@@ -879,133 +879,133 @@ const CW_WORLD_COUNTRIES = [
   ['LV',"Latvia",'🇱🇻'],
   ['EE',"Estonia",'🇪🇪']
 ];
-const CW_WORLD_KINDS = [
-  { job:'doc_expiry',     icon:'\uD83D\uDEC2', cat:'Home & life',
-    t:n=>'Papers and permits in '+n,
-    d:n=>'Tracks what expires and what has to be renewed in '+n+' - identity documents, residence and work permits, licenses - and says how long each one normally takes so you start it in time.' },
-  { job:'weather_day',    icon:'\uD83C\uDF26\uFE0F', cat:'Home & life',
-    t:n=>'The day ahead in '+n,
-    d:n=>'The forecast where you are in '+n+', and what it actually changes about your day - what to wear, what to move, what to bring.' },
-  { job:'fuel_watch',     icon:'\u26FD', cat:'Money',
-    t:n=>'Cheapest fuel in '+n,
-    d:n=>'Watches pump prices near you in '+n+' and tells you where and when to fill up, in the local currency.' },
-  { job:'store_deals',    icon:'\uD83C\uDFF7\uFE0F', cat:'Money',
-    t:n=>'This week at the shops in '+n,
-    d:n=>'The discounts running at the chains people actually use in '+n+', checked against what you buy rather than what is on the front of the leaflet.' },
-  { job:'local_basket',   icon:'\uD83E\uDDFA', cat:'Money',
-    t:n=>'Where the food shop is cheapest in '+n,
-    d:n=>'Compares a basket across the supermarkets near you in '+n+' and says where this week is cheapest and by how much.' },
-  { job:'fridge_recipes', icon:'\uD83E\uDD57', cat:'Home & life',
-    t:n=>'Cooking from what you bought in '+n,
-    d:n=>'Takes what you bought, works out what goes off first, and suggests meals from it using what is normal to find in '+n+'.' },
-  { job:'appt_chase',     icon:'\uD83E\uDE7A', cat:'Health',
-    t:n=>'Getting seen in '+n,
-    d:n=>'How appointments are actually booked in '+n+', what the wait tends to be, what to bring, and what to ask when you are there.' },
-  { job:'school_admin',   icon:'\uD83C\uDF92', cat:'Family & kids',
-    t:n=>'School paperwork in '+n,
-    d:n=>'The forms, terms, deadlines and payments schools in '+n+' ask for, and which of them are about to be due.' },
-  { job:'bills_due',      icon:'\uD83E\uDDFE', cat:'Money',
-    t:n=>'Bills and pay in '+n,
-    d:n=>'What is due and when in '+n+', in local currency - flags a failed payment or a low balance early, and confirms when your pay lands.' },
-  { job:'tax_catch',      icon:'\uD83D\uDCC9', cat:'Money',
-    t:n=>'What is deductible in '+n,
-    d:n=>'Watches for the spending that is claimable in '+n+' and keeps it together, with the deadline that applies where you are.' },
+/* THE SAME EVERYWHERE, AND THE PART THAT IS NOT ────────────────────────────
+
+   The previous version of this took ten job templates and pasted a country
+   name into each one, so Japan got "Papers and permits in Japan" and Nigeria
+   got "Papers and permits in Nigeria". That is not localisation, it is a mail
+   merge - the same job wearing a flag - and it was rightly called out: a
+   universal tool has to have real things in common between countries AND real
+   differences, not one shape repeated a hundred times.
+
+   The real material already existed on the server and nothing showed it. The
+   Worker carries ten EVERYDAY_UNIVERSAL jobs plus five genuinely local ones
+   for each of 105 countries, and the local ones are actually local: 年末調整
+   and ふるさと納税 in Japan, NIN and BVN and DisCo bills in Nigeria, Renta and
+   cuota de autónomo and ITV in Spain, Kündigungsfristen and
+   Nebenkostenabrechnung in Germany, CFDI and OXXO in Mexico.
+
+   So the split is the honest one, and it is the answer to the question:
+
+     WHAT IS THE SAME - the ten below. Everybody, everywhere, has bills with
+     dates, subscriptions that renew themselves, parcels, warranties that
+     expire and letters they have not answered. These ship with the page, so
+     they are there with no connection and no account.
+
+     WHAT IS DIFFERENT - the five for the country you pick, fetched from the
+     server because 525 of them will not fit in a page somebody downloads.
+     When the backend is not reachable the local half says so, rather than
+     falling back to a template with a flag on it. */
+const CW_EVERYDAY_UNIVERSAL = [
+  { id:'ev_bills_due', icon:'📄', needs:'Email',
+    title:'Bills due this week',
+    desc:'Every bill sitting in your mail with a date on it, in one list, before the date rather than after it.' },
+  { id:'ev_renewals', icon:'🪪', needs:'Email',
+    title:'Renewals and expiry dates',
+    desc:'Passport, licence, insurance, visa, registration, tenancy. The things that cost a great deal of trouble when they lapse and give no warning when they do.' },
+  { id:'ev_trials', icon:'⏳', needs:'Email',
+    title:'Free trials about to charge',
+    desc:'A trial that is about to become a payment, while there is still time to decide.' },
+  { id:'ev_deliveries', icon:'📦', needs:'Email',
+    title:'Parcels: what is coming and what is late',
+    desc:'Everything in transit in one place, and specifically the ones that have stopped moving.' },
+  { id:'ev_returns', icon:'↩️', needs:'Email',
+    title:'Return and warranty windows closing',
+    desc:'The last day you can send something back or claim on it, which is never mentioned again after the receipt.' },
+  { id:'ev_official', icon:'🏛️', needs:'Email',
+    title:'Official letters you have not answered',
+    desc:'Anything from a tax office, council, ministry, court, bank or school that asked for something and has not had a reply.' },
+  { id:'ev_utility_spike', icon:'⚡', needs:'Email',
+    title:'Is my bill higher than usual?',
+    desc:'Compares this month against the months before it, so a quiet price rise or a broken meter does not go unnoticed for a year.' },
+  { id:'ev_trip', icon:'✈️', needs:'Email, Calendar',
+    title:'My next trip, in one place',
+    desc:'Flights, hotel, transfers, check-in windows and what expires before you go, assembled from the confirmations scattered across your mail.' },
+  { id:'ev_school_week', icon:'🎒', needs:'Email, Calendar',
+    title:'School and study week ahead',
+    desc:'Deadlines, forms, payments and dates from school or university mail, before the week starts rather than the night before.' },
+  { id:'ev_week_ahead', icon:'🗓️', needs:'Email, Calendar',
+    title:'My week, before it starts',
+    desc:'One message before the week begins: what is scheduled, what is due, what is waiting on you, and where the week is over-committed.' }
 ];
 
-/* A STABLE SHUFFLE.
-
-   "100 random examples" has to mean random ACROSS VISITS and fixed WITHIN one,
-   or the cards reorder under your hand every time a filter is pressed, which
-   reads as a bug rather than as variety. Seeded once per page load. */
-let _cwWorldSeed = 0;
-function _cwWorldRand(){
-  _cwWorldSeed = (_cwWorldSeed * 1664525 + 1013904223) >>> 0;
-  return _cwWorldSeed / 4294967296;
+/* One shape for both halves, so a universal job and a local one are visibly
+   the same kind of thing and go through the same card, peek and toggle. */
+function _cwEverydayJob(raw, countryName, local){
+  return {
+    id: 'ev_' + (local ? (String(raw.country || '').toLowerCase() + '_') : '') + String(raw.id || ''),
+    world: true, everyday: true, local: !!local,
+    country: raw.country || '', countryName: countryName || '',
+    cat: 'Home & life', icon: raw.icon || '\uD83D\uDCCB', on: false,
+    title: String(raw.title || ''),
+    desc: String(raw.desc || ''),
+    needs: String(raw.needs || 'Email'),
+    /* The instruction lives on the server with the job. Switching one on sends
+       the id, and the runner uses the real prompt - which is why this does not
+       invent one here and does not need to carry 525 of them in the page. */
+    everydayId: String(raw.id || ''),
+  };
 }
-function _cwWorldBuild(){
-  _cwWorldSeed = (Date.now() ^ 0x9e3779b9) >>> 0;
-  const out = [];
-  /* One example per country, so a hundred examples really are a hundred
-     PLACES rather than ten places wearing ten hats. The kind rotates and is
-     offset by the country's position, so neighbours in the list are not all
-     about fuel. */
-  CW_WORLD_COUNTRIES.forEach(([code, name, flag], i) => {
-    const k = CW_WORLD_KINDS[i % CW_WORLD_KINDS.length];
-    out.push({
-      id: 'world_' + code.toLowerCase() + '_' + k.job,
-      world: true, country: code, countryName: name,
-      cat: k.cat, icon: flag, on: false,
-      title: k.t(name),
-      desc: k.d(name),
-      /* THE NEEDS COME FROM THE REAL JOB, NOT FROM A GUESS.
-
-         These were all filed as 'Web research', which made every one of them
-         look like a lookup - the weakest thing in the catalogue, and exactly
-         what reads as filler next to a job that goes into your mailbox. The
-         job underneath doc_expiry needs Email and Calendar; bills_due needs
-         Email. Saying so makes the card true AND makes it the strong kind:
-         real accounts, running while you are not there. */
-      needs: _cwNeedsOf(k.job) || 'Web research',
-      /* The instruction is the real job's, with the country named in it. That
-         is the whole difference: the same job asked about Japan and about
-         Kenya is two different answers, and neither is invented here. */
-      prompt: 'For somebody living in ' + name + ' (' + code + '): ' +
-              (_cwPromptFor(k.job) || k.d(name)) +
-              ' Use sources and services that actually operate in ' + name +
-              ', give amounts in the local currency, and say the date you checked.',
-      basedOn: k.job,
-    });
-  });
-  /* Shuffle so the top of the list is not always the Americas. */
-  for(let i = out.length - 1; i > 0; i--){
-    const j = Math.floor(_cwWorldRand() * (i + 1));
-    const t = out[i]; out[i] = out[j]; out[j] = t;
+function _cwUniversalJobs(){
+  return CW_EVERYDAY_UNIVERSAL.map(j => _cwEverydayJob(j, '', false));
+}
+/* The local five, from the server. Cached per country: choosing a country
+   twice must not be two round trips, and switching back and forth is exactly
+   what somebody comparing does. */
+const _cwLocalCache = {};
+let _cwLocalState = {};        // code -> 'loading' | 'ok' | 'offline'
+function _cwLocalJobs(code){
+  const cc = String(code || '').toUpperCase();
+  if(!cc) return [];
+  return _cwLocalCache[cc] || [];
+}
+async function _cwLoadLocal(code){
+  const cc = String(code || '').toUpperCase();
+  if(!cc || _cwLocalCache[cc] || _cwLocalState[cc] === 'loading') return;
+  /* Asked only when there is something to ask. Without a backend, or without
+     an account, the call cannot answer - and calling anyway produced the worst
+     possible outcome: an empty list that the screen then reported as "nothing
+     specific to Spain is written yet", which is FALSE. Spain has five, and the
+     copy was stating the opposite because it could not tell "the server says
+     none" from "there was no server". */
+  if(!(window.AMV_API && AMV_API.live)){ _cwLocalState[cc] = 'offline'; return; }
+  if(!AMV_API.hasSession){ _cwLocalState[cc] = 'needsauth'; return; }
+  _cwLocalState[cc] = 'loading';
+  try{
+    const d = await AMV_API.everyday(cc);
+    /* The real endpoint always returns the country list. Anything without it
+       did not come from the catalogue, so it is not an answer about what
+       exists - it is an absence of one. */
+    if(!d || !Array.isArray(d.countries)) throw new Error('no catalogue');
+    const name = (d && d.name) || cc;
+    const local = Array.isArray(d.local) ? d.local : [];
+    _cwLocalCache[cc] = local.map(j => _cwEverydayJob(Object.assign({ country: cc }, j), name, true));
+    _cwLocalState[cc] = 'ok';
+  }catch(e){
+    /* Two different reasons, said as two different sentences. The catalogue
+       route needs an account, so a signed-out visitor gets "sign in" - which
+       is true and actionable - rather than "cannot reach the server", which
+       would send them looking for a fault in their connection that is not
+       there. Not cached as empty either way: signing in, or a connection
+       coming back, should be able to fill this in. */
+    const why = String((e && e.message) || '');
+    _cwLocalState[cc] = /sign in|unauthor|session/i.test(why) ? 'needsauth' : 'offline';
   }
-  return out;
+  try{ if(S.tab === 'crew') renderCrewView(); }catch(e){}
 }
-function _cwNeedsOf(id){
-  try{
-    const j = (_cwDefaultJobs() || []).find(x => x && x.id === id);
-    return j && j.needs ? String(j.needs) : '';
-  }catch(e){ return ''; }
-}
-function _cwPromptFor(id){
-  try{
-    const j = (_cwDefaultJobs() || []).find(x => x && x.id === id);
-    return j && j.prompt ? String(j.prompt) : '';
-  }catch(e){ return ''; }
-}
-let _cwWorldCache = null;
-function _cwWorldJobs(){
-  if(!_cwWorldCache) _cwWorldCache = _cwWorldBuild();
-  return _cwWorldCache;
-}
-/* EVERY KIND FOR ONE COUNTRY.
-
-   The grid used to carry one example per country, which showed range and
-   answered nobody's actual question - a person does not want to know that AMV
-   does something in Peru, they want to know what it does where THEY live. Pick
-   a country and this is the ten. */
-function _cwWorldFor(code){
-  const row = CW_WORLD_COUNTRIES.find(c => c[0] === String(code || '').toUpperCase());
-  if(!row) return [];
-  const [cc, name, flag] = row;
-  return CW_WORLD_KINDS.map(k => ({
-    id: 'world_' + cc.toLowerCase() + '_' + k.job,
-    world: true, country: cc, countryName: name,
-    cat: k.cat, icon: flag, on: false,
-    title: k.t(name),
-    desc: k.d(name),
-    needs: _cwNeedsOf(k.job) || 'Web research',
-    prompt: 'For somebody living in ' + name + ' (' + cc + '): ' +
-            (_cwPromptFor(k.job) || k.d(name)) +
-            ' Use sources and services that actually operate in ' + name +
-            ', give amounts in the local currency, and say the date you checked.',
-    basedOn: k.job,
-  }));
-}
-try{ window._cwWorldFor = _cwWorldFor; }catch(e){}
-try{ window._cwWorldJobs = _cwWorldJobs; window.CW_WORLD_COUNTRIES = CW_WORLD_COUNTRIES; }catch(e){}
+try{ window._cwUniversalJobs=_cwUniversalJobs; window._cwLocalJobs=_cwLocalJobs;
+     window._cwLoadLocal=_cwLoadLocal; window.CW_EVERYDAY_UNIVERSAL=CW_EVERYDAY_UNIVERSAL; }catch(e){}
+try{ window.CW_WORLD_COUNTRIES = CW_WORLD_COUNTRIES; }catch(e){}
 
 /* THE POOL, AND THE HUNDRED THAT GET SHOWN.
 
@@ -1022,7 +1022,8 @@ try{ window._cwWorldJobs = _cwWorldJobs; window.CW_WORLD_COUNTRIES = CW_WORLD_CO
    A world example is a real job with a country named in its instruction, so
    switching one on switches on that job - it is not a card that does nothing. */
 function _cwAllJobs(){
-  try{ return (_cwJobs() || []).concat(_cwWorldJobs() || []); }
+  try{ return (_cwJobs() || []).concat(_cwUniversalJobs() || [])
+                              .concat(_cwLocalJobs(_cwCountryGuess()) || []); }
   catch(e){ return _cwJobs() || []; }
 }
 /* THE BEST ONES FIRST, AND FEWER OF THEM.
@@ -1201,13 +1202,41 @@ function _cwCountryHTML(){
     .sort((a, b) => a[1].localeCompare(b[1]))
     .map(([cc, name, flag]) =>
       `<option value="${escH(cc)}"${cc === cur ? ' selected' : ''}>${flag} ${escH(name)}</option>`).join('');
-  const jobs = cur ? _cwWorldFor(cur) : [];
   const row = CW_WORLD_COUNTRIES.find(c => c[0] === cur);
+  const name = row ? row[1] : '';
+  const universal = _cwUniversalJobs();
+  /* Asked BEFORE the state is read, not after. _cwLoadLocal settles the cases
+     it can answer with no round trip - no backend, no account - synchronously,
+     and reading the state first meant the render used the value from before
+     that and left "Looking up..." on screen for a lookup that was never going
+     to happen. It is a no-op once it has the answer or is already asking. */
+  if(cur){ try{ _cwLoadLocal(cur); }catch(e){} }
+  const local = cur ? _cwLocalJobs(cur) : [];
+  const state = cur ? (_cwLocalState[cur] || 'loading') : '';
+
+  const localBlock = !cur
+    ? `<div class="cw-country-empty">Pick a country and AMV shows the work that only exists there - the forms,
+         the bills and the deadlines that have local names and local dates.</div>`
+    : state === 'ok' && local.length
+      ? `<div class="cw-jobs-grid">${local.map(_cwCountryCard).join('')}</div>`
+    : state === 'needsauth'
+      ? `<div class="cw-country-empty">The work that only exists in ${escH(name)} is kept on AMV\u2019s servers, so it
+           takes an account to look at. Everything above works anywhere - those are the same wherever you are.
+           <button class="mc-sec-link" data-auth="signup">Create an account</button></div>`
+    : state === 'offline'
+      ? `<div class="cw-country-empty">The work specific to ${escH(name)} is held on AMV\u2019s servers and this copy
+           cannot reach them right now. Everything above still applies here - those are the same everywhere.</div>`
+    : state === 'ok'
+      ? `<div class="cw-country-empty">Nothing specific to ${escH(name)} is written yet. The ten above still apply -
+           they are the same everywhere - and anything else you can describe, Crew will take.</div>`
+      : `<div class="cw-country-empty">Looking up what is different in ${escH(name)}\u2026</div>`;
+
   return `<section class="cw-country">
     <div class="cw-country-head">
       <div>
         <h3>What AMV does where you live</h3>
-        <p class="cw-country-sub">Every one of these runs on AMV\u2019s servers on a schedule, so it happens whether or not this window is open. Pick a country to see how the work is actually done there.</p>
+        <p class="cw-country-sub">Every one of these runs on AMV\u2019s servers on a schedule, so it happens whether
+          or not this window is open. Some of it is the same wherever you are. Some of it only exists in one place.</p>
       </div>
       <label class="cw-country-pick">
         <span>Country</span>
@@ -1217,9 +1246,15 @@ function _cwCountryHTML(){
         </select>
       </label>
     </div>
-    ${cur && jobs.length
-      ? `<div class="cw-jobs-grid">${jobs.map(_cwCountryCard).join('')}</div>`
-      : `<div class="cw-country-empty">Choose a country and AMV shows the ten things it runs there \u2013 the paperwork, the bills, the shops and the deadlines, named the way they are named locally.</div>`}
+
+    <div class="cw-split-h"><b>The same everywhere</b><span>Bills, renewals, parcels, letters - everyone has these,
+      whatever country they are in.</span></div>
+    <div class="cw-jobs-grid">${universal.map(_cwCountryCard).join('')}</div>
+
+    <div class="cw-split-h"><b>${cur ? 'Only in ' + escH(name) : 'Only where you are'}</b><span>${cur
+      ? 'The forms, taxes and bills that exist in ' + escH(name) + ' and nowhere else, under the names they actually have.'
+      : 'Different in every country - the paperwork, the taxes, the utilities.'}</span></div>
+    ${localBlock}
   </section>`;
 }
 /* The catalogue's own card, so a country job is visibly the same kind of thing
@@ -2820,7 +2855,7 @@ function cwToggle(id){
      adds it and then follows exactly the same path as any other job - the
      allowance check, the setup questions, the scheduling. */
   if(!j){
-    const w=(()=>{ try{ return (_cwWorldJobs()||[]).find(x=>x.id===id); }catch(e){ return null; } })();
+    const w=(()=>{ try{ return (_cwAllJobs()||[]).find(x=>x.id===id); }catch(e){ return null; } })();
     if(!w) return;
     j={...w}; jobs.push(j); _cwSaveJobs(jobs);
   }

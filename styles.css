@@ -9747,3 +9747,25 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 #vc .sv.crew-view .vi > .eyebrow{ display:block; }
 /* The command box is inside the centred block but is a control, not prose. */
 #vc .sv.crew-view .vi .mc-cmd{ text-align:left; }
+
+/* ── LAYER A127: THE SAME EVERYWHERE, AND THE PART THAT IS NOT ─────────────
+   Two labelled bands rather than one grid, because the distinction IS the
+   point: a universal tool has to show what it does for everybody and what it
+   does only for you, and a single undifferentiated list says neither. */
+.cw-split-h{
+  display:flex;align-items:baseline;gap:var(--sp-3);flex-wrap:wrap;
+  margin:var(--sp-6) 0 var(--sp-3);
+  padding-top:var(--sp-4);border-top:1px solid var(--bd);
+}
+.cw-split-h:first-of-type{ border-top:none;padding-top:0; }
+.cw-split-h > b{
+  font-size:var(--t-md);font-weight:650;color:var(--tx);
+  letter-spacing:-.1px;flex:0 0 auto;
+}
+.cw-split-h > span{
+  font-size:var(--t-base);color:var(--mu);line-height:1.55;
+  flex:1 1 320px;min-width:0;
+}
+@media (max-width:720px){
+  .cw-split-h{ flex-direction:column;gap:var(--sp-1); }
+}
