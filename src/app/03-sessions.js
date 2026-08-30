@@ -886,12 +886,24 @@ function _initMobileSidebar(){
     _renderBottomNav();
   }catch(e){}
 }
-// Native-feeling bottom navigation for mobile. Five primary destinations;
-// "More" opens the full sidebar for everything else.
+/* Native-feeling bottom navigation for mobile. "More" opens the full sidebar
+   for everything else.
+
+   THE PHONE WAS STILL DESCRIBING THE OLD SHAPE. Studio and Dev were listed
+   here as two separate destinations long after the sidebar was reduced to one
+   Build with the three modes inside it - so the desktop said Build and the
+   phone said Studio and Dev, for the same screen. They were not broken, which
+   is why it survived: both still route, because setBuildMode maps the old
+   names onto the modes. It was just the product disagreeing with itself
+   depending on what somebody was holding.
+
+   Crew earns the freed slot rather than nothing taking it: it is the surface
+   that runs work while the phone is in a pocket, which is the one most worth
+   reaching from a phone. */
 const BOTTOM_NAV=[
   {tab:'chat',   label:'Chat',   svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'},
-  {tab:'studio', label:'Studio', svg:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>'},
-  {tab:'dev',    label:'Dev',    svg:'<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>'},
+  {tab:'build',  label:'Build',  svg:'<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>'},
+  {tab:'crew',   label:'Crew',   svg:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
   {tab:'__more', label:'More',   svg:'<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>'},
 ];
 function _renderBottomNav(){
