@@ -4076,6 +4076,10 @@ try{ window._mobileShowOutput=_mobileShowOutput; }catch(e){}
    the admin totals were caught. A view preference crossing accounts is
    untidy; content or an entitlement crossing accounts is a defect. */
 const _S_SIGNOUT_KEEP = [
+  /* Which Build section you were last in - Studio, Dev or Lab. A view
+     preference exactly like `tab` beside it: it says where you were looking,
+     never what you were looking at. */
+  'buildMode',
   'tab','sbOpen','openTabs','settingsPane','starFilter','busy','ck','se','sp',
   'model','_researchDepth','_researchTier',
   '_adminTab','_mktTab','_setSearch','user',
@@ -15185,12 +15189,12 @@ function _cwJobsBody(jobs, jobCard){
     const all = (() => { try{ return _cwAllJobs() || jobs; }catch(e){ return jobs; } })();
     const hits = all.filter(j => _cwMatches(j, _cwFind));
     return hits.length
-      ? `<div class="cw-jobs-grid">${hits.map(jobCard).join('')}</div>`
+      ? `<div class="cw-jobs-grid cw-cat-grid">${hits.map(jobCard).join('')}</div>`
       : _cwNoMatchHTML();
   }
   if(_cwCat!=='all'){
     const sel=jobs.filter(j=>j.cat===_cwCat);
-    return `<div class="cw-jobs-grid">${sel.map(jobCard).join('')}</div>`;
+    return `<div class="cw-jobs-grid cw-cat-grid">${sel.map(jobCard).join('')}</div>`;
   }
   /* Anything without a known category still has to appear - a job that exists
      but renders nowhere is the failure this whole screen keeps having. */
@@ -15198,11 +15202,11 @@ function _cwJobsBody(jobs, jobCard){
   const rest=jobs.filter(j=>CW_CATS.indexOf(j.cat)<0);
   return known.map(c=>`<div class="cw-cat">
       <div class="cw-cat-h">${escH(c)}<span class="cw-cat-n">${jobs.filter(j=>j.cat===c).length}</span></div>
-      <div class="cw-jobs-grid">${jobs.filter(j=>j.cat===c).map(jobCard).join('')}</div>
+      <div class="cw-jobs-grid cw-cat-grid">${jobs.filter(j=>j.cat===c).map(jobCard).join('')}</div>
     </div>`).join('')
     + (rest.length?`<div class="cw-cat">
       <div class="cw-cat-h">More<span class="cw-cat-n">${rest.length}</span></div>
-      <div class="cw-jobs-grid">${rest.map(jobCard).join('')}</div>
+      <div class="cw-jobs-grid cw-cat-grid">${rest.map(jobCard).join('')}</div>
     </div>`:'');
 }
 
@@ -18492,7 +18496,14 @@ function renderCodeView(){
   on($('dev-open-ext'),'click',()=>_devOpenExternal());
   on($('dev-download-proj'),'click',()=>_devDownloadProject());
   on($('dev-deploy'),'click',()=>_devDeploy());
-  on($('dev-tolab'),'click',()=>{ const code=_DEV.activePath?_DEV.project[_DEV.activePath]?.content:_DEV.curCode; if(code){ _LAB_HANDOFF=code; setTab('lab'); toast('Sent to Lab for debugging','info'); } else { toast('Build something first, then send it to Lab','info'); } });
+  /* Falls back through the project rather than trusting one pointer: the file
+     that is open, else the entry file, else anything in the project, else
+     whatever is in the editor. Refusing while holding the code is the failure
+     this is guarding against. */
+  on($('dev-tolab'),'click',()=>{ const code=(_DEV.activePath && _DEV.project[_DEV.activePath]?.content)
+      || _DEV.project[_devEntryFile()]?.content
+      || (_devProjectFiles().map(p=>_DEV.project[p]?.content).find(Boolean))
+      || _DEV.curCode; if(code){ _LAB_HANDOFF=code; setTab('lab'); toast('Sent to Lab for debugging','info'); } else { toast('Build something first, then send it to Lab','info'); } });
   on($('dev-new'),'click',()=>{
     _sessNew('dev');
     _DEV.log=[]; _DEV.project={}; _DEV.activePath=''; _DEV.curCode=''; _DEV.curLang='';
@@ -18631,7 +18642,18 @@ function _devDeriveName(request){
   return _devSetName(name);
 }
 window._devProjectName=_devProjectName; window._devSetName=_devSetName;
-function _devSetFile(path, content, lang){ path=_safePath(path)||('file'+Date.now()); _DEV.project[path]={ content, lang:lang||_devLangFor(path), ts:Date.now() }; if(!_DEV.activePath) _DEV.activePath=path; try{ _sessTouch('dev'); }catch(e){} }
+function _devSetFile(path, content, lang){ path=_safePath(path)||('file'+Date.now()); _DEV.project[path]={ content, lang:lang||_devLangFor(path), ts:Date.now() }; /* AN ACTIVE PATH THAT NAMES NOTHING IS WORSE THAN NONE.
+
+     This only claimed the path when there was no active one, so a project
+     cleared and refilled - which is what "New session" and every import does -
+     left activePath pointing at a file that no longer exists. Everything that
+     reads the active file then gets undefined and behaves as if the project is
+     empty: "Send to Lab" refuses with "Build something first, then send it to
+     Lab" while a file sits in the list beside it.
+
+     So: claim it when nothing is active, and also when whatever IS active is
+     no longer in the project. */
+  if(!_DEV.activePath || !_DEV.project[_DEV.activePath]) _DEV.activePath=path; try{ _sessTouch('dev'); }catch(e){} }
 function _devLangFor(path){ const e=(path.split('.').pop()||'').toLowerCase(); return ({js:'js',mjs:'js',jsx:'js',ts:'js',tsx:'js',py:'python',html:'html',css:'css',json:'json',md:'md'})[e]||'txt'; }
 function _devEntryFile(){
   const files=_devProjectFiles();

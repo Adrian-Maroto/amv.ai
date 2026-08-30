@@ -542,7 +542,13 @@ const ar = await page.evaluate(() => {
   return { dir, navArabic };
 });
 ok(ar.dir === 'rtl', 'Arabic sets right-to-left layout', ar.dir);
-ok(ar.navArabic >= 5, 'the sidebar nav is translated to Arabic', ar.navArabic);
+/* Four nav entries now, not seven: Studio, Dev and Lab became sections of one
+   Build entry. The property is that EVERY entry translates, so the number
+   tracks the nav rather than being a fixed floor that outlives it. */
+const navCount = await page.evaluate(() => document.querySelectorAll('.snb[data-tab]').length);
+ok(navCount >= 4, 'there is a nav to translate', navCount);
+ok(ar.navArabic === navCount,
+   'every sidebar nav entry is translated to Arabic', { translated: ar.navArabic, of: navCount });
 
 await page.evaluate(() => { saveStr('amv_lang','en'); if(typeof _translateUI==='function') _translateUI(); });
 await new Promise(r => setTimeout(r, 200));

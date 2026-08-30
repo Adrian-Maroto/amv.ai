@@ -48,7 +48,6 @@ section('Structural anchors the app inserts into still exist');
     ['#ovr',          'the modal overlay every dialog is built inside'],
     ['#mta',          'the composer - the first-run card and activation offers type into it'],
     ['#hist',         'the conversation list'],
-    ['#build-group',  'the Build group - Studio, Dev and Lab'],
   ];
   for (const [sel, why] of ANCHORS) {
     ok(await exists(sel), sel + ' is present - ' + why);
@@ -171,32 +170,27 @@ section('Nothing is called that does not exist');
   ok(undef.length === 0,
      'every function the app calls on startup is actually defined', undef);
 
-  /* The Build group used to collapse behind a toggle, and this exercised
-     opening it - the toggle was what broke when _initBuildGroup was deleted.
-     It does not collapse any more: the reason it was folded away was to leave
-     room for Images and Video, which no longer exist, so Studio, Dev and Lab
-     are simply visible. What is worth checking is therefore the thing that
-     actually matters to somebody looking at the sidebar - that all three are
-     there and reachable, with nothing hiding them. */
-  const build = await page.evaluate(() => {
-    const grp = document.getElementById('build-group');
-    if (!grp) return { there: false };
-    const cs = getComputedStyle(grp);
-    const inside = [...grp.querySelectorAll('[data-tab]')].map(b => b.dataset.tab);
-    const hidden = [...grp.querySelectorAll('[data-tab]')].filter(b => {
-      const r = b.getBoundingClientRect();
-      return r.width < 1 || r.height < 1 || getComputedStyle(b).display === 'none';
-    }).length;
-    return { there: true, display: cs.display, inside, hidden,
+  /* Build used to be three sidebar entries under a collapsible heading. It is
+     ONE entry now, and Studio, Dev and Lab are sections you pick inside it -
+     so what is worth checking moved with them: that the entry is there, that
+     it opens the Build surface, and that all three sections are reachable from
+     inside rather than from the nav. */
+  const build = await page.evaluate(async () => {
+    const entry = document.querySelector('#sb .snb[data-tab="build"]');
+    if (!entry) return { there: false };
+    entry.click();
+    await new Promise(r => setTimeout(r, 400));
+    const modes = [...document.querySelectorAll('#vc [data-bmode]')].map(b => b.dataset.bmode);
+    return { there: true, tab: S.tab, modes,
+             groupGone: !document.getElementById('build-group'),
              toggleGone: !document.getElementById('build-toggle') };
   });
-  ok(build.there, 'the Build group exists');
-  ok(build.display !== 'none', 'and is shown rather than folded away', build.display);
-  ok(build.inside.includes('studio') && build.inside.includes('dev') && build.inside.includes('lab'),
-     'with all three build surfaces in it', build.inside);
-  ok(build.hidden === 0, 'and every one of them is actually visible', build);
-  ok(build.toggleGone,
-     'and the toggle is gone rather than left behind with nothing to toggle', build);
+  ok(build.there, 'Build is one entry in the sidebar');
+  ok(build.tab === 'build', 'and it opens the Build surface', build.tab);
+  ok(build.modes.includes('studio') && build.modes.includes('dev') && build.modes.includes('lab'),
+     'with all three sections pickable inside it', build.modes);
+  ok(build.groupGone && build.toggleGone,
+     'and the old group and its toggle are gone rather than left behind', build);
 }
 
 section('No handler is bound to a data-attribute nothing renders');

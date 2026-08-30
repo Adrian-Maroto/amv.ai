@@ -30,6 +30,11 @@ import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
+/* studio/dev/lab are what the buttons are called; design/code/lab are the
+   modes they select. Same map the product uses, named here so the assertion
+   does not restate it wrongly. */
+const BUILD_SURFACES_T = { studio: 'design', dev: 'code', lab: 'lab' };
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const FIX = JSON.parse(readFileSync(join(ROOT, 'tests/fixtures/build-surface-controls.json'), 'utf8'));
 
@@ -198,16 +203,29 @@ section('Every route into a Build surface goes through the one door (AMV-D007 st
     }, { t: tab, sel: shell });
     ok(got.mode === mode, `${tab} resolves to the ${mode} surface`, got.mode);
     ok(got.shell, `${tab} still renders ${shell}`);
-    ok(got.tab === tab, `and ${tab} is still a real route name, not a redirect`, got.tab);
+    /* It settles on `build` on purpose. The three are sections of one surface
+       now, and leaving S.tab as `studio` would mean the sidebar - which has a
+       single Build entry - could not show where you are. The property this
+       line exists for is that the old name still WORKS rather than 404s, and
+       the two assertions above are what prove it: it resolves to the right
+       mode and renders that surface's shell. */
+    ok(got.tab === 'build', `and ${tab} still routes somewhere real`, got.tab);
   }
 
   /* Dev hands code to Lab and that crossing is the product already admitting
      these are one job. It has to survive every step of the merge. */
   const handoff = await page.evaluate(async () => {
-    _DEV.log = [{ role: 'sys', text: 'x' }];
-    _devSetFile('a.js', 'console.log(1)', 'js');
+    /* Arrive first, THEN put a file in it. The earlier viewport sweep clears
+       _DEV.project between runs, and seeding before navigating left this
+       depending on whether the trip to Dev preserved it - so the failure read
+       as "the handoff lost the code" when the code had never made it onto the
+       surface. This is also the real sequence: you build something while you
+       are on Dev, then send it to Lab. */
     setTab('dev');
     await new Promise(s => setTimeout(s, 400));
+    _DEV.log = [{ role: 'sys', text: 'x' }];
+    _devSetFile('a.js', 'console.log(1)', 'js');
+    await new Promise(s => setTimeout(s, 120));
     /* Null-guarded on purpose. Reaching straight through to .click() turns a
        MISSING control - exactly what this suite exists to detect - into an
        uncaught TypeError that kills the run before it reports anything. A guard
@@ -217,11 +235,29 @@ section('Every route into a Build surface goes through the one door (AMV-D007 st
     const btn = document.getElementById('dev-tolab');
     if (!btn) return { missing: true, tab: S.tab, code: '' };
     btn.click();
-    await new Promise(s => setTimeout(s, 500));
-    return { missing: false, tab: S.tab, code: (document.getElementById('lab-code') || {}).value || '' };
+    /* Waited for rather than slept past. The handoff lands when the Lab
+       surface renders and reads _LAB_HANDOFF, and a fixed 500ms was just
+       enough until Build gained a state settle before its render - at which
+       point this failed reporting an empty editor, which reads exactly like
+       the code being lost rather than like the test being early. */
+    const stop = Date.now() + 8000;
+    while(Date.now() < stop){
+      const el = document.getElementById('lab-code');
+      if(el && el.value) break;
+      await new Promise(s => setTimeout(s, 40));
+    }
+    /* Reported rather than inferred. When this failed it said only "the code
+       is empty", which is true of a lost handoff AND of a Dev surface that
+       never had the file - two very different bugs wearing one message. */
+    return { missing: false, tab: S.tab, mode: _buildMode(),
+             activePath: _DEV.activePath,
+             files: Object.keys(_DEV.project || {}),
+             curCode: String(_DEV.curCode || '').slice(0, 20),
+             code: (document.getElementById('lab-code') || {}).value || '' };
   });
   ok(!handoff.missing, 'the Dev-to-Lab control is on the Dev surface', handoff);
-  ok(handoff.tab === 'lab', 'Dev still hands off to Lab', handoff.tab);
+  ok(handoff.tab === 'build' && handoff.mode === 'lab',
+     'Dev still hands off to Lab', handoff);
   ok(handoff.code.includes('console.log(1)'), 'carrying the code with it', handoff.code);
 }
 
@@ -318,11 +354,16 @@ section('The outcome can be chosen from any Build surface (AMV-D007 step 4)');
       await page.waitForTimeout(450);
       const now = await page.evaluate(() => {
         const on = document.querySelector('#vc .build-mode.on');
-        return { tab: S.tab, active: on ? on.dataset.bmode : null,
+        return { tab: S.tab, mode: _buildMode(), active: on ? on.dataset.bmode : null,
                  selected: [...document.querySelectorAll('#vc .build-mode')]
                    .filter(b => b.getAttribute('aria-selected') === 'true').length };
       });
-      ok(now.tab === target, `at ${w}x${h} choosing ${target} really goes there`, now.tab);
+      /* The three are sections of one Build surface, so choosing one changes
+         the MODE and stays on Build - which is what keeps the single sidebar
+         entry showing where you are. `active` below already checks the button
+         lit up; this checks the surface actually followed it. */
+      ok(now.tab === 'build' && now.mode === (BUILD_SURFACES_T[target] || target),
+         `at ${w}x${h} choosing ${target} really goes there`, now);
       ok(now.active === target, `and the switch shows ${target} as current`, now.active);
       ok(now.selected === 1, 'with exactly one marked selected for a screen reader', now.selected);
     }

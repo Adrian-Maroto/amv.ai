@@ -206,7 +206,11 @@ section('Somebody who has not paid sees the product, not a paragraph about it');
     };
   });
   ok(r.plan === 'free', 'they are on the free plan', r.plan);
-  ok(r.cards >= 80, 'and they can see the whole catalogue', r.cards);
+  /* Sixty ranked examples plus the ten for the selected country. It was
+     "the whole catalogue" when the catalogue was rendered entire; it is a
+     shelf now, and what matters to somebody deciding is that there is plenty
+     of it and every card opens. */
+  ok(r.cards >= 50, 'and they can see plenty of it', r.cards);
   ok(r.openable === r.cards, 'every card can be opened', { openable: r.openable, cards: r.cards });
   ok(r.cats >= 5, 'and browsed by category', r.cats);
   /* No switch they cannot use. A toggle that silently refuses teaches them the

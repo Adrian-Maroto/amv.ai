@@ -1346,12 +1346,12 @@ function _cwJobsBody(jobs, jobCard){
     const all = (() => { try{ return _cwAllJobs() || jobs; }catch(e){ return jobs; } })();
     const hits = all.filter(j => _cwMatches(j, _cwFind));
     return hits.length
-      ? `<div class="cw-jobs-grid">${hits.map(jobCard).join('')}</div>`
+      ? `<div class="cw-jobs-grid cw-cat-grid">${hits.map(jobCard).join('')}</div>`
       : _cwNoMatchHTML();
   }
   if(_cwCat!=='all'){
     const sel=jobs.filter(j=>j.cat===_cwCat);
-    return `<div class="cw-jobs-grid">${sel.map(jobCard).join('')}</div>`;
+    return `<div class="cw-jobs-grid cw-cat-grid">${sel.map(jobCard).join('')}</div>`;
   }
   /* Anything without a known category still has to appear - a job that exists
      but renders nowhere is the failure this whole screen keeps having. */
@@ -1359,11 +1359,11 @@ function _cwJobsBody(jobs, jobCard){
   const rest=jobs.filter(j=>CW_CATS.indexOf(j.cat)<0);
   return known.map(c=>`<div class="cw-cat">
       <div class="cw-cat-h">${escH(c)}<span class="cw-cat-n">${jobs.filter(j=>j.cat===c).length}</span></div>
-      <div class="cw-jobs-grid">${jobs.filter(j=>j.cat===c).map(jobCard).join('')}</div>
+      <div class="cw-jobs-grid cw-cat-grid">${jobs.filter(j=>j.cat===c).map(jobCard).join('')}</div>
     </div>`).join('')
     + (rest.length?`<div class="cw-cat">
       <div class="cw-cat-h">More<span class="cw-cat-n">${rest.length}</span></div>
-      <div class="cw-jobs-grid">${rest.map(jobCard).join('')}</div>
+      <div class="cw-jobs-grid cw-cat-grid">${rest.map(jobCard).join('')}</div>
     </div>`:'');
 }
 

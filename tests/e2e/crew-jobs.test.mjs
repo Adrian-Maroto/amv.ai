@@ -30,7 +30,7 @@ section('There is a lot of it, and every one is reachable');
   const t = await openCrew();
   const n = await page.evaluate(() => ({
     defined: _cwDefaultJobs().length,
-    rendered: document.querySelectorAll('.cw-job').length,
+    rendered: document.querySelectorAll('.cw-cat-grid .cw-job').length,
     cats: document.querySelectorAll('.cw-cat').length,
   }));
   ok(n.defined >= 70, 'the catalogue is genuinely large', n.defined);
@@ -49,7 +49,11 @@ section('There is a lot of it, and every one is reachable');
      searched the sample would have broken exactly that - which is what this
      now asserts instead, by looking for jobs that are deliberately not in the
      hundred. */
-  ok(n.rendered === 100, 'a hundred examples are shown, not the whole pool', n);
+  /* Sixty ranked examples plus the ten for whichever country is selected.
+     The number came down from a hundred when the catalogue gained a ranking -
+     showing the strongest sixty beats showing a hundred in no order. */
+  ok(n.rendered >= 55 && n.rendered <= 75,
+     'a ranked shelf is shown, not the whole pool', n);
   const reach = await page.evaluate(() => {
     const shown = new Set(_cwShowcase().map(j => j.id));
     const hidden = _cwAllJobs().filter(j => !shown.has(j.id));
@@ -65,8 +69,25 @@ section('There is a lot of it, and every one is reachable');
   ok(reach.found === true,
      'and a job NOT in the hundred is still reachable by searching for it', reach);
   ok(n.cats >= 6, 'grouped under headings rather than one flat wall', n.cats);
-  ok(/Refund chaser/.test(t) && /Salary benchmark/.test(t),
-     'including the newly added ones', t.length);
+  /* These two used to be checked as text on the screen, which only held while
+     everything was rendered. The catalogue is a ranked sixty now, so a job can
+     be real, reachable and simply further down - the property worth holding is
+     that it EXISTS and can be found, not that it happens to be in the visible
+     band. */
+  const named = await page.evaluate(() => {
+    const pool = _cwAllJobs();
+    /* Matched as a fragment, because these are the front of longer titles -
+       "Refund chaser & price protection", "Salary benchmark & timing" - and an
+       exact comparison finds neither. */
+    const has = (t) => pool.some(j => (j.title || '').indexOf(t) >= 0);
+    const findable = (t) => { cwFind(t); const hit =
+      [...document.querySelectorAll('.cw-cat-grid .cw-job-t')].some(e => (e.textContent || '').indexOf(t) >= 0);
+      cwFind(''); return hit; };
+    return { refund: has('Refund chaser'), salary: has('Salary benchmark'),
+             refundFound: findable('Refund chaser'), salaryFound: findable('Salary benchmark') };
+  });
+  ok(named.refund && named.salary, 'the newly added ones are in the catalogue', named);
+  ok(named.refundFound && named.salaryFound, 'and both can be found by name', named);
 }
 
 section('Every job is filed somewhere');
@@ -93,7 +114,7 @@ section('Filtering by category shows that category and only that category');
   const r = await page.evaluate(async () => {
     document.querySelector('[data-darg="Money"]').click();
     await new Promise(r => setTimeout(r, 300));
-    const titles = [...document.querySelectorAll('.cw-job-t')].map(e => e.textContent);
+    const titles = [...document.querySelectorAll('.cw-cat-grid .cw-job-t')].map(e => e.textContent);
     const money = _cwShowcase().filter(j => j.cat === 'Money');
     return { shown: titles.length, expected: money.length,
              allMoney: titles.every(t => money.some(j => j.title === t)) };
@@ -104,7 +125,7 @@ section('Filtering by category shows that category and only that category');
   const back = await page.evaluate(async () => {
     document.querySelector('[data-darg="all"]').click();
     await new Promise(r => setTimeout(r, 300));
-    return document.querySelectorAll('.cw-job').length;
+    return document.querySelectorAll('.cw-cat-grid .cw-job').length;
   });
   /* "All" means no category filter, which is the whole SHOWN catalogue - the
      screen is a hundred-item sample now, so comparing it to every job that
@@ -127,7 +148,7 @@ section('A job that cannot run says so rather than looking active');
     const needsAcct = _cwShowcase().filter(j =>
       String(j.needs || '').split(',').map(x => x.trim()).some(n => known.includes(n)));
     return { needsAcct: needsAcct.length,
-             blocked: document.querySelectorAll('.cw-job.blocked').length,
+             blocked: document.querySelectorAll('.cw-cat-grid .cw-job.blocked').length,
              text: document.body.textContent };
   });
   ok(r.blocked === r.needsAcct,

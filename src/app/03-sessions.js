@@ -1139,6 +1139,10 @@ try{ window._mobileShowOutput=_mobileShowOutput; }catch(e){}
    the admin totals were caught. A view preference crossing accounts is
    untidy; content or an entitlement crossing accounts is a defect. */
 const _S_SIGNOUT_KEEP = [
+  /* Which Build section you were last in - Studio, Dev or Lab. A view
+     preference exactly like `tab` beside it: it says where you were looking,
+     never what you were looking at. */
+  'buildMode',
   'tab','sbOpen','openTabs','settingsPane','starFilter','busy','ck','se','sp',
   'model','_researchDepth','_researchTier',
   '_adminTab','_mktTab','_setSearch','user',

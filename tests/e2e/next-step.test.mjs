@@ -66,9 +66,15 @@ const ran = await page.evaluate((code) => {
   renderChatMsgs();
   document.querySelector('[data-next-go]').click();
   const files = _devProjectFiles();
-  return { tab: S.tab, files, body: files.length ? _DEV.project[files[0]].content : '' };
+  return { tab: S.tab, mode: (typeof _buildMode === 'function' ? _buildMode() : ''),
+           files, body: files.length ? _DEV.project[files[0]].content : '' };
 }, CODE);
-ok(ran.tab === 'dev', 'the Dev offer actually opens Dev', ran.tab);
+/* Studio, Dev and Lab are sections of one Build surface now rather than three
+   sidebar entries, so the tab is `build` and WHICH of the three is the mode.
+   The property is unchanged - the offer has to land on the code surface with
+   the code in it - so it is checked on the thing that now carries it. */
+ok(ran.tab === 'build', 'the Dev offer opens Build', ran.tab);
+ok(ran.mode === 'code', 'in the code section, which is what the offer promised', ran.mode);
 /* It used to do ONLY that, and the offer says Dev "keeps the files, runs them,
    and lets you keep building on them" - so somebody who accepted it arrived at
    an empty Dev with none of their code in it. Switching tabs is not the work. */
