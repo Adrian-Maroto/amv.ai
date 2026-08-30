@@ -14929,7 +14929,8 @@ function _cwShowcase(){
   _cwShowcaseCache = out;
   return out;
 }
-try{ window._cwAllJobs=_cwAllJobs; window._cwShowcase=_cwShowcase; }catch(e){}
+try{ window._cwAllJobs=_cwAllJobs; window._cwShowcase=_cwShowcase;
+     window.CW_SHOWCASE_N=CW_SHOWCASE_N; window._cwUsesAccount=_cwUsesAccount; }catch(e){}
 
 /* ── BROWSING SEVENTY JOBS ────────────────────────────────────────────────────
    A flat grid of seventy cards is a wall, and a wall reads as less capable than

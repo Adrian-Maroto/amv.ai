@@ -49,11 +49,18 @@ section('There is a lot of it, and every one is reachable');
      searched the sample would have broken exactly that - which is what this
      now asserts instead, by looking for jobs that are deliberately not in the
      hundred. */
-  /* Sixty ranked examples plus the ten for whichever country is selected.
-     The number came down from a hundred when the catalogue gained a ranking -
-     showing the strongest sixty beats showing a hundred in no order. */
-  ok(n.rendered >= 55 && n.rendered <= 75,
-     'a ranked shelf is shown, not the whole pool', n);
+  /* A hundred ranked examples. The count went 106 (all of them) to 100, then
+     to 60 while the ranking was being judged, then back to 100 - because the
+     ranking is what fixed the weak-examples problem, not the cutting, and a
+     hundred is what somebody browsing for ideas asked to see.
+
+     Asserted against CW_SHOWCASE_N rather than the number of the week: the
+     property is that the screen shows the shelf it decided on and NOT the
+     whole pool, and pinning the literal here just means editing this line
+     every time the shelf is retuned. */
+  const cap = await page.evaluate(() => CW_SHOWCASE_N);
+  ok(n.rendered === cap, 'the ranked shelf is what is shown', { rendered: n.rendered, cap });
+  ok(cap < n.defined, 'and it is a shelf, not the whole pool', { cap, defined: n.defined });
   const reach = await page.evaluate(() => {
     const shown = new Set(_cwShowcase().map(j => j.id));
     const hidden = _cwAllJobs().filter(j => !shown.has(j.id));
