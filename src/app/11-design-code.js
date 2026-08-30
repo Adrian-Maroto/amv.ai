@@ -1220,17 +1220,39 @@ function renderCodeView(){
         return;
       }
     }catch(e){}
-    let added=0;
+    /* WHAT WAS NOT LOADED, AND WHY, INSTEAD OF A SUCCESS MESSAGE ABOUT NOTHING.
+
+       The ceiling was 800,000 bytes and a file over it was skipped by an `if`
+       with no else - so nothing was recorded, nothing was said, and the toast
+       underneath reported "Loaded 0 files" as a SUCCESS. Measured: a
+       10,000-line file with normal line lengths is 544KB and loads; the same
+       10,000 lines at ninety columns is 1MB and vanished, cheerfully.
+
+       A success message about zero files is worse than an error, because it
+       tells somebody the thing they just did worked. */
+    let added=0; const tooBig=[], notText=[];
     for(const file of Array.from(fileList||[])){
       const isText=/\.(txt|md|csv|json|js|mjs|ts|jsx|tsx|html|css|py|java|c|cpp|go|rs|rb|php|sql|sh|xml|yml|yaml|vue|svelte|scss|less)$/i.test(file.name)||(file.type||'').startsWith('text');
-      if(isText && file.size<800000){ const text=await file.text(); const path=file.webkitRelativePath||file.name; _devSetFile(path, text); added++; }
+      if(!isText){ notText.push(file.name); continue; }
+      if(file.size>=DEV_MAX_FILE_BYTES){ tooBig.push(file.name); continue; }
+      const text=await file.text(); const path=file.webkitRelativePath||file.name; _devSetFile(path, text); added++;
     }
     _DEV.activePath=_DEV.activePath||_devEntryFile(); _devRenderTree(); _devShowActive();
     /* Uploading a site and seeing it is one action, not two. */
     try{ _devPaintPreview(); }catch(e){}
     const total=_devProjectFiles().length;
-    _devPushSys('Loaded '+added+' file'+(added>1?'s':'')+' - project now has '+total+'. Ask me to build, fix, or refactor across them.'); _devRenderLog();
-    toast('Loaded '+added+' file'+(added>1?'s':''),'success',3500);
+    const plural=(n,w)=>n+' '+w+(n===1?'':'s');
+    if(added){
+      _devPushSys('Loaded '+plural(added,'file')+' - project now has '+total+'. Ask me to build, fix, or refactor across them.');
+      _devRenderLog();
+    }
+    const skipped=[];
+    if(tooBig.length) skipped.push(plural(tooBig.length,'file')+' over '+Math.round(DEV_MAX_FILE_BYTES/1e6)+'MB ('+tooBig.slice(0,3).join(', ')+(tooBig.length>3?', …':'')+')');
+    if(notText.length) skipped.push(plural(notText.length,'file')+' that is not text ('+notText.slice(0,3).join(', ')+(notText.length>3?', …':'')+')');
+    if(added && !skipped.length) toast('Loaded '+plural(added,'file'),'success',3500);
+    else if(added) toast('Loaded '+plural(added,'file')+'. Skipped '+skipped.join(' and ')+'.','info',7000);
+    else toast('Nothing was loaded: '+skipped.join(' and ')+'.','error',7000);
+    if(skipped.length){ _devPushSys('Not loaded: '+skipped.join('; ')+'.'); _devRenderLog(); }
   };
   const addMenu=$('dev-add-menu');
   on($('dev-add'),'click',(e)=>{ e.stopPropagation(); if(addMenu) addMenu.style.display=addMenu.style.display==='none'?'block':'none'; });
@@ -1337,11 +1359,48 @@ function _devEntryFile(){
   return files.find(p=>/index\.html$/i.test(p)) || files.find(p=>/\.html$/i.test(p)) ||
          files.find(p=>/(index|main|app)\.(js|mjs|py)$/i.test(p)) || files.find(p=>/\.(js|py)$/i.test(p)) || files[0] || '';
 }
+/* WHAT THE MODEL ACTUALLY GETS TO READ.
+
+   Two things were wrong here, and together they meant a large file was
+   uploaded, accepted, confirmed on screen - and then not read at all.
+
+   THE BUDGET. 16,000 characters is about 4,000 tokens. The product declares a
+   usable context of 180,000 tokens and draws the user a meter against that
+   number, so this was spending two per cent of the budget it advertises. It
+   is derived from the same constant now, so the two cannot drift apart.
+
+   THE ALL-OR-NOTHING. Each file was one chunk, and a chunk that did not fit
+   was not shortened - the loop appended "[...truncated...]" and BROKE. So a
+   single file bigger than the budget contributed nothing whatsoever, and
+   every file after it was dropped too. Measured on a 544KB upload that had
+   just been confirmed as loaded: the model received 71 characters, which was
+   the file list and the word truncated.
+
+   A file too big to include whole now contributes its beginning and says how
+   much was left out, which is what somebody reading a large file would do. */
 function _devProjectContext(maxChars){
-  maxChars=maxChars||16000; const files=_devProjectFiles();
+  /* Derived, not restated: a bit over half the declared budget goes to the
+     project, leaving the rest for the conversation, memory and the request. */
+  maxChars = maxChars || Math.floor(CTX_LIMIT_TOKENS * 0.55) * 4;
+  const files=_devProjectFiles();
   if(!files.length) return '';
   let out='CURRENT PROJECT ('+files.length+' files):\n'+files.map(p=>'- '+p).join('\n')+'\n\nFILE CONTENTS:\n';
-  for(const p of files){ const chunk='\n===== '+p+' =====\n'+_DEV.project[p].content+'\n'; if(out.length+chunk.length>maxChars){ out+='\n[...truncated...]'; break; } out+=chunk; }
+  let shown=0;
+  for(const p of files){
+    const room = maxChars - out.length;
+    /* Not enough left for a header and anything under it, so stop and say how
+       many files never made it rather than implying the list was complete. */
+    if(room < 300){ out += '\n[...'+(files.length-shown)+' more file(s) not included - the project is larger than one request can carry...]\n'; break; }
+    const body = String((_DEV.project[p] && _DEV.project[p].content) || '');
+    const head = '\n===== '+p+' =====\n';
+    if(head.length + body.length + 1 <= room){ out += head + body + '\n'; }
+    else {
+      const keep = Math.max(0, room - head.length - 140);
+      out += head + body.slice(0, keep)
+          + '\n[...'+(body.length-keep).toLocaleString()+' more characters of this file not included...]\n';
+    }
+    shown++;
+  }
   return out;
 }
 function _devPushSys(t){ _DEV.log.push({role:'sys',text:t}); }
@@ -2753,6 +2812,19 @@ try{ window.AMV_TOOLS=AMV_TOOLS; window._amvRunTool=_amvRunTool; window._crewToo
    ══════════════════════════════════════════════════════════════ */
 const CTX_LIMIT_TOKENS = 180000;      // usable context budget
 const CTX_MAX_FILES    = 100;         // max files in a Dev project
+/* THE BIGGEST SINGLE FILE THAT CAN BE OPENED.
+
+   It was 800,000 bytes, which sounds generous and is not: ten thousand lines
+   of ordinary code is 544KB and fits, the same ten thousand lines at ninety
+   columns is 1MB and did not. Somebody uploading a real file has no idea which
+   side of that they are on, and the old code did not tell them.
+
+   Five megabytes covers fifty thousand lines of source with room to spare.
+   Above it the answer is a refusal that names the file, not a silent skip -
+   and the storage layer already reports honestly if a project this size
+   cannot be saved between sessions, so a bigger ceiling does not buy a new
+   silent failure. */
+const DEV_MAX_FILE_BYTES = 5000000;
 const CTX_WARN_AT      = 0.75;        // show a nudge
 const CTX_FULL_AT      = 0.92;        // must start a new chat
 
