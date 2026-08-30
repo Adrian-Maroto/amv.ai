@@ -1,5 +1,12 @@
 node_modules/
+# Both .build directories hold the same thing: a copy of amv-backend.js with an
+# export line appended, written from source immediately before the suite imports
+# it. The worker one was ignored from the start; the e2e one was not, so a single
+# generated file sat in the repository and turned up as an uncommitted change
+# after every edit to the Worker - noise that says nothing about the change that
+# caused it, on a file nothing reads.
 tests/worker/.build/
+tests/e2e/.build/
 /tmp/
 *.log
 .DS_Store
