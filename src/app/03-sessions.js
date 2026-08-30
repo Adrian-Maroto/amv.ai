@@ -1035,9 +1035,22 @@ function setTab(t){
       }
     }
   }catch(e){}
-  // Auth gate: a logged-out visitor can browse the chat tab, but using any AMV
-  // feature (crew, studio, dev, lab, etc.) requires an account.
-  const _gatedTabs=['crew','build','studio','dev','lab','handoff','workspaces','memory','team','market','tasks','integrations','apps','extensions','prompts'];
+  /* Auth gate: a logged-out visitor can browse chat and Crew, but USING any AMV
+     feature requires an account.
+
+     Crew is off this list on purpose, and it is the only one. The screen a
+     signed-out visitor gets there is the same one somebody on the free plan
+     gets - the catalogue, browsable, with every toggle refusing and saying why
+     - because the question Crew answers is "what would this do for me", and
+     that is asked before signing up, not after. Both things it reads from the
+     server are public catalogues with no account behind them: the everyday
+     jobs for a country, and the counts of what people run. Nothing on it acts,
+     spends or reads anything belonging to anybody.
+
+     The rest stay gated. They are not descriptions of the product, they are
+     the product: they write data, spend money, or show something that belongs
+     to an account. */
+  const _gatedTabs=['build','studio','dev','lab','handoff','workspaces','memory','team','market','tasks','integrations','apps','extensions','prompts'];
   if((!S.user||!S.user.email) && _gatedTabs.indexOf(t)>=0){
     try{ openAuth('signup'); }catch(e){}
     if(typeof toast==='function') toast('Create a free account to use '+(t.charAt(0).toUpperCase()+t.slice(1)),'info',3500);

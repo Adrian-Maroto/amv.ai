@@ -8642,6 +8642,11 @@ async function _route(request, env, ctx) {
     '/v1/public-config',        // which features this deployment has
     '/v1/entitlement',          // what plan this account is on
     '/v1/market/list',          // the public marketplace
+    /* Reads no storage and writes nothing: it returns three constants - the
+       universal jobs, the five for the country asked about, and the country
+       names. A GET so a browser and the edge can cache it, which is what keeps
+       a public catalogue cheap. */
+    '/v1/everyday',             // what AMV does where you live
     '/v1/account/export',       // the caller's own data, read-only, and a download
     '/widget.js',               // a <script src> on somebody else's site
     '/v1/widget/config-public', // fetched by that script before the chat opens
@@ -24598,10 +24603,35 @@ const EVERYDAY_BY_COUNTRY = {
    everywhere. The whole registry is well over a hundred templates and a
    hundred and five of them are wrong for any given reader. */
 async function everydayJobs(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  const body = await request.json().catch(() => ({}));
-  const code = String(body.country || '').trim().toUpperCase().slice(0, 2);
+  /* PUBLIC, ON PURPOSE, AND SIGNED OFF BY THE OWNER.
+
+     This used to require an account, and the person it exists for is the one
+     who does not have one yet. "Does this do anything where I live" is a
+     question somebody asks BEFORE signing up, and answering it with a login
+     wall answers a different question instead: whether they trust AMV enough
+     to hand over an email to find out. Most will not, and the ones who would
+     were already convinced.
+
+     Safe because there is nothing here to leak. The response is three
+     constants - the ten universal jobs, the five for the country asked about,
+     and the country names for the picker. Nothing is read from any account,
+     nothing is keyed to one, and the only input is two characters of country
+     code. /v1/market/list is already public for the same reason: a catalogue
+     of what a product does is marketing, not data.
+
+     GET as well as POST, and cacheable, which is what makes opening it cheap
+     rather than expensive. The answer for a country is identical for everyone
+     who asks, so the edge can serve it and somebody clicking through five
+     countries costs five cached reads instead of five invocations. POST stays
+     for callers that already send one. */
+  let asked = '';
+  if (request.method === 'GET') {
+    asked = new URL(request.url).searchParams.get('country') || '';
+  } else {
+    const body = await request.json().catch(() => ({}));
+    asked = body.country || '';
+  }
+  const code = String(asked).trim().toUpperCase().slice(0, 2);
   const local = EVERYDAY_BY_COUNTRY[code] || [];
   return json({
     ok: true, country: code, name: COUNTRY_NAME[code] || '',
@@ -24614,5 +24644,5 @@ async function everydayJobs(request, env) {
     countries: Object.keys(EVERYDAY_BY_COUNTRY)
       .map((c) => ({ code: c, name: COUNTRY_NAME[c] || c }))
       .sort((a, b) => a.name.localeCompare(b.name)),
-  });
+  }, 200, { 'Cache-Control': 'public, max-age=3600' });
 }

@@ -963,7 +963,7 @@ function _cwUniversalJobs(){
    twice must not be two round trips, and switching back and forth is exactly
    what somebody comparing does. */
 const _cwLocalCache = {};
-let _cwLocalState = {};        // code -> 'loading' | 'ok' | 'offline' | 'needsauth'
+let _cwLocalState = {};        // code -> 'loading' | 'ok' | 'offline'
 /* WHAT WAS ALREADY ASKED, AND UNDER WHAT CONDITIONS.
 
    A failed lookup leaves no cache entry, and the failure path re-renders. So
@@ -973,16 +973,19 @@ let _cwLocalState = {};        // code -> 'loading' | 'ok' | 'offline' | 'needsa
    146 requests in four seconds - and it is a denial of service on AMV's own
    servers, written by AMV, triggered by one bad minute of network.
 
-   The key is the SITUATION rather than a flat "already tried", because the two
-   things that would make asking again sensible - a backend becoming reachable,
-   somebody signing in - are exactly the two things it records. When either
-   changes the key changes and the question is asked once more. Nothing else
-   re-asks, so a country that answered "cannot reach the server" says so and
-   stays quiet. */
+   The key is the SITUATION rather than a flat "already tried", because the one
+   thing that would make asking again sensible - a backend becoming reachable -
+   is the thing it records. When that changes the key changes and the question
+   is asked once more. Nothing else re-asks, so a country that answered "cannot
+   reach the server" says so and stays quiet.
+
+   Signing in used to be part of this key, because the catalogue used to need
+   an account. It is public now, so signing in changes nothing about the answer
+   and has no business invalidating it. */
 const _cwLocalTried = {};
 function _cwLocalCtx(){
   const api = window.AMV_API;
-  return (api && api.live ? '1' : '0') + (api && api.hasSession ? '1' : '0');
+  return api && api.live ? '1' : '0';
 }
 function _cwLocalJobs(code){
   const cc = String(code || '').toUpperCase();
@@ -995,14 +998,17 @@ async function _cwLoadLocal(code){
   const ctx = _cwLocalCtx();
   if(_cwLocalTried[cc] === ctx) return;
   _cwLocalTried[cc] = ctx;
-  /* Asked only when there is something to ask. Without a backend, or without
-     an account, the call cannot answer - and calling anyway produced the worst
-     possible outcome: an empty list that the screen then reported as "nothing
-     specific to Spain is written yet", which is FALSE. Spain has five, and the
-     copy was stating the opposite because it could not tell "the server says
-     none" from "there was no server". */
+  /* Asked only when there is something to ask. With no backend the call cannot
+     answer - and calling anyway produced the worst possible outcome: an empty
+     list that the screen then reported as "nothing specific to Spain is written
+     yet", which is FALSE. Spain has five, and the copy was stating the opposite
+     because it could not tell "the server says none" from "there was no
+     server".
+
+     No account is needed any more. The catalogue is public, so a visitor who
+     has never signed up sees what AMV does where they live - which is the
+     question they are actually asking. */
   if(!(window.AMV_API && AMV_API.live)){ _cwLocalState[cc] = 'offline'; return; }
-  if(!AMV_API.hasSession){ _cwLocalState[cc] = 'needsauth'; return; }
   _cwLocalState[cc] = 'loading';
   try{
     const d = await AMV_API.everyday(cc);
@@ -1015,14 +1021,11 @@ async function _cwLoadLocal(code){
     _cwLocalCache[cc] = local.map(j => _cwEverydayJob(Object.assign({ country: cc }, j), name, true));
     _cwLocalState[cc] = 'ok';
   }catch(e){
-    /* Two different reasons, said as two different sentences. The catalogue
-       route needs an account, so a signed-out visitor gets "sign in" - which
-       is true and actionable - rather than "cannot reach the server", which
-       would send them looking for a fault in their connection that is not
-       there. Not cached as empty either way: signing in, or a connection
-       coming back, should be able to fill this in. */
-    const why = String((e && e.message) || '');
-    _cwLocalState[cc] = /sign in|unauthor|session/i.test(why) ? 'needsauth' : 'offline';
+    /* One reason left, now that the catalogue is public: the server could not
+       be reached. Not cached as an empty list, so a connection coming back can
+       still fill this in - an empty list would be a claim that the country has
+       nothing, which is a different and false statement. */
+    _cwLocalState[cc] = 'offline';
   }
   try{ if(S.tab === 'crew') renderCrewView(); }catch(e){}
 }
@@ -1228,8 +1231,8 @@ function _cwCountryHTML(){
   const row = CW_WORLD_COUNTRIES.find(c => c[0] === cur);
   const name = row ? row[1] : '';
   const universal = _cwUniversalJobs();
-  /* Asked BEFORE the state is read, not after. _cwLoadLocal settles the cases
-     it can answer with no round trip - no backend, no account - synchronously,
+  /* Asked BEFORE the state is read, not after. _cwLoadLocal settles what it can
+     answer with no round trip - no backend, or already asked - synchronously,
      and reading the state first meant the render used the value from before
      that and left "Looking up..." on screen for a lookup that was never going
      to happen. It is a no-op once it has the answer or is already asking. */
@@ -1242,10 +1245,6 @@ function _cwCountryHTML(){
          the bills and the deadlines that have local names and local dates.</div>`
     : state === 'ok' && local.length
       ? `<div class="cw-jobs-grid">${local.map(_cwCountryCard).join('')}</div>`
-    : state === 'needsauth'
-      ? `<div class="cw-country-empty">The work that only exists in ${escH(name)} is kept on AMV\u2019s servers, so it
-           takes an account to look at. Everything above works anywhere - those are the same wherever you are.
-           <button class="mc-sec-link" data-auth="signup">Create an account</button></div>`
     : state === 'offline'
       ? `<div class="cw-country-empty">The work specific to ${escH(name)} is held on AMV\u2019s servers and this copy
            cannot reach them right now. Everything above still applies here - those are the same everywhere.</div>`
@@ -2416,6 +2415,23 @@ async function mcRunCommand(instruction, opts){
   opts=opts||{};
   const box=document.getElementById('mc-cmd-result'); if(!box) return;
   instruction=(instruction||'').trim(); if(!instruction){ const i=document.getElementById('mc-cmd-input'); i&&i.focus(); return; }
+  /* SAY IT BEFORE PRETENDING TO START.
+
+     Crew is browsable without an account now, which is the point of it - but
+     browsing is not running. Everything past this line asks a model to read
+     the request and then binds real steps to real connectors, and none of that
+     can happen for somebody AMV has never met. Without this the box printed
+     "Reading your request..." and then failed somewhere underneath, which is
+     the worst of both: it looked like it was working and it never was.
+
+     So the refusal is the first thing, it is specific about why, and it hands
+     over the way forward instead of leaving somebody staring at a dead box. */
+  if(!(typeof S!=='undefined' && S.user && S.user.email)){
+    box.innerHTML='<div class="mc-cmd-msg">Running this takes an account - it happens on AMV’s servers, on a '
+      +'schedule, and there has to be somewhere to send the result. Everything on this page is yours to read '
+      +'without one. <button class="mc-sec-link" data-auth="signup">Create a free account</button></div>';
+    return;
+  }
   // Recurring? Make it a running job and ask how it should run (autonomous vs
   // approval). This comes first: scheduling doesn't need the app connected yet -
   // the job runs when it's due, once the integration is linked.

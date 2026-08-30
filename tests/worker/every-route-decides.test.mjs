@@ -84,6 +84,19 @@ const PUBLIC = {
      It only READS, and it is bounded per IP because an endpoint anybody can
      reach without a credential is the one worth hammering. */
   '/crew/popular':       'a ranking of a public catalogue, read by people deciding what to try',
+  /* The catalogue itself, opened deliberately and with the owner's sign-off.
+     The handler returns three constants and nothing else - the ten universal
+     jobs, the five for the country asked about, and the country names for the
+     picker. It reads no storage, writes none, and takes two characters of
+     country code as its only input, so there is no record here belonging to
+     anybody and nothing a login would protect.
+
+     Why it is open rather than merely harmless: "does this do anything where I
+     live" is a question people ask BEFORE signing up, and a login wall answers
+     a different one. Unlike /crew/popular it needs no per-IP ceiling, because
+     it touches no storage - a cache header and constants make a flood cheap to
+     serve, and a rate limiter would cost a round trip more than the handler. */
+  '/v1/everyday':        'what AMV does where you live, asked before anybody signs up',
 };
 
 /* One definition, in tests/lib/source.mjs. Three files carried an identical

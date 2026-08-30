@@ -27,24 +27,20 @@ const outbound = makeOutbound();
 const L = await bootLive({ env, outbound, port: 9221 });
 const { page } = L;
 
-/* SIGNED IN, BECAUSE THE LOCAL HALF IS BEHIND A LOGIN.
+/* NOBODY SIGNS IN HERE, AND THAT IS THE POINT.
 
-   /v1/everyday requires an account. That is a real limit on the feature - the
-   person most likely to ask "does this do anything where I live" is somebody
-   who has not signed up yet, and they see the universal ten and a sentence
-   saying the local set needs an account. Whether to open that catalogue to
-   visitors is the owner's call, so this proves the half that works today
-   rather than asserting a product decision nobody has made. */
-const EMAIL = 'local@example.com';
-const PW = 'A-real-Passw0rd!';
-await page.evaluate(async ([em, pw]) => {
-  openAuth('signup');
-  await __amvAuthOpen();
-  const type = (s, v) => { const el = document.querySelector(s); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
-  type('#a-name', 'Local'); type('#a-email', em); type('#a-pass', pw);
-  document.getElementById('auth-submit').click();
-  await __amvSignedIn();
-}, [EMAIL, PW]);
+   The local half used to need an account, and the person it exists for is the
+   one who does not have one. "Does this do anything where I live" gets asked
+   BEFORE signing up, and answering it with a login wall answers a different
+   question instead: whether somebody trusts AMV enough to hand over an email
+   to find out. The catalogue is three constants with nothing keyed to any
+   account, so it is public now.
+
+   This suite therefore runs as a stranger. No signup, no token, no session -
+   so every assertion below about Japanese tax terms and Nigerian identity
+   numbers is one a visitor can see having given AMV nothing at all. If the
+   login wall ever comes back, the whole file fails rather than one case. */
+const anonymous = await page.evaluate(() => !(window.AMV_API && window.AMV_API.hasSession));
 
 /* On the actual screen, not just calling the renderer. The country half
    updates from a fetch that finishes later, and the product only repaints
@@ -63,6 +59,13 @@ const pick = (code) => page.evaluate(async (cc) => {
     onScreen: [...document.querySelectorAll('.cw-country .cw-job-t')].map(e => e.textContent),
   };
 }, code);
+
+section('Everything below is seen by somebody with no account');
+{
+  ok(anonymous, 'no session: this is a stranger, not a signed-in user', anonymous);
+  const tokened = await page.evaluate(() => !!(window.AMV_API && window.AMV_API.token));
+  ok(!tokened, 'and no token was picked up along the way', tokened);
+}
 
 section('The half that is the same wherever you are');
 {
@@ -147,6 +150,10 @@ section('A country with nothing written for it says so rather than inventing');
 section('A lookup that fails asks once, then stops asking');
 {
   const r = await page.evaluate(async () => {
+    /* Crew, here, now. The tab is set again rather than assumed: the product
+       only repaints Crew when Crew is what somebody is looking at, so this
+       assertion is about the screen and the screen has to be the one open. */
+    setTab('crew');
     window.__ev = 0;
     const real = window.fetch;
     window.fetch = async (u, o) => {
@@ -158,13 +165,25 @@ section('A lookup that fails asks once, then stops asking');
       return real(u, o);
     };
     cwCountry('FR');
-    await new Promise(res => setTimeout(res, 2500));
+    /* Waited on the condition, not on a clock. A GET is retried twice with a
+       backoff, so "how long until it gives up" is a number that moves when the
+       transport is tuned - and a fixed sleep would then read the screen
+       mid-retry and report the wrong thing about the product. */
+    const settled = Date.now() + 10000;
+    while (Date.now() < settled && (_cwLocalState.FR || 'loading') === 'loading')
+      await new Promise(res => setTimeout(res, 50));
+    /* Then a moment longer, on purpose: this is the window in which the loop
+       used to fire hundreds of times, so counting only up to the first answer
+       would miss exactly the defect being guarded. */
+    await new Promise(res => setTimeout(res, 1200));
     const asked = window.__ev;
     window.fetch = real;
     return { asked, text: (document.querySelector('.cw-country-empty') || {}).textContent || '' };
   });
   ok(r.asked >= 1, 'it does ask once', r.asked);
-  ok(r.asked <= 2, 'and then stops, instead of spinning until the tab is closed', r.asked);
+  /* Three at most: a GET is retried twice on a 5xx, which is the transport
+     doing its job. The defect was unbounded, so the bound is the assertion. */
+  ok(r.asked <= 4, 'and then stops, instead of spinning until the tab is closed', r.asked);
   ok(/cannot reach/i.test(r.text),
      'and says the server could not be reached, not that France has nothing',
      r.text.slice(0, 90));
