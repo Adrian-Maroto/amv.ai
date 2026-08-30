@@ -294,15 +294,45 @@ function _buildEntryHeadHTML(active, title, sub){
    getting there that has to be kept in step. */
 function _wireBuildModes(root){
   (root || document).querySelectorAll('[data-bmode]').forEach(b =>
-    on(b, 'click', () => { try{ setTab(b.dataset.bmode); }catch(e){} }));
+    on(b, 'click', () => { try{ setBuildMode(BUILD_SURFACES[b.dataset.bmode] || b.dataset.bmode); }catch(e){} }));
 }
 try{ window._buildModeSwitchHTML = _buildModeSwitchHTML; window._wireBuildModes = _wireBuildModes; }catch(e){}
 
+/* ONE TAB, THREE SECTIONS INSIDE IT.
+
+   The sidebar used to carry Studio, Dev and Lab as three entries that all
+   opened the same surface, which is three names for one place - and asked
+   somebody to know the difference between them before they had seen any of
+   it. It is one "Build" entry now, and the three are sections you pick once
+   you are inside, which is where the difference is visible.
+
+   The old tab names still work. A deep link, a saved session or an old
+   handoff naming `studio` lands on Build in the design section rather than
+   404-ing, so nothing that used to point somewhere stops pointing there. */
 const BUILD_SURFACES = { studio: 'design', dev: 'code', lab: 'lab' };
+const BUILD_MODE_TAB = { design: 'studio', code: 'dev', lab: 'lab' };
 function _buildMode(){
+  if(S.tab === 'build') return S.buildMode || 'code';
   return BUILD_SURFACES[S.tab] || S.buildMode || 'code';
 }
+/* Picking a section stays ON Build rather than navigating to one of the old
+   tabs - otherwise the sidebar would stop showing Build as the place you are,
+   which is the whole point of there being one entry. */
+function setBuildMode(mode){
+  const m = BUILD_MODE_TAB[mode] ? mode : (BUILD_SURFACES[mode] || 'code');
+  try{ S.buildMode = m; }catch(e){}
+  if(S.tab !== 'build'){ setTab('build'); return; }
+  try{ renderBuildView(); }catch(e){}
+  try{ _sessTouch(BUILD_MODE_TAB[m] || 'dev'); }catch(e){}
+}
+try{ window.setBuildMode = setBuildMode; window.BUILD_MODE_TAB = BUILD_MODE_TAB; }catch(e){}
 function renderBuildView(){
+  /* Arriving by an old tab name selects that section and settles on Build, so
+     the sidebar shows where you are and a second click on a section does not
+     bounce you back out to a tab that is no longer in the nav. */
+  try{
+    if(S.tab !== 'build' && BUILD_SURFACES[S.tab]){ S.buildMode = BUILD_SURFACES[S.tab]; S.tab = 'build'; }
+  }catch(e){}
   const mode = _buildMode();
   /* Dispatch only. Each of these is the renderer it always was, and they are
      deliberately not touched in this step - a refactor and a redesign in one

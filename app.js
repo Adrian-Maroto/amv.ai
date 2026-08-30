@@ -3974,7 +3974,7 @@ function setTab(t){
   }catch(e){}
   // Auth gate: a logged-out visitor can browse the chat tab, but using any AMV
   // feature (crew, studio, dev, lab, etc.) requires an account.
-  const _gatedTabs=['crew','studio','dev','lab','handoff','workspaces','memory','team','market','tasks','integrations','apps','extensions','prompts'];
+  const _gatedTabs=['crew','build','studio','dev','lab','handoff','workspaces','memory','team','market','tasks','integrations','apps','extensions','prompts'];
   if((!S.user||!S.user.email) && _gatedTabs.indexOf(t)>=0){
     try{ openAuth('signup'); }catch(e){}
     if(typeof toast==='function') toast('Create a free account to use '+(t.charAt(0).toUpperCase()+t.slice(1)),'info',3500);
@@ -14776,7 +14776,15 @@ function _cwWorldBuild(){
       cat: k.cat, icon: flag, on: false,
       title: k.t(name),
       desc: k.d(name),
-      needs: 'Web research',
+      /* THE NEEDS COME FROM THE REAL JOB, NOT FROM A GUESS.
+
+         These were all filed as 'Web research', which made every one of them
+         look like a lookup - the weakest thing in the catalogue, and exactly
+         what reads as filler next to a job that goes into your mailbox. The
+         job underneath doc_expiry needs Email and Calendar; bills_due needs
+         Email. Saying so makes the card true AND makes it the strong kind:
+         real accounts, running while you are not there. */
+      needs: _cwNeedsOf(k.job) || 'Web research',
       /* The instruction is the real job's, with the country named in it. That
          is the whole difference: the same job asked about Japan and about
          Kenya is two different answers, and neither is invented here. */
@@ -14794,6 +14802,12 @@ function _cwWorldBuild(){
   }
   return out;
 }
+function _cwNeedsOf(id){
+  try{
+    const j = (_cwDefaultJobs() || []).find(x => x && x.id === id);
+    return j && j.needs ? String(j.needs) : '';
+  }catch(e){ return ''; }
+}
 function _cwPromptFor(id){
   try{
     const j = (_cwDefaultJobs() || []).find(x => x && x.id === id);
@@ -14805,6 +14819,31 @@ function _cwWorldJobs(){
   if(!_cwWorldCache) _cwWorldCache = _cwWorldBuild();
   return _cwWorldCache;
 }
+/* EVERY KIND FOR ONE COUNTRY.
+
+   The grid used to carry one example per country, which showed range and
+   answered nobody's actual question - a person does not want to know that AMV
+   does something in Peru, they want to know what it does where THEY live. Pick
+   a country and this is the ten. */
+function _cwWorldFor(code){
+  const row = CW_WORLD_COUNTRIES.find(c => c[0] === String(code || '').toUpperCase());
+  if(!row) return [];
+  const [cc, name, flag] = row;
+  return CW_WORLD_KINDS.map(k => ({
+    id: 'world_' + cc.toLowerCase() + '_' + k.job,
+    world: true, country: cc, countryName: name,
+    cat: k.cat, icon: flag, on: false,
+    title: k.t(name),
+    desc: k.d(name),
+    needs: _cwNeedsOf(k.job) || 'Web research',
+    prompt: 'For somebody living in ' + name + ' (' + cc + '): ' +
+            (_cwPromptFor(k.job) || k.d(name)) +
+            ' Use sources and services that actually operate in ' + name +
+            ', give amounts in the local currency, and say the date you checked.',
+    basedOn: k.job,
+  }));
+}
+try{ window._cwWorldFor = _cwWorldFor; }catch(e){}
 try{ window._cwWorldJobs = _cwWorldJobs; window.CW_WORLD_COUNTRIES = CW_WORLD_COUNTRIES; }catch(e){}
 
 /* THE POOL, AND THE HUNDRED THAT GET SHOWN.
@@ -14825,29 +14864,60 @@ function _cwAllJobs(){
   try{ return (_cwJobs() || []).concat(_cwWorldJobs() || []); }
   catch(e){ return _cwJobs() || []; }
 }
-const CW_SHOWCASE_N = 100;
+/* THE BEST ONES FIRST, AND FEWER OF THEM.
+
+   "for crew only have the best example not like these shitty examples make
+   them clear also that they work autonomously when the browser is closed and
+   used like email instagram, accounts given bank account etcetera."
+
+   That is a ranking, and the catalogue had none - it showed a sample, so the
+   first thing on the screen was as likely to be "the day ahead in Vietnam" as
+   anything that touches your mailbox. Fifty of a hundred and six jobs are pure
+   web lookups; the other fifty-six go into a real account. The lookups are not
+   bad, they are just the weakest thing here, and they were being shown first
+   as often as not.
+
+   So the order is: what it USES, then whether it runs without you. A job that
+   reads your mail or watches your bank and does it while the browser is shut
+   is the thing worth seeing first, and a lookup you could do yourself in a tab
+   is the thing worth seeing last.
+
+   Sixty rather than a hundred, for the same reason the hundred replaced two
+   hundred: this is a shelf, not an inventory. */
+const CW_SHOWCASE_N = 60;
+/* An account need is one CW_NEEDS_CHECK knows how to test for - which is the
+   same list the product uses to decide whether a job can actually run, so this
+   cannot drift from what "needs an account" means everywhere else. */
+function _cwUsesAccount(j){
+  try{
+    const known = Object.keys(CW_NEEDS_CHECK || {});
+    return String((j && j.needs) || '').split(',').map(x => x.trim())
+      .some(n => known.indexOf(n) >= 0);
+  }catch(e){ return false; }
+}
+function _cwStrength(j){
+  let n = 0;
+  if(_cwUsesAccount(j)) n += 2;                       // it works on something of yours
+  if(_cwWhereState(j) !== 'open') n += 1;             // and it does it while you are away
+  return n;
+}
 let _cwShowcaseCache = null;
 function _cwShowcase(){
   if(_cwShowcaseCache) return _cwShowcaseCache;
-  const world = (()=>{ try{ return _cwWorldJobs() || []; }catch(e){ return []; } })();
-  const home  = (()=>{ try{ return _cwJobs() || []; }catch(e){ return []; } })();
-  /* Anything already switched on is always shown, whatever the sample says -
-     a job you are running must never vanish from the screen that manages it. */
-  const on = home.filter(j => j && j.on);
+  const home = (()=>{ try{ return _cwJobs() || []; }catch(e){ return []; } })();
+  const on   = home.filter(j => j && j.on);
   const rest = home.filter(j => !(j && j.on));
+  /* Sorted by strength, stable within a band so the order does not churn. */
+  const ranked = rest.map((j, i) => [j, _cwStrength(j), i])
+    .sort((a, b) => (b[1] - a[1]) || (a[2] - b[2]))
+    .map(x => x[0]);
   const out = [];
   const seen = new Set();
   const push = (j) => { if(j && !seen.has(j.id) && out.length < CW_SHOWCASE_N){ seen.add(j.id); out.push(j); } };
+  /* Anything already switched on is always shown - a job you are running must
+     never fall off the screen that manages it. */
   on.forEach(push);
-  /* Roughly half the world, half the built-ins, interleaved so the grid does
-     not read as two separate lists bolted together. */
-  const half = Math.floor((CW_SHOWCASE_N - out.length) / 2);
-  for(let i = 0; i < Math.max(world.length, rest.length); i++){
-    if(i < half) push(world[i]);
-    push(rest[i]);
-    if(out.length >= CW_SHOWCASE_N) break;
-  }
-  for(let i = 0; i < world.length && out.length < CW_SHOWCASE_N; i++) push(world[i]);
+  ranked.forEach(push);
   _cwShowcaseCache = out;
   return out;
 }
@@ -14927,6 +14997,71 @@ function cwPromptSelf(q){
   try{ setTab('chat'); }catch(e){}
 }
 try{ window.cwPromptSelf=cwPromptSelf; }catch(e){}
+
+/* PICK WHERE YOU LIVE, AND SEE WHAT RUNS THERE.
+
+   Asked for: "have something where you can select your country and see what
+   you can do autonomously cus mainly crew is autonomous work".
+
+   The previous attempt scattered one example per country through the grid,
+   which demonstrated range and answered nobody - a person does not want to
+   learn that AMV does something in Peru, they want the ten things it does
+   where they live. This is that: one control, then the ten, with the
+   paperwork, the shops and the deadlines named the way they are named there.
+
+   Remembered, because somebody's country does not change between visits, and
+   guessed from the browser the first time so the common case needs no
+   choosing at all. */
+let _cwCountry = (()=>{ try{ return loadStr('amv_cw_country') || ''; }catch(e){ return ''; } })();
+function cwCountry(code){
+  _cwCountry = String(code || '');
+  try{ saveStr('amv_cw_country', _cwCountry); }catch(e){}
+  renderCrewView();
+}
+try{ window.cwCountry = cwCountry; }catch(e){}
+function _cwCountryGuess(){
+  if(_cwCountry) return _cwCountry;
+  try{
+    if(typeof _everydayGuess === 'function'){
+      const g = String(_everydayGuess() || '').toUpperCase();
+      if(CW_WORLD_COUNTRIES.some(c => c[0] === g)) return g;
+    }
+  }catch(e){}
+  return '';
+}
+function _cwCountryHTML(){
+  const cur = _cwCountryGuess();
+  const opts = CW_WORLD_COUNTRIES.slice()
+    .sort((a, b) => a[1].localeCompare(b[1]))
+    .map(([cc, name, flag]) =>
+      `<option value="${escH(cc)}"${cc === cur ? ' selected' : ''}>${flag} ${escH(name)}</option>`).join('');
+  const jobs = cur ? _cwWorldFor(cur) : [];
+  const row = CW_WORLD_COUNTRIES.find(c => c[0] === cur);
+  return `<section class="cw-country">
+    <div class="cw-country-head">
+      <div>
+        <h3>What AMV does where you live</h3>
+        <p class="cw-country-sub">Every one of these runs on AMV\u2019s servers on a schedule, so it happens whether or not this window is open. Pick a country to see how the work is actually done there.</p>
+      </div>
+      <label class="cw-country-pick">
+        <span>Country</span>
+        <select id="cw-country" aria-label="Choose your country">
+          <option value=""${cur ? '' : ' selected'}>Choose\u2026</option>
+          ${opts}
+        </select>
+      </label>
+    </div>
+    ${cur && jobs.length
+      ? `<div class="cw-jobs-grid">${jobs.map(_cwCountryCard).join('')}</div>`
+      : `<div class="cw-country-empty">Choose a country and AMV shows the ten things it runs there \u2013 the paperwork, the bills, the shops and the deadlines, named the way they are named locally.</div>`}
+  </section>`;
+}
+/* The catalogue's own card, so a country job is visibly the same kind of thing
+   as any other job rather than a second-class listing. It opens the peek,
+   which offers "Turn it on" to anybody whose plan runs jobs and the price to
+   anybody whose does not - so one card serves both without a second branch
+   here that could disagree with the one in cwPeek. */
+function _cwCountryCard(j){ return _cwLockedCard(j); }
 
 function _cwCatChips(jobs){
   const count=c=>jobs.filter(j=>j.cat===c).length;
@@ -16159,12 +16294,15 @@ function renderCrewView(){
     vc.innerHTML=`<div class="sv fi crew-view"><div class="vi">
       <span class="eyebrow">Crew \u00b7 Autonomous work</span>
       <h2>AMV working while you are not</h2>
-      <p class="vsub">Give it an outcome and it plans the steps, does the work, and brings back something finished -
-        every morning, every week, whatever you set. Here is every job it can run. Open any of them to see the
-        exact instruction it follows and the shape of what it sends back.</p>
-      <p class="vsub cw-open-note">A hundred of them are below, from a hundred different countries. They are
-        <b>examples</b>, not the menu - Crew runs what you describe, in your own words, so anything you can write
-        down is a job it can take. The catalogue is here to show you the shape of one.</p>
+      <p class="vsub">Crew is the part that works when you are not here. A job runs on AMV\u2019s own servers on the
+        schedule you set - every morning, every Monday, whenever - so it happens with this window closed, your
+        laptop shut, your phone in your pocket. You get the finished thing, not a notification asking you to come
+        and do it.</p>
+      <p class="vsub cw-open-note">The strongest ones work on accounts you connect: your <b>email</b>, your
+        <b>calendar</b>, your <b>files</b>, your <b>bank</b>. Connecting one is a real sign-in at the provider -
+        AMV never sees your password, only a grant limited to what you allow, and you can take it back at any
+        time. The jobs below are <b>examples</b>, not the menu: describe what you want in your own words and Crew
+        works out the rest.</p>
 
       ${/* THE BOX IS THE PRODUCT, AND IT WAS ONLY ON THE PAID SCREEN.
 
@@ -16209,6 +16347,7 @@ function renderCrewView(){
             belong here as much as on the paid screen. */ ''}
       ${_cwErrandsHTML()}
       ${_cwPopularHTML()}
+      ${_cwCountryHTML()}
       ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
       ${_cwCatChips(_cwShowcase())}
       ${_cwJobsBody(_cwShowcase(), _cwLockedCard)}
@@ -16419,6 +16558,7 @@ function renderCrewView(){
       <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
       ${_cwErrandsHTML()}
       ${_cwPopularHTML()}
+      ${_cwCountryHTML()}
       ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
       ${_cwCatChips(_cwShowcase())}
       ${_cwJobsBody(_cwShowcase(), jobCard)}
@@ -16476,6 +16616,10 @@ function _cwWireCmd(vc){
   /* The search re-renders on a pause rather than on every keystroke: this
      rebuilds a hundred cards, and doing that per character makes typing feel
      like wading. */
+  try{
+    var _cc=$('cw-country');
+    if(_cc) on(_cc,'change',function(){ cwCountry(this.value); });
+  }catch(e){}
   try{
     var _fi=$('cw-find');
     if(_fi){
@@ -17509,15 +17653,45 @@ function _buildEntryHeadHTML(active, title, sub){
    getting there that has to be kept in step. */
 function _wireBuildModes(root){
   (root || document).querySelectorAll('[data-bmode]').forEach(b =>
-    on(b, 'click', () => { try{ setTab(b.dataset.bmode); }catch(e){} }));
+    on(b, 'click', () => { try{ setBuildMode(BUILD_SURFACES[b.dataset.bmode] || b.dataset.bmode); }catch(e){} }));
 }
 try{ window._buildModeSwitchHTML = _buildModeSwitchHTML; window._wireBuildModes = _wireBuildModes; }catch(e){}
 
+/* ONE TAB, THREE SECTIONS INSIDE IT.
+
+   The sidebar used to carry Studio, Dev and Lab as three entries that all
+   opened the same surface, which is three names for one place - and asked
+   somebody to know the difference between them before they had seen any of
+   it. It is one "Build" entry now, and the three are sections you pick once
+   you are inside, which is where the difference is visible.
+
+   The old tab names still work. A deep link, a saved session or an old
+   handoff naming `studio` lands on Build in the design section rather than
+   404-ing, so nothing that used to point somewhere stops pointing there. */
 const BUILD_SURFACES = { studio: 'design', dev: 'code', lab: 'lab' };
+const BUILD_MODE_TAB = { design: 'studio', code: 'dev', lab: 'lab' };
 function _buildMode(){
+  if(S.tab === 'build') return S.buildMode || 'code';
   return BUILD_SURFACES[S.tab] || S.buildMode || 'code';
 }
+/* Picking a section stays ON Build rather than navigating to one of the old
+   tabs - otherwise the sidebar would stop showing Build as the place you are,
+   which is the whole point of there being one entry. */
+function setBuildMode(mode){
+  const m = BUILD_MODE_TAB[mode] ? mode : (BUILD_SURFACES[mode] || 'code');
+  try{ S.buildMode = m; }catch(e){}
+  if(S.tab !== 'build'){ setTab('build'); return; }
+  try{ renderBuildView(); }catch(e){}
+  try{ _sessTouch(BUILD_MODE_TAB[m] || 'dev'); }catch(e){}
+}
+try{ window.setBuildMode = setBuildMode; window.BUILD_MODE_TAB = BUILD_MODE_TAB; }catch(e){}
 function renderBuildView(){
+  /* Arriving by an old tab name selects that section and settles on Build, so
+     the sidebar shows where you are and a second click on a section does not
+     bounce you back out to a tab that is no longer in the nav. */
+  try{
+    if(S.tab !== 'build' && BUILD_SURFACES[S.tab]){ S.buildMode = BUILD_SURFACES[S.tab]; S.tab = 'build'; }
+  }catch(e){}
   const mode = _buildMode();
   /* Dispatch only. Each of these is the renderer it always was, and they are
      deliberately not touched in this step - a refactor and a redesign in one
@@ -20491,6 +20665,10 @@ function renderView(){
     case 'crew': renderCrewView(); _crewSyncLive(); break;
     /* One door for all three (AMV-D007 step 2). The renderers behind it are
        unchanged; this is only where they are reached from. */
+    /* One entry in the sidebar, three sections inside it. The old tab names
+       stay so a deep link, a saved session or an older handoff naming
+       `studio` still lands on Build in that section rather than a 404. */
+    case 'build':
     case 'studio':
     case 'dev':
     case 'lab': renderBuildView(); break;

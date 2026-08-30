@@ -9675,3 +9675,44 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   min-height:24px;padding:5px 8px;margin:-5px -8px;
   display:inline-flex;align-items:center;
 }
+
+/* ── LAYER A125: WHERE YOU LIVE, AND WHAT RUNS THERE ───────────────────────
+   Crew is autonomous work, and the question a person actually arrives with is
+   "what does it do for ME" - which is mostly a question about where they are.
+   The picker sits above the catalogue rather than inside a filter row,
+   because choosing a country is not filtering a list, it is asking a
+   different question. */
+.cw-country{ margin-top:var(--sp-6); }
+.cw-country-head{
+  display:flex;align-items:flex-end;justify-content:space-between;
+  gap:var(--sp-5);flex-wrap:wrap;margin-bottom:var(--sp-4);
+}
+.cw-country-head h3{
+  margin:0 0 var(--sp-2);font-size:var(--t-xl);font-weight:650;
+  letter-spacing:-.2px;color:var(--tx);
+}
+.cw-country-sub{
+  margin:0;font-size:var(--t-base);color:var(--mu);
+  line-height:1.6;max-width:62ch;
+}
+.cw-country-pick{
+  display:flex;flex-direction:column;gap:6px;flex:0 0 auto;
+}
+.cw-country-pick > span{
+  font-size:var(--t-sm);font-weight:600;color:var(--mu);letter-spacing:.02em;
+}
+.cw-country-pick select{
+  min-width:220px;min-height:44px;
+  background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-sm);
+  padding:10px 12px;color:var(--tx);font-size:var(--t-base);font-family:var(--fn);
+}
+.cw-country-pick select:focus{ outline:none;border-color:var(--accent); }
+.cw-country-empty{
+  border:1px dashed var(--bd);border-radius:var(--r-lg);
+  padding:var(--sp-5);font-size:var(--t-base);color:var(--mu);
+  line-height:1.6;max-width:78ch;
+}
+@media (max-width:720px){
+  .cw-country-head{ flex-direction:column;align-items:stretch; }
+  .cw-country-pick select{ min-width:0;width:100%; }
+}

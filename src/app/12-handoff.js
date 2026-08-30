@@ -357,6 +357,10 @@ function renderView(){
     case 'crew': renderCrewView(); _crewSyncLive(); break;
     /* One door for all three (AMV-D007 step 2). The renderers behind it are
        unchanged; this is only where they are reached from. */
+    /* One entry in the sidebar, three sections inside it. The old tab names
+       stay so a deep link, a saved session or an older handoff naming
+       `studio` still lands on Build in that section rather than a 404. */
+    case 'build':
     case 'studio':
     case 'dev':
     case 'lab': renderBuildView(); break;

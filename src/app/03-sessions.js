@@ -1037,7 +1037,7 @@ function setTab(t){
   }catch(e){}
   // Auth gate: a logged-out visitor can browse the chat tab, but using any AMV
   // feature (crew, studio, dev, lab, etc.) requires an account.
-  const _gatedTabs=['crew','studio','dev','lab','handoff','workspaces','memory','team','market','tasks','integrations','apps','extensions','prompts'];
+  const _gatedTabs=['crew','build','studio','dev','lab','handoff','workspaces','memory','team','market','tasks','integrations','apps','extensions','prompts'];
   if((!S.user||!S.user.email) && _gatedTabs.indexOf(t)>=0){
     try{ openAuth('signup'); }catch(e){}
     if(typeof toast==='function') toast('Create a free account to use '+(t.charAt(0).toUpperCase()+t.slice(1)),'info',3500);
