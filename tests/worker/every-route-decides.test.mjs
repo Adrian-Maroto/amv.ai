@@ -210,5 +210,56 @@ section('The public writes are bounded');
   ok(/CF-Connecting-IP/.test(pop), 'per caller rather than as one global tap', true);
 }
 
+section('Every route the client asks for with a GET is allowed to answer one');
+{
+  /* THE ROUTE THAT ANSWERED 405 TO ITS ONLY CALLER, FOR AS LONG AS IT EXISTED.
+
+     AMV_API.crewPopular() calls /crew/popular with no method, which is a GET.
+     The router refuses a GET unless the path is on GET_SAFE, and it was not,
+     so every request the product ever made to that route came back "does not
+     accept GET requests". The most-used band had no data because it was never
+     given any - and it degraded politely into "not enough runs yet", which is
+     indistinguishable from a young product, so nothing ever looked wrong.
+
+     Nothing caught it because the suite covering that band stubs fetch: it
+     proves the rendering, and a stub answers whatever verb it is asked. The
+     two halves were each correct and never met.
+
+     So this reads the shipped client, works out which paths it fetches without
+     naming a method, and checks the router will actually answer them. It is
+     the general form of the bug rather than a note about one route - the same
+     mistake was made again the same week on /v1/everyday. */
+  const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
+
+  /* _fetch(path) with no second argument, or a second argument that names no
+     method, is a GET. Template literals are taken by their static prefix,
+     which is what the router matches on anyway. */
+  const calls = [...client.matchAll(/_fetch\(\s*(['"`])([^'"`$]+)[^)]*?\)/g)]
+    .map(m => ({ raw: m[0], path: m[2].split('?')[0].replace(/\/+$/, '') }))
+    .filter(c => c.path.startsWith('/'));
+  const gets = [...new Set(calls.filter(c => !/method\s*:/.test(c.raw)).map(c => c.path))];
+
+  ok(gets.length > 3, 'the client really does fetch some paths as GETs', gets.length);
+
+  /* GET_SAFE is read from the worker rather than restated, so this cannot pass
+     by agreeing with a copy of itself. Comments are stripped first: the list is
+     annotated in prose, prose contains apostrophes ("the caller's own data"),
+     and an apostrophe shifts the quote pairing so that the next two real
+     entries are read as one string between them. Without this the check
+     reported /api/jobs and /v1/resume as refused when both are plainly on the
+     list - a check wrong about the product rather than the other way round,
+     which is the failure mode these files exist to avoid. */
+  const code = codeOnly(src);
+  const safeBlock = code.slice(code.indexOf('const GET_SAFE'));
+  const safe = new Set([...safeBlock.slice(0, safeBlock.indexOf(']);'))
+    .matchAll(/'([^']+)'/g)].map(m => m[1]));
+  ok(safe.size > 10, 'and GET_SAFE was read from the worker, not restated here', safe.size);
+
+  const known = new Set(routes.map(r => r.path));
+  const refused = gets.filter(p => known.has(p) && !safe.has(p));
+  ok(refused.length === 0,
+     'no path the client GETs is one the router answers 405 to', refused);
+}
+
 if (report('every-route-decides') > 0) process.exitCode = 1;
 done();

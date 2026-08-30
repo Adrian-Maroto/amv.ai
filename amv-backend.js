@@ -1448,11 +1448,35 @@ async function counter(env, name, payload) {
        the question could not be answered. Callers already understand
        `unavailable` - guardAction turns it into a 503 that says so rather than
        telling somebody they are going too fast. */
-    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve')) {
+    /* AMV-032b: AND rateCheck, WHICH WAS LEFT OUT AND SHOULD NOT HAVE BEEN.
+
+       The rule above was written for claim and reserve because those are
+       mutual exclusion and a ceiling on money. A rate limit looked softer, so
+       it kept the KV fallback - and the fallback is a read followed by a
+       write, which is the exact race the Durable Object exists to close. Under
+       any concurrency it is not a slightly loose limit, it is no limit:
+       measured on the KV path, forty-five simultaneous calls against a cap of
+       thirty let all forty-five through, because every one of them read zero
+       before any of them wrote one.
+
+       It went unnoticed because almost every caller also passes a daily cap,
+       and that second call IS a reserve - so a bound-and-failing namespace
+       already answered `unavailable` a line later and the racy minute check
+       never decided anything. Exactly one caller has no daily cap, and it is
+       the worst one to have missed: /crew/popular, the public unauthenticated
+       route whose own comment says an endpoint anybody can reach without a
+       credential is the one worth hammering. Its only ceiling was the racy one,
+       and it reported success while enforcing nothing.
+
+       Bound-and-failing now answers that the question could not be answered,
+       the same as the other two. An UNBOUND namespace keeps the fallback for
+       the same reason it always did: that is a development machine with no
+       Durable Object, and refusing there means the product does not run. */
+    if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck')) {
       audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
-      return payload.op === 'claim'
-        ? { claimed: false, unavailable: true, code: 'atomic_unavailable' }
-        : { allowed: false, unavailable: true, code: 'atomic_unavailable', value: 0 };
+      if (payload.op === 'claim') return { claimed: false, unavailable: true, code: 'atomic_unavailable' };
+      if (payload.op === 'rateCheck') return { allowed: false, unavailable: true, code: 'atomic_unavailable', count: 0 };
+      return { allowed: false, unavailable: true, code: 'atomic_unavailable', value: 0 };
     }
   }
   // ---- KV fallback (best-effort, NOT atomic) - only used if DO unbound ----
@@ -8647,6 +8671,28 @@ async function _route(request, env, ctx) {
        names. A GET so a browser and the edge can cache it, which is what keeps
        a public catalogue cheap. */
     '/v1/everyday',             // what AMV does where you live
+    /* A READ THAT WAS ANSWERING 405 TO ITS ONLY CALLER.
+
+       AMV_API.crewPopular() calls this with no method, which is a GET, and
+       this list is what decides whether a GET is allowed - so every request
+       the product has ever made to this route came back "that endpoint does
+       not accept GET requests". The most-used section had no data because it
+       was never given any, and nothing said so: the client swallowed it and
+       rendered the not-enough-yet state, which looks exactly like a young
+       product with few users.
+
+       The route's own comment describes a cache header put there so a browser
+       visiting the screen twice in a minute does not ask twice. That header
+       was on a POST response, and browsers do not cache those - so the one
+       mitigation named in the design was inert as well. Both work now. */
+    '/crew/popular',            // aggregate counts, read-only, already public
+    /* The same mistake, found by the same check in the same minute.
+       AMV_API.connectList() sends a GET; this route requires an account,
+       writes nothing, and returns the caller's own connected accounts. It was
+       answering 405 to the only thing that calls it, so the Connected accounts
+       screen was listing nothing for the same invisible reason. Not cached -
+       it is one account's data, not a catalogue. */
+    '/v1/connect/list',         // the caller's own connections, read-only
     '/v1/account/export',       // the caller's own data, read-only, and a download
     '/widget.js',               // a <script src> on somebody else's site
     '/v1/widget/config-public', // fetched by that script before the chat opens

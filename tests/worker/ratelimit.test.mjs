@@ -106,5 +106,94 @@ let normalOk = true;
 for (let i = 0; i < 3; i++) { const r = await W.handoffCreate(hReq(), env); if (r.status === 429) normalOk = false; }
 ok(normalOk, 'a few handoffs in a row are fine - limits do not punish real use', normalOk);
 
+/* ── A LIMITER THAT STOPS LIMITING AND SAYS NOTHING ─────────────────────────
+
+   Found by a CI run, not by reading: forty-five simultaneous sign-in attempts
+   from one address, forty-five reached password hashing, none refused.
+
+   The cause is that the Durable Object call FAILED while its namespace was
+   bound, and rateCheck was the one operation left out of the rule that covers
+   claim and reserve - so it fell back to a KV counter, which is a read
+   followed by a write. That is the precise race the Durable Object exists to
+   close: every one of the forty-five read zero before any of them wrote one.
+   Not a loose limit. No limit.
+
+   It hid for so long because nearly every caller also passes a daily cap, and
+   that second call is a reserve, which already answered "unavailable" a line
+   later. Exactly one caller has no daily cap - /crew/popular, public and
+   unauthenticated, the single route whose own comment calls it the one worth
+   hammering - so it was the one endpoint relying on the racy check alone.
+
+   Both halves are asserted: that concurrency really does defeat the fallback
+   (or this test proves nothing), and that a bound namespace no longer takes
+   it. */
+section('A rate limit whose counter is broken says so instead of passing everything');
+
+/* Bound, and every call to it fails. This is the CI condition, and it is
+   different from having no Durable Object at all. */
+const failingDO = { idFromName: n => n, get: () => ({ async fetch(){ throw new Error('DO unreachable'); } }) };
+/* Slow enough to interleave, which is what a real store does and what a
+   synchronous Map hides. A fallback that only looks safe because JavaScript
+   happens to run it in one go is the thing being tested. */
+const slowStore = new Map();
+const slowKV = {
+  async get(k){ await new Promise(r=>setTimeout(r,1)); return slowStore.has(k)?slowStore.get(k):null; },
+  async put(k,v){ await new Promise(r=>setTimeout(r,1)); slowStore.set(k,v); },
+  async delete(k){ slowStore.delete(k); },
+  async list({prefix}){ return { keys:[], list_complete:true }; },
+};
+
+{
+  /* First: the fallback really is racy, so the fix is not guarding against an
+     imaginary problem. No AMV_COUNTER here - the development-machine path,
+     which keeps its fallback on purpose. */
+  const devEnv = { AMV_KV: slowKV };
+  const burst = await Promise.all(Array.from({ length: 45 },
+    () => W.limitAction(devEnv, 'race:one-address', 30, 0)));
+  const allowed = burst.filter(r => r.ok).length;
+  ok(allowed > 30,
+     'the KV fallback really does let a concurrent burst past its cap - otherwise this proves nothing',
+     allowed);
+}
+
+{
+  slowStore.clear();
+  /* Now the same burst with the namespace BOUND and failing. No caller here
+     passes a daily cap, which is exactly /crew/popular's shape - so nothing
+     else can rescue the answer. */
+  const brokenEnv = { AMV_KV: slowKV, AMV_COUNTER: failingDO };
+  const burst = await Promise.all(Array.from({ length: 45 },
+    () => W.limitAction(brokenEnv, 'race:one-address', 30, 0)));
+  const allowed = burst.filter(r => r.ok).length;
+  const unavailable = burst.filter(r => r.unavailable).length;
+  ok(allowed === 0,
+     'a bound-but-failing counter allows nothing through on a promise it cannot keep', allowed);
+  ok(unavailable === 45,
+     'and says the ceiling could not be evaluated, rather than reporting success', unavailable);
+
+  /* guardAction turns that into the honest answer rather than "slow down",
+     which would blame the caller for a fault on this side. */
+  const res = await W.guardAction(brokenEnv, 'race:one-address', 30, 0, 'this');
+  ok(res && res.status === 503, 'the caller gets 503, not 429 and not a silent pass', res && res.status);
+}
+
+{
+  /* And a working counter is untouched: the fix must not make a healthy
+     limiter refuse. */
+  let n = 0;
+  /* counter() calls stub.fetch(url, init) - a string and an init object, not
+     a Request - so the double has to read init.body. Getting that wrong made
+     this double throw, which the code then correctly reported as a broken
+     counter: the double was the fault, and it looked exactly like the bug. */
+  const goodDO = { idFromName: k => k, get: () => ({ async fetch(_url, init){
+    const p = JSON.parse((init && init.body) || '{}');
+    if (p.op === 'rateCheck') { n++; return new Response(JSON.stringify({ allowed: n <= p.limit, count: n })); }
+    return new Response(JSON.stringify({ allowed: true, value: 0 }));
+  } }) };
+  const goodEnv = { AMV_KV: slowKV, AMV_COUNTER: goodDO };
+  const first = await W.limitAction(goodEnv, 'race:healthy', 30, 0);
+  ok(first.ok === true, 'a healthy counter still lets normal use through', first);
+}
+
 report();
 done();
