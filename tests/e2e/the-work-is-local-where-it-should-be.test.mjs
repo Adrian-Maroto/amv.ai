@@ -46,6 +46,12 @@ await page.evaluate(async ([em, pw]) => {
   await __amvSignedIn();
 }, [EMAIL, PW]);
 
+/* On the actual screen, not just calling the renderer. The country half
+   updates from a fetch that finishes later, and the product only repaints
+   Crew when Crew is what somebody is looking at - so a suite that never
+   opened the tab would watch the first paint forever and call it the answer. */
+await page.evaluate(() => setTab('crew'));
+
 const pick = (code) => page.evaluate(async (cc) => {
   cwCountry(cc);
   const stop = Date.now() + 10000;
@@ -126,6 +132,42 @@ section('A country with nothing written for it says so rather than inventing');
   ok(none.local === 0, 'nothing is fabricated for it', none.local);
   ok(/still apply|same everywhere/i.test(none.text),
      'and it says the universal ones still hold, which is true', none.text.slice(0, 80));
+}
+
+/* THE ONE THAT ACTUALLY BIT.
+
+   Nothing caches a failed lookup, and the failure path re-renders, so the
+   render asked, the answer failed, the failure re-rendered, and the render
+   asked again. It was found because a suite that normally takes seconds sat
+   at nine minutes and climbing; measured directly it was 146 requests in four
+   seconds and rising, forever, from any browser whose first attempt missed.
+
+   One bad minute of network on a launch day is every open tab hammering AMV's
+   own servers. So the count is the assertion. */
+section('A lookup that fails asks once, then stops asking');
+{
+  const r = await page.evaluate(async () => {
+    window.__ev = 0;
+    const real = window.fetch;
+    window.fetch = async (u, o) => {
+      if (String(u).includes('/v1/everyday')) {
+        window.__ev++;
+        return new Response('{"error":"nope"}',
+          { status: 500, headers: { 'Content-Type': 'application/json' } });
+      }
+      return real(u, o);
+    };
+    cwCountry('FR');
+    await new Promise(res => setTimeout(res, 2500));
+    const asked = window.__ev;
+    window.fetch = real;
+    return { asked, text: (document.querySelector('.cw-country-empty') || {}).textContent || '' };
+  });
+  ok(r.asked >= 1, 'it does ask once', r.asked);
+  ok(r.asked <= 2, 'and then stops, instead of spinning until the tab is closed', r.asked);
+  ok(/cannot reach/i.test(r.text),
+     'and says the server could not be reached, not that France has nothing',
+     r.text.slice(0, 90));
 }
 
 section('No JavaScript errors');

@@ -963,7 +963,27 @@ function _cwUniversalJobs(){
    twice must not be two round trips, and switching back and forth is exactly
    what somebody comparing does. */
 const _cwLocalCache = {};
-let _cwLocalState = {};        // code -> 'loading' | 'ok' | 'offline'
+let _cwLocalState = {};        // code -> 'loading' | 'ok' | 'offline' | 'needsauth'
+/* WHAT WAS ALREADY ASKED, AND UNDER WHAT CONDITIONS.
+
+   A failed lookup leaves no cache entry, and the failure path re-renders. So
+   the render asked, the answer failed, the failure re-rendered, and the render
+   asked again: about thirty-seven requests a second, forever, from every
+   browser whose first attempt happened to miss. Measured rather than guessed -
+   146 requests in four seconds - and it is a denial of service on AMV's own
+   servers, written by AMV, triggered by one bad minute of network.
+
+   The key is the SITUATION rather than a flat "already tried", because the two
+   things that would make asking again sensible - a backend becoming reachable,
+   somebody signing in - are exactly the two things it records. When either
+   changes the key changes and the question is asked once more. Nothing else
+   re-asks, so a country that answered "cannot reach the server" says so and
+   stays quiet. */
+const _cwLocalTried = {};
+function _cwLocalCtx(){
+  const api = window.AMV_API;
+  return (api && api.live ? '1' : '0') + (api && api.hasSession ? '1' : '0');
+}
 function _cwLocalJobs(code){
   const cc = String(code || '').toUpperCase();
   if(!cc) return [];
@@ -972,6 +992,9 @@ function _cwLocalJobs(code){
 async function _cwLoadLocal(code){
   const cc = String(code || '').toUpperCase();
   if(!cc || _cwLocalCache[cc] || _cwLocalState[cc] === 'loading') return;
+  const ctx = _cwLocalCtx();
+  if(_cwLocalTried[cc] === ctx) return;
+  _cwLocalTried[cc] = ctx;
   /* Asked only when there is something to ask. Without a backend, or without
      an account, the call cannot answer - and calling anyway produced the worst
      possible outcome: an empty list that the screen then reported as "nothing
