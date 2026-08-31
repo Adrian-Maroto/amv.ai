@@ -151,9 +151,13 @@ section('EVERY href and src built by concatenation is guarded, or named here');
     ['the app’s own address on the share card',
      /^location\.origin\s*\+\s*location\.pathname/,
      'built from where the page already is - there is no outside value in it'],
-    ['a blob: preview of an artifact',
-     /^url\+'" sandbox=/,
-     'URL.createObjectURL of a Blob this page just made; sandboxed, and no string from anywhere else reaches it'],
+    /* The blob: artifact preview was here, and is deleted rather than kept:
+       previews no longer build a URL at all. They load a real document and
+       receive the page by postMessage, because a blob: frame inherits this
+       page's policy and refused every script inside an artifact. Nothing in
+       the bundle matches the pattern any more, and this check's own rule is
+       that an exemption which excuses nothing gets removed before it can
+       excuse the next thing that resembles it. */
     ['the widget install snippet',
      /^host\+'\/widget\.js/,
      'shown as text to copy, from the operator’s own backend base - it is not a link this page follows'],
