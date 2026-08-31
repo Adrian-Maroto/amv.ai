@@ -56,6 +56,15 @@ async function _aiError(res){
 }
 try{ window._aiError = _aiError; }catch(e){}
 
+/* WHAT THE LAST CALL ACTUALLY RAN AT.
+
+   The server clamps effort to what the plan allows and reports the resolved
+   value on the response. Keeping it here means a surface can show the truth
+   without every caller having to thread a return value it does not otherwise
+   want. */
+const _AI_LAST = { effort:'' };
+try{ window._AI_LAST=_AI_LAST; }catch(e){}
+
 async function aiCompleteLong(prompt, system, opts){
   opts = opts || {};
   /* An unrecognised engine falls back to the BALANCED tier, not the dearest
@@ -80,9 +89,15 @@ async function aiCompleteLong(prompt, system, opts){
     const body = { model: modelStr, max_tokens: maxTok, messages: messages.slice() };
     if(system) body.system = system + (opts.noLang?'':_langInstruction());
     else if(!opts.noLang) body.system = _langInstruction();
+    /* Effort is a request, not a setting. The server clamps it to what the
+       plan may have and says on the way back what it actually ran, which is
+       the value any surface should display - a picker that echoes its own
+       wish is how a clamped control comes to look broken. */
+    if(opts.effort) body.effort = opts.effort;
 
     const res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body)}, 180000);
     if(!res.ok) throw await _aiError(res);
+    try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
     const data = await res.json();
     const chunk = (data.content||[]).map(b=>b.text||'').join('');
     full += chunk;
@@ -121,8 +136,10 @@ async function aiComplete(prompt, system, opts){
   const body = { model: modelStr, max_tokens: maxTok, messages: [{role:'user', content: prompt}] };
   if(system) body.system = system + (opts.noLang?'':_langInstruction());
   else if(!opts.noLang) body.system = _langInstruction();
+  if(opts.effort) body.effort = opts.effort;
   const res = await fetchDeadline(url,{method:'POST',headers,body:JSON.stringify(body)}, 120000);
   if(!res.ok) throw await _aiError(res);
+  try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
   const data = await res.json();
   const text=_noDash((data.content||[]).map(b=>b.text||'').join('').trim());
   // record usage for EVERY call (Lab, Dev, Studio, Cowork, agents) - not just chat

@@ -97,8 +97,7 @@ function _buildBarHTML(mode){
     : isDesign
     ? _sectionModelSelect('design','studio-model')
         + '<span class="sec-usage-note" id="studio-usage-note"></span>'
-    : _sectionModelSelect('code','dev-model')
-        + '<span class="sec-usage-note" id="dev-usage-note"></span>';
+    : '<span class="sec-usage-note" id="dev-usage-note"></span>';
 
   /* The right-hand side, in one order for both surfaces: bring work in, start
      over, then the actions that operate on what is loaded. Dev's paperclip is
@@ -113,19 +112,17 @@ function _buildBarHTML(mode){
       + '<button class="lab-run-btn" id="lab-run">'+_bico('run',13)+'Run</button>'
       + _bIcoBtn('lab-deploy','Publish this page to a live URL','deploy')
       + '<button class="lab-fix-btn" id="lab-debug">'+_bico('debug',13)+'Auto-Debug</button>'
-    : '<div class="dev-addwrap">'
-        + _bIcoBtn('dev-add','Add existing code (optional)','add')
-        + '<div class="dev-add-menu" id="dev-add-menu" style="display:none">'
-          + '<button data-add="files"><b>Files</b><span>One or a few files</span></button>'
-          + '<button data-add="folder"><b>Folder</b><span>A whole project</span></button>'
-          + '<button data-add="connect"><b>Connect folder</b><span>Also save edits back &middot; Chrome/Edge</span></button>'
-        + '</div>'
-      + '</div>'
-      + _bIcoBtn('dev-tolab','Debug in Lab','tolab')
+    /* THE ATTACH BUTTON AND THE ENGINE PICKER MOVED TO THE COMPOSER.
+
+       Both are decisions about the MESSAGE being sent, and both were sitting
+       in the bar that describes the whole surface - so "which engine writes
+       this" was two feet away from the box you type it in, and the paperclip
+       was next to "New session". What is left here is what it says on the
+       tin: what to do with the surface, not with this turn. Dev's file
+       inputs moved with the button that opens them. */
+    : _bIcoBtn('dev-tolab','Debug in Lab','tolab')
       + _bIcoBtn('dev-save','Save to your folder','save',' style="display:none"')
-      + _bIcoBtn('dev-new','New session','fresh')
-      + '<input type="file" id="dev-files" multiple style="display:none">'
-      + '<input type="file" id="dev-folderinput" webkitdirectory directory multiple style="display:none">';
+      + _bIcoBtn('dev-new','New session','fresh');
 
   const cls = isLab ? 'lab-bar' : 'dev-bar';
   return '<div class="'+cls+' build-bar">'
@@ -1123,10 +1120,12 @@ function renderCodeView(){
       <div id="dev-log" class="dev-log"></div>
 
       <div id="ctx-dev"></div>
-      <div class="dev-input">
+      <div class="dev-input dev-input-v2">
         <select id="dev-lang" class="lab-sel" style="display:none"><option value="js">JavaScript</option><option value="python">Python</option></select>
         <textarea id="dev-msg" rows="1" placeholder="Describe what to build\u2026"></textarea>
-        <button class="dev-send" id="dev-send" title="Build (Enter)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+        ${_devComposerBarHTML()}
+        <input type="file" id="dev-files" multiple style="display:none">
+        <input type="file" id="dev-folderinput" webkitdirectory directory multiple style="display:none">
       </div>
     </div>
 
@@ -1151,6 +1150,15 @@ function renderCodeView(){
   on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px'; });
   on(ta,'keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); _devSend(); } });
   on($('dev-send'),'click',_devSend);
+  /* The two composer decisions that are not the message itself. Both persist,
+     because somebody who has said "just apply it" once should not have to say
+     it again every time they open Build. */
+  on($('dev-apply-mode'),'change',function(){
+    const m=_devSetApplyMode(this.value);
+    toast(m==='auto' ? 'Changes will be applied as soon as they are ready.'
+                     : 'You will be asked before any change is applied.','info',3000);
+  });
+  on($('dev-effort'),'change',function(){ _devSetEffort(this.value); });
   on($('dev-lang'),'change',()=>{ _DEV.lang=$('dev-lang').value; });
   $('dev-lang').value=_DEV.lang;
   // section model picker + live usage note
@@ -1258,7 +1266,14 @@ function renderCodeView(){
     if(skipped.length){ _devPushSys('Not loaded: '+skipped.join('; ')+'.'); _devRenderLog(); }
   };
   const addMenu=$('dev-add-menu');
-  on($('dev-add'),'click',(e)=>{ e.stopPropagation(); if(addMenu) addMenu.style.display=addMenu.style.display==='none'?'block':'none'; });
+  on($('dev-add'),'click',(e)=>{ e.stopPropagation();
+    if(!addMenu) return;
+    const open = addMenu.style.display==='none';
+    addMenu.style.display = open ? 'block' : 'none';
+    /* The button says whether the menu is open, so a screen reader is not
+       told there is a menu and left to guess. */
+    try{ e.currentTarget.setAttribute('aria-expanded', open ? 'true' : 'false'); }catch(_e){}
+  });
   // The hero's obvious upload button opens the same menu.
   on($('dev-hero-add'),'click',(e)=>{ e.stopPropagation(); if(addMenu) addMenu.style.display=addMenu.style.display==='none'?'block':'none'; });
   /* ONE listener, not one per render.
@@ -1983,8 +1998,13 @@ function _devRenderLog(){
     if(m.html) h+='<div class="dev-ai-embed">'+m.html+'</div>';
     if(m.code) h+='<div class="dev-code"><div class="dev-code-h">'+escH(m.lang||'code')+' <button class="dev-copy" data-code="'+encodeURIComponent(m.code)+'">copy</button></div><pre>'+escH(m.code.length>800?m.code.slice(0,800)+'\n…':m.code)+'</pre></div>';
     if(m.run) h+='<div class="dev-run '+(m.run.ok?'ok':'err')+'"><div class="dev-run-h">'+(m.run.ok?'✓ ran ('+m.run.ms+'ms)':'✗ error')+'</div><pre>'+escH(m.run.ok?(m.run.stdout||m.run.result||'(no output)'):m.run.stderr)+'</pre></div>';
+    /* The changelist goes last, under whatever was said about the change,
+       which is the order somebody reads it in: what happened, then what
+       moved, then the way back. */
+    if(m.changes) h+=_devChangeCardHTML(m);
     h+='</div>'; return h;
   }).join('');
+  try{ _devWireChangeCards(el); }catch(e){}
   el.scrollTop=el.scrollHeight;
   el.querySelectorAll('.dev-copy').forEach(btn=>on(btn,'click',()=>{navigator.clipboard&&navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code));btn.textContent='copied';}));
   el.querySelectorAll('[data-dev-retry]').forEach(btn=>on(btn,'click',()=>{
@@ -2008,14 +2028,45 @@ function _devToolIntent(msg){
   return null;
 }
 
+/* WHAT HAPPENS AFTER FILES LAND, WHEREVER THEY LANDED FROM.
+
+   An automatic turn and an approved one have to do the same thing next -
+   repaint the preview, run the entry script for a project that is not a
+   page, and save to a connected folder. Having that written out twice is
+   how the approved path comes to quietly skip the folder save. */
+async function _devAfterWrite(changed, stat){
+  const previewHTML=_devProjectPreviewHTML();
+  const pb=$('dev-prev-body');
+  if(pb){
+    if(previewHTML){ _previewMount(pb, previewHTML, 'dev-prev-frame'); }
+    else {
+      const entryP=_devEntryFile(); const lang=_devLangFor(entryP);
+      if((lang==='js'||lang==='python') && _DEV.project[entryP]){
+        const run=await runCode(_DEV.project[entryP].content, lang, s=>{ if(stat) stat.textContent=s; });
+        pb.innerHTML='<div class="dev-prev-out '+(run.ok?'ok':'err')+'"><pre>'+escH(run.ok?(run.stdout||run.result||'(no output)'):run.stderr)+'</pre></div>';
+        if(stat) stat.textContent=run.ok?'\u2713 ran':'\u2717 error';
+      }
+    }
+  }
+  if(AMVWorkspace.dirHandle && changed && changed.length){
+    for(const p of changed){ try{ if(_DEV.project[p]) await AMVWorkspace.writeFile(p, _DEV.project[p].content); }catch(e){} }
+    if(stat) stat.textContent='\u2713 saved to folder';
+  }
+}
+try{ window._devAfterWrite=_devAfterWrite; }catch(e){}
+
 async function _devSend(){
   if(_DEV.busy) return;
   const ta=$('dev-msg'); const msg=ta?ta.value.trim():''; if(!msg) return;
   ta.value=''; ta.style.height='auto';
   _DEV.log.push({role:'user',text:msg}); _devRenderLog(); _DEV.busy=true;
+  try{ _devBusy(true,'Building'); }catch(e){}
   try{ _sessTouch('dev'); }catch(e){}
   const stat=$('dev-prev-s'); if(stat) stat.textContent='building…';
   const hasProject=_devProjectFiles().length>0;
+  /* Taken before anything is written, so the changelist at the end of the
+     turn is measured rather than assembled from what the model claimed. */
+  const before=_devSnapshot();
 
   // ── Dev can now use AMV's real tools, not just write code ──
   const intent=_devToolIntent(msg);
@@ -2045,7 +2096,8 @@ async function _devSend(){
       _devRenderLog();
       if(stat) stat.textContent='';
     }
-    _DEV.busy=false; return;
+    _DEV.busy=false; try{ _devBusy(false); }catch(e){}
+    return;
   }
   try{
     if(hasProject){
@@ -2059,25 +2111,57 @@ async function _devSend(){
       const _isUI=Object.keys(_DEV.project).some(p=>/\.(html|css|jsx|tsx)$/i.test(p))||/\b(html|css|ui|page|component|design|frontend)\b/i.test(msg);
       const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI.\n\n':'')+_devProjectContext()+'\n\nCHANGE REQUEST: '+msg;
       const resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
+        effort:_devEffort(),
         onProgress:(p)=>_devProgress(p)});
-      const writes=[...resp.matchAll(/```[a-z]*\s*\n?WRITE_FILE:\s*([^\n`]+)\n([\s\S]*?)```/gi)];
+      /* THE WRITES ARE PARSED ONCE, AND THE PATH IS SETTLED THERE.
+
+         Both the card and the apply step have to agree about which file a
+         block names, and `_devSetFile` sanitises the path on the way in. So
+         it is sanitised here, once, and the same list is what gets measured
+         and what gets written - rather than the card describing one path and
+         the write landing on another. */
+      const writes=[...resp.matchAll(/```[a-z]*\s*\n?WRITE_FILE:\s*([^\n`]+)\n([\s\S]*?)```/gi)]
+        .map(m=>{ const raw=m[1].trim();
+                  return { path:(typeof _safePath==='function' ? (_safePath(raw)||raw) : raw),
+                           body:m[2].replace(/\n$/,'') }; })
+        .filter(w=>!!w.path);
       const summary=resp.split('```')[0].trim();
-      const changed=[];
       try{ _devDeriveName(msg); }catch(e){}   // name the project from the first request
-      for(const m of writes){ const path=m[1].trim(); const body=m[2].replace(/\n$/,''); _devSetFile(path, body); changed.push(path); }
-      if(changed.length){ _DEV.activePath=changed[0]; }
-      const entry={role:'ai',text:(summary||'Updated the project.')+(changed.length?('\n\n**Files changed:** '+changed.join(', ')):'')};
+      /* THE TURN ENDS WITH A CHANGELIST, MEASURED RATHER THAN CLAIMED.
+
+         The list of paths used to be appended to the summary as a sentence,
+         which says which files moved and nothing about how much, whether
+         they were created, or how to put them back. This diffs the proposed
+         project against what it was before the turn, so a file the model
+         rewrote byte-identically does not appear - it was not changed, and
+         counting it pads the number people are trusting. */
+      const proposed=Object.assign({}, before);
+      for(const w of writes) proposed[w.path]=w.body;
+      const rows=_devChangeSet(before, proposed);
+      const entry={role:'ai',text:(summary||'Updated the project.')};
+      /* ASK BEFORE CHANGES MEANS NOTHING HAS MOVED YET.
+
+         Not a confirmation on top of a change that already happened - the
+         files are untouched, the preview still shows what it showed, and the
+         card carries Apply. That is the whole difference between a setting
+         that means something and a label. */
+      if(rows.length && _devApplyMode()==='ask'){
+        entry.changes=rows;
+        entry.chgId=_devStageTurn(before, proposed, writes);
+        _DEV.log.push(entry); _devRenderLog();
+        if(stat) stat.textContent='waiting for you';
+        _DEV.busy=false; try{ _devBusy(false); }catch(e){}
+        return;
+      }
+      for(const w of writes) _devSetFile(w.path, w.body);
+      if(writes.length) _DEV.activePath=writes[0].path;
+      const after=_devSnapshot();
+      const rows2=_devChangeSet(before, after);
+      if(rows2.length){ entry.changes=rows2; entry.chgId=_devRecordTurn(before, after); }
       _DEV.log.push(entry); _devRenderLog(); _devRenderTree(); _devShowActive();
-      // preview whole project + auto-save if folder connected
-      const previewHTML=_devProjectPreviewHTML();
-      const pb=$('dev-prev-body');
-      if(pb){ if(previewHTML){ _previewMount(pb, previewHTML, 'dev-prev-frame'); } else {
-        // run the entry script
-        const entryP=_devEntryFile(); const lang=_devLangFor(entryP);
-        if(lang==='js'||lang==='python'){ const run=await runCode(_DEV.project[entryP].content, lang, s=>{ if(stat) stat.textContent=s; }); pb.innerHTML='<div class="dev-prev-out '+(run.ok?'ok':'err')+'"><pre>'+escH(run.ok?(run.stdout||run.result||'(no output)'):run.stderr)+'</pre></div>'; if(stat) stat.textContent=run.ok?'✓ ran':'✗ error'; }
-      } }
-      if(AMVWorkspace.dirHandle && changed.length){ for(const p of changed){ try{ await AMVWorkspace.writeFile(p, _DEV.project[p].content); }catch(e){} } if(stat) stat.textContent='✓ saved to folder'; }
-      _DEV.busy=false; return;
+      await _devAfterWrite(rows2.map(r=>r.path), stat);
+      _DEV.busy=false; try{ _devBusy(false); }catch(e){}
+      return;
     }
     // ---- SINGLE-FILE MODE (unchanged behavior) ----
     const hasCurrent=!!_DEV.curCode;
@@ -2088,6 +2172,7 @@ async function _devSend(){
     const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI/visual output.\n\n':'')+
       (hasCurrent?('Current '+(_DEV.curLang||_DEV.lang)+' code:\n```\n'+_DEV.curCode+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated program.'):msg);
     const resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
+      effort:_devEffort(),
       onProgress:(p)=>_devProgress(p)});
     const code=extractCode(resp,_DEV.lang)||extractCode(resp);
     const txt=resp.replace(/```[\s\S]*?```/g,'').trim();
@@ -2101,7 +2186,7 @@ async function _devSend(){
     } else { if(stat) stat.textContent=''; }
     _DEV.log.push(entry); _devRenderLog();
   }catch(err){ _DEV.log.push({role:'ai',text:'',_snag:_errText(err),_snagRoute:(typeof _refusalRoute==='function'?_refusalRoute(err&&err.code):'')}); _devRenderLog(); if(stat) stat.textContent=''; }
-  _DEV.busy=false;
+  _DEV.busy=false; try{ _devBusy(false); }catch(e){}
 }
 window.renderCodeView=renderCodeView;
 

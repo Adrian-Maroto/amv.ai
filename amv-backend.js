@@ -29,7 +29,7 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
   // The browser cannot read a custom response header cross-origin unless it is
   // exposed. Without this the routed-engine name is invisible to the app.
-  'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Engine-Why',
+  'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Effort, X-AMV-Engine-Why',
 };
 // Security headers applied to every response. Protects users against clickjacking,
 // MIME-sniffing, protocol downgrade, and referrer leakage. CSP here is API-appropriate
@@ -78,6 +78,41 @@ const ENGINES = {
   'amv-forge': { model: 'claude-opus-5',             minPlan: 'pro',   inCost: 5,  outCost: 25,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
   'amv-apex':  { model: 'claude-fable-5',            minPlan: 'elite', inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
 };
+/* ── EFFORT: A REAL CONTROL, WITH THE PLAN AS ITS CEILING ─────────────────
+   Effort decides how hard the engine thinks, which decides what the call
+   costs. It was fixed per engine, and a picker that changes nothing would be
+   decoration; a picker anybody can raise would be a way for a free account to
+   spend Ultra money. So it is a real request with a ceiling set by the plan.
+
+   Down is always allowed, for everyone. "Run this one cheaper" is a thing
+   people genuinely want and it can only reduce the bill, so there is no
+   reason to gate it - and gating it would make the control feel like an
+   upsell rather than a tool.
+
+   Up needs Elite or above, and never goes past what the engine already runs
+   at, so the ceiling is the smaller of the two.
+
+   ONLY THE VALUES THIS SERVICE ALREADY SENDS UPSTREAM ARE LISTED. A lower
+   step would be a nice third rung and is deliberately absent: sending an
+   effort the upstream does not accept is a 400 on a live request, and the
+   place to learn that is its documentation, not production. Adding one is a
+   line in this table once it is verified. */
+const EFFORT_RANK = { medium: 0, high: 1 };
+const EFFORT_LABEL = { medium: 'Balanced', high: 'High' };
+function _effortCeiling(eng, rank) {
+  if (!eng.effort) return null;
+  /* Below Elite the engine's own setting is the ceiling, so nobody can raise
+     spend past what their plan already pays for. */
+  if (rank >= PLAN_RANK.elite) return 'high';
+  return eng.effort;
+}
+function _resolveEffort(eng, want, rank) {
+  if (!eng.effort) return null;                       // engine takes no effort
+  const ceiling = _effortCeiling(eng, rank);
+  if (want == null || !EFFORT_RANK.hasOwnProperty(want)) return eng.effort;
+  return EFFORT_RANK[want] <= EFFORT_RANK[ceiling] ? want : ceiling;
+}
+
 /* The model behind a tier, read from the one place that defines it.
    Three worker paths hardcoded a model id instead - the browser agent's
    per-step decision (up to WEB_MAX_STEPS calls per run), the SMS agent, and the
@@ -1290,6 +1325,12 @@ function validateMessagesPayload(body) {
   if (body.max_tokens != null) {
     const mt = Number(body.max_tokens);
     if (!Number.isFinite(mt) || mt < 1 || mt > 64000) return 'max_tokens out of range';
+  }
+  /* Refused rather than ignored. Effort is a spend lever, so a request that
+     names one AMV does not recognise is a bug somewhere - in a client, or in
+     somebody probing - and quietly substituting a default would hide both. */
+  if (body.effort != null && !EFFORT_RANK.hasOwnProperty(body.effort)) {
+    return 'effort must be one of: ' + Object.keys(EFFORT_RANK).join(', ');
   }
   return null; // valid
 }
@@ -12203,7 +12244,12 @@ async function aiProxy(request, env, ctx) {
      to an engine that does not support it is a 400, so it is opt-in per model
      rather than blanket. */
   if (eng.thinking) upstreamBody.thinking = { type: 'adaptive' };
-  if (eng.effort)   upstreamBody.output_config = { effort: eng.effort };
+  /* What the caller asked for, clamped to what their plan may have. The
+     resolved value is echoed back on the response so the surface shows what
+     actually ran rather than what it requested - a picker that reports its
+     own wish is how a clamped control comes to look broken. */
+  const _effort = _resolveEffort(eng, body.effort, _planRankOf(user.plan, user.customCfg));
+  if (_effort) upstreamBody.output_config = { effort: _effort };
   if (body.tools && Array.isArray(body.tools)) {
     const safe = _safeTools(body.tools);
     if (safe.length) upstreamBody.tools = safe;
@@ -12317,6 +12363,7 @@ async function aiProxy(request, env, ctx) {
       // Tell the client which engine actually ran. Without this, a routed turn
       // would be labelled "AMV Auto", which says nothing.
       'X-AMV-Engine': key,
+      'X-AMV-Effort': _effort || '',
       'X-AMV-Engine-Why': routed ? routed.why : '' },
   });
 }
