@@ -10037,8 +10037,30 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
    whether it lands by itself, and which engine at what effort - sit under the
    box they type in, because that is where the decision is. They used to be
    spread across the toolbar that describes the whole surface. */
-.dev-input-v2{ display:flex;flex-direction:column;gap:var(--sp-2); }
-.dev-input-v2 textarea{ width:100%; }
+/* THE `!important` ROW THAT ATE THE COMPOSER.
+
+   `.dev-input,.lab-input{flex-direction:row!important}` is set by an earlier
+   layer for the old single-line composer - a textarea with a send button
+   beside it - and `!important` beats a later rule of equal weight. So the new
+   composer laid its bar BESIDE the textarea instead of under it, and the box
+   you type in was squeezed to a pill about forty pixels wide.
+
+   It shipped, and no automated check saw it: nothing overflowed, nothing was
+   too small to tap, and the one screenshot of the desktop view happened to
+   have the cookie banner sitting over the composer. It took looking at it.
+
+   Matched weight, higher specificity, and scoped to the v2 composer so the
+   Lab keeps the row its own composer was written for. */
+.dev-input.dev-input-v2{
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:stretch!important;
+  flex-wrap:wrap!important;
+  gap:var(--sp-2);
+}
+/* An ID selector pins this at 32px, so a class rule cannot raise it - the
+   main input on the surface was the smallest target on it. */
+.dev-input-v2 #dev-msg{ width:100%;flex:1 1 auto;min-height:44px; }
 .dvi-bar{
   display:flex;align-items:center;gap:var(--sp-2);
   flex-wrap:wrap;
@@ -10065,6 +10087,10 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 }
 .dvi-sel:focus-visible{ outline:2px solid var(--accent);outline-offset:2px; }
 .dev-input-v2 .secmodel-sel{ min-height:34px;font-size:var(--t-sm); }
+/* The same `[hidden]` trap as `.dvp`, and it was worse here: the spinner
+   carries an infinite animation, so an element nobody could see was
+   repainting forever on every Dev view. */
+.dvi-busy[hidden]{ display:none!important; }
 .dvi-busy{ display:inline-flex;align-items:center;gap:6px;font-size:var(--t-sm);color:var(--mu); }
 .dvi-spin{
   width:13px;height:13px;flex:0 0 auto;
@@ -10076,7 +10102,7 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   /* Still says it is working, without the thing that causes the problem. */
   .dvi-spin{ animation:none;border-top-color:var(--accent);opacity:.7; }
 }
-.dev-input-v2 .dev-send{ width:34px;height:34px;flex:0 0 auto; }
+.dev-input-v2 .dev-send{ width:34px;height:34px;flex:0 0 auto;padding:0;align-self:auto; }
 .dev-input-v2 .dev-send[disabled]{ opacity:.5;cursor:default; }
 .dev-input-v2 .dev-addwrap{ position:relative; }
 
@@ -10118,6 +10144,12 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
      to come down as well, or the row is 12px too wide however narrow the
      content is. Measured at 320, not reasoned about. */
   .dvi-bar{ gap:var(--sp-1); }
+  /* FORTY-FOUR ON A PHONE, which is AMV's own standard and which these three
+     missed at 34. The plus and the send button were already bumped by a
+     global phone rule; the three selects were not - so the two controls you
+     actually change per message were the two hardest to hit. */
+  .dvi-sel,.dev-input-v2 .secmodel-sel,.dev-input-v2 #dev-model{ min-height:44px; }
+  .dev-input-v2 .dev-send,.dvi-plus{ width:44px;height:44px; }
   /* Each group takes its own line. The right one was `nowrap` holding four
      controls, so it could not give way however narrow the screen got. */
   .dvi-l,.dvi-r{ flex:1 1 100%;min-width:0;flex-wrap:wrap; }
@@ -10177,6 +10209,13 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 /* Quiet, and to the left of copy so it never pushes the button around. */
 .dev-code-saved{ margin-left:auto;margin-right:var(--sp-2);font-size:var(--t-xs);color:var(--mu); }
 
+/* `[hidden]` LOSES TO A CLASS THAT SETS `display`, and this file has already
+   learned that once - see the `.faq-item[hidden]` note above. The offer
+   markup carries the `hidden` attribute, `.dvp` sets `display:flex`, and the
+   attribute is a UA-stylesheet rule that any author rule outranks. The result
+   was a permanently visible empty accent-tinted bar sitting under the box you
+   type in, at every width, doing nothing. */
+.dvp[hidden]{ display:none!important; }
 .dvp{
   display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;
   padding:var(--sp-2) var(--sp-3);

@@ -275,6 +275,30 @@ section('The turn really sends the effort and shows it is working');
   ok(shown.offHidden && shown.sendBack, 'and both come back afterwards', shown);
 }
 
+section('Nothing that says it is hidden is actually on screen');
+{
+  /* TWO OF THESE SHIPPED. `[hidden]` is a UA-stylesheet rule, so ANY author
+     rule that sets `display` outranks it - and both new composer pieces set
+     one. The paste offer rendered as a permanently visible empty accent bar
+     under the box you type in, and the busy spinner sat there with its
+     infinite animation running on every Dev view, forever, invisible only
+     because it was small.
+
+     Neither overflowed, neither was too small to tap, and no check in this
+     repo could see them. This one can, and it is written against every
+     element on the surface rather than the two that were wrong, so the next
+     one is caught the day it is added. */
+  const shown = await page.evaluate(async () => {
+    setTab('dev');
+    await new Promise(s => setTimeout(s, 400));
+    return [...document.querySelectorAll('#vc [hidden]')]
+      .filter(el => getComputedStyle(el).display !== 'none')
+      .map(el => el.tagName.toLowerCase() + '#' + el.id + '.' + String(el.className).split(' ')[0]);
+  });
+  ok(shown.length === 0,
+     'every element carrying the hidden attribute really is display:none', shown);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

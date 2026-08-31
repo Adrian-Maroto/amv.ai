@@ -6623,3 +6623,65 @@ third timing-shaped false alarm this month.
 Confirm the names exist and the mechanism is live before believing what it says
 is missing - and when the thing measured animates, wait for it to settle rather
 than racing it.
+
+## 303. A CSS transition means the number is not there yet when you look
+
+A viewport-switcher check failed on CI while passing on every machine here,
+and the product was correct. `.studio-frame` carries `transition:width .2s`.
+The inline style lands the instant the button is clicked; the RENDERED width
+only arrives as the animation timeline advances, and that timeline advances
+with rendering updates rather than with wall-clock time. On a loaded runner -
+four headless browsers sharing two cores - no rendering update happened inside
+the 250ms sleep, so the check read the frame's STARTING width and reported
+"1050 -> 1050" for a phone preset. The next sample then caught the following
+transition part-way, which is where the second failure's 761 came from: 390 on
+its way to 768. Both numbers were the sleep being wrong.
+
+**Wait on rendered frames, not on a clock, whenever the thing measured
+animates.** A value that has held steady across several rAF callbacks has
+finished moving, and a stalled compositor advances neither the transition nor
+the counter - which is the whole point of counting frames instead of
+milliseconds. Measured after the fix: 428ms for a transitioned change, 219ms
+for one that changes flex-basis and therefore jumps. This is the same family as
+302's third false alarm and the second time it has cost a gate run.
+
+## 304. `[hidden]` loses to any class that sets `display`, and it did it twice in one change
+
+Two new composer pieces shipped visible while carrying the `hidden` attribute.
+`[hidden]{display:none}` comes from the UA stylesheet, so `.dvp{display:flex}`
+and `.dvi-busy{display:inline-flex}` both outrank it. The paste offer rendered
+as a permanently visible empty accent-tinted bar under the box you type in, and
+the busy spinner sat on every Dev view with its infinite animation repainting
+forever, invisible only because it is small.
+
+This file already had the rule written down - see the `.faq-item[hidden]` note
+in styles.css - and I wrote the same bug twice in one afternoon anyway.
+
+Neither instance overflowed, neither was too small to tap, and nothing in the
+suite could see them. There is now a check that walks every element on the
+surface carrying `hidden` and fails if its computed display is not `none`,
+verified by reverting the fix and watching it fail. **A rule you have already
+learned needs a check, not a comment - the comment is only read by somebody
+who already remembered.**
+
+## 305. Two of the three composer bugs were `!important` and an ID selector winning
+
+The new Dev composer laid its control bar BESIDE the textarea instead of under
+it, at every width, squeezing the box you type in to a pill about forty pixels
+wide. `.dev-input,.lab-input{flex-direction:row!important}` is set by an
+earlier layer for the old single-line composer, and `!important` beats a later
+rule of equal weight however far down the file it sits. Separately the engine
+picker would not shrink below 150px because that minimum is set by `#dev-model`
+- an ID, which no class selector outranks - and the row went 12px off the side
+of a 320px phone.
+
+Append-only layers make the LAST rule win, and both of these are the exceptions
+to that. **In a file this size, check what already targets an element before
+assuming a later rule wins: `!important` and ID selectors are the two things
+that make position irrelevant.**
+
+And the composer shipped that way because I measured it instead of looking at
+it. Nothing overflowed, every control passed its tap-target check, and the one
+screenshot I took of the desktop view happened to have the cookie banner over
+the composer. **A screenshot with the thing you changed hidden behind something
+else is not a screenshot of the thing you changed.**
