@@ -9769,3 +9769,16 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 @media (max-width:720px){
   .cw-split-h{ flex-direction:column;gap:var(--sp-1); }
 }
+
+/* ── LAYER A128 · the degraded preview note ──────────────────────────────────
+   Shown only when preview.html is not being served, so this is a line somebody
+   should notice and be able to act on - not an error, and not decoration. */
+.prev-degraded{
+  flex:0 0 auto;
+  padding:var(--sp-2) var(--sp-3);
+  font-size:var(--t-sm);
+  line-height:1.45;
+  color:var(--gold);
+  background:color-mix(in srgb, var(--gold) 10%, transparent);
+  border-bottom:1px solid color-mix(in srgb, var(--gold) 28%, transparent);
+}

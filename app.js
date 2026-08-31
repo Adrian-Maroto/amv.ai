@@ -19291,11 +19291,30 @@ function _previewSend(frame, html){
   setTimeout(() => {
     if(greeted) return;
     try{ window.removeEventListener('message', hear); }catch(e){}
+    /* FALL BACK TO WHAT WORKED YESTERDAY, AND SAY WHAT IS MISSING.
+
+       An error message and nothing else would make a hosting mistake worse
+       than the bug it replaced: before today the preview at least DREW the
+       page, it only refused to run it. So the old path is still here as the
+       degraded one - srcdoc, which renders the markup and the styling under
+       the page's own policy - with one line saying scripts are not running
+       and naming the file that would fix it.
+
+       Honest rather than quiet: somebody gets a preview, and knows exactly
+       why it is the lesser one. */
     try{
       const host = frame.parentNode; if(!host) return;
-      host.innerHTML = '<div class="lab-placeholder">The preview could not start. AMV serves it from '
-        + escH(PREVIEW_DOC) + ', and that file did not answer - so nothing is being shown rather than '
-        + 'something misleading.</div>';
+      const note = document.createElement('div');
+      note.className = 'prev-degraded';
+      note.textContent = 'Showing this without scripts: ' + PREVIEW_DOC + ' is not being served, '
+        + 'so anything the page builds or does in JavaScript will not run here.';
+      const f2 = document.createElement('iframe');
+      f2.className = frame.className;
+      f2.sandbox = 'allow-scripts';
+      host.innerHTML = '';
+      host.appendChild(note);
+      host.appendChild(f2);
+      f2.srcdoc = String(html == null ? '' : html);
     }catch(e){}
   }, 4000);
   frame.removeAttribute('srcdoc');

@@ -142,6 +142,46 @@ section('The page AMV itself runs on keeps its strict policy');
   ok(/frame-ancestors\s+'none'/.test(csp), 'and nobody may frame AMV', true);
 }
 
+section('If the preview document is not served, it degrades and says so');
+{
+  /* preview.html is a second file, and a host that does not serve it - or
+     answers unknown paths with index.html - would otherwise leave the frame
+     showing AMV inside AMV, or nothing at all. Before today the preview at
+     least DREW the page; an error message alone would make a hosting mistake
+     worse than the bug it replaced. So the old path stays as the degraded
+     one, with a line naming what is missing.
+
+     Simulated by pointing the frame at a path that does not exist, which is
+     exactly what a missing file looks like from here. */
+  const shown = await page.evaluate(async () => {
+    document.getElementById('probe').remove();
+    const host = document.createElement('div');
+    host.id = 'probe2';
+    host.style.cssText = 'position:fixed;left:0;top:0;width:500px;height:300px;z-index:99999';
+    document.body.appendChild(host);
+    const f = document.createElement('iframe');
+    f.className = 'dev-prev-frame';
+    f.sandbox = 'allow-scripts';
+    host.appendChild(f);
+    _previewSend(f, '<h1 id="deg">drawn without scripts</h1>');
+    /* Repointed at a path that does not exist, AFTER _previewSend has set its
+       own src - so the greeting never arrives and the timeout is reached, the
+       same as a host that does not serve the file. The note still names the
+       real preview document, because that is what somebody has to go and fix. */
+    f.src = 'no-such-preview-file.html';
+    await new Promise(r => setTimeout(r, 5200));
+    const note = host.querySelector('.prev-degraded');
+    return { note: note ? note.textContent : '', frames: host.querySelectorAll('iframe').length,
+             srcdoc: !!(host.querySelector('iframe') || {}).getAttribute && !!host.querySelector('iframe').getAttribute('srcdoc') };
+  });
+  ok(/not being served/i.test(shown.note),
+     'it says the preview document is missing rather than failing silently', shown.note.slice(0, 80));
+  ok(/JavaScript will not run/i.test(shown.note),
+     'and says exactly what is lost, so the page is not mistaken for a working one', shown.note.slice(-60));
+  ok(shown.frames === 1 && shown.srcdoc,
+     'and still draws the page the old way rather than showing nothing', shown);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
