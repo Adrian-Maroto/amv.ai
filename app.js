@@ -958,7 +958,51 @@ window.AMV_API = AMV_API;
 try{
   AMV_API._restoring = !!(AMV_API.cookieAuth && loadStr('amv_user'));
 }catch(e){ AMV_API._restoring = false; }
-function amvSaveBackend(){ var v=(document.getElementById('be-url')||{}).value||''; AMV_API.base=v.trim(); toast(v.trim()?'Backend URL saved':'Cleared - local mode','info'); if(typeof renderSetPane==='function') renderSetPane(); }
+/* CAN THIS PAGE EVEN TALK TO THAT HOST?
+
+   connect-src is fixed when the page is built, so a backend typed in here can
+   be perfectly correct and still unreachable - the browser refuses the request
+   before it leaves, and every call comes back "Failed to fetch". Indis-
+   tinguishable, from the outside, from a server that is down or a URL with a
+   typo, and somebody would reasonably spend an evening on the wrong problem.
+
+   The policy is readable from the page, so this is answerable rather than
+   guessable. Returns null when it cannot be read, and the caller says nothing
+   in that case: a warning invented from an unknown is worse than silence. */
+function _cspReachable(origin){
+  try{
+    var m=document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+    if(!m || !m.content) return null;
+    var d=(m.content.match(/connect-src\s([^;]*);/)||[,''])[1];
+    if(!d) return null;
+    var toks=d.split(/\s+/).filter(Boolean);
+    if(toks.indexOf('*')>=0 || toks.indexOf('https:')>=0) return true;
+    if(origin===location.origin && toks.indexOf("'self'")>=0) return true;
+    for(var i=0;i<toks.length;i++){
+      var t=toks[i];
+      if(t===origin) return true;
+      if(t.indexOf('https://*.')===0 && origin.slice(-(t.length-9))===t.slice(9)) return true;
+    }
+    return false;
+  }catch(e){ return null; }
+}
+function amvSaveBackend(){
+  var v=(document.getElementById('be-url')||{}).value||'';
+  AMV_API.base=v.trim();
+  if(!v.trim()){ toast('Cleared - local mode','info'); }
+  else {
+    var origin=''; try{ origin=new URL(v.trim()).origin; }catch(e){}
+    var reach=origin?_cspReachable(origin):null;
+    if(reach===false){
+      toast('Saved, but this page is not allowed to contact '+origin+'. Its security policy is '
+           +'fixed when AMV is built, so a backend on a new host has to be built in with '
+           +'AMV_API_BASE - otherwise every request is refused before it is sent.','error',9000);
+    } else {
+      toast('Backend URL saved','info');
+    }
+  }
+  if(typeof renderSetPane==='function') renderSetPane();
+}
 async function amvBackendLogin(){ var em=(document.getElementById('be-email')||{}).value||''; var pw=(document.getElementById('be-pass')||{}).value||''; if(!em.trim()){ toast('Enter your email','error'); return; } if(!pw){ toast('Enter your password','error'); return; } if(!AMV_API.live){ toast('Set the backend URL first','error'); return; } try{ await AMV_API.login(em.trim(), {name:(S.user&&S.user.name)||'', password:pw}); var p=document.getElementById('be-pass'); if(p) p.value=''; toast('Connected to backend','info'); if(typeof renderSetPane==='function') renderSetPane(); }catch(e){ toast(e.message||'Login failed','error'); } }
 window.amvSaveBackend=amvSaveBackend; window.amvBackendLogin=amvBackendLogin;
 

@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
 import { deflateSync as zlibDeflate } from 'zlib';
 import { createHash } from 'crypto';
 import { execSync } from 'child_process';
+import { pathToFileURL } from 'url';
 
 const args = process.argv.slice(2);
 const cmd = args.find(a => !a.startsWith('--')) || 'build';
@@ -195,11 +196,15 @@ async function rebuild() {
     if (!/^https:\/\/[^\s"'<>]+$/.test(apiBase)) {
       throw new Error('AMV_API_BASE must be an https:// URL - got: ' + apiBase);
     }
-    const metaPat = /<meta name="amv-api-base" content="[^"]*"><!-- BUILD:APIBASE -->/;
+    const metaPat = /<meta name="amv-api-base" content="([^"]*)"><!-- BUILD:APIBASE -->/;
+    const prev = (html.match(metaPat) || [, ''])[1];
     if (!metaPat.test(html)) throw new Error('amv-api-base meta marker not found');
     html = html.replace(metaPat,
       () => '<meta name="amv-api-base" content="' + apiBase + '"><!-- BUILD:APIBASE -->');
     console.log('Backend baked in: ' + apiBase);
+    /* And the policy is told about it in the same breath, so a build can never
+       instruct the page to call a host the browser will refuse. */
+    html = allowApiOrigin(html, apiBase, prev);
   }
 
   // 4) validate the assembled code BEFORE writing - a broken build must never
@@ -270,6 +275,71 @@ async function rebuild() {
    the weaker version. It stays in style-src: several hundred inline style
    attributes are presentation, they cannot exfiltrate anything, and hashing
    them is not a thing CSP offers. */
+/* THE BACKEND THE PAGE IS TOLD TO USE, AND THE HOSTS IT IS ALLOWED TO REACH.
+
+   These were set in two different places by two different mechanisms, and
+   nothing made them agree. AMV_API_BASE bakes a host into a meta tag;
+   connect-src is a hand-written list in index.html. Build with the backend on
+   any host outside that list and the page is instructed to call an address the
+   browser will refuse - so signup, sign-in, chat, Crew and payments all fail
+   with "Failed to fetch" and the only explanation is a console line nobody
+   reads.
+
+   It never showed up in development, because a build with no AMV_API_BASE is
+   same-origin and 'self' covers it, and it would not have shown up with a
+   workers.dev backend either, because the list has a wildcard for those. It
+   fails precisely for a production deployment on a custom domain - which is
+   the normal thing to do and the likeliest next step here.
+
+   Verified before writing this: the page fetched https://api.amv.homes/v1/health
+   and the browser answered "Refused to connect ... violates the following
+   Content Security Policy directive: connect-src".
+
+   So the build now teaches the policy about the host it just baked in. Not a
+   second list to keep in step - the one value produces both. */
+function allowApiOrigin(html, apiBase, previousBase) {
+  if (!apiBase) return html;
+  let origin = '';
+  try { origin = new URL(apiBase).origin; }
+  catch (e) { throw new Error('AMV_API_BASE is not a usable URL: ' + apiBase); }
+
+  /* The host this build REPLACES, dropped on the way past. Baking is sticky -
+     the value lives in the committed index.html until another build changes it
+     - so without this, moving the backend from one domain to another would
+     leave the old one permitted for good. An allowance for a host somebody
+     else may own next year is exactly the kind of thing that ages badly, and
+     nobody would ever think to go and delete it. */
+  let stale = '';
+  try { if (previousBase && previousBase !== apiBase) stale = new URL(previousBase).origin; } catch (e) {}
+  if (stale && stale !== origin) {
+    html = html.replace(/((^|\n)\s*connect-src\s)([^;]*);/, (_m, head, _nl, value) =>
+      head + value.split(/\s+/).filter(Boolean).filter((t) => t !== stale).join(' ') + ';');
+    console.log('CSP: connect-src no longer reaches ' + stale);
+  }
+
+  const cspPat = /(<meta http-equiv="Content-Security-Policy" content=")([\s\S]*?)(">)/;
+  const found = html.match(cspPat);
+  if (!found) throw new Error('Content-Security-Policy meta not found - aborting write');
+  const body = found[2];
+
+  const cur = (body.match(/(^|\n)\s*connect-src\s([^;]*);/) || [, , ''])[2] || '';
+  /* Already reachable, either by name or under a wildcard like
+     https://*.workers.dev - adding it again would be noise in a header every
+     visitor downloads. */
+  const covered = cur.split(/\s+/).filter(Boolean).some((tok) =>
+    tok === origin || (tok.startsWith('https://*.') && origin.endsWith(tok.slice('https://*'.length))));
+  if (covered) { console.log('CSP: connect-src already reaches ' + origin); return html; }
+
+  let rewrote = false;
+  const sealed = body.replace(/(^|\n)(\s*)connect-src\s([^;]*);/, (_m, nl, indent, value) => {
+    rewrote = true;
+    return nl + indent + 'connect-src ' + value.trim() + ' ' + origin + ';';
+  });
+  if (!rewrote) throw new Error('connect-src could not be rewritten - aborting write');
+  console.log('CSP: connect-src now reaches ' + origin);
+  return html.replace(cspPat, (_m, a, _b, c) => a + sealed + c);
+}
+
 function sealScriptCSP(html, appCode) {
   const sha = (text) =>
     "'sha256-" + createHash('sha256').update(Buffer.from(text, 'utf8')).digest('base64') + "'";
@@ -493,9 +563,21 @@ function solidPng(size) {
   ]);
 }
 
-if (cmd === 'check') {
-  validate(assembleJS());
-  console.log('app.js syntax OK');
-} else {
-  rebuild().catch(err => { console.error('BUILD FAILED:', err.message); process.exit(1); });
+/* RUN ONLY WHEN RUN, SO THIS CAN ALSO BE READ.
+
+   Importing this file used to rebuild index.html as a side effect, which meant
+   the build's own logic could not be tested without a test that overwrites the
+   artifact it is testing. The standard main-module check settles it: `node
+   build.mjs` still builds, and a test can import allowApiOrigin and hand it a
+   sample of HTML. */
+const RUN_DIRECTLY = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (RUN_DIRECTLY) {
+  if (cmd === 'check') {
+    validate(assembleJS());
+    console.log('app.js syntax OK');
+  } else {
+    rebuild().catch(err => { console.error('BUILD FAILED:', err.message); process.exit(1); });
+  }
 }
+
+export { allowApiOrigin };
