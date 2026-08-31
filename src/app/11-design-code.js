@@ -1123,6 +1123,7 @@ function renderCodeView(){
       <div class="dev-input dev-input-v2">
         <select id="dev-lang" class="lab-sel" style="display:none"><option value="js">JavaScript</option><option value="python">Python</option></select>
         <textarea id="dev-msg" rows="1" placeholder="Describe what to build\u2026"></textarea>
+        <div class="dvp" id="dev-paste-offer" hidden></div>
         ${_devComposerBarHTML()}
         <input type="file" id="dev-files" multiple style="display:none">
         <input type="file" id="dev-folderinput" webkitdirectory directory multiple style="display:none">
@@ -1134,6 +1135,7 @@ function renderCodeView(){
         tabs:[{id:'dev-tab-prev',key:'preview',label:'Preview'},
               {id:'dev-tab-code',key:'code',label:'Code'}],
         actions: _vpSwitchHTML('dev-vp') + `<button class="dev-openext" id="dev-download-proj" title="Download the project"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+          <button class="dev-openext" id="dev-github" title="Push this project to GitHub"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg></button>
           <button class="dev-openext" id="dev-deploy" title="Deploy a shareable page"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg></button>
           <button class="dev-openext" id="dev-open-ext" title="Open in a new tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` })}
       <div id="dev-prev-body" class="dev-prev-body"><div class="lab-placeholder">Your live result appears here.</div></div>
@@ -1147,7 +1149,14 @@ function renderCodeView(){
   }));
   _devRenderLog();
   const ta=$('dev-msg');
-  on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px'; });
+  on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px';
+    /* The offer goes away as soon as what it describes does. */
+    if(!_looksLikeCode(ta.value)){ const h=$('dev-paste-offer'); if(h && !h.hidden){ h.innerHTML=''; h.hidden=true; } }
+  });
+  /* Read AFTER the paste has landed, so this sees the text rather than the
+     clipboard - which is also the only way it works for drag-and-drop and
+     for a middle-click paste. */
+  on(ta,'paste',()=>{ setTimeout(()=>_devOfferPaste(ta.value), 0); });
   on(ta,'keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); _devSend(); } });
   on($('dev-send'),'click',_devSend);
   /* The two composer decisions that are not the message itself. Both persist,
@@ -1172,16 +1181,26 @@ function renderCodeView(){
     if(cb) cb.style.display = pv==='code' ? 'block' : 'none';
     if(pb) pb.style.display = pv==='code' ? 'none' : 'flex';
     /* Switching TO the preview is somebody asking to see it, which is the
-       moment it has to be there - not the moment a run happens to end. */
-    if(pv!=='code'){ try{ _devPaintPreview(); }catch(e){} } };
+       moment it has to be there - not the moment a run happens to end.
+
+       AND THE SAME IS TRUE OF THE CODE, which it was not. Only a build turn
+       ever filled the code pane, so arriving at Code with a project already
+       loaded - from an upload, from a restored session, from a paste - gave
+       you "The code appears here as AMV writes it" above a project full of
+       files. The file is right there; the pane just never asked for it. */
+    if(pv==='code'){ try{ _devRenderTree(); _devShowActive(); }catch(e){} }
+    else { try{ _devPaintPreview(); }catch(e){} } };
   _wireVpSwitch('dev-vp', ()=>document.querySelector('#dev-prev-body .dev-prev-frame'));
   _wireResultTabs('dev-rb', showPV);
   /* And on arrival, so re-opening Build with a project already in it shows the
-     project rather than an empty promise. */
+     project rather than an empty promise - on both panes, for the same
+     reason. */
   try{ _devPaintPreview(); }catch(e){}
+  try{ if(_devProjectFiles().length){ _devRenderTree(); _devShowActive(); } }catch(e){}
   on($('dev-open-ext'),'click',()=>_devOpenExternal());
   on($('dev-download-proj'),'click',()=>_devDownloadProject());
   on($('dev-deploy'),'click',()=>_devDeploy());
+  on($('dev-github'),'click',()=>_devPushToGitHub());
   /* Falls back through the project rather than trusting one pointer: the file
      that is open, else the entry file, else anything in the project, else
      whatever is in the editor. Refusing while holding the code is the failure
@@ -1431,12 +1450,52 @@ function _devRenderTree(){
   el.querySelectorAll('[data-path]').forEach(f=>on(f,'click',()=>{ _DEV.activePath=decodeURIComponent(f.dataset.path); _devRenderTree(); _devShowActive(); }));
 }
 // show the active file's code in the Code pane
+/* THE CODE PANE IS WHERE YOUR CODE IS, SO IT IS WHERE YOU EDIT IT.
+
+   This was a `<pre>`. You could read the file AMV wrote and copy it, and to
+   change one character you had to ask the model to do it for you - which
+   costs a turn, costs money, and can come back having rewritten three other
+   things. A build surface whose code you cannot touch is a demo of a build
+   surface.
+
+   Edits go straight into the project and the preview follows them, debounced
+   so a fast typist is not re-assembling the whole page on every keystroke.
+   No changelist card: this change is the person's own, they are looking
+   right at it, and a card telling somebody what they just typed is noise. */
+let _devEditTimer = null;
 function _devShowActive(){
   const main=$('dev-code-main'); if(!main) return;
   const p=_DEV.activePath; const f=p&&_DEV.project[p];
   if(!f){ main.innerHTML='<div class="lab-placeholder">Select a file.</div>'; return; }
-  main.innerHTML='<div class="dev-code-wrap"><div class="dev-code-h">'+escH(p)+'<button class="dev-copy" data-code="'+encodeURIComponent(f.content)+'">copy</button></div><pre>'+escH(f.content)+'</pre></div>';
+  main.innerHTML='<div class="dev-code-wrap"><div class="dev-code-h">'+escH(p)
+    +'<span class="dev-code-saved" id="dev-code-saved" role="status" aria-live="polite"></span>'
+    +'<button class="dev-copy" data-code="'+encodeURIComponent(f.content)+'">copy</button></div>'
+    +'<textarea class="dev-code-ed" id="dev-code-ed" spellcheck="false" autocapitalize="off" autocorrect="off"'
+    +' aria-label="'+escH(p)+' - editable"></textarea></div>';
+  const ed=$('dev-code-ed');
+  /* Set as a VALUE, never as markup: this is somebody's file and it is very
+     often HTML. */
+  if(ed) ed.value=f.content;
   main.querySelectorAll('.dev-copy').forEach(btn=>on(btn,'click',()=>{navigator.clipboard&&navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code));btn.textContent='copied';setTimeout(()=>btn.textContent='copy',1200);}));
+  on(ed,'input',()=>{
+    const path=_DEV.activePath; const file=path&&_DEV.project[path];
+    if(!file) return;
+    file.content=ed.value; file.ts=Date.now();
+    const note=$('dev-code-saved'); if(note) note.textContent='editing\u2026';
+    clearTimeout(_devEditTimer);
+    _devEditTimer=setTimeout(async ()=>{
+      try{ _devPaintPreview(); }catch(e){}
+      try{ _sessTouch('dev'); }catch(e){}
+      /* A connected folder is a folder somebody expects to match what they
+         see. Leaving hand edits out of it is how the two drift apart. */
+      let saved=false;
+      try{
+        if(AMVWorkspace.dirHandle){ await AMVWorkspace.writeFile(path, file.content); saved=true; }
+      }catch(e){}
+      const n=$('dev-code-saved'); if(n) n.textContent=saved?'saved to folder':'preview updated';
+      setTimeout(()=>{ const x=$('dev-code-saved'); if(x) x.textContent=''; }, 2200);
+    }, 300);
+  });
 }
 /* Open the current live preview in a real new browser tab. Uses a Blob URL
    (never a custom protocol, so it can't blank the page). Falls back to a
@@ -2001,10 +2060,18 @@ function _devRenderLog(){
     /* The changelist goes last, under whatever was said about the change,
        which is the order somebody reads it in: what happened, then what
        moved, then the way back. */
+    if(m.gh) h+='<div class="ghd"><a class="ghd-l" href="'+escH(m.gh.url)+'" target="_blank" rel="noopener noreferrer">'
+      +escH(m.gh.repo)+' &middot; '+escH(m.gh.branch)+'</a>'
+      +'<button class="ghd-pr" type="button" data-ghpr="'+encodeURIComponent(JSON.stringify(m.gh))+'">Open a pull request</button></div>';
+    if(m.verify) h+=_devVerifyHTML(m);
     if(m.changes) h+=_devChangeCardHTML(m);
     h+='</div>'; return h;
   }).join('');
   try{ _devWireChangeCards(el); }catch(e){}
+  el.querySelectorAll('[data-ghpr]').forEach(b=>on(b,'click',()=>{
+    let gh=null; try{ gh=JSON.parse(decodeURIComponent(b.dataset.ghpr)); }catch(e){}
+    b.disabled=true; _devOpenPR(gh);
+  }));
   el.scrollTop=el.scrollHeight;
   el.querySelectorAll('.dev-copy').forEach(btn=>on(btn,'click',()=>{navigator.clipboard&&navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code));btn.textContent='copied';}));
   el.querySelectorAll('[data-dev-retry]').forEach(btn=>on(btn,'click',()=>{
@@ -2035,14 +2102,19 @@ function _devToolIntent(msg){
    page, and save to a connected folder. Having that written out twice is
    how the approved path comes to quietly skip the folder save. */
 async function _devAfterWrite(changed, stat){
+  /* Returns what it DID, because the verification line above the changelist
+     may only report things that really happened, and the only place that
+     knows is here. */
+  const out={ previewed:false, run:null, saved:false };
   const previewHTML=_devProjectPreviewHTML();
   const pb=$('dev-prev-body');
   if(pb){
-    if(previewHTML){ _previewMount(pb, previewHTML, 'dev-prev-frame'); }
+    if(previewHTML){ _previewMount(pb, previewHTML, 'dev-prev-frame'); out.previewed=true; }
     else {
       const entryP=_devEntryFile(); const lang=_devLangFor(entryP);
       if((lang==='js'||lang==='python') && _DEV.project[entryP]){
         const run=await runCode(_DEV.project[entryP].content, lang, s=>{ if(stat) stat.textContent=s; });
+        out.run=run;
         pb.innerHTML='<div class="dev-prev-out '+(run.ok?'ok':'err')+'"><pre>'+escH(run.ok?(run.stdout||run.result||'(no output)'):run.stderr)+'</pre></div>';
         if(stat) stat.textContent=run.ok?'\u2713 ran':'\u2717 error';
       }
@@ -2050,8 +2122,10 @@ async function _devAfterWrite(changed, stat){
   }
   if(AMVWorkspace.dirHandle && changed && changed.length){
     for(const p of changed){ try{ if(_DEV.project[p]) await AMVWorkspace.writeFile(p, _DEV.project[p].content); }catch(e){} }
+    out.saved=true;
     if(stat) stat.textContent='\u2713 saved to folder';
   }
+  return out;
 }
 try{ window._devAfterWrite=_devAfterWrite; }catch(e){}
 
@@ -2159,7 +2233,11 @@ async function _devSend(){
       const rows2=_devChangeSet(before, after);
       if(rows2.length){ entry.changes=rows2; entry.chgId=_devRecordTurn(before, after); }
       _DEV.log.push(entry); _devRenderLog(); _devRenderTree(); _devShowActive();
-      await _devAfterWrite(rows2.map(r=>r.path), stat);
+      const outcome=await _devAfterWrite(rows2.map(r=>r.path), stat);
+      /* Attached AFTER the work, from what the work reported. Written before
+         it would be a claim rather than a result. */
+      entry.verify=_devVerify(rows2.map(r=>r.path), outcome);
+      _devRenderLog();
       _DEV.busy=false; try{ _devBusy(false); }catch(e){}
       return;
     }

@@ -18687,6 +18687,7 @@ function renderCodeView(){
       <div class="dev-input dev-input-v2">
         <select id="dev-lang" class="lab-sel" style="display:none"><option value="js">JavaScript</option><option value="python">Python</option></select>
         <textarea id="dev-msg" rows="1" placeholder="Describe what to build\u2026"></textarea>
+        <div class="dvp" id="dev-paste-offer" hidden></div>
         ${_devComposerBarHTML()}
         <input type="file" id="dev-files" multiple style="display:none">
         <input type="file" id="dev-folderinput" webkitdirectory directory multiple style="display:none">
@@ -18698,6 +18699,7 @@ function renderCodeView(){
         tabs:[{id:'dev-tab-prev',key:'preview',label:'Preview'},
               {id:'dev-tab-code',key:'code',label:'Code'}],
         actions: _vpSwitchHTML('dev-vp') + `<button class="dev-openext" id="dev-download-proj" title="Download the project"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+          <button class="dev-openext" id="dev-github" title="Push this project to GitHub"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.34 1.09 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2z"/></svg></button>
           <button class="dev-openext" id="dev-deploy" title="Deploy a shareable page"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg></button>
           <button class="dev-openext" id="dev-open-ext" title="Open in a new tab"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></button>` })}
       <div id="dev-prev-body" class="dev-prev-body"><div class="lab-placeholder">Your live result appears here.</div></div>
@@ -18711,7 +18713,14 @@ function renderCodeView(){
   }));
   _devRenderLog();
   const ta=$('dev-msg');
-  on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px'; });
+  on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px';
+    /* The offer goes away as soon as what it describes does. */
+    if(!_looksLikeCode(ta.value)){ const h=$('dev-paste-offer'); if(h && !h.hidden){ h.innerHTML=''; h.hidden=true; } }
+  });
+  /* Read AFTER the paste has landed, so this sees the text rather than the
+     clipboard - which is also the only way it works for drag-and-drop and
+     for a middle-click paste. */
+  on(ta,'paste',()=>{ setTimeout(()=>_devOfferPaste(ta.value), 0); });
   on(ta,'keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); _devSend(); } });
   on($('dev-send'),'click',_devSend);
   /* The two composer decisions that are not the message itself. Both persist,
@@ -18736,16 +18745,26 @@ function renderCodeView(){
     if(cb) cb.style.display = pv==='code' ? 'block' : 'none';
     if(pb) pb.style.display = pv==='code' ? 'none' : 'flex';
     /* Switching TO the preview is somebody asking to see it, which is the
-       moment it has to be there - not the moment a run happens to end. */
-    if(pv!=='code'){ try{ _devPaintPreview(); }catch(e){} } };
+       moment it has to be there - not the moment a run happens to end.
+
+       AND THE SAME IS TRUE OF THE CODE, which it was not. Only a build turn
+       ever filled the code pane, so arriving at Code with a project already
+       loaded - from an upload, from a restored session, from a paste - gave
+       you "The code appears here as AMV writes it" above a project full of
+       files. The file is right there; the pane just never asked for it. */
+    if(pv==='code'){ try{ _devRenderTree(); _devShowActive(); }catch(e){} }
+    else { try{ _devPaintPreview(); }catch(e){} } };
   _wireVpSwitch('dev-vp', ()=>document.querySelector('#dev-prev-body .dev-prev-frame'));
   _wireResultTabs('dev-rb', showPV);
   /* And on arrival, so re-opening Build with a project already in it shows the
-     project rather than an empty promise. */
+     project rather than an empty promise - on both panes, for the same
+     reason. */
   try{ _devPaintPreview(); }catch(e){}
+  try{ if(_devProjectFiles().length){ _devRenderTree(); _devShowActive(); } }catch(e){}
   on($('dev-open-ext'),'click',()=>_devOpenExternal());
   on($('dev-download-proj'),'click',()=>_devDownloadProject());
   on($('dev-deploy'),'click',()=>_devDeploy());
+  on($('dev-github'),'click',()=>_devPushToGitHub());
   /* Falls back through the project rather than trusting one pointer: the file
      that is open, else the entry file, else anything in the project, else
      whatever is in the editor. Refusing while holding the code is the failure
@@ -18995,12 +19014,52 @@ function _devRenderTree(){
   el.querySelectorAll('[data-path]').forEach(f=>on(f,'click',()=>{ _DEV.activePath=decodeURIComponent(f.dataset.path); _devRenderTree(); _devShowActive(); }));
 }
 // show the active file's code in the Code pane
+/* THE CODE PANE IS WHERE YOUR CODE IS, SO IT IS WHERE YOU EDIT IT.
+
+   This was a `<pre>`. You could read the file AMV wrote and copy it, and to
+   change one character you had to ask the model to do it for you - which
+   costs a turn, costs money, and can come back having rewritten three other
+   things. A build surface whose code you cannot touch is a demo of a build
+   surface.
+
+   Edits go straight into the project and the preview follows them, debounced
+   so a fast typist is not re-assembling the whole page on every keystroke.
+   No changelist card: this change is the person's own, they are looking
+   right at it, and a card telling somebody what they just typed is noise. */
+let _devEditTimer = null;
 function _devShowActive(){
   const main=$('dev-code-main'); if(!main) return;
   const p=_DEV.activePath; const f=p&&_DEV.project[p];
   if(!f){ main.innerHTML='<div class="lab-placeholder">Select a file.</div>'; return; }
-  main.innerHTML='<div class="dev-code-wrap"><div class="dev-code-h">'+escH(p)+'<button class="dev-copy" data-code="'+encodeURIComponent(f.content)+'">copy</button></div><pre>'+escH(f.content)+'</pre></div>';
+  main.innerHTML='<div class="dev-code-wrap"><div class="dev-code-h">'+escH(p)
+    +'<span class="dev-code-saved" id="dev-code-saved" role="status" aria-live="polite"></span>'
+    +'<button class="dev-copy" data-code="'+encodeURIComponent(f.content)+'">copy</button></div>'
+    +'<textarea class="dev-code-ed" id="dev-code-ed" spellcheck="false" autocapitalize="off" autocorrect="off"'
+    +' aria-label="'+escH(p)+' - editable"></textarea></div>';
+  const ed=$('dev-code-ed');
+  /* Set as a VALUE, never as markup: this is somebody's file and it is very
+     often HTML. */
+  if(ed) ed.value=f.content;
   main.querySelectorAll('.dev-copy').forEach(btn=>on(btn,'click',()=>{navigator.clipboard&&navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code));btn.textContent='copied';setTimeout(()=>btn.textContent='copy',1200);}));
+  on(ed,'input',()=>{
+    const path=_DEV.activePath; const file=path&&_DEV.project[path];
+    if(!file) return;
+    file.content=ed.value; file.ts=Date.now();
+    const note=$('dev-code-saved'); if(note) note.textContent='editing\u2026';
+    clearTimeout(_devEditTimer);
+    _devEditTimer=setTimeout(async ()=>{
+      try{ _devPaintPreview(); }catch(e){}
+      try{ _sessTouch('dev'); }catch(e){}
+      /* A connected folder is a folder somebody expects to match what they
+         see. Leaving hand edits out of it is how the two drift apart. */
+      let saved=false;
+      try{
+        if(AMVWorkspace.dirHandle){ await AMVWorkspace.writeFile(path, file.content); saved=true; }
+      }catch(e){}
+      const n=$('dev-code-saved'); if(n) n.textContent=saved?'saved to folder':'preview updated';
+      setTimeout(()=>{ const x=$('dev-code-saved'); if(x) x.textContent=''; }, 2200);
+    }, 300);
+  });
 }
 /* Open the current live preview in a real new browser tab. Uses a Blob URL
    (never a custom protocol, so it can't blank the page). Falls back to a
@@ -19565,10 +19624,18 @@ function _devRenderLog(){
     /* The changelist goes last, under whatever was said about the change,
        which is the order somebody reads it in: what happened, then what
        moved, then the way back. */
+    if(m.gh) h+='<div class="ghd"><a class="ghd-l" href="'+escH(m.gh.url)+'" target="_blank" rel="noopener noreferrer">'
+      +escH(m.gh.repo)+' &middot; '+escH(m.gh.branch)+'</a>'
+      +'<button class="ghd-pr" type="button" data-ghpr="'+encodeURIComponent(JSON.stringify(m.gh))+'">Open a pull request</button></div>';
+    if(m.verify) h+=_devVerifyHTML(m);
     if(m.changes) h+=_devChangeCardHTML(m);
     h+='</div>'; return h;
   }).join('');
   try{ _devWireChangeCards(el); }catch(e){}
+  el.querySelectorAll('[data-ghpr]').forEach(b=>on(b,'click',()=>{
+    let gh=null; try{ gh=JSON.parse(decodeURIComponent(b.dataset.ghpr)); }catch(e){}
+    b.disabled=true; _devOpenPR(gh);
+  }));
   el.scrollTop=el.scrollHeight;
   el.querySelectorAll('.dev-copy').forEach(btn=>on(btn,'click',()=>{navigator.clipboard&&navigator.clipboard.writeText(decodeURIComponent(btn.dataset.code));btn.textContent='copied';}));
   el.querySelectorAll('[data-dev-retry]').forEach(btn=>on(btn,'click',()=>{
@@ -19599,14 +19666,19 @@ function _devToolIntent(msg){
    page, and save to a connected folder. Having that written out twice is
    how the approved path comes to quietly skip the folder save. */
 async function _devAfterWrite(changed, stat){
+  /* Returns what it DID, because the verification line above the changelist
+     may only report things that really happened, and the only place that
+     knows is here. */
+  const out={ previewed:false, run:null, saved:false };
   const previewHTML=_devProjectPreviewHTML();
   const pb=$('dev-prev-body');
   if(pb){
-    if(previewHTML){ _previewMount(pb, previewHTML, 'dev-prev-frame'); }
+    if(previewHTML){ _previewMount(pb, previewHTML, 'dev-prev-frame'); out.previewed=true; }
     else {
       const entryP=_devEntryFile(); const lang=_devLangFor(entryP);
       if((lang==='js'||lang==='python') && _DEV.project[entryP]){
         const run=await runCode(_DEV.project[entryP].content, lang, s=>{ if(stat) stat.textContent=s; });
+        out.run=run;
         pb.innerHTML='<div class="dev-prev-out '+(run.ok?'ok':'err')+'"><pre>'+escH(run.ok?(run.stdout||run.result||'(no output)'):run.stderr)+'</pre></div>';
         if(stat) stat.textContent=run.ok?'\u2713 ran':'\u2717 error';
       }
@@ -19614,8 +19686,10 @@ async function _devAfterWrite(changed, stat){
   }
   if(AMVWorkspace.dirHandle && changed && changed.length){
     for(const p of changed){ try{ if(_DEV.project[p]) await AMVWorkspace.writeFile(p, _DEV.project[p].content); }catch(e){} }
+    out.saved=true;
     if(stat) stat.textContent='\u2713 saved to folder';
   }
+  return out;
 }
 try{ window._devAfterWrite=_devAfterWrite; }catch(e){}
 
@@ -19723,7 +19797,11 @@ async function _devSend(){
       const rows2=_devChangeSet(before, after);
       if(rows2.length){ entry.changes=rows2; entry.chgId=_devRecordTurn(before, after); }
       _DEV.log.push(entry); _devRenderLog(); _devRenderTree(); _devShowActive();
-      await _devAfterWrite(rows2.map(r=>r.path), stat);
+      const outcome=await _devAfterWrite(rows2.map(r=>r.path), stat);
+      /* Attached AFTER the work, from what the work reported. Written before
+         it would be a claim rather than a result. */
+      entry.verify=_devVerify(rows2.map(r=>r.path), outcome);
+      _devRenderLog();
       _DEV.busy=false; try{ _devBusy(false); }catch(e){}
       return;
     }
@@ -24804,23 +24882,23 @@ const INTEGRATION_ACTIONS = {
     desc:'List recent Google Drive files.', needs:'connect',
     async run(){ return await _connActRun('drive.list'); }
   },
+  /* BOTH OF THESE WENT THROUGH THE BROWSER AND COULD NEVER WORK.
+
+     They read a GitHub token from localStorage under `amv_github`, a key that
+     no connect flow has ever written - so every call threw "GitHub not
+     connected" at somebody whose account WAS connected, and the fix looked
+     like a bug in GitHub rather than a key that does not exist.
+
+     They go through the server now, which is where the token actually lives
+     and the only place it should: a repo-scoped credential in localStorage is
+     one injected script away from being somebody else's. */
   github_list_issues: {
     desc:'List open issues for a repo. Args: {repo: "owner/name"}.', needs:'github',
-    async run(args){
-      const t=loadStr('amv_github'); if(!t) throw new Error('GitHub not connected');
-      const r=await fetchDeadline('https://api.github.com/repos/'+args.repo+'/issues?state=open&per_page=20',{headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json'}});
-      const d=await r.json(); if(d.message&&!Array.isArray(d)) throw new Error(d.message);
-      return d.map(i=>({number:i.number, title:i.title, url:i.html_url}));
-    }
+    async run(args){ return await _connActRun('github.issues', { repo:args.repo }); }
   },
   github_create_issue: { risk:'high', riskLabel:'create a GitHub issue',
     desc:'Open a GitHub issue. Args: {repo:"owner/name", title, body}.', needs:'github',
-    async run(args){
-      const t=loadStr('amv_github'); if(!t) throw new Error('GitHub not connected');
-      const r=await fetchDeadline('https://api.github.com/repos/'+args.repo+'/issues',{method:'POST',headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({title:args.title,body:args.body||''})});
-      const d=await r.json(); if(!d.number) throw new Error(d.message||'Failed to create issue');
-      return {created:true, number:d.number, url:d.html_url};
-    }
+    async run(args){ return await _connActRun('github.issue.create', args); }
   },
   slack_post: { risk:'high', riskLabel:'post a Slack message',
     desc:'Post a message to Slack. Args: {channel, text}.', needs:'slack',
@@ -34050,6 +34128,11 @@ try{ window._devChangeCardHTML=_devChangeCardHTML; }catch(e){}
    to be forgotten in, and the refresh is what makes the change visible. */
 function _devToggleTurn(id){
   const t = _DEVCHG.turns[id]; if(!t) return;
+  /* RE-CAPTURED BEFORE ROLLING BACK, so hand edits made after the turn are
+     not thrown away by Redo. The snapshot taken at the end of the turn is
+     what the turn produced; what is in the project NOW is what the person
+     has since made of it, and that is the thing Redo should bring back. */
+  if(!t.undone) t.after = _devSnapshot();
   _devRestore(t.undone ? t.after : t.before);
   t.undone = !t.undone;
   try{ _devRenderLog(); }catch(e){}
@@ -34233,7 +34316,11 @@ async function _devApplyStaged(id){
   try{ _devShowActive(); }catch(e){}
   try{
     const stat = document.getElementById('dev-prev-s');
-    await _devAfterWrite(Object.keys(t.after), stat);
+    const outcome = await _devAfterWrite(Object.keys(t.after), stat);
+    /* The approved path gets the same verification line the automatic one
+       does, and gets it from the same place - the work that just ran. */
+    const entry = _DEV.log.find(m => m.chgId === id);
+    if(entry){ entry.verify = _devVerify((t.writes || []).map(w => w.path), outcome); _devRenderLog(); }
   }catch(e){}
   try{ toast('Applied. Undo is on the card if it is not what you wanted.','success',3500); }catch(e){}
 }
@@ -34245,3 +34332,383 @@ function _devDiscardStaged(id){
   try{ toast('Discarded. Nothing was written.','info',3000); }catch(e){}
 }
 try{ window._devApplyStaged=_devApplyStaged; window._devDiscardStaged=_devDiscardStaged; }catch(e){}
+
+/* ══════════════════════════════════════════════════════════════════════
+   WHAT WAS ACTUALLY CHECKED, AND WHAT WAS NOT.
+
+   "Done" is the word that costs the most when it is wrong. A build turn
+   that says nothing about how far it got invites somebody to ship a page
+   nobody has opened; a build turn that says "verified" invites it harder.
+
+   So the line above the changelist reports only things that really
+   happened this turn - the preview really assembled, the entry script
+   really ran and this is what it said - and then names the step nobody
+   has done. Nothing here re-derives confidence from the fact that the
+   model sounded sure.
+
+   NO SYNTAX CHECK, AND THE REASON IS WORTH KEEPING. Parsing the changed
+   JavaScript would be the obvious thing to add, and the page cannot do
+   it: `new Function` and `eval` are exactly what AMV's own policy
+   forbids, which is the point of the policy. The one parser available
+   without eval is JSON's, so JSON is the one thing genuinely checked
+   here - and it earns its place, because a config file the model got
+   subtly wrong fails much later and much more confusingly than it
+   should. Claiming a JavaScript check that is not running would be
+   worse than the silence it replaced. */
+function _devVerify(changed, outcome){
+  outcome = outcome || {};
+  const checks = [];
+  const paths = changed || [];
+
+  const jsons = paths.filter(p => /\.json$/i.test(p));
+  if(jsons.length){
+    const broken = [];
+    for(const p of jsons){
+      const f = _DEV.project[p]; if(!f) continue;
+      try{ JSON.parse(f.content); }catch(e){ broken.push(p); }
+    }
+    checks.push(broken.length
+      ? { ok:false, text:'JSON did not parse: ' + broken.join(', ') }
+      : { ok:true, text:(jsons.length === 1 ? 'The JSON file parses.' : 'All ' + jsons.length + ' JSON files parse.') });
+  }
+
+  if(outcome.previewed) checks.push({ ok:true, text:'The project was assembled into one page and rendered in the preview.' });
+  if(outcome.run){
+    checks.push(outcome.run.ok
+      ? { ok:true, text:'The entry script ran without error.' }
+      : { ok:false, text:'The entry script errored: ' + String(outcome.run.stderr || '').split('\n')[0].slice(0, 140) });
+  }
+  if(outcome.saved) checks.push({ ok:true, text:'The changed files were written to your connected folder.' });
+
+  /* Always said, and said last. Rendering is not using: a page can draw
+     perfectly and have a button that does nothing, and this surface has no
+     way to know that. */
+  const remaining = outcome.previewed
+    ? 'Nobody has clicked through it. Open the preview and use it to be sure it behaves.'
+    : 'Nothing was run this turn, so nothing here has been checked by running it.';
+  return { checks, remaining };
+}
+function _devVerifyHTML(entry){
+  const v = entry && entry.verify; if(!v) return '';
+  const rows = (v.checks || []).map(c =>
+    '<li class="dvv-i ' + (c.ok ? 'dvv-ok' : 'dvv-no') + '">'
+      + '<span class="dvv-m" aria-hidden="true">' + (c.ok ? '✓' : '✗') + '</span>'
+      + '<span>' + escH(c.text) + '</span></li>').join('');
+  return '<div class="dvv"><div class="dvv-h">Verification</div>'
+    + (rows ? '<ul class="dvv-l">' + rows + '</ul>' : '')
+    + '<div class="dvv-rem">' + escH(v.remaining) + '</div></div>';
+}
+try{ window._devVerify=_devVerify; window._devVerifyHTML=_devVerifyHTML; }catch(e){}
+
+/* ══════════════════════════════════════════════════════════════════════
+   CODE PASTED INTO THE BOX IS CODE, NOT AN INSTRUCTION.
+
+   Paste four hundred lines of somebody else's file into the composer and
+   the old behaviour sent it to the model as a prompt: it cost a turn, it
+   came back paraphrased, and the file you actually wanted to work on was
+   never in the project. The thing you meant was "here, take this".
+
+   It is OFFERED, not done. A long paste can genuinely be a spec, a stack
+   trace, or a pile of copy - and silently turning one of those into a
+   source file would be the same mistake in the other direction. So this
+   spots it, says what it thinks, and waits.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Signals, not one regex. Any single line of prose can contain a brace; what
+   code has is several of these at once, over many lines. */
+function _looksLikeCode(text){
+  const t = String(text || '');
+  if(t.length < 200) return false;
+  const lines = t.split('\n');
+  if(lines.length < 6) return false;
+  let hits = 0;
+  if(/^\s*(?:<!doctype html|<html)/i.test(t)) hits += 3;
+  if(/<\/[a-z][\w-]*>/i.test(t)) hits += 2;
+  if(/\b(?:function|const|let|var|=>|class|return)\b/.test(t)) hits += 2;
+  if(/^\s*(?:def |class |import |from )\w/m.test(t)) hits += 2;
+  if(/[{};]\s*$/m.test(t)) hits += 1;
+  if(/^\s*[.#@][\w-]+\s*\{/m.test(t)) hits += 2;
+  /* Indentation is the giveaway that survives every language. */
+  if(lines.filter(l => /^\s{2,}\S/.test(l)).length >= 3) hits += 1;
+  /* SEVERAL LINES ENDING THE WAY STATEMENTS END. Added because the first
+     version of this missed ordinary JavaScript: a short function with two
+     indented lines scored three of the four it needed, so somebody pasting
+     exactly the thing this feature is for got nothing. Prose does not end
+     three lines in a row with a semicolon or a brace. */
+  if(lines.filter(l => /[;{}]\s*$/.test(l)).length >= 3) hits += 1;
+  if(/\b(?:export|import|require|module\.exports|console\.log|print\()/.test(t)) hits += 1;
+  return hits >= 4;
+}
+/* A name somebody will recognise, from what the code plainly is. They get to
+   change it - this only saves the typing. */
+function _guessFileName(text){
+  const t = String(text || '');
+  if(/^\s*(?:<!doctype html|<html)/i.test(t)) return 'index.html';
+  if(/^\s*(?:def |class |import |from )\w/m.test(t) && !/[{};]\s*$/m.test(t)) return 'main.py';
+  if(/^\s*[.#@][\w-]+\s*\{/m.test(t) && !/\b(?:function|=>|const)\b/.test(t)) return 'styles.css';
+  try{ JSON.parse(t); return 'data.json'; }catch(e){}
+  if(/<\/[a-z][\w-]*>/i.test(t)) return 'index.html';
+  return 'app.js';
+}
+try{ window._looksLikeCode=_looksLikeCode; window._guessFileName=_guessFileName; }catch(e){}
+
+/* The offer, under the composer. One line, one button, and a way to say no
+   that leaves the text exactly where it was. */
+function _devOfferPaste(text){
+  const host = document.getElementById('dev-paste-offer'); if(!host) return;
+  if(!_looksLikeCode(text)){ host.innerHTML = ''; host.hidden = true; return; }
+  const name = _guessFileName(text);
+  const lines = String(text).split('\n').length;
+  host.hidden = false;
+  host.innerHTML = '<span class="dvp-t">That looks like ' + lines + ' lines of code.</span>'
+    + '<button class="dvp-add" type="button" id="dev-paste-add">Add as ' + escH(name) + '</button>'
+    + '<button class="dvp-no" type="button" id="dev-paste-no">Send as a message</button>';
+  on(document.getElementById('dev-paste-no'), 'click', () => { host.innerHTML = ''; host.hidden = true; });
+  on(document.getElementById('dev-paste-add'), 'click', async () => {
+    const ta = document.getElementById('dev-msg');
+    const body = ta ? ta.value : '';
+    let path = name;
+    try{
+      if(typeof showTextPromptAsync === 'function'){
+        const asked = await showTextPromptAsync('Save this as which file?', name);
+        if(asked === null || asked === undefined) return;   // they changed their mind
+        if(String(asked).trim()) path = String(asked).trim();
+      }
+    }catch(e){}
+    _devSetFile(path, body);
+    _DEV.activePath = path;
+    if(ta){ ta.value = ''; ta.style.height = 'auto'; }
+    host.innerHTML = ''; host.hidden = true;
+    try{ _devRenderTree(); }catch(e){}
+    try{ _devShowActive(); }catch(e){}
+    try{ _devPaintPreview(); }catch(e){}
+    try{ toast('Added ' + path + '. The preview shows it now.', 'success', 3500); }catch(e){}
+  });
+}
+try{ window._devOfferPaste=_devOfferPaste; }catch(e){}
+
+/* ══════════════════════════════════════════════════════════════════════
+   PUSHING TO GITHUB, WITH THE DIFF IN FRONT OF YOU FIRST.
+
+   The loop a build surface has to close is: it wrote the code, now put it
+   somewhere real. Downloading a zip is not that.
+
+   Every rule here exists because the other choice is worse:
+
+   The token never touches this browser. It is held server-side and the
+   push happens there; nothing in this file has ever seen it. A repo-scoped
+   credential in localStorage is one injected script away from being
+   somebody else's, and AMV's old GitHub tools kept one exactly there - or
+   would have, if the key they read had ever been written.
+
+   Nothing goes to a default branch. The push creates a NEW branch off the
+   base and the pull request asks for it to land. The server has no
+   argument that could name an existing branch, so this is not a promise
+   in a comment.
+
+   And the confirmation shows what will actually be sent - every path, and
+   how many lines each one is - before anything leaves. "Push to GitHub"
+   with no list is a button people press once and then stop trusting.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* A branch name somebody will recognise a week later. */
+function _ghBranchName(){
+  const base = (typeof _devProjectName === 'function' && _devProjectName()) || 'build';
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return 'amv/' + base + '-' + p(d.getMonth() + 1) + p(d.getDate()) + '-'
+    + p(d.getHours()) + p(d.getMinutes());
+}
+
+/* Is GitHub connected, and with the permission this needs? The two are
+   different problems with different fixes, so they are answered separately
+   rather than collapsed into "not connected". */
+async function _ghConnection(){
+  if(!(window.AMV_API && AMV_API.live)) return { ok:false, why:'engine' };
+  let list = null;
+  try{ list = await AMV_API.connectList(); }catch(e){ return { ok:false, why:'engine' }; }
+  /* `items` and `scopes`, which is what /v1/connect/list actually returns. The
+     first version of this read `connections` and `caps` - names that exist
+     nowhere - so it found nothing and reported "not connected" to everybody,
+     forever. Correct at both ends and not joined in the middle is the most
+     common defect in this codebase and this was another one. */
+  const items = (list && list.items) || [];
+  const gh = items.filter(c => c && c.provider === 'github');
+  if(!gh.length){
+    /* Nothing connected has two causes with two different fixes, and only one
+       of them is the person's to make. If this deployment has no GitHub
+       credentials, telling them to go and connect it sends them to a button
+       that cannot work. */
+    const provs = (list && list.providers) || [];
+    const p = provs.find(x => x && x.id === 'github');
+    if(list && list.configured === false) return { ok:false, why:'unconfigured' };
+    if(p && p.ready === false) return { ok:false, why:'unconfigured' };
+    return { ok:false, why:'none' };
+  }
+  const can = gh.some(c => (c.scopes || []).indexOf('code.write') >= 0);
+  return can ? { ok:true } : { ok:false, why:'scope' };
+}
+
+function _ghNotReadyMessage(why){
+  if(why === 'engine') return 'AMV is not connected to its engine yet, so it cannot reach your GitHub account.';
+  if(why === 'scope')  return 'Your GitHub account is connected, but not for writing code. Reconnect it under Settings, Integrations and tick the permission that lets AMV push.';
+  if(why === 'unconfigured') return 'GitHub is not switched on for this deployment yet, so there is nothing for you to connect to. This one is on the operator, not on you.';
+  return 'Connect GitHub under Settings, Integrations first. AMV holds the token on the server, never in this browser.';
+}
+
+/* THE MODAL IS BUILT HERE RATHER THAN THROUGH `confirmModal`, AND THE REASON
+   MATTERS. `confirmModal` escapes its body - correctly, because everywhere
+   else it is handed a sentence - so a file list passed to it renders as a
+   run-together string of literal markup. The confirmation for a push has to
+   BE the list; a sentence with a number in it is the thing this is replacing.
+
+   Same overlay element, same backdrop and close behaviour, so it inherits the
+   focus and dismissal the rest of the product already has. */
+function _ghModal(title, innerHTML, wire){
+  const ovr = $('ovr'); if(!ovr) return null;
+  ovr.innerHTML = '<div class="ov" id="ghp-bg"><div class="ob ghp-ob" role="dialog" aria-modal="true" aria-labelledby="ghp-t">'
+    + '<button class="oc" id="ghp-x" aria-label="Close">&#215;</button>'
+    + '<h2 id="ghp-t">' + escH(title) + '</h2>'
+    + innerHTML
+    + '</div></div>';
+  ovr.classList.add('on');
+  const root = ovr;
+  /* Guarded on the backdrop itself, never by stopping propagation inside the
+     card - which is what kills every delegated button in the dialog. */
+  try{ onBackdrop($('ghp-bg'), closeOvr); }catch(e){}
+  on($('ghp-x'), 'click', closeOvr);
+  try{ wire && wire(root); }catch(e){}
+  return root;
+}
+
+/* Which repository. A list somebody scans, not a box they have to type an
+   exact "owner/name" into from memory. Resolves null if they close it, so the
+   caller can tell "cancelled" from "chose". */
+function _devPickRepo(repos){
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v) => { if(settled) return; settled = true; resolve(v); };
+    const rows = repos.map((r, i) =>
+      '<button class="ghr" type="button" data-ghr="' + i + '">'
+      + '<span class="ghr-n">' + escH(r.full) + '</span>'
+      + (r.private ? '<span class="ghr-p">private</span>' : '')
+      + '<span class="ghr-b">' + escH(r.branch) + '</span></button>').join('');
+    _ghModal('Push to which repository?',
+      '<p class="ob-sub">Only repositories you can write to are listed.</p>'
+      + '<div class="ghr-l">' + rows + '</div>',
+      (root) => {
+        root.querySelectorAll('[data-ghr]').forEach(b => on(b, 'click', () => {
+          const chosen = repos[Number(b.dataset.ghr)];
+          try{ closeOvr(); }catch(e){}
+          finish(chosen);
+        }));
+        on($('ghp-x'), 'click', () => finish(null));
+        try{ onBackdrop($('ghp-bg'), () => finish(null)); }catch(e){}
+      });
+  });
+}
+try{ window._devPickRepo=_devPickRepo; }catch(e){}
+
+/* The whole flow, in the order somebody thinks about it: can we, where to,
+   is this really what you meant, then do it. */
+async function _devPushToGitHub(){
+  const paths = (typeof _devProjectFiles === 'function') ? _devProjectFiles() : [];
+  if(!paths.length){ toast('Build something first, then AMV can push it.', 'info', 4000); return; }
+
+  const conn = await _ghConnection();
+  if(!conn.ok){ toast(_ghNotReadyMessage(conn.why), 'info', 7000); return; }
+
+  let repos = [];
+  try{ repos = await _connActRun('github.repos'); }
+  catch(e){ toast(e.message || 'Could not read your repositories.', 'error', 6000); return; }
+  if(!repos || !repos.length){
+    toast('No repository on your account can be pushed to. AMV only lists the ones you can write to.', 'info', 6000);
+    return;
+  }
+
+  const repo = await _devPickRepo(repos);
+  if(!repo) return;
+
+  const files = paths.map(p => ({ path:p, content:_DEV.project[p].content }));
+  const total = files.reduce((n, f) => n + f.content.split('\n').length, 0);
+  const branch = _ghBranchName();
+
+  /* THE CONFIRMATION IS THE LIST, not a sentence with a number in it. Every
+     path, every line count, and the branch it will land on - which is the one
+     thing somebody has to be able to check before it is somebody else's
+     repository. */
+  const rows = files.map(f =>
+    '<li class="ghp-f"><span class="ghp-p">' + escH(f.path) + '</span>'
+    + '<span class="ghp-n">' + f.content.split('\n').length + ' lines</span></li>').join('');
+  _ghModal('Push ' + files.length + ' file' + (files.length === 1 ? '' : 's') + ' to ' + repo.full + '?',
+    '<p class="ob-sub">AMV creates a NEW branch. Your default branch is not touched, '
+      + 'and nothing is merged - a pull request is how you decide that.</p>'
+    + '<div class="ghp-meta"><b>' + escH(repo.full) + '</b>'
+    + '<span>branch <code>' + escH(branch) + '</code> off <code>' + escH(repo.branch) + '</code></span></div>'
+    + '<ul class="ghp-l">' + rows + '</ul>'
+    + '<p class="ghp-sum">' + files.length + ' file' + (files.length === 1 ? '' : 's')
+    + ', ' + total + ' lines in total.</p>'
+    + '<div class="ghp-acts">'
+      + '<button class="btn bs" id="ghp-no" type="button">Cancel</button>'
+      + '<button class="btn bp" id="ghp-go" type="button">Push</button>'
+    + '</div>',
+    () => {
+      on($('ghp-no'), 'click', closeOvr);
+      on($('ghp-go'), 'click', async () => {
+        closeOvr();
+        await _devDoPush(repo, branch, files);
+      });
+    });
+}
+try{ window._devPushToGitHub=_devPushToGitHub; }catch(e){}
+
+/* The push itself, after somebody has seen exactly what it will send. */
+async function _devDoPush(repo, branch, files){
+  const stat = document.getElementById('dev-prev-s');
+  if(stat) stat.textContent = 'pushing\u2026';
+  try{
+    const r = await _connActRun('github.push', {
+      repo: repo.full, base: repo.branch, branch,
+      message: 'Build from AMV: ' + files.length + ' file' + (files.length === 1 ? '' : 's'),
+      files,
+    });
+    if(stat) stat.textContent = 'pushed';
+    _DEV.log.push({ role:'ai',
+      text:'Pushed ' + r.files + ' files to **' + r.repo + '** on branch `' + r.branch + '` ('
+        + r.commit + '). Nothing was merged - open a pull request when you want it to land.',
+      gh:{ repo:r.repo, branch:r.branch, base:repo.branch, url:r.url } });
+    _devRenderLog();
+  }catch(e){
+    if(stat) stat.textContent = '';
+    /* Named, because "that failed" sends somebody to look in the wrong place.
+       A branch collision is the one they can fix by trying again. */
+    const m = /branch_exists/.test(e.message || '')
+      ? 'That branch already exists on GitHub. Try again in a moment - AMV names the branch by the minute.'
+      : (e.message || 'The push did not go through. Nothing was changed.');
+    _DEV.log.push({ role:'ai', text:'', _snag:m });
+    _devRenderLog();
+  }
+}
+try{ window._devDoPush=_devDoPush; }catch(e){}
+
+/* Opening the pull request, offered on the card the push leaves behind rather
+   than done automatically: pushing a branch and opening a PR are two
+   decisions, and the second one puts the change in front of other people. */
+async function _devOpenPR(gh){
+  if(!gh) return;
+  const stat = document.getElementById('dev-prev-s');
+  try{
+    const r = await _connActRun('github.pr', {
+      repo: gh.repo, head: gh.branch, base: gh.base,
+      title: 'Build from AMV',
+      body: 'Opened from AMV. ' + gh.branch + ' onto ' + gh.base + '.',
+    });
+    if(stat) stat.textContent = 'pull request open';
+    _DEV.log.push({ role:'ai', text:'Opened pull request #' + r.number + ': ' + r.url });
+    _devRenderLog();
+  }catch(e){
+    _DEV.log.push({ role:'ai', text:'', _snag:(e.message || 'The pull request could not be opened.') });
+    _devRenderLog();
+  }
+}
+try{ window._devOpenPR=_devOpenPR; }catch(e){}

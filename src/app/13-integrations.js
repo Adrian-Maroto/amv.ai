@@ -93,23 +93,23 @@ const INTEGRATION_ACTIONS = {
     desc:'List recent Google Drive files.', needs:'connect',
     async run(){ return await _connActRun('drive.list'); }
   },
+  /* BOTH OF THESE WENT THROUGH THE BROWSER AND COULD NEVER WORK.
+
+     They read a GitHub token from localStorage under `amv_github`, a key that
+     no connect flow has ever written - so every call threw "GitHub not
+     connected" at somebody whose account WAS connected, and the fix looked
+     like a bug in GitHub rather than a key that does not exist.
+
+     They go through the server now, which is where the token actually lives
+     and the only place it should: a repo-scoped credential in localStorage is
+     one injected script away from being somebody else's. */
   github_list_issues: {
     desc:'List open issues for a repo. Args: {repo: "owner/name"}.', needs:'github',
-    async run(args){
-      const t=loadStr('amv_github'); if(!t) throw new Error('GitHub not connected');
-      const r=await fetchDeadline('https://api.github.com/repos/'+args.repo+'/issues?state=open&per_page=20',{headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json'}});
-      const d=await r.json(); if(d.message&&!Array.isArray(d)) throw new Error(d.message);
-      return d.map(i=>({number:i.number, title:i.title, url:i.html_url}));
-    }
+    async run(args){ return await _connActRun('github.issues', { repo:args.repo }); }
   },
   github_create_issue: { risk:'high', riskLabel:'create a GitHub issue',
     desc:'Open a GitHub issue. Args: {repo:"owner/name", title, body}.', needs:'github',
-    async run(args){
-      const t=loadStr('amv_github'); if(!t) throw new Error('GitHub not connected');
-      const r=await fetchDeadline('https://api.github.com/repos/'+args.repo+'/issues',{method:'POST',headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({title:args.title,body:args.body||''})});
-      const d=await r.json(); if(!d.number) throw new Error(d.message||'Failed to create issue');
-      return {created:true, number:d.number, url:d.html_url};
-    }
+    async run(args){ return await _connActRun('github.issue.create', args); }
   },
   slack_post: { risk:'high', riskLabel:'post a Slack message',
     desc:'Post a message to Slack. Args: {channel, text}.', needs:'slack',

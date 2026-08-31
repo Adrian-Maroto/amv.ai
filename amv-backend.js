@@ -2073,7 +2073,14 @@ const CONN_PROVIDERS = {
     revoke: null,
     revokeNote: 'GitHub ends this from Settings → Applications.',
     idEnv: 'GH_CLIENT_ID', secretEnv: 'GH_CLIENT_SECRET',
-    scopes: { 'repo.read': 'repo', 'issues.write': 'repo' },
+    /* GitHub grants one `repo` scope and it covers everything, so these
+       capability names are AMV's own division of it rather than GitHub's.
+       They are still worth keeping separate: `connUse` checks the capability
+       before the call is made, so an account connected only for reading
+       cannot be talked into a push by a prompt, even though the token it
+       holds would technically allow one. The narrowing AMV can enforce is
+       the narrowing AMV should offer. */
+    scopes: { 'repo.read': 'repo', 'issues.write': 'repo', 'code.write': 'repo' },
   },
 };
 function connProviderReady(env, id){
@@ -2463,6 +2470,41 @@ async function connList(request, env){
    Attended, because a person is waiting. The autonomy pause stops UNattended
    work: an emergency stop that also froze the button somebody just pressed
    would be a different feature with the same name. */
+/* ── GITHUB ARGUMENT VALIDATION ──────────────────────────────────────────────
+   Every one of these throws rather than coercing. A repo name that is nearly
+   right, a branch with a slash in the wrong place, a path that climbs out of
+   the tree - each is a request that should not be sent, and quietly repairing
+   it is how a caller ends up pushing somewhere it did not mean to. */
+const GH_MAX_FILES = 60;
+const GH_MAX_BYTES = 2 * 1024 * 1024;
+function _ghHeaders(token){
+  return { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json',
+           'Content-Type': 'application/json',
+           'X-GitHub-Api-Version': '2022-11-28',
+           /* GitHub refuses requests without one. */
+           'User-Agent': 'AMV' };
+}
+function _ghRepo(v){
+  const s = String(v || '').trim();
+  if(!/^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/.test(s)) throw new Error('bad_repo');
+  return s;
+}
+function _ghBranch(v){
+  const s = String(v || '').trim();
+  /* No leading or trailing slash, no `..`, no control characters, and no
+     leading dash - which git itself would read as an option. */
+  if(!/^[A-Za-z0-9._\/-]{1,200}$/.test(s)) throw new Error('bad_branch');
+  if(s.startsWith('/') || s.endsWith('/') || s.startsWith('-') || s.indexOf('..') >= 0) throw new Error('bad_branch');
+  return s;
+}
+function _ghPath(v){
+  const s = String(v || '').trim().replace(/^\/+/, '');
+  if(!s || s.length > 300) throw new Error('bad_path');
+  if(s.indexOf('..') >= 0 || /^\.git(\/|$)/i.test(s)) throw new Error('bad_path');
+  if(/[\0-\x1f]/.test(s)) throw new Error('bad_path');
+  return s;
+}
+
 const CONN_ACTIONS = {
   'gmail.unread': {
     need: 'mail.read', writes: false,
@@ -2584,6 +2626,147 @@ const CONN_ACTIONS = {
           body: JSON.stringify({ type:'user', role, emailAddress: to }) }, 20000);
       if(!r.ok) throw new Error('drive_' + r.status);
       return { shared: true, role };
+    },
+  },
+  /* ── GITHUB ────────────────────────────────────────────────────────────────
+     GitHub was in the provider table with two capability names and NO actions,
+     which is the same as not being there: an account could be connected and
+     then do nothing at all. These are the three that make the loop close -
+     find the repo, put the code somewhere, open the pull request.
+
+     NOTHING HERE PUSHES TO A DEFAULT BRANCH. Every push goes to a branch this
+     code names, created off the base, and the pull request is what asks for it
+     to land. That is not a policy written in a prompt somewhere - `github.push`
+     has no argument that could name an existing branch to overwrite, and the
+     ref call below only ever CREATES. A tool that can move somebody's main
+     branch is a tool that will eventually move somebody's main branch. */
+  'github.repos': {
+    need: 'repo.read', writes: false,
+    async run(token){
+      const r = await fetchDeadline(
+        'https://api.github.com/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member',
+        { headers: _ghHeaders(token) }, 15000);
+      if(!r.ok) throw new Error('github_' + r.status);
+      const d = await r.json().catch(()=>[]);
+      /* Only the ones a push could actually land in, and only the fields the
+         picker needs - not the eighty a repo object carries. */
+      return (Array.isArray(d) ? d : [])
+        .filter(x => x && x.permissions && x.permissions.push)
+        .slice(0, 100)
+        .map(x => ({ full: x.full_name, private: !!x.private,
+                     branch: x.default_branch || 'main' }));
+    },
+  },
+  'github.push': {
+    need: 'code.write', writes: true,
+    async run(token, args){
+      const repo = _ghRepo(args.repo);
+      const base = _ghBranch(args.base || 'main');
+      const branch = _ghBranch(args.branch);
+      const message = String(args.message || 'Changes from AMV').slice(0, 500);
+      const files = Array.isArray(args.files) ? args.files : [];
+      if(!files.length) throw new Error('no_files');
+      /* Bounded before anything leaves. Each file is a separate outbound call
+         to somebody else's API, and the body of one is unbounded unless it is
+         bounded here. */
+      if(files.length > GH_MAX_FILES) throw new Error('too_many_files');
+      let total = 0;
+      for(const f of files){
+        const path = _ghPath(f && f.path);
+        const content = String((f && f.content) || '');
+        total += content.length;
+        if(total > GH_MAX_BYTES) throw new Error('too_large');
+        f._path = path; f._content = content;
+      }
+      const H = _ghHeaders(token);
+      const api = 'https://api.github.com/repos/' + repo;
+
+      /* The commit is built through the Git Data API rather than by writing
+         files one at a time. The contents endpoint would be fewer lines and
+         would produce one commit PER FILE, which turns a single change into a
+         wall of noise in somebody's history. */
+      const rBase = await fetchDeadline(api + '/git/ref/heads/' + encodeURIComponent(base), { headers: H }, 15000);
+      if(!rBase.ok) throw new Error('github_base_' + rBase.status);
+      const baseSha = ((await rBase.json().catch(()=>({}))).object || {}).sha;
+      if(!baseSha) throw new Error('github_base_missing');
+
+      const tree = [];
+      for(const f of files){
+        const rb = await fetchDeadline(api + '/git/blobs', { method:'POST', headers: H,
+          body: JSON.stringify({ content: f._content, encoding: 'utf-8' }) }, 20000);
+        if(!rb.ok) throw new Error('github_blob_' + rb.status);
+        const sha = (await rb.json().catch(()=>({}))).sha;
+        if(!sha) throw new Error('github_blob_missing');
+        tree.push({ path: f._path, mode: '100644', type: 'blob', sha });
+      }
+      const rt = await fetchDeadline(api + '/git/trees', { method:'POST', headers: H,
+        body: JSON.stringify({ base_tree: baseSha, tree }) }, 20000);
+      if(!rt.ok) throw new Error('github_tree_' + rt.status);
+      const treeSha = (await rt.json().catch(()=>({}))).sha;
+      if(!treeSha) throw new Error('github_tree_missing');
+
+      const rc = await fetchDeadline(api + '/git/commits', { method:'POST', headers: H,
+        body: JSON.stringify({ message, tree: treeSha, parents: [baseSha] }) }, 20000);
+      if(!rc.ok) throw new Error('github_commit_' + rc.status);
+      const commit = await rc.json().catch(()=>({}));
+      if(!commit.sha) throw new Error('github_commit_missing');
+
+      /* CREATE, never update. There is deliberately no branch-move here: this
+         call fails if the branch already exists, and a caller that wants a
+         second push picks a new name. Nothing AMV does can rewrite a ref that
+         somebody else's work is sitting on. */
+      const rr = await fetchDeadline(api + '/git/refs', { method:'POST', headers: H,
+        body: JSON.stringify({ ref: 'refs/heads/' + branch, sha: commit.sha }) }, 20000);
+      if(rr.status === 422) throw new Error('branch_exists');
+      if(!rr.ok) throw new Error('github_ref_' + rr.status);
+
+      return { repo, branch, base, files: files.length, commit: commit.sha.slice(0, 7),
+               url: 'https://github.com/' + repo + '/tree/' + branch };
+    },
+  },
+  /* The two the client already had tools for, and could never reach: both
+     read a token out of localStorage under a key no flow has ever written, so
+     every call threw "GitHub not connected" against an account that was.
+     Rewired here, where the token actually lives. */
+  'github.issues': {
+    need: 'repo.read', writes: false,
+    async run(token, args){
+      const repo = _ghRepo(args.repo);
+      const r = await fetchDeadline('https://api.github.com/repos/' + repo + '/issues?state=open&per_page=20',
+        { headers: _ghHeaders(token) }, 15000);
+      if(!r.ok) throw new Error('github_' + r.status);
+      const d = await r.json().catch(()=>[]);
+      return (Array.isArray(d) ? d : []).map(i => ({ number:i.number, title:i.title, url:i.html_url }));
+    },
+  },
+  'github.issue.create': {
+    need: 'issues.write', writes: true,
+    async run(token, args){
+      const repo = _ghRepo(args.repo);
+      const title = String(args.title || '').trim().slice(0, 250);
+      if(!title) throw new Error('bad_title');
+      const r = await fetchDeadline('https://api.github.com/repos/' + repo + '/issues',
+        { method:'POST', headers: _ghHeaders(token),
+          body: JSON.stringify({ title, body: String(args.body || '').slice(0, 8000) }) }, 20000);
+      if(!r.ok) throw new Error('github_' + r.status);
+      const d = await r.json().catch(()=>({}));
+      return { created:true, number: d.number || 0, url: d.html_url || '' };
+    },
+  },
+  'github.pr': {
+    need: 'code.write', writes: true,
+    async run(token, args){
+      const repo = _ghRepo(args.repo);
+      const head = _ghBranch(args.head);
+      const base = _ghBranch(args.base || 'main');
+      const title = String(args.title || 'Changes from AMV').slice(0, 250);
+      const body = String(args.body || '').slice(0, 8000);
+      const r = await fetchDeadline('https://api.github.com/repos/' + repo + '/pulls',
+        { method:'POST', headers: _ghHeaders(token),
+          body: JSON.stringify({ title, head, base, body }) }, 20000);
+      if(!r.ok) throw new Error('github_pr_' + r.status);
+      const d = await r.json().catch(()=>({}));
+      return { number: d.number || 0, url: d.html_url || '' };
     },
   },
 };
