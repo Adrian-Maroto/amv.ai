@@ -9772,9 +9772,26 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 
 /* ── LAYER A128 · the degraded preview note ──────────────────────────────────
    Shown only when preview.html is not being served, so this is a line somebody
-   should notice and be able to act on - not an error, and not decoration. */
+   should notice and be able to act on - not an error, and not decoration.
+
+   IT HAS TO SIT ABOVE THE PREVIEW, AND NEITHER HOST STACKS BY DEFAULT.
+   Both places this note appears - Studio's stage and Dev's preview body - are
+   flex ROWS, so a sibling added beside the frame is laid out beside it: a
+   sliver of text squeezed against a squashed preview. The first version of
+   this did exactly that, and the check on it only read the text, so it passed.
+
+   The host is told to wrap for as long as it is degraded, and the note claims
+   a whole line, which puts it above the frame in either host without either
+   one needing to know about the other. */
+.prev-degraded-host{
+  flex-wrap:wrap;
+  align-content:flex-start;
+  align-items:flex-start;
+}
 .prev-degraded{
-  flex:0 0 auto;
+  flex:0 0 100%;
+  width:100%;
+  box-sizing:border-box;
   padding:var(--sp-2) var(--sp-3);
   font-size:var(--t-sm);
   line-height:1.45;

@@ -540,18 +540,58 @@ section('Checking a result at phone width works, on both surfaces (AMV-D007 step
      than being loosened to fit. A tablet preset wider than the pane still
      scrolls inside it, which is what a device preview should do - it is not
      clamped, because a "Tablet" button that quietly shows 730px is lying. */
+  /* MEASURED WHEN IT HAS STOPPED MOVING, NOT AFTER A FIXED SLEEP.
+
+     This failed on CI while passing on every machine here, and the product was
+     not at fault. `.studio-frame` carries `transition:width .2s`. The inline
+     style lands the instant the button is clicked, but the RENDERED width only
+     gets there as the animation timeline advances, and that timeline advances
+     with rendering updates rather than with wall-clock time. On a loaded
+     runner - four headless browsers sharing two cores - no rendering update
+     happened inside the 250ms wait, so the frame was still sitting at its
+     starting width and the check read 1050 for a phone.
+
+     The next sample then caught the FOLLOWING transition part-way, which is
+     where the 761 in that log came from: 390 on its way to 768. Both numbers
+     were the sleep being wrong, not the switcher.
+
+     So this waits on rendered frames instead. A value that has held steady
+     across several frames has finished moving, and a stalled compositor
+     advances neither the transition nor this counter - which is the whole
+     point of counting frames rather than milliseconds. The wall-clock cap is
+     only there so a genuinely broken page fails rather than hangs. */
+  /* Installed once on the page rather than passed in as source: AMV pins
+     script-src to hashes, so an eval inside the page would be refused by its
+     own policy - which is a thing this repo now has a whole suite about. */
+  await page.evaluate(() => {
+    window.__settleWidth = (read) => new Promise(resolve => {
+      let last = read(), same = 0, frames = 0, over = false;
+      const finish = (v) => { if (over) return; over = true; resolve(v); };
+      setTimeout(() => finish(read()), 6000);
+      const tick = () => {
+        if (over) return;
+        frames++;
+        const v = read();
+        if (v === last) same++; else { same = 0; last = v; }
+        if (same >= 8 || frames > 400) return finish(v);
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  });
+
   await page.setViewportSize({ width: 1600, height: 900 });
   const studio = await page.evaluate(async () => {
+    const settle = window.__settleWidth;
     setTab('studio');
     _studioNewArtifact('T', 'page', 'b'); _studioSetHTML('<h1>hi</h1>', 'b');
     _studioShowCanvas('b');
     await new Promise(s => setTimeout(s, 500));
     const w = () => Math.round(document.getElementById('studio-frame').getBoundingClientRect().width);
-    const out = { full: w() };
+    const out = { full: await settle(w) };
     for (const vp of ['phone', 'tablet', 'desktop']) {
       document.querySelector('#studio-vp [data-vp="' + vp + '"]').click();
-      await new Promise(s => setTimeout(s, 250));
-      out[vp] = w();
+      out[vp] = await settle(w);
     }
     return out;
   });
@@ -562,6 +602,7 @@ section('Checking a result at phone width works, on both surfaces (AMV-D007 step
   ok(studio.desktop === studio.full, 'and desktop gives it the pane back', studio.desktop);
 
   const dev = await page.evaluate(async () => {
+    const settle = window.__settleWidth;
     _DEV.log = [{ role: 'sys', text: 'x' }];
     _devSetFile('index.html', '<h1>hi</h1>', 'html');
     setTab('dev');
@@ -569,17 +610,15 @@ section('Checking a result at phone width works, on both surfaces (AMV-D007 step
     _devShowResult('<h1>hi</h1>', 'html', { html: '<h1>hi</h1>' });
     await new Promise(s => setTimeout(s, 300));
     const w = () => { const e = document.querySelector('#dev-prev-body .dev-prev-frame'); return e ? Math.round(e.getBoundingClientRect().width) : null; };
-    const out = { switcher: !!document.getElementById('dev-vp'), full: w() };
+    const out = { switcher: !!document.getElementById('dev-vp'), full: await settle(w) };
     document.querySelector('#dev-vp [data-vp="phone"]').click();
-    await new Promise(s => setTimeout(s, 250));
-    out.phone = w();
+    out.phone = await settle(w);
     /* Dev replaces its iframe on every build. A handler that captured the
        element at wiring time would drive a frame that no longer exists. */
     _devShowResult('<h1>again</h1>', 'html', { html: '<h1>again</h1>' });
     await new Promise(s => setTimeout(s, 300));
     document.querySelector('#dev-vp [data-vp="phone"]').click();
-    await new Promise(s => setTimeout(s, 250));
-    out.phoneAfterRebuild = w();
+    out.phoneAfterRebuild = await settle(w);
     return out;
   });
   ok(dev.switcher, 'Dev has the same switcher Studio does');

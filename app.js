@@ -19340,8 +19340,17 @@ const PREVIEW_DOC = 'preview.html';
    reload is what "show me this instead" honestly means. */
 function _previewSend(frame, html){
   if(!frame) return frame;
-  const send = () => { try{ frame.contentWindow.postMessage({ __amv:'preview', html:String(html==null?'':html) }, '*'); }catch(e){} };
-  frame.addEventListener('load', send, { once:true });
+  const body = String(html == null ? '' : html);
+  /* A frame can be handed a second page later. Clear any note an earlier
+     degraded render left beside it, or they stack up one per render. */
+  try{
+    const h = frame.parentNode;
+    if(h){
+      [...h.querySelectorAll('.prev-degraded')].forEach(n => n.remove());
+      h.classList.remove('prev-degraded-host');
+    }
+  }catch(e){}
+  const send = () => { try{ frame.contentWindow.postMessage({ __amv:'preview', html:body }, '*'); }catch(e){} };
   /* IF THE PREVIEW DOCUMENT IS NOT THERE, SAY SO.
 
      preview.html is a second file, and a host that answers an unknown path
@@ -19350,14 +19359,15 @@ function _previewSend(frame, html){
      to diagnose from a screenshot. The document announces itself on load, so
      its silence is the signal: no greeting, no preview, and a sentence naming
      the file instead of a picture of the app looking at itself. */
-  let greeted = false;
+  let settled = false;
   const hear = (e) => {
     if(!frame.contentWindow || e.source !== frame.contentWindow) return;
-    if(e.data && e.data.__amv === 'preview-ready'){ greeted = true; window.removeEventListener('message', hear); }
+    if(e.data && e.data.__amv === 'preview-ready'){ settled = true; try{ window.removeEventListener('message', hear); }catch(_e){} }
   };
   try{ window.addEventListener('message', hear); }catch(e){}
-  setTimeout(() => {
-    if(greeted) return;
+  const degrade = () => {
+    if(settled) return;
+    settled = true;
     try{ window.removeEventListener('message', hear); }catch(e){}
     /* FALL BACK TO WHAT WORKED YESTERDAY, AND SAY WHAT IS MISSING.
 
@@ -19369,22 +19379,51 @@ function _previewSend(frame, html){
        and naming the file that would fix it.
 
        Honest rather than quiet: somebody gets a preview, and knows exactly
-       why it is the lesser one. */
+       why it is the lesser one.
+
+       THE SAME FRAME, NOT A REPLACEMENT. An earlier version emptied the host
+       and appended a fresh iframe, which quietly threw away everything the
+       rest of the product had attached to the element: Studio finds its
+       canvas by id, and the viewport switcher styles the element it finds -
+       so a degraded preview silently broke the phone and tablet buttons. The
+       degradation is about where the page comes from, and nothing else about
+       the frame should change. */
     try{
       const host = frame.parentNode; if(!host) return;
       const note = document.createElement('div');
       note.className = 'prev-degraded';
       note.textContent = 'Showing this without scripts: ' + PREVIEW_DOC + ' is not being served, '
         + 'so anything the page builds or does in JavaScript will not run here.';
-      const f2 = document.createElement('iframe');
-      f2.className = frame.className;
-      f2.sandbox = 'allow-scripts';
-      host.innerHTML = '';
-      host.appendChild(note);
-      host.appendChild(f2);
-      f2.srcdoc = String(html == null ? '' : html);
+      /* Both hosts are flex ROWS, so a plain sibling lands beside the frame
+         rather than above it. The class lets them wrap for as long as they
+         are degraded; the note claims a whole line. */
+      try{ host.classList.add('prev-degraded-host'); }catch(_e){}
+      host.insertBefore(note, frame);
+      frame.removeAttribute('src');
+      frame.srcdoc = body;
     }catch(e){}
-  }, 4000);
+  };
+  /* WHEN TO STOP WAITING, AND WHY IT TAKES TWO ANSWERS.
+
+     The only real signal is the greeting: preview.html says hello, or nothing
+     is serving it. Everything else here is a deadline, and the deadline was
+     a flat four seconds - a guess about how fast somebody else's machine and
+     network are, which on a slow connection declares a preview missing while
+     it is still on its way.
+
+     Arming from the frame's own load is the better question, and on its own
+     it is not enough. Measured rather than assumed: a host that answers an
+     unknown path with the app itself frames a 1.3MB document whose load event
+     waits on its subresources, and in that case load had not fired after five
+     seconds - so a load-only rule leaves an empty rectangle for as long as
+     that takes.
+
+     So both. A short grace after load answers quickly in the common case,
+     where whatever came back instead is small and lands immediately, and a
+     ceiling covers the case where the wrong document is heavy or the response
+     never completes at all. Whichever comes first. */
+  frame.addEventListener('load', () => { send(); setTimeout(degrade, 1500); }, { once:true });
+  setTimeout(degrade, 8000);
   frame.removeAttribute('srcdoc');
   frame.src = PREVIEW_DOC + '?r=' + Date.now().toString(36);
   return frame;

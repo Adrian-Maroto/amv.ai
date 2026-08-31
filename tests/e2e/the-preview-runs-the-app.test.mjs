@@ -212,35 +212,74 @@ section('If the preview document is not served, it degrades and says so');
      worse than the bug it replaced. So the old path stays as the degraded
      one, with a line naming what is missing.
 
-     Simulated by pointing the frame at a path that does not exist, which is
-     exactly what a missing file looks like from here. */
-  const shown = await page.evaluate(async () => {
-    document.querySelectorAll('#probe').forEach(e => e.remove());
+     TWO WAYS FOR THE FILE TO BE MISSING, AND THEY BEHAVE DIFFERENTLY.
+     This checked only one, and the version it was checking got the other one
+     wrong: an earlier fix armed the fallback purely from the frame's load
+     event, which is fine when the wrong document is small and never fires in
+     time when the host answers with the 1.3MB app. Both are simulated below,
+     because both are things a real host does. */
+  const probe = async (path, waitMs) => page.evaluate(async ([p, ms]) => {
+    document.querySelectorAll('.probe-deg').forEach(e => e.remove());
     const host = document.createElement('div');
-    host.id = 'probe2';
-    host.style.cssText = 'position:fixed;left:0;top:0;width:500px;height:300px;z-index:99999';
+    host.className = 'probe-deg';
+    /* The real hosts for this note are flex ROWS, so the note has to be
+       measured in one - it used to be appended as a plain sibling and laid
+       out beside the preview rather than above it, and a check that only read
+       the text passed anyway. */
+    host.style.cssText = 'position:fixed;left:0;top:0;width:500px;height:300px;z-index:99999;display:flex';
     document.body.appendChild(host);
     const f = document.createElement('iframe');
     f.className = 'dev-prev-frame';
+    f.id = 'deg-frame';
     f.sandbox = 'allow-scripts';
     host.appendChild(f);
     _previewSend(f, '<h1 id="deg">drawn without scripts</h1>');
-    /* Repointed at a path that does not exist, AFTER _previewSend has set its
-       own src - so the greeting never arrives and the timeout is reached, the
-       same as a host that does not serve the file. The note still names the
-       real preview document, because that is what somebody has to go and fix. */
-    f.src = 'no-such-preview-file.html';
-    await new Promise(r => setTimeout(r, 5200));
+    /* Repointed AFTER _previewSend has set its own src, so the greeting never
+       arrives - the same as a host that does not serve the file. The note
+       still names the real preview document, because that is what somebody
+       has to go and fix. */
+    f.src = p;
+    await new Promise(r => setTimeout(r, ms));
     const note = host.querySelector('.prev-degraded');
-    return { note: note ? note.textContent : '', frames: host.querySelectorAll('iframe').length,
-             srcdoc: !!(host.querySelector('iframe') || {}).getAttribute && !!host.querySelector('iframe').getAttribute('srcdoc') };
-  });
-  ok(/not being served/i.test(shown.note),
-     'it says the preview document is missing rather than failing silently', shown.note.slice(0, 80));
-  ok(/JavaScript will not run/i.test(shown.note),
-     'and says exactly what is lost, so the page is not mistaken for a working one', shown.note.slice(-60));
-  ok(shown.frames === 1 && shown.srcdoc,
-     'and still draws the page the old way rather than showing nothing', shown);
+    const frames = [...host.querySelectorAll('iframe')];
+    const nr = note && note.getBoundingClientRect();
+    const fr = frames[0] && frames[0].getBoundingClientRect();
+    return {
+      note: note ? note.textContent : '',
+      frames: frames.length,
+      sameFrame: frames.length === 1 && frames[0].id === 'deg-frame',
+      srcdoc: !!(frames[0] && frames[0].getAttribute('srcdoc')),
+      /* Compared with the harness comparator rather than against a bare
+         integer: a rect is a float, and a whole number with no slack is how
+         these checks go flaky. Above means the note ENDS before the frame
+         begins, so `not meaningfully over` is the honest test. */
+      above: !!(nr && fr && !__over(nr.bottom, fr.top)),
+      noteWide: !!(nr && __over(nr.width, 400)),
+    };
+  }, [path, waitMs]);
+
+  /* A small wrong document: it lands at once, so the grace after load is what
+     answers, and it answers quickly. */
+  const light = await probe('package.json', 3000);
+  ok(/not being served/i.test(light.note),
+     'a small wrong document is spotted from its load, within seconds', light.note.slice(0, 60));
+
+  /* The heavy one: the host answers an unknown path with the whole app, whose
+     load event waits on its subresources. This is the case the load-armed
+     version sat blank through. */
+  const heavy = await probe('no-such-preview-file.html', 9000);
+  ok(/not being served/i.test(heavy.note),
+     'and a host that answers with the app itself does not leave it blank', heavy.note.slice(0, 60));
+  ok(/JavaScript will not run/i.test(heavy.note),
+     'it says exactly what is lost, so the page is not mistaken for a working one', heavy.note.slice(-60));
+  ok(heavy.frames === 1 && heavy.srcdoc,
+     'and still draws the page the old way rather than showing nothing', heavy);
+  /* The frame is REUSED rather than replaced. Studio finds its canvas by id
+     and the viewport switcher styles the element it finds, so a fallback that
+     swapped in a fresh iframe silently broke the phone and tablet buttons. */
+  ok(heavy.sameFrame, 'the same frame is kept, not swapped for a new one', heavy.sameFrame);
+  ok(heavy.above && heavy.noteWide,
+     'and the note sits above the preview rather than squeezed beside it', heavy);
 }
 
 section('No JavaScript errors');
