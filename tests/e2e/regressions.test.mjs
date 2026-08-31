@@ -434,9 +434,17 @@ const devCode = await page.evaluate(() => {
   _DEV.project = { 'x.js': { content: 'const aVeryLongIdentifierThatShouldNotWrapAcrossLines = doSomething(a, b, c);\n\tindented();' } };
   _DEV.activePath = 'x.js';
   _devShowActive();
-  const pre = document.querySelector('.dev-code-wrap pre');
-  if (!pre) return { err: 'no pre' };
-  const cs = getComputedStyle(pre);
+  /* THE ELEMENT CHANGED; THE REQUIREMENT DID NOT.
+
+     This read `.dev-code-wrap pre`. The code pane is a textarea now, because
+     a pane you can only read is a pane where changing one character costs a
+     model turn - but every property below is exactly as load-bearing on an
+     editor as it was on a block of text: code that wraps mid-token is code
+     you cannot read, whether or not you can also type in it. So this follows
+     the code to where it lives rather than being deleted with the tag. */
+  const code = document.querySelector('.dev-code-wrap textarea, .dev-code-wrap pre');
+  if (!code) return { err: 'no code element' };
+  const cs = getComputedStyle(code);
   return {
     monospace: /mono|jetbrains|sf mono|consolas|menlo/i.test(cs.fontFamily),
     preservesWhitespace: cs.whiteSpace === 'pre',

@@ -19,7 +19,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'econ.harness.mjs');
-writeFileSync(harness, src + '\nexport { ENGINES, RAW_TO_KEY, PLAN_RANK };\n');
+writeFileSync(harness, src + '\nexport { ENGINES, RAW_TO_KEY, PLAN_RANK, _resolveEffort };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 /* Published rates per million tokens, as of this change. */
@@ -79,8 +79,32 @@ section('Thinking is configured explicitly, never left to the default');
 
 section('Effort is opt-in per engine, because sending it to the wrong one is a 400');
 {
-  ok(/if \(eng\.effort\)\s+upstreamBody\.output_config = \{ effort: eng\.effort \}/.test(src),
-     'effort is only sent when the engine declares it');
+  /* THE PROPERTY, NOT THE SPELLING. This matched the literal line
+     `if (eng.effort) upstreamBody.output_config = { effort: eng.effort }`
+     and broke the moment effort became a plan-capped REQUEST routed through
+     a resolver - while the thing it guards, that an engine which takes no
+     effort is never sent one, was untouched. A rule written against a
+     spelling fails on a correct change and passes on a regression that keeps
+     the words (LESSONS #203).
+
+     So the resolver is asked directly, for every engine and every plan. The
+     end-to-end half - that the request really carries no output_config for
+     such an engine - is asserted through the live route in
+     worker/effort-cannot-outrun-the-plan. */
+  const noEffortEngines = Object.entries(W.ENGINES).filter(([, e]) => !e.effort);
+  ok(noEffortEngines.length >= 1,
+     'at least one engine declares no effort, so this has a subject',
+     noEffortEngines.map(([k]) => k));
+  let leaked = [];
+  for (const [k, e] of noEffortEngines) {
+    for (const rank of Object.values(W.PLAN_RANK)) {
+      for (const want of ['medium', 'high', undefined]) {
+        if (W._resolveEffort(e, want, rank) !== null) leaked.push(k + '/' + rank + '/' + want);
+      }
+    }
+  }
+  ok(leaked.length === 0,
+     'effort is only sent when the engine declares it', leaked.slice(0, 4));
   ok(!W.ENGINES['amv-pulse'].effort,
      'the cheapest engine does not get an effort it would reject');
   ok(W.ENGINES['amv-forge'].effort === 'high' && W.ENGINES['amv-core'].effort === 'medium',

@@ -51,7 +51,6 @@ const PREFIXED = [...client.matchAll(/[`'"](\/v1\/[a-z-]+\/)[`'"]\s*\+/g)].map(m
 /* Paths that belong to somebody ELSE's API, with whose. A path here is not a
    mistake; a path here that turns out to be ours is. */
 const FOREIGN = {
-  '/issues': 'the GitHub API, on api.github.com',
 };
 
 section('Both sides were read');

@@ -9962,9 +9962,27 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 .dvc-discarded .dvc-rows{ display:none; }
 @media (max-width:520px){
   /* The send button and the plus stay; the two selects wrap onto their own
-     line rather than shrinking to the point of being unreadable. */
-  .dvi-l,.dvi-r{ flex:1 1 auto; }
-  .dvi-sel{ flex:1 1 120px;min-width:0; }
+     line rather than shrinking to the point of being unreadable.
+
+     THE 12px THAT WENT OFF THE SIDE OF A 320px PHONE. `flex:1 1 120px` sets
+     a 120px BASIS, and a flex item does not shrink below its basis unless it
+     is allowed to - two of those plus the gaps is wider than the smallest
+     screen anybody still uses. min-width:0 lets them shrink; the basis has
+     to come down as well, or the row is 12px too wide however narrow the
+     content is. Measured at 320, not reasoned about. */
+  .dvi-bar{ gap:var(--sp-1); }
+  /* Each group takes its own line. The right one was `nowrap` holding four
+     controls, so it could not give way however narrow the screen got. */
+  .dvi-l,.dvi-r{ flex:1 1 100%;min-width:0;flex-wrap:wrap; }
+  .dvi-r{ margin-left:0;justify-content:flex-end; }
+  .dvi-sel{ flex:1 1 0;min-width:0;max-width:100%; }
+  /* THE 150px THAT WOULD NOT SHRINK. The engine picker is pinned to a
+     150px minimum by a rule that selects it as `#dev-model` - an ID, which
+     a class selector cannot outrank however specific it looks. Measured at
+     320 rather than reasoned about: the row came to 332px and the last 12
+     went off the side. */
+  .dev-input-v2 #dev-model,
+  .dev-input-v2 .secmodel-sel{ flex:1 1 0;min-width:0;max-width:100%; }
 }
 
 /* ── LAYER A131 · what was checked, and what was not ─────────────────────────

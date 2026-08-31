@@ -19624,7 +19624,12 @@ function _devRenderLog(){
     /* The changelist goes last, under whatever was said about the change,
        which is the order somebody reads it in: what happened, then what
        moved, then the way back. */
-    if(m.gh) h+='<div class="ghd"><a class="ghd-l" href="'+escH(m.gh.url)+'" target="_blank" rel="noopener noreferrer">'
+    /* Through safeUrl, like every other attribute in the product. The value
+       comes from AMV's own server and is built from a repo name AMV
+       validated - but "it is ours" is exactly the reasoning that puts an
+       unchecked value in an href, and this one crosses two systems on its
+       way here. */
+    if(m.gh) h+='<div class="ghd"><a class="ghd-l" href="'+escH(safeUrl(m.gh.url))+'" target="_blank" rel="noopener noreferrer">'
       +escH(m.gh.repo)+' &middot; '+escH(m.gh.branch)+'</a>'
       +'<button class="ghd-pr" type="button" data-ghpr="'+encodeURIComponent(JSON.stringify(m.gh))+'">Open a pull request</button></div>';
     if(m.verify) h+=_devVerifyHTML(m);

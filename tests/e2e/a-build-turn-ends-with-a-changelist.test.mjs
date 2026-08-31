@@ -186,9 +186,13 @@ section('The turn really builds the card - the seam, not just the renderer');
      'it snapshots the project before writing anything', /_devSnapshot/.test(body));
   ok(/_devChangeSet\(/.test(body) && /_devRecordTurn\(/.test(body),
      'and ends the turn with a measured change set it can undo', true);
-  ok(!/Files changed:/.test(body),
+  /* Anchored on the CODE that built the old sentence - `changed.join(', ')`
+     appended to the entry text - rather than on the words it produced. A
+     check that greps for the prose is a check about an explanation, and this
+     repo has a suite whose whole job is catching that. */
+  ok(!/changed\.join\(/.test(body),
      'the sentence that used to stand in for this is gone, not left beside it',
-     (body.match(/Files changed:[^']*/) || [''])[0]);
+     /changed\.join\(/.test(body));
 }
 
 section('No JavaScript errors');
