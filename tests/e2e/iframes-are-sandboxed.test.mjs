@@ -23,9 +23,18 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { codeOnly } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+/* COMMENTS STRIPPED, OR PROSE ABOUT AN IFRAME IS READ AS AN IFRAME.
+
+   This went red on a comment. A note explaining that previews used to be an
+   `<iframe srcdoc>` - written while REMOVING exactly that - matched the
+   pattern below and was reported as an unsandboxed frame, because a sentence
+   about markup and markup look identical to a regex. The check was right to
+   look and wrong about what it found, which is the second time this week a
+   source-scanning check has been fooled by English. */
+const bundle = codeOnly(readFileSync(join(ROOT, 'app.js'), 'utf8'));
 const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
 
 /* Flags that give a framed document power over the page that framed it. */
@@ -60,7 +69,14 @@ section('And a frame built in script is sandboxed before it is used');
 {
   /* An element created with createElement has no sandbox until one is assigned,
      and assigning it AFTER the src is set is too late in some browsers. */
-  const assigns = [...bundle.matchAll(/\.sandbox\s*=\s*'([^']*)'/g)].map(m => m[1]);
+  /* Both spellings. The property is the convention here, but setAttribute is
+     the same act, and a check that only knows one of them can be walked past
+     by an author who simply used the other - not maliciously, just by writing
+     the line the other way. */
+  const assigns = [
+    ...[...bundle.matchAll(/\.sandbox\s*=\s*'([^']*)'/g)].map(m => m[1]),
+    ...[...bundle.matchAll(/setAttribute\('sandbox'\s*,\s*'([^']*)'\)/g)].map(m => m[1]),
+  ];
   const dynamic = [...bundle.matchAll(/createElement\('iframe'\)/g)].length;
   /* One assignment for every frame built in script. That is the property the
      old count was standing in for, and unlike a count it stays true whether

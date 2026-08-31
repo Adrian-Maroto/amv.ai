@@ -1813,7 +1813,10 @@ function _previewMount(host, html, cls){
   host.innerHTML='';
   const f=document.createElement('iframe');
   f.className=cls||'dev-prev-frame';
-  f.setAttribute('sandbox','allow-scripts');
+  /* Set through the property, which is what every other frame in the codebase
+     uses and what the sandbox check reads - and set BEFORE any src, because
+     assigning it afterwards is too late in some browsers. */
+  f.sandbox='allow-scripts';
   host.appendChild(f);
   return _previewSend(f, html);
 }
