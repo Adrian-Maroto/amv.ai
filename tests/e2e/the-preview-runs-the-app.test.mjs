@@ -142,6 +142,67 @@ section('The page AMV itself runs on keeps its strict policy');
   ok(/frame-ancestors\s+'none'/.test(csp), 'and nobody may frame AMV', true);
 }
 
+section('The artifact panel runs the app, which is the screen people look at');
+{
+  /* THE ONE THAT WAS MISSED. The Build previews were converted and this was
+     not, and this is the surface somebody actually opens to see what was
+     built - the side panel a chat artifact opens into. It rendered from a
+     blob: URL, and a blob: document inherits the page's policy exactly as
+     srcdoc does, so every script was refused. An app that writes its own
+     content drew as an empty box, and the only thing left to look at was the
+     Code tab. Reported as "the preview shows code", which is precisely what
+     it was.
+
+     A to-do app, because content AND behaviour both come from script. */
+  const TODO = '<!doctype html><html><body><h1 id="t"></h1><ul id="list"></ul>'
+    + '<button id="add">Add</button><scr' + 'ipt>'
+    + 'var items=["a","b"];'
+    + 'function draw(){document.getElementById("t").textContent="To-do ("+items.length+")";'
+    + 'document.getElementById("list").innerHTML=items.map(function(i){return "<li>"+i+"</li>";}).join("");}'
+    + 'document.getElementById("add").onclick=function(){items.push("c");draw();};draw();'
+    + '</scr' + 'ipt></body></html>';
+
+  const before = refusals.length;
+  await page.evaluate((html) => {
+    document.querySelectorAll('#probe,#probe2').forEach(e => e.remove());
+    const art = _artifactStore(html, 'html', true);
+    openArtifact(art.id);
+  }, TODO);
+  await page.waitForTimeout(1400);
+
+  const panel = await page.evaluate(() => {
+    const p = document.getElementById('art-panel');
+    const f = p && p.querySelector('.art-frame');
+    return {
+      open: !!(p && p.classList.contains('on')),
+      previewTabOn: !!(p && [...p.querySelectorAll('.art-tab')].some(t => /Preview/.test(t.textContent) && t.classList.contains('on'))),
+      src: f ? (f.getAttribute('src') || '').split('?')[0] : null,
+      sandbox: f ? f.getAttribute('sandbox') : null,
+    };
+  });
+  ok(panel.open, 'the panel opens', panel.open);
+  ok(panel.previewTabOn, 'on Preview, not Code', panel.previewTabOn);
+  ok(panel.src === 'preview.html', 'and the frame is a real document, not a blob', panel.src);
+  ok(panel.sandbox === 'allow-scripts', 'still sandboxed with nothing but scripts', panel.sandbox);
+
+  const artFrame = async () => {
+    for (const fr of page.frames()) {
+      try { if (await fr.evaluate(() => !!document.getElementById('add'))) return fr; } catch (e) {}
+    }
+    return null;
+  };
+  const fr = await artFrame();
+  ok(!!fr, 'the artifact rendered into a frame', !!fr);
+  const drawn = fr ? await fr.evaluate(() => document.getElementById('t').textContent) : '';
+  ok(drawn === 'To-do (2)',
+     'its own script built the content - an empty box here is the bug this replaces', drawn);
+  if (fr) await fr.click('#add');
+  const after = fr ? await fr.evaluate(() => document.getElementById('t').textContent) : '';
+  ok(after === 'To-do (3)', 'and it responds to a real click', after);
+  ok(refusals.length === before,
+     'with nothing refused, where every script used to be', refusals.slice(before, before + 2));
+}
+
 section('If the preview document is not served, it degrades and says so');
 {
   /* preview.html is a second file, and a host that does not serve it - or
@@ -154,7 +215,7 @@ section('If the preview document is not served, it degrades and says so');
      Simulated by pointing the frame at a path that does not exist, which is
      exactly what a missing file looks like from here. */
   const shown = await page.evaluate(async () => {
-    document.getElementById('probe').remove();
+    document.querySelectorAll('#probe').forEach(e => e.remove());
     const host = document.createElement('div');
     host.id = 'probe2';
     host.style.cssText = 'position:fixed;left:0;top:0;width:500px;height:300px;z-index:99999';

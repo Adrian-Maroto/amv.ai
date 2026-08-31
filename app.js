@@ -5725,10 +5725,24 @@ function _renderArtifactPanel(art){
     : '';
   let body;
   if(art.isHtml && _artifactActiveTab==='preview'){
-    let url='';
-    _artReleaseFrameUrl();          // the frame that held the last one is about to be replaced
-    try{ url=URL.createObjectURL(new Blob([art.raw],{type:'text/html'})); _artFrameUrl=url; }catch(e){}
-    body='<iframe class="art-frame" src="'+url+'" sandbox="allow-scripts"></iframe>';
+    /* THE PANEL THAT IS SUPPOSED TO SHOW THE PRODUCT, SHOWING NOTHING.
+
+       This built the preview from a blob: URL, and a blob: document inherits
+       the embedding page's Content-Security-Policy exactly as srcdoc does -
+       measured, both refused identically. AMV pins script-src to hashes, so
+       every script in every artifact was refused here. A page whose content is
+       written by JavaScript - which is most of what "build me an app"
+       produces - drew as nothing, and the only thing left to look at was the
+       Code tab.
+
+       That is the surface somebody actually uses to see what was built, and it
+       was missed when the Build previews were converted: same defect, one
+       screen over. It goes through the preview document now, like the rest.
+
+       The frame is created empty and filled by _previewSend, which points it
+       at a real URL whose own policy allows the page to run. */
+    _artReleaseFrameUrl();          // nothing creates one here now, but a stale one must not outlive the panel
+    body='<iframe class="art-frame" sandbox="allow-scripts"></iframe>';
   } else {
     _artReleaseFrameUrl();          // switching to the code tab drops the preview entirely
     body='<pre class="art-code"><code>'+escH(art.raw)+'</code></pre>';
@@ -5751,6 +5765,11 @@ function _renderArtifactPanel(art){
       '<button class="btn" id="art-share">Share</button>'+
       (art.isHtml||/^(js|javascript|jsx|ts|typescript|tsx|html|css|py|python|react)$/i.test(art.lang)?'<button class="btn bp" id="art-dev">Open in Dev</button>':'')+
     '</div>';
+  /* Filled after the markup is in the document, because the frame has to exist
+     before it can be handed a page. */
+  if(art.isHtml && _artifactActiveTab==='preview'){
+    try{ _previewSend(panel.querySelector('.art-frame'), art.raw); }catch(e){}
+  }
   // wire controls
   panel.querySelector('#art-x')?.addEventListener('click', closeArtifact);
   panel.querySelectorAll('[data-arttab]').forEach(b=>b.addEventListener('click',()=>{ _artifactActiveTab=b.dataset.arttab; _renderArtifactPanel(art); }));
@@ -5814,9 +5833,10 @@ function _renderSharedArtifact(data){
   const isHtml=!!data.h;
   let bodyHTML;
   if(isHtml){
-    let url='';
-    try{ url=URL.createObjectURL(new Blob([data.c||''],{type:'text/html'})); }catch(e){}
-    bodyHTML='<iframe class="shared-art-frame" src="'+url+'" sandbox="allow-scripts"></iframe>';
+    /* Same defect as the artifact panel: a blob: document inherits this page's
+       policy, so a shared artifact opened by its link ran none of its own
+       script. Filled below, once the frame is in the document. */
+    bodyHTML='<iframe class="shared-art-frame" sandbox="allow-scripts"></iframe>';
   } else {
     bodyHTML='<pre class="shared-art-code"><code>'+escH(data.c||'')+'</code></pre>';
   }
@@ -5832,7 +5852,11 @@ function _renderSharedArtifact(data){
       '</div>'+
     '</div>';
   document.title=(data.t||'Shared artifact')+' - AMV.AI';
-  // clean tokens/CSP-safe: nothing else runs on this view
+  /* The frame exists now, so it can be given the page. Through the preview
+     document, or the shared artifact renders without its own script - which
+     for anything built in JavaScript means an empty box with a title above
+     it, shown to somebody who followed a link expecting to see the thing. */
+  if(isHtml){ try{ _previewSend(document.querySelector('.shared-art-frame'), data.c||''); }catch(e){} }
 }
 try{ window._shareArtifact=_shareArtifact; }catch(e){}
 
