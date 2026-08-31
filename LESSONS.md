@@ -6685,3 +6685,35 @@ it. Nothing overflowed, every control passed its tap-target check, and the one
 screenshot I took of the desktop view happened to have the cookie banner over
 the composer. **A screenshot with the thing you changed hidden behind something
 else is not a screenshot of the thing you changed.**
+
+## 306. Every screenshot I took was dark, so the light theme shipped unread
+
+The changelist card's `+7` was `var(--grn)` - #4ade80. Against the dark
+surface it is a clean green; against the light theme's near-white background
+it measures about 1.8:1, which is not "a bit low" but effectively invisible,
+and it is the number somebody uses to decide whether to read a diff. Eight
+more elements had the same problem, and so did the degraded-preview note and
+the repository picker.
+
+The rule was already written down in this file's own `:root`: `--grn`,
+`--gold` and `--red` are FILLS, and `--grn-txt`, `--gold-txt`, `--red-txt` are
+the text variants, defined separately per theme for exactly this reason. Every
+new component used the fill.
+
+Two things follow. **A theme you never looked at is a theme you did not
+build** - dark was the only mode in every screenshot of this work, and no
+amount of looking at it would have helped. And a measurement beats a look
+anyway: the file-type chip survived the switch to text tokens and still
+measured 4.01:1, because tinted text on a tint of the same colour cannot be
+rescued by nudging either value - the fix was to put the hue in the fill and
+leave the text alone.
+
+There is now a check that composites every new component's colour over what is
+actually behind it and fails below 4.5:1, in both themes, with a count
+assertion so it cannot pass by finding nothing.
+
+A smaller one worth keeping: the hand-rolled Apply button used white on the
+accent and measured 4.83 in dark against the shared `.btn.bp`'s near-black,
+which measures better. **Reusing the design system's component was both the
+house rule and the more readable answer** - forking a button is how a product
+ends up with six primary buttons and one of them illegible.

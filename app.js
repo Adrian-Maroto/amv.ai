@@ -34084,8 +34084,14 @@ function _devChangeCardHTML(entry){
     + '<span class="dvc-del" aria-label="' + del + ' lines removed">-' + del + '</span>'
     + (staged
         ? '<span class="dvc-acts">'
-            + '<button class="dvc-reject" type="button" data-dvc-discard="' + escH(entry.chgId) + '">Discard</button>'
-            + '<button class="dvc-apply" type="button" data-dvc-apply="' + escH(entry.chgId) + '">Apply</button>'
+            /* THE PRODUCT'S OWN BUTTONS, not a pair forked for this card.
+               `.bp` puts near-black text on the accent, which is both the
+               house style and the more readable of the two - the hand-rolled
+               version used white and measured 4.1:1 in the dark theme where
+               the shared one measures 4.83. Reusing it is the design-system
+               rule and it happens to be the accessible answer as well. */
+            + '<button class="btn bs dvc-reject" type="button" data-dvc-discard="' + escH(entry.chgId) + '">Discard</button>'
+            + '<button class="btn bp dvc-apply" type="button" data-dvc-apply="' + escH(entry.chgId) + '">Apply</button>'
           + '</span>'
         : t ? '<button class="dvc-undo" type="button" data-dvc-undo="' + escH(entry.chgId) + '">'
             + (undone ? 'Redo' : 'Undo')
