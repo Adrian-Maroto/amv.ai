@@ -1,21 +1,28 @@
 /* A PREVIEW THAT IS CLOSED HAS TO ACTUALLY BE LET GO.
 
-   The artifact panel previews model-written HTML by wrapping it in a Blob and
-   pointing an iframe at the resulting blob: URL. A blob URL is a hard reference:
-   the browser keeps the whole document alive until someone revokes it, and
-   nothing in the page's lifetime collects it for you.
+   WHY THIS FILE EXISTS. The artifact panel used to preview model-written HTML
+   by wrapping it in a Blob and pointing an iframe at the resulting blob: URL.
+   A blob URL is a hard reference: the browser keeps the whole document alive
+   until someone revokes it, and nothing collects it for you. Nothing revoked.
+   Every render made a new one - every Preview/Code switch, every reopen - so a
+   long session that built a few pages and toggled between code and preview
+   accumulated megabytes that could never come back. Invisible in every
+   screenshot, never throws, which is why it survived so long. And the easy
+   mistake in the other direction is revoking the URL the frame is CURRENTLY
+   showing, which trades the leak for a blank box.
 
-   Nothing revoked. Every render made a new one - every Preview/Code tab switch,
-   every reopen of the same artifact - and each left the previous document
-   pinned in memory permanently. A long chat session that built a few pages and
-   toggled between code and preview a handful of times accumulated megabytes
-   that could never come back. It is invisible in every screenshot and it never
-   throws, which is why it survived this long.
+   WHY IT NOW READS DIFFERENTLY. Previews no longer make a blob URL at all. A
+   blob: document inherits the embedding page's Content-Security-Policy, and
+   AMV pins script-src to hashes, so every script inside an artifact was
+   refused and anything that built its own content rendered as an empty box.
+   Previews load a real document instead and receive the page by postMessage.
 
-   The half that is easy to get wrong in the other direction: revoking the URL
-   the frame is CURRENTLY showing. Then the leak is gone and so is the preview.
-   So both properties are asserted here - nothing accumulates, and what is on
-   screen still resolves. */
+   So the mechanism is gone and both properties still matter - they are simply
+   asserted against what the panel DOES rather than against its bookkeeping.
+   Nothing accumulates is now the stronger claim that nothing is pinned at all,
+   and "not a blank box" is now read off the rendered page rather than off a
+   URL that happens to still resolve. The markup-lifecycle cases below are
+   unchanged: they were never about blobs. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
@@ -36,14 +43,35 @@ const live = () => page.evaluate(() => window.__live.size);
 const frameSrc = () => page.evaluate(() =>
   document.querySelector('#art-panel .art-frame')?.getAttribute('src') || '');
 
-section('Opening a preview holds exactly one document');
+/* What the preview actually rendered. The parent cannot look inside a
+   sandboxed frame, and should not be able to; Playwright reaches it over the
+   debugging protocol. */
+const rendered = async () => {
+  for (const fr of page.frames()) {
+    /* The main frame is skipped explicitly. AMV's own page has an h1 too, so a
+       search across every frame found the app's heading first and reported it
+       as the preview's - a test looking at the wrong document and blaming the
+       right one. */
+    if (fr === page.mainFrame()) continue;
+    try { const h = await fr.evaluate(() => { const e = document.querySelector('h1'); return e ? e.textContent : null; }); if (h) return h; }
+    catch (e) { /* not the preview */ }
+  }
+  return null;
+};
+
+section('Opening a preview pins nothing, and shows the page');
 {
   await page.evaluate(() => openArtifact(window.__art.id));
-  ok(await live() === 1, 'one blob URL for the one thing being shown', await live());
+  /* The preview document has to load and then be handed the page, which is a
+     round trip more than setting srcdoc was. Waited on the content rather than
+     guessed at with a fixed delay. */
+  for (let i = 0; i < 40 && await rendered() === null; i++) await page.waitForTimeout(100);
+  ok(await live() === 0,
+     'no blob document is held at all - the leak this file was written for cannot happen now', await live());
   const src = await frameSrc();
-  ok(/^blob:/.test(src), 'and the frame points at it', src.slice(0, 24));
-  ok(await page.evaluate(s => window.__live.has(s), src),
-     'which has not been revoked out from under it', true);
+  ok(src.split('?')[0] === 'preview.html', 'the frame loads the preview document', src.split('?')[0]);
+  ok(await rendered() === 'hello',
+     'and the page is really on screen, which is the half a leak fix can break', await rendered());
 }
 
 section('Switching to Code lets the preview go');
@@ -64,9 +92,10 @@ section('Toggling back and forth does not accumulate');
   ok(await live() === 0, 'twelve renders later, nothing is still held', await live());
 
   await page.evaluate(() => { _artifactActiveTab = 'preview'; _renderArtifactPanel(window.__art); });
-  ok(await live() === 1, 'and the one on screen is the only one', await live());
-  ok(await page.evaluate(s => window.__live.has(s), await frameSrc()),
-     'still resolvable, so the preview is a preview and not a blank box', true);
+  for (let i = 0; i < 40 && await rendered() === null; i++) await page.waitForTimeout(100);
+  ok(await live() === 0, 'and returning to it still pins nothing', await live());
+  ok(await rendered() === 'hello',
+     'while the preview is a preview and not a blank box', await rendered());
 }
 
 section('Closing releases it');
@@ -106,7 +135,7 @@ section('Reopening during the slide-out is not wiped by the pending cleanup');
   const len = await page.evaluate(() =>
     (document.getElementById('art-panel')?.innerHTML || '').length);
   ok(len > 200, 'the reopened panel still has its content', len);
-  ok(await live() === 1, 'and holds exactly the one preview it is showing', await live());
+  ok(await live() === 0, 'and still holds nothing it would have to release', await live());
 }
 
 section('Many open/close cycles settle at nothing');
