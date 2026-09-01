@@ -7205,3 +7205,23 @@ configuration. If a suite reads a real config file, it must normalise every
 field it asserts on, because the one thing guaranteed about live configuration
 is that somebody will eventually configure it. Same family as 322: state what
 you are testing rather than inheriting it and hoping.
+
+### 324a. The second instance, found the same hour
+
+`check.test.mjs` had it too, in the same shape and from the same single cause.
+Its comment read "in dev the KV id is the placeholder, so this proves the gate
+stays green (with a warning) rather than red" - and it proved that by running
+the gate unmodified and hoping. Real id in, warning correctly gone, assertion
+red.
+
+Two files, two twenty-minute gate cycles, one root cause: both suites tested the
+placeholder path by borrowing the repository's own configuration instead of
+writing the state they meant to test. Finding the second one only after fixing
+the first is the avoidable part - the fix for 324 should have been followed by a
+grep for every other suite reading `wrangler.toml`, which takes ten seconds and
+would have collapsed two cycles into one.
+
+**The addendum.** When a defect turns out to be "a test borrowed live state",
+sweep for the same borrowing everywhere before running the gate again. The class
+is almost never a singleton, and each instance otherwise costs a full cycle to
+discover.

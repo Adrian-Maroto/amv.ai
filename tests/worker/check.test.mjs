@@ -70,13 +70,38 @@ catch { ok(false, 'amv-backend.js failed to restore'); }
 /* ── The dev-time KV placeholder is a WARNING, not a hard failure ─────────── */
 section('The dev KV placeholder does not fail the whole gate');
 
-// This runs the full gate once, unmodified. In dev the KV id is the placeholder,
-// so this proves the gate stays green (with a warning) rather than red.
+/* THIS USED TO RUN THE GATE UNMODIFIED AND HOPE.
+
+   The comment here said "in dev the KV id is the placeholder", and for the
+   whole life of the project it was - so running the gate as-is happened to
+   exercise the placeholder path. The hour a real namespace id was pasted into
+   wrangler.toml the placeholder warning correctly stopped appearing, and this
+   assertion went red on a deployment becoming deploy-ready. Second instance of
+   LESSONS 324, in a second file, from the same single cause.
+
+   The state under test is now WRITTEN rather than assumed, so this proves the
+   same thing on a configured deployment as on a fresh clone. */
 {
-  const r = runCheck();
-  ok(r.code === 0, 'with only the dev placeholder outstanding, the gate is green', r.code);
-  ok(/SHIPPABLE/.test(r.out), 'it reports SHIPPABLE');
-  ok(/placeholder/i.test(r.out), 'while still surfacing the KV placeholder as a warning');
+  const TOML = join(ROOT, 'wrangler.toml');
+  const bakToml = join(__dir, '.build', 'wrangler.bak.toml');
+  copyFileSync(TOML, bakToml);
+  try {
+    const real = readFileSync(TOML, 'utf8');
+    const withPlaceholder = real.replace(/^id = "[^"]*"$/m, 'id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"');
+    ok(withPlaceholder.includes('REPLACE_WITH_YOUR_KV_NAMESPACE_ID'),
+       'the placeholder state can actually be built from the real config');
+    writeFileSync(TOML, withPlaceholder);
+
+    const r = runCheck();
+    ok(r.code === 0, 'with only the dev placeholder outstanding, the gate is green', r.code);
+    ok(/SHIPPABLE/.test(r.out), 'it reports SHIPPABLE');
+    ok(/placeholder/i.test(r.out), 'while still surfacing the KV placeholder as a warning');
+  } finally {
+    copyFileSync(bakToml, TOML);
+  }
+  ok(!readFileSync(TOML, 'utf8').includes('REPLACE_WITH_YOUR_KV_NAMESPACE_ID')
+     || readFileSync(bakToml, 'utf8').includes('REPLACE_WITH_YOUR_KV_NAMESPACE_ID'),
+     'the real wrangler.toml is restored, whatever it held');
 }
 
 section('The gate does not fail because the suite talked too much');
