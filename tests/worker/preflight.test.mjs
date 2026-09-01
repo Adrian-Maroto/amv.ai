@@ -31,27 +31,56 @@ const runPreflight = () => {
   }
 };
 
+/* THE FIXTURE IS BUILT, NOT BORROWED.
+
+   This suite used to read the repository's own wrangler.toml and hand it
+   straight to preflight as the BROKEN case, on the assumption that it holds
+   `REPLACE_WITH_YOUR_KV_NAMESPACE_ID`. That assumption held for the whole life
+   of the project, and stopped holding the hour somebody pasted in a real
+   namespace id - so the suite fed preflight a perfectly valid config and
+   demanded it be rejected. It went red on the deploy blocker being FIXED, which
+   is the one event it should have been happiest about.
+
+   Every fixture below now sets the id explicitly. What is under test is stated
+   here, not inherited from however the deployment happens to be configured. */
+const PLACEHOLDER = 'REPLACE_WITH_YOUR_KV_NAMESPACE_ID';
+const setKvId = (src, id) => {
+  const out = src.replace(/^id = "[^"]*"$/m, 'id = "' + id + '"');
+  if (!out.includes('id = "' + id + '"')) {
+    throw new Error('no KV id line in wrangler.toml - the fixture cannot be built');
+  }
+  return out;
+};
+
 try {
   const good = readFileSync(SAVE, 'utf8');
 
+  /* The fixtures really are what they claim. Without this, a broken builder
+     shows up as preflight failing to notice a problem - blaming the code under
+     test for the test's own bug. */
+  section('The fixtures are what they say they are');
+  ok(setKvId(good, PLACEHOLDER).includes(PLACEHOLDER),
+     'the broken fixture really does carry the placeholder');
+  ok(!setKvId(good, 'abc123def456realid0000').includes(PLACEHOLDER),
+     'and the valid fixture really does not');
+
   /* ── With a REAL kv id, the true config should pass ─────────────────────── */
   section('Preflight passes a valid config');
-  writeFileSync(TOML, good.replace(/REPLACE_WITH_YOUR_KV_NAMESPACE_ID/, 'abc123def456realid0000'));
+  writeFileSync(TOML, setKvId(good, 'abc123def456realid0000'));
   let r = runPreflight();
   ok(r.code === 0, 'a fully-valid config is Ready to deploy (exit 0)', r.code);
   ok(/Ready to deploy/.test(r.out), 'it says so');
 
   /* ── The placeholder KV id must be caught ───────────────────────────────── */
   section('Preflight catches the placeholder KV id');
-  writeFileSync(TOML, good);   // still has REPLACE_WITH...
+  writeFileSync(TOML, setKvId(good, PLACEHOLDER));
   r = runPreflight();
   ok(r.code === 1, 'a placeholder KV id blocks deploy (exit 1)', r.code);
   ok(/PLACEHOLDER/.test(r.out), 'and names the problem');
 
   /* ── A missing Durable Object binding (silent quota failure) ────────────── */
   section('Preflight catches a missing Durable Object binding');
-  const noDO = good
-    .replace(/REPLACE_WITH_YOUR_KV_NAMESPACE_ID/, 'realid123')
+  const noDO = setKvId(good, 'realid123')
     .replace(/\[\[durable_objects\.bindings\]\][\s\S]*?class_name\s*=\s*"AMVCounter"/, '');
   writeFileSync(TOML, noDO);
   r = runPreflight();
@@ -60,8 +89,7 @@ try {
 
   /* ── A missing migration (DO deploy would be rejected) ──────────────────── */
   section('Preflight catches a missing DO migration');
-  const noMig = good
-    .replace(/REPLACE_WITH_YOUR_KV_NAMESPACE_ID/, 'realid123')
+  const noMig = setKvId(good, 'realid123')
     .replace(/\[\[migrations\]\][\s\S]*?new_classes\s*=\s*\[[^\]]*\]/, '');
   writeFileSync(TOML, noMig);
   r = runPreflight();
@@ -70,8 +98,7 @@ try {
 
   /* ── A missing cron is a WARNING, not a hard block ──────────────────────── */
   section('Preflight warns (not blocks) on a missing cron');
-  const noCron = good
-    .replace(/REPLACE_WITH_YOUR_KV_NAMESPACE_ID/, 'realid123')
+  const noCron = setKvId(good, 'realid123')
     .replace(/\[triggers\][\s\S]*?crons\s*=\s*\[[^\]]*\]/, '');
   writeFileSync(TOML, noCron);
   r = runPreflight();

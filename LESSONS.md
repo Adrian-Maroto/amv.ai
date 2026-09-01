@@ -7169,3 +7169,39 @@ read and left. When a check tells somebody to do something, build the thing it
 is telling them to do, so what is left of the job is the part only they can do.
 The last step here genuinely is theirs - only the host knows its publish
 directory - but that is one field, not an afternoon.
+
+---
+
+## 324. The test that went red because the deploy blocker got fixed
+
+`preflight.test.mjs` proves the preflight refuses a broken config - it must fail
+on a bad one or it is worthless. Its broken case for "the KV id is still the
+placeholder" was the repository's own `wrangler.toml`, copied and handed
+straight to the preflight, with the comment `// still has REPLACE_WITH...`.
+
+It did still have it. It had it for the entire life of the project, because
+nobody had ever configured a real namespace. The hour the owner pasted in a real
+id, the suite copied THAT, fed the preflight a perfectly valid config, and
+asserted it must exit 1. Two failures, and the gate refused to ship.
+
+The failure said `a placeholder KV id blocks deploy (exit 1): got 0`, which
+reads like the preflight had stopped catching placeholders. The preflight was
+fine. The fixture had quietly become the wrong fixture.
+
+What makes this worth writing down is the direction. This test went red on
+success - the one event in its whole subject area that it should have been
+happiest about. A guard that breaks when the thing it guards gets fixed will be
+hit exactly once, by the person doing the very thing everyone wanted, at the
+moment they are least equipped to tell a test bug from their own mistake.
+
+Every fixture now sets the id explicitly through `setKvId`, and two assertions
+check the fixtures are what they claim before anything relies on them - so a
+broken builder reports itself instead of looking like the code under test
+failing to notice a problem. Verified green with a real id in the file AND with
+the placeholder in it.
+
+**The rule.** A test fixture must be BUILT, never BORROWED from live
+configuration. If a suite reads a real config file, it must normalise every
+field it asserts on, because the one thing guaranteed about live configuration
+is that somebody will eventually configure it. Same family as 322: state what
+you are testing rather than inheriting it and hoping.
