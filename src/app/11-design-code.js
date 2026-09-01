@@ -3204,30 +3204,13 @@ const CTX_FULL_AT      = 0.92;        // must start a new chat
 // ~4 chars per token is the standard rough estimate.
 function _tok(str){ return Math.ceil(String(str||'').length / 4); }
 
-// How much context the CURRENT chat is using.
-function _ctxUsage(){
-  let tokens = 0, files = 0;
-  try{
-    const msgs = (typeof getMsgs==='function') ? (getMsgs()||[]) : [];
-    msgs.forEach(m=>{ tokens += _tok(m.c||m.text||''); });
-    // memory + profile + skills ride along in every request
-    tokens += _tok((S.memory||[]).join(' '));
-    if(typeof _profileContext==='function') tokens += _tok(_profileContext());
-    if(typeof _skillsContext==='function')  tokens += _tok(_skillsContext());
-  }catch(e){}
-  return { tokens, files, pct: Math.min(1, tokens / CTX_LIMIT_TOKENS) };
-}
-
-// How much context a Dev session is using (conversation + all project files).
-function _ctxUsageDev(){
-  let tokens = 0, files = 0;
-  try{
-    (_DEV.log||[]).forEach(m=>{ tokens += _tok(m.text||''); tokens += _tok(m.code||''); });
-    const proj = _DEV.project || {};
-    Object.keys(proj).forEach(p=>{ files++; tokens += _tok((proj[p]&&proj[p].content)||''); });
-  }catch(e){}
-  return { tokens, files, pct: Math.min(1, tokens / CTX_LIMIT_TOKENS) };
-}
+/* _ctxUsage and _ctxUsageDev counted the whole conversation against the
+   180k budget and existed only to feed the percentage over the composer.
+   That percentage was measuring content the request did not send - the
+   history had already been cut to the last twenty turns - and it is gone,
+   so the arithmetic behind it goes with it rather than sitting here as a
+   number nothing reads and nobody can check. What replaced it is
+   `_ctxSplit`, which measures what is actually sent. */
 
 // Build a COMPRESSED handoff of the current chat/session. Small enough to paste,
 // complete enough that a fresh chat continues seamlessly.
@@ -3309,7 +3292,9 @@ function _ctxRenderMeter(hostId, kind){
   const host=$(hostId); if(!host) return;
   const conv = (kind!=='dev' && typeof getCurConv==='function') ? getCurConv() : null;
   const compact = conv && conv.compact;
-  const degraded = !!(compact && compact.degraded);
+  /* Asked, not re-derived. Two places deciding what "degraded" means is how
+     the meter and the request come to disagree about it. */
+  const degraded = _ctxDegraded(conv);
   const summarised = !!(compact && compact.summary);
 
   let files = 0;

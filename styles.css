@@ -10182,3 +10182,39 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   border-color:color-mix(in srgb, var(--gold) 40%, var(--bd));
   background:color-mix(in srgb, var(--gold) 8%, transparent);
 }
+
+/* ── LAYER A135 · connecting a computer ──────────────────────────────────────
+   Every other row in Integrations connects an account so AMV can read or send
+   something. This connects a MACHINE, which is the difference between AMV
+   writing a project and AMV building one - so it reads as a panel with an
+   instruction in it rather than as another row in a catalogue. */
+.brg{
+  border:1px solid var(--bd);border-radius:var(--r-lg);
+  background:var(--s1);padding:var(--sp-4);margin-bottom:var(--sp-3);
+}
+.brg-h{display:flex;align-items:center;gap:var(--sp-2);font-size:var(--t-lg);margin-bottom:var(--sp-2)}
+.brg-p{color:var(--mu);font-size:var(--t-base);line-height:1.55;margin:0 0 var(--sp-3);max-width:64ch}
+.brg-p code{font-family:var(--mn);font-size:var(--t-sm);color:var(--tx)}
+.brg-cmd{
+  display:block;font-family:var(--mn);font-size:var(--t-sm);
+  background:var(--bg);border:1px solid var(--bd);border-radius:var(--r-sm);
+  padding:var(--sp-3);margin-bottom:var(--sp-3);color:var(--tx);
+  overflow-x:auto;white-space:pre;
+}
+.brg-form{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap}
+.brg-l{font-size:var(--t-xs);color:var(--mu);text-transform:uppercase;letter-spacing:.07em}
+.brg-i{
+  min-height:44px;padding:0 var(--sp-3);flex:0 1 130px;min-width:0;
+  border:1px solid var(--bd);border-radius:var(--r-sm);
+  background:var(--s2);color:var(--tx);font-family:var(--mn);font-size:var(--t-sm);
+}
+.brg-i-wide{flex:1 1 300px}
+.brg-i:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.brg-form .btn{min-height:44px}
+.brg-msg{margin-top:var(--sp-2);font-size:var(--t-sm);color:var(--mu);line-height:1.5}
+.brg-msg.brg-bad{color:var(--tx)}
+.brg-msg:empty{display:none}
+/* Connected: the state worth seeing at a glance from across the page. */
+.brg-on{border-color:color-mix(in srgb, var(--grn) 40%, var(--bd));background:color-mix(in srgb, var(--grn) 6%, transparent)}
+.brg-dot{width:9px;height:9px;border-radius:50%;background:var(--grn);flex:0 0 auto}
+.brg-acts{display:flex;gap:var(--sp-2)}

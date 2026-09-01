@@ -208,3 +208,90 @@ async function runBridgeTool(name, args){
 try{ window.runBridgeTool=runBridgeTool; }catch(e){}
 
 try{ _bridgeRestore(); }catch(e){}
+
+/* ══════════════════════════════════════════════════════════════════════
+   THE DOOR: connecting a computer, in Settings.
+
+   Deliberately not a button that goes looking. AMV does not scan ports
+   and does not probe for a bridge, because software that quietly pokes
+   around your machine is the thing everybody is right to hate. The port
+   and the code both come off the screen the bridge printed, typed once,
+   by the person who started it.
+   ══════════════════════════════════════════════════════════════════════ */
+function _bridgeCardHTML(){
+  if(BRIDGE.connected){
+    return '<div class="brg brg-on">'
+      + '<div class="brg-h"><span class="brg-dot" aria-hidden="true"></span>'
+        + '<b>This computer is connected</b></div>'
+      + '<p class="brg-p">AMV can run commands and read and write files in '
+        + '<code>' + escH(BRIDGE.folder || 'your project folder') + '</code> '
+        + 'and nowhere else. Every command asks you first.</p>'
+      + '<div class="brg-acts">'
+        + '<button class="btn bs" id="brg-off" type="button">Disconnect</button>'
+      + '</div></div>';
+  }
+  return '<div class="brg">'
+    + '<div class="brg-h"><b>Connect this computer</b></div>'
+    + '<p class="brg-p">So AMV can actually run your project instead of only writing it: '
+      + 'install packages, run the tests, start the server, use git. '
+      + 'In a terminal, in the folder you want AMV to work in:</p>'
+    + '<code class="brg-cmd">npx amv-bridge</code>'
+    + '<p class="brg-p">It prints a port and a code. Put them here.</p>'
+    + '<div class="brg-form">'
+      + '<label class="brg-l" for="brg-port">Port</label>'
+      + '<input class="brg-i" id="brg-port" inputmode="numeric" autocomplete="off" placeholder="e.g. 51734">'
+      + '<label class="brg-l" for="brg-code">Code</label>'
+      + '<input class="brg-i brg-i-wide" id="brg-code" autocomplete="off" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX">'
+      + '<button class="btn bp" id="brg-go" type="button">Connect</button>'
+    + '</div>'
+    + '<div class="brg-msg" id="brg-msg" role="status" aria-live="polite"></div>'
+    + '</div>';
+}
+try{ window._bridgeCardHTML=_bridgeCardHTML; }catch(e){}
+
+function _bridgeWireCard(root){
+  root = root || document;
+  const off = root.querySelector('#brg-off');
+  if(off) on(off, 'click', () => {
+    _bridgeForget();
+    try{ toast('Disconnected. AMV can no longer reach that folder.', 'info', 4000); }catch(e){}
+    try{ _refreshIntegrationsUI(); }catch(e){}
+  });
+  const go = root.querySelector('#brg-go');
+  if(!go) return;
+  const say = (t, bad) => {
+    const m = root.querySelector('#brg-msg');
+    if(m){ m.textContent = t; m.className = 'brg-msg' + (bad ? ' brg-bad' : ''); }
+  };
+  on(go, 'click', async () => {
+    const port = String((root.querySelector('#brg-port') || {}).value || '').replace(/\D/g, '');
+    const code = String((root.querySelector('#brg-code') || {}).value || '').trim();
+    if(!port) return say('Put in the port the bridge printed.', true);
+    if(!code) return say('Put in the code the bridge printed.', true);
+    go.disabled = true;
+    say('Looking for the bridge on port ' + port + '…');
+    try{
+      /* Checked before pairing, so "nothing is listening there" and "the code
+         is wrong" are two different sentences rather than one shrug. */
+      const hello = await _bridgeHello(port);
+      if(!hello){
+        go.disabled = false;
+        return say('Nothing is answering on port ' + port + '. Check the bridge is still running, and that the port matches what it printed.', true);
+      }
+      say('Found ' + hello.folder + '. Pairing…');
+      await _bridgePair(port, code);
+      say('');
+      try{ toast('Connected to ' + BRIDGE.folder + '. AMV can build in that folder now.', 'success', 5000); }catch(e){}
+      try{ _refreshIntegrationsUI(); }catch(e){}
+    }catch(e){
+      go.disabled = false;
+      say(e.message || 'Could not connect.', true);
+    }
+  });
+  /* Enter in either box is the same as pressing Connect. */
+  ['#brg-port', '#brg-code'].forEach(sel => {
+    const el = root.querySelector(sel);
+    if(el) on(el, 'keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); go.click(); } });
+  });
+}
+try{ window._bridgeWireCard=_bridgeWireCard; }catch(e){}

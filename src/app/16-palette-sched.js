@@ -15,6 +15,13 @@ function _paletteCommands(){
     {id:'errors',label:'Errors - what\u2019s breaking for your users',group:'Actions',kw:'errors bugs crashes reports monitoring bugs dashboard',icon:'nav',run:()=>{ try{ openErrors(); }catch(e){} }},
     {id:'mysites',label:'My live sites - view or take down',group:'Actions',kw:'sites deploy live url hosting published apps',icon:'nav',run:()=>{ try{ openMySites(); }catch(e){} }},
     {id:'handoffs',label:'Context handoffs - download or resume',group:'Actions',kw:'handoff context download resume paste transfer continue new chat',icon:'nav',run:()=>{ try{ openHandoffManager(); }catch(e){} }},
+    /* THE DOOR THE METER USED TO BE. Carrying a chat into a fresh one was
+       reached from a button on the "this chat is full" warning, and that
+       warning is gone - chats compact in place now instead of ending. The
+       flow itself is still worth having for moving a session to another
+       device, so it keeps a way in rather than becoming code nothing can
+       reach. */
+    {id:'carry-over',label:'Carry this chat into a fresh one',group:'Actions',kw:'handoff carry over compress summarize start fresh new chat transfer device',icon:'nav',run:()=>{ try{ _ctxHandoffFlow('chat'); }catch(e){} }},
     {id:'shortcuts',label:'Keyboard shortcuts',group:'Actions',kw:'keyboard shortcuts cheat sheet hotkeys help keys',icon:'nav',run:()=>{ try{ openShortcutSheet(); }catch(e){} }},
     // Navigation
     nav('go-chat','Chat','chat','chat home talk'),

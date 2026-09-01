@@ -141,9 +141,16 @@ let _resumingSession=false;
    tests/e2e/a-reset-really-resets, which enumerates every field assigned
    anywhere and fails on one that is in neither list. */
 const _TOOL_DEFAULTS = {
+  /* `compact` is the running brief of THIS session's conversation. A new
+     session has no earlier turns, so carrying one over would hand the model a
+     summary of work the person has just walked away from and describe it as
+     what is going on now. Declared here because the reset check demands every
+     field be one or the other, which is how it was caught the day it was
+     added rather than as a confused answer months later. */
   dev: { log:[], project:{}, activePath:'', curCode:'', curLang:'', curRun:null,
          deploySlug:'', deployedOnce:false, lastHTML:'', name:'', files:[],
-         handoff:null, dirHandle:null, usingWorkspace:false, busy:false },
+         handoff:null, dirHandle:null, usingWorkspace:false, busy:false,
+         compact:null },
   lab: { code:'', files:[], chat:[], busy:false, deploySlug:'' },
   /* atHome is view intent, not a device setting: it records that somebody
      pressed "Studio home" and wants the hero rather than the canvas they just

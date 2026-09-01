@@ -3126,9 +3126,16 @@ let _resumingSession=false;
    tests/e2e/a-reset-really-resets, which enumerates every field assigned
    anywhere and fails on one that is in neither list. */
 const _TOOL_DEFAULTS = {
+  /* `compact` is the running brief of THIS session's conversation. A new
+     session has no earlier turns, so carrying one over would hand the model a
+     summary of work the person has just walked away from and describe it as
+     what is going on now. Declared here because the reset check demands every
+     field be one or the other, which is how it was caught the day it was
+     added rather than as a confused answer months later. */
   dev: { log:[], project:{}, activePath:'', curCode:'', curLang:'', curRun:null,
          deploySlug:'', deployedOnce:false, lastHTML:'', name:'', files:[],
-         handoff:null, dirHandle:null, usingWorkspace:false, busy:false },
+         handoff:null, dirHandle:null, usingWorkspace:false, busy:false,
+         compact:null },
   lab: { code:'', files:[], chat:[], busy:false, deploySlug:'' },
   /* atHome is view intent, not a device setting: it records that somebody
      pressed "Studio home" and wants the hero rather than the canvas they just
@@ -20784,30 +20791,13 @@ const CTX_FULL_AT      = 0.92;        // must start a new chat
 // ~4 chars per token is the standard rough estimate.
 function _tok(str){ return Math.ceil(String(str||'').length / 4); }
 
-// How much context the CURRENT chat is using.
-function _ctxUsage(){
-  let tokens = 0, files = 0;
-  try{
-    const msgs = (typeof getMsgs==='function') ? (getMsgs()||[]) : [];
-    msgs.forEach(m=>{ tokens += _tok(m.c||m.text||''); });
-    // memory + profile + skills ride along in every request
-    tokens += _tok((S.memory||[]).join(' '));
-    if(typeof _profileContext==='function') tokens += _tok(_profileContext());
-    if(typeof _skillsContext==='function')  tokens += _tok(_skillsContext());
-  }catch(e){}
-  return { tokens, files, pct: Math.min(1, tokens / CTX_LIMIT_TOKENS) };
-}
-
-// How much context a Dev session is using (conversation + all project files).
-function _ctxUsageDev(){
-  let tokens = 0, files = 0;
-  try{
-    (_DEV.log||[]).forEach(m=>{ tokens += _tok(m.text||''); tokens += _tok(m.code||''); });
-    const proj = _DEV.project || {};
-    Object.keys(proj).forEach(p=>{ files++; tokens += _tok((proj[p]&&proj[p].content)||''); });
-  }catch(e){}
-  return { tokens, files, pct: Math.min(1, tokens / CTX_LIMIT_TOKENS) };
-}
+/* _ctxUsage and _ctxUsageDev counted the whole conversation against the
+   180k budget and existed only to feed the percentage over the composer.
+   That percentage was measuring content the request did not send - the
+   history had already been cut to the last twenty turns - and it is gone,
+   so the arithmetic behind it goes with it rather than sitting here as a
+   number nothing reads and nobody can check. What replaced it is
+   `_ctxSplit`, which measures what is actually sent. */
 
 // Build a COMPRESSED handoff of the current chat/session. Small enough to paste,
 // complete enough that a fresh chat continues seamlessly.
@@ -20889,7 +20879,9 @@ function _ctxRenderMeter(hostId, kind){
   const host=$(hostId); if(!host) return;
   const conv = (kind!=='dev' && typeof getCurConv==='function') ? getCurConv() : null;
   const compact = conv && conv.compact;
-  const degraded = !!(compact && compact.degraded);
+  /* Asked, not re-derived. Two places deciding what "degraded" means is how
+     the meter and the request come to disagree about it. */
+  const degraded = _ctxDegraded(conv);
   const summarised = !!(compact && compact.summary);
 
   let files = 0;
@@ -25526,6 +25518,12 @@ function _integrationsCatalogHTML(){
          it survives the tab closing. So the row points there. Nothing is
          removed - the capability moves to the entry that actually delivers it,
          which is the difference between a catalogue and a promise. */
+      /* THE MACHINE, FIRST IN THE LIST. Every other row here connects an
+         account so AMV can read or send something. This one connects a
+         computer, which is the difference between AMV writing your project
+         and AMV building it - so it goes at the top rather than among the
+         mail providers. */
+      _bridgeCardHTML()+
       intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically. Set up under Connected accounts above, where you choose what AMV may do.',auto:true,connected:_connHasProvider('google'),icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
       intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:isConn('amv_outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})+
       /* The rest of the world. Google and Microsoft cover a lot of people and
@@ -25644,6 +25642,10 @@ function _wireIntegrationCatalog(root){
     if(_connOwnsProvider(btn.dataset.intConn)) return _connGoTo(btn.dataset.intConn);
     connectIntegration(btn.dataset.intConn);
   }));
+  /* The bridge card is not a row, so it wires itself. Wired in the same
+     pass as everything else, because a control that is drawn by one function
+     and wired by another is how a button comes to do nothing. */
+  try{ _bridgeWireCard(root); }catch(e){}
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intDisc==='mail') return disconnectMail();
     if(btn.dataset.intDisc==='telegram') return disconnectTelegram();
@@ -28569,6 +28571,13 @@ function _paletteCommands(){
     {id:'errors',label:'Errors - what\u2019s breaking for your users',group:'Actions',kw:'errors bugs crashes reports monitoring bugs dashboard',icon:'nav',run:()=>{ try{ openErrors(); }catch(e){} }},
     {id:'mysites',label:'My live sites - view or take down',group:'Actions',kw:'sites deploy live url hosting published apps',icon:'nav',run:()=>{ try{ openMySites(); }catch(e){} }},
     {id:'handoffs',label:'Context handoffs - download or resume',group:'Actions',kw:'handoff context download resume paste transfer continue new chat',icon:'nav',run:()=>{ try{ openHandoffManager(); }catch(e){} }},
+    /* THE DOOR THE METER USED TO BE. Carrying a chat into a fresh one was
+       reached from a button on the "this chat is full" warning, and that
+       warning is gone - chats compact in place now instead of ending. The
+       flow itself is still worth having for moving a session to another
+       device, so it keeps a way in rather than becoming code nothing can
+       reach. */
+    {id:'carry-over',label:'Carry this chat into a fresh one',group:'Actions',kw:'handoff carry over compress summarize start fresh new chat transfer device',icon:'nav',run:()=>{ try{ _ctxHandoffFlow('chat'); }catch(e){} }},
     {id:'shortcuts',label:'Keyboard shortcuts',group:'Actions',kw:'keyboard shortcuts cheat sheet hotkeys help keys',icon:'nav',run:()=>{ try{ openShortcutSheet(); }catch(e){} }},
     // Navigation
     nav('go-chat','Chat','chat','chat home talk'),
@@ -35249,3 +35258,90 @@ async function runBridgeTool(name, args){
 try{ window.runBridgeTool=runBridgeTool; }catch(e){}
 
 try{ _bridgeRestore(); }catch(e){}
+
+/* ══════════════════════════════════════════════════════════════════════
+   THE DOOR: connecting a computer, in Settings.
+
+   Deliberately not a button that goes looking. AMV does not scan ports
+   and does not probe for a bridge, because software that quietly pokes
+   around your machine is the thing everybody is right to hate. The port
+   and the code both come off the screen the bridge printed, typed once,
+   by the person who started it.
+   ══════════════════════════════════════════════════════════════════════ */
+function _bridgeCardHTML(){
+  if(BRIDGE.connected){
+    return '<div class="brg brg-on">'
+      + '<div class="brg-h"><span class="brg-dot" aria-hidden="true"></span>'
+        + '<b>This computer is connected</b></div>'
+      + '<p class="brg-p">AMV can run commands and read and write files in '
+        + '<code>' + escH(BRIDGE.folder || 'your project folder') + '</code> '
+        + 'and nowhere else. Every command asks you first.</p>'
+      + '<div class="brg-acts">'
+        + '<button class="btn bs" id="brg-off" type="button">Disconnect</button>'
+      + '</div></div>';
+  }
+  return '<div class="brg">'
+    + '<div class="brg-h"><b>Connect this computer</b></div>'
+    + '<p class="brg-p">So AMV can actually run your project instead of only writing it: '
+      + 'install packages, run the tests, start the server, use git. '
+      + 'In a terminal, in the folder you want AMV to work in:</p>'
+    + '<code class="brg-cmd">npx amv-bridge</code>'
+    + '<p class="brg-p">It prints a port and a code. Put them here.</p>'
+    + '<div class="brg-form">'
+      + '<label class="brg-l" for="brg-port">Port</label>'
+      + '<input class="brg-i" id="brg-port" inputmode="numeric" autocomplete="off" placeholder="e.g. 51734">'
+      + '<label class="brg-l" for="brg-code">Code</label>'
+      + '<input class="brg-i brg-i-wide" id="brg-code" autocomplete="off" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX-XXXX">'
+      + '<button class="btn bp" id="brg-go" type="button">Connect</button>'
+    + '</div>'
+    + '<div class="brg-msg" id="brg-msg" role="status" aria-live="polite"></div>'
+    + '</div>';
+}
+try{ window._bridgeCardHTML=_bridgeCardHTML; }catch(e){}
+
+function _bridgeWireCard(root){
+  root = root || document;
+  const off = root.querySelector('#brg-off');
+  if(off) on(off, 'click', () => {
+    _bridgeForget();
+    try{ toast('Disconnected. AMV can no longer reach that folder.', 'info', 4000); }catch(e){}
+    try{ _refreshIntegrationsUI(); }catch(e){}
+  });
+  const go = root.querySelector('#brg-go');
+  if(!go) return;
+  const say = (t, bad) => {
+    const m = root.querySelector('#brg-msg');
+    if(m){ m.textContent = t; m.className = 'brg-msg' + (bad ? ' brg-bad' : ''); }
+  };
+  on(go, 'click', async () => {
+    const port = String((root.querySelector('#brg-port') || {}).value || '').replace(/\D/g, '');
+    const code = String((root.querySelector('#brg-code') || {}).value || '').trim();
+    if(!port) return say('Put in the port the bridge printed.', true);
+    if(!code) return say('Put in the code the bridge printed.', true);
+    go.disabled = true;
+    say('Looking for the bridge on port ' + port + '…');
+    try{
+      /* Checked before pairing, so "nothing is listening there" and "the code
+         is wrong" are two different sentences rather than one shrug. */
+      const hello = await _bridgeHello(port);
+      if(!hello){
+        go.disabled = false;
+        return say('Nothing is answering on port ' + port + '. Check the bridge is still running, and that the port matches what it printed.', true);
+      }
+      say('Found ' + hello.folder + '. Pairing…');
+      await _bridgePair(port, code);
+      say('');
+      try{ toast('Connected to ' + BRIDGE.folder + '. AMV can build in that folder now.', 'success', 5000); }catch(e){}
+      try{ _refreshIntegrationsUI(); }catch(e){}
+    }catch(e){
+      go.disabled = false;
+      say(e.message || 'Could not connect.', true);
+    }
+  });
+  /* Enter in either box is the same as pressing Connect. */
+  ['#brg-port', '#brg-code'].forEach(sel => {
+    const el = root.querySelector(sel);
+    if(el) on(el, 'keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); go.click(); } });
+  });
+}
+try{ window._bridgeWireCard=_bridgeWireCard; }catch(e){}
