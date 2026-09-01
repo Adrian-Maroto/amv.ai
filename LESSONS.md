@@ -6927,3 +6927,71 @@ The duplicate is gone and the extraction in the surviving suite now finds every
 
 **The rule.** Before writing a test for a rule, grep for the rule. `AMV_CLIENT_TOOLS`
 appeared in exactly one suite; one search would have found it.
+
+## 315. A check that passes fifteen times out of sixteen
+
+The bridge suite proved a near-miss token is refused by taking the real token,
+dropping its last character and appending `'0'`. The token is 64 hex
+characters. One run in sixteen already ends in `'0'`, so the "wrong" token was
+the right one, the command ran, the status was 200, and the check failed for a
+reason with nothing to do with the boundary it exists to guard.
+
+It failed on the final gate before pushing to `main`, which is the best
+possible place for it and pure luck. The other fifteen-sixteenths of the time
+it would have shipped, and the first person to see it fail would have re-run
+the gate and watched it pass - which is how a check stops being read.
+
+The fix is that a mutation must be a mutation: change the character to
+something it is not, and assert the result differs from the original before
+using it. Confirmed by running the suite eight times.
+
+**The rule.** When a test builds a "wrong" value from a right one, it must
+assert the two actually differ. Randomness in the subject means the
+transformation has to be total, not merely usually correct - and this codebase
+already has the general form of that rule (LESSONS 303: a fixed sleep is a
+guess about timing) one level up.
+
+## 316. Both bridge suites leaked a command server when they failed
+
+The `kill` sits at the bottom of each file, so it only runs when everything
+above it passed. Every failing run left a daemon listening on a port, holding
+a temp folder, able to execute shell commands, for as long as the machine
+stayed up. Four were still there an hour after the runs that started them.
+
+Bad from any test. Worse from these two, whose entire argument is that a
+program which runs commands must be bounded - and in CI they would hold the
+runner open past the end of the job.
+
+Found by misreading `ps`: I thought a gate had hung for 46 minutes, went to
+look, and the long-running processes turned out to be something else entirely.
+The alarm was wrong and the thing it led to was real.
+
+**The rule.** Anything a test spawns is killed from an exit handler, not from
+the last line. The last line only runs when nothing went wrong, which is the
+one case where cleanup was never going to matter.
+
+## 317. The gate stamped a commit it had not tested
+
+`.gate-pass` records which commit a full run proved, and a Stop hook moves
+`main` only when that marker names the commit being pushed. It read HEAD at
+the END of the run, twenty minutes after the run began.
+
+Commit anything during those twenty minutes - the normal way to work while
+waiting - and the marker names a commit whose code the run never saw. It
+happened here: a run started on one tree, two commits landed while it worked,
+and it stamped the second of them green. The suites were green. They were
+green about a different tree.
+
+The gate exists so an unproven commit cannot reach `main`. Its own marker was
+the way one could, and nothing would have looked wrong.
+
+HEAD is captured before the first stage now. If the tree moves during a run
+the marker names what was actually proven, the hook declines, and somebody
+runs it again.
+
+**The rule.** A record of "what passed" must be taken at the moment the
+question was asked, never at the moment the answer arrives. Anything that
+identifies a subject after the fact is identifying whatever is in front of it
+then - which is the same defect as a meter measuring the wrong tank (305) and
+a safety net with a 400-character window (308), in the one place that decides
+what ships.

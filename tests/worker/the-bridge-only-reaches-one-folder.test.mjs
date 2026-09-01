@@ -135,7 +135,18 @@ section('The right code pairs, once');
   const d = await jsonOf(await call('pair', { code: CODE }));
   TOKEN = d.token || '';
   ok(!!TOKEN && TOKEN.length >= 32, 'a session token is issued', TOKEN ? TOKEN.length : 0);
-  const bad = await call('exec', { command: 'echo hi' }, { token: TOKEN.slice(0, -1) + '0' });
+  /* CHANGED, not set to a constant. This appended '0' to the token minus its
+     last character - and the token is 64 hex characters, so one run in
+     sixteen ends in '0' already and the "wrong" token was the RIGHT one. The
+     command then ran, the status was 200, and the check failed for a reason
+     that had nothing to do with the boundary it is about.
+
+     A check that passes fifteen times out of sixteen is worse than no check:
+     it is the one people learn to re-run, and then it is the one they ignore
+     the day it means something. */
+  const flipped = TOKEN.slice(0, -1) + (TOKEN.slice(-1) === '0' ? '1' : '0');
+  ok(flipped !== TOKEN, 'the near-miss token really is a different string', flipped.slice(-4));
+  const bad = await call('exec', { command: 'echo hi' }, { token: flipped });
   ok(bad.status === 401, 'and a token that is one character off is refused', bad.status);
 }
 
