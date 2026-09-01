@@ -35,6 +35,14 @@ const G = '\x1b[32m', RED = '\x1b[31m', Y = '\x1b[33m', DIM = '\x1b[2m', B = '\x
 // (which would include the self-test, causing runaway recursion).
 const FAST = process.argv.includes('--fast');
 
+/* Captured before any stage runs, so the pass marker can name the commit this
+   run is ABOUT rather than whatever HEAD is when it finishes. See the write
+   at the bottom of this file. */
+const HEAD_AT_START = (() => {
+  try { return execSync('git rev-parse HEAD', { cwd: ROOT, stdio: 'pipe' }).toString().trim(); }
+  catch (e) { return ''; }
+})();
+
 /* ONE GATE AT A TIME.
 
    Two gates running together rebuild index.html on top of each other and then
@@ -557,8 +565,24 @@ const secs = ((Date.now() - t0) / 1000).toFixed(1);
    whether the product works. */
 if (!FAST) {
   try {
-    const head = execSync('git rev-parse HEAD', { cwd: ROOT, stdio: 'pipe' }).toString().trim();
-    writeFileSync(join(ROOT, '.gate-pass'), head + '\n');
+    /* THE COMMIT THIS RUN WAS ABOUT, NOT THE ONE THAT HAPPENS TO BE HEAD NOW.
+
+       This read HEAD here, at the end, twenty minutes after the run began.
+       Commit anything while a gate is going - which is the normal way to work
+       during a twenty-minute wait - and the marker names a commit whose code
+       this run never saw, and the hook that moves `main` believes it.
+
+       It happened: a run started on one tree, two commits landed while it
+       worked, and it stamped the second of them green. The tests were green;
+       they were green about a different tree. That is the exact shape of
+       defect this repository keeps finding, and the gate's own marker was an
+       instance of it.
+
+       So HEAD is captured BEFORE the first stage and written afterwards. If
+       the tree moved meanwhile the marker names the commit that was actually
+       proven, the hook declines to move main, and somebody runs it again -
+       which is the correct outcome and the one that was not available. */
+    if (HEAD_AT_START) writeFileSync(join(ROOT, '.gate-pass'), HEAD_AT_START + '\n');
   } catch (e) { /* not a git checkout, or git is unavailable - not a gate failure */ }
 }
 console.log('');
