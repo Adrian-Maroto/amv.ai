@@ -1,4 +1,4 @@
-name = "amv-backend"
+name = "amv-ai"
 main = "amv-backend.js"
 compatibility_date = "2024-09-23"
 

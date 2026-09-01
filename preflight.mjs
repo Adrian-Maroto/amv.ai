@@ -58,7 +58,7 @@ if (toml) {
 
   const name = field(/^\s*name\s*=\s*"([^"]+)"/m);
   if (name) ok(`worker name is "${name}"`);
-  else err('wrangler.toml has no `name`', 'add: name = "amv-backend"');
+  else err('wrangler.toml has no `name`', 'add: name = "amv-ai"');
 
   const main = field(/^\s*main\s*=\s*"([^"]+)"/m);
   if (main === 'amv-backend.js') ok('main points at amv-backend.js');
