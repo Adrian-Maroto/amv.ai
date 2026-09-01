@@ -1159,6 +1159,7 @@ function renderCodeView(){
   on(ta,'paste',()=>{ setTimeout(()=>_devOfferPaste(ta.value), 0); });
   on(ta,'keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); _devSend(); } });
   on($('dev-send'),'click',_devSend);
+  on($('dev-stop'),'click',_agentStop);
   /* The two composer decisions that are not the message itself. Both persist,
      because somebody who has said "just apply it" once should not have to say
      it again every time they open Build. */
@@ -2068,6 +2069,9 @@ function _devRenderLog(){
     if(m.gh) h+='<div class="ghd"><a class="ghd-l" href="'+escH(safeUrl(m.gh.url))+'" target="_blank" rel="noopener noreferrer">'
       +escH(m.gh.repo)+' &middot; '+escH(m.gh.branch)+'</a>'
       +'<button class="ghd-pr" type="button" data-ghpr="'+encodeURIComponent(JSON.stringify(m.gh))+'">Open a pull request</button></div>';
+    /* What it did on the machine goes ABOVE what changed, because the
+       commands are the story and the files are the result. */
+    if(m.steps && m.steps.length) h+=_agentStepsHTML(m);
     if(m.verify) h+=_devVerifyHTML(m);
     if(m.changes) h+=_devChangeCardHTML(m);
     h+='</div>'; return h;
@@ -2142,6 +2146,24 @@ async function _devSend(){
   try{ _devBusy(true,'Building'); }catch(e){}
   try{ _sessTouch('dev'); }catch(e){}
   const stat=$('dev-prev-s'); if(stat) stat.textContent='building…';
+  /* THERE IS A COMPUTER CONNECTED, SO THE COMPUTER IS THE PROJECT.
+
+     Not a mode somebody picks. When a bridge is paired, the folder it was
+     started in is the real thing being worked on, and building a copy of it
+     in a browser tab beside it would leave two versions of every file and
+     no answer to which one is true. */
+  if(_agentReady()){
+    try{ await _devSendAgent(msg, stat); }
+    catch(err){
+      _DEV.log.push({role:'ai',text:'',_snag:_errText(err),
+                     _snagRoute:(typeof _refusalRoute==='function'?_refusalRoute(err&&err.code):'')});
+      _devRenderLog();
+      try{ _agentSetRunning(false); }catch(e){}
+    }
+    if(stat) stat.textContent='';
+    _DEV.busy=false; try{ _devBusy(false); }catch(e){}
+    return;
+  }
   const hasProject=_devProjectFiles().length>0;
   /* Taken before anything is written, so the changelist at the end of the
      turn is measured rather than assembled from what the model claimed. */

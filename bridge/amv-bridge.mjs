@@ -48,7 +48,7 @@
 import { createServer } from 'http';
 import { spawn } from 'child_process';
 import { realpathSync, existsSync, statSync, readFileSync, writeFileSync,
-         mkdirSync, readdirSync } from 'fs';
+         mkdirSync, readdirSync, unlinkSync } from 'fs';
 import { resolve, join, dirname, relative, sep } from 'path';
 import { randomBytes, timingSafeEqual } from 'crypto';
 
@@ -65,11 +65,15 @@ const ALLOWED_ORIGINS = new Set([
   'https://amv.homes',
   'https://www.amv.homes',
 ]);
-/* Local development of AMV itself, opt-in, because it widens who may pair. */
-if (process.env.AMV_BRIDGE_DEV === '1') {
-  ALLOWED_ORIGINS.add('http://localhost:3000');
-  ALLOWED_ORIGINS.add('http://127.0.0.1:3000');
-}
+/* Local development of AMV itself, opt-in, because it widens who may pair.
+
+   Any loopback port rather than a fixed one: AMV's own harness asks the
+   kernel for a free port precisely so two runs cannot collide, so pinning
+   3000 here meant the one thing this flag exists for did not work. Still
+   loopback only, still behind an environment variable somebody has to set,
+   and the pairing code is unchanged - this widens who may KNOCK. */
+const DEV_ORIGINS = process.env.AMV_BRIDGE_DEV === '1';
+const isLoopbackOrigin = (o) => /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5})?$/.test(o);
 
 /* Shown once, in the terminal. Six groups of four is long enough that
    guessing is hopeless and short enough that somebody will actually type it. */
@@ -181,7 +185,7 @@ function readBody(req){
 
 const server = createServer(async (req, res) => {
   const origin = req.headers.origin || '';
-  const allowed = ALLOWED_ORIGINS.has(origin);
+  const allowed = ALLOWED_ORIGINS.has(origin) || (DEV_ORIGINS && isLoopbackOrigin(origin));
 
   /* CORS, and Chrome's private-network preflight with it: a page on the
      public internet reaching a loopback server has to be granted that
@@ -263,6 +267,28 @@ const server = createServer(async (req, res) => {
       writeFileSync(file, content, 'utf8');
       console.log('  · wrote ' + relative(ROOT, file) + ' (' + content.split('\n').length + ' lines)');
       return json(res, 200, { path: relative(ROOT, file), bytes: Buffer.byteLength(content) });
+    }
+
+    /* UNDO NEEDS THIS, AND NOTHING ELSE DOES.
+
+       A build turn that creates a file and is then undone has to be able to
+       remove it, or "undo" means "put back what was edited and leave the rest
+       lying around" - which is the half-undo this repository has been careful
+       to avoid everywhere else.
+
+       Bounded to exactly that job. One file at a time, never a directory, and
+       inside the same root as everything else - so this is strictly less power
+       than `write`, which can already empty any file in the folder. A path
+       that is not there is answered as done rather than as an error, because
+       the state the caller wanted is the state it is in. */
+    if (path === '/amv-bridge/delete') {
+      const file = safePath(body.path);
+      let st = null;
+      try { st = statSync(file); } catch (e) { return json(res, 200, { path: relative(ROOT, file), removed: false }); }
+      if (!st.isFile()) return json(res, 400, { error: 'not_a_file' });
+      unlinkSync(file);
+      console.log('  · removed ' + relative(ROOT, file));
+      return json(res, 200, { path: relative(ROOT, file), removed: true });
     }
 
     if (path === '/amv-bridge/exec') {

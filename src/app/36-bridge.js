@@ -136,8 +136,13 @@ async function bridgeExec(command, opts){
 async function bridgeRead(path){ return await _bridgeCall('read', { path }, 20000); }
 async function bridgeWrite(path, content){ return await _bridgeCall('write', { path, content }, 20000); }
 async function bridgeList(path){ return await _bridgeCall('list', { path: path || '.' }, 15000); }
+/* Only Undo calls this, and only for a file the turn it is undoing created.
+   It is deliberately NOT offered to the model: nothing about building needs
+   to delete somebody's file, and a tool that can is a tool that will. */
+async function bridgeDelete(path){ return await _bridgeCall('delete', { path }, 20000); }
 try{ window.bridgeExec=bridgeExec; window.bridgeRead=bridgeRead;
-     window.bridgeWrite=bridgeWrite; window.bridgeList=bridgeList; }catch(e){}
+     window.bridgeWrite=bridgeWrite; window.bridgeList=bridgeList;
+     window.bridgeDelete=bridgeDelete; }catch(e){}
 
 /* ── THE TOOLS THE MODEL GETS ─────────────────────────────────────────────
    Offered ONLY while a bridge is connected. A tool that is always present

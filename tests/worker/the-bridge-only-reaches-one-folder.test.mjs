@@ -88,7 +88,7 @@ section('It starts, and says only what it must before anybody has paired');
 
 section('Nothing works before pairing');
 {
-  for (const route of ['exec', 'read', 'write', 'list']) {
+  for (const route of ['exec', 'read', 'write', 'list', 'delete']) {
     const r = await call(route, { command: 'echo hi', path: 'hello.txt', content: 'x' });
     ok(r.status === 401, route + ' is refused without a token', r.status);
   }
@@ -158,6 +158,45 @@ section('It really writes, and really runs');
 
   const l = await jsonOf(await call('list', { path: '.' }, { token: TOKEN }));
   ok(l.entries.some(x => x.name === 'src' && x.dir), 'listing marks directories', true);
+}
+
+section('It can remove a file it made, and only a file, and only in here');
+{
+  /* Undo needs this: a turn that CREATED a file has to be able to take it
+     back, or undo means "put back what was edited and leave the rest". So the
+     route exists - and being the only destructive one, it is the one worth
+     checking from outside as hard as read and write were. */
+  const w = await call('write', { path: 'scratch/tmp.txt', content: 'made by a turn\n' }, { token: TOKEN });
+  ok(w.status === 200, 'a file is created', w.status);
+  ok(existsSync(join(proj, 'scratch', 'tmp.txt')), 'and is really there', true);
+
+  const d = await jsonOf(await call('delete', { path: 'scratch/tmp.txt' }, { token: TOKEN }));
+  ok(d.removed === true, 'removing it works', d.removed);
+  ok(!existsSync(join(proj, 'scratch', 'tmp.txt')), 'and it is gone from disk', true);
+
+  /* Already gone is the state the caller asked for, not a fault. */
+  const again = await jsonOf(await call('delete', { path: 'scratch/tmp.txt' }, { token: TOKEN }));
+  ok(again.removed === false, 'removing it twice is not an error', again.removed);
+
+  /* A directory is not a file, and one route that quietly recurses is how a
+     project disappears. */
+  const dir = await call('delete', { path: 'src' }, { token: TOKEN });
+  ok(dir.status === 400, 'a directory is refused', dir.status);
+  ok(existsSync(join(proj, 'src', 'a.js')), 'and its contents are untouched', true);
+
+  /* And it is confined exactly like read and write. The read guard being
+     right says nothing about this one, and this is the one that destroys. */
+  for (const p of ['../SECRET.txt', '/etc/hosts', 'src/../../SECRET.txt']) {
+    const r = await call('delete', { path: p }, { token: TOKEN });
+    const dd = await jsonOf(r);
+    ok(r.status === 403 && dd.error === 'outside_root', p + ' is refused', dd.error || r.status);
+  }
+  ok(readFileSync(join(box, 'SECRET.txt'), 'utf8') === 'must never be readable\n',
+     'and the file outside is still there, unread and unremoved', true);
+
+  const noTok = await call('delete', { path: 'hello.txt' });
+  ok(noTok.status === 401, 'and it needs the token like everything else', noTok.status);
+  ok(existsSync(join(proj, 'hello.txt')), 'so an unpaired page removes nothing', true);
 }
 
 section('The catastrophic shapes are refused by the daemon, not by a prompt');

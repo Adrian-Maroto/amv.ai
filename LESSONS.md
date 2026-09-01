@@ -6824,3 +6824,29 @@ does not recognise at all, and drops it in silence.
 **The rule.** An allowlist is a second copy of a list that lives somewhere
 else. Whenever one is added, the test that compares it to the first copy is
 part of the change, not a follow-up.
+
+## 311. My colour probe was wrong before the product was, again
+
+Checking the new run-log against both themes, the probe reported the "why it
+stopped" line at 3.60:1 in the light theme - a real failure, on the one line
+whose whole job is to tell somebody their work did not finish. I moved the hue
+to a border and set the text in `--tx`. The probe then reported 1.31:1, which
+is worse than anything that could be on the screen.
+
+The product was fine both times. `color-mix()` and modern `color(srgb …)`
+notation come back from `getComputedStyle` as `color(srgb 0.94 0.92 0.87)`, and
+my parser pulled the numbers out with `[\d.]+` and divided each by 255 - so a
+near-white ground became near-black and every ratio built on it was fiction.
+Measured properly, by letting the browser resolve the colour onto a 1×1 canvas
+and reading the pixel, every element passes on both themes.
+
+That is the fifth time in this project that the first thing to fail was my own
+instrument: `data-theme` where the product uses `body.light`; `String(_devSend)`
+reading the minified bundle; `window.getCurConv` invisible against a top-level
+`const`; a misread screenshot column; and now this.
+
+**The rule.** Before believing a measurement that says the product is broken,
+make the instrument agree with something already known to be true. One
+control element with a colour you can predict costs one line and would have
+caught every one of these. And never parse a CSS colour by hand: ask the
+engine that computed it.

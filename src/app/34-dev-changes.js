@@ -219,8 +219,11 @@ try{ window._devChangeCardHTML=_devChangeCardHTML; }catch(e){}
 /* Undo and redo are the same operation pointed at a different snapshot, so
    they are one function - two would be two places for the refresh afterwards
    to be forgotten in, and the refresh is what makes the change visible. */
-function _devToggleTurn(id){
+async function _devToggleTurn(id){
   const t = _DEVCHG.turns[id]; if(!t) return;
+  /* A turn that happened on somebody's computer is put back on their
+     computer. Same card, same button, different disk. */
+  if(t.machine) return await _agentToggleTurn(t, id);
   /* RE-CAPTURED BEFORE ROLLING BACK, so hand edits made after the turn are
      not thrown away by Redo. The snapshot taken at the end of the turn is
      what the turn produced; what is in the project NOW is what the person
@@ -370,6 +373,10 @@ function _devComposerBarHTML(){
       + '<button class="dev-send" id="dev-send" type="button" title="Build (Enter)" aria-label="Build">'
         + '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>'
       + '</button>'
+      /* Hidden until a turn is running, and it REPLACES Send rather than
+         sitting beside it: a Send button that does nothing while AMV works is
+         a control lying about being available. */
+      + _agentStopBtnHTML()
     + '</div>'
   + '</div>';
 }

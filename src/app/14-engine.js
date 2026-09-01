@@ -230,6 +230,142 @@ async function aiCompleteLong(prompt, system, opts){
 }
 try{ window.aiCompleteLong=aiCompleteLong; }catch(e){}
 
+/* ══════════════════════════════════════════════════════════════════════
+   THE LOOP THAT DOES THE WORK INSTEAD OF DESCRIBING IT.
+
+   `aiCompleteLong` is one question and one answer, however long. That is the
+   right shape for "write me this file" and the wrong shape for almost
+   everything somebody actually wants from a build tool, because real work is
+   a loop: run the tests, read what broke, change the file, run them again.
+   Every step of that depends on the result of the one before, and none of it
+   can be written down in advance.
+
+   A model with tools can run that loop itself. What it needs from us is the
+   turn-taking: call it, do what it asked, hand back what happened, call it
+   again with that in the history - until it stops asking, or until one of the
+   bounds below stops it.
+
+   THE BOUNDS ARE THE POINT, not paperwork around it. This runs commands on
+   somebody's computer and spends their money, so:
+
+     · `maxRounds` caps how many times it may come back for more.
+     · `wallMs` caps how long the whole thing may take, because a loop that
+       is cheap per round can still run all afternoon.
+     · `stopped()` is asked before every round AND before every single tool
+       call, so Stop means stop at the next possible instant rather than at
+       the end of whatever it is in the middle of.
+     · Anything that had to be asked about was asked about before this was
+       called. This function does not decide what is allowed; it runs what it
+       is given and reports what happened.
+
+   And it never ends silently. `why` says which bound ended it, so a surface
+   can tell somebody "I stopped after 24 rounds" rather than presenting a
+   half-finished job as a finished one - which is the failure this codebase
+   keeps finding in other clothes.
+
+   Deliberately NOT chat's loop. Chat's is a streaming loop that re-enters
+   sendMsg once per round and paints words as they arrive; this one blocks,
+   returns a transcript, and is driven by a surface that shows steps rather
+   than prose. Merging them would mean one function pretending to be both. */
+const AGENT_ROUND_MAX = 24;
+const AGENT_WALL_MS   = 12 * 60 * 1000;
+const AGENT_RESULT_MAX = 12000;   // per tool result, so one noisy build log cannot fill the window
+
+async function aiAgentLoop(opts){
+  opts = opts || {};
+  const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-core', tokens:4096};
+  const modelStr = opts.model || mdl.model;
+  const url = _aiBase();
+  const headers = _aiHeaders();
+  const maxTok = opts.max_tokens || 8000;
+  const maxRounds = Math.max(1, Math.min(opts.maxRounds || AGENT_ROUND_MAX, 60));
+  const deadline = Date.now() + (opts.wallMs || AGENT_WALL_MS);
+  const tools = Array.isArray(opts.tools) ? opts.tools : [];
+  const runTool = opts.runTool;
+  const onStep = opts.onStep || function(){};
+  const stopped = opts.stopped || function(){ return false; };
+  const resultMax = opts.resultMax || AGENT_RESULT_MAX;
+
+  const messages = [{ role:'user', content: String(opts.prompt || '') }];
+  const steps = [];
+  let text = '', rounds = 0, why = 'done';
+
+  for(;;){
+    if(stopped()){ why = 'stopped'; break; }
+    if(rounds >= maxRounds){ why = 'rounds'; break; }
+    if(Date.now() > deadline){ why = 'time'; break; }
+    rounds++;
+
+    const body = { model: modelStr, max_tokens: maxTok, messages: messages.slice() };
+    if(tools.length) body.tools = tools;
+    if(opts.system) body.system = opts.system + (opts.noLang ? '' : _langInstruction());
+    else if(!opts.noLang) body.system = _langInstruction();
+    if(opts.effort) body.effort = opts.effort;
+
+    const res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body)}, 180000);
+    if(!res.ok) throw await _aiError(res);
+    try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
+    const data = await _aiReadStream(res);
+    const blocks = data.content || [];
+    const said = blocks.filter(b => b.type === 'text').map(b => b.text || '').join('');
+    if(said.trim()) text += (text ? '\n\n' : '') + said.trim();
+
+    try{
+      const u = data.usage || {};
+      const inTok = u.input_tokens || Math.ceil(JSON.stringify(messages).length / 4);
+      const outTok = u.output_tokens || Math.ceil(said.length / 4);
+      if(typeof AEGIS !== 'undefined') AEGIS.recordUsage(modelStr, inTok, outTok);
+      if(typeof AMVUsage !== 'undefined') AMVUsage.record((inTok || 0) + (outTok || 0));
+    }catch(e){}
+
+    const calls = blocks.filter(b => b.type === 'tool_use');
+    if(!calls.length){
+      /* It ran out of room mid-sentence rather than finishing. Hand it its own
+         words back and let it carry on, the same way aiCompleteLong does -
+         otherwise a long explanation at the end of a job is truncated and
+         reads as the job having stopped. */
+      if(data.stop_reason === 'max_tokens'){
+        messages.push({ role:'assistant', content: blocks });
+        messages.push({ role:'user', content:
+          'Continue exactly where you left off. Do not repeat anything you already wrote.' });
+        continue;
+      }
+      why = 'done';
+      break;
+    }
+
+    onStep({ phase:'said', text: said, round: rounds });
+
+    const results = [];
+    let cut = false;
+    for(const c of calls){
+      if(stopped()){ cut = true; break; }
+      const step = { name: c.name, input: c.input || {}, round: rounds, ok: true, detail: '' };
+      steps.push(step);
+      onStep({ phase:'start', step });
+      let r;
+      /* A failing command is INFORMATION, not an error. A missing package or a
+         red test is exactly what the model needs to read and act on, and
+         throwing here would end the turn at the moment the work starts. */
+      try{ r = await runTool(c.name, c.input || {}, step); }
+      catch(e){ r = { ok:false, text:'That did not work: ' + ((e && e.message) || e) }; }
+      step.ok = !(r && r.ok === false);
+      step.detail = String((r && r.text) || '');
+      onStep({ phase:'end', step });
+      const item = { type:'tool_result', tool_use_id: c.id, content: step.detail.slice(0, resultMax) };
+      if(!step.ok) item.is_error = true;
+      results.push(item);
+    }
+    if(cut){ why = 'stopped'; break; }
+
+    messages.push({ role:'assistant', content: blocks });
+    messages.push({ role:'user', content: results });
+  }
+
+  return { text, steps, rounds, why };
+}
+try{ window.aiAgentLoop=aiAgentLoop; }catch(e){}
+
 async function aiComplete(prompt, system, opts){
   opts=opts||{};
   const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-core',tokens:4096};
