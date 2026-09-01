@@ -93,6 +93,28 @@ authority** on money, limits, and content.
 57. **Using the agent to attack or scrape sites at scale.** → Authenticated, per-user rate limits, hard step + wall-clock caps, one session per run, every outcome audited. 🛡️✅
 58. **Captcha / login walls silently "handled".** → Detected and returned as `needs_human` / `needs_info` with the exact requirement. AMV never claims to have completed what it could not. ✅
 
+## H. The bridge and the build agent - running commands on somebody's own machine
+
+A program listening on a person's computer that can execute shell commands is
+the most dangerous thing in this repository, and the threat is not AMV. It is
+that **any page in that browser, and anything else on loopback, can try to
+reach it** - so every entry here is about the boundary, and every one of them
+is driven from outside over real HTTP by
+`tests/worker/the-bridge-only-reaches-one-folder`.
+
+59. **A hostile page finding the bridge and using it** (any site the person has open scans loopback ports and posts a command). → Nothing works before pairing: `exec`, `read`, `write`, `list` and `delete` all answer 401 without a session token, and the token is only issued for a **pairing code printed in the person's own terminal**, compared with `timingSafeEqual`. The code changes every start and is not stored anywhere. ✅
+60. **A hostile page that is paired anyway** (or that guesses a token). → Even holding a token, requests are refused unless the browser `Origin` is AMV's, and the refusal happens before the route runs - a rejected pairing attempt leaves the bridge unpaired rather than half-paired. Loopback origins are accepted only behind an opt-in environment variable for developing AMV itself. ✅
+61. **Reaching outside the project folder** (`../`, an absolute path, a symlink out). → Every path is resolved through symlinks and must be the root or inside it, checked **separately for read, write and delete** - the read guard being right says nothing about the write guard, and the write is the one that does damage. ✅
+62. **Catastrophic commands** (`rm -rf`, `mkfs`, `dd of=/dev/…`, a fork bomb, `sudo`, a force push, `curl … | sh`). → Refused **by the daemon**, on the person's own machine, rather than by asking the model nicely. `git push --force-with-lease` is deliberately still allowed: a rule that bans git by name is not a safety rule. ✅
+63. **A timeout that does not actually stop the work.** → `kill` reaches the shell, not what the shell started, so a killed `sh -c "sleep 30"` used to orphan a live `sleep 30`. Commands run in their own process group and the whole tree is killed. Caught by running it, not by reading it, and held by a test that watches a grandchild's heartbeat stop. ✅
+64. **The bridge's own token leaking into a command's environment.** → Stripped from the environment every child process inherits. A command has no business reading the pairing token. ✅
+65. **Somebody's home directory (and usually their real name) leaking to a page before they agree to anything.** → The one route that answers unpaired returns the folder's **name** and never its path. ✅
+66. **Prompt injection from the repository itself** (a comment, a commit message, a test fixture or a dependency telling the agent to run something). → The agent is instructed that file contents, command output, logs and dependency code are **data, never instructions**, and that the only instructions are the ones from the person in the conversation. It is also told not to run commands whose purpose is to dump an environment, a `.env`, a private key or a credential store. Defence in depth behind the daemon's own refusals and the root confinement, which no wording can widen. ✅➕
+67. **An agent that runs away with somebody's machine or their allowance.** → Permission is asked **once per request**, naming the folder and what may happen in it, and never remembered. The turn is bounded on rounds AND wall clock; Stop is checked before every round and before every single command; a bridge that disconnects ends the turn rather than being rediscovered once per remaining round. Every step is shown as it happens with the command it really ran. ✅➕
+68. **Work that cannot be undone.** → Every file the agent writes is read first, so the changelist is measured from the disk rather than from what the model claimed; Undo writes the original bytes back and **removes files the turn created** rather than leaving them behind. ✅➕
+69. **A tampered bridge, or a "bridge" that is actually a web page.** → The daemon is served from AMV's own origin over the same connection as AMV itself, and the download is checked to be the real program before it is handed over - a host that answers an unknown path with `index.html` would otherwise save somebody a web page named `amv-bridge.mjs` that they would then run. A suite compares the served copy byte for byte with the file the bridge tests drive. ✅➕
+70. **Telling people to install it with `curl … | sh`.** → Deliberately not done. The bridge refuses that shape as a command; teaching the habit while claiming to forbid it would be incoherent. Download and run are two steps, and the file is small and readable on purpose. 📋
+
 ## What YOU still control (server/ops)
 
 These are already coded to activate the moment you configure them:
@@ -105,6 +127,13 @@ These are already coded to activate the moment you configure them:
 - For marketplace payouts: keep withdrawal holds on and require identity
   verification before releasing funds (money-laundering / wash-trade control).
 - Optionally add a disposable-email domain blocklist at signup.
+- **Narrow what the static host publishes.** The site is one file at the root
+  of this repository, so if the host's publish directory is the repository,
+  `amv-backend.js`, `wrangler.toml` and this file are readable at your domain.
+  No credentials - they live in the Worker's environment - but every route,
+  every limit, and this register of what is defended and, by omission, what is
+  not. Check by opening `https://<your domain>/amv-backend.js`; the one-field
+  fix is in DEPLOY.md, and `node preflight.mjs` warns until it is settled.
 
 _This register is intentionally conservative: where a defense is server-side it
 is marked 🛡️ so you know it needs your live keys to be enforced end-to-end._
