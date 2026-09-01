@@ -7307,3 +7307,41 @@ never been deployed; switching a live one is a migration with data in it.
 the deploy actually tests, not the nearest thing that is easy to grep for. A
 field being present is rarely the requirement; a field being present AND of the
 kind this account can use, usually is.
+
+---
+
+## 327. Configuring the backend revealed a button with no waiting state
+
+Baking the live backend address into the page turned one control sweep red:
+`dev-github` clicked and nothing on screen changed.
+
+The control was not broken, and the sweep was not wrong. `_ghConnection()`
+begins `if(!(window.AMV_API && AMV_API.live)) return {ok:false, why:'engine'}` -
+a synchronous check. With no backend configured that returned inside a frame and
+the button always produced a toast immediately. With a real address baked in,
+`AMV_API.live` became true and the same call started AWAITING
+`/v1/connect/list`, so the button went silent for the length of a round trip.
+
+Nobody had ever seen that state, because nobody had ever run this product
+against a configured backend. Every test, every review, every screenshot in the
+project's life had been taken with `AMV_API.live` false, and this control's
+waiting state simply did not exist because it had never been reachable.
+
+That is the interesting part. The bug was not introduced by the change; it was
+UNCOVERED by it. A whole class of behaviour - everything gated on `AMV_API.live`
+- had been dark, and configuring the deployment turned the lights on. The
+control sweep was the thing standing there when they came on, and what it
+reported was a genuine gap: a button that puts your code in somebody's
+repository, giving no evidence it heard the click, on the connection where that
+matters most.
+
+Fixed in the product, not the test: the button goes busy on click, refuses a
+second click while working, and clears when the confirmation modal takes over as
+the feedback. LAYER A140 makes waiting visible without motion for anybody who
+asked for none.
+
+**The rule.** The first deployment against a real backend is not a formality; it
+is the first time half the product has ever executed. Expect the sweeps to find
+things, read what they report as being about the product rather than about
+themselves, and look hardest at the paths that were previously unreachable -
+they have never been seen by anyone.

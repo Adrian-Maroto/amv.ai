@@ -35082,10 +35082,53 @@ try{ window._devPickRepo=_devPickRepo; }catch(e){}
 
 /* The whole flow, in the order somebody thinks about it: can we, where to,
    is this really what you meant, then do it. */
+/* A BUTTON THAT STARTS A NETWORK CALL HAS TO SAY SO BEFORE IT FINISHES.
+
+   With no backend configured, _ghConnection() answers from memory - one
+   synchronous check of AMV_API.live - and this control always produced a toast
+   inside a frame. The moment a real backend address was baked into the page it
+   started AWAITING /v1/connect/list instead, and the button went silent for the
+   length of a round trip. Nothing was broken; there was simply no evidence for
+   the person that their click had landed, on a control whose job is to put
+   their code in somebody's repository. On a slow connection that is seconds of
+   nothing, and the reasonable thing to do with a button that appears dead is
+   press it again.
+
+   So it goes busy the instant it is clicked and stays busy for the part with no
+   other evidence: the connection check and the repository read. It clears when
+   the confirmation modal opens, because from there the modal is the feedback -
+   and while it is busy a second click is refused, which is what somebody does
+   to a button that looks dead.
+
+   Found by the control sweep noticing a click that changed nothing on screen.
+   The sweep was right, and it was right about the product rather than about
+   itself. */
+function _devGhBusy(on){
+  const btn = (typeof $ === 'function') ? $('dev-github') : null;
+  if(!btn) return;
+  try{
+    btn.setAttribute('aria-busy', on ? 'true' : 'false');
+    btn.disabled = !!on;
+    btn.classList.toggle('is-busy', !!on);
+    btn.title = on ? 'Checking your GitHub connection\u2026' : 'Push this project to GitHub';
+  }catch(e){ /* a missing button is not a reason to skip the push */ }
+}
+
 async function _devPushToGitHub(){
   const paths = (typeof _devProjectFiles === 'function') ? _devProjectFiles() : [];
   if(!paths.length){ toast('Build something first, then AMV can push it.', 'info', 4000); return; }
 
+  const btn = (typeof $ === 'function') ? $('dev-github') : null;
+  if(btn && btn.getAttribute('aria-busy') === 'true') return;   // already working
+  _devGhBusy(true);
+  try{
+    await _devPushToGitHubInner(paths);
+  } finally {
+    _devGhBusy(false);
+  }
+}
+
+async function _devPushToGitHubInner(paths){
   const conn = await _ghConnection();
   if(!conn.ok){ toast(_ghNotReadyMessage(conn.why), 'info', 7000); return; }
 

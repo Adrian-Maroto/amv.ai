@@ -10377,3 +10377,33 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   .prj-x{width:44px;height:44px;margin-left:auto}
   .prj-list{max-height:200px}
 }
+
+/* ══ LAYER A140 - a control that is waiting on the network looks like it ══════
+   The Push-to-GitHub button starts a connection check and a repository read
+   before it can show anything. Until a backend address was baked into the page
+   that check answered from memory, so the button never had a waiting state to
+   show; now it does, and a control that looks identical while working is a
+   control people click twice. Tokens only, and no motion for anybody who has
+   asked for none - a spinner is not needed to say "hold on". */
+[aria-busy="true"].dev-openext{
+  opacity:.55;
+  cursor:progress;
+  border-color:var(--bd);
+  color:var(--mu);
+  background:transparent;
+}
+[aria-busy="true"].dev-openext:hover{
+  border-color:var(--bd);
+  color:var(--mu);
+  background:transparent;
+}
+[aria-busy="true"].dev-openext svg{
+  animation:amv-busy-pulse 1.1s var(--ease-soft) infinite;
+}
+@keyframes amv-busy-pulse{
+  0%,100%{opacity:.45}
+  50%{opacity:1}
+}
+@media (prefers-reduced-motion:reduce){
+  [aria-busy="true"].dev-openext svg{animation:none;opacity:.7}
+}
