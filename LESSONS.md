@@ -6850,3 +6850,33 @@ make the instrument agree with something already known to be true. One
 control element with a colour you can predict costs one line and would have
 caught every one of these. And never parse a CSS colour by hand: ask the
 engine that computed it.
+
+## 312. The weight ceiling asked the right question and the answer was no
+
+The bridge needed a way to reach somebody who has only used the website, so I
+embedded the daemon in the page as base64 and had the connect card hand it
+over as a download. Self-contained, no registry, no second host, nothing for
+the owner to do. It failed the page-weight ceiling by 4KB.
+
+The reflex is to raise the ceiling - it is a tripwire, not a law, and the
+guide says it may be raised on purpose. Compressing before encoding got it
+from 10KB gzipped to 7KB, and still over.
+
+But the number was never the point. The ceiling was asking: *should every
+visitor download this?* The bridge is for developers. Most people who open
+AMV will never run a shell command. Making all of them pay 7KB on every load
+for a file a fraction of them will fetch once is the wrong trade at any size,
+and the arithmetic only made it visible.
+
+It is written out beside `index.html` instead, the way `sw.js` and the
+manifest already are, and fetched when somebody presses the button. Zero page
+weight, same origin, same connection - and one thing the embed did not have:
+the fetched bytes are CHECKED before being handed over, because a host that
+answers an unknown path with `index.html` would otherwise save somebody a web
+page named `amv-bridge.mjs`, which they would run.
+
+**The rule.** When a budget refuses a change, read it as a question about the
+design rather than an obstacle in front of it. "Can I afford this?" is the
+wrong question; "should everyone pay for this?" is the one the budget is
+actually asking, and answering it produced a better feature than the one that
+fit.

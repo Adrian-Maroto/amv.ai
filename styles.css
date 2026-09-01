@@ -10280,3 +10280,24 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   .ags-list{max-height:240px}
   .ags-verb{min-width:38px}
 }
+
+/* ═══ LAYER A137 - GETTING THE BRIDGE ═════════════════════════════════════
+   Three steps, numbered, because it genuinely is a sequence: get the file,
+   run it, type in what it printed. Numbering something that is not a
+   sequence is decoration; numbering something that is one is the whole
+   reason people manage to finish it. */
+.brg-steps{list-style:none;counter-reset:brg;margin:var(--sp-3) 0 var(--sp-4);padding:0;
+           display:flex;flex-direction:column;gap:var(--sp-3)}
+.brg-steps li{counter-increment:brg;display:grid;grid-template-columns:22px 1fr;
+              gap:var(--sp-1) var(--sp-3);align-items:start}
+.brg-steps li::before{content:counter(brg);grid-row:1/span 2;
+  width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:var(--s3);color:var(--mu);font-size:var(--t-xs);font-weight:600;
+  font-variant-numeric:tabular-nums}
+.brg-steps li>span{grid-column:2;color:var(--tx);font-size:var(--t-sm);line-height:1.55}
+.brg-steps li>.brg-cmd,.brg-steps li>.brg-dl{grid-column:2;justify-self:start;margin:0}
+.brg-dl{min-height:38px}
+@media (max-width:640px){
+  .brg-dl{min-height:44px;width:100%;justify-content:center}
+  .brg-steps li>.brg-cmd{width:100%;box-sizing:border-box}
+}

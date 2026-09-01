@@ -191,15 +191,38 @@ const CTX_DEV_HISTORY_BUDGET = Math.floor(CTX_LIMIT_TOKENS * 0.12);
    Snags are dropped: a transient "could not reach the engine" is not part
    of what was decided, and feeding it back invites the model to explain
    an error the person has already moved past. */
+/* WHAT A TURN DID, NOT ONLY WHAT IT SAID ABOUT IT.
+
+   A turn that worked on somebody's computer ends with a summary and a list
+   of steps. Carrying only the summary forward means the next turn cannot
+   answer "why did that fail?" or "run it again" - the commands, their exit
+   codes and which files were touched were all in memory and none of it
+   travelled. One compact line per turn is enough to keep that, and small
+   enough not to crowd out the conversation it belongs to. */
+function _ctxStepDigest(m){
+  const steps = m && m.steps;
+  if(!steps || !steps.length) return '';
+  const bits = steps.slice(-14).map(s => {
+    if(s.name === 'run_command'){
+      return 'ran `' + String(s.input.command || '').slice(0, 80) + '`'
+           + (s.exitCode == null ? '' : ' (exit ' + s.exitCode + ')');
+    }
+    if(s.name === 'write_file') return 'wrote ' + String(s.input.path || '');
+    if(s.name === 'read_file')  return 'read ' + String(s.input.path || '');
+    return 'listed ' + String(s.input.path || '.');
+  });
+  const more = steps.length > 14 ? ' (+' + (steps.length - 14) + ' earlier)' : '';
+  return '\n[on the machine: ' + bits.join('; ') + more + ']';
+}
 function _ctxDevTurns(){
   try{
     return (_DEV.log || [])
-      .filter(m => m && !m._snag && (m.text || m.code))
+      .filter(m => m && !m._snag && (m.text || m.code || (m.steps && m.steps.length)))
       .map(m => ({ r: m.role === 'user' ? 'u' : 'a',
-                   c: String(m.text || '') + (m.code ? '\n' + m.code : '') }));
+                   c: String(m.text || '') + (m.code ? '\n' + m.code : '') + _ctxStepDigest(m) }));
   }catch(e){ return []; }
 }
-try{ window._ctxDevTurns=_ctxDevTurns; }catch(e){}
+try{ window._ctxDevTurns=_ctxDevTurns; window._ctxStepDigest=_ctxStepDigest; }catch(e){}
 
 /* The conversation block for a Dev turn: a brief of what fell out, then
    the recent turns verbatim. Empty string when there is no history yet,

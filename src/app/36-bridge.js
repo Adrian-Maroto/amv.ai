@@ -228,20 +228,45 @@ function _bridgeCardHTML(){
     return '<div class="brg brg-on">'
       + '<div class="brg-h"><span class="brg-dot" aria-hidden="true"></span>'
         + '<b>This computer is connected</b></div>'
+      /* WHAT IT SAYS HAS TO BE WHAT HAPPENS. This said "Every command asks
+         you first", which was true when the only caller was chat and stopped
+         being true the moment Build could work on its own: there, permission
+         is asked once for the whole request, by name, before anything runs.
+         A card that describes the old behaviour is worse than one that says
+         nothing, because somebody reads it and stops watching. */
       + '<p class="brg-p">AMV can run commands and read and write files in '
         + '<code>' + escH(BRIDGE.folder || 'your project folder') + '</code> '
-        + 'and nowhere else. Every command asks you first.</p>'
+        + 'and nowhere else. In chat it asks before each one. In Build it asks '
+        + 'once for the whole request, and you can stop it at any point.</p>'
       + '<div class="brg-acts">'
         + '<button class="btn bs" id="brg-off" type="button">Disconnect</button>'
       + '</div></div>';
   }
+  /* THREE STEPS, BECAUSE IT REALLY IS THREE STEPS.
+
+     This used to name one command, `npx amv-bridge`, which nobody has
+     published - so for everybody who had not cloned the repository it
+     failed, which is the one group the card exists for. The file now travels
+     inside AMV and is handed over directly.
+
+     Downloading and running are deliberately two steps rather than one
+     pipe. The bridge itself refuses `curl … | sh` as a shape; telling people
+     to do it to install the thing that refuses it would be teaching the
+     habit while claiming to forbid it. It is a small file, it is readable,
+     and anybody who wants to look at it before running it should be able to. */
   return '<div class="brg">'
     + '<div class="brg-h"><b>Connect this computer</b></div>'
     + '<p class="brg-p">So AMV can actually run your project instead of only writing it: '
-      + 'install packages, run the tests, start the server, use git. '
-      + 'In a terminal, in the folder you want AMV to work in:</p>'
-    + '<code class="brg-cmd">npx amv-bridge</code>'
-    + '<p class="brg-p">It prints a port and a code. Put them here.</p>'
+      + 'install packages, run the tests, start the server, use git. It works only in '
+      + 'the folder you point it at, and it stops when you close it.</p>'
+    + '<ol class="brg-steps">'
+      + '<li><span>Get the bridge. It is one small file with no dependencies, and '
+        + 'you can read it before you run it.</span>'
+        + '<button class="btn bs brg-dl" id="brg-dl" type="button">Download amv-bridge.mjs</button></li>'
+      + '<li><span>Run it in the folder you want AMV to work in. You need Node.</span>'
+        + '<code class="brg-cmd">node amv-bridge.mjs</code></li>'
+      + '<li><span>It prints a port and a code. Put them here.</span></li>'
+    + '</ol>'
     + '<div class="brg-form">'
       + '<label class="brg-l" for="brg-port">Port</label>'
       + '<input class="brg-i" id="brg-port" inputmode="numeric" autocomplete="off" placeholder="e.g. 51734">'
@@ -254,8 +279,59 @@ function _bridgeCardHTML(){
 }
 try{ window._bridgeCardHTML=_bridgeCardHTML; }catch(e){}
 
+/* HANDING OVER THE FILE.
+
+   Fetched from AMV's own origin rather than carried in the page. The first
+   version embedded it as base64 and the page-weight ceiling refused it: a
+   file only developers download should not be paid for by every visitor.
+
+   It is checked before it is handed over. A host that answers an unknown
+   path with index.html - which plenty do - would otherwise save somebody a
+   web page called amv-bridge.mjs, and they would run it, and node would
+   throw something incomprehensible about a `<` character. Saying "AMV could
+   not fetch it, here is where it lives" is the honest answer and it takes
+   one line to check. */
+const BRIDGE_FILE = 'amv-bridge.mjs';
+const BRIDGE_REPO = 'https://github.com/adrian-maroto/amv.ai/blob/main/bridge/amv-bridge.mjs';
+
+async function _bridgeFetchSource(){
+  const r = await fetchDeadline(BRIDGE_FILE, { cache: 'no-store' }, 15000);
+  if(!r.ok) throw new Error('http_' + r.status);
+  const text = await r.text();
+  /* It has to BE the daemon, not whatever the host decided to answer with. */
+  if(!/^#!\/usr\/bin\/env node/.test(text) || !/ALLOWED_ORIGINS/.test(text)){
+    throw new Error('not_the_bridge');
+  }
+  return text;
+}
+async function _bridgeDownload(){
+  let text;
+  try{ text = await _bridgeFetchSource(); }
+  catch(e){
+    try{ toast('AMV could not fetch the bridge from this deployment. You can get it from the AMV repository, under bridge/amv-bridge.mjs.', 'error', 8000); }catch(x){}
+    return false;
+  }
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/javascript' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = BRIDGE_FILE;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => { try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
+  return true;
+}
+try{ window._bridgeFetchSource=_bridgeFetchSource; window._bridgeDownload=_bridgeDownload;
+     window.BRIDGE_FILE=BRIDGE_FILE; }catch(e){}
+
 function _bridgeWireCard(root){
   root = root || document;
+  const dl = root.querySelector('#brg-dl');
+  if(dl) on(dl, 'click', async () => {
+    dl.disabled = true;
+    try{
+      if(await _bridgeDownload()){
+        try{ toast('Saved amv-bridge.mjs. Run it with "node amv-bridge.mjs" in your project folder.', 'success', 6000); }catch(e){}
+      }
+    } finally { dl.disabled = false; }
+  });
   const off = root.querySelector('#brg-off');
   if(off) on(off, 'click', () => {
     _bridgeForget();

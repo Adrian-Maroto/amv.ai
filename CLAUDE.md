@@ -25,7 +25,7 @@ Companion docs (do not duplicate them here - read them):
 
 ## Architecture reality (know this before editing)
 - The app ships as a SINGLE-FILE build, but the JS SOURCE is MODULAR:
-  `src/app/NN-name.js` files (01-core, 02-state, ... 16-palette-sched) are
+  `src/app/NN-name.js` files (01-core, 02-state, ... 37-build-agent) are
   concatenated IN NAME ORDER to form the bundle. `node build.mjs` concatenates
   them (regenerating `app.js`) and injects that + `styles.css` into `index.html`
   between the BUILD:CSS / BUILD:JS markers.
@@ -50,6 +50,26 @@ Companion docs (do not duplicate them here - read them):
 - Backend: a Cloudflare Worker (`amv-backend.js`) + KV + a Durable Object
   (atomic usage counter) + cron. The server is always the authority on money,
   limits, auth, and content. Client checks are defense-in-depth only.
+- **The AI proxy only ever STREAMS.** `/v1/messages` writes `stream:true` into
+  its upstream body as a literal and returns `text/event-stream` on its one
+  success path, whatever the caller asked for. Everything that is not chat goes
+  through `aiComplete` / `aiCompleteLong` / `aiAgentLoop`, which share
+  `_aiReadStream` - it reads the events and returns the NON-streaming message
+  shape (`{content, stop_reason, usage}`). Never call `res.json()` on that
+  route; see LESSONS 309, where doing so had silently broken every surface
+  except chat.
+- **The bridge** (`bridge/amv-bridge.mjs`) is a zero-dependency daemon somebody
+  runs on their own computer; it is what gives AMV a filesystem and a shell.
+  It ships INSIDE `index.html` as base64 (injected by `build.mjs`), so the
+  connect card can hand it over with no registry or second host - and a suite
+  checks the shipped copy is byte-identical to the file the bridge tests drive.
+  `aiAgentLoop` (in `14-engine.js`) is the turn-taking on top of it: consent
+  once per turn, a stop checked before every round and every command, and a
+  changelist measured from the disk with an Undo that writes real bytes back.
+- **Any tool the client can send must be in `AMV_CLIENT_TOOLS` on the server**,
+  or `_safeTools` drops it by name at the last hop before the model and the
+  feature silently does not exist. LESSONS 310; covered by
+  `a-tool-the-model-never-receives`.
 - CSS is applied as append-only override LAYERs (A1..A17+). New work adds a NEW
   layer at the end to win the cascade. Reuse tokens/classes; do not fork a
   component per page.
@@ -66,7 +86,7 @@ Companion docs (do not duplicate them here - read them):
 - `npm run check` is the shippability gate (syntax, worker load, build fresh,
   all suites, deploy preflight -> "SHIPPABLE"). Roughly 15 MINUTES: the suites
   run several at a time (`tests/run.mjs`, default four, `--jobs=N` to change it,
-  `--serial` to reproduce something that might be about ordering). All 138 e2e
+  `--serial` to reproduce something that might be about ordering). All 170 e2e
   suites take ~13 minutes together; serially they took hours, which is why the
   runner is parallel now. Output is buffered per suite and printed in selection
   order, so a parallel transcript reads exactly like a serial one - and a slow

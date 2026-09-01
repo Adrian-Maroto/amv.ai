@@ -34,10 +34,40 @@ const MINIFY = !args.includes('--no-minify');
 // working unchanged. IMPORTANT: do NOT hand-edit app.js; edit the src/app/
 // modules and rebuild (the build overwrites app.js from them).
 const APP_SRC_DIR = 'src/app';
+
+/* THE BRIDGE IS SERVED BESIDE THE PAGE, NOT INSIDE IT.
+
+   The daemon that lets AMV work on somebody's own computer is a file in this
+   repository, which is a fine answer for anybody who has the repository and
+   no answer at all for somebody who has only ever used the website. The
+   connect card used to tell them to run `npx amv-bridge`, a package nobody
+   has published, so it failed for exactly the people it was written for.
+
+   The first attempt at fixing that embedded the file in the bundle as
+   base64, and the page-weight ceiling caught it: 10KB gzipped, and 7KB even
+   after compressing first. That is a tax on every visitor for a file only
+   developers will ever download, which is the wrong trade however small the
+   number is - the ceiling exists to ask exactly that question and the honest
+   answer was no.
+
+   So it is written out beside index.html, the way sw.js and the manifest
+   already are, and fetched when somebody asks for it. Zero bytes on the
+   page, the same origin and the same connection as AMV itself - which for a
+   program about to run shell commands on somebody's machine is better
+   provenance than a package registry, not worse. A suite checks the served
+   copy is byte-identical to the file the bridge tests drive, because a
+   shipped copy that has drifted from the tested one is worse than no copy. */
+const BRIDGE_SRC = 'bridge/amv-bridge.mjs';
+const BRIDGE_OUT = 'amv-bridge.mjs';
+function emitBridge() {
+  writeFileSync(BRIDGE_OUT, readFileSync(BRIDGE_SRC));
+}
+
 function assembleJS() {
   const files = readdirSync(APP_SRC_DIR).filter(f => /\.js$/.test(f)).sort();
   if (!files.length) throw new Error(`no source modules found in ${APP_SRC_DIR}/`);
   const src = files.map(f => readFileSync(`${APP_SRC_DIR}/${f}`, 'utf8')).join('');
+  emitBridge();
   writeFileSync('app.js', src);   // regenerate the committed bundle from the modules
   return src;
 }

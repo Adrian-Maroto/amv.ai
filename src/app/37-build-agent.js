@@ -38,6 +38,14 @@ const _AGENT = {
   before: null,
   after: null,
   created: null,
+  /* WHICH PATHS HAVE ALREADY BEEN LOOKED AT, which is NOT the same as which
+     ones have a `before`. A file the turn created has no before - that is
+     what marks it created - so testing `path in before` to decide whether to
+     capture would capture again on the second write to it, find the file
+     there this time, and record the turn's own first write as the original.
+     The card would then call a new file an edit, and Undo would leave it
+     behind holding an intermediate version. */
+  seen: null,
   steps: null,
 };
 try{ window._AGENT = _AGENT; }catch(e){}
@@ -86,7 +94,8 @@ async function _agentConsent(msg){
 async function _agentRunTool(name, input, step){
   if(name === 'write_file'){
     const path = String(input.path || '');
-    if(!(path in _AGENT.before)){
+    if(!_AGENT.seen[path]){
+      _AGENT.seen[path] = true;
       let prev = null;
       try{ const r = await bridgeRead(path); prev = r && typeof r.content === 'string' ? r.content : null; }
       catch(e){ prev = null; }          // not there, or not readable as text
@@ -248,7 +257,7 @@ async function _devSendAgent(msg, stat){
     return;
   }
   _AGENT.stop = false;
-  _AGENT.before = {}; _AGENT.after = {}; _AGENT.created = {};
+  _AGENT.before = {}; _AGENT.after = {}; _AGENT.created = {}; _AGENT.seen = {};
   _AGENT.steps = [];
   _agentSetRunning(true);
 

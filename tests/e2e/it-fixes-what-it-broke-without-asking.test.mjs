@@ -325,6 +325,65 @@ section('Stop lands on the next step, not at the end');
      'in words that do not present an unfinished job as a finished one', after.why_text.slice(0, 70));
 }
 
+section('The next turn remembers what the last one actually did');
+{
+  /* A turn that worked on the machine ends with a summary and a list of
+     steps. Carrying only the summary forward means the next turn cannot
+     answer "why did that fail?" - the commands, their exit codes and the
+     files touched were all in memory and none of it travelled. */
+  await armModel([{ text: 'Nothing to do.' }]);
+  await page.evaluate(() => { document.getElementById('dev-msg').value = 'why did that fail earlier?'; _devSend(); });
+  await page.waitForSelector('#modal-ok', { timeout: 6000 });
+  await page.click('#modal-ok');
+  await page.waitForFunction(() => _AGENT.running === false && window.__asked.length > 0,
+                             null, { timeout: 20000 });
+
+  const prompt = await page.evaluate(() => {
+    const first = window.__asked[0];
+    const m = (first.messages || [])[0];
+    return typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+  });
+  ok(/on the machine:/.test(prompt),
+     'the steps from the earlier turn travel with the conversation', /on the machine:/.test(prompt));
+  ok(/node check\.js/.test(prompt), 'naming the command it ran', /node check\.js/.test(prompt));
+  ok(/exit 1/.test(prompt),
+     'and the exit code, which is the part the question is about', /exit 1/.test(prompt));
+  ok(/wrote sum\.js/.test(prompt), 'and what it changed', /wrote sum\.js/.test(prompt));
+}
+
+section('A file written twice in one turn is still a file that was created');
+{
+  /* The turn's own first write must not become the "before" for its second.
+     If it does, the card calls a new file an edit and Undo leaves it behind
+     holding an intermediate version - which looks like undo working. */
+  await armModel([
+    { text: 'Writing it.',
+      tool: { name: 'write_file', input: { path: 'twice.txt', content: 'first\n' } } },
+    { text: 'Thought of something better.',
+      tool: { name: 'write_file', input: { path: 'twice.txt', content: 'second\n' } } },
+    { text: 'Done.' },
+  ]);
+  await page.evaluate(() => { document.getElementById('dev-msg').value = 'write it twice'; _devSend(); });
+  await page.waitForSelector('#modal-ok', { timeout: 6000 });
+  await page.click('#modal-ok');
+  await page.waitForFunction(() => _AGENT.running === false && _DEV.log.some(m => m.changes && m.changes.some(r => r.path === 'twice.txt')),
+                             null, { timeout: 25000 });
+
+  ok(readFileSync(join(proj, 'twice.txt'), 'utf8') === 'second\n',
+     'the second write is what is on disk', true);
+  const card = await page.evaluate(() => {
+    const m = _DEV.log.filter(x => x.changes && x.changes.some(r => r.path === 'twice.txt')).pop();
+    return { row: m.changes.find(r => r.path === 'twice.txt'), id: m.chgId };
+  });
+  ok(card.row.kind === 'added',
+     'and it is listed as created, not as an edit of its own first draft', card.row);
+
+  await page.evaluate((id) => _devToggleTurn(id), card.id);
+  await page.waitForFunction((id) => _DEVCHG.turns[id].undone === true, card.id, { timeout: 15000 });
+  ok(!existsSync(join(proj, 'twice.txt')),
+     'so Undo removes it rather than leaving the intermediate version behind', true);
+}
+
 section('No JavaScript errors');
 {
   ok(A.errors.length === 0, 'zero uncaught page errors', A.errors.slice(0, 3));
