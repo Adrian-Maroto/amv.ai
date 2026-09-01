@@ -10,6 +10,48 @@ precisely what's missing. Green = ready to deploy.
 
 ---
 
+## 0. One-time: a Cloudflare account, and a terminal that is logged into it
+
+Everything below runs against your own Cloudflare account. This step was missing
+from this list, which made step 1 fail for the only person it was written for -
+somebody who has not done this before.
+
+1. **Make the account.** Go to <https://dash.cloudflare.com/sign-up>, enter an
+   email and a password, and confirm the email it sends. It is free, and none of
+   what AMV needs costs anything to start: the Workers free plan covers 100,000
+   requests a day, and KV covers 100,000 reads and 1,000 writes a day.
+2. **You do not need to move your domain.** Cloudflare will offer to take over
+   DNS for a site. Skip it. AMV's backend lives at a `workers.dev` address, and
+   the front end stays where it is. Moving the domain is a separate decision and
+   not one to make while getting the backend up.
+3. **Check node is there.** In a terminal, in this folder:
+   ```bash
+   node --version
+   ```
+   If that errors, install Node 20 or newer from <https://nodejs.org> first.
+   Everything here uses `npx`, which comes with it - there is nothing to
+   install globally.
+4. **Log the terminal in.**
+   ```bash
+   npx wrangler login
+   ```
+   A browser tab opens asking you to authorize Wrangler against the account you
+   just made. Say yes. The terminal prints `Successfully logged in.`
+5. **Confirm it took.**
+   ```bash
+   npx wrangler whoami
+   ```
+   It prints the email on the account and the account id. If it says you are not
+   authenticated, run `npx wrangler login` again - the browser tab has to be the
+   same browser you are signed into Cloudflare in.
+
+> On a machine with no browser (a server over SSH), use
+> `npx wrangler login --browser=false` and open the printed URL yourself.
+
+Now step 1 will work.
+
+---
+
 ## 1. One-time: create your data store (the only hard blocker)
 
 The Worker needs a KV namespace to persist accounts, jobs, and approvals.

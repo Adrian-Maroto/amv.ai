@@ -51,6 +51,21 @@ Worker reads is declared, and the build is fresh. It exits non-zero if anything
 would break the deploy. It also runs automatically before `npm run deploy`, so a
 broken config can’t ship.
 
+## 0. A Cloudflare account, and a terminal logged into it
+
+Every command below runs against your own Cloudflare account, so it has to exist
+first. Sign up at <https://dash.cloudflare.com/sign-up> (free; the Workers and KV
+free tiers cover AMV's start), then:
+
+```bash
+npx wrangler login     # opens a browser tab to authorize
+npx wrangler whoami    # prints the account it is now using
+```
+
+Decline Cloudflare's offer to take over your domain's DNS - the Worker lives at a
+`workers.dev` address and the site stays where it is hosted. `GO-LIVE.md` has the
+long version of this step.
+
 ## 1. Create a KV namespace
 
 ```bash
