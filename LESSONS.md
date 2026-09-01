@@ -7103,3 +7103,35 @@ changes, so a late sign-in is a reload rather than a wipe.
 identity is known, or must notice when it changes. A module-level load is a
 claim that everything it depends on is already settled - and at bundle
 evaluation time, the signed-in user never is.
+
+## 322. The proof that the scanner keeps its place was a coincidence
+
+Everything structural here runs on `codeOnly`, the comment stripper, so one
+suite exists to prove it does not lose its place: if it did, more of the file
+would look like string, comments would survive, and a prose-dependent check
+would look code-dependent - failing in the direction of passing.
+
+The proof was that the number of backticks left in the output is even, on the
+theory that an odd count means the scan ended inside a template.
+
+That is not the same question. This codebase has 191 lines carrying a lone
+backtick inside a regex character class - `.replace(/[#*`]/g,'')` and its
+relatives - every one correctly scanned code. The parity was even by accident.
+Adding one more correct line of exactly that shape turned the proof red, and a
+real desync that happened to move the count by two would have left it green.
+
+A proof that fails on correct input and passes on broken input is not a proof.
+It also cost real time in the wrong place: the failure said "the scan ends
+outside every template literal", so I went looking for a bug in a scanner that
+was working perfectly.
+
+The scanner now reports what it was doing when it ran out of file, and the
+suite asks it. Verified both ways: clean on the real bundle, red on an
+unterminated template and on an unterminated string.
+
+**The rule.** When a check proves something indirectly, write down what it
+would take for the proxy and the property to disagree - and if you cannot, do
+not call it a proof. Where the subject can be asked directly, ask it. This is
+the same defect as the meter that measured the wrong tank (305) and the
+400-character safety net (308), in the one place that certifies the tools every
+other check is built on.

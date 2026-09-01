@@ -130,6 +130,27 @@ export function functionBody(src, name) {
    place that knows. */
 export function codeOnly(text, opts) {
   const BLANK_STRINGS = !!(opts && opts.blankStrings);
+  /* WHERE THE SCAN FINISHED, REPORTED RATHER THAN INFERRED.
+
+     Everything structural in this repository trusts this function, so
+     something has to prove it kept its place. That proof used to be "the
+     number of backticks left in the output is even", on the theory that an
+     odd count means the scan ended inside a template.
+
+     It does not. This codebase contains a hundred and ninety-one lines with
+     a lone backtick inside a regex character class - `.replace(/[#*`]/g,'')`
+     and its relatives - all of them correctly scanned code. The parity was
+     even by coincidence, and adding one more correct line of the same kind
+     turned the proof red while a real desync that happened to move the count
+     by two would leave it green.
+
+     So the scanner says so itself. `opts.state` is filled in with what it was
+     doing when it ran out of file, which is the actual question. */
+  const state = opts && opts.state;
+  if (state) { state.endedIn = 'code'; state.unterminated = null; }
+  const note = (what, at) => {
+    if (state && state.endedIn === 'code') { state.endedIn = what; state.unterminated = at; }
+  };
   const n = text.length;
   const out = [];
   /* The last significant character emitted. It is what decides whether the next
@@ -199,12 +220,13 @@ export function codeOnly(text, opts) {
       if (c === '"' || c === "'") {
         /* Copied intact - a quote inside it must not open another literal, and
            `//` inside a URL is not a comment. */
-        let j = i + 1;
+        let j = i + 1, done = false;
         for (; j < n; j++) {
           if (text[j] === '\\') { j++; continue; }
-          if (text[j] === c) { j++; break; }
+          if (text[j] === c) { j++; done = true; break; }
           if (text[j] === '\n') break;              // unterminated: bail out
         }
+        if (!done && j >= n) note('string', i);
         const lit = text.slice(i, j);
         /* The quotes are kept so the shape of the code survives; only what is
            between them becomes spaces, and newlines are preserved so every
@@ -258,7 +280,11 @@ export function codeOnly(text, opts) {
       out.push(ch); i++;
     }
     prev = '`';
-    return i;   // unterminated - the file is broken, and saying so is not this helper's job
+    /* Unterminated. It IS this helper's job to say so - not to repair the
+       file, but so the suite that proves this scanner keeps its place can ask
+       a direct question instead of counting characters. */
+    note('template', start);
+    return i;
   }
 }
 

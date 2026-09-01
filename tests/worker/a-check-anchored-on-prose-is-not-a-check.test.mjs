@@ -213,12 +213,22 @@ section('The comment stripper itself is sound, because everything above trusts i
        s.file + ': line numbers still line up with the file', s.file);
     ok(s.code.length === s.raw.length,
        s.file + ': nothing shifted - comments are blanked, not deleted', s.file);
-    /* A whole file scanned correctly ends outside every literal. The last
-       backtick count is the cheap proof: an odd number means the scanner
-       finished believing it was inside a template. */
-    ok((s.code.match(/`/g) || []).length % 2 === 0,
-       s.file + ': the scan ends outside every template literal',
-       (s.code.match(/`/g) || []).length);
+    /* A whole file scanned correctly ends outside every literal, and the
+       scanner now says which it ended in rather than leaving this to be
+       inferred.
+
+       It used to be inferred, from whether the backtick count in the output
+       was even. That is not the same question. This codebase has 191 lines
+       carrying a lone backtick inside a regex character class - all correctly
+       scanned code - so the parity was even by coincidence; one more correct
+       line of the same shape turned it red, while a real desync moving the
+       count by two would have left it green. A proof that fails on correct
+       input and passes on broken input is not a proof. */
+    const st = {};
+    codeOnly(s.raw, { state: st });
+    ok(st.endedIn === 'code',
+       s.file + ': the scan ends outside every literal, by its own account',
+       st.endedIn === 'code' ? 'code' : (st.endedIn + ' opened at ' + st.unterminated));
   }
   /* The specific shapes that made earlier versions wrong. Each one, gotten
      wrong, silently disables every check on this page. */
