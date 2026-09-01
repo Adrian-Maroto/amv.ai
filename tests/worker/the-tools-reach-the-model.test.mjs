@@ -54,16 +54,38 @@ section('Every tool the app ships is one the backend will forward');
   /* Read from the built bundle rather than from a list retyped here - a list
      retyped here would agree with itself for ever. */
   const app = readFileSync(join(ROOT, 'app.js'), 'utf8');
-  const block = app.slice(app.indexOf('const AMV_TOOLS'), app.indexOf('function _toolsFor'));
-  /* Every tool name in the block, not the ones matching a list of prefixes.
+  /* EVERY group of tools the app builds, not one of them.
 
-     The prefix filter was a quiet bug in this check: tools added later under a
-     new prefix were invisible to the forward direction (so a backend that
-     dropped them would have passed) and looked like orphans to the reverse one.
-     A whitelist of prefixes has to be maintained in step with the thing it is
-     supposed to be watching, which is the failure mode this file exists for. */
-  const clientNames = [...new Set([...block.matchAll(/\bname\s*:\s*'([a-z][a-z0-9_]*)'/g)].map(m => m[1]))];
+     This read a single slice - `const AMV_TOOLS` up to `function _toolsFor` -
+     which is the same shape of bug as the prefix filter it already replaced,
+     one level up. A prefix list has to be maintained in step with the tools;
+     a hardcoded slice has to be maintained in step with the FILE. When the
+     bridge arrived with four tools in a second array, the forward direction
+     could not see them (so a backend dropping all four passed) and the
+     reverse direction called them orphans. Both happened.
 
+     So the groups are found by matching their brackets, and a fifth added
+     later is picked up here without anybody remembering to come back. */
+  const groups = {};
+  {
+    const re = /const\s+([A-Z][A-Z_]*TOOLS)\s*=\s*\[/g;
+    let m;
+    while ((m = re.exec(app))) {
+      let i = re.lastIndex - 1, depth = 0;
+      for (; i < app.length; i++) {
+        const c = app[i];
+        if (c === '[') depth++;
+        else if (c === ']') { depth--; if (!depth) break; }
+      }
+      groups[m[1]] = [...new Set([...app.slice(re.lastIndex, i)
+        .matchAll(/\bname\s*:\s*'([a-z][a-z0-9_]*)'/g)].map(x => x[1]))];
+    }
+  }
+  const clientNames = [...new Set(Object.values(groups).flat())];
+
+  ok(Object.keys(groups).length >= 2,
+     'the app builds more than one group of tools, and all of them were read',
+     Object.keys(groups).join(', '));
   ok(clientNames.length >= 10, 'the app really defines a set of tools', clientNames.length);
   const dropped = clientNames.filter(n => !W.AMV_CLIENT_TOOLS.has(n));
   ok(dropped.length === 0,

@@ -10290,9 +10290,13 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
            display:flex;flex-direction:column;gap:var(--sp-3)}
 .brg-steps li{counter-increment:brg;display:grid;grid-template-columns:22px 1fr;
               gap:var(--sp-1) var(--sp-3);align-items:start}
+/* --tx, not --mu: the numeral is the step you are on, which is information,
+   and --mu on --s3 measured 4.11:1 in the light theme. Muted is for text that
+   can afford to recede; a step number in a sequence somebody is following
+   cannot. */
 .brg-steps li::before{content:counter(brg);grid-row:1/span 2;
   width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  background:var(--s3);color:var(--mu);font-size:var(--t-xs);font-weight:600;
+  background:var(--s3);color:var(--tx);font-size:var(--t-xs);font-weight:600;
   font-variant-numeric:tabular-nums}
 .brg-steps li>span{grid-column:2;color:var(--tx);font-size:var(--t-sm);line-height:1.55}
 .brg-steps li>.brg-cmd,.brg-steps li>.brg-dl{grid-column:2;justify-self:start;margin:0}

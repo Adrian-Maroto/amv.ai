@@ -154,6 +154,63 @@ work syncs across devices, and Deploy publishes to `<your-worker>/s/<slug>`.
 
 ---
 
+## 5. What the static host publishes, and what it should not
+
+The site is a single `index.html` at the root of this repository, so the
+host's publish directory is very likely the repository itself - and a static
+host serves everything in its publish directory.
+
+Open `https://<your domain>/amv-backend.js` in a private window. If the Worker
+source comes back, so does the rest: `wrangler.toml`, `SECURITY-SCAMS.md`,
+`GO-LIVE.md`, `LESSONS.md`, `check.mjs`, `tests/`.
+
+**No credentials are exposed by this.** Every secret lives in the Worker's
+environment and none is written to a file here. What is exposed is
+reconnaissance: every route and every limit in `amv-backend.js`, a register of
+what is defended and by omission what is not in `SECURITY-SCAMS.md`, and the
+real KV namespace id in `wrangler.toml` the moment it stops being a
+placeholder.
+
+**The fix is one field.** Point the host's publish directory at a folder that
+holds only what a visitor needs:
+
+```
+index.html
+sw.js
+manifest.webmanifest
+amv-bridge.mjs        # the bridge download; the connect card fetches this
+icons/                # whatever the manifest references
+```
+
+Anything the page loads at runtime must be in there. `app.js` and `styles.css`
+do NOT need to be: the build inlines both into `index.html`, and they stay in
+the repository so `check.mjs`, the preflight and grep keep working.
+
+If the host cannot be pointed at a subfolder, add deny rules for `*.md`,
+`*.mjs` (except `amv-bridge.mjs`), `*.toml` and `amv-backend.js`.
+
+`node preflight.mjs` warns about this on every run until it is settled - it
+cannot check the answer from inside the repository, because only the host
+knows its publish directory.
+
+---
+
+## The bridge (letting AMV work on somebody's computer)
+
+`bridge/amv-bridge.mjs` is a zero-dependency daemon a person runs in their own
+project folder. While it is running, AMV can install dependencies, run builds
+and tests, use git, and fix what breaks - in that one folder and nowhere else.
+
+The build copies it to `amv-bridge.mjs` at the root, and the **Integrations →
+Connect this computer** card fetches it when somebody presses Download. There
+is nothing to publish to a registry and no second host involved; a suite
+checks the served copy is byte-identical to the file the bridge tests drive.
+
+It needs no secret and no configuration. See `bridge/README.md` for the
+security model.
+
+---
+
 ## Checking it works
 
 - **Automations:** create one, then run `npx wrangler tail` and watch for `[cron] automations` every 5 minutes.

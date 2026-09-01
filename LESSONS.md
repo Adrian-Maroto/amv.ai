@@ -6880,3 +6880,50 @@ design rather than an obstacle in front of it. "Can I afford this?" is the
 wrong question; "should everyone pay for this?" is the one the budget is
 actually asking, and answering it produced a better feature than the one that
 fit.
+
+## 313. The third copy of the same bug, in code nothing called
+
+Two functions were fixed for calling `res.json()` on a route that only ever
+streams. A sweep for the rest found a third: `runAgentic`, an entire second
+tool-use loop, with the same defect, that no code has ever called.
+
+It was declared in `every-entry-point-has-a-door`'s not-a-door list as "an
+engine other code calls into". Nothing did. So the exemption list - the file
+whose own comment says the names in it must each say WHY, "because 'internal
+API' is the excuse this check would rot into" - carried a rationale that was
+false in both halves, and that is exactly how the check rots.
+
+It is now the surface-specific half (which tools, the consent gate, the
+rendered extras) sitting on the one tested loop, and its rationale says that.
+Deleting it would have taken the consent gate with it and the next person
+would have rewritten a worse one.
+
+**Two rules.** When a defect is found, sweep for its shape rather than fixing
+the instance; there were three, and only one was reachable enough to have been
+noticed. And an exemption is a claim with an expiry date: whatever justifies a
+name being on a list like that has to be re-read when the code around it
+changes, or the list becomes a place things go to stop being checked.
+
+## 314. I wrote a duplicate test because I did not look for the existing one
+
+Having found the server's tool allowlist four names short, I wrote
+`a-tool-the-model-never-receives` to compare both lists. It passed. The gate
+then failed on `the-tools-reach-the-model` - a suite that had been doing
+exactly that for a long time, and which flagged my four bridge tools as
+orphans because its extraction read one hardcoded slice of the bundle
+(`const AMV_TOOLS` up to `function _toolsFor`) and could not see a second
+group.
+
+Two things at once. The existing check had the same shape of blind spot it
+already documented having fixed once - it replaced a prefix whitelist with a
+general match, then kept a hardcoded slice, which has to be maintained in step
+with the file the way the prefix list had to be maintained in step with the
+tools. And I had spent an hour writing a second check for a rule already
+covered, which is worse than wasted: two checks of one rule drift, and the
+weaker one becomes the excuse for deleting the stronger.
+
+The duplicate is gone and the extraction in the surviving suite now finds every
+`*_TOOLS` group by matching brackets.
+
+**The rule.** Before writing a test for a rule, grep for the rule. `AMV_CLIENT_TOOLS`
+appeared in exactly one suite; one search would have found it.

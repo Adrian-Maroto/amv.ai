@@ -1117,7 +1117,7 @@ function renderCodeView(){
         ${_ownedMarketHTML('dev')}
       </div>
 
-      <div id="dev-log" class="dev-log"></div>
+      <div id="dev-log" class="dev-log" data-no-i18n></div>
 
       <div id="ctx-dev"></div>
       <div class="dev-input dev-input-v2">
@@ -2487,67 +2487,62 @@ try{ window._toolsFor=_toolsFor; }catch(e){}
    that should be rendered.
    ══════════════════════════════════════════════════════════════ */
 async function runAgentic(surface, userPrompt, opts){
+  /* ONE LOOP, NOT TWO.
+
+     This was a second, hand-rolled tool-use loop written when Dev, Lab and
+     Crew had no way to use tools at all. It had `await r.json()` against the
+     AI proxy - which only ever returns an event stream - so it could not have
+     completed a single round in production (LESSONS 309), and nothing has
+     ever called it, so nothing noticed. Its entry in the not-a-door list said
+     it was "an engine other code calls into"; no other code did.
+
+     `aiAgentLoop` is now that engine, and it is the tested one: it reads the
+     stream, retries a busy engine, bounds itself on rounds AND wall clock,
+     and can be stopped between steps. So this keeps its name, its arguments
+     and its return shape, and becomes the surface-specific part - which tools
+     this surface gets, the per-call consent, and the rendered extras - on top
+     of that one loop. Deleting it instead would take the consent gate and the
+     tool selection with it, and the next person would rewrite both.
+
+     One deliberate difference: `text` now carries everything the model said
+     across the whole run rather than only its last round. The old behaviour
+     silently dropped anything said before a tool call. */
   opts = opts || {};
   const tools = _toolsFor(surface);
   const onStatus = opts.onStatus || (()=>{});
-  const maxRounds = opts.maxRounds || 4;
-
-  const messages = [{ role:'user', content:String(userPrompt||'') }];
   let rendered = '';
-  let finalText = '';
 
-  for(let round = 0; round < maxRounds; round++){
-    const body = {
-      model: opts.model || _sectionModel('code'),
-      max_tokens: opts.max_tokens || 8000,
-      system: opts.system || 'You are AMV. You have real tools - use them to actually do the work rather than describing it.',
-      messages,
-      ...(tools.length ? { tools } : {})
-    };
-
-    const r = await fetchDeadline(_aiBase(), {
-      method:'POST', headers:_aiHeaders(), body:JSON.stringify(body)
-    }, 120000);
-    if(!r.ok){
-      const t = await r.text().catch(()=>'');
-      throw new Error('AMV request failed ('+r.status+'): '+t.slice(0,160));
-    }
-    const data = await r.json();
-    const blocks = data.content || [];
-
-    const text = blocks.filter(b=>b.type==='text').map(b=>b.text).join('').trim();
-    if(text) finalText = text;
-
-    const toolUses = blocks.filter(b=>b.type==='tool_use');
-    if(!toolUses.length || data.stop_reason !== 'tool_use'){
-      return { text: finalText, rendered, rounds: round + 1 };
-    }
-
-    // Run every tool the model asked for, feed the REAL results back.
-    const results = [];
-    for(const tu of toolUses){
-      /* Every name here was chosen by the MODEL, which is exactly the condition
-         AMV-007 describes: the request can come from content the model read
-         rather than from anything the person asked for. Chat's streaming loop
-         has always asked first. This runner was written later and did not, so a
-         second dispatch path could execute code on the device and publish a
-         public page with no prompt at all. Same gate, same reasons. */
-      let out;
-      if(_toolNeedsConsent(tu.name)){
-        const allowed = await _confirmModelTool(tu.name, tu.input || {});
+  const out = await aiAgentLoop({
+    prompt: String(userPrompt || ''),
+    system: opts.system || 'You are AMV. You have real tools - use them to actually do the work rather than describing it.',
+    tools,
+    model: opts.model || _sectionModel('code'),
+    max_tokens: opts.max_tokens || 8000,
+    maxRounds: opts.maxRounds || 4,
+    stopped: opts.stopped,
+    onStep: (ev) => { if(ev.phase === 'start') onStatus('Working\u2026'); },
+    runTool: async (name, input) => {
+      /* AMV-007. Every name here was chosen by the MODEL, so the request can
+         come from content it read rather than from anything the person asked
+         for. Chat's streaming loop has always asked first; this path must
+         too, or a second dispatch route executes code and publishes pages
+         with no prompt at all. */
+      if(_toolNeedsConsent(name)){
+        const allowed = await _confirmModelTool(name, input || {});
         if(!allowed){
-          out = { text:'The user DENIED permission to run "'+tu.name+'". Do not attempt it again unless they explicitly ask for it. Continue helping without it.', render:null };
-          try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_denied',{tool:tu.name,surface}); }catch(e){}
+          try{ if(typeof AEGIS !== 'undefined') AEGIS.log('tool_denied', { tool:name, surface }); }catch(e){}
+          return { ok:false, text:'The user DENIED permission to run "' + name + '". Do not attempt it '
+                 + 'again unless they explicitly ask for it. Continue helping without it.' };
         }
       }
-      if(!out) out = await _amvRunTool(tu.name, tu.input || {}, onStatus);
-      results.push({ type:'tool_result', tool_use_id: tu.id, content: String(out.text||'').slice(0,8000) });
-      if(out.render) rendered += out.render;
-    }
-    messages.push({ role:'assistant', content: blocks });
-    messages.push({ role:'user', content: results });
-  }
-  return { text: finalText, rendered, rounds: maxRounds, hitLimit:true };
+      const r = await _amvRunTool(name, input || {}, onStatus);
+      if(r && r.render) rendered += r.render;
+      return { ok:true, text: String((r && r.text) || '') };
+    },
+  });
+
+  return { text: out.text, rendered, rounds: out.rounds,
+           ...(out.why === 'rounds' ? { hitLimit:true } : {}) };
 }
 try{ window.runAgentic = runAgentic; }catch(e){}
 

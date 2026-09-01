@@ -160,7 +160,7 @@ function _devChangeCardHTML(entry){
     /* The wording changes with the state, because "3 files changed" above a
        set of changes that have not happened yet is a lie the whole feature
        rests on not telling. */
-    + '<span class="dvc-n">' + n + ' file' + (n === 1 ? '' : 's') + ' '
+    + '<span class="dvc-n" data-i18n>' + n + ' file' + (n === 1 ? '' : 's') + ' '
       + (staged ? 'to change' : 'changed') + '</span>'
     + '<span class="dvc-add" aria-label="' + add + ' lines added">+' + add + '</span>'
     + '<span class="dvc-del" aria-label="' + del + ' lines removed">-' + del + '</span>'
@@ -172,10 +172,10 @@ function _devChangeCardHTML(entry){
                version used white and measured 4.1:1 in the dark theme where
                the shared one measures 4.83. Reusing it is the design-system
                rule and it happens to be the accessible answer as well. */
-            + '<button class="btn bs dvc-reject" type="button" data-dvc-discard="' + escH(entry.chgId) + '">Discard</button>'
-            + '<button class="btn bp dvc-apply" type="button" data-dvc-apply="' + escH(entry.chgId) + '">Apply</button>'
+            + '<button class="btn bs dvc-reject" type="button" data-i18n data-dvc-discard="' + escH(entry.chgId) + '">Discard</button>'
+            + '<button class="btn bp dvc-apply" type="button" data-i18n data-dvc-apply="' + escH(entry.chgId) + '">Apply</button>'
           + '</span>'
-        : t ? '<button class="dvc-undo" type="button" data-dvc-undo="' + escH(entry.chgId) + '">'
+        : t ? '<button class="dvc-undo" type="button" data-i18n data-dvc-undo="' + escH(entry.chgId) + '">'
             + (undone ? 'Redo' : 'Undo')
             + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
             + (undone ? '<polyline points="15 14 20 9 15 4"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>'
@@ -199,7 +199,7 @@ function _devChangeCardHTML(entry){
       + '<button class="dvc-row" type="button"' + act + '>'
         + _devFileChipHTML(r.path)
         + '<span class="dvc-path">' + escH(r.path) + '</span>'
-        + (r.kind === 'edited' ? '' : '<span class="dvc-kind">' + r.kind + '</span>')
+        + (r.kind === 'edited' ? '' : '<span class="dvc-kind" data-i18n>' + r.kind + '</span>')
         + '<span class="dvc-add" aria-label="' + r.add + ' added">+' + r.add + '</span>'
         + '<span class="dvc-del" aria-label="' + r.del + ' removed">-' + r.del + '</span>'
       + '</button></div>';
@@ -211,7 +211,7 @@ function _devChangeCardHTML(entry){
   return '<div class="dvc' + (undone ? ' dvc-undone' : '') + (staged ? ' dvc-staged' : '')
       + (discarded ? ' dvc-discarded' : '') + '">' + head
     + '<div class="dvc-rows">' + body + '</div>'
-    + (note ? '<div class="dvc-note">' + note + '</div>' : '')
+    + (note ? '<div class="dvc-note" data-i18n>' + note + '</div>' : '')
     + '</div>';
 }
 try{ window._devChangeCardHTML=_devChangeCardHTML; }catch(e){}

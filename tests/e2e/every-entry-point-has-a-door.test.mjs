@@ -41,7 +41,13 @@ const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
    because "internal API" is the excuse this check would rot into if it were
    allowed to be a bare list of names. */
 const NOT_A_DOOR = {
-  runAgentic:  'the agentic tool loop - an engine other code calls into, exposed so a surface can drive it without importing across module boundaries in a single-scope bundle',
+  /* Its rationale said "an engine other code calls into". Nothing did, and it
+     carried the res.json()-on-a-stream defect the whole time, so the claim was
+     false in both halves and this list said so with a straight face - which is
+     exactly the rot this file exists to prevent. It is now the surface-specific
+     half - which tools, the consent gate, the rendered extras - sitting on the
+     one tested loop, and it is still exported for a surface to drive. */
+  runAgentic:  'the per-surface half of the agentic loop (tool selection + consent) over aiAgentLoop, exposed so a surface can drive it without importing across module boundaries in a single-scope bundle',
   qDecompose:  'the quality module’s task splitter, same shape: engine, not screen',
   amvOpenFile: 'the file-open bridge the desktop and editor integrations call from outside the page, so by definition nothing inside the bundle references it',
   /* THE CONSUME HALF OF A PAIR WHOSE START HALF IS LIVE.

@@ -225,7 +225,41 @@ try {
   }
 } catch { /* non-fatal */ }
 
-/* ── 9. package.json has a deploy script ─────────────────────────────────── */
+/* ── 9. WHAT THE STATIC HOST WOULD SERVE ──────────────────────────────────
+
+   The site is a single file at the root of this repository, so the static
+   host's publish directory is very likely the repository itself - and a
+   static host serves what is in its publish directory. All of it.
+
+   That means the Worker source, the security register, the deploy notes and
+   wrangler.toml are readable at `https://<the site>/<the filename>` by
+   anybody who guesses a name, and the names are not hard to guess. None of
+   them is a credential - secrets live in the Worker's environment and never
+   in a file here - so this is reconnaissance rather than a key. But
+   `SECURITY-SCAMS.md` is a list of what is defended and, by omission, what
+   is not; `amv-backend.js` is every route and every limit; and
+   `wrangler.toml` will carry the real KV namespace id the moment it stops
+   being a placeholder.
+
+   This cannot be settled from inside the repository - only the host knows
+   its publish directory - so it is a warning that names the files rather
+   than a check that passes or fails. If the publish directory is already
+   narrowed, this costs one line to read and ignore. */
+{
+  const PRIVATE = ['amv-backend.js', 'wrangler.toml', 'wrangler.saved.toml',
+                   'SECURITY-SCAMS.md', 'GO-LIVE.md', 'DEPLOY.md', 'LESSONS.md',
+                   'check.mjs', 'preflight.mjs', 'backup.mjs', 'package.json'];
+  const present = PRIVATE.filter(f => existsSync(R(f)));
+  if (present.length) {
+    warn('if the static host publishes this whole folder, these are PUBLIC at your domain: '
+         + present.slice(0, 6).join(', ') + (present.length > 6 ? `, +${present.length - 6} more` : ''),
+         'point the host\'s publish directory at a folder holding only index.html, sw.js, '
+       + 'manifest.webmanifest, the icons and amv-bridge.mjs - or add host rules denying '
+       + 'the rest. Check by opening https://<your domain>/amv-backend.js');
+  }
+}
+
+/* ── 10. package.json has a deploy script ────────────────────────────────── */
 if (pkg) {
   if (/"deploy"\s*:\s*"wrangler deploy"/.test(pkg)) ok('npm run deploy is wired to wrangler');
   else warn('no `deploy` script in package.json', 'add "deploy": "wrangler deploy" to scripts');

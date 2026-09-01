@@ -302,8 +302,33 @@ async function aiAgentLoop(opts){
     else if(!opts.noLang) body.system = _langInstruction();
     if(opts.effort) body.effort = opts.effort;
 
-    const res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body)}, 180000);
-    if(!res.ok) throw await _aiError(res);
+    /* A BUSY MINUTE MUST NOT END A JOB THAT IS HALF DONE.
+
+       This runs up to two dozen rounds, so it is far more likely than a chat
+       turn to meet a rate limit or a moment of provider trouble - and unlike
+       a chat turn there is real work already on somebody's disk behind it.
+       Ending there would leave a half-finished build and a bill for it.
+
+       Only the conditions that really are passing are retried. A decision -
+       a plan boundary, a quota that is spent, a bad request - does not change
+       in two seconds, and retrying it makes somebody wait through two more
+       round trips to be told the same thing. Anything AMV named with a code
+       that is not on the transient list is answered at once, INCLUDING a code
+       added later: the cost of not retrying a passing error is one lost
+       round, and the cost of retrying a settled one is silence. */
+    let res, attempt = 0;
+    for(;;){
+      res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body)}, 180000);
+      if(res.ok) break;
+      const err = await _aiError(res);
+      const code = String(err.code || '');
+      const transient = /^(provider_error|rate_limited|not_ready|acct_busy)$/.test(code)
+                     || (!code && (res.status === 429 || res.status >= 500));
+      if(!transient || attempt >= 2 || stopped()) throw err;
+      attempt++;
+      onStep({ phase:'waiting', attempt, round: rounds });
+      await new Promise(r => setTimeout(r, Math.min(8000, 900 * Math.pow(2, attempt))));
+    }
     try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
     const data = await _aiReadStream(res);
     const blocks = data.content || [];

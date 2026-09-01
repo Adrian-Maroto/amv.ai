@@ -308,6 +308,25 @@ section('Stop lands on the next step, not at the end');
   ok(stopVisible.stop === true, 'a Stop button is really on the screen while it runs', stopVisible.stop);
   ok(stopVisible.send === true, 'and it has replaced Build rather than sitting beside it', stopVisible.send);
 
+  /* Hiding a focused element drops focus to the body, so somebody who started
+     this from the keyboard would have to hunt for the one control that
+     matters for the next minute. */
+  const focus = await page.evaluate(() => {
+    const send = document.getElementById('dev-send');
+    const stop = document.getElementById('dev-stop');
+    /* As it is the instant before a turn starts: visible and enabled, with
+       focus left on it by the Enter that started this. `_devBusy` disables it
+       once a turn is under way, and a disabled button cannot hold focus - so
+       reproducing the moment means undoing that first. */
+    send.hidden = false; send.disabled = false; send.focus();
+    const was = document.activeElement === send;
+    _agentSetRunning(true);
+    return { was, now: document.activeElement === stop, id: document.activeElement.id };
+  });
+  ok(focus.was === true, 'focus starts on Build, where pressing Enter left it', focus.was);
+  ok(focus.now === true,
+     'and moves to Stop rather than being dropped on the body', focus.id || '(body)');
+
   await page.waitForFunction(() => {
     const m = _DEV.log.filter(x => x.steps && x.steps.length).pop();
     return m && m.steps.length >= 1;

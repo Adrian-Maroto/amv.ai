@@ -25,8 +25,68 @@
    It also covers what only a stream can get wrong: a turn that arrives in
    many small pieces, a tool call whose arguments are split across events,
    and an error that arrives after a 200 has already been sent. */
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { bootLive, makeEnv, makeOutbound } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { codeOnly, functionBody } from '../lib/source.mjs';
+
+/* THE RULE, CHECKED STRUCTURALLY, BEFORE ANY BROWSER STARTS.
+
+   The behavioural half of this file needs a real Worker and a real browser,
+   which is slow and which only covers the callers somebody thought to drive.
+   This half covers ALL of them, cheaply, and is what would have caught the
+   third instance: `runAgentic`, a whole second tool loop with the same
+   `res.json()` against the same streaming route, which nothing called and
+   nothing therefore noticed.
+
+   The rule is simple enough to state as one: any function that posts to
+   `_aiBase()` is talking to a route that only ever answers with an event
+   stream, so it must read it as one. */
+{
+  const bundle = codeOnly(readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'app.js'), 'utf8'));
+
+  /* Which function each call to the proxy sits inside, found by walking back
+     to the nearest top-level declaration rather than by testing every
+     function in a 1.4MB bundle against a regex - that took long enough to be
+     the slowest thing in the suite for no extra certainty. */
+  const enclosing = (idx) => {
+    const before = bundle.lastIndexOf('\nfunction ', idx);
+    const beforeAsync = bundle.lastIndexOf('\nasync function ', idx);
+    const at = Math.max(before, beforeAsync);
+    if (at < 0) return null;
+    const m = /^\n(?:async\s+)?function\s+([A-Za-z_$][\w$]*)/.exec(bundle.slice(at, at + 80));
+    return m ? m[1] : null;
+  };
+  const callers = [...new Set([...bundle.matchAll(/_aiBase\s*\(\s*\)/g)]
+    /* Its own definition contains its own name followed by a paren. */
+    .filter(m => !/function\s+$/.test(bundle.slice(Math.max(0, m.index - 20), m.index)))
+    .map(m => enclosing(m.index))
+    .filter(Boolean))];
+
+  section('Nothing reads the streaming proxy as if it were an object');
+  {
+    ok(callers.length >= 3,
+       'the functions that post to the AI proxy were found', callers.join(', '));
+    const wrong = callers.filter(n => {
+      const body = functionBody(bundle, n);
+      /* Either it hands the response to the shared reader, or it reads the
+         stream itself, which is what chat does. Anything else is the bug. */
+      return !(/_aiReadStream\s*\(/.test(body) || /getReader\s*\(/.test(body));
+    });
+    ok(wrong.length === 0,
+       'every one of them reads the response as the stream it is', wrong);
+    /* Deliberately NOT "nothing calls .json()". Reading an ERROR body as JSON
+       is correct - AMV's refusal envelope is JSON and chat depends on it - so
+       banning the method would fail the one caller that was always right. The
+       rule that separates the three real defects from that is whether the
+       SUCCESS path reads a stream at all, which is what is asserted above. */
+    ok(callers.every(n => (functionBody(bundle, n) || '').length > 0),
+       'and every one of them was read as a whole function, not a fragment', callers.length);
+  }
+}
 
 const MODEL = 'https://model.example';
 const MRE = new RegExp(MODEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
