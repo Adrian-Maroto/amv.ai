@@ -48,9 +48,26 @@ id = "a6ebfd730a654c638402484b324c8311"
 name = "AMV_COUNTER"
 class_name = "AMVCounter"
 
+# SQLITE-BACKED, BECAUSE THE OTHER KIND IS NOT DEPLOYABLE HERE.
+#
+# `new_classes` creates a Durable Object on the legacy key-value backend, and a
+# free-plan account cannot create one at all: wrangler deploy is refused with
+# "In order to use Durable Objects with a free plan, you must create a namespace
+# using a `new_sqlite_classes` migration" [code: 10097]. It is the LAST thing
+# checked on a deploy, so it fails after a clean build and a full upload.
+#
+# Nothing else changes. AMVCounter uses state.storage.get/put/setAlarm, which
+# both backends implement identically - the SQLite backend adds SQL on top
+# rather than replacing the key-value API. It is also what Cloudflare now
+# recommends for every new namespace, so this is the current default rather
+# than a concession to the free plan.
+#
+# Safe to change here only because the class has never been deployed. Switching
+# the backend of a LIVE Durable Object is not this edit; it is a migration with
+# data in it.
 [[migrations]]
 tag = "v1"
-new_classes = ["AMVCounter"]
+new_sqlite_classes = ["AMVCounter"]
 
 # ── THIS is what lets Crew operate websites that have no API ──
 # Browser Rendering gives the Worker a real headless browser, so the web agent

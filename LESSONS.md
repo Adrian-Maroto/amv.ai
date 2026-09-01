@@ -7264,3 +7264,46 @@ the environment to delete your results. Catch what the environment can do to you
 worst case is one red line and not a file that never finished. Retrying is only
 safe where an assertion downstream still checks the work actually happened;
 where it is safe, prefer it, and prove the recovery runs by forcing the error.
+
+---
+
+## 326. The preflight checked that a migration existed, not that it could be created
+
+The first deploy that ran the right command on the right branch got all the way
+through a clean build and a 1.9MB upload, resolved both bindings, and was then
+refused:
+
+    In order to use Durable Objects with a free plan, you must create a
+    namespace using a `new_sqlite_classes` migration. [code: 10097]
+
+`wrangler.toml` said `new_classes = ["AMVCounter"]`, which creates the Durable
+Object on the legacy key-value backend. A free-plan account cannot create one at
+all. The preflight had a check for this file - it asserted AMVCounter was bound,
+exported, AND migrated - and the migration check was
+`/new_classes\s*=\s*\[[^\]]*"AMVCounter"/`. Present, so green, all the way to a
+config that could not deploy on the account it was written for.
+
+The check tested for the EXISTENCE of a migration. What decides the deploy is
+its KIND. That distinction cost a full build cycle, and it is the third time in
+this session that a check has been green about a property adjacent to the one
+that mattered.
+
+It is also the worst-placed failure in the whole deploy: refused last, by the
+API, after everything expensive has already succeeded. Which is exactly what a
+preflight is for - it exists to move that verdict to the front, and here it had
+the file open and did not look.
+
+The preflight now distinguishes the two, names the fix, and was verified by
+forcing the legacy form: red, with `new_sqlite_classes = ["AMVCounter"]` in the
+message.
+
+Nothing else changed. AMVCounter uses `state.storage.get/put/setAlarm`, which
+both backends implement identically - SQLite adds SQL on top rather than
+replacing the key-value API - and SQLite-backed is what Cloudflare now
+recommends for every new namespace. The edit is only safe because the class had
+never been deployed; switching a live one is a migration with data in it.
+
+**The rule.** When a check stands in for "will this deploy", assert the property
+the deploy actually tests, not the nearest thing that is easy to grep for. A
+field being present is rarely the requirement; a field being present AND of the
+kind this account can use, usually is.

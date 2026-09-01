@@ -88,7 +88,9 @@ if (toml) {
 /* ── 5. Durable Object: bound, migrated, AND the class is exported ────────── */
 if (toml && backend) {
   const doBound = /class_name\s*=\s*"AMVCounter"/.test(toml) && /name\s*=\s*"AMV_COUNTER"/.test(toml);
-  const doMigrated = /new_classes\s*=\s*\[[^\]]*"AMVCounter"/.test(toml);
+  const doSqlite = /new_sqlite_classes\s*=\s*\[[^\]]*"AMVCounter"/.test(toml);
+  const doLegacy = /(?<!sqlite_)new_classes\s*=\s*\[[^\]]*"AMVCounter"/.test(toml);
+  const doMigrated = doSqlite || doLegacy;
   const doExported = /export\s+class\s+AMVCounter/.test(backend);
 
   if (doExported) ok('AMVCounter class is exported from the Worker');
@@ -99,9 +101,16 @@ if (toml && backend) {
   else err('AMV_COUNTER Durable Object is NOT bound - usage limits silently fall back to a NON-ATOMIC counter',
     'add [[durable_objects.bindings]] with name="AMV_COUNTER", class_name="AMVCounter"');
 
-  if (doMigrated) ok('AMVCounter has a migration entry');
+  /* The KIND of migration matters, and only at deploy time. A free-plan
+     account cannot create a key-value-backed Durable Object at all - wrangler
+     refuses with code 10097 - and it refuses LAST, after a clean build and a
+     1.9MB upload. Cheaper to say so here. */
+  if (doSqlite) ok('AMVCounter has a SQLite-backed migration entry');
+  else if (doLegacy) err('AMVCounter migrates with new_classes, which a free-plan account cannot create',
+    'change it to new_sqlite_classes = ["AMVCounter"] - same storage API, and what Cloudflare '
+  + 'recommends for every new namespace. Only safe before the class has been deployed.');
   else err('AMVCounter has no [[migrations]] entry - first deploy of the DO will be rejected',
-    'add [[migrations]] with tag and new_classes = ["AMVCounter"]');
+    'add [[migrations]] with tag and new_sqlite_classes = ["AMVCounter"]');
 }
 
 /* ── 6. Cron trigger present (automations/research watches depend on it) ──── */

@@ -90,7 +90,7 @@ try {
   /* ── A missing migration (DO deploy would be rejected) ──────────────────── */
   section('Preflight catches a missing DO migration');
   const noMig = setKvId(good, 'realid123')
-    .replace(/\[\[migrations\]\][\s\S]*?new_classes\s*=\s*\[[^\]]*\]/, '');
+    .replace(/\[\[migrations\]\][\s\S]*?new_(sqlite_)?classes\s*=\s*\[[^\]]*\]/, '');
   writeFileSync(TOML, noMig);
   r = runPreflight();
   ok(r.code === 1, 'a missing migration blocks deploy', r.code);
