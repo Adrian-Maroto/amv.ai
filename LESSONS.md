@@ -7345,3 +7345,30 @@ is the first time half the product has ever executed. Expect the sweeps to find
 things, read what they report as being about the product rather than about
 themselves, and look hardest at the paths that were previously unreachable -
 they have never been seen by anyone.
+
+### 327a. And a counter that counted the wrong requests
+
+Same cause, one suite over. `team-seats` asserts "the team is fetched once, not
+in a loop" - the team pane re-draws when the team arrives, and re-drawing
+unconditionally would fetch, render, fetch, for ever. It proved that by
+replacing `AMV_API._fetch` with a stub that incremented a counter and ignoring
+which endpoint was asked for.
+
+That worked while nothing else on the screen could reach the network. With
+`AMV_API.live` false everywhere, the team read was the ONLY request the settings
+screen made, so "every request" and "the team request" were the same number. A
+real backend address made the invite pane ask `/v1/referral` for the person's
+referral code - correct, once, its own business - and the count went to 2. The
+suite reported a re-render loop in a pane that does not have one.
+
+The stub now counts `/team/get`. Proven in both directions: a deliberate second
+team read turns it red, and the referral call no longer touches it.
+
+Also swept the other six suites that stub `_fetch` without looking at the path.
+All six make EVERY request fail, which is exactly right for the offline and
+degraded states they test, and none of them counts calls. This was the only one.
+
+**The addendum to 327.** Turning the backend on does not only reveal missing
+product states; it breaks measurements that were accidentally exact. Any test
+counting "how many requests" was, until now, counting in a world with almost no
+requests. Count the endpoint you mean.

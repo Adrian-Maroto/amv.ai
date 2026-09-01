@@ -174,7 +174,20 @@ section('Settings answers "what is a team", with numbers');
     window.__f = 0;
     window.AMVTeam.enabled = () => true;
     window.AMVTeam._cache = null;
-    window.AMV_API._fetch = async () => { window.__f++; return { ok: true, status: 200, json: async () => ({ ok: true, team: {
+    /* COUNT THE TEAM READ, NOT EVERY REQUEST THE SETTINGS SCREEN MAKES.
+
+       This counted every call through _fetch, on the assumption that the only
+       thing fetching on this screen was the team. That held while the app had
+       no backend: AMV_API.live was false everywhere, so no other pane reached
+       the network and the total happened to equal the team reads. With a real
+       backend configured, the invite pane correctly asks /v1/referral for the
+       person's referral code - and the count went to 2, reporting a re-render
+       loop in the team pane that does not exist.
+
+       The assertion is about ONE endpoint being read once. Counting that
+       endpoint says so, and stays true however many other panes on this screen
+       legitimately load their own data. */
+    window.AMV_API._fetch = async (path) => { if(String(path||'').indexOf('/team/get') >= 0) window.__f++; return { ok: true, status: 200, json: async () => ({ ok: true, team: {
       id: 't1', name: 'Acme', members: [{ email: 'owner@x.com', role: 'owner' }],
       seats: { used: 1, limit: 10, over: 0 } } }) }; };
     S.settingsPane = 'teamset'; S.tab = 'settings'; setTab('settings');
