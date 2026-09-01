@@ -6766,3 +6766,61 @@ that must already tell a regex from a division to find comments at all.
 **When a second pass needs to know something the first pass already worked
 out, extend the first pass.** Verified by putting the bug back and watching
 the rule name it.
+
+## 309. The proxy only ever streamed, and five surfaces called res.json() on it
+
+`/v1/messages` writes `stream: true` into its upstream body as a literal, tees
+the result and returns `text/event-stream`. There is no other success path out
+of that handler, and none of it depends on what the caller asked for, because
+the caller is never asked.
+
+Chat knew. `aiComplete` and `aiCompleteLong` did `await res.json()`, which on a
+body of `data: {...}` lines throws `SyntaxError: Unexpected end of JSON input`
+before the first word reaches anything. Build, Design, Crew, the agents, the
+accuracy pass and the translation cache all go through those two functions. In
+production, on every call, all of them would have failed - and failed as "AMV
+hit a snag", which reads as a bad day rather than as a product that cannot
+work at all.
+
+Why 138 suites were green about it: every browser suite stubs `fetch` and hands
+back a JSON object, so the parse always succeeded and the test proved the stub.
+The one suite that drives the real Worker posts with `fetch` directly and reads
+`r.text()` - it exercised the handler thoroughly and never touched the two
+functions the app uses. Both halves were covered. The seam was not, and the
+seam was the product.
+
+**The rule.** A test that stubs the transport proves the caller's logic and
+nothing about the wire. For every function that talks to our own server, at
+least one test must run the REAL server and call the function the APP calls -
+not fetch. If the only end-to-end test posts with fetch, what it proves is that
+fetch works.
+
+Related, and the reason this went unnoticed for so long: this is the third time
+"correct at both ends, never introduced in the middle" has shipped (297: dead
+guards; 300: `_ghConnection` reading the wrong shape). The pattern is always a
+list, a name or a content type that two files each hold a version of. The fix
+is never cleverness; it is one test that reads both.
+
+## 310. The tool allowlist dropped a whole feature, twice
+
+`_safeTools` refuses to forward arbitrary client-supplied tool definitions
+upstream, and allows AMV's own by name from a Set in the Worker. Correct
+policy. It has now silently deleted a feature twice.
+
+First by allowing on `t.type` - and none of AMV's own tools have a type - so
+every one was dropped on every turn since the day they were written. The system
+prompt promised the model real tools; the model was handed none.
+
+Second by being four names short. The bridge shipped complete: a daemon, a
+pairing screen, four tools, a runner, a test that drives the real HTTP surface.
+`run_command` was not in the Set, so the definitions stopped at the last hop
+before the model, and somebody with a connected computer asking AMV to run
+their tests would have got advice about running tests.
+
+Both are invisible from either end. The client assembles the tools and believes
+it sent them; the server never sees a name it recognises as wrong, only one it
+does not recognise at all, and drops it in silence.
+
+**The rule.** An allowlist is a second copy of a list that lives somewhere
+else. Whenever one is added, the test that compares it to the first copy is
+part of the change, not a follow-up.

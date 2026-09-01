@@ -26727,6 +26727,110 @@ async function _aiError(res){
 }
 try{ window._aiError = _aiError; }catch(e){}
 
+/* ══════════════════════════════════════════════════════════════════════
+   THE PROXY ONLY EVER STREAMS, AND FIVE SURFACES CALLED res.json() ON IT.
+
+   `/v1/messages` builds its upstream request with `stream: true` written in
+   literally, tees the result, and returns it as `text/event-stream`. There is
+   no other success path out of that handler - not one that depends on what
+   the caller asked for, because the caller is never asked.
+
+   Chat knew that and reads the events. `aiComplete` and `aiCompleteLong` did
+   `await res.json()`, which on a body of `data: {...}` lines throws a parse
+   error before the first word. Everything that is not chat goes through those
+   two: Build, Design, Crew, the agents, the accuracy pass, the translation
+   cache. All of it, in production, on every single call.
+
+   Nothing could see it. Every browser suite stubs `fetch` and hands back a
+   JSON object, so the parse always succeeded; the one suite that drives the
+   real Worker posts with `fetch` directly and reads `r.text()`, so it never
+   touched these functions. The two halves were each correct and were never
+   introduced to one another - and the failure surfaced as "AMV hit a snag",
+   which reads as a bad day rather than as a product that cannot work.
+
+   So there is now one reader, and it returns the NON-streaming message shape
+   the callers were already written against - `{content, stop_reason, usage}` -
+   so nothing downstream had to learn about streams to be correct. A response
+   that genuinely is JSON is still parsed as JSON, which keeps every stub
+   honest and leaves room for a non-streaming path to exist later. */
+async function _aiReadStream(res, onText){
+  const ct = String((res.headers && res.headers.get('Content-Type')) || '');
+  if(!/event-stream/i.test(ct)) return await res.json();
+
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  const blocks = [];
+  let buffer = '', stopReason = null, model = '';
+  const usage = { input_tokens:0, output_tokens:0 };
+
+  for(;;){
+    const step = await reader.read();
+    if(step.done) break;
+    buffer += dec.decode(step.value, { stream:true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for(const line of lines){
+      if(!line.startsWith('data:')) continue;
+      const raw = line.slice(5).trim();
+      if(!raw || raw === '[DONE]') continue;
+      let evt; try{ evt = JSON.parse(raw); }catch(e){ continue; }
+
+      if(evt.type === 'message_start' && evt.message){
+        model = evt.message.model || model;
+        if(evt.message.usage) usage.input_tokens = evt.message.usage.input_tokens || 0;
+      }
+      if(evt.type === 'message_delta'){
+        if(evt.usage && evt.usage.output_tokens != null) usage.output_tokens = evt.usage.output_tokens;
+        if(evt.delta && evt.delta.stop_reason) stopReason = evt.delta.stop_reason;
+      }
+      if(evt.type === 'content_block_start'){
+        const b = evt.content_block || {};
+        /* A tool call arrives as a header and then its arguments, one JSON
+           fragment at a time. `_json` collects them; it is parsed once at the
+           end, because a half-arrived object is not an object. */
+        blocks[evt.index] = (b.type === 'tool_use' || b.type === 'server_tool_use')
+          ? { type:b.type, id:b.id, name:b.name, _json:'' }
+          : (b.type === 'text' ? { type:'text', text:b.text || '' } : Object.assign({}, b));
+      }
+      if(evt.type === 'content_block_delta'){
+        const b = blocks[evt.index]; if(!b) continue;
+        const d = evt.delta || {};
+        if(d.type === 'text_delta'){ b.text = (b.text || '') + (d.text || ''); if(onText) onText(d.text || ''); }
+        else if(d.type === 'input_json_delta'){ b._json = (b._json || '') + (d.partial_json || ''); }
+        else if(d.type === 'thinking_delta'){ b.thinking = (b.thinking || '') + (d.thinking || ''); }
+      }
+      /* An error that arrives PART WAY THROUGH a 200. The status said fine and
+         the stream then said otherwise, which is the one failure a caller
+         reading only `res.ok` can never see. */
+      if(evt.type === 'error' && evt.error){
+        const e = new Error(evt.error.message || 'The engine stopped part way through.');
+        try{ if(evt.error.message) e._saidPlainly = true; e.code = evt.error.type || ''; }catch(x){}
+        throw e;
+      }
+    }
+  }
+
+  const content = [];
+  for(const b of blocks){
+    if(!b) continue;
+    if(b._json !== undefined){
+      let input = {};
+      try{ input = b._json ? JSON.parse(b._json) : {}; }catch(e){ input = {}; }
+      content.push({ type:b.type, id:b.id, name:b.name, input });
+    } else content.push(b);
+  }
+  /* Nothing at all and no reason given is a connection that died, not an
+     empty answer. Saying so beats returning '' and letting a surface render
+     a blank result as a successful one. */
+  if(!content.length && stopReason === null){
+    const e = new Error('The connection stalled before AMV could answer. Please try again.');
+    try{ e._saidPlainly = true; e.code = 'provider_error'; }catch(x){}
+    throw e;
+  }
+  return { content, stop_reason:stopReason, usage, model };
+}
+try{ window._aiReadStream = _aiReadStream; }catch(e){}
+
 /* WHAT THE LAST CALL ACTUALLY RAN AT.
 
    The server clamps effort to what the plan allows and reports the resolved
@@ -26769,7 +26873,7 @@ async function aiCompleteLong(prompt, system, opts){
     const res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body)}, 180000);
     if(!res.ok) throw await _aiError(res);
     try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
-    const data = await res.json();
+    const data = await _aiReadStream(res);
     const chunk = (data.content||[]).map(b=>b.text||'').join('');
     full += chunk;
 
@@ -26811,7 +26915,7 @@ async function aiComplete(prompt, system, opts){
   const res = await fetchDeadline(url,{method:'POST',headers,body:JSON.stringify(body)}, 120000);
   if(!res.ok) throw await _aiError(res);
   try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
-  const data = await res.json();
+  const data = await _aiReadStream(res);
   const text=_noDash((data.content||[]).map(b=>b.text||'').join('').trim());
   // record usage for EVERY call (Lab, Dev, Studio, Cowork, agents) - not just chat
   try{

@@ -11961,6 +11961,21 @@ const AMV_CLIENT_TOOLS = new Set([
   'crew_ceiling',
   'memory_list', 'memory_add', 'memory_forget',
   'approvals_list', 'approval_act', 'account_status',
+  /* THE BRIDGE'S TOOLS, AND THE SAME MISTAKE ONE FLOOR UP.
+
+     The bridge was built end to end - a daemon on somebody's machine, a
+     pairing screen, four tools, a runner that executes them - and the tool
+     definitions stopped HERE, dropped by name at the last hop before the
+     model. Every piece worked and the model was never told the machine
+     existed, so it answered "run the tests" with a paragraph about how to
+     run them, on a connected computer that was waiting to.
+
+     That is the exact failure the comment above this list describes, found
+     again by reading the list again. Nothing executes on the server: these
+     run in the person's browser, through their own bridge, in the one
+     folder it was started in, behind a confirmation for the two that
+     change something. */
+  'run_command', 'read_file', 'write_file', 'list_dir',
 ]);
 const TOOLS_MAX          = 24;      // more than AMV has, far less than an attack
 const TOOL_DESC_MAX      = 1200;    // a description, not a second prompt
