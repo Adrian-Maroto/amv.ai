@@ -231,31 +231,38 @@ try {
    host's publish directory is very likely the repository itself - and a
    static host serves what is in its publish directory. All of it.
 
-   That means the Worker source, the security register, the deploy notes and
-   wrangler.toml are readable at `https://<the site>/<the filename>` by
-   anybody who guesses a name, and the names are not hard to guess. None of
-   them is a credential - secrets live in the Worker's environment and never
-   in a file here - so this is reconnaissance rather than a key. But
-   `SECURITY-SCAMS.md` is a list of what is defended and, by omission, what
-   is not; `amv-backend.js` is every route and every limit; and
-   `wrangler.toml` will carry the real KV namespace id the moment it stops
-   being a placeholder.
+   That is not hypothetical any more: opening https://<the site>/amv-backend.js
+   returned the Worker. Every route and every limit, and beside it
+   wrangler.toml, SECURITY-SCAMS.md - a list of what is defended and, by
+   omission, what is not - the deploy notes, and the tests. None of them is a
+   credential; secrets live in the Worker's environment and never in a file
+   here. It is reconnaissance rather than a key, which is not a reason to keep
+   handing it out.
 
-   This cannot be settled from inside the repository - only the host knows
-   its publish directory - so it is a warning that names the files rather
-   than a check that passes or fails. If the publish directory is already
-   narrowed, this costs one line to read and ignore. */
+   The build now writes `public/`, holding exactly what a visitor's browser
+   asks for and nothing else, so the fix is one field rather than a list of
+   deny rules. Whether the host has been pointed at it cannot be answered from
+   in here - only the host knows its publish directory - so this stays a
+   warning that names the files and the folder, not a check that passes. */
 {
   const PRIVATE = ['amv-backend.js', 'wrangler.toml', 'wrangler.saved.toml',
                    'SECURITY-SCAMS.md', 'GO-LIVE.md', 'DEPLOY.md', 'LESSONS.md',
                    'check.mjs', 'preflight.mjs', 'backup.mjs', 'package.json'];
   const present = PRIVATE.filter(f => existsSync(R(f)));
-  if (present.length) {
-    warn('if the static host publishes this whole folder, these are PUBLIC at your domain: '
+  const ready = existsSync(R('public', 'index.html'));
+
+  if (!ready) {
+    err('public/ has no index.html, so the host has nothing narrow to publish',
+        'rebuild with: node build.mjs   (it writes public/ from the built artifacts)');
+  } else if (present.length) {
+    warn('if the static host still publishes this whole folder, these are PUBLIC at your domain: '
          + present.slice(0, 6).join(', ') + (present.length > 6 ? `, +${present.length - 6} more` : ''),
-         'point the host\'s publish directory at a folder holding only index.html, sw.js, '
-       + 'manifest.webmanifest, the icons and amv-bridge.mjs - or add host rules denying '
-       + 'the rest. Check by opening https://<your domain>/amv-backend.js');
+         'set the host\'s publish directory to  public  - it already holds index.html, sw.js, '
+       + 'manifest.webmanifest, the icons and amv-bridge.mjs, and nothing else. '
+       + 'Check by opening https://<your domain>/amv-backend.js in a private window: '
+       + 'a 404 is the answer you want.');
+  } else {
+    ok('public/ is the folder to publish, and holds only what a visitor needs');
   }
 }
 

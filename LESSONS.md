@@ -7135,3 +7135,37 @@ not call it a proof. Where the subject can be asked directly, ask it. This is
 the same defect as the meter that measured the wrong tank (305) and the
 400-character safety net (308), in the one place that certifies the tools every
 other check is built on.
+
+---
+
+## 323. The warning was right, and a warning is not a fix
+
+`node preflight.mjs` had said it on every run for weeks: if the static host
+publishes this whole folder, `amv-backend.js` and ten more files are public at
+your domain. It named the files. It named the fix - point the publish
+directory at a folder holding only what a visitor needs. Then the owner opened
+`https://<the site>/amv-backend.js` and the Worker came back.
+
+Nothing had gone wrong that the warning did not describe. What went wrong is
+that the warning described a folder that did not exist. Acting on it meant
+somebody working out which files a visitor actually needs, creating the folder,
+copying them in, and then keeping that copy in step with every future build by
+hand - so of course it stayed unactioned. The advice was correct and the work
+it implied was the reason it was never taken.
+
+The build now writes `public/`, and a suite checks it holds exactly what the
+page asks this origin for, byte-identical, with none of the rest of the
+repository in it. The warning says the same thing it always said, except the
+fix is now one field in the host's settings.
+
+Worth being exact about what leaked, because overstating it is its own error:
+no credential. Secrets live in the Worker's environment and none is written to
+a file here - which the new suite now checks rather than asserting. What was
+readable is reconnaissance: every route and every limit, and a register of what
+is defended and, by omission, what is not.
+
+**The rule.** A warning nobody can act on in one step is a warning that will be
+read and left. When a check tells somebody to do something, build the thing it
+is telling them to do, so what is left of the job is the part only they can do.
+The last step here genuinely is theirs - only the host knows its publish
+directory - but that is one field, not an afternoon.

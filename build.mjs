@@ -13,7 +13,7 @@
  * (still one index.html, no external requests, global scope + strict mode
  * preserved, DOM fully available when the code runs).
  */
-import { readFileSync, writeFileSync, readdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, unlinkSync, statSync } from 'fs';
 import { deflateSync as zlibDeflate } from 'zlib';
 import { createHash } from 'crypto';
 import { execSync } from 'child_process';
@@ -326,6 +326,7 @@ async function rebuild() {
   } catch (e) { /* a missing stamp only costs the warning, never the build */ }
 
   writePWA(html);
+  emitPublishDir();
   console.log(`Built index.html - deferred non-blocking script${MINIFY ? ', minified' : ''}, validated OK.`);
 }
 
@@ -648,6 +649,71 @@ function solidPng(size) {
     Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
     chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0)),
   ]);
+}
+
+/* THE FOLDER A STATIC HOST IS MEANT TO PUBLISH.
+
+   The site is one index.html at the root of this repository, so the obvious
+   thing to point a static host at is the repository - and a static host
+   serves everything in its publish directory. That is how `amv-backend.js`
+   came back from https://<the site>/amv-backend.js: every route and every
+   limit in the Worker, and beside it wrangler.toml, SECURITY-SCAMS.md (a
+   register of what is defended and, by omission, what is not), the deploy
+   notes and the whole test suite. No credential is in any of them - secrets
+   live in the Worker's environment and are never written to a file here - but
+   reconnaissance that complete is not something to hand out either.
+
+   Only the host knows its publish directory, so this cannot be fixed from
+   inside the repository. What CAN be done from here is make the right answer
+   exist: a folder holding exactly what a visitor needs and nothing else, so
+   settling it is one field in the host's settings rather than a list of deny
+   rules somebody has to keep in step with the repository.
+
+   The files are copies, not moves. index.html stays at the root because that
+   is what the suites boot, what check.mjs measures and what a host already
+   pointed at the root keeps serving - so adding this breaks nothing and
+   narrowing the field is a decision the owner makes when they are ready.
+   Byte-identical copies also cost the repository nothing: git addresses blobs
+   by content, so the same bytes under two names are stored once.
+
+   Anything the page asks for at runtime has to be in here. app.js and
+   styles.css deliberately are NOT: the build inlines both into index.html,
+   and they stay at the root because check.mjs, the preflight and grep read
+   them. Add to PUBLISH only when a visitor's browser would actually request
+   the file. */
+const PUBLISH_DIR = 'public';
+const PUBLISH = [
+  'index.html',            // the app
+  'sw.js',                 // registered by the app for offline
+  'manifest.webmanifest',  // linked from the head, makes it installable
+  'icon-192.png',          // linked from the head and the manifest
+  'icon-512.png',          // the manifest's large and maskable icon
+  'amv-bridge.mjs',        // fetched by the connect card's Download button
+];
+function emitPublishDir() {
+  if (!existsSync(PUBLISH_DIR)) mkdirSync(PUBLISH_DIR, { recursive: true });
+
+  for (const f of PUBLISH) {
+    if (!existsSync(f)) throw new Error(`${f} is in PUBLISH but was not built`);
+    writeFileSync(`${PUBLISH_DIR}/${f}`, readFileSync(f));
+  }
+
+  /* A file that stopped being published has to LEAVE, or the host keeps
+     serving it long after the page stopped asking for it. Only plain files
+     directly in the folder are removed, and only ones PUBLISH does not name -
+     a directory is reported rather than deleted, because a build that can
+     delete a tree is a build one typo away from deleting the wrong one. */
+  const keep = new Set(PUBLISH);
+  for (const name of readdirSync(PUBLISH_DIR)) {
+    if (keep.has(name)) continue;
+    const path = `${PUBLISH_DIR}/${name}`;
+    if (statSync(path).isDirectory()) {
+      console.warn(`  ! ${path} is a directory this build did not create - leaving it alone`);
+      continue;
+    }
+    unlinkSync(path);
+    console.warn(`  - removed ${path} (no longer published)`);
+  }
 }
 
 /* RUN ONLY WHEN RUN, SO THIS CAN ALSO BE READ.

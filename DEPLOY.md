@@ -160,9 +160,9 @@ The site is a single `index.html` at the root of this repository, so the
 host's publish directory is very likely the repository itself - and a static
 host serves everything in its publish directory.
 
-Open `https://<your domain>/amv-backend.js` in a private window. If the Worker
-source comes back, so does the rest: `wrangler.toml`, `SECURITY-SCAMS.md`,
-`GO-LIVE.md`, `LESSONS.md`, `check.mjs`, `tests/`.
+That is not a hypothetical. Opening `https://<your domain>/amv-backend.js`
+returned the Worker source, and beside it sit `wrangler.toml`,
+`SECURITY-SCAMS.md`, `GO-LIVE.md`, `LESSONS.md`, `check.mjs` and `tests/`.
 
 **No credentials are exposed by this.** Every secret lives in the Worker's
 environment and none is written to a file here. What is exposed is
@@ -171,27 +171,48 @@ what is defended and by omission what is not in `SECURITY-SCAMS.md`, and the
 real KV namespace id in `wrangler.toml` the moment it stops being a
 placeholder.
 
-**The fix is one field.** Point the host's publish directory at a folder that
-holds only what a visitor needs:
+### The fix is one field
+
+Set the host's **publish directory** to `public`.
+
+`node build.mjs` writes that folder, and it holds exactly this:
 
 ```
-index.html
-sw.js
-manifest.webmanifest
-amv-bridge.mjs        # the bridge download; the connect card fetches this
-icons/                # whatever the manifest references
+public/
+  index.html             the app
+  sw.js                  registered by the app, for offline
+  manifest.webmanifest   linked from the head, makes it installable
+  icon-192.png           linked from the head and the manifest
+  icon-512.png           the manifest's large and maskable icon
+  amv-bridge.mjs         fetched by the connect card's Download button
 ```
 
-Anything the page loads at runtime must be in there. `app.js` and `styles.css`
-do NOT need to be: the build inlines both into `index.html`, and they stay in
-the repository so `check.mjs`, the preflight and grep keep working.
+Nothing else, and nothing stale: the files are byte-for-byte copies written by
+every build, and `tests/worker/the-host-publishes-only-what-a-visitor-needs`
+fails if one drifts, if anything from the rest of the repository turns up in
+there, or if the page starts asking this origin for a file that is not
+published. The folder is committed, so a host with no build step serves it as
+it stands.
 
-If the host cannot be pointed at a subfolder, add deny rules for `*.md`,
-`*.mjs` (except `amv-bridge.mjs`), `*.toml` and `amv-backend.js`.
+`app.js` and `styles.css` are deliberately NOT in there: the build inlines
+both into `index.html`, and they stay at the root so `check.mjs`, the preflight
+and grep keep working.
 
-`node preflight.mjs` warns about this on every run until it is settled - it
-cannot check the answer from inside the repository, because only the host
-knows its publish directory.
+Where the field lives, on the hosts this has been set up on: Render →
+the static site → **Settings → Build & Deploy → Publish Directory**, then a
+manual deploy. Netlify → **Site settings → Build & deploy → Publish
+directory**. Vercel → **Settings → General → Output Directory**. Cloudflare
+Pages → **Settings → Builds & deployments → Build output directory**.
+
+**Then check it.** Open `https://<your domain>/amv-backend.js` in a private
+window. A 404 is the answer you want. `node preflight.mjs` warns on every run
+until the field is changed - it cannot see the answer from inside the
+repository, because only the host knows its publish directory.
+
+If the host cannot be pointed at a subfolder at all, the fallback is deny rules
+for `*.md`, `*.mjs` (except `amv-bridge.mjs`), `*.toml` and `amv-backend.js` -
+but that is a list somebody has to keep in step with the repository, which is
+why the folder exists.
 
 ---
 

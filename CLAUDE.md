@@ -48,6 +48,17 @@ Companion docs (do not duplicate them here - read them):
     artifact is kept where it is actually used. `--no-minify` opts out.
     `npm run check` has a gzipped ceiling on `index.html`, so it can only grow
     by somebody raising it on purpose.
+- **What the static host publishes is `public/`.** The build writes it: the
+  built `index.html`, `sw.js`, `manifest.webmanifest`, the two icons and
+  `amv-bridge.mjs`, byte-identical copies and nothing else. It exists because
+  the site is one file at the ROOT of this repository, so a host pointed at the
+  repository serves `amv-backend.js`, `wrangler.toml` and `SECURITY-SCAMS.md`
+  too - which it was, confirmed live. Add a file to `PUBLISH` in `build.mjs`
+  only when a visitor's browser actually requests it; `app.js` and `styles.css`
+  are inlined into the page and deliberately stay out.
+  `the-host-publishes-only-what-a-visitor-needs` fails on drift, on a leak, and
+  on a page asset that was never published. Pointing the host at it is the
+  owner's one field - the repository cannot see the answer.
 - Vanilla JS. There is NO React, Next.js, Vue, Tailwind, or bundler. Do not add
   one. Framework-specific tools and advice do not apply here.
 - Backend: a Cloudflare Worker (`amv-backend.js`) + KV + a Durable Object

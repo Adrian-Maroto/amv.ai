@@ -127,13 +127,19 @@ These are already coded to activate the moment you configure them:
 - For marketplace payouts: keep withdrawal holds on and require identity
   verification before releasing funds (money-laundering / wash-trade control).
 - Optionally add a disposable-email domain blocklist at signup.
-- **Narrow what the static host publishes.** The site is one file at the root
-  of this repository, so if the host's publish directory is the repository,
-  `amv-backend.js`, `wrangler.toml` and this file are readable at your domain.
-  No credentials - they live in the Worker's environment - but every route,
-  every limit, and this register of what is defended and, by omission, what is
-  not. Check by opening `https://<your domain>/amv-backend.js`; the one-field
-  fix is in DEPLOY.md, and `node preflight.mjs` warns until it is settled.
+- **Narrow what the static host publishes.** ⚠️ CONFIRMED OPEN, and it is one
+  field. The site is one file at the root of this repository, so if the host's
+  publish directory is the repository, everything in it is readable at your
+  domain - and opening `https://<your domain>/amv-backend.js` returned the
+  Worker. No credentials: those live in the Worker's environment and are never
+  written to a file here. What is exposed is every route, every limit, and this
+  register of what is defended and, by omission, what is not.
+  **The fix:** set the host's publish directory to `public`. The build writes
+  that folder and it holds only index.html, sw.js, manifest.webmanifest, the
+  two icons and amv-bridge.mjs - nothing else, checked on every run by
+  `tests/worker/the-host-publishes-only-what-a-visitor-needs`. Confirm with a
+  private window: `https://<your domain>/amv-backend.js` should 404.
+  `node preflight.mjs` warns until it is settled.
 
 _This register is intentionally conservative: where a defense is server-side it
 is marked 🛡️ so you know it needs your live keys to be enforced end-to-end._
