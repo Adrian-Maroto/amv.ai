@@ -28,7 +28,13 @@
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
-const app = await bootApp({ tab: 'billing', user: { name: 'A', email: 'a@x.com', ini: 'A' } });
+/* Served as a deployment nobody has connected a backend to, which is the whole
+   subject of this file. Clearing the localStorage override is not enough - that
+   correctly falls back to the address the build shipped with, so once a real one
+   was baked in this suite was testing a live deployment while asserting about a
+   dead one. The tag itself is what has to be empty. */
+const app = await bootApp({ tab: 'billing', apiBase: '',
+                            user: { name: 'A', email: 'a@x.com', ini: 'A' } });
 const { page, errors } = app;
 
 /* Stripe.js is stood up ONCE, before anything runs, and never fetched.

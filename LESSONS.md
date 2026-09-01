@@ -7372,3 +7372,33 @@ degraded states they test, and none of them counts calls. This was the only one.
 product states; it breaks measurements that were accidentally exact. Any test
 counting "how many requests" was, until now, counting in a world with almost no
 requests. Count the endpoint you mean.
+
+### 327b. And a suite that switched the backend off by clearing the wrong thing
+
+Third from the same cause. `money-needs-a-server` is entirely about what a
+visitor sees when a deployment has NO backend - no card form, no PayPal SDK, and
+plain words saying nothing was charged. It produced that state with
+`saveStr('amv_api_base', '')`.
+
+That is the per-device override, and clearing it correctly falls back to the
+address the build shipped with - documented behaviour, and the reason somebody
+can point one browser at a staging Worker and then undo it. With nothing baked
+in, empty override meant no backend and the fixture worked by coincidence. With
+a real address baked in, seven assertions inverted: the suite asserted "checkout
+is not connected" against a screen reading "Pay $15 / month", and then crashed
+clicking a disabled button that correctly no longer existed.
+
+The address the app falls back to is read from a meta tag once and memoised, so
+no amount of poking from inside the page can unset it. The honest fixture is to
+SERVE the page as an unconfigured deployment, so `bootApp({ apiBase: '' })` now
+rewrites that tag before the app ever reads it. 24 passed.
+
+Swept the other suites touching `amv_api_base` first: three more clear it, and
+all three pass - they either assert on something else or replace `AMV_API`
+wholesale. This was the only one.
+
+**The third addendum.** A test that switches a capability OFF is as
+configuration-dependent as one that switches it on, and it is the easier of the
+two to get wrong, because "off" was free for the entire life of an unconfigured
+project. Ask of every negative fixture: is this state built, or was it just the
+weather?

@@ -40,11 +40,30 @@ export const LAUNCH = (() => {
   return exe ? { executablePath: exe } : {};
 })();
 
-export async function serveApp() {
+/* SERVING THE PAGE AS A DEPLOYMENT THAT HAS NOT BEEN CONFIGURED YET.
+
+   The backend address lives in a meta tag the build writes, and the app reads
+   it ONCE and memoises it. A suite could not therefore switch it off from
+   inside the page: clearing the per-device override in localStorage correctly
+   falls back to whatever the build shipped with, which is the documented
+   behaviour and not something to work around.
+
+   Suites testing what a visitor sees when there is NO backend used to get that
+   state for free, because the built page never had an address in it. Once one
+   was baked in they were quietly testing the opposite thing. `apiBase` serves
+   the page with the tag set to whatever the suite means - '' for a deployment
+   nobody has connected yet - so the state is stated rather than inherited. */
+export async function serveApp(opts = {}) {
   if (!existsSync(APP)) {
     throw new Error('index.html not found - run `node build.mjs` first');
   }
-  const html = readFileSync(APP);
+  let html = readFileSync(APP);
+  if (opts.apiBase !== undefined) {
+    const pat = /(<meta name="amv-api-base" content=")[^"]*(">)/;
+    const src = html.toString('utf8');
+    if (!pat.test(src)) throw new Error('amv-api-base meta tag not found - cannot set it for this suite');
+    html = Buffer.from(src.replace(pat, '$1' + String(opts.apiBase) + '$2'), 'utf8');
+  }
   /* Real sibling files, with real content types.
 
      This answered EVERY path with index.html as text/html, which is fine until
@@ -175,7 +194,8 @@ export async function armGeom(pageOrContext) {
 /* Boot the app: signed in, on a tab, cookie banner dismissed.
    Pass { user: null } to test the signed-out state. */
 export async function bootApp(opts = {}) {
-  const { url, server } = await serveApp();
+  const { url, server } = await serveApp(
+    opts.apiBase === undefined ? {} : { apiBase: opts.apiBase });
   const browser = await chromium.launch(LAUNCH);
   const page = await browser.newPage({
     viewport: opts.viewport || { width: 1280, height: 860 }
