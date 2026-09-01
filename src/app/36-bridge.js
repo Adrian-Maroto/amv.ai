@@ -55,6 +55,10 @@ function _bridgeForget(){
   BRIDGE.port = 0; BRIDGE.token = ''; BRIDGE.folder = ''; BRIDGE.root = '';
   BRIDGE.connected = false;
   try{ sessionStorage.removeItem('amv_bridge'); }catch(e){}
+  /* The connectors ran on that machine, so they are gone with it. Leaving
+     them listed as live would offer the model tools whose every call fails,
+     which teaches it to stop trying and tells the person AMV is broken. */
+  try{ if(typeof MCP !== 'undefined') MCP.live = {}; }catch(e){}
 }
 try{ window._bridgeForget=_bridgeForget; }catch(e){}
 
@@ -364,6 +368,23 @@ function _bridgeWireCard(root){
       say('');
       try{ toast('Connected to ' + BRIDGE.folder + '. AMV can build in that folder now.', 'success', 5000); }catch(e){}
       try{ _refreshIntegrationsUI(); }catch(e){}
+      /* THE CONNECTORS COME UP WITH THE MACHINE.
+
+         They cannot run without it, so pairing is the only moment they can
+         start, and making somebody press a second button for something that
+         has exactly one prerequisite is how a feature goes unused. Each one
+         reports for itself: a connector missing a package must not stop the
+         others, and the row says which failed and why. */
+      if(typeof mcpStartAll === 'function'){
+        try{
+          const started = await mcpStartAll();
+          const bad = started.filter(r => !r.ok);
+          const good = started.filter(r => r.ok);
+          if(good.length) toast(good.length + ' connector' + (good.length === 1 ? '' : 's') + ' ready.', 'success', 4000);
+          if(bad.length) toast(bad.length + ' connector' + (bad.length === 1 ? '' : 's') + ' could not start. See Integrations.', 'error', 6000);
+          if(started.length) try{ _refreshIntegrationsUI(); }catch(e){}
+        }catch(e){}
+      }
     }catch(e){
       go.disabled = false;
       say(e.message || 'Could not connect.', true);

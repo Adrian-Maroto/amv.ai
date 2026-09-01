@@ -242,6 +242,37 @@ section('The catastrophic shapes are refused by the daemon, not by a prompt');
     const d = await jsonOf(r);
     ok(r.status === 403 && d.reason === why, JSON.stringify(cmd) + ' is refused', d.reason || r.status);
   }
+  /* THE SAME CATASTROPHE WEARING A QUOTE.
+
+     The refusal list was anchored to the start of the line or a shell
+     separator, which is one of the several places a command can begin. So
+     `rm -rf /` was refused and five dressed-up versions of it ran: after
+     `-c`, inside quotes, inside a substitution, inside backticks. Refusing
+     only the undisguised form is worse than refusing nothing, because
+     everything else here says it relies on this list. */
+  const dressed = [
+    ['sh -c rm -rf /', 'a recursive or forced delete'],
+    ['sh -c "rm -rf /"', 'a recursive or forced delete'],
+    ["bash -lc 'rm -rf ~'", 'a recursive or forced delete'],
+    ['$(rm -rf /)', 'a recursive or forced delete'],
+    ['`rm -rf /`', 'a recursive or forced delete'],
+    ['sh -c "sudo apt install x"', 'sudo'],
+    ['sh -c "shutdown -h now"', 'a shutdown'],
+  ];
+  for (const [cmd, why] of dressed) {
+    const r = await call('exec', { command: cmd }, { token: TOKEN });
+    const d = await jsonOf(r);
+    ok(r.status === 403 && d.reason === why,
+       JSON.stringify(cmd) + ' is refused too', d.reason || r.status);
+  }
+
+  /* And the ordinary commands this exists to let through must still run, or
+     the widened anchor has simply banned working in a project. */
+  for (const cmd of ['node -e "console.log(1)"', 'echo hello']) {
+    const d = await jsonOf(await call('exec', { command: cmd }, { token: TOKEN }));
+    ok(d.exitCode === 0, JSON.stringify(cmd) + ' still runs', d.exitCode);
+  }
+
   /* And the near-miss that must still be ALLOWED, or the rule is just a
      blanket ban on git wearing a specific name. */
   const lease = await jsonOf(await call('exec',

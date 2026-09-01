@@ -2580,6 +2580,21 @@ function _toolNeedsConsent(name){
      anything, and asking four times before AMV can look at a file is how a
      confirmation stops being read. */
   if(name === 'run_command' || name === 'write_file') return true;
+  /* EVERY CONNECTOR TOOL, WITHOUT EXCEPTION.
+
+     These come from servers AMV did not write, acting on accounts AMV does
+     not own, and there is no list to classify them against: the tools are
+     named and described by whoever published that server, so anything AMV
+     said about how risky one is would be a guess dressed as a rule. A
+     connector's `search` may well be harmless and its `send` may not, and we
+     cannot tell them apart from the outside.
+
+     So the answer is the one that is true rather than the one that is
+     convenient: a person is asked before a third-party connector acts, and
+     the prompt names the server and shows the arguments. In Build's own loop
+     this is covered instead by the once-per-turn consent, which lists the
+     connected services by name for the same reason. */
+  if(typeof isMcpTool === 'function' && isMcpTool(name)) return true;
   return !!_TOOL_CONSENT[name];
 }
 /* How often a job runs, in the words a person uses. */
@@ -2602,8 +2617,23 @@ async function _confirmModelTool(name, input){
     memory_add:'remember something about you permanently',
     memory_forget:'permanently forget something it knows about you',
     approval_act:(input.action === 'reject' ? 'discard a piece of finished work' : 'APPROVE and send a piece of finished work')
-  })[name] || ('run the "'+name+'" action');
+  })[name] || (typeof isMcpTool === 'function' && isMcpTool(name)
+      ? (() => {
+          /* Named as what it is: somebody else's connector, on somebody
+             else's service. "Run the mcp__github__create_issue action" tells
+             a person nothing they can consent to. */
+          const m = /^mcp__([a-z0-9_-]+)__(.+)$/.exec(name);
+          return m ? ('use your "' + m[1] + '" connector to run "' + m[2] + '"')
+                   : ('run the "' + name + '" connector action');
+        })()
+      : ('run the "'+name+'" action'));
   let detail='';
+  if(typeof isMcpTool === 'function' && isMcpTool(name)){
+    /* The arguments ARE the preview here. A connector call with no visible
+       arguments is a blank cheque, and these reach services holding somebody's
+       real mail, repositories or money. */
+    try{ detail = JSON.stringify(input, null, 1).slice(0, 700); }catch(e){ detail = ''; }
+  }
   if(name==='deploy_site') detail='Page title: '+String(input.title||'App');
   else if(name==='run_code'||name==='fix_code') detail=String(input.code||'').slice(0,600);
   /* For a job, the dialog IS the preview: the exact instruction it will follow
@@ -2654,6 +2684,17 @@ async function _amvRunTool(name, input, onStatus){
        package or a failing test is exactly what the model needs to read and
        act on, and turning it into a thrown error would end the turn at the
        moment the work actually starts. */
+    /* A CONNECTOR SOMEBODY ELSE WROTE, ON A SERVICE THAT IS NOT OURS.
+
+       Handled before AMV's own names so a connector cannot shadow one, and
+       reported with the server it came from, because "AMV sent the email" and
+       "the gmail connector on your machine sent the email" are different
+       sentences and only the second is true. */
+    if(typeof isMcpTool === 'function' && isMcpTool(name)){
+      onStatus && onStatus('Using ' + String(name).replace(/^mcp__/, '').replace('__', ' \u00b7 ') + '\u2026');
+      const r = await runMcpTool(name, input);
+      return { text: String((r && r.text) || ''), render:null };
+    }
     if(name==='run_command' || name==='read_file' || name==='write_file' || name==='list_dir'){
       const label = name==='run_command' ? ('Running: ' + String(input.command||'').slice(0,60))
                   : name==='write_file'  ? ('Writing ' + String(input.path||''))

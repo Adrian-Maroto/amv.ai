@@ -902,6 +902,9 @@ async function _callAI(msgs, _opts) {
        trying it and teaches the person that AMV is broken; appearing with
        the thing it needs is the honest shape. */
     try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(BRIDGE_TOOLS); }catch(e){}
+    /* And whatever connectors are running on that machine. Same rule, one
+       level out: a tool appears when the thing behind it exists. */
+    try{ if(BRIDGE.connected && typeof mcpTools === 'function') tools = tools.concat(mcpTools()); }catch(e){}
     if(!tools.length) tools = undefined;
 
     const _endpoint = _aiBase();        // backend-only; never the browser key

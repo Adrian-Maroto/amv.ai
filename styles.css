@@ -10305,3 +10305,37 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   .brg-dl{min-height:44px;width:100%;justify-content:center}
   .brg-steps li>.brg-cmd{width:100%;box-sizing:border-box}
 }
+
+/* ═══ LAYER A138 - CONNECTORS ═════════════════════════════════════════════
+   Sits directly under the bridge card and shares its shell (.brg), because a
+   connector without a machine cannot run and the two are one idea on screen.
+   Each row says what it is, what starts it, and whether it is actually up -
+   the last of which is the only part people come back to look at. */
+.mcp-rows{display:flex;flex-direction:column;gap:var(--sp-2);margin:var(--sp-3) 0}
+.mcp-row{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);
+         padding:var(--sp-2) var(--sp-3);border:1px solid var(--bd);border-radius:var(--r-md);
+         background:var(--s2)}
+.mcp-row-m{display:flex;flex-direction:column;gap:2px;min-width:0}
+.mcp-row-m b{font-size:var(--t-sm);color:var(--tx)}
+.mcp-row-m code{font-family:var(--mn);font-size:var(--t-xs);color:var(--mu);
+                overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mcp-state{font-size:var(--t-xs);color:var(--mu)}
+.mcp-on{border-color:color-mix(in srgb, var(--grn) 40%, var(--bd))}
+.mcp-on .mcp-state{color:var(--grn-txt)}
+.mcp-bad{border-color:color-mix(in srgb, var(--red) 40%, var(--bd))}
+.mcp-bad .mcp-state{color:var(--red-txt)}
+.mcp-none{color:var(--mu)}
+.mcp-form{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-2) var(--sp-3);align-items:center}
+.mcp-form .brg-i-wide{grid-column:2}
+.mcp-form .btn{grid-column:2;justify-self:start;margin-top:var(--sp-1)}
+/* The one line people must actually read before typing a credential in. */
+.mcp-note{margin-top:var(--sp-3);font-size:var(--t-xs);color:var(--mu);line-height:1.55;
+          border-left:3px solid var(--gold);padding-left:var(--sp-3)}
+.mcp-del{min-height:34px;flex:0 0 auto}
+@media (max-width:640px){
+  .mcp-row{flex-direction:column;align-items:stretch;gap:var(--sp-2)}
+  .mcp-del{min-height:44px;width:100%}
+  .mcp-form{grid-template-columns:1fr}
+  .mcp-form .brg-i,.mcp-form .brg-i-wide,.mcp-form .btn{grid-column:1;width:100%}
+  .mcp-form .btn{justify-self:stretch}
+}

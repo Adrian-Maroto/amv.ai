@@ -51,6 +51,22 @@ the model nicely:
 Every command runs with a timeout, and the timeout kills the whole process
 tree rather than only the shell that started it.
 
+## Connectors (MCP)
+
+While the bridge is running, AMV can also start **MCP servers** - the standard
+connectors published for GitHub, databases, filesystems and hundreds of other
+services. They are programs, which is why they live here rather than in the
+browser.
+
+Add one under **Integrations → Connectors**: a short name, the command that
+starts it, and any environment it needs. AMV starts it when you connect and
+stops it when you disconnect.
+
+Starting a connector runs a command, so it goes through the same refusal list
+as anything else here. Its environment is written into the child process and
+never read back out by any route. AMV asks you before any connector tool acts,
+showing which connector and what it is about to send.
+
 ## Why it is safe to leave running
 
 The danger of a program listening on your machine is not the program you

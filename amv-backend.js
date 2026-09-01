@@ -12001,7 +12001,29 @@ function _safeTools(list) {
        and nothing here executes: the work happens in their browser, behind
        their own approval. */
     const name = String(t.name || '');
-    if (!AMV_CLIENT_TOOLS.has(name)) continue;
+    /* MCP TOOLS CANNOT BE ON A LIST, AND DO NOT NEED TO BE.
+
+       A connector's tools are named by whoever wrote that server; there is
+       no build-time list to check them against, and there never will be.
+       So they are admitted by SHAPE - `mcp__<server>__<tool>`, bounded
+       characters, bounded length - rather than by name.
+
+       That is not a hole, because of what this allowlist is actually for.
+       Nothing here executes: the work happens in the caller's own browser,
+       through their own bridge, behind their own consent. What the list
+       prevents is a modified client shipping a thousand definitions or a
+       megabyte of schema at AMV's expense - and TOOLS_MAX, TOOL_DESC_MAX
+       and TOOL_SCHEMA_MAX below still enforce every bit of that, on these
+       exactly as on the rest.
+
+       What the name list DOES buy for AMV's own tools is the wiring check:
+       a tool the client ships and the server has never heard of is a
+       feature silently doing nothing, which is how the whole tool system
+       was dead once and the bridge was dead again. That check is only
+       possible for names known at build time, so it keeps applying to
+       those, and a shape check applies to the ones that cannot be. */
+    const isMcp = /^mcp__[a-z0-9_-]{1,40}__[A-Za-z0-9_-]{1,60}$/.test(name);
+    if (!isMcp && !AMV_CLIENT_TOOLS.has(name)) continue;
     const schema = (t.input_schema && typeof t.input_schema === 'object') ? t.input_schema : { type: 'object', properties: {} };
     let schemaStr = '';
     try { schemaStr = JSON.stringify(schema); } catch (e) { continue; }

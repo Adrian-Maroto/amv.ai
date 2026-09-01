@@ -653,6 +653,9 @@ function _integrationsCatalogHTML(){
          and AMV building it - so it goes at the top rather than among the
          mail providers. */
       _bridgeCardHTML()+
+      /* Directly under the machine they run on: a connector without one
+         cannot start, so the two belong on the screen together. */
+      _mcpCardHTML()+
       intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically. Set up under Connected accounts above, where you choose what AMV may do.',auto:true,connected:_connHasProvider('google'),icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
       intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:isConn('amv_outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})+
       /* The rest of the world. Google and Microsoft cover a lot of people and
@@ -774,7 +777,7 @@ function _wireIntegrationCatalog(root){
   /* The bridge card is not a row, so it wires itself. Wired in the same
      pass as everything else, because a control that is drawn by one function
      and wired by another is how a button comes to do nothing. */
-  try{ _bridgeWireCard(root); }catch(e){}
+  try{ _bridgeWireCard(root); _mcpWireCard(root); }catch(e){}
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intDisc==='mail') return disconnectMail();
     if(btn.dataset.intDisc==='telegram') return disconnectTelegram();

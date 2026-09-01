@@ -6995,3 +6995,55 @@ identifies a subject after the fact is identifying whatever is in front of it
 then - which is the same defect as a meter measuring the wrong tank (305) and
 a safety net with a 400-character window (308), in the one place that decides
 what ships.
+
+## 318. The catastrophe was refused; the catastrophe wearing a quote was not
+
+The bridge's refusal list is anchored to `(^|[;&|]\s*)` - the start of the
+line, or straight after a shell separator. That is one of several places a
+command can begin, and writing an MCP test made it obvious how few:
+
+    rm -rf /            refused
+    sh -c rm -rf /      ran
+    sh -c "rm -rf /"    ran
+    bash -lc "rm -rf ~" ran
+    $(rm -rf /)         ran
+    `rm -rf /`          ran
+
+Five of seven catastrophic forms walked past, on `/exec` as well as the new
+route. The undisguised version was blocked and every disguise worked - which
+is worse than having no list, because the daemon's own documentation, the
+connect card and the consent dialog all tell people this list is what stands
+between them and an accident.
+
+The anchor now covers every position a command can actually start: after a
+separator, a bracket, a backtick, `$(`, a quote, or a `-c`-style flag. It costs
+one false positive - `echo "rm -rf tmp"` is refused too - which is the correct
+side to be wrong on, because the message names the reason and the alternative
+is somebody's home directory.
+
+**The rule.** A pattern that matches a dangerous thing must be tested against
+the ways that thing is actually written, not the way it is written in the
+example. Every anchor is a claim about context; list the contexts and check
+them. The file still does not claim to be a sandbox, and that is fine - it
+claims to stop the obvious catastrophe, and now it stops the obvious
+catastrophe in the clothes it usually arrives in.
+
+## 319. An assertion that cannot see its subject is not coverage
+
+Writing the browser test for connectors, I wanted to check that a namespaced
+tool name survives the server's filter. The page cannot import the Worker, so
+what I actually wrote was an assertion that passed whether the import worked or
+not - `ok(survives === 'no-import' || survives === null, ...)` - with a
+reassuring label about the seam being checked.
+
+It would have sat in the file as a green line about the exact thing that has
+silently broken this product twice.
+
+The check belongs where the subject is, so it moved to the worker suite, where
+it drives the real `_safeTools` against a real namespaced name and nine shapes
+that must be refused.
+
+**The rule.** If a test cannot reach its subject, it does not get a weaker
+assertion about it - it gets a note saying where the check lives, and the check
+gets written there. A line that always passes is worse than a missing line,
+because it reads as coverage and stops anybody looking.

@@ -98,6 +98,44 @@ section('Every tool the app ships is one the backend will forward');
   ok(orphans.length === 0, 'and the allowlist has no names the app has stopped shipping', orphans);
 }
 
+section('A connector\u2019s tools get through, and only in the shape AMV defined');
+{
+  /* MCP tools are named by whoever wrote that server, so no build-time list
+     can hold them and they are admitted by SHAPE instead. That is the third
+     time this filter decides whether a whole feature exists, so the shape is
+     checked here rather than assumed - both that a real one survives and
+     that the pattern is not a way to smuggle anything through. */
+  const real = W._safeTools([{ name: 'mcp__echo__shout', description: 'x',
+                               input_schema: { type: 'object' } }]);
+  ok(real.length === 1 && real[0].name === 'mcp__echo__shout',
+     'a namespaced connector tool is forwarded', real.length);
+
+  const shapes = [
+    ['mcp__', 'no server and no tool'],
+    ['mcp__echo__', 'no tool'],
+    ['mcp_echo_shout', 'one underscore, not the namespace'],
+    ['mcp__Echo__shout', 'a capital in the server id'],
+    ['mcp__echo__sh out', 'a space'],
+    ['mcp__echo__sh/out', 'a slash'],
+    ['mcp__' + 'e'.repeat(41) + '__shout', 'a server id past the limit'],
+    ['mcp__echo__' + 's'.repeat(61), 'a tool name past the limit'],
+    ['xmcp__echo__shout', 'a prefix that only looks right'],
+  ];
+  for (const [name, why] of shapes) {
+    const out = W._safeTools([{ name, description: 'x', input_schema: { type: 'object' } }]);
+    ok(out.length === 0, JSON.stringify(name).slice(0, 34) + ' is dropped (' + why + ')', out.length);
+  }
+
+  /* And the bounds that are the whole reason this filter exists still apply
+     to them - being admitted by shape must not mean being admitted unbounded. */
+  const fat = W._safeTools([{ name: 'mcp__echo__shout', description: 'x',
+                              input_schema: { type: 'object', pad: 'x'.repeat(W.TOOL_SCHEMA_MAX + 100) } }]);
+  ok(fat.length === 0, 'an oversized schema is dropped under a connector name too', fat.length);
+  const many = W._safeTools(Array.from({ length: W.TOOLS_MAX + 30 },
+    (_, i) => ({ name: 'mcp__echo__t' + i, description: 'x', input_schema: { type: 'object' } })));
+  ok(many.length <= W.TOOLS_MAX, 'and a flood of them is still cut to the ceiling', many.length);
+}
+
 section('A tool AMV did not write is still refused');
 {
   ok(names([tool('exfiltrate_everything')]).length === 0,

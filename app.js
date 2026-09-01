@@ -6402,6 +6402,9 @@ async function _callAI(msgs, _opts) {
        trying it and teaches the person that AMV is broken; appearing with
        the thing it needs is the honest shape. */
     try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(BRIDGE_TOOLS); }catch(e){}
+    /* And whatever connectors are running on that machine. Same rule, one
+       level out: a tool appears when the thing behind it exists. */
+    try{ if(BRIDGE.connected && typeof mcpTools === 'function') tools = tools.concat(mcpTools()); }catch(e){}
     if(!tools.length) tools = undefined;
 
     const _endpoint = _aiBase();        // backend-only; never the browser key
@@ -20167,6 +20170,21 @@ function _toolNeedsConsent(name){
      anything, and asking four times before AMV can look at a file is how a
      confirmation stops being read. */
   if(name === 'run_command' || name === 'write_file') return true;
+  /* EVERY CONNECTOR TOOL, WITHOUT EXCEPTION.
+
+     These come from servers AMV did not write, acting on accounts AMV does
+     not own, and there is no list to classify them against: the tools are
+     named and described by whoever published that server, so anything AMV
+     said about how risky one is would be a guess dressed as a rule. A
+     connector's `search` may well be harmless and its `send` may not, and we
+     cannot tell them apart from the outside.
+
+     So the answer is the one that is true rather than the one that is
+     convenient: a person is asked before a third-party connector acts, and
+     the prompt names the server and shows the arguments. In Build's own loop
+     this is covered instead by the once-per-turn consent, which lists the
+     connected services by name for the same reason. */
+  if(typeof isMcpTool === 'function' && isMcpTool(name)) return true;
   return !!_TOOL_CONSENT[name];
 }
 /* How often a job runs, in the words a person uses. */
@@ -20189,8 +20207,23 @@ async function _confirmModelTool(name, input){
     memory_add:'remember something about you permanently',
     memory_forget:'permanently forget something it knows about you',
     approval_act:(input.action === 'reject' ? 'discard a piece of finished work' : 'APPROVE and send a piece of finished work')
-  })[name] || ('run the "'+name+'" action');
+  })[name] || (typeof isMcpTool === 'function' && isMcpTool(name)
+      ? (() => {
+          /* Named as what it is: somebody else's connector, on somebody
+             else's service. "Run the mcp__github__create_issue action" tells
+             a person nothing they can consent to. */
+          const m = /^mcp__([a-z0-9_-]+)__(.+)$/.exec(name);
+          return m ? ('use your "' + m[1] + '" connector to run "' + m[2] + '"')
+                   : ('run the "' + name + '" connector action');
+        })()
+      : ('run the "'+name+'" action'));
   let detail='';
+  if(typeof isMcpTool === 'function' && isMcpTool(name)){
+    /* The arguments ARE the preview here. A connector call with no visible
+       arguments is a blank cheque, and these reach services holding somebody's
+       real mail, repositories or money. */
+    try{ detail = JSON.stringify(input, null, 1).slice(0, 700); }catch(e){ detail = ''; }
+  }
   if(name==='deploy_site') detail='Page title: '+String(input.title||'App');
   else if(name==='run_code'||name==='fix_code') detail=String(input.code||'').slice(0,600);
   /* For a job, the dialog IS the preview: the exact instruction it will follow
@@ -20241,6 +20274,17 @@ async function _amvRunTool(name, input, onStatus){
        package or a failing test is exactly what the model needs to read and
        act on, and turning it into a thrown error would end the turn at the
        moment the work actually starts. */
+    /* A CONNECTOR SOMEBODY ELSE WROTE, ON A SERVICE THAT IS NOT OURS.
+
+       Handled before AMV's own names so a connector cannot shadow one, and
+       reported with the server it came from, because "AMV sent the email" and
+       "the gmail connector on your machine sent the email" are different
+       sentences and only the second is true. */
+    if(typeof isMcpTool === 'function' && isMcpTool(name)){
+      onStatus && onStatus('Using ' + String(name).replace(/^mcp__/, '').replace('__', ' \u00b7 ') + '\u2026');
+      const r = await runMcpTool(name, input);
+      return { text: String((r && r.text) || ''), render:null };
+    }
     if(name==='run_command' || name==='read_file' || name==='write_file' || name==='list_dir'){
       const label = name==='run_command' ? ('Running: ' + String(input.command||'').slice(0,60))
                   : name==='write_file'  ? ('Writing ' + String(input.path||''))
@@ -25541,6 +25585,9 @@ function _integrationsCatalogHTML(){
          and AMV building it - so it goes at the top rather than among the
          mail providers. */
       _bridgeCardHTML()+
+      /* Directly under the machine they run on: a connector without one
+         cannot start, so the two belong on the screen together. */
+      _mcpCardHTML()+
       intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically. Set up under Connected accounts above, where you choose what AMV may do.',auto:true,connected:_connHasProvider('google'),icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
       intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:isConn('amv_outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})+
       /* The rest of the world. Google and Microsoft cover a lot of people and
@@ -25662,7 +25709,7 @@ function _wireIntegrationCatalog(root){
   /* The bridge card is not a row, so it wires itself. Wired in the same
      pass as everything else, because a control that is drawn by one function
      and wired by another is how a button comes to do nothing. */
-  try{ _bridgeWireCard(root); }catch(e){}
+  try{ _bridgeWireCard(root); _mcpWireCard(root); }catch(e){}
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intDisc==='mail') return disconnectMail();
     if(btn.dataset.intDisc==='telegram') return disconnectTelegram();
@@ -35417,6 +35464,10 @@ function _bridgeForget(){
   BRIDGE.port = 0; BRIDGE.token = ''; BRIDGE.folder = ''; BRIDGE.root = '';
   BRIDGE.connected = false;
   try{ sessionStorage.removeItem('amv_bridge'); }catch(e){}
+  /* The connectors ran on that machine, so they are gone with it. Leaving
+     them listed as live would offer the model tools whose every call fails,
+     which teaches it to stop trying and tells the person AMV is broken. */
+  try{ if(typeof MCP !== 'undefined') MCP.live = {}; }catch(e){}
 }
 try{ window._bridgeForget=_bridgeForget; }catch(e){}
 
@@ -35726,6 +35777,23 @@ function _bridgeWireCard(root){
       say('');
       try{ toast('Connected to ' + BRIDGE.folder + '. AMV can build in that folder now.', 'success', 5000); }catch(e){}
       try{ _refreshIntegrationsUI(); }catch(e){}
+      /* THE CONNECTORS COME UP WITH THE MACHINE.
+
+         They cannot run without it, so pairing is the only moment they can
+         start, and making somebody press a second button for something that
+         has exactly one prerequisite is how a feature goes unused. Each one
+         reports for itself: a connector missing a package must not stop the
+         others, and the row says which failed and why. */
+      if(typeof mcpStartAll === 'function'){
+        try{
+          const started = await mcpStartAll();
+          const bad = started.filter(r => !r.ok);
+          const good = started.filter(r => r.ok);
+          if(good.length) toast(good.length + ' connector' + (good.length === 1 ? '' : 's') + ' ready.', 'success', 4000);
+          if(bad.length) toast(bad.length + ' connector' + (bad.length === 1 ? '' : 's') + ' could not start. See Integrations.', 'error', 6000);
+          if(started.length) try{ _refreshIntegrationsUI(); }catch(e){}
+        }catch(e){}
+      }
     }catch(e){
       go.disabled = false;
       say(e.message || 'Could not connect.', true);
@@ -35821,7 +35889,13 @@ async function _agentConsent(msg){
         + 'It cannot touch anything outside that folder, and your bridge refuses '
         + 'anything destructive on its own - that rule lives on your machine, not in AMV.\n\n'
         + 'You can stop it at any moment, and every file it changes is listed at the '
-        + 'end with an Undo.\n\nThis is for this one request: '
+        + 'end with an Undo.\n\n'
+        /* If connectors are running, this turn can reach out of the folder and
+           into real accounts. Consent that does not say so is consent to the
+           wrong thing. */
+        + ((typeof mcpConsentLine === 'function' && mcpConsentLine())
+            ? mcpConsentLine() + '\n\n' : '')
+        + 'This is for this one request: '
         + String(msg || '').slice(0, 140),
     okText: 'Let it work', cancelText: 'Not now',
   });
@@ -35835,6 +35909,9 @@ async function _agentConsent(msg){
    that did not exist is recorded as created, which is what makes Undo able
    to remove it rather than leave an empty one behind. */
 async function _agentRunTool(name, input, step){
+  /* A connector, not one of the four. Covered by this turn's consent, which
+     named the connected services before any of this started. */
+  if(typeof isMcpTool === 'function' && isMcpTool(name)) return await runMcpTool(name, input);
   if(name === 'write_file'){
     const path = String(input.path || '');
     if(!_AGENT.seen[path]){
@@ -35881,9 +35958,18 @@ async function _agentRunTool(name, input, step){
 const _AGENT_VERB = {
   run_command: 'Ran', read_file: 'Read', write_file: 'Wrote', list_dir: 'Looked in',
 };
+/* A connector step names the service, because "Used" on its own hides the one
+   fact that matters about it: this step left the folder. */
+function _agentVerbFor(name){
+  if(_AGENT_VERB[name]) return _AGENT_VERB[name];
+  const m = /^mcp__([a-z0-9_-]+)__(.+)$/.exec(String(name || ''));
+  return m ? m[1] : name;
+}
 function _agentStepHTML(s, live){
-  const verb = _AGENT_VERB[s.name] || s.name;
-  const what = s.name === 'run_command' ? String(s.input.command || '')
+  const verb = _agentVerbFor(s.name);
+  const mcp = /^mcp__[a-z0-9_-]+__(.+)$/.exec(String(s.name || ''));
+  const what = mcp ? mcp[1]
+             : s.name === 'run_command' ? String(s.input.command || '')
              : String(s.input.path || '.');
   const bad = s.ok === false;
   const tail = s.name === 'run_command' && s.exitCode != null && s.exitCode !== 0
@@ -36071,7 +36157,7 @@ async function _devSendAgent(msg, stat){
     out = await aiAgentLoop({
       system: _AGENT_SYS + _handoffContext('dev') + _userStyle(),
       prompt: _hist + 'You are in the folder "' + folder + '".\n\nREQUEST: ' + msg,
-      tools: BRIDGE_TOOLS,
+      tools: BRIDGE_TOOLS.concat(typeof mcpTools === 'function' ? mcpTools() : []),
       model: _sectionModel('code'),
       effort: _devEffort(),
       max_tokens: 8000,
@@ -36087,7 +36173,7 @@ async function _devSendAgent(msg, stat){
              the moment it starts rather than when the turn is over. The loop
              keeps its own transcript; this is the one being rendered. */
           _AGENT.steps.push(ev.step);
-          try{ _devBusy(true, (_AGENT_VERB[ev.step.name] || 'Working') + ' · '
+          try{ _devBusy(true, (_agentVerbFor(ev.step.name) || 'Working') + ' · '
                + String(ev.step.input.command || ev.step.input.path || '').slice(0, 40)); }catch(e){}
           paint();
         } else if(ev.phase === 'end'){ paint(); }
@@ -36134,3 +36220,336 @@ function _agentFinish(entry){
   _devRenderLog();
 }
 try{ window._devSendAgent=_devSendAgent; }catch(e){}
+/* ══════════════════════════════════════════════════════════════════════
+   MCP: ONE INTEGRATION INSTEAD OF A HUNDRED AND FIFTY.
+
+   The services people want AMV connected to number in the hundreds, and
+   almost every one of them already has an MCP server written by somebody
+   who knows that service far better than we ever will. Hand-writing a
+   hundred and fifty integrations is a hundred and fifty things to keep
+   working, each rotting on its own schedule. Speaking one protocol is one.
+
+   AMV is a browser tab and cannot hold a child process, so the bridge runs
+   the servers and this drives them. That means MCP is available exactly
+   when a computer is connected, which is the honest shape: no machine, no
+   third-party servers, and the screen says so rather than offering a
+   feature that cannot work.
+
+   WHERE THE SECRETS GO, WHICH IS THE ONLY HARD QUESTION HERE.
+
+   An MCP server usually needs a credential - a GitHub token, a database
+   URL - passed in its environment. Those are written into the child
+   process by the bridge and never read back out by any route. On this
+   side, the command and its arguments persist (they are not secret and
+   retyping them every session is friction nobody accepts), and the
+   environment lives in sessionStorage only: it dies with the tab, exactly
+   like the bridge token, because both are capabilities rather than
+   settings. An argument that LOOKS like a credential is refused rather
+   than quietly written to disk.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const MCP = {
+  /* [{ id, command, args }] - configuration, no secrets. */
+  servers: [],
+  /* id -> { tools:[...], info, error } for the ones actually running now. */
+  live: {},
+};
+try{ window.MCP = MCP; }catch(e){}
+
+const MCP_MAX_SERVERS = 8;
+/* A token, a key, a connection string. Deliberately broad: the cost of a
+   false positive is somebody putting a value in the environment box instead,
+   and the cost of a false negative is a credential in localStorage. */
+const MCP_SECRETISH = /(^|[_-])(token|key|secret|password|passwd|pat|apikey)([_-]|=|$)|:\/\/[^\/\s]*:[^@\/\s]*@|\b(gh[pousr]_[A-Za-z0-9]{16,}|sk-[A-Za-z0-9]{16,}|xox[baprs]-[A-Za-z0-9-]{10,})\b/i;
+
+function _mcpLoad(){
+  try{
+    const raw = localStorage.getItem('amv_mcp_servers');
+    MCP.servers = raw ? (JSON.parse(raw) || []) : [];
+    if(!Array.isArray(MCP.servers)) MCP.servers = [];
+  }catch(e){ MCP.servers = []; }
+}
+function _mcpSave(){
+  try{ localStorage.setItem('amv_mcp_servers', JSON.stringify(MCP.servers.slice(0, MCP_MAX_SERVERS))); }catch(e){}
+}
+/* Environment values, per tab. Never localStorage: see the header. */
+function _mcpEnv(id){
+  try{ return JSON.parse(sessionStorage.getItem('amv_mcp_env_' + id) || '{}') || {}; }catch(e){ return {}; }
+}
+function _mcpSetEnv(id, env){
+  try{
+    if(env && Object.keys(env).length) sessionStorage.setItem('amv_mcp_env_' + id, JSON.stringify(env));
+    else sessionStorage.removeItem('amv_mcp_env_' + id);
+  }catch(e){}
+}
+try{ window._mcpEnv=_mcpEnv; window._mcpSetEnv=_mcpSetEnv; }catch(e){}
+
+/* An id that is safe in a tool name, a storage key and a log line. */
+function _mcpSafeId(s){
+  return String(s || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+}
+
+function _mcpAdd(id, command, args, env){
+  id = _mcpSafeId(id);
+  if(!id) throw new Error('Give the server a short name, like "github".');
+  if(MCP.servers.some(s => s.id === id)) throw new Error('There is already a server called "' + id + '".');
+  if(MCP.servers.length >= MCP_MAX_SERVERS) throw new Error('That is as many servers as AMV will run at once.');
+  command = String(command || '').trim();
+  if(!command) throw new Error('Give the command that starts the server.');
+  const argv = Array.isArray(args) ? args.map(a => String(a)) : [];
+  /* REFUSED RATHER THAN STORED. An argument carrying a credential would be
+     written to localStorage, where it outlives the tab and every session
+     after it - which is the thing this whole file is careful about. */
+  const leak = [command].concat(argv).find(a => MCP_SECRETISH.test(a));
+  if(leak) throw new Error('That looks like it contains a credential. Put it in the environment box instead, where AMV keeps it only for this tab.');
+  MCP.servers.push({ id, command, args: argv });
+  _mcpSave();
+  if(env) _mcpSetEnv(id, env);
+  return id;
+}
+function _mcpRemove(id){
+  MCP.servers = MCP.servers.filter(s => s.id !== id);
+  _mcpSave(); _mcpSetEnv(id, null);
+  delete MCP.live[id];
+}
+try{ window._mcpAdd=_mcpAdd; window._mcpRemove=_mcpRemove; }catch(e){}
+
+/* ── TALKING TO THE BRIDGE ──────────────────────────────────────────────── */
+async function _mcpStart(id){
+  const cfg = MCP.servers.find(s => s.id === id);
+  if(!cfg) throw new Error('No server called "' + id + '".');
+  const d = await _bridgeCall('mcp/start', { id, command: cfg.command, args: cfg.args, env: _mcpEnv(id) }, 70000);
+  MCP.live[id] = { tools: d.tools || [], info: d.info || null, error: '' };
+  return MCP.live[id];
+}
+async function _mcpStop(id){
+  try{ await _bridgeCall('mcp/stop', { id }, 15000); }catch(e){}
+  delete MCP.live[id];
+}
+async function mcpCall(id, method, params){
+  const d = await _bridgeCall('mcp/call', { id, method, params }, 70000);
+  return d.result;
+}
+try{ window._mcpStart=_mcpStart; window._mcpStop=_mcpStop; window.mcpCall=mcpCall; }catch(e){}
+
+/* Start everything configured, and report what happened per server rather
+   than failing the lot because one is misconfigured. */
+async function mcpStartAll(){
+  if(!(typeof BRIDGE !== 'undefined' && BRIDGE.connected)) return [];
+  const out = [];
+  for(const s of MCP.servers.slice(0, MCP_MAX_SERVERS)){
+    if(MCP.live[s.id]) { out.push({ id:s.id, ok:true, tools:MCP.live[s.id].tools.length }); continue; }
+    try{
+      const live = await _mcpStart(s.id);
+      out.push({ id:s.id, ok:true, tools:(live.tools || []).length });
+    }catch(e){
+      MCP.live[s.id] = { tools: [], info: null, error: String(e.message || e) };
+      out.push({ id:s.id, ok:false, error: String(e.message || e) });
+    }
+  }
+  return out;
+}
+try{ window.mcpStartAll=mcpStartAll; }catch(e){}
+
+/* ── THE TOOLS THE MODEL GETS ───────────────────────────────────────────── */
+/* Namespaced, because two servers may each have a `search` and the model has
+   to be able to mean one of them. The separator is the one the server's
+   pattern check knows about, so a name that survives here survives there. */
+const MCP_PREFIX = 'mcp__';
+function mcpToolName(serverId, toolName){
+  return MCP_PREFIX + serverId + '__' + String(toolName).replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 60);
+}
+function _mcpSplitName(name){
+  const m = /^mcp__([a-z0-9_-]{1,40})__(.+)$/.exec(String(name || ''));
+  if(!m) return null;
+  const server = MCP.live[m[1]];
+  if(!server) return null;
+  /* Back to the tool's REAL name, which is what the server answers to - the
+     sanitising above is one-way, so the match is made on the sanitised form
+     rather than by trying to reverse it. */
+  const tool = (server.tools || []).find(t => mcpToolName(m[1], t.name) === name);
+  return tool ? { id: m[1], tool } : null;
+}
+
+function mcpTools(){
+  const out = [];
+  for(const id of Object.keys(MCP.live)){
+    const live = MCP.live[id];
+    for(const t of (live.tools || [])){
+      out.push({
+        name: mcpToolName(id, t.name),
+        /* The server's own description, with its origin stated. The model
+           should know a tool came from somewhere else, because that is the
+           difference between "AMV can do this" and "this machine has a
+           connector that claims to". */
+        description: ('[' + id + '] ' + String(t.description || t.name || '')).slice(0, 1000),
+        input_schema: (t.inputSchema && typeof t.inputSchema === 'object')
+          ? t.inputSchema : { type:'object', properties:{} },
+      });
+    }
+  }
+  return out;
+}
+try{ window.mcpTools=mcpTools; window.mcpToolName=mcpToolName; }catch(e){}
+
+function isMcpTool(name){ return String(name || '').startsWith(MCP_PREFIX); }
+try{ window.isMcpTool=isMcpTool; }catch(e){}
+
+/* Run one. Failures come back as a RESULT rather than a throw, for the same
+   reason the bridge's do: a connector saying no is information the model
+   should read, not a reason to end the turn. */
+async function runMcpTool(name, args){
+  const hit = _mcpSplitName(name);
+  if(!hit) return { ok:false, text:'That connector is not running any more. Reconnect it in Integrations.' };
+  try{
+    const r = await mcpCall(hit.id, 'tools/call', { name: hit.tool.name, arguments: args || {} });
+    const text = (r && Array.isArray(r.content))
+      ? r.content.map(c => c && c.type === 'text' ? c.text : ('[' + ((c && c.type) || 'content') + ']')).join('\n')
+      : JSON.stringify(r == null ? {} : r).slice(0, 8000);
+    /* MCP says a tool that FAILED returns a normal result with isError set,
+       not a protocol error. Treating the two the same turns "that file does
+       not exist" into "the server is broken", and the model then gives up on
+       a connector that is working perfectly. */
+    return { ok: !(r && r.isError), text: text || '(no output)' };
+  }catch(e){
+    return { ok:false, text:'That connector failed: ' + String(e.message || e) };
+  }
+}
+try{ window.runMcpTool=runMcpTool; }catch(e){}
+
+/* Which connectors are live, in words, for the consent screen. A person
+   agreeing to let AMV work on their machine should be told that a connector
+   to their GitHub is part of what that now means. */
+function mcpConsentLine(){
+  const ids = Object.keys(MCP.live).filter(id => (MCP.live[id].tools || []).length);
+  if(!ids.length) return '';
+  const n = mcpTools().length;
+  return 'Connected services: ' + ids.join(', ') + ' (' + n + ' tool' + (n === 1 ? '' : 's') + '). '
+       + 'AMV can use these to act on those accounts.';
+}
+try{ window.mcpConsentLine=mcpConsentLine; }catch(e){}
+
+try{ _mcpLoad(); }catch(e){}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   THE DOOR: connectors, under the computer they run on.
+
+   Deliberately placed with the bridge rather than in its own tab. A
+   connector without a machine cannot run at all, so a screen offering one
+   while nothing is connected is a screen offering nothing - and this
+   codebase has shipped several of those.
+   ══════════════════════════════════════════════════════════════════════ */
+function _mcpCardHTML(){
+  const connected = !!(typeof BRIDGE !== 'undefined' && BRIDGE.connected);
+  const rows = MCP.servers.map(sv => {
+    const live = MCP.live[sv.id];
+    const n = live && live.tools ? live.tools.length : 0;
+    const state = !connected ? 'needs your computer'
+                : live && live.error ? live.error
+                : live ? (n + ' tool' + (n === 1 ? '' : 's') + ' ready')
+                : 'not started';
+    const cls = live && !live.error ? ' mcp-on' : live && live.error ? ' mcp-bad' : '';
+    return '<div class="mcp-row' + cls + '">'
+      + '<div class="mcp-row-m">'
+        + '<b>' + escH(sv.id) + '</b>'
+        + '<code>' + escH((sv.command + ' ' + (sv.args || []).join(' ')).slice(0, 90)) + '</code>'
+        + '<span class="mcp-state">' + escH(state) + '</span>'
+      + '</div>'
+      + '<button class="btn bs mcp-del" type="button" data-mcp-del="' + escH(sv.id) + '">Remove</button>'
+    + '</div>';
+  }).join('');
+
+  return '<div class="brg mcp">'
+    + '<div class="brg-h"><b>Connectors</b></div>'
+    + '<p class="brg-p">Anything that speaks MCP - GitHub, a database, your files, hundreds of '
+      + 'services - runs on your computer and AMV can use it. It needs the bridge above, because '
+      + 'a connector is a program and AMV is a browser tab.</p>'
+    + (rows ? '<div class="mcp-rows">' + rows + '</div>'
+            : '<p class="brg-p mcp-none">No connectors yet.</p>')
+    + '<div class="mcp-form">'
+      + '<label class="brg-l" for="mcp-id">Name</label>'
+      + '<input class="brg-i" id="mcp-id" autocomplete="off" placeholder="github">'
+      + '<label class="brg-l" for="mcp-cmd">Command</label>'
+      + '<input class="brg-i brg-i-wide" id="mcp-cmd" autocomplete="off" placeholder="npx -y @modelcontextprotocol/server-github">'
+      + '<label class="brg-l" for="mcp-env">Environment</label>'
+      + '<input class="brg-i brg-i-wide" id="mcp-env" autocomplete="off" placeholder="GITHUB_TOKEN=…  (kept for this tab only, never saved)">'
+      + '<button class="btn bp" id="mcp-add" type="button">Add</button>'
+    + '</div>'
+    + '<p class="mcp-note">The name and command are saved. Anything in Environment is kept for '
+      + 'this tab only and is gone when you close it, because it is usually a credential.</p>'
+    + '<div class="brg-msg" id="mcp-msg" role="status" aria-live="polite"></div>'
+  + '</div>';
+}
+try{ window._mcpCardHTML=_mcpCardHTML; }catch(e){}
+
+/* "npx -y pkg --flag" -> command plus argv, respecting quotes so a path with
+   a space is one argument rather than two. */
+function _mcpParseCommand(line){
+  const parts = String(line || '').match(/"[^"]*"|'[^']*'|\S+/g) || [];
+  const clean = parts.map(p => p.replace(/^["']|["']$/g, ''));
+  return { command: clean[0] || '', args: clean.slice(1) };
+}
+function _mcpParseEnv(line){
+  const env = {};
+  for(const pair of String(line || '').split(/\s+/)){
+    const i = pair.indexOf('=');
+    if(i > 0) env[pair.slice(0, i)] = pair.slice(i + 1);
+  }
+  return env;
+}
+try{ window._mcpParseCommand=_mcpParseCommand; window._mcpParseEnv=_mcpParseEnv; }catch(e){}
+
+function _mcpWireCard(root){
+  root = root || document;
+  const say = (t, bad) => {
+    const m = root.querySelector('#mcp-msg');
+    if(m){ m.textContent = t; m.className = 'brg-msg' + (bad ? ' brg-bad' : ''); }
+  };
+  root.querySelectorAll('[data-mcp-del]').forEach(b => on(b, 'click', async () => {
+    const id = b.dataset.mcpDel;
+    try{ await _mcpStop(id); }catch(e){}
+    _mcpRemove(id);
+    try{ toast('Removed the "' + id + '" connector.', 'info', 3000); }catch(e){}
+    try{ _refreshIntegrationsUI(); }catch(e){}
+  }));
+
+  const add = root.querySelector('#mcp-add');
+  if(!add) return;
+  on(add, 'click', async () => {
+    const id = (root.querySelector('#mcp-id') || {}).value || '';
+    const cmdLine = (root.querySelector('#mcp-cmd') || {}).value || '';
+    const envLine = (root.querySelector('#mcp-env') || {}).value || '';
+    const { command, args } = _mcpParseCommand(cmdLine);
+    add.disabled = true;
+    try{
+      const realId = _mcpAdd(id, command, args, _mcpParseEnv(envLine));
+      if(typeof BRIDGE !== 'undefined' && BRIDGE.connected){
+        say('Starting ' + realId + '…');
+        try{
+          const live = await _mcpStart(realId);
+          const n = (live.tools || []).length;
+          say('');
+          toast(realId + ' is ready with ' + n + ' tool' + (n === 1 ? '' : 's') + '.', 'success', 5000);
+        }catch(e){
+          /* Kept rather than discarded: the configuration is probably right
+             and the machine is probably missing a package. Throwing the row
+             away would make somebody retype it to find out. */
+          MCP.live[realId] = { tools: [], info: null, error: String(e.message || e) };
+          say(String(e.message || e), true);
+        }
+      } else {
+        say('Saved. Connect your computer above and it will start.');
+      }
+      try{ _refreshIntegrationsUI(); }catch(e){}
+    }catch(e){
+      add.disabled = false;
+      say(String(e.message || e), true);
+    }
+  });
+  ['#mcp-id', '#mcp-cmd', '#mcp-env'].forEach(sel => {
+    const el = root.querySelector(sel);
+    if(el) on(el, 'keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); add.click(); } });
+  });
+}
+try{ window._mcpWireCard=_mcpWireCard; }catch(e){}

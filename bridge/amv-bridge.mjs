@@ -99,15 +99,45 @@ const MAX_TIMEOUT_MS = 900000;
    would be the dangerous kind of comfort. The honest claim is: the obvious
    catastrophes are blocked, the folder is confined, and you can see the
    process in your own terminal. */
+/* WHERE A DANGEROUS COMMAND IS ALLOWED TO START.
+
+   These rules were anchored to `(^|[;&|]\s*)` - the beginning of the line,
+   or straight after a shell separator. That is exactly one of the ways a
+   command reaches a shell, and it let five of the seven catastrophic forms
+   through:
+
+     sh -c rm -rf /            the word is after "-c", not after a separator
+     sh -c "rm -rf /"          and after a quote
+     bash -lc "rm -rf ~"       and after a combined flag
+     $(rm -rf /)               and inside a substitution
+     `rm -rf /`                and inside a backtick
+
+   `rm -rf /` was refused and every dressed-up version of it ran. That is
+   worse than having no list, because the list is what everything else here
+   says it can rely on.
+
+   So the anchor is every position a command can actually begin: the start,
+   after a separator or a bracket, after a backtick or `$(`, after a quote,
+   and after a `-c`-style flag. It costs a false positive - `echo "rm -rf
+   tmp"` is now refused as well - and that is the right side to be wrong on,
+   because the message names the reason and the person can rephrase, while
+   the other kind of wrong is somebody's home directory.
+
+   This is still not a sandbox and the file has never claimed to be one:
+   anybody determined can write a script and run that. It is a guard against
+   the obvious catastrophe arriving by accident, and it now covers the
+   obvious catastrophe wearing a quote. */
+const AT = String.raw`(?:^|[;&|(){}\`]\s*|\$\(\s*|['"]\s*|\s-[a-zA-Z]*c\s+['"]?)`;
+const at = (body, flags) => new RegExp(AT + body, flags);
 const REFUSED = [
-  [/(^|[;&|]\s*)rm\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*[rf]/, 'a recursive or forced delete'],
-  [/(^|[;&|]\s*)(shutdown|reboot|halt|poweroff)\b/, 'a shutdown'],
+  [at(String.raw`rm\s+(-[a-zA-Z]*\s+)*-[a-zA-Z]*[rf]`), 'a recursive or forced delete'],
+  [at(String.raw`(shutdown|reboot|halt|poweroff)\b`), 'a shutdown'],
   [/\bmkfs(\.|\s)/, 'a filesystem format'],
   [/\bdd\s+.*of=\/dev\//, 'a raw write to a device'],
   [/>\s*\/dev\/(sd|nvme|disk)/, 'a raw write to a disk'],
-  [/(^|[;&|]\s*)git\s+push\b[^\n]*--force(?!-with-lease)/, 'a force push'],
-  [/(^|[;&|]\s*)sudo\b/, 'sudo'],
-  [/(^|[;&|]\s*)(chown|chmod)\s+.*\s\//, 'a permission change outside the project'],
+  [at(String.raw`git\s+push\b[^\n]*--force(?!-with-lease)`), 'a force push'],
+  [at(String.raw`sudo\b`), 'sudo'],
+  [at(String.raw`(chown|chmod)\s+.*\s\/`), 'a permission change outside the project'],
   [/:\(\)\s*\{.*\}\s*;\s*:/, 'a fork bomb'],
   [/\bcurl\b[^\n]*\|\s*(ba)?sh/, 'piping a download straight into a shell'],
   [/\bwget\b[^\n]*\|\s*(ba)?sh/, 'piping a download straight into a shell'],
@@ -127,6 +157,129 @@ function killTree(child){
        than leaving it running because the group call failed. */
     try { child.kill('SIGKILL'); } catch (e2) {}
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   MCP: SPEAKING TO SERVERS SOMEBODY ELSE WROTE.
+
+   The connectors people want from AMV number in the hundreds, and almost
+   every one of them already has an MCP server published by somebody who
+   knows that service far better than we do. Writing a hundred and fifty
+   integrations by hand is a hundred and fifty things to keep working;
+   speaking one protocol is one.
+
+   An MCP server over stdio is a child process exchanging newline-delimited
+   JSON-RPC on its stdin and stdout. A browser tab cannot hold one. This can,
+   which is the whole reason the work lands here.
+
+   WHAT IS BOUNDED, AND WHY EACH BOUND EXISTS.
+
+     · Starting a server runs a command, so it goes through exactly the same
+       refusal list as `/exec`. A route that runs arbitrary commands while
+       calling itself something else is a hole with a nicer name.
+     · A server count, so a page cannot start fifty processes.
+     · A line length, because a server that never emits a newline would
+       otherwise grow a buffer until the machine complains.
+     · A per-request timeout, so one server that stops answering does not
+       hold a request open for ever.
+     · Everything is killed by tree when the daemon exits, the same way the
+       exec timeout does it - a stdio server whose parent went away is a
+       process nobody is left to stop.
+   ══════════════════════════════════════════════════════════════════════ */
+const MCP_MAX_SERVERS   = 8;
+const MCP_MAX_LINE      = 4 * 1024 * 1024;
+const MCP_TIMEOUT_MS    = 60000;
+const MCP_STDERR_KEEP   = 8000;
+const mcpServers = new Map();
+
+function mcpKillAll(){
+  for (const [, srv] of mcpServers) { try { killTree(srv.child); } catch (e) {} }
+  mcpServers.clear();
+}
+/* Not only on a clean exit. A daemon killed with ^C is the ordinary way
+   somebody stops this, and it is the case where an orphan is most likely. */
+for (const sig of ['exit', 'SIGINT', 'SIGTERM']) {
+  process.on(sig, () => { mcpKillAll(); if (sig !== 'exit') process.exit(0); });
+}
+
+function mcpStart(id, command, args, envExtra){
+  const shell = false;
+  const child = spawn(command, Array.isArray(args) ? args : [], {
+    cwd: ROOT,
+    /* The parent's environment plus whatever the server needs, minus the
+       bridge's own secrets - a connector has no business reading the pairing
+       token, and this is the route most likely to run somebody else's code. */
+    env: Object.assign({}, process.env, envExtra || {},
+                       { AMV_BRIDGE_TOKEN: '', AMV_BRIDGE_DEV: '' }),
+    stdio: ['pipe', 'pipe', 'pipe'],
+    detached: process.platform !== 'win32',
+    shell,
+  });
+  const srv = { id, child, command, buf: '', stderr: '', pending: new Map(), nextId: 1,
+                tools: [], info: null, exited: false };
+
+  child.stdout.on('data', (chunk) => {
+    srv.buf += chunk.toString('utf8');
+    if (srv.buf.length > MCP_MAX_LINE) {
+      /* A server producing an unbounded line is malfunctioning, and holding
+         it in memory is how that becomes the machine's problem rather than
+         its own. */
+      srv.buf = '';
+      return;
+    }
+    let nl;
+    while ((nl = srv.buf.indexOf('\n')) >= 0) {
+      const line = srv.buf.slice(0, nl).trim();
+      srv.buf = srv.buf.slice(nl + 1);
+      if (!line) continue;
+      let msg; try { msg = JSON.parse(line); } catch (e) { continue; }
+      /* A response carries the id we sent. Anything else is a notification -
+         progress, a log line, a tools-changed nudge - and is not what any
+         caller is waiting on. */
+      if (msg && msg.id != null && srv.pending.has(msg.id)) {
+        const p = srv.pending.get(msg.id);
+        srv.pending.delete(msg.id);
+        clearTimeout(p.timer);
+        p.resolve(msg);
+      }
+    }
+  });
+  /* MCP servers log to stderr as a matter of course, so this is diagnostics
+     rather than failure - kept short, and only the tail, because the useful
+     part of a crash is always the end. */
+  child.stderr.on('data', (chunk) => {
+    srv.stderr = (srv.stderr + chunk.toString('utf8')).slice(-MCP_STDERR_KEEP);
+  });
+  const done = (why) => {
+    srv.exited = true;
+    for (const [, p] of srv.pending) { clearTimeout(p.timer); p.resolve({ error: { message: why } }); }
+    srv.pending.clear();
+  };
+  child.on('error', (e) => done('could not start: ' + (e && e.message)));
+  child.on('exit', (code) => done('the server exited (code ' + code + ')'));
+  return srv;
+}
+
+function mcpSend(srv, method, params){
+  return new Promise((resolve) => {
+    if (srv.exited) return resolve({ error: { message: 'the server is not running' } });
+    const id = srv.nextId++;
+    const timer = setTimeout(() => {
+      srv.pending.delete(id);
+      resolve({ error: { message: 'the server did not answer in ' + MCP_TIMEOUT_MS + 'ms' } });
+    }, MCP_TIMEOUT_MS);
+    srv.pending.set(id, { resolve, timer });
+    try {
+      srv.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params: params || {} }) + '\n');
+    } catch (e) {
+      srv.pending.delete(id); clearTimeout(timer);
+      resolve({ error: { message: 'could not write to the server: ' + (e && e.message) } });
+    }
+  });
+}
+function mcpNotify(srv, method, params){
+  try { srv.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method, params: params || {} }) + '\n'); }
+  catch (e) {}
 }
 
 function refuseReason(cmd){
@@ -289,6 +442,89 @@ const server = createServer(async (req, res) => {
       unlinkSync(file);
       console.log('  · removed ' + relative(ROOT, file));
       return json(res, 200, { path: relative(ROOT, file), removed: true });
+    }
+
+    /* ── MCP ROUTES ───────────────────────────────────────────────────
+       Start a server, ask it things, stop it. The handshake is done here
+       rather than in the page, because it is protocol bookkeeping the caller
+       should not have to repeat and getting it wrong leaves a half-open
+       server that answers nothing. */
+    if (path === '/amv-bridge/mcp/start') {
+      const id = String(body.id || '').slice(0, 64);
+      const command = String(body.command || '').trim();
+      if (!id || !command) return json(res, 400, { error: 'need_id_and_command' });
+      if (mcpServers.has(id)) return json(res, 409, { error: 'already_running', id });
+      if (mcpServers.size >= MCP_MAX_SERVERS) return json(res, 429, { error: 'too_many_servers', max: MCP_MAX_SERVERS });
+
+      /* THE SAME REFUSALS AS EXEC. Starting a connector is running a command,
+         and a route that runs commands under a friendlier name is a hole with
+         a friendlier name. The full line is checked, arguments included. */
+      const args = Array.isArray(body.args) ? body.args.map(a => String(a)) : [];
+      const why = refuseReason([command].concat(args).join(' '));
+      if (why) {
+        console.log('  ✗ refused an MCP server: ' + why);
+        return json(res, 403, { error: 'refused', reason: why });
+      }
+      /* Its environment may carry a connector's own credentials. They are
+         written into the child and never read back out by any route here. */
+      const envExtra = {};
+      if (body.env && typeof body.env === 'object') {
+        for (const k of Object.keys(body.env).slice(0, 40)) envExtra[String(k)] = String(body.env[k]);
+      }
+
+      const srv = mcpStart(id, command, args, envExtra);
+      mcpServers.set(id, srv);
+      console.log('  · started MCP server "' + id + '": ' + command + ' ' + args.join(' '));
+
+      const init = await mcpSend(srv, 'initialize', {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'AMV', version: VERSION },
+      });
+      if (init.error) {
+        killTree(srv.child); mcpServers.delete(id);
+        return json(res, 502, { error: 'handshake_failed',
+                                message: init.error.message || 'the server refused the handshake',
+                                stderr: srv.stderr.slice(-1200) });
+      }
+      /* The spec requires this after initialize, and a server that does not
+         get it is entitled to answer nothing afterwards. */
+      mcpNotify(srv, 'notifications/initialized', {});
+      srv.info = (init.result && init.result.serverInfo) || null;
+
+      const listed = await mcpSend(srv, 'tools/list', {});
+      srv.tools = (listed.result && Array.isArray(listed.result.tools)) ? listed.result.tools : [];
+      return json(res, 200, { id, info: srv.info,
+                              capabilities: (init.result && init.result.capabilities) || {},
+                              tools: srv.tools });
+    }
+
+    if (path === '/amv-bridge/mcp/call') {
+      const srv = mcpServers.get(String(body.id || ''));
+      if (!srv) return json(res, 404, { error: 'no_such_server' });
+      const method = String(body.method || '');
+      if (!/^[a-z][a-zA-Z0-9_/]{1,40}$/.test(method)) return json(res, 400, { error: 'bad_method' });
+      const out = await mcpSend(srv, method, body.params || {});
+      if (out.error) return json(res, 502, { error: 'server_error',
+                                             message: out.error.message || 'the server returned an error',
+                                             stderr: srv.stderr.slice(-1200) });
+      return json(res, 200, { result: out.result });
+    }
+
+    if (path === '/amv-bridge/mcp/stop') {
+      const id = String(body.id || '');
+      const srv = mcpServers.get(id);
+      if (!srv) return json(res, 200, { id, stopped: false });
+      killTree(srv.child);
+      mcpServers.delete(id);
+      console.log('  · stopped MCP server "' + id + '"');
+      return json(res, 200, { id, stopped: true });
+    }
+
+    if (path === '/amv-bridge/mcp/list') {
+      return json(res, 200, { servers: [...mcpServers.values()].map(s => ({
+        id: s.id, command: s.command, info: s.info, running: !s.exited,
+        tools: s.tools.map(t => t.name) })) });
     }
 
     if (path === '/amv-bridge/exec') {

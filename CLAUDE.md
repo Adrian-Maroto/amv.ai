@@ -25,7 +25,7 @@ Companion docs (do not duplicate them here - read them):
 
 ## Architecture reality (know this before editing)
 - The app ships as a SINGLE-FILE build, but the JS SOURCE is MODULAR:
-  `src/app/NN-name.js` files (01-core, 02-state, ... 37-build-agent) are
+  `src/app/NN-name.js` files (01-core, 02-state, ... 38-mcp) are
   concatenated IN NAME ORDER to form the bundle. `node build.mjs` concatenates
   them (regenerating `app.js`) and injects that + `styles.css` into `index.html`
   between the BUILD:CSS / BUILD:JS markers.
@@ -66,6 +66,14 @@ Companion docs (do not duplicate them here - read them):
   `aiAgentLoop` (in `14-engine.js`) is the turn-taking on top of it: consent
   once per turn, a stop checked before every round and every command, and a
   changelist measured from the disk with an Undo that writes real bytes back.
+- **Connectors are MCP** (`38-mcp.js`). A connector is a program somebody else
+  wrote, so the bridge runs it and the page drives it over JSON-RPC: no machine,
+  no connectors. Tools arrive namespaced `mcp__<server>__<tool>`, which no
+  build-time list can hold, so `_safeTools` admits them by SHAPE while the
+  count/description/schema bounds still apply. Every connector tool needs
+  per-call consent in chat - AMV cannot classify a third-party tool's risk, so
+  any rule it invented would be a guess. Credentials go in sessionStorage and
+  into the child's environment, never localStorage.
 - **Any tool the client can send must be in `AMV_CLIENT_TOOLS` on the server**,
   or `_safeTools` drops it by name at the last hop before the model and the
   feature silently does not exist. LESSONS 310; covered by

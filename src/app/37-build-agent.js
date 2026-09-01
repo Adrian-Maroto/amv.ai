@@ -81,7 +81,13 @@ async function _agentConsent(msg){
         + 'It cannot touch anything outside that folder, and your bridge refuses '
         + 'anything destructive on its own - that rule lives on your machine, not in AMV.\n\n'
         + 'You can stop it at any moment, and every file it changes is listed at the '
-        + 'end with an Undo.\n\nThis is for this one request: '
+        + 'end with an Undo.\n\n'
+        /* If connectors are running, this turn can reach out of the folder and
+           into real accounts. Consent that does not say so is consent to the
+           wrong thing. */
+        + ((typeof mcpConsentLine === 'function' && mcpConsentLine())
+            ? mcpConsentLine() + '\n\n' : '')
+        + 'This is for this one request: '
         + String(msg || '').slice(0, 140),
     okText: 'Let it work', cancelText: 'Not now',
   });
@@ -95,6 +101,9 @@ async function _agentConsent(msg){
    that did not exist is recorded as created, which is what makes Undo able
    to remove it rather than leave an empty one behind. */
 async function _agentRunTool(name, input, step){
+  /* A connector, not one of the four. Covered by this turn's consent, which
+     named the connected services before any of this started. */
+  if(typeof isMcpTool === 'function' && isMcpTool(name)) return await runMcpTool(name, input);
   if(name === 'write_file'){
     const path = String(input.path || '');
     if(!_AGENT.seen[path]){
@@ -141,9 +150,18 @@ async function _agentRunTool(name, input, step){
 const _AGENT_VERB = {
   run_command: 'Ran', read_file: 'Read', write_file: 'Wrote', list_dir: 'Looked in',
 };
+/* A connector step names the service, because "Used" on its own hides the one
+   fact that matters about it: this step left the folder. */
+function _agentVerbFor(name){
+  if(_AGENT_VERB[name]) return _AGENT_VERB[name];
+  const m = /^mcp__([a-z0-9_-]+)__(.+)$/.exec(String(name || ''));
+  return m ? m[1] : name;
+}
 function _agentStepHTML(s, live){
-  const verb = _AGENT_VERB[s.name] || s.name;
-  const what = s.name === 'run_command' ? String(s.input.command || '')
+  const verb = _agentVerbFor(s.name);
+  const mcp = /^mcp__[a-z0-9_-]+__(.+)$/.exec(String(s.name || ''));
+  const what = mcp ? mcp[1]
+             : s.name === 'run_command' ? String(s.input.command || '')
              : String(s.input.path || '.');
   const bad = s.ok === false;
   const tail = s.name === 'run_command' && s.exitCode != null && s.exitCode !== 0
@@ -331,7 +349,7 @@ async function _devSendAgent(msg, stat){
     out = await aiAgentLoop({
       system: _AGENT_SYS + _handoffContext('dev') + _userStyle(),
       prompt: _hist + 'You are in the folder "' + folder + '".\n\nREQUEST: ' + msg,
-      tools: BRIDGE_TOOLS,
+      tools: BRIDGE_TOOLS.concat(typeof mcpTools === 'function' ? mcpTools() : []),
       model: _sectionModel('code'),
       effort: _devEffort(),
       max_tokens: 8000,
@@ -347,7 +365,7 @@ async function _devSendAgent(msg, stat){
              the moment it starts rather than when the turn is over. The loop
              keeps its own transcript; this is the one being rendered. */
           _AGENT.steps.push(ev.step);
-          try{ _devBusy(true, (_AGENT_VERB[ev.step.name] || 'Working') + ' · '
+          try{ _devBusy(true, (_agentVerbFor(ev.step.name) || 'Working') + ' · '
                + String(ev.step.input.command || ev.step.input.path || '').slice(0, 40)); }catch(e){}
           paint();
         } else if(ev.phase === 'end'){ paint(); }
