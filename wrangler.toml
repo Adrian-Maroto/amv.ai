@@ -31,7 +31,7 @@ crons = ["*/5 * * * *"]
 
 [[kv_namespaces]]
 binding = "AMV_KV"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "a6ebfd730a654c638402484b324c8311"
 
 # ── THIS is what makes usage limits actually hold ──
 # Quota enforcement is "read usage → compare to cap → call the model → add usage".
