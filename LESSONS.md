@@ -7225,3 +7225,42 @@ would have collapsed two cycles into one.
 sweep for the same borrowing everywhere before running the gate again. The class
 is almost never a singleton, and each instance otherwise costs a full cycle to
 discover.
+
+---
+
+## 325. The flake cost a rerun; the crash cost the results
+
+`the-refusal-reaches-the-person` went red in the gate with
+`page.evaluate: Execution context was destroyed, most likely because of a
+navigation`. Run on its own it passed three times out of three - which is not
+evidence it is fine, it is the signature of a race that only opens under the
+parallel runner, where four browsers share a machine and the timing moves.
+
+The send it died in awaits 200ms INSIDE the page before calling `sendMsg()`.
+Anything that replaces the document in that window - the shell re-rendering, the
+service worker taking over - destroys the execution context and Playwright
+rejects. Nothing caught it.
+
+The race is the small half. The expensive half is what an uncaught rejection
+does to a test file: the process died mid-run, so every remaining assertion in
+that file was never reported. A suite that fails tells you one thing is wrong. A
+suite that crashes tells you nothing about the twenty checks it had not reached
+yet, and the twenty checks are why it exists.
+
+Fixed in both directions, and both directions were proven by forcing them rather
+than reasoned about:
+
+  - a transient destroyed context is retried once against a re-established page,
+    with `had` re-read first so the retry cannot paper over a real failure - the
+    existing "the turn was actually sent" assertion still has to pass. Injected
+    a destroyed-context rejection into the first send of every turn: suite green.
+  - a permanent one is REPORTED as a named assertion instead of thrown. Injected
+    a rejection into every send: exit 1, zero uncaught exceptions, and the
+    failure reads "the chat stayed put long enough to send a question".
+
+**The rule.** In a browser suite, an unguarded `await page.evaluate` is a way for
+the environment to delete your results. Catch what the environment can do to you
+- context destroyed, target closed - and turn it into a reported failure, so the
+worst case is one red line and not a file that never finished. Retrying is only
+safe where an assertion downstream still checks the work actually happened;
+where it is safe, prefer it, and prove the recovery runs by forcing the error.
