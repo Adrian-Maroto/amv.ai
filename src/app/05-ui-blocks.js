@@ -904,17 +904,26 @@ async function _callAI(msgs, _opts) {
        (AMV-070). */
     const _turnId = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     const _headers = Object.assign({}, _aiHeaders(), { 'X-AMV-Request-Id': _turnId });
+    /* WHAT THE MODEL ACTUALLY GETS TO REMEMBER.
+
+       This used to be `.slice(-20)`: twenty turns, whatever they weighed,
+       and everything older gone with nothing said. Now the split is by
+       tokens, and the turns that fall outside it are compressed into a
+       brief that travels in the system prompt - so a long chat keeps going
+       in place instead of being declared full. */
+    const _conv = (typeof getCurConv === 'function') ? getCurConv() : null;
+    const _ctx = _conv ? await _ctxPrepare(_conv, streamIdx) : { from: 0, brief: '' };
     const _payload = JSON.stringify({
         model:mdl.model,
         max_tokens:mdl.tokens,
-        system:sysPrompt,
+        system:sysPrompt + (_ctx.brief || ''),
         stream:true,
         ...(tools?{tools}:{}),
         messages:(()=>{
           // Turn our internal messages into the wire format. Any turn where AMV
           // actually used a tool becomes: assistant[text + tool_use] -> user[tool_result].
           const out=[];
-          msgs.slice(0,streamIdx).slice(-20).forEach(m=>{
+          msgs.slice(_ctx.from, streamIdx).forEach(m=>{
             if(m.r==='a' && m._toolContent && m._toolResults){
               out.push({ role:'assistant', content:m._toolContent });
               out.push({ role:'user', content:m._toolResults });

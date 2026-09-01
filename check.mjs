@@ -412,9 +412,56 @@ step('No guard names a function that does not exist', () => {
      A catch that DOES something with the error is not covered here - if it
      logs or reports, the failure is observable and this check has no business
      objecting. It is the silent ones that can hide a deletion. */
+  /* THE 400-CHARACTER WINDOW THAT LET ONE THROUGH.
+
+     This matched `try{ ... }catch(e){}` with the body capped at 400
+     characters, and a fixed character window is wrong in both directions -
+     the same mistake tests/lib/source.mjs was written to stop making. A
+     `try` whose body opens with a long message string pushes everything
+     after it past the cap, so the call is never examined.
+
+     That is not hypothetical: `saveConvs()` sat 350 characters into such a
+     block on the handoff-resume path, defined nowhere, throwing a
+     ReferenceError into the empty catch beside it - so the message AMV drew
+     when it carried your context over was never saved, and reloading lost
+     it. This check existed to catch exactly that and could not see it.
+
+     So the body is found by matching braces from the `try` rather than by
+     counting characters. `src` has already had its comments and strings
+     stripped, which is what makes brace counting reliable here - a brace
+     inside a string is the reason this would otherwise be the wrong tool. */
   const swallowed = new Map();
-  for (const m of src.matchAll(/try\s*\{([\s\S]{0,400}?)\}\s*catch\s*\([A-Za-z0-9_$]*\)\s*\{\s*\}/g)) {
-    for (const c of m[1].matchAll(/(?:^|[^.\w$'"`])([A-Za-z_$][\w$]*)\s*\(/g)) {
+  /* STRINGS BLANKED, WHICH THE BRACE MATCHING BELOW DEPENDS ON.
+
+     `codeOnly` keeps string literals on purpose - most callers are looking for
+     one - and here they are noise that reads as code: `Handoffs (` and
+     `hyphen ( - )`, sitting in ordinary prose inside a message, match "a call"
+     exactly as well as a call does. Widening the search without this reported
+     four names, every one of them a word in a sentence.
+
+     Done by the scanner rather than by a second pass over its output, because
+     the second pass is the thing that goes wrong: a regex literal containing a
+     quote starts a string that never ends, and from there it eats real code.
+     That was tried here and it silently swallowed the very call this widening
+     exists to catch. */
+  const noStrings = codeOnly(readFileSync(R('app.js'), 'utf8'), { blankStrings: true });
+  const bodyAfter = (from) => {
+    let depth = 0;
+    for (let i = from; i < noStrings.length; i++) {
+      const ch = noStrings[i];
+      if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (depth === 0) return { body: noStrings.slice(from + 1, i), end: i }; }
+    }
+    return null;
+  };
+  for (const m of noStrings.matchAll(/\btry\s*\{/g)) {
+    const open = m.index + m[0].length - 1;
+    const found = bodyAfter(open);
+    if (!found) continue;
+    /* Only the ones that swallow. A catch that logs or reports makes the
+       failure observable, and this rule has no business objecting to it. */
+    if (!/^\s*catch\s*\([A-Za-z0-9_$]*\)\s*\{\s*\}/.test(noStrings.slice(found.end + 1))) continue;
+    for (const c of found.body.matchAll(/(?:^|[^.\w$'"`])([A-Za-z_$][\w$]*)\s*\(/g)) {
       const n = c[1];
       if (KEYWORDS.has(n) || defined.has(n) || isPlatform(n)) continue;
       swallowed.set(n, (swallowed.get(n) || 0) + 1);

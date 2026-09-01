@@ -2188,7 +2188,11 @@ async function _devSend(){
         'When starting a NEW project, scaffold it as a REAL multi-file project the way a senior engineer would - separate files for markup, styles, scripts, components, config and a README - rather than cramming everything into one file. Use clear, conventional paths (index.html, styles/main.css, scripts/app.js, components/<name>.js). '+
         'If any UI is involved, it must look like a top design agency built it.'+_userStyle();
       const _isUI=Object.keys(_DEV.project).some(p=>/\.(html|css|jsx|tsx)$/i.test(p))||/\b(html|css|ui|page|component|design|frontend)\b/i.test(msg);
-      const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI.\n\n':'')+_devProjectContext()+'\n\nCHANGE REQUEST: '+msg;
+      /* The conversation, which Dev never sent. Without it "make the button
+         bigger" arrives as a request about a button the model has never
+         heard of. */
+      const _hist=await _ctxDevHistory();
+      const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI.\n\n':'')+_hist+_devProjectContext()+'\n\nCHANGE REQUEST: '+msg;
       const resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
         effort:_devEffort(),
         onProgress:(p)=>_devProgress(p)});
@@ -3248,28 +3252,52 @@ function _ctxDecode(str){
     return JSON.parse(new TextDecoder().decode(bytes));
   }catch(e){ return null; }
 }
-// Render the context meter + warnings into a host element.
+/* WHAT THE CHAT SAYS ABOUT ITS OWN LENGTH, WHICH IS ALMOST NOTHING NOW.
+
+   This used to render "Context 75% full" from halfway, and at 92% told you
+   the chat was full and to start a new one. Both were wrong. The percentage
+   measured the whole conversation against a budget that was never what got
+   sent - the request had already been cut to the last twenty turns - and
+   "full" described a limit the product had invented for itself.
+
+   A long chat now compacts in place, so there is no full and nothing to do.
+   What is left is the two things somebody genuinely benefits from knowing:
+   that older turns are now travelling as a summary rather than verbatim, and
+   - the one that matters - that AMV could NOT summarise them, because
+   without an engine it has no way to, and turns are being left out.
+
+   The file count stays. CTX_MAX_FILES is a real ceiling with a real refusal
+   behind it, which is a different kind of fact from a percentage. */
 function _ctxRenderMeter(hostId, kind){
   const host=$(hostId); if(!host) return;
-  const u = kind==='dev' ? _ctxUsageDev() : _ctxUsage();
-  const pct = Math.round(u.pct*100);
-  if(u.pct < 0.5 && !(kind==='dev' && u.files>=CTX_MAX_FILES*0.8)){ host.innerHTML=''; return; }
-  const state = u.pct>=CTX_FULL_AT ? 'full' : u.pct>=CTX_WARN_AT ? 'warn' : 'ok';
-  const fileNote = (kind==='dev' && u.files) ? ' \u00b7 '+u.files+'/'+CTX_MAX_FILES+' files' : '';
+  const conv = (kind!=='dev' && typeof getCurConv==='function') ? getCurConv() : null;
+  const compact = conv && conv.compact;
+  const degraded = !!(compact && compact.degraded);
+  const summarised = !!(compact && compact.summary);
+
+  let files = 0;
+  if(kind==='dev'){ try{ files = Object.keys(_DEV.project||{}).length; }catch(e){} }
+  const filesTight = kind==='dev' && files >= CTX_MAX_FILES*0.8;
+
+  if(!degraded && !summarised && !filesTight){ host.innerHTML=''; return; }
+
+  if(degraded){
+    host.innerHTML =
+      '<div class="ctx-note-line ctx-degraded">'+
+        'Older messages in this chat are not being sent - AMV needs its engine connected '+
+        'to summarise them. Everything you can see is still here.'+
+      '</div>';
+    return;
+  }
+  if(filesTight){
+    host.innerHTML =
+      '<div class="ctx-note-line">'+files+' of '+CTX_MAX_FILES+' files in this project.</div>';
+    return;
+  }
+  /* Summarised, and nothing is wrong. One quiet line, no number, no button:
+     the chat is working exactly as intended and there is nothing to decide. */
   host.innerHTML =
-    '<div class="ctx-meter ctx-'+state+'">'+
-      '<div class="ctx-row">'+
-        '<span class="ctx-l">Context '+pct+'% full'+fileNote+'</span>'+
-        (state!=='ok' ? '<button class="ctx-btn" data-ctx-new="'+kind+'">Continue in a new '+(kind==='dev'?'session':'chat')+'</button>' : '')+
-      '</div>'+
-      '<div class="ctx-bar"><div class="ctx-fill" style="width:'+pct+'%"></div></div>'+
-      (state==='full'
-        ? '<div class="ctx-note">This '+(kind==='dev'?'session':'chat')+' is full. Start a new one - AMV will carry a compressed handoff across so it picks up exactly where you left off.</div>'
-        : state==='warn'
-        ? '<div class="ctx-note">Getting long. When you continue in a new '+(kind==='dev'?'session':'chat')+', everything is carried over.</div>'
-        : '')+
-    '</div>';
-  host.querySelectorAll('[data-ctx-new]').forEach(b=>on(b,'click',()=>_ctxHandoffFlow(b.dataset.ctxNew)));
+    '<div class="ctx-note-line">Earlier messages are summarised so this chat can keep going.</div>';
 }
 
 // Compress the current context, start fresh, and resume seamlessly.
@@ -3316,7 +3344,11 @@ function _ctxResume(h, kind, token){
     try{
       const msgs=getMsgs();
       msgs.push({r:'a', c:'**Picked up where we left off.** I have a compressed handoff of the previous chat - the goal, every decision, the current state, and the next steps.\n\nTell me what you want next, or just say "continue".\n\n*You can download this handoff or reuse it later from Handoffs (\u2318K \u2192 "handoff").*', _t:Date.now()});
-      renderChatMsgs(); saveConvs();
+      /* _autoSave, not saveConvs - which is defined nowhere. It threw a
+         ReferenceError into the empty catch below, so this message was drawn
+         and never persisted: reload and the handoff you just carried over had
+         vanished from the chat. */
+      renderChatMsgs(); _autoSave();
     }catch(e){}
   }
   toast('Context carried over - you can pick up right where you left off.','success',4500);

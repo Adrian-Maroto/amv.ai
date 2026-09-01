@@ -10159,3 +10159,26 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 .ghd-pr:hover:not([disabled]){ background:var(--s3); }
 .ghd-pr[disabled]{ opacity:.55;cursor:default; }
 .ghd-pr:focus-visible{ outline:2px solid var(--accent);outline-offset:2px; }
+
+/* ── LAYER A134 · what a long chat says about itself ─────────────────────────
+   Almost nothing. The old meter drew a bar and a percentage from halfway
+   through every conversation and ended with "this chat is full". A chat that
+   compacts in place has no full and nothing to decide, so what is left is one
+   quiet line - and one that is not quiet at all, for the case where AMV could
+   not summarise and turns really are missing. */
+.ctx-note-line{
+  padding:var(--sp-2) var(--sp-3);
+  margin-bottom:var(--sp-2);
+  border-radius:var(--r-md);
+  background:var(--s1);
+  border:1px solid var(--bdl);
+  color:var(--mu);
+  font-size:var(--t-sm);
+  line-height:1.45;
+}
+/* Missing context is a thing to act on, not a status. */
+.ctx-note-line.ctx-degraded{
+  color:var(--tx);
+  border-color:color-mix(in srgb, var(--gold) 40%, var(--bd));
+  background:color-mix(in srgb, var(--gold) 8%, transparent);
+}

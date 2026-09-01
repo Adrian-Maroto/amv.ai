@@ -6717,3 +6717,52 @@ accent and measured 4.83 in dark against the shared `.btn.bp`'s near-black,
 which measures better. **Reusing the design system's component was both the
 house rule and the more readable answer** - forking a button is how a product
 ends up with six primary buttons and one of them illegible.
+
+## 307. The meter measured one thing and the request sent another
+
+"Context 75% full" over the composer counted the whole conversation against a
+180k budget. The request sent `msgs.slice(-20)`. Those are not the same
+number and never were: the percentage described content that was not being
+sent, and at 92% it used that number to tell somebody their chat was full and
+to start a new one - a chat the product had already been silently truncating
+from turn twenty-one.
+
+So a long conversation lost its early history completely, with no summary and
+no notice, while a meter above the box reported on the history it had thrown
+away. Ask about something from message four and AMV did not answer badly; it
+answered as though you had never said it.
+
+**A number on screen has to be measured from the thing it claims to be
+about.** Anything else is a gauge wired to the wrong tank, and it is worse
+than no gauge, because people act on it.
+
+The same audit found the Build surface sending no conversation at all -
+`_DEV.log` was rendered on screen and used for handoffs and never put in a
+prompt, so "make the button bigger" arrived as a request about a button the
+model had never heard of.
+
+## 308. A safety net with a 400-character window let through exactly what it was for
+
+`saveConvs()` is defined nowhere and was called on the handoff-resume path
+inside `try{ ... }catch(e){}`. The message AMV drew when it carried your
+context over was therefore never saved: it appeared, and a reload lost it.
+
+The gate has a rule for precisely this shape - LESSONS 297, a call inside a
+swallowing catch naming something that does not exist - and it could not see
+it, because it matched `try\{([\s\S]{0,400}?)\}\s*catch` and the call sat past
+400 characters, behind a long message string. A fixed character window is
+wrong in both directions, which is the lesson tests/lib/source.mjs was written
+about, restated in the one place that most needed to have learned it.
+
+Widening it to match braces exposed a second trap. `codeOnly` strips comments
+and deliberately KEEPS strings, so a wider search reported four names that
+were words in sentences - `Handoffs (`, `hyphen ( - )`. Blanking the strings
+with a regex pass over its output was worse still: a regex literal containing
+a quote starts a string that never ends, and the blanker silently ate the very
+call the widening existed to catch.
+
+The fix was to put the option where the knowledge already is - the scanner
+that must already tell a regex from a division to find comments at all.
+**When a second pass needs to know something the first pass already worked
+out, extend the first pass.** Verified by putting the bug back and watching
+the rule name it.

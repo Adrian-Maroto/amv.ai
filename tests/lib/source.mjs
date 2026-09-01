@@ -114,7 +114,22 @@ export function functionBody(src, name) {
    rule a JavaScript tokeniser uses. Running this over the whole Worker and
    re-checking the result with `node --check` is how that was confirmed - a
    version that got it wrong produced a file that no longer parsed. */
-export function codeOnly(text) {
+/* Comments blanked, and OPTIONALLY the insides of string literals too.
+
+   `codeOnly` keeps strings on purpose: most callers are looking for one. But a
+   rule that scans for "a name followed by a paren" cannot tell `Handoffs (` in
+   a sentence from a call, and a rule that counts braces cannot survive a `{`
+   inside a message. Both need the strings gone.
+
+   It is an option on THIS scanner rather than a second pass over its output,
+   because the second pass is the thing that goes wrong: a regex literal
+   containing a quote - /['"]/g - starts a string that never ends, and from
+   there the blanker eats real code. That was tried, and it silently swallowed
+   the very call the rule was being widened to catch. This scanner already has
+   to tell a regex from a division to find comments at all, so it is the only
+   place that knows. */
+export function codeOnly(text, opts) {
+  const BLANK_STRINGS = !!(opts && opts.blankStrings);
   const n = text.length;
   const out = [];
   /* The last significant character emitted. It is what decides whether the next
@@ -191,7 +206,11 @@ export function codeOnly(text) {
           if (text[j] === '\n') break;              // unterminated: bail out
         }
         const lit = text.slice(i, j);
-        out.push(lit); remember(lit); prev = c; i = j; continue;
+        /* The quotes are kept so the shape of the code survives; only what is
+           between them becomes spaces, and newlines are preserved so every
+           line number still lines up with the file. */
+        out.push(BLANK_STRINGS ? lit.replace(/[^\n'"]/g, ' ') : lit);
+        remember(lit); prev = c; i = j; continue;
       }
 
       if (c === '`') { i = template(i); continue; }
