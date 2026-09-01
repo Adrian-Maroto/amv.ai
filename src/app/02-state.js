@@ -148,7 +148,7 @@ const _SYNC_KEYS = ['convs','memory','workspaces','prompts','model'];
    they're gathered and restored explicitly below. Before this they never left
    the browser: switch device or clear cache and a 10,000-line Dev project was
    simply gone. */
-const _SYNC_EXTRA = ['sessions','skills','handoffs','profile'];
+const _SYNC_EXTRA = ['sessions','skills','handoffs','profile','projects'];
 /* Keys whose values are id-bearing lists, so a pull can merge them item by item
    instead of replacing the list. `model` is a scalar and deliberately absent -
    last write genuinely should win on a preference. */
@@ -261,6 +261,17 @@ const AMVSync = {
       if(Array.isArray(data.handoffs)){
         try{ store('amv_handoffs', _mergeById(load('amv_handoffs')||[], data.handoffs)); }catch(e){ _logErr('sync.handoffs', e); }
       }
+      /* What AMV has learned about each project. Merged like the rest, and put
+         back into the live object as well as into storage - otherwise the
+         facts would only appear after a reload, which on the one screen that
+         shows them reads as the feature not working. */
+      if(Array.isArray(data.projects)){
+        try{
+          const merged = _mergeById(load('amv_projects')||[], data.projects);
+          store('amv_projects', merged);
+          if(typeof PROJ !== 'undefined'){ PROJ.list = merged; }
+        }catch(e){ _logErr('sync.projects', e); }
+      }
       if(data.profile)                 { try{ store('amv_profile', data.profile); }catch(e){} }
 
       try{ renderHist && renderHist(); }catch(e){}          // Recents repaint
@@ -275,6 +286,7 @@ const AMVSync = {
     try{ out.sessions = _syncSessionList(); }catch(e){ out.sessions = []; }
     try{ out.skills   = load('amv_skills')   || []; }catch(e){}
     try{ out.handoffs = load('amv_handoffs') || []; }catch(e){}
+    try{ out.projects = load('amv_projects')  || []; }catch(e){}
     try{ out.profile  = load('amv_profile')  || null; }catch(e){}
     return _syncTrim(out);
   },

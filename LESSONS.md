@@ -7047,3 +7047,59 @@ that must be refused.
 assertion about it - it gets a note saying where the check lives, and the check
 gets written there. A line that always passes is worse than a missing line,
 because it reads as coverage and stops anybody looking.
+
+## 320. The stylesheet went out with its comments on
+
+The JS is minified before it is injected into `index.html`. `styles.css` was
+injected verbatim, so every visitor downloaded 145KB of explanatory prose -
+60KB gzipped, a tenth of the entire page - that only a developer ever reads.
+In a repository whose whole culture is long comments explaining why, that is a
+tax that grows with the thing we most want to encourage.
+
+It surfaced only because the weight ceiling failed by 1KB while adding a
+feature. The right instinct at a ceiling is to look for waste before raising
+it, and the waste was 10% of the page.
+
+Two things worth keeping from the fix:
+
+The scanner is a state machine, not a regex. `/\*[\s\S]*?\*\//g` cannot tell a
+comment from an apostrophe inside one, and a naive check said 78 strings
+contained comment markers - every one a false positive from prose like
+"'s styles lived here". That is the same unsoundness that ate a real call the
+last time a stripper was written by pattern (308).
+
+And it was verified by the browser's own CSS parser rather than by counting
+braces: 5261 rules in, 5261 rules out, one difference and it is whitespace
+inside a multi-line value. Counting braces would have "proved" it while
+missing anything structural, because comments contain braces too - my first
+attempt at a count showed a mismatch of 18 declarations that turned out to be
+the counting regex, not the transform.
+
+**The rule.** A ceiling failing is a question, not an obstacle. Ask what is in
+the file before asking for more room. And when a transformation must preserve
+meaning, check it with something that understands the language, not with a
+proxy that counts characters.
+
+## 321. Per-account storage, loaded before the account is known
+
+Project memory saves through `store()`, which scopes every key by the
+signed-in email. The module runs while the bundle is being evaluated - before
+sign-in has been restored - so its load read the guest scope, found nothing,
+and left the list empty. The first save then wrote that empty list under the
+real account's key.
+
+Everything AMV had learned about every project, erased on the next turn,
+silently, for anybody who was signed in.
+
+The test that found it was failing for a different reason: I had read the raw
+key `amv_projects` in the assertion, forgetting the scoping - my sixth
+instrument error of the session. Chasing why the key was empty is what exposed
+the real one.
+
+The fix records which account the data was loaded for and reloads when that
+changes, so a late sign-in is a reload rather than a wipe.
+
+**The rule.** Anything scoped by identity must not be loaded before the
+identity is known, or must notice when it changes. A module-level load is a
+claim that everything it depends on is already settled - and at bundle
+evaluation time, the signed-in user never is.

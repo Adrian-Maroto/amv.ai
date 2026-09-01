@@ -368,6 +368,9 @@ function _bridgeWireCard(root){
       say('');
       try{ toast('Connected to ' + BRIDGE.folder + '. AMV can build in that folder now.', 'success', 5000); }catch(e){}
       try{ _refreshIntegrationsUI(); }catch(e){}
+      /* Build's project panel is keyed off the connected folder, so it has
+         something to show only from this moment on. */
+      try{ _devRenderProject(); }catch(e){}
       /* THE CONNECTORS COME UP WITH THE MACHINE.
 
          They cannot run without it, so pairing is the only moment they can

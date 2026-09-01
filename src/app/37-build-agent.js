@@ -348,7 +348,9 @@ async function _devSendAgent(msg, stat){
   try{
     out = await aiAgentLoop({
       system: _AGENT_SYS + _handoffContext('dev') + _userStyle(),
-      prompt: _hist + 'You are in the folder "' + folder + '".\n\nREQUEST: ' + msg,
+      prompt: _hist
+            + (typeof projBlock === 'function' ? projBlock() : '')
+            + 'You are in the folder "' + folder + '".\n\nREQUEST: ' + msg,
       tools: BRIDGE_TOOLS.concat(typeof mcpTools === 'function' ? mcpTools() : []),
       model: _sectionModel('code'),
       effort: _devEffort(),
@@ -394,6 +396,16 @@ async function _devSendAgent(msg, stat){
 /* What every ending has in common, so a stopped turn, a failed turn and a
    finished one all get the same changelist and the same Undo. */
 function _agentFinish(entry){
+  /* WHAT THIS TURN TAUGHT US, taken from the steps rather than from the
+     summary. A command that ran and exited zero is evidence about how this
+     project works; anything the model merely said is not, and the whole
+     value of this memory is that everything in it actually happened. */
+  try{
+    if(typeof projLearnFromSteps === 'function'){
+      const learned = projLearnFromSteps(_AGENT.steps || []);
+      if(learned) try{ _devRenderProject(); }catch(e){}
+    }
+  }catch(e){}
   const before = Object.assign({}, _AGENT.before);
   const after = Object.assign({}, _AGENT.after);
   /* A file the turn created has no "before". It is listed as created by

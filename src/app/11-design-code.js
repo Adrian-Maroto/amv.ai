@@ -1077,6 +1077,22 @@ window._integrationStatusPrompt=_integrationStatusPrompt;
 /* ============================================================
    CODE  - AI coding workspace entry
    ============================================================ */
+/* WHAT AMV KNOWS ABOUT THIS PROJECT, ON THE SCREEN WHERE IT IS USED.
+
+   Collapsed by default, and absent entirely when there is no connected
+   folder, because a memory of nothing is a heading over nothing. The reason
+   it is visible at all is that it goes into a prompt: something AMV believes
+   about your project that you cannot see and cannot correct is how a helpful
+   memory becomes a confidently wrong one. */
+function _devRenderProject(){
+  const el = $('dev-proj'); if(!el) return;
+  try{
+    el.innerHTML = (typeof projPanelHTML === 'function') ? projPanelHTML() : '';
+    if(typeof projWirePanel === 'function') projWirePanel(el);
+  }catch(e){ el.innerHTML = ''; }
+}
+try{ window._devRenderProject=_devRenderProject; }catch(e){}
+
 // Live build progress - shows Dev writing past a single response's limit.
 function _devProgress(p){
   try{
@@ -1119,6 +1135,7 @@ function renderCodeView(){
 
       <div id="dev-log" class="dev-log" data-no-i18n></div>
 
+      <div id="dev-proj"></div>
       <div id="ctx-dev"></div>
       <div class="dev-input dev-input-v2">
         <select id="dev-lang" class="lab-sel" style="display:none"><option value="js">JavaScript</option><option value="python">Python</option></select>
@@ -1148,6 +1165,7 @@ function renderCodeView(){
     const t=$('dev-msg'); if(t){ t.value=c.dataset.dq; t.focus(); t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,140)+'px'; }
   }));
   _devRenderLog();
+  _devRenderProject();
   const ta=$('dev-msg');
   on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px';
     /* The offer goes away as soon as what it describes does. */

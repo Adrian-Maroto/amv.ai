@@ -2096,7 +2096,7 @@ const _SYNC_KEYS = ['convs','memory','workspaces','prompts','model'];
    they're gathered and restored explicitly below. Before this they never left
    the browser: switch device or clear cache and a 10,000-line Dev project was
    simply gone. */
-const _SYNC_EXTRA = ['sessions','skills','handoffs','profile'];
+const _SYNC_EXTRA = ['sessions','skills','handoffs','profile','projects'];
 /* Keys whose values are id-bearing lists, so a pull can merge them item by item
    instead of replacing the list. `model` is a scalar and deliberately absent -
    last write genuinely should win on a preference. */
@@ -2209,6 +2209,17 @@ const AMVSync = {
       if(Array.isArray(data.handoffs)){
         try{ store('amv_handoffs', _mergeById(load('amv_handoffs')||[], data.handoffs)); }catch(e){ _logErr('sync.handoffs', e); }
       }
+      /* What AMV has learned about each project. Merged like the rest, and put
+         back into the live object as well as into storage - otherwise the
+         facts would only appear after a reload, which on the one screen that
+         shows them reads as the feature not working. */
+      if(Array.isArray(data.projects)){
+        try{
+          const merged = _mergeById(load('amv_projects')||[], data.projects);
+          store('amv_projects', merged);
+          if(typeof PROJ !== 'undefined'){ PROJ.list = merged; }
+        }catch(e){ _logErr('sync.projects', e); }
+      }
       if(data.profile)                 { try{ store('amv_profile', data.profile); }catch(e){} }
 
       try{ renderHist && renderHist(); }catch(e){}          // Recents repaint
@@ -2223,6 +2234,7 @@ const AMVSync = {
     try{ out.sessions = _syncSessionList(); }catch(e){ out.sessions = []; }
     try{ out.skills   = load('amv_skills')   || []; }catch(e){}
     try{ out.handoffs = load('amv_handoffs') || []; }catch(e){}
+    try{ out.projects = load('amv_projects')  || []; }catch(e){}
     try{ out.profile  = load('amv_profile')  || null; }catch(e){}
     return _syncTrim(out);
   },
@@ -18667,6 +18679,22 @@ window._integrationStatusPrompt=_integrationStatusPrompt;
 /* ============================================================
    CODE  - AI coding workspace entry
    ============================================================ */
+/* WHAT AMV KNOWS ABOUT THIS PROJECT, ON THE SCREEN WHERE IT IS USED.
+
+   Collapsed by default, and absent entirely when there is no connected
+   folder, because a memory of nothing is a heading over nothing. The reason
+   it is visible at all is that it goes into a prompt: something AMV believes
+   about your project that you cannot see and cannot correct is how a helpful
+   memory becomes a confidently wrong one. */
+function _devRenderProject(){
+  const el = $('dev-proj'); if(!el) return;
+  try{
+    el.innerHTML = (typeof projPanelHTML === 'function') ? projPanelHTML() : '';
+    if(typeof projWirePanel === 'function') projWirePanel(el);
+  }catch(e){ el.innerHTML = ''; }
+}
+try{ window._devRenderProject=_devRenderProject; }catch(e){}
+
 // Live build progress - shows Dev writing past a single response's limit.
 function _devProgress(p){
   try{
@@ -18709,6 +18737,7 @@ function renderCodeView(){
 
       <div id="dev-log" class="dev-log" data-no-i18n></div>
 
+      <div id="dev-proj"></div>
       <div id="ctx-dev"></div>
       <div class="dev-input dev-input-v2">
         <select id="dev-lang" class="lab-sel" style="display:none"><option value="js">JavaScript</option><option value="python">Python</option></select>
@@ -18738,6 +18767,7 @@ function renderCodeView(){
     const t=$('dev-msg'); if(t){ t.value=c.dataset.dq; t.focus(); t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,140)+'px'; }
   }));
   _devRenderLog();
+  _devRenderProject();
   const ta=$('dev-msg');
   on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,140)+'px';
     /* The offer goes away as soon as what it describes does. */
@@ -35777,6 +35807,9 @@ function _bridgeWireCard(root){
       say('');
       try{ toast('Connected to ' + BRIDGE.folder + '. AMV can build in that folder now.', 'success', 5000); }catch(e){}
       try{ _refreshIntegrationsUI(); }catch(e){}
+      /* Build's project panel is keyed off the connected folder, so it has
+         something to show only from this moment on. */
+      try{ _devRenderProject(); }catch(e){}
       /* THE CONNECTORS COME UP WITH THE MACHINE.
 
          They cannot run without it, so pairing is the only moment they can
@@ -36156,7 +36189,9 @@ async function _devSendAgent(msg, stat){
   try{
     out = await aiAgentLoop({
       system: _AGENT_SYS + _handoffContext('dev') + _userStyle(),
-      prompt: _hist + 'You are in the folder "' + folder + '".\n\nREQUEST: ' + msg,
+      prompt: _hist
+            + (typeof projBlock === 'function' ? projBlock() : '')
+            + 'You are in the folder "' + folder + '".\n\nREQUEST: ' + msg,
       tools: BRIDGE_TOOLS.concat(typeof mcpTools === 'function' ? mcpTools() : []),
       model: _sectionModel('code'),
       effort: _devEffort(),
@@ -36202,6 +36237,16 @@ async function _devSendAgent(msg, stat){
 /* What every ending has in common, so a stopped turn, a failed turn and a
    finished one all get the same changelist and the same Undo. */
 function _agentFinish(entry){
+  /* WHAT THIS TURN TAUGHT US, taken from the steps rather than from the
+     summary. A command that ran and exited zero is evidence about how this
+     project works; anything the model merely said is not, and the whole
+     value of this memory is that everything in it actually happened. */
+  try{
+    if(typeof projLearnFromSteps === 'function'){
+      const learned = projLearnFromSteps(_AGENT.steps || []);
+      if(learned) try{ _devRenderProject(); }catch(e){}
+    }
+  }catch(e){}
   const before = Object.assign({}, _AGENT.before);
   const after = Object.assign({}, _AGENT.after);
   /* A file the turn created has no "before". It is listed as created by
@@ -36553,3 +36598,260 @@ function _mcpWireCard(root){
   });
 }
 try{ window._mcpWireCard=_mcpWireCard; }catch(e){}
+/* ══════════════════════════════════════════════════════════════════════
+   WHAT AMV KNOWS ABOUT THIS PROJECT, AND HOW IT CAME TO KNOW IT.
+
+   Every session used to start from nothing. AMV would work out how to run
+   the tests, where the source lives and what this project's conventions
+   are - and then throw all of it away, so the next request paid to
+   rediscover the same three facts. On a big repository that is several
+   minutes and several rounds of somebody's allowance, every time, for
+   something that has not changed since yesterday.
+
+   So a project gets a memory. The important word is LEARNED: everything in
+   here is something that actually happened. A command that ran and exited
+   zero is evidence that it is how this project does that thing; a command
+   the model asserted would work is not evidence of anything, and does not
+   get in. That distinction is the whole reason this can be trusted enough
+   to put in a prompt.
+
+   WHY THE PATH IS HASHED. The natural key for "this project" is the folder
+   it lives in, and a folder path is almost always somebody's home
+   directory with their real name in it. This memory syncs, so that path
+   would leave the machine. The id is a hash instead: stable across
+   sessions and devices for the same folder, and meaningless to anybody who
+   reads the record. The readable NAME is the folder's own basename, which
+   is what people call their project anyway.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* A LIST, NOT A MAP, AND FOR ONE REASON.
+
+   Everything else that syncs here - Recents, skills, handoffs - is a list of
+   items carrying an `id` and an `updated`, because that is the shape the
+   server's merge understands: two devices that both changed something are
+   reconciled item by item, newest wins. A map keyed by id would have fallen
+   through that to "last writer replaces everything", so a project learned on
+   the laptop would vanish the next time the desktop synced. Forty entries
+   make a linear lookup free. */
+const PROJ = {
+  list: [],
+  /* The account `list` was loaded for. See _projFresh. */
+  scope: null,
+  /* The one in front of us, or '' when nothing is connected. */
+  current: '',
+};
+try{ window.PROJ = PROJ; }catch(e){}
+
+const PROJ_MAX        = 40;     // projects remembered at once
+const PROJ_MAX_FACTS  = 40;     // per project - a prompt block, not a database
+const PROJ_FACT_MAX   = 200;    // characters per fact
+
+/* LOADED FOR THE ACCOUNT THAT IS SIGNED IN, WHICH IS NOT KNOWN AT LOAD TIME.
+
+   `store`/`load` scope every key by the signed-in email. This module runs
+   while the bundle is being evaluated, before sign-in has been restored, so
+   a plain load at the bottom of the file reads the guest scope and finds
+   nothing - and then the first `_projSave` writes an EMPTY list over the
+   real one under the account's own key. Everything AMV had learned about
+   every project, gone on the next turn, silently.
+
+   So the scope is recorded with the data, and any read checks it first. A
+   different account (or one arriving late, which is the ordinary case) is a
+   reload rather than a wipe. */
+function _projScope(){
+  try{
+    if(typeof S !== 'undefined' && S && S.user && S.user.email) return S.user.email.toLowerCase();
+  }catch(e){}
+  try{ const u = JSON.parse(localStorage.getItem('amv_user') || 'null'); if(u && u.email) return u.email.toLowerCase(); }catch(e){}
+  return 'guest';
+}
+function _projLoad(){
+  try{
+    const raw = load('amv_projects');
+    PROJ.list = Array.isArray(raw) ? raw.filter(p => p && p.id) : [];
+  }catch(e){ PROJ.list = []; }
+  PROJ.scope = _projScope();
+}
+/* Called by everything that reads or writes. Cheap: a string compare. */
+function _projFresh(){
+  if(PROJ.scope !== _projScope()) _projLoad();
+}
+try{ window._projFresh=_projFresh; }catch(e){}
+function _projSave(){
+  try{
+    /* Least recently touched drops off, so a long-lived browser does not grow
+       without end. */
+    PROJ.list.sort((a, b) => (b.updated || 0) - (a.updated || 0));
+    PROJ.list = PROJ.list.slice(0, PROJ_MAX);
+    store('amv_projects', PROJ.list);
+  }catch(e){}
+  /* Rides the sync that already exists rather than inventing a second one.
+     Debounced there, so calling this on every fact costs nothing. */
+  try{ if(typeof AMVSync !== 'undefined') AMVSync.push(); }catch(e){}
+}
+try{ window._projSave=_projSave; }catch(e){}
+
+/* A stable, meaningless id for a path. FNV-1a rather than SHA-256 because
+   this is a lookup key and not a secret: nothing is protected by it being
+   hard to reverse, and a synchronous function keeps every caller simple.
+   What matters is that the path itself never leaves. */
+function _projHash(s){
+  let h = 0x811c9dc5;
+  const str = String(s || '');
+  for(let i = 0; i < str.length; i++){
+    h ^= str.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return 'p' + h.toString(36) + str.length.toString(36);
+}
+try{ window._projHash=_projHash; }catch(e){}
+
+/* Which project is in front of us. A connected folder is the answer when
+   there is one; without a machine there is no stable identity to key on, so
+   there is no project memory rather than a made-up one. */
+function projectId(){
+  try{
+    if(typeof BRIDGE !== 'undefined' && BRIDGE.connected && BRIDGE.root) return _projHash(BRIDGE.root);
+  }catch(e){}
+  return '';
+}
+function projectName(){
+  try{ if(typeof BRIDGE !== 'undefined' && BRIDGE.connected) return BRIDGE.folder || 'this project'; }catch(e){}
+  return '';
+}
+function _projCurrent(create){
+  _projFresh();
+  const id = projectId();
+  if(!id) return null;
+  let p = PROJ.list.find(x => x && x.id === id);
+  if(!p){
+    if(!create) return null;
+    p = { id, name: projectName(), facts: [], updated: Date.now() };
+    PROJ.list.push(p);
+  }
+  /* The folder can be renamed; the path is what identifies it. */
+  p.name = projectName() || p.name;
+  PROJ.current = id;
+  return p;
+}
+try{ window.projectId=projectId; window.projectName=projectName; }catch(e){}
+
+/* ── LEARNING ───────────────────────────────────────────────────────────── */
+/* Near-duplicates are the failure mode here: forty variations on "the tests
+   are run with npm test" crowd out everything else and make the block worse
+   than empty. Compared on a normalised form rather than exactly. */
+const _projNorm = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').replace(/[`'".,;:]/g, '').trim();
+
+function projLearn(text, how){
+  const p = _projCurrent(true);
+  if(!p) return false;
+  const t = String(text || '').trim().slice(0, PROJ_FACT_MAX);
+  if(!t) return false;
+  const norm = _projNorm(t);
+  const at = p.facts.findIndex(f => _projNorm(f.t) === norm);
+  if(at >= 0){
+    /* Seen again. Worth knowing: something confirmed five times is worth
+       more room than something seen once, and this is what makes the
+       trimming below keep the right things. */
+    p.facts[at].seen = (p.facts[at].seen || 1) + 1;
+    p.facts[at].ts = Date.now();
+  } else {
+    p.facts.push({ t, how: String(how || 'observed').slice(0, 40), ts: Date.now(), seen: 1 });
+  }
+  /* Most-confirmed first, then most recent. What falls off the end is what
+     was seen once and long ago, which is the right thing to forget. */
+  p.facts.sort((a, b) => (b.seen || 1) - (a.seen || 1) || (b.ts || 0) - (a.ts || 0));
+  p.facts = p.facts.slice(0, PROJ_MAX_FACTS);
+  p.updated = Date.now();
+  _projSave();
+  return true;
+}
+function projForget(text){
+  const p = _projCurrent(false);
+  if(!p) return false;
+  const norm = _projNorm(text);
+  const before = p.facts.length;
+  p.facts = p.facts.filter(f => _projNorm(f.t) !== norm);
+  if(p.facts.length === before) return false;
+  p.updated = Date.now();
+  _projSave();
+  return true;
+}
+try{ window.projLearn=projLearn; window.projForget=projForget; }catch(e){}
+
+/* WHAT A FINISHED TURN ACTUALLY TAUGHT US.
+
+   Only commands that RAN and SUCCEEDED. A command that failed says nothing
+   about how this project works - it may have been wrong, or the project may
+   have been broken at that moment - and recording it would teach the next
+   turn to repeat somebody's mistake.
+
+   The noise is filtered out too: `ls`, `cat`, `cd` and friends are how
+   anybody looks around and are true of every project on earth, so they are
+   not facts about THIS one. */
+const _PROJ_BORING = /^(ls|ll|cat|cd|pwd|echo|head|tail|which|whoami|find|grep|rg|wc|true|clear|date|env)\b/;
+function projLearnFromSteps(steps){
+  if(!Array.isArray(steps) || !steps.length) return 0;
+  let n = 0;
+  for(const s of steps){
+    if(!s || s.name !== 'run_command' || s.ok !== true) continue;
+    const cmd = String((s.input && s.input.command) || '').trim();
+    if(!cmd || cmd.length > PROJ_FACT_MAX || _PROJ_BORING.test(cmd)) continue;
+    if(cmd.includes('\n')) continue;                 // a script, not a project's command
+    if(projLearn('`' + cmd + '` runs here and succeeds', 'ran it')) n++;
+  }
+  return n;
+}
+try{ window.projLearnFromSteps=projLearnFromSteps; }catch(e){}
+
+/* ── TELLING THE MODEL ──────────────────────────────────────────────────── */
+/* Empty when there is nothing worth saying, so a first visit is not prefixed
+   with a heading over nothing. */
+function projBlock(){
+  const p = _projCurrent(false);
+  if(!p || !p.facts.length) return '';
+  const lines = p.facts.slice(0, PROJ_MAX_FACTS).map(f => '- ' + f.t);
+  return '\n\nWHAT YOU ALREADY KNOW ABOUT "' + (p.name || 'this project') + '"\n'
+    + 'These are things that have actually happened in this folder in earlier\n'
+    + 'sessions, not guesses. Prefer them over exploring again, but if one turns\n'
+    + 'out to be wrong now, say so and go by what you find.\n'
+    + lines.join('\n') + '\n';
+}
+try{ window.projBlock=projBlock; }catch(e){}
+
+/* ── THE DOOR: what AMV knows, on the Build screen ───────────────────────── */
+function projPanelHTML(){
+  const p = _projCurrent(false);
+  const name = projectName();
+  if(!name) return '';
+  if(!p || !p.facts.length){
+    return '<div class="prj prj-empty"><span class="prj-h">' + escH(name) + '</span>'
+      + '<span class="prj-none">AMV has not learned anything about this project yet. '
+      + 'It will, as it works.</span></div>';
+  }
+  const rows = p.facts.map(f =>
+    '<li class="prj-f">'
+      + '<span class="prj-t">' + escH(f.t) + '</span>'
+      + '<span class="prj-how">' + escH(f.how) + ((f.seen || 1) > 1 ? ' · ' + f.seen + '×' : '') + '</span>'
+      + '<button class="prj-x" type="button" aria-label="Forget this" title="Forget this"'
+        + ' data-prj-forget="' + escH(f.t) + '">×</button>'
+    + '</li>').join('');
+  return '<details class="prj"><summary class="prj-sum">'
+      + '<span class="prj-h">' + escH(name) + '</span>'
+      + '<span class="prj-n">' + p.facts.length + ' thing' + (p.facts.length === 1 ? '' : 's') + ' learned</span>'
+    + '</summary><ul class="prj-list">' + rows + '</ul>'
+    + '<p class="prj-note">Learned by doing, not guessed. Remove anything that is wrong '
+      + 'and AMV will stop believing it.</p></details>';
+}
+function projWirePanel(root){
+  root = root || document;
+  root.querySelectorAll('[data-prj-forget]').forEach(b => on(b, 'click', () => {
+    if(projForget(b.dataset.prjForget)){
+      try{ toast('Forgotten.', 'info', 2500); }catch(e){}
+      try{ _devRenderProject(); }catch(e){}
+    }
+  }));
+}
+try{ window.projPanelHTML=projPanelHTML; window.projWirePanel=projWirePanel; }catch(e){}
+
+try{ _projLoad(); }catch(e){}

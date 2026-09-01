@@ -39,9 +39,12 @@ Companion docs (do not duplicate them here - read them):
   - The nav/body shell in `index.html` is safe to edit directly; everything
     else comes from the sources. Always rebuild.
   - `node build.mjs` MINIFIES by default, because `index.html` is the artifact
-    every visitor downloads (1.8MB minified, ~505KB over the wire; 2.3MB and
-    ~690KB without). `app.js` is written unminified beside it either way, and
-    that is the copy `check.mjs`, `preflight` and grep read - so the readable
+    every visitor downloads (1.9MB minified, ~560KB over the wire). That is the
+    JS through terser AND the CSS with its comments stripped - the stylesheet
+    used to ship 145KB of prose, 60KB gzipped, a tenth of the whole page, that
+    only developers ever read. `styles.css` and `app.js` are both written
+    unminified beside it, and those are the copies `check.mjs`, `preflight` and
+    grep read - so the readable
     artifact is kept where it is actually used. `--no-minify` opts out.
     `npm run check` has a gzipped ceiling on `index.html`, so it can only grow
     by somebody raising it on purpose.
@@ -60,9 +63,12 @@ Companion docs (do not duplicate them here - read them):
   except chat.
 - **The bridge** (`bridge/amv-bridge.mjs`) is a zero-dependency daemon somebody
   runs on their own computer; it is what gives AMV a filesystem and a shell.
-  It ships INSIDE `index.html` as base64 (injected by `build.mjs`), so the
-  connect card can hand it over with no registry or second host - and a suite
-  checks the shipped copy is byte-identical to the file the bridge tests drive.
+  `build.mjs` copies it to `amv-bridge.mjs` beside `index.html` (the way `sw.js`
+  and the manifest are emitted) and the connect card fetches it from there, so
+  there is no registry and no second host - and a suite checks the served copy
+  is byte-identical to the file the bridge tests drive. It must therefore be in
+  whatever directory the static host publishes. It is NOT embedded in the page:
+  that was tried and the weight ceiling rightly refused it.
   `aiAgentLoop` (in `14-engine.js`) is the turn-taking on top of it: consent
   once per turn, a stop checked before every round and every command, and a
   changelist measured from the disk with an Undo that writes real bytes back.

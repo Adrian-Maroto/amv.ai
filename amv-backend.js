@@ -11659,7 +11659,13 @@ const SYNC_ALLOWED_KEYS = new Set([
   // Your actual WORK - Dev projects, Lab sessions, and everything in Recents.
   // These used to live only in the browser, so switching device or clearing the
   // cache destroyed them. They are the most valuable thing a user has.
-  'sessions','skills','handoffs','profile'
+  'sessions','skills','handoffs','profile',
+  /* What AMV has learned about each of your projects by working in them -
+     which command runs the tests, where the source lives. Small, and the
+     thing that stops every session paying to rediscover the same facts.
+     Contains no paths: a project is keyed by a hash of its folder, so
+     somebody's home directory and real name never reach this record. */
+  'projects'
 ]);
 const SYNC_MAX_BYTES = 4 * 1024 * 1024;   // 4MB hard ceiling (well under KV's 25MB, sane for D1)
 
@@ -11692,7 +11698,7 @@ const SYNC_MAX_BYTES = 4 * 1024 * 1024;   // 4MB hard ceiling (well under KV's 2
    Both fields are additive; a record written before this change simply has no
    rev and takes the safe merge path.
    ===================================================================== */
-const SYNC_MERGE_KEYS = new Set(['chats','convs','memory','workspaces','prompts','imgs','vids','sessions','skills','handoffs']);
+const SYNC_MERGE_KEYS = new Set(['chats','convs','memory','workspaces','prompts','imgs','vids','sessions','skills','handoffs','projects']);
 const _syncId = it => (it && (it.id || it.key || it.name)) || null;
 /* Best available "when was this touched". Different lists use different names
    and older records have none at all. */

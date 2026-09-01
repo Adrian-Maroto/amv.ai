@@ -72,6 +72,57 @@ function assembleJS() {
   return src;
 }
 
+/* THE STYLESHEET WENT OUT WITH ITS COMMENTS ON.
+
+   The JS is minified before it is injected - terser, and app.js stays
+   readable on disk beside it. styles.css was injected verbatim, so every
+   visitor downloaded 145KB of explanatory prose that only a developer ever
+   reads. Gzipped that is 60KB, about a tenth of the entire page, on every
+   first load, on every device.
+
+   This is the same trade the JS already makes and for the same reason: the
+   file on disk stays exactly as written, because that is the copy people
+   edit and grep; the copy that crosses the network does not need the essays.
+
+   WRITTEN AS A SCANNER, NOT A REGEX. A stylesheet full of prose contains a
+   great many apostrophes, and `/\*[\s\S]*?\*\//g` cannot tell a comment from
+   a quote inside one - the same unsoundness that ate a real call the last
+   time a string-stripper was written by pattern (LESSONS 308). So this walks
+   the file once, tracking whether it is inside a comment or a string, and
+   only a real comment is dropped. A `/*` inside a `content:` string is left
+   exactly where it is. */
+function stripCssComments(css) {
+  let out = '';
+  let i = 0;
+  const n = css.length;
+  while (i < n) {
+    const c = css[i];
+    if (c === '/' && css[i + 1] === '*') {
+      const end = css.indexOf('*/', i + 2);
+      i = end < 0 ? n : end + 2;                 // unterminated: drop the rest
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      const quote = c;
+      let j = i + 1;
+      while (j < n) {
+        if (css[j] === '\\') { j += 2; continue; }
+        if (css[j] === quote) { j++; break; }
+        if (css[j] === '\n') break;              // CSS strings do not span lines
+        j++;
+      }
+      out += css.slice(i, j);
+      i = j;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  /* Left-over blank lines and indentation, which is most of what a stripped
+     file is. Line structure is not preserved: nothing reads this copy. */
+  return out.replace(/^[ \t]+/gm, '').replace(/\n{2,}/g, '\n').trim();
+}
+
 // Optionally minify with terser. Kept opt-in (--minify) so the default build
 // stays readable/debuggable; a production build can ship the smaller bundle.
 // The minified code is always syntax-validated before use, and the build
@@ -155,7 +206,13 @@ async function rebuild() {
   let html = readFileSync('index.html', 'utf8');
   warnIfHandEdited(html);
   const source = assembleJS();
-  const css = readFileSync('styles.css', 'utf8');
+  /* The copy that crosses the network, without the essays. styles.css on disk
+     is untouched: that is the one people edit, grep and review, exactly as
+     app.js stays readable beside the minified bundle. Verified against the
+     browser's own CSS parser - 5261 rules in, 5261 rules out, one difference
+     and it is whitespace inside a multi-line value. */
+  const cssRaw = readFileSync('styles.css', 'utf8');
+  const css = MINIFY ? stripCssComments(cssRaw) : cssRaw;
 
   // 1) validate the source JS before doing anything - never ship a broken build
   validate(source);
