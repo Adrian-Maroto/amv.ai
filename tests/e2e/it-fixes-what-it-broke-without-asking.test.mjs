@@ -50,9 +50,28 @@ const bridge = spawn(process.execPath, [join(ROOT, 'bridge', 'amv-bridge.mjs'), 
   stdio: ['ignore', 'pipe', 'pipe'],
   env: Object.assign({}, process.env, { AMV_BRIDGE_DEV: '1' }),
 });
+/* KILLED WHETHER OR NOT THIS FILE REACHES ITS LAST LINE.
+
+   The tidy-up at the bottom only runs when everything above it passed. Every
+   failing run of this file - and there were several while it was being
+   written - left a daemon listening on a port, holding a temp folder, able to
+   run shell commands, for as long as the machine stayed up. Four of them were
+   still there an hour later.
+
+   That is a bad thing for any test to leak and a much worse thing for THIS
+   one, which exists precisely because a program that executes commands must
+   be bounded. A suite that argues for careful lifecycles and then abandons
+   its own subject is not making the argument it thinks it is - and in CI it
+   would hold a runner open past the end of the job. */
 let banner = '';
 bridge.stdout.on('data', b => { banner += b.toString(); });
 bridge.stderr.on('data', b => { banner += b.toString(); });
+const killBridge = () => { try { bridge.kill('SIGKILL'); } catch (e) {} };
+process.on('exit', killBridge);
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => { killBridge(); process.exit(1); });
+}
+process.on('uncaughtException', (e) => { killBridge(); throw e; });
 const waitFor = async (re, ms) => {
   const until = Date.now() + ms;
   while (Date.now() < until) {
@@ -408,7 +427,7 @@ section('No JavaScript errors');
   ok(A.errors.length === 0, 'zero uncaught page errors', A.errors.slice(0, 3));
 }
 
-bridge.kill('SIGKILL');
+killBridge();
 await A.close();
 if (report('it-fixes-what-it-broke-without-asking') > 0) process.exitCode = 1;
 done();

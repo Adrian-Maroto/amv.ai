@@ -42,9 +42,25 @@ writeFileSync(join(box, 'SECRET.txt'), 'must never be readable\n');
 
 const child = spawn(process.execPath, [join(ROOT, 'bridge', 'amv-bridge.mjs'), proj],
                     { stdio: ['ignore', 'pipe', 'pipe'] });
+/* KILLED WHETHER OR NOT THIS FILE REACHES ITS LAST LINE.
+
+   The kill at the bottom only runs when everything above it passed. A failing
+   run left a daemon listening on a port, holding a temp folder, able to run
+   shell commands, for as long as the machine stayed up - and in CI it would
+   hold the runner open past the end of the job.
+
+   Leaking that from any test is bad. Leaking it from the file whose entire
+   argument is that a program which executes commands must be bounded is the
+   argument failing to hold in its own house. */
 let banner = '';
 child.stdout.on('data', b => { banner += b.toString(); });
 child.stderr.on('data', b => { banner += b.toString(); });
+const killBridge = () => { try { child.kill('SIGKILL'); } catch (e) {} };
+process.on('exit', killBridge);
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => { killBridge(); process.exit(1); });
+}
+process.on('uncaughtException', (e) => { killBridge(); throw e; });
 
 const waitFor = async (re, ms) => {
   const until = Date.now() + ms;
@@ -246,6 +262,6 @@ section('A timeout kills the whole tree, not just the shell');
      a + ' then ' + b);
 }
 
-child.kill('SIGKILL');
+killBridge();
 if (report('the-bridge-only-reaches-one-folder') > 0) process.exitCode = 1;
 done();
