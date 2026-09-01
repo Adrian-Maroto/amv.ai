@@ -895,6 +895,13 @@ async function _callAI(msgs, _opts) {
     if(_webSearchOn) tools.push({ type:'web_search_20250305', name:'web_search', max_uses:_webMaxUses });
     // AMV's own tools - chat can actually DO the work, not just describe it.
     try{ if(Array.isArray(AMV_TOOLS)) tools = tools.concat(AMV_TOOLS); }catch(e){}
+    /* THE MACHINE'S TOOLS, ONLY WHILE THERE IS A MACHINE.
+
+       Offered when a bridge is connected and withheld when it is not. A tool
+       that is always present and always fails teaches the model to stop
+       trying it and teaches the person that AMV is broken; appearing with
+       the thing it needs is the honest shape. */
+    try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(BRIDGE_TOOLS); }catch(e){}
     if(!tools.length) tools = undefined;
 
     const _endpoint = _aiBase();        // backend-only; never the browser key

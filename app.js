@@ -6388,6 +6388,13 @@ async function _callAI(msgs, _opts) {
     if(_webSearchOn) tools.push({ type:'web_search_20250305', name:'web_search', max_uses:_webMaxUses });
     // AMV's own tools - chat can actually DO the work, not just describe it.
     try{ if(Array.isArray(AMV_TOOLS)) tools = tools.concat(AMV_TOOLS); }catch(e){}
+    /* THE MACHINE'S TOOLS, ONLY WHILE THERE IS A MACHINE.
+
+       Offered when a bridge is connected and withheld when it is not. A tool
+       that is always present and always fails teaches the model to stop
+       trying it and teaches the person that AMV is broken; appearing with
+       the thing it needs is the honest shape. */
+    try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(BRIDGE_TOOLS); }catch(e){}
     if(!tools.length) tools = undefined;
 
     const _endpoint = _aiBase();        // backend-only; never the browser key
@@ -20129,7 +20136,15 @@ const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true,
                            same question. Forgetting destroys something of theirs.
                            And approving is what SENDS. */
                         memory_add:true, memory_forget:true, approval_act:true };
-function _toolNeedsConsent(name){ return !!_TOOL_CONSENT[name]; }
+function _toolNeedsConsent(name){
+  /* Running a command on somebody's own computer is the most consequential
+     thing AMV can do, so it is gated here as well as by the bridge's own
+     refusals. Reading and listing are not gated: they cannot change
+     anything, and asking four times before AMV can look at a file is how a
+     confirmation stops being read. */
+  if(name === 'run_command' || name === 'write_file') return true;
+  return !!_TOOL_CONSENT[name];
+}
 /* How often a job runs, in the words a person uses. */
 const _CREW_EVERY = { '10min':'every 10 minutes', '30min':'every 30 minutes',
                       hourly:'every hour', daily:'every day', weekly:'every week' };
@@ -20137,6 +20152,8 @@ async function _confirmModelTool(name, input){
   input = input || {};
   const what = ({
     deploy_site:'publish a public web page live on the internet',
+    run_command:'run this on your computer, in your project folder:\n\n' + String(input.command||''),
+    write_file:'write the file '+String(input.path||'')+' in your project folder on your computer',
     run_code:'run '+String(input.lang||'code')+' on your device',
     fix_code:'run and edit '+String(input.lang||'code')+' on your device',
     crew_add:'set up a job that runs on its own, on a schedule',
@@ -20192,6 +20209,33 @@ async function _confirmModelTool(name, input){
 }
 async function _amvRunTool(name, input, onStatus){
   try{
+    /* THE BRIDGE'S TOOLS. Handled first because they are the ones that touch
+       somebody's real machine, and a name collision with an AMV tool must
+       resolve toward the more careful path rather than away from it.
+
+       A failing command comes back as a RESULT, not an error: a missing
+       package or a failing test is exactly what the model needs to read and
+       act on, and turning it into a thrown error would end the turn at the
+       moment the work actually starts. */
+    if(name==='run_command' || name==='read_file' || name==='write_file' || name==='list_dir'){
+      const label = name==='run_command' ? ('Running: ' + String(input.command||'').slice(0,60))
+                  : name==='write_file'  ? ('Writing ' + String(input.path||''))
+                  : name==='read_file'   ? ('Reading ' + String(input.path||''))
+                  :                        'Looking at the project';
+      onStatus && onStatus(label + '…');
+      const r = await runBridgeTool(name, input);
+      if(r && r.error) return { text:'That did not work: ' + r.error, render:null };
+      if(name==='run_command'){
+        const head = 'exit ' + r.exitCode + (r.timedOut ? ' (timed out and was killed)' : '')
+                   + ' in ' + r.ms + 'ms' + (r.truncated ? ' - output truncated' : '');
+        return { text: head + '\n\nstdout:\n' + (r.stdout || '(empty)')
+                      + '\n\nstderr:\n' + (r.stderr || '(empty)'), render:null };
+      }
+      if(name==='read_file')  return { text:'--- ' + r.path + ' ---\n' + r.content, render:null };
+      if(name==='write_file') return { text:'Wrote ' + r.path + ' (' + r.bytes + ' bytes).', render:null };
+      return { text: r.path + ':\n' + (r.entries||[]).map(e=>(e.dir?'[dir] ':'      ')+e.name).join('\n'), render:null };
+    }
+
     /* generate_image and generate_video were handled here. Removed with the
        feature: a tool the model can call and the product cannot honour is the
        worst of both - it promises, then fails at the last step. */
@@ -34995,3 +35039,213 @@ async function _ctxDevHistory(){
         + recent + '\n\n' : '');
 }
 try{ window._ctxDevHistory=_ctxDevHistory; }catch(e){}
+/* ══════════════════════════════════════════════════════════════════════
+   THE BRIDGE, FROM AMV'S SIDE.
+
+   AMV could write code and never run it. The page is a browser tab and
+   the server is a Worker; neither can spawn a process, install a package
+   or hold a filesystem, so every capability from "install the
+   dependencies" through "deploy the backend" was waiting on a machine
+   that did not exist.
+
+   The bridge is that machine: a small program somebody runs themselves,
+   in the folder they want AMV to work in. This file is how AMV finds it,
+   pairs with it once, and then uses it.
+
+   WHAT THIS DELIBERATELY DOES NOT DO. It does not scan for the bridge on
+   a timer, and it does not try a range of ports looking for one. Both
+   would make AMV a program that quietly probes your machine, which is
+   what everybody rightly hates about software that does this. The port
+   comes from the person, once, off the screen the bridge prints - and
+   then it is remembered.
+   ══════════════════════════════════════════════════════════════════════ */
+
+const BRIDGE = {
+  port: 0,
+  token: '',
+  folder: '',
+  root: '',
+  connected: false,
+  /* The last thing that went wrong, so the surface can say which of the
+     several different problems this is rather than "not connected". */
+  why: '',
+};
+try{ window.BRIDGE = BRIDGE; }catch(e){}
+
+const _bridgeBase = (port) => 'http://127.0.0.1:' + (port || BRIDGE.port);
+
+/* Restored on load. The token is a capability - anything holding it can run
+   commands in that folder - so it lives in sessionStorage rather than
+   localStorage: closing the tab ends it, which matches the bridge itself,
+   which ends when its window is closed. */
+function _bridgeRestore(){
+  try{
+    const raw = sessionStorage.getItem('amv_bridge');
+    if(!raw) return;
+    const s = JSON.parse(raw);
+    if(s && s.port && s.token){ Object.assign(BRIDGE, s, { connected: true, why: '' }); }
+  }catch(e){}
+}
+function _bridgeRemember(){
+  try{
+    sessionStorage.setItem('amv_bridge', JSON.stringify({
+      port: BRIDGE.port, token: BRIDGE.token, folder: BRIDGE.folder, root: BRIDGE.root }));
+  }catch(e){}
+}
+function _bridgeForget(){
+  BRIDGE.port = 0; BRIDGE.token = ''; BRIDGE.folder = ''; BRIDGE.root = '';
+  BRIDGE.connected = false;
+  try{ sessionStorage.removeItem('amv_bridge'); }catch(e){}
+}
+try{ window._bridgeForget=_bridgeForget; }catch(e){}
+
+/* Is a bridge listening on this port, and what folder is it holding? The one
+   call that works before pairing, so somebody can be told what they are about
+   to connect to before they connect to it. */
+async function _bridgeHello(port){
+  try{
+    const r = await fetchDeadline(_bridgeBase(port) + '/amv-bridge/hello', {}, 4000);
+    if(!r.ok) return null;
+    const d = await r.json();
+    return d && d.bridge ? d : null;
+  }catch(e){ return null; }
+}
+try{ window._bridgeHello=_bridgeHello; }catch(e){}
+
+/* Pair once, with the code the bridge printed. */
+async function _bridgePair(port, code){
+  const r = await fetchDeadline(_bridgeBase(port) + '/amv-bridge/pair', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: String(code || '').trim().toUpperCase() }),
+  }, 8000);
+  if(r.status === 403){
+    const d = await r.json().catch(()=>({}));
+    throw new Error(d.error === 'origin_not_allowed'
+      ? 'That bridge will not accept connections from this address.'
+      : 'That code did not match. Check the one in your terminal - it changes each time the bridge starts.');
+  }
+  if(!r.ok) throw new Error('Could not pair with the bridge on port ' + port + '.');
+  const d = await r.json();
+  BRIDGE.port = Number(port); BRIDGE.token = d.token;
+  BRIDGE.folder = d.folder || ''; BRIDGE.root = d.root || '';
+  BRIDGE.connected = true; BRIDGE.why = '';
+  _bridgeRemember();
+  return BRIDGE;
+}
+try{ window._bridgePair=_bridgePair; }catch(e){}
+
+/* Every call after pairing. Failures are named rather than flattened,
+   because "the bridge is not running", "this tab is not paired" and "the
+   command was refused" have three different fixes and telling somebody the
+   wrong one sends them to restart something that is fine. */
+async function _bridgeCall(route, body, timeoutMs){
+  if(!BRIDGE.connected) throw new Error('No computer is connected. Run the AMV bridge in your project folder, then connect it here.');
+  let r;
+  try{
+    r = await fetchDeadline(_bridgeBase() + '/amv-bridge/' + route, {
+      method: 'POST', headers: { 'Content-Type': 'application/json',
+                                 'X-AMV-Bridge-Token': BRIDGE.token },
+      body: JSON.stringify(body || {}),
+    }, timeoutMs || 130000);
+  }catch(e){
+    BRIDGE.connected = false; BRIDGE.why = 'unreachable';
+    throw new Error('The bridge stopped answering. It may have been closed - start it again and reconnect.');
+  }
+  if(r.status === 401){
+    /* The bridge restarted, so its token changed. Saying "reconnect" is the
+       whole answer here and it is worth being exact about, because the
+       symptom looks identical to it not running. */
+    _bridgeForget(); BRIDGE.why = 'stale';
+    throw new Error('The bridge restarted, so this tab is no longer paired with it. Connect it again with the new code.');
+  }
+  const d = await r.json().catch(()=>({}));
+  if(r.status === 403 && d.error === 'refused'){
+    throw new Error('The bridge refused that command: it looks like ' + d.reason + '. That rule lives on your machine, not in AMV.');
+  }
+  if(r.status === 403 && d.error === 'outside_root'){
+    throw new Error('That path is outside the folder the bridge was started in, so it is not AMV’s to touch.');
+  }
+  if(!r.ok) throw new Error(d.message || d.error || 'The bridge could not do that.');
+  return d;
+}
+
+async function bridgeExec(command, opts){
+  opts = opts || {};
+  return await _bridgeCall('exec', { command, cwd: opts.cwd || '.', timeout: opts.timeout },
+                           (opts.timeout || 120000) + 8000);
+}
+async function bridgeRead(path){ return await _bridgeCall('read', { path }, 20000); }
+async function bridgeWrite(path, content){ return await _bridgeCall('write', { path, content }, 20000); }
+async function bridgeList(path){ return await _bridgeCall('list', { path: path || '.' }, 15000); }
+try{ window.bridgeExec=bridgeExec; window.bridgeRead=bridgeRead;
+     window.bridgeWrite=bridgeWrite; window.bridgeList=bridgeList; }catch(e){}
+
+/* ── THE TOOLS THE MODEL GETS ─────────────────────────────────────────────
+   Offered ONLY while a bridge is connected. A tool that is always present
+   and always fails teaches the model to stop trying it, and teaches the
+   person that AMV is broken; a tool that appears when the machine does is
+   the honest shape.
+
+   `run_command` carries the warning in its own description, because the
+   model reads that on every turn and it is the one place a rule about
+   destructive work is guaranteed to be in front of it. The daemon refuses
+   the catastrophic shapes regardless - this is the belt, that is the
+   braces. */
+const BRIDGE_TOOLS = [
+  {
+    name: 'run_command',
+    description: 'Run a shell command on the user\'s own computer, in their project folder, and get back stdout, stderr and the exit code. Use this to install dependencies, run builds, run tests, start and stop things, inspect logs, and use git. Prefer the smallest command that answers the question. Anything destructive or irreversible is refused by the bridge itself.',
+    input_schema: { type:'object', properties:{
+      command:{ type:'string', description:'The shell command, exactly as it would be typed.' },
+      cwd:{ type:'string', description:'Folder to run in, relative to the project root. Defaults to the root.' },
+      timeout:{ type:'number', description:'Milliseconds before it is killed. Default 120000.' },
+    }, required:['command'] },
+  },
+  {
+    name: 'read_file',
+    description: 'Read a file from the user\'s project folder on their computer. Use before editing, so a change is made against what is really there rather than what was assumed.',
+    input_schema: { type:'object', properties:{
+      path:{ type:'string', description:'Path relative to the project root.' },
+    }, required:['path'] },
+  },
+  {
+    name: 'write_file',
+    description: 'Write a file in the user\'s project folder on their computer, creating folders as needed. Writes the WHOLE file - read it first and include everything that should stay.',
+    input_schema: { type:'object', properties:{
+      path:{ type:'string', description:'Path relative to the project root.' },
+      content:{ type:'string', description:'The complete file contents.' },
+    }, required:['path','content'] },
+  },
+  {
+    name: 'list_dir',
+    description: 'List what is in a folder of the user\'s project. Use to find your way around a repository before assuming its layout.',
+    input_schema: { type:'object', properties:{
+      path:{ type:'string', description:'Path relative to the project root. Defaults to the root.' },
+    }, required:[] },
+  },
+];
+try{ window.BRIDGE_TOOLS = BRIDGE_TOOLS; }catch(e){}
+
+/* Run one of them. Errors come back as a RESULT rather than being thrown,
+   because a failed command is information the model should reason about -
+   a missing package, a failing test - and not a reason to end the turn. */
+async function runBridgeTool(name, args){
+  args = args || {};
+  try{
+    if(name === 'run_command'){
+      const r = await bridgeExec(String(args.command||''), { cwd: args.cwd, timeout: args.timeout });
+      return { ok: r.exitCode === 0, exitCode: r.exitCode, timedOut: !!r.timedOut,
+               ms: r.ms, stdout: r.stdout || '', stderr: r.stderr || '',
+               truncated: !!r.truncated };
+    }
+    if(name === 'read_file')  return await bridgeRead(String(args.path||''));
+    if(name === 'write_file') return await bridgeWrite(String(args.path||''), String(args.content||''));
+    if(name === 'list_dir')   return await bridgeList(String(args.path||'.'));
+  }catch(e){
+    return { ok:false, error: String(e.message||e) };
+  }
+  return { ok:false, error: 'unknown bridge tool: ' + name };
+}
+try{ window.runBridgeTool=runBridgeTool; }catch(e){}
+
+try{ _bridgeRestore(); }catch(e){}

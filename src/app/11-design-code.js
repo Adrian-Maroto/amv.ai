@@ -2556,7 +2556,15 @@ const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true,
                            same question. Forgetting destroys something of theirs.
                            And approving is what SENDS. */
                         memory_add:true, memory_forget:true, approval_act:true };
-function _toolNeedsConsent(name){ return !!_TOOL_CONSENT[name]; }
+function _toolNeedsConsent(name){
+  /* Running a command on somebody's own computer is the most consequential
+     thing AMV can do, so it is gated here as well as by the bridge's own
+     refusals. Reading and listing are not gated: they cannot change
+     anything, and asking four times before AMV can look at a file is how a
+     confirmation stops being read. */
+  if(name === 'run_command' || name === 'write_file') return true;
+  return !!_TOOL_CONSENT[name];
+}
 /* How often a job runs, in the words a person uses. */
 const _CREW_EVERY = { '10min':'every 10 minutes', '30min':'every 30 minutes',
                       hourly:'every hour', daily:'every day', weekly:'every week' };
@@ -2564,6 +2572,8 @@ async function _confirmModelTool(name, input){
   input = input || {};
   const what = ({
     deploy_site:'publish a public web page live on the internet',
+    run_command:'run this on your computer, in your project folder:\n\n' + String(input.command||''),
+    write_file:'write the file '+String(input.path||'')+' in your project folder on your computer',
     run_code:'run '+String(input.lang||'code')+' on your device',
     fix_code:'run and edit '+String(input.lang||'code')+' on your device',
     crew_add:'set up a job that runs on its own, on a schedule',
@@ -2619,6 +2629,33 @@ async function _confirmModelTool(name, input){
 }
 async function _amvRunTool(name, input, onStatus){
   try{
+    /* THE BRIDGE'S TOOLS. Handled first because they are the ones that touch
+       somebody's real machine, and a name collision with an AMV tool must
+       resolve toward the more careful path rather than away from it.
+
+       A failing command comes back as a RESULT, not an error: a missing
+       package or a failing test is exactly what the model needs to read and
+       act on, and turning it into a thrown error would end the turn at the
+       moment the work actually starts. */
+    if(name==='run_command' || name==='read_file' || name==='write_file' || name==='list_dir'){
+      const label = name==='run_command' ? ('Running: ' + String(input.command||'').slice(0,60))
+                  : name==='write_file'  ? ('Writing ' + String(input.path||''))
+                  : name==='read_file'   ? ('Reading ' + String(input.path||''))
+                  :                        'Looking at the project';
+      onStatus && onStatus(label + '…');
+      const r = await runBridgeTool(name, input);
+      if(r && r.error) return { text:'That did not work: ' + r.error, render:null };
+      if(name==='run_command'){
+        const head = 'exit ' + r.exitCode + (r.timedOut ? ' (timed out and was killed)' : '')
+                   + ' in ' + r.ms + 'ms' + (r.truncated ? ' - output truncated' : '');
+        return { text: head + '\n\nstdout:\n' + (r.stdout || '(empty)')
+                      + '\n\nstderr:\n' + (r.stderr || '(empty)'), render:null };
+      }
+      if(name==='read_file')  return { text:'--- ' + r.path + ' ---\n' + r.content, render:null };
+      if(name==='write_file') return { text:'Wrote ' + r.path + ' (' + r.bytes + ' bytes).', render:null };
+      return { text: r.path + ':\n' + (r.entries||[]).map(e=>(e.dir?'[dir] ':'      ')+e.name).join('\n'), render:null };
+    }
+
     /* generate_image and generate_video were handled here. Removed with the
        feature: a tool the model can call and the product cannot honour is the
        worst of both - it promises, then fails at the last step. */
