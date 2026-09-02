@@ -7560,3 +7560,33 @@ of your own source will reveal. Check hard limits against the platform's
 documentation, in a test, next to the constant - and when the only thing that
 could find a class of defect is deploying, assume the first person to find it is
 a user unless something in the repository looks for it first.
+
+### 330a. The iteration count was part of a format, and the guard had a hole
+
+Two follow-ups to 330, both caught by the gate rather than by me.
+
+**The first was a real regression.** `_mailCredKey` derives at 120000 for v2 and
+had a v1 branch whose entire purpose is to READ what v1 wrote. I changed the
+count for both. For v1 the number is not a setting, it is part of the format: a
+different count is a different key, and a key that does not open the ciphertext
+is not a migration, it is somebody's stored mailbox password becoming
+permanently unreadable with no message saying so. v1 keeps its number; only v2
+moves to the ceiling. That it also exceeds the runtime's cap is true and
+irrelevant - on a deployed Worker there can be no v1 data, because a Worker able
+to write it could never have run.
+
+**The second was the guard going blind.** Picking the count by version turned
+the call into `{ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }` -
+shorthand. The new check scanned for `iterations:` and shorthand has no colon,
+so it stopped seeing the call it was written for and reported 9 passed. Written
+an hour after 328, which is the same defect, and after 330's own first version
+had it too.
+
+It now counts shorthand as well, resolves the local it comes from, and requires
+that local to be built from the ceiling. Verified by making the legacy count the
+default (two failures) and by putting a fresh 300000 in the ternary (one).
+
+**The rule.** Three times in one session a check went green by no longer looking
+at anything. The assertion that saves you is the boring one: *did this check
+find anything to examine?* Put it in every structural test, and make it name the
+count, so an empty scan reads as a failure rather than as a pass.

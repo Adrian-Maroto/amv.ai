@@ -21561,6 +21561,9 @@ function _mailCredWeak(secret) {
   return null;
 }
 
+/* The count v1 was written with. Read-only: see _mailCredKey. */
+const MAIL_CRED_V1_ITERATIONS = 120000;
+
 async function _mailCredSalt(secret) {
   /* Per deployment, from the deployment's own key. Not stored, so there is
      nothing to migrate and nothing to lose. */
@@ -21575,14 +21578,25 @@ async function _mailCredKey(env, version) {
   const salt = version === 1
     ? enc.encode('amv-mail-credentials-v1')   // only ever used to READ what v1 wrote
     : await _mailCredSalt(secret);
+  /* THE ITERATION COUNT IS PART OF THE FORMAT, NOT A SETTING.
+
+     v2 derived at 120000, which the Workers runtime refuses - it caps PBKDF2 at
+     100000 - so this threw the first time anybody stored a mailbox password,
+     the same defect as PBKDF2_ITERATIONS on a different route. v2 is now at the
+     cap.
+
+     v1 KEEPS ITS NUMBER. This branch exists for one purpose: to read what v1
+     wrote. Changing the count changes the key, and a key that does not open the
+     ciphertext is not a migration, it is a loss - the person's mailbox password
+     simply stops being readable and they are never told why. That it also
+     exceeds the runtime's cap is true and does not change the answer: on a
+     deployed Worker there can be no v1 ciphertext to read, because a Worker
+     that could write it could never have run. Where v1 data does exist, this is
+     the only number that opens it. */
+  const iterations = version === 1 ? MAIL_CRED_V1_ITERATIONS : PBKDF2_MAX_ITERATIONS;
   const material = await crypto.subtle.importKey('raw', enc.encode(secret), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
-    /* Also over the runtime's ceiling at 120000, and it would have thrown the
-       first time anybody stored a mailbox password - the same defect as
-       PBKDF2_ITERATIONS, waiting on a different route. Nothing was ever
-       encrypted at the old count because the call could not complete, so there
-       is no ciphertext to migrate. */
-    { name: 'PBKDF2', salt, iterations: PBKDF2_MAX_ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
     material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 

@@ -55,7 +55,16 @@ section('No PBKDF2 call asks for more iterations than the runtime allows');
      new call written with a fresh literal, or with some other variable, fails
      here rather than in production. */
   const exprs = [...code.matchAll(/iterations\s*:\s*([A-Za-z0-9_$.]+)/g)].map(m => m[1]);
-  ok(exprs.length > 0, 'there are PBKDF2 calls to check', exprs.length);
+  /* SHORTHAND COUNTS TOO, AND ONCE DID NOT.
+
+     `{ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }` passes an iteration
+     count without ever writing `iterations:`, so a scan for the colon form does
+     not see it at all. That is not hypothetical - refactoring _mailCredKey to
+     pick its count by version produced exactly that shape, and this check went
+     green while no longer looking at the call it was written for. */
+  const shorthand = [...code.matchAll(/[{,]\s*iterations\s*[,}]/g)].length;
+  ok(exprs.length + shorthand > 0, 'there are PBKDF2 calls to check',
+     { named: exprs.length, shorthand });
 
   const CHECKED = ['PBKDF2_MAX_ITERATIONS', 'PBKDF2_ITERATIONS', 'rounds'];
   const bad = exprs.filter((e) => {
@@ -63,8 +72,38 @@ section('No PBKDF2 call asks for more iterations than the runtime allows');
     return !CHECKED.includes(e);
   });
   ok(bad.length === 0,
-     `every iteration count is a number at or under ${CAP}, or a constant checked below`,
+     `every named iteration count is a number at or under ${CAP}, or a constant checked below`,
      bad);
+
+  /* Every shorthand use has to resolve to a local built from checked values. */
+  const locals = [...code.matchAll(/const iterations\s*=\s*([^;]+);/g)].map(m => m[1].trim());
+  ok(locals.length === shorthand || shorthand === 0,
+     'each shorthand iteration count comes from a local this file can read',
+     { locals: locals.length, shorthand });
+  const unresolved = locals.filter(v => /\b\d{6,}\b/.test(v)
+    ? Number((v.match(/\b\d{6,}\b/) || [])[0]) > CAP
+    : !/PBKDF2_MAX_ITERATIONS/.test(v));
+  ok(unresolved.length === 0,
+     'and each is built from the ceiling rather than a fresh number', unresolved);
+}
+
+section('The one count above the ceiling is a read-only legacy format');
+{
+  /* MAIL_CRED_V1_ITERATIONS is 120000, above what the runtime will run, and
+     that is correct: the number is part of the v1 ciphertext format, and
+     changing it does not migrate old data, it makes it permanently unreadable.
+     On a deployed Worker there can be no v1 data - a Worker that could write it
+     could never have run - so the branch is unreachable there and harmless.
+
+     What must stay true is that it is only ever used to READ v1. If it were
+     ever the default, every new credential would be written with a key the
+     runtime cannot derive, which is the original bug again. */
+  const m = /const MAIL_CRED_V1_ITERATIONS\s*=\s*(\d+)/.exec(code);
+  ok(!!m, 'the legacy count is named rather than inline', m && m[1]);
+  const uses = [...code.matchAll(/MAIL_CRED_V1_ITERATIONS/g)].length;
+  ok(uses === 2, 'it is declared once and used once', uses);
+  ok(/version === 1\s*\?\s*MAIL_CRED_V1_ITERATIONS\s*:/.test(code.replace(/\s+/g, ' ')),
+     'and only on the branch that reads v1, never as the default');
 }
 
 section('And the constant every route derives from is within it too');
