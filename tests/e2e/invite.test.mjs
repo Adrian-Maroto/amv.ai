@@ -141,12 +141,32 @@ section('At the ceiling, it says so');
 
 section('No server, no invented link');
 {
-  await page.evaluate(() => { AMV_API.base = ''; });
+  /* SETTING THE BASE TO '' NO LONGER MEANS THERE IS NO BACKEND.
+
+     `AMV_API.base = ''` writes the per-device override, and the getter falls
+     back to the address the build shipped with when that override is empty -
+     which is what lets somebody point one browser at a staging Worker and then
+     undo it. While nothing was baked in, empty override happened to mean no
+     backend; with a real address in the page it means the opposite, and this
+     section was checking the no-server copy against a fully live pane.
+
+     The fallback is read from a meta tag once and memoised, so it cannot be
+     unset from in here. What CAN be done honestly is replace the accessor for
+     the length of this check and put it back after - the pane reads
+     AMV_API.live, which is `!!this.base`, so this is the state under test at
+     exactly the level the pane sees it. */
+  await page.evaluate(() => {
+    window.__baseDesc = Object.getOwnPropertyDescriptor(AMV_API, 'base');
+    Object.defineProperty(AMV_API, 'base', { value: '', writable: true, configurable: true });
+  });
   await openPane();
   const txt = await page.evaluate(() => document.querySelector('.set-pane').textContent);
   ok(/Sign in/.test(txt), 'it explains what is needed instead of showing a dead code', txt.slice(0, 90));
   ok(!/ref=/.test(txt), 'and never fabricates a link');
-  await page.evaluate(() => { AMV_API.base = 'https://api.test'; AMV_API.referral = async () => { throw new Error('offline'); }; });
+  await page.evaluate(() => {
+    Object.defineProperty(AMV_API, 'base', window.__baseDesc);   // the real accessor is back
+    AMV_API.base = 'https://api.test'; AMV_API.referral = async () => { throw new Error('offline'); };
+  });
   await openPane();
   await page.waitForFunction(() => /online|server/i.test(document.querySelector('.set-pane').textContent), { timeout: 4000 });
   const off = await page.evaluate(() => document.querySelector('.set-pane').textContent);

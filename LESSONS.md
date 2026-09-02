@@ -7402,3 +7402,41 @@ configuration-dependent as one that switches it on, and it is the easier of the
 two to get wrong, because "off" was free for the entire life of an unconfigured
 project. Ask of every negative fixture: is this state built, or was it just the
 weather?
+
+---
+
+## 328. Fifteen suites had the same broken fixture, and three of them were honest enough to fail
+
+327, 327a and 327b were three separate fixes for one cause. Then I counted:
+`AMV_API.base = ''` appears at fifteen places across eleven suites, every one of
+them meaning "there is no backend" and every one of them now meaning the
+opposite. That write goes to the per-device override, and an empty override
+falls back to the address the build ships with.
+
+Three went red. That is the good outcome. The rest went GREEN, and one of them -
+`saved-is-not-sent` - was making real requests to the production Worker from a
+test run, having intended to make none at all. A suite that quietly talks to
+somebody's live deployment is a defect on its own, and it had been doing it for
+every gate run since the address was baked in.
+
+Fixing fifteen call sites would have been fifteen chances to get it wrong. The
+cause is one thing: the harness let each suite inherit whatever deployment the
+build happened to be configured for. So `bootApp` now SERVES the address, and
+its default is empty - which is exactly the world all 170 suites were written
+in, stated instead of assumed. A suite wanting a configured deployment asks for
+one.
+
+That alone would have re-hidden the configured path, which is how these bugs got
+in. So `a-configured-deployment-is-a-different-product` opts in and covers it on
+purpose: the address in the page being enough on its own for a first-time
+visitor with empty storage, clearing the override returning to the build's
+address rather than to nothing, checkout offering a real path where
+`money-needs-a-server` proves the honest refusal, and the push control reporting
+itself busy. Verified sensitive rather than assumed: booted unconfigured on
+purpose, six of its fifteen assertions fail.
+
+**The rule.** When the same wrong fixture appears in a dozen places, do not fix
+it a dozen times - it got there once, through whatever let each test inherit
+ambient state. Fix that, restore every existing test to the world it was written
+for, and then add ONE suite that deliberately enters the other world. Two states
+each tested on purpose beats a hundred tested by accident.

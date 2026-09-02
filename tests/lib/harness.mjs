@@ -193,9 +193,29 @@ export async function armGeom(pageOrContext) {
 
 /* Boot the app: signed in, on a tab, cookie banner dismissed.
    Pass { user: null } to test the signed-out state. */
+/* THE HARNESS STATES THE DEPLOYMENT, RATHER THAN INHERITING ONE.
+
+   Every suite in this directory was written against a build with no backend
+   address in it, because for the whole life of the project there wasn't one.
+   Roughly a dozen of them switch the backend off with `AMV_API.base = ''` and
+   assert on what a visitor sees when nothing is connected. That write goes to
+   the per-device OVERRIDE, and an empty override correctly falls back to the
+   address the build shipped with - so the day a real one was baked in, every
+   one of those turned into a live deployment wearing a dead one's assertions.
+   Three were caught by going red. The rest are worse: `saved-is-not-sent` went
+   green while making real requests to the production Worker from a test.
+
+   So the default here is an EMPTY address - the state all of this was written
+   for, stated rather than assumed - and a suite that wants a configured
+   deployment asks for one with `bootApp({ apiBase: 'https://...' })`. That is
+   the same rule the last four lessons in LESSONS.md are about: build the
+   fixture, never borrow it from whatever the deployment happens to be today.
+
+   `a-configured-deployment-is-a-different-product` is the suite that opts in,
+   so the configured path is covered on purpose instead of by accident. */
 export async function bootApp(opts = {}) {
   const { url, server } = await serveApp(
-    opts.apiBase === undefined ? {} : { apiBase: opts.apiBase });
+    { apiBase: opts.apiBase === undefined ? '' : opts.apiBase });
   const browser = await chromium.launch(LAUNCH);
   const page = await browser.newPage({
     viewport: opts.viewport || { width: 1280, height: 860 }
