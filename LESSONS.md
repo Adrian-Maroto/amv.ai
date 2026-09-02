@@ -7473,3 +7473,32 @@ about infrastructure, not a piece of copy. If the product says "it has been
 logged", something in the repository has to guarantee that - and the guarantee
 belongs in the file the deploy reads, not in a dashboard toggle any deploy can
 overwrite.
+
+### 329a. The recorder was on and nothing was speaking into it
+
+Turning observability on was necessary and not sufficient. The first 500 after
+it landed arrived in Workers Logs as an error event carrying the method, the
+URL, the status and nothing else - no message, no stack, no reason. The operator
+could see THAT a request had failed, which they already knew from the browser,
+and still could not learn why.
+
+The top-level catch records the exception two ways, and neither is the
+platform's log. `_workerError` writes it to KV, which is reachable only through
+an admin route that needs a token and a POST - not something anybody can open
+while a signup is failing in front of them. It forwards to Sentry, which is
+inert until somebody sets a DSN. Both are the right places for it to END UP.
+Neither is where somebody LOOKS first.
+
+The cron path had `console.error` from its first version. The request path - the
+one every user is on - did not, so the only route with a human waiting on the
+other end was the silent one.
+
+Now it says the path, the scrubbed message and 600 characters of scrubbed stack.
+Scrubbed with the same function the stored copy uses: a log line is as public as
+a KV record, and an exception quotes whatever was in scope, including a URL with
+a token in it. The assertion sits in the suite already anchored on that handler,
+and was verified by deleting the logging again - two failures.
+
+**The addendum to 329.** "Recorded" and "readable" are different claims. Ask
+where the person will actually be standing when they need it, and make sure the
+message is there too - not only in the place it is archived.

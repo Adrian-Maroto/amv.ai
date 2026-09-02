@@ -8603,6 +8603,25 @@ export default {
       try{
         let path = 'request';
         try{ path = new URL(request.url).pathname; }catch(_){}
+        /* SAY IT WHERE THE RUNTIME CAN HEAR IT.
+
+           _workerError writes the exception to KV and forwards it to Sentry,
+           and both are real - but KV is readable only through an admin route
+           that needs a token and a POST, and Sentry is inert until somebody
+           sets a DSN. Neither reaches the platform's own log, so a 500 arrived
+           in Workers Logs as an error event with no reason in it: the operator
+           could see THAT a request failed and had no way to learn WHY, which
+           is the whole thing they came to the log for.
+
+           The cron path had console.error from the start. The request path -
+           the one every user is on - did not. Scrubbed with the same function
+           the stored copy uses, because a log line is as public as a KV record
+           and an exception can quote a URL with a token in it. */
+        try{
+          console.error('[500] ' + path + ' :: '
+            + _errScrub(String((err && err.message) || err), 300) + ' :: '
+            + _errScrub(String((err && err.stack) || ''), 600));
+        }catch(_){}
         ctx.waitUntil(_workerError(env, path, err));
       }catch(_){}
       /* The MESSAGE stays on the server. This returned err.message straight to
