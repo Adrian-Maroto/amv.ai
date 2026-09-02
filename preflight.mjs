@@ -113,6 +113,19 @@ if (toml && backend) {
     'add [[migrations]] with tag and new_sqlite_classes = ["AMVCounter"]');
 }
 
+/* ── 5b. Observability, so the generic 500 is not the end of the story ─────
+   The Worker answers an unhandled exception with "Something went wrong on our
+   side. It has been logged." That is the right answer to a stranger, and it is
+   only honest if the log exists. Observability defaults to OFF, and a dashboard
+   toggle does not survive the next deploy - it is overwritten from this file -
+   so the setting has to live here. */
+if (toml) {
+  const obs = /\[observability\]/.test(toml) && /enabled\s*=\s*true/.test(toml);
+  if (obs) ok('observability is on, so a 500 leaves something to read');
+  else warn('observability is OFF - unhandled errors return "it has been logged" and are not',
+    'add [observability] with enabled = true (and [observability.logs] persist = true) to wrangler.toml');
+}
+
 /* ── 6. Cron trigger present (automations/research watches depend on it) ──── */
 if (toml) {
   if (/crons\s*=\s*\[[^\]]+\]/.test(toml)) ok('a cron trigger is configured (scheduled jobs will run)');

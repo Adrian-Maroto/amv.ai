@@ -26,6 +26,33 @@ compatibility_flags = ["nodejs_compat"]
 # Cloudflare fires the Worker's scheduled() handler on this cron, whether or
 # not anyone has AMV open. Every 5 minutes it looks for due automations,
 # runs them, and stores the results for the user.
+# ── A WORKER YOU CANNOT SEE INSIDE IS A WORKER YOU CANNOT FIX ──
+#
+# The top-level catch returns "Something went wrong on our side. It has been
+# logged." on purpose: an exception message is written for an engineer and can
+# carry a key name, a storage path or a stack-shaped hint, none of which belongs
+# in an answer to a stranger. That trade is only honest if the message really is
+# somewhere afterwards.
+#
+# It was not. Observability defaults to OFF, so the first real 500 on this
+# deployment left nothing to read - the promise in the error message was not
+# being kept. Set here rather than in the dashboard because every deploy
+# overwrites dashboard toggles from this file, so a toggle would have lasted
+# until the next push and then quietly gone again.
+#
+# `persist` is what keeps a log after the moment it happened, which is the
+# difference between reading an error and having to reproduce it while watching.
+# Sampling stays at 1 - this is a small deployment and a sampled log is exactly
+# the log that is missing when you need it.
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
 [triggers]
 crons = ["*/5 * * * *"]
 

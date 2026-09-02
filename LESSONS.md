@@ -7440,3 +7440,36 @@ it a dozen times - it got there once, through whatever let each test inherit
 ambient state. Fix that, restore every existing test to the world it was written
 for, and then add ONE suite that deliberately enters the other world. Two states
 each tested on purpose beats a hundred tested by accident.
+
+---
+
+## 329. "It has been logged" was not true
+
+The Worker's top-level catch answers an unhandled exception with "Something went
+wrong on our side. It has been logged." That is the right thing to tell a
+stranger - an exception message is written for an engineer and can carry a key
+name, a storage path or a stack-shaped hint - and there is a careful comment
+above it explaining that nothing is lost by withholding it, because it is
+recorded.
+
+The first real 500 on the first real deployment arrived, and there was nothing
+to read. Cloudflare's observability defaults to OFF, so no log was kept. The
+sentence in the error message was a promise the deployment was not keeping, and
+the person it failed was the owner, on their first day live, with no way to find
+out what broke.
+
+Two things made it worse than a missing setting. The dashboard will let you turn
+it on, and the next deploy overwrites it from `wrangler.toml` - so the fix that
+looks obvious lasts until the next push and then silently goes again. And
+`persist` is a separate flag: without it a log exists only while somebody is
+watching a live tail, which means reproducing an error on demand to see it at
+all.
+
+Now set in the config, where deploys read it, with sampling at 1 and persistence
+on. The preflight warns when it is missing, verified by removing it.
+
+**The rule.** An error message that promises the failure was recorded is a claim
+about infrastructure, not a piece of copy. If the product says "it has been
+logged", something in the repository has to guarantee that - and the guarantee
+belongs in the file the deploy reads, not in a dashboard toggle any deploy can
+overwrite.
