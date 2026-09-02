@@ -29,3 +29,11 @@ tests/e2e/.build/
 .discarded-index-*.txt
 .test-run.lock
 .gate.lock
+
+# Local wrangler runtime state - the KV, the Durable Object storage and the
+# caches `wrangler dev --local` writes while smoke-real.mjs drives the real
+# Worker. Regenerated on every run and meaningless anywhere else, but it turned
+# up as an untracked directory after each full gate, which is noise that says
+# nothing about the change that caused it - the same reason tests/*/.build is
+# ignored above.
+.wrangler/
