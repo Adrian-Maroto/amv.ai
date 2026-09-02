@@ -16548,6 +16548,7 @@ function renderCrewView(){
         <div class="mc-cmd-inner">
           <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
           <input id="mc-cmd-input" class="mc-cmd-input" type="text" autocomplete="off"
+                 aria-label="Tell AMV what to do"
                  placeholder="e.g. \u201csummarize my last meetings\u201d or \u201cfind the cheapest flights to Madrid in March\u201d">
           <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
         </div>
@@ -16733,7 +16734,7 @@ function renderCrewView(){
       <div class="mc-cmd-label">Tell AMV what to do <span>- it recognizes what you mean and does it, right here</span></div>
       <div class="mc-cmd-inner">
         <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
-        <input id="mc-cmd-input" class="mc-cmd-input" type="text" placeholder="e.g. “email me a summary of my unread emails” or “research the top AI news and write a brief”" autocomplete="off">
+        <input id="mc-cmd-input" class="mc-cmd-input" type="text" aria-label="Tell AMV what to do" placeholder="e.g. “email me a summary of my unread emails” or “research the top AI news and write a brief”" autocomplete="off">
         <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
       </div>
       <div class="mc-cmd-chips">${[
