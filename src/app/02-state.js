@@ -515,7 +515,7 @@ try{ window._budgetGuard = _budgetGuard; }catch(e){}
    authority; this client value only gates local UI affordances. */
 const OWNER_EMAIL = (function(){
   try{ if(typeof window!=='undefined' && typeof window.__AMV_OWNER_EMAIL__==='string' && window.__AMV_OWNER_EMAIL__.includes('@')) return window.__AMV_OWNER_EMAIL__.trim().toLowerCase(); }catch(e){}
-  return 'amarotovaleria@gmail.com';
+  return 'kubikam@icloud.com';
 })();
 function _isOwnerEmail(email){
   try{ return !!email && String(email).trim().toLowerCase() === OWNER_EMAIL.toLowerCase(); }catch(e){ return false; }
