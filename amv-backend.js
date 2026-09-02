@@ -9178,7 +9178,38 @@ async function _route(request, env, ctx) {
    transparently re-hash on next successful login - no lockouts.
    (Argon2id would be preferable but isn't available in the Workers runtime.)
    ============================================================ */
-const PBKDF2_ITERATIONS = 210000;   // OWASP 2023 recommendation for PBKDF2-SHA256
+/* WHAT THE PLATFORM WILL ACTUALLY DO, WHICH IS NOT WHAT OWASP ASKS FOR.
+
+   This was 210000, citing OWASP's 2023 recommendation for PBKDF2-SHA256. The
+   Workers runtime refuses it:
+
+     NotSupportedError: Pbkdf2 failed: iteration counts above 100000 are not
+     supported (requested 210000).
+
+   So _hashPassword threw on every single call, and since every sign-up hashes a
+   password, NOBODY COULD CREATE AN ACCOUNT on a deployed AMV. Not a rare path,
+   not a race - the first thing the first user does, failing for everybody, from
+   the first deployment. It surfaced as the generic 500 because that is what the
+   top-level catch is for.
+
+   100000 is the platform maximum, so this is not a tuning choice; it is the
+   ceiling. Be honest about what that costs: it is a sixth of OWASP's 600000 for
+   this algorithm, which means an offline attacker with a stolen hash does a
+   sixth of the work. What stands in front of that is unchanged - the hash is
+   salted per account, the store is not public, and every route that hashes is
+   rate limited per source precisely because hashing is the expensive thing here.
+
+   It can be raised later without a migration and without anybody losing an
+   account: every record stores its own `pwIter` and verification uses the
+   stored value, so new accounts can move to a higher factor the moment the
+   platform allows one, and old ones keep verifying at theirs.
+
+   Chaining several sub-100000 rounds to reach 210000 would preserve the work
+   factor and was deliberately not done: it triples the CPU of the most
+   expensive operation in the Worker, on a free plan with a hard CPU ceiling
+   per request, and a sign-up killed for CPU looks exactly like this bug did. */
+const PBKDF2_MAX_ITERATIONS = 100000;   // hard limit in the Workers runtime
+const PBKDF2_ITERATIONS = 100000;       // == the cap; see above before raising
 // AMV-051: reject the most common / trivially-weak passwords at signup.
 const _COMMON_PASSWORDS = new Set(['password','12345678','123456789','1234567890','qwerty123','password1','password123','iloveyou','admin123','welcome1','letmein1','abc12345','11111111','qwertyuiop','1q2w3e4r','sunshine1','football1','baseball1','trustno1','superman1']);
 function _isCommonPassword(pw){
@@ -9231,8 +9262,16 @@ async function _hashPassword(password, salt, iterations){
     throw e;
   }
   const enc = new TextEncoder();
+  /* Clamped rather than trusted. `iterations` arrives from a stored record for
+     verification, and a record written by a future deployment - or edited -
+     could name a count this runtime refuses. Throwing there would lock somebody
+     out of their own account with a 500; clamping verifies at the highest count
+     the platform will run, which for any record written by THIS code is the
+     count it was hashed at. */
+  const want = iterations || PBKDF2_ITERATIONS;
+  const rounds = Math.min(want, PBKDF2_MAX_ITERATIONS);
   const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt: enc.encode(salt), iterations: iterations || PBKDF2_ITERATIONS, hash:'SHA-256' }, keyMaterial, 256);
+  const bits = await crypto.subtle.deriveBits({ name:'PBKDF2', salt: enc.encode(salt), iterations: rounds, hash:'SHA-256' }, keyMaterial, 256);
   return [...new Uint8Array(bits)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 /* Verify a Cloudflare Turnstile token. Returns true if:
@@ -21538,7 +21577,12 @@ async function _mailCredKey(env, version) {
     : await _mailCredSalt(secret);
   const material = await crypto.subtle.importKey('raw', enc.encode(secret), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 120000, hash: 'SHA-256' },
+    /* Also over the runtime's ceiling at 120000, and it would have thrown the
+       first time anybody stored a mailbox password - the same defect as
+       PBKDF2_ITERATIONS, waiting on a different route. Nothing was ever
+       encrypted at the old count because the call could not complete, so there
+       is no ciphertext to migrate. */
+    { name: 'PBKDF2', salt, iterations: PBKDF2_MAX_ITERATIONS, hash: 'SHA-256' },
     material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 

@@ -24,6 +24,17 @@
  * checks below are the ones a fake cannot answer - concurrency, ordering, and
  * what an unconfigured deployment does.
  *
+ * AND WHAT IT STILL CANNOT SEE, which is worth knowing before trusting it.
+ * `wrangler dev --local` is workerd, but it is not the deployed runtime, and it
+ * does not enforce everything the deployed one does. The section below performs
+ * a real sign-up and asserts a 200; it passed every run for the life of the
+ * project while the deployed Worker refused every sign-up, because
+ * PBKDF2_ITERATIONS was 210000 and the production runtime caps PBKDF2 at
+ * 100000. Local ran it happily. So "it works in workerd" is a weaker claim than
+ * it sounds, and platform limits have to be checked against the documentation
+ * as well - which is what tests/worker/the-runtime-refuses-what-this-asks-for
+ * does.
+ *
  * It SKIPS rather than fails when wrangler cannot start (no workerd binary, no
  * network on a fresh install). A gate that goes red for a reason that is not
  * the code teaches people to ignore it - the same rule audit-deps.mjs follows.

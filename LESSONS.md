@@ -7502,3 +7502,61 @@ and was verified by deleting the logging again - two failures.
 **The addendum to 329.** "Recorded" and "readable" are different claims. Ask
 where the person will actually be standing when they need it, and make sure the
 message is there too - not only in the place it is archived.
+
+---
+
+## 330. Nobody could create an account, and every check was green
+
+The first user of the deployed AMV was the owner, and they could not sign up.
+Neither could anybody else. Every attempt returned the generic 500, from the
+first deployment onwards, and the reason was one number:
+
+    NotSupportedError: Pbkdf2 failed: iteration counts above 100000 are not
+    supported (requested 210000).
+
+`PBKDF2_ITERATIONS = 210000`, with a comment citing OWASP's 2023 recommendation.
+The Workers runtime caps PBKDF2 at 100000 and refuses anything higher, so
+`_hashPassword` threw on every call - and every sign-up hashes a password. A
+second call had the same defect waiting on a different route: `_mailCredKey`
+derived at 120000 and would have thrown the first time somebody stored a mailbox
+password.
+
+The number was chosen from a security recommendation without checking what the
+platform would run. That is the ordinary mistake. Two things about how it
+survived are not ordinary.
+
+**The gate runs the real Worker and did not catch it.** `smoke-real.mjs` exists
+precisely for this - it starts `wrangler dev --local`, which is workerd with a
+real KV and a real Durable Object, and performs a real sign-up asserting a 200.
+It passed every run. Local workerd does not enforce the limit; the deployed
+runtime does. So "we ran it in the real runtime" was a weaker claim than it
+sounded, and the strongest check in the project was blind to a defect that made
+the product unusable.
+
+**Nothing else could see it either.** Two hundred and eighty suites hand the
+Worker a mock crypto or a fake env. A platform limit is not visible in a mock,
+not visible in local workerd, and not visible in the source unless somebody
+compares the number to the documentation. It was only ever going to be found by
+deploying - which is what happened, on the owner, on their first day.
+
+The fix is 100000, which is the ceiling rather than a choice, and the cost is
+stated where the constant is: a sixth of OWASP's work factor for this algorithm.
+`pwIter` is stored per account, so raising it later needs no migration. The
+count is now clamped before it reaches the runtime, so a record naming a bigger
+number cannot 500 somebody out of their own account.
+`the-runtime-refuses-what-this-asks-for` checks every iteration count against
+the documented cap, and was verified against both the original bug and a fresh
+over-cap literal.
+
+Its first version matched `iterations: <digits>` and counted them - and the fix
+had replaced the last bare number with a named constant, so the scan found
+nothing and passed by having nothing to test. It only showed because it also
+asserted it had found something. The same defect as 322, 324 and 328, committed
+while writing the guard for a different one.
+
+**The rule.** A number taken from a standard is a claim about what the platform
+will do, and platforms have limits that no local runtime, no mock and no reading
+of your own source will reveal. Check hard limits against the platform's
+documentation, in a test, next to the constant - and when the only thing that
+could find a class of defect is deploying, assume the first person to find it is
+a user unless something in the repository looks for it first.
