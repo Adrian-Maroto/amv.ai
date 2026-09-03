@@ -303,17 +303,50 @@ function _mountTurnstile(){
   box.style.display='';
   box.setAttribute('data-sitekey', siteKey);
   const render = ()=>{ try{ if(window.turnstile && box && !box.dataset.rendered){ turnstile.render(box, { sitekey: siteKey }); box.dataset.rendered='1'; } }catch(e){} };
-  if(window.turnstile){ render(); return; }
+
+  /* WHEN THE CHALLENGE CANNOT LOAD, SAY SO RATHER THAN ASKING FOR IT ANYWAY.
+
+     This had an onload and no onerror. If the script never arrives - a school
+     or workplace filter, an extension, a dead network - nothing happened at
+     all: the box stayed empty, no token was produced, and the server refused
+     the sign-up with "Please complete the verification and try again". The
+     person is told to complete a verification that is not on the screen and
+     cannot be put there, and there is nothing they can do about it. That is
+     the worst thing a form can say.
+
+     AMV cannot let them through - the server requires a real token whenever
+     the operator has configured one, and a client that waved people past would
+     be the captcha not existing. What it can do is stop blaming them, name the
+     likely cause, and say who can change it. */
+  let failed = false;
+  const cannotLoad = (why)=>{
+    if(failed) return; failed = true;
+    try{
+      box.dataset.failed='1';
+      box.innerHTML = '<div class="ts-blocked" role="alert">Verification could not load'
+        + (why ? ' (' + escH(why) + ')' : '') + '.<br>'
+        + 'A network filter, extension or firewall is usually the cause. '
+        + 'Try a different network, or ask whoever runs this AMV to turn the check off.</div>';
+      box.style.display='';
+    }catch(e){}
+  };
+  /* Loaded but never drew: a filter that answers with something that is not the
+     script leaves window.turnstile undefined, and a silent empty box again. */
+  const watch = ()=>setTimeout(()=>{ if(!box.dataset.rendered) cannotLoad('timed out'); }, 8000);
+
+  if(window.turnstile){ render(); watch(); return; }
   // load the script once
   if(!document.getElementById('cf-turnstile-js')){
     const s=document.createElement('script');
     s.id='cf-turnstile-js';
     s.src='https://challenges.cloudflare.com/turnstile/v0/api.js';
     s.async=true; s.defer=true;
-    s.onload=render;
+    s.onload=()=>{ render(); watch(); };
+    s.onerror=()=>cannotLoad('blocked');
     document.head.appendChild(s);
   } else {
     setTimeout(render, 400);
+    watch();
   }
 }
 try{ window._mountTurnstile=_mountTurnstile; }catch(e){}

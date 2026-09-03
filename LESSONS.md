@@ -7737,3 +7737,37 @@ The check now asserts `new-password`, and its label says which value and why.
 check that pins a mechanism rather than an outcome will defend the mechanism
 even after the mechanism is known not to work - and it will do it politely, in
 green, for years.
+
+---
+
+## 334. "Please complete the verification" of a box that was not there
+
+The owner turned Turnstile on and could not create an account. The form asked
+them to complete a verification. There was no verification on the screen.
+
+`_mountTurnstile` attached an `onload` and no `onerror`. When the script does
+not arrive - a school filter, an extension, a firewall, a network answering with
+something that is not the script - nothing happened at all. The box stayed
+empty, no token existed, and the server correctly refused the sign-up for want
+of one. So the product named the single thing the person could not do, offered
+nothing to act on, and was right on every individual step while being useless.
+
+Two silent failures, not one. The script erroring is the obvious half. The other
+is a script that ARRIVES and leaves `window.turnstile` undefined, which is what
+a filter serving its own block page looks like - `onerror` never fires and the
+box is empty just the same. A timeout covers that one.
+
+The fix is not to let anybody past, and it was worth being deliberate about
+that, because the code that handles the failure is exactly where somebody is
+tempted to. The server requires a real token whenever the operator configured
+one; a client that forged one or set a skip flag would be a captcha that is not
+a captcha. What the person is owed is the truth: the check could not load, a
+filter or extension is the usual cause, and here are the two ways out - a
+different network, or the operator turning it off. The suite asserts both the
+message and the absence of any bypass.
+
+**The rule.** A required control that can fail to appear needs a story for not
+appearing, and "ask again" is not one. Whenever the product demands something
+from a person, ask what they see if the thing they must interact with never
+arrives - and make sure that path says who can fix it, especially when the
+answer is not them.

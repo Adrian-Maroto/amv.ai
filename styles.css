@@ -10407,3 +10407,17 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 @media (prefers-reduced-motion:reduce){
   [aria-busy="true"].dev-openext svg{animation:none;opacity:.7}
 }
+
+/* ══ LAYER A141 - a verification that could not load says so ══════════════════
+   The captcha box used to stay empty when its script was blocked, while the
+   form demanded a token nobody could produce. This is the message that replaces
+   the silence: readable, not alarming, and it names who can change it. */
+.ts-blocked{
+  font-size:var(--t-sm);
+  line-height:1.55;
+  color:var(--mu);
+  background:var(--s2);
+  border:1px solid var(--bd);
+  border-radius:var(--r-sm);
+  padding:10px 12px;
+}
