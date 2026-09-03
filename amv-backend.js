@@ -569,10 +569,16 @@ const DB = {
       return;
     }
     await env.AMV_KV.put(`${kind}:${id}`, j, kvOpts);
+    /* This namespace is demonstrably not empty any more. */
+    await _forgetKindEmpty(env, kind);
   },
   async del(env, kind, id){
     if(this._hasD1(env)){ await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, id).run(); return; }
     await env.AMV_KV.delete(`${kind}:${id}`);
+    /* A delete can only make a namespace emptier - but "emptier" is not
+       "empty", and the marker means ALL of them are gone. Only a completed
+       scan may claim that, so drop the claim and let one prove it. */
+    await _forgetKindEmpty(env, kind);
   },
   /* AMV-078: compare-and-set for a record that carries its own `_rev`.
 
@@ -603,6 +609,7 @@ const DB = {
       return { ok: changed > 0, guarded: true };
     }
     await env.AMV_KV.put(`${kind}:${id}`, j);
+    await _forgetKindEmpty(env, kind);
     return { ok: true, guarded: false };
   },
   async list(env, kind, limit){
@@ -661,6 +668,111 @@ const SCHOOL_ASSIGNMENT_MAX = 10;
    listing. One write per fifty instead of one per view. */
 const MKT_VIEW_FOLD = 50;      // one admin page of accounts
 const SUPPORT_SCAN_LIMIT = 500;     // accounts with tickets, not tickets
+/* AN IDLE DEPLOYMENT WAS PAYING THE MOST, FOR EVER.
+
+   runDueAutomations has a cheap index - `duehour:` buckets naming the accounts
+   with work due in this hour and the two before it - and one safety rule over
+   the top of it: an EMPTY bucket set is never believed, because "nobody is due"
+   and "the index does not know" look identical, and the second one must not
+   silently stop somebody's nightly job. Empty therefore falls through to a full
+   scan of the namespace.
+
+   Which is correct for a busy deployment and exactly inverted for a new one.
+   With no automations at all the buckets are empty on every tick, so the
+   fallback ran EVERY time: the cheap path can never engage precisely when there
+   is no work to be cheap about. reconcilePayments had the same shape with no
+   index at all - its comment says "cheap when there is nothing pending", which
+   is true of the bytes read and false of the operation count, because a list is
+   one list whether it returns nothing or a thousand rows.
+
+   Measured against the real Worker: 2 lists and 49 reads per tick, 288 ticks a
+   day, with nobody signed up. 576 list operations - 58% of a free plan's daily
+   allowance - spent rediscovering that the product is empty. The owner's KV
+   usage sat at 90% with zero users.
+
+   So: a marker that separates "the index has no idea" from "there are no
+   records at all". The second is a FACT rather than a guess, because it is
+   written only by a scan that walked the whole namespace and found nothing, and
+   it is thrown away by any write that would make it wrong.
+
+   Three properties matter, and they are why this is safe:
+
+   - It cannot lose work, only delay it. The marker is trusted for under an
+     hour, and runDueAutomations already forces a full sweep in the first five
+     minutes of every hour and ignores the marker while doing it. A marker that
+     somehow went stale costs one hour of lateness, which is reported, and then
+     self-heals. Compare the failure it replaces: none, but the deployment stops
+     working entirely when the daily limit is hit, which stops automations AND
+     payment reconciliation AND the owner dashboard at once.
+   - Only the two kinds the cron scans carry it. DB.put is the write path for a
+     hundred and thirty-five call sites; invalidating a marker there for every
+     kind would add a delete to every account, entitlement and usage write and
+     cost more than it saves. `auto` and `paypending` are written when somebody
+     saves an automation or starts a checkout - rare, deliberate, one at a time.
+   - It trades the scarce operation for the abundant one. Free KV allows 100,000
+     reads a day and 1,000 lists. This spends a read to avoid a list. */
+const KIND_EMPTY_PREFIX = 'kindempty:';
+/* Under an hour on purpose, so the marker expires in step with the hourly full
+   sweep rather than outliving it. */
+const KIND_EMPTY_TRUST_MS = 55 * 60 * 1000;
+/* The kinds the 5-minute tick scans, and the ONLY kinds this applies to. */
+const CRON_SCANNED_KINDS = new Set(['auto', 'paypending']);
+
+/* D1 is a real database: `SELECT ... WHERE kind=?` costs nothing like a KV
+   list, and there is no daily operation ceiling to protect. On that path the
+   marker would be pure overhead - a KV read added where there was no KV op at
+   all - so every one of these is a no-op there. */
+async function _markKindEmpty(env, kind){
+  if(!CRON_SCANNED_KINDS.has(kind) || DB._hasD1(env)) return;
+  try{ await env.AMV_KV.put(KIND_EMPTY_PREFIX + kind, String(Date.now()), { expirationTtl: 86400 }); }
+  catch(e){ /* best effort: failing to record emptiness only costs a scan */ }
+}
+/* AWAITED, not fired and forgotten.
+
+   The first version registered the delete with waitUntil and returned - which
+   meant reaching forward to `_liveCtx`, declared several hundred lines below
+   this, from inside a catch that swallows. Top-level order dependencies are
+   real in a concatenated single script, and a TDZ error in there would have
+   been invisible: the marker would simply never be dropped, and an automation
+   would never run.
+
+   Awaiting is both simpler and a stronger guarantee. It costs one KV delete on
+   a write that only happens when somebody saves an automation or starts a
+   checkout, and it means the stale marker is provably gone BEFORE the caller
+   is told the record was written - rather than probably gone, shortly. */
+async function _forgetKindEmpty(env, kind){
+  if(!CRON_SCANNED_KINDS.has(kind) || DB._hasD1(env)) return;
+  try{ await env.AMV_KV.delete(KIND_EMPTY_PREFIX + kind); }
+  catch(e){ /* the scan it would have saved simply happens */ }
+}
+async function _kindKnownEmpty(env, kind){
+  if(!CRON_SCANNED_KINDS.has(kind) || DB._hasD1(env)) return false;
+  try{
+    const at = +(await env.AMV_KV.get(KIND_EMPTY_PREFIX + kind)) || 0;
+    const age = Date.now() - at;
+    /* BOUNDED FROM BOTH SIDES, AND THE SECOND SIDE IS THE ONE THAT MATTERS.
+
+       This first read `at > 0 && age < KIND_EMPTY_TRUST_MS`, which looks like
+       it rejects a bad value and does not. Unparseable text and 0 both land on
+       at=0, giving an age of fifty-odd years, which the upper bound already
+       refuses - so `at > 0` could never once have changed the answer. A
+       mutation run proved it: removing it left all thirty-six assertions
+       passing.
+
+       What neither clause caught is a timestamp in the FUTURE. That gives a
+       NEGATIVE age, which is happily less than the trust window, so the marker
+       would be believed until the clock caught up with it - months, and the
+       hourly sweep is the only thing that would still find the work. Not
+       theoretical: backupImport writes whatever keys a snapshot contains
+       straight to KV, and a snapshot is operator-supplied JSON, so
+       `kindempty:auto` can arrive holding any number at all.
+
+       So the age is bounded below as well. A marker from the future is not a
+       marker from the past. */
+    return age >= 0 && age < KIND_EMPTY_TRUST_MS;
+  }catch(e){ return false; }
+}
+
 async function scan(env, kind, limit, what) {
   const cap = limit || SCAN_ALL;
   const all = await DB.list(env, kind, cap);
@@ -679,6 +791,16 @@ async function scan(env, kind, limit, what) {
         + 'place every time. Raise the limit for this scan or page it.', 12 * 60);
     } catch (e) {}
   }
+  /* Only a walk that found nothing may claim the namespace is empty.
+
+     This read `!truncated && rows.length === 0`, and the first half was
+     unreachable: `truncated` is `all.length >= cap` and `rows` is
+     `all.slice(0, cap)`, so a truncated scan carries at least `cap` rows and
+     cap is never zero. Zero rows already means the walk completed. Removing
+     the clause changed no test, which is the definition of a guard that was
+     never guarding - so it is gone rather than left standing as protection
+     that is not there. */
+  if (rows.length === 0) await _markKindEmpty(env, kind);
   return { rows, truncated };
 }
 
@@ -3919,8 +4041,18 @@ async function runDueAutomations(env, atMs){
      it can never be the reason a job does not run. */
   let allUsers = [], truncated = false, viaIndex = false;
   const sweepDue = new Date(now).getUTCMinutes() < 5;
-  const candidates = sweepDue ? null : await _autoDueCandidates(env, now);
-  if (candidates && candidates.size > 0) {
+  /* Checked BEFORE the buckets, because reading the index to learn that an
+     empty namespace has nothing due is 48 reads spent on a foregone
+     conclusion. Never consulted on the hourly sweep: that sweep is the thing
+     that bounds a stale marker's cost to one hour, so it has to ignore it. */
+  const idle = !sweepDue && await _kindKnownEmpty(env, 'auto');
+  const candidates = (sweepDue || idle) ? null : await _autoDueCandidates(env, now);
+  if (idle) {
+    /* Nothing has ever been scheduled here, established by a scan that walked
+       the whole namespace, and no automation has been written since. There is
+       no work and nothing to read to confirm it. */
+    allUsers = [];
+  } else if (candidates && candidates.size > 0) {
     viaIndex = true;
     for (const em of candidates) {
       const rec = await DB.get(env, 'auto', em);
@@ -8044,6 +8176,16 @@ async function backupImport(request, env){
       const merged = await _restoreMerge(env, key, val);
       if (merged.held) heldForward++;
       await env.AMV_KV.put(key, merged.value);
+      /* THE ONE WRITER THAT DOES NOT GO THROUGH DB.put.
+
+         Every other write to a scanned namespace passes through DB.put or
+         DB.del, which drop the empty-namespace marker for us. This loop writes
+         whatever keys the snapshot contains, straight to KV - so a restore that
+         brings automations back while the marker still said the namespace was
+         empty would leave them unscanned until the marker aged out. An hour of
+         lateness rather than lost work, but a restore is run during an
+         incident, which is the worst hour to add one to. */
+      try{ const kind = String(key).split(':')[0]; if(kind) await _forgetKindEmpty(env, kind); }catch(_){}
     restored++;
   }
   audit(env, 'backup_import', { mode, restored, skipped, rejected, heldForward, from: snap.createdISO });
@@ -12191,6 +12333,21 @@ async function _pendDone(env, id) {
 async function reconcilePayments(env) {
   let checked = 0, rescued = 0, dropped = 0;
   let rows = [];
+  /* NOTHING PENDING IS THE NORMAL CASE, AND IT WAS THE EXPENSIVE ONE.
+
+     The comment below is about how much is read once a scan starts. It is not
+     about whether to start one, and this ran on all 288 ticks of the day
+     whether or not a single payment was outstanding - one list operation each
+     time, because a list costs the same for no rows as for a thousand.
+
+     The marker is written only by a completed scan that found nothing and is
+     dropped by the write that records a pending payment, so a checkout that
+     starts between two ticks is picked up by the next one. Unlike the
+     automations tick there is no separate hourly sweep here, so the marker's
+     own sub-hour trust window IS the re-verification: worst case a charge
+     waits under an hour longer for the last-line rescue, against a grace
+     period measured in days before the reconciler will act on it at all. */
+  if (await _kindKnownEmpty(env, PEND_KIND)) return { checked, rescued, dropped, idle: true };
   /* No practical ceiling. A pending payment is somebody who has been CHARGED
      and is waiting to be given what they paid for; capping this at 200 meant
      that during the exact incident this exists for - a webhook outage, where

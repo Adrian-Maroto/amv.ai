@@ -7815,3 +7815,70 @@ rather than from a person, per-account storage is not a neutral default - it is
 a bug with a delay on it, and the delay is however long until somebody signs
 out. The guard reads the map rather than a list, so the fourth setting is
 covered without anybody remembering this.
+
+## 336. The deployment with no users was the most expensive one to run
+
+The owner reported KV usage at 90% of the free plan with essentially nobody
+signed up. Measured against the real Worker rather than reasoned about: the
+5-minute cron did **2 list operations and 49 reads per tick** - 576 lists a day,
+**58% of a free plan's entire daily list allowance**, spent rediscovering that
+the product is empty.
+
+Both scans were guarded by something that was correct and inverted at zero
+scale.
+
+`runDueAutomations` has a cheap index: `duehour:` buckets naming the accounts
+with work due this hour and the two before. Over it sits one safety rule - an
+EMPTY bucket set is never believed, because "nobody is due" and "the index does
+not know" are indistinguishable, and the second must not silently cancel
+somebody's nightly job. So empty falls through to a full scan. Which is right on
+a busy deployment and exactly backwards on a new one: with no automations at all
+the buckets are empty on every tick, so the fallback ran every time. **The cheap
+path can never engage precisely when there is no work to be cheap about.**
+
+`reconcilePayments` had the same shape with no index at all. Its comment says
+"cheap when there is nothing pending" - true of the bytes, false of the
+operation count, because a list is one list whether it returns nothing or a
+thousand rows. That distinction is invisible in a codebase that thinks in bytes
+and a bill that charges per operation.
+
+The fix separates "the index has no idea" from "there are no records", the
+second being a fact rather than a guess: written only by a scan that walked a
+whole namespace and found nothing, dropped by any write that would falsify it,
+and trusted for under an hour. Steady state went from 49 reads + 2 lists per
+tick to **3 reads and no lists**; lists from 58% of the daily ceiling to under
+5%.
+
+Three things worth keeping from how it went:
+
+**Scale-dependent optimisations need measuring at the scale you are actually
+at.** Every cost decision in that tick was argued for a deployment with users.
+Nobody had run the numbers for the deployment that exists. A ceiling on bytes
+would never have caught it - the wasted work weighs nothing and costs the
+scarcest resource on the plan.
+
+**Trade the abundant limit for the scarce one, and know which is which.** Free
+KV allows 100,000 reads a day and 1,000 lists. Spending a read to avoid a list
+is a 100:1 trade that only exists if you have looked up both numbers.
+
+**Mutation-test the guards, and follow the ones that survive.** Six deliberate
+breakages, four caught. The two that survived were both clauses of mine that
+could never fire - `!truncated` (a truncated scan always has rows, so zero rows
+already implies completion) and `at > 0` (unparseable text and 0 both give an
+age of fifty years, which the upper bound already refuses). Removing dead guards
+was the small win. The real one was asking *why* `at > 0` could not fire, which
+turned up the case neither clause covered: **a marker dated in the FUTURE gives
+a negative age, which is happily less than the trust window, so it would have
+been believed until the clock caught up.** Reachable, too - `backupImport` writes
+whatever keys a snapshot contains straight to KV, bypassing `DB.put`, and a
+snapshot is operator-supplied JSON. A guard that cannot fail is not just clutter;
+it is a sign nobody has worked out what the real boundary is.
+
+And one shape to watch for: the first version registered the invalidating delete
+with `waitUntil` and returned, which meant reaching forward to `_liveCtx` -
+declared five hundred lines below - from inside a catch that swallows. In a
+concatenated single script that is a real order dependency, and a TDZ error
+there would have been perfectly silent: the marker never dropped, the automation
+never run. Awaiting it is simpler, has no ordering dependency, and is a stronger
+guarantee - the stale marker is provably gone before the caller is told the
+record was saved.
