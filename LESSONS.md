@@ -7590,3 +7590,40 @@ default (two failures) and by putting a fresh 300000 in the ternary (one).
 at anything. The assertion that saves you is the boring one: *did this check
 find anything to examine?* Put it in every structural test, and make it name the
 count, so an empty scan reads as a failure rather than as a pass.
+
+---
+
+## 331. The captcha loaded, framed, and could not talk to its own server
+
+Turning on Turnstile locked the owner out of their own product. The widget
+half-appeared or did not appear, produced no token, and the server correctly
+refused every sign-up for want of one - so configuring a security feature
+properly closed the front door.
+
+`challenges.cloudflare.com` was in `script-src` and in `frame-src` and NOT in
+`connect-src`. The script ran, the frame rendered, and the requests Turnstile
+makes to complete a challenge were refused by the page's own policy. Two of the
+three permissions a third-party widget needs, which fails in the worst available
+way: it reads as the widget being broken rather than as the policy being
+incomplete, so the person debugging it goes to Cloudflare's dashboard and finds
+nothing wrong there.
+
+An embedded widget is not one permission. It is at least three - run it, frame
+it, reach it - and Cloudflare's own Turnstile guidance names all three. The
+suite now asserts that a host trusted for any of them is trusted for all of
+them, or for none. Verified by putting the gap back exactly as it shipped: red,
+naming the directive that was missing.
+
+Worth noting where this sat in the failure ordering. The product was written to
+fail OPEN on a half-configured captcha - `_verifyCaptcha` returns true when
+`TURNSTILE_SECRET` is unset, precisely so that a partial setup cannot refuse
+every sign-up. That guard covers a missing SECRET. It cannot cover a secret that
+is present and a widget that the page will not let finish, because from the
+server's side that is indistinguishable from somebody who did not do the
+captcha.
+
+**The rule.** When you allow a third party into a page, allow it in every
+directive it needs in the same edit, and check the vendor's own list rather than
+the one directive that made the error message go away. A permission set that is
+two-thirds right does not degrade - it fails, silently, somewhere that looks
+like the vendor's fault.

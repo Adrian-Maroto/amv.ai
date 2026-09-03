@@ -81,6 +81,34 @@ section('The page states a policy at all');
      'and it is a real list rather than a placeholder', (directive('connect-src') || new Set()).size);
 }
 
+section('A widget the page embeds is allowed to finish what it starts');
+{
+  /* THE CAPTCHA LOADED, RENDERED, AND COULD NOT TALK TO ITS OWN SERVER.
+
+     challenges.cloudflare.com was in script-src and frame-src and NOT in
+     connect-src, so Turnstile's script ran, its frame appeared, and the
+     requests it makes to complete a challenge were refused. The widget
+     half-appeared or did not appear, produced no token, and the server
+     correctly rejected every sign-up for want of one - which is a locked door
+     on the front of the product, arrived at by configuring a security feature
+     properly.
+
+     A third-party widget is not one permission, it is three, and getting two
+     of them right fails in a way that reads as the widget being broken rather
+     than as the policy being incomplete. So: a host trusted to run a script
+     here must also be trusted to be framed and to be reached, or none of them.
+     Cloudflare's own guidance for Turnstile names all three. */
+  const WIDGETS = ['challenges.cloudflare.com'];
+  for (const host of WIDGETS) {
+    const inS = allows(directive('script-src'), host);
+    const inF = allows(directive('frame-src'), host);
+    const inC = allows(directive('connect-src'), host);
+    ok(inS === inF && inF === inC,
+       host + ' is allowed by script-src, frame-src and connect-src together, or by none',
+       { 'script-src': inS, 'frame-src': inF, 'connect-src': inC });
+  }
+}
+
 section('Every host the app FETCHES is one it is allowed to reach');
 {
   /* The literal ones. A URL built from a variable cannot be checked here, which
