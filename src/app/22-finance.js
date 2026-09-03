@@ -85,7 +85,7 @@ const AMVFinance = {
     return true;
   },
 
-  _base(){ try{ return (loadStr('amv_api_base')||'').replace(/\/$/,''); }catch(e){ return ''; } },
+  _base(){ try{ return (apiBase()||'').replace(/\/$/,''); }catch(e){ return ''; } },
   /* The live token, wherever it is being held. Read off disk this returned
      nothing in cookie mode and every finance call went out unauthenticated. */
   _tok(){ try{ return (window.AMV_API && AMV_API.token)||''; }catch(e){ return ''; } },
@@ -294,7 +294,7 @@ function _wireInvDone(pane){
 
 function _renderInvestPane(pane){
   const linked=(typeof AMVFinance!=='undefined') && AMVFinance.linked();
-  const backend=(()=>{ try{ return !!loadStr('amv_api_base'); }catch(e){ return false; } })();
+  const backend=(()=>{ try{ return !!apiBase(); }catch(e){ return false; } })();
   /* Ask the server what is actually true, then redraw only if it disagrees with
      what was just drawn. Without this the pane would keep showing whatever the
      last cached answer was - including on another device, where the cache is
@@ -526,7 +526,7 @@ try{
   if(typeof AMVConnectors !== 'undefined'){
     AMVConnectors.register({
       id:'finance', name:'Bank & cards', auth:'oauth', channel:'api',
-      isLive(){ try{ return AMVFinance.linked() && !!(loadStr('amv_api_base')); }catch(e){ return false; } },
+      isLive(){ try{ return AMVFinance.linked() && !!(apiBase()); }catch(e){ return false; } },
       actions:{
         balances:{ desc:'Live balances across every linked bank account and card.',
           async run(){ return AMVFinance.accounts(); } },

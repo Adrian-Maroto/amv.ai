@@ -261,7 +261,7 @@ const AMVFraud = {
     const l=this._log(); l.unshift(a); this._save(l);
     try{ if(typeof AEGIS!=='undefined'&&AEGIS.log) AEGIS.log('fraud_flag',{category:a.category,risk:a.risk,action:a.action}); }catch(e){}
     try{
-      const base=(typeof loadStr==='function'&&loadStr('amv_api_base'))||'';
+      const base=(typeof apiBase==='function'&&apiBase())||'';
       /* Through AMV_API, not off disk. In cookie mode the access token is in
          memory and this key is empty, so a storage read here is a request sent
          with no Authorization header - a 401 on a screen that was working. */
@@ -488,7 +488,7 @@ function renderAdminView(){
   const stale = S._admStats && (Date.now()-(S._admStats.generatedAt||0) > 180000);
   /* Only fetch when there is a token to fetch WITH. Firing without one used to
      produce a guaranteed 403 that surfaced as "network error". */
-  if((loadStr('amv_api_base')||'') && _adminToken() && (!S._admStats || stale) && !S._admStatsLoading){ _admFetchStats(); }
+  if((apiBase()||'') && _adminToken() && (!S._admStats || stale) && !S._admStatsLoading){ _admFetchStats(); }
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Operator</span>'+
     '<h2>Command Center</h2>'+
@@ -500,7 +500,7 @@ function renderAdminView(){
     /* Gated on a backend URL, not on being signed in. The admin token is a
        separate credential from the user session - requiring a session here
        would hide the prompt from an operator who has one but not the other. */
-    ((loadStr('amv_api_base')||'') && !live && !S._admStatsLoading ? _admTokenPromptHTML(S._admStatsError) : '')+
+    ((apiBase()||'') && !live && !S._admStatsLoading ? _admTokenPromptHTML(S._admStatsError) : '')+
     '<div id="adm-body"></div>'+
   '</div></div>';
   vc.querySelectorAll('[data-atab]').forEach(b=>on(b,'click',()=>{ S._adminTab=b.dataset.atab; renderAdminView(); }));
@@ -514,7 +514,7 @@ function renderAdminView(){
 }
 /* Fetch real cross-user platform stats from the backend and cache them. */
 async function _admFetchStats(){
-  const base=loadStr('amv_api_base')||'';
+  const base=apiBase()||'';
   /* The ADMIN token, not the signed-in user's. These endpoints are gated on the
      Worker's ADMIN_TOKEN secret; sending an access token here was a request
      that could only ever be refused. */
@@ -538,7 +538,7 @@ async function _admFetchStats(){
 }
 /* Fetch the real financial statement (all transactions) from the backend. */
 async function _admFetchFinance(){
-  const base=loadStr('amv_api_base')||''; const tok=_adminToken();
+  const base=apiBase()||''; const tok=_adminToken();
   if(!base || !tok){ return; }
   if(S._admFinanceLoading) return;
   S._admFinanceLoading=true;
@@ -1197,7 +1197,7 @@ function renderBillingView(targetEl){
 /* Fetch and render the user's invoice history into the billing view. */
 async function _loadInvoices(){
   const el=$('bill-invoices'); if(!el) return;
-  const base=loadStr('amv_api_base')||''; const tok=(window.AMV_API&&AMV_API.token)||'';
+  const base=apiBase()||''; const tok=(window.AMV_API&&AMV_API.token)||'';
   if(!base){ return; }
   try{
     const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/stripe/invoices',{headers:{'Authorization':'Bearer '+tok}},15000);

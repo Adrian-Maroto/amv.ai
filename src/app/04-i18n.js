@@ -18,7 +18,7 @@ function _embedApiBase(){
   // The widget calls the same backend the app is configured to use. In embed
   // mode there's no logged-in user, so read the deployed base from the global
   // config (set by the operator) or fall back to same-origin.
-  try{ const b=loadStr('amv_api_base'); if(b) return b.replace(/\/+$/,''); }catch(e){}
+  try{ const b=apiBase(); if(b) return b.replace(/\/+$/,''); }catch(e){}
   return location.origin;
 }
 function _renderEmbedView(key){

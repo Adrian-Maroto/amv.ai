@@ -650,7 +650,7 @@ function _payoutCardHTML(){
 }
 async function _loadPayouts(){
   const host=$('fd-payouts'); if(!host) return;
-  const base=loadStr('amv_api_base')||'';
+  const base=apiBase()||'';
   const tok=($('fd-token')&&$('fd-token').value||'').trim()||((typeof _adminToken==='function')?_adminToken():'');
   if(!base||!tok){ host.innerHTML='<h3>Payouts owed</h3><div class="fd-empty">Enter your admin token to see money owed to sellers.</div>'; return; }
   try{
@@ -714,7 +714,7 @@ function _payoutsPaint(host, d){
     const btns=[...host.querySelectorAll('[data-po-paid],[data-po-rej]')];
     btns.forEach(b=>{ b.disabled=true; });
     if(say) say.textContent='Working\u2026';
-    const base=loadStr('amv_api_base')||'';
+    const base=apiBase()||'';
     const tok=($('fd-token')&&$('fd-token').value||'').trim()||((typeof _adminToken==='function')?_adminToken():'');
     try{
       const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/payouts/mark',{
@@ -747,7 +747,7 @@ function _reportsCardHTML(){
 }
 async function _loadReports(){
   const host=$('fd-reports'); if(!host) return;
-  const base=loadStr('amv_api_base')||'';
+  const base=apiBase()||'';
   const tok=($('fd-token')&&$('fd-token').value||'').trim()||((typeof _adminToken==='function')?_adminToken():'');
   if(!base||!tok){ host.innerHTML='<h3>Reported listings</h3><div class="fd-empty">Enter your admin token to see what has been reported.</div>'; return; }
   try{
@@ -799,7 +799,7 @@ function _wireDigestCard(){
   /* Read at click time, not captured when the card was built - the operator may
      correct the token after this card exists. */
   const call = async (qs) => {
-    const base = loadStr('amv_api_base')||'';
+    const base = apiBase()||'';
     const tok = ($('fd-token') && $('fd-token').value || '').trim()
       || ((typeof _adminToken==='function') ? _adminToken() : '');
     if(!base) throw new Error('connect your backend first');
@@ -991,7 +991,7 @@ function renderSettingsView(){
 let _WIDGET_CFG=null;
 function _renderWidgetPane(pane){
   const live=!!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
-  const base=(loadStr('amv_api_base')||'').replace(/\/+$/,'');
+  const base=(apiBase()||'').replace(/\/+$/,'');
   if(!live){
     pane.innerHTML=
       '<h2 class="set-title">Website Widget</h2>'+
@@ -1135,7 +1135,7 @@ function _paintWidgetForm(body, cfg, base){
    of a deployment is operator information. */
 async function _loadReadiness(){
   const host = $('golive-body'); if(!host) return;
-  const base = loadStr('amv_api_base')||'';
+  const base = apiBase()||'';
   const tok = ($('fd-token') && $('fd-token').value || '').trim()
     || ((typeof _adminToken==='function') ? _adminToken() : '');
   if(!base){ host.innerHTML = '<div class="gl-note">Connect your backend first (Settings \u2192 Live / Backend) and this reads your real configuration.</div>'; return; }
@@ -2279,7 +2279,7 @@ function _renderSetPaneInner(only, into){
     const loadStats=async()=>{
       const tok=($('fd-token')&&$('fd-token').value||'').trim();
       try{ if(tok && typeof _setAdminToken==='function') _setAdminToken(tok); }catch(e){}
-      const base=loadStr('amv_api_base')||'';
+      const base=apiBase()||'';
       const body=$('fd-body');
       if(!base){ body.innerHTML='<div class="fd-empty">Connect your backend first (Settings \u2192 Live/Backend) to see platform stats.</div>'; return; }
       if(!tok){ body.innerHTML='<div class="fd-empty">Enter your admin token above and press Load stats.</div>'; return; }
@@ -2334,7 +2334,7 @@ function _renderSetPaneInner(only, into){
     setTimeout(loadStats,100);
 
   } else if(sp==='backend'){
-    const liveBase=loadStr('amv_api_base')||'';
+    const liveBase=apiBase()||'';
     /* Is there a SESSION, which on a fresh tab in cookie mode is not the same
        question as whether a token has been minted yet. */
     const tokenSet=!!(window.AMV_API && AMV_API.hasSession);
@@ -2350,7 +2350,7 @@ function _renderSetPaneInner(only, into){
         '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:var(--t-sm)" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:var(--t-sm)" autocomplete="current-password"><button class="btn bp" style="font-size:var(--t-sm)" data-dact="amvBackendLogin">Connect</button></div></div>'+
       '</div>';
   } else if(sp==='apikeys'){
-    const liveBase=loadStr('amv_api_base')||'';
+    const liveBase=apiBase()||'';
     const connected=!!(window.AMV_API && AMV_API.live);
     pane.innerHTML=
       '<h2 class="set-title">AI Connection</h2>'+

@@ -191,7 +191,7 @@ AMVConnectors.register({
         }
         // The agent runs SERVER-SIDE (a real headless browser the Worker drives).
         // It can never run in this tab, so the backend URL is the service URL.
-        const base = (typeof loadStr === 'function' && (loadStr('amv_browser_service') || loadStr('amv_api_base'))) || '';
+        const base = (typeof loadStr === 'function' && (loadStr('amv_browser_service') || apiBase())) || '';
         if(!base){
           const e = new Error('Web automation needs the AMV backend. Connect it in Settings and this starts working.');
           e.code = 'needs_service'; throw e;

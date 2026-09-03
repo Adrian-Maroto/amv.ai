@@ -133,7 +133,7 @@ function _apiShowOnce(key){
 
 /* Enough to make the first call without leaving the page. */
 function _apiDocsHTML(){
-  const base = (loadStr('amv_api_base')||'https://your-worker.workers.dev').replace(/\/$/,'');
+  const base = (apiBase()||'https://your-worker.workers.dev').replace(/\/$/,'');
   const curl =
     'curl ' + base + '/v1/messages \\\n' +
     '  -H "Authorization: Bearer amv_sk_..." \\\n' +

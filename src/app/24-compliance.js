@@ -42,7 +42,7 @@ const AMVCompliance = {
     r.acceptedUA = (navigator && navigator.userAgent || '').slice(0,180);
     this._save(r);
     try{
-      const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
+      const base = (apiBase()||'').replace(/\/$/,'');
       const tok = (window.AMV_API && AMV_API.token)||'';
       if(base && tok) fetch(base + '/v1/consent', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
@@ -77,7 +77,7 @@ const AMVCompliance = {
     /* Sent now as well as at acceptance, because age is usually confirmed after
        the terms - and the server refuses money until it has this. */
     try{
-      const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
+      const base = (apiBase()||'').replace(/\/$/,'');
       const tok = (window.AMV_API && AMV_API.token)||'';
       if(base && tok && r.termsVersion) fetch(base + '/v1/consent', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},

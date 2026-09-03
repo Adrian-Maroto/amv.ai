@@ -300,6 +300,27 @@ function _defaultApiBase(){
 }
 try{ window._defaultApiBase=_defaultApiBase; }catch(e){}
 
+/* THE ADDRESS, RESOLVED - NOT THE PER-DEVICE OVERRIDE.
+
+   `loadStr('amv_api_base')` is the override somebody types in Settings to point
+   ONE browser somewhere else. It is empty on every normal visit, because a
+   configured deployment carries its address in a meta tag the build writes.
+
+   Twenty-odd places read that key directly and treated an empty answer as "no
+   backend": the founder dashboard's Load stats did nothing, the go-live
+   readiness panel said connect a backend first, the embed widget fell back to
+   its own origin, and the API docs printed a placeholder URL - all on a
+   deployment that was correctly configured. Every one of them looked like a
+   dead button rather than a wrong lookup.
+
+   This is what they should have been asking. Same resolution as AMV_API.base,
+   written standalone so it is safe to call before that object exists. */
+function apiBase(){
+  try{ return String(loadStr('amv_api_base') || _defaultApiBase() || '').replace(/\/+$/, ''); }
+  catch(e){ return ''; }
+}
+try{ window.apiBase=apiBase; }catch(e){}
+
 /* THE PUBLIC SETTINGS A VISITOR NEEDS, FROM THE BACKEND THAT HAS THEM.
 
    The Worker holds GOOGLE_CLIENT_ID. The browser did not - so "Continue with

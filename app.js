@@ -300,6 +300,27 @@ function _defaultApiBase(){
 }
 try{ window._defaultApiBase=_defaultApiBase; }catch(e){}
 
+/* THE ADDRESS, RESOLVED - NOT THE PER-DEVICE OVERRIDE.
+
+   `loadStr('amv_api_base')` is the override somebody types in Settings to point
+   ONE browser somewhere else. It is empty on every normal visit, because a
+   configured deployment carries its address in a meta tag the build writes.
+
+   Twenty-odd places read that key directly and treated an empty answer as "no
+   backend": the founder dashboard's Load stats did nothing, the go-live
+   readiness panel said connect a backend first, the embed widget fell back to
+   its own origin, and the API docs printed a placeholder URL - all on a
+   deployment that was correctly configured. Every one of them looked like a
+   dead button rather than a wrong lookup.
+
+   This is what they should have been asking. Same resolution as AMV_API.base,
+   written standalone so it is safe to call before that object exists. */
+function apiBase(){
+  try{ return String(loadStr('amv_api_base') || _defaultApiBase() || '').replace(/\/+$/, ''); }
+  catch(e){ return ''; }
+}
+try{ window.apiBase=apiBase; }catch(e){}
+
 /* THE PUBLIC SETTINGS A VISITOR NEEDS, FROM THE BACKEND THAT HAS THEM.
 
    The Worker holds GOOGLE_CLIENT_ID. The browser did not - so "Continue with
@@ -4727,7 +4748,7 @@ function _embedApiBase(){
   // The widget calls the same backend the app is configured to use. In embed
   // mode there's no logged-in user, so read the deployed base from the global
   // config (set by the operator) or fall back to same-origin.
-  try{ const b=loadStr('amv_api_base'); if(b) return b.replace(/\/+$/,''); }catch(e){}
+  try{ const b=apiBase(); if(b) return b.replace(/\/+$/,''); }catch(e){}
   return location.origin;
 }
 function _renderEmbedView(key){
@@ -11718,7 +11739,7 @@ const AMVFraud = {
     const l=this._log(); l.unshift(a); this._save(l);
     try{ if(typeof AEGIS!=='undefined'&&AEGIS.log) AEGIS.log('fraud_flag',{category:a.category,risk:a.risk,action:a.action}); }catch(e){}
     try{
-      const base=(typeof loadStr==='function'&&loadStr('amv_api_base'))||'';
+      const base=(typeof apiBase==='function'&&apiBase())||'';
       /* Through AMV_API, not off disk. In cookie mode the access token is in
          memory and this key is empty, so a storage read here is a request sent
          with no Authorization header - a 401 on a screen that was working. */
@@ -11945,7 +11966,7 @@ function renderAdminView(){
   const stale = S._admStats && (Date.now()-(S._admStats.generatedAt||0) > 180000);
   /* Only fetch when there is a token to fetch WITH. Firing without one used to
      produce a guaranteed 403 that surfaced as "network error". */
-  if((loadStr('amv_api_base')||'') && _adminToken() && (!S._admStats || stale) && !S._admStatsLoading){ _admFetchStats(); }
+  if((apiBase()||'') && _adminToken() && (!S._admStats || stale) && !S._admStatsLoading){ _admFetchStats(); }
   vc.innerHTML='<div class="sv fi"><div class="vi">'+
     '<span class="eyebrow">Operator</span>'+
     '<h2>Command Center</h2>'+
@@ -11957,7 +11978,7 @@ function renderAdminView(){
     /* Gated on a backend URL, not on being signed in. The admin token is a
        separate credential from the user session - requiring a session here
        would hide the prompt from an operator who has one but not the other. */
-    ((loadStr('amv_api_base')||'') && !live && !S._admStatsLoading ? _admTokenPromptHTML(S._admStatsError) : '')+
+    ((apiBase()||'') && !live && !S._admStatsLoading ? _admTokenPromptHTML(S._admStatsError) : '')+
     '<div id="adm-body"></div>'+
   '</div></div>';
   vc.querySelectorAll('[data-atab]').forEach(b=>on(b,'click',()=>{ S._adminTab=b.dataset.atab; renderAdminView(); }));
@@ -11971,7 +11992,7 @@ function renderAdminView(){
 }
 /* Fetch real cross-user platform stats from the backend and cache them. */
 async function _admFetchStats(){
-  const base=loadStr('amv_api_base')||'';
+  const base=apiBase()||'';
   /* The ADMIN token, not the signed-in user's. These endpoints are gated on the
      Worker's ADMIN_TOKEN secret; sending an access token here was a request
      that could only ever be refused. */
@@ -11995,7 +12016,7 @@ async function _admFetchStats(){
 }
 /* Fetch the real financial statement (all transactions) from the backend. */
 async function _admFetchFinance(){
-  const base=loadStr('amv_api_base')||''; const tok=_adminToken();
+  const base=apiBase()||''; const tok=_adminToken();
   if(!base || !tok){ return; }
   if(S._admFinanceLoading) return;
   S._admFinanceLoading=true;
@@ -12654,7 +12675,7 @@ function renderBillingView(targetEl){
 /* Fetch and render the user's invoice history into the billing view. */
 async function _loadInvoices(){
   const el=$('bill-invoices'); if(!el) return;
-  const base=loadStr('amv_api_base')||''; const tok=(window.AMV_API&&AMV_API.token)||'';
+  const base=apiBase()||''; const tok=(window.AMV_API&&AMV_API.token)||'';
   if(!base){ return; }
   try{
     const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/stripe/invoices',{headers:{'Authorization':'Bearer '+tok}},15000);
@@ -21835,7 +21856,7 @@ function _payoutCardHTML(){
 }
 async function _loadPayouts(){
   const host=$('fd-payouts'); if(!host) return;
-  const base=loadStr('amv_api_base')||'';
+  const base=apiBase()||'';
   const tok=($('fd-token')&&$('fd-token').value||'').trim()||((typeof _adminToken==='function')?_adminToken():'');
   if(!base||!tok){ host.innerHTML='<h3>Payouts owed</h3><div class="fd-empty">Enter your admin token to see money owed to sellers.</div>'; return; }
   try{
@@ -21899,7 +21920,7 @@ function _payoutsPaint(host, d){
     const btns=[...host.querySelectorAll('[data-po-paid],[data-po-rej]')];
     btns.forEach(b=>{ b.disabled=true; });
     if(say) say.textContent='Working\u2026';
-    const base=loadStr('amv_api_base')||'';
+    const base=apiBase()||'';
     const tok=($('fd-token')&&$('fd-token').value||'').trim()||((typeof _adminToken==='function')?_adminToken():'');
     try{
       const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/payouts/mark',{
@@ -21932,7 +21953,7 @@ function _reportsCardHTML(){
 }
 async function _loadReports(){
   const host=$('fd-reports'); if(!host) return;
-  const base=loadStr('amv_api_base')||'';
+  const base=apiBase()||'';
   const tok=($('fd-token')&&$('fd-token').value||'').trim()||((typeof _adminToken==='function')?_adminToken():'');
   if(!base||!tok){ host.innerHTML='<h3>Reported listings</h3><div class="fd-empty">Enter your admin token to see what has been reported.</div>'; return; }
   try{
@@ -21984,7 +22005,7 @@ function _wireDigestCard(){
   /* Read at click time, not captured when the card was built - the operator may
      correct the token after this card exists. */
   const call = async (qs) => {
-    const base = loadStr('amv_api_base')||'';
+    const base = apiBase()||'';
     const tok = ($('fd-token') && $('fd-token').value || '').trim()
       || ((typeof _adminToken==='function') ? _adminToken() : '');
     if(!base) throw new Error('connect your backend first');
@@ -22176,7 +22197,7 @@ function renderSettingsView(){
 let _WIDGET_CFG=null;
 function _renderWidgetPane(pane){
   const live=!!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
-  const base=(loadStr('amv_api_base')||'').replace(/\/+$/,'');
+  const base=(apiBase()||'').replace(/\/+$/,'');
   if(!live){
     pane.innerHTML=
       '<h2 class="set-title">Website Widget</h2>'+
@@ -22320,7 +22341,7 @@ function _paintWidgetForm(body, cfg, base){
    of a deployment is operator information. */
 async function _loadReadiness(){
   const host = $('golive-body'); if(!host) return;
-  const base = loadStr('amv_api_base')||'';
+  const base = apiBase()||'';
   const tok = ($('fd-token') && $('fd-token').value || '').trim()
     || ((typeof _adminToken==='function') ? _adminToken() : '');
   if(!base){ host.innerHTML = '<div class="gl-note">Connect your backend first (Settings \u2192 Live / Backend) and this reads your real configuration.</div>'; return; }
@@ -23464,7 +23485,7 @@ function _renderSetPaneInner(only, into){
     const loadStats=async()=>{
       const tok=($('fd-token')&&$('fd-token').value||'').trim();
       try{ if(tok && typeof _setAdminToken==='function') _setAdminToken(tok); }catch(e){}
-      const base=loadStr('amv_api_base')||'';
+      const base=apiBase()||'';
       const body=$('fd-body');
       if(!base){ body.innerHTML='<div class="fd-empty">Connect your backend first (Settings \u2192 Live/Backend) to see platform stats.</div>'; return; }
       if(!tok){ body.innerHTML='<div class="fd-empty">Enter your admin token above and press Load stats.</div>'; return; }
@@ -23519,7 +23540,7 @@ function _renderSetPaneInner(only, into){
     setTimeout(loadStats,100);
 
   } else if(sp==='backend'){
-    const liveBase=loadStr('amv_api_base')||'';
+    const liveBase=apiBase()||'';
     /* Is there a SESSION, which on a fresh tab in cookie mode is not the same
        question as whether a token has been minted yet. */
     const tokenSet=!!(window.AMV_API && AMV_API.hasSession);
@@ -23535,7 +23556,7 @@ function _renderSetPaneInner(only, into){
         '<div style="display:flex;flex-direction:column;gap:8px"><input type="email" id="be-email" value="'+escH((S.user&&S.user.email)||'')+'" placeholder="you@email.com" style="font-size:var(--t-sm)" autocomplete="username"><div style="display:flex;gap:8px"><input type="password" id="be-pass" placeholder="Your password" style="flex:1;font-size:var(--t-sm)" autocomplete="current-password"><button class="btn bp" style="font-size:var(--t-sm)" data-dact="amvBackendLogin">Connect</button></div></div>'+
       '</div>';
   } else if(sp==='apikeys'){
-    const liveBase=loadStr('amv_api_base')||'';
+    const liveBase=apiBase()||'';
     const connected=!!(window.AMV_API && AMV_API.live);
     pane.innerHTML=
       '<h2 class="set-title">AI Connection</h2>'+
@@ -30150,7 +30171,7 @@ AMVConnectors.register({
         }
         // The agent runs SERVER-SIDE (a real headless browser the Worker drives).
         // It can never run in this tab, so the backend URL is the service URL.
-        const base = (typeof loadStr === 'function' && (loadStr('amv_browser_service') || loadStr('amv_api_base'))) || '';
+        const base = (typeof loadStr === 'function' && (loadStr('amv_browser_service') || apiBase())) || '';
         if(!base){
           const e = new Error('Web automation needs the AMV backend. Connect it in Settings and this starts working.');
           e.code = 'needs_service'; throw e;
@@ -31054,7 +31075,7 @@ const AMVFamily = {
      editing local state, and both accounts (usually on different devices)
      genuinely share it. The local path below is the offline mirror. */
   async acceptRemote(inviteId, code){
-    const base = (typeof loadStr === 'function' && (loadStr('amv_api_base')||'')).replace(/\/$/,'');
+    const base = (typeof apiBase === 'function' && (apiBase()||'')).replace(/\/$/,'');
     const tok = (window.AMV_API && AMV_API.token) || '';
     if(!base || !tok) return this.accept(inviteId, code);   // offline mirror
     const r = await fetchDeadline(base + '/v1/link/accept', {
@@ -31279,7 +31300,7 @@ const AMVFinance = {
     return true;
   },
 
-  _base(){ try{ return (loadStr('amv_api_base')||'').replace(/\/$/,''); }catch(e){ return ''; } },
+  _base(){ try{ return (apiBase()||'').replace(/\/$/,''); }catch(e){ return ''; } },
   /* The live token, wherever it is being held. Read off disk this returned
      nothing in cookie mode and every finance call went out unauthenticated. */
   _tok(){ try{ return (window.AMV_API && AMV_API.token)||''; }catch(e){ return ''; } },
@@ -31488,7 +31509,7 @@ function _wireInvDone(pane){
 
 function _renderInvestPane(pane){
   const linked=(typeof AMVFinance!=='undefined') && AMVFinance.linked();
-  const backend=(()=>{ try{ return !!loadStr('amv_api_base'); }catch(e){ return false; } })();
+  const backend=(()=>{ try{ return !!apiBase(); }catch(e){ return false; } })();
   /* Ask the server what is actually true, then redraw only if it disagrees with
      what was just drawn. Without this the pane would keep showing whatever the
      last cached answer was - including on another device, where the cache is
@@ -31720,7 +31741,7 @@ try{
   if(typeof AMVConnectors !== 'undefined'){
     AMVConnectors.register({
       id:'finance', name:'Bank & cards', auth:'oauth', channel:'api',
-      isLive(){ try{ return AMVFinance.linked() && !!(loadStr('amv_api_base')); }catch(e){ return false; } },
+      isLive(){ try{ return AMVFinance.linked() && !!(apiBase()); }catch(e){ return false; } },
       actions:{
         balances:{ desc:'Live balances across every linked bank account and card.',
           async run(){ return AMVFinance.accounts(); } },
@@ -31966,7 +31987,7 @@ const AMVCompliance = {
     r.acceptedUA = (navigator && navigator.userAgent || '').slice(0,180);
     this._save(r);
     try{
-      const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
+      const base = (apiBase()||'').replace(/\/$/,'');
       const tok = (window.AMV_API && AMV_API.token)||'';
       if(base && tok) fetch(base + '/v1/consent', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
@@ -32001,7 +32022,7 @@ const AMVCompliance = {
     /* Sent now as well as at acceptance, because age is usually confirmed after
        the terms - and the server refuses money until it has this. */
     try{
-      const base = (loadStr('amv_api_base')||'').replace(/\/$/,'');
+      const base = (apiBase()||'').replace(/\/$/,'');
       const tok = (window.AMV_API && AMV_API.token)||'';
       if(base && tok && r.termsVersion) fetch(base + '/v1/consent', {
         method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
@@ -33529,7 +33550,7 @@ function _apiShowOnce(key){
 
 /* Enough to make the first call without leaving the page. */
 function _apiDocsHTML(){
-  const base = (loadStr('amv_api_base')||'https://your-worker.workers.dev').replace(/\/$/,'');
+  const base = (apiBase()||'https://your-worker.workers.dev').replace(/\/$/,'');
   const curl =
     'curl ' + base + '/v1/messages \\\n' +
     '  -H "Authorization: Bearer amv_sk_..." \\\n' +

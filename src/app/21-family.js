@@ -129,7 +129,7 @@ const AMVFamily = {
      editing local state, and both accounts (usually on different devices)
      genuinely share it. The local path below is the offline mirror. */
   async acceptRemote(inviteId, code){
-    const base = (typeof loadStr === 'function' && (loadStr('amv_api_base')||'')).replace(/\/$/,'');
+    const base = (typeof apiBase === 'function' && (apiBase()||'')).replace(/\/$/,'');
     const tok = (window.AMV_API && AMV_API.token) || '';
     if(!base || !tok) return this.accept(inviteId, code);   // offline mirror
     const r = await fetchDeadline(base + '/v1/link/accept', {

@@ -7667,3 +7667,48 @@ somebody with the right saved password opens the right screen. And a field that
 renders its own value back from state cannot be cleared by the user against
 anything that writes to it; if something else can put text in there, that is not
 a nuisance, it is permanent.
+
+---
+
+## 333. Twenty-four controls looked for the backend where it is never kept
+
+The owner pressed "Load stats" on their own founder dashboard and nothing
+happened. The button was not broken. It read `loadStr('amv_api_base')`, found
+nothing, and returned early.
+
+That key is the PER-DEVICE OVERRIDE - the thing somebody types into Settings to
+point one browser at a staging Worker. It is empty on every normal visit,
+because a configured deployment carries its address in a meta tag the build
+writes. So the check consulted the one place the answer is never kept, and did
+it on a deployment that was correctly configured.
+
+Twenty-four call sites across eight modules had it, and the shape of the failure
+is why none was reported before: each one degrades to a dead control, not an
+error. The founder dashboard's stats. The go-live readiness panel - the screen
+the owner had just been sent to in order to verify their configuration, which
+would have told them to connect a backend they had already connected. Family,
+finance, compliance, the admin surfaces. The embed widget fell back to
+`location.origin`, so it called the static host instead of the Worker. The API
+docs printed `https://your-worker.workers.dev` to somebody who has a real one.
+
+None of this was reachable before this week, because until the address was baked
+in there was nothing for the override to be wrong about - an empty override and
+an empty default agree. Configuring the deployment made twenty-four latent
+lookups wrong at once. Same root as 327: the paths that only exist on a live
+deployment have never been executed by anybody.
+
+`apiBase()` resolves it once, override first and then the address the build
+shipped, and nothing outside core reads the raw key. Verified by putting one
+control back: three failures, naming the control.
+
+The guard's own first version searched the minified bundle for a message and
+read the characters after it - and that message appears twice, so it found the
+other one and called a fix that was in place missing. Anchored on function names
+now. That is 322 again, committed while writing the check for 333.
+
+**The rule.** An override and a default are not the same value, and reading the
+override alone is correct exactly while nobody has configured anything. When a
+setting has a fallback, resolve it in ONE function and make every caller use it
+- because the failure of reading it directly is not an error, it is a button
+that does nothing, and nobody files a bug about a button that does nothing on a
+screen they were told they might not need yet.
