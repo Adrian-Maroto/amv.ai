@@ -7771,3 +7771,47 @@ appearing, and "ask again" is not one. Whenever the product demands something
 from a person, ask what they see if the thing they must interact with never
 arrives - and make sure that path says who can fix it, especially when the
 answer is not them.
+
+---
+
+## 335. The captcha's site key was filed under whoever was signed in
+
+The owner turned Turnstile on and could not create an account. The form said
+"Please complete the verification and try again" and there was no verification
+box on the screen. The Worker was serving the site key correctly - opening
+`/v1/public-config` showed it - and the page never drew the widget.
+
+`saveStr`/`loadStr` scope every key to the current account unless it is listed
+in `_GLOBAL_KEYS`: `u:<email>|<key>`, falling back to `u:guest|<key>`. Right for
+anything belonging to a person; wrong for anything belonging to the deployment.
+
+`_PUBLIC_CONFIG_MAP` carries three things the OPERATOR sets once for everybody -
+a Google client id, a support address, and the Turnstile site key. The first two
+are in the global list. The third was not. So the site key was written under
+whichever account was current when the config arrived, and disappeared the
+moment the scope changed. Signing out to create an account is exactly that
+moment, and exactly when the captcha is required. `_mountTurnstile` found no
+key, hid the empty box, and the server refused the sign-up for a token that
+could not exist.
+
+Two things made this expensive to find. It is intermittent by nature - it
+depends on which account was signed in when a network response landed - so the
+owner's own report was "it doesn't show many times", which sounds like a race
+and is one. And every layer was individually correct: the server served the key,
+the client asked for it, the storage helper scoped it exactly as designed, the
+widget hid an empty box rather than showing a broken one, and the server refused
+a request with no token. Five right decisions composing into a locked front
+door.
+
+I spent two fixes on it before this - a CSP directive and a missing onerror -
+both genuinely wrong and neither the cause. What ended the guessing was asking
+the owner for three facts at once: whether the key reached storage, whether the
+box existed, whether the script had loaded. It should have been the first thing
+I asked for, not the third.
+
+**The rule.** Anything an operator configures for a whole deployment must be
+stored for the whole deployment. When a value arrives from server configuration
+rather than from a person, per-account storage is not a neutral default - it is
+a bug with a delay on it, and the delay is however long until somebody signs
+out. The guard reads the map rather than a list, so the fourth setting is
+covered without anybody remembering this.
