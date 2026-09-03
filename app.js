@@ -1556,9 +1556,98 @@ async function _refreshStatusPanel(){
 function closeStatusPanel(){ const el=$('status-modal-bg'); if(el) el.remove(); }
 try{ window.openStatusPanel=openStatusPanel; }catch(e){}
 
+/* THE PAGE-LEVEL STATUS BAR, AND THE TWO THINGS IT HAS TO SAY.
+
+   One bar, because a person meets one page. The reasons are different in kind
+   and must not be treated alike:
+
+     - OFFLINE is transient. The connection is expected back, and coming back
+       online is exactly the event that clears it.
+     - A BACKEND THIS NETWORK REFUSES is not transient. A policy on the origin
+       refuses every call AMV makes, so being online has nothing to do with it,
+       and clearing this one on an `online` event would erase the only
+       explanation the person has while nothing works.
+
+   Sticky is therefore a property of the notice rather than of the bar, and
+   `hide` honours it. Both share the markup, the styles and the dismiss
+   control, so there is one component to get right rather than two that drift.
+
+   The dismiss button matters more than it looks: this is a FIXED element, and
+   a fixed element with no way to close it is one that can cover something on a
+   small screen with no recourse. */
+function _statusBar(){
+  let bar=$('offline-bar');
+  if(!bar){
+    bar=document.createElement('div');
+    bar.id='offline-bar'; bar.className='offline-bar';
+    bar.setAttribute('role','status');
+    bar.setAttribute('aria-live','polite');
+    document.body.appendChild(bar);
+  }
+  return bar;
+}
+function _showStatusBar(msg, opts){
+  const o = opts || {};
+  try{
+    const bar=_statusBar();
+    /* A PASSING PROBLEM DOES NOT GET TO ERASE A STANDING ONE.
+
+       Found by the suite for this, not by reading it back: going offline while
+       a blocked-backend notice was up replaced the message AND cleared its
+       sticky flag, so the next `online` event hid the whole thing. The person
+       is left with everything failing and the one explanation they had gone -
+       which is the exact failure this bar was added to end.
+
+       Offline is real too, and it is the less useful of the two: the blocked
+       notice already says nothing will work and why. So the standing notice
+       holds the bar until it is dismissed. */
+    if(!o.sticky && bar.dataset && bar.dataset.sticky) return;
+    bar.innerHTML='';
+    const m=document.createElement('span');
+    m.className='offline-bar-msg';
+    m.textContent=msg;
+    bar.appendChild(m);
+    const x=document.createElement('button');
+    x.type='button'; x.className='offline-bar-x';
+    x.setAttribute('aria-label','Dismiss this message');
+    x.textContent='\u2715';
+    /* Dismissing clears the sticky flag too - the person has read it and said
+       so, and a notice that comes straight back is not a dismiss. */
+    x.addEventListener('click',()=>{ try{ delete bar.dataset.sticky; }catch(e){} bar.classList.remove('show'); });
+    bar.appendChild(x);
+    bar.classList.toggle('net-blocked', !!o.sticky);
+    if(o.sticky) bar.dataset.sticky='1'; else { try{ delete bar.dataset.sticky; }catch(e){} }
+    bar.classList.add('show');
+  }catch(e){}
+}
+function _hideStatusBar(){
+  try{
+    const bar=$('offline-bar');
+    if(!bar) return;
+    if(bar.dataset && bar.dataset.sticky) return;   // not something being online fixes
+    bar.classList.remove('show');
+  }catch(e){}
+}
+/* AMV cannot reach its own server because something between the two refuses
+   the connection. Said once, at page level, because the alternative is what
+   was shipped: every feature failing in its own private way - a dead Load
+   stats, a captcha that never appears, a sign-in that says nothing - and
+   nowhere saying the one thing they have in common. */
+function _netBlockedNotice(reason){
+  _showStatusBar('\u26A0 This network is blocking AMV from reaching its own server'
+    + (reason ? ' (' + reason + ')' : '')
+    + ', so signing in and anything that needs your account will not work here. '
+    + 'A school or office filter is the usual cause - try a different network, '
+    + 'or a phone on mobile data, to confirm.', { sticky:true });
+}
+try{ window._netBlockedNotice=_netBlockedNotice; window._showStatusBar=_showStatusBar; window._hideStatusBar=_hideStatusBar; }catch(e){}
 /* Global offline indicator - shows a banner when the connection drops. */
-function _initOfflineWatch(){  const show=()=>{ try{ _setStatusIndicator('offline'); }catch(e){} let bar=$('offline-bar'); if(!bar){ bar=document.createElement('div'); bar.id='offline-bar'; bar.className='offline-bar'; bar.innerHTML='\u26A0 You\u2019re offline - changes are saved locally and will sync when you\u2019re back online.'; document.body.appendChild(bar); } bar.classList.add('show'); };
-  const hide=()=>{ const bar=$('offline-bar'); if(bar) bar.classList.remove('show'); try{ _checkStatus(); }catch(e){} };
+function _initOfflineWatch(){
+  const show=()=>{
+    try{ _setStatusIndicator('offline'); }catch(e){}
+    _showStatusBar('\u26A0 You\u2019re offline - changes are saved locally and will sync when you\u2019re back online.');
+  };
+  const hide=()=>{ _hideStatusBar(); try{ _checkStatus(); }catch(e){} };
   try{
     window.addEventListener('offline',show);
     window.addEventListener('online',()=>{ hide(); try{ if(window.AMVSync&&AMVSync.enabled()) AMVSync.push(); }catch(e){} });
@@ -1793,7 +1882,13 @@ try{
       var blocked = String(e.blockedURI || '');
       if(blocked && String(e.violatedDirective||'').indexOf('connect-src')===0){
         var ab=''; try{ ab = (typeof apiBase==='function') ? apiBase() : ''; }catch(_e){}
-        if(ab && blocked.indexOf(ab)===0) _publicConfigFail = "this network's security policy blocked it";
+        if(ab && blocked.indexOf(ab)===0){
+          _publicConfigFail = "this network's security policy blocked it";
+          /* Page level, not just the sign-up form. If the origin is refused
+             then chat, Crew, payments and sign-in are all refused with it, and
+             each of those was failing in its own private way. */
+          _netBlockedNotice("this network's security policy");
+        }
       }
     }catch(_){}
   });
@@ -22135,8 +22230,22 @@ function _digestCardHTML(){
   '</div>';
 }
 function _wireDigestCard(){
-  const out = $('fd-digest-out');
-  const say = (t, kind) => { if(out){ out.className = 'fd-digest-out' + (kind ? ' ' + kind : ''); out.textContent = t; } };
+  /* RESOLVED WHEN IT IS WRITTEN TO, FOR THE SAME REASON THE TOKEN IS.
+
+     This captured the output node once, when the card was wired. The business
+     tab re-renders itself with `el.innerHTML = ...` - on a stats refresh, or
+     on leaving and coming back - which detaches that node and puts a fresh
+     empty one in its place. A preview in flight across a re-render then wrote
+     its answer into the detached one: the request succeeded, the digest was
+     built, and it landed somewhere no longer on the page. From the outside the
+     button did nothing at all.
+
+     The comment two lines down was already careful about exactly this for the
+     admin token, and this element had the same problem and no guard. */
+  const say = (t, kind) => {
+    const out = $('fd-digest-out');
+    if(out){ out.className = 'fd-digest-out' + (kind ? ' ' + kind : ''); out.textContent = t; }
+  };
   /* Read at click time, not captured when the card was built - the operator may
      correct the token after this card exists. */
   const call = async (qs) => {
@@ -22156,7 +22265,7 @@ function _wireDigestCard(){
     try{
       const d = await call('');
       // The plain-text version IS what gets sent, so showing it is not a mock-up.
-      if(out){ out.className='fd-digest-out'; out.textContent = d.subject + '\n\n' + d.text; }
+      say(d.subject + '\n\n' + d.text);
     }catch(e){ say('Could not build the digest: ' + e.message, 'bad'); }
   });
   on($('fd-digest-send'),'click', async ()=>{

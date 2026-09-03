@@ -7980,3 +7980,72 @@ policy block. The message distinguishes them, and a test asserts that a
 violation about some other host or directive is not mistaken for this one -
 because a confident wrong cause sends somebody to spend an evening on the wrong
 problem, which is the failure this whole entry is about.
+
+## 339. A status bar with no styles told people they were offline for ever
+
+`_initOfflineWatch` appends `<div class="offline-bar">` to the body and toggles
+a `show` class on it. Nothing in `styles.css` has ever matched either selector.
+
+Measured in Chromium rather than read: the element lands at `position:static`,
+`z-index:auto`, in normal document flow - an unstyled 1280x22 line of text. The
+consequence was not that it looked wrong. Because `show` had no rule,
+`classList.remove('show')` removed nothing, so after going offline and coming
+back **online** the bar was still there, still saying "You're offline - changes
+are saved locally". Telling somebody they are offline while they are online
+sends them hunting a connection problem that does not exist. That is worse than
+having no indicator at all: an absent feature is a gap, a lying one is a wrong
+answer delivered with confidence.
+
+**The rule.** A visual feature is not done when the JavaScript is right. This
+code set and unset its class perfectly for its whole life, and a test written
+against class names would have passed every run. The assertions that matter are
+about what is on the screen - computed `display`, a real height, a position
+inside the viewport - because that is the only thing the person actually gets.
+
+Two design points worth keeping from the fix:
+
+**`display` is what the class controls.** Not opacity, not a transform. Hiding
+is then something the class genuinely does, rather than something the code
+believes it does, and the sticking bug cannot come back in another form.
+
+**A passing problem must not erase a standing one.** The bar now carries two
+reasons: offline, which is transient and cleared by coming back online, and a
+backend this network refuses, which is not - a policy on the origin refuses
+every call, so connectivity has nothing to do with it. The first version let an
+`offline` event overwrite the second and clear its sticky flag, so the next
+`online` event hid the explanation entirely, leaving the person with everything
+failing and nothing saying why. Found by the suite, not by re-reading it. A
+standing notice now holds the bar until it is dismissed.
+
+And because it is a FIXED element, it has a dismiss control at 40x40. One with
+no way to close it can cover something on a small screen with no recourse.
+
+## 340. The button worked; the answer went somewhere nobody was looking
+
+"Preview this week" on the founder dashboard said Loading and, from the owner's
+side, did nothing else. The endpoint was never the problem - driven against the
+real Worker it answers 200 in under a fifth of a second with a complete digest.
+
+`_wireDigestCard` captured its output element once, when the card was wired:
+
+    const out = $('fd-digest-out');
+    const say = (t, kind) => { if(out){ ... } };
+
+The business tab re-renders itself with `el.innerHTML = ...` on a stats refresh
+or on leaving and returning. That detaches the captured node and puts a fresh
+empty one in its place, so a preview in flight across a re-render wrote its
+answer into a node no longer in the document. The request succeeded, the digest
+was built, and it landed nowhere. Nothing appears, nothing errors, the control
+looks dead.
+
+The same function was already careful about this exact hazard **for the token**,
+and says so: "Read at click time, not captured when the card was built - the
+operator may correct the token after this card exists." The element had the
+identical problem, five lines away, with no guard.
+
+**The rule.** In a UI that re-renders by replacing innerHTML, an element
+reference is only valid for as long as nobody has re-rendered - which is not a
+property you can reason about from inside an async handler. Look elements up
+when you write to them. And when a comment in a function explains why one value
+must be read late, that reasoning almost always applies to its neighbours;
+knowing the hazard is not the same as having applied it everywhere.

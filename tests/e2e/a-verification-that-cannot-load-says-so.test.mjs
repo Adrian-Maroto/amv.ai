@@ -26,12 +26,38 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const src = readFileSync(join(ROOT, 'src', 'app', '03-sessions.js'), 'utf8');
-const i = src.indexOf('function _mountTurnstile');
-const body = i > 0 ? src.slice(i, i + 3000) : '';
+
+/* THE WHOLE FUNCTION, NOT THE FIRST 3000 CHARACTERS OF IT.
+
+   This read `src.slice(i, i + 3000)`, which is a bet that the function will
+   never grow - and it did, by a comment explaining a second failure mode. The
+   onerror it checks for ended up at offset 4408 of a 4536-character body, so
+   both assertions failed while the code they describe was untouched and
+   working. A test that breaks when a function gets longer is a test that
+   punishes the next person for explaining themselves.
+
+   Matched by braces instead, so the window is the function. */
+function bodyOf(text, decl) {
+  const i = text.indexOf(decl);
+  if (i < 0) return '';
+  const open = text.indexOf('{', i);
+  if (open < 0) return '';
+  let depth = 0;
+  for (let k = open; k < text.length; k++) {
+    const c = text[k];
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) return text.slice(i, k + 1); }
+  }
+  return '';   // unbalanced: say nothing rather than half a function
+}
+const body = bodyOf(src, 'function _mountTurnstile');
 
 section('The captcha mount handles the ways it can fail to appear');
 {
   ok(body.length > 0, '_mountTurnstile was found');
+  ok(body.trimEnd().endsWith('}'),
+     'and the whole of it was read, not a fixed-size window into it',
+     body.slice(-40));
   ok(/\.onerror\s*=/.test(body),
      'the script tag has an onerror, so a blocked load is noticed');
   ok(/setTimeout\([^)]*dataset\.rendered/.test(body.replace(/\s+/g, ' '))

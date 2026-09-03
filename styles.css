@@ -10421,3 +10421,64 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   border-radius:var(--r-sm);
   padding:10px 12px;
 }
+
+/* ── LAYER A142 · the status bar that had no styles ──────────────────────────
+   `_initOfflineWatch` has been appending `<div class="offline-bar">` to the
+   body and toggling a `show` class on it since it was written. Nothing in this
+   stylesheet has ever matched either selector.
+
+   Measured in Chromium rather than guessed: the element lands at
+   position:static, z-index:auto, in normal document flow, 1280x22 - an
+   unstyled line of text. And because `show` had no rule, `classList.remove`
+   removed nothing: after going offline and coming back ONLINE, the bar was
+   still on screen, still saying "You're offline". Telling somebody they are
+   offline while they are online is worse than saying nothing at all - they go
+   looking for a connection problem that does not exist.
+
+   So `display` is what `show` controls. That is the whole fix for the sticking:
+   hiding is now a thing the class actually does, rather than a thing the code
+   believed it did.
+
+   Below the modal layer (10000) and the toast stack (9999) on purpose: a
+   status bar must not sit over a dialog somebody is answering. It carries a
+   dismiss control for the same reason - a fixed bar with no way to close it is
+   a bar that can cover something on a small screen for ever. */
+.offline-bar{
+  position:fixed; left:0; right:0; top:0; z-index:9998;
+  display:none; align-items:center; justify-content:center;
+  gap:var(--sp-3);
+  padding:var(--sp-2) var(--sp-4);
+  padding-top:calc(var(--sp-2) + env(safe-area-inset-top,0px));
+  background:var(--s3); color:var(--tx);
+  border-bottom:1px solid var(--bd);
+  box-shadow:var(--sh-md);
+  font-size:var(--t-sm); line-height:1.5; text-align:center;
+  /* A long sentence on a narrow screen has to wrap rather than clip. */
+  flex-wrap:wrap;
+}
+.offline-bar.show{ display:flex; }
+.offline-bar-msg{ max-width:78ch; }
+/* Transient - the connection is expected back. */
+.offline-bar{ border-top:2px solid var(--gold); }
+/* NOT transient. A policy on the origin refuses every call, so coming back
+   online does not fix it, and it should not look like the kind of thing that
+   clears itself. */
+.offline-bar.net-blocked{ border-top-color:var(--red); }
+.offline-bar-x{
+  flex:0 0 auto;
+  /* The tap-target floor this project measures at 390x844. */
+  min-width:40px; min-height:40px;
+  display:inline-flex; align-items:center; justify-content:center;
+  background:transparent; border:1px solid var(--bd); border-radius:var(--r-sm);
+  color:var(--mu); font-size:var(--t-md); cursor:pointer;
+  transition:color .14s var(--ease), border-color .14s var(--ease);
+}
+.offline-bar-x:hover{ color:var(--tx); border-color:var(--bdl); }
+.offline-bar-x:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+@media (max-width:520px){
+  .offline-bar{ font-size:var(--t-xs); padding-left:var(--sp-2); padding-right:var(--sp-2); }
+}
+@media (prefers-reduced-motion:no-preference){
+  .offline-bar.show{ animation:amv-bar-in .22s var(--ease) both; }
+  @keyframes amv-bar-in{ from{ transform:translateY(-100%); opacity:0 } to{ transform:none; opacity:1 } }
+}

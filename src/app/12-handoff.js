@@ -794,8 +794,22 @@ function _digestCardHTML(){
   '</div>';
 }
 function _wireDigestCard(){
-  const out = $('fd-digest-out');
-  const say = (t, kind) => { if(out){ out.className = 'fd-digest-out' + (kind ? ' ' + kind : ''); out.textContent = t; } };
+  /* RESOLVED WHEN IT IS WRITTEN TO, FOR THE SAME REASON THE TOKEN IS.
+
+     This captured the output node once, when the card was wired. The business
+     tab re-renders itself with `el.innerHTML = ...` - on a stats refresh, or
+     on leaving and coming back - which detaches that node and puts a fresh
+     empty one in its place. A preview in flight across a re-render then wrote
+     its answer into the detached one: the request succeeded, the digest was
+     built, and it landed somewhere no longer on the page. From the outside the
+     button did nothing at all.
+
+     The comment two lines down was already careful about exactly this for the
+     admin token, and this element had the same problem and no guard. */
+  const say = (t, kind) => {
+    const out = $('fd-digest-out');
+    if(out){ out.className = 'fd-digest-out' + (kind ? ' ' + kind : ''); out.textContent = t; }
+  };
   /* Read at click time, not captured when the card was built - the operator may
      correct the token after this card exists. */
   const call = async (qs) => {
@@ -815,7 +829,7 @@ function _wireDigestCard(){
     try{
       const d = await call('');
       // The plain-text version IS what gets sent, so showing it is not a mock-up.
-      if(out){ out.className='fd-digest-out'; out.textContent = d.subject + '\n\n' + d.text; }
+      say(d.subject + '\n\n' + d.text);
     }catch(e){ say('Could not build the digest: ' + e.message, 'bad'); }
   });
   on($('fd-digest-send'),'click', async ()=>{
