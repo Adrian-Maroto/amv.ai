@@ -347,17 +347,39 @@ const _PUBLIC_CONFIG_MAP = {
      for want of a token nobody could produce. */
   turnstileSiteKey: 'amv_turnstile_site',
 };
-let _publicConfigDone=false;
+/* DONE MEANS IT HAPPENED, NOT THAT IT WAS ATTEMPTED.
+
+   This set `_publicConfigDone = true` as its second statement - before reading
+   the base, before the fetch, before knowing there was anything to do. The page
+   calls it exactly once, at boot, so any early return burned the only attempt
+   that would ever be made and left every value it fetches permanently absent:
+   the Google button dead, and the captcha's site key never arriving, on a
+   deployment whose Worker was serving both correctly.
+
+   Two early returns could do it. An empty base - a first paint where the
+   address had not resolved yet, or a device with no backend configured - and a
+   fetch that simply failed, which on a school or office network is an ordinary
+   Tuesday. Neither is a permanent condition, and both were treated as one.
+   Worse, it is invisible: there is no error, the values are just missing, and
+   reloading looks like it should help while the flag is set again in the same
+   place.
+
+   So the flag now means "we have the config", and a separate in-flight flag
+   does the job it was accidentally doing - keeping two concurrent calls from
+   both fetching. A missing base or a failed request leaves both clear, so the
+   next caller gets a real attempt. */
+let _publicConfigDone=false, _publicConfigInFlight=false;
 async function _loadPublicConfig(){
-  if(_publicConfigDone) return;
-  _publicConfigDone=true;
+  if(_publicConfigDone || _publicConfigInFlight) return;
   const base=(AMV_API && AMV_API.base) || '';
   if(!base) return;
+  _publicConfigInFlight=true;
   try{
     const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/public-config',{method:'GET'},8000);
     if(!r.ok) return;
     const d=await r.json().catch(()=>null);
     if(!d || !d.ok) return;
+    _publicConfigDone=true;
     Object.keys(_PUBLIC_CONFIG_MAP).forEach(k=>{
       const key=_PUBLIC_CONFIG_MAP[k];
       const val=String(d[k]||'').trim();
@@ -374,6 +396,7 @@ async function _loadPublicConfig(){
        before the site key existed, and the box hid itself. */
     try{ if(typeof _mountTurnstile==='function') _mountTurnstile(); }catch(e){}
   }catch(e){ /* the sign-in button says plainly when it is not configured */ }
+  finally{ _publicConfigInFlight=false; }
 }
 try{ window._loadPublicConfig=_loadPublicConfig; }catch(e){}
 const AMV_API = {

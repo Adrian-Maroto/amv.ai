@@ -7882,3 +7882,41 @@ there would have been perfectly silent: the marker never dropped, the automation
 never run. Awaiting it is simpler, has no ordering dependency, and is a stronger
 guarantee - the stale marker is provably gone before the caller is told the
 record was saved.
+
+## 337. "Done" has to mean it happened, not that it was attempted
+
+`_loadPublicConfig` is how a visitor's browser learns the things only the Worker
+knows - the Google client id behind "Continue with Google", and the Turnstile
+SITE key without which the captcha cannot draw itself. The page calls it exactly
+once, at boot.
+
+Its second statement was `_publicConfigDone = true`, set before reading the
+backend address, before the fetch, before knowing there was anything to do. Both
+of the early returns underneath it are ordinary transient conditions - an empty
+base on a first paint where the address had not resolved, and a request that
+simply failed, which behind a school or office filter is a normal Tuesday - and
+both were being recorded as the final answer. One flicker of a network and the
+Google button is inert and the captcha's site key never arrives, for the life of
+the tab, on a deployment whose Worker is serving both correctly.
+
+The failure is silent by construction: nothing throws, no message appears, the
+values are just absent. Reloading looks like it ought to help, and sets the flag
+again in the same place.
+
+**The rule.** A flag that guards work has to be set from the OUTCOME, not from
+entry. Two different questions were being answered by one variable - "is someone
+already doing this?" and "do we have the answer?" - and collapsing them means a
+failure gets remembered as a success. They are now two flags: an in-flight
+guard, released in a `finally`, and a done flag set only after the config is
+actually in hand.
+
+**Where to look for the same shape.** Anything that reads `if (done) return;
+done = true;` as its opening two lines. The pattern is most dangerous where the
+work happens once per page load, because then there is no second chance to
+paper over it, and most invisible where the values it fetches are optional-
+looking - a missing config value degrades quietly, which is exactly what makes
+it survive.
+
+Found while chasing a captcha box that would not appear. The owner's console
+reported the site key absent while `/v1/public-config` served it plainly, which
+leaves only the journey between the two - and the journey was one attempt long.
