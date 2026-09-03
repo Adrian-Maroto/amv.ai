@@ -7627,3 +7627,43 @@ directive it needs in the same edit, and check the vendor's own list rather than
 the one directive that made the error message go away. A permission set that is
 two-thirds right does not degrade - it fails, silently, somewhere that looks
 like the vendor's fault.
+
+---
+
+## 332. The password manager typed a stranger's name into the search box
+
+The owner opened the Founder Dashboard and found the Settings search field
+holding a saved username. Deleting it put it straight back, every time. Nothing
+in AMV contains that name.
+
+Two faults, and the browser was behaving correctly in both.
+
+**`autocomplete="off"` does nothing on a credential field.** Chrome and Safari
+ignore it deliberately - a site is not allowed to switch somebody's password
+manager off. Every admin-token box asked for `off`, so every one of them still
+read as a login, and a browser filling a login fills the username too: into the
+nearest text input, which on that screen is the Settings search. The saddest
+part is `_killTokenAutofill`, a helper that exists for exactly this purpose and
+set exactly the value that has no effect. The intent was right and had never
+worked anywhere.
+
+**Then AMV made it stick.** `set-search` renders `value="..."` from state, so
+whatever the browser injected became state and was written back on every redraw.
+Clearing the box could not beat a re-render. A field that mirrors its own state
+turns a one-off injection into something the user cannot remove, which is why
+this read as AMV doing it on purpose.
+
+Fixed with the two things the platform actually honours: `autocomplete="new-password"`
+on every field where a secret is pasted once, and `type="search"` on the search
+boxes so they are not username candidates. Writing the check found four more
+fields with the same wrong value - an error dashboard token, a mailbox app
+password, a bot token and a school token - none of which anybody had reported,
+because each needs the person to be on that screen with a saved credential of
+the right shape.
+
+**The rule.** When you suppress a browser behaviour, check the platform honours
+the value you used - a no-op attribute looks identical to a working one until
+somebody with the right saved password opens the right screen. And a field that
+renders its own value back from state cannot be cleared by the user against
+anything that writes to it; if something else can put text in there, that is not
+a nuisance, it is permanent.

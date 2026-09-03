@@ -1490,7 +1490,7 @@ async function openMailConnect(){
       '<label class="ml-f"><span>SMTP server</span><input id="ml-smtp" placeholder="smtp.example.com" autocomplete="off"></label>'+
     '</div>'+
     '<label class="ml-f"><span>Email address</span><input id="ml-addr" type="email" placeholder="you@example.com" autocomplete="username"></label>'+
-    '<label class="ml-f"><span>App password</span><input id="ml-pass" type="password" autocomplete="off"></label>'+
+    '<label class="ml-f"><span>App password</span><input id="ml-pass" type="password" autocomplete="new-password"></label>'+
     '<p class="ml-setup" id="ml-setup"></p>'+
     '<div class="ml-err" id="ml-err" style="display:none" role="alert"></div>'+
     '<div class="ml-foot"><button class="btn" id="ml-cancel">Cancel</button>'+
@@ -1672,7 +1672,7 @@ async function openTelegramConnect(){
     '<p class="mu ml-intro">AMV sends through a bot you own, so you can revoke it any time and the messages are not from a stranger.</p>'+
     '<p class="ml-setup">Open Telegram, message <b>@BotFather</b>, send <b>/newbot</b>, and it gives you a token. '+
       'Then send your new bot any message, open <b>api.telegram.org/bot&lt;your token&gt;/getUpdates</b> in a browser, and copy the <b>chat id</b> it shows.</p>'+
-    '<label class="ml-f"><span>Bot token</span><input id="tg-tok" type="password" autocomplete="off" placeholder="123456789:AA\u2026"></label>'+
+    '<label class="ml-f"><span>Bot token</span><input id="tg-tok" type="password" autocomplete="new-password" placeholder="123456789:AA\u2026"></label>'+
     '<label class="ml-f"><span>Chat id</span><input id="tg-chat" autocomplete="off" placeholder="e.g. 87654321"></label>'+
     '<div class="ml-err" id="tg-err" style="display:none" role="alert"></div>'+
     '<div class="ml-foot"><button class="btn" id="tg-cancel">Cancel</button>'+

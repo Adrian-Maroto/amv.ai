@@ -458,7 +458,7 @@ function _admTokenPromptHTML(msg){
     '<div class="adm-tokmsg">'+escH(msg || 'Platform-wide figures are gated on your Worker’s ADMIN_TOKEN secret.')+'</div>'+
     '<div class="adm-tokrow">'+
       '<label class="sr-only" for="adm-tok">Admin token</label>'+
-      '<input id="adm-tok" type="password" autocomplete="off" class="inp" placeholder="Admin token">'+
+      '<input id="adm-tok" type="password" autocomplete="new-password" class="inp" placeholder="Admin token">'+
       '<button class="btn bp" id="adm-tok-go" type="button">Load</button>'+
     '</div>'+
     '<div class="adm-toknote">Kept in memory for this tab only - never written to this device.</div>'+

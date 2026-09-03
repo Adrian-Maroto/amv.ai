@@ -1792,7 +1792,7 @@ function _errAskToken(msg){
   ovr.innerHTML='<div class="share-modal err-modal">'+
     '<div class="share-title">Admin access</div>'+
     '<p class="share-sub">'+(msg?escH(msg)+' ':'')+'Enter your ADMIN_TOKEN (the secret you set on the Worker) to see what\u2019s breaking for your users.</p>'+
-    '<input id="er-tok" class="inp" type="password" placeholder="ADMIN_TOKEN" autocomplete="off">'+
+    '<input id="er-tok" class="inp" type="password" placeholder="ADMIN_TOKEN" autocomplete="new-password">'+
     '<p class="share-sub" style="margin-top:8px;font-size:var(--t-xs)">Kept in memory for this tab only - never written to this device.</p>'+
     '<div class="share-actions">'+
       '<button class="btn bp" id="er-go">View errors</button>'+

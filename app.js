@@ -11915,7 +11915,7 @@ function _admTokenPromptHTML(msg){
     '<div class="adm-tokmsg">'+escH(msg || 'Platform-wide figures are gated on your Worker’s ADMIN_TOKEN secret.')+'</div>'+
     '<div class="adm-tokrow">'+
       '<label class="sr-only" for="adm-tok">Admin token</label>'+
-      '<input id="adm-tok" type="password" autocomplete="off" class="inp" placeholder="Admin token">'+
+      '<input id="adm-tok" type="password" autocomplete="new-password" class="inp" placeholder="Admin token">'+
       '<button class="btn bp" id="adm-tok-go" type="button">Load</button>'+
     '</div>'+
     '<div class="adm-toknote">Kept in memory for this tab only - never written to this device.</div>'+
@@ -19395,7 +19395,7 @@ function _errAskToken(msg){
   ovr.innerHTML='<div class="share-modal err-modal">'+
     '<div class="share-title">Admin access</div>'+
     '<p class="share-sub">'+(msg?escH(msg)+' ':'')+'Enter your ADMIN_TOKEN (the secret you set on the Worker) to see what\u2019s breaking for your users.</p>'+
-    '<input id="er-tok" class="inp" type="password" placeholder="ADMIN_TOKEN" autocomplete="off">'+
+    '<input id="er-tok" class="inp" type="password" placeholder="ADMIN_TOKEN" autocomplete="new-password">'+
     '<p class="share-sub" style="margin-top:8px;font-size:var(--t-xs)">Kept in memory for this tab only - never written to this device.</p>'+
     '<div class="share-actions">'+
       '<button class="btn bp" id="er-go">View errors</button>'+
@@ -22097,7 +22097,7 @@ function _openSettingsPicker(){
     '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
     '<h2 style="margin:0 0 12px;font-size:var(--t-xl)">Settings</h2>'+
     '<div class="set-search-wrap setpick-searchwrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
-      '<input id="setpick-search" class="set-search" type="text" placeholder="Search settings…" autocomplete="off"></div>'+
+      '<input id="setpick-search" class="set-search" type="search" name="amv-settings-search" placeholder="Search settings…" autocomplete="off"></div>'+
     '<div class="setpick-list" id="setpick-list">'+rows+'</div></div></div>';
   onBackdrop($('setpick-bg'),closeOvr);
   r.querySelectorAll('[data-setpick]').forEach(b=>on(b,'click',()=>{
@@ -22139,7 +22139,7 @@ function renderSettingsView(){
       '<div class="settings-nav">'+
         _settingsPickerBtnHTML()+
         '<div class="set-search-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'+
-          '<input id="set-search" class="set-search" type="text" placeholder="Search settings\u2026" value="'+escH(S._setSearch||'')+'" autocomplete="off">'+
+          '<input id="set-search" class="set-search" type="search" name="amv-settings-search" placeholder="Search settings\u2026" value="'+escH(S._setSearch||'')+'" autocomplete="off">'+
         '</div>'+
         '<div class="settings-nav-list">'+navHtml+(noMatch?'<div class="sn-empty">No settings match \u201c'+escH(q)+'\u201d</div>':'')+'</div>'+
       '</div>'+
@@ -22331,7 +22331,7 @@ async function _loadReadiness(){
       '<div class="gl-note">Your admin token reads this from the Worker. It is kept in memory for this tab only.</div>'+
       '<div class="adm-tokrow" style="margin-top:10px">'+
         '<label class="sr-only" for="gl-tok">Admin token</label>'+
-        '<input id="gl-tok" type="password" autocomplete="off" class="inp" placeholder="Admin token">'+
+        '<input id="gl-tok" type="password" autocomplete="new-password" class="inp" placeholder="Admin token">'+
         '<button class="btn bp" id="gl-tok-go" type="button">Check</button>'+
       '</div>';
     const go = () => {
@@ -22747,12 +22747,24 @@ async function _exportUserData(){
 try{ window._exportUserData=_exportUserData; }catch(e){}
 function renderSetPane(){ _renderSetPaneInner(); _killTokenAutofill(); try{ if(_lang()!=='auto'&&_lang()!=='en') _translateUI(); }catch(e){ console.error('Translate UI error in renderSetPane', e); } }
 /* Stop browsers / password managers from autofilling API-key & token fields.
-   The only field that SHOULD autofill is the real account password (#a-pass). */
+   The only field that SHOULD autofill is the real account password (#a-pass).
+
+   THIS USED TO SET autocomplete="off", WHICH IS THE ONE VALUE THAT DOES NOTHING.
+   Chrome and Safari deliberately ignore `off` on credential fields, on the
+   reasoning that a site should not be able to switch somebody's password
+   manager off. So the intent here was right and the mechanism never worked: the
+   admin-token boxes still read as a login, the browser paired each with the
+   nearest text input, and it filled a saved username into the Settings SEARCH
+   box - which AMV then wrote into its own state and restored on every redraw,
+   so clearing it put it straight back. That is what the owner hit.
+
+   `new-password` is the documented way to say "a secret, but not one you have
+   saved". Browsers will not offer a stored credential for it. */
 function _killTokenAutofill(){
   try{
     document.querySelectorAll('input[type="password"]').forEach(inp=>{
       if(inp.id==='a-pass'||inp.id==='pw-new'||inp.id==='pw-conf'||inp.id==='pw-cur') return;
-      inp.setAttribute('autocomplete','off');
+      inp.setAttribute('autocomplete','new-password');
       inp.setAttribute('autocorrect','off');
       inp.setAttribute('autocapitalize','off');
       inp.setAttribute('spellcheck','false');
@@ -23443,7 +23455,7 @@ function _renderSetPaneInner(only, into){
       '<div class="set-sub">Live platform spend, users, revenue, and abuse signals. Operator-only.</div>'+
       '<div id="fd-body"><div class="fd-loading">Loading platform stats\u2026</div></div>'+
       '<div id="fd-digest-host"></div>'+
-      '<div class="fd-token-row"><input id="fd-token" type="password" autocomplete="off" placeholder="Admin token" class="inp" style="max-width:240px"/>'+
+      '<div class="fd-token-row"><input id="fd-token" type="password" autocomplete="new-password" placeholder="Admin token" class="inp" style="max-width:240px"/>'+
         '<button class="btn bp" id="fd-load" style="font-size:var(--t-sm)">Load stats</button></div>'+
       '<div class="fd-note">Your admin token is set as the ADMIN_TOKEN secret on your Worker. It\u2019s never stored - paste it here each session.</div>';
     // Pre-fill from the session holder so the operator pastes it once per tab
@@ -26453,7 +26465,7 @@ async function openMailConnect(){
       '<label class="ml-f"><span>SMTP server</span><input id="ml-smtp" placeholder="smtp.example.com" autocomplete="off"></label>'+
     '</div>'+
     '<label class="ml-f"><span>Email address</span><input id="ml-addr" type="email" placeholder="you@example.com" autocomplete="username"></label>'+
-    '<label class="ml-f"><span>App password</span><input id="ml-pass" type="password" autocomplete="off"></label>'+
+    '<label class="ml-f"><span>App password</span><input id="ml-pass" type="password" autocomplete="new-password"></label>'+
     '<p class="ml-setup" id="ml-setup"></p>'+
     '<div class="ml-err" id="ml-err" style="display:none" role="alert"></div>'+
     '<div class="ml-foot"><button class="btn" id="ml-cancel">Cancel</button>'+
@@ -26635,7 +26647,7 @@ async function openTelegramConnect(){
     '<p class="mu ml-intro">AMV sends through a bot you own, so you can revoke it any time and the messages are not from a stranger.</p>'+
     '<p class="ml-setup">Open Telegram, message <b>@BotFather</b>, send <b>/newbot</b>, and it gives you a token. '+
       'Then send your new bot any message, open <b>api.telegram.org/bot&lt;your token&gt;/getUpdates</b> in a browser, and copy the <b>chat id</b> it shows.</p>'+
-    '<label class="ml-f"><span>Bot token</span><input id="tg-tok" type="password" autocomplete="off" placeholder="123456789:AA\u2026"></label>'+
+    '<label class="ml-f"><span>Bot token</span><input id="tg-tok" type="password" autocomplete="new-password" placeholder="123456789:AA\u2026"></label>'+
     '<label class="ml-f"><span>Chat id</span><input id="tg-chat" autocomplete="off" placeholder="e.g. 87654321"></label>'+
     '<div class="ml-err" id="tg-err" style="display:none" role="alert"></div>'+
     '<div class="ml-foot"><button class="btn" id="tg-cancel">Cancel</button>'+
@@ -34320,7 +34332,7 @@ async function schoolConnectOpen(){
       '<label class="sch-lbl">' + T('Your school’s Canvas address') + '</label>'+
       '<input id="schc-url" class="inp" placeholder="https://yourschool.instructure.com" autocomplete="off">'+
       '<label class="sch-lbl">' + T('Access token') + '</label>'+
-      '<input id="schc-tok" class="inp" type="password" placeholder="' + T('paste the token from Canvas') + '" autocomplete="off">'+
+      '<input id="schc-tok" class="inp" type="password" placeholder="' + T('paste the token from Canvas') + '" autocomplete="new-password">'+
       '<p class="sch-help">' + T('In Canvas: Account → Settings → New Access Token. AMV stores it on the server so it can read your work, and deletes it with your account.') + '</p>'+
       '<div class="sch-btns">'+
         '<button class="btn bp" id="schc-save">' + T('Connect') + '</button>'+

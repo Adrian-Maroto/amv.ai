@@ -255,7 +255,7 @@ async function schoolConnectOpen(){
       '<label class="sch-lbl">' + T('Your school’s Canvas address') + '</label>'+
       '<input id="schc-url" class="inp" placeholder="https://yourschool.instructure.com" autocomplete="off">'+
       '<label class="sch-lbl">' + T('Access token') + '</label>'+
-      '<input id="schc-tok" class="inp" type="password" placeholder="' + T('paste the token from Canvas') + '" autocomplete="off">'+
+      '<input id="schc-tok" class="inp" type="password" placeholder="' + T('paste the token from Canvas') + '" autocomplete="new-password">'+
       '<p class="sch-help">' + T('In Canvas: Account → Settings → New Access Token. AMV stores it on the server so it can read your work, and deletes it with your account.') + '</p>'+
       '<div class="sch-btns">'+
         '<button class="btn bp" id="schc-save">' + T('Connect') + '</button>'+
