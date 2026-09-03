@@ -132,14 +132,25 @@ section('It works on a phone');
       fits: r.right <= window.innerWidth + 1 && r.width > 100,
             labelled: !!document.querySelector('label[for="adm-tok"]'),
       masked: i.type === 'password',
-      noAutofill: i.getAttribute('autocomplete') === 'off',
+      /* NOT 'off'. Chrome and Safari ignore `off` on a credential field on
+         purpose - a site may not switch somebody's password manager off - so
+         this assertion held while the attribute did nothing, and the browser
+         went on treating the box as a login. It then filled the matching
+         USERNAME into the nearest text input, which on the settings screen is
+         the search field, and AMV rendered that back from state on every
+         redraw so it could not be cleared. The owner hit exactly that.
+
+         `new-password` is the value browsers honour for "a secret, but not one
+         you have saved". This check was asserting the wrong thing and so was
+         guarding the defect. */
+      noAutofill: i.getAttribute('autocomplete') === 'new-password',
     };
   });
   ok(m.fits, 'the field fits the screen');
   ok((await overflowingElement(page)) === null, 'and nothing overflows the screen', await overflowingElement(page));
   ok(m.labelled, 'it has a real label for screen readers');
   ok(m.masked, 'the secret is masked');
-  ok(m.noAutofill, 'and browsers are told not to save it');
+  ok(m.noAutofill, 'and browsers are told, in the value they honour, not to offer a saved login');
   await page.setViewportSize({ width: 1280, height: 900 });
 }
 

@@ -7712,3 +7712,28 @@ setting has a fallback, resolve it in ONE function and make every caller use it
 - because the failure of reading it directly is not an error, it is a button
 that does nothing, and nobody files a bug about a button that does nothing on a
 screen they were told they might not need yet.
+
+### 332a. A test was holding the bug in place
+
+The gate went red on the autofill fix, and the failing assertion was
+`admin-token`'s:
+
+    noAutofill: i.getAttribute('autocomplete') === 'off'
+    ok(m.noAutofill, 'and browsers are told not to save it');
+
+It had passed for the life of the project. The attribute was present, so the
+check was green, and the check's own words - "browsers are told not to save it"
+- were false: browsers ignore `off` on a credential field. The test asserted the
+PRESENCE of a request nobody honours and called that the property.
+
+So the defect had a guard on it. Anybody changing `off` to something that works
+would have been told they had broken a passing test, and the cheapest reading of
+that is to put it back.
+
+The check now asserts `new-password`, and its label says which value and why.
+
+**The addendum.** When a fix makes an old test fail, the question is not only
+"did I break something" but "was that test asserting the thing it names". A
+check that pins a mechanism rather than an outcome will defend the mechanism
+even after the mechanism is known not to work - and it will do it politely, in
+green, for years.
