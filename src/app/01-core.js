@@ -672,7 +672,12 @@ const AMV_API = {
     const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
-    throw new Error(d.error || 'Login failed');
+    /* The CODE, not only the sentence. `captcha_required` is the moment the
+       server states that a verification was expected - the one fact that
+       separates "this deployment has no captcha" from "it has one and the
+       browser could not produce a token". keyCreate already carries the code
+       through for the same reason. */
+    { const e=new Error(d.error || 'Login failed'); if(d.code) e.code=d.code; throw e; }
   },
   _setTokens(d){
     /* Set BEFORE the token is stored: the setter below reads it to decide
@@ -783,7 +788,7 @@ const AMV_API = {
     const r = await this._fetch('/auth/signup', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
-    throw new Error(d.error || 'Signup failed');
+    { const e=new Error(d.error || 'Signup failed'); if(d.code) e.code=d.code; throw e; }
   },
 
   /* Programmatic access to this account. The key is returned exactly once, at

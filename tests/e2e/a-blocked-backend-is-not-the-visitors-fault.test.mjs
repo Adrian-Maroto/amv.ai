@@ -137,8 +137,21 @@ section('A violation about something else does not blame the backend');
   ok(got === '', 'neither a different host nor a different directive is mistaken for it', got);
 }
 
-section('A fetch that really fails is reported without inventing a cause');
+section('A fetch that merely failed does NOT announce a missing captcha');
 {
+  /* THE OVER-CLAIM THIS FILE ORIGINALLY SHIPPED, AND THE SUITE THAT CAUGHT IT.
+
+     The first version showed the message whenever the config fetch had failed
+     for any reason at all. On a deployment with NO captcha configured, a 503
+     or a timeout would then announce that a verification could not be set up -
+     on a sign-up form that works perfectly. A false alarm on a working form is
+     its own kind of dishonesty, and a-stranger-can-pay was right to fail.
+
+     A refusal naming this build's backend is different in kind: the browser
+     refused the ORIGIN, so a key living behind it cannot arrive. That one is
+     certain. Everything else waits for the server to say a verification was
+     required - see the refusal section below, which is the only moment anybody
+     knows. */
   await openSignUp();
   await page.unroute('**/v1/public-config').catch(() => {});
   await page.route('**/v1/public-config', route => route.fulfill({ status: 503, body: '{}' }));
@@ -150,12 +163,71 @@ section('A fetch that really fails is reported without inventing a cause');
     await window._loadPublicConfig();
     const reason = configUnreachable();
     _mountTurnstile();
-    return { reason, html: (document.getElementById('a-turnstile') || {}).innerHTML || '' };
+    const b = document.getElementById('a-turnstile');
+    return { reason, html: b.innerHTML || '', hidden: b.style.display === 'none' };
   }, BASE);
-  ok(/503/.test(got.reason), 'a 503 is reported as what it was', got.reason);
-  ok(/could not reach its own server/i.test(got.html), 'and reaches the form', got.html.slice(0, 160));
-  ok(!/security policy/i.test(got.html),
-     'without claiming a policy blocked it, which it did not', got.html.slice(0, 200));
+  ok(/503/.test(got.reason), 'the reason is still recorded, as what it was', got.reason);
+  ok(got.hidden, 'but the box just hides, because nothing is certain yet', got);
+  ok(!/could not reach its own server/i.test(got.html),
+     'nothing is announced about a captcha that may not exist', got.html.slice(0, 160));
+}
+
+section('The refusal is the moment anybody knows a verification was expected');
+{
+  /* And it is exact: the server has just said so. No inference, no guessing
+     from an empty string, and it works whatever went wrong - a filter that
+     refuses the origin, one that hangs, or a key the operator half-configured. */
+  await openSignUp();
+  const got = await page.evaluate(() => {
+    let e = document.getElementById('auth-err');
+    if (!e) { e = document.createElement('div'); e.id = 'auth-err'; document.body.appendChild(e); }
+    e.textContent = ''; e.style.display = 'none';
+    const box = document.getElementById('a-turnstile');
+    box.style.display = 'none';                       // no key arrived
+    showAuthErr('Please complete the verification and try again.', null, 'captcha_required');
+    return e.textContent;
+  });
+  ok(/could not be loaded/i.test(got),
+     'the person is told the verification could not be loaded', got.slice(0, 120));
+  ok(/not something you can fix from this form/i.test(got),
+     'and that it is not theirs to fix', got.slice(0, 200));
+  ok(/different network|mobile data/i.test(got), 'with something to try', got.slice(0, 240));
+  ok(!/^Please complete the verification/.test(got),
+     'rather than being asked again for a box that is not there', got.slice(0, 60));
+}
+
+section('But with a working box on screen, the plain message is right');
+{
+  /* "Complete the verification" is correct advice when there IS one to
+     complete - most often somebody who simply did not tick it. Rewriting that
+     into a network explanation would be the same mistake pointing the other
+     way. */
+  await openSignUp();
+  const got = await page.evaluate(() => {
+    const e = document.getElementById('auth-err');
+    e.textContent = ''; e.style.display = 'none';
+    const box = document.getElementById('a-turnstile');
+    box.style.display = ''; delete box.dataset.failed; box.dataset.rendered = '1';
+    showAuthErr('Please complete the verification and try again.', null, 'captcha_required');
+    return e.textContent;
+  });
+  ok(/^Please complete the verification/.test(got),
+     'the message is left exactly as the server wrote it', got.slice(0, 80));
+}
+
+section('And an ordinary auth error is never rewritten');
+{
+  await openSignUp();
+  const got = await page.evaluate(() => {
+    const e = document.getElementById('auth-err');
+    e.textContent = '';
+    const box = document.getElementById('a-turnstile');
+    box.style.display = 'none';                       // unusable, but irrelevant here
+    showAuthErr('Wrong password. Please try again.', null, 'bad_password');
+    return e.textContent;
+  });
+  ok(got === 'Wrong password. Please try again.',
+     'a different refusal keeps its own words', got);
 }
 
 section('A key that arrives is still just a captcha');

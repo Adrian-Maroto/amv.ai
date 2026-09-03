@@ -8049,3 +8049,51 @@ property you can reason about from inside an async handler. Look elements up
 when you write to them. And when a comment in a function explains why one value
 must be read late, that reasoning almost always applies to its neighbours;
 knowing the hazard is not the same as having applied it everywhere.
+
+## 341. Honest degradation can over-claim, and a false alarm is its own dishonesty
+
+LESSONS 338 fixed a form that blamed the person for their network. The fix
+shipped with the opposite fault, and the gate caught it within the hour.
+
+`_mountTurnstile` showed "AMV could not reach its own server, so the
+verification could not be set up" whenever the config fetch had failed for
+**any** reason. On a deployment with no captcha configured at all, a 503 or a
+timeout would therefore announce a broken verification step on a sign-up form
+that works perfectly. `a-stranger-can-pay` failed on it, asserting that with no
+key the box hides rather than showing a frame - and that assertion was right.
+
+The trap is subtle because it is the same ambiguity 338 was about, read from the
+other end. "No site key" cannot distinguish "no captcha here" from "a captcha we
+could not fetch", so 338 added a reason. But a *reason the fetch failed* still
+does not establish that a captcha was ever expected - a server that is briefly
+unwell tells you nothing about whether it has TURNSTILE_SECRET set.
+
+**The rule.** When you cannot yet distinguish two situations, do not pick the
+alarming one because it is the one you just fixed. Wait for the moment the
+system actually knows, and say it then. Two things followed from asking when
+that moment is:
+
+- A `connect-src` violation naming this build's own backend IS certain at mount
+  time. The browser refused the ORIGIN, so every call is refused and a key
+  living behind it cannot arrive. That one is announced.
+- Everything else waits for `captcha_required` from the server, which is the
+  only moment anything in the system knows a verification was expected. The
+  message is corrected at the point of refusal instead of guessed at the point
+  of drawing - which is both exact and broader, since it also covers a filter
+  that hangs rather than refusing, and a half-configured key.
+
+The code is carried through from the server rather than matched in prose, the
+way `keyCreate` already did it. And the correction is skipped entirely when a
+working widget is on screen: "complete the verification" is correct advice to
+somebody who simply did not tick it, and rewriting that into a network
+explanation would be the same mistake pointing the other way.
+
+One more thing this run settled. The suite for 338 dispatched a hand-built
+`securitypolicyviolation` event with the two properties assigned, which proves
+the listener's logic and nothing about whether Chrome's real event carries what
+it expects. Pointing AMV's backend at a host the SHIPPED policy forbids produces
+a violation the browser itself dispatched, and the whole chain - refusal,
+recorded reason, page-level bar, captcha slot - is now asserted against that.
+After a day in which one CSP experiment gave a confident wrong answer and
+another silently proved nothing because its own probe had been blocked, that
+distinction had earned its place.

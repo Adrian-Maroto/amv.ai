@@ -672,7 +672,12 @@ const AMV_API = {
     const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
-    throw new Error(d.error || 'Login failed');
+    /* The CODE, not only the sentence. `captcha_required` is the moment the
+       server states that a verification was expected - the one fact that
+       separates "this deployment has no captcha" from "it has one and the
+       browser could not produce a token". keyCreate already carries the code
+       through for the same reason. */
+    { const e=new Error(d.error || 'Login failed'); if(d.code) e.code=d.code; throw e; }
   },
   _setTokens(d){
     /* Set BEFORE the token is stored: the setter below reads it to decide
@@ -783,7 +788,7 @@ const AMV_API = {
     const r = await this._fetch('/auth/signup', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
-    throw new Error(d.error || 'Signup failed');
+    { const e=new Error(d.error || 'Signup failed'); if(d.code) e.code=d.code; throw e; }
   },
 
   /* Programmatic access to this account. The key is returned exactly once, at
@@ -3440,9 +3445,43 @@ function newConvObj(title) {
   return { id:'c'+Date.now()+Math.random().toString(36).slice(2,6), title:title||'New Conversation', msgs:[], model:'auto', starred:false, created:Date.now() };
 }
 
-function showAuthErr(msg, kind){
+/* "PLEASE COMPLETE THE VERIFICATION" IS THE WRONG THING TO SAY TO SOMEBODY
+   WITH NO VERIFICATION IN FRONT OF THEM.
+
+   The server refuses with `captcha_required` when it wanted a token and got
+   none. That refusal is the only moment anything in this system KNOWS a
+   verification was expected - which is the fact that separates "this
+   deployment has no captcha" from "it has one and this browser could not
+   produce a token", and the two are indistinguishable everywhere else.
+
+   So the correction happens here rather than at mount time. Mounting has to
+   guess; this does not. If the widget is absent or failed AND the server has
+   just said it required one, the person is told what actually happened instead
+   of being asked for something that is not on their screen.
+
+   Deliberately narrow: with a working widget on screen the message is left
+   exactly as it was, because then "complete the verification" is correct
+   advice and there is a box to complete. */
+function _captchaUnusable(){
+  try{
+    const box=document.getElementById('a-turnstile');
+    if(!box) return true;                                  // never rendered
+    if(box.dataset && box.dataset.failed) return true;     // said so itself
+    if(box.style.display==='none') return true;            // hidden: no key
+    return !box.dataset || !box.dataset.rendered;          // present but never drew
+  }catch(e){ return false; }
+}
+function showAuthErr(msg, kind, code){
   const e=$('auth-err');
   if(!e) return;
+  if(code==='captcha_required' && _captchaUnusable()){
+    let why=''; try{ why = (typeof configUnreachable==='function') ? configUnreachable() : ''; }catch(_){}
+    msg = 'This sign-up needs a verification step, and it could not be loaded'
+        + (why ? ' - ' + why : '')
+        + '. That is not something you can fix from this form: a school or office '
+        + 'network filter is the usual cause. Try a different network, or a phone '
+        + 'on mobile data.';
+  }
   e.textContent=msg;
   e.style.display='block';
   // a success message must not be painted red
@@ -3532,9 +3571,24 @@ function _mountTurnstile(){
      config loader now records whether its fetch failed, so the difference is
      answerable instead of guessable. */
   if(!siteKey){
+    /* ONLY WHEN IT IS CERTAIN.
+
+       The first version of this showed the message whenever the config fetch
+       had failed for ANY reason, which over-claims: a 503 or a timeout on a
+       deployment that has no captcha at all would announce that a verification
+       could not be set up, on a sign-up that works perfectly. That is a false
+       alarm on a working form, and it broke a suite that was right to expect
+       the box to stay hidden.
+
+       A connect-src violation naming this build's own backend is different in
+       kind. It is not an inference about what might be missing - the browser
+       refused the origin, so every call AMV makes is refused, and a captcha
+       key that lives behind that origin cannot arrive. That one is said out
+       loud; everything else waits for the server to state that a verification
+       was required, which showAuthErr handles at the moment of refusal. */
     var why=''; try{ why = (typeof configUnreachable==='function') ? configUnreachable() : ''; }catch(e){}
-    if(why){ noConfig(why); return; }
-    box.style.display='none'; return;   // genuinely not set up → hide the empty box
+    if(/security policy/i.test(why)){ noConfig(why); return; }
+    box.style.display='none'; return;   // nothing certain to say → hide the empty box
   }
   box.style.display='';
   box.setAttribute('data-sitekey', siteKey);
@@ -3611,7 +3665,7 @@ async function doSignupForm() {
         const pf=$('a-pass'); if(pf) pf.focus(); return;
       }
       if(btn){btn.disabled=false;btn.textContent='Create Free Account';}
-      showAuthErr(e.message||'Could not create account.'); return;
+      showAuthErr(e.message||'Could not create account.', null, e && e.code); return;
     }
   }
   const acct=await createAccount(nm,em,pw);
@@ -3933,7 +3987,7 @@ async function doLoginForm() {
         return;
       }
       const msg=/wrong password/i.test(e.message||'')?'Wrong password. Please try again.':(e.message||'Sign in failed.');
-      showAuthErr(msg); const pf=$('a-pass'); if(pf){ pf.value=''; pf.focus(); }
+      showAuthErr(msg, null, e && e.code); const pf=$('a-pass'); if(pf){ pf.value=''; pf.focus(); }
       return;
     }
   }
