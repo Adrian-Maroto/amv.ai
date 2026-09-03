@@ -64,6 +64,21 @@ section('The billing pane reads in the order somebody uses it');
 
 section('Upgrading opens the plans screen, on the plan that was picked');
 {
+  /* REDUCED MOTION, SO THIS MEASURES A PLACE AND NOT A MOMENT.
+
+     The click scrolls smoothly and rings the card for 2.4 seconds, and the
+     first version of this waited a fixed 700ms before measuring - a bet that a
+     smooth scroll finishes in under 700ms on whatever machine is running, with
+     a 2.4s window closing behind it. The sibling suite made exactly that bet
+     about a 220ms slide-in and lost it twice in CI while passing every time
+     locally.
+
+     Asking the page for reduced motion removes the race rather than out-waiting
+     it: the scroll becomes instant and the keyframes are skipped, because the
+     code under test honours the preference. What is asserted - which card is
+     marked, and that it is the visible one - is unchanged, and the
+     reduced-motion path gets covered for free. */
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const r = await page.evaluate(async () => {
     saveStr('amv_plan', 'pro');
     S.tab = 'settings'; S.settingsPane = 'billing'; renderSettingsView();
@@ -71,7 +86,9 @@ section('Upgrading opens the plans screen, on the plan that was picked');
     if (!b) return { missing: true };
     const label = b.textContent.trim();
     b.click();
-    await new Promise(r => setTimeout(r, 700));
+    /* Still a wait, because the handler defers by 60ms so the plans view has
+       rendered - but with motion off there is nothing animating to wait out. */
+    await new Promise(r => setTimeout(r, 400));
     const picked = document.querySelector('.plnc-picked');
     const vis = (el) => { const c = getComputedStyle(el), q = el.getBoundingClientRect();
                           return c.display !== 'none' && c.visibility !== 'hidden' && q.width > 0 && q.height > 0; };
@@ -95,6 +112,7 @@ section('Upgrading opens the plans screen, on the plan that was picked');
      silently, and look like the button was broken. */
   ok(r.totalCards > 4, 'there really are duplicate cards in the document', r.totalCards);
   ok(r.inAppView, 'and the one marked is the visible one, not the landing copy', r);
+  await page.emulateMedia({ reducedMotion: null });
 }
 
 section('Nothing on the paying screens sells image generation any more');

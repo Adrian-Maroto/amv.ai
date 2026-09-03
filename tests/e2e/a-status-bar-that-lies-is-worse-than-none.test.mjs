@@ -29,7 +29,27 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 const app = await bootApp({ apiBase: '' });
 const { page, errors } = app;
 
-const seen = () => page.evaluate(() => {
+/* MEASURE IT WHERE IT LANDS, NOT WHILE IT IS STILL ARRIVING.
+
+   This failed in CI twice and passed locally every time, on one assertion:
+   the bar reported display:flex, position:fixed and a height of 59, and
+   "visible" false. The bar slides in from translateY(-100%), so for the first
+   220ms its rect is entirely above the viewport - and the check waited a fixed
+   200ms. Locally that landed after the animation; on a shared CI runner it
+   landed inside it.
+
+   A longer sleep would be the same bet with better odds. This waits for the
+   animation the page is actually running, through the Web Animations API, so
+   the measurement happens when the element has stopped moving however slow the
+   machine is. */
+const settled = () => page.waitForFunction(() => {
+  const b = document.getElementById('offline-bar');
+  if (!b) return true;
+  if (typeof b.getAnimations !== 'function') return true;
+  return b.getAnimations().every(a => a.playState === 'finished' || a.playState === 'idle');
+}, null, { timeout: 5000 }).catch(() => {});
+
+const seen = async () => (await settled(), page.evaluate(() => {
   const b = document.getElementById('offline-bar');
   if (!b) return { missing: true };
   const cs = getComputedStyle(b);
@@ -40,7 +60,7 @@ const seen = () => page.evaluate(() => {
              && r.height > 0 && r.top < window.innerHeight && r.bottom > 0,
     h: Math.round(r.height), text: (b.textContent || '').trim(),
   };
-});
+}));
 const fire = (name) => page.evaluate((n) => window.dispatchEvent(new Event(n)), name);
 
 await page.evaluate(() => { try { _initOfflineWatch(); } catch (e) {} });

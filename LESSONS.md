@@ -8097,3 +8097,45 @@ recorded reason, page-level bar, captcha slot - is now asserted against that.
 After a day in which one CSP experiment gave a confident wrong answer and
 another silently proved nothing because its own probe had been blocked, that
 distinction had earned its place.
+
+## 342. A fixed sleep is a bet on how fast the machine is, and CI is a different machine
+
+Two pushes went red in CI on one assertion, having passed the full local gate
+both times. The owner got a failure email for each.
+
+The assertion was mine, from the day before: the status bar reported
+`display:flex`, `position:fixed`, a height of 59 - and "visible" false. The bar
+slides in from `translateY(-100%)`, so for the first 220ms its rectangle sits
+entirely above the viewport, and the check waited a fixed 200ms. Locally that
+landed after the animation. On a shared CI runner it landed inside it.
+
+Nothing was wrong with the product either time. Both red runs, and both emails,
+were a test measuring a thing while it was still moving.
+
+**The rule.** Do not wait a length of time; wait for the condition. A longer
+sleep is the same bet at better odds, and it is the bet that gets made again the
+next time somebody adds an animation. Two ways out, and both are better than a
+number:
+
+- **Wait on the mechanism.** `element.getAnimations()` reports what the page is
+  actually running, so the measurement happens when the element has stopped
+  moving however slow the machine is. Verified by stretching the animation to
+  2 seconds - ten times any sleep that had been there - and watching the suite
+  still pass.
+- **Remove the motion.** `page.emulateMedia({ reducedMotion: 'reduce' })` makes
+  a smooth scroll instant and skips keyframes, because the code under test
+  honours the preference. That is not avoiding the test: what was being asserted
+  - which card is marked, and that it is the visible one - is unchanged, and the
+  reduced-motion path gets covered for nothing.
+
+Checking the sibling suites after the fix found a second instance about to fail
+the same way: a fixed 700ms wait covering a smooth scroll AND a highlight that
+removes itself after 2.4 seconds. It had not gone red yet. Finding it took one
+grep for a geometry read after a `setTimeout`, which is the check that should
+follow any fix of this shape - the same sweep rule as 324a.
+
+**And a note on where this was already known.** The repository has a task for
+replacing fixed sleeps with condition waits, done for the bootLive suites, and a
+prior CI-only failure recorded as "it passed locally and failed in CI". Knowing
+the hazard did not stop me introducing two more the moment I added an animation.
+A rule that lives only in a completed task is a rule that gets rediscovered.
