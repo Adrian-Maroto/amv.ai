@@ -1368,7 +1368,8 @@ try{ window.signOutAndErase = signOutAndErase; }catch(e){}
    computer. The ordinary button is the one people press.
 
    Device preferences are deliberately NOT here: theme, accent, language, rail,
-   reduced motion, the backend URL, the cookie choice, the Google client id.
+   reduced motion, the backend URL, the cookie choice, the Google client id, the
+   captcha site key.
    Those belong to the machine, and clearing them would reset the next person's
    screen and their sign-in configuration for no privacy gain.
 
@@ -1392,6 +1393,11 @@ const _DEVICE_GLOBAL_KEYS = [
      the person, so it survives a sign-out - the next person to sign in on this
      machine meets the same server. */
   'amv_refresh_cookie',
+  /* The captcha's public site key. It identifies the DEPLOYMENT to the widget
+     host, the way the backend URL and the Google client id do - and the form
+     that needs it is the SIGNED-OUT one, so clearing it here would delete the
+     widget at exactly the moment it has to appear. */
+  'amv_turnstile_site',
   'amv_cookie_consent','amv_analytics_id','amv_ref_code','amv_links',
 ];
 try{ window._SIGNOUT_CLEAR_GLOBAL=_SIGNOUT_CLEAR_GLOBAL; window._DEVICE_GLOBAL_KEYS=_DEVICE_GLOBAL_KEYS; }catch(e){}
