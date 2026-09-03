@@ -7920,3 +7920,63 @@ it survive.
 Found while chasing a captcha box that would not appear. The owner's console
 reported the site key absent while `/v1/public-config` served it plainly, which
 leaves only the journey between the two - and the journey was one attempt long.
+
+## 338. Two situations, one empty string, opposite correct behaviours
+
+The owner could not sign up on a school Chromebook: the form asked them to
+complete a verification, and no verification box was on the screen. The Worker
+was serving `TURNSTILE_SITE_KEY` correctly - visible by opening
+`/v1/public-config` in a tab - and the page never drew the widget.
+
+The console held one line: `[AMV] csp.connect-src: https://<worker>/v1/public-config`.
+The request was being refused before it left the browser. AMV's own shipped
+policy permits that host - verified by serving the verbatim meta tag from the
+built page to Chromium, where the Worker origin is allowed and a control URL is
+correctly blocked - and the page carried exactly one policy with no header
+policy behind it. So the restriction is added on the machine, by a filter, and
+is not something this repository can widen its way around. Nor should it: the
+filter's policy is the restrictive one, and loosening ours would weaken every
+visitor's protection to accommodate one network.
+
+What was AMV's to fix is everything after the refusal.
+
+`_mountTurnstile` decided from one value: `if(!siteKey){ hide(); return; }`.
+Hiding an empty box is right for a deployment with no captcha configured -
+nothing is expected, so drawing an error would invent a problem. It is exactly
+wrong when the key exists on the server and did not reach the browser, because
+then the server still demands a token, and hiding the box means the refusal
+arrives with no way to satisfy it. **Both are an empty string at the point of
+decision**, so one line served two situations that need opposite treatment, and
+the failure it produced was the worst thing a form can say: it blamed the person
+for their network and gave them nothing to act on. That is why this feature had
+already been deleted twice.
+
+**The rule.** When a value's absence has more than one cause and the causes call
+for different behaviour, the absence is not enough information - record the
+reason at the point where it is still known. The loader knew whether its fetch
+had failed and threw that away; the policy listener knew the exact blocked
+address and wrote it to a console line nobody reads. Everything needed for an
+honest message existed at the moment of failure and nothing carried it forward.
+
+Three smaller things worth keeping:
+
+**A guess stated confidently costs more than a question.** Before this, two
+fixes shipped on theory - per-account storage, then a Wrangler variable wipe.
+Both were real defects; neither was this one. The thing that actually resolved
+it was asking for `/v1/public-config` in a browser tab and one console line, and
+that could have been the first move rather than the third.
+
+**Test the shipped artefact, not a clean-room version of it.** The first CSP
+experiment lifted `connect-src` out and tested it alone. That cannot reproduce
+an interaction between directives, and it also silently proved nothing when the
+harness page's own inline probe was blocked by its own `default-src` - the
+result read "allowed" because the listener had never been installed. Serving the
+byte-for-byte meta tag, with the probe as an external file `'self'` permits, is
+what made the answer trustworthy.
+
+**Name only what you actually know.** A `connect-src` violation for a third-party
+script says nothing about whether the backend is reachable, and a 503 is not a
+policy block. The message distinguishes them, and a test asserts that a
+violation about some other host or directive is not mistaken for this one -
+because a confident wrong cause sends somebody to spend an evening on the wrong
+problem, which is the failure this whole entry is about.

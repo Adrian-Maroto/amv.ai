@@ -299,10 +299,6 @@ function _mountTurnstile(){
   if(!siteKey && typeof window!=='undefined') siteKey=window.__AMV_TURNSTILE_SITE_KEY__||'';
   const box = document.getElementById('a-turnstile');
   if(!box) return;
-  if(!siteKey){ box.style.display='none'; return; }   // not set up → hide the empty box
-  box.style.display='';
-  box.setAttribute('data-sitekey', siteKey);
-  const render = ()=>{ try{ if(window.turnstile && box && !box.dataset.rendered){ turnstile.render(box, { sitekey: siteKey }); box.dataset.rendered='1'; } }catch(e){} };
 
   /* WHEN THE CHALLENGE CANNOT LOAD, SAY SO RATHER THAN ASKING FOR IT ANYWAY.
 
@@ -330,6 +326,46 @@ function _mountTurnstile(){
       box.style.display='';
     }catch(e){}
   };
+  /* A DIFFERENT FAILURE, AND IT DESERVES ITS OWN SENTENCE.
+
+     The one above is "the challenge script never arrived". This one is "we
+     never learned the site key", because the page could not reach its own
+     backend - and it is worth distinguishing because the person can act on
+     them differently, and because naming the wrong cause sends somebody to
+     spend an evening on the wrong problem. */
+  const noConfig = (why)=>{
+    if(failed) return; failed = true;
+    try{
+      box.dataset.failed='1';
+      box.innerHTML = '<div class="ts-blocked" role="alert">AMV could not reach its own server'
+        + (why ? ' - ' + escH(why) : '') + ', so the verification could not be set up.<br>'
+        + 'Sign-up needs it, so this has to be fixed rather than skipped. '
+        + 'A school or office network filter is the usual cause: try a different network, '
+        + 'or a phone on mobile data, to confirm.</div>';
+      box.style.display='';
+    }catch(e){}
+  };
+
+  /* WITHOUT A KEY THERE ARE TWO SITUATIONS AND THEY LOOK IDENTICAL.
+
+     Hiding an empty box is right for a deployment that has no captcha
+     configured: nothing is expected, nothing is missing, and drawing an error
+     would invent a problem. It is exactly wrong when the key exists on the
+     server and did not reach the browser - because then _verifyCaptcha WILL
+     refuse the sign-up for want of a token, and hiding the box means the
+     refusal arrives with no way to satisfy it.
+
+     Both are an empty string here, which is why this shipped hiding both. The
+     config loader now records whether its fetch failed, so the difference is
+     answerable instead of guessable. */
+  if(!siteKey){
+    var why=''; try{ why = (typeof configUnreachable==='function') ? configUnreachable() : ''; }catch(e){}
+    if(why){ noConfig(why); return; }
+    box.style.display='none'; return;   // genuinely not set up → hide the empty box
+  }
+  box.style.display='';
+  box.setAttribute('data-sitekey', siteKey);
+  const render = ()=>{ try{ if(window.turnstile && box && !box.dataset.rendered){ turnstile.render(box, { sitekey: siteKey }); box.dataset.rendered='1'; } }catch(e){} };
   /* Loaded but never drew: a filter that answers with something that is not the
      script leaves window.turnstile undefined, and a silent empty box again. */
   const watch = ()=>setTimeout(()=>{ if(!box.dataset.rendered) cannotLoad('timed out'); }, 8000);

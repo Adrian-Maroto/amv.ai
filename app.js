@@ -368,6 +368,19 @@ const _PUBLIC_CONFIG_MAP = {
    does the job it was accidentally doing - keeping two concurrent calls from
    both fetching. A missing base or a failed request leaves both clear, so the
    next caller gets a real attempt. */
+/* WHY THE CONFIG IS MISSING, WHICH IS NOT THE SAME AS IT BEING ABSENT.
+
+   "This deployment has no captcha" and "this deployment has a captcha whose
+   key we could not fetch" are the same value downstream - an empty string -
+   and they need opposite behaviour. The first should hide the box; the second
+   must say so, because the SERVER will still demand a token and the person is
+   about to be told to complete a verification that is not on their screen.
+
+   Nothing recorded the difference, so the honest message could not be written
+   even though everything needed to write it was known at the time. */
+let _publicConfigFail = '';
+function configUnreachable(){ return _publicConfigFail; }
+try{ window.configUnreachable=configUnreachable; }catch(e){}
 let _publicConfigDone=false, _publicConfigInFlight=false;
 async function _loadPublicConfig(){
   if(_publicConfigDone || _publicConfigInFlight) return;
@@ -376,10 +389,11 @@ async function _loadPublicConfig(){
   _publicConfigInFlight=true;
   try{
     const r=await fetchDeadline(base.replace(/\/$/,'')+'/v1/public-config',{method:'GET'},8000);
-    if(!r.ok) return;
+    if(!r.ok){ _publicConfigFail = _publicConfigFail || ('the server answered ' + r.status); return; }
     const d=await r.json().catch(()=>null);
-    if(!d || !d.ok) return;
+    if(!d || !d.ok){ _publicConfigFail = _publicConfigFail || 'the server sent something unreadable'; return; }
     _publicConfigDone=true;
+    _publicConfigFail='';
     Object.keys(_PUBLIC_CONFIG_MAP).forEach(k=>{
       const key=_PUBLIC_CONFIG_MAP[k];
       const val=String(d[k]||'').trim();
@@ -395,7 +409,13 @@ async function _loadPublicConfig(){
     /* Same for the captcha - if the sign-up sheet is already open it was drawn
        before the site key existed, and the box hid itself. */
     try{ if(typeof _mountTurnstile==='function') _mountTurnstile(); }catch(e){}
-  }catch(e){ /* the sign-in button says plainly when it is not configured */ }
+  }catch(e){
+    /* A refusal that never left the browser and a server that is down look
+       identical here. The policy listener below names the first one properly
+       when it happens, so this is only the fallback wording - and it does not
+       overwrite a reason already recorded, because that one is better. */
+    _publicConfigFail = _publicConfigFail || 'the request could not be sent';
+  }
   finally{ _publicConfigInFlight=false; }
 }
 try{ window._loadPublicConfig=_loadPublicConfig; }catch(e){}
@@ -1758,6 +1778,23 @@ try{
          that was refused and can quote whatever was in scope. */
       _logErr('csp.' + String(e.violatedDirective || 'unknown').slice(0, 40),
               new Error(String(e.blockedURI || 'inline').slice(0, 120)));
+      /* AND WHEN WHAT WAS REFUSED IS AMV'S OWN BACKEND, THAT IS NOT A LOG LINE.
+
+         A console entry nobody reads was the entire visible consequence of a
+         page that cannot reach its own server. Everything downstream then
+         degraded as though the deployment were simply unconfigured - the
+         captcha hid its empty box, and the sign-up came back "please complete
+         the verification", blaming the person for their network.
+
+         This is the one violation AMV can name exactly: the blocked address is
+         the backend the build shipped, so the cause is not a mystery and not
+         the visitor's fault. Recorded here so the surfaces that go quiet can
+         say which of the two things happened. */
+      var blocked = String(e.blockedURI || '');
+      if(blocked && String(e.violatedDirective||'').indexOf('connect-src')===0){
+        var ab=''; try{ ab = (typeof apiBase==='function') ? apiBase() : ''; }catch(_e){}
+        if(ab && blocked.indexOf(ab)===0) _publicConfigFail = "this network's security policy blocked it";
+      }
     }catch(_){}
   });
 }catch(e){}
@@ -3340,10 +3377,6 @@ function _mountTurnstile(){
   if(!siteKey && typeof window!=='undefined') siteKey=window.__AMV_TURNSTILE_SITE_KEY__||'';
   const box = document.getElementById('a-turnstile');
   if(!box) return;
-  if(!siteKey){ box.style.display='none'; return; }   // not set up → hide the empty box
-  box.style.display='';
-  box.setAttribute('data-sitekey', siteKey);
-  const render = ()=>{ try{ if(window.turnstile && box && !box.dataset.rendered){ turnstile.render(box, { sitekey: siteKey }); box.dataset.rendered='1'; } }catch(e){} };
 
   /* WHEN THE CHALLENGE CANNOT LOAD, SAY SO RATHER THAN ASKING FOR IT ANYWAY.
 
@@ -3371,6 +3404,46 @@ function _mountTurnstile(){
       box.style.display='';
     }catch(e){}
   };
+  /* A DIFFERENT FAILURE, AND IT DESERVES ITS OWN SENTENCE.
+
+     The one above is "the challenge script never arrived". This one is "we
+     never learned the site key", because the page could not reach its own
+     backend - and it is worth distinguishing because the person can act on
+     them differently, and because naming the wrong cause sends somebody to
+     spend an evening on the wrong problem. */
+  const noConfig = (why)=>{
+    if(failed) return; failed = true;
+    try{
+      box.dataset.failed='1';
+      box.innerHTML = '<div class="ts-blocked" role="alert">AMV could not reach its own server'
+        + (why ? ' - ' + escH(why) : '') + ', so the verification could not be set up.<br>'
+        + 'Sign-up needs it, so this has to be fixed rather than skipped. '
+        + 'A school or office network filter is the usual cause: try a different network, '
+        + 'or a phone on mobile data, to confirm.</div>';
+      box.style.display='';
+    }catch(e){}
+  };
+
+  /* WITHOUT A KEY THERE ARE TWO SITUATIONS AND THEY LOOK IDENTICAL.
+
+     Hiding an empty box is right for a deployment that has no captcha
+     configured: nothing is expected, nothing is missing, and drawing an error
+     would invent a problem. It is exactly wrong when the key exists on the
+     server and did not reach the browser - because then _verifyCaptcha WILL
+     refuse the sign-up for want of a token, and hiding the box means the
+     refusal arrives with no way to satisfy it.
+
+     Both are an empty string here, which is why this shipped hiding both. The
+     config loader now records whether its fetch failed, so the difference is
+     answerable instead of guessable. */
+  if(!siteKey){
+    var why=''; try{ why = (typeof configUnreachable==='function') ? configUnreachable() : ''; }catch(e){}
+    if(why){ noConfig(why); return; }
+    box.style.display='none'; return;   // genuinely not set up → hide the empty box
+  }
+  box.style.display='';
+  box.setAttribute('data-sitekey', siteKey);
+  const render = ()=>{ try{ if(window.turnstile && box && !box.dataset.rendered){ turnstile.render(box, { sitekey: siteKey }); box.dataset.rendered='1'; } }catch(e){} };
   /* Loaded but never drew: a filter that answers with something that is not the
      script leaves window.turnstile undefined, and a silent empty box again. */
   const watch = ()=>setTimeout(()=>{ if(!box.dataset.rendered) cannotLoad('timed out'); }, 8000);
