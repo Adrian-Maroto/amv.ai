@@ -714,7 +714,7 @@ function renderAppsView(){
 
       '<div class="ss2"><h3>Featured</h3>'+
         '<div class="appx-grid">'+
-          app('🌐','AMV for Web','Runs in any browser right now - full chat, images, agents, and automations. Add it to your home screen for one-tap access.','<button class="btn bp" style="width:100%" data-dact="installPWA">Add to home screen</button>','rgba(66,133,244,.12)','auto')+
+          app('🌐','AMV for Web','Runs in any browser right now - full chat, agents, and automations. Add it to your home screen for one-tap access.','<button class="btn bp" style="width:100%" data-dact="installPWA">Add to home screen</button>','rgba(66,133,244,.12)','auto')+
           app('💻','VS Code','Generate, explain, and debug code inline. Use the Dev workspace here, or open your project in VS Code.','<button class="btn bp" style="width:100%" data-dact="openDevView">Open Dev workspace</button>','rgba(0,118,212,.12)','auto')+
           app('💬','Slack','Bring AMV into any channel with /amv - answers, summaries, and tasks without leaving Slack.','<button class="btn" style="width:100%" data-dact="setTabBtn" data-darg="integrations">Connect Slack</button>','rgba(74,21,75,.14)','auto')+
         '</div>'+
@@ -789,7 +789,10 @@ const HABIT_FEATURES = {
   dev:    { label:'Build',  plan:'pro',   gain:'build and ship real apps, with the app sandbox' },
   studio: { label:'Studio', plan:'pro',   gain:'every model, and designs that keep their own style' },
   lab:    { label:'Lab',    plan:'pro',   gain:'the deeper engine on debugging, and longer files' },
-  images: { label:'Images', plan:'pro',   gain:'a far larger daily allowance and HD output' },
+  /* No `images` entry. It offered "a far larger daily allowance and HD output"
+     for a feature that no longer exists - so the one nudge that asks somebody
+     for money was ready to ask for it on the strength of something they could
+     never receive. */
   team:   { label:'Teams',  plan:'elite', gain:'shared projects, roles and one bill for everyone' },
 };
 

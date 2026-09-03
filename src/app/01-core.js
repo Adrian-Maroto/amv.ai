@@ -1528,7 +1528,10 @@ function openStatusPanel(){
         '<div class="st-sec-h">Services</div>'+
         '<div class="st-svcs" id="st-svcs">'+
           svc('AMV chat & agents', online, online?'Checking\u2026':'Offline')+
-          svc('Image generation', online)+
+          /* Image generation was listed here as a service with its own status
+             dot long after it was removed from the product. A status page
+             reporting a feature that does not exist as "Operational" is the
+             one page that must never do that. */
           svc('Your connection', online, online?'Connected':'Offline')+
         '</div>'+
         '<div class="st-sec-h">Your data & security</div>'+
@@ -1553,7 +1556,6 @@ async function _refreshStatusPanel(){
     '<span class="st-svc-state">'+escH(note)+'</span></div>';
   box.innerHTML=
     svc('AMV chat & agents', online&&backendOk, online?(backendOk?'Operational':'Degraded'):'Offline')+
-    svc('Image generation', online, online?'Operational':'Offline')+
     svc('Your connection', online, online?'Connected':'Offline');
   const ht=$('st-head-txt'); if(ht) ht.textContent=_statusState==='ok'?'All systems operational':_statusState==='degraded'?'Some services degraded':'You\u2019re offline';
   const hd=document.querySelector('#status-modal-bg .sb-status-dot'); if(hd) hd.className='sb-status-dot '+_statusState;

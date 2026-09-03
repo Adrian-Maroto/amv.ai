@@ -1878,12 +1878,16 @@ try{ window._renderSkillsPane=_renderSkillsPane; }catch(e){}
    Each renderer writes its own title, so the section keeps the heading it
    always had - the merge changes where you find it, not what it says. The
    anchor id is what a retired deep link scrolls to. */
-function _setAppendSection(pane, id){
+function _setAppendSection(pane, id, host){
   if(!pane) return;
   const wrap=document.createElement('div');
   wrap.className='set-merged';
   wrap.id='set-sec-'+id;
-  pane.appendChild(wrap);
+  /* `host` lets a pane say WHERE its merged half belongs. Without it the only
+     answer was "at the end", which on Billing put usage and spending below the
+     payment-security block. Falls back to the pane, so every existing caller
+     keeps the behaviour it had. */
+  ((host && host.appendChild) ? host : pane).appendChild(wrap);
   try{ _renderSetPaneInner(id, wrap); }catch(e){}
 }
 try{ window._setAppendSection=_setAppendSection; }catch(e){}
@@ -1920,8 +1924,11 @@ function _renderSetPaneInner(only, into){
   // Billing renders its full content INSIDE the settings pane (stays in Settings).
   if(sp==='billing'){
     if(typeof renderBillingView==='function'){ renderBillingView(pane); }
-    if(!only) _setAppendSection(pane, 'usage');
-    if(!only) _setAppendSection(pane, 'spending');
+    /* Into the slot the billing view leaves for them, so the pane reads
+       plan -> usage -> what you could move to -> how payments are protected. */
+    const slot=$('bill-usage-slot');
+    if(!only) _setAppendSection(pane, 'usage', slot);
+    if(!only) _setAppendSection(pane, 'spending', slot);
     return;
   }
   // Projects lives in Settings now - render its grid inside the pane.

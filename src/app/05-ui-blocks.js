@@ -2526,7 +2526,10 @@ function planCards(inApp){
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
         '<li><span class="fck">\u2713</span>A monthly allowance, yours to spend how you like</li>'+
-        '<li><span class="fck">\u2713</span>Chat, images &amp; 3D generation</li>'+
+        /* Not "images": image generation is gone, and the free card was the
+           last place still selling it. 3D stays because it is real - AMV
+           writes the interactive model as code and runs it in the preview. */
+        '<li><span class="fck">\u2713</span>Chat, code &amp; interactive 3D models</li>'+
         '<li><span class="fck">\u2713</span>File analysis - PDF, images, code</li>'+
         '<li><span class="fck">\u2713</span>Essays, code, math &amp; research</li>'+
         '<li><span class="fxx">\u2717</span>Autonomous agents &amp; Crew</li>'+

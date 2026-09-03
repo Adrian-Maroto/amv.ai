@@ -1086,6 +1086,20 @@ function renderBillingView(targetEl){
         '<p class="bill-acts-s">Change your card, download receipts, or cancel. '+
           'Cancelling keeps your plan until the end of the period you have paid for.</p>'+
       '</div>':'')+
+      /* WHERE USAGE AND SPENDING GO.
+
+         In Settings this pane is followed by two appended sections - the
+         retired Usage and Spending panes, merged in here. Appended means
+         appended, so they landed after EVERYTHING, including "How we protect
+         your payment" - which put a block of reassurance nobody is looking for
+         between somebody and the two numbers they opened this screen to see.
+
+         The reading order that makes sense is: what you are on, what you have
+         used, what you could move to, and only then the payment-security
+         reassurance. So the appended sections get a slot here rather than
+         being dropped at the end, and the security block keeps its place at
+         the bottom where it is available without being in the way. */
+      (inSettings?'<div id="bill-usage-slot"></div>':'')+
       /* These two lists were computed on every render and shown nowhere, and the
          click handler below bound to buttons that never existed - so the billing
          screen told a paying customer what they had and gave them no way to
@@ -1183,7 +1197,39 @@ function renderBillingView(targetEl){
        the whole truth rather than a pretence. */
     _switchPlan('free');
   });
-  vc.querySelectorAll('[data-pay]').forEach(b=>on(b,'click',()=>openCheckout(b.dataset.pay)));
+  /* A PRICE ON A BUTTON IS NOT ENOUGH TO DECIDE ON.
+
+     These went straight to checkout. Six words and a number is not what
+     somebody needs in order to move from Pro to Elite - what each plan
+     actually gives them is on the plans screen, and this list cannot hold it
+     without becoming that screen.
+
+     So they go there, landing on the card they picked rather than at the top
+     of four of them, because being dropped on a page and having to find your
+     own place again is its own small insult. */
+  vc.querySelectorAll('[data-pay]').forEach(b=>on(b,'click',()=>{
+    const want=b.dataset.pay;
+    try{ setTab('plans'); }catch(e){ return; }
+    setTimeout(()=>{
+      try{
+        /* Scoped to the app view. The landing page carries its own set of
+           plan cards in the same markup, so an unscoped query returns
+           whichever happens to come first in the document - and highlighting
+           and scrolling to a hidden card would do nothing at all, silently.
+           There are eight .plnc elements on the page and only four of them are
+           the ones being looked at. */
+        const view=document.getElementById('vc')||document;
+        const btn=view.querySelector('.pg [data-darg="'+want+'"]');
+        const card=btn&&btn.closest('.plnc');
+        if(!card) return;
+        let smooth=true;
+        try{ smooth=!window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+        card.scrollIntoView({ block:'center', behavior: smooth?'smooth':'auto' });
+        card.classList.add('plnc-picked');
+        setTimeout(()=>{ try{ card.classList.remove('plnc-picked'); }catch(e){} }, 2400);
+      }catch(e){}
+    }, 60);
+  }));
   vc.querySelectorAll('[data-simpay]').forEach(b=>on(b,'click',()=>{
     const pl=b.dataset.simpay;
     if(pl==='free'){ _setPlan('free'); renderBillingView(); toast('Test: reset to Free plan','info'); }
@@ -1538,7 +1584,10 @@ function openPlanCompare(highlight){
     ['Deploy & host multiple live apps', p=>isC(p)?'-':(PLAN_RANK[p]>=3?'\u2713':'-')],
     ['Autonomous multi-step projects', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=3?'\u2713':(PLAN_RANK[p]>=2?'Limited':'-'))],
     ['Context window (how much it holds)', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Whole codebase':(PLAN_RANK[p]>=2?'Extra-large':'Large'))],
-    ['Image generation', p=>'\u2713'],
+    /* No "Image generation" row. It sat here claiming a tick on every tier -
+       on the detailed comparison somebody opens precisely when they are trying
+       to work out what the money buys - for a feature that was removed from
+       the product. A comparison table is a promise in a grid. */
     /* Was "Limited / Up to 5 / Unlimited" for parallel agents, which nothing
        enforced at any tier. This is the throughput limit that is real, and it
        is read from the table the Worker checks against. */

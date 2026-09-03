@@ -538,7 +538,11 @@ const MODELS = {
   core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', tokens:16000, cost:2, rec:'free' },
   coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', tokens:32000, cost:3, rec:'pro' },
   smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', tokens:16000, cost:4, rec:'elite' },
-  image:  { label:'AMV Vision', desc:'Image generation', color:'#5590ff', model:'image', tokens:0, cost:0, hidden:true },
+  /* "AMV Vision - Image generation" lived here behind hidden:true, which kept
+     it out of the picker and kept it in the product's own idea of what it can
+     do. Nothing reads it: MODEL_ORDER never listed it, and the only other
+     'image' references are file-type categories and reading an image somebody
+     uploads, which is a real feature and stays. */
 };
 const MODEL_ORDER=['auto','fast','core','coding','smart'];
 /* The server's engine keys, in AMV's own names. Used to label a turn that AMV

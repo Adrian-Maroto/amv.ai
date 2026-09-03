@@ -10482,3 +10482,26 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   .offline-bar.show{ animation:amv-bar-in .22s var(--ease) both; }
   @keyframes amv-bar-in{ from{ transform:translateY(-100%); opacity:0 } to{ transform:none; opacity:1 } }
 }
+
+/* ── LAYER A143 · the plan card you asked for ────────────────────────────────
+   The Change plan list in Settings now opens the full plans screen instead of
+   going straight to checkout, because a name and a price is not enough to
+   decide on. Arriving at the top of four cards and having to find Elite again
+   is a small insult, so the card that was picked is scrolled to and says so
+   briefly.
+
+   A ring rather than a colour change: the cards already carry meaning in their
+   colour (Most Popular, Best Value), and repainting one would be saying
+   something different from "here is the one you tapped". */
+.plnc-picked{
+  outline:2px solid var(--accent);
+  outline-offset:3px;
+  border-radius:var(--r-lg);
+}
+@media (prefers-reduced-motion:no-preference){
+  .plnc-picked{ animation:amv-pick-in .32s var(--ease) both; }
+  @keyframes amv-pick-in{
+    from{ outline-color:transparent }
+    to{ outline-color:var(--accent) }
+  }
+}

@@ -1528,7 +1528,10 @@ function openStatusPanel(){
         '<div class="st-sec-h">Services</div>'+
         '<div class="st-svcs" id="st-svcs">'+
           svc('AMV chat & agents', online, online?'Checking\u2026':'Offline')+
-          svc('Image generation', online)+
+          /* Image generation was listed here as a service with its own status
+             dot long after it was removed from the product. A status page
+             reporting a feature that does not exist as "Operational" is the
+             one page that must never do that. */
           svc('Your connection', online, online?'Connected':'Offline')+
         '</div>'+
         '<div class="st-sec-h">Your data & security</div>'+
@@ -1553,7 +1556,6 @@ async function _refreshStatusPanel(){
     '<span class="st-svc-state">'+escH(note)+'</span></div>';
   box.innerHTML=
     svc('AMV chat & agents', online&&backendOk, online?(backendOk?'Operational':'Degraded'):'Offline')+
-    svc('Image generation', online, online?'Operational':'Offline')+
     svc('Your connection', online, online?'Connected':'Offline');
   const ht=$('st-head-txt'); if(ht) ht.textContent=_statusState==='ok'?'All systems operational':_statusState==='degraded'?'Some services degraded':'You\u2019re offline';
   const hd=document.querySelector('#status-modal-bg .sb-status-dot'); if(hd) hd.className='sb-status-dot '+_statusState;
@@ -2667,7 +2669,11 @@ const MODELS = {
   core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', tokens:16000, cost:2, rec:'free' },
   coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', tokens:32000, cost:3, rec:'pro' },
   smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', tokens:16000, cost:4, rec:'elite' },
-  image:  { label:'AMV Vision', desc:'Image generation', color:'#5590ff', model:'image', tokens:0, cost:0, hidden:true },
+  /* "AMV Vision - Image generation" lived here behind hidden:true, which kept
+     it out of the picker and kept it in the product's own idea of what it can
+     do. Nothing reads it: MODEL_ORDER never listed it, and the only other
+     'image' references are file-type categories and reading an image somebody
+     uploads, which is a real feature and stays. */
 };
 const MODEL_ORDER=['auto','fast','core','coding','smart'];
 /* The server's engine keys, in AMV's own names. Used to label a turn that AMV
@@ -8343,7 +8349,10 @@ function planCards(inApp){
       '<div class="plndiv"></div>'+
       '<ul class="plnfl">'+
         '<li><span class="fck">\u2713</span>A monthly allowance, yours to spend how you like</li>'+
-        '<li><span class="fck">\u2713</span>Chat, images &amp; 3D generation</li>'+
+        /* Not "images": image generation is gone, and the free card was the
+           last place still selling it. 3D stays because it is real - AMV
+           writes the interactive model as code and runs it in the preview. */
+        '<li><span class="fck">\u2713</span>Chat, code &amp; interactive 3D models</li>'+
         '<li><span class="fck">\u2713</span>File analysis - PDF, images, code</li>'+
         '<li><span class="fck">\u2713</span>Essays, code, math &amp; research</li>'+
         '<li><span class="fxx">\u2717</span>Autonomous agents &amp; Crew</li>'+
@@ -12848,6 +12857,20 @@ function renderBillingView(targetEl){
         '<p class="bill-acts-s">Change your card, download receipts, or cancel. '+
           'Cancelling keeps your plan until the end of the period you have paid for.</p>'+
       '</div>':'')+
+      /* WHERE USAGE AND SPENDING GO.
+
+         In Settings this pane is followed by two appended sections - the
+         retired Usage and Spending panes, merged in here. Appended means
+         appended, so they landed after EVERYTHING, including "How we protect
+         your payment" - which put a block of reassurance nobody is looking for
+         between somebody and the two numbers they opened this screen to see.
+
+         The reading order that makes sense is: what you are on, what you have
+         used, what you could move to, and only then the payment-security
+         reassurance. So the appended sections get a slot here rather than
+         being dropped at the end, and the security block keeps its place at
+         the bottom where it is available without being in the way. */
+      (inSettings?'<div id="bill-usage-slot"></div>':'')+
       /* These two lists were computed on every render and shown nowhere, and the
          click handler below bound to buttons that never existed - so the billing
          screen told a paying customer what they had and gave them no way to
@@ -12945,7 +12968,39 @@ function renderBillingView(targetEl){
        the whole truth rather than a pretence. */
     _switchPlan('free');
   });
-  vc.querySelectorAll('[data-pay]').forEach(b=>on(b,'click',()=>openCheckout(b.dataset.pay)));
+  /* A PRICE ON A BUTTON IS NOT ENOUGH TO DECIDE ON.
+
+     These went straight to checkout. Six words and a number is not what
+     somebody needs in order to move from Pro to Elite - what each plan
+     actually gives them is on the plans screen, and this list cannot hold it
+     without becoming that screen.
+
+     So they go there, landing on the card they picked rather than at the top
+     of four of them, because being dropped on a page and having to find your
+     own place again is its own small insult. */
+  vc.querySelectorAll('[data-pay]').forEach(b=>on(b,'click',()=>{
+    const want=b.dataset.pay;
+    try{ setTab('plans'); }catch(e){ return; }
+    setTimeout(()=>{
+      try{
+        /* Scoped to the app view. The landing page carries its own set of
+           plan cards in the same markup, so an unscoped query returns
+           whichever happens to come first in the document - and highlighting
+           and scrolling to a hidden card would do nothing at all, silently.
+           There are eight .plnc elements on the page and only four of them are
+           the ones being looked at. */
+        const view=document.getElementById('vc')||document;
+        const btn=view.querySelector('.pg [data-darg="'+want+'"]');
+        const card=btn&&btn.closest('.plnc');
+        if(!card) return;
+        let smooth=true;
+        try{ smooth=!window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+        card.scrollIntoView({ block:'center', behavior: smooth?'smooth':'auto' });
+        card.classList.add('plnc-picked');
+        setTimeout(()=>{ try{ card.classList.remove('plnc-picked'); }catch(e){} }, 2400);
+      }catch(e){}
+    }, 60);
+  }));
   vc.querySelectorAll('[data-simpay]').forEach(b=>on(b,'click',()=>{
     const pl=b.dataset.simpay;
     if(pl==='free'){ _setPlan('free'); renderBillingView(); toast('Test: reset to Free plan','info'); }
@@ -13300,7 +13355,10 @@ function openPlanCompare(highlight){
     ['Deploy & host multiple live apps', p=>isC(p)?'-':(PLAN_RANK[p]>=3?'\u2713':'-')],
     ['Autonomous multi-step projects', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=3?'\u2713':(PLAN_RANK[p]>=2?'Limited':'-'))],
     ['Context window (how much it holds)', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Whole codebase':(PLAN_RANK[p]>=2?'Extra-large':'Large'))],
-    ['Image generation', p=>'\u2713'],
+    /* No "Image generation" row. It sat here claiming a tick on every tier -
+       on the detailed comparison somebody opens precisely when they are trying
+       to work out what the money buys - for a feature that was removed from
+       the product. A comparison table is a promise in a grid. */
     /* Was "Limited / Up to 5 / Unlimited" for parallel agents, which nothing
        enforced at any tier. This is the throughput limit that is real, and it
        is read from the table the Worker checks against. */
@@ -14139,7 +14197,7 @@ function renderAppsView(){
 
       '<div class="ss2"><h3>Featured</h3>'+
         '<div class="appx-grid">'+
-          app('🌐','AMV for Web','Runs in any browser right now - full chat, images, agents, and automations. Add it to your home screen for one-tap access.','<button class="btn bp" style="width:100%" data-dact="installPWA">Add to home screen</button>','rgba(66,133,244,.12)','auto')+
+          app('🌐','AMV for Web','Runs in any browser right now - full chat, agents, and automations. Add it to your home screen for one-tap access.','<button class="btn bp" style="width:100%" data-dact="installPWA">Add to home screen</button>','rgba(66,133,244,.12)','auto')+
           app('💻','VS Code','Generate, explain, and debug code inline. Use the Dev workspace here, or open your project in VS Code.','<button class="btn bp" style="width:100%" data-dact="openDevView">Open Dev workspace</button>','rgba(0,118,212,.12)','auto')+
           app('💬','Slack','Bring AMV into any channel with /amv - answers, summaries, and tasks without leaving Slack.','<button class="btn" style="width:100%" data-dact="setTabBtn" data-darg="integrations">Connect Slack</button>','rgba(74,21,75,.14)','auto')+
         '</div>'+
@@ -14214,7 +14272,10 @@ const HABIT_FEATURES = {
   dev:    { label:'Build',  plan:'pro',   gain:'build and ship real apps, with the app sandbox' },
   studio: { label:'Studio', plan:'pro',   gain:'every model, and designs that keep their own style' },
   lab:    { label:'Lab',    plan:'pro',   gain:'the deeper engine on debugging, and longer files' },
-  images: { label:'Images', plan:'pro',   gain:'a far larger daily allowance and HD output' },
+  /* No `images` entry. It offered "a far larger daily allowance and HD output"
+     for a feature that no longer exists - so the one nudge that asks somebody
+     for money was ready to ask for it on the strength of something they could
+     never receive. */
   team:   { label:'Teams',  plan:'elite', gain:'shared projects, roles and one bill for everyone' },
 };
 
@@ -23368,12 +23429,16 @@ try{ window._renderSkillsPane=_renderSkillsPane; }catch(e){}
    Each renderer writes its own title, so the section keeps the heading it
    always had - the merge changes where you find it, not what it says. The
    anchor id is what a retired deep link scrolls to. */
-function _setAppendSection(pane, id){
+function _setAppendSection(pane, id, host){
   if(!pane) return;
   const wrap=document.createElement('div');
   wrap.className='set-merged';
   wrap.id='set-sec-'+id;
-  pane.appendChild(wrap);
+  /* `host` lets a pane say WHERE its merged half belongs. Without it the only
+     answer was "at the end", which on Billing put usage and spending below the
+     payment-security block. Falls back to the pane, so every existing caller
+     keeps the behaviour it had. */
+  ((host && host.appendChild) ? host : pane).appendChild(wrap);
   try{ _renderSetPaneInner(id, wrap); }catch(e){}
 }
 try{ window._setAppendSection=_setAppendSection; }catch(e){}
@@ -23410,8 +23475,11 @@ function _renderSetPaneInner(only, into){
   // Billing renders its full content INSIDE the settings pane (stays in Settings).
   if(sp==='billing'){
     if(typeof renderBillingView==='function'){ renderBillingView(pane); }
-    if(!only) _setAppendSection(pane, 'usage');
-    if(!only) _setAppendSection(pane, 'spending');
+    /* Into the slot the billing view leaves for them, so the pane reads
+       plan -> usage -> what you could move to -> how payments are protected. */
+    const slot=$('bill-usage-slot');
+    if(!only) _setAppendSection(pane, 'usage', slot);
+    if(!only) _setAppendSection(pane, 'spending', slot);
     return;
   }
   // Projects lives in Settings now - render its grid inside the pane.
