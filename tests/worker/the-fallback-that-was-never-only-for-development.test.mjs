@@ -256,7 +256,36 @@ section('The dependency audit is a script, so it happens more than once');
 
   const s = readFileSync(join(ROOT, 'audit-deps.mjs'), 'utf8');
   ok(/const ACCEPTED = \{/.test(s), 'with a list of advisories somebody has assessed', true);
-  ok(/why:/.test(s) && /since:/.test(s), 'each with a written reason and a date', true);
+
+  /* EVERY ENTRY HAS A REASON AND A DATE - INCLUDING WHEN THERE ARE NONE.
+
+     This used to be `/why:/.test(s) && /since:/.test(s)`, which is not that
+     claim: it asks whether those two words appear anywhere in the file, so one
+     entry with a reason passed it on behalf of five without. Worse, it made an
+     EMPTY roster a failure - and empty is the correct state the moment the last
+     stale exemption is deleted, which is what the sibling assertion two lines
+     down demands. Two suites in this repository disagreed, and the one that was
+     wrong was the one greping for a substring.
+
+     So read the object instead: brace-match the literal, take its top-level
+     keys, and require each to carry both fields. Vacuously true for zero
+     entries, genuinely checked for any number above that. */
+  const acc = (() => {
+    const at = s.indexOf('const ACCEPTED = {');
+    if (at < 0) return null;
+    let i = s.indexOf('{', at), depth = 0;
+    for (let j = i; j < s.length; j++) {
+      if (s[j] === '{') depth++;
+      else if (s[j] === '}' && --depth === 0) return s.slice(i + 1, j);
+    }
+    return null;
+  })();
+  ok(acc !== null, 'and the list is a literal that can be read, not just matched', true);
+  const entries = [...String(acc || '').matchAll(/(?:'([^']+)'|"([^"]+)"|([\w@\/.-]+))\s*:\s*\{([\s\S]*?)\n  \}/g)];
+  const bare = entries.filter(m => !/since:/.test(m[4]) || !/why:/.test(m[4]))
+                      .map(m => m[1] || m[2] || m[3]);
+  ok(bare.length === 0, 'each with a written reason and a date',
+     entries.length ? entries.length + ' assessed, ' + bare.length + ' without' : 'none exempted');
   ok(/unexpected\.length/.test(s), 'anything unassessed fails it', true);
   ok(/stale\.length/.test(s), 'and an exemption for something no longer flagged fails it too', true);
   ok(/SKIP/.test(s) && /registry is not reachable/.test(s),
