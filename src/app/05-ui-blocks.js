@@ -984,10 +984,27 @@ async function _callAI(msgs, _opts) {
         // A quota 429 is NOT transient. If the server says we're out of usage,
         // stop the chat with the quota card + live countdown instead of
         // retrying or showing a generic error.
-        if(res.status===429 && (srvCode==='quota_day'||srvCode==='quota_month')){
-          const resetAt=err.resetAt||(Date.now()+3600000);
-          quotaLock(resetAt);
-          msgs[streamIdx]={r:'a',c:'',_quota:true,_resetAt:resetAt};
+        if(res.status===429 && (srvCode==='quota_day'||srvCode==='quota_month'||srvCode==='family_cap')){
+          /* AN HOUR WAS NOT A GUESS, IT WAS AN ANSWER, AND IT WAS WRONG.
+
+             This read `err.resetAt || (Date.now()+3600000)`. Two of the four
+             monthly refusals sent no resetAt at all, so somebody who had used
+             their whole BILLING CYCLE was shown a live countdown saying their
+             usage came back in 59 minutes - with the server's own sentence
+             ("It resets next month") thrown away to make room for it. An hour
+             later `quotaUnlock` fired a green toast saying "Your usage has
+             reset - you're good to go", re-enabled the composer, and the next
+             thing they sent was refused again.
+
+             That is on the one screen where somebody decides whether to pay.
+
+             So there is no fallback now. A reset time the server did not send
+             is a reset time nobody knows, and the card says what it does know
+             - the server's sentence - instead of a number it made up. */
+          const resetAt = +err.resetAt || 0;
+          quotaLock(resetAt, srvMsg);
+          msgs[streamIdx]={r:'a',c:'',_quota:true,_resetAt:resetAt,
+                           _quotaCode:srvCode,_quotaMsg:srvMsg};
           setMsgs(msgs); S.busy=false; renderChatMsgs();
           _recordUsageOnce();
           return;
@@ -2056,12 +2073,31 @@ function renderChatMsgs() {
     if(!isU && m._quota){
       const plan=(loadStr('amv_plan')||'free');
       const nextPlan=plan==='free'?'Pro':plan==='pro'?'Elite':'Ultra';
-      const resetTxt=_fmtResetIn(Math.max(0,(m._resetAt||_quotaLockUntil||Date.now())-Date.now()));
+      /* THREE THINGS THIS CARD USED TO GET WRONG, ALL AT ONCE.
+
+         It always drew a countdown, falling back to `Date.now()` when no reset
+         time was known - which renders as "under a minute" for a limit that
+         comes back next month. It always offered Upgrade, including to a child
+         whose PARENT set the limit, for whom upgrading is not an available
+         action and buying a bigger plan would not lift it. And it always said
+         "I'll wait", which is advice about an hour, not about a billing cycle.
+
+         The server's own sentence is the fallback now, because it was written
+         for this and was being discarded. */
+      const isFamily = m._quotaCode === 'family_cap';
+      const when = +m._resetAt || 0;
+      const whenTxt = when > Date.now()
+        ? 'Your usage resets in <b class="quota-reset-live">' + escH(_fmtResetIn(when - Date.now())) + '</b>. '
+        : (m._quotaMsg ? escH(m._quotaMsg) + ' ' : '');
       content='<div class="quota-card"><div class="quota-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>'+
         '<div class="quota-body"><b>You\u2019re out of usage for now.</b>'+
-        '<span>Your usage resets in <b class="quota-reset-live">'+escH(resetTxt)+'</b>. Upgrade to '+nextPlan+' for much higher limits and keep going right now.</span>'+
-        '<div class="quota-actions"><button class="quota-upgrade" data-action="quota-upgrade" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>'+
-        '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">I\u2019ll wait</button></div></div></div>';
+        (isFamily
+          ? '<span>'+whenTxt+'Whoever manages your family can raise this limit - a bigger plan will not lift it.</span>'+
+            '<div class="quota-actions"><button class="quota-later" data-action="quota-later" data-idx="'+i+'">Got it</button></div>'
+          : '<span>'+whenTxt+'Upgrade to '+nextPlan+' for much higher limits and keep going right now.</span>'+
+            '<div class="quota-actions"><button class="quota-upgrade" data-action="quota-upgrade" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>'+
+            '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">'+(when>Date.now()?'I\u2019ll wait':'Got it')+'</button></div>')+
+        '</div></div>';
     } else if(!isU && m._error){
       /* Retry is the right offer for a hiccup and the wrong one for a
          decision. A refusal a plan lifts gets the plan instead. */

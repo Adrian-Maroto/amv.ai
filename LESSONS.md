@@ -8749,3 +8749,41 @@ it. The word "offline" in a suite name is not evidence that the offline path
 was tested, and the piece that was untested is the piece that had never worked.
 A stub would have agreed with the broken code the entire time, which is why the
 new suite drives a real browser with the network genuinely turned off.
+
+## 360. The composer let itself back in after an hour that meant nothing
+
+The chat read `err.resetAt || (Date.now() + 3600000)`. Two of the four monthly
+refusals send no reset time at all - the account spend ceiling and the family
+ceiling, both of which say "It resets next month" in their own text - so
+somebody who had used a whole billing cycle was shown a live countdown claiming
+their usage came back in 59 minutes, with the server's sentence discarded to
+make room for the number. Sixty minutes later the timer fired `quotaUnlock`,
+which toasts "Your usage has reset - you're good to go", re-enables the
+composer, and hands them straight back into the same refusal. On the one screen
+where a person decides whether to pay.
+
+The one refusal that DID send a reset time sent the wrong one. It computed the
+first of the calendar month, while the counter that refused is keyed on
+`_periodKeyOf` - the BILLING ANNIVERSARY for anyone paying. Renew on the 20th,
+run out on the 5th, get told the 1st: fifteen days early, and the client
+unlocks on that date.
+
+**A fabricated value gets in where a state cannot be represented.** One
+variable, `_quotaLockUntil`, was doing two jobs: "are we locked" and "until
+when". So "locked, reset unknown" had nowhere to live, and rather than leave it
+unrepresentable the caller filled the hole with an hour. The fix is not a
+better default - there is no correct default for a fact nobody has - it is a
+second variable. Whenever a fallback looks like it is inventing information,
+look one level up for the state that has no room in the type.
+
+Two more that fell out of it. Zero is not a safe sentinel for a deadline: an
+unknown reset stored as `0` is permanently in the past, so the timer would have
+unlocked on the next tick even without the invented hour - the same false "good
+to go" by a second route. And `family_cap` was not in the list of quota codes
+at all, so a child who hit the limit their PARENT set got the red error card
+with a **Retry** button: the one action that cannot possibly work, offered
+instead of the true one the server had already written out.
+
+Every monthly refusal now carries a reset time from one helper derived from the
+same function that decides the period key, so the date somebody is told and the
+window they are measured over cannot drift apart again.

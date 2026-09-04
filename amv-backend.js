@@ -1076,11 +1076,14 @@ async function _spendGate(env, user, what, usd, out, opts) {
          than vague. The helper decides it once, from the numbers. */
       const hitFamily = ceilingInfo.source === 'family';
       audit(env, 'spend_cap_hit', { email: user.email, plan: user.plan, family: hitFamily, what });
+      /* Both of these say "it resets" and neither said when, so the client had
+         nothing to show and invented an hour. */
+      const resetAt = _periodResetAtOf(user);
       return json(hitFamily
         ? { error: 'You have used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.',
-            code: 'family_cap' }
+            code: 'family_cap', resetAt }
         : { error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
-            code: 'quota_month' }, 429);
+            code: 'quota_month', resetAt }, 429);
     }
   }
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
@@ -1401,6 +1404,42 @@ function _periodStartISO(anchorMs, nowMs) {
   const d = dayIn(y, mo);
   return `${y}-${String(mo + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
+
+/* WHEN THIS SUBJECT'S ALLOWANCE ACTUALLY COMES BACK.
+
+   Every monthly refusal tells somebody to wait, so every one of them needs a
+   real answer to "until when". There was one, computed inline, and it was
+   `Date.UTC(y, m + 1, 1)` - the first of the calendar month.
+
+   That is right for a free account and wrong for every paying one. The counter
+   that refused is keyed on `_periodKeyOf`, which for a paying subject is their
+   BILLING ANNIVERSARY, not the 1st. Somebody who renews on the 20th and runs
+   out on the 5th was told their allowance returns on the 1st - fifteen days
+   early - and the client unlocks the composer on that date, so the next thing
+   they send is refused again with no explanation.
+
+   Same clamping as `_periodStartISO` because it has to land on the same day
+   the charge does: the 31st is the 30th in September and the 28th in
+   February. Derived from that function's answer rather than recomputed, so
+   the two cannot drift apart. */
+function _periodResetAtFor(renewedAt, plan, customCfg, nowMs) {
+  const now = nowMs || Date.now();
+  const anchor = +renewedAt || 0;
+  const n = new Date(now);
+  // No billing anniversary to anchor to: the calendar month is the window.
+  if (!anchor || !(_planPriceUSD(plan, customCfg) > 0)) {
+    return Date.UTC(n.getUTCFullYear(), n.getUTCMonth() + 1, 1);
+  }
+  const start = _periodStartISO(anchor, now).split('-').map(Number);
+  const anchorDay = new Date(anchor).getUTCDate();
+  let y = start[0], mo = start[1] - 1 + 1;          // the month AFTER this period
+  if (mo > 11) { mo -= 12; y += 1; }
+  const d = Math.min(anchorDay, new Date(Date.UTC(y, mo + 1, 0)).getUTCDate());
+  return Date.UTC(y, mo, d);
+}
+/* The same question asked of a resolved user, which is what most callers have. */
+const _periodResetAtOf = (user, nowMs) =>
+  _periodResetAtFor(user && user.billingRenewedAt, user && user.plan, user && user.customCfg, nowMs);
 
 /* The key for a billing subject's current allowance window. Takes what it
    needs rather than a whole user, so the cron and the request path - which
@@ -12708,8 +12747,10 @@ async function aiProxy(request, env, ctx) {
   if (!mRes.allowed) {
     // give back the daily reservation we just took - this call isn't happening
     await counter(env, dName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 35 });
-    const now = new Date();
-    const resetAt = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+    /* The BILLING period, not the calendar month - `mName` above is keyed on
+       `_periodKeyOf(user)`, so the calendar 1st was the wrong date for every
+       paying account and the client unlocked the composer on it. */
+    const resetAt = _periodResetAtOf(user);
     return json({ error: 'Monthly usage limit reached. Upgrade for more room.', code: 'quota_month', resetAt }, 429);
   }
 
@@ -12779,11 +12820,12 @@ async function aiProxy(request, env, ctx) {
          it. Which one bound is decided in _monthlyCeiling, beside the numbers
          it was decided from. */
       const hitFamilyCap = ceiling.source === 'family';
+      const capResetAt = _periodResetAtOf(user);
       return json(hitFamilyCap
         ? { error: 'You have used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.',
-            code: 'family_cap' }
+            code: 'family_cap', resetAt: capResetAt }
         : { error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
-            code: 'quota_month' }, 429);
+            code: 'quota_month', resetAt: capResetAt }, 429);
     }
   }
 

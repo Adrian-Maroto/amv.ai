@@ -2719,27 +2719,50 @@ try{ window.AMVUsage = AMVUsage; }catch(e){}
    When usage runs out (locally-tracked window OR a server quota_day/month),
    the chat stops: sends are blocked, a notice with a LIVE countdown shows in
    the composer, and everything unlocks automatically the moment usage resets. */
-let _quotaLockUntil=0, _quotaTimer=null;
-function quotaLock(resetAt){
-  _quotaLockUntil=Math.max(_quotaLockUntil, resetAt||0);
+/* BEING LOCKED AND KNOWING WHEN IT LIFTS ARE TWO DIFFERENT FACTS.
+
+   They were one variable. `_quotaLockUntil` was both "are we locked" and
+   "until when", so a refusal carrying no reset time could not be represented -
+   and rather than leave the state unrepresentable, the caller invented
+   `Date.now() + 1 hour` to fill it. An hour later the timer below fired
+   `quotaUnlock`, which says "Your usage has reset - you're good to go" and
+   re-enables the composer. For a monthly allowance every word of that was
+   false, and the next send was refused again.
+
+   Split, so an unknown reset is a state the code can hold: locked, with no
+   countdown, showing what the server actually said. The auto-unlock only fires
+   against a reset time somebody real supplied. */
+let _quotaLockUntil=0, _quotaLocked=false, _quotaMsg='', _quotaTimer=null;
+function quotaLock(resetAt, serverMsg){
+  _quotaLocked=true;
+  _quotaLockUntil=Math.max(_quotaLockUntil, +resetAt||0);
+  if(serverMsg) _quotaMsg=String(serverMsg);
   _renderQuotaNotice();
   if(!_quotaTimer){
     _quotaTimer=setInterval(()=>{
-      if(Date.now()>=_quotaLockUntil){ quotaUnlock(); return; }
+      /* Only a KNOWN reset can expire. Without this guard an unknown one (0)
+         is instantly in the past and the lock unlocks itself on the next tick
+         - the same false "you're good to go" by a different route. */
+      if(_quotaLockUntil>0 && Date.now()>=_quotaLockUntil){ quotaUnlock(); return; }
       _renderQuotaNotice();                       // live countdown tick
-      const card=document.querySelector('.quota-reset-live');
-      if(card) card.textContent=_fmtResetIn(_quotaLockUntil-Date.now());
+      if(_quotaLockUntil>0){
+        const card=document.querySelector('.quota-reset-live');
+        if(card) card.textContent=_fmtResetIn(_quotaLockUntil-Date.now());
+      }
     }, 30000);                                     // update every 30s
   }
 }
 function quotaUnlock(){
-  _quotaLockUntil=0;
+  _quotaLockUntil=0; _quotaLocked=false; _quotaMsg='';
   if(_quotaTimer){ clearInterval(_quotaTimer); _quotaTimer=null; }
   const n=$('quota-notice'); if(n) n.remove();
   const ta=$('mta'); if(ta){ ta.disabled=false; ta.placeholder=ta.dataset.ph||ta.placeholder; }
   toast('Your usage has reset - you\u2019re good to go.','success',3500);
 }
-function quotaLocked(){ return _quotaLockUntil>0 && Date.now()<_quotaLockUntil; }
+function quotaLocked(){
+  if(!_quotaLocked) return false;
+  return _quotaLockUntil<=0 || Date.now()<_quotaLockUntil;
+}
 function _renderQuotaNotice(){
   const cia=$('cia'); if(!cia) return;
   let n=$('quota-notice');
@@ -2748,10 +2771,20 @@ function _renderQuotaNotice(){
     n.id='quota-notice'; n.className='quota-notice';
     cia.insertBefore(n, cia.firstChild);
   }
-  n.innerHTML='<span class="quota-notice-dot"></span>You\u2019re out of usage - resets in <b class="quota-reset-live">'+escH(_fmtResetIn(_quotaLockUntil-Date.now()))+'</b>'+
+  /* A countdown only when there is something to count down to. Otherwise the
+     server's own sentence, which is what it was written for. */
+  const known=_quotaLockUntil>Date.now();
+  const tail=known
+    ? 'resets in <b class="quota-reset-live">'+escH(_fmtResetIn(_quotaLockUntil-Date.now()))+'</b>'
+    : escH(_quotaMsg||'your allowance returns at the start of your next billing period.');
+  n.innerHTML='<span class="quota-notice-dot"></span>You\u2019re out of usage - '+tail+
     '<button class="quota-notice-up" data-stab="plans">Upgrade</button>';
   const ta=$('mta');
-  if(ta && !ta.disabled){ ta.dataset.ph=ta.placeholder; ta.disabled=true; ta.placeholder='Out of usage - resets in '+_fmtResetIn(_quotaLockUntil-Date.now()); }
+  if(ta && !ta.disabled){
+    ta.dataset.ph=ta.placeholder; ta.disabled=true;
+    ta.placeholder=known ? 'Out of usage - resets in '+_fmtResetIn(_quotaLockUntil-Date.now())
+                         : 'Out of usage for this billing period';
+  }
 }
 try{ window.quotaLock=quotaLock; window.quotaLocked=quotaLocked; }catch(e){}
 
@@ -7043,10 +7076,27 @@ async function _callAI(msgs, _opts) {
         // A quota 429 is NOT transient. If the server says we're out of usage,
         // stop the chat with the quota card + live countdown instead of
         // retrying or showing a generic error.
-        if(res.status===429 && (srvCode==='quota_day'||srvCode==='quota_month')){
-          const resetAt=err.resetAt||(Date.now()+3600000);
-          quotaLock(resetAt);
-          msgs[streamIdx]={r:'a',c:'',_quota:true,_resetAt:resetAt};
+        if(res.status===429 && (srvCode==='quota_day'||srvCode==='quota_month'||srvCode==='family_cap')){
+          /* AN HOUR WAS NOT A GUESS, IT WAS AN ANSWER, AND IT WAS WRONG.
+
+             This read `err.resetAt || (Date.now()+3600000)`. Two of the four
+             monthly refusals sent no resetAt at all, so somebody who had used
+             their whole BILLING CYCLE was shown a live countdown saying their
+             usage came back in 59 minutes - with the server's own sentence
+             ("It resets next month") thrown away to make room for it. An hour
+             later `quotaUnlock` fired a green toast saying "Your usage has
+             reset - you're good to go", re-enabled the composer, and the next
+             thing they sent was refused again.
+
+             That is on the one screen where somebody decides whether to pay.
+
+             So there is no fallback now. A reset time the server did not send
+             is a reset time nobody knows, and the card says what it does know
+             - the server's sentence - instead of a number it made up. */
+          const resetAt = +err.resetAt || 0;
+          quotaLock(resetAt, srvMsg);
+          msgs[streamIdx]={r:'a',c:'',_quota:true,_resetAt:resetAt,
+                           _quotaCode:srvCode,_quotaMsg:srvMsg};
           setMsgs(msgs); S.busy=false; renderChatMsgs();
           _recordUsageOnce();
           return;
@@ -8115,12 +8165,31 @@ function renderChatMsgs() {
     if(!isU && m._quota){
       const plan=(loadStr('amv_plan')||'free');
       const nextPlan=plan==='free'?'Pro':plan==='pro'?'Elite':'Ultra';
-      const resetTxt=_fmtResetIn(Math.max(0,(m._resetAt||_quotaLockUntil||Date.now())-Date.now()));
+      /* THREE THINGS THIS CARD USED TO GET WRONG, ALL AT ONCE.
+
+         It always drew a countdown, falling back to `Date.now()` when no reset
+         time was known - which renders as "under a minute" for a limit that
+         comes back next month. It always offered Upgrade, including to a child
+         whose PARENT set the limit, for whom upgrading is not an available
+         action and buying a bigger plan would not lift it. And it always said
+         "I'll wait", which is advice about an hour, not about a billing cycle.
+
+         The server's own sentence is the fallback now, because it was written
+         for this and was being discarded. */
+      const isFamily = m._quotaCode === 'family_cap';
+      const when = +m._resetAt || 0;
+      const whenTxt = when > Date.now()
+        ? 'Your usage resets in <b class="quota-reset-live">' + escH(_fmtResetIn(when - Date.now())) + '</b>. '
+        : (m._quotaMsg ? escH(m._quotaMsg) + ' ' : '');
       content='<div class="quota-card"><div class="quota-ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>'+
         '<div class="quota-body"><b>You\u2019re out of usage for now.</b>'+
-        '<span>Your usage resets in <b class="quota-reset-live">'+escH(resetTxt)+'</b>. Upgrade to '+nextPlan+' for much higher limits and keep going right now.</span>'+
-        '<div class="quota-actions"><button class="quota-upgrade" data-action="quota-upgrade" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>'+
-        '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">I\u2019ll wait</button></div></div></div>';
+        (isFamily
+          ? '<span>'+whenTxt+'Whoever manages your family can raise this limit - a bigger plan will not lift it.</span>'+
+            '<div class="quota-actions"><button class="quota-later" data-action="quota-later" data-idx="'+i+'">Got it</button></div>'
+          : '<span>'+whenTxt+'Upgrade to '+nextPlan+' for much higher limits and keep going right now.</span>'+
+            '<div class="quota-actions"><button class="quota-upgrade" data-action="quota-upgrade" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>'+
+            '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">'+(when>Date.now()?'I\u2019ll wait':'Got it')+'</button></div>')+
+        '</div></div>';
     } else if(!isU && m._error){
       /* Retry is the right offer for a hiccup and the wrong one for a
          decision. A refusal a plan lifts gets the plan instead. */

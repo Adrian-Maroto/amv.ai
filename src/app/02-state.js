@@ -434,27 +434,50 @@ try{ window.AMVUsage = AMVUsage; }catch(e){}
    When usage runs out (locally-tracked window OR a server quota_day/month),
    the chat stops: sends are blocked, a notice with a LIVE countdown shows in
    the composer, and everything unlocks automatically the moment usage resets. */
-let _quotaLockUntil=0, _quotaTimer=null;
-function quotaLock(resetAt){
-  _quotaLockUntil=Math.max(_quotaLockUntil, resetAt||0);
+/* BEING LOCKED AND KNOWING WHEN IT LIFTS ARE TWO DIFFERENT FACTS.
+
+   They were one variable. `_quotaLockUntil` was both "are we locked" and
+   "until when", so a refusal carrying no reset time could not be represented -
+   and rather than leave the state unrepresentable, the caller invented
+   `Date.now() + 1 hour` to fill it. An hour later the timer below fired
+   `quotaUnlock`, which says "Your usage has reset - you're good to go" and
+   re-enables the composer. For a monthly allowance every word of that was
+   false, and the next send was refused again.
+
+   Split, so an unknown reset is a state the code can hold: locked, with no
+   countdown, showing what the server actually said. The auto-unlock only fires
+   against a reset time somebody real supplied. */
+let _quotaLockUntil=0, _quotaLocked=false, _quotaMsg='', _quotaTimer=null;
+function quotaLock(resetAt, serverMsg){
+  _quotaLocked=true;
+  _quotaLockUntil=Math.max(_quotaLockUntil, +resetAt||0);
+  if(serverMsg) _quotaMsg=String(serverMsg);
   _renderQuotaNotice();
   if(!_quotaTimer){
     _quotaTimer=setInterval(()=>{
-      if(Date.now()>=_quotaLockUntil){ quotaUnlock(); return; }
+      /* Only a KNOWN reset can expire. Without this guard an unknown one (0)
+         is instantly in the past and the lock unlocks itself on the next tick
+         - the same false "you're good to go" by a different route. */
+      if(_quotaLockUntil>0 && Date.now()>=_quotaLockUntil){ quotaUnlock(); return; }
       _renderQuotaNotice();                       // live countdown tick
-      const card=document.querySelector('.quota-reset-live');
-      if(card) card.textContent=_fmtResetIn(_quotaLockUntil-Date.now());
+      if(_quotaLockUntil>0){
+        const card=document.querySelector('.quota-reset-live');
+        if(card) card.textContent=_fmtResetIn(_quotaLockUntil-Date.now());
+      }
     }, 30000);                                     // update every 30s
   }
 }
 function quotaUnlock(){
-  _quotaLockUntil=0;
+  _quotaLockUntil=0; _quotaLocked=false; _quotaMsg='';
   if(_quotaTimer){ clearInterval(_quotaTimer); _quotaTimer=null; }
   const n=$('quota-notice'); if(n) n.remove();
   const ta=$('mta'); if(ta){ ta.disabled=false; ta.placeholder=ta.dataset.ph||ta.placeholder; }
   toast('Your usage has reset - you\u2019re good to go.','success',3500);
 }
-function quotaLocked(){ return _quotaLockUntil>0 && Date.now()<_quotaLockUntil; }
+function quotaLocked(){
+  if(!_quotaLocked) return false;
+  return _quotaLockUntil<=0 || Date.now()<_quotaLockUntil;
+}
 function _renderQuotaNotice(){
   const cia=$('cia'); if(!cia) return;
   let n=$('quota-notice');
@@ -463,10 +486,20 @@ function _renderQuotaNotice(){
     n.id='quota-notice'; n.className='quota-notice';
     cia.insertBefore(n, cia.firstChild);
   }
-  n.innerHTML='<span class="quota-notice-dot"></span>You\u2019re out of usage - resets in <b class="quota-reset-live">'+escH(_fmtResetIn(_quotaLockUntil-Date.now()))+'</b>'+
+  /* A countdown only when there is something to count down to. Otherwise the
+     server's own sentence, which is what it was written for. */
+  const known=_quotaLockUntil>Date.now();
+  const tail=known
+    ? 'resets in <b class="quota-reset-live">'+escH(_fmtResetIn(_quotaLockUntil-Date.now()))+'</b>'
+    : escH(_quotaMsg||'your allowance returns at the start of your next billing period.');
+  n.innerHTML='<span class="quota-notice-dot"></span>You\u2019re out of usage - '+tail+
     '<button class="quota-notice-up" data-stab="plans">Upgrade</button>';
   const ta=$('mta');
-  if(ta && !ta.disabled){ ta.dataset.ph=ta.placeholder; ta.disabled=true; ta.placeholder='Out of usage - resets in '+_fmtResetIn(_quotaLockUntil-Date.now()); }
+  if(ta && !ta.disabled){
+    ta.dataset.ph=ta.placeholder; ta.disabled=true;
+    ta.placeholder=known ? 'Out of usage - resets in '+_fmtResetIn(_quotaLockUntil-Date.now())
+                         : 'Out of usage for this billing period';
+  }
 }
 try{ window.quotaLock=quotaLock; window.quotaLocked=quotaLocked; }catch(e){}
 
