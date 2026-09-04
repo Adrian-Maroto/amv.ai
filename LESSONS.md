@@ -9028,3 +9028,35 @@ never released them, so the second request could not reach the queue at all and
 the file died on "approvals is busy" instead of measuring anything. A fake that
 cannot release is not a lock, it is a deadlock, and it hid the very race it was
 built to expose.
+
+## 368. The gate on the shell had no ceiling, and its comment claimed a property it did not have
+
+The bridge runs shell commands on somebody's own machine. Everything that
+reaches it passes one gate: the code printed in their terminal. That gate had
+no limit on wrong answers at all.
+
+Ninety-six bits is not brute forceable over a network, so this was never a
+break. It is the absence of the thing that turns an attack into something a
+person NOTICES - on the one surface where noticing is the entire defence,
+because there is no server-side log and no operator, only somebody looking at
+a terminal window.
+
+**A guard with no ceiling is not wrong, it is silent.** The question to ask of
+any gate is not only "can this be forced" but "if somebody spent all night on
+it, where would that show up". Here the answer was nowhere.
+
+The comment beside the code said "The code is single-use". Nothing made it so:
+it stayed valid for the daemon's whole life and could be used repeatedly, each
+use silently replacing the token the previous pairing held. And reusable is the
+RIGHT design - the session token lives in sessionStorage, so closing the tab
+loses it, and a single-use code would mean restarting the daemon to carry on
+working. The claim was what was wrong, not the behaviour.
+
+That is the third time this round that a comment described a property the code
+did not have (LESSONS 362's "the subscription's real billing history", 365's
+warning about a shape mistake sitting above the same mistake). A comment is
+evidence of what somebody INTENDED, and reads to every later eye as evidence of
+what is true. When they disagree, decide which one is right before changing
+either - here the code was, and once that was settled the two things actually
+missing were obvious: the ceiling, and a line on the terminal when re-pairing
+disconnects an existing session, which is the only place that would ever show.

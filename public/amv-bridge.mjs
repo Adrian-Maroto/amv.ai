@@ -78,10 +78,31 @@ const isLoopbackOrigin = (o) => /^http:\/\/(?:localhost|127\.0\.0\.1)(?::\d{1,5}
 /* Shown once, in the terminal. Six groups of four is long enough that
    guessing is hopeless and short enough that somebody will actually type it. */
 const PAIR_CODE = randomBytes(12).toString('hex').toUpperCase().match(/.{4}/g).join('-');
-/* Issued on a successful pair. The code is single-use; this is what every
-   later request carries. */
+/* Issued on a successful pair; this is what every later request carries.
+
+   THE COMMENT HERE USED TO SAY "The code is single-use". It was not, and
+   nothing made it so - the code stayed valid for the whole life of the daemon
+   and could be used any number of times, each time silently replacing the
+   token the previous pairing was using.
+
+   Reusable is the RIGHT design and the claim was the thing that was wrong:
+   the session token lives in sessionStorage, so closing the tab loses it, and
+   a single-use code would mean restarting the daemon to carry on working. The
+   trust model is that you must be able to see this terminal. So the code stays
+   reusable and the two things that were actually missing are here instead.
+
+   A guessing limit, because there was none at all: 96 bits is not brute
+   forceable over a network, but a bridge with no attempt ceiling is one whose
+   log fills with attempts nobody counted, and the ceiling is what turns that
+   into a thing somebody notices.
+
+   And a line on the terminal when an existing session is replaced. Re-pairing
+   revokes whatever was connected before; if that was not you, this is the
+   only place it would ever have shown. */
 let sessionToken = '';
 let pairedAt = 0;
+const PAIR_MAX_FAILS = 5;
+let pairFails = 0;
 
 const MAX_BODY = 8 * 1024 * 1024;
 const MAX_OUTPUT = 2 * 1024 * 1024;
@@ -372,17 +393,31 @@ const server = createServer(async (req, res) => {
 
   if (path === '/amv-bridge/pair' && req.method === 'POST') {
     let body; try { body = await readBody(req); } catch (e) { return json(res, 400, { error: 'bad_body' }); }
+    if (pairFails >= PAIR_MAX_FAILS) {
+      return json(res, 429, { error: 'too_many_attempts',
+                              detail: 'Too many wrong codes. Stop the bridge and start it again to pair.' });
+    }
     const given = String(body.code || '').trim().toUpperCase();
     const want = PAIR_CODE;
     const a = Buffer.from(given), b = Buffer.from(want);
     if (a.length !== b.length || !timingSafeEqual(a, b)) {
-      console.log('  ✗ a pairing attempt used the wrong code');
-      return json(res, 403, { error: 'bad_code' });
+      pairFails++;
+      const left = PAIR_MAX_FAILS - pairFails;
+      console.log('  ✗ a pairing attempt used the wrong code' +
+                  (left > 0 ? ` (${left} left before pairing is locked)` : ' - pairing is now locked, restart the bridge'));
+      return json(res, 403, { error: 'bad_code', attemptsLeft: Math.max(0, left) });
     }
+    /* A correct code clears the count: the failures were somebody typing it
+       wrong, which is the common case, and holding those against them after
+       they get it right would lock the person who owns the terminal out. */
+    pairFails = 0;
+    const replaced = !!sessionToken;
     sessionToken = randomBytes(32).toString('hex');
     pairedAt = Date.now();
-    console.log('  ✓ paired with AMV');
-    return json(res, 200, { token: sessionToken, folder: ROOT.split(sep).pop(), root: ROOT });
+    console.log(replaced
+      ? '  ✓ paired with AMV - the previous session was disconnected'
+      : '  ✓ paired with AMV');
+    return json(res, 200, { token: sessionToken, folder: ROOT.split(sep).pop(), root: ROOT, replaced });
   }
 
   if (!tokenOk(req.headers['x-amv-bridge-token'])) return json(res, 401, { error: 'not_paired' });
