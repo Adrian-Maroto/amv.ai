@@ -77,7 +77,7 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
 
    The filter was a substring match on the FILENAME, so `npm run test:worker`
    selected files whose name contained "worker" - which is one file out of the
-   hundred and thirty-nine in tests/worker. Anybody running the shortcut before
+   two hundred-odd in tests/worker. Anybody running the shortcut before
    pushing believed they had run the Worker suite and had run 0.7% of it.
 
    `npm run check` was never affected: it calls this with no filter and runs

@@ -1,8 +1,13 @@
 # AMV.AI - Project Guide
 
-AMV is a premium AI product (chat, images, video, autonomous agents, a
-marketplace with payouts, subscriptions) built to production quality. This file
-is the standing contract for how work is done here. Read it first, every session.
+AMV is a premium AI product (chat, code and app building, research, documents,
+autonomous agents, a marketplace with payouts, subscriptions) built to
+production quality. Image and video GENERATION were removed end to end - it
+reads an uploaded image, it does not make one - so do not reintroduce them in
+copy, docs or config (LESSONS 349, 353).
+
+This file is the standing contract for how work is done here. Read it first,
+every session.
 
 Companion docs (do not duplicate them here - read them):
 - `CONTEXT.md` - product brief and architecture background.
@@ -71,7 +76,10 @@ Companion docs (do not duplicate them here - read them):
   `_aiReadStream` - it reads the events and returns the NON-streaming message
   shape (`{content, stop_reason, usage}`). Never call `res.json()` on that
   route; see LESSONS 309, where doing so had silently broken every surface
-  except chat.
+  except chat. `stream:false` from an API caller is REFUSED with
+  `code:'stream_required'` before the rate limit and before the reservation -
+  silently ignoring a parameter produces a parse error in somebody else's code
+  with no cause attached (LESSONS 356).
 - **The bridge** (`bridge/amv-bridge.mjs`) is a zero-dependency daemon somebody
   runs on their own computer; it is what gives AMV a filesystem and a shell.
   `build.mjs` copies it to `amv-bridge.mjs` beside `index.html` (the way `sw.js`
@@ -109,18 +117,23 @@ Companion docs (do not duplicate them here - read them):
 
 ## Verify like this
 - `npm run check` is the shippability gate (syntax, worker load, build fresh,
-  all suites, deploy preflight -> "SHIPPABLE"). Roughly 15 MINUTES: the suites
+  all suites, deploy preflight -> "SHIPPABLE"). Roughly 20 MINUTES: the suites
   run several at a time (`tests/run.mjs`, default four, `--jobs=N` to change it,
-  `--serial` to reproduce something that might be about ordering). All 170 e2e
-  suites take ~13 minutes together; serially they took hours, which is why the
+  `--serial` to reproduce something that might be about ordering). The 401
+  suites take ~20 minutes together; serially they took hours, which is why the
   runner is parallel now. Output is buffered per suite and printed in selection
   order, so a parallel transcript reads exactly like a serial one - and a slow
   suite early in the list holds back the printing of everything behind it, which
-  is what the `[n/138]` counter on stderr is for.
-  The harness asks the kernel for a free port, so nothing binds a fixed one and
-  two runs no longer collide.
-- `npm run check:fast` is the ITERATION loop: ~7 seconds, seven stages (syntax,
-  worker loads, build fresh, dead guards, page weight, deps, preflight). It
+  is what the `[n/401]` counter on stderr is for (it counts whatever was
+  selected, so the number moves as suites are added).
+  Both harnesses ask the kernel for a free port - `serveApp` in
+  `tests/lib/harness.mjs` and `serveArtifact` in `tests/lib/live-backend.mjs`,
+  which was left on hand-picked numbers until a collision showed up as
+  EADDRINUSE from inside a suite - so nothing binds a fixed one and two runs no
+  longer collide.
+- `npm run check:fast` is the ITERATION loop: ~6 seconds, eight stages (syntax,
+  worker loads, build fresh, unstyled classes, dead guards, page weight, deps,
+  preflight). It
   deliberately SKIPS the suites and the workerd stage, so it catches a broken
   build and a stale artifact but NOT a behavioural regression. Use it between
   edits; use the full `npm run check` before calling anything done.
