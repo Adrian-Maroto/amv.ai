@@ -18,9 +18,11 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 
 /* run check.mjs, return { code, out } */
-function runCheck() {
+function runCheck(env) {
+  const opts = { cwd: ROOT, stdio: 'pipe', timeout: 180000,
+                 env: Object.assign({}, process.env, env || {}) };
   try {
-    const out = execSync('node check.mjs --fast', { cwd: ROOT, stdio: 'pipe', timeout: 180000 }).toString();
+    const out = execSync('node check.mjs --fast', opts).toString();
     return { code: 0, out };
   } catch (e) {
     return { code: e.status || 1, out: (e.stdout || '').toString() + (e.stderr || '').toString() };
@@ -82,26 +84,37 @@ section('The dev KV placeholder does not fail the whole gate');
    The state under test is now WRITTEN rather than assumed, so this proves the
    same thing on a configured deployment as on a fresh clone. */
 {
-  const TOML = join(ROOT, 'wrangler.toml');
-  const bakToml = join(__dir, '.build', 'wrangler.bak.toml');
-  copyFileSync(TOML, bakToml);
-  try {
-    const real = readFileSync(TOML, 'utf8');
-    const withPlaceholder = real.replace(/^id = "[^"]*"$/m, 'id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"');
-    ok(withPlaceholder.includes('REPLACE_WITH_YOUR_KV_NAMESPACE_ID'),
-       'the placeholder state can actually be built from the real config');
-    writeFileSync(TOML, withPlaceholder);
+  /* AGAINST A COPY, NOT THE FILE THE DEPLOY USES.
 
-    const r = runCheck();
-    ok(r.code === 0, 'with only the dev placeholder outstanding, the gate is green', r.code);
-    ok(/SHIPPABLE/.test(r.out), 'it reports SHIPPABLE');
-    ok(/placeholder/i.test(r.out), 'while still surfacing the KV placeholder as a warning');
-  } finally {
-    copyFileSync(bakToml, TOML);
-  }
-  ok(!readFileSync(TOML, 'utf8').includes('REPLACE_WITH_YOUR_KV_NAMESPACE_ID')
-     || readFileSync(bakToml, 'utf8').includes('REPLACE_WITH_YOUR_KV_NAMESPACE_ID'),
-     'the real wrangler.toml is restored, whatever it held');
+     This used to write the placeholder into the real wrangler.toml, run the
+     gate, and restore it in a finally. It always restored - but for most of a
+     twenty-minute run the deploy config on disk named a KV namespace that does
+     not exist, and anything committing during that window would have shipped
+     it and broken the Worker on the next deploy. A stop hook asked to commit it
+     three times in one session; it only takes one agreeing.
+
+     The preflight takes the config path from AMV_WRANGLER_TOML when that names
+     a file that exists, so the placeholder state is built in a temp file and
+     the real one is never touched. The assertion below is now about the
+     property that matters - that the file was not modified AT ALL - which the
+     old shape could not check, because it was the thing doing the modifying. */
+  const TOML = join(ROOT, 'wrangler.toml');
+  const before = readFileSync(TOML, 'utf8');
+  const tmp = join(__dir, '.build', 'wrangler.placeholder.toml');
+  const withPlaceholder = before.replace(/^id = "[^"]*"$/m, 'id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"');
+  ok(withPlaceholder.includes('REPLACE_WITH_YOUR_KV_NAMESPACE_ID'),
+     'the placeholder state can actually be built from the real config');
+  ok(withPlaceholder !== before,
+     'and it really differs from what is on disk, so the run below means something');
+  writeFileSync(tmp, withPlaceholder);
+
+  const r = runCheck({ AMV_WRANGLER_TOML: tmp });
+  ok(r.code === 0, 'with only the dev placeholder outstanding, the gate is green', r.code);
+  ok(/SHIPPABLE/.test(r.out), 'it reports SHIPPABLE');
+  ok(/placeholder/i.test(r.out), 'while still surfacing the KV placeholder as a warning');
+
+  ok(readFileSync(TOML, 'utf8') === before,
+     'and the real wrangler.toml was never touched, so nothing can commit it mid-run');
 }
 
 section('The gate does not fail because the suite talked too much');

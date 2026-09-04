@@ -18,7 +18,24 @@ import { dirname, join } from 'path';
 import { execSync } from 'child_process';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const R = (p) => join(ROOT, p);
+/* THE CONFIG THIS RUN SHOULD READ.
+
+   check.test.mjs proves the KV placeholder is a warning rather than a hard
+   failure, and it proved it by writing the placeholder into the REAL
+   wrangler.toml, running the gate, and restoring it. That works and it always
+   restored correctly - but for most of a twenty-minute run the deploy config
+   on disk named a namespace that does not exist, and anything that committed
+   during that window would have shipped it. A stop hook asked three times.
+
+   So the path is overridable. The test points this at a copy carrying the
+   placeholder, the real file is never the thing being edited, and the window
+   is gone rather than survived. Ignored unless it names a file that exists, so
+   a stale or mistyped value cannot quietly make the preflight read nothing. */
+const TOML_OVERRIDE = (() => {
+  const v = process.env.AMV_WRANGLER_TOML;
+  return (v && existsSync(v)) ? v : '';
+})();
+const R = (p) => (p === 'wrangler.toml' && TOML_OVERRIDE) ? TOML_OVERRIDE : join(ROOT, p);
 
 const errors = [];
 const warns = [];
