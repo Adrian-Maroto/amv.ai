@@ -32,7 +32,13 @@ const seed = () => page.evaluate(() => {
     { id: 'b', title: 'Plain one',   starred: false, msgs: [{ r: 'u', c: 'yo' }], updated: 1 },
   ];
   S.cur = 'a'; S.starFilter = false;
-  if (Array.isArray(window._SESSIONS)) _SESSIONS.length = 0;
+  /* Cleared through the BARE binding. `_SESSIONS` is a top-level `let`, so it
+     lives in the global lexical environment and is never a property of
+     `window` - the guard this used to read, `Array.isArray(window._SESSIONS)`,
+     was `Array.isArray(undefined)` and the list was never cleared at all.
+     renderHist() folds `_SESSIONS` in whenever the star filter is off, so the
+     isolation these sections assume was resting on it happening to be empty. */
+  if (Array.isArray(_SESSIONS)) _SESSIONS.length = 0;
   renderHist();
 });
 const titles = () => page.evaluate(() =>
@@ -93,7 +99,7 @@ section('With nothing starred it explains itself instead of looking broken');
   await page.evaluate(() => {
     S.convs = [{ id: 'b', title: 'Plain one', starred: false, msgs: [{ r: 'u', c: 'yo' }], updated: 1 }];
     S.cur = 'b'; S.starFilter = false;
-    if (Array.isArray(window._SESSIONS)) _SESSIONS.length = 0;
+    if (Array.isArray(_SESSIONS)) _SESSIONS.length = 0;
     renderHist();
   });
   await page.click('#star-filter');
@@ -107,7 +113,7 @@ section('The Recents heading can be hidden, which needed a class rather than a s
 {
   const hidden = await page.evaluate(() => {
     S.convs = []; S.starFilter = false;
-    if (Array.isArray(window._SESSIONS)) _SESSIONS.length = 0;
+    if (Array.isArray(_SESSIONS)) _SESSIONS.length = 0;
     renderHist();
     return getComputedStyle(document.getElementById('hist-header')).display;
   });

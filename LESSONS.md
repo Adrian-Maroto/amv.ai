@@ -9118,3 +9118,82 @@ The gate caught the tail of this on its own: removing the write left an excuse
 for a key that no longer exists, and the suite's last section - "an excuse that
 has since become untrue is itself a finding" - failed on it. A guard written
 against its own list rotting, doing exactly that.
+
+
+## 371. The test reset two of the three facts, and CI owned the third
+
+`a-blocked-backend-is-not-the-visitors-fault` passed here 24/24 and failed on
+CI, on one assertion: the reason it read back was "the request could not be
+sent" rather than the 503 it had just routed.
+
+The section resets the loader's state before driving it:
+
+    _publicConfigFail = ''; _publicConfigDone = false;
+    await _loadPublicConfig();
+
+The loader begins `if(_publicConfigDone || _publicConfigInFlight) return;`.
+There are THREE facts guarding that door and the test reset two. A load still
+running from boot made the call a silent no-op - the 503 route was never
+exercised, and the assertion read the reason the earlier, real failure had
+recorded. Locally that boot load has always settled by the time the section
+runs; on a loaded runner it had not. A pass that depends on how busy the
+machine is is not a pass, it is a coin landing the same way.
+
+**Resetting state means resetting every fact the code under test consults, not
+the ones the test happens to know about.** The early-return condition is the
+list. If a guard reads three variables, a reset that clears two is a race with
+no failure mode of its own - it just quietly stops testing.
+
+The fix waits for the flag rather than forcing it to false: it is cleared in a
+`finally`, so it is genuinely transient, and forcing it would start a second
+load beside the first instead of after it.
+
+And the first attempt at that fix was wrong in a way that would have looked
+right for ever - it read `window._publicConfigInFlight`. That is a top-level
+`let`, so it lives in the global lexical environment and is NEVER a property of
+`window`; the read is `undefined`, the loop runs zero times, and the suite goes
+on passing locally exactly as before. A wait that never waits is
+indistinguishable from a wait that was never needed. It was caught by probing
+both reads against a deliberately slowed route: the bare identifier came back
+`true` and the loop held for 1423ms, the `window` one came back `undefined`.
+**A fix for a race is not verified by the suite going green - it was green
+before. Reproduce the race first, then watch the fix engage.**
+
+
+## 372. Four comments warning about the same trap, and no control
+
+Chasing 371 down turned up how often this repository has met it before. A sweep
+for `window.<name>` where `<name>` is a top-level `let` or `const` in the bundle
+returned nine sites. EIGHT of them were comments - prose left by whoever lost
+the time, explaining to the next person that a script binding is not a window
+property:
+
+    // NOTE: `S` is a script-scope const - it is NOT on window. Checking
+    // window.S here produced a false negative for a while.
+
+    /* The first version of this assigned `window.getCurConv`, which the bundle
+       never reads - it is a top-level `const`, so the stub was invisible and
+       the meter rendered for the real (empty) chat every time. */
+
+The ninth was live, in `starred-chats-can-actually-be-shown`:
+
+    if (Array.isArray(window._SESSIONS)) _SESSIONS.length = 0;
+
+`Array.isArray(undefined)` is false, so the list was never cleared. `renderHist`
+folds `_SESSIONS` in whenever the star filter is off, so three sections were
+asserting about a list they believed they had emptied and had not. They passed
+because it happened to be empty.
+
+**Four people wrote down the same warning and the fifth still shipped the bug.
+A comment is not a control.** Prose is read by whoever is already looking at
+that line; the person about to make the mistake is by definition somewhere
+else. The moment the same explanation appears in a second file it has stopped
+being a note and become a specification for a check.
+
+It is now stage 6 of the gate. The rule is mechanical and exact: walk the
+bundle at brace depth 0 - which IS the global lexical environment - collect the
+`let` and `const` names, subtract anything the bundle assigns to `window`, and
+fail on any `window.` read of what is left. `var` is not flagged, because a
+top-level `var` genuinely does create a window property. Comments and strings
+are stripped first, or the eight warnings above would be reported as the defect
+they warn about.

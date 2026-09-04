@@ -159,6 +159,37 @@ section('A fetch that merely failed does NOT announce a missing captcha');
     localStorage.removeItem('amv_turnstile_site');
     window.__AMV_TURNSTILE_SITE_KEY__ = '';
     AMV_API.base = base;
+    /* WAIT FOR ANY LOAD ALREADY RUNNING BEFORE STARTING THIS ONE.
+
+       `_loadPublicConfig` returns immediately when `_publicConfigInFlight` is
+       true. This case reset `_publicConfigFail` and `_publicConfigDone` but not
+       that flag, so a load still in flight from boot meant the call below did
+       nothing at all: the 503 route was never exercised and the assertion read
+       whatever the earlier attempt had recorded.
+
+       Locally the earlier load has always settled by now; on a loaded CI runner
+       it had not, and the reason came back as "the request could not be sent"
+       - a real failure, from a different request, reported against this one.
+
+       Waited for rather than forced to false: the flag is cleared in a
+       `finally`, so it is genuinely transient, and forcing it would start a
+       second load beside the first instead of after it.
+
+       Read as a BARE identifier, not off `window`: it is a top-level `let`, so
+       it lives in the global lexical environment and is never a property of
+       `window` - `window._publicConfigInFlight` is `undefined` for ever and the
+       wait would be a loop that never runs. */
+    const t0 = Date.now();
+    while (_publicConfigInFlight && Date.now() - t0 < 10000) {
+      await new Promise(r => setTimeout(r, 25));
+    }
+    /* If the wait ran out, say THAT. Without this the section falls straight
+       back into the bug it was written for - the call below no-ops, the
+       assertion reads the previous attempt's reason, and the failure reads as
+       "the product recorded the wrong reason" when the truth is "this test
+       never got to run". A control that reports the wrong cause is worse than
+       one that stays quiet. */
+    if (_publicConfigInFlight) return { stuck: true };
     _publicConfigFail = ''; _publicConfigDone = false;
     await window._loadPublicConfig();
     const reason = configUnreachable();
@@ -166,7 +197,8 @@ section('A fetch that merely failed does NOT announce a missing captcha');
     const b = document.getElementById('a-turnstile');
     return { reason, html: b.innerHTML || '', hidden: b.style.display === 'none' };
   }, BASE);
-  ok(/503/.test(got.reason), 'the reason is still recorded, as what it was', got.reason);
+  ok(!got.stuck, 'a config load from boot finished, so this one actually ran', got);
+  ok(/503/.test(got.reason || ''), 'the reason is still recorded, as what it was', got.reason);
   ok(got.hidden, 'but the box just hides, because nothing is certain yet', got);
   ok(!/could not reach its own server/i.test(got.html),
      'nothing is announced about a captcha that may not exist', got.html.slice(0, 160));

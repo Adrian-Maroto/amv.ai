@@ -131,12 +131,19 @@ Companion docs (do not duplicate them here - read them):
   which was left on hand-picked numbers until a collision showed up as
   EADDRINUSE from inside a suite - so nothing binds a fixed one and two runs no
   longer collide.
-- `npm run check:fast` is the ITERATION loop: ~7 seconds, nine stages (syntax,
-  worker loads, build fresh, unstyled classes, response shapes, dead guards,
-  page weight, deps, preflight). It
+- `npm run check:fast` is the ITERATION loop: ~8 seconds, ten stages (syntax,
+  worker loads, build fresh, unstyled classes, response shapes, window reads,
+  dead guards, page weight, deps, preflight). It
   deliberately SKIPS the suites and the workerd stage, so it catches a broken
   build and a stale artifact but NOT a behavioural regression. Use it between
   edits; use the full `npm run check` before calling anything done.
+- The WINDOW READS stage exists because of LESSONS 371-372. The bundle is one
+  classic script, so its top-level `let` and `const` are script bindings and are
+  NEVER properties of `window` - `window.S`, `window._SESSIONS`,
+  `window._publicConfigInFlight` all read `undefined`, with no error either way.
+  Four separate comments in this repo warn about it and a fifth site still
+  shipped it, which is what turned the warning into a stage. A `var` is not
+  flagged: a top-level `var` really does create a window property.
 - The DEAD GUARDS stage exists because of LESSONS 297. It fails when
   `typeof X === 'function'` names something defined nowhere - a guard that can
   never pass, so whatever it protects never runs. That is not theoretical: it

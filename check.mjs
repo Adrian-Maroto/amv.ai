@@ -21,7 +21,7 @@
    ───────────────────────────────────────────────────────────────────────── */
 import { gzipSync } from 'zlib';
 import { execSync } from 'child_process';
-import { readFileSync, existsSync, writeFileSync, writeSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, writeSync, readdirSync, statSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { codeOnly } from './tests/lib/source.mjs';
@@ -95,7 +95,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 9 : 11;
+const TOTAL = FAST ? 10 : 12;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -573,6 +573,117 @@ step('No client reads a field the server does not send', () => {
      SHIPPABLE. A finding is a failure; only an absent stage is a note. */
   if (bad.length) {
     throw new Error('A client reads a field its endpoint never returns:\n  ' + bad.join('\n  '));
+  }
+});
+
+/* A TOP-LEVEL `let` IS NOT A PROPERTY OF `window`, AND READING IT AS ONE IS SILENT.
+
+   This trap has now cost time five separate times in this repository, and four
+   of the five left a comment behind explaining it to the next person - which is
+   how you can tell a comment is not a control.
+
+   The bundle is one classic script, so its top-level `let` and `const` live in
+   the global lexical environment. Code in the same scope reaches them by name;
+   `window.<name>` does NOT, and never will. There is no error either way: the
+   read is `undefined`, the write creates an unrelated second variable, and
+   whatever depended on it quietly stops happening.
+
+     - `window.getCurConv = stub` - the stub was invisible and the chat meter
+       measured the real, empty conversation every time.
+     - `window.S && ...` as a wait predicate - waited out its whole timeout.
+     - `window._GLOBAL_KEYS` - asked whether the set happens to be exposed,
+       which is not the question, and answered no while the key was in it.
+     - `if (Array.isArray(window._SESSIONS)) _SESSIONS.length = 0` - always
+       false, so three sections of the starred-chats suite were resting on the
+       list happening to be empty rather than on having emptied it.
+     - `while (window._publicConfigInFlight)` - a wait for a race that looped
+       zero times, written as the FIX for that race (LESSONS 371).
+
+   Every one of them is a test that goes green while testing less than it says.
+   That is the worst failure a test can have, so it is a stage.
+
+   `var` is deliberately NOT flagged: a top-level `var` really does create a
+   window property, so reading one that way is odd but correct. Comments and
+   strings are stripped first, or the four comments above would be reported as
+   the defect they warn about - the mistake the dead-guards stage is named for. */
+step('No window read reaches for a binding that is not on window', () => {
+  /* STRINGS BLANKED, not just comments. The depth walk below counts braces, and
+     `codeOnly` keeps string literals by default - so a `}` inside a sentence of
+     prose in a string skews the depth and the walk starts reading nested code as
+     top-level. Measured: it invented seven bindings named `not`, `real`,
+     `never`, `do`, `and`, `or` and `so`, every one of them a word lifted out of
+     an English sentence. None of those is a plausible read today, and a control
+     that can report `window.not` is a control that will one day be wrong in
+     public. Blanking strings removes all seven and misses nothing. */
+  const src = codeOnly(readFileSync(R('app.js'), 'utf8'), { blankStrings: true });
+
+  /* Brace depth 0 in the concatenated bundle IS the global lexical
+     environment, so the depth walk answers the question exactly rather than
+     approximating it with "declared in column 1". */
+  const lexical = new Set();
+  let d = 0;
+  const re = /[{}]|(?:^|[\n;])\s*(let|const)\s+/g;
+  for (let m; (m = re.exec(src));) {
+    if (m[0] === '{') { d++; continue; }
+    if (m[0] === '}') { d--; continue; }
+    if (d !== 0) continue;
+    let i = re.lastIndex, dep = 0, buf = '';
+    for (; i < src.length && buf.length < 4000; i++) {
+      const c = src[i];
+      if ('{[('.includes(c)) dep++;
+      else if ('}])'.includes(c)) { if (dep === 0) break; dep--; }
+      else if (c === ';' && dep === 0) break;
+      buf += c;
+    }
+    let dep2 = 0, cur = '', parts = [];
+    for (const c of buf) {
+      if ('{[('.includes(c)) dep2++; else if ('}])'.includes(c)) dep2--;
+      if (c === ',' && dep2 === 0) { parts.push(cur); cur = ''; } else cur += c;
+    }
+    parts.push(cur);
+    /* A destructured part starts with `{` or `[` and is skipped rather than
+       guessed at - it loses coverage, never correctness. */
+    for (const p of parts) { const mm = p.match(/^\s*([A-Za-z_$][\w$]*)/); if (mm) lexical.add(mm[1]); }
+  }
+  /* Anything the bundle deliberately publishes is on window and is fine to
+     read there - that is what `window._loadPublicConfig = _loadPublicConfig`
+     beside the flag is for. */
+  for (const m of src.matchAll(/window\.([A-Za-z0-9_$]+)\s*=/g)) lexical.delete(m[1]);
+  for (const m of src.matchAll(/globalThis\.([A-Za-z0-9_$]+)\s*=/g)) lexical.delete(m[1]);
+
+  const files = [];
+  (function walk(dir) {
+    for (const e of readdirSync(dir)) {
+      const f = join(dir, e);
+      if (statSync(f).isDirectory()) walk(f);
+      else if (f.endsWith('.mjs')) files.push(f);
+    }
+  })(R('tests'));
+  for (const f of readdirSync(R('src/app'))) if (f.endsWith('.js')) files.push(R('src/app/' + f));
+
+  /* RAW TEXT FIRST, `codeOnly` ONLY ON A FILE THAT MIGHT BE GUILTY.
+
+     Stripping comments from all 601 test files is 300MB and 32 SECONDS - five
+     times the whole fast loop, for a stage whose answer is almost always "no".
+     A stage that slow is a stage somebody turns off, so the expensive parse is
+     spent only on the handful of files whose raw text mentions one of these
+     names after `window.` at all. The pre-filter can only over-select: every
+     file it skips has no candidate to report even before comments are cut. */
+  const bad = [];
+  for (const f of files) {
+    const raw = readFileSync(f, 'utf8');
+    let maybe = false;
+    for (const m of raw.matchAll(/window\.([A-Za-z_$][\w$]*)/g)) if (lexical.has(m[1])) { maybe = true; break; }
+    if (!maybe) continue;
+    const t = codeOnly(raw);
+    for (const m of t.matchAll(/window\.([A-Za-z_$][\w$]*)/g)) {
+      if (!lexical.has(m[1])) continue;
+      bad.push(f.replace(ROOT + '/', '') + ':' + (t.slice(0, m.index).split('\n').length) +
+               ' reads window.' + m[1] + ', which is a top-level binding and not a window property');
+    }
+  }
+  if (bad.length) {
+    throw new Error('A window read that can only ever be undefined:\n  ' + bad.join('\n  '));
   }
 });
 
