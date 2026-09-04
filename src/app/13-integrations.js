@@ -1134,15 +1134,15 @@ function openSheetEditor(data,name){
   <span style="font-size:var(--t-base);font-weight:600">&#128200; ${escH(name||'Spreadsheet')}</span>
   <span style="font-size:var(--t-xs);color:var(--mu)">${data.length-1} rows &middot; ${data[0]&&data[0].length||0} cols</span>
   <div style="margin-left:auto;display:flex;gap:6px">
-    <button class="ext-btn" data-dact="_sheetDownloadCSV">&#8681; Download</button>
-    <button class="ext-btn" data-stab="extensions">&#10005; Close</button>
+    <button class="btn bs" data-dact="_sheetDownloadCSV">&#8681; Download</button>
+    <button class="btn bs" data-stab="extensions">&#10005; Close</button>
   </div>
 </div>
 <div style="flex:1;overflow:auto;padding:12px">${csvToTable(data)}</div>
 <div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
   <div style="font-size:var(--t-2xs);color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    ${['Analyze trends','Find duplicates','Add totals row','Sort by first column','Summarize data'].map(q=>`<button class="ext-btn" data-dact="runSheetAI" data-darg="${q}">${q}</button>`).join('')}
+    ${['Analyze trends','Find duplicates','Add totals row','Sort by first column','Summarize data'].map(q=>`<button class="btn bs" data-dact="runSheetAI" data-darg="${q}">${q}</button>`).join('')}
   </div>
   <div style="display:flex;gap:8px">
     <input type="text" id="sheet-inp" placeholder="Ask AMV anything about this spreadsheet..." style="flex:1;font-size:var(--t-base)">
@@ -1249,7 +1249,7 @@ function renderAutomationView(){
     if(t.error) h+='<div style="font-size:var(--t-sm);color:var(--red-txt);padding:8px;background:rgba(248,81,73,.08);border-radius:var(--r-sm);margin-top:4px">'+escH(t.error)+'</div>';
     if(t.result){
       h+='<div style="font-size:var(--t-sm);color:var(--mu);background:rgba(0,0,0,.25);border-radius:var(--r-sm);padding:10px;margin-top:8px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65">'+escH(t.result.slice(0,500))+(t.result.length>500?' ...(truncated)':'')+'</div>';
-      h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="ext-btn" data-dact="_toastResultCopied">Copy result</button></div>';
+      h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="btn bs" data-dact="_toastResultCopied">Copy result</button></div>';
     }
     h+='<div style="font-size:var(--t-2xs);color:var(--dim);margin-top:6px">'+new Date(t.created).toLocaleString()+'</div>';
     h+='</div>';
@@ -1261,7 +1261,7 @@ function renderAutomationView(){
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">${cards}</div>
 </div>
 <div class="ss2">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">Task Queue</h3><button class="ext-btn" data-dact="renderAutomationView">Refresh</button></div>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">Task Queue</h3><button class="btn bs" data-dact="renderAutomationView">Refresh</button></div>
 ${taskList}
 </div>
 </div></div>`;

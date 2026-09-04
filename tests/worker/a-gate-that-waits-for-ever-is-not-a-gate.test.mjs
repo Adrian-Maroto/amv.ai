@@ -68,6 +68,50 @@ section('And it skips rather than failing, which is the whole point');
      'while a genuinely unreadable audit still fails, so this is not a blanket pass');
 }
 
+section('An empty answer is not evidence that an advisory was withdrawn');
+{
+  /* THIS ONE COST A RED CI RUN AND A WRONG DELETION.
+
+     The stale check read `!vulns[name]` and concluded the advisory was gone.
+     npm audit can return valid JSON with an empty vulnerabilities object when
+     the advisory endpoint is degraded - the same endpoint that, on this
+     machine, accepts a connection and never answers, which is why the call has
+     a deadline at all. So an audit that came back with nothing was read as
+     proof that three specific advisories had been withdrawn, the roster was
+     emptied on the strength of it, and all three were live the whole time.
+
+     A check that can order a correct exemption destroyed on ambiguous evidence
+     is worse than no check. It now needs positive evidence: either the audit
+     demonstrably had data, or the package is not installed at all.
+
+     Driven against the real rule rather than asserted about the source, because
+     "does the file contain the word installed" would pass on a broken one. */
+  const lock = JSON.parse(readFileSync(join(ROOT, 'package-lock.json'), 'utf8')).packages || {};
+  const isInstalled = n => Object.prototype.hasOwnProperty.call(lock, 'node_modules/' + n);
+  const staleOf = (accepted, vulns) => {
+    const hadData = Object.keys(vulns).length > 0;
+    return Object.keys(accepted).filter(n => !vulns[n] && (hadData || !isInstalled(n)));
+  };
+  const A = { 'extract-zip': 1, '@puppeteer/browsers': 1, '@cloudflare/puppeteer': 1 };
+
+  ok(staleOf(A, {}).length === 0,
+     'an audit that came back with nothing retires nothing', staleOf(A, {}).join(', '));
+  ok(staleOf(A, { 'extract-zip': 1, 'other': 1 }).length === 2,
+     'but an audit that DID find advisories retires the ones it did not name',
+     staleOf(A, { 'extract-zip': 1, 'other': 1 }).join(', '));
+  ok(staleOf(A, A).length === 0,
+     'and retires nothing while every one of them is still flagged', staleOf(A, A).join(', '));
+  ok(staleOf({ ...A, 'left-pad': 1 }, {}).join(',') === 'left-pad',
+     'a package that is not installed at all is stale whatever the audit said',
+     staleOf({ ...A, 'left-pad': 1 }, {}).join(', '));
+
+  /* And the rule that is actually shipped is the one just exercised. */
+  ok(/_auditHadData/.test(code) && /_isInstalled/.test(code),
+     'the script uses that rule rather than a bare !vulns[n]', true);
+  ok(!/const stale = Object\.keys\(ACCEPTED\)\.filter\(n => !vulns\[n\]\);/.test(code),
+     'and the version that could not tell the two apart is gone', true);
+}
+
 section('A non-zero exit always says why');
 {
   /* The gate reads this script's EXIT CODE, so a silent 1 is a stage that

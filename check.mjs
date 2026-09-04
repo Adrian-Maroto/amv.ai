@@ -92,10 +92,10 @@ let stepNum = 0;
 /* Kept in step with the stages below. Adding the dependency audit without
    updating this printed "[8/7]", and the fast total was two out as well - small
    things, and they read as nobody looking at the screen they are on.
-   Full: syntax, worker, build, suites, dead guards, page weight, deps, real
-   runtime, preflight.
+   Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
+   deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 7 : 9;
+const TOTAL = FAST ? 8 : 10;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -313,6 +313,151 @@ if (!FAST) step('All test suites', () => {
     const tail = out.split('\n').slice(-12).join('\n');
     throw new Error(`the suite did not report a clean pass:\n${tail}`);
   }
+});
+
+/* ── A CLASS THAT NAMES A LOOK NOTHING GIVES IT ──────────────────────────
+   The sibling of the stage below, and it exists for the same reason: three
+   real defects found by one scan, none of which any suite could see.
+
+     The GO-LIVE screen - the one somebody reads to decide whether AMV can
+     launch - had .gl-row, .gl-ic, .gl-tag, .gl-body, .gl-label and .gl-how in
+     its markup and rules for none of them, so it rendered as stacked
+     default-weight divs. Sixteen green assertions over that screen did not
+     notice, because "does it contain the word required" is true either way.
+
+     The CHECKOUT SHEET's .pay-body, and the whole "Secure checkout is not
+     connected yet" panel, the same - on the screen that takes money.
+
+     And FOUR MODALS used .ovr-bg / .ovr-card, which have never existed; the
+     real classes are .ov and .ob. Measured side by side, the forked pair came
+     out position:static, z-index:auto, no backdrop, no card, no centring - so
+     a purchase refusal and an abuse report rendered as loose text at the top
+     of the page with the app still clickable behind them.
+
+   A class name is a PROMISE about appearance. Nothing in a build checks that
+   the promise is kept, and CSS has no compiler to notice, so the gap simply
+   accumulates until somebody happens to look at that screen.
+
+   THE RULE. A class written into a static class attribute must either have a
+   rule in styles.css, be read back by the code (querySelector, closest,
+   classList.contains, matches), or be named below with a reason somebody typed.
+   Dynamic class attributes - anything built by concatenation - are skipped:
+   this cannot know what they evaluate to, and guessing would produce exactly
+   the false positives that get a check switched off. */
+step('No class is applied without something to apply', () => {
+  /* Named, so a scanner that breaks says so rather than blaming the code. */
+  const css = readFileSync(R('styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const defined = new Set();
+  for (const m of css.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) defined.add(m[1]);
+
+  /* app.js is the whole client; index.html contributes only its hand-written
+     shell, because everything after the BUILD:JS marker is app.js again and
+     counting it twice proves nothing. */
+  const shell = readFileSync(R('index.html'), 'utf8').split('BUILD:JS')[0];
+  const src = readFileSync(R('app.js'), 'utf8') + '\n' + shell;
+
+  const queried = new Set();
+  for (const m of src.matchAll(/(?:querySelector(?:All)?|closest|getElementsByClassName|matches)\(\s*['"`]([^'"`]+)['"`]/g))
+    for (const c of m[1].split(/[^\w-]+/)) if (c) queried.add(c);
+  for (const m of src.matchAll(/classList\.contains\(\s*['"`]([\w-]+)/g)) queried.add(m[1]);
+
+  if (defined.size < 400 || queried.size < 50)
+    throw new Error(`the class scan found ${defined.size} styled and ${queried.size} queried names, `
+      + 'which cannot be right - the scanner is broken, not the code.');
+
+  /* Every one of these was measured before it was written down. The reason is
+     the point: an entry with no reason is a hole with a comment over it, and
+     the next person needs to know whether this was decided or merely tolerated. */
+  const ALLOWED = {
+    /* A third party finds the element by this exact class. Renaming or styling
+       it is not ours to do. */
+    'cf-turnstile': "Cloudflare's script renders the widget into this class",
+
+    /* The landing block is never painted. #land is hidden on every route - AMV
+       opens straight into a chat, signed in or not - and every element in the
+       hero measures 0x0 in a real browser. It is kept for crawlers and text
+       extractors, which read textContent and do not care about styles. */
+    'hero-rd-eyebrow': 'in the landing block, which is never painted',
+    'hero-rd-sub': 'in the landing block, which is never painted',
+    'hero-rd-row': 'in the landing block, which is never painted',
+    'hero-rd-strip': 'in the landing block, which is never painted',
+    'hero-rd-stat': 'in the landing block, which is never painted',
+
+    /* The element carries its own style="..." attribute. It IS styled - just
+       not through a class - so the class here is a name, and naming a thing is
+       allowed. Migrating these onto tokens is worth doing and is not this
+       stage's business. */
+    'mp-dot': 'styled by its own inline style attribute',
+    'tt-failed': 'styled by its own inline style attribute',
+    'wsc-chat': 'styled by its own inline style attribute',
+    'sched-days': 'styled by its own inline style attribute',
+
+    /* Grouping elements. Each sits inside an already-styled parent and holds
+       children that carry the styling themselves, so the class is a name for a
+       region rather than a description of how it looks. Verified one at a time:
+       every one of these has a child whose class does have a rule. */
+    'act-main': 'a grouping element whose children carry the styling',
+    'adm-fb-main': 'a grouping element whose children carry the styling',
+    'adm-fnl-row': 'a grouping element whose children carry the styling',
+    'ai-retrying': 'a grouping element whose children carry the styling',
+    'conn-body': 'a grouping element whose children carry the styling',
+    'crew-results': 'a grouping element whose children carry the styling',
+    'cw-pop-body': 'a grouping element whose children carry the styling',
+    'cwp-foot': 'a grouping element whose children carry the styling',
+    'golive': 'a grouping element whose children carry the styling',
+    'ho-row-l': 'a grouping element whose children carry the styling',
+    'jb-c': 'a grouping element whose children carry the styling',
+    'mc-head-l': 'a grouping element whose children carry the styling',
+    'mc-sched-mode-row': 'a grouping element whose children carry the styling',
+    'mkt-seller-b': 'a grouping element whose children carry the styling',
+    'pvw-mail': 'a grouping element whose children carry the styling',
+    'pvw-sec': 'a grouping element whose children carry the styling',
+    'pvw-skel-frame': 'a grouping element whose children carry the styling',
+    'pvw-tl-b': 'a grouping element whose children carry the styling',
+    'sess-txt': 'a grouping element whose children carry the styling',
+    'site-l': 'a grouping element whose children carry the styling',
+    'studio-hrow-b': 'a grouping element whose children carry the styling',
+    'uni-ic': 'a grouping element whose children carry the styling',
+    'upg-row-l': 'a grouping element whose children carry the styling',
+  };
+  for (const [k, why] of Object.entries(ALLOWED))
+    if (!why || why.length < 12)
+      throw new Error(`the allowance for .${k} has no real reason written against it`);
+
+  /* PER ELEMENT, NOT PER CLASS - AND THIS IS THE DIFFERENCE BETWEEN A CHECK
+     PEOPLE KEEP AND ONE THEY SWITCH OFF.
+
+     Written per class, this failed on 26 further names, every one of them a
+     second class sitting beside a styled one: `ss2 bill-txns`, `crew-page
+     mc-page`, `hero hero-rd`, `lsec trust-sec`. Those elements ARE styled. The
+     extra name is a hook somebody added and never used - untidy, harmless, and
+     invisible to a person looking at the screen. Reporting 26 of those in order
+     to find 3 real defects is how a check earns a reputation for crying wolf,
+     and the one after that gets ignored too.
+
+     So the unit is the ELEMENT: it fails when NOTHING on an element styles it.
+     That is exactly the shape of all three defects this stage was written for -
+     .gl-row/.gl-done, .pay-body, .ovr-bg/.ovr-card each stood alone - and it is
+     the shape that a person actually sees.
+
+     The honest cost: a modifier that was meant to add something to an
+     already-styled element slips through. That is a smaller, quieter fault than
+     an element with no styling at all, and it is the trade being made. */
+  const bare = new Set();
+  for (const m of src.matchAll(/class="([^"]*)"/g)) {
+    const raw = m[1];
+    /* Built at runtime. What it evaluates to is not knowable from here. */
+    if (/['"`+${]/.test(raw)) continue;
+    const toks = raw.split(/\s+/).filter(t => /^[a-zA-Z][\w-]*$/.test(t));
+    if (!toks.length) continue;
+    if (toks.some(t => defined.has(t) || queried.has(t) || ALLOWED[t])) continue;
+    for (const t of toks) bare.add(t);
+  }
+
+  if (bare.size)
+    throw new Error('these are written into a class attribute, have no rule in styles.css and are never read '
+      + 'back by the code, so the element is named for a look nothing gives it: ' + [...bare].sort().join(', ')
+      + '\n  Style it, use the class that already does the job, or add it to ALLOWED in check.mjs with a reason.');
 });
 
 /* ── A GUARD THAT IS ALWAYS FALSE IS A FEATURE THAT NEVER RAN ─────────────

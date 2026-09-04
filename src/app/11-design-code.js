@@ -3603,7 +3603,7 @@ function _ctxRenderMeter(hostId, kind){
 // Compress the current context, start fresh, and resume seamlessly.
 async function _ctxHandoffFlow(kind){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px">'+
+  r.innerHTML='<div class="ov"><div class="ob" style="max-width:460px">'+
     '<div style="font-size:var(--t-prose);font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
     '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
     '<div class="ctx-bar" style="margin-top:14px"><div class="ctx-fill" id="ctx-anim" style="width:15%"></div></div>'+
@@ -3682,7 +3682,7 @@ function openHandoffManager(){
           '<button class="btn bp" data-ho-use="'+escH(h.id)+'" style="font-size:var(--t-sm)">Resume</button>'+
         '</div></div>').join('')
     : '<div class="ho-empty">No handoffs yet. When a chat or Dev session fills up, AMV creates one automatically.</div>';
-  r.innerHTML='<div class="ovr-bg" id="ho-bg"><div class="ovr-card" style="max-width:560px">'+
+  r.innerHTML='<div class="ov" id="ho-bg"><div class="ob" style="max-width:560px">'+
     '<div style="font-size:var(--t-lg);font-weight:600;margin-bottom:4px">Context handoffs</div>'+
     '<div style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin-bottom:16px">A handoff is a compressed snapshot of a conversation - the goal, every decision, the current state, and the next steps. Load one into a fresh chat and AMV picks up exactly where you left off.</div>'+
     '<div class="ho-list">'+rows+'</div>'+

@@ -10656,3 +10656,74 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   font-size:var(--t-lg); font-weight:600; color:var(--tx); line-height:1.3;
 }
 .pay-setup-s{ font-size:var(--t-sm); color:var(--mu); line-height:1.6; }
+
+/* ── LAYER A148 · classes that named a thing without ever styling it ─────────
+   Each of these is written into a class attribute somewhere and had no rule
+   anywhere in this stylesheet, so the element rendered as whatever it happened
+   to inherit. They are grouped by the sibling they were meant to sit beside,
+   because in every case a sibling on the same row WAS styled and this one was
+   simply missed - .fr-link-l has a rule and .fr-link-v does not, .ho-row-t has
+   one and .ho-to does not. That asymmetry is the tell, and it is what the new
+   gate stage now watches for.
+
+   Nothing here invents a look. Each rule takes the treatment its own styled
+   sibling already uses, so these elements join the design rather than adding
+   to it.                                                                      */
+
+/* A muted paragraph. `.mu` is used for loading lines, empty states and error
+   text across Connectors and the job search - nine places - and only the token
+   --mu existed. The text was rendering at full contrast, which is the one thing
+   a muted class is for. */
+.mu{ color:var(--mu); }
+
+/* Profile card: the name outranks the address, the way .ho-row-t outranks
+   .ho-row-m two hundred lines above. */
+.prof-name{ font-size:var(--t-base); font-weight:600; color:var(--tx); line-height:1.3; }
+.prof-email{ font-size:var(--t-sm); color:var(--mu); line-height:1.4; }
+
+/* Password-reset options: a name and what it does. Same pair, same ranking. */
+.opt-name{ font-size:var(--t-base); font-weight:600; color:var(--tx); }
+.opt-desc{ font-size:var(--t-sm); color:var(--mu); line-height:1.5; margin-top:2px; }
+
+/* Handoff rows: who it went to, and when. .fr-link-l is the model for the
+   first and .ho-row-m for the second. */
+.ho-to{ font-size:var(--t-sm); color:var(--mu); }
+.ho-when{ font-size:var(--t-xs); color:var(--dim); }
+
+/* The value half of a fraud-panel link row. Its label half already has a rule. */
+.fr-link-v{ color:var(--tx); display:flex; gap:5px; flex-wrap:wrap; }
+
+/* Remove-a-member: a <button> with a multiplication sign in it and no class
+   that means anything, so it drew as a raw browser button in the middle of a
+   styled row. 40px because a control on a phone has to be reachable, which is
+   what every-control-is-big-enough-to-hit measures. */
+.team-x{
+  flex:0 0 auto; width:40px; height:40px; padding:0;
+  display:inline-flex; align-items:center; justify-content:center;
+  background:transparent; border:1px solid transparent; border-radius:var(--r-sm);
+  color:var(--mu); font-size:var(--t-lg); line-height:1; cursor:pointer;
+  transition:background-color .13s var(--ease), color .13s var(--ease), border-color .13s var(--ease);
+}
+.team-x:hover{ color:var(--red-txt); border-color:var(--bd); background:var(--s2); }
+.team-x:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+/* The invite link, which is a line of text wrapped around a <code> holding
+   something somebody has to select and copy. It needs to be readable and it
+   needs the code not to overflow the panel on a phone. */
+.team-invite-link{
+  font-size:var(--t-sm); color:var(--mu); line-height:1.6;
+  padding:var(--sp-3); margin-top:var(--sp-2);
+  background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-sm);
+}
+.team-invite-link code{
+  display:block; margin-top:5px; font-family:var(--mn); font-size:var(--t-xs);
+  color:var(--tx); word-break:break-all;
+}
+
+/* Raw model output in Lab. A <pre> falls back to the browser's mono default at
+   whatever size it likes and does not wrap, so a long line pushed the panel
+   sideways. Matches .gl-cmd, which is the same idea one screen over. */
+.lab-pre{
+  margin:0; font-family:var(--mn); font-size:var(--t-xs); line-height:1.6;
+  color:var(--tx); white-space:pre-wrap; word-break:break-word;
+}

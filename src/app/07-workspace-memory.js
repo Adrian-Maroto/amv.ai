@@ -947,7 +947,7 @@ function _mktBlockedDialog(reason, action, category){
   const icon = needsVer
     ? '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
     : '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
-  r.innerHTML='<div class="ovr-bg" id="mkb-bg"><div class="ovr-card" style="max-width:470px">'+
+  r.innerHTML='<div class="ov" id="mkb-bg"><div class="ob" style="max-width:470px">'+
     '<div style="display:flex;gap:12px;align-items:flex-start">'+
       '<span style="width:38px;height:38px;flex-shrink:0;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,'+tint+' 13%,transparent);color:'+tint+'">'+
         '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
@@ -984,7 +984,7 @@ function _mktReport(itemId, title){
     ['stolen','Stolen or pirated material'],['broken','Not as described'],
     ['sexual','Sexual or abusive content'],['harassment','Hate or harassment'],
     ['other','Something else']];
-  r.innerHTML='<div class="ovr-bg" id="mkr-bg"><div class="ovr-card" style="max-width:430px">'+
+  r.innerHTML='<div class="ov" id="mkr-bg"><div class="ob" style="max-width:430px">'+
     '<div style="font-size:var(--t-prose);font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
     '<div style="font-size:var(--t-sm);color:var(--mu);margin-bottom:14px">'+escH(title||'')+'</div>'+
     '<label class="lbl">'+T('What\u2019s wrong with it?')+'</label>'+

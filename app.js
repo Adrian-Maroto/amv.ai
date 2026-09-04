@@ -11156,7 +11156,7 @@ function _mktBlockedDialog(reason, action, category){
   const icon = needsVer
     ? '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
     : '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
-  r.innerHTML='<div class="ovr-bg" id="mkb-bg"><div class="ovr-card" style="max-width:470px">'+
+  r.innerHTML='<div class="ov" id="mkb-bg"><div class="ob" style="max-width:470px">'+
     '<div style="display:flex;gap:12px;align-items:flex-start">'+
       '<span style="width:38px;height:38px;flex-shrink:0;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,'+tint+' 13%,transparent);color:'+tint+'">'+
         '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span>'+
@@ -11193,7 +11193,7 @@ function _mktReport(itemId, title){
     ['stolen','Stolen or pirated material'],['broken','Not as described'],
     ['sexual','Sexual or abusive content'],['harassment','Hate or harassment'],
     ['other','Something else']];
-  r.innerHTML='<div class="ovr-bg" id="mkr-bg"><div class="ovr-card" style="max-width:430px">'+
+  r.innerHTML='<div class="ov" id="mkr-bg"><div class="ob" style="max-width:430px">'+
     '<div style="font-size:var(--t-prose);font-weight:600;margin-bottom:4px">'+T('Report this listing')+'</div>'+
     '<div style="font-size:var(--t-sm);color:var(--mu);margin-bottom:14px">'+escH(title||'')+'</div>'+
     '<label class="lbl">'+T('What\u2019s wrong with it?')+'</label>'+
@@ -21804,7 +21804,7 @@ function _ctxRenderMeter(hostId, kind){
 // Compress the current context, start fresh, and resume seamlessly.
 async function _ctxHandoffFlow(kind){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ovr-bg"><div class="ovr-card" style="max-width:460px">'+
+  r.innerHTML='<div class="ov"><div class="ob" style="max-width:460px">'+
     '<div style="font-size:var(--t-prose);font-weight:600;margin-bottom:6px">Carrying your context over\u2026</div>'+
     '<div style="font-size:var(--t-base);color:var(--mu);line-height:1.6" id="ctx-step">Compressing everything important from this '+(kind==='dev'?'session':'chat')+'\u2026</div>'+
     '<div class="ctx-bar" style="margin-top:14px"><div class="ctx-fill" id="ctx-anim" style="width:15%"></div></div>'+
@@ -21883,7 +21883,7 @@ function openHandoffManager(){
           '<button class="btn bp" data-ho-use="'+escH(h.id)+'" style="font-size:var(--t-sm)">Resume</button>'+
         '</div></div>').join('')
     : '<div class="ho-empty">No handoffs yet. When a chat or Dev session fills up, AMV creates one automatically.</div>';
-  r.innerHTML='<div class="ovr-bg" id="ho-bg"><div class="ovr-card" style="max-width:560px">'+
+  r.innerHTML='<div class="ov" id="ho-bg"><div class="ob" style="max-width:560px">'+
     '<div style="font-size:var(--t-lg);font-weight:600;margin-bottom:4px">Context handoffs</div>'+
     '<div style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin-bottom:16px">A handoff is a compressed snapshot of a conversation - the goal, every decision, the current state, and the next steps. Load one into a fresh chat and AMV picks up exactly where you left off.</div>'+
     '<div class="ho-list">'+rows+'</div>'+
@@ -26944,15 +26944,15 @@ function openSheetEditor(data,name){
   <span style="font-size:var(--t-base);font-weight:600">&#128200; ${escH(name||'Spreadsheet')}</span>
   <span style="font-size:var(--t-xs);color:var(--mu)">${data.length-1} rows &middot; ${data[0]&&data[0].length||0} cols</span>
   <div style="margin-left:auto;display:flex;gap:6px">
-    <button class="ext-btn" data-dact="_sheetDownloadCSV">&#8681; Download</button>
-    <button class="ext-btn" data-stab="extensions">&#10005; Close</button>
+    <button class="btn bs" data-dact="_sheetDownloadCSV">&#8681; Download</button>
+    <button class="btn bs" data-stab="extensions">&#10005; Close</button>
   </div>
 </div>
 <div style="flex:1;overflow:auto;padding:12px">${csvToTable(data)}</div>
 <div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
   <div style="font-size:var(--t-2xs);color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    ${['Analyze trends','Find duplicates','Add totals row','Sort by first column','Summarize data'].map(q=>`<button class="ext-btn" data-dact="runSheetAI" data-darg="${q}">${q}</button>`).join('')}
+    ${['Analyze trends','Find duplicates','Add totals row','Sort by first column','Summarize data'].map(q=>`<button class="btn bs" data-dact="runSheetAI" data-darg="${q}">${q}</button>`).join('')}
   </div>
   <div style="display:flex;gap:8px">
     <input type="text" id="sheet-inp" placeholder="Ask AMV anything about this spreadsheet..." style="flex:1;font-size:var(--t-base)">
@@ -27059,7 +27059,7 @@ function renderAutomationView(){
     if(t.error) h+='<div style="font-size:var(--t-sm);color:var(--red-txt);padding:8px;background:rgba(248,81,73,.08);border-radius:var(--r-sm);margin-top:4px">'+escH(t.error)+'</div>';
     if(t.result){
       h+='<div style="font-size:var(--t-sm);color:var(--mu);background:rgba(0,0,0,.25);border-radius:var(--r-sm);padding:10px;margin-top:8px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65">'+escH(t.result.slice(0,500))+(t.result.length>500?' ...(truncated)':'')+'</div>';
-      h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="ext-btn" data-dact="_toastResultCopied">Copy result</button></div>';
+      h+='<div style="display:flex;gap:6px;margin-top:8px"><button class="btn bs" data-dact="_toastResultCopied">Copy result</button></div>';
     }
     h+='<div style="font-size:var(--t-2xs);color:var(--dim);margin-top:6px">'+new Date(t.created).toLocaleString()+'</div>';
     h+='</div>';
@@ -27071,7 +27071,7 @@ function renderAutomationView(){
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">${cards}</div>
 </div>
 <div class="ss2">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">Task Queue</h3><button class="ext-btn" data-dact="renderAutomationView">Refresh</button></div>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px"><h3 style="margin:0">Task Queue</h3><button class="btn bs" data-dact="renderAutomationView">Refresh</button></div>
 ${taskList}
 </div>
 </div></div>`;

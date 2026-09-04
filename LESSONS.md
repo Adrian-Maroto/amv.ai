@@ -8202,14 +8202,8 @@ failure, any coherent verdict is a pass. Verified against both cases with
 stubs, since neither is reproducible on this machine - a script that exits 1
 after printing FAIL passes, and one that never returns fails with SIGTERM.
 
-THE FINDING ITSELF WAS REAL, and worth as much as the fix. npm had stopped
-flagging extract-zip, `@puppeteer/browsers` and `@cloudflare/puppeteer`, so the
-ACCEPTED roster's own staleness check fired and asked for all three entries to
-go. That check is the part of the audit that keeps it honest - an exemption
-nobody rechecks is a hole with a comment over it - and it did its job. The
-roster is empty now. Deleted rather than kept "in case it comes back": if one
-is flagged again, somebody assesses it against whatever the advisory says then,
-instead of inheriting a judgement made about a different one.
+THE OTHER HALF OF THIS ENTRY WAS WRONG WHEN IT WAS WRITTEN, and correcting it
+is the more useful lesson. See 346.
 
 The second-order lesson is about WHERE it was found. The registry here answers
 a GET and stalls on the advisories endpoint, so locally the script always takes
@@ -8267,3 +8261,47 @@ The general lesson is the one about fallbacks. A fallback is a decision about
 what happens in the worst case, and it deserves to be read in that case rather
 than in the ordinary one. Reading these in the ordinary case - where `confirm`
 exists - they are all correct, which is why they survived so long.
+
+## 346. A degraded audit said an advisory was withdrawn, and I deleted the exemption
+
+Correcting 344, which recorded the opposite in good faith.
+
+CI failed with `ACCEPTED names something npm no longer flags: extract-zip,
+@puppeteer/browsers, @cloudflare/puppeteer`. The audit script's own rule is that
+an exemption for something no longer flagged is stale and must be deleted, so I
+deleted all three and wrote a commit message explaining that an empty roster was
+the check working as designed.
+
+Hours later, on the same lockfile, the gate's audit reached the registry and
+reported all three as live `high` advisories, symlink-traversal title intact.
+They had never been withdrawn. I had removed three correct, written security
+assessments because a machine told me to.
+
+THE DEFECT IS IN THE CHECK, and it is a nasty one. `npm audit` can return valid
+JSON with an empty `vulnerabilities` object when the advisory endpoint is
+degraded - the very endpoint that on this machine accepts a connection and then
+never answers, which is the reason that call has a ninety-second deadline in the
+first place. The staleness test read `!vulns[name]` and could not distinguish
+"this advisory was withdrawn" from "the audit came back with nothing". Those are
+completely different facts and only one of them justifies deleting a security
+note.
+
+So the same bad network shape is behind BOTH failures a day apart: first it hung
+the gate, and then, once it was given a deadline, it started returning empty
+answers that got read as findings. Bounding a call stops it hanging; it does not
+make what comes back true.
+
+The rule now needs positive evidence before retiring anything - either the audit
+demonstrably had data, or the package is not installed at all. Exercised against
+four cases: an empty audit retires nothing, an audit that did find advisories
+retires the ones it did not name, a still-flagged set retires nothing, and a
+package that is gone is stale whatever the audit said.
+
+THE PART I WANT TO REMEMBER is not the regex. It is that I treated a tool's
+output as authority on a security decision and acted on it in the destructive
+direction. The check said "delete this exemption", and deleting an exemption is
+exactly the move that needs the most evidence, not the least - it is the one
+that quietly widens what the audit will let through next time. A tool asking me
+to remove a safety note should have raised suspicion, and instead I wrote a
+paragraph justifying it. When automation points at a destructive action and the
+evidence is a single negative signal, verify the signal before obeying it.
