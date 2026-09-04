@@ -182,8 +182,49 @@ export async function armWait(pageOrContext) {
   });
 }
 
+/* ANSWERING AMV'S OWN CONFIRMATION, BECAUSE IT NO LONGER USES THE BROWSER'S.
+
+   Destructive actions used to ask with window.confirm, so a suite drove them by
+   assigning `window.confirm = () => true`. They ask in AMV's own dialog now -
+   the browser box could not show a second line, could not be styled, and its
+   guard proceeded when confirm was unavailable - and a stub on window.confirm
+   answers a question nobody is asking any more, so the flow simply waits.
+
+   `__answerConfirm(true|false)` stands in for that stub. It watches the overlay
+   and presses Continue or Cancel as soon as a dialog appears, which is stronger
+   than the stub was: it drives the real control the real person presses instead
+   of a function the product has stopped calling.
+
+   It also records the question in `window.__lastConfirm`, keeping the shape the
+   suites already assert against - "it asks first" is still the property, and
+   now it is checked against what the dialog actually said, title and body. */
+export async function armConfirm(pageOrContext) {
+  await pageOrContext.addInitScript(() => {
+    window.__answerConfirm = (yes) => {
+      try { if (window.__amvConfirmObs) window.__amvConfirmObs.disconnect(); } catch (e) {}
+      window.__amvConfirmAnswer = yes !== false;
+      window.__lastConfirm = '';
+      const ovr = document.getElementById('ovr');
+      if (!ovr) return false;
+      const press = () => {
+        const t = document.getElementById('cfm-t');
+        if (!t) return;
+        const sub = document.querySelector('#ovr .ob-sub');
+        window.__lastConfirm = (t.textContent || '') + (sub ? ' ' + sub.textContent : '');
+        const b = document.getElementById(window.__amvConfirmAnswer ? 'cfm-yes' : 'cfm-no');
+        if (b) b.click();
+      };
+      window.__amvConfirmObs = new MutationObserver(press);
+      window.__amvConfirmObs.observe(ovr, { childList: true, subtree: true });
+      press();          // in case it is already open
+      return true;
+    };
+  });
+}
+
 export async function armGeom(pageOrContext) {
   await armWait(pageOrContext);
+  await armConfirm(pageOrContext);
   await pageOrContext.addInitScript(() => {
     const EPS = 0.5;
     window.__under = (v, n) => v < n - EPS;   // meaningfully smaller than n

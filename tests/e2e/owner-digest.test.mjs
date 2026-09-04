@@ -41,7 +41,9 @@ const DIGEST = {
 const wire = (opts = {}) => page.evaluate(cfg => {
   window.__admCalls = [];
   window.__confirmAnswer = cfg.confirmAnswer;
-  window.confirm = (q) => { window.__lastConfirm = q; return window.__confirmAnswer; };
+  /* AMV asks in its own dialog now, so the stub answers nothing. __answerConfirm
+     presses the real button and records the real question. */
+  window.__answerConfirm(window.__confirmAnswer);
   saveStr('amv_api_base', 'https://amv-stub.workers.dev');
   window.fetchDeadline = async (url) => {
     const u = String(url);

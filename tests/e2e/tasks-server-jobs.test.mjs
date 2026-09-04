@@ -99,15 +99,18 @@ section('Deleting a running job asks first');
 {
   const r = await page.evaluate(async () => {
     const calls = [];
-    let asked = false;
     window._autoAction = async (id, action) => { calls.push({ id, action }); return true; };
-    window.confirm = () => { asked = true; return false; };
+    /* Answer NO in AMV's own dialog. __lastConfirm carries what it asked, so
+       "it asks first" is now checked against the words on the screen rather
+       than against a stub having been reached. */
+    window.__answerConfirm(false);
     const btn = [...document.querySelectorAll('[data-auto-act="delete"]')][0];
     btn.click();
-    await new Promise(r => setTimeout(r, 150));
-    return { calls, asked, disabled: btn.disabled };
+    await new Promise(r => setTimeout(r, 250));
+    return { calls, asked: window.__lastConfirm, disabled: btn.disabled };
   });
-  ok(r.asked, 'it asks before stopping something that is running');
+  ok(/delete this scheduled job/i.test(r.asked || ''),
+     'it asks before stopping something that is running', r.asked);
   ok(r.calls.length === 0, 'and saying no deletes nothing', r.calls);
   ok(r.disabled === false, 'with the button usable again rather than stuck', r.disabled);
 }

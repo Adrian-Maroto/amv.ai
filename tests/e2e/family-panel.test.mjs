@@ -132,7 +132,7 @@ section('The account holder has a way out');
      left and has not is worse off than before they tried. */
   const failed = await page.evaluate(async () => {
     window.AMV_API.familyLeave = async () => { throw new Error('engine down'); };
-    window.confirm = () => true;
+    window.__answerConfirm(true);
     document.getElementById('fam-leave').click();
     await new Promise(r => setTimeout(r, 200));
     return { say: document.getElementById('fam-leave-say').textContent,

@@ -313,7 +313,7 @@ section('Disconnecting is as easy as connecting was');
 {
   const r = await page.evaluate(async () => {
     const calls = [];
-    window.confirm = () => true;
+    window.__answerConfirm(true);
     window.fetchDeadline = async (url) => {
       calls.push(String(url));
       if (/unlink/.test(url)) return { ok: true, json: async () => ({ ok: true, unlinked: true }) };
@@ -332,7 +332,10 @@ section('A failed disconnect does not say it disconnected');
 {
   const r = await page.evaluate(async () => {
     saveStr('amv_fin_linked', '1');
-    window.confirm = () => true;
+    /* Re-armed rather than relying on the observer installed further up: it
+       does still answer this one, and a test that passes because of a leftover
+       from an earlier section is a test that breaks when somebody reorders them. */
+    window.__answerConfirm(true);
     window.fetchDeadline = async (url) => {
       if (/unlink/.test(url)) return { ok: false, json: async () => ({ error: 'engine down' }) };
       return { ok: true, json: async () => ({ ok: true, ready: true, linked: true }) };
