@@ -10591,3 +10591,68 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 @media (max-width:760px){
   .dev-split{ display:none; }
 }
+
+/* ── LAYER A146 · the readiness rows LAYER A39 never finished ────────────────
+   A39 above styles the verdict, the command line, the section headings and the
+   closing note - and stops. The ROWS, which are the actual answer to "which
+   keys are set and what is blocking launch", had nothing: .gl-row was never
+   given a layout, .gl-ic never a size, .gl-tag never a shape, and .gl-body,
+   .gl-label and .gl-how no rule whatsoever. So the one screen somebody reads
+   before deciding AMV is ready to launch rendered as stacked default-weight
+   divs, and the tests over it asserted the text and the DOM without ever
+   asking what any of it looked like.
+
+   Built from .sess-row's vocabulary rather than a new one. It is the same
+   shape of thing - a status icon, a name, a badge, a line of detail - and two
+   screens in one product should not disagree about how that looks.
+
+   Only a missing REQUIRED capability gets the warning colour, which is A39's
+   rule and is kept: everything else being off is a choice, not a fault.       */
+.gl-row{
+  display:flex; align-items:flex-start; gap:var(--sp-3);
+  padding:11px 14px; margin-bottom:var(--sp-2);
+  background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-lg);
+}
+.gl-ic{
+  flex:0 0 auto; width:20px; height:20px; margin-top:1px;
+  display:flex; align-items:center; justify-content:center;
+  font-size:var(--t-sm); color:var(--mu);
+}
+.gl-row.gl-done .gl-ic{ color:var(--grn); }
+.gl-body{ flex:1; min-width:0; }
+.gl-label{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  font-size:var(--t-base); font-weight:600; color:var(--tx);
+}
+.gl-tag{
+  flex:0 0 auto;
+  font-size:var(--t-xs); font-weight:600; letter-spacing:.02em;
+  padding:2px 8px; border-radius:var(--r-pill);
+  color:var(--mu); border:1px solid var(--bd);
+}
+.gl-row.gl-done .gl-tag{
+  color:var(--grn); border-color:color-mix(in srgb,var(--grn) 40%,transparent);
+}
+.gl-how{ font-size:var(--t-sm); color:var(--mu); line-height:1.55; margin-top:3px; }
+/* ── LAYER A147 · the checkout sheet's body, and the panel that says it is off
+   Every payment method renders into .pay-body, and .pay-body had no rule - so
+   did .pay-setup and its title and subtitle, which are the whole "Secure
+   checkout is not connected yet" panel. The sheet AROUND them is styled
+   (.pay-modal, .pay-head, .pay-amount, .pay-tab, .pay-secure, .pay-note), so
+   this is drift rather than a deliberately bare container: measured at 394x22
+   with font-size 14px and weight 400, the title of that panel was rendering as
+   body text.
+
+   This is the screen that takes money, and on a deployment with no Stripe key
+   it is the ONLY thing a person sees after pressing Upgrade - so it has to
+   read as a considered answer, not as an unfinished one.                      */
+.pay-body{ display:block; min-height:0; }
+.pay-setup{
+  display:flex; flex-direction:column; gap:7px;
+  padding:var(--sp-4); border-radius:var(--r-lg);
+  background:var(--s2); border:1px solid var(--bd);
+}
+.pay-setup-t{
+  font-size:var(--t-lg); font-weight:600; color:var(--tx); line-height:1.3;
+}
+.pay-setup-s{ font-size:var(--t-sm); color:var(--mu); line-height:1.6; }

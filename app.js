@@ -1331,13 +1331,13 @@ function closeOvr() {
    context, a partial render - this returns false rather than throwing, and the
    caller's window.confirm still runs. A confirmation that silently does not
    happen is worse than an ugly one. */
-function confirmModal(title, body, onConfirm, opts){
+function _confirmRender(title, body, opts){
   const o = opts || {};
   const ovr = $('ovr');
-  if(!ovr) return false;
+  if(!ovr) return null;
   ovr.innerHTML =
     '<div class="ov" id="cfm-bg"><div class="ob" role="alertdialog" aria-modal="true" aria-labelledby="cfm-t">'+
-      '<button class="oc" data-dact="closeOvr" aria-label="Close">&#215;</button>'+
+      '<button class="oc" id="cfm-x" aria-label="Close">&#215;</button>'+
       '<h2 id="cfm-t">'+escH(title||'Are you sure?')+'</h2>'+
       (body ? '<p class="ob-sub">'+escH(body)+'</p>' : '')+
       '<div style="display:flex;gap:9px;margin-top:14px">'+
@@ -1346,20 +1346,109 @@ function confirmModal(title, body, onConfirm, opts){
       '</div>'+
     '</div></div>';
   ovr.classList.add('on');
-  onBackdrop($('cfm-bg'), closeOvr);
-  on($('cfm-no'), 'click', closeOvr);
-  on($('cfm-yes'), 'click', () => {
-    closeOvr();
+  return ovr;
+}
+
+/* THE SAME DIALOG, AWAITED.
+
+   Half the destructive actions in AMV live inside `async` click handlers and
+   read as `if (!confirmed) return;`. Rewriting each into a callback would move
+   a screenful of logic into a closure at every site, so the dialog is offered
+   in both shapes off one renderer - one markup, one set of ids, no chance of
+   the two drifting into different-looking questions.
+
+   WHY THE OVERLAY IS WATCHED RATHER THAN THE BUTTONS. Cancel, the backdrop and
+   the close button all resolve here directly. Escape does not: it is handled by
+   the global key listener, which takes the overlay down knowing nothing about
+   this promise - so a promise that trusted only its own buttons would never
+   settle, and the handler awaiting it would hang forever holding a disabled
+   button. Watching for the dialog leaving covers every route out, including any
+   added later. A yes settles synchronously in its own handler, before the
+   observer's microtask can run, so pressing Continue cannot be read as a
+   cancel.
+
+   No overlay to draw into: ask in the browser's dialog, and if there is not one
+   of those either, refuse and say so. Never proceed unasked.                   */
+function _askDestructive(title, body, confirmLabel, opts){
+  const o = Object.assign({}, opts || {}, confirmLabel ? { confirm: confirmLabel } : {});
+  return new Promise(resolve => {
+    let settled = false, obs = null;
+    const done = v => {
+      if(settled) return; settled = true;
+      try{ if(obs) obs.disconnect(); }catch(e){}
+      resolve(v);
+    };
+    const ovr = _confirmRender(title, body, o);
+    if(!ovr){
+      if(typeof confirm === 'function'){
+        try{ return done(!!confirm(title + (body ? '\n\n' + body : ''))); }catch(e){}
+      }
+      try{ toast('AMV could not show a confirmation for that, so nothing was changed. Reload the page and try again.','error',6500); }catch(e){}
+      return done(false);
+    }
+    const no = () => { closeOvr(); done(false); };
+    onBackdrop($('cfm-bg'), no);
+    on($('cfm-no'), 'click', no);
+    on($('cfm-x'), 'click', no);
+    on($('cfm-yes'), 'click', () => { closeOvr(); done(true); });
+    try{
+      obs = new MutationObserver(() => { if(!document.getElementById('cfm-yes')) done(false); });
+      obs.observe(ovr, { childList:true, subtree:true, attributes:true, attributeFilter:['class'] });
+    }catch(e){}
+    /* Cancel is focused, not Continue. Somebody who arrives here and presses
+       Enter out of habit should not have destroyed anything. */
+    setTimeout(() => { try{ const n=$('cfm-no'); if(n) n.focus(); }catch(e){} }, 0);
+  });
+}
+
+function confirmModal(title, body, onConfirm, opts){
+  if(!$('ovr')) return false;
+  _askDestructive(title, body, null, opts).then(yes => {
+    if(!yes) return;
     /* After the overlay is down, so a handler that opens its own modal is not
        fighting the one being closed. */
     setTimeout(() => { try{ if(typeof onConfirm==='function') onConfirm(); }catch(e){} }, 0);
   });
-  /* Cancel is focused, not Continue. Somebody who arrives here and presses
-     Enter out of habit should not have destroyed anything. */
-  setTimeout(() => { try{ const n=$('cfm-no'); if(n) n.focus(); }catch(e){} }, 0);
   return true;
 }
 try{ window.confirmModal = confirmModal; }catch(e){}
+try{ window._askDestructive = _askDestructive; }catch(e){}
+
+/* ASK - AND IF ASKING IS IMPOSSIBLE, DO NOT DO IT.
+
+   Every destructive action here was guarded by one of two shapes:
+
+       if(typeof confirm !== 'function' || confirm(msg)) go();
+       if(typeof confirm === 'function' && !confirm(msg)) return;
+
+   Both PROCEED when `confirm` is unavailable. Read them again: the first runs
+   `go()` on a page with no confirm, and the second falls through to the action.
+   So the guard written to make somebody think twice was, in exactly the
+   conditions it was written for, the thing that skipped asking - leaving a
+   team, revoking an API key, disconnecting a bank account, signing every device
+   out, all one tap and no question.
+
+   It is not a hypothetical shape either: a page inside a sandboxed frame gets a
+   window.confirm that returns false without drawing anything, and an embedded
+   or partially-rendered context may not have the overlay to draw AMV's own
+   dialog into. Those are the cases the guard existed for, and they were the
+   cases it failed in.
+
+   The order here is AMV's dialog, then the browser's, then refuse. A
+   destructive action that cannot be confirmed does not happen, and the person
+   is told why rather than left wondering whether their tap registered.
+
+   Returns whether it managed to ask. `onConfirm` runs only on a real yes.     */
+function confirmDestructive(title, body, onConfirm, opts){
+  const run = () => { try{ if(typeof onConfirm === 'function') onConfirm(); }catch(e){} };
+  try{ if(confirmModal(title, body, run, opts)) return true; }catch(e){}
+  if(typeof confirm === 'function'){
+    try{ if(confirm(title + (body ? '\n\n' + body : ''))) run(); return true; }catch(e){}
+  }
+  try{ toast('AMV could not show a confirmation for that, so nothing was changed. Reload the page and try again.','error',6500); }catch(e){}
+  return false;
+}
+try{ window.confirmDestructive = confirmDestructive; }catch(e){}
 
 /* Reusable polished empty state: icon + title + subtitle + optional action.
    emptyState({icon,title,sub,btn:{label,act,arg}}) -> HTML string */
@@ -4669,11 +4758,11 @@ function signOutAndErase(){
      false when it could not draw itself, and the native dialog is still there
      underneath for exactly that case. */
   try{
-    if(typeof confirmModal === 'function' && confirmModal('Erase AMV data on this device?',
-        'This removes your chats, memories, projects, files and saved details from THIS device only. Anything synced to your account stays safe. Use this on a shared or public computer.',
-        go, { confirm:'Erase this device' })) return;
+    confirmDestructive('Erase AMV data on this device?',
+      'This removes your chats, memories, projects, files and saved details from THIS device only. Anything synced to your account stays safe. Use this on a shared or public computer.',
+      go, { confirm:'Erase this device' });
+    return;
   }catch(e){}
-  if(typeof confirm !== 'function' || confirm('Erase all AMV data from this device? Your account is not deleted.')) go();
 }
 try{ window.signOutAndErase = signOutAndErase; }catch(e){}
 
@@ -9430,8 +9519,9 @@ function _renderTeamManage(vc, team){
     finally{ if(btn){ btn.disabled=false; btn.textContent='Change seats'; } }
   });
   on($('team-leave'),'click',async()=>{
-    if(typeof confirm==='function' &&
-       !confirm('Leave '+team.name+'? You go back to your own plan and lose access to the shared library.')) return;
+    if(!await _askDestructive('Leave '+team.name+'?',
+        'You go back to your own plan and lose access to everything shared with the team.',
+        'Leave team')) return;
     const btn=$('team-leave'); if(btn){ btn.disabled=true; btn.textContent='Leaving\u2026'; }
     try{ await AMVTeam.leave(); toast('You have left the team','info'); renderTeamView(); }
     catch(e){ if(btn){ btn.disabled=false; btn.textContent='Leave team'; } toast(e.message||'Could not leave the team','error',6000); }
@@ -13880,6 +13970,42 @@ function openPaymentSheet(plan){
 function closePaySheet(){ const r=$('ovr'); if(r) r.innerHTML=''; }
 
 function _payCfg(){ try{ return load('amv_pay_cfg')||{}; }catch(e){ return {}; } }
+
+/* THE PANEL THAT SAYS A PROCESSOR IS NOT CONNECTED.
+
+   This markup existed once, at the bottom of _payRenderMethod, for the case
+   where there is no backend and no Stripe link. There is a SECOND case that
+   reaches the same fact by a different road - a live backend whose deployment
+   has no STRIPE_SECRET_KEY - and that one was landing in a red toast reading
+   "Card: payments not configured", which is a log line with a person's name on
+   it. Both are "AMV cannot take a card here yet", so both say so the same way.
+
+   A missing processor is not a failed payment. Nothing was attempted, nothing
+   was charged, and there is nothing for somebody to retry - so it is stated in
+   the sheet where they are looking, not thrown at them in an error colour that
+   suggests they did something wrong. */
+function _paySetupHTML(title, sub, btnId, btnLabel){
+  return '<div class="pay-setup">'+
+    '<div class="pay-setup-t">'+escH(title)+'</div>'+
+    '<div class="pay-setup-s">'+escH(sub)+'</div>'+
+    (btnId ? '<button class="btn bp pay-submit" id="'+escH(btnId)+'">'+escH(btnLabel)+'</button>' : '')+
+  '</div>';
+}
+/* Returns true when it handled the rejection, so the caller's toast is skipped.
+   Only `needs_service` - a deployment that is not set up - is handled here. A
+   card that was declined, a network that dropped, an account on hold: those ARE
+   failures, they are the person's business to retry, and they keep the toast. */
+function _payNotConnected(err, host){
+  if(!err || err.code !== 'needs_service') return false;
+  const body = host || $('pay-body');
+  if(!body || !body.isConnected) return false;
+  body.innerHTML = _paySetupHTML(
+    'Payments are not connected yet',
+    (err.message || 'This deployment cannot take a payment yet.') +
+    ' Nothing has been charged, and your plan has not changed.');
+  return true;
+}
+try{ window._paySetupHTML=_paySetupHTML; window._payNotConnected=_payNotConnected; }catch(e){}
 function _payRenderMethod(method,plan){
   const body=$('pay-body'); if(!body) return;
   const price=PLANS[plan].price;
@@ -13893,7 +14019,7 @@ function _payRenderMethod(method,plan){
         '<button class="pay-wallet-b paypal" id="pay-pp-sub">Subscribe with PayPal →</button>'+
         '<button class="pay-wallet-b venmo" id="pay-vm-sub">Subscribe with Venmo →</button>'+
         '<p class="pay-note">Sets up a real monthly subscription through PayPal or Venmo. Opens securely, then brings you back.</p></div>';
-      const go=async ()=>{ const pre=_preopenPay(); try{ const u=await AMV_API.paypalSubscribe(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'paypal',pre); }catch(e){ _closePay(pre); toast('PayPal: '+(e.message||'could not start'),'error',4500); } };
+      const go=async ()=>{ const pre=_preopenPay(); try{ const u=await AMV_API.paypalSubscribe(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'paypal',pre); }catch(e){ _closePay(pre); if(!_payNotConnected(e)) toast('PayPal could not start: '+(e.message||'try again'),'error',4500); } };
       on($('pay-pp-sub'),'click',go); on($('pay-vm-sub'),'click',go);
       return;
     }
@@ -13935,7 +14061,7 @@ function _payRenderMethod(method,plan){
         const pre=_preopenPay();
         if(sb){ sb.disabled=true; sb.textContent='Opening…'; }
         try{ const u=await AMV_API.stripeCheckout(plan, (S.user&&S.user.email)||''); _openExternalPay(u,plan,'stripe',pre); }
-        catch(e){ _closePay(pre); toast('Stripe: '+(e.message||'could not start'),'error',4500); }
+        catch(e){ _closePay(pre); if(!_payNotConnected(e)) toast('Stripe could not start: '+(e.message||'try again'),'error',4500); }
         finally{ if(sb){ sb.disabled=false; sb.textContent='Pay with Stripe →'; } }
         return;
       }
@@ -13975,7 +14101,7 @@ function _payRenderMethod(method,plan){
       '<p class="pay-note">Opens a secure card checkout. Your plan unlocks once payment is confirmed.</p></div>';
     on($('pay-card-go'),'click',async ()=>{
       const sb=$('pay-card-go');
-      if(liveBackend){ const pre=_preopenPay(); if(sb){sb.disabled=true;sb.textContent='Opening…';} try{ const u=await AMV_API.stripeCheckout(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'card',pre); }catch(e){ _closePay(pre); toast('Card: '+(e.message||'failed'),'error',4500);} finally{ if(sb){sb.disabled=false;sb.textContent='Pay by card →';} } return; }
+      if(liveBackend){ const pre=_preopenPay(); if(sb){sb.disabled=true;sb.textContent='Opening…';} try{ const u=await AMV_API.stripeCheckout(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'card',pre); }catch(e){ _closePay(pre); if(!_payNotConnected(e)) toast('Card payment could not start: '+(e.message||'try again'),'error',4500);} finally{ if(sb){sb.disabled=false;sb.textContent='Pay by card →';} } return; }
       if(link){ _openExternalPay(link,plan,'card'); }
     });
     return;
@@ -13985,12 +14111,10 @@ function _payRenderMethod(method,plan){
      the whole business into PCI-DSS scope and creates breach liability for
      data we have no right to hold. Card details are only ever entered on the
      processor's own hosted page. So this states what to connect instead. */
-  body.innerHTML=
-    '<div class="pay-setup">'+
-      '<div class="pay-setup-t">Secure checkout is not connected yet</div>'+
-      '<div class="pay-setup-s">Card details are always entered on the payment provider’s own secure page - AMV never handles or stores card numbers. Connect Stripe in Settings → Platform and checkout turns on immediately.</div>'+
-      '<button class="btn bp pay-submit" id="pay-card">Open secure checkout</button>'+
-    '</div>';
+  body.innerHTML = _paySetupHTML(
+    'Secure checkout is not connected yet',
+    'Card details are always entered on the payment provider’s own secure page - AMV never handles or stores card numbers. Connect Stripe in Settings → Platform and checkout turns on immediately.',
+    'pay-card', 'Open secure checkout');
   on($('pay-card'),'click',()=>_payCard(plan));
 }
 
@@ -22570,7 +22694,8 @@ function _payoutsPaint(host, d){
     const what = status==='paid'
       ? 'Mark this payout as already sent? It does not transfer anything - confirm you have paid it.'
       : 'Reject this payout and return the money to the seller\u2019s balance?';
-    if(typeof confirm==='function' && !confirm(what)) return;
+    if(!await _askDestructive(status==='paid' ? 'Mark this payout as already sent?' : 'Reject this payout?',
+        what, status==='paid' ? 'Mark as sent' : 'Reject payout')) return;
     _poBusy=true;
     const btns=[...host.querySelectorAll('[data-po-paid],[data-po-rej]')];
     btns.forEach(b=>{ b.disabled=true; });
@@ -22695,7 +22820,9 @@ function _wireDigestCard(){
   });
   on($('fd-digest-send'),'click', async ()=>{
     /* Outward-facing: it puts mail in someone's inbox, so it is confirmed. */
-    if(typeof confirm === 'function' && !confirm('Email this week\u2019s digest to the owner now?')) return;
+    if(!await _askDestructive('Email this week\u2019s digest to the owner now?',
+        'It goes to the owner\u2019s inbox immediately. Mail that has been sent cannot be recalled.',
+        'Send it')) return;
     say('Sending\u2026');
     try{
       const d = await call('?send=1');
@@ -23339,8 +23466,19 @@ function _confirmDeleteAccount(){
       /* What AMV keeps, and why, shown before the page goes. The server sends
          it on every deletion; nothing displayed it, so a disclosure written to
          be read was only ever in a response body. */
+      /* WHAT AMV KEEPS, AT THE MOMENT SOMEBODY LEAVES.
+
+         This is the last thing AMV ever says to this person, and it was said in
+         the browser's grey alert box - unstyled, unreadable on a phone, and
+         gone the instant they tap OK. It is a data-retention disclosure written
+         to be read, so it is shown in AMV's own dialog and the page waits for
+         them to close it before reloading. */
       if(retained&&retained.what){
-        try{ alert('Your account is deleted.\n\n'+retained.what+'\n\n'+(retained.why||'')); }catch(e){}
+        try{
+          await _askDestructive('Your account is deleted.',
+            retained.what + (retained.why ? '\n\n' + retained.why : ''),
+            'Close', { safe:true, cancel:'Close' });
+        }catch(e){}
       }
     }
     // Erase THIS account off the device, rather than blanking all of storage.
@@ -26000,8 +26138,14 @@ function _approveAction(detail){
       okText:'Approve & run', cancelText:'Skip this'
     });
   }
-  // fallback to native confirm
-  return Promise.resolve(typeof confirm==='function' ? confirm('AMV wants to: '+detail+'\n\nApprove this real action?') : false);
+  /* No overlay to draw the rich version into. _askDestructive asks in AMV's
+     dialog if it can, the browser's if it cannot, and refuses rather than
+     approving when neither is available - which matters more here than
+     anywhere: this gate stands in front of a real action on somebody's
+     connected account. */
+  return _askDestructive('Approve this action?',
+    'AMV wants to: ' + detail + '\n\nThis takes a real action on your connected account.',
+    'Approve & run');
 }
 window._describeAction=_describeAction;
 window.runAgentTask=runAgentTask;
@@ -27045,7 +27189,9 @@ function _wireAutoServer(root){
         else if(act==='delete'){
           /* Deleting a running job is not undoable from here, so it is asked
              about rather than done on a single tap. */
-          if(typeof confirm==='function' && !confirm('Delete this scheduled job? It will stop running.')){ b.disabled=false; return; }
+          if(!await _askDestructive('Delete this scheduled job?',
+              'It stops running straight away and is not kept. You can create it again later.',
+              'Delete job')){ b.disabled=false; return; }
           await _autoAction(id,'delete');
         }
         else await _autoAction(id, act);
@@ -29433,9 +29579,24 @@ function _rrTogglePause(){
   const dot=document.getElementById('rr-dot'); if(dot) dot.classList.toggle('paused',_AUTO.paused);
   if(typeof _autoSetStatus==='function') _autoSetStatus(_AUTO.paused?'Paused - will stop after this step':'Working…');
 }
-function _rrAddInstruction(){
-  const t=prompt('Add an instruction for AMV - it will use this on the next step:');
-  if(t && t.trim()){ _AUTO.inject=t.trim(); if(typeof toast==='function') toast('Noted - AMV will use this on the next step','info',3500); }
+/* Typing an instruction into the browser's grey prompt box gave a single line,
+   no room to read the run it is about to change, and nothing to say what
+   happens next. showTextPromptAsync is AMV's own, and already exists. */
+async function _rrAddInstruction(){
+  let t = null;
+  try{ t = await showTextPromptAsync('Add an instruction for AMV - it will use this on the next step.'); }
+  catch(e){ t = null; }
+  if(t === null || t === undefined){
+    /* No overlay at all: the browser's box is better than no way to steer a
+       run that is already going. Nothing destructive happens either way. */
+    if(!$('ovr') && typeof prompt === 'function'){
+      try{ t = prompt('Add an instruction for AMV - it will use this on the next step:'); }catch(e2){ t = null; }
+    }
+  }
+  if(t && String(t).trim()){
+    _AUTO.inject = String(t).trim();
+    if(typeof toast==='function') toast('Noted - AMV will use this on the next step','info',3500);
+  }
 }
 window._rrTogglePause=_rrTogglePause; window._rrAddInstruction=_rrAddInstruction;
 
@@ -32287,8 +32448,9 @@ function _renderInvestPane(pane){
 
   on($('inv-unlink'),'click',async()=>{
     const say=$('inv-say');
-    if(typeof confirm==='function' &&
-       !confirm('Disconnect this account? AMV stops reading it, and the history it compares against is deleted.')) return;
+    if(!await _askDestructive('Disconnect this account?',
+        'AMV stops reading it, and the history it compares against is deleted. This cannot be undone.',
+        'Disconnect')) return;
     try{
       await AMVFinance.unlink();
       _renderInvestPane(pane);
@@ -33139,8 +33301,9 @@ function _famChildHTML(st){
 function _wireFamilyChild(pane){
   on($('fam-leave'),'click',async()=>{
     const say=$('fam-leave-say');
-    if(typeof confirm==='function' &&
-       !confirm('Leave this family? Their limits stop applying to you, and they stop paying for your AMV.')) return;
+    if(!await _askDestructive('Leave this family?',
+        'Their limits stop applying to you, and they stop paying for your AMV. You go back to your own plan.',
+        'Leave family')) return;
     const b=$('fam-leave'); if(b){ b.disabled=true; b.textContent='Leaving\u2026'; }
     try{ await AMV_API.familyLeave(); _FAM_STATE=null; _renderFamilyPane(pane); }
     catch(e){
@@ -33180,7 +33343,9 @@ function _wireFamilyParent(pane){
   }));
   pane.querySelectorAll('[data-fam-remove]').forEach(b=>on(b,'click',async()=>{
     const em=b.dataset.famRemove;
-    if(typeof confirm==='function' && !confirm('Remove '+em+' from your family? Their limits stop applying and you stop paying for them.')) return;
+    if(!await _askDestructive('Remove '+em+' from your family?',
+        'Their limits stop applying and you stop paying for them. You can invite them again later.',
+        'Remove them')) return;
     b.disabled=true;
     try{ await AMV_API.familyRemove(em); _FAM_STATE=null; _renderFamilyPane(pane); }
     catch(e){ b.disabled=false; toast((e&&e.message)||'Could not remove them','error'); }
@@ -33408,13 +33573,9 @@ function _renderFamilyPane(pane){
        be safe. Now it can run: confirmModal answers false when there is no
        overlay to draw into, and the honest fallback for a destructive action is
        to ask in the browser's own dialog, not to skip asking. */
-    let asked = false;
-    try{ asked = (typeof confirmModal === 'function') && confirmModal(
-      'Remove this link?', 'Access stops straight away. You can always set it up again later.',
-      go, { confirm:'Remove link' }); }catch(e){ asked = false; }
-    if(!asked){
-      if(typeof confirm !== 'function' || confirm('Remove this link? Access stops straight away.')) go();
-    }
+    confirmDestructive('Remove this link?',
+      'Access stops straight away. You can always set it up again later.',
+      go, { confirm:'Remove link' });
   }));
 }
 try{ window._renderFamilyPane = _renderFamilyPane; }catch(e){}
@@ -33932,12 +34093,12 @@ function _actSignOutEverywhere(sayId){
      confirmation is not a smaller action than the others - it is the one
      somebody reaches for while panicking, on a phone, with a thumb. */
   try{
-    if(typeof confirmModal === 'function' && confirmModal('Sign out of all devices?',
-        'Every device signed in to this account is signed out immediately, including this one and your phone. '+
-        'Your data is untouched. Do this if you think someone else has access.',
-        go, { confirm:'Sign out everywhere' })) return;
+    confirmDestructive('Sign out of all devices?',
+      'Every device signed in to this account is signed out immediately, including this one and your phone. '+
+      'Your data is untouched. Do this if you think someone else has access.',
+      go, { confirm:'Sign out everywhere' });
+    return;
   }catch(e){}
-  if(typeof confirm !== 'function' || confirm('Sign out of every device, including this one?')) go();
 }
 try{ window._renderActivityBlock = _renderActivityBlock; window._actSignOutEverywhere = _actSignOutEverywhere; }catch(e){}
 /* ============================================================
@@ -34189,8 +34350,9 @@ function _apiPaint(host, d){
   host.querySelectorAll('[data-ak-rev]').forEach(b=>on(b,'click', async ()=>{
     /* Revoking is immediate and cannot be undone - anything using this key
        stops working the moment it is confirmed, so it says that. */
-    if(typeof confirm==='function' &&
-       !confirm('Revoke this key? Anything using it stops working immediately, and it cannot be restored.')) return;
+    if(!await _askDestructive('Revoke this key?',
+        'Anything using it stops working immediately, and it cannot be restored.',
+        'Revoke key')) return;
     say('Revoking\u2026');
     const ok2 = await AMV_API.keyRevoke(b.dataset.akRev);
     say(ok2 ? 'Revoked.' : 'Could not revoke that key - nothing was changed.', ok2 ? '' : 'bad');

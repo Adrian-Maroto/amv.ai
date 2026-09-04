@@ -331,8 +331,9 @@ function _famChildHTML(st){
 function _wireFamilyChild(pane){
   on($('fam-leave'),'click',async()=>{
     const say=$('fam-leave-say');
-    if(typeof confirm==='function' &&
-       !confirm('Leave this family? Their limits stop applying to you, and they stop paying for your AMV.')) return;
+    if(!await _askDestructive('Leave this family?',
+        'Their limits stop applying to you, and they stop paying for your AMV. You go back to your own plan.',
+        'Leave family')) return;
     const b=$('fam-leave'); if(b){ b.disabled=true; b.textContent='Leaving\u2026'; }
     try{ await AMV_API.familyLeave(); _FAM_STATE=null; _renderFamilyPane(pane); }
     catch(e){
@@ -372,7 +373,9 @@ function _wireFamilyParent(pane){
   }));
   pane.querySelectorAll('[data-fam-remove]').forEach(b=>on(b,'click',async()=>{
     const em=b.dataset.famRemove;
-    if(typeof confirm==='function' && !confirm('Remove '+em+' from your family? Their limits stop applying and you stop paying for them.')) return;
+    if(!await _askDestructive('Remove '+em+' from your family?',
+        'Their limits stop applying and you stop paying for them. You can invite them again later.',
+        'Remove them')) return;
     b.disabled=true;
     try{ await AMV_API.familyRemove(em); _FAM_STATE=null; _renderFamilyPane(pane); }
     catch(e){ b.disabled=false; toast((e&&e.message)||'Could not remove them','error'); }
@@ -600,13 +603,9 @@ function _renderFamilyPane(pane){
        be safe. Now it can run: confirmModal answers false when there is no
        overlay to draw into, and the honest fallback for a destructive action is
        to ask in the browser's own dialog, not to skip asking. */
-    let asked = false;
-    try{ asked = (typeof confirmModal === 'function') && confirmModal(
-      'Remove this link?', 'Access stops straight away. You can always set it up again later.',
-      go, { confirm:'Remove link' }); }catch(e){ asked = false; }
-    if(!asked){
-      if(typeof confirm !== 'function' || confirm('Remove this link? Access stops straight away.')) go();
-    }
+    confirmDestructive('Remove this link?',
+      'Access stops straight away. You can always set it up again later.',
+      go, { confirm:'Remove link' });
   }));
 }
 try{ window._renderFamilyPane = _renderFamilyPane; }catch(e){}

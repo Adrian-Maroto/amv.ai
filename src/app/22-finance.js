@@ -396,8 +396,9 @@ function _renderInvestPane(pane){
 
   on($('inv-unlink'),'click',async()=>{
     const say=$('inv-say');
-    if(typeof confirm==='function' &&
-       !confirm('Disconnect this account? AMV stops reading it, and the history it compares against is deleted.')) return;
+    if(!await _askDestructive('Disconnect this account?',
+        'AMV stops reading it, and the history it compares against is deleted. This cannot be undone.',
+        'Disconnect')) return;
     try{
       await AMVFinance.unlink();
       _renderInvestPane(pane);

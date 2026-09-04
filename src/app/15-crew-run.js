@@ -66,9 +66,24 @@ function _rrTogglePause(){
   const dot=document.getElementById('rr-dot'); if(dot) dot.classList.toggle('paused',_AUTO.paused);
   if(typeof _autoSetStatus==='function') _autoSetStatus(_AUTO.paused?'Paused - will stop after this step':'Working…');
 }
-function _rrAddInstruction(){
-  const t=prompt('Add an instruction for AMV - it will use this on the next step:');
-  if(t && t.trim()){ _AUTO.inject=t.trim(); if(typeof toast==='function') toast('Noted - AMV will use this on the next step','info',3500); }
+/* Typing an instruction into the browser's grey prompt box gave a single line,
+   no room to read the run it is about to change, and nothing to say what
+   happens next. showTextPromptAsync is AMV's own, and already exists. */
+async function _rrAddInstruction(){
+  let t = null;
+  try{ t = await showTextPromptAsync('Add an instruction for AMV - it will use this on the next step.'); }
+  catch(e){ t = null; }
+  if(t === null || t === undefined){
+    /* No overlay at all: the browser's box is better than no way to steer a
+       run that is already going. Nothing destructive happens either way. */
+    if(!$('ovr') && typeof prompt === 'function'){
+      try{ t = prompt('Add an instruction for AMV - it will use this on the next step:'); }catch(e2){ t = null; }
+    }
+  }
+  if(t && String(t).trim()){
+    _AUTO.inject = String(t).trim();
+    if(typeof toast==='function') toast('Noted - AMV will use this on the next step','info',3500);
+  }
 }
 window._rrTogglePause=_rrTogglePause; window._rrAddInstruction=_rrAddInstruction;
 

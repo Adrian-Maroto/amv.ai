@@ -328,8 +328,14 @@ function _approveAction(detail){
       okText:'Approve & run', cancelText:'Skip this'
     });
   }
-  // fallback to native confirm
-  return Promise.resolve(typeof confirm==='function' ? confirm('AMV wants to: '+detail+'\n\nApprove this real action?') : false);
+  /* No overlay to draw the rich version into. _askDestructive asks in AMV's
+     dialog if it can, the browser's if it cannot, and refuses rather than
+     approving when neither is available - which matters more here than
+     anywhere: this gate stands in front of a real action on somebody's
+     connected account. */
+  return _askDestructive('Approve this action?',
+    'AMV wants to: ' + detail + '\n\nThis takes a real action on your connected account.',
+    'Approve & run');
 }
 window._describeAction=_describeAction;
 window.runAgentTask=runAgentTask;
@@ -1373,7 +1379,9 @@ function _wireAutoServer(root){
         else if(act==='delete'){
           /* Deleting a running job is not undoable from here, so it is asked
              about rather than done on a single tap. */
-          if(typeof confirm==='function' && !confirm('Delete this scheduled job? It will stop running.')){ b.disabled=false; return; }
+          if(!await _askDestructive('Delete this scheduled job?',
+              'It stops running straight away and is not kept. You can create it again later.',
+              'Delete job')){ b.disabled=false; return; }
           await _autoAction(id,'delete');
         }
         else await _autoAction(id, act);

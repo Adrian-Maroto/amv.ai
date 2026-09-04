@@ -289,6 +289,42 @@ function openPaymentSheet(plan){
 function closePaySheet(){ const r=$('ovr'); if(r) r.innerHTML=''; }
 
 function _payCfg(){ try{ return load('amv_pay_cfg')||{}; }catch(e){ return {}; } }
+
+/* THE PANEL THAT SAYS A PROCESSOR IS NOT CONNECTED.
+
+   This markup existed once, at the bottom of _payRenderMethod, for the case
+   where there is no backend and no Stripe link. There is a SECOND case that
+   reaches the same fact by a different road - a live backend whose deployment
+   has no STRIPE_SECRET_KEY - and that one was landing in a red toast reading
+   "Card: payments not configured", which is a log line with a person's name on
+   it. Both are "AMV cannot take a card here yet", so both say so the same way.
+
+   A missing processor is not a failed payment. Nothing was attempted, nothing
+   was charged, and there is nothing for somebody to retry - so it is stated in
+   the sheet where they are looking, not thrown at them in an error colour that
+   suggests they did something wrong. */
+function _paySetupHTML(title, sub, btnId, btnLabel){
+  return '<div class="pay-setup">'+
+    '<div class="pay-setup-t">'+escH(title)+'</div>'+
+    '<div class="pay-setup-s">'+escH(sub)+'</div>'+
+    (btnId ? '<button class="btn bp pay-submit" id="'+escH(btnId)+'">'+escH(btnLabel)+'</button>' : '')+
+  '</div>';
+}
+/* Returns true when it handled the rejection, so the caller's toast is skipped.
+   Only `needs_service` - a deployment that is not set up - is handled here. A
+   card that was declined, a network that dropped, an account on hold: those ARE
+   failures, they are the person's business to retry, and they keep the toast. */
+function _payNotConnected(err, host){
+  if(!err || err.code !== 'needs_service') return false;
+  const body = host || $('pay-body');
+  if(!body || !body.isConnected) return false;
+  body.innerHTML = _paySetupHTML(
+    'Payments are not connected yet',
+    (err.message || 'This deployment cannot take a payment yet.') +
+    ' Nothing has been charged, and your plan has not changed.');
+  return true;
+}
+try{ window._paySetupHTML=_paySetupHTML; window._payNotConnected=_payNotConnected; }catch(e){}
 function _payRenderMethod(method,plan){
   const body=$('pay-body'); if(!body) return;
   const price=PLANS[plan].price;
@@ -302,7 +338,7 @@ function _payRenderMethod(method,plan){
         '<button class="pay-wallet-b paypal" id="pay-pp-sub">Subscribe with PayPal →</button>'+
         '<button class="pay-wallet-b venmo" id="pay-vm-sub">Subscribe with Venmo →</button>'+
         '<p class="pay-note">Sets up a real monthly subscription through PayPal or Venmo. Opens securely, then brings you back.</p></div>';
-      const go=async ()=>{ const pre=_preopenPay(); try{ const u=await AMV_API.paypalSubscribe(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'paypal',pre); }catch(e){ _closePay(pre); toast('PayPal: '+(e.message||'could not start'),'error',4500); } };
+      const go=async ()=>{ const pre=_preopenPay(); try{ const u=await AMV_API.paypalSubscribe(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'paypal',pre); }catch(e){ _closePay(pre); if(!_payNotConnected(e)) toast('PayPal could not start: '+(e.message||'try again'),'error',4500); } };
       on($('pay-pp-sub'),'click',go); on($('pay-vm-sub'),'click',go);
       return;
     }
@@ -344,7 +380,7 @@ function _payRenderMethod(method,plan){
         const pre=_preopenPay();
         if(sb){ sb.disabled=true; sb.textContent='Opening…'; }
         try{ const u=await AMV_API.stripeCheckout(plan, (S.user&&S.user.email)||''); _openExternalPay(u,plan,'stripe',pre); }
-        catch(e){ _closePay(pre); toast('Stripe: '+(e.message||'could not start'),'error',4500); }
+        catch(e){ _closePay(pre); if(!_payNotConnected(e)) toast('Stripe could not start: '+(e.message||'try again'),'error',4500); }
         finally{ if(sb){ sb.disabled=false; sb.textContent='Pay with Stripe →'; } }
         return;
       }
@@ -384,7 +420,7 @@ function _payRenderMethod(method,plan){
       '<p class="pay-note">Opens a secure card checkout. Your plan unlocks once payment is confirmed.</p></div>';
     on($('pay-card-go'),'click',async ()=>{
       const sb=$('pay-card-go');
-      if(liveBackend){ const pre=_preopenPay(); if(sb){sb.disabled=true;sb.textContent='Opening…';} try{ const u=await AMV_API.stripeCheckout(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'card',pre); }catch(e){ _closePay(pre); toast('Card: '+(e.message||'failed'),'error',4500);} finally{ if(sb){sb.disabled=false;sb.textContent='Pay by card →';} } return; }
+      if(liveBackend){ const pre=_preopenPay(); if(sb){sb.disabled=true;sb.textContent='Opening…';} try{ const u=await AMV_API.stripeCheckout(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'card',pre); }catch(e){ _closePay(pre); if(!_payNotConnected(e)) toast('Card payment could not start: '+(e.message||'try again'),'error',4500);} finally{ if(sb){sb.disabled=false;sb.textContent='Pay by card →';} } return; }
       if(link){ _openExternalPay(link,plan,'card'); }
     });
     return;
@@ -394,12 +430,10 @@ function _payRenderMethod(method,plan){
      the whole business into PCI-DSS scope and creates breach liability for
      data we have no right to hold. Card details are only ever entered on the
      processor's own hosted page. So this states what to connect instead. */
-  body.innerHTML=
-    '<div class="pay-setup">'+
-      '<div class="pay-setup-t">Secure checkout is not connected yet</div>'+
-      '<div class="pay-setup-s">Card details are always entered on the payment provider’s own secure page - AMV never handles or stores card numbers. Connect Stripe in Settings → Platform and checkout turns on immediately.</div>'+
-      '<button class="btn bp pay-submit" id="pay-card">Open secure checkout</button>'+
-    '</div>';
+  body.innerHTML = _paySetupHTML(
+    'Secure checkout is not connected yet',
+    'Card details are always entered on the payment provider’s own secure page - AMV never handles or stores card numbers. Connect Stripe in Settings → Platform and checkout turns on immediately.',
+    'pay-card', 'Open secure checkout');
   on($('pay-card'),'click',()=>_payCard(plan));
 }
 

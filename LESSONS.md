@@ -8219,3 +8219,51 @@ developer's machine is one whose real behaviour is only ever observed in CI.
 That is tolerable for a network-dependent stage, and the skip is deliberate,
 but it means CI is the authority on that stage and a local pass is not evidence
 about it. Worth knowing which of your stages are actually running.
+
+## 345. The guard skipped the question in exactly the case it was written for
+
+Fourteen destructive actions in AMV were guarded one of two ways:
+
+    if(typeof confirm !== 'function' || confirm(msg)) go();
+    if(typeof confirm === 'function' && !confirm(msg)) return;
+
+Read the first with no `confirm` available: the left side is true, so `go()`
+runs. Read the second the same way: the `&&` is false, so it does not return,
+and falls through to the action. Both PROCEED when there is nothing to ask
+with. Every one of those lines was written to make somebody think twice, and
+every one of them was the line that skipped asking - leaving a team, revoking
+an API key, disconnecting a bank account, rejecting a payout, signing every
+device out.
+
+The shape is worth naming because it reads as careful. `typeof x === 'function'`
+looks like defensive programming, and in a nondestructive context it is. Around
+a destructive action it inverts: the fallback for "I cannot ask" must be "then
+I do not do it", and both of those spellings say "then I do it anyway".
+
+Nor is the branch hypothetical. A page inside a sandboxed frame gets a
+window.confirm that returns without drawing anything, and an embedded or
+half-rendered context may have no overlay for AMV's own dialog either. Those
+are precisely the conditions the fallback was written for.
+
+TWO RACES CAME OUT OF FIXING IT, and both are worth keeping.
+
+Half the sites live in `async` handlers reading `if (!confirmed) return;`, so
+the dialog needed a promise shape. Cancel, the backdrop and the close button
+resolve in their own handlers - but ESCAPE does not. Escape is handled by the
+global keydown listener, which takes the overlay down knowing nothing about the
+promise, so a dialog trusting only its own buttons never settles and the caller
+awaits forever holding a disabled button. That is a worse failure than the one
+being fixed: the original at least did something. So the dialog watches the
+overlay leaving, which covers every route out including any added later.
+
+And that watcher created the second race. Pressing Continue ALSO takes the
+overlay down, and the mutation record is delivered as a microtask - so if the
+yes were deferred by even a `setTimeout(…, 0)`, the watcher would win and read
+a confirmation as a cancel. It settles synchronously in its own handler for
+that reason. Verified by deferring it deliberately: "pressing it is read as
+yes" fails.
+
+The general lesson is the one about fallbacks. A fallback is a decision about
+what happens in the worst case, and it deserves to be read in that case rather
+than in the ordinary one. Reading these in the ordinary case - where `confirm`
+exists - they are all correct, which is why they survived so long.

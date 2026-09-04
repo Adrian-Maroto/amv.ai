@@ -96,8 +96,9 @@ function _apiPaint(host, d){
   host.querySelectorAll('[data-ak-rev]').forEach(b=>on(b,'click', async ()=>{
     /* Revoking is immediate and cannot be undone - anything using this key
        stops working the moment it is confirmed, so it says that. */
-    if(typeof confirm==='function' &&
-       !confirm('Revoke this key? Anything using it stops working immediately, and it cannot be restored.')) return;
+    if(!await _askDestructive('Revoke this key?',
+        'Anything using it stops working immediately, and it cannot be restored.',
+        'Revoke key')) return;
     say('Revoking\u2026');
     const ok2 = await AMV_API.keyRevoke(b.dataset.akRev);
     say(ok2 ? 'Revoked.' : 'Could not revoke that key - nothing was changed.', ok2 ? '' : 'bad');

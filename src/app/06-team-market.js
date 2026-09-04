@@ -515,8 +515,9 @@ function _renderTeamManage(vc, team){
     finally{ if(btn){ btn.disabled=false; btn.textContent='Change seats'; } }
   });
   on($('team-leave'),'click',async()=>{
-    if(typeof confirm==='function' &&
-       !confirm('Leave '+team.name+'? You go back to your own plan and lose access to the shared library.')) return;
+    if(!await _askDestructive('Leave '+team.name+'?',
+        'You go back to your own plan and lose access to everything shared with the team.',
+        'Leave team')) return;
     const btn=$('team-leave'); if(btn){ btn.disabled=true; btn.textContent='Leaving\u2026'; }
     try{ await AMVTeam.leave(); toast('You have left the team','info'); renderTeamView(); }
     catch(e){ if(btn){ btn.disabled=false; btn.textContent='Leave team'; } toast(e.message||'Could not leave the team','error',6000); }

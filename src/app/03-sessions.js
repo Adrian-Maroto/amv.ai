@@ -1485,11 +1485,11 @@ function signOutAndErase(){
      false when it could not draw itself, and the native dialog is still there
      underneath for exactly that case. */
   try{
-    if(typeof confirmModal === 'function' && confirmModal('Erase AMV data on this device?',
-        'This removes your chats, memories, projects, files and saved details from THIS device only. Anything synced to your account stays safe. Use this on a shared or public computer.',
-        go, { confirm:'Erase this device' })) return;
+    confirmDestructive('Erase AMV data on this device?',
+      'This removes your chats, memories, projects, files and saved details from THIS device only. Anything synced to your account stays safe. Use this on a shared or public computer.',
+      go, { confirm:'Erase this device' });
+    return;
   }catch(e){}
-  if(typeof confirm !== 'function' || confirm('Erase all AMV data from this device? Your account is not deleted.')) go();
 }
 try{ window.signOutAndErase = signOutAndErase; }catch(e){}
 

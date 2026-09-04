@@ -90,6 +90,58 @@ section('A missing REQUIRED thing looks different from an optional one');
   ok(!v.emailBlock && /not set up/.test(v.emailTag), 'an optional one is simply off, not an alarm', v.emailTag);
 }
 
+section('And the rows LOOK like rows, which nothing here ever checked');
+{
+  /* THE GAP THAT LET THE SCREEN SHIP UNSTYLED.
+
+     Every assertion above this one reads text or a class name, and a class name
+     is a promise about appearance, not the appearance. LAYER A39 styled the
+     verdict, the command line, the section headings and the closing note - and
+     never styled the rows. .gl-row had no layout, .gl-ic no size, .gl-tag no
+     shape, and .gl-body, .gl-label and .gl-how no rule at all, so the screen
+     somebody reads before deciding AMV can launch rendered as stacked
+     default-weight divs. Sixteen green assertions above did not notice, because
+     "does it contain the word required" is true either way.
+
+     So this measures. Not pixel values - those are somebody's design decision
+     and will change - but the properties that distinguish a designed row from
+     an undesigned one: it is laid out, the icon and the label share a line, the
+     label outranks the body text, and the tag is a pill rather than a word. */
+  const v = await page.evaluate(() => {
+    const row = document.querySelector('.gl-row');
+    const ic = row.querySelector('.gl-ic');
+    const label = row.querySelector('.gl-label');
+    const how = row.querySelector('.gl-how');
+    const tag = row.querySelector('.gl-tag');
+    const num = x => parseFloat(x) || 0;
+    const rs = getComputedStyle(row), ls = getComputedStyle(label), hs = getComputedStyle(how), ts = getComputedStyle(tag);
+    return {
+      rowDisplay: rs.display,
+      rowPad: num(rs.paddingTop) + num(rs.paddingLeft),
+      rowFramed: num(rs.borderTopWidth) > 0 || rs.backgroundColor !== 'rgba(0, 0, 0, 0)',
+      iconW: Math.round(ic.getBoundingClientRect().width),
+      sameLine: Math.abs(ic.getBoundingClientRect().top - label.getBoundingClientRect().top) < 12,
+      labelWeight: num(ls.fontWeight),
+      labelSize: num(ls.fontSize),
+      howSize: num(hs.fontSize),
+      howMuted: hs.color !== ls.color,
+      tagRadius: num(ts.borderTopLeftRadius),
+      tagPad: num(ts.paddingLeft),
+    };
+  });
+  ok(v.rowDisplay === 'flex', 'a row is laid out rather than left as a stack of divs', v.rowDisplay);
+  ok(v.rowPad > 0 && v.rowFramed, 'and is a surface with padding, not bare text on the page',
+     v.rowPad + 'px pad, framed:' + v.rowFramed);
+  ok(v.iconW > 0 && v.sameLine, 'the status mark sits beside the name, not above it',
+     v.iconW + 'px, sameLine:' + v.sameLine);
+  ok(v.labelWeight >= 600, 'the name of the thing is weighted as a name', v.labelWeight);
+  ok(v.howSize < v.labelSize && v.howMuted,
+     'and what it turns on reads as supporting text, not as another heading',
+     v.howSize + ' vs ' + v.labelSize + ', muted:' + v.howMuted);
+  ok(v.tagRadius >= 8 && v.tagPad > 0, 'live / required / not set up is a pill, not a loose word',
+     'radius ' + v.tagRadius + ', pad ' + v.tagPad);
+}
+
 section('Storage bindings are shown, and what their absence costs');
 {
   const t = await golive();

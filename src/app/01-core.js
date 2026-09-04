@@ -1331,13 +1331,13 @@ function closeOvr() {
    context, a partial render - this returns false rather than throwing, and the
    caller's window.confirm still runs. A confirmation that silently does not
    happen is worse than an ugly one. */
-function confirmModal(title, body, onConfirm, opts){
+function _confirmRender(title, body, opts){
   const o = opts || {};
   const ovr = $('ovr');
-  if(!ovr) return false;
+  if(!ovr) return null;
   ovr.innerHTML =
     '<div class="ov" id="cfm-bg"><div class="ob" role="alertdialog" aria-modal="true" aria-labelledby="cfm-t">'+
-      '<button class="oc" data-dact="closeOvr" aria-label="Close">&#215;</button>'+
+      '<button class="oc" id="cfm-x" aria-label="Close">&#215;</button>'+
       '<h2 id="cfm-t">'+escH(title||'Are you sure?')+'</h2>'+
       (body ? '<p class="ob-sub">'+escH(body)+'</p>' : '')+
       '<div style="display:flex;gap:9px;margin-top:14px">'+
@@ -1346,20 +1346,109 @@ function confirmModal(title, body, onConfirm, opts){
       '</div>'+
     '</div></div>';
   ovr.classList.add('on');
-  onBackdrop($('cfm-bg'), closeOvr);
-  on($('cfm-no'), 'click', closeOvr);
-  on($('cfm-yes'), 'click', () => {
-    closeOvr();
+  return ovr;
+}
+
+/* THE SAME DIALOG, AWAITED.
+
+   Half the destructive actions in AMV live inside `async` click handlers and
+   read as `if (!confirmed) return;`. Rewriting each into a callback would move
+   a screenful of logic into a closure at every site, so the dialog is offered
+   in both shapes off one renderer - one markup, one set of ids, no chance of
+   the two drifting into different-looking questions.
+
+   WHY THE OVERLAY IS WATCHED RATHER THAN THE BUTTONS. Cancel, the backdrop and
+   the close button all resolve here directly. Escape does not: it is handled by
+   the global key listener, which takes the overlay down knowing nothing about
+   this promise - so a promise that trusted only its own buttons would never
+   settle, and the handler awaiting it would hang forever holding a disabled
+   button. Watching for the dialog leaving covers every route out, including any
+   added later. A yes settles synchronously in its own handler, before the
+   observer's microtask can run, so pressing Continue cannot be read as a
+   cancel.
+
+   No overlay to draw into: ask in the browser's dialog, and if there is not one
+   of those either, refuse and say so. Never proceed unasked.                   */
+function _askDestructive(title, body, confirmLabel, opts){
+  const o = Object.assign({}, opts || {}, confirmLabel ? { confirm: confirmLabel } : {});
+  return new Promise(resolve => {
+    let settled = false, obs = null;
+    const done = v => {
+      if(settled) return; settled = true;
+      try{ if(obs) obs.disconnect(); }catch(e){}
+      resolve(v);
+    };
+    const ovr = _confirmRender(title, body, o);
+    if(!ovr){
+      if(typeof confirm === 'function'){
+        try{ return done(!!confirm(title + (body ? '\n\n' + body : ''))); }catch(e){}
+      }
+      try{ toast('AMV could not show a confirmation for that, so nothing was changed. Reload the page and try again.','error',6500); }catch(e){}
+      return done(false);
+    }
+    const no = () => { closeOvr(); done(false); };
+    onBackdrop($('cfm-bg'), no);
+    on($('cfm-no'), 'click', no);
+    on($('cfm-x'), 'click', no);
+    on($('cfm-yes'), 'click', () => { closeOvr(); done(true); });
+    try{
+      obs = new MutationObserver(() => { if(!document.getElementById('cfm-yes')) done(false); });
+      obs.observe(ovr, { childList:true, subtree:true, attributes:true, attributeFilter:['class'] });
+    }catch(e){}
+    /* Cancel is focused, not Continue. Somebody who arrives here and presses
+       Enter out of habit should not have destroyed anything. */
+    setTimeout(() => { try{ const n=$('cfm-no'); if(n) n.focus(); }catch(e){} }, 0);
+  });
+}
+
+function confirmModal(title, body, onConfirm, opts){
+  if(!$('ovr')) return false;
+  _askDestructive(title, body, null, opts).then(yes => {
+    if(!yes) return;
     /* After the overlay is down, so a handler that opens its own modal is not
        fighting the one being closed. */
     setTimeout(() => { try{ if(typeof onConfirm==='function') onConfirm(); }catch(e){} }, 0);
   });
-  /* Cancel is focused, not Continue. Somebody who arrives here and presses
-     Enter out of habit should not have destroyed anything. */
-  setTimeout(() => { try{ const n=$('cfm-no'); if(n) n.focus(); }catch(e){} }, 0);
   return true;
 }
 try{ window.confirmModal = confirmModal; }catch(e){}
+try{ window._askDestructive = _askDestructive; }catch(e){}
+
+/* ASK - AND IF ASKING IS IMPOSSIBLE, DO NOT DO IT.
+
+   Every destructive action here was guarded by one of two shapes:
+
+       if(typeof confirm !== 'function' || confirm(msg)) go();
+       if(typeof confirm === 'function' && !confirm(msg)) return;
+
+   Both PROCEED when `confirm` is unavailable. Read them again: the first runs
+   `go()` on a page with no confirm, and the second falls through to the action.
+   So the guard written to make somebody think twice was, in exactly the
+   conditions it was written for, the thing that skipped asking - leaving a
+   team, revoking an API key, disconnecting a bank account, signing every device
+   out, all one tap and no question.
+
+   It is not a hypothetical shape either: a page inside a sandboxed frame gets a
+   window.confirm that returns false without drawing anything, and an embedded
+   or partially-rendered context may not have the overlay to draw AMV's own
+   dialog into. Those are the cases the guard existed for, and they were the
+   cases it failed in.
+
+   The order here is AMV's dialog, then the browser's, then refuse. A
+   destructive action that cannot be confirmed does not happen, and the person
+   is told why rather than left wondering whether their tap registered.
+
+   Returns whether it managed to ask. `onConfirm` runs only on a real yes.     */
+function confirmDestructive(title, body, onConfirm, opts){
+  const run = () => { try{ if(typeof onConfirm === 'function') onConfirm(); }catch(e){} };
+  try{ if(confirmModal(title, body, run, opts)) return true; }catch(e){}
+  if(typeof confirm === 'function'){
+    try{ if(confirm(title + (body ? '\n\n' + body : ''))) run(); return true; }catch(e){}
+  }
+  try{ toast('AMV could not show a confirmation for that, so nothing was changed. Reload the page and try again.','error',6500); }catch(e){}
+  return false;
+}
+try{ window.confirmDestructive = confirmDestructive; }catch(e){}
 
 /* Reusable polished empty state: icon + title + subtitle + optional action.
    emptyState({icon,title,sub,btn:{label,act,arg}}) -> HTML string */

@@ -166,11 +166,11 @@ function _actSignOutEverywhere(sayId){
      confirmation is not a smaller action than the others - it is the one
      somebody reaches for while panicking, on a phone, with a thumb. */
   try{
-    if(typeof confirmModal === 'function' && confirmModal('Sign out of all devices?',
-        'Every device signed in to this account is signed out immediately, including this one and your phone. '+
-        'Your data is untouched. Do this if you think someone else has access.',
-        go, { confirm:'Sign out everywhere' })) return;
+    confirmDestructive('Sign out of all devices?',
+      'Every device signed in to this account is signed out immediately, including this one and your phone. '+
+      'Your data is untouched. Do this if you think someone else has access.',
+      go, { confirm:'Sign out everywhere' });
+    return;
   }catch(e){}
-  if(typeof confirm !== 'function' || confirm('Sign out of every device, including this one?')) go();
 }
 try{ window._renderActivityBlock = _renderActivityBlock; window._actSignOutEverywhere = _actSignOutEverywhere; }catch(e){}

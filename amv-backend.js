@@ -5822,7 +5822,13 @@ async function stripeSubscribe(request, env){
   const plan = String(body.plan || '').toLowerCase();
   const pm = String(body.payment_method || '');
   const priceId = { pro:env.STRIPE_PRICE_PRO, elite:env.STRIPE_PRICE_ELITE, ultra:env.STRIPE_PRICE_ULTRA }[plan];
-  if(!priceId) return json({ error:'unknown plan or price id not configured', code:'needs_service' }, 400);
+  /* A plan whose Stripe price id was never set. From the outside that is not
+     an unknown plan - they picked it off AMV's own pricing page - it is a
+     plan this deployment cannot sell yet, and saying so is the difference
+     between somebody waiting for a fix and somebody thinking they broke it. */
+  if(!priceId)
+    return json({ error:'That plan cannot be bought on this deployment yet - its price has not been set up. Nothing has been charged.',
+                  code:'needs_service' }, 400);
   if(!/^pm_/.test(pm)) return json({ error:'a valid payment method is required' }, 400);
 
   const sk = { 'Authorization':'Bearer ' + env.STRIPE_SECRET_KEY, 'Content-Type':'application/x-www-form-urlencoded' };
@@ -15805,7 +15811,16 @@ async function stripeCheckout(request, env) {
      times never sees it. */
   const sc = await guardAction(env, `stripeco:${user.email}`, 10, 100, 'checkout attempts');
   if (sc) return sc;
-  if (!env.STRIPE_SECRET_KEY) return json({ error: 'payments not configured' }, 503);
+  /* NOT CONFIGURED IS A SENTENCE SOMEBODY READS, NOT A LOG LINE.
+     This said 'payments not configured' with no code, and the client renders a
+     rejected checkout straight into a toast - so pressing Upgrade on a
+     deployment with no Stripe key produced "Card: payments not configured".
+     The subscribe route a few hundred lines up already does this properly; it
+     is the same fact and gets the same words. The code lets the sheet show the
+     honest panel instead of a red toast. */
+  if (!env.STRIPE_SECRET_KEY)
+    return json({ error: 'Payments are not connected on this deployment yet, so checkout cannot open. Nothing has been charged.',
+                  code: 'needs_service' }, 503);
 
 
   /* An account flagged for chargeback/refund abuse cannot start a new paid plan.
@@ -15915,7 +15930,10 @@ async function stripePortal(request, env) {
   if (!user) return json({ error: 'unauthorized' }, 401);
   const sp = await guardAction(env, `stripepo:${user.email}`, 10, 100, 'billing portal sessions');
   if (sp) return sp;
-  if (!env.STRIPE_SECRET_KEY) return json({ error: 'payments not configured' }, 503);
+  /* Same fact, same words as the checkout route above. */
+  if (!env.STRIPE_SECRET_KEY)
+    return json({ error: 'Payments are not connected on this deployment yet, so the billing portal cannot open.',
+                  code: 'needs_service' }, 503);
   const custId = await env.AMV_KV.get(`stripecust:${user.email}`);
   if (!custId) return json({ error: 'no subscription found' }, 404);
   // AMV-025 / AMV-SP-09: the server-configured origin is authoritative for
@@ -17496,7 +17514,11 @@ async function marketBuy(request, env) {
     return json({ error: 'Buying from the marketplace is turned off for your account. Whoever manages your family can turn it on.',
                   code: 'family_blocked' }, 403);
   }
-  if (!env.STRIPE_SECRET_KEY) return json({ error: 'payments not configured' }, 503);
+  /* Same fact, same words as the subscription routes. Somebody pressing Buy
+     on a marketplace listing is owed a sentence, not a config note. */
+  if (!env.STRIPE_SECRET_KEY)
+    return json({ error: 'Payments are not connected on this deployment yet, so this cannot be bought. Nothing has been charged.',
+                  code: 'needs_service' }, 503);
 
   /* AMV-009: THE CHECKOUT THEY ALREADY HAVE, IF THERE IS ONE.
 
@@ -20911,7 +20933,9 @@ async function verifyStripeSignature(secret, payload, sigHeader) {
 async function paypalSubscribe(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
-  if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_SECRET) return json({ error: 'paypal not configured' }, 503);
+  if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_SECRET)
+    return json({ error: 'PayPal is not connected on this deployment yet, so it cannot be used to pay. Nothing has been charged.',
+                  code: 'needs_service' }, 503);
   /* The same bound the card path has had all along, for the same reason: one
      account hammering this burns AMV's rate limit at PayPal, and the people
      who then cannot check out are everybody else. It was missing here because

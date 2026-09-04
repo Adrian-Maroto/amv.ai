@@ -709,7 +709,8 @@ function _payoutsPaint(host, d){
     const what = status==='paid'
       ? 'Mark this payout as already sent? It does not transfer anything - confirm you have paid it.'
       : 'Reject this payout and return the money to the seller\u2019s balance?';
-    if(typeof confirm==='function' && !confirm(what)) return;
+    if(!await _askDestructive(status==='paid' ? 'Mark this payout as already sent?' : 'Reject this payout?',
+        what, status==='paid' ? 'Mark as sent' : 'Reject payout')) return;
     _poBusy=true;
     const btns=[...host.querySelectorAll('[data-po-paid],[data-po-rej]')];
     btns.forEach(b=>{ b.disabled=true; });
@@ -834,7 +835,9 @@ function _wireDigestCard(){
   });
   on($('fd-digest-send'),'click', async ()=>{
     /* Outward-facing: it puts mail in someone's inbox, so it is confirmed. */
-    if(typeof confirm === 'function' && !confirm('Email this week\u2019s digest to the owner now?')) return;
+    if(!await _askDestructive('Email this week\u2019s digest to the owner now?',
+        'It goes to the owner\u2019s inbox immediately. Mail that has been sent cannot be recalled.',
+        'Send it')) return;
     say('Sending\u2026');
     try{
       const d = await call('?send=1');
@@ -1478,8 +1481,19 @@ function _confirmDeleteAccount(){
       /* What AMV keeps, and why, shown before the page goes. The server sends
          it on every deletion; nothing displayed it, so a disclosure written to
          be read was only ever in a response body. */
+      /* WHAT AMV KEEPS, AT THE MOMENT SOMEBODY LEAVES.
+
+         This is the last thing AMV ever says to this person, and it was said in
+         the browser's grey alert box - unstyled, unreadable on a phone, and
+         gone the instant they tap OK. It is a data-retention disclosure written
+         to be read, so it is shown in AMV's own dialog and the page waits for
+         them to close it before reloading. */
       if(retained&&retained.what){
-        try{ alert('Your account is deleted.\n\n'+retained.what+'\n\n'+(retained.why||'')); }catch(e){}
+        try{
+          await _askDestructive('Your account is deleted.',
+            retained.what + (retained.why ? '\n\n' + retained.why : ''),
+            'Close', { safe:true, cancel:'Close' });
+        }catch(e){}
       }
     }
     // Erase THIS account off the device, rather than blanking all of storage.
