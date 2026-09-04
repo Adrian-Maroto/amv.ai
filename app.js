@@ -4239,7 +4239,24 @@ async function _forgotSave(){
     try{
       const d = await AMV_API.login(_RESET.email, { password: pw, provider:'email' });
       if(d && d.token){
-        const nm = (d.user && d.user.name) || _RESET.email.split('@')[0];
+        /* THE SAME MISTAKE THE COMMENT ABOVE DESCRIBES, TWO LINES LATER.
+
+           `/auth/login` answers `{token, refreshToken, email, name}` - the name
+           is at the TOP LEVEL. This read `d.user.name`, and there is no `user`
+           object on that response, so the fallback ran every single time: after
+           resetting their password, Ada Lovelace was signed back in as "ada".
+
+           And it sticks. `_completeIntroLogin` writes `S.user` to storage, so a
+           password reset permanently renamed the account on that device, with
+           the initial in the sidebar changing to match. A rename nobody asked
+           for, at the end of a flow about something else entirely.
+
+           The local account record is the second-best answer, ahead of the
+           email prefix: it is what this browser already displayed for them. */
+        let known = '';
+        try{ const raw = localStorage.getItem(acctKey(_RESET.email));
+             if(raw) known = (JSON.parse(raw).name || ''); }catch(e){}
+        const nm = d.name || known || _RESET.email.split('@')[0];
         closeOvr();
         _completeIntroLogin({ name:nm, email:_RESET.email,
                               ini:String(nm)[0].toUpperCase(), provider:'email' });

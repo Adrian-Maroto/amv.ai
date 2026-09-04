@@ -8925,3 +8925,34 @@ reader, out loud, for the same path.** Here they agreed on the name `plan` and
 disagreed about which object it hangs off, which greps identically. Two of the
 three consumers of one endpoint were wrong and the third was right, so even
 "is this field used correctly somewhere" answers yes.
+
+## 365. Reset your password, lose your name
+
+`/auth/login` answers `{token, refreshToken, email, name}`. The auto sign-in at
+the end of the password-reset flow read `d.user.name`. There is no `user`
+object on that response, so the fallback ran every single time and Ada Lovelace
+came back as "ada" - the local part of her email. And it sticks:
+`_completeIntroLogin` writes `S.user` to storage, so the name and initial in the
+sidebar were permanently replaced on that device. A rename nobody asked for, at
+the end of a flow about something else.
+
+The comment directly above the defect describes the PREVIOUS version of the
+same mistake, in the same three lines: `const r = await _fetch(...); if(r.token)`
+on a Response object, which has no `.token`, so the auto sign-in "could never
+fire and silently fell through". The fix for that one introduced this one two
+lines later.
+
+**A comment recording a shape mistake is a warning that the shape is easy to
+get wrong here, not proof it has been got right.** Twice in the same statement,
+by different hands, the code guessed at the structure of a response instead of
+reading it. Both guesses failed silently, because a missing property is
+`undefined` and every one of these had a fallback ready to make `undefined`
+look like an answer.
+
+Which is the thread running through 363, 364 and this one, three separate
+findings in one round: `amv_profile` written by nobody, `ent.plan` on the wrong
+object, `d.user.name` on an object that does not exist. None of them threw. All
+three had a fallback that produced something plausible. The check that catches
+every one is the same and takes a minute: open the handler, read the literal it
+returns, and compare it to the expression the caller writes - not to the
+caller's variable name, which in all three cases sounded exactly right.
