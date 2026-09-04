@@ -78,10 +78,22 @@ async function askInChat(question) {
   await page.waitForTimeout(1000);
   /* And a burst window on top of that: several turns inside ten seconds are
      answered locally with "pause briefly", which is right for a person and
-     wrong for a file that asks six questions in a row. The rolling window is
-     cleared, the 800ms floor above is not - so what is skipped is only the
-     part that has nothing to do with what is being tested. */
-  await page.evaluate(() => { try { AEGIS._times = []; } catch (e) {} });
+     wrong for a file that asks six questions in a row.
+
+     `_lastSend` is cleared with it now, and that was the last flake in this
+     file. The 1000ms above is measured from when the PREVIOUS ask returned,
+     which is normally well clear of the 800ms floor - but a case that drives
+     the RETRY path pushes `_lastSend` forward with every attempt, so on a
+     loaded machine the last retry landed a few hundred milliseconds before the
+     next send and the case asserting on a quota card read "Slow down a moment"
+     instead. Under the parallel runner only, three times in four, which is
+     exactly how a race hides.
+
+     Both halves of the throttle are the app protecting a person from their own
+     typing speed. Neither has anything to do with what this file asserts, and
+     clearing one and not the other left the timing dependency in place while
+     looking as though it had been dealt with. */
+  await page.evaluate(() => { try { AEGIS._times = []; AEGIS._lastSend = 0; } catch (e) {} });
   /* THE SEND USED TO BE ABLE TO TAKE THE WHOLE FILE DOWN WITH IT.
 
      This evaluate awaits 200ms inside the page before it sends. Anything that
@@ -101,20 +113,40 @@ async function askInChat(question) {
      real failure: `had` is re-read first, and the assertion below still
      requires two new messages to have actually appeared. */
   const readCount = () => page.evaluate(() => (getMsgs() || []).length);
+  /* The wait for `S.busy` and the send happen in ONE round trip, deliberately.
+
+     `sendMsg` is a no-op while `S.busy` is true and it says nothing when it
+     declines - so a turn started a moment too early simply does not happen,
+     and the assertion below reports "before 12, after 12" with no hint as to
+     why. Waiting in a separate evaluate leaves a gap between the check and the
+     press that a loaded machine can fit a state change into; inside one
+     evaluate there is no gap.
+
+     It also reports whether the messages actually grew, so a decline is
+     distinguishable from a send that went out and came back empty. */
   const doSend = (q) => page.evaluate(async (text) => {
     setTab('chat');
+    const t0 = Date.now();
+    while (S.busy && Date.now() - t0 < 60000) await new Promise(r => setTimeout(r, 50));
+    /* Kept at 200ms. The app answers a send inside 800ms of the last one
+       locally with "slow down a moment" and never reaches the backend, and the
+       waits above this add up to just over that - shortening this tipped a
+       case that asserts on a REFUSAL into reading the throttle instead. */
     await new Promise(r => setTimeout(r, 200));
+    const n0 = (getMsgs() || []).length;
     const box = document.getElementById('mta');
     box.value = text;
     box.dispatchEvent(new Event('input', { bubbles: true }));
     sendMsg();
+    return { busyAtSend: S.busy, grewTo: (getMsgs() || []).length, from: n0 };
   }, q);
   const gone = (e) => /Execution context was destroyed|Target closed|page has been closed/i
     .test(String((e && e.message) || e));
 
   let had = await readCount();
+  let sent = null;
   try {
-    await doSend(question);
+    sent = await doSend(question);
   } catch (e) {
     if (!gone(e)) throw e;
     /* Let the page finish becoming itself again, then start the turn over from
@@ -125,7 +157,7 @@ async function askInChat(question) {
     await page.waitForTimeout(300);
     try {
       had = await readCount();
-      await doSend(question);
+      sent = await doSend(question);
     } catch (e2) {
       ok(false, 'the chat stayed put long enough to send a question',
          String((e2 && e2.message) || e2).slice(0, 120));
@@ -144,7 +176,8 @@ async function askInChat(question) {
     const m = all.slice(-1)[0] || {};
     return { error: m._error || '', text: m.c || '', quota: !!m._quota, count: all.length };
   });
-  ok(last.count >= had + 2, 'the turn was actually sent', { before: had, after: last.count });
+  ok(last.count >= had + 2, 'the turn was actually sent',
+     { before: had, after: last.count, atSend: sent });
   return { ...last, calls: L.hit(/\/v1\/messages/).length - before };
 }
 

@@ -149,7 +149,24 @@ async function serveArtifact(port, apiBase) {
     res.writeHead(200, { 'Content-Type': TYPES[file.slice(file.lastIndexOf('.'))] || 'application/octet-stream' });
     res.end(body);
   });
-  await new Promise(r => server.listen(port, r));
+  /* THE KERNEL PICKS IT, because it is the only thing that knows what is free.
+
+     Every caller hand-picked a distinct number - 9160, 9163, 9169, 9175, 9181,
+     9191, 9201, 9237 - and that works exactly as long as nobody reuses one. The
+     failure when somebody does is EADDRINUSE from inside a suite, which reads
+     as the code being broken rather than the machine being busy, and it only
+     appears under the parallel runner. `serveApp` in harness.mjs was moved off
+     fixed ports for this reason; this file was left behind.
+
+     `listen(0)` asks for a port that is free right now, so the numbers the
+     callers pass are honoured as a hint and ignored when they collide. */
+  await new Promise((res, rej) => {
+    server.once('error', (e) => {
+      if (e && e.code === 'EADDRINUSE') { server.listen(0, res); return; }
+      rej(e);
+    });
+    server.listen(port, res);
+  });
   return server;
 }
 
@@ -161,13 +178,15 @@ async function serveArtifact(port, apiBase) {
    this exists to catch are precisely the ones where the screen and the server
    disagree. */
 export async function bootLive(opts = {}) {
-  const port = opts.port || 9160;
+  const wanted = opts.port || 0;
   const env = opts.env || makeEnv();
   const outbound = opts.outbound || makeOutbound();
   const apiBase = opts.apiBase === undefined ? BACKEND : opts.apiBase;
 
   const worker = (await import(join(ROOT, 'amv-backend.js') + '?live=' + Date.now())).default;
-  const server = await serveArtifact(port, apiBase);
+  const server = await serveArtifact(wanted, apiBase);
+  /* Whatever it actually got, which is not always what was asked for. */
+  const port = server.address().port;
   const browser = await chromium.launch(LAUNCH);
   const context = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 } });
   /* Armed on the CONTEXT rather than the page, so every page this context makes
