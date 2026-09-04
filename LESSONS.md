@@ -8956,3 +8956,37 @@ three had a fallback that produced something plausible. The check that catches
 every one is the same and takes a minute: open the handler, read the literal it
 returns, and compare it to the expression the caller writes - not to the
 caller's variable name, which in all three cases sounded exactly right.
+
+## 366. Three of one shape in a round is a missing check, not three mistakes
+
+LESSONS 363, 364 and 365 are the same defect three times: the client reads a
+field the endpoint does not send. `amv_profile`, written by nobody and read by
+nobody. `ent.plan`, where the plan is at `entitlement.plan`. `d.user.name`,
+where the name is at `name`.
+
+None of them threw. A missing property is `undefined`, and every one had a
+fallback standing by to turn `undefined` into something plausible - an empty
+profile, a "not yet confirmed" retry, an email prefix used as a person's name.
+Nothing logged. Nothing looked wrong on the screen. And in each case the
+variable was named exactly what a reader would expect it to be named, so the
+line reads correctly right up until you open the handler.
+
+So the fix is not three fixes. It is the check: take the route each `AMV_API`
+method calls, take the object literals that handler returns, and compare them
+to the fields the caller reads off the result. That is now a gate stage, and it
+fails on the entitlement defect by name when it is put back.
+
+Two things learned building it, both about not being deleted later:
+
+**Conservative or dead.** The first version reported `.getMonth` on a Date
+declared four lines below the call, and treated `json(await issueTokens(...))`
+as a response with only two fields. Both are noise, and a stage that cries wolf
+gets skipped by the next person under time pressure. It now stops the read
+window at the next `await` assignment and skips any handler whose response is
+not a literal it can see - catching less, and trusted.
+
+**A finding is a failure.** This file marks a stage that did not RUN by
+returning a string, which prints a green tick with a note. The first version
+returned its findings that way, so it printed the real defect and the gate
+still said SHIPPABLE. A check that reports a problem without failing is a check
+somebody scrolls past.

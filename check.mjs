@@ -95,7 +95,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 8 : 10;
+const TOTAL = FAST ? 9 : 11;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -478,6 +478,104 @@ step('No class is applied without something to apply', () => {
 
    Three real defects from one regex, so it is a stage rather than an anecdote.
    It reads app.js because that is the whole client in one scope. */
+step('No client reads a field the server does not send', () => {
+  /* THREE BUGS IN ONE ROUND HAD THIS SHAPE, and none of them threw.
+
+     `/v1/entitlement` answers `{ok, entitlement:{plan}, ...}` and two functions
+     on the post-payment path read `ent.plan` off the whole response, so a
+     customer who had just paid got no confirmation and the guard against faked
+     unlocks never ran (LESSONS 364). `/auth/login` answers `{token,
+     refreshToken, email, name}` and the reset flow read `d.user.name`, so a
+     password reset renamed the account to the email prefix (LESSONS 365). And
+     the sync `profile` slot was written by nobody and read by nobody (363).
+
+     A missing property is `undefined`, and every one of these had a fallback
+     ready to turn `undefined` into something plausible. Nothing throws, nothing
+     logs, and the variable name always sounds right - so the only check that
+     finds them is mechanical: take the route each AMV_API method calls, take
+     the object literals its handler returns, and compare them to the fields the
+     caller actually reads off the result.
+
+     DELIBERATELY CONSERVATIVE. A handler that returns anything but an object
+     literal - `json(await issueTokens(...))`, an Object.assign, a spread - has
+     a shape this cannot see, and is skipped rather than guessed at. The read
+     window stops at the next `await` assignment, because without that a Date
+     declared four lines later was attributed to the response and `.getMonth`
+     was reported as a missing field. False alarms are what get a stage
+     deleted. */
+  const be = readFileSync(R('amv-backend.js'), 'utf8');
+  const app = readFileSync(R('app.js'), 'utf8');
+
+  const route = new Map();
+  for (const m of be.matchAll(/case\s+'([^']+)':\s*return\s+([A-Za-z_$][\w$]*)\s*\(/g))
+    if (!route.has(m[1])) route.set(m[1], m[2]);
+
+  const bodyOf = (name) => {
+    const i = be.search(new RegExp('async function ' + name.replace(/\$/g, '\\$') + '\\s*\\('));
+    if (i < 0) return '';
+    let d = 0, j = be.indexOf('{', i); const start = j;
+    for (; j < be.length; j++) { const c = be[j]; if (c === '{') d++; else if (c === '}') { d--; if (!d) break; } }
+    return be.slice(start, j + 1);
+  };
+  const topKeys = (src) => {
+    const keys = new Set();
+    for (const m of src.matchAll(/\bjson\(\s*\{/g)) {
+      let i = m.index + m[0].length - 1, d = 0, j = i;
+      for (; j < src.length; j++) { const c = src[j]; if (c === '{') d++; else if (c === '}') { d--; if (!d) break; } }
+      const body = src.slice(i + 1, j);
+      let dep = 0, cur = '', parts = [];
+      for (const ch of body) {
+        if ('{[('.includes(ch)) dep++; else if ('}])'.includes(ch)) dep--;
+        if (ch === ',' && dep === 0) { parts.push(cur); cur = ''; } else cur += ch;
+      }
+      parts.push(cur);
+      for (const p of parts) {
+        const mm = p.match(/^\s*(?:\.\.\.)?\s*([A-Za-z_$][\w$]*)\s*:/) || p.match(/^\s*([A-Za-z_$][\w$]*)\s*$/);
+        if (mm) keys.add(mm[1]);
+      }
+    }
+    for (const _ of src.matchAll(/\bjson\(\s*([^{\s])/g)) keys.add('*');
+    if (/\bjson\(\s*Object\.assign|\.\.\./.test(src)) keys.add('*');
+    return keys;
+  };
+
+  const meth = new Map();
+  for (const m of app.matchAll(/async\s+([A-Za-z_$][\w$]*)\s*\(/g)) {
+    const j = app.indexOf('{', m.index + m[0].length - 1);
+    if (j < 0) continue;
+    let d = 0, k = j;
+    for (; k < app.length; k++) { const c = app[k]; if (c === '{') d++; else if (c === '}') { d--; if (!d) break; } }
+    const body = app.slice(j, k + 1);
+    if (body.length > 2500) continue;
+    const p = body.match(/_fetch\(\s*'([^']+)'/);
+    if (p && /\.json\(\)/.test(body)) meth.set(m[1], p[1].split('?')[0]);
+  }
+
+  const UNIVERSAL = new Set(['error', 'ok', 'code', 'message', 'then', 'catch', 'length', 'map', 'forEach', 'filter', 'slice']);
+  const bad = [];
+  for (const m of app.matchAll(/(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*await\s+AMV_API\.([A-Za-z_$][\w$]*)\(/g)) {
+    const v = m[1], fn = m[2];
+    const path = meth.get(fn); if (!path) continue;
+    const h = route.get(path); if (!h) continue;
+    const keys = topKeys(bodyOf(h));
+    if (!keys.size || keys.has('*')) continue;
+    let seg = app.slice(m.index + m[0].length, m.index + 900);
+    const nxt = seg.search(/(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*await\b/);
+    if (nxt > 0) seg = seg.slice(0, nxt);
+    for (const f of new Set([...(v + seg).matchAll(new RegExp('\\b' + v + '\\.([A-Za-z_$][\\w$]*)', 'g'))].map(x => x[1]))) {
+      if (UNIVERSAL.has(f) || keys.has(f)) continue;
+      bad.push(fn + '() -> ' + path + ' (' + h + ') reads .' + f + ' | sends: ' + [...keys].join(', '));
+    }
+  }
+  /* THROWN, not returned. A returned string is how this file marks a stage
+     that did not RUN, and it prints a green tick with a note beside it - so
+     the first version of this reported the real defect and the gate still said
+     SHIPPABLE. A finding is a failure; only an absent stage is a note. */
+  if (bad.length) {
+    throw new Error('A client reads a field its endpoint never returns:\n  ' + bad.join('\n  '));
+  }
+});
+
 step('No guard names a function that does not exist', () => {
   /* COMMENTS AND STRINGS STRIPPED FIRST, and this is not a detail.
 

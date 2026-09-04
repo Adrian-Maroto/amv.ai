@@ -131,9 +131,9 @@ Companion docs (do not duplicate them here - read them):
   which was left on hand-picked numbers until a collision showed up as
   EADDRINUSE from inside a suite - so nothing binds a fixed one and two runs no
   longer collide.
-- `npm run check:fast` is the ITERATION loop: ~6 seconds, eight stages (syntax,
-  worker loads, build fresh, unstyled classes, dead guards, page weight, deps,
-  preflight). It
+- `npm run check:fast` is the ITERATION loop: ~7 seconds, nine stages (syntax,
+  worker loads, build fresh, unstyled classes, response shapes, dead guards,
+  page weight, deps, preflight). It
   deliberately SKIPS the suites and the workerd stage, so it catches a broken
   build and a stale artifact but NOT a behavioural regression. Use it between
   edits; use the full `npm run check` before calling anything done.
@@ -154,6 +154,18 @@ Companion docs (do not duplicate them here - read them):
 
   Both rules read `app.js` with comments and strings stripped, so a comment
   explaining a removal is not mistaken for the removal not happening.
+- The RESPONSE SHAPES stage exists because of LESSONS 363-365: three defects in
+  one round where the client read a field the endpoint does not send.
+  `ent.plan` on a response whose plan is at `entitlement.plan`, so nothing
+  happened at the moment somebody paid and the guard against faked unlocks
+  never ran. `d.user.name` on `/auth/login`, so a password reset renamed the
+  account to the email prefix. None of them threw: a missing property is
+  `undefined` and each had a fallback that made it look like an answer.
+  It maps each `AMV_API` method to its route, reads the object literals that
+  handler returns, and compares them to what the caller reads off the result.
+  Deliberately conservative - a handler returning anything but a literal is
+  skipped rather than guessed at - because a false alarm is what gets a stage
+  deleted.
 - **Performance is measured, not inferred.** There used to be one perf check, a
   ceiling on the gzipped size of `index.html`, and the page sat comfortably
   inside it the whole time it was taking 12.6 SECONDS to paint - a
