@@ -48,7 +48,7 @@ ok(off.depth == null, 'clicking again turns research off');
 section('Deep research raises the search budget (max_uses)');
 
 const req = await page.evaluate(async () => {
-  AMV_API.base = 'https://api.test';
+  AMV_API.base = 'https://amv-stub.workers.dev';
   AMV_API.token = 'tok';
   let captured = null;
   window.fetch = async (u, o) => {
@@ -146,7 +146,7 @@ ok(modal.disclaimerNoTrade, 'and it makes clear AMV will not place trades or say
 section('Research watch: it schedules a real research job with the chosen options');
 
 const scheduled = await page.evaluate(async () => {
-  AMV_API.base = 'https://api.test'; AMV_API.token = 'tok'; AMV_API.live = true;
+  AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 'tok'; AMV_API.live = true;
   let sent = null;
   window.fetch = async (u, o) => {
     if (String(u).includes('/auto/create')) {

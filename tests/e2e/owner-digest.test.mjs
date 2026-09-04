@@ -42,7 +42,7 @@ const wire = (opts = {}) => page.evaluate(cfg => {
   window.__admCalls = [];
   window.__confirmAnswer = cfg.confirmAnswer;
   window.confirm = (q) => { window.__lastConfirm = q; return window.__confirmAnswer; };
-  saveStr('amv_api_base', 'https://api.test');
+  saveStr('amv_api_base', 'https://amv-stub.workers.dev');
   window.fetchDeadline = async (url) => {
     const u = String(url);
     window.__admCalls.push(u);

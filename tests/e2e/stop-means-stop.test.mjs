@@ -18,7 +18,7 @@ const { page, errors } = app;
 section('Pressing Stop does not re-issue the request');
 {
   const r = await page.evaluate(async () => {
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     let calls = 0;
     const realFetch = window.fetch;
     /* Counted PER ENDPOINT. Other things fetch while a chat is open - the
@@ -65,7 +65,7 @@ section('A real network drop still retries, because that is not a stop');
   /* The fix must not turn a genuine connection hiccup into a dead end - those
      are the failures retrying exists for. */
   const r = await page.evaluate(async () => {
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     let calls = 0;
     const realFetch = window.fetch;
     window.fetch = async (url) => {

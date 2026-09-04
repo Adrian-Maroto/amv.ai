@@ -27,7 +27,7 @@ const { page, errors } = app;
 const story = await page.evaluate(async () => {
   S.user = { name: 'T', email: 't@amv.dev', ini: 'T' };
   saveStr('amv_plan', 'ultra');
-  AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+  AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
 
   /* Every slug the client sends, and a DIFFERENT name back for each new site -
      a stub that answers with one name makes "updated in place" and "made a new

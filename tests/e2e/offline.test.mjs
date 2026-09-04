@@ -13,7 +13,7 @@ const { page, errors } = app;
 
 section('Every API call has a deadline');
 const hung = await page.evaluate(async () => {
-  AMV_API.base = 'https://api.test'; AMV_API.token = 'tok';
+  AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 'tok';
   // a connection that accepts the request and then says nothing, ever
   window.fetch = (u, o) => new Promise((_, rej) => {
     if (o && o.signal) o.signal.addEventListener('abort', () => rej(Object.assign(new Error('aborted'), { name: 'AbortError' })));
@@ -65,7 +65,7 @@ ok(sig.streamAborted === false, 'but a streamed response is left alone - it is m
 section('A chat answer cut off halfway keeps what arrived');
 const cut = await page.evaluate(async () => {
   window.__amvStreamIdleMs = 300;
-  AMV_API.base = 'https://api.test'; AMV_API.token = 'tok';
+  AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 'tok';
   S.busy = false;
   window.fetch = async (u) => {
     const sse = 'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"The first half of the answer"}}\n\n';

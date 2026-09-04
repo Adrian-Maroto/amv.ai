@@ -23,7 +23,7 @@ const { page, errors } = app;
    fail the way a flaky connection does. */
 const withDeadServer = (fn) => page.evaluate(async (body) => {
   const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
-  AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+  AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
   AMV_API._fetch = async () => { throw new Error('network down'); };
   let out;
   try { out = await (new Function('return (' + body + ')')())(); }
@@ -83,7 +83,7 @@ section('And a working server still renders the real numbers');
      fix, so the ordinary case is asserted too. */
   const r = await page.evaluate(async () => {
     const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API._fetch = async () => ({ ok: true, json: async () => ({
       ok: true, balance: 42.5, lifetime: 108, sellerPct: 80, minWithdraw: 10,
       tx: [{ type: 'sale', amount: 12.5, title: 'A thing', ts: Date.now() }] }) });
@@ -112,7 +112,7 @@ section('A rating nobody else can see is not reported as a rating');
     AMV_API.base = ''; 
     out.noBackend = await AMVMarket.rate('mk_seo', 5);
 
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API._fetch = async () => ({ ok: false, json: async () => ({ error: 'rating service down' }) });
     out.failed = await AMVMarket.rate('mk_seo', 4);
 
@@ -144,7 +144,7 @@ section('A review the seller never receives is not "posted"');
     try { await AMVMarket.reviewSeller('seller@x.com', 5, 'great'); out.noBackend = 'CLAIMED POSTED'; }
     catch (e) { out.noBackend = e.message; out.noBackendCode = e.code; }
 
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API._fetch = async () => ({ ok: false, json: async () => ({ error: 'review rejected' }) });
     try { await AMVMarket.reviewSeller('seller@x.com', 5, 'great'); out.failed = 'CLAIMED POSTED'; }
     catch (e) { out.failed = e.message; }

@@ -176,7 +176,7 @@ section('Limits are saved where they cannot be edited');
   const r = await page.evaluate(async () => {
     const S2 = window.AMVSpend, sent = [];
     const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API._fetch = async (path, opts) => {
       sent.push({ path, body: JSON.parse((opts && opts.body) || '{}') });
       // The account pulls the monthly ceiling down to its own maximum.

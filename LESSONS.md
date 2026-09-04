@@ -8139,3 +8139,42 @@ replacing fixed sleeps with condition waits, done for the bootLive suites, and a
 prior CI-only failure recorded as "it passed locally and failed in CI". Knowing
 the hazard did not stop me introducing two more the moment I added an animation.
 A rule that lives only in a completed task is a rule that gets rediscovered.
+
+## 343. The tests pointed the app at a host its own policy forbids
+
+`bootApp().connect()` sets `AMV_API.base` so a suite can exercise the connected
+app, and it pointed at `https://api.test`. connect-src forbids that host.
+Measured rather than assumed: a fetch there raises a connect-src violation and
+returns "Failed to fetch" without leaving the browser. 53 occurrences across 31
+files.
+
+**The honest size of it.** I first reported this as suites believing they
+exercised a network path and exercising nothing. That was overstated, and
+checking rather than repeating it mattered: of the 16 suites that set the base
+and stub nothing, 15 set it only to make `AMV_API.live` true - a liveness flag
+for whether the UI offers a connected experience, with no request intended. One
+made a real call, the Crew surface asking for `/v1/everyday`, refused silently,
+with nothing asserting on the result either way. So nothing was passing while
+testing nothing, today.
+
+**Why it was still worth fixing.** The cost was never in what the suites do now;
+it is in what the next one would do. A suite that sets this base and relies on a
+real request tests nothing at all and reports a pass - which is precisely the
+defect LESSONS 328 records, sitting in the harness waiting for somebody to walk
+into it. The sibling live-backend harness had already worked this out and picked
+a `workers.dev` host, with a comment saying why. The main harness had not, and
+nothing compared the two.
+
+**The rule.** A policy that constrains the product constrains the tests, and the
+tests do not get a second policy. `the-page-can-reach-what-it-calls` already
+checks every host the app fetches against connect-src; it now checks the
+harness's base against the same directive, from the same parsed policy. A stub
+host is still a stub - nothing asserts the request succeeds, only that the
+browser would let it start.
+
+**And on reporting a finding before measuring it.** Three of my claims this
+session ran ahead of the evidence: a Wrangler variable wipe that had not
+happened, a captcha diagnosis that was a real bug but not the one in front of
+us, and this. All three were plausible, all three were stated with more
+confidence than they had earned, and each cost a round trip to walk back. The
+measurement here took one browser and four minutes. It should have come first.

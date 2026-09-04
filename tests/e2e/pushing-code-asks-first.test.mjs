@@ -91,7 +91,7 @@ section('It reads the shape the server actually returns');
     const withList = async (payload) => {
       window.AMV_API.connectList = async () => payload;
       /* live is a getter off base, so it is made true the way the app does. */
-      AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+      AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
       return await window.__realGhConnection();
     };
     window.__realGhConnection = window.__realGhConnection || _ghConnection;

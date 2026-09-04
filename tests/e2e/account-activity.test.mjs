@@ -15,7 +15,7 @@ const { page, errors } = app;
 
 const openSecurity = () => page.evaluate(() => { S.settingsPane = 'security'; renderSetPane(); });
 const serve = events => page.evaluate(evs => {
-  AMV_API.base = 'https://api.test';
+  AMV_API.base = 'https://amv-stub.workers.dev';
   AMV_API.token = 'test-token';
   AMV_API.activity = async () => ({ ok: true, events: evs, kept: 100, retentionDays: 400 });
 }, events);

@@ -17,7 +17,7 @@ const { page, errors } = app;
 await page.evaluate(() => {
   S.user = { name: 'Owner', email: OWNER_EMAIL, ini: 'O', provider: 'email' };
   store('amv_user', S.user);
-  saveStr('amv_api_base', 'https://api.test');
+  saveStr('amv_api_base', 'https://amv-stub.workers.dev');
 });
 
 const STATS = {

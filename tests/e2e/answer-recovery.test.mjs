@@ -13,7 +13,7 @@ const FULL = 'Here is the complete answer that finished on the server. '.repeat(
 section('A stalled stream recovers the finished answer instead of failing');
 const recovered = await page.evaluate(async (full) => {
   window.__amvStreamIdleMs = 250;
-  AMV_API.base = 'https://api.test'; AMV_API.token = 'tok';
+  AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 'tok';
   S.busy = false;
   let askedResume = 0;
   window.fetch = async (u) => {

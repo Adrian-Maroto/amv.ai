@@ -10,7 +10,7 @@ const { page, errors } = app;
 
 section('Work done on this device survives signing in');
 const merged = await page.evaluate(async () => {
-  AMV_API.base = 'https://api.test'; AMV_API.token = 'tok';
+  AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 'tok';
   // Something written here and never pushed - e.g. drafted on a plane.
   S.convs = [{ id: 'local1', title: 'Written offline', msgs: [{ r: 'u', c: 'hi' }], updated: 500 }];
   // The server has different conversations from another device.

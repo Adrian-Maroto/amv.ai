@@ -165,7 +165,7 @@ ok(hdr.inHidden, 'Sign up disappears once signed in');
 section('Modals are actually on screen (not rendered below the fold)');
 
 await page.evaluate(() => {
-  AMV_API.base = 'https://api.test'; AMV_API.token = 'tok';
+  AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 'tok';
   saveStr('amv_admin_token', 's');
   window.fetch = async () => ({ ok: true, json: async () => ({ ok: true, sites: [], groups: [], distinct: 0, total: 0, active24h: 0 }) });
   const m = getMsgs(); m.push({ r: 'u', c: 'hi', _t: Date.now() }); renderChatMsgs();

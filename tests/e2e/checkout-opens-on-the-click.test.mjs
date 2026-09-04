@@ -40,7 +40,7 @@ async function trace(run) {
     const realLive = AMV_API.live, realBase = AMV_API.base, realTok = AMV_API.token;
     const opened = [];
     window.toast = () => {};
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     try { AMV_API.live = true; } catch (e) {}
     window.open = (url) => {
       order.push('open:' + (url || '(blank)'));
@@ -130,7 +130,7 @@ section('A failed request does not leave a tab saying "Opening…"');
        whether a backend is reachable, and without them it renders the
        "not connected yet" panel, whose button has a different id. Setting only
        `live` made this section test a screen that was not the one under test. */
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     try { AMV_API.live = true; } catch (e) {}
     window.open = () => ({ closed: false, opener: {}, location: { replace() {} },
                            document: { write() {} }, close() { closed = true; } });

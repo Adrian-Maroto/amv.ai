@@ -44,7 +44,7 @@ section('Revoking a share link that the server refuses says so');
     const realToast = window.toast, realFetch = AMV_API._fetch,
           realBase = AMV_API.base, realTok = AMV_API.token;
     window.toast = (m) => said.push(String(m));
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     const calls = [];
     AMV_API._fetch = async (p) => { calls.push(p); return { ok: false, status: 500, json: async () => ({ error: 'server error' }) }; };
     /* Render the manager with one shared link, then press Revoke. */

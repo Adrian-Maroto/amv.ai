@@ -24,7 +24,7 @@ const { page, errors } = app;
 /* Point the client at a backend whose reads all fail, then ask each one. */
 const withBrokenBackend = (fn) => page.evaluate(async (body) => {
   const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
-  AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+  AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
   AMV_API._fetch = async () => ({ ok: false, json: async () => ({ error: 'server unavailable' }) });
   let out;
   try { out = await eval('(' + body + ')')(); }
@@ -46,7 +46,7 @@ section('A failed read is not an empty board');
 
   const silent = await page.evaluate(async () => {
     const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API._fetch = async () => ({ ok: true, json: async () => ({}) });   // no reason, no tasks
     let threw = null;
     try { await AMVTeam.tasks(); } catch (e) { threw = e.message; }
@@ -85,7 +85,7 @@ section('And a real empty answer is still an empty answer');
      have to render as the calm empty state they are. */
   const r = await page.evaluate(async () => {
     const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API._fetch = async (path) => ({ ok: true, json: async () =>
       /tasks/.test(path) ? { tasks: [], members: [] }
       : /shared/.test(path) ? { shared: [] }

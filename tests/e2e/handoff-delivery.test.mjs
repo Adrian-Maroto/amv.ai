@@ -60,7 +60,7 @@ section('With a backend that refuses, the failure is the answer');
     const said = [];
     const realToast = window.toast; window.toast = (m) => said.push(String(m));
     const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API._fetch = async () => { throw new Error('network down'); };
     await hoSend();
     AMV_API.base = realBase; AMV_API.token = realTok; AMV_API._fetch = realFetch;
@@ -81,7 +81,7 @@ section('When it really is delivered, it says so');
     const realToast = window.toast; window.toast = (m) => said.push(String(m));
     const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = AMV_API._fetch;
     let hit = null;
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API._fetch = async (path, opts) => { hit = { path, body: JSON.parse((opts && opts.body) || '{}') };
       return { ok: true, json: async () => ({ ok: true, id: 'h1' }) }; };
     await hoSend();
@@ -106,7 +106,7 @@ section('A sync does not quietly delete what was never delivered');
     ]);
     const realBase = AMV_API.base, realTok = AMV_API.token;
     const realList = AMV_API.listHandoff;
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     // The server only knows about the one that arrived.
     AMV_API.listHandoff = async () => ({ incoming: [],
       sent: [{ id: 'srv1', to_email: 'other@x.com', title: 'Delivered', status: 'waiting' }] });

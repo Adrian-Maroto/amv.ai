@@ -14,7 +14,7 @@ const app = await bootApp({ tab: 'chat', user: { name: 'Alice', email: 'alice@x.
 const { page, errors } = app;
 
 const sync = (plan, billing, sold) => page.evaluate(async ([p, b, s]) => {
-  AMV_API.base = 'https://api.test'; AMV_API.token = 'tok';
+  AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 'tok';
   window.fetch = async () => ({ ok: true, status: 200, headers: new Headers(),
     json: async () => ({ ok: true, entitlement: { plan: p, sold: s || p }, billing: b }) });
   await syncEntitlement();

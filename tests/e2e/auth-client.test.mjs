@@ -12,7 +12,7 @@ const { page, errors } = app;
 section('A 401 triggers a silent refresh and retry');
 
 const silentRefresh = await page.evaluate(async () => {
-  AMV_API.base = 'https://api.test';
+  AMV_API.base = 'https://amv-stub.workers.dev';
   AMV_API.token = 'expired-token';
   AMV_API.refreshTok = 'good-refresh';
 
@@ -42,7 +42,7 @@ ok(silentRefresh.tokenAfter === 'fresh-token', 'and the client is now holding th
 section('Concurrent 401s share ONE refresh (no refresh storm)');
 
 const dedupe = await page.evaluate(async () => {
-  AMV_API.base = 'https://api.test';
+  AMV_API.base = 'https://amv-stub.workers.dev';
   AMV_API.token = 'expired-token';
   AMV_API.refreshTok = 'good-refresh';
 
@@ -74,7 +74,7 @@ ok(dedupe.refreshCalls === 1, 'but only ONE refresh fired for the whole burst (s
 section('When refresh is impossible, the user is cleanly told to sign in');
 
 const cleanFail = await page.evaluate(async () => {
-  AMV_API.base = 'https://api.test';
+  AMV_API.base = 'https://amv-stub.workers.dev';
   AMV_API.token = 'expired-token';
   AMV_API.refreshTok = 'dead-refresh';
 

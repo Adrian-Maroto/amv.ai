@@ -248,13 +248,30 @@ export async function bootApp(opts = {}) {
     page, browser, errors,
     async close() { await browser.close(); server.close(); },
 
-    /* Pretend the AMV engine is connected.
+    /* A HOST THE SHIPPED POLICY ACTUALLY PERMITS.
+
+       This was https://api.test, which connect-src forbids - measured, not
+       assumed: a fetch there raises a connect-src violation and comes back
+       "Failed to fetch" before leaving the browser.
+
+       For almost every suite that made no difference, because the base is set
+       to make AMV_API.live true and the network is stubbed or never touched.
+       One suite's app code really did call /v1/everyday and have it refused,
+       silently, with nothing asserting on it either way.
+
+       The hazard is the next one. A suite that sets this base and then relies
+       on a real request would test nothing at all and report a pass, which is
+       the failure LESSONS 328 is about. *.workers.dev is inside connect-src -
+       the live-backend harness already picked a host on it for exactly this
+       reason - so the trap is gone rather than documented.
+
+       Pretend the AMV engine is connected.
        NOTE: AMV_API.live is a GETTER derived from .base - you cannot just
        assign `AMV_API.live = true`, and replacing window.AMV_API does nothing
        because the code closes over the original const. Set base + token. */
     async connect() {
       await page.evaluate(() => {
-        AMV_API.base = 'https://api.test';
+        AMV_API.base = 'https://amv-stub.workers.dev';
         AMV_API.token = 'test-token';
       });
     },

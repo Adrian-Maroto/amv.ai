@@ -104,7 +104,7 @@ section('An error code survives the trip, so behaviour does not hinge on wording
     window._autoApi = window.__realAutoApi;      // the stub is out of the way now
     const realFetch = window.fetchDeadline;
     window.fetchDeadline = async () => ({ ok: false, status: 402, json: async () => ({ error: 'nope', code: 'plan_required' }) });
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     let caught = null;
     try { await _autoApi('/auto/create', {}); } catch (err) { caught = { code: err.code, status: err.status, msg: err.message }; }
     window.fetchDeadline = realFetch;

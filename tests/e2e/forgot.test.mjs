@@ -25,7 +25,7 @@ const STUB = `
   window.fetch = async (u, opts) => {
     const url = String(u);
     const body = JSON.parse((opts && opts.body) || '{}');
-    window.__calls.push(url.replace('https://api.test', ''));
+    window.__calls.push(url.replace('https://amv-stub.workers.dev', ''));
     if (url.includes('/auth/reset/code'))
       return R({ ok: true, sent: window.__emailOn !== false, emailConfigured: window.__emailOn !== false });
     if (url.includes('/auth/reset/verify'))
@@ -42,7 +42,7 @@ const STUB = `
 section('Step 1 - enter your email');
 
 await page.evaluate((stub) => {
-  AMV_API.base = 'https://api.test';
+  AMV_API.base = 'https://amv-stub.workers.dev';
   eval(stub);
   openForgot('v@test.com');
 }, STUB);
@@ -154,7 +154,7 @@ ok(!/check your connection/i.test(noBackend),
    'it does NOT blame the user"s connection', noBackend);
 
 const noEmail = await page.evaluate(async (stub) => {
-  AMV_API.base = 'https://api.test';
+  AMV_API.base = 'https://amv-stub.workers.dev';
   window.__emailOn = false;                 // Worker up, but no email provider
   eval(stub);
   window.__emailOn = false;
@@ -229,7 +229,7 @@ const serverWins = await page.evaluate(async (stub) => {
   const localExists = !!findAccount('both@test.com');
 
   // ...but now a Worker IS connected
-  AMV_API.base = 'https://api.test';
+  AMV_API.base = 'https://amv-stub.workers.dev';
   AMV_API.token = 'tok';
   window.__emailOn = true;          // a properly configured workspace
   eval(stub);

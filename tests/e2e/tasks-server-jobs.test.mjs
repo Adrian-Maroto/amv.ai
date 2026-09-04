@@ -162,7 +162,7 @@ section('"Could not check" is not the same nothing as "you have none"');
      next move is to schedule a duplicate. */
   const r = await page.evaluate(async () => {
     const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = window.fetch;
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     window.fetch = async () => { throw new Error('network down'); };
     _AUTOS = []; _AUTO_RESULTS = [];
     await _autoRefresh();
@@ -187,7 +187,7 @@ section('Never scheduling anything still shows nothing at all');
   /* The fix must not invent a problem for the ordinary case. */
   const r = await page.evaluate(async () => {
     const realBase = AMV_API.base, realTok = AMV_API.token, realFetch = window.fetch;
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     window.fetch = async () => ({ ok: true, status: 200, headers: new Headers(),
       json: async () => ({ ok: true, items: [], results: [] }) });
     await _autoRefresh();

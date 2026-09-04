@@ -122,7 +122,7 @@ section('A table is not code, and is not offered as code');
 section('The daily offer creates a genuine background automation');
 const scheduled = await page.evaluate(async (long) => {
   let posted = null;
-  AMV_API.base = 'https://api.test'; AMV_API.token = 'tok';
+  AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 'tok';
   window.fetch = async (u, o) => {
     if (String(u).includes('/auto/create')) { posted = JSON.parse(o.body); }
     return { ok: true, status: 200, headers: new Headers(),

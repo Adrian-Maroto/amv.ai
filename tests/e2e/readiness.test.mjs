@@ -37,7 +37,7 @@ const REPORT = {
 
 const wire = (opts = {}) => page.evaluate(cfg => {
   window.__calls = [];
-  saveStr('amv_api_base', cfg.noBase ? '' : 'https://api.test');
+  saveStr('amv_api_base', cfg.noBase ? '' : 'https://amv-stub.workers.dev');
   if (typeof _setAdminToken === 'function') _setAdminToken(cfg.noToken ? '' : 'admin-secret');
   window.fetchDeadline = async (url, init) => {
     const u = String(url);

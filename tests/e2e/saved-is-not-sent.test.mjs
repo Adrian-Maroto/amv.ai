@@ -51,7 +51,7 @@ async function sendFeedback({ supportEmail = '', server = null }) {
 
     let postedTo = null, postedBody = '';
     if (server) {
-      AMV_API.base = 'https://api.test'; AMV_API.token = 'tok';
+      AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 'tok';
       window.fetch = async (u, o) => {
         postedTo = String(u); postedBody = String((o && o.body) || '');
         return { ok: server.status < 400, status: server.status, headers: new Headers(),

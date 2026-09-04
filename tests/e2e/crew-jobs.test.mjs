@@ -503,7 +503,7 @@ section('A job says where it will actually run');
     out.noBackend = _mcWhereItRuns(await _mcScheduleServer({ goal: 'x', freq: 'daily' }));
 
     // 2. Backend present but refusing.
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API._fetch = async () => ({ ok: false, json: async () => ({ error: 'scheduler off' }) });
     out.refused = _mcWhereItRuns(await _mcScheduleServer({ goal: 'x', freq: 'daily' }));
 
@@ -557,7 +557,7 @@ section('The emergency stop does not claim a stop it never made');
     const realBase = AMV_API.base, realTok = AMV_API.token, realPause = AMV_API.pauseAutonomy;
     const out = {};
 
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API.pauseAutonomy = async () => { throw new Error('server unreachable'); };
     said.length = 0;
     await pauseAllAutonomous();
@@ -620,7 +620,7 @@ section('Approving says "Sent" only when something was sent');
     out.noBackendKept = _cwApprovals().length;
 
     // 2. Connected but the send fails.
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API.actApproval = async () => { throw new Error('mail server refused'); };
     seed(); said.length = 0;
     out.failed = await _apvDoApprove(_cwApprovals()[0]);

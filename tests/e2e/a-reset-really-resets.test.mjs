@@ -70,7 +70,7 @@ section('Nothing of one account is left on S for the next one');
 
   /* And the one that mattered, driven rather than read. */
   const ent = await page.evaluate(async () => {
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     S.user = { name: 'Alice', email: 'alice@corp.com', ini: 'A' };
     saveStr('amv_plan', 'ultra');
     S._entVerified = { plan: 'ultra', at: Date.now() };
@@ -150,7 +150,7 @@ section('A new session cannot publish the work the last one made');
   const out = await page.evaluate(async () => {
     S.user = { name: 'T', email: 't@amv.dev', ini: 'T' };
     saveStr('amv_plan', 'ultra');
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     const published = [];
     window.fetch = async (u, o) => {
       if (String(u).includes('/deploy')) {
@@ -198,7 +198,7 @@ section('Signing out leaves nothing of yours for the next account');
     };
     S.user = { name: 'Alice', email: 'alice@corp.com', ini: 'A' };
     saveStr('amv_plan', 'ultra');
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     _DEV.log = [{ role: 'sys', text: 'x' }];
     _devSetFile('index.html', '<h1>ALICE PRIVATE</h1>', 'html');
     _DEV.lastHTML = '<h1>ALICE PRIVATE</h1>';

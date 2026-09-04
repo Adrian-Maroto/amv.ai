@@ -17,7 +17,7 @@ const openPane = () => page.evaluate(() => { S.settingsPane = 'invite'; renderSe
 /* `live` is a getter over the configured base URL, so a test server is a base
    URL - not an assignment to `live`, which would silently do nothing. */
 const serve = data => page.evaluate(d => {
-  AMV_API.base = 'https://api.test';
+  AMV_API.base = 'https://amv-stub.workers.dev';
   AMV_API.referral = async () => d;
 }, data);
 
@@ -165,7 +165,7 @@ section('No server, no invented link');
   ok(!/ref=/.test(txt), 'and never fabricates a link');
   await page.evaluate(() => {
     Object.defineProperty(AMV_API, 'base', window.__baseDesc);   // the real accessor is back
-    AMV_API.base = 'https://api.test'; AMV_API.referral = async () => { throw new Error('offline'); };
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.referral = async () => { throw new Error('offline'); };
   });
   await openPane();
   await page.waitForFunction(() => /online|server/i.test(document.querySelector('.set-pane').textContent), { timeout: 4000 });

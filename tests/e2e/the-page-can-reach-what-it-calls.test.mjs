@@ -122,6 +122,39 @@ section('Every host the app FETCHES is one it is allowed to reach');
      'none of them is refused by the page’s own policy', blocked);
 }
 
+section('And the address the SUITES point the app at is reachable too');
+{
+  /* THE SAME RULE, TURNED ON THE TESTS.
+
+     bootApp().connect() sets AMV_API.base so a suite can exercise the
+     connected app, and it pointed at https://api.test - a host connect-src
+     forbids. Measured rather than assumed: a fetch there raises a connect-src
+     violation and comes back "Failed to fetch" without leaving the browser.
+
+     It mattered less than it sounds. Almost every suite sets the base to make
+     AMV_API.live true and then stubs the network or never touches it, and the
+     one that really did make a call - the Crew surface asking for
+     /v1/everyday - had nothing asserting on the result either way. What it
+     WOULD have cost is the next suite: one that sets this base, relies on a
+     real request, tests nothing at all, and reports a pass. That is the defect
+     LESSONS 328 is about, waiting to happen.
+
+     So the harness's host is checked against the same policy as the app's. A
+     stub host is still a stub - nothing here says a request must succeed, only
+     that the browser would let it start. */
+  const connect = directive('connect-src');
+  const harness = readFileSync(join(ROOT, 'tests', 'lib', 'harness.mjs'), 'utf8');
+  const bases = [...new Set(
+    [...harness.matchAll(/AMV_API\.base\s*=\s*['"`](https?:\/\/[^'"`]+)/g)].map(m => m[1])
+  )];
+  ok(bases.length > 0, 'the harness names a backend for connected suites', bases);
+  for (const b of bases) {
+    let host = ''; try { host = new URL(b).hostname; } catch (e) {}
+    ok(host && allows(connect, host),
+       'a suite pointed at ' + b + ' can actually reach it', { base: b, connect });
+  }
+}
+
 section('Every script the app INJECTS is one it is allowed to load');
 {
   const script = directive('script-src');

@@ -42,7 +42,7 @@ async function resetWith({ status = 200, body = {}, throwIt = false }) {
   return page.evaluate(async ({ status, body, throwIt }) => {
     const calls = [];
     const realFetch = AMV_API._fetch, realBase = AMV_API.base, realTok = AMV_API.token;
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     AMV_API._fetch = async (path) => {
       calls.push(path);
       if (throwIt) throw new Error('network down');

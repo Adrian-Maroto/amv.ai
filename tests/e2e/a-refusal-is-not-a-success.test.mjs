@@ -38,7 +38,7 @@ async function withServer({ status, body }, run) {
     const realToast = window.toast, realBase = AMV_API.base,
           realTok = AMV_API.token, realFetch = AMV_API._fetch;
     window.toast = (m) => said.push(String(m));
-    AMV_API.base = 'https://api.test'; AMV_API.token = 't';
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
     const calls = [];
     AMV_API._fetch = async (path, opts) => {
       calls.push(path);
