@@ -164,45 +164,63 @@ section('Approving a held result actually delivers it');
   const act = (e, id, action) => W.crewApprovalAct(new Request('https://w/api/approvals/act',
     { method:'POST', body: JSON.stringify({ id, action }) }), e);
 
-  const seed = async () => putRec('approvals','o@x.com', { items: [
-    { id:'ap-send',   actionType:'send',   title:'Email the brief', result:{ type:'doc', body:'the finished brief' } },
-    { id:'ap-review', actionType:'review', title:'Look at this',    result:{ type:'doc', body:'reading only' } },
-  ] });
+  /* A FRESH ID PER SECTION, because the product never reuses one.
+
+     Real approval ids are `'ap' + Date.now().toString(36) + random`, unique per
+     item, and the send is now guarded by a permanent per-approval claim so that
+     approving twice cannot email twice. Re-seeding the SAME id across sections
+     therefore modelled something that cannot happen and collided with a claim a
+     previous section had legitimately taken - the later section got the
+     duplicate answer instead of the one it was testing.
+
+     `n` makes each section its own approval, which is what the queue actually
+     contains. The uniqueness this now depends on is asserted below rather than
+     assumed. */
+  let seedN = 0;
+  let SEND = '', REVIEW = '';
+  const seed = async () => {
+    seedN++;
+    SEND = 'ap-send-' + seedN; REVIEW = 'ap-review-' + seedN;
+    return putRec('approvals','o@x.com', { items: [
+      { id:SEND,   actionType:'send',   title:'Email the brief', result:{ type:'doc', body:'the finished brief' } },
+      { id:REVIEW, actionType:'review', title:'Look at this',    result:{ type:'doc', body:'reading only' } },
+    ] });
+  };
 
   await seed();
-  const r1 = await (await act(envMail, 'ap-send', 'approve')).json();
+  const r1 = await (await act(envMail, SEND, 'approve')).json();
   ok(r1.ok === true && r1.delivered === true, 'a send-type approval is delivered', r1);
   ok(sent.length === 1, 'exactly one message went out', sent.length);
   ok(/the finished brief/.test(sent[0].body), 'carrying the finished work', sent[0].body.slice(0,60));
-  ok(!getRec('approvals','o@x.com').items.some(x=>x.id==='ap-send'), 'and it leaves the queue');
+  ok(!getRec('approvals','o@x.com').items.some(x=>x.id===SEND), 'and it leaves the queue');
 
   /* Rejecting must never send. */
   sent.length = 0;
   await seed();
-  const r2 = await (await act(envMail, 'ap-send', 'reject')).json();
+  const r2 = await (await act(envMail, SEND, 'reject')).json();
   ok(r2.delivered === null, 'rejecting delivers nothing', r2.delivered);
   ok(sent.length === 0, 'and sends nothing', sent.length);
 
   /* A review-only item has nothing to send - approving it is just reading it. */
   sent.length = 0;
   await seed();
-  const r3 = await (await act(envMail, 'ap-review', 'approve')).json();
+  const r3 = await (await act(envMail, REVIEW, 'approve')).json();
   ok(r3.delivered === null, 'a review-only approval is resolved, not sent', r3.delivered);
   ok(sent.length === 0, 'with nothing emailed', sent.length);
 
   /* No email provider: approved, but honestly not delivered. */
   sent.length = 0;
   await seed();
-  const r4 = await (await act(env, 'ap-send', 'approve')).json();
+  const r4 = await (await act(env, SEND, 'approve')).json();
   ok(r4.delivered === false, 'with no provider it says it was NOT delivered', r4.delivered);
   ok(sent.length === 0, 'because nothing could be', sent.length);
 
   /* A send that fails keeps the work, or there is nothing left to retry. */
   globalThis.fetch = async () => { throw new Error('mail down'); };
   await seed();
-  const r5 = await act(envMail, 'ap-send', 'approve');
+  const r5 = await act(envMail, SEND, 'approve');
   ok(r5.status === 502, 'a failed send is an error', r5.status);
-  ok(getRec('approvals','o@x.com').items.some(x=>x.id==='ap-send'),
+  ok(getRec('approvals','o@x.com').items.some(x=>x.id===SEND),
      'and the finished work is still in the queue', true);
 
   /* An approval that only ever existed on the client is not an error. */
@@ -211,6 +229,15 @@ section('Approving a held result actually delivers it');
   const r6 = await (await act(envMail, 'a1730000000000', 'approve')).json();
   ok(r6.ok === true && r6.found === false,
      'resolving something the server never had is fine, not a failure', r6);
+
+  /* The property the guard above rests on, stated rather than assumed: two
+     approvals created in the same millisecond still get different ids, so a
+     permanent per-approval claim can never swallow a real second item. */
+  {
+    const idOf = () => 'ap' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    const ids = new Set(); for (let i = 0; i < 500; i++) ids.add(idOf());
+    ok(ids.size === 500, 'approval ids do not repeat', ids.size);
+  }
 }
 
 if (report() > 0) process.exitCode = 1;
