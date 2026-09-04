@@ -18,7 +18,7 @@ But **three features only work once the Worker is deployed**, because they need 
 | Background automations (run with the app closed) | **yes - plus the cron trigger** |
 | Cloud sync (work follows you across devices) | yes |
 | Deploy & host live apps | yes |
-| Chat / images / code / Lab | no - these work client-side |
+| Chat / code / Build / Lab | no - these work client-side |
 
 ---
 
@@ -338,29 +338,26 @@ Quotas now **reserve** an upper bound (prompt size + `max_tokens`) atomically be
 the model runs, then reconcile against actual usage afterwards - refunding the
 difference, and refunding in full if the call fails.
 
-## Video
+## Video and images - removed, and not coming back by accident
 
-Video is a real generation job against a real provider. Set three secrets:
+There is no video generation and no image generation in AMV. Both were taken out
+end to end: the routes, the tools, the tabs, the per-plan quotas and the secrets.
 
-```bash
-npx wrangler secret put VIDEO_API_URL    # e.g. https://api.replicate.com/v1/predictions
-npx wrangler secret put VIDEO_API_KEY    # your provider key
-npx wrangler secret put VIDEO_MODEL      # the model/version id at that provider
-npx wrangler deploy
-```
+This section used to tell you to set `VIDEO_API_URL`, `VIDEO_API_KEY` and
+`VIDEO_MODEL`, and the go-live checklist listed `IMAGE_API_*` beside them. The
+Worker reads none of those names anywhere - checked, zero occurrences - so
+following the old instructions meant opening an account with a generation
+provider, paying for it, and putting three secrets into Cloudflare that nothing
+would ever read. A deploy checklist naming a secret nothing reads is worse than
+one that omits it, because it costs money to obey.
 
-Any provider with a create-job / poll-status shape works (Replicate, Luma, fal,
-Runway). AMV creates the job, polls until the provider says it's done, and plays
-the file it returns.
+They are gone from `preflight.mjs`'s known-secrets list too, so the deploy
+checklist cannot start mentioning them again on its own.
 
-**Without these, the Video tab says so plainly and generates nothing.** It does not
-fake a render - which is exactly what it used to do (a `setInterval` that ticked a
-fake progress bar through invented stages and produced no video at all).
-
-Video is metered per plan (`videosMonth`): free gets none, pro 30, elite 200,
-ultra 1000. The reservation is taken atomically before the provider is called, and
-**refunded if the render fails** - a failed video never counts against your users'
-plan. Chat can also generate video itself via the `generate_video` tool.
+If you ever want either feature back, it is a real piece of work rather than a
+secret: the routes, the metering, the refund-on-failure path and the honest
+"not configured" state all have to be built again. Nothing is lying dormant
+waiting for a key.
 
 ## Admin user directory (owner-only)
 
@@ -481,18 +478,17 @@ your bill:
   plans do not run paid automations; over-cap users are skipped; each run records its
   cost. (This closed a real leak - scheduled jobs previously spent uncapped.)
 - SMS: per-number per-minute limit AND a daily cap (200/number) - SMS is real Twilio money.
-- Image / video: per-day and per-month caps by plan.
 - Write endpoints (handoff, marketplace publish/message, crew jobs, sync, widget): a
   reusable per-minute + per-day limiter (guardAction) returns 429 on floods.
 
-Tuning: PLAN_LIMITS (tokens/rpm/images/videos per tier) and the backstop ratio live at the
+Tuning: PLAN_LIMITS (tokens and rpm per tier) and the backstop ratio live at the
 top of amv-backend.js. GLOBAL_DAILY_USD_CAP is a secret (default $500). All limits are
 enforced atomically via the AMVCounter Durable Object, so parallel requests can’t race
 past them. Covered by tests/worker/ratelimit.test.mjs and the automation cost-cap tests.
 
 ## Anti-abuse / refund-fraud protection
 
-AMV’s product is compute - model calls, video, deep research - which costs real
+AMV’s product is compute - model calls, agent runs, deep research - which costs real
 money the instant it’s delivered. So a chargeback or refund after heavy use is a
 direct loss ("the DoorDash method"). Protections:
 
@@ -503,7 +499,7 @@ direct loss ("the DoorDash method"). Protections:
 - A **flagged account cannot start a new paid checkout** (403 account_flagged) - this
   closes the loop of “chargeback, then just subscribe again.” They keep a working free
   account.
-- Usage refunds on failed video/model calls come from the PROVIDER’s real failure
+- Usage refunds on failed model calls come from the PROVIDER’s real failure
   status, never a user claim, and terminal jobs are cached so a refund can’t be farmed
   by re-polling.
 - Admin-only endpoints /admin/abuse/list and /admin/abuse/clear (ADMIN_TOKEN) let you
@@ -558,4 +554,3 @@ the browser before they leave it.
 
 ## Not implemented
 
-- **Video generation.** There is no video engine. The Video tab says so plainly rather than faking it.

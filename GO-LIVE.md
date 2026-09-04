@@ -100,8 +100,6 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 | Secret | Default | What it changes |
 |---|---|---|
 | `GLOBAL_DAILY_USD_CAP` | `500` | The hard ceiling on model spend across all users, per day |
-| `IMAGE_COST_USD` | `0.04` | What one image is assumed to cost, for the ceiling and your cost figures |
-| `VIDEO_COST_USD` | `0.50` | The same for one video - the most expensive call in the product |
 
 > Payout decisioning (the $100 auto-clear limit, the $600 identity threshold,
 > the 10% / 120-day reserve) is set in `amv-backend.js` next to `_payoutRisk`,
@@ -155,12 +153,10 @@ moving in a direction somebody has to know about:
 > that your webhooks are not arriving. That is a safety net, not a substitute -
 > it runs every five minutes, not instantly.
 
-### Turn on integrations + more generation (optional, add anytime)
+### Turn on integrations (optional, add anytime)
 | Secret | Unlocks |
 |---|---|
 | `GOOGLE_CLIENT_ID` | Google sign-in **and** the agent's real Gmail / Calendar / Drive actions. Served to every visitor's browser automatically via `/v1/public-config` - you do not paste it anywhere in the app. |
-| `VIDEO_API_URL`, `VIDEO_API_KEY`, `VIDEO_MODEL` | Real video generation |
-| `IMAGE_API_URL`, `IMAGE_API_KEY`, `IMAGE_API_MODEL` | Higher-tier image generation |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | SMS / phone verification |
 | `TURNSTILE_SITE_KEY` **and** `TURNSTILE_SECRET` | Cloudflare Turnstile bot protection on sign-up and sign-in. Set **both** or neither. The site key renders the widget (served to browsers via `/v1/public-config`); the secret checks its answer. With only the secret set, no browser can produce a token, so AMV skips the captcha rather than refusing every sign-up, and readiness reports it as **HALF SET UP**. |
 | `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET`, `PAYPAL_MODE`, `PAYPAL_PLAN_*`, `PAYPAL_WEBHOOK_ID` | PayPal as an alternative to Stripe |

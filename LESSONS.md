@@ -8372,3 +8372,34 @@ rather than "the reset flow can wait for ever". A test for a hang must not hang
 to prove it: race it, and let the failing case report the hang as a finding.
 With that fixed, removing the deadline fails four assertions, the first of which
 reads "still pending after 30s".
+
+## 349. The launch checklist told the owner to buy things AMV cannot use
+
+Image and video generation were removed from AMV end to end - routes, tools,
+tabs, per-plan quotas, the lot. The documentation was not.
+
+GO-LIVE.md still listed `IMAGE_API_URL` / `IMAGE_API_KEY` / `IMAGE_API_MODEL`
+and `VIDEO_API_URL` / `VIDEO_API_KEY` / `VIDEO_MODEL` as secrets to set, priced
+`IMAGE_COST_USD` and `VIDEO_COST_USD` as spend knobs, and DEPLOY.md carried a
+whole section of `wrangler secret put` commands for the video three, describing
+a Video tab, a `generate_video` tool and per-plan video quotas. The Worker reads
+none of those names anywhere - measured, zero occurrences. `preflight.mjs` had
+them in its known-secrets list too, so the deploy checklist would have kept
+mentioning them.
+
+What makes this worse than an ordinary stale comment is the ACTION it asks for.
+Following it means opening an account with a generation provider, paying for it,
+putting three secrets into Cloudflare, and then waiting for a feature that will
+never appear - with nothing anywhere saying why. A checklist naming a secret
+nothing reads is worse than one that omits it, because obeying it costs money
+and the failure is silent.
+
+The rule is now a test: every ALL-CAPS name the deploy docs present in backticks
+must appear in the Worker. Names the docs explicitly describe as REMOVED are
+exempt, because "this is gone, do not set it" is the opposite of the mistake and
+is worth writing down - which is what DEPLOY.md now says in place of the
+instructions.
+
+The general form is the one this repository keeps relearning: a document that
+tells somebody to DO something is code with a slower compiler. It deserves a
+check like any other, and "is the thing this names real" is usually mechanical.

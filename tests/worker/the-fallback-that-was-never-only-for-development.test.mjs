@@ -248,6 +248,54 @@ section('Everything the project needs to run is declared, including the deploy t
   ok(!!lock.packages['node_modules/wrangler'], 'and it is in the lockfile, at a resolved version', true);
 }
 
+section('The deploy checklist does not name a secret nothing reads');
+{
+  /* IT DID, AND OBEYING IT COST MONEY.
+
+     GO-LIVE.md listed IMAGE_API_URL / IMAGE_API_KEY / IMAGE_API_MODEL and
+     VIDEO_API_URL / VIDEO_API_KEY / VIDEO_MODEL as secrets to set, DEPLOY.md
+     had a whole section of `wrangler secret put` commands for the video three,
+     and GO-LIVE priced IMAGE_COST_USD and VIDEO_COST_USD as spend knobs. Image
+     and video generation were removed from this product end to end. The Worker
+     reads none of those names anywhere.
+
+     So the checklist told somebody to open an account with a generation
+     provider, pay for it, and put three secrets into Cloudflare that nothing
+     would ever read - and then wonder why the feature never appeared. A
+     checklist naming a secret nothing reads is worse than one that omits it,
+     because it costs money to obey.
+
+     The rule: every ALL-CAPS name the deploy docs present in backticks must
+     appear in the Worker. Names the docs explicitly describe as REMOVED are
+     exempt, because saying "this is gone, do not set it" is the opposite of the
+     mistake and is worth writing down. */
+  const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+  const goLive = readFileSync(join(ROOT, 'GO-LIVE.md'), 'utf8');
+  const deploy = readFileSync(join(ROOT, 'DEPLOY.md'), 'utf8');
+
+  /* The section that documents the removal names them on purpose. */
+  const removalNote = /removed[\s\S]{0,2000}?reads none of those names|Video and images - removed/i;
+  const exempt = new Set();
+  const note = /## Video and images - removed[\s\S]*?(?=\n## )/.exec(deploy);
+  if (note) for (const m of note[0].matchAll(/`([A-Z][A-Z0-9_]{4,})`/g)) exempt.add(m[1]);
+  ok(exempt.size > 0, 'the removal note is present and names what it removed', exempt.size);
+
+  const PLACEHOLDERS = new Set(['REPLACE_WITH_YOUR_KV_NAMESPACE_ID']);
+  const dead = [];
+  for (const src of [goLive, deploy])
+    for (const m of src.matchAll(/`([A-Z][A-Z0-9_]{4,})`/g)) {
+      const n = m[1];
+      if (exempt.has(n) || PLACEHOLDERS.has(n)) continue;
+      if (!worker.includes(n) && !dead.includes(n)) dead.push(n);
+    }
+  ok(dead.length === 0,
+     'every secret the checklist tells you to set is one the Worker reads', dead.join(', '));
+
+  /* And the other direction for the one that actually blocks a launch. */
+  ok(/AMV_MODEL_KEY/.test(goLive) && worker.includes('AMV_MODEL_KEY'),
+     'and the one secret that blocks launch is on the checklist', true);
+}
+
 section('The dependency audit is a script, so it happens more than once');
 {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));

@@ -166,13 +166,18 @@ if (backend && toml) {
     }
   }
 
-  // Secrets the Worker reads - documented so you don't forget one at deploy.
+  /* Secrets the Worker reads - documented so you don't forget one at deploy.
+     IMAGE_API_* and VIDEO_API_* used to be here and are gone: image and video
+     generation were removed from the product end to end, and the Worker reads
+     neither name anywhere. A deploy checklist naming a secret nothing reads
+     sends somebody to buy a provider account for a feature that does not
+     exist. */
   const KNOWN_SECRETS = ['AMV_MODEL_KEY', 'JWT_SECRET', 'STRIPE_PRICE_TEAM_SEAT', 'MODEL_API_URL', 'MODEL_API_FALLBACK_URL', 'ADMIN_TOKEN', 'EMAIL_API_KEY',
     'RESET_EMAIL_FROM', 'GLOBAL_DAILY_USD_CAP', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET',
-    'VIDEO_API_URL', 'VIDEO_API_KEY', 'VIDEO_MODEL', 'APP_URL', 'AUDIT_WEBHOOK',
+    'APP_URL', 'AUDIT_WEBHOOK',
     // optional integrations - supported but not required to launch
     'ALLOWED_ORIGIN', 'APP_ORIGIN', 'OWNER_EMAIL', 'GOOGLE_CLIENT_ID',
-    'IMAGE_API_URL', 'IMAGE_API_KEY', 'IMAGE_API_MODEL', 'ALERT_WEBHOOK',
+    'ALERT_WEBHOOK',
     'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER',
     'STRIPE_PRICE_PRO', 'STRIPE_PRICE_ELITE', 'STRIPE_PRICE_ULTRA',
     'PAYPAL_CLIENT_ID', 'PAYPAL_SECRET', 'PAYPAL_MODE', 'PAYPAL_WEBHOOK_ID',
