@@ -174,10 +174,17 @@ const _TOOL_DEFAULTS = {
      what is going on now. Declared here because the reset check demands every
      field be one or the other, which is how it was caught the day it was
      added rather than as a confused answer months later. */
+  /* `atHome` is the same view intent Studio declares below: somebody pressed
+     "All builds" and wants the list rather than the project they just left. A
+     new build has no project to return to, so it resets with the rest.
+
+     Declared here because the reset check requires every _DEV field to be one
+     or the other - and it caught this one within the hour of it being added,
+     which is the entire point of that check. */
   dev: { log:[], project:{}, activePath:'', curCode:'', curLang:'', curRun:null,
          deploySlug:'', deployedOnce:false, lastHTML:'', name:'', files:[],
          handoff:null, dirHandle:null, usingWorkspace:false, busy:false,
-         compact:null },
+         compact:null, atHome:false },
   lab: { code:'', files:[], chat:[], busy:false, deploySlug:'' },
   /* atHome is view intent, not a device setting: it records that somebody
      pressed "Studio home" and wants the hero rather than the canvas they just
