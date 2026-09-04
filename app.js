@@ -114,7 +114,7 @@ function _renderFramedRefusal(){
    it cannot live in the requester's private bucket. It is safe because every
    read filters by the signed-in identity (AMVFamily.check/mine), and because
    the server is authoritative for links once the backend is connected. */
-const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_credits','amv_credits_autoreload','amv_reduce_motion','amv_mute_chime','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_refresh_cookie','amv_owner','amv_lang','amv_support_email','amv_turnstile_site',
+const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_credits','amv_credits_autoreload','amv_reduce_motion','amv_mute_chime','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_refresh_cookie','amv_owner','amv_lang','amv_support_email','amv_dev_split','amv_turnstile_site',
   'amv_market_local','amv_market_purchases','amv_market_wallet','amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
   'amv_cookie_consent','amv_analytics_id',
   /* An invite code is captured before anyone is signed in, and belongs to the
@@ -4724,6 +4724,10 @@ const _DEVICE_GLOBAL_KEYS = [
      the person, so it survives a sign-out - the next person to sign in on this
      machine meets the same server. */
   'amv_refresh_cookie',
+  /* How wide the preview should be. A fact about the screen in front of you,
+     not about who is signed in - the same person on a laptop and a phone wants
+     different answers - so it survives a sign-out with the theme and the rail. */
+  'amv_dev_split',
   /* The captcha's public site key. It identifies the DEPLOYMENT to the widget
      host, the way the backend URL and the Google client id do - and the form
      that needs it is the SIGNED-OUT one, so clearing it here would delete the
@@ -18362,6 +18366,106 @@ function _buildModeSwitchHTML(active){
 
    Empty means nothing rather than an empty box - a first visit should be the
    hero and a composer, not a heading over nothing. */
+/* DRAGGING THE EDGE OF THE PREVIEW.
+
+   The split was flex:1 against flex:1.5 - a fixed 40/60 that suited neither
+   somebody reading a long answer nor somebody watching a wide layout render.
+   The pane sizes are now a percentage the person sets, and it is remembered.
+
+   Stored as a DEVICE setting rather than an account one: how wide a pane
+   should be is a fact about the screen in front of you, and the same person on
+   a laptop and a phone wants different answers. LESSONS 335 is the version of
+   this that was got wrong the other way round.
+
+   Below 760px the panes stack and only one is shown at a time, so there is
+   nothing to divide - the divider hides itself there rather than becoming a
+   control that moves something invisible.
+
+   Pointer events rather than mouse: one code path covers a trackpad, a touch
+   screen and a pen, and setPointerCapture keeps the drag alive when the cursor
+   outruns the divider, which is most drags. */
+const DEV_SPLIT_KEY = 'amv_dev_split';
+const DEV_SPLIT_DEFAULT = 60;    // matches the flex:1 / flex:1.5 it replaces
+const DEV_SPLIT_MIN = 22, DEV_SPLIT_MAX = 82;
+function _splitClamp(v){
+  const n = Math.round(Number(v));
+  if(!isFinite(n)) return DEV_SPLIT_DEFAULT;
+  return Math.min(DEV_SPLIT_MAX, Math.max(DEV_SPLIT_MIN, n));
+}
+function _splitGet(){
+  let v = DEV_SPLIT_DEFAULT;
+  try{ const raw = loadStr(DEV_SPLIT_KEY); if(raw) v = parseFloat(raw); }catch(e){}
+  return _splitClamp(v);
+}
+function _splitApply(shellId, pct){
+  const shell = $(shellId); if(!shell) return;
+  shell.style.setProperty('--dev-split', _splitClamp(pct) + '%');
+  const bar = shell.querySelector('[role="separator"]');
+  if(bar) bar.setAttribute('aria-valuenow', String(_splitClamp(pct)));
+}
+function _splitSave(pct){ try{ saveStr(DEV_SPLIT_KEY, String(_splitClamp(pct))); }catch(e){} }
+function _wireSplit(barId, shellId){
+  const bar = $(barId), shell = $(shellId);
+  if(!bar || !shell) return;
+  bar.setAttribute('aria-valuemin', String(DEV_SPLIT_MIN));
+  bar.setAttribute('aria-valuemax', String(DEV_SPLIT_MAX));
+  _splitApply(shellId, _splitGet());
+
+  /* The preview is the RIGHT pane, so its share is measured from the right
+     edge - dragging left makes it bigger, which is the direction somebody
+     expects when they grab the divider and pull. */
+  const pctFor = (clientX) => {
+    const r = shell.getBoundingClientRect();
+    if(!r.width) return _splitGet();
+    return _splitClamp(((r.right - clientX) / r.width) * 100);
+  };
+  let dragging = false;
+  bar.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    bar.classList.add('on');
+    try{ bar.setPointerCapture(e.pointerId); }catch(_){}
+    e.preventDefault();          // or the drag selects the text either side
+  });
+  bar.addEventListener('pointermove', (e) => {
+    if(!dragging) return;
+    _splitApply(shellId, pctFor(e.clientX));
+  });
+  const end = (e) => {
+    if(!dragging) return;
+    dragging = false;
+    bar.classList.remove('on');
+    try{ bar.releasePointerCapture(e.pointerId); }catch(_){}
+    /* Written once at the end rather than on every move: a drag is one
+       decision, not two hundred. */
+    const cur = getComputedStyle(shell).getPropertyValue('--dev-split');
+    _splitSave(parseFloat(cur));
+  };
+  bar.addEventListener('pointerup', end);
+  bar.addEventListener('pointercancel', end);
+
+  /* A divider that only responds to dragging is one that somebody who cannot
+     drag cannot use at all. */
+  bar.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 10 : 2;
+    let v = _splitGet(), handled = true;
+    if(e.key === 'ArrowLeft') v += step;          // left = more preview
+    else if(e.key === 'ArrowRight') v -= step;
+    else if(e.key === 'Home') v = DEV_SPLIT_MAX;
+    else if(e.key === 'End') v = DEV_SPLIT_MIN;
+    else if(e.key === 'Enter' || e.key === ' ') v = DEV_SPLIT_DEFAULT;
+    else handled = false;
+    if(!handled) return;
+    e.preventDefault();
+    _splitApply(shellId, v); _splitSave(v);
+  });
+  bar.addEventListener('dblclick', () => {
+    _splitApply(shellId, DEV_SPLIT_DEFAULT); _splitSave(DEV_SPLIT_DEFAULT);
+  });
+}
+try{ window._wireSplit=_wireSplit; window._splitGet=_splitGet; window.DEV_SPLIT_KEY=DEV_SPLIT_KEY;
+     window.DEV_SPLIT_DEFAULT=DEV_SPLIT_DEFAULT; window.DEV_SPLIT_MIN=DEV_SPLIT_MIN;
+     window.DEV_SPLIT_MAX=DEV_SPLIT_MAX; }catch(e){}
+
 const BUILD_RECENTS_MAX = 8;
 function _buildRecentsHTML(){
   let rows = [];
@@ -19309,6 +19413,10 @@ function renderCodeView(){
       </div>
     </div>
 
+    <div class="dev-split" id="dev-split" role="separator" tabindex="0"
+         aria-orientation="vertical" aria-label="Resize the preview"
+         title="Drag to resize \u00b7 double-click to reset"></div>
+
     <div class="dev-preview">
       ${_resultBarHTML({ id:'dev-rb', statusId:'dev-prev-s',
         tabs:[{id:'dev-tab-prev',key:'preview',label:'Preview'},
@@ -19380,6 +19488,7 @@ function renderCodeView(){
   try{ if(_devProjectFiles().length){ _devRenderTree(); _devShowActive(); } }catch(e){}
   on($('dev-open-ext'),'click',()=>_devOpenExternal());
   _wireBuildRecents(vc);
+  _wireSplit('dev-split', 'dev-shell');
   /* Back to the page that lists the builds. The work is already saved and stays
      listed, so this is a navigation rather than a discard - which is the
      difference between it and the new-build control beside it. */

@@ -10558,3 +10558,36 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 }
 .bld-home:hover{ color:var(--tx); border-color:var(--bdl); }
 .bld-home:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+/* ── LAYER A145 · dragging the edge of the preview ───────────────────────────
+   The split was flex:1 against flex:1.5 - a fixed 40/60 that suited neither
+   reading a long answer nor watching a wide layout render. The share is now a
+   percentage the person sets, held in --dev-split on the shell so one variable
+   moves both panes and nothing can disagree about the remainder.
+
+   Below 760px the panes stack and only one shows at a time, so there is
+   nothing to divide and the divider goes away rather than becoming a control
+   that moves something invisible. */
+.dev-shell{ --dev-split:60%; }
+.dev-shell:not(.dev-blank) > .dev-chat-pane{ flex:1 1 auto; min-width:240px; }
+.dev-shell:not(.dev-blank) > .dev-preview{ flex:0 0 var(--dev-split); min-width:240px; }
+
+.dev-split{
+  flex:0 0 auto; width:9px; margin:0 -4px;   /* a 9px target over a 1px line */
+  position:relative; z-index:3;
+  cursor:col-resize; background:transparent;
+  touch-action:none;                          /* or a touch drag scrolls instead */
+}
+.dev-split::after{
+  content:''; position:absolute; inset:0 4px;
+  background:var(--bd); transition:background .14s var(--ease);
+}
+.dev-split:hover::after,
+.dev-split.on::after{ background:var(--accent); }
+.dev-split:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+/* While dragging, the panes must not fight the pointer for the selection. */
+.dev-shell:has(.dev-split.on){ user-select:none; }
+.dev-shell.dev-blank > .dev-split{ display:none; }
+@media (max-width:760px){
+  .dev-split{ display:none; }
+}

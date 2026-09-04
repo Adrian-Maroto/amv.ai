@@ -1540,6 +1540,10 @@ const _DEVICE_GLOBAL_KEYS = [
      the person, so it survives a sign-out - the next person to sign in on this
      machine meets the same server. */
   'amv_refresh_cookie',
+  /* How wide the preview should be. A fact about the screen in front of you,
+     not about who is signed in - the same person on a laptop and a phone wants
+     different answers - so it survives a sign-out with the theme and the rail. */
+  'amv_dev_split',
   /* The captcha's public site key. It identifies the DEPLOYMENT to the widget
      host, the way the backend URL and the Google client id do - and the form
      that needs it is the SIGNED-OUT one, so clearing it here would delete the
