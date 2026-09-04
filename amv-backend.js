@@ -7646,6 +7646,28 @@ async function crewApprovalAct(request, env){
     if(!env.EMAIL_API_KEY){
       delivered = false;                     // approved, but there is no way to send it
     } else {
+      /* CLAIMED BEFORE THE SEND, because the send is the irreversible part.
+
+         The removal below is inside a lock; the send was not. Two requests
+         carrying the same approval id - a double press, a retry after a slow
+         response, two tabs - both found the item, both sent, and both removed
+         it and reported success. The person's draft went to their client
+         twice, from the one flow whose entire premise is that they decide
+         once. Measured, not reasoned about: two concurrent approvals produced
+         two emails and two `delivered:true` answers.
+
+         Released only on FAILURE, so a genuine retry can still send and a
+         success cannot be repeated. Keyed per approval, or approving two
+         things in the same second would drop the second one - a fix that
+         breaks the feature is not a fix. */
+      const sendKey = user.email + ':' + id;
+      if(!(await _claimOnce(env, 'apvsend', sendKey, 3600))){
+        /* Somebody else is delivering this one. Not an error and not a
+           success: saying "sent" for a send this request did not make is the
+           habit this whole handler exists to break. */
+        audit(env, 'approval_duplicate', { by:user.email, id });
+        return json({ ok:true, action:'approve', found:true, delivered:null, duplicate:true });
+      }
       try{
         /* _sendEmail answers with a BOOLEAN, not a throw - a refused send comes
            back as false. Awaiting it and assuming success is the very defect
@@ -7654,13 +7676,16 @@ async function crewApprovalAct(request, env){
           { kind:'task', detail: item.title, notify:'email' },
           (item.result && item.result.body) || item.preview || '');
         if(!wentOut){
+          try{ await _releaseClaim(env, 'apvsend', sendKey); }catch(_){}
           return json({ error:'The email provider would not accept it, so nothing was sent.',
                         code:'send_failed' }, 502);
         }
         delivered = true;
       }catch(e){
-        /* The item STAYS. Losing the finished work and reporting a failure at
-           the same time would leave nothing to retry. */
+        /* The item STAYS, and so does the right to try again - a claim kept
+           after a failure is how a retry gets discarded as a duplicate of work
+           that never happened. */
+        try{ await _releaseClaim(env, 'apvsend', sendKey); }catch(_){}
         return json({ error:'Could not send it: ' + String((e && e.message) || e).slice(0,200),
                       code:'send_failed' }, 502);
       }

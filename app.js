@@ -18294,6 +18294,15 @@ async function _apvDoApprove(a){
     return { ok:false, code:'failed', error:(e&&e.message)||'' };
   }
   _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id));
+  /* Somebody else is already delivering this one - a double press, a retry, a
+     second tab. The server now refuses to send it twice, so this request made
+     no send and must not claim one. "Already going out" is the true sentence
+     and it is a reassurance, not an error: the work IS on its way. */
+  if(d && d.duplicate){
+    toast('Already going out - this was approved a moment ago, and AMV will not send it twice.','info',6000);
+    renderCrewView();
+    return { ok:true, duplicate:true, delivered:null };
+  }
   /* "Sent" only when the server actually sent it. An item that was approved but
      has no email provider behind it is APPROVED, which is a different word. */
   if(d && d.delivered === false){

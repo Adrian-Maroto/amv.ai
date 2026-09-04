@@ -8990,3 +8990,41 @@ returning a string, which prints a green tick with a note. The first version
 returned its findings that way, so it printed the real defect and the gate
 still said SHIPPABLE. A check that reports a problem without failing is a check
 somebody scrolls past.
+
+## 367. Approving twice sent it twice
+
+`crewApprovalAct` reads the queued approval, sends the email, and then removes
+the item from the queue under a lock. The removal is serialized. The send is
+not. So two requests carrying the same approval id - a double press, a retry
+after a slow response, two tabs - both found the item, both sent, and both
+reported `delivered:true`. Measured, not argued: two concurrent approvals
+produced two emails.
+
+Somebody's draft goes to their client twice, from the one flow whose entire
+premise is that they decide once. Every other irreversible path in this file
+takes `_claimOnce` first. This one had a lock in the right shape around the
+wrong step.
+
+**A lock around the bookkeeping is not a lock around the act.** The queue write
+is the part that is easy to see going wrong - it is state, it is local, it is
+what a reviewer looks at - so that is where the lock went. The send is the part
+that leaves the building and cannot be taken back, and it sat outside. When
+choosing what to serialize, pick the step that has an effect in the world, not
+the step that has an effect in the database.
+
+Two details the fix had to get right, both from earlier lessons here. The claim
+is released on FAILURE only, so a real retry can still send and a success can
+never be repeated - a claim kept after a failure discards the retry as a
+duplicate of work that never happened. And it is keyed per approval rather than
+per user: approving two things in the same second must send two emails, and a
+guard that stops the second one is a fix that breaks the feature.
+
+The loser of the race is told "already going out", not "sent". It made no send
+and must not claim one - which is the same rule this handler was already
+written to enforce, applied to the new branch the fix created.
+
+One more thing, from writing the test: the first fake counter claimed locks and
+never released them, so the second request could not reach the queue at all and
+the file died on "approvals is busy" instead of measuring anything. A fake that
+cannot release is not a lock, it is a deadlock, and it hid the very race it was
+built to expose.
