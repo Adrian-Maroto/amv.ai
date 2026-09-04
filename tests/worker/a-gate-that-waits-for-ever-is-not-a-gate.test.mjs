@@ -68,21 +68,51 @@ section('And it skips rather than failing, which is the whole point');
      'while a genuinely unreadable audit still fails, so this is not a blanket pass');
 }
 
+section('A non-zero exit always says why');
+{
+  /* The gate reads this script's EXIT CODE, so a silent 1 is a stage that
+     failed with nothing to act on. Every failing path prints first. */
+  const exits = [...code.matchAll(/process\.exit\(1\)/g)];
+  ok(exits.length >= 1, 'there is at least one failing path to check', exits.length);
+  const unexplained = exits.filter(m => {
+    const before = code.slice(Math.max(0, m.index - 400), m.index);
+    return !/console\.error\(/.test(before);
+  });
+  ok(unexplained.length === 0,
+     'and each is preceded by a console.error naming the reason', unexplained.length);
+}
+
 section('The script still runs, whatever the network is doing right now');
 {
-  /* Driven rather than read: it either audits or skips, and either way it
-     finishes and exits 0. If the registry is reachable from here this is the
-     ordinary path; if it is stalling, this is the fix under test. */
-  let outcome = '', threw = '';
+  /* Driven rather than read. The subject of this section is TERMINATION: the
+     script either audits or skips, and either way it stops on its own, says
+     what it did, and does so within a bounded time.
+
+     It used to assert exit 0, which was wrong and cost a red CI run. The script
+     exits 1 on a real finding - that is its whole job - so a genuine advisory,
+     or a stale exemption, failed THIS suite and reported a dependency problem
+     as a hang. That is precisely the confusion this file exists to prevent:
+     "the gate did not come back" and "the gate came back with bad news" are
+     different facts and must not arrive under the same name. The verdict has
+     its own gate stage (check.mjs stage 6), which is where a red audit belongs.
+
+     So: killed is a failure here, and any coherent verdict is a pass. */
+  let out = '', killed = '';
   const started = Date.now();
   try {
-    outcome = execFileSync(process.execPath, [join(ROOT, 'audit-deps.mjs')],
+    out = execFileSync(process.execPath, [join(ROOT, 'audit-deps.mjs')],
       { encoding: 'utf8', timeout: 200000 }).toString();
-  } catch (e) { threw = String((e && e.message) || e); }
+  } catch (e) {
+    out = String((e && e.stdout) || '') + String((e && e.stderr) || '');
+    /* execFileSync sets these only when IT stopped the process - a deadline or
+       a signal. An ordinary non-zero exit sets neither. */
+    if (e && (e.killed === true || e.signal)) killed = String(e.signal || 'timeout');
+    if (e && e.status == null && !killed) killed = String((e && e.message) || e).slice(0, 200);
+  }
   const secs = Math.round((Date.now() - started) / 1000);
-  ok(!threw, 'it exits without being killed', threw.slice(0, 200));
-  ok(/SKIP|OK|advisor/i.test(outcome),
-     'and says what it did', outcome.trim().split('\n').slice(-1)[0]);
+  ok(!killed, 'it stops on its own rather than being killed', killed);
+  ok(/SKIP|OK  |FAIL/.test(out),
+     'and says what it did', out.trim().split('\n').filter(Boolean).slice(-1)[0]);
   ok(secs <= 180, 'within a bounded time rather than indefinitely', secs + 's');
 }
 

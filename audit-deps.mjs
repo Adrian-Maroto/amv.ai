@@ -25,29 +25,21 @@ import { execSync } from 'child_process';
  * Reassess when the dependency changes, and delete the entry rather than
  * editing the reason: a stale reason attached to a live advisory is exactly the
  * comment-versus-code failure this project keeps finding.
+ *
+ * EMPTY, AND THAT IS THE ROSTER WORKING.
+ *
+ * It held three entries from 2026-08 - extract-zip and the two packages that
+ * depend on it, @puppeteer/browsers and @cloudflare/puppeteer - all accepted on
+ * the ground that nothing in a Worker downloads or extracts a browser. npm
+ * stopped flagging all three, so the stale check below turned red and asked for
+ * them to go, which is exactly what it is for: an exemption nobody rechecks is
+ * a hole with a comment over it.
+ *
+ * Deleted rather than kept "in case it comes back". If any of them is flagged
+ * again the audit fails and somebody assesses it against whatever the advisory
+ * says THEN, instead of inheriting a judgement made about a different one.
  */
-const ACCEPTED = {
-  'extract-zip': {
-    since: '2026-08',
-    why: 'Symlink path traversal while EXTRACTING a downloaded browser archive. '
-       + 'It is reached by @puppeteer/browsers when puppeteer downloads a browser. '
-       + 'The Worker never does: @cloudflare/puppeteer connects to the Browser Rendering '
-       + 'binding, and the deployed bundle contains no download path at all. '
-       + 'The package is present because it is a transitive dependency of the fork, not '
-       + 'because anything calls it.',
-  },
-  '@puppeteer/browsers': {
-    since: '2026-08',
-    why: 'Present only as the parent of extract-zip above, and unreachable for the same '
-       + 'reason: nothing in a Worker downloads or extracts a browser.',
-  },
-  '@cloudflare/puppeteer': {
-    since: '2026-08',
-    why: 'Flagged solely because it depends on the two above. The only version npm offers '
-       + 'as a "fix" is 0.0.11, which is OLDER than what is installed and loses real fixes - '
-       + 'downgrading to make an audit quiet is worse than the advisory.',
-  },
-};
+const ACCEPTED = {};
 
 /* UNREACHABLE INCLUDES "NEVER ANSWERS".
 

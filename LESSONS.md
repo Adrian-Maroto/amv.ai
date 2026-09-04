@@ -8178,3 +8178,44 @@ happened, a captcha diagnosis that was a real bug but not the one in front of
 us, and this. All three were plausible, all three were stated with more
 confidence than they had earned, and each cost a round trip to walk back. The
 measurement here took one browser and four minutes. It should have come first.
+
+## 344. A test that asserts exit 0 cannot tell "it hung" from "it found something"
+
+CI run 652 went red on a commit whose full local gate had passed green, and
+emailed a failure for it. The failing suite was
+`a-gate-that-waits-for-ever-is-not-a-gate` - the one written a few hours
+earlier about a gate stage that could hang for ever - and its last section
+drove `audit-deps.mjs` for real and asserted `!threw`, described as "either way
+it finishes and exits 0".
+
+That description was wrong about the script under test. `audit-deps.mjs` exits
+1 on a finding; that is the entire point of it. So the assertion said "the
+dependency verdict is clean" while claiming to say "the script terminates",
+and the two are not the same claim. The moment there was a real finding, a
+dependency problem arrived under the name of a hang - which is the exact
+confusion the file was written to prevent. "It did not come back" and "it came
+back with bad news" are different facts and must not share a failure message.
+
+It is now split. A separate section asserts that every non-zero exit prints a
+reason first, and the driven section asserts only termination: killed is a
+failure, any coherent verdict is a pass. Verified against both cases with
+stubs, since neither is reproducible on this machine - a script that exits 1
+after printing FAIL passes, and one that never returns fails with SIGTERM.
+
+THE FINDING ITSELF WAS REAL, and worth as much as the fix. npm had stopped
+flagging extract-zip, `@puppeteer/browsers` and `@cloudflare/puppeteer`, so the
+ACCEPTED roster's own staleness check fired and asked for all three entries to
+go. That check is the part of the audit that keeps it honest - an exemption
+nobody rechecks is a hole with a comment over it - and it did its job. The
+roster is empty now. Deleted rather than kept "in case it comes back": if one
+is flagged again, somebody assesses it against whatever the advisory says then,
+instead of inheriting a judgement made about a different one.
+
+The second-order lesson is about WHERE it was found. The registry here answers
+a GET and stalls on the advisories endpoint, so locally the script always takes
+the skip path and exits 0 - the green local gate was green on a path that never
+reached the check. A gate stage that silently degrades to a skip on the
+developer's machine is one whose real behaviour is only ever observed in CI.
+That is tolerable for a network-dependent stage, and the skip is deliberate,
+but it means CI is the authority on that stage and a local pass is not evidence
+about it. Worth knowing which of your stages are actually running.
