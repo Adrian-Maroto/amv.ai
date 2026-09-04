@@ -2023,10 +2023,42 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
           '<button class="btn bp" id="modal-ok" style="padding:10px 16px;font-size:var(--t-base)">'+escH(okText)+'</button>'+ 
         '</div>'+ 
       '</div></div>';
-    on($('modal-close'),'click',()=>{ closeOvr(); resolve(null); });
-    if(cancelText) on($('modal-cancel'),'click',()=>{ closeOvr(); resolve(null); });
-    on($('modal-ok'),'click',()=>{ const hasInput=!!$('modal-input'); const val=hasInput?$('modal-input').value:true; closeOvr(); resolve(val); });
-    onBackdrop($('modal-bg'),()=>{ closeOvr(); resolve(null); });
+    /* ESCAPE USED TO HANG THIS FOR EVER.
+
+       Three routes out resolved - the close button, cancel, and the backdrop -
+       and Escape did not. Escape is handled by the global keydown listener in
+       _initKeyboardNav, which calls closeOvr() directly and knows nothing about
+       this promise, so the dialog vanished from the screen and the awaiting
+       caller was left holding a promise that would never settle. Measured: 1.2
+       seconds after Escape, still pending, while the cancel button settled
+       false immediately.
+
+       Thirty-one call sites await this, and they are not small ones - cancelling
+       a subscription, pausing the entire service for every user, disconnecting a
+       mailbox, typing the six-digit code from a text message, and the approval
+       gate that stands in front of a real action on somebody's connected
+       account. Pressing Escape on any of them stopped the flow silently and
+       left nothing on screen to say so, so the natural next move is to press the
+       button again and wonder why nothing happens.
+
+       So the overlay itself is watched, which covers every route out including
+       any added later. Each resolve below happens synchronously before its
+       closeOvr can deliver a mutation record, so a real answer always wins the
+       race against the watcher - the same ordering _askDestructive depends on. */
+    let settled = false, obs = null;
+    const done = (v) => {
+      if(settled) return; settled = true;
+      try{ if(obs) obs.disconnect(); }catch(e){}
+      resolve(v);
+    };
+    on($('modal-close'),'click',()=>{ closeOvr(); done(null); });
+    if(cancelText) on($('modal-cancel'),'click',()=>{ closeOvr(); done(null); });
+    on($('modal-ok'),'click',()=>{ const hasInput=!!$('modal-input'); const val=hasInput?$('modal-input').value:true; closeOvr(); done(val); });
+    onBackdrop($('modal-bg'),()=>{ closeOvr(); done(null); });
+    try{
+      obs = new MutationObserver(()=>{ if(!document.getElementById('modal-ok')) done(null); });
+      obs.observe(r, { childList:true, subtree:true, attributes:true, attributeFilter:['class'] });
+    }catch(e){}
     const input=$('modal-input'); if(input){ input.focus(); input.select(); }
   });
 }

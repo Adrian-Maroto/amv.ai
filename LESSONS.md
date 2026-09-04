@@ -8305,3 +8305,38 @@ that quietly widens what the audit will let through next time. A tool asking me
 to remove a safety note should have raised suspicion, and instead I wrote a
 paragraph justifying it. When automation points at a destructive action and the
 evidence is a single negative signal, verify the signal before obeying it.
+
+## 347. The same dialog bug, in the dialog I had not touched
+
+Having designed around an Escape hang in the new confirmation (345), I went
+looking for it in the old one, and it was there.
+
+_showModalAsync is the promise-shaped dialog this codebase already had. It
+resolved from its close button, its cancel button and its backdrop, and from
+nothing else. Escape is handled by the global keydown listener, which calls
+closeOvr() knowing nothing about any promise - so the dialog left the screen and
+the caller kept awaiting it. Measured: still pending 1.2 seconds after Escape,
+while the cancel button settled immediately.
+
+Thirty-one places await it. Cancelling a subscription. Pausing the entire
+service for every user. Disconnecting a mailbox. Typing the six-digit code from
+a text message. And _describeAction, which is the approval gate standing in
+front of a real action on somebody's connected account. Press Escape on any of
+those and the flow stopped silently, with nothing on screen to say so - so the
+natural next move is to press the button again and wonder.
+
+THE REASON THIS WAS FINDABLE is that the previous fix forced me to reason about
+every route out of a modal, and "the global key handler closes the overlay
+without telling anybody" is a property of the PAGE, not of one dialog. Once that
+is understood, it obviously applies to every promise that waits on an overlay.
+The generalisable move is small: after fixing a bug that came from a shared
+mechanism, go and look at the other users of that mechanism before doing
+anything else. It took one browser and four minutes.
+
+The subtler half is the race that the fix creates. Watching the overlay means
+the watcher also fires when a real answer closes it, and mutation records arrive
+as microtasks - so if the answer is deferred by even a setTimeout(...,0), the
+watcher wins and a typed value comes back as a cancellation. Both dialogs settle
+synchronously in their own handlers for that reason, and both have an assertion
+that fails when the answer is deferred. A fix that introduces a race quietly is
+not better than the bug.

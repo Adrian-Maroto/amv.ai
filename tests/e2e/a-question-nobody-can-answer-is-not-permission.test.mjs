@@ -146,6 +146,74 @@ section('Cancel is what has the focus, and the danger is coloured');
      'with room for the second line the browser box could never show', r.body.slice(0, 50));
 }
 
+section('And the OTHER dialog, which hung for ever on Escape');
+{
+  /* _showModalAsync is the older, promise-shaped dialog, and thirty-one places
+     await it: cancelling a subscription, pausing the entire service for every
+     user, disconnecting a mailbox, typing the six-digit code from a text
+     message, and _describeAction - the approval gate in front of a REAL action
+     on somebody's connected account.
+
+     It resolved from its close button, its cancel button and its backdrop, and
+     from nothing else. Escape goes through the global keydown listener, which
+     calls closeOvr() knowing nothing about the promise, so the dialog left the
+     screen and the caller was still awaiting it. Measured before the fix: still
+     pending 1.2 seconds later, while cancel settled immediately. Nothing on
+     screen said anything had gone wrong, so the obvious next move is to press
+     the button again.
+
+     Same fix as above, and the same race to avoid: OK must settle before the
+     overlay watcher can, or a typed value would come back as a cancellation.
+     That is why the text case is asserted on its VALUE and not just on
+     settling. */
+  const race = async (fn) => page.evaluate(async (kind) => {
+    const go = (p) => Promise.race([
+      p.then(v => 'settled:' + JSON.stringify(v)),
+      new Promise(r => setTimeout(() => r('HUNG'), 1500)),
+    ]);
+    let out;
+    if (kind === 'confirmEscape') {
+      const p = showConfirmAsync('Remove them from the team?');
+      await new Promise(r => setTimeout(r, 150));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      out = await go(p);
+    } else if (kind === 'promptEscape') {
+      const p = showTextPromptAsync('Add an instruction');
+      await new Promise(r => setTimeout(r, 150));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      out = await go(p);
+    } else if (kind === 'ok') {
+      const p = showConfirmAsync('go ahead?');
+      await new Promise(r => setTimeout(r, 150));
+      document.getElementById('modal-ok').click();
+      out = await go(p);
+    } else if (kind === 'text') {
+      const p = showTextPromptAsync('type something', 'hello');
+      await new Promise(r => setTimeout(r, 150));
+      document.getElementById('modal-input').value = 'typed value';
+      document.getElementById('modal-ok').click();
+      out = await go(p);
+    } else {
+      const p = showConfirmAsync('cancel me');
+      await new Promise(r => setTimeout(r, 150));
+      document.getElementById('modal-cancel').click();
+      out = await go(p);
+    }
+    try { closeOvr(); } catch (e) {}
+    return out;
+  }, fn);
+
+  ok(await race('confirmEscape') === 'settled:false',
+     'Escape on a confirmation answers no rather than hanging', await race('confirmEscape'));
+  ok(await race('promptEscape') === 'settled:null',
+     'Escape on a text prompt answers nothing rather than hanging', await race('promptEscape'));
+  ok(await race('ok') === 'settled:true', 'OK is still a yes');
+  ok(await race('text') === 'settled:"typed value"',
+     'and a typed value still comes back, so the watcher did not beat the answer',
+     await race('text'));
+  ok(await race('cancel') === 'settled:false', 'and Cancel is still a no');
+}
+
 ok(errors.length === 0, 'no console errors', errors.slice(0, 3));
 if (report('a-question-nobody-can-answer-is-not-permission') > 0) process.exitCode = 1;
 done();
