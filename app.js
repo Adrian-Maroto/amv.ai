@@ -7284,13 +7284,55 @@ function renderChatView() {
   on($('inp-mdl-btn'),'click',showModelPicker);
 }
 
+/* THE MENU OPENED OFF THE TOP OF THE SCREEN.
+
+   This anchored the menu's BOTTOM eight pixels above the button and let it grow
+   upward, with nothing saying how tall it may be. On a phone the composer sits
+   near the bottom, the list is a heading, five engines and a footnote, and the
+   result measured at 390x844 was a top edge at -61px: the first engines were
+   off the screen, and a `position:fixed` element cannot be scrolled back into
+   view, so they could not be reached at all. Shorter phones lose more.
+
+   It is now told the space it actually has. The side with more room wins -
+   above, in practice, because the button lives in the composer - the height is
+   clamped to that space less a margin, and the list scrolls inside itself. A
+   menu that scrolls is a menu somebody can use; a menu above the viewport is
+   not there.
+
+   Deliberately not a bottom sheet on small screens. That is a different control
+   with different dismissal behaviour, and this list is short enough to fit once
+   it is allowed to scroll. */
 function showModelPicker(){
   const btn=$('inp-mdl-btn'); if(!btn) return;
   const rect=btn.getBoundingClientRect();
   document.querySelectorAll('.model-picker').forEach(m=>m.remove());
   const menu=document.createElement('div');
   menu.className='model-picker';
-  menu.style.cssText='bottom:'+(window.innerHeight-rect.top+8)+'px;right:'+Math.max(12,window.innerWidth-rect.right)+'px';
+  const GAP=8, EDGE=12;
+  const above=Math.max(0, rect.top - GAP - EDGE);
+  const below=Math.max(0, window.innerHeight - rect.bottom - GAP - EDGE);
+  const up=above>=below;
+  const room=Math.max(140, up?above:below);   // never so small it is useless
+  /* AND THE OTHER EDGE, WHICH WAS WRONG IN THE SAME WAY.
+
+     `right` was the distance from the viewport's right edge to the button's,
+     which lines the menu up under the button and says nothing about where its
+     LEFT edge lands. The button sits in the middle of the composer, so on a
+     390px screen right came out at 104, the menu is 340 wide, and its left edge
+     was at -54: cut off on the side as well as the top. Same control, same
+     class of mistake - a position computed from one anchor with no reference to
+     the box it has to fit inside.
+
+     The width here mirrors the stylesheet's (340, capped at the viewport less
+     its margins) so the arithmetic is about the box that will actually exist. */
+  const width=Math.min(340, Math.max(0, window.innerWidth - EDGE*2));
+  let right=Math.max(EDGE, window.innerWidth - rect.right);
+  right=Math.max(EDGE, Math.min(right, window.innerWidth - EDGE - width));
+  menu.style.cssText=
+    (up ? 'bottom:'+(window.innerHeight-rect.top+GAP)+'px'
+        : 'top:'+(rect.bottom+GAP)+'px')+
+    ';right:'+right+'px'+
+    ';max-height:'+room+'px;overflow-y:auto';
   const bars=(c)=>{ if(c===0) return '<span class="mp-auto">\u21c6</span>'; let h=''; for(let i=1;i<=4;i++) h+='<span class="mp-bar'+(i<=c?' on':'')+'"></span>'; return h; };
   menu.innerHTML=
     '<div class="mp-head">Choose a model</div>'+
