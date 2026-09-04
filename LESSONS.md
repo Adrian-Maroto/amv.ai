@@ -8403,3 +8403,40 @@ instructions.
 The general form is the one this repository keeps relearning: a document that
 tells somebody to DO something is code with a slower compiler. It deserves a
 check like any other, and "is the thing this names real" is usually mechanical.
+
+## 350. The light theme shipped with invisible text, and my first two measurements of it were wrong
+
+`.tk-t{color:#e6edf3}` - a hardcoded near-white rather than `var(--tx)`. Dark:
+#e6edf3 on #1a1b1f, fine. Light: the page becomes #fdfdfc and the text does not
+move, so every item title on the Tasks screen was white on white at 1.16:1.
+Seven sibling rules had the same shape. Nothing caught it because nothing in
+this project had ever measured a colour.
+
+The rule it breaks was already written down: colour comes from tokens so that a
+theme switch works. A rule that opts out of the tokens opts out of the theme.
+
+WHAT IS WORTH REMEMBERING IS THE MEASURING, because I got it wrong twice and
+both wrong answers were confident.
+
+The first run toggled `data-theme`, which this product does not use - the hook
+is `body.light`. It measured dark twice and reported both themes as identical,
+27 failures each. Identical results for two themes should have been the tell,
+and it was: the numbers were the same because the input was.
+
+The second run read `backgroundColor` off the nearest ancestor that had one and
+treated it as opaque. Backgrounds here are frequently translucent, so the active
+sidebar item came out at 1.00:1 - which would mean invisible text on a control
+that plainly works. Compositing every layer down to the body took the count from
+35 to 11, and the 24 that vanished were never real. Had I reported the 35, most
+of what I "found" would have been noise, and the real finding would have been
+buried in it.
+
+So: when a measurement produces an implausible number, the measurement is the
+first suspect, not the product. A control that obviously works cannot be at
+1.00:1. Both times, checking one specific element by hand against its real
+colours took under a minute and settled it.
+
+The guard's floor is 3:1 rather than AA's 4.5, deliberately. What shipped was
+1.16 - nobody can see it - and the handful of badges sitting between 3.88 and
+4.44 are a different question that needs a decision about brand colours rather
+than a gate failure. Those are counted and pinned so they cannot grow.
