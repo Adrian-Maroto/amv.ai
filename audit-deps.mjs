@@ -49,9 +49,26 @@ const ACCEPTED = {
   },
 };
 
+/* UNREACHABLE INCLUDES "NEVER ANSWERS".
+
+   This call had no timeout, and the skip below only fires on an error MESSAGE -
+   ENOTFOUND, ECONNREFUSED and friends - which requires npm to actually fail.
+   A registry that accepts the connection and then says nothing does not fail;
+   it waits. So the gate waited with it, for ever, at stage six of seven.
+
+   That is the exact scenario the comment above this stage in check.mjs
+   describes - "a gate that goes red on a train is a gate people learn to
+   ignore" - and the commonest shape of a bad network is a stall, not a refusal.
+   The intent was right and the implementation could not reach it.
+
+   Ninety seconds is far past a healthy audit, which answers here in under one,
+   so this cannot turn a slow-but-working registry into a skipped check. */
+const AUDIT_TIMEOUT_MS = 90000;
+
 function audit() {
   try {
-    const out = execSync('npm audit --json', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const out = execSync('npm audit --json', {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: AUDIT_TIMEOUT_MS });
     return JSON.parse(out);
   } catch (e) {
     /* npm audit exits non-zero when it FINDS something, and still prints the
@@ -59,6 +76,13 @@ function audit() {
     const out = String((e && e.stdout) || '');
     if (out.trim().startsWith('{')) { try { return JSON.parse(out); } catch (_) {} }
     const msg = String((e && e.message) || e);
+    /* Said separately from the refusals below, because it is a different fact
+       and naming the wrong one sends somebody to check their DNS. */
+    if (e && (e.code === 'ETIMEDOUT' || e.killed === true || e.signal === 'SIGTERM')) {
+      console.log('SKIP  the registry accepted the connection and did not answer within '
+        + Math.round(AUDIT_TIMEOUT_MS / 1000) + 's, so no audit was run.');
+      process.exit(0);
+    }
     if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|network|offline|ETIMEDOUT/i.test(msg + out)) {
       console.log('SKIP  the registry is not reachable, so no audit was run.');
       process.exit(0);
