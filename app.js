@@ -11530,8 +11530,20 @@ function _mktEarnings(body){
     const bal=(d.balance||0), avail=(d.available!=null?d.available:bal), pend=(d.pending||0),
           holdDays=(d.holdDays||0), life=(d.lifetime||0), pct=d.sellerPct||80, min=d.minWithdraw||10;
     const txLabel={sale:'Sale',withdrawal:'Withdrawal'};
-    const tx=(d.tx||[]).map(t=>'<div class="vrow"><span>'+(txLabel[t.type]||t.type)+(t.title?' \u00b7 '+escH(t.title):'')+(t.status?' <span style="color:var(--mu);font-size:var(--t-xs)">('+t.status+')</span>':'')+'</span>'+
-      '<span class="vrow-n" style="color:'+(t.amount<0?'var(--mu)':'#4ade80')+'">'+(t.amount<0?'-$'+Math.abs(t.amount).toFixed(2):'+$'+t.amount.toFixed(2))+'</span></div>').join('')||'<div class="vrow"><span style="color:var(--mu)">No earnings yet - sell something to start.</span></div>';
+    /* "No earnings yet - sell something to start." was printed whenever the
+       list came back empty, including when the money history could not be READ
+       - which put that sentence directly under a lifetime-earnings figure on
+       the same screen. The server now separates the three cases, so this can:
+       could not be read, read and empty, read and longer than what was sent. */
+    const rows=(d.tx||[]).map(t=>'<div class="vrow"><span>'+(txLabel[t.type]||t.type)+(t.title?' \u00b7 '+escH(t.title):'')+(t.status?' <span style="color:var(--mu);font-size:var(--t-xs)">('+escH(t.status)+')</span>':'')+'</span>'+
+      '<span class="vrow-n'+(t.amount<0?'':' vrow-in')+'" style="'+(t.amount<0?'color:var(--mu)':'')+'">'+(t.amount<0?'-$'+Math.abs(t.amount).toFixed(2):'+$'+t.amount.toFixed(2))+'</span></div>').join('');
+    const tx= d.txUnavailable
+      ? '<div class="vrow vrow-warn"><span>AMV could not read your transaction history. '+
+          'The balances above are correct - this list is not available right now, and nothing has been lost.</span></div>'
+      : (rows || '<div class="vrow"><span style="color:var(--mu)">No earnings yet - sell something to start.</span></div>')
+        + (d.txTruncated
+            ? '<div class="vrow vrow-more"><span>Showing the '+(d.tx||[]).length+' most recent of '+(+d.txTotal||0)+'.</span></div>'
+            : '');
     body.innerHTML=
       '<div class="vhero">'+
         '<div class="vcard vcard-accent"><div class="vcard-n">$'+avail.toFixed(2)+'</div><div class="vcard-l">Available to withdraw</div></div>'+

@@ -10784,3 +10784,21 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 .sch-partial b{ font-size:var(--t-md); color:var(--tx); }
 .sch-partial span{ font-size:var(--t-sm); line-height:1.6; color:var(--mu); }
 .sch-retry{ font-size:var(--t-sm); }
+
+/* ── LAYER A151 · the money history says which three things it is ────────────
+   The transaction list printed "No earnings yet - sell something to start."
+   for every empty list, including one that could not be READ - so that
+   sentence appeared directly beneath a lifetime-earnings figure on the same
+   screen. The server now distinguishes unreadable, empty, and truncated; these
+   are the two rows that say the first and the third.
+
+   `.vrow-in` also retires a hardcoded #4ade80 on the credit amounts. It was
+   picked for the dark theme and measured 1.74:1 against the tinted chip behind
+   it in light mode - a green a seller could not read on the row telling them
+   they had been paid. `--grn-txt` is the theme-aware one (it darkens to
+   #267343 under body.light); `--grn` is the flat status colour and has the
+   same problem the literal did. */
+.vrow-in{ color:var(--grn-txt); }
+.vrow-warn{ border-left:3px solid var(--gold); padding-left:var(--sp-3); }
+.vrow-warn span{ color:var(--tx); font-size:var(--t-sm); line-height:1.6; }
+.vrow-more span{ color:var(--dim); font-size:var(--t-xs); }

@@ -8629,3 +8629,50 @@ The suite that covers it reads the refusal body as TEXT and parses defensively,
 because with the fix removed that body is a stream, and a test that called
 `.json()` on it would crash with the same unexplained parse error instead of
 naming the assertion that failed.
+
+## 357. The wallet read invented a zero, and the next sale made it permanent
+
+`_wallet` was `try { return JSON.parse(raw) } catch {}` falling through to
+`{ balance: 0, lifetime: 0, holds: [] }`. A seller whose wallet record became
+unparseable was, from every caller's point of view, a seller who had never sold
+anything. Two things followed and only one of them was visible.
+
+The visible one: the earnings screen showed $0.00 available, $0.00 lifetime and
+"No earnings yet - sell something to start." to somebody who is owed money -
+eight lines from a comment in the same file that says "Never a fabricated zero"
+about the network-failure path. And the withdrawal endpoint answered "Minimum
+withdrawal is $10. You have $0.00 available", which is a specific, confident,
+false number at the one moment a seller is trying to get paid.
+
+The invisible one is the reason this is the biggest of the batch. `_withWallet`
+is the lock every money path goes through, and it is read, mutate,
+`_saveWallet`. A sale credit landing on a corrupt record did not fail - it
+wrote the fabricated zero plus the new sale over the top. Balance, lifetime and
+the holds array, gone, permanently, with no error anywhere. `_withKV`, which
+every OTHER locked record uses, has refused precisely this from the day it was
+written: "Nothing is known about this record, so nothing may be written over
+it." The money record was the one that did not go through it.
+
+Three rules out of it:
+
+**A read that cannot fail is a read that lies.** Absent and unreadable are
+different answers and only one of them has a safe default. Absent is a new
+seller; unreadable is nothing at all, and a default there is a guess wearing a
+value's clothing.
+
+**A safety rule applied to the general helper and not to the special case has
+been applied to the wrong one.** `wallet:` got its own read function precisely
+BECAUSE it is important, and that is how it ended up outside the protection
+every less important record had. Look for the bespoke path first, not last.
+
+**Degrade per record, not per screen.** The balances and the money history are
+two records. Losing the history does not make the numbers wrong, so the screen
+now shows the numbers and says the list is unavailable - and separately says
+"showing the 50 most recent of 137", because a heading that reads "Transaction
+history" over a capped list claims a completeness the response never had.
+
+One more thing fell out of measuring it: the credit amounts were a hardcoded
+#4ade80, chosen for the dark theme, which measures 1.74:1 against the tinted
+chip behind it in light mode. A seller could not read the green number telling
+them they had been paid. `--grn-txt` is the theme-aware token; `--grn` is the
+flat status colour and has the same defect the literal did.

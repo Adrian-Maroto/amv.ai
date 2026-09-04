@@ -17270,9 +17270,38 @@ async function _sellerIndexRemove(env, email, id) {
 const PAYOUT_HOLD_DAYS = 14;
 const PAYOUT_HOLD_MS = PAYOUT_HOLD_DAYS * 86400000;
 
+/* AN UNREADABLE WALLET IS NOT AN EMPTY WALLET.
+
+   This used to be `try { return JSON.parse(raw) } catch {}` falling through to
+   a fresh zero wallet, and that made a corrupt record indistinguishable from a
+   seller who has never sold anything. Two consequences, and the second is the
+   one that cannot be undone.
+
+   The screen showed $0.00 available, $0.00 lifetime and "No earnings yet -
+   sell something to start" to somebody who is owed money. The code six lines
+   from the caller says "Never a fabricated zero" about the network-failure
+   path; this path fabricated exactly that zero.
+
+   And `_withWallet` - the lock every money path goes through - reads with this
+   function, mutates, and writes back with `_saveWallet`. So the next sale
+   credit landing on a corrupt record did not fail: it overwrote the real
+   balance, the lifetime total and the holds array with a fresh wallet plus the
+   new sale. The seller's money was gone, permanently, and nothing anywhere
+   said so.
+
+   `_withKV` - which every other locked record uses - has always refused this:
+   "Nothing is known about this record, so nothing may be written over it." The
+   money one was the one that did not. Absent is still a new seller and still
+   returns a fresh wallet; only present-and-unparseable throws. */
 async function _wallet(env, email) {
   const raw = await env.AMV_KV.get(`wallet:${email}`);
-  if (raw) { try { return JSON.parse(raw); } catch {} }
+  if (raw != null) {
+    try { return JSON.parse(raw); }
+    catch (e) {
+      try { audit(env, 'record_corrupt', { key: `wallet:${email}`, bytes: String(raw).length }); } catch (_) {}
+      throw new UnreadableRecordError(`wallet:${email}`, 'invalid JSON');
+    }
+  }
   return { balance: 0, lifetime: 0, currency: 'usd', holds: [] };
 }
 async function _saveWallet(env, email, w) { await env.AMV_KV.put(`wallet:${email}`, JSON.stringify(w)); }
@@ -17539,9 +17568,22 @@ function _nextClearingAt(w) {
     .filter(t => t > now).sort((a, b) => a - b);
   return times.length ? times[0] : 0;
 }
+/* Same rule as `_wallet` above, for the same reason: a money history that
+   cannot be read is not a money history with nothing in it. This one is also
+   read-modify-written by `_pushWalletTx`, so swallowing the parse here would
+   let the next sale replace a seller's whole record of what they were paid
+   with a single line. */
 async function _walletTx(env, email) {
   const raw = await env.AMV_KV.get(`wallet_tx:${email}`);
-  if (raw) { try { return JSON.parse(raw); } catch {} }
+  if (raw != null) {
+    try {
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? v : [];
+    } catch (e) {
+      try { audit(env, 'record_corrupt', { key: `wallet_tx:${email}`, bytes: String(raw).length }); } catch (_) {}
+      throw new UnreadableRecordError(`wallet_tx:${email}`, 'invalid JSON');
+    }
+  }
   return [];
 }
 /* Append a line to somebody's money history, at most once per event.
@@ -18106,17 +18148,44 @@ async function marketUnlist(request, env) {
 async function marketEarnings(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
-  const w = await _wallet(env, user.email);
-  const tx = await _walletTx(env, user.email);
+  /* The wallet is the numbers. If it cannot be read there is nothing honest to
+     put on this screen, so the failure goes to the client whole rather than as
+     a zero - and the client already says "could not load your earnings,
+     nothing has changed" rather than inventing a balance. */
+  let w;
+  try { w = await _wallet(env, user.email); }
+  catch (e) {
+    if (!(e instanceof UnreadableRecordError)) throw e;
+    try { await alertOnce(env, 'wallet_corrupt', 'A seller wallet record is unreadable, so their balance cannot be shown. Check the audit log for record_corrupt.', 60); } catch (_) {}
+    return json({ error: 'AMV could not read your balance right now, so it will not guess at it. Nothing has changed - your money is where it was. This has been reported.',
+                  code: 'wallet_unreadable' }, 503);
+  }
+  /* The history is separate, and losing it does not make the numbers wrong. So
+     it degrades on its own: the balances still show, and the list says it
+     could not be read instead of "No earnings yet" - which to somebody with a
+     lifetime total on the same screen is both false and self-contradictory. */
+  let tx = [], txUnavailable = false;
+  try { tx = await _walletTx(env, user.email); }
+  catch (e) {
+    if (!(e instanceof UnreadableRecordError)) throw e;
+    txUnavailable = true;
+  }
   /* Three numbers, not one. "Balance" alone meant a seller saw money they could
      not take and had no way to learn why - which reads as AMV keeping it. What
      has cleared, what is still clearing, and how long that takes. */
   const available = _availableOf(w);
   const pending = +Math.max(0, (+w.balance || 0) - available).toFixed(2);
+  /* The list is capped at 50 and the heading says "Transaction history", which
+     claims completeness the response cannot support. The count and the flag go
+     with it so the screen can say which 50 these are - the same rule every
+     bounded scan here already follows. */
+  const TX_SHOWN = 50;
   return json({ ok: true, balance: w.balance, available, pending,
                 holdDays: PAYOUT_HOLD_DAYS, availableAt: _nextClearingAt(w) || null,
                 lifetime: w.lifetime, currency: w.currency || 'usd', minWithdraw: MARKET_MIN_WITHDRAW,
-                sellerPct: Math.round((1 - MARKET_PLATFORM_FEE) * 100), tx: tx.slice(0, 50) });
+                sellerPct: Math.round((1 - MARKET_PLATFORM_FEE) * 100),
+                tx: tx.slice(0, TX_SHOWN), txTotal: tx.length,
+                txTruncated: tx.length > TX_SHOWN, txUnavailable });
 }
 
 /* Extraction: seller requests a withdrawal of their balance. Records a
@@ -18206,7 +18275,18 @@ async function marketWithdraw(request, env) {
        so it cannot race the withdrawal it is correcting. */
     try { await _reconcileStrandedPayouts(env, user.email); }
     catch (e) { audit(env, 'withdraw_reconcile_failed', { seller: user.email, error: String((e && e.message) || e).slice(0, 160) }); }
-    const w = await _wallet(env, user.email);
+    /* A wallet that cannot be read used to come back as a fresh zero, so this
+       path answered "Minimum withdrawal is $10. You have $0.00 available." to
+       a seller with money - a specific, confident, false number, at the one
+       moment they are trying to get paid. It refuses, and says which. */
+    let w;
+    try { w = await _wallet(env, user.email); }
+    catch (e) {
+      if (!(e instanceof UnreadableRecordError)) throw e;
+      try { await alertOnce(env, 'wallet_corrupt', 'A seller wallet record is unreadable, so a withdrawal was refused. Check the audit log for record_corrupt.', 60); } catch (_) {}
+      return json({ error: 'AMV could not read your balance, so it will not process a withdrawal against a number it does not have. Nothing has been debited and your money is untouched. This has been reported.',
+                    code: 'wallet_unreadable' }, 503);
+    }
     /* Only what has cleared. The balance may be larger - held money is still
        theirs and still shown - but it cannot leave until the dispute window has
        substantially passed, or a seller could outrun a chargeback and leave AMV
