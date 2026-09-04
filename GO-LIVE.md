@@ -100,6 +100,7 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 | Secret | Default | What it changes |
 |---|---|---|
 | `GLOBAL_DAILY_USD_CAP` | `500` | The hard ceiling on model spend across all users, per day |
+| `NONESSENTIAL_WRITE_CAP` | `150` | How many storage writes a day error telemetry and the waitlist may share. Free-tier KV allows 1000 a day for the whole account, so this keeps the least important writes from starving sign-ups and saves. Raise it on a paid plan. |
 
 > Payout decisioning (the $100 auto-clear limit, the $600 identity threshold,
 > the 10% / 120-day reserve) is set in `amv-backend.js` next to `_payoutRisk`,

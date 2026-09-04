@@ -1697,6 +1697,49 @@ async function _counterKVFallback(env, name, payload) {
      perMin - max calls per rolling minute
      perDay - optional max calls per day (0 = no daily cap)
    Returns { ok:true } or { ok:false, code, retry } - caller turns !ok into a 429. */
+/* A CEILING ON THE WRITES THAT DO NOT MATTER, SO THEY CANNOT STARVE THE ONES
+   THAT DO.
+
+   Cloudflare's free KV tier allows 1000 writes a DAY for the whole account.
+   Two endpoints here are public, unauthenticated, and write once per request:
+   /errors (telemetry) and /waitlist. Both were rate-limited per IP and nothing
+   else - 500 a day and 50 a day respectively - so two IPs at the telemetry
+   allowance is 1000 writes: the entire account's budget for the day, spent on
+   error reports.
+
+   When it is gone, every write fails. Sign-up. Session. Save. The KV
+   bookkeeping behind a payment. For everybody, until the quota rolls over, and
+   nothing in the product would know that was why.
+
+   Neither per-IP limit is wrong on its own. What was missing is that no
+   allowance may be larger than a fraction of what the account HAS. Telemetry
+   and a waitlist are the two least important writes AMV makes, so they get a
+   small shared daily ceiling and are refused first - which is the correct order
+   for a product to shed load in.
+
+   Exhausting it is worth knowing about: it is either far more traffic than
+   expected or somebody pushing on it, and both are things an operator should
+   hear once rather than discover from a dead sign-up page. */
+const NONESSENTIAL_DAILY_WRITES = 150;
+async function _nonEssentialWrite(env, what) {
+  const cap = Math.max(1, parseInt(env.NONESSENTIAL_WRITE_CAP || '', 10) || NONESSENTIAL_DAILY_WRITES);
+  const res = await counter(env, `noness:${todayKey()}`,
+    { op: 'reserve', amount: 1, cap, ttlMs: 86400000 * 2 });
+  /* The counter itself being unreachable is not a reason to spend the budget on
+     the least important thing AMV does. Refuse, quietly. */
+  if (res.unavailable) return false;
+  if (!res.allowed) {
+    try {
+      await alertOnce(env, 'noness_write_cap',
+        'The daily ceiling on non-essential writes (' + cap + ') is used up, so ' + what +
+        ' is being refused to keep sign-ups, sessions and saves working. Either traffic is far ' +
+        'higher than expected or somebody is pushing on a public endpoint.', 720);
+    } catch (e) {}
+    return false;
+  }
+  return true;
+}
+
 async function limitAction(env, key, perMin, perDay = 0) {
   const minName = `act:${key}:${Math.floor(Date.now() / 60000)}`;
   const minRes = await counter(env, minName, { op: 'rateCheck', limit: perMin, windowMs: 60000 });
@@ -7128,6 +7171,11 @@ async function errorsReport(request, env, ctx){
   const eip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
   const erl = await limitAction(env, `errreport:${eip}`, 30, 500);
   if (!erl.ok) return json({ ok: true, accepted: 0, throttled: true });
+  /* And a ceiling shared with the other non-essential writer, because a per-IP
+     allowance says nothing about what the ACCOUNT can afford. Telemetry is the
+     first thing to drop when storage is scarce, not the last. */
+  if (!await _nonEssentialWrite(env, 'error telemetry'))
+    return json({ ok: true, accepted: 0, throttled: true, reason: 'storage_budget' });
   const body = await request.json().catch(()=>({}));
   const events = Array.isArray(body.events) ? body.events.slice(0, ERR_MAX_BATCH) : [];
   if(!events.length) return json({ ok:true, accepted:0 });
@@ -14709,7 +14757,15 @@ async function waitlistAdd(request, env) {
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || '').toLowerCase().trim();
   const product = String(body.product || 'general').replace(/[^a-z0-9_-]/gi, '').slice(0, 40);
-  if (!email || !/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(email)) return json({ error: 'invalid email' }, 400);
+  if (!email || !/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(email))
+    return json({ error: 'That does not look like an email address. Check it and try again.' }, 400);
+  /* Shares the non-essential ceiling with telemetry. A waitlist entry is worth
+     having and is worth nothing at all compared to sign-up still working, so it
+     is refused before the storage budget is spent - and says so, rather than
+     pretending it was recorded. */
+  if (!await _nonEssentialWrite(env, 'a waitlist sign-up'))
+    return json({ error: 'We could not add you to the list just now. Please try again later.',
+                  code: 'needs_service' }, 503);
   await env.AMV_KV.put(`waitlist:${product}:${email}`, JSON.stringify({ email, product, ts: Date.now() }));
   return json({ ok: true });
 }

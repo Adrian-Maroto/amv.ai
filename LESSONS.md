@@ -8478,3 +8478,30 @@ a filter and a write BACK - so the fault never reached it, and the assertion
 went green on an unrelated phase failing. The mutation run is the only reason
 that was caught: removing the fix left the suite green. A test that passes
 without the fix is not a test, and the way to find out is to take the fix away.
+
+## 352. A per-caller limit says nothing about what the account can afford
+
+/errors and /waitlist are public, unauthenticated, and write once per request.
+Both were rate-limited per IP: 500 a day and 50 a day. Neither number is wrong
+on its own, and together they were a way to take the product down.
+
+Cloudflare's free KV tier allows 1000 writes a DAY for the whole account. Two
+IPs at the telemetry allowance is 1000 writes. After that every write fails -
+sign-up, session, save, the bookkeeping behind a payment - for everybody, until
+the quota rolls over, and nothing in the product would know that was the reason.
+
+The mistake is a category one. A rate limit answers "is this caller being
+unreasonable", and that is a different question from "can we afford to serve
+this". Every limit in this file was set by asking the first question. Nobody had
+asked the second, because the resource being spent is not the one the endpoint
+appears to consume: an error report costs a KV write, and KV writes are a shared
+account-wide budget that nothing else in the code refers to.
+
+So the two least important writes AMV makes now share a small daily ceiling and
+are refused FIRST, which is the order a product should shed load in. The counter
+being unreachable also refuses - spending the last of a scarce budget on
+telemetry because the limiter is down is the wrong way round.
+
+Worth writing down as a question rather than a fix: for every limit, what
+happens if a hundred different callers each stay just inside it? That is the
+number that matters, and it is not the one in the code.
