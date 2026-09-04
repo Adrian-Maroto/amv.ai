@@ -3423,6 +3423,19 @@ function _sessResume(id){
       _STUDIO.prompt = st.prompt||'';
     }
   }catch(e){}
+  /* OPENING SOMETHING IS LEAVING HOME.
+
+     Both Dev and Studio have a flag saying "show me the list, not the work",
+     and resuming a session restored the work while leaving that flag set - so
+     picking a build off the home page loaded it and then kept the home page
+     over the top of it. The work was there; the screen said otherwise.
+
+     Studio's own open path has said `atHome=false` since it was written. The
+     resume path is a second door into the same room and never learned it. */
+  try{
+    if(k==='dev' && typeof _DEV!=='undefined') _DEV.atHome=false;
+    if(k==='studio' && typeof _STUDIO!=='undefined') _STUDIO.atHome=false;
+  }catch(e){}
   const tab=SESSION_KINDS[k]?.tab||'chat';
   setTab(tab);
   _resumingSession=false;
@@ -18327,6 +18340,70 @@ function _buildModeSwitchHTML(active){
       + '</button>').join('')
   + '</div>';
 }
+/* THE BUILDS YOU ALREADY MADE, ON THE PAGE WHERE YOU LOOK FOR THEM.
+
+   Sessions have been saved per kind since Build existed, and the only place
+   they were listed was the sidebar history, mixed in with chats and sorted by
+   time - so finding last night's project meant recognising its auto-generated
+   title among the day's conversations. On the surface that made them, they did
+   not appear at all.
+
+   One list for all three modes rather than one per mode: "past builds" is how
+   somebody thinks about them, and _sessResume already navigates to whichever
+   tab a session belongs to, so opening a design from the Dev home lands in
+   Studio without this needing to know that. The badge says which is which.
+
+   Empty means nothing rather than an empty box - a first visit should be the
+   hero and a composer, not a heading over nothing. */
+const BUILD_RECENTS_MAX = 8;
+function _buildRecentsHTML(){
+  let rows = [];
+  try{
+    rows = (Array.isArray(_SESSIONS) ? _SESSIONS : [])
+      .filter(s => s && SESSION_KINDS[s.kind])
+      .slice().sort((a, b) => (b.updated || 0) - (a.updated || 0))
+      .slice(0, BUILD_RECENTS_MAX);
+  }catch(e){ rows = []; }
+  if(!rows.length) return '';
+  const KIND = { dev:'App', studio:'Design', lab:'Code' };
+  return '<section class="bld-recents"><h3 class="bld-recents-h">Pick up where you left off</h3>'
+    + '<div class="bld-recents-list">'
+    + rows.map(s =>
+        '<button class="bld-recent" data-bsess="' + escH(s.id) + '">'
+        + '<span class="bld-recent-k">' + escH(KIND[s.kind] || s.kind) + '</span>'
+        + '<span class="bld-recent-t">' + escH(s.title || 'Untitled') + '</span>'
+        + '<span class="bld-recent-w">' + escH(_agoLabel(s.updated)) + '</span>'
+      + '</button>').join('')
+    + '</div></section>';
+}
+/* Relative rather than a date: "3 minutes ago" is what somebody needs to tell
+   two of their own projects apart, and a timestamp is not. */
+function _agoLabel(ts){
+  const t = +ts || 0; if(!t) return '';
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if(s < 60) return 'just now';
+  const m = Math.round(s / 60); if(m < 60) return m + (m === 1 ? ' minute ago' : ' minutes ago');
+  const h = Math.round(m / 60); if(h < 24) return h + (h === 1 ? ' hour ago' : ' hours ago');
+  const d = Math.round(h / 24); if(d < 7) return d + (d === 1 ? ' day ago' : ' days ago');
+  try{ return new Date(t).toLocaleDateString(undefined, { month:'short', day:'numeric' }); }catch(e){ return ''; }
+}
+function _wireBuildRecents(root){
+  (root || document).querySelectorAll('[data-bsess]').forEach(b =>
+    on(b, 'click', () => { try{ _sessResume(b.dataset.bsess); }catch(e){} }));
+}
+/* Leaving the build you are in, without ending it. The work stays saved and
+   listed; this is the way back to the page that lists it, which is what makes
+   "open another one" possible at all. Studio has had this as `atHome` since it
+   was built - Dev never did, so the only way out of a project was to start a
+   new one, which is a different thing entirely. */
+function _buildHomeBtnHTML(show){
+  if(!show) return '';
+  return '<button class="bld-home" id="bld-home" title="Back to Build">'
+    + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>'
+    + 'All builds</button>';
+}
+try{ window._buildRecentsHTML=_buildRecentsHTML; window._wireBuildRecents=_wireBuildRecents; window._agoLabel=_agoLabel; }catch(e){}
+
 /* The header is the shared .pghd from AMV-D070 rather than a fourth bespoke
    one - that duplication is what AMV-D013 is about, and this is the surface
    that would otherwise have added to it. */
@@ -18449,6 +18526,8 @@ function renderDesignView(){
       <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
     </section>
 
+    ${_buildRecentsHTML()}
+
     <section class="dsn-starts">
       ${starts.map(([ic,t,d],n)=>`<button class="dsn-tile${n===0?' feat':''}" data-dact="designStart" data-darg="${escH(t)}">
         <span class="dsn-tile-ic">${ic}</span>
@@ -18466,6 +18545,7 @@ function renderDesignView(){
     ${_ownedMarketHTML('studio')}
   </div></div>`;
   _wireBuildModes(vc);
+  _wireBuildRecents(vc);
   /* The two controls Studio never had. Both do exactly what their Dev and Lab
      twins do, against the section this surface actually sends. */
   on($('studio-model'),'change',function(){
@@ -19160,13 +19240,34 @@ function _devProgress(p){
 function _devChip(prompt,label){
   return '<button class="dev-chip" data-dq="'+escH(prompt)+'">'+escH(label)+'</button>';
 }
+/* ONE ANSWER TO "IS DEV SHOWING ITS HOME PAGE".
+
+   There were two. renderCodeView decided it when building the markup, and the
+   log renderer decided it again on every turn with `!_DEV.log.length` - so the
+   moment anything re-rendered the log, the second one overwrote the first.
+   That is how "All builds" appeared to do nothing: the flag was set, the view
+   was rebuilt correctly, and then the class was recomputed from the log alone
+   and put straight back.
+
+   Two places computing the same fact will disagree eventually. This is the
+   fact; both ask it. */
+function _devIsHome(){
+  return !_DEV.log.length || !!_DEV.atHome;
+}
+try{ window._devIsHome=_devIsHome; }catch(e){}
+
 function renderCodeView(){
   const vc=$('vc'); if(!vc) return;
-  const blank = !_DEV.log.length;
+  /* `atHome` is what makes "All builds" mean anything. Without it the only
+     states were "no work" and "the work", so the way out of a project was to
+     start a new one - which does not open the old one, it replaces it. Studio
+     has had this since it was built; Dev is catching up. */
+  const blank = _devIsHome();
   vc.innerHTML = `<div class="dev-shell${blank?' dev-blank':''}" id="dev-shell">
     <div class="dev-chat-pane">
       ${_buildEntryHeadHTML('dev','What should we build?',
         'Describe it in plain English. AMV writes the code, runs it, and shows you the live result.')}
+      ${_buildHomeBtnHTML(!blank)}
       ${_buildBarHTML('code')}
 
       <div id="dev-hero" class="dev-hero">
@@ -19184,6 +19285,7 @@ function renderCodeView(){
           <span class="dev-hero-or">to work on code you already have</span>
         </div>
         ${_ownedMarketHTML('dev')}
+        ${_buildRecentsHTML()}
       </div>
 
       <div id="dev-log" class="dev-log" data-no-i18n></div>
@@ -19270,6 +19372,11 @@ function renderCodeView(){
   try{ _devPaintPreview(); }catch(e){}
   try{ if(_devProjectFiles().length){ _devRenderTree(); _devShowActive(); } }catch(e){}
   on($('dev-open-ext'),'click',()=>_devOpenExternal());
+  _wireBuildRecents(vc);
+  /* Back to the page that lists the builds. The work is already saved and stays
+     listed, so this is a navigation rather than a discard - which is the
+     difference between it and the new-build control beside it. */
+  on($('bld-home'),'click',()=>{ _DEV.atHome=true; try{ _sessFlush('dev'); }catch(e){} renderBuildView(); });
   on($('dev-download-proj'),'click',()=>_devDownloadProject());
   on($('dev-deploy'),'click',()=>_devDeploy());
   on($('dev-github'),'click',()=>_devPushToGitHub());
@@ -20104,7 +20211,7 @@ function _devShowResult(code,lang,run){
   }
 }
 function _devRenderLog(){
-  try{ const sh=$('dev-shell'); if(sh){ const wasBlank=sh.classList.contains('dev-blank'); const nowBlank=!_DEV.log.length; sh.classList.toggle('dev-blank', nowBlank); if(wasBlank && !nowBlank){ try{ _mountMobilePaneToggle('dev'); _mobileShowOutput('dev'); }catch(e){} } } }catch(e){}
+  try{ const sh=$('dev-shell'); if(sh){ const wasBlank=sh.classList.contains('dev-blank'); const nowBlank=_devIsHome(); sh.classList.toggle('dev-blank', nowBlank); if(wasBlank && !nowBlank){ try{ _mountMobilePaneToggle('dev'); _mobileShowOutput('dev'); }catch(e){} } } }catch(e){}
   try{ _ctxRenderMeter('ctx-dev','dev'); }catch(e){}
   const el=$('dev-log'); if(!el) return;
   el.innerHTML=_DEV.log.map(m=>{
@@ -20213,6 +20320,9 @@ async function _devSend(){
   if(_DEV.busy) return;
   const ta=$('dev-msg'); const msg=ta?ta.value.trim():''; if(!msg) return;
   ta.value=''; ta.style.height='auto';
+  /* Asking for something is leaving home, the same way opening a design is in
+     Studio - otherwise the hero would stay up over the answer. */
+  _DEV.atHome=false;
   _DEV.log.push({role:'user',text:msg}); _devRenderLog(); _DEV.busy=true;
   try{ _devBusy(true,'Building'); }catch(e){}
   try{ _sessTouch('dev'); }catch(e){}

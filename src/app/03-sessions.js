@@ -239,6 +239,19 @@ function _sessResume(id){
       _STUDIO.prompt = st.prompt||'';
     }
   }catch(e){}
+  /* OPENING SOMETHING IS LEAVING HOME.
+
+     Both Dev and Studio have a flag saying "show me the list, not the work",
+     and resuming a session restored the work while leaving that flag set - so
+     picking a build off the home page loaded it and then kept the home page
+     over the top of it. The work was there; the screen said otherwise.
+
+     Studio's own open path has said `atHome=false` since it was written. The
+     resume path is a second door into the same room and never learned it. */
+  try{
+    if(k==='dev' && typeof _DEV!=='undefined') _DEV.atHome=false;
+    if(k==='studio' && typeof _STUDIO!=='undefined') _STUDIO.atHome=false;
+  }catch(e){}
   const tab=SESSION_KINDS[k]?.tab||'chat';
   setTab(tab);
   _resumingSession=false;
