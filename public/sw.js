@@ -48,8 +48,26 @@ self.addEventListener('fetch', e => {
 
   /* And nothing that arrived with a credential attached. A request the browser
      sent an Authorization header or a cookie with is a request whose answer is
-     about one person. */
-  if (req.headers.get('Authorization') || req.credentials === 'include') return;
+     about one person.
+
+     EXCEPT A NAVIGATION, which is how this rule switched the whole offline
+     shell off. A top-level navigation's credentials mode is "include" by spec
+     - always, for every page load - so this line returned early on every
+     navigation, and the fetch handler never ran for the one request it exists
+     to serve. Nothing was ever put in the cache and the offline fallback below
+     was unreachable: measured, with the real worker in a real browser, the
+     cache was empty and an offline reload got the browser's disconnected page.
+     AMV shipped a service worker, a manifest, an install prompt and an offline
+     fallback, and not one of them did anything.
+
+     Safe to exempt, because the page a navigation asks for is the same single
+     file for everybody - there is no server-rendered personalization here, the
+     API is excluded above, and the URLs that DO carry a credential (an OAuth
+     return, a checkout return, a share token) all have a query string and were
+     already handled by the branch above this one. The no-store check below
+     is still the server's way to opt any response out. */
+  if (req.headers.get('Authorization')) return;
+  if (req.mode !== 'navigate' && req.credentials === 'include') return;
 
   /* NETWORK FIRST, cache as the fallback.
 

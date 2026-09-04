@@ -8716,3 +8716,36 @@ sale". `[]` meant "bought nothing". A short list meant "that is all of them".
 Each of those is a real answer some caller acts on, so returning it for a
 failure does not degrade the caller - it misdirects it, confidently, down a
 path built for a different situation. Give not-knowing its own value, or throw.
+
+## 359. The service worker was correct, complete, and never once ran
+
+`sw.js` excludes anything that arrived with a credential attached, with a
+comment saying why: "a request the browser sent an Authorization header or a
+cookie with is a request whose answer is about one person." That is right. What
+it missed is that a top-level navigation's credentials mode is `include` by
+specification - always, for every page load, on every site. So the guard
+returned early on every navigation, and the fetch handler never ran for the one
+request the whole file exists to serve.
+
+Nothing was ever put in the cache. The network-first path, the
+`caches.match(SHELL)` fallback, the manifest, the install prompt, the whole PWA
+story: reachable only in theory. A returning visitor who lost their connection
+got the browser's disconnected page. Measured, not reasoned about - a real
+Chromium, the real generated worker, a second visit so the worker was actually
+in control, then the network off: cache empty, `ERR_INTERNET_DISCONNECTED`.
+
+Two rules.
+
+**A correct rule applied to a request type nobody thought about is an outage.**
+The exclusion was written thinking of API calls and authenticated
+subresources. Navigations are neither, and they are the only request that
+matters here. When a guard is expressed in terms of a property of the request
+rather than the kind of request, enumerate the kinds.
+
+**The offline suite tested everything except the offline shell.** Twenty-eight
+assertions about deadlines, stalled sockets and the offline banner - all of
+them about `fetch` inside the page, none about the service worker underneath
+it. The word "offline" in a suite name is not evidence that the offline path
+was tested, and the piece that was untested is the piece that had never worked.
+A stub would have agreed with the broken code the entire time, which is why the
+new suite drives a real browser with the network genuinely turned off.
