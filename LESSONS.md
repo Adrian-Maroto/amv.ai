@@ -8440,3 +8440,41 @@ The guard's floor is 3:1 rather than AA's 4.5, deliberately. What shipped was
 1.16 - nobody can see it - and the handful of badges sitting between 3.88 and
 4.44 are a different question that needs a decision about brand colours rather
 than a gate failure. Those are counted and pinned so they cannot grow.
+
+## 351. The rule was right and had been applied to one loop out of fifteen
+
+authDeleteAccount removes a person in about fifteen passes. Exactly one of them
+- the loop over per-user record kinds - collected its failures, and when that
+list came back non-empty the route audited, paged an operator and answered
+`deleted:false` naming what survived. Its comment states the principle
+exactly: "Erasure that half-worked and SAYS so can be finished by hand; erasure
+that half-worked in silence cannot, because nobody knows to look."
+
+Every other pass was `try { ... } catch {}`. The deployed sites. The shared
+conversations. The revoke of every connected account. The OTHER party's half of
+a permission link. The family membership. The API keys. A live password-reset
+code, in a loop whose own comment calls it a live credential. Any of those
+failing returned `deleted:true` - the person told their data was gone - with no
+audit entry and nothing paged.
+
+This is a shape worth naming: a principle stated well, in the right place, and
+applied once. It reads as done. The comment is not wrong, the code under it is
+not wrong, and the fifteen places that needed the same treatment are somewhere
+else in the same function. Nothing about reading the good part suggests the rest
+exists.
+
+TWO MISTAKES IN THE TEST, both of which passed first.
+
+The source-level assertion matched a `catch {}` against a five-line window and
+reported a JSON.parse fallback and a stats counter as deletions swallowed -
+which is the same overreach the assertion's own comment warned against. Matching
+the catch to its nearest preceding `try` fixed it. Brace-matching backwards was
+tried first and failed, because this source is full of template literals and
+`${email}` contributes braces nothing had stripped.
+
+Worse, the behavioural test for the cross-account link PASSED while the phase
+was still silent. Its fault injection failed deletes, and that phase is a read,
+a filter and a write BACK - so the fault never reached it, and the assertion
+went green on an unrelated phase failing. The mutation run is the only reason
+that was caught: removing the fix left the suite green. A test that passes
+without the fix is not a test, and the way to find out is to take the fix away.

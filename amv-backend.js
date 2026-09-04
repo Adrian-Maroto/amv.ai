@@ -10490,6 +10490,24 @@ async function authDeleteAccount(request, env) {
 
   // (AMV-015) Erase referenced records too, not just the top-level per-user rows.
 
+  /* EVERY PHASE REPORTS INTO THE SAME LIST.
+
+     The loop over perUserKinds below already did this, and its comment states
+     the principle: "Erasure that half-worked and SAYS so can be finished by
+     hand; erasure that half-worked in silence cannot, because nobody knows to
+     look." That was true of one loop out of fifteen. Every other phase - the
+     deployed sites, the shared conversations, the marketplace snapshots, the
+     revoke of every connected account, the OTHER party's half of a permission
+     link, the family membership, the API keys, and a live password-reset code -
+     swallowed its failure whole and let the route answer "deleted".
+
+     So the list is declared up here instead, and each phase names itself into
+     it. Deduped, because one phase failing on ten rows is one thing to go and
+     finish, not ten. A parse fallback is deliberately NOT counted: only a catch
+     that wraps an actual deletion can mean data survived. */
+  const eraseFailed = [];
+  const _eraseFailed = (what) => { if (!eraseFailed.includes(what)) eraseFailed.push(what); };
+
   // 1) Remove the user from their team's member list before dropping the pointer,
   //    so team records don't retain a ghost member. (A team-OWNER's team is left
   //    intact - ownership transfer/teardown is a separate flow.)
@@ -10531,6 +10549,9 @@ async function authDeleteAccount(request, env) {
     /* Not silent. A ghost member left on a team record is data AMV has told
        somebody was deleted, and nobody finds out from an empty catch. */
     audit(env, 'erase_team_failed', { email, error: String((e && e.message) || e) });
+    /* Audited and paged, and until now the ROUTE still answered "deleted" - so
+       the person was told it was done while a membership row still named them. */
+    _eraseFailed('team membership');
     try { await alertOnce(env, 'erase_team:' + email,
       'An account was deleted but could not be removed from its team, so a membership row may still name them. Remove it by hand.', 60); } catch (_) {}
   }
@@ -10538,8 +10559,8 @@ async function authDeleteAccount(request, env) {
   // 2) Delete the user's deployed public sites (records + index).
   try {
     const idx = await DB.get(env, 'sites', email);
-    for (const slug of (idx && idx.slugs) || []) { try { await DB.del(env, 'site', slug); } catch {} }
-  } catch {}
+    for (const slug of (idx && idx.slugs) || []) { try { await DB.del(env, 'site', slug); } catch { _eraseFailed('deployed sites'); } }
+  } catch { _eraseFailed('deployed sites'); }
 
   /* Publicly shared conversations. `sites` was handled this way and `share` was
      not, so a deleted account's chats stayed readable at their public URL
@@ -10549,9 +10570,9 @@ async function authDeleteAccount(request, env) {
     const mine = await DB.get(env, 'shares', email);
     for (const it of ((mine && mine.items) || [])) {
       const sid = it && (it.id || it.slug);
-      if (sid) { try { await DB.del(env, 'share', sid); } catch {} }
+      if (sid) { try { await DB.del(env, 'share', sid); } catch { _eraseFailed('shared conversations'); } }
     }
-  } catch {}
+  } catch { _eraseFailed('shared conversations'); }
 
   // 3) Delete the user's marketplace listings and their purchased-item snapshots.
   try {
@@ -10570,11 +10591,11 @@ async function authDeleteAccount(request, env) {
           if (!raw) continue;
           const rec = JSON.parse(raw);
           if (rec && rec.authorEmail === email) await env.AMV_KV.delete(k.name);
-        } catch {}
+        } catch { _eraseFailed('marketplace listings'); }
       }
       cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor);
-  } catch {}
+  } catch { _eraseFailed('marketplace listings'); }
   try {
     /* Through DB, both to list and to delete. Listing from KV found nothing on a
        D1 deployment, so the snapshots of everything this person had bought
@@ -10583,9 +10604,9 @@ async function authDeleteAccount(request, env) {
     const { rows: snaps } = await scan(env, 'mktsnap', SCAN_ALL, 'erasure: marketplace snapshots');
     for (const s of snaps) {
       if (!s || typeof s.id !== 'string' || !s.id.startsWith(email + ':')) continue;
-      try { await DB.del(env, 'mktsnap', s.id); } catch {}
+      try { await DB.del(env, 'mktsnap', s.id); } catch { _eraseFailed('purchased-item snapshots'); }
     }
-  } catch {}
+  } catch { _eraseFailed('purchased-item snapshots'); }
 
   /* Account-link invitations, keyed `link:<owner>|<id>` - the same compound
      shape as the snapshots above, and missed for the same reason: `links` is
@@ -10606,17 +10627,17 @@ async function authDeleteAccount(request, env) {
         || String(rec.grantee || '').toLowerCase() === email
         || String(rec.owner || '').toLowerCase() === email;
       if (!mine) continue;
-      try { await DB.del(env, 'link', id); } catch {}
+      try { await DB.del(env, 'link', id); } catch { _eraseFailed('account-link invitations'); }
     }
-  } catch {}
+  } catch { _eraseFailed('account-link invitations'); }
 
   // 4) Unlink phone/SMS records (email↔phone are cross-referenced).
   try {
     const link = await env.AMV_KV.get(`sms:user:${email}`);
-    if (link) { let phone = link; try { phone = JSON.parse(link).phone || link; } catch {} if (phone) await env.AMV_KV.delete(`sms:phone:${phone}`); }
+    if (link) { let phone = link; try { phone = JSON.parse(link).phone || link; } catch { /* an older row held the number as a bare string; that IS the fallback, not a failure to delete anything */ } if (phone) await env.AMV_KV.delete(`sms:phone:${phone}`); }
     await env.AMV_KV.delete(`sms:user:${email}`);
     await env.AMV_KV.delete(`sms:email:${email}`);
-  } catch {}
+  } catch { _eraseFailed('phone and SMS records'); }
 
   /* 5) END THE SUBSCRIPTION BEFORE ERASING WHAT MAKES IT FINDABLE.
 
@@ -10711,7 +10732,7 @@ async function authDeleteAccount(request, env) {
     if (fin && fin.accessToken && _finReady(env)) {
       await _finCall(env, '/item/remove', { access_token: fin.accessToken });
     }
-  } catch {}
+  } catch { _eraseFailed('bank connection'); }
 
   /* THE OLDER GOOGLE GRANT'S REFRESH TOKENS, WHICH NOTHING WRITES ANY MORE.
 
@@ -10735,11 +10756,11 @@ async function authDeleteAccount(request, env) {
           method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({ token: g.refreshToken }).toString(),
         });
-      } catch {}
+      } catch { _eraseFailed('stored bank data'); }
       audit(env, 'google_revoked_on_erasure', { by: email });
     }
     await DB.del(env, 'goauth', email);
-  } catch {}
+  } catch { _eraseFailed('stored bank data'); }
 
   /* EVERY CONNECTED ACCOUNT, REVOKED BEFORE THE ROW GOES.
 
@@ -10772,7 +10793,7 @@ async function authDeleteAccount(request, env) {
           why: String((e && e.message) || 'failed').slice(0, 60) });
       }
     }
-  } catch {}
+  } catch { _eraseFailed('connected accounts'); }
 
   /* Links this account is part of, in BOTH directions. A link lives under each
      side's own row, so deleting only this one would leave the other party
@@ -10788,7 +10809,7 @@ async function authDeleteAccount(request, env) {
       r.items = r.items.filter(x => x.id !== l.id);
       if (r.items.length !== before) await DB.put(env, 'links', other, r);
     }
-  } catch {}
+  } catch { _eraseFailed('links held by the other party'); }
 
   /* If this person was carried in someone's family, their membership row is
      held in the PARENT's record and would otherwise outlive them. */
@@ -10804,7 +10825,7 @@ async function authDeleteAccount(request, env) {
         fam.members = fam.members.filter(m => m.email !== email);
       });
     }
-  } catch {}
+  } catch { _eraseFailed('family membership'); }
 
   /* And if they were the parent, the children must stop being limited by an
      account that no longer exists - otherwise a spend cap set by a deleted
@@ -10818,7 +10839,7 @@ async function authDeleteAccount(request, env) {
         delete ce.familyOf;
       });
     }
-  } catch {}
+  } catch { _eraseFailed('family limits on children'); }
 
   /* API KEYS OUTLIVING THE ACCOUNT.
 
@@ -10832,9 +10853,9 @@ async function authDeleteAccount(request, env) {
   try {
     const keys = await DB.get(env, 'apikeys', email);
     for (const k of ((keys && keys.items) || [])) {
-      if (k && k.hash) { try { await env.AMV_KV.delete(`apikey:${k.hash}`); } catch {} }
+      if (k && k.hash) { try { await env.AMV_KV.delete(`apikey:${k.hash}`); } catch { _eraseFailed('API keys'); } }
     }
-  } catch {}
+  } catch { _eraseFailed('API keys'); }
 
   /* `fin` is a live credential and `invsnap` is a record of somebody's account
      balances - both are exactly what erasure is for, and neither was listed. */
@@ -10857,7 +10878,6 @@ async function authDeleteAccount(request, env) {
      Erasure that half-worked and SAYS so can be finished by hand; erasure that
      half-worked in silence cannot, because nobody knows to look. */
   let deleted = 0;
-  const eraseFailed = [];
   for (const kind of perUserKinds) {
     try { await DB.del(env, kind, email); deleted++; }
     catch (e) { eraseFailed.push(kind); }
@@ -10871,7 +10891,11 @@ async function authDeleteAccount(request, env) {
      exists, and the activity log is a record OF this person - erasure means it
      goes too. */
   let myCode = '';
-  try { myCode = await env.AMV_KV.get(`refmine:${email}`) || ''; } catch {}
+  /* A failed READ here is not harmless: myCode stays empty, so `refcode:<code>`
+     below is never deleted and the code keeps resolving to an account that is
+     gone. Nothing else would ever notice. */
+  try { myCode = await env.AMV_KV.get(`refmine:${email}`) || ''; }
+  catch { _eraseFailed('referral code pair'); }
   /* `reset:${email}` used to be on this list and never existed: reset tokens
      are keyed by the TOKEN, not by the address, so deleting it deleted nothing
      and a pending reset link outlived the account. It cannot be reached from
@@ -10888,7 +10912,11 @@ async function authDeleteAccount(request, env) {
                  ...FUNNEL_STEPS.map(step => `fstep:${email}:${step}`)];
   if (myCode) loose.push(`refcode:${myCode}`);
   for (const raw of loose) {
-    try { await env.AMV_KV.delete(raw); } catch {}
+    /* `resetcode:` in this list is a LIVE credential - the comment above says
+       so - and the referral pair must go both ways or a code keeps resolving
+       to an account that is gone. A delete that fails here is data surviving,
+       so it is named rather than swallowed. */
+    try { await env.AMV_KV.delete(raw); } catch { _eraseFailed('loose per-user keys'); }
   }
 
   /* Keys that carry the address inside a compound key rather than as the whole
@@ -10912,10 +10940,10 @@ async function authDeleteAccount(request, env) {
       let cursor;
       do {
         const page = await env.AMV_KV.list({ prefix, cursor, limit: 1000 });
-        for (const k of (page.keys || [])) { try { await env.AMV_KV.delete(k.name); deleted++; } catch {} }
+        for (const k of (page.keys || [])) { try { await env.AMV_KV.delete(k.name); deleted++; } catch { _eraseFailed('scanned per-user keys'); } }
         cursor = page.list_complete ? undefined : page.cursor;
       } while (cursor);
-    } catch {}
+    } catch { _eraseFailed('scanned per-user keys'); }
   }
 
   /* The waitlist puts the address at the END of the key (waitlist:<product>:
@@ -10928,11 +10956,11 @@ async function authDeleteAccount(request, env) {
     do {
       const page = await env.AMV_KV.list({ prefix: 'waitlist:', cursor, limit: 1000 });
       for (const k of (page.keys || [])) {
-        if (k.name.endsWith(suffix)) { try { await env.AMV_KV.delete(k.name); deleted++; } catch {} }
+        if (k.name.endsWith(suffix)) { try { await env.AMV_KV.delete(k.name); deleted++; } catch { _eraseFailed('waitlist entries'); } }
       }
       cursor = page.list_complete ? undefined : page.cursor;
     } while (cursor);
-  } catch {}
+  } catch { _eraseFailed('waitlist entries'); }
 
   // Revoke all tokens so existing sessions die immediately.
   await _revokeOrSay(env, email, 'account_deleted');
