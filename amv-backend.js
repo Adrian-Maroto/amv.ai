@@ -612,11 +612,39 @@ const DB = {
     await _forgetKindEmpty(env, kind);
     return { ok: true, guarded: false };
   },
+  /* A ROW THAT COULD NOT BE PARSED IS NOT A ROW THAT IS NOT THERE.
+
+     Both loops here were `try { out.push(JSON.parse(...)) } catch {}`, so an
+     unreadable record was dropped and the caller received a shorter list with
+     no way to know. `scan` above this is built entirely around the opposite
+     principle - truncation is audited, alerted and handed back as a flag,
+     because "nobody was told" is the failure it exists to prevent - and it was
+     being fed by a reader that dropped rows in silence underneath it.
+
+     Three things went wrong with that. An erasure scan reported success while a
+     record it never saw survived. A backup export omitted the corrupt records,
+     and a restore from that backup then deleted them for real. And worst,
+     `scan` writes a durable "this namespace is empty" marker when it sees zero
+     rows - so a kind whose records were ALL unreadable got marked empty, and
+     every later scan skipped it by design.
+
+     `_unreadable` is attached to the returned array rather than changing the
+     return shape, because a dozen callers destructure it as a list and this is
+     information about the read, not another element of it. */
   async list(env, kind, limit){
     const out = [];
+    let unreadable = 0;
+    const take = (id, raw) => {
+      try { out.push({ id, value: JSON.parse(raw) }); }
+      catch (e) {
+        unreadable++;
+        try { audit(env, 'record_corrupt', { key: `${kind}:${id}`, bytes: String(raw).length, where: 'scan' }); } catch (_) {}
+      }
+    };
     if(this._hasD1(env)){
       const rows = await env.DB.prepare('SELECT id,json FROM kv WHERE kind=? LIMIT ?').bind(kind, limit||1000).all();
-      for(const r of (rows.results||[])){ try{ out.push({ id:r.id, value:JSON.parse(r.json) }); }catch{} }
+      for(const r of (rows.results||[])) take(r.id, r.json);
+      Object.defineProperty(out, '_unreadable', { value: unreadable, enumerable: false });
       return out;
     }
     let cursor;
@@ -624,10 +652,11 @@ const DB = {
       const page = await env.AMV_KV.list({ prefix: `${kind}:`, cursor, limit: 1000 });
       for(const k of page.keys){
         const raw = await env.AMV_KV.get(k.name);
-        if(raw){ try{ out.push({ id:k.name.slice(kind.length+1), value:JSON.parse(raw) }); }catch{} }
+        if(raw) take(k.name.slice(kind.length+1), raw);
       }
       cursor = page.list_complete ? undefined : page.cursor;
     } while(cursor && out.length < (limit||100000));
+    Object.defineProperty(out, '_unreadable', { value: unreadable, enumerable: false });
     return out;
   },
 };
@@ -800,8 +829,27 @@ async function scan(env, kind, limit, what) {
      the clause changed no test, which is the definition of a guard that was
      never guarding - so it is gone rather than left standing as protection
      that is not there. */
-  if (rows.length === 0) await _markKindEmpty(env, kind);
-  return { rows, truncated };
+  /* Records this walk could see but could not read. They exist, so whatever
+     this scan is responsible for has not been done for them - the same
+     statement truncation makes, about a different set of rows. */
+  const unreadable = +(all._unreadable || 0);
+  if (unreadable) {
+    audit(env, 'scan_unreadable', { kind, unreadable, what });
+    try {
+      await alertOnce(env, 'scanunread:' + what,
+        'RECORDS COULD NOT BE READ. "' + what + '" walked "' + kind + '" and ' + unreadable + ' record(s) '
+        + 'would not parse, so they were skipped. They still EXIST - whatever this scan does has not been '
+        + 'done for them, and a backup taken now will not contain them. Check the audit log for '
+        + 'record_corrupt entries naming this kind.', 12 * 60);
+    } catch (e) {}
+  }
+  /* Only a walk that found nothing may claim the namespace is empty - and a
+     walk that skipped something did not find nothing. Without this, a kind
+     whose records were all unreadable got a durable empty marker and every
+     later scan skipped it entirely, which turns a recoverable corruption into
+     data nothing will ever look at again. */
+  if (rows.length === 0 && !unreadable) await _markKindEmpty(env, kind);
+  return { rows, truncated, unreadable };
 }
 
 // Per-plan limits (TUNE THESE to protect margin). Tokens/day, tokens/month.
@@ -17978,10 +18026,33 @@ async function _creditSaleWork(env, { itemId, buyer, seller, amountCents, ref })
    which makes "buy the expensive listing, charge it back" a way to take money
    out of AMV. The fraud register already had a signal for exactly this pattern;
    what it did not have was anything on the server that acted on it. */
+/* Returns null for "this charge is not a marketplace sale", which is the
+   signal the webhook uses to fall through to the subscription path.
+
+   A corrupt `saleref:` record produced that same null, and the consequence was
+   two wrongs at once. The marketplace sale was never reversed - the buyer kept
+   the item, the seller kept the credit and could withdraw it, and the platform
+   ate the whole charge, which is exactly the "buy the expensive listing, then
+   charge it back" hole this function was written to close. And the fallthrough
+   then treated a $9 listing chargeback as a SUBSCRIPTION dispute: it revoked
+   the customer's whole plan to free and recorded an abuse strike against them.
+
+   "I could not read it" is not "it is not one of mine", so it throws. The
+   webhook catches that and refuses the event rather than deciding on it, and
+   the provider retries - which is the right answer for a record that may be
+   readable again in a moment, and the only answer that does not punish the
+   wrong customer meanwhile. */
 async function _reverseSale(env, ref, reason) {
   if (!ref) return null;
   let rec = null;
-  try { rec = JSON.parse(await env.AMV_KV.get(`saleref:${ref}`) || 'null'); } catch (e) {}
+  const rawRef = await env.AMV_KV.get(`saleref:${ref}`);
+  if (rawRef != null) {
+    try { rec = JSON.parse(rawRef); }
+    catch (e) {
+      try { audit(env, 'record_corrupt', { key: `saleref:${ref}`, bytes: String(rawRef).length }); } catch (_) {}
+      throw new UnreadableRecordError(`saleref:${ref}`, 'invalid JSON');
+    }
+  }
   if (!rec || !rec.itemId || !rec.buyer) return null;
   /* AMV-010: THE CLAIM WAS TAKEN BEFORE THE WORK AND KEPT WHEN IT FAILED.
 
@@ -18080,9 +18151,23 @@ async function _reverseSaleWork(env, rec, reason) {
                                        price: rec.price, reason });
   await notify(env, `Marketplace ${reason}: $${(+rec.price || 0).toFixed(2)} on ${rec.itemId}. Buyer access revoked, seller credit clawed back.`);
 }
+/* Same rule as `_wallet`: absent means they have bought nothing, unreadable
+   means AMV does not know. Swallowed, the two were the same answer, and the
+   library screen says "No purchases yet" to a buyer who has paid - which the
+   client already calls the worst way for this to be wrong, in a comment
+   guarding the case where the REQUEST fails. This is the case where it
+   succeeds and returns a lie. */
 async function _purchasesList(env, email) {
   const raw = await env.AMV_KV.get(`purchases:${email}`);
-  if (raw) { try { return JSON.parse(raw); } catch {} }
+  if (raw != null) {
+    try {
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? v : [];
+    } catch (e) {
+      try { audit(env, 'record_corrupt', { key: `purchases:${email}`, bytes: String(raw).length }); } catch (_) {}
+      throw new UnreadableRecordError(`purchases:${email}`, 'invalid JSON');
+    }
+  }
   return [];
 }
 
@@ -18090,7 +18175,17 @@ async function _purchasesList(env, email) {
 async function marketPurchases(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
-  const list = await _purchasesList(env, user.email);
+  /* An unreadable record here is the difference between "you have bought
+     nothing" and "AMV cannot tell you what you own", and only one of those is
+     something to say to somebody who has paid. */
+  let list;
+  try { list = await _purchasesList(env, user.email); }
+  catch (e) {
+    if (!(e instanceof UnreadableRecordError)) throw e;
+    try { await alertOnce(env, 'purchases_corrupt', 'A buyer purchase record is unreadable, so their library cannot be listed. Check the audit log for record_corrupt.', 60); } catch (_) {}
+    return json({ error: 'AMV could not read your library right now, so it will not tell you it is empty. Nothing has been lost - everything you have bought is still yours. This has been reported.',
+                  code: 'purchases_unreadable' }, 503);
+  }
   const items = [];
   for (const p of list) {
     // AMV-037: serve the immutable snapshot taken at purchase - the buyer keeps

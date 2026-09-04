@@ -8676,3 +8676,43 @@ One more thing fell out of measuring it: the credit amounts were a hardcoded
 chip behind it in light mode. A seller could not read the green number telling
 them they had been paid. `--grn-txt` is the theme-aware token; `--grn` is the
 flat status colour and has the same defect the literal did.
+
+## 358. The three reads left after the wallet, found by grepping for the shape
+
+LESSONS 357 was one swallowed `JSON.parse`. The obvious next move was to grep
+the worker for the shape rather than wait to trip over the next one:
+seventeen sites where a parse failure is caught and something is returned
+anyway. Most fail closed - a corrupt thread record answers "that conversation
+does not exist", a corrupt API-key record refuses the key - and those are fine.
+Three were not.
+
+**`DB.list` dropped every unparseable row in silence.** `scan` sits directly on
+top of it and is built entirely around the opposite principle: truncation is
+audited, alerted, and handed back as a flag, with a comment saying the only
+thing the failures had in common was that NOBODY WAS TOLD. It was being fed by
+a reader that lost rows without a word. An erasure scan reported success over a
+record it never saw. A backup omitted it, and a restore from that backup then
+deleted it for real. And `scan` writes a durable "this namespace is empty"
+marker at zero rows - so a kind whose records were ALL corrupt got marked
+empty, and every later scan skipped it by design. A recoverable corruption
+became data nothing would ever look at again.
+
+**`_reverseSale` returned `null`**, which is precisely the signal the Stripe
+webhook uses for "this charge is not a marketplace sale". A corrupt `saleref:`
+record therefore did two wrong things at once: the sale was never reversed -
+buyer keeps the item, seller keeps the credit, platform eats the charge, the
+exact hole that function exists to close - and the fallthrough treated a $9
+listing chargeback as a SUBSCRIPTION dispute, revoking the customer's whole
+plan and recording an abuse strike against them. One unparsed record, money out
+and the wrong person punished.
+
+**`_purchasesList` returned `[]`**, so the library said "No purchases yet" to
+somebody who had paid - defeating a client comment that guards the case where
+the REQUEST fails, in the case where it succeeds and returns a lie.
+
+The rule underneath all three: **an error value that already means something
+must not be reused for "I do not know".** `null` meant "not a marketplace
+sale". `[]` meant "bought nothing". A short list meant "that is all of them".
+Each of those is a real answer some caller acts on, so returning it for a
+failure does not degrade the caller - it misdirects it, confidently, down a
+path built for a different situation. Give not-knowing its own value, or throw.
