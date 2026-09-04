@@ -8505,3 +8505,35 @@ telemetry because the limiter is down is the wrong way round.
 Worth writing down as a question rather than a fix: for every limit, what
 happens if a hundred different callers each stay just inside it? That is the
 number that matters, and it is not the one in the code.
+
+## 353. The copy still sold two features that were removed, and the sweep that checked it could not see half the product
+
+The composer placeholder read "essays, images, 3D models, code, research". The
+language setting promised the choice would apply to "chat replies, images,
+documents". A capability card on the handoff screen said "Images & video -
+generate photoreal images and video from a prompt". None of that is true any
+more; image and video generation were taken out. A person who came for the
+thing the placeholder named would type it, and get a paragraph explaining that
+AMV cannot.
+
+The first guard I wrote booted the app, walked every tab, and read the rendered
+text. It went green. So I broke it on purpose - put the image wording back in
+the language setting - and it stayed green, because the language setting lives
+in a sub-pane a tab sweep never opens. The rendered sweep can only see what it
+navigated to, and no navigation is ever complete.
+
+So the suite reads the SOURCES too, and that pass immediately found two more
+that I had not: the agentic system prompt was still coaching the model with
+`Don't say "you could generate an image" - generate it`, which is the product
+instructing the model to offer the removed feature, and the capability card.
+Both were live. Neither was reachable by the sweep that had gone green.
+
+Two of the four source hits were correct and are allowlisted with the reason
+written next to them: a refusal ("rendering a video file", in the list of what
+AMV hands back) and a Crew example that produces a video package where every
+deliverable is text.
+
+The rule: a guard against stale copy has to read the strings where they are
+WRITTEN, not only where they happen to be rendered. And when a new guard passes
+on the first run, that is the moment to break it - a guard that has never been
+seen to fail has not been tested, it has been assumed.

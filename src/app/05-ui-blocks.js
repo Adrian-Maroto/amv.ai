@@ -793,7 +793,7 @@ async function _callAI(msgs, _opts) {
     '\u2022 approvals_list / approval_act - the finished work waiting for them. APPROVING IS WHAT SENDS IT. Read them what it will do before you ask.\n'+
     '\u2022 account_status - their real plan, usage and what background work has cost. Never estimate any of that from memory; look.\n'+
     'Never claim a background job was created, changed or removed unless the tool said so - if it failed, tell them exactly what failed. These jobs run unattended and cost money on a timer, so they are worth being precise about.\n'+
-    'Prefer doing over explaining. Don\u2019t say "here is code you could run" - run it. Don\u2019t say "you could generate an image" - generate it. After a tool runs, briefly tell them what you did and what they got.';
+    'Prefer doing over explaining. Don\u2019t say "here is code you could run" - run it. Don\u2019t say "you could draft that" - draft it. After a tool runs, briefly tell them what you did and what they got.';
   /* "Keep this chat motivational" has to actually take, and has to say so.
      Set BEFORE the prompt is built, so it applies to the very turn that asked
      for it rather than only to the next one - which would look like it was
@@ -1413,7 +1413,7 @@ function renderChatView() {
       '<div id="cia">'+
         '<div id="cib">'+
           '<div id="ab2"><div id="ac"></div></div>'+
-          '<textarea id="mta" data-i18n-ph placeholder="Ask anything - essays, 3D models, code, images, research…" rows="1"></textarea>'+
+          '<textarea id="mta" data-i18n-ph placeholder="Ask anything - essays, 3D models, code, research…" rows="1"></textarea>'+
           '<div id="itb">'+
             '<div class="il">'+
               '<button class="atb" id="att-btn" title="Attach file">'+

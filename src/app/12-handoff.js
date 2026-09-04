@@ -2253,7 +2253,7 @@ function _renderSetPaneInner(only, into){
     const cur=_lang();
     pane.innerHTML=
       '<h2 class="set-title">Language</h2>'+
-      '<div class="set-sub">Choose the language for AMV\u2019s responses and the content it generates - chat replies, images, video, and 3D models will all use it. You can still ask for any other language inside a message.</div>'+
+      '<div class="set-sub">Choose the language for AMV\u2019s responses and everything it writes - chat replies, documents, code and 3D models will all use it. You can still ask for any other language inside a message.</div>'+
       /* The app's own text is translated too, but that half needs the engine.
          Without it a handful of common labels come from a built-in dictionary
          and the rest stays English - which is what somebody switching language
@@ -2585,7 +2585,7 @@ function _renderSetPaneInner(only, into){
         '<div class="cap-grid">'+
           cap('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>','Chat & reasoning','Ask anything, think through problems, get clear answers with sources.')+
           cap('<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>','Build & run code','Full-stack apps, scripts and APIs - written, run, and previewed live in Dev.')+
-          cap('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>','Images & video','Generate photoreal images and video from a single line of description.')+
+          cap('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>','Read any file','PDFs, images, spreadsheets and code - uploaded, read and worked from.')+
           cap('<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>','Web search','Pull live information from the web and cite it in answers.')+
           cap('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>','Agents & Crew','Delegate multi-step jobs that run in the background and report back.')+
           cap('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>','Automations','Schedule recurring work - daily briefs, monitoring, reports - hands-free.')+
