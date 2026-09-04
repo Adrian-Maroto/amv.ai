@@ -8595,3 +8595,37 @@ degradation renders as the EMPTY state, and empty states are written
 confidently - "Nothing is due", "No results", "You're all caught up" - because
 whoever wrote them was thinking about the happy path where the answer really
 is nothing. An empty state should never be reachable from a failure.
+
+## 356. "Responses stream by default" - there was no default, and no other behaviour
+
+The API documentation shown to every developer who creates a key ended with
+that sentence. `/v1/messages` writes `stream: true` into its upstream body as a
+literal and returns text/event-stream on its only success path. `body.stream`
+was never read anywhere in the file. There is no default; there is one
+behaviour.
+
+"By default" says the opposite: that `"stream": false` is available. Every
+client library in this shape offers it, so a developer sends it, gets an SSE
+body, calls `.json()` on it and receives a parse error with nothing anywhere
+explaining why. That is LESSONS 309 precisely - the same mistake made inside
+AMV silently broke every surface except chat and took a long time to find, for
+the same reason: the failure carries no explanation. Written into the docs of a
+paid API, it is that trap handed to somebody who cannot read this file.
+
+Two fixes, and the second is the general one. The docs now say the endpoint
+always streams, name the content type, name the events, and the copyable curl
+asks for `"stream": true` with `--no-buffer` so it does not look like it hangs.
+And the server refuses `stream:false` with `code:'stream_required'` and a
+sentence, before the rate limit and before the reservation, so the refusal
+costs the caller nothing.
+
+**Silently ignoring a parameter is worse than refusing it.** Ignoring produces
+a failure with no cause attached, somewhere else, later, in somebody else's
+code. Nothing that works today sends `stream:false` - a caller passing it is
+already broken - so refusing it cannot break an integration, it can only make
+a broken one say why.
+
+The suite that covers it reads the refusal body as TEXT and parses defensively,
+because with the fix removed that body is a stream, and a test that called
+`.json()` on it would crash with the same unexplained parse error instead of
+naming the assertion that failed.

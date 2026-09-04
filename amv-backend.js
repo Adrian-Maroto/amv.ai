@@ -12564,6 +12564,30 @@ async function aiProxy(request, env, ctx) {
   const vErr = validateMessagesPayload(body);
   if (vErr) return json({ error: vErr, code: 'invalid_input' }, 400);
 
+  /* THIS ENDPOINT ONLY STREAMS, AND IT SHOULD SAY SO RATHER THAN PRETEND.
+
+     `stream: true` is written into the upstream body below as a literal and
+     the one success path returns text/event-stream, whatever the caller asked
+     for. `body.stream` was never read at all - so a developer with an API key
+     who sent `"stream": false`, which every client library in this shape
+     offers, got a stream anyway, called .json() on it, and received a parse
+     error with nothing anywhere explaining why.
+
+     That is not hypothetical. It is LESSONS 309: the same mistake made inside
+     AMV silently broke every surface except chat, and it took a long time to
+     find precisely because the failure carries no explanation. Shipping it as
+     the documented behaviour of a paid API is the same trap sold to somebody
+     who cannot read this file.
+
+     Refused rather than ignored, before the rate limit and before any
+     reservation, so nothing is counted against an account for a request that
+     was never going to work. Nothing that works today sends this: a caller
+     passing stream:false is already broken, and is now broken loudly. */
+  if (body.stream === false) {
+    return json({ error: 'This endpoint always streams. Read the response body as text/event-stream rather than as JSON - "stream": false is not supported. Omit the field or send "stream": true.',
+                  code: 'stream_required' }, 400);
+  }
+
   /* A client-supplied id for this turn, so a dropped connection can ask for the
      answer back (AMV-070). Validated rather than trusted - it becomes part of a
      KV key, and it is namespaced by the caller's own email either way. */

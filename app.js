@@ -34470,19 +34470,39 @@ function _apiShowOnce(key){
 /* Enough to make the first call without leaving the page. */
 function _apiDocsHTML(){
   const base = (apiBase()||'https://your-worker.workers.dev').replace(/\/$/,'');
+  /* THE ONE SENTENCE THAT WAS WRONG WAS "Responses stream by default."
+
+     There is no default about it. `/v1/messages` writes stream:true into its
+     upstream body as a literal and returns text/event-stream on its only
+     success path, whatever the caller asked for. "by default" told a developer
+     the opposite of the truth - that stream:false was available - and the
+     failure it leads to explains nothing: an SSE body handed to .json() is a
+     parse error at their end with no message anywhere saying why. That is the
+     exact trap of LESSONS 309, sold to somebody who cannot read that file.
+
+     The server now refuses stream:false with a sentence instead of ignoring
+     it. This says the same thing before they send anything, and the example
+     asks for what it is going to get. --no-buffer, because without it curl
+     holds the stream in its own buffer and the example looks like it hangs. */
   const curl =
-    'curl ' + base + '/v1/messages \\\n' +
+    'curl --no-buffer ' + base + '/v1/messages \\\n' +
     '  -H "Authorization: Bearer amv_sk_..." \\\n' +
     '  -H "Content-Type: application/json" \\\n' +
-    '  -d \'{"model":"amv-core","max_tokens":1024,\n' +
+    '  -d \'{"model":"amv-core","max_tokens":1024,"stream":true,\n' +
     '       "messages":[{"role":"user","content":"Hello"}]}\'';
   return '<div class="ss2"><h3>Making a call</h3>'+
     '<p class="ak-doc">The same endpoint the app uses. Your key goes in the Authorization header - '+
       'never in a query string, where it would end up in logs and browser history.</p>'+
     '<pre class="ak-code"><code>'+escH(curl)+'</code></pre>'+
+    '<p class="ak-doc"><b>This endpoint always streams.</b> The response is '+
+      '<code>text/event-stream</code> - a sequence of <code>data:</code> lines carrying '+
+      '<code>content_block_delta</code> events, ending in <code>message_stop</code>. Read the body as a '+
+      'stream and parse each event; calling <code>.json()</code> on it will fail. '+
+      'Sending <code>"stream": false</code> is refused with <code>stream_required</code> rather than '+
+      'silently ignored, so you find out immediately rather than from a parse error.</p>'+
     '<p class="ak-doc">Engines: <code>amv-pulse</code> (fastest), <code>amv-core</code> (balanced), '+
       '<code>amv-forge</code> (deep work), <code>amv-apex</code> (hardest problems), or '+
-      '<code>auto</code> to let AMV choose. Responses stream by default.</p>'+
+      '<code>auto</code> to let AMV choose.</p>'+
     '<p class="ak-doc">Usage counts against this account\u2019s plan, so the limits in '+
       '<b>Settings -> Usage</b> are the limits your integration has.</p>'+
   '</div>';
