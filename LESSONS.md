@@ -8821,3 +8821,41 @@ wholesale and put its dark-green "Best Value" text onto a blue ground at
 3.07:1 - a repair creating the exact defect it was written to remove. Caught
 because the sweep was re-run AFTER the change, not before it. Measure again
 after you fix, on the same instrument.
+
+## 362. The billing screen invented one financial record and mis-scoped the other
+
+Two halves of the same screen, wrong in opposite directions.
+
+The invoice table was a loop. One row per month between the plan's start date
+and today, each for the plan's LIST PRICE, each stamped Paid, each with a View
+button - and a comment above it describing this as "the subscription's real
+billing history". No invoice number, no amount from a processor, no check that
+any payment happened. A proration, a coupon, a refund, a failed charge, a plan
+change or a cancel-and-resubscribe all rendered as an unbroken run of
+full-price months marked Paid, on the screen somebody reads before disputing a
+charge.
+
+It was only reachable with no backend connected - which makes it worse, not
+better: that is exactly the case where no processor exists and no money has
+moved, so those invoices are not unverified, they describe charges that cannot
+have happened. Nothing was lost by removing it, because there was never any
+information in it - only arithmetic on a price.
+
+The other half went the other way. `amv_txns` is written to localStorage and
+appears in neither sync list, so it never leaves the browser that made the
+purchase - under a heading reading "Every payment you've made on AMV". On a
+second device that heading sat above none of them, and because the function
+returned `''` for an empty list, the whole section was simply absent. Somebody
+who paid on a laptop and opened Billing on their phone found no transactions
+section at all, with nothing saying why.
+
+**A record's scope is part of its meaning, and a heading is where that gets
+promised.** "Every payment you've made" is a claim about completeness that only
+the server can support; what this list actually holds is "payments this browser
+saw". The gap between those two sentences is invisible on the device that made
+the purchase and total on every other one - which is the shape of every bug in
+this family: correct where it was written, wrong everywhere it is read.
+
+And the same rule as LESSONS 355, in a place that costs money: an empty state
+must not be reachable from a limitation. Vanishing is the most confident empty
+state there is.

@@ -960,41 +960,67 @@ function renderUsageView(){
 /* === USAGE (legacy owner view, unused) === */
 
 /* === BILLING === */
-// Build an invoices table from the subscription's real billing history: one
-// invoice per monthly cycle since the plan started, for the plan's price.
+/* THIS USED TO INVENT THE INVOICES.
+
+   The comment above it said "the subscription's real billing history". It was
+   a loop: one row per month between the plan's start date and today, each for
+   the plan's list price, each stamped Paid, each with a View button. No
+   invoice number, no amount from a processor, no check that any payment
+   happened.
+
+   So a proration, a coupon, a refund, a failed charge, a plan change or a
+   cancel-and-resubscribe all rendered as an unbroken run of full-price months
+   marked Paid - on the screen somebody opens to work out what they have
+   actually been billed, and the one they read before disputing a charge.
+
+   There is a real source. When a backend is connected, `_loadInvoices` fetches
+   the processor's own invoice list, with numbers, amounts, statuses and PDFs,
+   and that is what renders. This function is only reached with NO backend
+   connected - which is precisely the case where no processor exists and no
+   money has moved, so a paid invoice history is not merely unverified, it is
+   describing charges that cannot have happened.
+
+   It says that instead. Nothing is lost: there was never any information
+   here, only arithmetic on a price. */
 function _invoiceTableHTML(plan, P, sinceDate){
-  if(!sinceDate || plan==='free') return '<div class="bill-inv-loading">No invoices yet.</div>';
-  const price=P.price||0;
-  const rows=[];
-  const now=Date.now();
-  let d=new Date(sinceDate.getTime());
-  let guard=0;
-  while(d.getTime()<=now && guard<36){
-    rows.push({ date:new Date(d.getTime()), total:price });
-    d=new Date(d.getTime()); d.setMonth(d.getMonth()+1); guard++;
-  }
-  rows.reverse(); // newest first
-  if(!rows.length) return '<div class="bill-inv-loading">No invoices yet.</div>';
-  const fmtD=(dt)=>dt.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});
-  return '<div class="inv-table">'+
-    '<div class="inv-row inv-head"><span>Date</span><span>Total</span><span>Status</span><span></span></div>'+
-    rows.map((r,i)=>'<div class="inv-row"><span>'+fmtD(r.date)+'</span>'+
-      '<span class="inv-total">$'+r.total.toFixed(2)+'</span>'+
-      '<span><span class="inv-paid">Paid</span></span>'+
-      '<span><button class="inv-view" data-inv="'+i+'">View</button></span></div>').join('')+
-  '</div>';
+  if(plan==='free') return '<div class="bill-inv-empty">No invoices yet. Your first payment will show up here.</div>';
+  return '<div class="bill-inv-empty">Invoices come from the payment processor, and this deployment is not '+
+    'connected to one - so there is nothing to show and nothing has been charged. Connect a backend and every '+
+    'real invoice appears here, with its number, amount and a PDF.</div>';
 }
 try{ window._invoiceTableHTML=_invoiceTableHTML; }catch(e){}
 
 
-/* Unified transaction history - every payment the user has made (subscription
-   upgrades + marketplace purchases). Private to them. */
+/* WHAT THIS LIST ACTUALLY IS, WHICH IS NOT WHAT IT SAID.
+
+   `amv_txns` is written to localStorage and appears in neither `_SYNC_KEYS`
+   nor `_SYNC_EXTRA`, so it never leaves the browser that made the purchase.
+   The heading said "Every payment you've made on AMV". On a second device, in
+   a private window, or after clearing site data, that same heading sat above a
+   list containing none of them - and because the function returned '' when the
+   list was empty, the section did not appear at all. Somebody who paid on a
+   laptop and opened Billing on their phone to check a charge found no
+   transactions section on the screen, with nothing saying why.
+
+   Two changes. It says where the record comes from, so "I do not see my
+   purchase" has an answer on the screen instead of being a support ticket. And
+   an empty list on a connected account says so and points at the invoice list
+   above, which IS the authoritative record of subscription payments, rather
+   than vanishing. */
 function _billingTxnsHTML(){
   const txns=(typeof _loadTxns==='function')?_loadTxns():[];
-  if(!txns.length) return '';
+  const live=!!(window.AMV_API&&AMV_API.live);
+  if(!txns.length){
+    if(!live) return '';
+    return '<div class="ss2 bill-txns"><h3>Payments recorded on this device</h3>'+
+      '<p class="bill-txns-sub">Nothing has been recorded in this browser. This list is kept locally, so a purchase '+
+      'made on another device will not appear here - the Invoices above are the full record of your subscription '+
+      'payments, and anything you have bought is in your Purchases.</p></div>';
+  }
   const money=n=>'$'+(Number(n)||0).toFixed(2);
-  return '<div class="ss2 bill-txns"><h3>Your transactions</h3>'+
-    '<p class="bill-txns-sub">Every payment you’ve made on AMV - subscriptions and marketplace. Only you can see these.</p>'+
+  return '<div class="ss2 bill-txns"><h3>Payments recorded on this device</h3>'+
+    '<p class="bill-txns-sub">Kept in this browser, so a purchase made on another device will not be here. '+
+    'The Invoices above are the full record of your subscription payments. Only you can see this.</p>'+
     '<div class="bill-txn-list">'+txns.slice(0,60).map(t=>{
       let d=''; try{ d=new Date(t.ts).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }catch(e){}
       const kind=t.type==='subscription'?'Subscription':t.type==='marketplace'?'Marketplace':'Payment';
@@ -1236,7 +1262,9 @@ function renderBillingView(targetEl){
     else handlePaymentSuccess(pl,{simulated:true});
   }));
   const rz=$('bill-resize'); if(rz) on(rz,'click',openCustomPlan);
-  vc.querySelectorAll('.inv-view').forEach(b=>on(b,'click',()=>toast('Invoice PDFs open through the billing portal once your account is connected to a payment processor.','info',4000)));
+  /* The `.inv-view` buttons this used to wire were part of the invented
+     invoice table and are gone with it. A real invoice carries its own PDF
+     link from the processor, rendered by `_loadInvoices`. */
   // load real invoice history when the backend is connected
   if(plan!=='free' && liveBackend){ _loadInvoices(); }
 }
