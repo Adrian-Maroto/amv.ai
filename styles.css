@@ -10727,3 +10727,41 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   margin:0; font-family:var(--mn); font-size:var(--t-xs); line-height:1.6;
   color:var(--tx); white-space:pre-wrap; word-break:break-word;
 }
+
+/* ── LAYER A149 · form controls are controls too ─────────────────────────────
+   every-control-is-big-enough-to-hit measured a 44px minimum for buttons and
+   links and never looked at input, select or textarea - the three hardest
+   things on a phone to hit accurately, because they are small by default and
+   the browser gives them no generous padding of its own.
+
+   Measured at 390x844 once the suite was widened: the sidebar search sat at
+   276x36 on every screen, the Crew and Marketplace searches at 38, and the
+   family permission rows at 266x32 - the last of those being where a mis-tap
+   grants somebody the right to read email or spend money.
+
+   Phone only. On a desktop these are aimed at with a cursor and the tighter
+   density is a deliberate choice, which is why the suite measures a phone.    */
+@media (max-width:760px){
+  #sb #hist-search,
+  .cw-find,
+  .mkt-search,
+  #app input[type="text"],
+  #app input[type="search"],
+  #app input[type="email"],
+  #app input[type="password"],
+  #app input[type="number"],
+  #app input[type="tel"],
+  #app input[type="url"],
+  #app select{
+    min-height:44px!important;
+  }
+  /* The label is what a thumb hits, so the label is what has to be big enough.
+     Aligned to the top rather than centred: these rows wrap to two lines and
+     centring a 16px box against 53px of text puts it beside the wrong line. */
+  .mf-scope,
+  .fam-tog{
+    min-height:44px;
+    padding-top:var(--sp-2);
+    padding-bottom:var(--sp-2);
+  }
+}
