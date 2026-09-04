@@ -8894,3 +8894,34 @@ instructions is a real situation: without one, a device that had never saved
 anything would push its empty profile over instructions set elsewhere - the
 merge failing in the direction that deletes, which is the only direction that
 matters.
+
+## 364. The plan came back and the client looked in the wrong pocket
+
+`/v1/entitlement` answers `{ok, entitlement:{plan,...}, billing, bonusTokens,
+referralEarned}`. Two functions on the post-payment path read `ent.plan` off
+the whole RESPONSE. That is always `undefined`, so their conditions were never
+true, not once, for anybody.
+
+`_checkPayReturn` runs when somebody comes back from the checkout. Its "trust
+the SERVER's entitlement" branch never fired, so every payment fell through to
+the "not yet confirmed" branch: no welcome message, no card recorded, no
+billing screen refresh - at the exact moment a customer is looking for proof
+their money did something. And `_verifyEntitlement`, whose comment says it
+exists to prevent faked unlocks, has never once run its check.
+
+Nothing reported it, because `syncEntitlement` twenty files away reads
+`d.entitlement.plan` correctly and puts the plan right on the next load. **The
+defect was invisible in the end state and total in the moment.** That is the
+hardest kind to notice by using the product: everything is correct a minute
+later, and the minute that mattered is gone.
+
+It also explains a dead key. `amv_ent_token` was written from `ent.token` on a
+response that has never carried a `token` field, and read by nothing anywhere -
+which is what turned up in a sweep for storage keys with a writer and no
+reader, and led here.
+
+Same rule as LESSONS 363, one level down: **name the writer and name the
+reader, out loud, for the same path.** Here they agreed on the name `plan` and
+disagreed about which object it hangs off, which greps identically. Two of the
+three consumers of one endpoint were wrong and the third was right, so even
+"is this field used correctly somewhere" answers yes.

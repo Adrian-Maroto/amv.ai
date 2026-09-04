@@ -614,11 +614,28 @@ function _checkPayReturn(){
       }
       // If a backend is live, trust the SERVER's entitlement, not the URL.
       if(window.AMV_API&&AMV_API.live&&S.user&&S.user.email){
-        AMV_API.entitlement(S.user.email).then(ent=>{
+        AMV_API.entitlement(S.user.email).then(d=>{
+          /* `/v1/entitlement` answers `{ok, entitlement:{plan,...}, billing,
+             bonusTokens, referralEarned}`. This read `ent.plan` off the whole
+             RESPONSE, which is always undefined - so the condition was never
+             true, and the moment somebody had just paid for their plan it fell
+             through to the "not yet confirmed" branch instead.
+
+             Nothing said so, because `syncEntitlement` elsewhere reads
+             `d.entitlement.plan` correctly and eventually corrects the plan on
+             the next load. What was lost was everything that happens HERE: the
+             welcome, the card being recorded, and the billing screen
+             refreshing - at the one moment a customer is looking for proof
+             their money did something.
+
+             `ent.token` went with it. The server has never sent a `token` on
+             this response, so `amv_ent_token` was written from `undefined` and
+             read by nothing; it is not a field that exists. */
+          const ent=(d&&d.entitlement)||null;
           if(ent&&ent.plan&&PLANS[ent.plan]&&ent.plan!=='free'){
-            if(ent.token) saveStr('amv_ent_token',ent.token);
             _savePM({type:pm,brand:pm,last4:'••'}); _setPlan(ent.plan);
             toast('Payment complete - welcome to '+PLANS[ent.plan].name+'!','success',5000);
+            try{ if(typeof _showBillingNotice==='function') _showBillingNotice(d.billing||null); }catch(_e){}
             if(S.tab==='billing') renderBillingView();
           } else {
             // payment not yet confirmed by webhook; check again shortly
@@ -652,11 +669,15 @@ async function _verifyEntitlement(){
   try{
     if(!(window.AMV_API&&AMV_API.live)) return;
     if(!(S.user&&S.user.email)) return;
-    const ent=await AMV_API.entitlement(S.user.email);
+    /* Same shape mistake as above, and this function's whole job is to be the
+       check that "prevents faked unlocks" - a guard reading a field the server
+       does not send has never once run. */
+    const d=await AMV_API.entitlement(S.user.email);
+    const ent=(d&&d.entitlement)||null;
     if(ent&&ent.plan&&PLANS[ent.plan]){
-      if(ent.token) saveStr('amv_ent_token',ent.token);
       const cur=loadStr('amv_plan')||'free';
       if(ent.plan!==cur){ _setPlan(ent.plan); if(S.tab==='billing') renderBillingView(); }
+      try{ if(typeof _showBillingNotice==='function') _showBillingNotice(d.billing||null); }catch(_e){}
     }
   }catch(e){}
 }
