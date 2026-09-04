@@ -3302,6 +3302,33 @@ function _sessLeave(kind){
   _activeSession[kind]='';
 }
 try{ window._sessFlush=_sessFlush; window._sessLeave=_sessLeave; }catch(e){}
+
+/* THE SAVE THAT WAS MISSING WAS THE ONE FOR CLOSING THE TAB.
+
+   _sessTouch debounces at 700ms and _sessFlush runs when you switch tabs, so
+   everything was covered except the way people actually stop: closing it. The
+   last change made before that goes nowhere - no error, no warning, and no way
+   to tell afterwards which edit was the one that did not survive.
+
+   `pagehide` rather than `beforeunload`: beforeunload is unreliable on mobile
+   and is not fired when a phone discards a backgrounded tab, which is the
+   commonest way a session on a phone ends. `visibilitychange` to hidden is the
+   one that always arrives - switching apps, locking the screen, swiping away -
+   so both are listened for and the flush is idempotent, writing the same
+   snapshot twice rather than risking neither.
+
+   Flushing all three kinds rather than the current tab: state is kept across
+   tab switches now, so work can be sitting in a tool nobody is looking at. */
+function _sessFlushAll(){
+  try{ for(const k of Object.keys(SESSION_KINDS)) _sessFlush(k); }catch(e){}
+}
+try{ window._sessFlushAll=_sessFlushAll; }catch(e){}
+try{
+  window.addEventListener('pagehide', _sessFlushAll);
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.visibilityState==='hidden') _sessFlushAll();
+  });
+}catch(e){}
 // Reset a tool's live state to empty (after its work was saved to Recents).
 let _resumingSession=false;
 /* WHAT A RESET MEANS, WRITTEN AS WHAT SURVIVES RATHER THAN WHAT IS CLEARED.
@@ -3371,7 +3398,10 @@ function _sessResume(id){
   // its work isn't lost when we jump away to resume this session.
   try{
     const cur=S.tab, KIND_TAB={dev:1,lab:1,studio:1};
-    if(cur && KIND_TAB[cur] && cur!==k){ _sessLeave(cur); _resetToolState(cur); }
+    /* Same rule when jumping straight from one tool to another: the one being
+       left is written down, not wiped. Resuming somebody's design is no reason
+       to throw away the project they had open. */
+    if(cur && KIND_TAB[cur] && cur!==k){ _sessFlush(cur); }
   }catch(e){}
   _resumingSession=true;   // prevent setTab's leave-hook from wiping what we restore
   _activeSession[k]=id;
@@ -4353,13 +4383,25 @@ function setTab(t){
     const prev=S.tab;
     const KIND_TAB={dev:1,lab:1,studio:1};
     if(!_resumingSession && prev && KIND_TAB[prev] && prev!==t){
-      // Lab persists across tab switches - leaving and coming back keeps your
-      // code and results. Only the "+" button (new session) or a page refresh
-      // starts fresh. Other tools keep the save-to-Recents-then-reset behavior.
-      if(prev!=='lab'){
-        _sessLeave(prev);
-        _resetToolState(prev);
-      }
+      /* LEAVING THE ROOM IS NOT THE SAME AS FINISHING.
+
+         This saved the work and then deliberately forgot you had been in it -
+         _sessLeave clears the active pointer and _resetToolState wipes the
+         tool - so a glance at chat and back put you on "What should we build?"
+         with your project sitting in Recents, to be found again by name. The
+         comment for it said "the next visit starts fresh", which is true and is
+         not what somebody stepping away for ten seconds wants.
+
+         Lab was already exempt, with a comment saying leaving and coming back
+         keeps your code and only the "+" button or a page refresh starts fresh.
+         That is the right rule and there was never a reason it stopped at Lab.
+         So all three keep their state, and the difference between "I looked at
+         something else" and "I am done" is drawn where it belongs: the explicit
+         new-build control, which still leaves and resets.
+
+         A refresh still lands on the main page, because none of this survives
+         in memory - which is the other half of what was asked for. */
+      _sessFlush(prev);
     }
   }catch(e){}
   /* Auth gate: a logged-out visitor can browse chat and Crew, but USING any AMV
