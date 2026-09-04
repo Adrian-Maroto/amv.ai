@@ -692,13 +692,29 @@ function _renderForgot(){
   }
 }
 
+/* A DEADLINE, BECAUSE THIS IS THE FLOW SOMEBODY IS ALREADY LOCKED OUT IN.
+
+   This was a plain fetch, and a plain fetch only rejects when the connection
+   FAILS. One that is accepted and then stalls - a captive portal, a phone
+   changing networks, a dead tunnel whose socket is still open - leaves the
+   promise pending for ever. All three steps of the password reset go through
+   here, and every caller disables its button and sets it to "Sending…",
+   "Verifying…" or "Saving…" before awaiting, so the stall showed up as a
+   disabled button with no way out and nothing on screen saying anything was
+   wrong.
+
+   fetchDeadline already exists for exactly this, and says so in its own comment
+   ("every caller waiting on it is stuck with a spinner that will never stop").
+   It also throws the right sentence - the server did not answer in time, or you
+   appear to be offline - and each caller here already re-enables its button and
+   shows e.message, so the honest failure arrives with no other change. */
 function _resetApi(path, body){
   if(!(window.AMV_API && AMV_API.live))
     return Promise.reject(new Error('not-connected'));
-  return fetch(AMV_API.base.replace(/\/$/,'')+path, {
+  return fetchDeadline(AMV_API.base.replace(/\/$/,'')+path, {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify(body||{})
-  }).then(async r=>{
+  }, 20000).then(async r=>{
     const d = await r.json().catch(()=>({}));
     if(!r.ok || d.error) throw new Error(d.error || 'Something went wrong. Try again.');
     return d;

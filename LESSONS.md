@@ -8340,3 +8340,35 @@ watcher wins and a typed value comes back as a cancellation. Both dialogs settle
 synchronously in their own handlers for that reason, and both have an assertion
 that fails when the answer is deferred. A fix that introduces a race quietly is
 not better than the bug.
+
+## 348. Four hangs in one night, and a test that nearly hung to prove one
+
+The fourth instance of one shape, found by looking for it after the third.
+
+  - the gate's dependency audit, on a registry that accepted the connection and
+    then said nothing (344);
+  - the new confirmation dialog, on Escape (345);
+  - the older async dialog, on Escape, in thirty-one flows (347);
+  - and the password reset, on a plain fetch with no deadline.
+
+The shape is a promise nobody can settle. It is worse than an error in every
+case, because an error names something and this names nothing: the dialog is
+gone, or the button is disabled and says "Sending…", and the screen carries no
+admission that anything went wrong. The natural next move - press it again - is
+usually not even available.
+
+Worth noticing that all four were in code somebody had already thought about.
+fetchDeadline was written for exactly the reset case and says so in its own
+comment; the reset flow simply was not using it. The audit's skip path was
+written for a bad network and covered only the refusal half. Both dialogs
+handled three routes out and missed the fourth. None of these were oversights
+about whether the case mattered - they were oversights about whether the code
+reached the case.
+
+AND THE TEST FOR THE FOURTH ONE NEARLY HAD THE SAME BUG. The first version
+awaited the reset call directly, so with the fix removed it did not fail - it
+sat there until Playwright's own timeout killed it, and the run said "timed out"
+rather than "the reset flow can wait for ever". A test for a hang must not hang
+to prove it: race it, and let the failing case report the hang as a finding.
+With that fixed, removing the deadline fails four assertions, the first of which
+reads "still pending after 30s".
