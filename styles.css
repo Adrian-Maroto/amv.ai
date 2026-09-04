@@ -10765,3 +10765,22 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
     padding-bottom:var(--sp-2);
   }
 }
+
+/* ── LAYER A150 · a homework list that is missing a class says so ────────────
+   `schoolWork` reads each course separately and any one of them can fail on
+   its own, so it sends `partial`, the names in `missedCourses`, and a written
+   `notice`. The screen was rendering `work` and dropping all three: a student
+   saw a complete-looking list with a whole class absent, and - when every
+   course failed - the words "Nothing is due".
+
+   Warning, not error. Everything shown IS real and still usable; what is wrong
+   is that it is not all of it. Gold rather than red for exactly that reason. */
+.sch-partial{
+  display:flex; flex-direction:column; align-items:flex-start; gap:var(--sp-2);
+  margin-bottom:var(--sp-3); padding:var(--sp-3);
+  background:var(--s2); border:1px solid var(--gold);
+  border-left-width:3px; border-radius:var(--r-md);
+}
+.sch-partial b{ font-size:var(--t-md); color:var(--tx); }
+.sch-partial span{ font-size:var(--t-sm); line-height:1.6; color:var(--mu); }
+.sch-retry{ font-size:var(--t-sm); }

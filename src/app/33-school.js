@@ -88,13 +88,38 @@ async function _schoolRender(){
     return;
   }
   const work = (d && d.work) || [];
+  /* THE SERVER NAMES THE CLASSES IT COULD NOT READ. SHOW THEM.
+
+     `schoolWork` fetches each course's assignments separately and any one of
+     them can fail on its own. It deliberately does not drop those in silence:
+     it sends back `partial`, the course names in `missedCourses`, and a
+     written `notice` - the comment beside it says a homework list with a whole
+     class missing and no reason to doubt it is the worst way for this to be
+     wrong. This screen was reading `work` and nothing else, so all of that
+     care stopped one layer short of the student.
+
+     The empty case was worse than the partial one. Every course failing to
+     read produces an empty list, and the screen answered "Nothing is due" -
+     stated flatly, with no hedge, to somebody who has homework. */
+  const missed = (d && Array.isArray(d.missedCourses)) ? d.missedCourses : [];
+  const partial = !!(d && d.partial) || missed.length > 0;
+  const notice = partial
+    ? '<div class="sch-partial" role="status">'+
+        '<b>' + T('This list is not complete.') + '</b>'+
+        '<span>' + escH(d.notice || (T('AMV could not read') + ' ' + missed.join(', ') + '.')) + ' '+
+          T('Anything due in those is missing from this list.') + '</span>'+
+        '<button class="btn bs sch-retry" data-dact="schoolReload">' + T('Try again') + '</button>'+
+      '</div>'
+    : '';
   if(!work.length){
-    body.innerHTML = '<div class="sch-empty"><b>' + T('Nothing is due.') + '</b><span>'+
-      T('When your teachers post something, it appears here.') + '</span></div>';
+    body.innerHTML = partial
+      ? notice
+      : '<div class="sch-empty"><b>' + T('Nothing is due.') + '</b><span>'+
+        T('When your teachers post something, it appears here.') + '</span></div>';
     return;
   }
   _schoolWork = work;
-  body.innerHTML = '<div class="sch-list">' + work.map((a, i) => {
+  body.innerHTML = notice + '<div class="sch-list">' + work.map((a, i) => {
     const due = a.dueAt ? new Date(a.dueAt).toLocaleDateString() : T('no due date');
     const docs = (a.docs || []).length;
     return '<div class="sch-item">'+
@@ -298,7 +323,17 @@ async function schoolConnectOpen(){
   });
 }
 
+/* The retry the partial notice offers. It re-runs the same read, because a
+   course that could not be reached once often can be a moment later - and the
+   alternative on that screen is closing it and opening it again. */
+async function schoolReload(){
+  const body = $('sch-body');
+  if(body) body.innerHTML = '<div class="sch-loading">' + T('Reading your assignments\u2026') + '</div>';
+  await _schoolRender();
+}
+
 try{
+  window.schoolReload = schoolReload;
   window.schoolConnectOpen = schoolConnectOpen;
   window.schoolOpen = schoolOpen;
   window.schoolPrepare = schoolPrepare;

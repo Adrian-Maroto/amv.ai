@@ -8567,3 +8567,31 @@ The rule: when one layer goes to the trouble of reporting which guarantee it
 could give, the layer above it does not get to round that to success. And a
 field a response carries but no caller reads is worth grepping for - it is
 either dead weight or, as here, a dropped signal.
+
+## 355. The server named the classes it could not read, and the screen said "Nothing is due"
+
+`schoolWork` reads each course's assignments in a separate request, so any one
+course can fail on its own. It does not drop those in silence - it returns
+`partial`, names them in `missedCourses`, and writes a `notice`. The comment
+beside that code says why: a homework list with an entire class absent, and no
+reason for the student to doubt it, is the worst way for this to be wrong.
+
+The screen read `work` and nothing else. All three fields were dropped, so the
+list rendered as though it were complete. And in the case where every course
+failed - an expired connection, Canvas down - `work` came back empty and the
+screen answered a student who has homework with "Nothing is due. When your
+teachers post something, it appears here."
+
+That is the second one of these in a day (LESSONS 354 was the sync guarantee),
+which is what makes it a rule and not an anecdote: **a field the server
+computes to be honest with is worthless until somebody reads it.** The
+mechanical version of the check is cheap - list the keys the worker puts in a
+JSON response, subtract the ones the client mentions anywhere, and read what
+is left. Sixty-nine keys came back; two of them were this.
+
+The empty-plus-partial case is the one to look for specifically. Partial
+degradation usually renders as "some of it", which at least looks odd. Total
+degradation renders as the EMPTY state, and empty states are written
+confidently - "Nothing is due", "No results", "You're all caught up" - because
+whoever wrote them was thinking about the happy path where the answer really
+is nothing. An empty state should never be reachable from a failure.
