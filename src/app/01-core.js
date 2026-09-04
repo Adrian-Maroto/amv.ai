@@ -753,6 +753,24 @@ const AMV_API = {
   get syncRev(){ try{ return +(loadStr('amv_sync_rev')||0) || 0; }catch(e){ return 0; } },
   set syncRev(v){ try{ saveStr('amv_sync_rev', String(+v||0)); }catch(e){} },
 
+  /* WHETHER THE SAVE WE JUST MADE WAS ACTUALLY GUARANTEED.
+
+     `DB.putIfRev` is a compare-and-set on D1 - the write lands only if the
+     revision is still the one we read, so a device that lost the race is told
+     to pull rather than allowed to overwrite. KV has no conditional write at
+     all, so there it degrades to a plain put and says so by returning
+     `guarded:false`. The server passes that through on every push for exactly
+     one reason: so the caller can be honest about which guarantee it has.
+
+     This client was throwing it away. Both answers arrived as `{ok:true}` and
+     both were treated as "saved", so a deployment where two devices can
+     silently overwrite each other's work was indistinguishable, from in here,
+     from one where they cannot. The readiness screen reports the missing D1
+     binding, but only to an operator who opens it; nothing ever observed the
+     condition happening. Now it does, once. */
+  syncGuarded: true,
+  _syncUnguardedTold: false,
+
   async syncPull(){
     if(!this.live || !this.token) return null;
     try{ const r = await this._fetch('/sync/pull', {method:'POST', body:'{}'}); const d = await r.json();
@@ -765,10 +783,25 @@ const AMV_API = {
     try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data, baseRev:this.syncRev})}); const d = await r.json();
       if(d && d.ok){
         this.syncRev = d.rev || 0;
+        if(d.guarded === false){
+          this.syncGuarded = false;
+          if(!this._syncUnguardedTold){
+            this._syncUnguardedTold = true;
+            _logErr('sync.unguarded', new Error('This deployment writes sync data without a conditional write, because no D1 database is bound. Two devices saving in the same instant can only be merged, never arbitrated, so one can overwrite the other. Bind DB in wrangler.toml.'));
+          }
+        }
         /* The server merged because another device had written. Our in-memory
            copy is now behind what the server holds, so pull it back rather than
-           carrying on from a stale list and pushing the same conflict again. */
-        if(d.merged && typeof AMVSync !== 'undefined'){ try{ AMVSync.pull(); }catch(e){} }
+           carrying on from a stale list and pushing the same conflict again.
+
+           AWAITED, which it was not. Fire-and-forget meant syncPush resolved
+           "saved" while the reconciliation was still in flight, so the next
+           debounced push - 1.2 seconds later, and there is always one, because
+           the pull repaints - could collect the SAME unreconciled list and
+           push the identical conflict again. On a deployment with no
+           conditional write that is the loop that loses work: every round
+           re-asserts a state the server has already moved past. */
+        if(d.merged && typeof AMVSync !== 'undefined'){ try{ await AMVSync.pull(); }catch(e){} }
         return true;
       }
       /* AMV-078: the server refused to write over a version it had not shown us

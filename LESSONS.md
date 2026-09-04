@@ -8537,3 +8537,33 @@ The rule: a guard against stale copy has to read the strings where they are
 WRITTEN, not only where they happen to be rendered. And when a new guard passes
 on the first run, that is the moment to break it - a guard that has never been
 seen to fail has not been tested, it has been assumed.
+
+## 354. The server said the save was not guaranteed and the client dropped the word
+
+`DB.putIfRev` exists because read-merge-write is not atomic: two devices that
+both read revision 5 both write revision 6, and the second silently erases the
+first. On D1 it is a real compare-and-set. KV has no conditional write at all,
+so there the same call degrades to an unconditional put - and it says so, by
+returning `guarded:false`. The comment above it is explicit about why: "the
+caller can then be honest about which guarantee it actually has, rather than
+assuming one it does not."
+
+The push route passes the flag through. `syncPush` read `ok`, `rev`, `merged`
+and `code`, and never looked at `guarded`. So both answers arrived as "saved".
+A deployment where two devices can overwrite each other's conversations was,
+from inside the app, indistinguishable from one where they cannot, and nothing
+ever observed the condition happening - the readiness screen names the missing
+D1 binding, but only to an operator who opens it.
+
+Reading it also exposed a second bug on the same three lines. The reconciling
+pull after a merged push was fire-and-forget, so `syncPush` resolved "saved"
+while the reconciliation was still in flight; the next debounced push, 1.2
+seconds later and guaranteed to exist because the pull repaints, could collect
+the same unreconciled list and re-send a conflict the server had already moved
+past. On a deployment with no conditional write that is the loop that loses
+work.
+
+The rule: when one layer goes to the trouble of reporting which guarantee it
+could give, the layer above it does not get to round that to success. And a
+field a response carries but no caller reads is worth grepping for - it is
+either dead weight or, as here, a dropped signal.
