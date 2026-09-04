@@ -10862,3 +10862,44 @@ body.light{
 /* Hand-written hex that predates the status tokens. */
 .mk-kind-agent{ color:var(--gold-txt); }
 .ax-manual{ color:var(--gold-txt); }
+
+/* ── LAYER A153 · the browser's own text-size setting does something ─────────
+   Measured: setting the root font to 24px or 32px - Chrome's Large and Very
+   Large, and the equivalent on a phone - changed nothing at all. Average text
+   across thirty-one sampled elements stayed at 11.79px at every setting,
+   because every step of the type scale is a hard `px`.
+
+   AMV has its own Small/Default/Large/Largest control and it works. But the
+   browser setting is the one somebody with low vision sets ONCE, for
+   everything, and then expects every page to honour - they should not have to
+   find a per-app control, or know that AMV has one. Ignoring it is the product
+   deciding it knows better than an accessibility preference the person already
+   expressed.
+
+   Expressed in rem, so the browser's setting multiplies in. Every value below
+   is the same number of pixels at the default root of 16px - 0.6875rem IS
+   11px - so nothing moves for anybody who has not changed the setting, and the
+   in-app multiplier still applies on top of it.
+
+   `text-size-adjust` is set with it: without it a phone browser applies its own
+   inflation to some text and not other text, which is a second, invisible
+   scale fighting this one. */
+:root{
+  --t-3xs:0.5625rem; --t-2xs:0.625rem;  --t-xs:0.6875rem; --t-sm:0.75rem;
+  --t-base:0.84375rem; --t-md:0.875rem; --t-prose:0.9375rem; --t-lg:1rem;
+  --t-xl:1.25rem;    --t-2xl:1.625rem;  --t-3xl:2.125rem;
+}
+html.fs-scaled{
+  --t-3xs:  calc(0.5625rem  * var(--fs-s));
+  --t-2xs:  calc(0.625rem   * var(--fs-s));
+  --t-xs:   calc(0.6875rem  * var(--fs-s));
+  --t-sm:   calc(0.75rem    * var(--fs-s));
+  --t-base: calc(0.84375rem * var(--fs-s));
+  --t-md:   calc(0.875rem   * var(--fs-s));
+  --t-prose:calc(0.9375rem  * var(--fs-s));
+  --t-lg:   calc(1rem       * var(--fs-s));
+  --t-xl:   calc(1.25rem    * var(--fs-s));
+  --t-2xl:  calc(1.625rem   * var(--fs-s));
+  --t-3xl:  calc(2.125rem   * var(--fs-s));
+}
+html{ -webkit-text-size-adjust:100%; text-size-adjust:100%; }

@@ -171,7 +171,15 @@ const _SYNC_EXTRA = ['sessions','skills','handoffs','profile','projects'];
    and one record, so the two representations cannot drift. `updatedAt` decides
    a conflict, because two devices with different instructions is a real thing
    that needs a rule rather than whichever pull happened last. */
+/* The same ceilings the settings screen applies on save. A value arriving from
+   the server is not more trustworthy than one typed here - it may have been
+   written by another device running an older build, or be a corrupt record -
+   and `instructions` goes into the system prompt of every conversation, so an
+   unbounded one is an unbounded request. Bounded on the way IN, where the
+   value crosses into this browser, rather than at each of the places that
+   later read it. */
 const _PROFILE_FIELDS = ['nickname','work','instructions'];
+const _PROFILE_MAX = { nickname: 60, work: 400, instructions: 2000 };
 function _profileSnapshot(){
   const out = { updatedAt: 0 };
   try{ out.updatedAt = +(loadStr('amv_profile_at')||0) || 0; }catch(e){}
@@ -187,7 +195,9 @@ function _profileApply(p){
      the merge failing in the direction that DELETES, which is the one that
      matters. */
   if(theirs <= mine) return false;
-  _PROFILE_FIELDS.forEach(f=>{ try{ saveStr('amv_'+f, String(p[f]==null?'':p[f])); }catch(e){} });
+  _PROFILE_FIELDS.forEach(f=>{
+    try{ saveStr('amv_'+f, String(p[f]==null?'':p[f]).slice(0, _PROFILE_MAX[f]||2000)); }catch(e){}
+  });
   try{ saveStr('amv_profile_at', String(theirs)); }catch(e){}
   return true;
 }

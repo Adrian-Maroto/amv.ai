@@ -9060,3 +9060,34 @@ what is true. When they disagree, decide which one is right before changing
 either - here the code was, and once that was settled the two things actually
 missing were obvious: the ceiling, and a line on the terminal when re-pairing
 disconnects an existing session, which is the only place that would ever show.
+
+## 369. "Very Large" text changed nothing at all
+
+Set the browser's root font to 24px, then 32px - Chrome's Large and Very Large,
+and the equivalent on a phone. The average size of text across thirty-one
+sampled elements: 11.79px, 11.79px, 11.79px. Exactly the same page at every
+setting, because every step of the type scale was a hard `px`.
+
+AMV has its own Small/Default/Large/Largest control and it works properly. That
+is what made this easy to miss and does not make it acceptable: the browser
+setting is the one somebody with low vision changes ONCE, for everything, and
+a person should not have to discover a per-app control to get the size they
+have already asked for. A product that overrides an accessibility preference
+somebody explicitly expressed has decided it knows better than they do.
+
+The scale is in rem now - `0.6875rem` IS 11px at the default root - so nothing
+moves for anyone who has not changed the setting, and the in-app multiplier
+still applies on top. Both settings are real and they compose.
+
+**A preference nobody can observe you ignoring is still being ignored.** There
+was no complaint to act on here and there never would be: somebody who sets
+larger text and finds a site unchanged concludes the site is small, not that
+the setting failed. The only way to find this class of defect is to change the
+setting yourself and measure, which took one probe and three numbers.
+
+The other half is why it is safe. Text that grows inside a layout that does not
+is how a resize setting becomes a broken page - and that is the reason most
+products give for not honouring it. So the same probe measured horizontal
+overflow on every screen at 24px and 32px, on a phone-width viewport where
+there is least room, and found none. The claim "we support this" is worth
+exactly the measurement behind it.

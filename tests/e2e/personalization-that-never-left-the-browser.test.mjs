@@ -100,6 +100,24 @@ try {
     ok(r.instr === 'Cite the standard.', 'so nothing is replaced', r.instr);
   }
 
+  section('A value from the server is bounded like one typed here');
+  /* `instructions` goes into the system prompt of every conversation, so an
+     unbounded one arriving over sync is an unbounded request. The settings
+     screen caps it at 2000; the same cap has to hold on the way in, because
+     the other end of the sync is not more trustworthy than this end. */
+  {
+    const r = await app.page.evaluate(() => {
+      _profileApply({ nickname: 'n'.repeat(500), work: 'w'.repeat(5000),
+                      instructions: 'i'.repeat(50000), updatedAt: Date.now() + 60000 });
+      return { nick: (loadStr('amv_nickname')||'').length,
+               work: (loadStr('amv_work')||'').length,
+               instr: (loadStr('amv_instructions')||'').length };
+    });
+    ok(r.nick === 60, 'the nickname is capped', r.nick);
+    ok(r.work === 400, 'what they do is capped', r.work);
+    ok(r.instr === 2000, 'and the standing instructions are capped at what the form allows', r.instr);
+  }
+
   section('Saving in settings sends it, rather than waiting for something else to');
   {
     const pushed = await app.page.evaluate(async () => {
