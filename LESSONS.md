@@ -8859,3 +8859,38 @@ this family: correct where it was written, wrong everywhere it is read.
 And the same rule as LESSONS 355, in a place that costs money: an empty state
 must not be reachable from a limitation. Vanishing is the most confident empty
 state there is.
+
+## 363. A dead pipe that greps as wired
+
+The sync protocol has a `profile` slot. `collect()` read `amv_profile` to push
+it, `pull()` wrote `amv_profile` from the server, `profile` is named in
+`_SYNC_EXTRA`, and the server's sync record carries it. Every part of the pipe
+is present and every part round-trips.
+
+Nothing ever wrote `amv_profile` locally, and nothing ever read it back. The
+settings screen saves three separate keys - `amv_nickname`, `amv_work`,
+`amv_instructions` - and the system-prompt builder reads those same three. So
+`collect()` pushed `null` every time, the server's copy was permanently empty,
+and a pull wrote a key with no readers.
+
+Personalization therefore never left the browser: the nickname, what somebody
+does, and the standing instructions that go into EVERY conversation. Sign in on
+a phone and AMV has forgotten who you are and everything you told it to always
+do - while the settings screen on the laptop still shows it all, so nothing
+anywhere reports a problem.
+
+**A pipe connected at both ends to the wrong thing is worse than a missing
+one.** A missing feature is absent and someone notices. This one passes every
+check a reader would run - the field exists, it is collected, it is applied, it
+is in the sync list - and the only way to see it is to ask which key the
+WRITERS use and which key the READERS use, and find they are different keys.
+The question that catches this family is not "is it wired" but "name the writer
+and name the reader", out loud, for the same key.
+
+Two other things the fix needed. One place now owns the fact that the profile
+is three keys and one record, so the two shapes cannot drift apart again. And
+the merge needs a timestamp, because two devices with different standing
+instructions is a real situation: without one, a device that had never saved
+anything would push its empty profile over instructions set elsewhere - the
+merge failing in the direction that deletes, which is the only direction that
+matters.

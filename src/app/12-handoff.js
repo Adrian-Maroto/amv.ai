@@ -2033,6 +2033,15 @@ function _renderSetPaneInner(only, into){
         saveStr('amv_nickname', ($('s-nick')?.value||'').trim().slice(0,60));
         saveStr('amv_work', ($('s-work')?.value||''));
         saveStr('amv_instructions', ($('s-instr')?.value||'').trim().slice(0,2000));
+        /* STAMPED AND PUSHED, because these three keys are the personalization
+           that goes into every conversation and they were staying on this
+           device. The sync had a `profile` slot at both ends and nothing ever
+           filled it, so signing in elsewhere meant AMV had forgotten your name
+           and every standing instruction. The timestamp is what lets two
+           devices with different instructions be resolved by a rule rather
+           than by whichever pull landed last. */
+        saveStr('amv_profile_at', String(Date.now()));
+        try{ if(typeof AMVSync!=='undefined' && AMVSync.enabled()) AMVSync.push(); }catch(_e){}
       }catch(e){}
       if(S.user){
         const key=acctKey(S.user.email);

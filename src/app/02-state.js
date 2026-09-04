@@ -149,6 +149,49 @@ const _SYNC_KEYS = ['convs','memory','workspaces','prompts','model'];
    the browser: switch device or clear cache and a 10,000-line Dev project was
    simply gone. */
 const _SYNC_EXTRA = ['sessions','skills','handoffs','profile','projects'];
+
+/* THE PROFILE SLOT WAS WIRED AT BOTH ENDS AND CONNECTED TO NOTHING.
+
+   `collect()` reads `amv_profile` to push it and `pull()` writes `amv_profile`
+   from the server, so the pipe looks complete - it is named in _SYNC_EXTRA, it
+   is in the server's sync record, it round-trips. Nothing ever wrote
+   `amv_profile` locally, and nothing ever read it back.
+
+   The settings screen saves three separate keys - `amv_nickname`, `amv_work`,
+   `amv_instructions` - and `_profileContext` reads those same three when it
+   builds the system prompt. So `collect()` always pushed null, the server's
+   copy was always empty, and a pull wrote a key no reader consults.
+
+   Which means personalization never left the browser. Your nickname, what you
+   do, and the standing instructions that go into EVERY conversation were
+   per-device: sign in on a phone and AMV has forgotten who you are and
+   everything you told it to always do.
+
+   These two functions are the only place that knows the profile is three keys
+   and one record, so the two representations cannot drift. `updatedAt` decides
+   a conflict, because two devices with different instructions is a real thing
+   that needs a rule rather than whichever pull happened last. */
+const _PROFILE_FIELDS = ['nickname','work','instructions'];
+function _profileSnapshot(){
+  const out = { updatedAt: 0 };
+  try{ out.updatedAt = +(loadStr('amv_profile_at')||0) || 0; }catch(e){}
+  _PROFILE_FIELDS.forEach(f=>{ try{ out[f] = loadStr('amv_'+f)||''; }catch(e){ out[f]=''; } });
+  return out;
+}
+function _profileApply(p){
+  if(!p || typeof p !== 'object') return false;
+  const theirs = +p.updatedAt || 0;
+  const mine = _profileSnapshot().updatedAt;
+  /* Not newer is not applied. Without this, a device that has never saved
+     anything would push its empty profile over one that was set elsewhere -
+     the merge failing in the direction that DELETES, which is the one that
+     matters. */
+  if(theirs <= mine) return false;
+  _PROFILE_FIELDS.forEach(f=>{ try{ saveStr('amv_'+f, String(p[f]==null?'':p[f])); }catch(e){} });
+  try{ saveStr('amv_profile_at', String(theirs)); }catch(e){}
+  return true;
+}
+try{ window._profileSnapshot=_profileSnapshot; window._profileApply=_profileApply; }catch(e){}
 /* Keys whose values are id-bearing lists, so a pull can merge them item by item
    instead of replacing the list. `model` is a scalar and deliberately absent -
    last write genuinely should win on a preference. */
@@ -272,7 +315,9 @@ const AMVSync = {
           if(typeof PROJ !== 'undefined'){ PROJ.list = merged; }
         }catch(e){ _logErr('sync.projects', e); }
       }
-      if(data.profile)                 { try{ store('amv_profile', data.profile); }catch(e){} }
+      /* Unpacked into the three keys the app actually reads, rather than
+         stored under a name nothing consults. */
+      if(data.profile){ try{ _profileApply(data.profile); }catch(e){ _logErr('sync.profile', e); } }
 
       try{ renderHist && renderHist(); }catch(e){}          // Recents repaint
       try{ if(S.tab) renderView&&renderView(); }catch(e){}
@@ -287,7 +332,9 @@ const AMVSync = {
     try{ out.skills   = load('amv_skills')   || []; }catch(e){}
     try{ out.handoffs = load('amv_handoffs') || []; }catch(e){}
     try{ out.projects = load('amv_projects')  || []; }catch(e){}
-    try{ out.profile  = load('amv_profile')  || null; }catch(e){}
+    /* Built from the keys the settings screen writes, not from a mirror of
+       them that nothing maintained. */
+    try{ out.profile  = _profileSnapshot(); }catch(e){}
     return _syncTrim(out);
   },
   push(){ // debounced
