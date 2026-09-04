@@ -26,22 +26,35 @@
    So this composites, and it skips what it cannot judge: emoji paint themselves
    whatever the CSS colour says, and gradient text sets a transparent fill.
 
-   THE FLOOR IS 3:1 rather than AA's 4.5. Not because 4.5 does not matter, but
-   because what shipped here was 1.16 - text nobody can see at all - and a
-   handful of AA-marginal badges are a different, smaller question that needs a
-   design decision about brand colours rather than a gate failure. The marginal
-   set is counted and pinned below so it cannot quietly grow. */
+   THE FLOOR WAS 3:1 AND IS NOW 4.5. It started at 3 because what shipped was
+   1.16 - text nobody could see at all - and the AA-marginal badges left over
+   were called "a design decision about brand colours rather than a gate
+   failure", counted and pinned so they could not grow.
+
+   That decision has been made. Sixteen of them were one of three light-theme
+   token values set just light enough to fail on the chips they are used on;
+   the rest reached past the tokens entirely - a bare `--accent`, which is a
+   FILL colour, used as small text, and a `#d9912f` written by hand. Neither
+   needed the brand to change: the `-txt` variants already existed for text on
+   a tinted ground, and `--accent-fill` already existed for a surface somebody
+   reads on. See LAYER A152.
+
+   The list included "Start Pro - $15/mo" at 4.10:1, which is the button that
+   takes the money, and "Manual" on Integrations at 2.19:1. So the allowance is
+   zero now, in both themes, and this file is a rule rather than a ratchet. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const INVISIBLE = 3.0;      // below this, nobody can read it in any theme
 const AA = 4.5;
-const TABS = ['chat','plans','settings','tasks','crew','market','build','team'];
+const TABS = ['chat','build','crew','tasks','projects','memory','usage',
+              'plans','settings','integrations','market','teams','activity'];
 
-/* Counted from a real run, per theme. A ratchet, not an approval: these are
-   badges and pills sitting between 3.88 and 4.44 against a 4.5 requirement, and
-   fixing them means changing brand colours, which is not this file's call. */
-const MARGINAL_ALLOWED = { dark: 5, light: 11 };
+/* Zero. Measured at zero across thirteen screens in both themes after LAYER
+   A152; anything above it is a regression with a name attached, not a backlog
+   entry. Kept as a named constant rather than inlined so that raising it is a
+   visible decision somebody has to write down. */
+const MARGINAL_ALLOWED = { dark: 0, light: 0 };
 
 const parse = c => { const p = (c || '').match(/[\d.]+/g); if (!p) return null;
   const n = p.map(Number); return [n[0], n[1], n[2], n.length > 3 ? n[3] : 1]; };

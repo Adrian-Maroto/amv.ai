@@ -10802,3 +10802,63 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 .vrow-warn{ border-left:3px solid var(--gold); padding-left:var(--sp-3); }
 .vrow-warn span{ color:var(--tx); font-size:var(--t-sm); line-height:1.6; }
 .vrow-more span{ color:var(--dim); font-size:var(--t-xs); }
+
+/* ── LAYER A152 · text somebody can actually read, measured ──────────────────
+   Twenty-four pieces of text failed WCAG AA when every layer was composited
+   down to the body and the real ratio computed - in both themes, across nine
+   screens. The list included "Start Pro - $15/mo", which is the button that
+   takes the money, and "Manual" on the Integrations screen at 2.19:1.
+
+   Most of it is three token values rather than twenty-four mistakes. The
+   light theme's muted text and its three status text colours were each set
+   just light enough to fail on the tinted chips they are actually used on -
+   4.1 to 4.4 against a 4.5 floor - so every component using them correctly
+   inherited a failure. Correcting the token fixes each of those at once and
+   keeps the next component right by default.
+
+   The rest are places that reach past the tokens: a bare `--accent` used as
+   TEXT (the accent is a fill colour and is too light to read at small sizes),
+   and `#d9912f` written out by hand. Those are repointed at the `-txt`
+   variants, which exist for exactly this and are theme-aware.
+
+   Every value here was computed against the surface it actually sits on, not
+   picked by eye, and `text-you-can-actually-read-in-both-themes` measures the
+   whole product rather than these rules. */
+
+/* The tokens. Light only - the dark theme's values already clear the floor. */
+body.light{
+  --mu:#5f5c56;          /* was #6e6c74 - 4.11:1 on a raised card */
+  --accent-txt:#2f5bc0;  /* was #3060c7 - 4.44:1 on the accent-tinted chip */
+  --accent-tx:#2f5bc0;   /* was var(--accent) - 4.39:1 behind the active nav */
+  --gold-txt:#6f5820;    /* was #7b6224 - 4.32:1 on a grey pill */
+  --grn-txt:#216539;     /* was #267343 - 4.19:1 on a grey pill */
+}
+
+/* THE BUTTON THAT TAKES THE MONEY.
+
+   White on `--accent` measures 4.10:1 in both themes. `--accent-fill` is the
+   token for an accent somebody has to read ON - 5.6:1 dark, 5.26:1 light -
+   and this is what it is for. The hover keeps the brighter accent, because a
+   hover state is a change the pointer explains. */
+.pbp,.plnbtn.bp,.plnc .plnbtn.bp{ background:var(--accent-fill); border-color:var(--accent-fill); }
+.pbp:hover,.plnbtn.bp:hover{ background:var(--accent); border-color:var(--accent); }
+.plnpop:not(.plnpop-elite){ background:var(--accent-fill)!important; }
+/* `.plnpop-elite` paints its own green with dark text on top and already
+   clears the floor. Overriding it here left that dark text on a blue ground
+   at 3.07:1 - a fix creating the defect it was written to remove, which is
+   why the sweep is run again after the change rather than before it. */
+
+/* Accent used as TEXT rather than as a fill. */
+.mk-kind{ color:var(--accent-txt); }
+.mkt-by{ color:var(--accent-txt); }
+.mkt-tab.on{ color:var(--accent-txt); }
+
+/* The disclaimer under the composer - the one line on the screen with a legal
+   job to do. `--dim` is the right weight for it, but `opacity:.85` on top
+   dilutes the colour a second time and dropped it to 4.42:1. The token is
+   already the muted value; multiplying it again is muting twice. */
+.amv-disclaimer{ color:var(--mu); opacity:1; }
+
+/* Hand-written hex that predates the status tokens. */
+.mk-kind-agent{ color:var(--gold-txt); }
+.ax-manual{ color:var(--gold-txt); }

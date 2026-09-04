@@ -8787,3 +8787,37 @@ instead of the true one the server had already written out.
 Every monthly refusal now carries a reset time from one helper derived from the
 same function that decides the period key, so the date somebody is told and the
 window they are measured over cannot drift apart again.
+
+## 361. Twenty-four failures of contrast, and three of them were one token
+
+Composited every layer down to the body and measured the real ratio of every
+piece of text on thirteen screens in both themes. Twenty-four failed WCAG AA.
+The list included "Start Pro - $15/mo" at 4.10:1 - the button that takes the
+money - and "Manual" on the Integrations screen at 2.19:1.
+
+Sixteen of them were not sixteen mistakes. The light theme's muted text and its
+three status text colours were each set just light enough to fail on the tinted
+chips they are actually used on, between 4.11 and 4.44 against a 4.5 floor, so
+every component using them CORRECTLY inherited a failure. Fixing the token fixed
+all sixteen and keeps the next component right by default. Fixing them one rule
+at a time would have been sixteen commits and the seventeenth would still fail.
+
+The rest reached past the token system: a bare `--accent` used as TEXT, and a
+`#d9912f` written out by hand. `--accent` is a FILL - it is chosen to be
+readable ON, not readable AS - and the `-txt` variants already existed for text
+on a tinted ground, as did `--accent-fill` for a surface somebody reads on.
+So none of it needed the brand to change, which is what the existing suite had
+assumed when it deferred them: "a design decision about brand colours rather
+than a gate failure", counted and pinned at 5 dark and 11 light.
+
+**A ratchet is a decision postponed, and it has to be spent.** That allowance
+was honest when it was written and it was still there rounds later, quietly
+carrying a broken purchase button. The allowance is zero now and the suite is a
+rule rather than a backlog. If a number in a test exists so a known problem does
+not fail the gate, put a date on it or it becomes permission.
+
+One more thing, from the fix itself: my first version overrode `.plnpop`
+wholesale and put its dark-green "Best Value" text onto a blue ground at
+3.07:1 - a repair creating the exact defect it was written to remove. Caught
+because the sweep was re-run AFTER the change, not before it. Measure again
+after you fix, on the same instrument.
