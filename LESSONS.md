@@ -9091,3 +9091,30 @@ products give for not honouring it. So the same probe measured horizontal
 overflow on every screen at 24px and 32px, on a phone-width viewport where
 there is least room, and found none. The claim "we support this" is worth
 exactly the measurement behind it.
+
+
+## 370. The note explaining the dead write was a sighting of the real bug
+
+`amv_ent_token` sat in the storage-key suite's WRITE_ONLY list - keys that are
+written and never read, catalogued as residue so nobody mistakes them for a
+working feature. Its excuse read: "the server does not put a token on an
+entitlement record, so this never fires."
+
+That sentence is correct, and it is a description of LESSONS 364. Somebody had
+already noticed that a line in the post-payment path could never do anything,
+worked out exactly why - the server does not send that field - written it down,
+and filed it as acceptable dead weight. The `plan` on the very same response
+was being read off the wrong object for the same reason, which meant nothing at
+all happened when a customer paid. The observation was one question away from
+the defect and the question was never asked.
+
+**"Why is this dead?" is one question. "What else is dead for the same reason?"
+is the one that finds the bug.** A line that cannot fire is evidence about the
+shape of the data around it, not just about itself. When an allowlist entry
+explains a mistaken assumption, that assumption almost certainly has other
+consumers.
+
+The gate caught the tail of this on its own: removing the write left an excuse
+for a key that no longer exists, and the suite's last section - "an excuse that
+has since become untrue is itself a finding" - failed on it. A guard written
+against its own list rotting, doing exactly that.

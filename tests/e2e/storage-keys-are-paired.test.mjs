@@ -175,7 +175,13 @@ section('Every key is both written and read, or is named here with the reason');
      working feature by the next person to read the file. */
   const WRITE_ONLY = {
     amv_onboarded:        'the first-run popup was removed; these writes were left so nothing could re-trigger it',
-    amv_ent_token:        'the server does not put a token on an entitlement record, so this never fires',
+    /* `amv_ent_token` used to sit here, excused as "the server does not put a
+       token on an entitlement record, so this never fires". That excuse was a
+       SIGHTING of a real defect, catalogued instead of followed: the same
+       response's `plan` was being read off the wrong object, so the whole
+       post-payment path was dead (LESSONS 364). The write is gone with it, and
+       the entry has to go too - an excuse for a key that no longer exists is
+       the rot this file's last section exists to catch. */
     amv_fin_pending:      'a link-in-progress marker the finance panel no longer consults',
     amv_owner:            'set by ?owner=1; the admin surfaces gate on the admin token instead',
   };
