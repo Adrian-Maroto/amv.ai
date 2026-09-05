@@ -10942,3 +10942,24 @@ html{ -webkit-text-size-adjust:100%; text-size-adjust:100%; }
   -webkit-overflow-scrolling:touch;
   overscroll-behavior:contain;
 }
+
+/* ── LAYER A155 · the way out of a build, on a phone ─────────────────────────
+
+   `.mv-toggle` is inserted as the shell's first child, outside both panes, so
+   it is the one strip that survives `.mv-show-out` hiding the chat pane. The
+   back button belongs there for exactly that reason - Dev's "All builds" was
+   inside the pane the toggle hides, and opening a build calls
+   `_mobileShowOutput` immediately, so arriving was what hid the way out.
+
+   Sized against the 40px tap floor the phone sweep set, and given the muted
+   treatment of a secondary control so it does not compete with the two labels
+   that switch panes. */
+.mv-toggle .mv-back{
+  display:inline-flex; align-items:center; gap:6px;
+  min-height:40px; padding:0 12px; margin-right:auto;
+  background:transparent; border:1px solid var(--bd); border-radius:var(--r-xs);
+  color:var(--mu); font-family:var(--fn); font-size:var(--t-sm); font-weight:500;
+  cursor:pointer; white-space:nowrap;
+}
+.mv-toggle .mv-back:hover{ color:var(--tx); border-color:var(--bdl); }
+.mv-toggle .mv-back:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }

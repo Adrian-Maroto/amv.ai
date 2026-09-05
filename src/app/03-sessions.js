@@ -1352,14 +1352,42 @@ function _mountMobilePaneToggle(tab){
 
   const bar = document.createElement('div');
   bar.className = 'mv-toggle';
+  /* THE WAY BACK LIVES HERE, NOT IN A PANE.
+
+     Dev has always rendered an "All builds" button, and on a phone it was
+     inside `.dev-chat-pane` - which THIS toggle sets to `display:none` the
+     moment the output pane is showing. Opening a build calls
+     `_mobileShowOutput` straight away, so the button was hidden by the very
+     act of arriving, and a descendant of a hidden element cannot be rescued by
+     any rule. Lab was worse: it had no way back at all, on any screen.
+
+     This bar is inserted as the shell's first child and is therefore outside
+     both panes, which is exactly what makes it the right home for the one
+     control that must survive the switch. */
+  const backable = tab === 'dev' || tab === 'lab';
   bar.innerHTML =
+    (backable
+      ? '<button class="mv-back" data-mv="home" aria-label="Back to all builds">'
+        + '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+        + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + '<path d="M19 12H5M12 19l-7-7 7-7"/></svg>Builds</button>'
+      : '') +
     '<button class="on" data-mv="in">'+escH(spec.inLabel)+'</button>'+
     '<button data-mv="out">'+escH(spec.outLabel)+'</button>';
 
   // place it at the very top of the shell so it's always reachable
   shell.insertBefore(bar, shell.firstChild);
 
-  const btns = bar.querySelectorAll('button');
+  const back = bar.querySelector('[data-mv="home"]');
+  if(back) on(back, 'click', () => {
+    /* Same destination as the desktop button, so "Builds" means one place
+       whichever surface you left and whatever size the screen is. */
+    try{ _DEV.atHome = true; }catch(e){}
+    try{ _sessFlush(tab); }catch(e){}
+    try{ setBuildMode('code'); }catch(e){}
+  });
+
+  const btns = bar.querySelectorAll('button[data-mv="in"],button[data-mv="out"]');
   const show = which => {
     shell.classList.toggle('mv-show-out', which==='out');
     btns.forEach(b=>b.classList.toggle('on', b.dataset.mv===which));

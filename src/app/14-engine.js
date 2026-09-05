@@ -798,6 +798,7 @@ function renderLabView(){
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
     ${_buildEntryHeadHTML('lab','Drop in your code and AMV takes it from there',
       'Paste it, or upload files - any size, 10,000+ lines is fine. Then pick what you want done.')}
+    ${(typeof _buildHomeBtnHTML==='function' ? _buildHomeBtnHTML(!labBlank) : '')}
     ${_buildBarHTML('lab')}
 
     <!-- ENTRY STATE: paste on the left, upload on the right -->
@@ -870,6 +871,15 @@ function renderLabView(){
 
   const codeEl=$('lab-code'), langEl=$('lab-lang');
   langEl.value=_LAB.lang;
+  /* The way back, which Lab did not have on any screen size. Dev has rendered
+     "All builds" since AMV-D007; Lab was left with no route to the page that
+     lists your work, so the only exits were the sidebar or starting over.
+     Same destination as Dev's, so "Builds" means one place from either. */
+  on($('bld-home'),'click',()=>{
+    try{ _DEV.atHome = true; }catch(e){}
+    try{ _sessFlush('lab'); }catch(e){}
+    try{ setBuildMode('code'); }catch(e){}
+  });
   // ── Loading code into Lab: paste, upload, or drag & drop ──
   const labShell=$('lab-shell');
   const setBlank=()=>{ if(labShell) labShell.classList.toggle('lab-blank', !String(codeEl.value||'').trim()); };
