@@ -10,6 +10,107 @@ precisely what's missing. Green = ready to deploy.
 
 ---
 
+## READ THIS BEFORE YOU LAUNCH
+
+**Everything AMV can do is already built and wired.** Nothing below is a stub,
+a mock or a screen with no code behind it. Each line is a capability that runs
+the moment its key exists, and refuses honestly - by name, saying what is
+missing - until then.
+
+So the launch decision is not "what still needs building". It is **which of
+these you want switched on, and what each one costs you**. Section 2.0 is that
+list. Read it once, decide, and set only what you want.
+
+Three of them can take money from a customer and give them nothing back if
+they are only half configured. They are called out in their own tables and
+each is marked **REQUIRED NOW** on the readiness screen the moment its other
+half is set:
+
+1. **Stripe with no price ids.** Payments reads as on and every plan refuses at
+   checkout, because the price was never created.
+2. **Stripe with no webhook secret.** Money arrives and no plan is granted;
+   cancellations, refunds and chargebacks never revoke one.
+3. **PayPal with no webhook id.** The same, on the PayPal side - and a
+   subscription that can start and can never be cancelled.
+
+**And two things that are correct defaults right up until you launch:**
+
+- `PAYPAL_MODE` defaults to **sandbox**. PayPal checkouts complete against test
+  servers and no real money arrives. Set it to `live` when you are ready.
+- `ALLOWED_ORIGIN` defaults to `*`. Any site on the internet can call your API
+  from a browser. Pin it to your own domain.
+
+The go-live readiness screen (**Settings -> Platform**, needs your
+`ADMIN_TOKEN`) reads all of this from the running Worker and reports every one
+of these states. It is the same list as section 2.0, answered live for the
+deployment you actually have rather than the one this file describes. A gate
+stage fails if a secret the Worker reads is missing from that screen, so it
+cannot fall behind the code.
+
+---
+
+## 2.0 What each capability costs, and what it unlocks
+
+Ordered by whether AMV works without it. Nothing here needs to be set on day
+one except the two in the first table.
+
+### Cannot run without these
+
+| Capability | Set | Costs |
+|---|---|---|
+| The AI itself | `AMV_MODEL_KEY` | Per token. This is the main running cost and the one the daily ceiling below protects. |
+| Sign-in and sync | `JWT_SECRET` | Nothing. Any long random string you generate yourself. |
+| Storage | Bind `AMV_KV` | Free tier: 100k reads and 1k writes a day. |
+
+### Costs nothing but a few minutes
+
+| Capability | Set | Costs |
+|---|---|---|
+| Operator dashboard, kill switch, digest | `ADMIN_TOKEN` | Nothing - a random string. |
+| Owner notices and the weekly digest | `OWNER_EMAIL` | Nothing. |
+| Correct links in every email and invite | `APP_URL` | Nothing. |
+| Encrypted connected-account tokens | `CONNECT_KEY` | Nothing - a random 32+ char value. Without it AMV refuses to connect an account at all. |
+| Encrypted mailbox / school / bot credentials | `MAIL_CRED_KEY` | Nothing - the same. Those three connectors refuse without it. |
+| Race-free spend and usage limits | Bind `AMV_COUNTER` | A paid Workers plan (Durable Objects). Free until you take payments; **required** once you do. |
+| Guaranteed sync writes | Bind `DB` (D1) | Free tier available. |
+| API pinned to your own site | `ALLOWED_ORIGIN` | Nothing. Do this before launch. |
+
+### Costs money to a third party
+
+| Capability | Set | Costs |
+|---|---|---|
+| Email that reaches anyone | `EMAIL_API_KEY` **and** `RESET_EMAIL_FROM` | Resend has a free tier. **Both halves**: with only the key, the default sender delivers to the Resend account owner and NOBODY ELSE, so every other person's password reset goes nowhere. |
+| Card payments | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, the three `STRIPE_PRICE_*` | Stripe's per-transaction fee. No monthly fee. All five, or see the three traps above. |
+| Team seats | `STRIPE_PRICE_TEAM_SEAT` | Same. Without it Teams still works on Elite and Ultra. |
+| PayPal | `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET`, `PAYPAL_WEBHOOK_ID`, the three `PAYPAL_PLAN_*`, `PAYPAL_MODE=live` | PayPal's per-transaction fee. |
+| Text messages | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | Twilio: a number, monthly, plus per message. All three or nothing sends. |
+| Bot protection on sign-up | `TURNSTILE_SITE_KEY` **and** `TURNSTILE_SECRET` | Free (Cloudflare). Both halves or neither. |
+| Google sign-in and Gmail / Calendar / Drive | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` | Free to register. Google review is required before you can ask the public for sensitive scopes. |
+| Microsoft: Outlook mail and calendar | `MS_CLIENT_ID` + `MS_CLIENT_SECRET` | Free to register. |
+| GitHub: real repositories in a build | `GH_CLIENT_ID` + `GH_CLIENT_SECRET` | Free to register. |
+| Bank balances and transactions | `FINANCE_CLIENT_ID` + `FINANCE_SECRET` | **Paid and application-reviewed.** A bank-data provider (Plaid or similar) is not a key you can self-serve in an afternoon. Leave it off until you want this. |
+| Server-side PDFs and screenshots | Bind `BROWSER` | Cloudflare Browser Rendering, paid plan. Those two surfaces refuse honestly without it. |
+| Being paged when something breaks | `ALERT_WEBHOOK` | Free - a Slack or Discord incoming webhook. **Set this one even if you set nothing else here.** |
+| Errors reaching you with a stack | `SENTRY_DSN` | Sentry has a free tier. |
+| Which features are actually used | `POSTHOG_KEY` | PostHog has a free tier. Nothing is collected until you set it. |
+| An off-site copy of the audit trail | `AUDIT_WEBHOOK` | Depends where you point it. |
+| A human to escalate to | `SUPPORT_EMAIL` | Nothing. |
+
+### Knobs with working defaults - change only if you mean to
+
+| Knob | Default | What it changes |
+|---|---|---|
+| `GLOBAL_DAILY_USD_CAP` | `500` | The most AMV spends on model calls in a day, across every account, before it refuses. Your runaway-bill protection. |
+| `NONESSENTIAL_WRITE_CAP` | `150` | The daily write budget telemetry and the waitlist share, so they cannot starve sign-ups. |
+| `MODEL_API_URL` | built-in | Point at a proxy or a specific region. |
+| `MODEL_API_FALLBACK_URL` | none | A second endpoint tried when the primary cannot answer. |
+| `APP_ORIGIN` | none | Read only when `APP_URL` is unset. Set `APP_URL` and ignore this. |
+| `POSTHOG_HOST` | US host | For the EU host or a self-hosted instance. |
+| `FINANCE_API_URL` | production | Point at the provider's sandbox while testing. |
+| `CONNECT_KEY_PREV` | none | Set to the old key during a rotation only; remove it when everyone has reconnected. |
+
+---
+
 ## 0. One-time: a Cloudflare account, and a terminal that is logged into it
 
 Everything below runs against your own Cloudflare account. This step was missing

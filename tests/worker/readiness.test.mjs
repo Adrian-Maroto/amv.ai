@@ -402,5 +402,45 @@ section('Rows are grouped, and settings with a default are not shown as faults')
   ok(withVals.tuning.find(t => t.id === 'spendCap').set === true, 'while still reporting that it is set');
 }
 
+section('The checklist somebody reads before launching names every one of them');
+{
+  /* THE READINESS SCREEN NEEDS AN ADMIN TOKEN AND A DEPLOYED WORKER.
+
+     GO-LIVE.md needs neither, which makes it the thing somebody actually reads
+     while deciding what to switch on - and it was missing six capabilities
+     that were documented only in DEPLOY.md: error reporting, product
+     analytics, bank connections, browser rendering, and RESET_EMAIL_FROM,
+     which is the difference between password resets reaching everybody and
+     reaching only the owner.
+
+     An existing suite already requires each secret to appear in GO-LIVE.md OR
+     DEPLOY.md. That rule is about not losing a secret entirely. This one is
+     narrower and about a different failure: the file named "Go Live Checklist"
+     has to be complete on its own, because somebody reading it to decide
+     whether they are ready will not know to go and read the other file. */
+  const goLive = readFileSync(join(ROOT, 'GO-LIVE.md'), 'utf8');
+
+  const named = new Set();
+  for (const m of src.matchAll(/_has\(env,\s*'([A-Z][A-Z0-9_]+)'/g)) named.add(m[1]);
+  for (const m of src.matchAll(/(?:idEnv|secretEnv)\s*:\s*'([A-Z][A-Z0-9_]+)'/g)) named.add(m[1]);
+  const d = await get(bare());
+  for (const t of d.tuning || []) named.add(t.env);
+  /* Every name the readiness rows carry in their `how` line, which is where a
+     row states the command - so a capability added to the screen is picked up
+     here without anybody having to add it to a list twice. */
+  for (const i of d.items) for (const m of String(i.how).matchAll(/\b([A-Z][A-Z0-9_]{3,})\b/g)) named.add(m[1]);
+
+  ok(named.size >= 30, 'the scan found the capabilities at all', named.size);
+  const missing = [...named].filter(n => !goLive.includes(n)).sort();
+  ok(missing.length === 0,
+     'every capability on the readiness screen is also on the go-live checklist', missing);
+
+  /* And the checklist says what each COSTS, which is the question the readiness
+     screen cannot answer and the one that decides whether to switch it on. */
+  ok(/\|\s*Costs\s*\|/.test(goLive), 'the checklist has a cost column at all');
+  for (const phrase of ['PAYPAL_MODE', 'sandbox', 'ALLOWED_ORIGIN'])
+    ok(goLive.includes(phrase), `it warns about ${phrase}`, true);
+}
+
 report('readiness');
 done();
