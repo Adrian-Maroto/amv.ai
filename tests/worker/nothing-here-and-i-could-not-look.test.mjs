@@ -153,7 +153,27 @@ section('Every admin route is bounded, not just thirteen of the sixteen');
      only has to find the one that is not. */
   const env = mkEnv();
   const answers = [];
-  for (let i = 0; i < 90; i++) answers.push(await hitAdmin(env, '/v1/admin/stats', 'wrong-token-' + i, '5.5.5.5'));
+  /* THE CLOCK IS PINNED, BECAUSE THE CEILING IS PER MINUTE.
+
+     The limiter counts into `act:<key>:<Math.floor(Date.now()/60000)>` - a
+     wall-clock minute bucket, which is the right shape for a burst control. So
+     ninety guesses only run into the ceiling if they land in ONE bucket. On
+     this machine they take milliseconds and always do; on a loaded CI runner
+     the loop straddled a boundary, the count restarted half way through, and
+     neither half reached the limit - so the assertion said guessing is
+     unbounded when what happened is that the minute ticked over.
+
+     Freezing Date.now for the loop tests the actual property (ninety guesses
+     from one address hit a ceiling) instead of also testing whether the
+     machine was fast enough to finish inside a minute. Restored in a finally,
+     so a failure here cannot leave a frozen clock behind for the rest of the
+     file. */
+  const realNow = Date.now;
+  const frozen = realNow.call(Date);
+  try {
+    Date.now = () => frozen;
+    for (let i = 0; i < 90; i++) answers.push(await hitAdmin(env, '/v1/admin/stats', 'wrong-token-' + i, '5.5.5.5'));
+  } finally { Date.now = realNow; }
   const refusedForRate = answers.filter(a => a.status === 429).length;
   ok(refusedForRate > 0, 'guesses at the admin token run into a ceiling', refusedForRate);
   ok(answers.filter(a => a.status === 403).length > 0, 'while the first ones are simply forbidden', true);
