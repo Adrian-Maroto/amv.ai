@@ -13,14 +13,31 @@ const { page, errors } = app;
 const openPane = pane => page.evaluate(p => { S.settingsPane = p; renderSetPane(); }, pane);
 
 section('Both panes are reachable from Settings');
-/* THEY ARE SECTIONS NOW, NOT ROWS IN THE NAV.
+/* ONE IS A ROW AGAIN, AND THAT IS A REVERSAL, NOT A REGRESSION.
 
-   Settings went from thirteen panes to eight, because thirteen was "too much
-   very overwhelming". Spending limits moved inside Plan & usage - a limit on
-   money belongs with the money - and Family & linked accounts moved inside
-   Account. Neither was deleted, and this is the check that would have caught
-   it if one had been: they still render, still carry their own heading, and
-   still have the anchor a deep link to the retired id lands on. */
+   This block used to assert that NEITHER was a nav row. Settings had gone from
+   thirteen panes to eight because thirteen was "too much very overwhelming",
+   and both moved inside a host pane: Spending into Plan & usage, Family into
+   Account.
+
+   The owner has since asked for Spending back as its own section, by name, and
+   they are right about it. Measured where it was, its heading began 1798px down
+   a 3698px pane - so the screen that decides how much money AMV may spend on
+   somebody's behalf sat halfway down a page they opened to look at their plan,
+   and it is the screen people go looking for on purpose when they are worried.
+   The server's own refusal even reads "Turn it on in Settings, under Spending".
+
+   The simplification is not abandoned: Spending did not go back to being a
+   ninth item under an existing heading. Money is its own heading now and holds
+   the two directions of one subject - what you pay AMV, and what AMV may spend
+   for you - so no group holds more than three, which is the rule that made the
+   screen usable and is still enforced next door in
+   settings-has-groups-that-do-work.
+
+   Family is unchanged: still a section of Account, still not a row. The
+   assertions below are inverted for Spending only, deliberately, rather than
+   deleted - a check that stops distinguishing the two arrangements is a check
+   that would not notice either of them breaking. */
 const nav = await page.evaluate(async () => {
   const labels = [...document.querySelectorAll('.sn-btn')].map(b => b.dataset.sp);
   const inside = async (host, id) => {
@@ -28,17 +45,32 @@ const nav = await page.evaluate(async () => {
     await new Promise(r => setTimeout(r, 350));
     return !!document.getElementById('set-sec-' + id);
   };
+  const ownPane = async (id) => {
+    S.settingsPane = id; renderSettingsView();
+    await new Promise(r => setTimeout(r, 350));
+    const t = document.querySelector('#set-pane .set-title');
+    return { pane: S.settingsPane, title: t ? t.textContent : null };
+  };
   return {
     spendingRow: labels.includes('spending'), familyRow: labels.includes('family'),
     spendingHost: labels.includes('billing'), familyHost: labels.includes('account'),
-    spending: await inside('billing', 'spending'),
+    /* Not inside Plan & usage any more - the same three limit fields on two
+       screens is how somebody edits the wrong one and cannot find it again. */
+    spendingStillMerged: await inside('billing', 'spending'),
     family:   await inside('account', 'family'),
+    spendingOwn: await ownPane('spending'),
   };
 });
-ok(!nav.spendingRow && !nav.familyRow,
-   'neither is a nav row any more - that is the simplification', nav);
+ok(nav.spendingRow,
+   'Spending is a row of its own again, which is what the owner asked for', nav);
+ok(!nav.familyRow,
+   'Family is still a section rather than a row, so the simplification holds', nav);
 ok(nav.spendingHost && nav.familyHost, 'the panes they moved into are', nav);
-ok(nav.spending, 'Spending renders as a section of Plan & usage', nav.spending);
+ok(!nav.spendingStillMerged,
+   'and Spending is no longer ALSO a section of Plan & usage, so its limits live in one place',
+   nav.spendingStillMerged);
+ok(nav.spendingOwn.pane === 'spending' && nav.spendingOwn.title === 'Spending',
+   'opening it lands on the real Spending screen', nav.spendingOwn);
 ok(nav.family, 'and Family & linked accounts as a section of Account', nav.family);
 
 section('The consent dead end has an exit');
