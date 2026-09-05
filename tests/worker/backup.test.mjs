@@ -116,7 +116,14 @@ const res3 = await r.json();
 ok(!store.has('GLOBAL_KILL'), 'GLOBAL_KILL is REJECTED (outside backup scope)');
 ok(!store.has('randomkey'), 'an arbitrary key is rejected');
 ok(store.has('acct:evil@x.com'), 'a validly-prefixed account key is allowed');
-ok(res3.rejected === 2, 'the two out-of-scope keys are counted as rejected', res3.rejected);
+/* `refused`, not `rejected`. One counter used to hold two unrelated events:
+   a tampered snapshot correctly stopped from writing a control key, and real
+   data being silently dropped during a recovery. The first is common and
+   harmless, so the second hid behind it and the response said ok:true either
+   way. Two names now, and this is the harmless one. */
+ok(res3.refused === 2, 'the two out-of-scope keys are counted as refused', res3.refused);
+ok(res3.unrestorable === 0, 'and none of it is mistaken for data that went missing', res3.unrestorable);
+ok(res3.ok === true, 'so a snapshot whose only problem is a rejected control key still succeeds', res3.ok);
 
 /* ── A garbage / non-snapshot file is refused ────────────────────────────── */
 section('A non-snapshot file is refused');
@@ -131,7 +138,17 @@ r = await W.backupImport(new Request('https://api.amv.dev/admin/backup/import', 
   body: JSON.stringify({ snapshot: { _amv_backup: 1, data: { 'acct:huge@x.com': 'A'.repeat(3 * 1024 * 1024) } } })
 }), env);
 const bd = await r.json();
-ok(r.status === 200 && bd.restored === 0 && bd.rejected >= 1, 'an oversized value is rejected, not written', bd);
+/* Still not written - that is the property, and it is asserted on the store
+   rather than inferred from a count. What changed is the ANSWER: this used to
+   be a 200 with ok:true and the count buried in the body, which a recovery
+   script reads as success. A restore that could not write part of the snapshot
+   is a failed restore, because a partial restore somebody believes was total is
+   how a recovery quietly loses data. */
+ok(!store.has('acct:huge@x.com'), 'an oversized value is not written', store.has('acct:huge@x.com'));
+ok(r.status === 422 && bd.ok === false, 'and the restore reports that as a failure', { status: r.status, ok: bd.ok });
+ok(bd.restored === 0 && bd.unrestorable >= 1, 'counting it as unrestorable', bd);
+ok(Array.isArray(bd.lost) && bd.lost.includes('acct:huge@x.com'),
+   'and naming it, so somebody can go and look', JSON.stringify(bd.lost));
 
 /* ── Admin only ──────────────────────────────────────────────────────────── */
 section('Backup endpoints are admin-only');
