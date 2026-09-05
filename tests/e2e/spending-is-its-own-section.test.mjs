@@ -42,8 +42,10 @@ section('It is in the list, by name');
      exception on the line above and taking the rest of the section with it. */
   ok(!!v.sp && v.sp.text === 'Spending',
      'called Spending, which is what somebody would look for', v.sp && v.sp.text);
-  ok(!!v.sp && v.sp.bigEnough,
-     'and it is big enough to hit on a phone', v.sp && v.sp.h);
+  /* Its tap size is asserted in the phone section below, at phone width. The
+     40px floor is a phone rule, and measuring it on a 1280px desktop was
+     asserting the wrong thing about the wrong screen - the settings list is a
+     31px row at desktop and every other entry is too. */
   /* Next to Plan & usage, not at the far end. The two are the same subject
      from opposite directions and reading them together is the point. */
   ok(v.items.indexOf('spending') === v.items.indexOf('billing') + 1,
@@ -53,7 +55,13 @@ section('It is in the list, by name');
 section('Pressing it opens the real screen, not a placeholder');
 {
   const v = await page.evaluate(async () => {
-    document.querySelector('[data-sp="spending"]').click();
+    /* Guarded. Without the entry this threw a null-click and aborted the whole
+       suite after the section above had already named the fault - so the run
+       ended on a stack trace instead of a list of what is wrong, which is the
+       difference between a failure somebody can act on and one they have to
+       re-derive. */
+    const entry = document.querySelector('[data-sp="spending"]');
+    if (entry) entry.click();
     await new Promise(r => setTimeout(r, 600));
     const pane = document.getElementById('set-pane');
     const t = pane.innerText;
@@ -120,7 +128,8 @@ section('Money it cannot spend yet says so, rather than pretending');
 section('Accepting reveals the controls, and they are the real ones');
 {
   const v = await page.evaluate(async () => {
-    document.getElementById('mf-accept-terms').click();
+    const acc = document.getElementById('mf-accept-terms');
+    if (acc) acc.click();
     await new Promise(r => setTimeout(r, 500));
     const g = (id) => document.getElementById(id);
     return {
@@ -168,7 +177,12 @@ section('It works on a phone');
   await page.setViewportSize({ width: 390, height: 844 });
   const v = await page.evaluate(async () => {
     S.settingsPane = 'spending';
-    renderSetPane();
+    /* renderSettingsView, not renderSetPane: the picker button is part of the
+       settings SHELL and carries the name of the section you are on, so
+       redrawing only the pane leaves it showing the previous one. That is what
+       the product does when you change section, and asserting against the
+       other one was testing a state the product never reaches. */
+    renderSettingsView();
     await new Promise(r => setTimeout(r, 500));
     const pane = document.getElementById('set-pane');
     return {
@@ -184,9 +198,68 @@ section('It works on a phone');
         const cs = getComputedStyle(n);
         return cs.display === 'none' || cs.visibility === 'hidden';
       })(),
+      /* THE PHONE AFFORDANCE IS THE PICKER, NOT THE LIST.
+
+         Measured: at 390px every .sn-btn in the settings list renders 0px
+         tall - all nine of them, not just this one - because the list
+         collapses and `#set-picker` is what a phone shows instead. The first
+         version of this asserted the list button's height here and failed on
+         a screen that is working correctly, which would have made this suite
+         report a fault in the nav rather than in itself. */
+      pickerLabel: (() => {
+        const l = document.querySelector('#set-picker .set-picker-lbl');
+        return l ? l.textContent.trim() : null;
+      })(),
+      pickerH: (() => {
+        const b = document.getElementById('set-picker');
+        return b ? Math.round(b.getBoundingClientRect().height) : 0;
+      })(),
+      pickerBigEnough: (() => {
+        const b = document.getElementById('set-picker');
+        return !!b && !__under(b.getBoundingClientRect().height, 40);
+      })(),
     };
   });
   ok(!v.overflows, 'nothing overflows sideways at phone width', v.overflows);
+  ok(v.pickerLabel === 'Spending',
+     'the phone picker names the section you are on', v.pickerLabel);
+  ok(v.pickerBigEnough, 'and it is big enough to hit with a thumb', v.pickerH);
+
+  /* The rows only exist once the picker is opened, so this is its own step
+     rather than a field on the snapshot above. */
+  const p = await page.evaluate(async () => {
+    const pk = document.getElementById('set-picker');
+    if (pk) pk.click();
+    await new Promise(r => setTimeout(r, 400));
+    const rows = [...document.querySelectorAll('#ovr [data-setpick]')];
+    const mine = rows.find(r => /Spending/.test(r.textContent));
+    return {
+      rows: rows.map(r => r.textContent.trim()).slice(0, 12),
+      has: !!mine,
+      h: mine ? Math.round(mine.getBoundingClientRect().height) : 0,
+      bigEnough: !!mine && !__under(mine.getBoundingClientRect().height, 40),
+    };
+  });
+  ok(p.has, 'opening it offers Spending as somewhere to go', p.rows);
+  ok(p.bigEnough, 'and that row is big enough to hit too', p.h);
+
+  /* And choosing it actually goes there, on a phone, which is the whole
+     point of the picker existing. */
+  const went = await page.evaluate(async () => {
+    S.settingsPane = 'account'; renderSettingsView();
+    await new Promise(r => setTimeout(r, 300));
+    const pk2 = document.getElementById('set-picker');
+    if (pk2) pk2.click();
+    await new Promise(r => setTimeout(r, 300));
+    const row = [...document.querySelectorAll('#ovr [data-setpick]')]
+      .find(r => /Spending/.test(r.textContent));
+    if (row) row.click();
+    await new Promise(r => setTimeout(r, 500));
+    return { pane: S.settingsPane,
+             title: (document.querySelector('#set-pane .set-title') || {}).textContent };
+  });
+  ok(went.pane === 'spending', 'and picking it goes there on a phone', went.pane);
+  ok(went.title === 'Spending', 'landing on the real screen', went.title);
   ok(v.readable, 'and the copy is all there', v.readable);
   ok(!v.navHidden, 'and the way back to the other settings is still on screen', v.navHidden);
   await page.setViewportSize({ width: 1280, height: 900 });

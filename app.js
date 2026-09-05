@@ -22906,7 +22906,12 @@ const SET_MERGED_INTO = {
   language: 'appearance',
   invite: 'teamset',
   family: 'account',
-  spending: 'billing',
+  /* `spending` is NOT here any more. It is its own section, so a request for
+     it has to render it rather than being redirected to Billing and scrolled
+     to an anchor that no longer exists - which is exactly what happened when
+     it was added to the list above and left in this map: pressing Spending
+     opened Plan & usage and landed on "Usage". Promoting a merged pane is two
+     edits, and this is the second one. */
   investing: 'capabilities',
   api: 'integrations',
   projects: 'teamset',
@@ -22929,7 +22934,29 @@ const USER_SET_SECTIONS=[
   {group:'You'},
   {id:'account',label:'Account',icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
   {id:'privacy',label:'Privacy & security',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
+  /* MONEY IS ITS OWN HEADING, AND IT HOLDS THE TWO DIRECTIONS OF IT.
+
+     Spending used to be appended to the bottom of Plan & usage. Measured
+     there: its heading began 1798px down a 3698px pane, so the screen that
+     decides how much money AMV may spend on somebody's behalf sat halfway
+     down a page they opened to look at their plan. Something people go
+     looking for on purpose - and they go looking for this one when they are
+     worried - needs a name in the list.
+
+     Two questions were sharing one pane, and they are opposite directions of
+     the same subject. Plan & usage is what YOU pay AMV. Spending is what AMV
+     may spend FOR you. Under one heading they read as a pair; the first
+     attempt put Spending under "You" as a fourth item, and
+     settings-has-groups-that-do-work rightly failed it - that suite holds the
+     ceiling at three per group, which is the rule the whole Settings tidy-up
+     was for, and stretching it to fit one new pane is how a rule that made a
+     screen usable gets spent one item at a time.
+
+     Nothing about Plan & usage changes except that it now sits under a
+     heading. Same id, same label, same place in the order. */
+  {group:'Money'},
   {id:'billing',label:'Plan & usage',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
+  {id:'spending',label:'Spending',icon:'<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>'},
   {group:'What AMV can do'},
   {id:'capabilities',label:'Capabilities & skills',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
   {id:'integrations',label:'Connectors',icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
@@ -24287,7 +24314,10 @@ function _renderSetPaneInner(only, into){
        plan -> usage -> what you could move to -> how payments are protected. */
     const slot=$('bill-usage-slot');
     if(!only) _setAppendSection(pane, 'usage', slot);
-    if(!only) _setAppendSection(pane, 'spending', slot);
+    /* Spending was appended here and is its own section now - see SET_SECTIONS.
+       Appending it as well would put the same three limit fields on two
+       screens, and the one that is not the real one is the one somebody edits
+       and then cannot find again. */
     return;
   }
   // Projects lives in Settings now - render its grid inside the pane.
