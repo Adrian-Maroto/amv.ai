@@ -296,6 +296,65 @@ section('The deploy checklist does not name a secret nothing reads');
      'and the one secret that blocks launch is on the checklist', true);
 }
 
+section('Nor does it leave out a secret the Worker actually reads');
+{
+  /* THE OTHER DIRECTION, AS A RULE INSTEAD OF ONE SPOT-CHECK.
+
+     The section above is thorough about docs -> Worker, and the reverse was a
+     single hardcoded assertion about AMV_MODEL_KEY. So twelve secrets the
+     Worker reads accumulated with no mention in any checklist, and four of
+     them could not even be discovered by running preflight:
+
+       MS_CLIENT_ID / MS_CLIENT_SECRET   Microsoft connected accounts
+       GH_CLIENT_ID / GH_CLIENT_SECRET   GitHub connected accounts
+
+     Both integrations are built and work. Neither could be switched on by
+     anybody following the documentation, because no document named the
+     secrets - and preflight scanned only for `env.NAME`, while these are read
+     off the provider table as `env[p.secretEnv]`. Invisible to the tool whose
+     entire job is catching this.
+
+     CONNECT_KEY is the same shape and worse: without it, connecting is refused
+     outright, so the whole Connected Accounts feature stays dark.
+
+     A secret nothing reads costs money to obey (the section above). A secret
+     nothing DOCUMENTS costs a feature - it is built, paid for, shipped, and
+     silently off. This direction is the one that loses the work.
+
+     The rule uses preflight's KNOWN_SECRETS as the registry, because that list
+     is already the place this product decides what counts as a secret. */
+  /* Re-read rather than reaching for the names above: each section here is its
+     own block, so those bindings do not exist out here. */
+  const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+  const goLive = readFileSync(join(ROOT, 'GO-LIVE.md'), 'utf8');
+  const deploy = readFileSync(join(ROOT, 'DEPLOY.md'), 'utf8');
+  const pre = readFileSync(join(ROOT, 'preflight.mjs'), 'utf8');
+  const km = /const KNOWN_SECRETS = \[([\s\S]*?)\];/.exec(pre);
+  ok(!!km, 'preflight still declares the secret registry this reads', !!km);
+
+  const known = [...new Set([...km[1].matchAll(/'([A-Z][A-Z0-9_]{3,})'/g)].map(m => m[1]))];
+  ok(known.length > 20, 'and it is populated', known.length);
+
+  /* Read by the Worker at all - with a dot, off the provider table, or through
+     _has(). A name the Worker never mentions is not this rule's business; the
+     section above covers those. */
+  const readsIt = (n) => new RegExp('\\b' + n + '\\b').test(worker);
+  /* Bindings are declared in wrangler.toml, not set with `wrangler secret put`,
+     so a checklist of secrets is the wrong place to demand them. */
+  const BINDINGS = new Set(['BROWSER', 'AMV_KV', 'AMV_COUNTER']);
+
+  const undocumented = known.filter(n => !BINDINGS.has(n) && readsIt(n)
+                                      && !goLive.includes(n) && !deploy.includes(n));
+  ok(undocumented.length === 0,
+     'every secret the Worker reads is named somewhere an operator will read it',
+     undocumented.join(', '));
+
+  /* Named specifically, because these four are the ones that were lost and a
+     generic count would not say so if they went missing again. */
+  for (const n of ['CONNECT_KEY', 'MS_CLIENT_SECRET', 'GH_CLIENT_SECRET', 'STRIPE_PRICE_TEAM_SEAT'])
+    ok(goLive.includes(n) || deploy.includes(n), `${n} is on the checklist`, true);
+}
+
 section('The dependency audit is a script, so it happens more than once');
 {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));

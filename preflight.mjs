@@ -155,9 +155,32 @@ if (backend && toml) {
   // env.SOMETHING references in the Worker
   const used = new Set();
   for (const m of backend.matchAll(/env\.([A-Z][A-Z0-9_]+)/g)) used.add(m[1]);
+  /* AND THE ONES NOT READ WITH A DOT.
+
+     This scan was `env.NAME` only, so every secret the Worker reaches through a
+     lookup table was invisible to it - and being invisible, it could never be
+     reported as undocumented. Four real secrets sat behind that blind spot:
+     MS_CLIENT_ID / MS_CLIENT_SECRET and GH_CLIENT_ID / GH_CLIENT_SECRET, read
+     as `env[p.idEnv]` / `env[p.secretEnv]` off the OAuth provider table. They
+     are in no checklist and in no KNOWN_SECRETS list, so Microsoft and GitHub
+     connected accounts could not be switched on by anybody following the
+     documentation, and nothing anywhere said why.
+
+     It also made the GOOGLE_CLIENT_SECRET pairing warning fire on every single
+     run: the Worker does read it, at the token exchange, just not with a dot.
+     A permanent warning about a thing that is not wrong is the AMV-060 problem
+     again - it teaches people to skip the line that one day names something
+     real. */
+  for (const m of backend.matchAll(/(?:idEnv|secretEnv)\s*:\s*'([A-Z][A-Z0-9_]+)'/g)) used.add(m[1]);
+  for (const m of backend.matchAll(/_has\(env,\s*'([A-Z][A-Z0-9_]+)'/g)) used.add(m[1]);
 
   // things that come from bindings (not secrets) - these MUST be in wrangler.toml
-  const bindingLike = ['AMV_KV', 'AMV_COUNTER'];
+  /* BROWSER belongs here and not in KNOWN_SECRETS: it is a Cloudflare Browser
+     Rendering BINDING, declared (commented out) in wrangler.toml, not something
+     anybody sets with `wrangler secret put`. Listed as a secret it would be
+     told to appear on the deploy checklist, which would send somebody looking
+     for a value that does not exist. */
+  const bindingLike = ['AMV_KV', 'AMV_COUNTER', 'BROWSER'];
   for (const b of bindingLike) {
     if (used.has(b)) {
       if (new RegExp(`"${b}"`).test(toml)) ok(`${b} is used and declared`);
@@ -203,14 +226,34 @@ if (backend && toml) {
        checklist rather than being discovered by a customer. */
     'MAIL_CRED_KEY',        // encrypts stored mailbox/school/bot credentials; without it those connectors refuse
     'TURNSTILE_SITE_KEY',   // the public half of Turnstile; the secret half is above
-    'IMAGE_COST_USD',       // what an image really costs, so the ceilings price it correctly
-    'VIDEO_COST_USD'];      // the same for video
+
+    /* IMAGE_COST_USD and VIDEO_COST_USD used to sit here as spend knobs. Image
+       and video generation were removed end to end and the Worker reads neither
+       name - measured, zero occurrences. The comment at the top of this list
+       says exactly why the IMAGE_API_* and VIDEO_API_* names were taken out;
+       these two survived that pass because they were priced as money settings
+       rather than named as provider secrets, and a cleanup that goes by
+       category misses whatever was filed under a different one.
+
+       CONNECT_KEY is the one this list missing actually cost something. It
+       seals every connected-account credential with AES-GCM, and without it
+       connecting is refused outright - so the whole Connected Accounts feature
+       stays dark. Because it was not here, it came out as an "unknown env var"
+       warning on every single run instead of as a line on the deploy
+       checklist, which is the AMV-060 note above happening a second time. */
+    'MS_CLIENT_ID', 'MS_CLIENT_SECRET',   // Microsoft connected accounts (Outlook mail/calendar, OneDrive)
+    'GH_CLIENT_ID', 'GH_CLIENT_SECRET',   // GitHub connected accounts
+    'CONNECT_KEY',          // seals connected-account credentials; without it connecting is refused
+    'CONNECT_KEY_PREV',     // one retired key kept readable so a rotation drains itself
+    'NONESSENTIAL_WRITE_CAP'];  // daily write budget for telemetry and the waitlist
   const usedSecrets = [...used].filter(u => KNOWN_SECRETS.includes(u)).sort();
   const REQUIRED = ['AMV_MODEL_KEY', 'JWT_SECRET'];
   /* Secrets that are optional to HAVE, but not optional once their partner is
      set. A client id with no client secret is a half-configured integration
      that fails at the moment somebody tries to use it. */
   const PAIRED = [['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
+                  ['MS_CLIENT_ID', 'MS_CLIENT_SECRET'],
+                  ['GH_CLIENT_ID', 'GH_CLIENT_SECRET'],
                   ['FINANCE_CLIENT_ID', 'FINANCE_SECRET'],
                   ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']];
   for (const [a, b] of PAIRED) {

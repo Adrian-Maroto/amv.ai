@@ -160,8 +160,41 @@ moving in a direction somebody has to know about:
 | `GOOGLE_CLIENT_ID` | Google sign-in **and** the agent's real Gmail / Calendar / Drive actions. Served to every visitor's browser automatically via `/v1/public-config` - you do not paste it anywhere in the app. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` | SMS / phone verification |
 | `TURNSTILE_SITE_KEY` **and** `TURNSTILE_SECRET` | Cloudflare Turnstile bot protection on sign-up and sign-in. Set **both** or neither. The site key renders the widget (served to browsers via `/v1/public-config`); the secret checks its answer. With only the secret set, no browser can produce a token, so AMV skips the captcha rather than refusing every sign-up, and readiness reports it as **HALF SET UP**. |
-| `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET`, `PAYPAL_MODE`, `PAYPAL_PLAN_*`, `PAYPAL_WEBHOOK_ID` | PayPal as an alternative to Stripe |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET`, `PAYPAL_MODE`, `PAYPAL_WEBHOOK_ID` | PayPal as an alternative to Stripe |
+| `PAYPAL_PLAN_PRO`, `PAYPAL_PLAN_ELITE`, `PAYPAL_PLAN_ULTRA` | The PayPal plan id for each tier. Spelled out because this table used to say `PAYPAL_PLAN_*`, and a wildcard is not something you can type into `wrangler secret put`. Without them a PayPal subscriber's tier cannot be resolved. |
 | `APP_URL` | Your live domain - used for secure payment redirects |
+
+### Connected accounts - the secrets nothing else will tell you about
+
+Connecting somebody's Google, Microsoft or GitHub account needs two things: a
+key to seal what comes back, and an OAuth app per provider.
+
+| Secret | Unlocks |
+|---|---|
+| `CONNECT_KEY` | **Connected accounts at all.** Every credential AMV stores for somebody is sealed with AES-GCM under this key. Without it, connecting is refused outright with a message naming the missing secret - it does not store a token in the clear and call that degraded. Any long random value, 32+ characters. |
+| `CONNECT_KEY_PREV` | One retired key, kept readable so a rotation drains itself. Set it to the old `CONNECT_KEY` when you rotate; drop it once everyone has reconnected. |
+| `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` | Gmail, Calendar, Drive and read-only school work. Both halves, or the token exchange fails at the last step with everything up to the redirect working - the hardest misconfiguration to diagnose. |
+| `MS_CLIENT_ID` + `MS_CLIENT_SECRET` | Microsoft: Outlook mail and calendar, OneDrive |
+| `GH_CLIENT_ID` + `GH_CLIENT_SECRET` | GitHub |
+
+> **These four Microsoft and GitHub names appeared in no document until now,**
+> and `node preflight.mjs` could not warn about them either: it scanned the
+> Worker for `env.NAME` and these are read off a provider table as
+> `env[p.secretEnv]`, so they were invisible to the one tool whose job is to
+> catch exactly this. Both integrations were built, tested and shipped, and
+> could not be switched on by anybody following the instructions. Preflight
+> reads indirect lookups now, and a suite fails if a secret the Worker reads is
+> missing from this file.
+
+### Advanced - you will usually not need these
+| Secret | What it changes |
+|---|---|
+| `MODEL_API_URL` | Point AMV at a different model endpoint. Defaults to the built-in one. |
+| `MODEL_API_FALLBACK_URL` | Tried when the primary cannot answer. Unset means no fallback, which is a fine choice - it just means one endpoint. |
+| `ALLOWED_ORIGIN` | Lock the browser API to your own domain instead of `*`. Set this once your domain is final. |
+| `APP_ORIGIN` | Fallback for `APP_URL` when building links. Set `APP_URL` and you can ignore this. |
+| `AUDIT_WEBHOOK` | A second sink for the audit stream, for anomaly detection. Separate from `ALERT_WEBHOOK`, which is where alarms go. |
+| `STRIPE_PRICE_TEAM_SEAT` | The Stripe price id for a team seat. Without it, team seat billing has no price to charge. |
 
 ## 3. Deploy the Worker
 

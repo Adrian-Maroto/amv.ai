@@ -9197,3 +9197,56 @@ fail on any `window.` read of what is left. `var` is not flagged, because a
 top-level `var` genuinely does create a window property. Comments and strings
 are stripped first, or the eight warnings above would be reported as the defect
 they warn about.
+
+
+## 373. Two finished integrations that nobody could switch on
+
+The preflight warning said: "the Worker reads env vars not in the known list:
+NONESSENTIAL_WRITE_CAP, CONNECT_KEY, CONNECT_KEY_PREV". It had been saying that
+on every run. Pulling on it found four separate defects, each larger than the
+warning that led to it.
+
+**`CONNECT_KEY` was on no checklist.** It seals every connected-account
+credential with AES-GCM, and without it connecting is refused outright - the
+Worker is honest about that, which is right, but the refusal is the only place
+the secret is ever named. An owner following GO-LIVE.md would never set it and
+Connected Accounts would simply never work.
+
+**`MS_CLIENT_ID`, `MS_CLIENT_SECRET`, `GH_CLIENT_ID` and `GH_CLIENT_SECRET`
+appeared in no document AND could not be discovered by running the tool.**
+preflight built its list of used environment variables from one regex,
+`/env\.([A-Z][A-Z0-9_]+)/` - dotted access only. These four are read off the
+OAuth provider table as `env[p.idEnv]` and `env[p.secretEnv]`, so they were
+invisible to the one program whose entire job is catching this. Microsoft and
+GitHub connected accounts are built, tested and shipped, and could not be
+turned on by anybody following the instructions.
+
+The same blind spot made the `GOOGLE_CLIENT_SECRET` pairing warning fire on
+every run - the Worker does read it, just not with a dot - which is AMV-060
+happening a third time: a permanent warning about a thing that is not wrong
+teaches people to skip the line that one day names something real. Two of the
+three warnings on this checklist were noise, which is exactly why the third one
+went unexamined for so long.
+
+**Twelve secrets in total were read by the Worker and named in no deploy
+document**, `STRIPE_PRICE_TEAM_SEAT` and the three real `PAYPAL_PLAN_*` names
+among them - the checklist wrote the PayPal ones as a wildcard, and a wildcard
+is not something you can type into `wrangler secret put`.
+
+**And the suite that should have caught it was thorough in one direction only.**
+It checks that the docs never name a secret the Worker does not read - the
+LESSONS 349 defect, where obeying the checklist cost money. The reverse was a
+single hardcoded assertion about `AMV_MODEL_KEY`. So one direction had a rule
+and the other had an example, and twelve names accumulated behind the example.
+
+**A missing secret and a phantom secret are not the same bug and need separate
+rules. A phantom costs money to obey; a missing one costs the whole feature -
+built, paid for, shipped, and silently off, with nothing anywhere saying why.**
+The second is worse and had the weaker check.
+
+Two things generalise past this file. A registry that is scanned rather than
+declared is only as complete as the shape its scanner knows: the moment code
+reads configuration through a table, a regex over `env.NAME` stops being an
+inventory and becomes a sample. And a check with a direction should be asked
+what the other direction would cost - here, one side was a rule and the other
+an anecdote, and the anecdote side is where everything went.
