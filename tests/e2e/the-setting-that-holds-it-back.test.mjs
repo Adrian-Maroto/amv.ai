@@ -118,16 +118,36 @@ section('The three levels are three statements, not three words');
 
 section('Choosing one reaches the server');
 {
-  const r = await page.evaluate(async () => {
-    document.querySelector('.mc-lv-opt[data-darg="require"]').click();
-    await new Promise(x => setTimeout(x, 1000));
+  /* WAITED FOR, NOT SLEPT THROUGH.
+
+     This clicked and then slept a flat 1000ms before reading `aria-checked`.
+     The click makes a server round trip and the screen updates when it comes
+     back, so the sleep was a bet that the round trip fits in a second. Alone it
+     always does. Under the gate, with four suites sharing the machine, it does
+     not - and the read then sees the PREVIOUS selection, so the assertion says
+     the screen did not update when what actually happened is that the test
+     looked too early.
+
+     A fixed sleep in a test is a race with a number written on it. The
+     condition is what matters, so the condition is what is waited for, with a
+     bound generous enough that only a real failure reaches it. */
+  await page.evaluate(() => { document.querySelector('.mc-lv-opt[data-darg="require"]').click(); });
+  const settled = await page.waitForFunction(() => {
     const sec = document.getElementById('mc-ceiling');
-    return {
-      checked: [...sec.querySelectorAll('.mc-lv-opt')].filter(o => o.getAttribute('aria-checked') === 'true').map(o => o.dataset.darg),
-    };
-  });
+    if (!sec) return false;
+    const on = [...sec.querySelectorAll('.mc-lv-opt')]
+      .filter(o => o.getAttribute('aria-checked') === 'true').map(o => o.dataset.darg);
+    return on.length === 1 && on[0] === 'require';
+  }, null, { timeout: 15000 }).then(() => true, () => false);
   await L.settle();
-  ok(r.checked[0] === 'require', 'the screen shows the new setting', r.checked);
+  /* Read again for the message, so a failure reports what the screen actually
+     showed rather than only that the wait ran out. */
+  const r = await page.evaluate(() => {
+    const sec = document.getElementById('mc-ceiling');
+    return { checked: sec ? [...sec.querySelectorAll('.mc-lv-opt')]
+      .filter(o => o.getAttribute('aria-checked') === 'true').map(o => o.dataset.darg) : null };
+  });
+  ok(settled && r.checked[0] === 'require', 'the screen shows the new setting', r.checked);
   const d = await rec();
   ok(d.ceiling === 'require', 'and the SERVER holds it, which is where it is enforced', d.ceiling);
   ok(L.hit(/\/auto\/update/).length > 0, 'having really been sent', L.hit(/\/auto\/update/).length);
