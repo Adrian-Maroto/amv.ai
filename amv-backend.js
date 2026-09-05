@@ -5951,14 +5951,11 @@ async function stripeSubscribe(request, env){
   const body = await request.json().catch(() => ({}));
   const plan = String(body.plan || '').toLowerCase();
   const pm = String(body.payment_method || '');
-  const priceId = { pro:env.STRIPE_PRICE_PRO, elite:env.STRIPE_PRICE_ELITE, ultra:env.STRIPE_PRICE_ULTRA }[plan];
-  /* A plan whose Stripe price id was never set. From the outside that is not
-     an unknown plan - they picked it off AMV's own pricing page - it is a
-     plan this deployment cannot sell yet, and saying so is the difference
-     between somebody waiting for a fix and somebody thinking they broke it. */
-  if(!priceId)
-    return json({ error:'That plan cannot be bought on this deployment yet - its price has not been set up. Nothing has been charged.',
-                  code:'needs_service' }, 400);
+  /* The same question the hosted checkout asks, answered by the same function -
+     see _planUnsellable. This route used to carry its own copy of the wording,
+     which is how the other one came to disagree with it. */
+  const priceId = _stripePriceId(env, plan);
+  if(!priceId) return _planUnsellable(plan);
   if(!/^pm_/.test(pm)) return json({ error:'a valid payment method is required' }, 400);
 
   const sk = { 'Authorization':'Bearer ' + env.STRIPE_SECRET_KEY, 'Content-Type':'application/x-www-form-urlencoded' };
@@ -14999,6 +14996,42 @@ function _stripePriceId(env, plan) {
   };
   return map[plan] || null;
 }
+
+/* WHY A PLAN CANNOT BE BOUGHT, ANSWERED THE SAME WAY BY BOTH CHECKOUTS.
+
+   There are two live routes to buy the same thing: /v1/stripe/checkout hands
+   back a hosted Checkout URL, and /v1/subscribe takes a payment method inside
+   the app. Both ask "is there a price for this plan", both can be told no, and
+   they were answering it DIFFERENTLY - one said the price had not been set up
+   and that nothing was charged, the other said `unknown plan`.
+
+   `unknown plan` for pro, elite or ultra is the wrong answer to the customer's
+   face. They did not invent the plan, they clicked it on AMV's own pricing
+   page; what is missing is a secret on this deployment. The comment that used
+   to sit over that line said exactly this - that calling it an unknown plan
+   "would send them looking for a mistake they did not make" - and then the
+   code did it for the three plans that carry the revenue, handling only `team`
+   properly.
+
+   It is one function now, so the two routes cannot drift apart again, and it
+   keeps the distinction that matters: a plan AMV does not sell is a bad
+   request, and a plan AMV sells but this deployment has not priced is a
+   configuration gap that names the secret to set. */
+const SELLABLE_PLANS = new Set(['pro', 'elite', 'ultra', 'team']);
+const PLAN_PRICE_ENV = { pro: 'STRIPE_PRICE_PRO', elite: 'STRIPE_PRICE_ELITE',
+                         ultra: 'STRIPE_PRICE_ULTRA', team: 'STRIPE_PRICE_TEAM_SEAT' };
+function _planUnsellable(plan) {
+  const p = String(plan || '').toLowerCase();
+  if (!SELLABLE_PLANS.has(p)) return json({ error: 'unknown plan', code: 'unknown_plan' }, 400);
+  if (p === 'team')
+    return json({ error: 'Teams checkout is not switched on yet. Set STRIPE_PRICE_TEAM_SEAT to a per-seat recurring price and it starts working with no other change.',
+                  code: 'not_configured' }, 503);
+  /* 503, not 400. The request was fine; the deployment is not finished. A 400
+     tells the browser the customer sent something wrong, which is the same
+     untruth in a status code. */
+  return json({ error: 'That plan cannot be bought on this deployment yet - its price has not been set up. Nothing has been charged.',
+                code: 'not_configured', missing: PLAN_PRICE_ENV[p] }, 503);
+}
 /* Price id -> plan, skipping the ones that are not configured.
 
    The object-literal version of this had a hole that was invisible until a
@@ -16118,14 +16151,7 @@ async function stripeCheckout(request, env) {
   const body = await request.json().catch(() => ({}));
   const plan = body.plan;
   const price = _stripePriceId(env, plan);
-  if (!price) {
-    /* Named separately from "unknown plan" because they are different problems
-       with different fixes: one is a bad request, the other is a real plan that
-       has no price configured yet, and telling the customer "unknown plan" for
-       the second would send them looking for a mistake they did not make. */
-    if (plan === 'team') return json({ error: 'Teams checkout is not switched on yet. Set STRIPE_PRICE_TEAM_SEAT to a per-seat recurring price and it starts working with no other change.', code: 'not_configured' }, 503);
-    return json({ error: 'unknown plan' }, 400);
-  }
+  if (!price) return _planUnsellable(plan);
   /* Seats are only meaningful for the per-seat plan, and the server decides the
      number - a client that asks for 1 seat at the 3-seat minimum gets 3, and one
      that asks for a million gets the cap. */
@@ -19977,6 +20003,34 @@ async function _markActive(env, email){
    it bounded. This is what turns "you have 40 users" into "signups are up 3x
    week over week" - the number that actually tells you if it's working. ── */
 async function _recordGrowth(env, kind){
+  /* BEST-EFFORT ON FAILURE WAS NOT BEST-EFFORT ON BUDGET.
+
+     This has always been wrapped so a growth stat can never fail a sign-up.
+     What it was not doing is YIELDING: it wrote straight to KV, spending the
+     same daily allowance the account record needs. Measured on a real
+     sign-up, two of the five KV writes were analytics.
+
+     The ceiling above already sheds load in the right order and says so -
+     "telemetry and a waitlist are the two least important writes AMV makes".
+     A growth counter is telemetry too; it was simply added later and never
+     joined the list. Without this, the analytics can consume the budget that
+     sign-up needs, which is the one shape where telemetry breaks the thing it
+     exists to measure.
+
+     THE TRADE, STATED, BECAUSE IT IS NOT FREE. The check is a counter
+     operation. With AMV_COUNTER bound - the configuration the readiness screen
+     marks REQUIRED the moment money is involved - it goes to the Durable
+     Object and costs no KV write at all, so this is pure gain. Without it, the
+     counter falls back to KV and this spends one write to protect one write:
+     break-even while the budget is healthy, and a saving of every subsequent
+     growth write once it is not. That is the right way round, because the
+     whole point is what happens when the budget is gone.
+
+     This is the per-EVENT counter - one write on every sign-up, visit and
+     referral - which is what actually amplifies. The funnel above is once per
+     user per step, reads first, and is deliberately left alone: gating it
+     measured WORSE (9 writes to 11) for a write that mostly never happens. */
+  if(!await _nonEssentialWrite(env, 'a growth stat')) return;
   const day = todayKey();
   const key = `grow:${kind}:${day}`;
   try{
@@ -20012,6 +20066,14 @@ async function _funnelMark(env, email, step){
     if(!em || FUNNEL_STEPS.indexOf(step) < 0) return false;
     const k = `fstep:${em}:${step}`;
     if(await env.AMV_KV.get(k)) return false;            // already counted, ever
+    /* DELIBERATELY NOT BEHIND THE NON-ESSENTIAL CEILING, and the measurement
+       is why. Each step is marked once per user EVER and the line above reads
+       first, so an account costs at most four of these for its whole life -
+       it is not what amplifies writes. Putting it behind the ceiling cost one
+       counter op to protect one write that mostly does not happen, which on a
+       deployment with no Durable Object is a net LOSS: measured, sign-up went
+       from 9 writes to 11. The per-event counter below is the one that needed
+       it. */
     await env.AMV_KV.put(k, String(Date.now()), { expirationTtl: FUNNEL_TTL_S });
     await counter(env, `funnel:${step}`, { op: 'incr', amount: 1 });
     if(step !== 'signup') await _recordGrowth(env, step);

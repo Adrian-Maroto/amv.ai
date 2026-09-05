@@ -95,7 +95,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 11 : 13;
+const TOTAL = FAST ? 11 : 14;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -945,6 +945,24 @@ if (!FAST) step('The Worker runs in workerd, not just in a mock', () => {
   /* smoke-real.mjs exits 0 when it could not start the runtime, on purpose.
      Exit code alone cannot tell that apart from twenty-seven passing checks,
      so the note is read out of what it printed. */
+  const m = /^SKIP\s+(.*)$/m.exec(out);
+  return m ? 'SKIPPED: ' + m[1].trim() : '';
+});
+
+/* ── 12b. THE LOOP THAT EARNS THE MONEY, IN ORDER, ON THE REAL RUNTIME ──────
+
+   Every step of it had unit coverage against a hand-built `env`, and none of
+   it had ever been run in SEQUENCE, in one runtime, against one account - which
+   is the only arrangement that catches a step that works alone and does not
+   compose. The first run found one: /v1/stripe/checkout answered a real plan
+   with no configured price as `unknown plan`, blaming the customer for a
+   choice they made on AMV's own pricing page, while /v1/subscribe answered the
+   same condition correctly. Two live routes, two different answers, and the
+   comment over the wrong one described the right behaviour.
+
+   Same skip rule as the stage above, for the same reason. */
+if (!FAST) step('The revenue loop works end to end on the real runtime', () => {
+  const out = sh('node smoke-revenue.mjs');
   const m = /^SKIP\s+(.*)$/m.exec(out);
   return m ? 'SKIPPED: ' + m[1].trim() : '';
 });

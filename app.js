@@ -14284,11 +14284,23 @@ function _paySetupHTML(title, sub, btnId, btnLabel){
   '</div>';
 }
 /* Returns true when it handled the rejection, so the caller's toast is skipped.
-   Only `needs_service` - a deployment that is not set up - is handled here. A
-   card that was declined, a network that dropped, an account on hold: those ARE
-   failures, they are the person's business to retry, and they keep the toast. */
+   Only a deployment that is not set up is handled here. A card that was
+   declined, a network that dropped, an account on hold: those ARE failures,
+   they are the person's business to retry, and they keep the toast.
+
+   TWO CODES, BECAUSE THE SERVER HAS ALWAYS SENT TWO.
+
+   This tested `needs_service` alone. The Teams branch of checkout has been
+   answering `not_configured` the whole time - a real plan on the pricing page
+   whose per-seat price was never set - so that refusal fell straight past this
+   and out as a raw red toast, on the screen that takes money. Nobody noticed
+   because it needs a deployment with Stripe connected and no seat price, which
+   is exactly the state the day Teams is switched on.
+
+   Both mean the same thing to the person reading it: this deployment cannot
+   take the payment, nothing was charged, it is not your fault. */
 function _payNotConnected(err, host){
-  if(!err || err.code !== 'needs_service') return false;
+  if(!err || (err.code !== 'needs_service' && err.code !== 'not_configured')) return false;
   const body = host || $('pay-body');
   if(!body || !body.isConnected) return false;
   body.innerHTML = _paySetupHTML(
