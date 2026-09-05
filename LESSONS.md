@@ -9295,3 +9295,43 @@ subject was stale configuration. It found the tail of my own change the same way
 the storage-key suite did in LESSONS 370. `check:fast` was green throughout,
 because it skips the suites - which is what it is for, and why it is never the
 last thing run.
+
+
+## 375. Two throttles at opposite ends of the system, one sentence apart
+
+The gate went red on `the-refusal-reaches-the-person`: the quota case got
+"Rate limit reached. Slow down a moment." where it expected the countdown card.
+
+The obvious reading was the client throttle - AEGIS, which answers a too-fast
+send locally - and that had been dealt with in an earlier round, so the obvious
+reading was that the earlier fix had not held. It had. The message came from the
+SERVER, `amv-backend.js`, `code:'rate_limited'`, a 429. AEGIS's wording is
+"Slow down a moment **before sending again**." Two components at opposite ends
+of the system, one clause apart.
+
+The three `rate_block` lines in the transcript were the evidence, and they were
+sitting there the whole time. Reading them first would have cost nothing;
+assuming instead nearly produced a fix to the wrong layer.
+
+**When two subsystems can produce nearly the same sentence, the message is not
+evidence of which one produced it. Find the thing that only one of them writes.**
+
+The defect underneath is LESSONS 371 a third time. The chat route checks the
+per-minute rate limit at step 2 and the quota at step 3, so anything that spends
+the minute's requests preempts every later assertion. This file resets the two
+client-side throttles and the server's usage counters, and never the server's
+rate counter - so the retry case, which makes several attempts by design, spends
+the budget and the next case never reaches what it is asserting about. On a
+machine running four suites at once they all land in one minute; alone they
+drift across a boundary and it passes.
+
+**Three throttles guard that route and the suite knew about two.** Resetting
+state means resetting every fact the code consults, and "every" keeps turning
+out to be one larger than the list somebody had in mind.
+
+A note on how NOT to verify this. Running the same suite four times at once to
+reproduce the load proves nothing: `tests/run.mjs` takes a lock and three of the
+four refuse to start, correctly and with a clear message. Empty output and a
+non-zero exit is not a failing test. The parallel environment that matters is
+the gate, running different suites together, and that is the only run that can
+say whether this is fixed.

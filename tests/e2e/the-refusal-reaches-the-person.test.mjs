@@ -94,6 +94,30 @@ async function askInChat(question) {
      clearing one and not the other left the timing dependency in place while
      looking as though it had been dealt with. */
   await page.evaluate(() => { try { AEGIS._times = []; AEGIS._lastSend = 0; } catch (e) {} });
+  /* AND THE SERVER'S OWN BURST CONTROL, WHICH IS A THIRD THROTTLE.
+
+     The two above are the app protecting somebody from their own typing speed.
+     The server has its own, per email per minute, and it is checked at step 2
+     of the chat route - BEFORE the quota check at step 3. So once a section
+     has spent the minute's requests, every later section is refused with
+     `rate_limited` and never reaches the thing it is asserting about.
+
+     That is what turned the gate red: the retry case makes several attempts by
+     design, and on a machine running suites four at a time they all land in
+     one minute window, so the quota case read "Rate limit reached. Slow down a
+     moment." - the SERVER's wording - where it expected the countdown card.
+     Locally the sections drift across a minute boundary and it passes.
+
+     Note the two messages are nearly identical and come from opposite ends of
+     the system; the client says "Slow down a moment BEFORE SENDING AGAIN". It
+     is worth reading which one arrived before concluding anything, because the
+     first look at this said AEGIS and AEGIS had already been dealt with.
+
+     Cleared here rather than in the quota case because nothing in this file
+     asserts on the rate limit, and any section could be preempted by it. */
+  for (const k of [...env.AMV_KV._map.keys()]) {
+    if (/^ctr:rl:/.test(k)) await env.AMV_KV.delete(k);
+  }
   /* THE SEND USED TO BE ABLE TO TAKE THE WHOLE FILE DOWN WITH IT.
 
      This evaluate awaits 200ms inside the page before it sends. Anything that
