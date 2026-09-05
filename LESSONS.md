@@ -9394,3 +9394,37 @@ happened to be looking at.
 **Two halves of one recovery are one feature and have to be tested as one.**
 Testing each end against its own expectations is how both ends pass while the
 thing they exist to do together does not work.
+
+
+## 377. Renaming a field left an assertion that could never fail
+
+Splitting the restore's `rejected` counter into `refused` and `unrestorable`
+was the right change. Rolling it out was not: I fixed the two assertions the
+gate showed me, ran the gate, and it found another - at twenty minutes a
+round. The sweep I should have done first took one grep and found every site
+at once.
+
+**A rename in a response contract has to be swept for before the first gate
+run, not discovered by it.** The gate reports failures one suite at a time and
+costs twenty minutes an iteration; grep costs a second and reports all of them.
+Using the expensive tool to enumerate what the cheap tool can list is a habit
+that reads as thoroughness and is the opposite.
+
+The part worth keeping is what the sweep found that the gate never would have:
+
+    ok(!d.rejected, 'rejecting nothing from a snapshot it produced itself')
+
+That assertion still PASSED. `d.rejected` no longer exists, and `!undefined` is
+true no matter what the restore did - so a real check quietly became one that
+can never fail, and stayed green through every run. The gate cannot see this,
+because a vacuous assertion and a satisfied one look identical from outside.
+
+This is LESSONS 372 arriving through a different door. There it was a `window`
+read of a script binding; here it is a read of a field that was renamed. Both
+are a test that goes on passing while testing nothing, and both are invisible
+to every control except somebody going and looking.
+
+**When a field is renamed, the assertions that FAIL are the lucky ones.** They
+tell you where they are. The ones that silently start passing for free are the
+cost, and the only way to find them is to grep for the old name and read every
+hit - including the ones that are green.

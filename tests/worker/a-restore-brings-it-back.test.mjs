@@ -139,7 +139,13 @@ section('The snapshot is imported');
   const d = await r.json();
   ok(r.status === 200, 'the import runs', r.status);
   ok(d.restored > 5, 'and writes the deployment back', d.restored);
-  ok(!d.rejected, 'rejecting nothing from a snapshot it produced itself', d.rejected);
+  /* Both counters, named. `d.rejected` no longer exists, so this assertion had
+     become one that could never fail - `!undefined` is true whatever the
+     restore did. The field split into `refused` (a control key correctly kept
+     out) and `unrestorable` (real data dropped), and a snapshot this export
+     produced itself must have neither. */
+  ok(d.refused === 0, 'refusing nothing from a snapshot it produced itself', d.refused);
+  ok(d.unrestorable === 0, 'and losing nothing from it either', d.unrestorable);
 }
 
 section('And the customers are back - not the data, the CUSTOMERS');
@@ -206,7 +212,12 @@ section('A tampered snapshot cannot switch the product off');
   const r = await admin('/admin/backup/import', { snapshot: evil, mode: 'merge' });
   const d = await r.json();
   ok(r.status === 200, 'the import completes', r.status);
-  ok(d.rejected >= 2, 'having refused the keys outside the backup prefixes', d);
+  /* A tampered snapshot being stopped is not a failed restore: every record
+     this file was entitled to write, it wrote. That is why refusing a control
+     key still answers 200, while a record that could not be written at all
+     answers 422 - the two used to share one counter and one status. */
+  ok(d.refused >= 2, 'having refused the keys outside the backup prefixes', d);
+  ok(d.unrestorable === 0, 'and none of the legitimate records went missing', d);
   ok(await env.AMV_KV.get('GLOBAL_KILL') === null,
      'the platform is not switched off by a snapshot', await env.AMV_KV.get('GLOBAL_KILL'));
   ok(await env.AMV_KV.get('ADMIN_TOKEN') === null, 'and no admin token is planted', true);
