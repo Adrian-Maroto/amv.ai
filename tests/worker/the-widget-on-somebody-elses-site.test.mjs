@@ -21,6 +21,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withFrozenClock } from '../lib/clock.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -177,10 +178,12 @@ section('One abusive visitor cannot drain the widget');
   const env = mkEnv();
   await seed(env);
   let refused = 0;
-  for (let i = 0; i < 25; i++) {
-    const r = await visit(env, { ip: '66.66.66.66' });
-    if (r.status === 429) refused++;
-  }
+  await withFrozenClock(async () => {
+    for (let i = 0; i < 25; i++) {
+      const r = await visit(env, { ip: '66.66.66.66' });
+      if (r.status === 429) refused++;
+    }
+  });
   ok(refused > 0, 'a burst from one address is throttled', refused);
 }
 

@@ -21,6 +21,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withFrozenClock } from '../lib/clock.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -113,10 +114,12 @@ section('It is bounded, because reaching a human is worth abusing');
 {
   const env = mkEnv({});
   let refused = 0;
-  for (let i = 0; i < 12; i++) {
-    const r = await W.supportSubmit(req({ kind: 'bug', text: 'spam number ' + i }), env);
-    if (r.status === 429) refused++;
-  }
+  await withFrozenClock(async () => {
+    for (let i = 0; i < 12; i++) {
+      const r = await W.supportSubmit(req({ kind: 'bug', text: 'spam number ' + i }), env);
+      if (r.status === 429) refused++;
+    }
+  });
   ok(refused > 0, 'a flood from one account is throttled', refused);
   const rec = await W.DB.get(env, 'support', 'a@x.com');
   ok(rec.tickets.length <= 20, 'and one account cannot grow without limit', rec.tickets.length);

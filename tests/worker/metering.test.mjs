@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withFrozenClock } from '../lib/clock.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -182,12 +183,14 @@ await setPlan('burner@test.com', 'free');
 
 const freeDay = W.PLAN_LIMITS.free.dayTokens;   // 50,000
 let allowed = 0, blocked = 0, lastCode = null;
-for (let i = 0; i < 10; i++) {
-  const rr = await W.aiProxy(msg(basePayload()), env, ctx);
-  if (rr.status === 429) { blocked++; lastCode = (await rr.json()).code; }
-  else if (rr.status !== 200) { /* unexpected */ }
-  else { allowed++; await settle(); }
-}
+await withFrozenClock(async () => {
+  for (let i = 0; i < 10; i++) {
+    const rr = await W.aiProxy(msg(basePayload()), env, ctx);
+    if (rr.status === 429) { blocked++; lastCode = (await rr.json()).code; }
+    else if (rr.status !== 200) { /* unexpected */ }
+    else { allowed++; await settle(); }
+  }
+});
 ok(blocked > 0, 'the daily cap actually blocks further calls', { allowed, blocked });
 ok(lastCode === 'quota_day' || lastCode === 'rate_limited',
    'and it says why (quota_day)', lastCode);

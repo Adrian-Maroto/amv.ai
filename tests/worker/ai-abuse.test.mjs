@@ -12,6 +12,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withFrozenClock } from '../lib/clock.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -45,7 +46,9 @@ section('AMV-022: public widget throttles a single visitor');
   globalThis.fetch = async () => ({ ok: true, status: 200, body: makeBody(), json: async () => ({}), headers: { get: () => null } });
   const wreq = () => new Request('https://api/v1/widget/chat', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'https://site.example', 'CF-Connecting-IP': '9.9.9.9' }, body: JSON.stringify({ key: 'wk1', messages: [{ role: 'user', content: 'hi' }] }) });
   let throttled = 0, ok200 = 0;
-  for (let i = 0; i < 20; i++) { const r = await W.widgetChat(wreq(), env, ctx); if (r.status === 429) throttled++; else ok200++; }
+  await withFrozenClock(async () => {
+    for (let i = 0; i < 20; i++) { const r = await W.widgetChat(wreq(), env, ctx); if (r.status === 429) throttled++; else ok200++; }
+  });
   globalThis.fetch = realFetch;
   ok(throttled > 0, 'a burst from one visitor gets throttled (429)', { throttled, ok200 });
   ok(ok200 <= 15, 'no more than the per-minute visitor allowance gets through', ok200);

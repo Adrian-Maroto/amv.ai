@@ -23,6 +23,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withFrozenClock } from '../lib/clock.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -161,7 +162,9 @@ section('No cap configured still means no cap');
      every request, which is the obvious way to get this wrong. */
   reset(); await setWidget({ dailyMsgCap: 0 });
   const codes = [];
-  for (let i = 0; i < 12; i++) codes.push((await hit()).status);
+  await withFrozenClock(async () => {
+    for (let i = 0; i < 12; i++) codes.push((await hit()).status);
+  });
   ok(codes.every(c => c === 200), 'twelve messages with no ceiling set', codes.filter(c => c !== 200));
 }
 

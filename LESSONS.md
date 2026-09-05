@@ -9464,3 +9464,34 @@ thirteen times.
 machine.** Sometimes the bet is fine. It stops being fine the moment four
 suites share a box, and the failure it produces always names the product rather
 than the wager.
+
+
+## 379. Three of the thirteen were never about the clock
+
+Finishing the sweep from 378 meant reading the remaining eight suites rather
+than wrapping them, and three did not belong in the set at all:
+
+- `team-collab` asserts a SIZE ceiling - 413 and `team_full` when the shared
+  record stops growing. No window, no clock.
+- `the-number-you-replaced-is-not-your-number` asserts that forty codes are
+  forty DIFFERENT codes. It loops forty times because it needs forty samples,
+  not because it is filling a bucket.
+- `nothing-here-and-i-could-not-look` and `the-door-does-not-say-who-lives-here`
+  were already pinned.
+
+They matched the grep - a loop, an assertion about a refusal - and matched
+nothing about the actual defect. **A pattern that finds candidates is not a
+pattern that finds instances**, and the difference is only visible by reading
+them. Wrapping all thirteen would have "fixed" three tests that were never
+broken, and left a frozen clock in a suite where time may later need to move.
+
+One of the five that did need it is worth naming. `widget-caps-are-atomic`
+asserts that twelve messages all return 200 when no ceiling is set - so
+freezing makes it STRICTER, concentrating all twelve into one window instead of
+letting them drift across two. It passed, which is the answer worth having: the
+no-ceiling path really does allow twelve in a single minute, rather than having
+been passing because the loop spread them out.
+
+**Making a test deterministic can only tell you something if you are willing
+for it to fail.** A freeze that is only applied where it is guaranteed safe
+tests nothing new.
