@@ -10903,3 +10903,42 @@ html.fs-scaled{
   --t-3xl:  calc(2.125rem   * var(--fs-s));
 }
 html{ -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+
+/* ── LAYER A154 · the Build home could not be scrolled on a phone ────────────
+
+   Reported from an iPhone: the Build screen was cut off and would not scroll.
+   Measured at 390x620 - a real phone's usable height once Safari's bars are
+   accounted for - `.dev-chat-pane` held 563px of content in a 472px box, and
+   `#dev-shell` above it is `overflow:hidden`, so 91px was simply unreachable.
+
+   The mechanism is the centring, not the height. `.dev-shell.dev-blank
+   .dev-chat-pane` sets `justify-content:center`, and a flex column that
+   centres content taller than itself pushes the overflow out of BOTH ends.
+   That is why the screenshot is clipped at the top as well as the bottom: the
+   mode picker's first row is above the box, and no amount of scrolling reaches
+   it, because scrollTop 0 is already past it. Centring is right when the
+   content fits and is a trap the moment it does not.
+
+   `safe center` is the property that exists for exactly this: centre while
+   there is room, fall back to flex-start when there is not, so the overflow
+   goes one way and stays reachable. The plain `center` before it is the
+   fallback for engines that do not know `safe`, which is why both are here and
+   in that order.
+
+   On a desktop viewport none of this shows, which is why it survived: 844px of
+   emulated height fits the content, and only the real device is short enough. */
+.dev-shell.dev-blank .dev-chat-pane{
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+  justify-content:center;
+  justify-content:safe center;
+}
+/* The working state scrolls too - a long turn plus the composer overflows the
+   same box for the same reason, and this pane is the only thing between them
+   and the shell that clips. */
+.dev-shell:not(.dev-blank) .dev-chat-pane{
+  overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain;
+}

@@ -7734,6 +7734,18 @@ html.fs-scaled{
 --t-3xl:  calc(2.125rem   * var(--fs-s));
 }
 html{ -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+.dev-shell.dev-blank .dev-chat-pane{
+overflow-y:auto;
+-webkit-overflow-scrolling:touch;
+overscroll-behavior:contain;
+justify-content:center;
+justify-content:safe center;
+}
+.dev-shell:not(.dev-blank) .dev-chat-pane{
+overflow-y:auto;
+-webkit-overflow-scrolling:touch;
+overscroll-behavior:contain;
+}
 </style>
 <!-- BUILD:CSS:END -->
 <script>
