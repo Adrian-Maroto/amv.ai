@@ -60,6 +60,11 @@ const backState = () => page.evaluate(() => {
     found: true,
     visible: cs.display !== 'none' && cs.visibility !== 'hidden' && b.width > 0 && b.height > 0,
     height: Math.round(b.height),
+    /* Measured with the harness comparator rather than by rounding here.
+       Rounding first turns 39.6 into 40 and calls it a pass; __under is the
+       one instrument every other suite uses for a rendered box, and
+       every-page-can-measure-itself exists to keep it that way. */
+    bigEnough: !__under(b.height, 40),
     paneDisplay: pane ? getComputedStyle(pane).display : null,
   };
 });
@@ -74,7 +79,7 @@ section('Inside a build on a phone, the way back is on screen');
      'the pane that USED to hold the only back button is hidden - the original fault', b.paneDisplay);
   ok(b.found, 'and there is still a way back, because it is not in that pane', b);
   ok(b.visible, 'it is actually visible', b);
-  ok(b.height >= 40, 'and big enough to hit with a thumb', b.height);
+  ok(b.bigEnough, 'and big enough to hit with a thumb', b.height);
 }
 
 section('Pressing it lands on the page that lists your builds');
