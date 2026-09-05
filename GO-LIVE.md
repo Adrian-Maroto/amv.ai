@@ -10,6 +10,58 @@ precisely what's missing. Green = ready to deploy.
 
 ---
 
+## YOUR LIST - the commands that stand between AMV and taking money
+
+Everything below in this file explains WHY. This is the WHAT, in order, and it
+is short. Run each from this folder.
+
+**Before anybody can pay you** - four commands. Payments already show as "on"
+with just `STRIPE_SECRET_KEY` set, and every plan still refuses at checkout
+without these, because a price object is what Stripe actually charges against.
+Create one recurring price per plan in the Stripe dashboard, then:
+
+```bash
+npx wrangler secret put STRIPE_PRICE_PRO      # the Pro monthly price id (price_...)
+npx wrangler secret put STRIPE_PRICE_ELITE    # the Elite monthly price id
+npx wrangler secret put STRIPE_PRICE_ULTRA    # the Ultra monthly price id
+npx wrangler secret put STRIPE_WEBHOOK_SECRET # from Stripe -> Developers -> Webhooks
+```
+
+The webhook secret is the one that is BLOCKING once payments are on: nothing
+else grants a plan when somebody pays, and nothing else revokes one when they
+cancel, are refunded, or charge back.
+
+**Before PayPal takes real money** - it defaults to SANDBOX, which means
+checkouts complete against PayPal's test servers and no money arrives. Only do
+this once `PAYPAL_WEBHOOK_ID` is set, or a subscription can start that nothing
+can ever cancel:
+
+```bash
+npx wrangler secret put PAYPAL_MODE           # value: live
+```
+
+**Before you launch at all** - your API currently accepts browser calls from
+any site on the internet, which is the right default for a deployment with no
+front end and the wrong one for a launched product:
+
+```bash
+npx wrangler secret put ALLOWED_ORIGIN        # value: https://amv.homes
+```
+
+**Then redeploy so the new secrets are in effect:**
+
+```bash
+npx wrangler deploy
+```
+
+**How to check you got it right:** open AMV, go to **Settings -> Money ->
+Plan & usage**, then **Settings -> Platform** and paste your `ADMIN_TOKEN`. The
+readiness screen reads your live Worker and reports every one of these. It says
+REQUIRED NOW next to anything that is half-configured in a way that can take a
+customer's money and give them nothing.
+
+---
+
 ## READ THIS BEFORE YOU LAUNCH
 
 **Everything AMV can do is already built and wired.** Nothing below is a stub,

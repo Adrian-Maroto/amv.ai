@@ -95,7 +95,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 11 : 14;
+const TOTAL = FAST ? 12 : 15;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -755,6 +755,70 @@ step('Every secret the Worker reads has a row on the readiness screen', () => {
     && !new RegExp('\\b' + i + '\\s*:').test(grouped));
   if (ungrouped.length)
     throw new Error(`readiness row(s) with no group, so they render under "Other": ${ungrouped.join(', ')}`);
+});
+
+/* ── 7c. A REMOVED FEATURE STAYS REMOVED IN EVERY LANGUAGE ──────────────────
+
+   Image and video generation were taken out of AMV end to end, and the English
+   copy was cleaned up when they went. The TRANSLATIONS were not. The language
+   setting told every Spanish, French, German, Portuguese, Chinese, Japanese
+   and Arabic speaker that their choice would apply to "chat replies, images,
+   video and 3D models" - promising two capabilities the product does not have,
+   to exactly the people least able to check the English.
+
+   It survived because a grep for the English words cannot see them, and a grep
+   for the foreign words cannot see them either: this file stores non-ASCII as
+   \uXXXX escapes, so a search for the literal characters matches nothing. That
+   is not a hypothetical - it is how the first fix in this session appeared to
+   pass while three languages were still wrong. The escapes are decoded here
+   before anything is matched, for that exact reason. */
+step('No translated string promises a feature AMV removed', () => {
+  /* COMMENTS STRIPPED FIRST, and this repo already has a suite named after
+     why: a check that reads prose as code reports a correct repair as the
+     defect it repaired. The comment above the dictionary EXPLAINS that image
+     and video were removed, and the first run of this stage flagged that
+     sentence as a promise to restore them. Strings are kept, because the
+     strings are the thing being checked. */
+  const raw = codeOnly(readFileSync(R('src/app/04-i18n.js'), 'utf8'));
+  /* Decoded, or this check is the same blind grep that missed it. */
+  const dec = raw.replace(/\\u([0-9a-fA-F]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
+
+  /* NEGATIVE CONTROL: if the decode silently stops working, every pattern
+     below matches nothing and this passes on an empty read. */
+  if (!/[^\x00-\x7F]/.test(dec))
+    throw new Error('the \\u decode produced no non-ASCII at all, so this stage checked nothing - '
+      + 'the scanner is broken, not the copy.');
+
+  /* The words for "image" and "video" in the languages AMV ships, and the
+     English. Matched only where the sentence is about what AMV GENERATES -
+     reading an uploaded image is a real capability and must not be flagged. */
+  const WORDS = ['images', 'imágenes', 'imagens', 'Bilder', '图像', '图片', '画像',
+                 'изображения', 'الصور', 'video', 'vídeo', 'vidéo', 'vidéos',
+                 '视频', '動画', 'видео', 'الفيديو'];
+  const GENERATES = /genera|génér|generier|生成|ينشئ/gi;
+
+  /* PROXIMITY, NOT THE LINE. The first version of this matched per line and
+     reported "Remove photo" -> the Arabic for "remove the photo" - because the
+     whole translation dictionary is ONE 10,000-character line, so a single
+     "generates" anywhere on it made every image word on it an offender. A
+     check that reports a correct label as a broken promise is one somebody
+     switches off. The words have to be in the same SENTENCE to mean anything,
+     so the window is 120 characters. */
+  const offenders = [];
+  dec.split('\n').forEach((line, i) => {
+    for (const m of line.matchAll(GENERATES)) {
+      const near = line.slice(Math.max(0, m.index - 120), m.index + 120);
+      const hit = WORDS.filter(w => near.includes(w));
+      if (hit.length) {
+        offenders.push(`  line ${i + 1}: "${near.trim().slice(0, 70)}" promises ${[...new Set(hit)].join(', ')}`);
+        break;
+      }
+    }
+  });
+  if (offenders.length)
+    throw new Error('translated copy still promises image or video generation, which AMV removed:\n'
+      + offenders.join('\n')
+      + '\n  Fix the translation, not just the English - a speaker of that language sees only this.');
 });
 
 step('No guard names a function that does not exist', () => {

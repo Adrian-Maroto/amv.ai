@@ -3020,7 +3020,19 @@ function renderDashboard(){
         '</div>':'')+ 
       (isAdmin()?'<div class="ss2"><h3>Platform Status</h3>'+
         '<div class="br2"><span style="color:var(--mu)">AI Engine</span><span style="color:'+(_aiBackendReady()?'var(--green)':'var(--red)')+';font-size:var(--t-sm);font-weight:500">'+(_aiBackendReady()?'✓ Online':'⚠ Backend required')+'</span></div>'+
-        '<div class="br2"><span style="color:var(--mu)">Video</span><span style="color:'+(S.rl?'var(--green)':'var(--dim)')+';font-size:var(--t-sm)">'+(S.rl?'✓ Connected':'Not configured')+'</span></div>'+
+        /* THE VIDEO ROW IS GONE, AND IT WAS TWO FAULTS IN ONE LINE.
+
+           Video generation was removed from AMV end to end, and this status row
+           survived the removal - so the owner's own dashboard carried a
+           permanent line for a capability the product does not have, directly
+           under the AI engine, which is the one place a status panel must be
+           trustworthy.
+
+           It was also unable to say anything else. The row read `S.rl`, and
+           `S.rl` is assigned NOWHERE in the bundle - measured, zero writes - so
+           it was always undefined, always falsy, always "Not configured", in
+           grey, for ever. A status that cannot change is not a status; it is a
+           label pretending to be one. */
         (isAdmin()&&!_aiBackendReady()?'<button class="btn bs" data-gs="apikeys" style="margin-top:10px;font-size:var(--t-sm)">Connect backend</button>':'')+
       '</div>':'')+ 
     '</div></div>';
