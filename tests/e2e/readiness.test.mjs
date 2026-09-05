@@ -19,12 +19,22 @@ await page.evaluate(() => {
 const REPORT = {
   ok: true, checkedAt: Date.now(),
   items: [
-    { id: 'ai', name: 'AI engine', blocking: true, on: false,
+    { id: 'ai', name: 'AI engine', blocking: true, on: false, group: 'Core',
       turnsOn: 'Every answer, agent, build, document and scheduled task.', how: 'wrangler secret put AMV_MODEL_KEY' },
-    { id: 'auth', name: 'Accounts and sessions', blocking: true, on: true,
+    { id: 'auth', name: 'Accounts and sessions', blocking: true, on: true, group: 'Core',
       turnsOn: 'Sign-in, sync and every authenticated route.', how: 'wrangler secret put JWT_SECRET' },
-    { id: 'email', name: 'Email delivery', blocking: false, on: false,
+    { id: 'email', name: 'Email delivery', blocking: false, on: false, group: 'Reaching people',
       turnsOn: 'Password resets, the weekly digest, and automation results reaching an inbox.', how: 'wrangler secret put EMAIL_API_KEY' },
+    { id: 'stripePrices', name: 'Plan prices (Stripe)', blocking: false, on: false, group: 'Taking money',
+      turnsOn: 'Buying Pro, Elite and Ultra. Without the price id that plan cannot be sold.',
+      how: 'wrangler secret put STRIPE_PRICE_PRO' },
+  ],
+  groupOrder: ['Core', 'Taking money', 'Reaching people', 'Signing in', 'Connected accounts', 'Watching it run', 'Other'],
+  tuning: [
+    { id: 'spendCap', name: 'Daily spend ceiling', env: 'GLOBAL_DAILY_USD_CAP', set: false,
+      effect: 'The most AMV will spend on model calls in one day before it starts refusing. Defaults to $500.' },
+    { id: 'writeCap', name: 'Non-essential write budget', env: 'NONESSENTIAL_WRITE_CAP', set: true,
+      effect: 'How many writes a day telemetry and the waitlist may spend before they are dropped.' },
   ],
   storage: [
     { id: 'kv', name: 'KV namespace', blocking: true, on: true,
@@ -32,7 +42,7 @@ const REPORT = {
     { id: 'd1', name: 'D1 database', blocking: false, on: false,
       turnsOn: 'Guaranteed sync writes: without it two devices saving at the same instant cannot be arbitrated.', how: 'Bind DB in wrangler.toml' },
   ],
-  summary: { on: 2, total: 5, blockingMissing: 1, verdict: 'Not ready: AI engine still missing.' },
+  summary: { on: 2, total: 6, blockingMissing: 1, verdict: 'Not ready: AI engine still missing.' },
 };
 
 const wire = (opts = {}) => page.evaluate(cfg => {
@@ -64,7 +74,7 @@ section('It reads the real configuration from the server');
   await page.waitForFunction(() => /AI engine/.test(document.getElementById('golive-body').textContent), { timeout: 15000 });
   const t = await golive();
   ok(/Not ready: AI engine still missing/.test(t), 'the verdict is the first thing said', t.slice(0, 60));
-  ok(/2 of 5 configured/.test(t), 'with a real count', t);
+  ok(/2 of 6 configured/.test(t), 'with a real count', t);
   ok(/Every answer, agent, build/.test(t), 'each line says what it turns on');
   ok(/wrangler secret put AMV_MODEL_KEY/.test(t), 'and the exact command for the ones that are off');
 
@@ -75,6 +85,78 @@ section('It reads the real configuration from the server');
   });
   ok(auth.done === true, 'something already configured is marked live');
   ok(auth.hasCmd === false, 'and is not told how to set what it already has');
+}
+
+section('Thirty-six rows are grouped, not stacked');
+{
+  /* The screen carried sixteen rows and read as a list. Every capability the
+     Worker can switch on has a row now, and an undivided list that long is one
+     somebody scrolls past - so the money rows, the delivery rows and the
+     sign-in rows each sit under their own heading, in the order the SERVER
+     sends, because the server is what decides which group a row belongs to. */
+  const g = await page.evaluate(() => {
+    const heads = [...document.querySelectorAll('#golive-body .gl-sec')].map(h => h.textContent);
+    /* Which heading each row actually sits under, walked in document order -
+       the thing that would break if the grouping rendered but put every row in
+       one bucket, which reading the headings alone would not catch. */
+    const under = {};
+    let cur = null;
+    for (const el of document.querySelectorAll('#golive-body .gl-sec, #golive-body .gl-row')) {
+      if (el.classList.contains('gl-sec')) cur = el.textContent;
+      else {
+        /* Keyed off .gl-label rather than the row's textContent: the status
+           circle and the "live" badge are inside the row too, so the row's own
+           text is the icon glyph followed by the name and never starts with
+           it. */
+        const lab = el.querySelector('.gl-label');
+        const name = lab ? lab.childNodes[0].textContent.trim() : '';
+        if (name) under[name] = cur;
+      }
+    }
+    return { heads, under };
+  });
+  ok(g.heads.includes('Core') && g.heads.includes('Taking money') && g.heads.includes('Reaching people'),
+     'each group the server sent rows for gets a heading', g.heads);
+  ok(g.heads.indexOf('Core') < g.heads.indexOf('Taking money'),
+     'in the order the server sent, not alphabetically', g.heads);
+  ok(!g.heads.includes('Signing in'),
+     'and a group with no rows is skipped rather than rendered empty', g.heads);
+  ok(/Core/.test(g.under['AI engine'] || ''), 'the AI engine sits under Core', g.under['AI engine']);
+  ok(/Taking money/.test(g.under['Plan prices (Stripe)'] || ''),
+     'and the price row under Taking money, so the grouping is real and not just headings',
+     g.under['Plan prices (Stripe)']);
+  ok(/Storage bindings/.test(g.heads.join('|')), 'storage keeps its own heading', g.heads);
+}
+
+section('A setting with a working default is not drawn as a fault');
+{
+  /* Six of the rows are knobs, not capabilities: a spend ceiling, a write
+     budget, an endpoint override. Drawing them as .gl-row would put six
+     permanent "not set up" circles on a deployment behaving exactly as
+     intended, and a screen with standing red on it is one somebody stops
+     reading - which costs the rows that ARE saying something. */
+  const t = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#golive-body .gl-tune')];
+    const cap = rows.find(r => /Daily spend ceiling/.test(r.textContent));
+    const write = rows.find(r => /Non-essential write budget/.test(r.textContent));
+    const cs = cap && getComputedStyle(cap);
+    return {
+      count: rows.length,
+      capTag: cap && cap.querySelector('.gl-tag').textContent.trim(),
+      writeTag: write && write.querySelector('.gl-tag').textContent.trim(),
+      capCmd: !!(cap && cap.querySelector('.gl-cmd')),
+      noIcon: !!(cap && !cap.querySelector('.gl-ic')),
+      styled: !!(cs && cs.paddingTop !== '0px'),
+      heads: [...document.querySelectorAll('#golive-body .gl-sec')].map(h => h.textContent),
+    };
+  });
+  ok(t.count === 2, 'each knob the server sent is rendered', t.count);
+  ok(t.capTag === 'default', 'an unset knob says "default", not "not set up"', t.capTag);
+  ok(t.writeTag === 'set', 'and a set one says so', t.writeTag);
+  ok(t.capCmd, 'each still carries the command, because it is a thing you can change');
+  ok(t.noIcon, 'but not a status circle, because there is no fault to report');
+  ok(t.styled, 'and the class has a rule, which is how the rows shipped unstyled last time');
+  ok(t.heads.some(h => /working default/.test(h)), 'under a heading that says what they are', t.heads);
 }
 
 section('A missing REQUIRED thing looks different from an optional one');

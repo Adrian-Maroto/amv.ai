@@ -20880,6 +20880,132 @@ function _readinessReport(env) {
     { id: 'alerts', name: 'Operator alerts', blocking: false, on: _has(env, 'ALERT_WEBHOOK'),
       turnsOn: 'Being paged when spend caps are hit, checkout breaks, or the model rejects a request.',
       how: put('ALERT_WEBHOOK') },
+
+    /* =================================================================
+       AMV-402  THE THIRTY CAPABILITIES THIS SCREEN COULD NOT SEE
+
+       Everything below was already BUILT and reachable in the Worker, and
+       none of it had a line here. The screen listed sixteen things; the
+       Worker read forty-nine names. So the one screen whose entire job is
+       to say what this deployment can do was silent about GitHub connect,
+       every PayPal path, text messages, the three Stripe price ids, error
+       reporting, product analytics, the audit stream, bank connections and
+       the key that lets a mailbox credential be stored at all.
+
+       That is worse than a screen with gaps. An operator reading "Core
+       product is live, 2 optional capabilities are still off" reasonably
+       concludes there are two things left to do. There were thirty-two,
+       and the ones missing included the three price ids without which the
+       Payments row goes green and nobody can actually buy anything.
+
+       A stage in the gate now fails when a name the Worker reads has no
+       row here, so this cannot drift again by anybody adding a capability
+       and forgetting this file.
+       ================================================================= */
+
+    /* PAYMENTS GREEN AND NOTHING BUYABLE.
+
+       STRIPE_SECRET_KEY alone turns the Payments row green. Checkout then
+       refuses every plan, honestly and by name, because the price id was
+       never set - which is the right refusal at the endpoint and the wrong
+       thing to learn from a customer. Same shape as the Turnstile and
+       Resend rows above: the capability is half-configured, and the half
+       that is missing is the half that takes the money. */
+    { id: 'stripePrices', name: 'Plan prices (Stripe)', blocking: false,
+      on: _has(env, 'STRIPE_PRICE_PRO') && _has(env, 'STRIPE_PRICE_ELITE') && _has(env, 'STRIPE_PRICE_ULTRA'),
+      turnsOn: (_has(env, 'STRIPE_SECRET_KEY')
+        && !(_has(env, 'STRIPE_PRICE_PRO') && _has(env, 'STRIPE_PRICE_ELITE') && _has(env, 'STRIPE_PRICE_ULTRA')))
+        ? 'REQUIRED NOW - payments are switched on but at least one plan has no price, so choosing it at checkout is refused. Nothing is charged and the refusal says why, but the plan is on your own pricing page and cannot be bought.'
+        : 'Buying Pro, Elite and Ultra. Each is a price object created once in the Stripe dashboard; without its id that plan cannot be sold even though payments are on.',
+      how: put('STRIPE_PRICE_PRO') + ', ' + put('STRIPE_PRICE_ELITE') + ' and ' + put('STRIPE_PRICE_ULTRA') },
+
+    { id: 'paypal', name: 'PayPal', blocking: false,
+      on: _has(env, 'PAYPAL_CLIENT_ID') && _has(env, 'PAYPAL_SECRET'),
+      turnsOn: 'A second way to pay, for people who will not hand over a card. Needs an app in the PayPal developer dashboard; both halves, or the checkout says PayPal is not set up rather than opening a flow that fails.',
+      how: put('PAYPAL_CLIENT_ID') + ' and ' + put('PAYPAL_SECRET') },
+
+    { id: 'paypalPlans', name: 'PayPal plan ids', blocking: false,
+      on: _has(env, 'PAYPAL_PLAN_PRO') && _has(env, 'PAYPAL_PLAN_ELITE') && _has(env, 'PAYPAL_PLAN_ULTRA'),
+      turnsOn: 'Which PayPal billing plan each AMV plan maps to, in both directions - starting a subscription, and recognising which plan a webhook is about. Without them PayPal can take a payment it cannot attribute.',
+      how: put('PAYPAL_PLAN_PRO') + ', ' + put('PAYPAL_PLAN_ELITE') + ' and ' + put('PAYPAL_PLAN_ULTRA') },
+
+    /* The PayPal half of the Stripe webhook row, and blocking for the same
+       reason: a subscription nothing can cancel is the configuration that
+       ends up in front of somebody's bank. */
+    { id: 'paypalHook', name: 'PayPal webhooks', blocking: _has(env, 'PAYPAL_CLIENT_ID') && _has(env, 'PAYPAL_SECRET'),
+      on: _has(env, 'PAYPAL_WEBHOOK_ID'),
+      turnsOn: (_has(env, 'PAYPAL_CLIENT_ID') && _has(env, 'PAYPAL_SECRET') && !_has(env, 'PAYPAL_WEBHOOK_ID'))
+        ? 'REQUIRED NOW - PayPal is switched on and its webhooks cannot be verified, so every one of them is rejected. A PayPal subscription can start and nothing will ever grant the plan, cancel it, or notice a refund.'
+        : 'Verifying that a PayPal webhook really came from PayPal. Plans are granted and revoked from these; an unverified webhook is refused rather than trusted.',
+      how: put('PAYPAL_WEBHOOK_ID') },
+
+    /* A STATE, NOT A CAPABILITY - the same shape as the key-rotation row.
+       PAYPAL_MODE decides sandbox versus live, it defaults to SANDBOX, and
+       a sandbox default is the correct default. It is on this screen
+       because "we launched and no PayPal money ever arrived" is the exact
+       thing this screen exists to prevent somebody discovering later. It
+       reports the MODE, never any value that is a secret - the mode is
+       observable from the outside anyway. */
+    { id: 'paypalLive', name: 'PayPal is taking real money', blocking: false,
+      on: String((env && env.PAYPAL_MODE) || '') === 'live',
+      turnsOn: String((env && env.PAYPAL_MODE) || '') === 'live'
+        ? 'PayPal is pointed at the live API. Real money moves.'
+        : 'PayPal is in SANDBOX, which is the default. Checkouts complete against PayPal\u2019s test servers and no real money arrives. Set it to live when you are ready to be paid - only after the webhook above is verified.',
+      how: 'wrangler secret put PAYPAL_MODE  (value: live)' },
+
+    { id: 'sms', name: 'Text messages', blocking: false,
+      on: _has(env, 'TWILIO_ACCOUNT_SID') && _has(env, 'TWILIO_AUTH_TOKEN') && _has(env, 'TWILIO_FROM_NUMBER'),
+      turnsOn: 'Sending a result to a phone instead of only to the app. Needs a Twilio account and a number you own, billed per message. All three parts, or nothing sends.',
+      how: put('TWILIO_ACCOUNT_SID') + ', ' + put('TWILIO_AUTH_TOKEN') + ' and ' + put('TWILIO_FROM_NUMBER') },
+
+    { id: 'support', name: 'Support address', blocking: false, on: _has(env, 'SUPPORT_EMAIL'),
+      turnsOn: 'Where a person reaches a human when AMV cannot help them. Without it the escalation path ends at a screen rather than an inbox.',
+      how: put('SUPPORT_EMAIL') },
+
+    { id: 'auditHook', name: 'Audit stream', blocking: false, on: _has(env, 'AUDIT_WEBHOOK'),
+      turnsOn: 'High-signal audit events pushed somewhere off this deployment as they happen - so the record of who did what survives losing the deployment itself. Separate from operator alerts, which page you about breakage.',
+      how: put('AUDIT_WEBHOOK') },
+
+    { id: 'connectGithub', name: 'Connect GitHub', blocking: false,
+      on: _has(env, 'GH_CLIENT_ID') && _has(env, 'GH_CLIENT_SECRET'),
+      turnsOn: 'Repositories as a connected account, so a build can read and write real code. Needs an OAuth app registered with GitHub and both halves pasted here.',
+      how: put('GH_CLIENT_ID') + ' and ' + put('GH_CLIENT_SECRET') },
+
+    /* The connected-accounts framework has CONNECT_KEY. The three
+       credential connectors that are NOT OAuth - a mailbox, a school, a
+       Telegram bot - have this one, and without it they refuse to store a
+       credential at all rather than storing it in the clear. Which is the
+       right refusal, and the reason it belongs on a screen rather than
+       being found by the first person who tries to connect a mailbox. */
+    { id: 'mailCredKey', name: 'Stored credentials (encryption)', blocking: false,
+      on: _has(env, 'MAIL_CRED_KEY'),
+      turnsOn: 'Holding a mailbox password, a school token or a Telegram bot token. Each is sealed with this key; without it those three connectors refuse outright rather than storing a credential unencrypted.',
+      how: put('MAIL_CRED_KEY') },
+
+    { id: 'finance', name: 'Bank connections', blocking: false,
+      on: _has(env, 'FINANCE_CLIENT_ID') && _has(env, 'FINANCE_SECRET'),
+      turnsOn: 'Reading balances and transactions from a connected bank account. Needs an account with a bank-data provider, which is a paid, application-reviewed product, not a key you can self-serve in an afternoon.',
+      how: put('FINANCE_CLIENT_ID') + ' and ' + put('FINANCE_SECRET') },
+
+    { id: 'errors', name: 'Error reporting', blocking: false, on: _has(env, 'SENTRY_DSN'),
+      turnsOn: 'Server errors reaching you with a stack rather than being counted and forgotten. Without it a crash is only visible as somebody telling you about it.',
+      how: put('SENTRY_DSN') },
+
+    { id: 'product', name: 'Product analytics', blocking: false, on: _has(env, 'POSTHOG_KEY'),
+      turnsOn: 'Which features are actually used, so a decision to build or cut one is measured. Off by default and it stays off until you set this - nothing is collected in the meantime.',
+      how: put('POSTHOG_KEY') },
+
+    /* A STATE ROW. ALLOWED_ORIGIN defaults to '*', which is correct for a
+       deployment with an unknown front end and wrong for a launched one:
+       it means any site on the internet can call this API from a browser.
+       The value is not a secret - it is in a response header on every
+       request - so reporting whether it is pinned leaks nothing. */
+    { id: 'apiOrigin', name: 'API is pinned to your site', blocking: false,
+      on: !!String((env && env.ALLOWED_ORIGIN) || '').trim() && String(env.ALLOWED_ORIGIN).trim() !== '*',
+      turnsOn: (!String((env && env.ALLOWED_ORIGIN) || '').trim() || String((env && env.ALLOWED_ORIGIN) || '').trim() === '*')
+        ? 'Cross-origin calls are currently allowed from ANY site, which is the default. Every browser-side control still applies and the server is still the authority, but another site can call this API with a visitor\u2019s credentials in the browser. Pin it to your own origin before launch.'
+        : 'Browser calls to this API are accepted only from your own site.',
+      how: 'wrangler secret put ALLOWED_ORIGIN  (value: your site\u2019s origin, e.g. https://amv.homes)' },
   ];
 
   /* Storage is bound, not pasted, so it is reported separately - and what each
@@ -20912,13 +21038,70 @@ function _readinessReport(env) {
         ? 'REQUIRED NOW - you are taking payments without it. Every spend ceiling and token allowance falls back to read-then-write, so requests arriving together all pass the same check and the day\u2019s ceiling can be overshot by however many arrive at once. It is the one control standing between AMV and an unbounded bill.'
         : 'Race-free usage limits, spend caps and one-time claims. Without it they are a read followed by a write, which is the race they exist to close.',
       how: 'Bind AMV_COUNTER (the AMVCounter Durable Object) in wrangler.toml' },
+    /* Bound rather than pasted, like the three above, which is why it sits
+       here and not with the secrets. Without it the two surfaces that need a
+       real browser refuse and say so; with it they render a page server-side. */
+    { id: 'render', name: 'Browser rendering', on: !!(env && env.BROWSER), blocking: false,
+      turnsOn: 'Turning a live page into a PDF or a screenshot on the server. Without it those two surfaces refuse rather than returning an empty file.',
+      how: 'Bind BROWSER (Cloudflare Browser Rendering) in wrangler.toml' },
+  ];
+
+  /* GROUPING, BECAUSE THIRTY-SIX ROWS IN ONE COLUMN IS NOT A SCREEN.
+
+     Kept as a map beside the rows rather than a field on each one, so adding a
+     capability is one entry in the list above and one here - and so the gate
+     stage can check that every row landed in a real group instead of the
+     'Other' bucket, which is how a row goes quietly missing from a heading. */
+  const GROUPS = {
+    ai: 'Core', auth: 'Core', appUrl: 'Core', admin: 'Core', ownerEmail: 'Core',
+    payments: 'Taking money', paymentsHook: 'Taking money', stripePrices: 'Taking money',
+    teamSeats: 'Taking money', paypal: 'Taking money', paypalPlans: 'Taking money',
+    paypalHook: 'Taking money', paypalLive: 'Taking money',
+    email: 'Reaching people', emailSender: 'Reaching people', sms: 'Reaching people',
+    support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
+    googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
+    connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
+    connectGoogle: 'Connected accounts', connectMicrosoft: 'Connected accounts',
+    connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
+    finance: 'Connected accounts',
+    modelFallback: 'Watching it run', errors: 'Watching it run', product: 'Watching it run',
+  };
+  const GROUP_ORDER = ['Core', 'Taking money', 'Reaching people', 'Signing in',
+                       'Connected accounts', 'Watching it run', 'Other'];
+  for (const i of items) i.group = GROUPS[i.id] || 'Other';
+
+  /* SETTINGS, NOT CAPABILITIES.
+
+     Each of these has a working default, so on/off is the wrong shape for it -
+     reporting GLOBAL_DAILY_USD_CAP as "not set up" would be a red row for a
+     deployment behaving exactly as intended. They are here because they are
+     still things somebody has to know exist before launch, and because a name
+     the Worker reads with nowhere on this screen to appear is the drift the
+     gate stage now refuses.
+
+     `set` is the only thing reported. Never the value: a spend ceiling is not
+     a secret, but a screen that prints one env var's value is a screen that
+     will print the next one's. */
+  const tuning = [
+    { id: 'spendCap', name: 'Daily spend ceiling', env: 'GLOBAL_DAILY_USD_CAP', set: _has(env, 'GLOBAL_DAILY_USD_CAP'),
+      effect: 'The most AMV will spend on model calls in one day across every account before it starts refusing. Defaults to $500.' },
+    { id: 'writeCap', name: 'Non-essential write budget', env: 'NONESSENTIAL_WRITE_CAP', set: _has(env, 'NONESSENTIAL_WRITE_CAP'),
+      effect: 'How many writes a day telemetry and the waitlist may spend before they are dropped, so they cannot exhaust the storage budget the product runs on.' },
+    { id: 'modelUrl', name: 'Model endpoint', env: 'MODEL_API_URL', set: _has(env, 'MODEL_API_URL'),
+      effect: 'Where AMV sends model requests. Defaults to the standard endpoint; set it only to point at a proxy or a region you have been given.' },
+    { id: 'appOrigin', name: 'App address (fallback)', env: 'APP_ORIGIN', set: _has(env, 'APP_ORIGIN'),
+      effect: 'Read only when APP_URL is unset. Two names for one thing, kept because a deployment may already have set either.' },
+    { id: 'analyticsHost', name: 'Analytics host', env: 'POSTHOG_HOST', set: _has(env, 'POSTHOG_HOST'),
+      effect: 'Where product analytics are sent. Defaults to the US host; set it for the EU one, or for a self-hosted instance.' },
+    { id: 'financeHost', name: 'Bank data host', env: 'FINANCE_API_URL', set: _has(env, 'FINANCE_API_URL'),
+      effect: 'Which environment of the bank-data provider to call. Defaults to production; point it at their sandbox while testing.' },
   ];
 
   const all = items.concat(storage);
   const missingBlocking = all.filter(i => i.blocking && !i.on);
   const missingOptional = all.filter(i => !i.blocking && !i.on);
   return {
-    items, storage,
+    items, storage, tuning, groupOrder: GROUP_ORDER,
     summary: {
       on: all.filter(i => i.on).length,
       total: all.length,

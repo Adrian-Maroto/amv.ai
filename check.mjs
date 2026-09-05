@@ -95,7 +95,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 10 : 12;
+const TOTAL = FAST ? 11 : 13;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -685,6 +685,76 @@ step('No window read reaches for a binding that is not on window', () => {
   if (bad.length) {
     throw new Error('A window read that can only ever be undefined:\n  ' + bad.join('\n  '));
   }
+});
+
+/* ── 7b. EVERY CAPABILITY THE WORKER HAS, ON THE SCREEN THAT LISTS THEM ─────
+
+   The go-live readiness screen listed SIXTEEN capabilities. The Worker read
+   forty-nine secret names. So thirty of the things this deployment can
+   actually do - GitHub connect, every PayPal path, text messages, the three
+   Stripe price ids, error reporting, product analytics, the audit stream,
+   bank connections, the key without which a mailbox credential cannot be
+   stored - were invisible on the one screen whose entire job is to name them.
+
+   The damage is not the gaps, it is the SENTENCE at the top. "Core product is
+   live, 2 optional capabilities are still off" reads as two things left to do.
+   There were thirty-two, and among them were the three price ids without which
+   the Payments row goes green and no plan can be bought.
+
+   None of that happened by anyone deciding it. It happened one capability at a
+   time, each added to the Worker by somebody who had no reason to think a
+   screen elsewhere needed editing too. So the fix is not "add the missing
+   thirty", it is this stage: a name the Worker READS with no row on the screen
+   is a failure, and the next capability cannot be added without one.
+
+   Comments and strings are stripped from _readinessReport before the check, so
+   a comment explaining why something was removed cannot stand in for the row
+   that was removed. */
+step('Every secret the Worker reads has a row on the readiness screen', () => {
+  const raw = readFileSync(R('amv-backend.js'), 'utf8');
+
+  /* The four shapes a name is read in. The last two are indirect and were the
+     ones preflight missed for months: a provider registry naming its own env
+     vars as data, and the presence check the readiness screen itself uses. */
+  const used = new Set();
+  for (const m of raw.matchAll(/env\.([A-Z][A-Z0-9_]+)/g)) used.add(m[1]);
+  for (const m of raw.matchAll(/env\['([A-Z][A-Z0-9_]+)'\]/g)) used.add(m[1]);
+  for (const m of raw.matchAll(/_has\(env,\s*'([A-Z][A-Z0-9_]+)'/g)) used.add(m[1]);
+  for (const m of raw.matchAll(/(?:idEnv|secretEnv)\s*:\s*'([A-Z][A-Z0-9_]+)'/g)) used.add(m[1]);
+
+  /* THE NEGATIVE CONTROL (LESSONS 294). If the four patterns above stop
+     matching - a refactor to a config object, say - every name vanishes and
+     this stage passes on an empty set, which is the failure mode that looks
+     exactly like success. */
+  if (used.size < 40)
+    throw new Error(`the env scan found only ${used.size} names in amv-backend.js, which cannot be right - `
+      + 'the scanner is broken, not the code.');
+
+  const start = raw.indexOf('function _readinessReport(env) {');
+  if (start < 0) throw new Error('_readinessReport is gone from amv-backend.js - the readiness screen has no source.');
+  const end = raw.indexOf('\n}\n', start);
+  const report = codeOnly(raw.slice(start, end === -1 ? undefined : end));
+
+  const missing = [...used].filter(n => !new RegExp('\\b' + n + '\\b').test(report)).sort();
+  if (missing.length)
+    throw new Error(
+      `${missing.length} name(s) the Worker reads have no row on the go-live readiness screen:\n    `
+      + missing.join('\n    ')
+      + '\n  Add a row to _readinessReport (or, for a knob with a working default, an entry in its `tuning` list)'
+      + '\n  so the operator can see the capability exists before a customer finds it missing.');
+
+  /* And every row landed under a real heading. A row whose id is absent from
+     the GROUPS map falls into 'Other', which renders - so it would never be
+     noticed - but sits under a heading that tells the operator nothing. */
+  const ids = [...report.matchAll(/\{\s*id:\s*'([A-Za-z0-9_]+)'/g)].map(m => m[1]);
+  const gStart = report.indexOf('const GROUPS = {');
+  const grouped = report.slice(gStart, report.indexOf('};', gStart));
+  const storageIds = ['kv', 'd1', 'counter', 'render'];
+  const tuningIds = ['spendCap', 'writeCap', 'modelUrl', 'appOrigin', 'analyticsHost', 'financeHost'];
+  const ungrouped = ids.filter(i => !storageIds.includes(i) && !tuningIds.includes(i)
+    && !new RegExp('\\b' + i + '\\s*:').test(grouped));
+  if (ungrouped.length)
+    throw new Error(`readiness row(s) with no group, so they render under "Other": ${ungrouped.join(', ')}`);
 });
 
 step('No guard names a function that does not exist', () => {

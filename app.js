@@ -23507,12 +23507,50 @@ function _readinessHTML(d){
         (i.on?'':'<code class="gl-cmd">'+escH(i.how)+'</code>')+
       '</div>'+
     '</div>').join('');
+  /* GROUPED, BECAUSE THIRTY-SIX ROWS IN ONE COLUMN IS A WALL.
+
+     The screen used to carry sixteen and read as a list. Every capability the
+     Worker can actually switch on has a row now, and an undivided list that
+     long is one somebody scrolls past rather than reads - so the money rows,
+     the delivery rows and the sign-in rows each get their own heading.
+
+     The server sends the heading order, because it is the server that decides
+     which group each row belongs to. A group the server names but sends no
+     rows for is skipped rather than rendered empty, and any row whose group
+     this browser does not recognise still appears under its own heading rather
+     than being dropped - a row that renders in the wrong place is a smaller
+     failure than a capability that silently is not on the screen at all. */
+  const grouped = (list) => {
+    const byGroup = new Map();
+    (list||[]).forEach(i => {
+      const g = i.group || 'Other';
+      if(!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push(i);
+    });
+    const order = (d.groupOrder||[]).slice();
+    byGroup.forEach((_, g) => { if(order.indexOf(g)<0) order.push(g); });
+    return order.filter(g => byGroup.has(g)).map(g =>
+      '<div class="gl-sec">'+escH(g)+'</div>'+rows(byGroup.get(g))).join('');
+  };
+  /* Knobs with working defaults. Reported as "using the default" rather than
+     as off, because a red row for a deployment behaving exactly as intended is
+     how a screen full of red teaches somebody to stop reading it. The VALUE is
+     never shown - a spend ceiling is not a secret, but a screen that prints one
+     env var's value is one that will print the next one's. */
+  const tune = (d.tuning||[]).map(t =>
+    '<div class="gl-tune">'+
+      '<div class="gl-label">'+escH(t.name)+
+        ' <span class="gl-tag '+(t.set?'':'off')+'">'+(t.set?'set':'default')+'</span></div>'+
+      '<div class="gl-how">'+escH(t.effect)+'</div>'+
+      '<code class="gl-cmd">wrangler secret put '+escH(t.env)+'</code>'+
+    '</div>').join('');
   const s = d.summary || {};
   return '<div class="gl-verdict '+(s.blockingMissing?'bad':'good')+'">'+escH(s.verdict||'')+
            ' <span class="gl-count">'+(s.on||0)+' of '+(s.total||0)+' configured</span></div>'+
-         rows(d.items)+
+         grouped(d.items)+
          '<div class="gl-sec">Storage bindings</div>'+
-         rows(d.storage);
+         rows(d.storage)+
+         (tune ? '<div class="gl-sec">Settings with a working default</div>'+tune : '');
 }
 
 /* === INTEGRATIONS: real Connect flow (OAuth-style, no key pasting) ===

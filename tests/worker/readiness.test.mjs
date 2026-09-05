@@ -79,9 +79,32 @@ section('It NEVER returns a secret, in any form');
        reset goes nowhere would be exactly the false green this file exists to
        prevent. */
     RESET_EMAIL_FROM: 'AMV <hello@amv.test>',
+    /* AMV-402: the thirty capabilities this screen could not see.
+
+       Every one of these was already built and reachable in the Worker with no
+       row on the readiness screen, so "Everything is configured" was a sentence
+       about sixteen things out of forty-six. Setting them here is what makes
+       the assertion below mean what it says - and it is why the assertion is
+       worth having: it is the one place a new capability with no row shows up
+       as a failing test rather than as a screen quietly under-reporting. */
+    STRIPE_PRICE_PRO: 'price_pro_SUPERSECRET', STRIPE_PRICE_ELITE: 'price_elite_SUPERSECRET',
+    STRIPE_PRICE_ULTRA: 'price_ultra_SUPERSECRET',
+    PAYPAL_CLIENT_ID: 'ppid-SUPERSECRET', PAYPAL_SECRET: 'ppsec-SUPERSECRET',
+    PAYPAL_WEBHOOK_ID: 'ppwh-SUPERSECRET', PAYPAL_MODE: 'live',
+    PAYPAL_PLAN_PRO: 'P-pro-SUPERSECRET', PAYPAL_PLAN_ELITE: 'P-elite-SUPERSECRET',
+    PAYPAL_PLAN_ULTRA: 'P-ultra-SUPERSECRET',
+    TWILIO_ACCOUNT_SID: 'AC-SUPERSECRET', TWILIO_AUTH_TOKEN: 'tw-SUPERSECRET',
+    TWILIO_FROM_NUMBER: '+15550000000',
+    SUPPORT_EMAIL: 'help@amv.test', AUDIT_WEBHOOK: 'https://audit.example/SUPERSECRET',
+    GH_CLIENT_ID: 'ghid-SUPERSECRET', GH_CLIENT_SECRET: 'ghsec-SUPERSECRET',
+    MAIL_CRED_KEY: 'mck-SUPERSECRET',
+    FINANCE_CLIENT_ID: 'finid-SUPERSECRET', FINANCE_SECRET: 'finsec-SUPERSECRET',
+    SENTRY_DSN: 'https://SUPERSECRET@sentry.example/1',
+    POSTHOG_KEY: 'phc_SUPERSECRET',
+    ALLOWED_ORIGIN: 'https://amv.test',
     // Bindings too, or "everything configured" would not be true - which is
     // the point of the assertion below.
-    DB: { prepare(){} }, AMV_COUNTER: {},
+    DB: { prepare(){} }, AMV_COUNTER: {}, BROWSER: {},
   });
   const body = await (await W.adminReadiness(req(env), env)).text();
   ok(!body.includes('SUPERSECRET'), 'no secret value appears anywhere in the response');
@@ -240,6 +263,143 @@ section('With a verified sender, it goes green');
   const env = Object.assign(bare(), { EMAIL_API_KEY: 're_key', RESET_EMAIL_FROM: 'AMV <hello@amv.test>' });
   const sender = find(await get(env), 'emailSender');
   ok(sender && sender.on === true, 'a verified sender satisfies it', sender && sender.on);
+}
+
+section('Payments green with no price is the trap this screen exists to catch');
+{
+  /* STRIPE_SECRET_KEY alone turns the Payments row green. Checkout then
+     refuses every plan by name, because the price id was never set - the right
+     refusal at the endpoint, and the wrong thing to learn from a customer.
+
+     Same shape as the Turnstile and Resend rows: the capability is
+     half-configured, and the missing half is the one that takes the money. */
+  const half = await get(Object.assign(bare(), {
+    AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', STRIPE_SECRET_KEY: 'sk_live_x' }));
+  ok(find(half, 'payments').on === true, 'payments reads as on, because the key is there', find(half, 'payments').on);
+  ok(find(half, 'stripePrices').on === false, 'and the prices read as missing', find(half, 'stripePrices').on);
+  ok(/REQUIRED NOW/.test(find(half, 'stripePrices').turnsOn),
+     'saying it is required NOW rather than one day', find(half, 'stripePrices').turnsOn);
+  ok(/cannot be bought|refused/i.test(find(half, 'stripePrices').turnsOn),
+     'and what actually happens to somebody who tries', find(half, 'stripePrices').turnsOn);
+
+  const whole = await get(Object.assign(bare(), {
+    AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', STRIPE_SECRET_KEY: 'sk_live_x',
+    STRIPE_PRICE_PRO: 'p1', STRIPE_PRICE_ELITE: 'p2', STRIPE_PRICE_ULTRA: 'p3' }));
+  ok(find(whole, 'stripePrices').on === true, 'all three ids clears it', find(whole, 'stripePrices').on);
+
+  /* TWO OF THREE IS NOT CONFIGURED. A row that goes green on a partial set is
+     the same false green as the Turnstile one, one plan further along. */
+  const two = await get(Object.assign(bare(), {
+    AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', STRIPE_SECRET_KEY: 'sk_live_x',
+    STRIPE_PRICE_PRO: 'p1', STRIPE_PRICE_ELITE: 'p2' }));
+  ok(find(two, 'stripePrices').on === false, 'two of the three is still not configured', find(two, 'stripePrices').on);
+}
+
+section('A PayPal subscription nothing can cancel is blocking');
+{
+  /* The PayPal half of the Stripe webhook rule, and blocking for the same
+     reason: a subscription that can start and can never be revoked is the one
+     configuration that puts a deployment in front of somebody's bank. */
+  const noPP = await get(Object.assign(bare(), { AMV_MODEL_KEY: 'k', JWT_SECRET: 'j' }));
+  ok(find(noPP, 'paypalHook').blocking === false,
+     'a deployment not using PayPal is not blocked on its webhook', find(noPP, 'paypalHook').blocking);
+
+  const pp = await get(Object.assign(bare(), {
+    AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', PAYPAL_CLIENT_ID: 'id', PAYPAL_SECRET: 'sec' }));
+  ok(find(pp, 'paypal').on === true, 'PayPal switched on is reported on', find(pp, 'paypal').on);
+  ok(find(pp, 'paypalHook').blocking === true,
+     'and now its webhook IS blocking', find(pp, 'paypalHook').blocking);
+  ok(/^Not ready/.test(pp.summary.verdict), 'so the verdict refuses to say ready', pp.summary.verdict);
+  ok(/PayPal webhooks/.test(pp.summary.verdict), 'and names it', pp.summary.verdict);
+
+  const done = await get(Object.assign(bare(), {
+    AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', PAYPAL_CLIENT_ID: 'id', PAYPAL_SECRET: 'sec',
+    PAYPAL_WEBHOOK_ID: 'wh' }));
+  ok(done.summary.blockingMissing === 0, 'and setting it clears the block', done.summary.blockingMissing);
+}
+
+section('Sandbox and a wide-open API are states, reported as states');
+{
+  /* Neither is a missing capability. PAYPAL_MODE defaults to sandbox and
+     ALLOWED_ORIGIN defaults to '*', and both defaults are correct for a
+     deployment that has not launched. They are here because "we launched and
+     no PayPal money ever arrived" is exactly what this screen exists to stop
+     somebody finding out later. */
+  const def = await get(Object.assign(bare(), { AMV_MODEL_KEY: 'k', JWT_SECRET: 'j' }));
+  ok(find(def, 'paypalLive').on === false, 'sandbox is reported as not live', find(def, 'paypalLive').on);
+  ok(/SANDBOX/.test(find(def, 'paypalLive').turnsOn), 'in those words', find(def, 'paypalLive').turnsOn);
+  ok(find(def, 'paypalLive').blocking === false, 'and it does not block, because sandbox is a valid state');
+  ok(find(def, 'apiOrigin').on === false, 'and a wildcard origin is reported as not pinned', find(def, 'apiOrigin').on);
+  ok(/ANY site/.test(find(def, 'apiOrigin').turnsOn), 'saying what that means', find(def, 'apiOrigin').turnsOn);
+
+  const star = await get(Object.assign(bare(), { AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', ALLOWED_ORIGIN: '*' }));
+  ok(find(star, 'apiOrigin').on === false,
+     'an explicit "*" is the same as none, not a configured origin', find(star, 'apiOrigin').on);
+
+  const pinned = await get(Object.assign(bare(), {
+    AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', ALLOWED_ORIGIN: 'https://amv.homes', PAYPAL_MODE: 'live' }));
+  ok(find(pinned, 'apiOrigin').on === true, 'a real origin is pinned', find(pinned, 'apiOrigin').on);
+  ok(find(pinned, 'paypalLive').on === true, 'and live mode reads as live', find(pinned, 'paypalLive').on);
+}
+
+section('Nothing the Worker can switch on is missing from the screen');
+{
+  /* THE PROPERTY, NOT THE COUNT. The screen listed sixteen capabilities while
+     the Worker read forty-nine names, so thirty things it could actually do
+     were invisible on the one screen whose job is to name them - including the
+     three price ids above.
+
+     A count assertion would go stale the day somebody adds a row. This reads
+     the Worker's own source for every name it reaches for, and asks whether
+     each one has somewhere on this screen to appear. The gate carries the same
+     check as a stage; it is here as well because a suite that runs in eight
+     seconds is what somebody actually runs while writing the capability. */
+  const used = new Set();
+  for (const m of src.matchAll(/env\.([A-Z][A-Z0-9_]+)/g)) used.add(m[1]);
+  for (const m of src.matchAll(/_has\(env,\s*'([A-Z][A-Z0-9_]+)'/g)) used.add(m[1]);
+  for (const m of src.matchAll(/(?:idEnv|secretEnv)\s*:\s*'([A-Z][A-Z0-9_]+)'/g)) used.add(m[1]);
+  ok(used.size >= 40, 'the scan found the Worker’s env reads at all', used.size);
+
+  const d = await get(bare());
+  /* What the SCREEN can show: every row's how/turnsOn, plus the tuning list,
+     which is where a knob with a working default is named. Assembled from the
+     response rather than from the source, because the response is what an
+     operator actually sees. */
+  const shown = JSON.stringify([].concat(d.items, d.storage, d.tuning || []));
+  const missing = [...used].filter(n => !new RegExp('\\b' + n + '\\b').test(shown)).sort();
+  ok(missing.length === 0,
+     'every name the Worker reads is named somewhere an operator can see it', missing);
+}
+
+section('Rows are grouped, and settings with a default are not shown as faults');
+{
+  const d = await get(bare());
+  ok(Array.isArray(d.groupOrder) && d.groupOrder.length >= 5,
+     'the server sends the heading order, because it decides the grouping', d.groupOrder);
+  ok(d.items.every(i => i.group), 'every row carries a group');
+  ok(d.items.every(i => d.groupOrder.includes(i.group)),
+     'and no row lands under a heading the browser was not told to render',
+     d.items.filter(i => !d.groupOrder.includes(i.group)).map(i => i.id));
+  ok(!d.items.some(i => i.group === 'Other'),
+     'nothing fell into the catch-all bucket', d.items.filter(i => i.group === 'Other').map(i => i.id));
+
+  ok(Array.isArray(d.tuning) && d.tuning.length >= 5,
+     'knobs with working defaults are reported separately', (d.tuning || []).length);
+  ok(d.tuning.every(t => t.env && t.effect && t.effect.length > 30),
+     'each names its variable and what it does');
+  ok(d.tuning.every(t => t.set === false), 'and on a bare deployment each is on its default', d.tuning.map(t => t.set));
+  ok(!d.tuning.some(t => 'blocking' in t || 'on' in t),
+     'they are not shaped like capabilities, so nothing renders them as missing');
+
+  /* AND THE VALUE IS NEVER REPORTED. A spend ceiling is not a secret, but a
+     screen that prints one env var's value is one that will print the next
+     one's - and the next one will be a key. */
+  const withVals = await get(Object.assign(bare(), {
+    GLOBAL_DAILY_USD_CAP: '31337', NONESSENTIAL_WRITE_CAP: '4242',
+    MODEL_API_URL: 'https://proxy.SUPERSECRET.example' }));
+  const body = JSON.stringify(withVals);
+  ok(!/31337|4242|SUPERSECRET/.test(body), 'a set knob reports that it is set, never what to');
+  ok(withVals.tuning.find(t => t.id === 'spendCap').set === true, 'while still reporting that it is set');
 }
 
 report('readiness');
