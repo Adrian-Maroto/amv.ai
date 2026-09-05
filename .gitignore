@@ -37,3 +37,11 @@ tests/e2e/.build/
 # nothing about the change that caused it - the same reason tests/*/.build is
 # ignored above.
 .wrangler/
+
+# A local MCP session handle (a port and a 64-hex token) that was committed by
+# accident. Nothing in this repository reads it - it is scratch state from a
+# dev session - and a file shaped like a credential must never be one git is
+# willing to track, for the same reason .dev.vars is ignored above. It became
+# a real exposure the day the static host was found to be publishing the
+# repository root rather than public/.
+mcp-session.txt
