@@ -9335,3 +9335,62 @@ four refuse to start, correctly and with a clear message. Empty output and a
 non-zero exit is not a failing test. The parallel environment that matters is
 the gate, running different suites together, and that is the only run that can
 say whether this is fixed.
+
+
+## 376. A backup that has never been restored is not a backup
+
+Asked what a serious engineering organisation would demand of this codebase,
+the answer was not a feature. It was: prove the procedures nobody exercises
+actually work. The two that always rot are restore and key rotation, because
+both are only ever run on the worst day of the year.
+
+There was an export, carefully written - it streams rather than building the
+whole store in memory, and it abandons the file rather than finishing short
+when a kind cannot be read. There was an import, also carefully written - it
+refuses keys outside the backup prefixes so a tampered snapshot cannot write a
+control key, and it will not let a restore undo a revocation.
+
+**Nothing had ever run the two together.** No suite in the repository fed an
+export into the import.
+
+Doing it took a few minutes and the result was: seven records in, six out.
+
+    exported keys: 7   complete: true
+    restore status 200  {"ok":true,"restored":6,"rejected":1}
+    MISSING AFTER RESTORE: ['data:big']
+
+The importer capped a record at 2MB. The exporter had no cap at all. So a large
+record was written into a file that called itself `"complete":true`, and the
+restore dropped it and answered `ok:true` with a 200 - the count sitting in the
+body where a recovery script does not look and a busy operator has no reason to
+read. The limits were declared as local constants inside the importer, and the
+exporter did not know they existed.
+
+**A limit the writer does not know about is not a limit. It is a trap laid for
+the worst day of the year.**
+
+Three things came out of it, and the third is the general one:
+
+- The export now refuses to write a record the restore would reject, and
+  abandons the file naming the key. The moment to learn a record cannot be
+  backed up is an ordinary day, while the store is healthy and somebody can go
+  and look at it - not during a recovery, when it is only an absence.
+- The restore answers 422 with `ok:false`, a code, a count and the names, when
+  it could not write everything. It also pages, because the person running a
+  restore is dealing with whatever caused it and is the least likely reader of
+  a JSON body.
+- One counter had been holding two unrelated events: a tampered control key
+  correctly refused, and real data silently dropped. The harmless one is
+  common, so the dangerous one hid behind it. They are `refused` and
+  `unrestorable` now.
+
+The neighbouring suite's header already says it: "A backup that is quietly
+incomplete is worse than no backup. No backup is a known state; a short one is
+trusted, and it is trusted at the single worst moment there is." That was
+written about the export and fixed in the export. The identical defect sat in
+the restore the whole time, because the fix was applied to the half somebody
+happened to be looking at.
+
+**Two halves of one recovery are one feature and have to be tested as one.**
+Testing each end against its own expectations is how both ends pass while the
+thing they exist to do together does not work.

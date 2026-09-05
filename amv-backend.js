@@ -7849,6 +7849,23 @@ async function handoffAct(request, env){
    JSON file is the last place that should live. A restore leaves those accounts
    unlinked, which is a minor inconvenience and the correct trade. `invsnap` goes
    with them, being a record of real balances. */
+/* THE EXPORT AND THE RESTORE HAVE TO AGREE, OR THE BACKUP IS NOT ONE.
+
+   These lived only inside backupImport. The export applied no size limit at
+   all, so a record larger than the restore would accept was written into the
+   file, counted, and reported under `"complete":true` - and the restore then
+   dropped it and answered `ok:true` with a 200. Measured end to end: seven
+   records in, six out, and both halves said everything was fine.
+
+   That is this file's own header defect moved one step downstream. The export
+   was taught to abandon rather than finish short; the restore was not, because
+   nothing had ever run the two together.
+
+   Shared here so they cannot drift apart again. A limit the writer does not
+   know about is not a limit, it is a trap laid for the worst day of the year. */
+const BACKUP_MAX_VALUE_BYTES = 2 * 1024 * 1024;   // per record
+const BACKUP_MAX_KEYS        = 500000;            // per snapshot
+
 const BACKUP_PREFIXES = [
   'acct:', 'ent:', 'entitleitem:', 'data:', 'auto:', 'team:', 'userteam:',
   'teamtasks:', 'sites:', 'site:', 'abuse:', 'seller:', 'widget:', 'market:',
@@ -8149,6 +8166,19 @@ async function backupExport(request, env){
           + ',"data":{');
         let first = true;
         const emit = (key, raw) => {
+          /* FOUND HERE, ON AN ORDINARY DAY, RATHER THAN DURING A RESTORE.
+
+             A record the restore will refuse must not be written into a file
+             that calls itself complete. Abandoning names the key, so somebody
+             can go and look at it now, while the store is healthy - instead of
+             discovering the gap at the moment they are trying to recover from
+             something else. */
+          if (raw.length > BACKUP_MAX_VALUE_BYTES) {
+            failed.push(key);
+            throw new Error('backup incomplete: ' + key + ' is ' + raw.length
+              + ' bytes, larger than the ' + BACKUP_MAX_VALUE_BYTES
+              + ' a restore will accept, so this snapshot could not be restored in full');
+          }
           send((first ? '' : ',') + JSON.stringify(key) + ':' + JSON.stringify(raw));
           first = false;
           count++; bytes += raw.length + key.length;
@@ -8309,13 +8339,23 @@ async function backupImport(request, env){
   // AMV-036: bound the import so a crafted/accidental snapshot can't exhaust
   // resources - cap the key count and reject oversized values.
   const entries = Object.entries(snap.data);
-  const MAX_IMPORT_KEYS = 500000;
-  const MAX_VALUE_BYTES = 2 * 1024 * 1024;   // 2MB per value
-  if(entries.length > MAX_IMPORT_KEYS) return json({ error:'snapshot has too many keys to import safely' }, 413);
+  if(entries.length > BACKUP_MAX_KEYS) return json({ error:'snapshot has too many keys to import safely' }, 413);
 
-  let restored = 0, skipped = 0, rejected = 0, heldForward = 0;
+  /* TWO REASONS TO REFUSE A RECORD, AND THEY ARE NOT THE SAME EVENT.
+
+     A key outside the backup prefixes is a TAMPERED snapshot being stopped
+     from writing a control key - working as intended, and the count is just
+     information. A record that is too large, or not a string, came out of a
+     legitimate AMV export and is DATA BEING LOST during a recovery. One
+     counter held both, so the second hid behind the first and the response
+     said ok:true either way. */
+  let restored = 0, skipped = 0, refused = 0, unrestorable = 0, heldForward = 0;
+  const lost = [];
   for(const [key, val] of entries){
-    if(typeof val !== 'string' || !allowed(key) || val.length > MAX_VALUE_BYTES){ rejected++; continue; }
+    if(!allowed(key)){ refused++; continue; }
+    if(typeof val !== 'string' || val.length > BACKUP_MAX_VALUE_BYTES){
+      unrestorable++; if(lost.length < 20) lost.push(key); continue;
+    }
     if(mode === 'missing'){
       const existing = await env.AMV_KV.get(key);
       if(existing != null){ skipped++; continue; }
@@ -8354,8 +8394,29 @@ async function backupImport(request, env){
       try{ const kind = String(key).split(':')[0]; if(kind) await _forgetKindEmpty(env, kind); }catch(_){}
     restored++;
   }
-  audit(env, 'backup_import', { mode, restored, skipped, rejected, heldForward, from: snap.createdISO });
-  return json({ ok:true, mode, restored, skipped, rejected,
+  audit(env, 'backup_import', { mode, restored, skipped, refused, unrestorable,
+    lost: lost.join(',') || undefined, heldForward, from: snap.createdISO });
+  if (unrestorable) {
+    /* NOT ok. A restore that dropped part of the snapshot answered 200 and
+       ok:true with the count buried in the body, so a recovery script saw
+       success and an operator saw a number they had no reason to read. The
+       whole point of this endpoint is the one day somebody is relying on it.
+
+       Paged as well as returned, because the person running a restore is busy
+       with whatever caused it and is the least likely reader of a JSON body. */
+    try { await alertOnce(env, 'restore_incomplete',
+      'A backup restore finished with ' + unrestorable + ' record(s) that could NOT be written: '
+      + lost.slice(0, 5).join(', ') + (lost.length > 5 ? ' and more' : '')
+      + '. The store is NOT a complete copy of that snapshot.', 5); } catch (e) {}
+    return json({ ok:false, code:'restore_incomplete', mode, restored, skipped,
+      refused, unrestorable, lost, heldForward,
+      error: unrestorable + ' record(s) in this snapshot could not be restored, so the store is '
+        + 'NOT a complete copy of it. They are named in `lost`. This is reported as a failure '
+        + 'rather than a count, because a partial restore somebody believes was total is how a '
+        + 'recovery quietly loses data.',
+      snapshotFrom: snap.createdISO || null }, 422);
+  }
+  return json({ ok:true, mode, restored, skipped, refused, unrestorable: 0,
     /* Said out loud. An operator restoring a snapshot needs to know that some
        of it was deliberately not applied, and why - a silent partial restore is
        one they will assume was total. */
