@@ -24,6 +24,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withFrozenClock } from '../lib/clock.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -104,11 +105,13 @@ section('But a farm is stopped');
 {
   const env = mkEnv();
   let made = 0, blocked = 0;
-  for (let i = 0; i < 30; i++) {
-    const r = await signup(env, 'farm' + i + '@example.com', '90.0.0.1');
-    if (r.body.token) made++;
-    else if (r.status === 429) blocked++;
-  }
+await withFrozenClock(async () => {
+    for (let i = 0; i < 30; i++) {
+      const r = await signup(env, 'farm' + i + '@example.com', '90.0.0.1');
+      if (r.body.token) made++;
+      else if (r.status === 429) blocked++;
+    }
+});
   ok(blocked > 0, 'the run is cut off rather than absorbed', { made, blocked });
   ok(made < 30, 'not every attempt became an account that can spend', made);
   ok(made >= 5, 'and the cut-off is not so tight that it hits a real person', made);
@@ -132,10 +135,12 @@ section('And a caller with no address at all is bounded, not exempt');
      probing. Unbounded is the wrong answer to both. */
   const env = mkEnv();
   let made = 0, blocked = 0;
-  for (let i = 0; i < 30; i++) {
-    const r = await signup(env, 'anon' + i + '@example.com', null);
-    if (r.body.token) made++; else if (r.status === 429) blocked++;
-  }
+await withFrozenClock(async () => {
+    for (let i = 0; i < 30; i++) {
+      const r = await signup(env, 'anon' + i + '@example.com', null);
+      if (r.body.token) made++; else if (r.status === 429) blocked++;
+    }
+});
   ok(blocked > 0, 'unidentifiable callers share a bucket rather than escaping the limit', { made, blocked });
 }
 
@@ -143,7 +148,9 @@ section('The refusal is honest about what happened');
 {
   const env = mkEnv();
   let last = null;
-  for (let i = 0; i < 30; i++) last = await signup(env, 'msg' + i + '@example.com', '11.11.11.11');
+await withFrozenClock(async () => {
+    for (let i = 0; i < 30; i++) last = await signup(env, 'msg' + i + '@example.com', '11.11.11.11');
+});
   ok(last.status === 429, 'it is a rate limit, not a generic failure', last.status);
   ok(/too fast|limit/i.test(last.body.error || ''), 'and says so in words', last.body.error);
   ok(!/password|captcha|invalid/i.test(last.body.error || ''),

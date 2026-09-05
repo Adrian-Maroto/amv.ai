@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withFrozenClock } from '../lib/clock.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -206,10 +207,12 @@ section('It is rate limited, because it sends mail to whoever is named');
   reset();
   await signup(USER, OLD);
   let refusedPerson = 0;
-  for (let i = 0; i < 12; i++) {
-    const r = await call('/auth/reset', { email: USER }, '10.0.0.' + i);
-    if (r.status === 429) refusedPerson++;
-  }
+await withFrozenClock(async () => {
+    for (let i = 0; i < 12; i++) {
+      const r = await call('/auth/reset', { email: USER }, '10.0.0.' + i);
+      if (r.status === 429) refusedPerson++;
+    }
+});
   ok(refusedPerson > 0,
      'one person cannot be buried in reset emails from a spread of addresses', refusedPerson);
   ok(sent.length < 12, 'so most of them were never sent', sent.length);
@@ -219,10 +222,12 @@ section('It is rate limited, because it sends mail to whoever is named');
      which is the point - the route must not become a way to mail strangers. */
   reset();
   let refusedList = 0;
-  for (let i = 0; i < 40; i++) {
-    const r = await call('/auth/reset', { email: `victim${i}@elsewhere.test` }, '7.7.7.7');
-    if (r.status === 429) refusedList++;
-  }
+await withFrozenClock(async () => {
+    for (let i = 0; i < 40; i++) {
+      const r = await call('/auth/reset', { email: `victim${i}@elsewhere.test` }, '7.7.7.7');
+      if (r.status === 429) refusedList++;
+    }
+});
   ok(refusedList > 0,
      'and one caller cannot work through a list of strangers', refusedList);
 }

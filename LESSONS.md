@@ -9428,3 +9428,39 @@ to every control except somebody going and looking.
 tell you where they are. The ones that silently start passing for free are the
 cost, and the only way to find them is to grep for the old name and read every
 hit - including the ones that are green.
+
+
+## 378. The window was the bug three times, so it became a helper
+
+Three red gates this session had one cause: a test that counts into a
+wall-clock window and hopes the loop finishes inside it. `act:<key>:<minute>`
+is the right shape for a burst control and the wrong thing to race. A loop that
+straddles a boundary starts a second bucket, neither half reaches the ceiling,
+and the assertion reports that the product has NO limit - a security failure
+that is not happening, investigated as if it were.
+
+Each time it looked like a one-off. It was not: a grep found thirteen suites
+that loop and then assert a ceiling, and exactly two of them pinned the clock.
+
+`tests/lib/clock.mjs` now holds `withFrozenClock`, and the bursts in the five
+highest-risk suites use it - ratelimit, making-accounts-is-not-free,
+public-config, locked-out-and-back-in, an-outage-pages-somebody. One correct
+implementation applied five times rather than five hand-written guesses.
+
+Two things this deliberately does NOT do.
+
+It is not applied file-wide. Anything asserting that a limit RESETS, a hold
+matures or a guard expires needs the clock to move, and freezing it there would
+break the property under test. The freeze wraps the burst and nothing else -
+in an-outage-pages-somebody that meant checking the ageing section first, which
+turned out to be a source assertion and safe either way.
+
+And it was not applied to all thirteen at once. The remaining suites have
+shorter loops and lower exposure, and each still needs its own read to be sure
+the clock is not load-bearing. Converting them unread would be the same guess
+thirteen times.
+
+**A fixed number in a test - a sleep, a loop count, a window - is a bet on the
+machine.** Sometimes the bet is fine. It stops being fine the moment four
+suites share a box, and the failure it produces always names the product rather
+than the wager.

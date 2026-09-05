@@ -7,6 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withFrozenClock } from '../lib/clock.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -30,10 +31,14 @@ const env = { AMV_KV: {
 section('limitAction blocks a per-minute flood');
 
 let allowed = 0, blocked = 0;
-for (let i = 0; i < 10; i++) {
-  const r = await W.limitAction(env, 'flood:user@test.com', 5, 0);   // 5/min, no daily cap
-  r.ok ? allowed++ : blocked++;
-}
+/* Pinned: this asserts EXACTLY 5 allowed, so a minute boundary landing inside
+   the loop starts a second bucket and lets a sixth through. */
+await withFrozenClock(async () => {
+  for (let i = 0; i < 10; i++) {
+    const r = await W.limitAction(env, 'flood:user@test.com', 5, 0);   // 5/min, no daily cap
+    r.ok ? allowed++ : blocked++;
+  }
+});
 ok(allowed === 5, 'exactly 5 calls are allowed in the minute', allowed);
 ok(blocked === 5, 'the 6th onward are blocked', blocked);
 
@@ -42,10 +47,12 @@ section('limitAction enforces a daily cap independent of the minute rate');
 store.clear();
 let dayAllowed = 0;
 // generous per-minute (100) but a daily cap of 3 - the day cap must bite
-for (let i = 0; i < 8; i++) {
-  const r = await W.limitAction(env, 'daily:user@test.com', 100, 3);
-  if (r.ok) dayAllowed++;
-}
+await withFrozenClock(async () => {
+  for (let i = 0; i < 8; i++) {
+    const r = await W.limitAction(env, 'daily:user@test.com', 100, 3);
+    if (r.ok) dayAllowed++;
+  }
+});
 ok(dayAllowed === 3, 'only 3 calls allowed for the day, then blocked', dayAllowed);
 
 section('guardAction returns a real 429 response when blocked');
@@ -65,7 +72,9 @@ W.__setRequireUser(async () => ({ email: 'sender@test.com' }));
 const hReq = () => new Request('https://x', { method:'POST', headers:{'Content-Type':'application/json'},
   body: JSON.stringify({ title:'t', context:'c', to:'target@test.com' }) });
 let h429 = 0;
-for (let i = 0; i < 15; i++) { const r = await W.handoffCreate(hReq(), env); if (r.status === 429) h429++; }
+await withFrozenClock(async () => {
+  for (let i = 0; i < 15; i++) { const r = await W.handoffCreate(hReq(), env); if (r.status === 429) h429++; }
+});
 ok(h429 > 0, 'flooding handoffs eventually returns 429', h429);
 
 section('marketPublish is rate limited (listing spam guard)');
@@ -95,7 +104,9 @@ W.__setRequireUser(async () => ({ email: 'syncer@test.com' }));
 const sReq = () => new Request('https://x', { method:'POST', headers:{'Content-Type':'application/json'},
   body: JSON.stringify({ data: { amv_test: '1' } }) });
 let s429 = 0;
-for (let i = 0; i < 70; i++) { const r = await W.syncPush(sReq(), env); if (r.status === 429) s429++; }
+await withFrozenClock(async () => {
+  for (let i = 0; i < 70; i++) { const r = await W.syncPush(sReq(), env); if (r.status === 429) s429++; }
+});
 ok(s429 > 0, 'hammering sync eventually returns 429 (protects KV write costs)', s429);
 
 section('A normal amount of use is NOT blocked');
@@ -103,7 +114,12 @@ section('A normal amount of use is NOT blocked');
 store.clear();
 W.__setRequireUser(async () => ({ email: 'normal@test.com' }));
 let normalOk = true;
-for (let i = 0; i < 3; i++) { const r = await W.handoffCreate(hReq(), env); if (r.status === 429) normalOk = false; }
+/* Frozen too, which makes this STRICTER rather than looser: all three land in
+   one window, so it proves a few requests in a row are fine even at their most
+   concentrated. */
+await withFrozenClock(async () => {
+  for (let i = 0; i < 3; i++) { const r = await W.handoffCreate(hReq(), env); if (r.status === 429) normalOk = false; }
+});
 ok(normalOk, 'a few handoffs in a row are fine - limits do not punish real use', normalOk);
 
 /* ── A LIMITER THAT STOPS LIMITING AND SAYS NOTHING ─────────────────────────

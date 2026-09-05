@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withFrozenClock } from '../lib/clock.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -83,7 +84,9 @@ section('One person in a retry loop is not an outage');
      pages, the pager is worthless within a day and somebody mutes it - which
      is the same as not having one. */
   const env = mkEnv();
-  for (let i = 0; i < 20; i++) await report1(env, 'same-person', '1.1.1.1');
+  await withFrozenClock(async () => {
+    for (let i = 0; i < 20; i++) await report1(env, 'same-person', '1.1.1.1');
+  });
   ok(paged.length === 0, 'nobody is woken up for one unlucky person', paged.length);
 
   const idx = await W.DB.get(env, 'errors', 'index');
@@ -118,7 +121,9 @@ section('And the same anonymous visitor retrying does not');
   /* The mirror of it: falling back to the address must not turn one person
      into a crowd. */
   const env = mkEnv();
-  for (let i = 0; i < 20; i++) await report1(env, null, '4.4.4.4');
+  await withFrozenClock(async () => {
+    for (let i = 0; i < 20; i++) await report1(env, null, '4.4.4.4');
+  });
   ok(paged.length === 0, 'one address is one person', paged.length);
 }
 
@@ -126,7 +131,12 @@ section('It pages once, not once per event');
 {
   /* A real outage produces thousands of these a minute. */
   const env = mkEnv();
-  for (let i = 0; i < 40; i++) await report1(env, 'p' + i, '5.5.5.' + (i % 250));
+  /* Pinned: the burst window is ERR_BURST_MS, so a loop that straddles it
+     ages entries out half way through and the count stops meaning what the
+     assertion says it means. */
+  await withFrozenClock(async () => {
+    for (let i = 0; i < 40; i++) await report1(env, 'p' + i, '5.5.5.' + (i % 250));
+  });
   ok(paged.length === 1, 'exactly one page for one bug', paged.length);
 }
 
@@ -166,7 +176,9 @@ section('The burst window is bounded, in time and in size');
      that grows without limit here is a cost on the hot path of a system that
      is by definition already having a bad day. */
   const env = mkEnv();
-  for (let i = 0; i < 120; i++) await report1(env, 'q' + i, '8.8.8.' + (i % 250));
+  await withFrozenClock(async () => {
+    for (let i = 0; i < 120; i++) await report1(env, 'q' + i, '8.8.8.' + (i % 250));
+  });
   const idx = await W.DB.get(env, 'errors', 'index');
   const g = Object.values(idx.groups)[0];
   ok(g.burst.length <= 40, 'the recent-people list stays small', g.burst.length);
@@ -181,10 +193,12 @@ section('With no pager configured it is silent, not broken');
 {
   const env = mkEnv();
   delete env.ALERT_WEBHOOK;
-  for (let i = 0; i < W.ERR_BURST_PEOPLE + 2; i++) {
-    const r = await report1(env, 'r' + i, '9.9.9.' + i);
-    if (r.status !== 200) { ok(false, 'reporting still works', r.status); break; }
-  }
+  await withFrozenClock(async () => {
+    for (let i = 0; i < W.ERR_BURST_PEOPLE + 2; i++) {
+      const r = await report1(env, 'r' + i, '9.9.9.' + i);
+      if (r.status !== 200) { ok(false, 'reporting still works', r.status); break; }
+    }
+  });
   ok(paged.length === 0, 'nothing is sent when there is nowhere to send it', paged.length);
   const idx = await W.DB.get(env, 'errors', 'index');
   ok(Object.keys(idx.groups).length === 1,

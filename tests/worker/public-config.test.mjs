@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { withFrozenClock } from '../lib/clock.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -134,10 +135,12 @@ section('It is bounded, because it is open to the world');
   counters.clear();
   const env = envWith({ SUPPORT_EMAIL: 'help@amv.test' });
   let refused = 0;
-  for (let i = 0; i < 40; i++) {
-    const r = await W.publicConfig(req('9.9.9.9'), env);
-    if (r.status === 429) refused++;
-  }
+await withFrozenClock(async () => {
+    for (let i = 0; i < 40; i++) {
+      const r = await W.publicConfig(req('9.9.9.9'), env);
+      if (r.status === 429) refused++;
+    }
+});
   ok(refused > 0, 'a flood from one address is throttled', refused);
 }
 
