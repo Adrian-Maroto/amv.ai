@@ -10984,3 +10984,26 @@ html{ -webkit-text-size-adjust:100%; text-size-adjust:100%; }
 .gl-tune:last-child{ border-bottom:0; }
 .gl-tune .gl-label{ font-weight:500; }
 .gl-tune .gl-cmd{ margin-top:5px; }
+
+/* ── LAYER A157 · the Integrations catalogue, read by somebody signed out ────
+
+   The Integrations TAB is gated; the same catalogue reached through Settings
+   was not, so a signed-out visitor saw twelve enabled Connect buttons and no
+   indication an account was needed. Pressing one returned a message written
+   for the operator - "it needs its API key added by the operator in Settings"
+   - which is true, is nothing they can act on, and leaves out the thing they
+   actually have to do.
+
+   One line at the top rather than a badge on twelve rows: the rows are worth
+   reading, because what an integration DOES is a fair question to ask before
+   signing up. Built from the .gl-verdict vocabulary - a stated fact with an
+   action in it - so two "you need an account" panels in one product do not
+   disagree about how that looks. */
+.int-guest{
+  display:flex; flex-direction:column; align-items:flex-start; gap:7px;
+  padding:var(--sp-4); margin-bottom:var(--sp-4);
+  background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-lg);
+}
+.int-guest-t{ font-size:var(--t-lg); font-weight:600; color:var(--tx); line-height:1.3; }
+.int-guest-s{ font-size:var(--t-sm); color:var(--mu); line-height:1.6; max-width:62ch; }
+.int-guest .btn{ margin-top:var(--sp-1); min-height:40px; }

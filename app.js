@@ -26810,7 +26810,31 @@ function _integrationsCatalogHTML(){
     '</div>';
   };
   const cat=(title,rows)=>'<div class="ss2"><h3>'+title+'</h3><div class="int-list">'+rows+'</div></div>';
+  /* SAY IT BEFORE THE PRESS, NOT AFTER IT.
+
+     The click gate above is the correctness fix; on its own it still means a
+     guest reads twelve rows that look ready, presses one, and only then learns
+     an account is needed. The owner's words for what that looked like were
+     "why does settings look like this for guest".
+
+     One line at the top, with the sign-up in it, rather than a badge on every
+     row: twelve identical badges is noise, and the rows are worth reading -
+     what these integrations DO is a fair question to ask before signing up,
+     which is why the catalogue stays browsable at all. */
+  const guest = !(typeof S!=='undefined' && S && S.user && S.user.email);
   return ''+
+    (guest
+      ? '<div class="int-guest">'+
+          '<div class="int-guest-t">Create a free account to connect these</div>'+
+          '<div class="int-guest-s">Browse what each one does. Connecting keeps a token against your account, '+
+            'so it needs an account first - it is free and takes a moment.</div>'+
+          /* `data-auth` is the delegation that already exists for this - the
+             dispatcher calls openAuth with its value. Inventing a new
+             `data-dact` name would have meant a second way to do one thing,
+             and a global function to hang off it. */
+          '<button class="btn bp" data-auth="signup">Create a free account</button>'+
+        '</div>'
+      : '')+
     '<div class="ax-legend">'+
       '<div class="ax-legend-item"><span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span><span>Runs on its own in the background after you connect.</span></div>'+
       '<div class="ax-legend-item"><span class="ax-badge ax-manual">Manual</span><span>You trigger it or upload files each time.</span></div>'+
@@ -26944,11 +26968,53 @@ function _connGoTo(id){
 }
 try{ window._connOwnsProvider=_connOwnsProvider; window._connGoTo=_connGoTo; }catch(e){}
 
+/* SIGNED OUT, IN FRONT OF TWELVE CONNECT BUTTONS.
+
+   The Integrations TAB is gated - a signed-out visitor pressing it gets the
+   sign-up sheet and "Create a free account to use Integrations". The SAME
+   catalogue reached through Settings had no gate at all, because the gate
+   lives in the tab router and Settings does not go through it. So a guest saw
+   twelve enabled Connect buttons, pressed one, and got a message meant for the
+   operator: "Slack isn't connected yet. It needs its API key added by the
+   operator in Settings first." Measured, signed out: twelve buttons, all
+   enabled, no mention anywhere on the screen that an account is needed.
+
+   That message is true and it is not their answer. Nothing they can do about
+   an operator's API key, and the thing they actually need to do - make an
+   account - was not said.
+
+   Every path that would store something against an account goes through here
+   now: connecting, and running an automation. Reading the catalogue does not,
+   because what these integrations DO is a fair question to ask before signing
+   up - the same reasoning that keeps Crew browsable. */
+function _intNeedsAccount(what){
+  if(typeof S!=='undefined' && S && S.user && S.user.email) return false;
+  try{ openAuth('signup'); }catch(e){}
+  try{ toast('Create a free account to connect '+(what||'this'),'info',3500); }catch(e){}
+  return true;
+}
+try{ window._intNeedsAccount=_intNeedsAccount; }catch(e){}
+
+/* The name a person would recognise, for that sentence. INTEGRATION_META is
+   the same table the disconnect path and the catalogue read, so the row and
+   the message cannot disagree about what a provider is called. */
+function _intName(id){
+  try{ if(INTEGRATION_META[id] && INTEGRATION_META[id].name) return INTEGRATION_META[id].name; }catch(e){}
+  const extra={ mail:'your mailbox', telegram:'Telegram', slack:'Slack' };
+  if(extra[id]) return extra[id];
+  return id ? (id.charAt(0).toUpperCase()+id.slice(1)) : 'this';
+}
+try{ window._intName=_intName; }catch(e){}
+
 function _wireIntegrationCatalog(root){
   root=root||document;
   /* Mail is connected with a password rather than an OAuth round trip, so it
      has its own flow instead of being pushed through connectIntegration. */
   root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>{
+    /* FIRST, before any provider branch. Put after them and the mail and
+       Telegram rows would open their own connect sheets to somebody with no
+       account to attach a mailbox to. */
+    if(_intNeedsAccount(_intName(btn.dataset.intConn))) return;
     if(btn.dataset.intConn==='mail') return openMailConnect();
     if(btn.dataset.intConn==='telegram') return openTelegramConnect();
     /* Providers the connected-accounts framework owns are STARTED there, not
@@ -26969,6 +27035,11 @@ function _wireIntegrationCatalog(root){
     disconnectIntegration(btn.dataset.intDisc);
   }));
   root.querySelectorAll('[data-int-run]').forEach(btn=>on(btn,'click',()=>{
+    /* An automation writes results against an account, so it needs one too.
+       Reachable only from a connected row, which a guest cannot have - but
+       this does not depend on that being true, because it is the kind of thing
+       that stops being true when somebody adds a row. */
+    if(_intNeedsAccount('an automation')) return;
     const fn=window[btn.dataset.intRun];
     if(typeof fn==='function') fn();
     else toast('That automation is not available in this build.','error');
