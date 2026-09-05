@@ -194,10 +194,34 @@ section('The deploy checklist names every setting the Worker reads');
 {
   /* A warning that is always there for a reason nobody needs to act on is a
      warning people stop reading - and the one time it names something real,
-     they skip that too. */
+     they skip that too.
+
+     THIS LIST USED TO HOLD FOUR NAMES, AND TWO OF THEM WERE DEAD.
+
+     It was written when the Worker read all four. Image and video generation
+     were later removed end to end, and IMAGE_COST_USD / VIDEO_COST_USD went
+     with them - the Worker reads neither name anywhere, measured, zero
+     occurrences. This assertion went on demanding that preflight list them,
+     which is why they were still there: the cleanup that removed IMAGE_API_*
+     and VIDEO_API_* could not take these two out without going red, so it left
+     them, and the reason they survived was a test.
+
+     A stale comment misleads whoever reads it. A stale test DEFENDS the thing
+     that should have gone, and hands the next person a red gate for doing the
+     right thing. That is the more expensive of the two, and it is the one
+     nobody thinks to audit.
+
+     So the rule is inverted for those two rather than dropped: they must now be
+     ABSENT, and this fails if anybody puts them back. */
   const pre = readFileSync(join(ROOT, 'preflight.mjs'), 'utf8');
-  for (const name of ['MAIL_CRED_KEY', 'TURNSTILE_SITE_KEY', 'IMAGE_COST_USD', 'VIDEO_COST_USD']) {
+  for (const name of ['MAIL_CRED_KEY', 'TURNSTILE_SITE_KEY', 'CONNECT_KEY']) {
     ok(pre.includes("'" + name + "'"), name + ' is on the checklist', name);
+  }
+  const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+  for (const name of ['IMAGE_COST_USD', 'VIDEO_COST_USD']) {
+    ok(!worker.includes(name), name + ' is not read by the Worker any more', name);
+    ok(!pre.includes("'" + name + "'"),
+       'so the checklist does not still ask for ' + name, name);
   }
   const deploy = readFileSync(join(ROOT, 'DEPLOY.md'), 'utf8');
   ok(/MAIL_CRED_KEY/.test(deploy), 'and the one that silently disables three connectors is documented', true);

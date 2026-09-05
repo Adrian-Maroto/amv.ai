@@ -9250,3 +9250,48 @@ reads configuration through a table, a regex over `env.NAME` stops being an
 inventory and becomes a sample. And a check with a direction should be asked
 what the other direction would cost - here, one side was a rule and the other
 an anecdote, and the anecdote side is where everything went.
+
+
+## 374. The reason the dead entries survived was a test
+
+Taking `IMAGE_COST_USD` and `VIDEO_COST_USD` out of preflight's secret registry
+turned the gate red. Not because the removal was wrong - the Worker reads
+neither name anywhere, measured, zero occurrences - but because a suite written
+in the AMV-060 round asserts:
+
+    for (const name of ['MAIL_CRED_KEY', 'TURNSTILE_SITE_KEY',
+                        'IMAGE_COST_USD', 'VIDEO_COST_USD'])
+      ok(pre.includes("'" + name + "'"), name + ' is on the checklist', name);
+
+That was correct when it was written: the Worker read all four. Image and video
+generation were then removed end to end, and two of the four became dead - but
+the assertion went on demanding that preflight name them. So the cleanup that
+took out `IMAGE_API_*` and `VIDEO_API_*` could not take these two with it
+without going red, and left them. LESSONS 349 records that cleanup; this is the
+part of it that could not be finished, and nothing said so.
+
+**The reason the stale entries were still there was a test protecting them.**
+
+A stale comment misleads whoever happens to read it. A stale test does
+something worse: it DEFENDS the thing that should have gone, and it hands the
+next person a red gate for doing the right thing. The natural response to a red
+gate is to assume you are wrong and put the change back - which is exactly how
+this survived a cleanup that was specifically looking for it.
+
+**A guard is an assertion about the world, and the world moves.** When a feature
+is removed end to end, the sweep has to include the tests that named it, or the
+removal is not finished - it is only blocked. Deleting the feature and leaving
+its guards behind creates a rule that outlives its reason and is enforced
+anyway.
+
+Rather than dropping those two assertions, they are inverted: the two names must
+now be ABSENT from both the Worker and the registry, and the suite fails if
+anybody puts them back. A rule that has become untrue is not deleted, it is
+turned around - the knowledge of what went wrong is worth keeping, and the only
+question is which direction it points.
+
+Worth noting which control caught this: the full gate, on a change whose whole
+subject was stale configuration. It found the tail of my own change the same way
+the storage-key suite did in LESSONS 370. `check:fast` was green throughout,
+because it skips the suites - which is what it is for, and why it is never the
+last thing run.
