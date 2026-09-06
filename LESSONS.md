@@ -9549,3 +9549,39 @@ that cannot span nested braces, which changed nothing and "passed".
    changed nothing is two failures wearing one coat.
 3. A retraction costs a paragraph. A wrong finding costs somebody a day
    chasing it, and costs the next real finding its credibility.
+
+## 381. The one route nothing tested is the one the copy was wrong about
+
+The bridge's confinement suite drove `read`, `write`, `list` and `delete` at
+`../SECRET.txt`, `/etc/passwd`, `src/../../SECRET.txt` and a six-deep climb,
+and every one came back `outside_root`. It never once pointed `exec` outside
+the folder.
+
+So `exec` never had to be confined, and it is not: it hands the string to
+`/bin/sh` with `cwd` set to the root, and `cat ../SECRET.txt`,
+`echo x > ../FROM_EXEC.txt` and `head /etc/hosts` all succeed. Verified by
+running a real bridge over HTTP, not by reading the source - the file routes
+being right says nothing about the route that does not use them.
+
+Four pieces of copy said otherwise, and two of them are read at the exact
+moment somebody decides to grant shell access to their machine: the terminal
+banner ("AMV can run commands, and read and write files, inside that folder
+and nowhere else"), the file's own security-model bullets, and both states of
+the connect card. The file even contradicted itself - the comment above
+`REFUSED` says "this is still not a sandbox and the file has never claimed to
+be one", forty lines under a header claiming exactly that.
+
+The fix is the words, not a filter. A path check over `/bin/sh` is defeated by
+`cat $(echo /etc/passwd)`, and a filter that can be walked around is worse
+than none, because it makes the promise look enforced. What actually holds -
+loopback only, paired, AMV's origin only, every command printed on the
+terminal, AMV asks before running - is a good model. It is just a different
+one from the one being advertised.
+
+1. A security claim is only as strong as the route nobody tested. Test the
+   claim on every route it covers, or narrow the claim to the routes tested.
+2. When a suite's escape cases all use one helper, ask what does not use it.
+3. The new assertions state the weaker truth on purpose: they assert that
+   `exec` DOES reach out. If somebody confines it later they fail, and the
+   person fixing them is standing where the copy has to be strengthened to
+   match. A promise and its enforcement have to move together.

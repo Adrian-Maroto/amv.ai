@@ -35,12 +35,24 @@
      An allowlisted browser origin. Even paired, requests are refused unless
      they come from AMV.
 
-     Root confinement on every path, resolved through symlinks. The folder
-     you started it in is the whole world.
+     Root confinement on every FILE path, resolved through symlinks. The
+     read, write, list and remove routes cannot name anything outside the
+     folder you started it in.
 
-     Nothing is silently destructive: commands that delete, force-push, or
-     reach outside the project are refused here, in the daemon, rather than
+     Nothing is silently destructive: commands that delete, force-push,
+     format or fetch-and-run are refused here, in the daemon, rather than
      being left to a prompt to remember.
+
+     But a command is not a path, and this is the boundary of the model:
+     /exec hands the string to /bin/sh with cwd set to the root. The shell
+     is the person's own shell with the person's own permissions, so a
+     command CAN read and write outside the folder. That is not a hole to
+     be patched with a path filter - `cat $(echo /etc/passwd)` defeats any
+     such filter, and a filter that can be walked around is worse than none
+     because it makes the promise look enforced. What holds instead is that
+     nothing runs unpaired, nothing runs from an origin that is not AMV,
+     every command is printed on this terminal as it runs, and AMV asks
+     before running. Say that, rather than the stronger thing that is false.
 
    Run it with no arguments in a project folder:  node amv-bridge.mjs
    ══════════════════════════════════════════════════════════════════════════ */
@@ -643,8 +655,17 @@ server.listen(0, '127.0.0.1', () => {
   console.log('  Port     ' + port + '  (127.0.0.1 only)');
   console.log('\n  In AMV, choose Connect this computer and enter:\n');
   console.log('      ' + PAIR_CODE + '\n');
-  console.log('  AMV can run commands, and read and write files, inside');
-  console.log('  that folder and nowhere else. Close this window to stop.');
+  /* WORDED FROM WHAT THE CODE ACTUALLY ENFORCES. This used to say "and
+     nowhere else", which is true of the file routes and is NOT true of
+     /exec: a command is handed to /bin/sh with cwd set to the folder, and a
+     shell can read and write anything the person running it can. Verified,
+     not assumed - `cat ../secret` and `head /etc/passwd` both came back with
+     content while /read refused the same path. The sentence somebody reads
+     while deciding whether to grant this has to be the weaker true one. */
+  console.log('  AMV reads and writes files inside that folder and nowhere');
+  console.log('  else. Commands run there as you, so a command can reach');
+  console.log('  anything you can - every one is printed below as it runs.');
+  console.log('  Close this window to stop.');
   console.log(line + '\n');
 });
 

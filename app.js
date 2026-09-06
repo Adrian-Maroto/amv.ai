@@ -37168,10 +37168,12 @@ function _bridgeCardHTML(){
          is asked once for the whole request, by name, before anything runs.
          A card that describes the old behaviour is worse than one that says
          nothing, because somebody reads it and stops watching. */
-      + '<p class="brg-p">AMV can run commands and read and write files in '
+      + '<p class="brg-p">AMV reads and writes files in '
         + '<code>' + escH(BRIDGE.folder || 'your project folder') + '</code> '
-        + 'and nowhere else. In chat it asks before each one. In Build it asks '
-        + 'once for the whole request, and you can stop it at any point.</p>'
+        + 'and nowhere else. Commands run there as you, so a command can reach '
+        + 'anything you can - the bridge prints every one in its terminal. In '
+        + 'chat AMV asks before each one. In Build it asks once for the whole '
+        + 'request, and you can stop it at any point.</p>'
       + '<div class="brg-acts">'
         + '<button class="btn bs" id="brg-off" type="button">Disconnect</button>'
       + '</div></div>';
@@ -37190,9 +37192,16 @@ function _bridgeCardHTML(){
      and anybody who wants to look at it before running it should be able to. */
   return '<div class="brg">'
     + '<div class="brg-h"><b>Connect this computer</b></div>'
+    /* THE SENTENCE SOMEBODY READS WHILE DECIDING. It said "It works only in
+       the folder you point it at", and the file routes do - /read refuses a
+       path outside the root. Commands do not: /exec is a real shell with the
+       folder as its working directory, and `cat ../secret` came back with the
+       secret. Granting a shell is the decision being made here, so the card
+       has to describe a shell. */
     + '<p class="brg-p">So AMV can actually run your project instead of only writing it: '
-      + 'install packages, run the tests, start the server, use git. It works only in '
-      + 'the folder you point it at, and it stops when you close it.</p>'
+      + 'install packages, run the tests, start the server, use git. Files stay in '
+      + 'the folder you point it at; commands run there as you, the way they would '
+      + 'if you typed them. It stops when you close it.</p>'
     + '<ol class="brg-steps">'
       + '<li><span>Get the bridge. It is one small file with no dependencies, and '
         + 'you can read it before you run it.</span>'

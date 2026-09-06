@@ -26,6 +26,7 @@ import { tmpdir } from 'os';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { codeOnly } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -279,6 +280,55 @@ section('The catastrophic shapes are refused by the daemon, not by a prompt');
     { command: 'echo "git push --force-with-lease"' }, { token: TOKEN }));
   ok(lease.exitCode === 0,
      'while --force-with-lease is not the dangerous one and still runs', lease.exitCode);
+}
+
+section('A command is not a path, and nothing pretends otherwise');
+{
+  /* THE GAP THE FILE ROUTES HID. Every escape check above drives `read` and
+     `write`, both of which go through safePath and refuse. `exec` does not
+     go through safePath at all - it hands the string to /bin/sh with cwd set
+     to the root - and because no test ever asked it to climb out, four
+     separate pieces of copy went on saying "and nowhere else" about the one
+     route where it is false.
+
+     So this asserts the TRUE thing, in the direction it actually holds: a
+     command CAN reach out. That reads backwards for a security suite, and it
+     is deliberate. If somebody later makes exec genuinely confined, these
+     three fail, and the person fixing them is standing exactly where the
+     copy below has to be strengthened to match. A promise and its enforcement
+     have to move together or the weaker one is a lie. */
+  const outRead = await jsonOf(await call('exec', {
+    command: 'cat ../SECRET.txt' }, { token: TOKEN }));
+  ok(outRead.exitCode === 0 && /must never be readable/.test(outRead.stdout || ''),
+     'a command reads a file the read route refuses - exec is not path-confined',
+     JSON.stringify(outRead.stdout || '').slice(0, 60));
+
+  const outWrite = await jsonOf(await call('exec', {
+    command: 'echo escaped > ../FROM_EXEC.txt' }, { token: TOKEN }));
+  ok(outWrite.exitCode === 0 && existsSync(join(box, 'FROM_EXEC.txt')),
+     'and writes one the write route refuses', outWrite.exitCode);
+
+  const abs = await jsonOf(await call('exec', {
+    command: 'head -1 /etc/hosts' }, { token: TOKEN }));
+  ok(abs.exitCode === 0 && (abs.stdout || '').length > 0,
+     'and an absolute path outside the folder resolves', abs.exitCode);
+
+  /* WHAT THE PERSON IS TOLD WHILE THEY DECIDE. The banner is the last thing
+     read before the code is typed into AMV, and the card is what is on
+     screen at the moment shell access is granted. Neither may carry the
+     claim the three assertions above just disproved. */
+  /* Read with comments stripped. The first version of this assertion failed
+     on the comment I had just written to explain the removal - which is the
+     shape check.mjs hits often enough that codeOnly exists for it. */
+  const cardSrc = codeOnly(readFileSync(join(ROOT, 'src', 'app', '36-bridge.js'), 'utf8'));
+  const claim = /run commands[^']*nowhere else|works only in[\s\S]{0,40}the folder you point it at/;
+  ok(!claim.test(cardSrc),
+     'the connect card does not tell somebody commands are confined', true);
+  ok(/Commands run there as you/.test(cardSrc),
+     'it says what actually happens instead', true);
+  ok(!/run commands[\s\S]{0,60}nowhere else/.test(banner),
+     'and neither does the terminal banner they read first',
+     (banner.match(/AMV [^\n]*/) || [''])[0].slice(0, 70));
 }
 
 section('A timeout kills the whole tree, not just the shell');
