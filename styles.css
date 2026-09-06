@@ -11161,3 +11161,26 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .bill-swap-lead{ line-height:1.35; }
   .bill-swap-tag{ margin-left:var(--sp-1); }
 }
+
+/* ── LAYER A163 · a control sized to the exact legal minimum fails somewhere ─
+
+   A124 gave `.cw-plan-foot .mc-sec-link` `min-height:24px`, which is exactly
+   the WCAG 2.5.8 floor. Exactly the floor is the one value that cannot
+   survive a different renderer: this machine measured 24 and the CI runner
+   measured a hair under, so `every-control-has-a-name-and-a-target` reported
+   `crew <BUTTON> .mc-sec-link 87x24` and went red on desktop while passing on
+   a phone and passing here. Four CI runs, on a control nobody had touched.
+
+   The number was never the point - being comfortably hittable was. 28px
+   clears the floor with room for the sub-pixel differences that font metrics
+   and device pixel ratios produce, and is still a text link to look at.
+
+   Applied to the CLASS rather than to the one place A124 patched. The base
+   rule at the top of this stylesheet gives `.mc-sec-link` no height at all,
+   so every instance outside `.cw-plan-foot` has the same latent problem and
+   was one screen away from the same failure. */
+.mc-sec-link{
+  min-height:28px;
+  display:inline-flex; align-items:center;
+  padding:5px 8px; margin:-5px -8px;
+}
