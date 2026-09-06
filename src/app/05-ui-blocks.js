@@ -2167,7 +2167,22 @@ function renderChatMsgs() {
     /* Name the engine that ACTUALLY answered. On Auto, the server routes the
        turn, so "AMV Auto Model" would tell the user nothing about what ran. */
     const _engLabel=(!isU && m._engine && ENGINE_LABEL[m._engine]) ? ENGINE_LABEL[m._engine] : (!isU&&m.model?(MODELS[m.model]?.label||''):'');
-    const mdlLabel=!isU&&m.model?'<span class="msg-engine" title="'+escH(m._engineWhy||'')+'">'+escH(_engLabel)+' Model'+
+    /* A LABEL WITH NO NAME IN IT SAID NOTHING, AND SAID IT ON EVERY REPLY.
+
+       This was gated on `m.model` alone, but `_engLabel` above resolves to ''
+       whenever the stored model id is not in the client's catalogue - which
+       is not an edge case, it is what happens to every message already in a
+       thread when an engine is renamed or retired. The span then rendered as
+       a leading space and the bare word "Model", in small grey type above the
+       answer, which reads as something half-drawn.
+
+       Seen in a screenshot rather than in a check: it throws nothing, styles
+       correctly, and is a perfectly valid element that happens to be empty of
+       the one thing it exists to carry.
+
+       So the name is what the label is conditional on. No name, no label -
+       the reply is unchanged and nothing pretends to identify it. */
+    const mdlLabel=!isU&&m.model&&_engLabel?'<span class="msg-engine" title="'+escH(m._engineWhy||'')+'">'+escH(_engLabel)+' Model'+
       (m._engineWhy?'<span class="msg-engine-why">'+escH(m._engineWhy)+'</span>':'')+'</span>':'';
         const actions=(!isU && (m._error||m._retrying||m._quota))? '' : (isU?
       '<div class="macts mact-bar">'+
