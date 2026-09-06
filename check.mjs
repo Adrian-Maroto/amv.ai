@@ -95,7 +95,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 12 : 15;
+const TOTAL = FAST ? 12 : 16;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -1025,6 +1025,25 @@ if (!FAST) step('The Worker runs in workerd, not just in a mock', () => {
    comment over the wrong one described the right behaviour.
 
    Same skip rule as the stage above, for the same reason. */
+/* ── 14b. THE THING THAT RUNS WHEN NOBODY IS THERE ─────────────────────────
+
+   Crew's promise, in its own words: "the work happens with this window closed
+   and your laptop shut". Everything behind that is a cron, and a defect in it
+   is invisible by construction - nobody is watching, so it surfaces weeks
+   later as "my automations never seem to do anything", from a paying customer.
+
+   Unit suites own "a due job runs correctly": ten of them call
+   runDueAutomations with a chosen time, which is the only way to make a job
+   due. This owns what a hand-built env cannot reach - the real scheduled()
+   handler being wired at all, the plan gate in front of it, a job surviving
+   creation and read-back through the real routes, and the kill switch reaching
+   the one thing that runs with no request behind it. */
+if (!FAST) step('Scheduled work is wired, gated and stoppable', () => {
+  const out = sh('node smoke-crew.mjs');
+  const m = /^SKIP\s+(.*)$/m.exec(out);
+  return m ? 'SKIPPED: ' + m[1].trim() : '';
+});
+
 if (!FAST) step('The revenue loop works end to end on the real runtime', () => {
   const out = sh('node smoke-revenue.mjs');
   const m = /^SKIP\s+(.*)$/m.exec(out);
