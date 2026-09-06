@@ -107,12 +107,37 @@ section('Translating twice does not translate twice');
     S.tab = 'crew'; setTab('crew');
     await new Promise(r => setTimeout(r, 150));
     _translateUI();
-    await new Promise(r => setTimeout(r, 900));
+    /* WAITED FOR SETTLING, NOT FOR A NUMBER OF MILLISECONDS.
+
+       This was a flat 900ms, and 900ms is only enough when the machine is
+       idle. Under the parallel gate - four suites and their browsers at once
+       - the first pass had not finished when `first` was read, a straggling
+       batch landed afterwards, and the suite reported 7 then 8: an unbounded
+       translation loop that was not happening. It passed every time it was
+       run on its own, which is the worst shape a failure can have, because
+       the transcript says the product broke and the product is fine.
+
+       The property being tested is CONVERGENCE, so the wait is for
+       convergence: the count has to stop moving before it can be a baseline.
+       A ceiling on the wait rather than a bare loop, so a genuine runaway
+       fails the assertion below instead of hanging the suite until the
+       runner's timeout kills it with no line saying why. */
+    const settle = async (quietFor, cap) => {
+      const until = Date.now() + cap;
+      let last = -1, since = Date.now();
+      while(Date.now() < until){
+        if(batches !== last){ last = batches; since = Date.now(); }
+        else if(Date.now() - since >= quietFor) return true;
+        await new Promise(r => setTimeout(r, 50));
+      }
+      return false;
+    };
+    const settled = await settle(400, 15000);
     const first = batches;
 
     /* Settled. Asking again must cost nothing. */
-    _translateUI(); await new Promise(r => setTimeout(r, 300));
-    _translateUI(); await new Promise(r => setTimeout(r, 300));
+    _translateUI(); await settle(400, 4000);
+    _translateUI(); await settle(400, 4000);
 
     const nodes = _collectI18nNodes(document.getElementById('vc'));
     let eng = 0, tot = 0; const left = [];
@@ -131,9 +156,12 @@ section('Translating twice does not translate twice');
       const src = it.node._i18nSrc;
       if (src == null || String(src).trim() === v) { eng++; if (left.length < 12) left.push(v.slice(0, 60)); }
     }
-    return { first, total: batches, tot, eng, left };
+    return { first, total: batches, tot, eng, left, settled };
   });
 
+  ok(r.settled === true,
+     'the first pass stopped asking on its own, rather than being cut off by a clock',
+     r.settled);
   ok(r.first > 0, 'the first pass really did translate', r.first);
   ok(r.total === r.first,
      'and running it again asks the model for nothing more', { first: r.first, after: r.total });

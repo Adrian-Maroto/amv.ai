@@ -9685,3 +9685,33 @@ dialog on a small phone with the backend unreachable.
    proves one screen size.
 3. When a comment names a number, check the number. This one was wrong and the
    prose around it was right, which is the combination that survives review.
+
+## 385. The gate went red for a runaway that was not happening
+
+`i18n-coverage` proves the translation pass CONVERGES - that asking twice
+costs nothing - because with an engine key configured a pass that keeps
+finding work is an unbounded loop billed by the token. Good property, and it
+was measured against a stopwatch: translate, wait 900ms, read the count.
+
+900ms is enough on an idle machine. Under the gate - four suites and their
+browsers at once - the first pass had not finished when the baseline was
+read, a straggling batch landed after it, and the suite reported 7 then 8. It
+passed every single time it was run on its own, which is the worst shape a
+failure can take: the transcript says the product has an unbounded loop, the
+product is fine, and the hour goes into finding that out.
+
+The property is convergence, so the wait is now for convergence - the count
+has to stop moving before it is a baseline. With a ceiling on it, so a real
+runaway fails the assertion instead of hanging until the runner kills the
+suite with no line saying why, and with the ceiling reported as its own
+assertion so "it settled" and "it ran out of time" are never the same pass.
+
+Confirmed both directions: an injected extra call still fails it, and it is
+green under six busy cores, which is the condition that broke it.
+
+1. A fixed sleep encodes the speed of the machine that wrote it. If the thing
+   being waited for is observable, wait for the thing.
+2. A test that only fails in parallel is still a broken test. "Passes when run
+   alone" is a diagnosis, not an exoneration.
+3. Give a bounded wait its own assertion. Otherwise a timeout and a success
+   are the same line in the transcript.
