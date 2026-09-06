@@ -9834,3 +9834,40 @@ absence. Nothing caught them at the moment they were written.
    then conclude something is not there.
 3. Match a field name as a field name, not as a word. Prose about the code
    lives next to the code.
+
+## 389. Three defects on one screen that no check could have caught
+
+Chat had three faults at once, and every one of them passed all sixteen gate
+stages, threw nothing, and logged nothing.
+
+  · A numbered list rendered as bare `<li>` with no parent, so steps arrived
+    as unrelated sentences. Valid HTML. Styled correctly.
+  · The composer told a phone "Enter to send, Shift+Enter for new line, drag
+    & drop files" - three sentences that are all false on a touch device.
+    Rendered perfectly.
+  · The engine label read as the bare word "Model" whenever the stored model
+    id was not in the catalogue, which is what happens to every message in a
+    thread once an engine is renamed. A valid element, empty of the one thing
+    it exists to carry.
+
+None is detectable by asserting on structure, because the structure is fine
+in all three. They are wrong in the way a sentence is wrong: complete,
+well-formed, and not true.
+
+What found them was rendering a REALISTIC answer - a bold lead, a numbered
+list, an inline emphasis, a code block, a closing line - and looking at the
+picture. An empty chat or a one-line "hello" shows none of it: the list bug
+needs a list, and the label bug needs a message with a model id on it.
+
+The repository already measures a great deal about chat and had no instrument
+pointed at what it LOOKS like with real content in it.
+
+1. For any surface that renders somebody else's content, seed it with content
+   that has the shapes real content has, then look. The bugs live in the
+   shapes, and a stub has none of them.
+2. "It throws nothing and the CSS is correct" is not evidence the screen is
+   right. Those three had both.
+3. Measure before reporting what a screenshot seems to show. A fourth
+   candidate on Build - a heading apparently starting off the left edge -
+   measured clean at 390, 360 and 1280: it was the tab transition caught
+   mid-animation, not a layout fault.
