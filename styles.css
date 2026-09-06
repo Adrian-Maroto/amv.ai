@@ -11131,3 +11131,33 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 @media (hover: none) and (pointer: coarse){
   .input-hint{ display:none; }
 }
+
+/* ── LAYER A162 · the plan chooser recommended nothing ───────────────────────
+
+   Three upgrade buttons, all `btn bp`, all full width, stacked: $15, $75 and
+   $200 with identical weight. A screen where everything is emphasised is a
+   screen where nothing is, and the person is left to do the whole decision
+   with no help from the product that knows the ladder.
+
+   The lead button keeps the filled accent it already had. What changes is
+   that the OTHERS step back to the secondary treatment, so there is one thing
+   to look at first - and a small tag naming why it leads.
+
+   The tag is inside the button rather than floating over its corner: a corner
+   ribbon on a full-width button on a 390px phone either overlaps the label or
+   pushes it off-centre, and this one has to sit beside a price. */
+.bill-swap-lead{ position:relative; }
+.bill-swap-tag{
+  display:inline-block; margin-left:var(--sp-2);
+  padding:2px var(--sp-2);
+  border-radius:var(--r-pill);
+  background:rgba(255,255,255,.18);
+  font-size:var(--t-xs); font-weight:650; letter-spacing:.02em;
+  vertical-align:middle; white-space:nowrap;
+}
+/* On the narrowest phones the price and the tag together can outgrow one
+   line, so the button is allowed to take two rather than clipping either. */
+@media(max-width:400px){
+  .bill-swap-lead{ line-height:1.35; }
+  .bill-swap-tag{ margin-left:var(--sp-1); }
+}

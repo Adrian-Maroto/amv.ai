@@ -13453,7 +13453,40 @@ function renderBillingView(targetEl){
       ((upTargets.length||downTargets.length)?
       '<div class="ss2"><h3>Change plan</h3>'+
         '<div class="bill-swap">'+
-          upTargets.map(k=>'<button class="btn bp" data-pay="'+escH(k)+'">Upgrade to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo</button>').join('')+
+          /* ONE RECOMMENDATION, NOT THREE SHOUTS.
+
+             Every upgrade button was `btn bp` - the filled accent - so Pro at
+             $15, Elite at $75 and Ultra at $200 arrived as three identical
+             full-width primary buttons stacked on top of each other. Nothing
+             was recommended, so the person had to do all the deciding
+             unaided, and a screen where everything is emphasised is a screen
+             where nothing is.
+
+             The one that leads is `upTargets[0]`, which is the NEXT STEP UP
+             from wherever somebody already is: Pro from Free, Elite from Pro,
+             Ultra from Elite. That is a rule rather than a favourite, so it
+             stays right when the ladder changes and it never recommends a
+             $200 jump to somebody who has not paid anything yet - which is
+             the one recommendation a brand nobody has heard of cannot make
+             credibly.
+
+             The badge says what is TRUE. Not "Most popular": AMV has no
+             customers yet, so that would be a claim about other people that
+             nobody could stand behind, and this file is not going to invent
+             social proof. "Start here" and "Next step up" are both just
+             descriptions of where the button sits on the ladder.
+
+             Nothing is hidden or made harder. The other plans keep their full
+             width, their full price, and a single tap - they are quiet, not
+             demoted. */
+          upTargets.map((k,ix)=>{
+            const lead = ix === 0;
+            const badge = lead
+              ? '<span class="bill-swap-tag">'+(plan==='free'?'Start here':'Next step up')+'</span>'
+              : '';
+            return '<button class="btn '+(lead?'bp bill-swap-lead':'bs')+'" data-pay="'+escH(k)+'">'
+              + 'Upgrade to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo'+badge+'</button>';
+          }).join('')+
           downTargets.filter(k=>k!=='free').map(k=>'<button class="btn bs" data-pay="'+escH(k)+'">Switch to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo</button>').join('')+
         '</div>'+
         '<p class="bill-acts-s">Changes take effect immediately and are prorated. '+
