@@ -11007,3 +11007,36 @@ html{ -webkit-text-size-adjust:100%; text-size-adjust:100%; }
 .int-guest-t{ font-size:var(--t-lg); font-weight:600; color:var(--tx); line-height:1.3; }
 .int-guest-s{ font-size:var(--t-sm); color:var(--mu); line-height:1.6; max-width:62ch; }
 .int-guest .btn{ margin-top:var(--sp-1); min-height:40px; }
+
+/* ── LAYER A158 · the consent banner sat on top of the only navigation ───────
+
+   Measured at 390x844, on a first visit, which is the ONLY time this banner is
+   shown: elementFromPoint at the centre of every bottom-nav button - Chat,
+   Build, Crew, More - returned the cookie banner. Not overlapping it. On top of
+   it, and taking the tap.
+
+   So a brand new visitor on a phone could not navigate. The banner is fixed at
+   bottom:8px with z-index 9999; the bottom nav is fixed at bottom:0 with
+   z-index 400 and is about 64px tall. The banner is 122px tall, so it covered
+   the bar completely, on every tab.
+
+   Nothing caught it because each half is correct on its own. The banner needs a
+   high z-index to sit over page content, the nav needs to be pinned to the
+   bottom, and no check asks whether a fixed element lands on top of another
+   one. The screenshots showed it and read as "banner at the bottom of the
+   screen", which is what a consent banner looks like.
+
+   The fix is to lift the banner by the height of the bar rather than to lower
+   its z-index - it must still cover ordinary content, it just must not cover
+   the navigation.
+
+   AND THE BREAKPOINT IS 720px, NOT 640px. The banner's own mobile rule stops
+   at 640px while #bottom-nav starts at 720px, so 641-720px - a small tablet in
+   portrait - had the bar visible and the banner still at its desktop offset,
+   covering it. Matching the nav's breakpoint is what makes the two agree. */
+@media(max-width:720px){
+  .cc-banner{
+    /* 64px of bar, its safe-area inset, and the 8px gap the banner already had. */
+    bottom:calc(64px + 8px + env(safe-area-inset-bottom,0px));
+  }
+}
