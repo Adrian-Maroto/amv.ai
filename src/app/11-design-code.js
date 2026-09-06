@@ -2838,25 +2838,63 @@ function _toolNeedsConsent(name){
    own budget, and a shortened one says how much was left out rather than
    trailing off. A value competes only with itself. */
 const _ARG_VALUE_CAP = 140;
+/* Enough for an address, an id or a filename - the short fields that carry the
+   consequence - so shrinking to fit never costs the thing somebody is looking
+   for. Below this a value is not worth showing badly, and the preview says so
+   rather than printing a stub of one. */
+const _ARG_VALUE_MIN = 44;
+/* A ceiling on the whole preview. Per-field budgets alone are not a bound:
+   measured at 390x620 with 24 fields at the full 140, the dialog runs to about
+   2,900 characters and its buttons land at y=1330. They ARE still reachable -
+   `.ov` scrolls, and that was checked rather than assumed - but a wall of text
+   somebody scrolls past to find Deny is a worse consent screen than a short
+   one, and the whole point of showing the arguments is that they get read. */
+const _ARG_TOTAL_BUDGET = 1200;
+/* Beyond this many fields the call is not something a dialog can usefully
+   preview, and the honest answer is a count rather than a wall. */
+const _ARG_MAX_FIELDS = 60;
 function _toolArgPreview(input){
   let keys = [];
   try{ keys = Object.keys(input || {}); }catch(e){ keys = []; }
   if(!keys.length) return 'No arguments.';
+
+  /* EVERY NAME, ALWAYS. The first version of this capped the LIST at 24
+     fields, which is the original hole wearing different clothes: 24 decoy
+     fields and `to` at position 25 hides the recipient exactly as 900
+     characters of padding did. Names are short and they are the part that
+     carries the warning, so names are what never gives way. */
+  const shown = keys.slice(0, _ARG_MAX_FIELDS);
+  let nameCost = 0;
+  for(const k of shown) nameCost += String(k).length + 3;
+  const perValue = Math.min(_ARG_VALUE_CAP,
+    Math.floor((_ARG_TOTAL_BUDGET - nameCost) / Math.max(1, shown.length)));
+
   const lines = [];
-  for(const k of keys.slice(0, 24)){
+  /* Too many fields for any of their values to be shown properly. Said out
+     loud, at the top, rather than by quietly printing eleven-character stubs
+     that look like the values. A call shaped like this is itself the signal. */
+  if(perValue < _ARG_VALUE_MIN){
+    lines.push('This call has ' + keys.length + ' fields, too many to show what is in them. '
+             + 'These are their names:');
+    for(const k of shown) lines.push('  ' + k);
+    if(keys.length > _ARG_MAX_FIELDS) lines.push('  \u2026 and ' + (keys.length - _ARG_MAX_FIELDS) + ' more');
+    return lines.join('\n');
+  }
+
+  for(const k of shown){
     let v;
     try{ v = input[k]; }catch(e){ v = null; }
     let s;
     if(typeof v === 'string') s = v;
     else { try{ s = JSON.stringify(v); }catch(e){ s = String(v); } }
     s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
-    if(s.length > _ARG_VALUE_CAP){
-      const left = s.length - _ARG_VALUE_CAP;
-      s = s.slice(0, _ARG_VALUE_CAP) + '\u2026 (' + left + ' more character' + (left === 1 ? '' : 's') + ')';
+    if(s.length > perValue){
+      const left = s.length - perValue;
+      s = s.slice(0, perValue) + '\u2026 (' + left + ' more character' + (left === 1 ? '' : 's') + ')';
     }
     lines.push(k + ': ' + (s || '(empty)'));
   }
-  if(keys.length > 24) lines.push('\u2026 and ' + (keys.length - 24) + ' more fields');
+  if(keys.length > _ARG_MAX_FIELDS) lines.push('\u2026 and ' + (keys.length - _ARG_MAX_FIELDS) + ' more fields');
   return lines.join('\n');
 }
 try{ window._toolArgPreview=_toolArgPreview; }catch(e){}

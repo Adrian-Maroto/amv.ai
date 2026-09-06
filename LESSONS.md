@@ -9715,3 +9715,49 @@ green under six busy cores, which is the condition that broke it.
    alone" is a diagnosis, not an exoneration.
 3. Give a bounded wait its own assertion. Otherwise a timeout and a success
    are the same line in the transcript.
+
+## 386. The tested phone was one phone, and a whole class hid behind it
+
+Forty-two `setViewportSize` calls in this repository use 390x844. Three use
+390x780; one each 390x667, 360x740, 320x700 and 320x568. So "we test on
+mobile" meant "we test on a tall phone", and any fault that needs a SHORT one
+had nowhere to be caught.
+
+One was there: `.offline-bar` sat on the close button of every dialog below
+about 700px of height. At 390x844 the card starts at 143 and the bar ends at
+59, so the class read clean. It was found by accident, in a screenshot taken
+for something else.
+
+`a-dialog-is-answerable-on-a-small-phone` is the instrument that finds the
+next one: every consent and destructive dialog, at 390x620 and 320x568, with
+the status bar and the cookie banner both up, every control read with
+`elementFromPoint`.
+
+Three things about how it is worded.
+
+It asserts ANSWERABLE, not "on screen". A long dialog whose buttons are below
+the fold is fine if the dialog scrolls to them; calling that broken is how a
+suite earns a reputation for crying wolf, and LESSONS 380 already has a
+retracted finding of exactly that shape. So a control passes if it takes its
+own tap where it is, OR after the dialog is scrolled to it. Only failing both
+is a finding.
+
+It drives the REAL dialogs. A hand-rolled modal with a short body centres
+instead of overflowing, starts lower, and clears every fixed surface on the
+page - passing while testing nothing. That happened once already, in the
+offline-bar suite, and the guard assertion there is what caught it.
+
+And it reports what needed scrolling even when it passes. At 320x568 the
+whole-turn consent's "Not now" is below the fold. Not a failure. Worth seeing.
+
+Turning it on the two fixes already made: reverting either one fails it, and
+reverting the cookie-banner fix fails FIVE dialogs at both sizes, not the one
+I had measured by hand. The by-hand number was right about the bug and wrong
+about its size.
+
+1. A viewport is a variable. Testing one value of it tests one value of it.
+2. When a bug is found by accident, ask what would have found it on purpose,
+   and build that - the bug itself is the cheaper half of the lesson.
+3. `page.evaluate` awaits a promise the page returns. Hand it an unresolved
+   dialog and the suite hangs until the runner kills it, with the section
+   header printed and no assertion under it.

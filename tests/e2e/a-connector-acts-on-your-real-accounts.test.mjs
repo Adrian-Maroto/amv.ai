@@ -179,6 +179,33 @@ section('And one argument cannot push another off the screen');
      /more characters?\)/.test(body));
   await page.click('#modal-cancel');
   await dlg2;
+
+  /* THE SAME ATTACK WITH A DIFFERENT LEVER. The first fix capped the LIST at
+     24 fields, which is the hole wearing different clothes: 24 decoy fields
+     and `to` at position 25 hides the recipient exactly as 900 characters of
+     padding did. Caught by re-running the check with the count moved instead
+     of the length, which is the variable the first fix left free. */
+  const many = {}; for (let i = 0; i < 24; i++) many['decoy_' + i] = 'y'.repeat(400);
+  many.to = 'attacker@example.com';
+  const dlg3 = page.evaluate((m) => _confirmModelTool('mcp__echo__shout', m), many);
+  await page.waitForSelector('#modal-ok', { timeout: 6000 });
+  const body3 = await page.evaluate(() =>
+    document.querySelector('#modal-box .ob-sub')?.textContent || '');
+  /* MATCHED AS A LINE, NOT AS A WORD. The first version of this was
+     `/\bto\b/`, and it passed against a build where the field really WAS
+     dropped - because the sentence explaining the truncation contains the
+     word "to". The mutation run is the only reason that is not still here.
+     `to` has to appear as a field name on its own line, which is the thing
+     somebody actually scans for. */
+  ok(/^\s*to\s*$/m.test(body3),
+     'a recipient hidden behind 24 decoy fields is still NAMED', body3.slice(-160));
+  ok(/too many to show what is in them/.test(body3),
+     'and the dialog says outright that it cannot show the values, rather than '
+     + 'printing stubs that look like them', /too many/.test(body3));
+  ok(body3.length < 2000,
+     'while the preview stays short enough to read on a phone', body3.length);
+  await page.click('#modal-cancel');
+  await dlg3;
 }
 
 section('Allowed, it really runs on the real server');
