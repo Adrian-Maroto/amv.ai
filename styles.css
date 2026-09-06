@@ -11102,3 +11102,32 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    consent banner this bar is saying something a person may need while they
    answer. Under the backdrop is where the comment always meant it to be. */
 .offline-bar{ z-index:8900; }
+
+/* ── LAYER A161 · keyboard help on a device with no keyboard ─────────────────
+
+   `.input-hint` reads "Enter to send • Shift+Enter for new line • Drag & drop
+   files". On a phone all three are false, not merely unhelpful:
+
+     · Enter inserts a newline on a touch keyboard. The send button sends.
+       So the first clause tells somebody the wrong thing about the control
+       they are looking at.
+     · There is no Shift key to hold.
+     · There is nothing to drag, and no second window to drag it from.
+
+   And it is not free: measured at 390x844 it wraps to two lines directly
+   above the composer, on the screen with the least room, pushing the thing
+   people came to use further down.
+
+   Matched on the INPUT, not on width. A narrow browser window on a laptop
+   still has a keyboard and all three sentences are true there; a large
+   tablet has none of them. `hover:none` plus `pointer:coarse` is the pair
+   that actually means "a finger, and no hardware keyboard attached", which
+   is the condition these words depend on.
+
+   Hidden rather than reworded because the phone already answers all three
+   without help: the send button is visible and labelled, the newline is what
+   the keyboard's own return key does, and the paperclip next to it is how
+   files get attached. */
+@media (hover: none) and (pointer: coarse){
+  .input-hint{ display:none; }
+}

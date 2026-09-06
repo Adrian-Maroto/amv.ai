@@ -469,9 +469,40 @@ function md(text) {  if(!text) return '';
   t = t.replace(/^# (.+)$/gm,'<h1>$1</h1>');
   t = t.replace(/^&gt; (.+)$/gm,'<blockquote>$1</blockquote>');
   t = t.replace(/^---+$/gm,'<hr>');
+  /* A NUMBERED LIST CAME OUT WITH NO NUMBERS, AND NO LIST.
+
+     These three lines used to run in this order: bullets to `<li>`, wrap the
+     run in `<ul>`, THEN numbered items to `<li>`. The wrap had already
+     happened, so an ordered list became bare `<li>` elements with no parent
+     at all - measured, in the browser:
+
+         md('1. one\n2. two')  ->  '<li>one</li><li>two</li>'
+
+     A browser renders a parentless `<li>` as a plain block: no marker, no
+     indent. So every numbered list the model wrote - steps, rankings, "do
+     this then that" - arrived as flat lines that read as unrelated
+     sentences. That is the most common shape in an answer, and the one where
+     order carries the meaning.
+
+     The second bug was underneath the first: `md` only ever emitted `<ul>`,
+     so even correctly wrapped, a numbered list would have shown bullets.
+     `.mb ul,.mb ol` has been styled the whole time - the CSS was ready and
+     nothing ever produced the tag.
+
+     Both kinds are converted BEFORE anything is wrapped, and an ordered item
+     is marked as it is converted so the wrapper can tell the runs apart. The
+     marker is safe because the text was HTML-escaped at the top of this
+     function: a literal `<li` cannot come from what somebody typed.
+
+     A run is ordered if its FIRST item is, which is how markdown behaves when
+     the two are mixed without a blank line between them. */
   t = t.replace(/^[\-\*] (.+)$/gm,'<li>$1</li>');
-  t = t.replace(/(<li>.*<\/li>\n?)+/g, m=>'<ul>'+m+'</ul>');
-  t = t.replace(/^\d+\. (.+)$/gm,'<li>$1</li>');
+  t = t.replace(/^\d+\. (.+)$/gm,'<li data-o>$1</li>');
+  t = t.replace(/(?:<li(?: data-o)?>.*<\/li>\n?)+/g, m => {
+    const ordered = m.slice(0, 11) === '<li data-o>';
+    const items = m.replace(/<li data-o>/g, '<li>');
+    return ordered ? '<ol>'+items+'</ol>' : '<ul>'+items+'</ul>';
+  });
   t = t.replace(/`([^`\n]+)`/g,'<code>$1</code>');
   t = t.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (m,alt,url)=>'<img src="'+_mdAttr(url)+'" alt="'+_mdAttr(alt)+'" class="chat-img" loading="lazy">');
   // Link TEXT ($1) is intentionally left as already-rendered inline HTML (bold/
