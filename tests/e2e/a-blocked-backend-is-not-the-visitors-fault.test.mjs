@@ -293,6 +293,27 @@ section('And the bar it puts up does not sit on a dialog somebody is answering')
      it, which is exactly why testing at 390x844 alone would have found this
      clean. */
   await page.setViewportSize({ width: 390, height: 620 });
+  /* TEAR THE CAPTCHA DOWN FIRST.
+
+     The section above mounts a REAL Turnstile widget with a deliberately fake
+     site key. On a machine with network - which is CI, and is not this
+     sandbox - Cloudflare's script actually loads, rejects the key, and leaves
+     its own element in the page. That span then sat over the dialog this
+     section measures, and the button that acts reported `took: SPAN`.
+
+     Green locally and red in CI, four runs running, because the two
+     environments disagree about whether a third party is reachable. The fix
+     is to stop borrowing the previous section's leftovers rather than to
+     widen what counts as reachable. */
+  await page.evaluate(() => {
+    try { localStorage.removeItem('amv_turnstile_site'); } catch (e) {}
+    const box = document.getElementById('a-turnstile');
+    if (box) { box.innerHTML = ''; box.removeAttribute('data-sitekey'); }
+    for (const el of document.querySelectorAll('iframe[src*="challenges.cloudflare"]')) el.remove();
+    const o = document.getElementById('ovr');
+    if (o) { o.innerHTML = ''; o.className = ''; }
+  });
+  await page.waitForTimeout(250);
   const armed = await page.evaluate(() => {
     try { _showStatusBar('AMV cannot reach its backend from this network.', { sticky: true }); }
     catch (e) { return false; }
@@ -329,7 +350,19 @@ section('And the bar it puts up does not sit on a dialog somebody is answering')
   await page.waitForTimeout(300);
 }
 
-ok(errors.length === 0, 'no console errors', errors);
+/* A THIRD PARTY COMPLAINING ABOUT A KEY THIS SUITE MADE UP IS NOT AN AMV
+   ERROR. `A key that arrives is still just a captcha` mounts Turnstile with
+   `0x4AAAAAAtestsitekey` on purpose. Where the host is reachable, Cloudflare
+   loads, finds the key invalid and logs `[Cloudflare Turnstile] Error:
+   400020` - caused by this file, about a value this file invented.
+
+   It only began failing when a later section added a couple of seconds of
+   waiting: before that the check ran before the async complaint arrived, so
+   the suite passed on a race rather than on a property. Filtered by its exact
+   shape, so any other console error - including a different Turnstile fault -
+   still fails this. */
+const ownErrors = errors.filter(e => !/Turnstile.*400020/i.test(String(e)));
+ok(ownErrors.length === 0, 'no console errors of our own', ownErrors);
 
 await app.close();
 if (report('a-blocked-backend-is-not-the-visitors-fault') > 0) process.exitCode = 1;
