@@ -9761,3 +9761,41 @@ about its size.
 3. `page.evaluate` awaits a promise the page returns. Hand it an unresolved
    dialog and the suite hangs until the runner kills it, with the section
    header printed and no assertion under it.
+
+## 387. A suite that hung held the gate, and the gate blamed the wrong thing
+
+`tests/run.mjs` spawned each suite and waited. There was no ceiling on that
+wait, so a suite that never exits held its slot, held the run lock, and held
+a browser, and the gate sat in "All test suites…" indefinitely.
+
+The second-order effect is what made it expensive. The NEXT gate refuses with
+"Another test run is already going (pid N)" - a message about concurrency,
+which was not the problem, naming a pid rather than a suite. Two correct
+mechanisms, the lock and the buffered transcript, combined into a report that
+pointed away from the fault at every step. It cost a 21-minute run and eight
+minutes of a wedged lock before the actual cause - a hung suite of my own -
+was even a candidate.
+
+The hang itself is worth knowing on its own: `page.evaluate` AWAITS a promise
+the page returns. A suite that hands back an unresolved dialog is waiting for
+a click that only that suite could produce.
+
+Each suite now gets ten minutes, killed by process GROUP - a suite's browser
+is a tree, and signalling the node process alone leaves chromium running,
+which was most of what was actually stuck. It resolves as a failure whose
+text says it timed out, how long it ran, and the common cause.
+
+Generous on purpose. The slowest suite here is well under a minute, and this
+is a backstop against a hang rather than a performance budget: a timeout that
+fires on a merely slow machine is one somebody raises until it is useless.
+
+Verified by running a deliberately hanging suite: it is killed at the
+ceiling, the transcript names it, and the chromium process count returns to
+what it was before - so the tree really does die with it.
+
+1. Every wait on a child process needs a ceiling. "It has always finished" is
+   an observation, not a bound.
+2. When a failure message names infrastructure rather than a test, ask what it
+   is pointing away from.
+3. Kill the group, not the process. Anything that spawns a browser leaves a
+   tree behind.

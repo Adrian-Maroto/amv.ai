@@ -177,16 +177,69 @@ sayLine(`\x1b[2mselected ${suites.length} suite(s)` +
    its header, when that suite finishes. The suites are still reported in the
    order they were selected, not the order they happened to finish, so two runs
    of the same tree read the same. */
+/* A SUITE THAT HANGS USED TO HANG THE WHOLE GATE, FOR EVER.
+
+   There was no ceiling here. A suite that never exits held its slot, held the
+   lock, and held a browser, and the gate sat in "All test suites…" until
+   somebody noticed. Then the NEXT gate failed with "Another test run is
+   already going", which points at concurrency - the one thing that was not
+   wrong - and says nothing about the suite that is actually stuck.
+
+   It is not hypothetical and it is not exotic: `page.evaluate` awaits a
+   promise the page returns, so a suite that hands back an unresolved dialog
+   waits for a click that only it could produce. That cost a 21-minute gate
+   run and eight minutes of a wedged lock, and the transcript blamed the
+   wrong thing at every step.
+
+   So each suite gets a ceiling. Generous - ten minutes, when the slowest here
+   is well under one - because this is a backstop against a hang, not a
+   performance budget, and a timeout that fires on a merely slow machine is a
+   timeout somebody raises until it is useless.
+
+   Killed by process GROUP, which is why the child is spawned detached. A
+   suite's browser is a tree of its own; signalling the node process alone
+   leaves chromium running, which is most of what was actually stuck.
+
+   And it resolves as a FAILURE that says so, in the suite's own buffer, so
+   the transcript names the suite that hung instead of describing a lock. */
+const SUITE_TIMEOUT_MS = Math.max(30000, +process.env.AMV_SUITE_TIMEOUT_MS || 600000);
 const run = (s) => new Promise((resolve) => {
   const chunks = [];
-  const p = spawn('node', [s.path], { stdio: ['ignore', 'pipe', 'pipe'], cwd: ROOT });
+  const started = Date.now();
+  const p = spawn('node', [s.path], {
+    stdio: ['ignore', 'pipe', 'pipe'], cwd: ROOT,
+    detached: process.platform !== 'win32',
+  });
+  let done = false;
+  const settle = (r) => { if (done) return; done = true; clearTimeout(timer); resolve(r); };
+  const killTree = () => {
+    try {
+      if (process.platform === 'win32') spawn('taskkill', ['/pid', String(p.pid), '/T', '/F'], { stdio: 'ignore' });
+      else process.kill(-p.pid, 'SIGKILL');
+    } catch (e) {
+      /* Already gone, or never grouped. Falls back to the child alone rather
+         than leaving it running because the group call failed. */
+      try { p.kill('SIGKILL'); } catch (e2) {}
+    }
+  };
+  const timer = setTimeout(() => {
+    killTree();
+    const secs = Math.round((Date.now() - started) / 1000);
+    chunks.push(Buffer.from(
+      `\n\x1b[31mTIMED OUT after ${secs}s and was killed.\x1b[0m\n` +
+      `Nothing below this line ran. A suite that hangs is usually waiting on ` +
+      `something that cannot happen -\nthe common one is returning a promise ` +
+      `from page.evaluate that only a click would settle.\n` +
+      `Raise AMV_SUITE_TIMEOUT_MS if this suite is genuinely this slow.\n`));
+    settle({ name: s.name, code: 1, out: Buffer.concat(chunks), timedOut: true });
+  }, SUITE_TIMEOUT_MS);
   p.stdout.on('data', (d) => chunks.push(d));
   p.stderr.on('data', (d) => chunks.push(d));
   /* A suite that cannot be spawned at all resolves like one that failed, rather
      than leaving a promise nobody settles and a run that hangs for ever with no
      output. */
-  p.on('error', (e) => resolve({ name: s.name, code: 1, out: Buffer.from(String(e && e.message || e) + '\n') }));
-  p.on('close', (code) => resolve({ name: s.name, code, out: Buffer.concat(chunks) }));
+  p.on('error', (e) => settle({ name: s.name, code: 1, out: Buffer.from(String(e && e.message || e) + '\n') }));
+  p.on('close', (code) => settle({ name: s.name, code, out: Buffer.concat(chunks) }));
 });
 
 /* ── SUITES THAT CANNOT SHARE THE MACHINE ──────────────────────────────────
