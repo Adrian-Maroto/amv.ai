@@ -320,12 +320,27 @@ section('A command is not a path, and nothing pretends otherwise');
   /* Read with comments stripped. The first version of this assertion failed
      on the comment I had just written to explain the removal - which is the
      shape check.mjs hits often enough that codeOnly exists for it. */
-  const cardSrc = codeOnly(readFileSync(join(ROOT, 'src', 'app', '36-bridge.js'), 'utf8'));
-  const claim = /run commands[^']*nowhere else|works only in[\s\S]{0,40}the folder you point it at/;
+  const srcOf = (f) => codeOnly(readFileSync(join(ROOT, 'src', 'app', f), 'utf8'));
+  const cardSrc = srcOf('36-bridge.js');
+  /* Every shape the four wrong sentences took, so a rewrite that reaches for
+     any of them again lands here rather than in front of somebody deciding
+     whether to hand over their machine. */
+  const claim = /run commands[^']*nowhere else|works only in[\s\S]{0,40}the folder you point it at|cannot touch anything outside|refuses[\s\S]{0,20}anything destructive/;
   ok(!claim.test(cardSrc),
      'the connect card does not tell somebody commands are confined', true);
   ok(/Commands run there as you/.test(cardSrc),
      'it says what actually happens instead', true);
+
+  /* THE HIGHEST-STAKES COPY IN THE PRODUCT. Build's consent is one ask for a
+     whole autonomous turn - twenty commands with no further prompt - so the
+     sentence in that dialog is the entire basis on which somebody agrees. It
+     carried the strongest version of the claim: "It cannot touch anything
+     outside that folder". */
+  const agentSrc = srcOf('37-build-agent.js');
+  ok(!claim.test(agentSrc),
+     "Build's whole-turn consent does not claim commands are confined either", true);
+  ok(/a command can reach the rest of/.test(agentSrc),
+     'it says what a command can actually reach', true);
   ok(!/run commands[\s\S]{0,60}nowhere else/.test(banner),
      'and neither does the terminal banner they read first',
      (banner.match(/AMV [^\n]*/) || [''])[0].slice(0, 70));

@@ -105,6 +105,59 @@ section('On a desktop there is no bar, and the banner sits where it always did')
      'so it stays near the bottom rather than floating up for no reason', v.gapFromBottom);
 }
 
+section('And it does not cover a dialog either, which is what the lift caused');
+{
+  /* THE SECOND HALF OF THE SAME BUG. Lifting the banner by the height of the
+     bar moved it from 722-844 to 650-772 on this screen - out of the nav and
+     into the band where a TALL modal's action row sits.
+
+     Measured on Build's consent dialog, which is the one where somebody hands
+     an autonomous agent their machine for a whole turn: the centre of both
+     "Let it work" and "Not now" returned the banner, leaving a ~23px strip of
+     each button that still worked. Short dialogs were never affected, so this
+     drives the tall one on purpose.
+
+     Reachability again, not geometry - the boxes overlapping was visible in a
+     screenshot the whole time and read as "a banner at the bottom". */
+  await freshVisit(390, 844);
+  const st = await page.evaluate(() => {
+    window.BRIDGE = { connected: true, folder: 'my-app' };
+    window.BRIDGE_TOOLS = [{ name: 'run_command' }];
+    try { _agentConsent('add a login page and run the tests'); } catch (e) { return { opened: false, why: String(e && e.message) }; }
+    return { opened: true };
+  });
+  ok(st.opened, 'the whole-turn consent dialog opens', st);
+  await page.waitForTimeout(700);
+
+  const d = await page.evaluate(() => {
+    const desc = el => el ? (el.tagName + '.' + String(el.className || '').split(' ')[0]) : 'null';
+    const hit = (el) => { const r = el.getBoundingClientRect();
+      const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { own: !!(t && (t === el || el.contains(t))), took: desc(t), top: Math.round(r.top) }; };
+    const okB = document.getElementById('modal-ok'), noB = document.getElementById('modal-cancel');
+    const cc = document.getElementById('cookie-consent-banner');
+    return { ok: okB ? hit(okB) : null, cancel: noB ? hit(noB) : null,
+             bannerStanding: !!cc, bannerVisible: cc ? getComputedStyle(cc).visibility : null };
+  });
+  ok(d.ok && d.ok.own,
+     'the button that GRANTS an autonomous turn takes its own tap', d.ok);
+  ok(d.cancel && d.cancel.own,
+     'and so does the one that refuses - a person who wants out can get out', d.cancel);
+  ok(d.bannerStanding, 'the banner is still on the page, not destroyed', d.bannerStanding);
+  ok(d.bannerVisible === 'hidden',
+     'it just stands down while something is blocking the page', d.bannerVisible);
+
+  /* And it comes back, because standing down permanently would be a consent
+     banner somebody never answered. */
+  await page.evaluate(() => { const b = document.getElementById('modal-cancel'); if (b) b.click(); });
+  await page.waitForTimeout(400);
+  const after = await page.evaluate(() => {
+    const cc = document.getElementById('cookie-consent-banner');
+    return cc ? getComputedStyle(cc).visibility : null;
+  });
+  ok(after === 'visible', 'and it is back the moment the dialog closes', after);
+}
+
 section('Nothing broke');
 ok(errors.length === 0, 'no JavaScript errors', errors.slice(0, 3));
 

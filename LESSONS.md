@@ -9585,3 +9585,39 @@ one from the one being advertised.
    `exec` DOES reach out. If somebody confines it later they fail, and the
    person fixing them is standing where the copy has to be strengthened to
    match. A promise and its enforcement have to move together.
+
+## 382. The fix for one overlap moved the element onto something else
+
+A158 lifted the cookie banner by the height of the bottom nav, because on a
+390x844 phone it was sitting on top of the only navigation a first-time
+visitor has - `elementFromPoint` at the centre of Chat, Build, Crew and More
+all returned the banner. That fix is right and the suite that proves it still
+passes.
+
+It moved the banner from 722-844 to 650-772, which is where a TALL modal's
+action row sits. Measured on Build's whole-turn consent dialog - the one where
+somebody hands an autonomous agent their machine until it is done - the centre
+of both "Let it work" and "Not now" returned the banner. About 23px at the top
+of each button still worked, which is the worst possible amount: enough that
+somebody eventually hits it and never reports the bug.
+
+Two things are worth keeping from the repair.
+
+The obvious fix was wrong. The banner is z-index 9999 and the modal overlay is
+9000, so raising the overlay looks like the answer - until you notice context
+menus and the profile menu are appended to the body at 10000 and open from
+inside sheets. Lifting the overlay over 9999 would have put those underneath
+it: the same class of bug, one layer along, and harder to see.
+
+And the first CSS I wrote did nothing. `body:has(#ovr.on)` keyed on the class
+the SHEETS use; `_showModalAsync` writes a `<div class="ov">` into `#ovr` and
+never touches `#ovr`'s own classList, so the selector was false for all
+thirty-one dialogs. I only knew because I re-measured after applying it
+instead of re-reading it.
+
+1. When a fix MOVES a fixed element, check what is at the new position. The
+   old position was checked; the new one is a fresh question.
+2. Re-measure after a CSS fix. A selector that matches nothing is silent, and
+   a comment explaining the fix reads exactly the same either way.
+3. z-index ordering is a total order over the whole page. Raising one thing to
+   win one collision re-orders it against everything else it never met.

@@ -78,8 +78,27 @@ async function _agentConsent(msg){
     body: 'AMV will work on this by itself until it is done: reading your files, '
         + 'writing changes, and running commands like builds, tests and git inside '
         + folder + ' on this computer.\n\n'
-        + 'It cannot touch anything outside that folder, and your bridge refuses '
-        + 'anything destructive on its own - that rule lives on your machine, not in AMV.\n\n'
+        /* SAID SMALLER THAN IT WAS, BECAUSE THE BIG VERSION WAS FALSE.
+
+           This read "It cannot touch anything outside that folder, and your
+           bridge refuses anything destructive on its own". Neither half held.
+           The bridge confines FILE paths; `run_command` is a real shell with
+           the folder as its working directory, and `cat ../secret` returns
+           the secret - proven by driving a live bridge, not by reading it.
+           And the refusal list is a set of catastrophic SHAPES, not a
+           category: the bridge's own source says it is a guard against the
+           obvious catastrophe arriving by accident and has never claimed to
+           be a sandbox.
+
+           This is the strongest version of the claim anywhere in AMV, in the
+           dialog where somebody hands an autonomous multi-round agent their
+           machine for a whole turn with no further prompts. It has to be the
+           weaker true one. */
+        + 'Files it writes stay inside that folder. Commands run there as you, so - '
+        + 'like anything you would type yourself - a command can reach the rest of '
+        + 'your computer. Your bridge refuses the obvious catastrophes on its own '
+        + '(recursive deletes, sudo, force pushes) and prints every command it runs '
+        + 'in its own window.\n\n'
         + 'You can stop it at any moment, and every file it changes is listed at the '
         + 'end with an Undo.\n\n'
         /* If connectors are running, this turn can reach out of the folder and

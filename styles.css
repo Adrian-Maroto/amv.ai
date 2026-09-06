@@ -11040,3 +11040,40 @@ html{ -webkit-text-size-adjust:100%; text-size-adjust:100%; }
     bottom:calc(64px + 8px + env(safe-area-inset-bottom,0px));
   }
 }
+
+/* ── LAYER A159 · the consent banner took the taps off a dialog's buttons ────
+
+   A158 lifted this banner by the height of the bottom nav, because it was
+   sitting on top of the only navigation a new visitor has. That fixed the
+   nav and moved the banner into the band where a TALL modal's action row
+   sits: it now spans 650-772 on a 390x844 phone instead of 722-844.
+
+   Measured, at 390x844, on the Build consent dialog - the one where somebody
+   hands an autonomous agent their machine for a whole turn:
+   elementFromPoint at the centre of "Let it work" and at the centre of
+   "Not now" both returned .cc-banner. Only a ~23px strip at the top of each
+   button was still the button. Short modals are unaffected; their buttons
+   land above 650.
+
+   The banner is z-index 9999 and the modal overlay is 9000, so the banner
+   wins wherever they meet. Raising the overlay instead was the obvious move
+   and is the wrong one: context menus and the profile menu are appended to
+   the body at 10000 and open from inside sheets, so lifting the overlay over
+   9999 would put those under it and trade this bug for a subtler one.
+
+   A consent banner should not compete with a dialog in the first place. It
+   is persistent, it comes back the moment the dialog closes, and nothing is
+   lost by standing it down while something is blocking the page.
+
+   `visibility` rather than `display` on purpose: the banner carries an
+   entrance animation, and display toggling would replay it every time any
+   modal closed.
+
+   AND THE SELECTOR IS `.ov`, NOT `#ovr.on`. The first version keyed on the
+   class the SHEETS use, measured, and found the banner still taking the
+   taps: `_showModalAsync` writes a `<div class="ov">` backdrop into `#ovr`
+   and never touches `#ovr`'s own class list, so `#ovr.on` was false for
+   every one of the thirty-one dialogs this is about. Both are listed here
+   because both block the page. */
+body:has(#ovr .ov) .cc-banner,
+body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
