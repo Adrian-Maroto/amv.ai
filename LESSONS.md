@@ -9799,3 +9799,38 @@ what it was before - so the tree really does die with it.
    is pointing away from.
 3. Kill the group, not the process. Anything that spawns a browser leaves a
    tree behind.
+
+## 388. Three false findings in one day, all from a search window too small
+
+LESSONS 380 recorded six probes that reported defects living in the probe.
+Three more happened today, and they share one shape that the earlier six did
+not: the region searched was bounded, and the thing being looked for sat just
+outside the bound.
+
+  · A test asserted the crew delivery branch was missing. It reads `level ===
+    'require'` within 4,000 characters of the anchor; the branch is at 4,797.
+  · A grep of `_readinessReport`'s first 120 lines found `STRIPE_PRICE_TEAM_SEAT`
+    and none of the three price ids that gate Pro, Elite and Ultra. The row
+    covering all three is at line 146, and its copy is better than anything I
+    would have written to replace it. That one was one keystroke from being
+    reported to the owner as the biggest revenue blocker in the product.
+  · An assertion that a field name survives truncation passed against a build
+    where it did not, because `/\bto\b/` matched the word "to" in the sentence
+    explaining the truncation.
+
+The first two are the same error: a window chosen to keep the search tight,
+with no check that it contains what is being searched for. The third is the
+mirror image - a pattern loose enough to match the explanation of the bug
+instead of the bug.
+
+What actually caught them: measuring the distance rather than assuming it,
+running the mutation, and reading the surrounding code before believing the
+absence. Nothing caught them at the moment they were written.
+
+1. A bounded search needs a landmark. If the window is meant to contain a
+   known thing, assert that it does - then a window that is too small fails
+   as a broken instrument rather than as a missing feature.
+2. Absence is the hardest claim to make from a grep. Widen, read, and only
+   then conclude something is not there.
+3. Match a field name as a field name, not as a word. Prose about the code
+   lives next to the code.
