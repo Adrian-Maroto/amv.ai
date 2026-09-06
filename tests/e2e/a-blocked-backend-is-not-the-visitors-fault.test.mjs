@@ -279,6 +279,56 @@ section('A key that arrives is still just a captcha');
   ok(!/could not reach/i.test(b.html), 'and no failure message is drawn', b.html.slice(0, 160));
 }
 
+section('And the bar it puts up does not sit on a dialog somebody is answering');
+{
+  /* `.offline-bar` says in its own comment that it sits "below the modal
+     layer (10000) and the toast stack (9999) on purpose: a status bar must
+     not sit over a dialog somebody is answering". The intent was right and
+     the number was wrong - the modal layer is `.ov` at 9000, so 9998 put it
+     above every dialog instead of below.
+
+     Measured at 390x620, which is an iPhone SE and most small Androids. On a
+     tall screen nothing happens: `.ov` gives the card 6vh of top padding and
+     it clears the bar. It is only short viewports where the card lands under
+     it, which is exactly why testing at 390x844 alone would have found this
+     clean. */
+  await page.setViewportSize({ width: 390, height: 620 });
+  const armed = await page.evaluate(() => {
+    try { _showStatusBar('AMV cannot reach its backend from this network.', { sticky: true }); }
+    catch (e) { return false; }
+    /* The REAL dialog, not a stand-in. A hand-rolled modal with a shorter
+       body centres instead of overflowing, its card starts lower, and the
+       bar never reaches it - which passes while testing nothing. The guard
+       below catches exactly that, and caught it. */
+    window.BRIDGE = { connected: true, folder: 'my-app' };
+    window.BRIDGE_TOOLS = [{ name: 'run_command' }];
+    try { _agentConsent('add a login page and run the tests'); } catch (e) { return false; }
+    return true;
+  });
+  await page.waitForTimeout(600);
+  ok(armed, 'the status bar and a tall dialog are both up', armed);
+
+  const d = await page.evaluate(() => {
+    const desc = el => el ? (el.tagName + '.' + String(el.className || '').split(' ')[0]) : 'null';
+    const hit = (el) => { if (!el) return null; const r = el.getBoundingClientRect();
+      const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { own: !!(t && (t === el || el.contains(t))), took: desc(t), y: Math.round(r.top) }; };
+    const bar = document.getElementById('offline-bar');
+    const br = bar ? bar.getBoundingClientRect() : null;
+    return { barBottom: br ? Math.round(br.bottom) : null,
+             close: hit(document.getElementById('modal-close')),
+             ok: hit(document.getElementById('modal-ok')) };
+  });
+  ok(d.barBottom > 0, 'the bar really is on screen, not a vacuous pass', d.barBottom);
+  ok(d.close && d.close.y < d.barBottom,
+     "and the dialog's close button really is inside the band it covers", d);
+  ok(d.close && d.close.own,
+     'the close button still takes its own tap, rather than the bar taking it', d.close);
+  ok(d.ok && d.ok.own, 'and so does the button that acts', d.ok);
+  await page.evaluate(() => { const b = document.getElementById('modal-cancel'); if (b) b.click(); });
+  await page.waitForTimeout(300);
+}
+
 ok(errors.length === 0, 'no console errors', errors);
 
 await app.close();

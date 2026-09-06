@@ -46,7 +46,26 @@ const SECURITY_HEADERS = {
 /* `extra` is for headers that are part of the ANSWER rather than the policy -
    Retry-After on a refusal being the one that matters: a 429 with no idea how
    long to wait sends the caller straight back into the same wall. */
-const json = (o, s = 200, extra) => new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json', ...CORS, ...SECURITY_HEADERS, ...(extra || {}) } });
+/* NO-STORE BY DEFAULT, BECAUSE THE CLIENT ALREADY HONOURS IT AND THE SERVER
+   NEVER SAID IT.
+
+   The service worker's caching rule reads Cache-Control and refuses to store
+   anything marked no-store or private - its comment says that is "how a
+   server says this is about one person". Every JSON answer here went out with
+   no Cache-Control at all, so that rule had nothing to act on: `storable` was
+   true for a wallet balance, a team roster and a chat list alike.
+
+   Today that is latent rather than live. `amv-api-base` points at the Worker
+   on its own origin, and the service worker returns early for anything
+   cross-origin, so nothing of this kind is being cached right now. It stops
+   being latent the moment somebody routes the Worker on the site's own
+   domain, which is an ordinary Cloudflare setup and would need no change
+   here to take effect. A header is a cheaper defence than remembering.
+
+   It is a DEFAULT, not a policy: `extra` spreads last, so the handful of
+   genuinely public answers that opt into `public, max-age=...` - the pricing
+   page's counts, the model catalogue, the public config - still win. */
+const json = (o, s = 200, extra) => new Response(JSON.stringify(o), { status: s, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...CORS, ...SECURITY_HEADERS, ...(extra || {}) } });
 
 /* ---- model catalog: maps AMV model -> real engine + cost + min plan ---- */
 /* ---- model catalog ---------------------------------------------------------

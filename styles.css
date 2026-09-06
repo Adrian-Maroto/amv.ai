@@ -11077,3 +11077,28 @@ html{ -webkit-text-size-adjust:100%; text-size-adjust:100%; }
    because both block the page. */
 body:has(#ovr .ov) .cc-banner,
 body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
+
+/* ── LAYER A160 · the status bar sat on the close button of every dialog ─────
+
+   `.offline-bar` carries a comment saying it is "below the modal layer (10000)
+   and the toast stack (9999) on purpose: a status bar must not sit over a
+   dialog somebody is answering". That intent is right and the number behind it
+   is wrong - the modal layer is `.ov` at 9000, not 10000, so 9998 put the bar
+   ABOVE every dialog rather than below it.
+
+   Measured at 390x620, which is an iPhone SE and most small Androids, with
+   the sticky "AMV cannot reach its backend" bar up and Build's consent dialog
+   open: the bar spans 0-59, the dialog's close button sits at y=31, and all
+   three sample points on it returned the bar. Worse than merely dead - the
+   bar's own dismiss × is at y=10, so somebody aiming for the dialog's × hits
+   a different control and closes the status bar instead.
+
+   At 390x844 it does not happen: the dialog starts at 143, well clear. The
+   bar only reaches a dialog when the viewport is short enough that `.ov`'s
+   6vh top padding puts the card under it, which is why a taller test screen
+   would have shown nothing wrong.
+
+   Below `.ov` rather than hidden while a dialog is open, because unlike the
+   consent banner this bar is saying something a person may need while they
+   answer. Under the backdrop is where the comment always meant it to be. */
+.offline-bar{ z-index:8900; }

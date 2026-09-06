@@ -2817,6 +2817,50 @@ function _toolNeedsConsent(name){
   if(typeof isMcpTool === 'function' && isMcpTool(name)) return true;
   return !!_TOOL_CONSENT[name];
 }
+/* WHAT THE ARGUMENTS ACTUALLY SAY, WITH NO FIELD ABLE TO PUSH ANOTHER OFF.
+
+   This was `JSON.stringify(input, null, 1).slice(0, 700)`, and the truncation
+   was a hole in the consent it was serving. Measured, not reasoned about:
+   `{ body: 'x'.repeat(900), to: 'attacker@example.com', subject: 'Invoice' }`
+   renders 700 characters of padding, and neither the address nor even the
+   word "to" survives. The cut leaves no mark either, so what somebody reads
+   is a complete-looking preview of a message with no recipient in it, and
+   they approve it.
+
+   The model chooses both the values and the ORDER they are serialized in, and
+   AMV-007 exists precisely because a tool call can be asked for by content the
+   model read rather than by the person. So this is not a corner case to be
+   tidied - it is the dialog's one job, defeated by the field next to it.
+
+   The rule here is that a FIELD NAME is never dropped. Names are short and
+   they are what somebody scans for: seeing `to` at all is what makes an
+   unexpected recipient noticeable. Values are what get shortened, each on its
+   own budget, and a shortened one says how much was left out rather than
+   trailing off. A value competes only with itself. */
+const _ARG_VALUE_CAP = 140;
+function _toolArgPreview(input){
+  let keys = [];
+  try{ keys = Object.keys(input || {}); }catch(e){ keys = []; }
+  if(!keys.length) return 'No arguments.';
+  const lines = [];
+  for(const k of keys.slice(0, 24)){
+    let v;
+    try{ v = input[k]; }catch(e){ v = null; }
+    let s;
+    if(typeof v === 'string') s = v;
+    else { try{ s = JSON.stringify(v); }catch(e){ s = String(v); } }
+    s = String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+    if(s.length > _ARG_VALUE_CAP){
+      const left = s.length - _ARG_VALUE_CAP;
+      s = s.slice(0, _ARG_VALUE_CAP) + '\u2026 (' + left + ' more character' + (left === 1 ? '' : 's') + ')';
+    }
+    lines.push(k + ': ' + (s || '(empty)'));
+  }
+  if(keys.length > 24) lines.push('\u2026 and ' + (keys.length - 24) + ' more fields');
+  return lines.join('\n');
+}
+try{ window._toolArgPreview=_toolArgPreview; }catch(e){}
+
 /* How often a job runs, in the words a person uses. */
 const _CREW_EVERY = { '10min':'every 10 minutes', '30min':'every 30 minutes',
                       hourly:'every hour', daily:'every day', weekly:'every week' };
@@ -2852,7 +2896,7 @@ async function _confirmModelTool(name, input){
     /* The arguments ARE the preview here. A connector call with no visible
        arguments is a blank cheque, and these reach services holding somebody's
        real mail, repositories or money. */
-    try{ detail = JSON.stringify(input, null, 1).slice(0, 700); }catch(e){ detail = ''; }
+    detail = _toolArgPreview(input);
   }
   if(name==='deploy_site') detail='Page title: '+String(input.title||'App');
   else if(name==='run_code'||name==='fix_code') detail=String(input.code||'').slice(0,600);

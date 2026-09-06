@@ -9621,3 +9621,67 @@ instead of re-reading it.
    a comment explaining the fix reads exactly the same either way.
 3. z-index ordering is a total order over the whole page. Raising one thing to
    win one collision re-orders it against everything else it never met.
+
+## 383. The consent preview could be made to hide the field that mattered
+
+Every third-party connector call is gated by a dialog whose whole argument is
+that the person can see what is about to happen. Its comment says so: "the
+arguments ARE the preview here. A connector call with no visible arguments is
+a blank cheque, and these reach services holding somebody's real mail,
+repositories or money."
+
+The preview was `JSON.stringify(input, null, 1).slice(0, 700)`. Measured:
+
+    { body: 'x'.repeat(900), to: 'attacker@example.com', subject: 'Invoice' }
+
+renders 700 characters of padding. Not the address, not the word `to`, not
+`subject`. And the cut leaves no mark, so what is on screen reads as a
+complete preview of a message with no recipient in it - which is a preview
+somebody approves.
+
+The model chooses both the values and the ORDER they serialize in, and this
+dialog exists because a tool call can be asked for by content the model READ
+rather than by the person. So the hostile case is the designed-for case, and
+the truncation handed it the one thing it needed.
+
+The rule now is that a FIELD NAME is never dropped. Names are short and they
+are what a person scans for - seeing `to` at all is what makes an unexpected
+recipient noticeable. Values are shortened individually and say how much was
+left out. A value competes only with itself.
+
+1. A truncation inside a security control is part of the control. Ask what an
+   attacker would put in the part that survives.
+2. A preview that cannot show everything must show that it could not.
+3. When a display is built from attacker-ordered data, budget per FIELD, never
+   across the whole thing.
+
+## 384. Four surfaces sat above the dialog layer; two of them mattered
+
+Finding the cookie banner on top of a dialog was luck - a screenshot taken for
+another reason. So the class got swept: every `position:fixed` rule with a
+z-index at or above the modal overlay's 9000, driven with a real dialog open
+and read with `elementFromPoint`.
+
+`.habit-nudge` (9500) and `#toast-wrap` (9999) take nothing. Both sit in the
+bottom-right corner, clear of where a dialog's controls land. Written down
+because a negative result stops the next person re-deriving it.
+
+`.offline-bar` (9998) does, and only on a short screen. At 390x844 the dialog
+starts at 143 and the bar ends at 59. At 390x620 - an iPhone SE, and most
+small Androids - `.ov`'s 6vh top padding puts the card under the bar, and the
+dialog's close button at y=31 returns the bar at all three sample points. Its
+own dismiss × is at y=10, so aiming for the dialog's × closes the status bar
+instead: not a dead control, a control that does something else.
+
+The bar already carried a comment saying it sits "below the modal layer
+(10000) and the toast stack (9999) on purpose: a status bar must not sit over
+a dialog somebody is answering". The intent was right the whole time. The
+modal layer is 9000, not 10000, so the number contradicted the sentence
+directly above it and nothing noticed for as long as nobody opened a tall
+dialog on a small phone with the backend unreachable.
+
+1. A stacking bug found by luck is a class to sweep, not an incident to close.
+2. Viewport height is a variable in a stacking bug. Testing one screen size
+   proves one screen size.
+3. When a comment names a number, check the number. This one was wrong and the
+   prose around it was right, which is the combination that survives review.

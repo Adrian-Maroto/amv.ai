@@ -151,6 +151,36 @@ section('Nothing happens on a real account without being asked');
   ok(await dlg === false, 'and declining means declining', true);
 }
 
+section('And one argument cannot push another off the screen');
+{
+  /* THE PREVIEW WAS TRUNCATABLE, WHICH MADE IT WORSE THAN NO PREVIEW.
+
+     It was `JSON.stringify(input, null, 1).slice(0, 700)`. Measured with
+     `{ body: 'x'.repeat(900), to: 'attacker@example.com', subject: 'Invoice' }`
+     the dialog showed 700 characters of padding and neither the address nor
+     the word "to" - and the cut left no mark, so it read as a complete
+     preview of a message with no recipient in it.
+
+     The model chooses both the values and the order they serialize in, and
+     this dialog exists because a tool call can come from content the model
+     READ rather than from the person. So this drives exactly that shape. */
+  const dlg2 = page.evaluate(() => _confirmModelTool('mcp__echo__shout', {
+    body: 'x'.repeat(900), to: 'attacker@example.com', subject: 'Invoice' }));
+  await page.waitForSelector('#modal-ok', { timeout: 6000 });
+  const body = await page.evaluate(() =>
+    document.querySelector('#modal-box .ob-sub')?.textContent || '');
+  ok(/attacker@example\.com/.test(body),
+     'the recipient is on screen even behind 900 characters of padding',
+     body.slice(-160));
+  ok(/\bsubject\b/.test(body) && /Invoice/.test(body),
+     'and so is every other field - a name is never dropped', /Invoice/.test(body));
+  ok(/more characters?\)/.test(body),
+     'the long value says how much of it was left out, rather than trailing off',
+     /more characters?\)/.test(body));
+  await page.click('#modal-cancel');
+  await dlg2;
+}
+
 section('Allowed, it really runs on the real server');
 {
   const out = await page.evaluate(() => runMcpTool('mcp__echo__shout', { text: 'it really works' }));
