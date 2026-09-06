@@ -76,10 +76,23 @@ function renderHandoffView(){
           <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">What are you handing off?</label>
             <input id="ho-title" placeholder="e.g. Finish the Q3 report intro" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:var(--t-md)"></div>
           <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">The work itself - paste it here</label>
-            <textarea id="ho-ctx" placeholder="Paste the actual content the next person (or the agent) should work on: the draft, the code, the data, the email thread, the brief - plus anything they need to know to continue. This is the baton they pick up." style="width:100%;min-height:220px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--mn,ui-monospace,monospace);font-size:var(--t-base);line-height:1.6;resize:vertical;tab-size:2"></textarea>
+            <textarea id="ho-ctx" placeholder="Paste the draft, code, data or thread" style="width:100%;min-height:220px;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--mn,ui-monospace,monospace);font-size:var(--t-base);line-height:1.6;resize:vertical;tab-size:2"></textarea>
             <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
               <button class="btn bs" data-dact="_hoPickChat" style="font-size:var(--t-sm)">Pull in your work…</button>
-              <span style="font-size:var(--t-xs);color:var(--mu);align-self:center">a conversation, a design, a project or some code - or just paste anything above</span>
+              <span style="font-size:var(--t-xs);color:var(--mu);align-self:center">a conversation, a design, a project or some code - or just paste anything above</span></div>
+            </div>
+            <!-- INSTRUCTIONS BELONG WHERE THEY SURVIVE TYPING.
+                 This guidance used to BE the placeholder - 209 characters of it,
+                 of which a phone showed 25. A placeholder is the worst place for
+                 an instruction twice over: it is clipped to the width of the box,
+                 and it vanishes the moment somebody starts typing, which is
+                 exactly when they need it. It sits AFTER the button row, never
+                 inside it - that row is display:flex, so a child of it would line
+                 up beside the button instead of below the field. -->
+            <div style="font-size:var(--t-xs);color:var(--mu);line-height:1.55;margin-top:8px">
+              Whatever the next person - or the agent - picks up and continues: the draft,
+              the code, the data, the email thread, the brief. Add anything they need to
+              know to carry on.
             </div></div>
           <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">Hand off to</label>
             <input id="ho-to" placeholder="teammate@email.com  - or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:var(--t-md)"></div>

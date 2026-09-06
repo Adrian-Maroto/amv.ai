@@ -1298,7 +1298,7 @@ function renderMemoryView(){
       '<h2>AI Memory</h2>'+
       '<p class="vsub">AMV remembers facts about you to personalize every response. These memories are included with every AI request.</p>'+
       '<div style="display:flex;gap:8px">'+
-        '<input type="text" id="mem-inp" placeholder="Add a memory - e.g. I am a software engineer or I prefer concise answers" style="flex:1;font-size:var(--t-base)">'+
+        '<input type="text" id="mem-inp" placeholder="e.g. I prefer concise answers" style="flex:1;font-size:var(--t-base)">'+
         '<button class="btn bp" id="mem-add" style="font-size:var(--t-sm);white-space:nowrap">Add Memory</button>'+
       '</div>'+
       '<div id="mem-list" style="display:flex;flex-direction:column;gap:8px"></div>'+
