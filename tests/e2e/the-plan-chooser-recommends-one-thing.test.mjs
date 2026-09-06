@@ -39,7 +39,14 @@ const chooserOn = (plan) => page.evaluate(async (p) => {
     return { text: (b.textContent || '').trim().replace(/\s+/g, ' '),
              lead: b.classList.contains('bill-swap-lead'),
              primary: b.classList.contains('bp'),
-             width: Math.round(r.width), height: Math.round(r.height),
+             width: Math.round(r.width),
+             /* Measured with the harness comparator, not by rounding here.
+                Rounding first turns 39.6 into 40 and calls it a pass, and
+                `every-page-can-measure-itself` fails any suite that compares
+                a rendered box to a bare integer - which the first version of
+                this file did, and which is what turned the gate red. */
+             height: Math.round(r.height),
+             bigEnough: !__under(r.height, 40),
              owns: !!(t && (t === b || b.contains(t))) };
   });
 }, plan);
@@ -74,7 +81,7 @@ section('Nothing was hidden or made harder to press');
     const b = await chooserOn(plan);
     ok(b.every(x => x.owns), 'on ' + plan + ', every plan button takes its own tap',
        b.filter(x => !x.owns));
-    ok(b.every(x => x.height >= 40), 'and is big enough to hit', b.map(x => x.height));
+    ok(b.every(x => x.bigEnough), 'and is big enough to hit', b.map(x => x.height));
     const w = b.map(x => x.width);
     ok(Math.max(...w) - Math.min(...w) < 40,
        'the quiet ones keep their full width - demoted in weight, not in size', w);
