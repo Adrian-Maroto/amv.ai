@@ -9495,3 +9495,57 @@ been passing because the loop spread them out.
 **Making a test deterministic can only tell you something if you are willing
 for it to fail.** A freeze that is only applied where it is guaranteed safe
 tests nothing new.
+
+
+## 380. Six probes reported a defect, and the defect was in the probe
+
+An audit session found five real defects. It also produced six measurements
+that reported a defect which did not exist, and every one of them was caught
+only by re-testing before saying anything:
+
+- `scrollTop` was assigned to check whether a pane could scroll. Assignment
+  moves an `overflow:hidden` element too, so a pane nobody could scroll
+  reported as scrollable. A real wheel gesture is the discriminating test.
+- A regex matched `What this is` against text a stylesheet renders in capitals.
+  `innerText` returns what is rendered, so the copy was reported missing while
+  it was on the screen.
+- Translations were fixed by replacing literal characters in a file that stores
+  non-ASCII as `\uXXXX`. Four languages were fixed, three silently were not -
+  **and the verification grep searched for literal characters too, so it agreed
+  with the mistake**. Decoding before matching is what found it.
+- A section named "It works on a phone" ran at the default desktop viewport.
+- Two boxes overlapping was read as "the buy buttons cannot be clicked". They
+  could: scrolling cleared the banner. A fixed element that cannot be scrolled
+  away is a bug; content that can be is not, and `elementFromPoint` plus a
+  scroll is what tells them apart.
+- Every button on a page was collected, then clicked in a loop. The first click
+  re-rendered the page, so the remaining references were detached nodes -
+  which do nothing when clicked. Twenty-three controls reported as dead were
+  three, and all three were correct behaviour.
+
+The common shape: **a measurement whose failure mode looks exactly like the
+defect being hunted for.** A detached node does nothing; so does a dead button.
+A clipped string is missing; so is a string that was never rendered. When the
+instrument breaks quietly and the breakage resembles the finding, the finding
+is what gets reported.
+
+Two assertions in the same session could not fail at all. The sharper one
+checked that the kill switch stops the cron from spending, by comparing model
+calls before and after a tick - on a tick where nothing was due, so no model
+call happened either way. It passed with the kill-switch read **deleted from
+the Worker**. The check on the one control whose entire purpose is "stop
+spending now" was decorative, and only a mutation revealed it.
+
+And the mutation used to test the NEXT assertion was itself broken - a regex
+that cannot span nested braces, which changed nothing and "passed".
+
+**Three rules, and the third is the one that keeps being learned here.**
+
+1. Before believing a probe that reports a defect, ask what it would report if
+   the probe were broken. If the answer is "the same thing", it has not
+   measured anything yet.
+2. Mutation-test every new assertion, and **verify the mutation actually
+   applied** before believing it passed. A green run against a mutation that
+   changed nothing is two failures wearing one coat.
+3. A retraction costs a paragraph. A wrong finding costs somebody a day
+   chasing it, and costs the next real finding its credibility.
