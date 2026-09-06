@@ -1102,7 +1102,7 @@ async function _spendGate(env, user, what, usd, out, opts) {
         ? { error: 'You have used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.',
             code: 'family_cap', resetAt }
         : { error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
-            code: 'quota_month', resetAt }, 429);
+            code: 'quota_month', resetAt }, 429, { 'Retry-After': _retryAfterUntil(resetAt) });
     }
   }
   const gCap = parseFloat(env.GLOBAL_DAILY_USD_CAP || '500');
@@ -1140,7 +1140,7 @@ async function _spendGate(env, user, what, usd, out, opts) {
     if (!paying) {
       await _releaseSpendGate(env, book);
       return json({ error: 'AMV is at capacity for free accounts right now. Paid plans are running normally - please try again shortly.',
-                    code: 'free_capacity' }, 503);
+                    code: 'free_capacity' }, 503, { 'Retry-After': _retryAfterMidnight() });
     }
     return null;
   }
@@ -1151,11 +1151,12 @@ async function _spendGate(env, user, what, usd, out, opts) {
   if (!paying) {
     audit(env, 'free_cap_hit', { what, value: res && res.value, cap });
     return json({ error: 'AMV is at capacity for free accounts today - it resets tomorrow. Paid plans are running normally.',
-                  code: 'free_capacity' }, 503);
+                  code: 'free_capacity' }, 503, { 'Retry-After': _retryAfterMidnight() });
   }
   audit(env, 'global_cap_hit', { what, value: res && res.value, cap });
   try { await alertOnce(env, 'global_cap', 'The daily spend ceiling has been reached, so AMV is refusing paid work until tomorrow.', 60); } catch (e) {}
-  return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503);
+  return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503,
+              { 'Retry-After': _retryAfterMidnight() });
 }
 
 /* Give back everything a gate booked, for work that is not going to happen.
@@ -1892,6 +1893,42 @@ async function guardAction(env, key, perMin, perDay, label) {
     : Math.max(1, 60 - Math.floor((Date.now() % 60000) / 1000));
   return json({ error: msg, code: r.code, retryAfter }, 429, { 'Retry-After': String(retryAfter) });
 }
+
+/* SECONDS UNTIL IT IS WORTH TRYING AGAIN, for a 429 that is not built by
+   `_limitOrRefuse`.
+
+   That helper computes this correctly and explains why it matters: the client
+   retries a 429 with an exponential backoff starting in the hundreds of
+   milliseconds, well inside a per-minute window, so a refused caller spends
+   two or three more attempts being refused - and every one of those costs a
+   Durable Object op on the way in.
+
+   The endpoints that do NOT go through the helper are the ones where that
+   costs the most. `/v1/messages` is called on every message anybody sends and
+   is the only route that spends real money; its three refusals carried no
+   Retry-After at all, while two cheaper routes in this same file hard-code
+   `'60'`. The fix was applied where it barely mattered and skipped where it
+   does.
+
+   Two shapes, because a limit and a quota are different waits. A window is
+   whatever is left of this minute. A quota already knows the instant it
+   resets, so it is asked. Floored at a second so a header never says zero,
+   and capped at a day so a clock skew cannot tell somebody to wait a year. */
+const _retryAfterWindow = () => Math.max(1, 60 - Math.floor((Date.now() % 60000) / 1000));
+/* Until UTC midnight, for the two caps that are keyed on `todayKey()` and
+   really do reset then. Both of those refusals are 503s, and a 503 is the
+   WORSE one to send bare: a 429 is about one caller, a 503 is about everybody,
+   so every client in the world backs off on the same exponential curve and
+   comes back together. Saying when turns a thundering herd into a queue. */
+const _retryAfterMidnight = () => {
+  const now = new Date();
+  const midnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
+  return String(Math.max(1, Math.min(86400, Math.ceil((midnight - Date.now()) / 1000))));
+};
+const _retryAfterUntil = (at) => {
+  const secs = Math.ceil(((+at || 0) - Date.now()) / 1000);
+  return String(Math.max(1, Math.min(86400, secs || 1)));
+};
 
 /* ══════════════════════════════════════════════════════════════
    BACKGROUND AUTOMATIONS  -  they run whether or not the app is open.
@@ -12811,7 +12848,15 @@ async function aiProxy(request, env, ctx) {
   //    throttling each other for typing at the same time (AMV-100).
   const rlName = `rl:${user.email}:${Math.floor(Date.now() / 60000)}`;
   const rlRes = await counter(env, rlName, { op: 'rateCheck', limit: limits.rpm, windowMs: 60000 });
-  if (!rlRes.allowed) { audit(env,'rate_block',{email:user.email}); return json({ error: 'Rate limit reached. Slow down a moment.', code: 'rate_limited' }, 429); }
+  if (!rlRes.allowed) {
+    audit(env,'rate_block',{email:user.email});
+    /* The burst limit on the hottest route in the product. Without the header
+       the client's backoff retries inside the same minute window, so one
+       refusal becomes three, each spending a counter op. */
+    const ra = _retryAfterWindow();
+    return json({ error: 'Rate limit reached. Slow down a moment.', code: 'rate_limited', retryAfter: ra },
+                429, { 'Retry-After': String(ra) });
+  }
 
   // 3) QUOTA CHECK (per account, day + month)
   //
@@ -12843,7 +12888,8 @@ async function aiProxy(request, env, ctx) {
   if (!dRes.allowed) {
     const now = new Date();
     const resetAt = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-    return json({ error: 'Daily usage limit reached.', code: 'quota_day', resetAt }, 429);
+    return json({ error: 'Daily usage limit reached.', code: 'quota_day', resetAt }, 429,
+                { 'Retry-After': _retryAfterUntil(resetAt) });
   }
   const mRes = await counter(env, mName, { op: 'reserve', amount: reserve, cap: limits.monthTokens, ttlMs: 86400000 * 70 });
   if (!mRes.allowed) {
@@ -12853,7 +12899,8 @@ async function aiProxy(request, env, ctx) {
        `_periodKeyOf(user)`, so the calendar 1st was the wrong date for every
        paying account and the client unlocked the composer on it. */
     const resetAt = _periodResetAtOf(user);
-    return json({ error: 'Monthly usage limit reached. Upgrade for more room.', code: 'quota_month', resetAt }, 429);
+    return json({ error: 'Monthly usage limit reached. Upgrade for more room.', code: 'quota_month', resetAt }, 429,
+                { 'Retry-After': _retryAfterUntil(resetAt) });
   }
 
   // From here on, `reserve` tokens are already booked against this user. Any
@@ -12927,7 +12974,8 @@ async function aiProxy(request, env, ctx) {
         ? { error: 'You have used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.',
             code: 'family_cap', resetAt: capResetAt }
         : { error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
-            code: 'quota_month', resetAt: capResetAt }, 429);
+            code: 'quota_month', resetAt: capResetAt }, 429,
+                { 'Retry-After': _retryAfterUntil(capResetAt) });
     }
   }
 
@@ -12952,12 +13000,13 @@ async function aiProxy(request, env, ctx) {
     audit(env, 'free_cap_hit', { value: gRes.value || 0, cap: gCapForThem, email: user.email });
     await refundReservation();
     return json({ error: 'AMV is at capacity for free accounts today - it resets tomorrow. Paid plans are running normally.',
-                  code: 'free_capacity' }, 503);
+                  code: 'free_capacity' }, 503, { 'Retry-After': _retryAfterMidnight() });
   }
   if (!gRes.allowed) {
     audit(env,'global_cap_hit',{value:gRes.value||0,cap:gCap}); ctx.waitUntil(notify(env, `GLOBAL DAILY SPEND CAP HIT: $${(gRes.value||0).toFixed(2)} >= $${gCap}`));
     await refundReservation();   // the call never happened - don't eat their quota
-    return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503);
+    return json({ error: 'Service is at capacity for today. Please try again tomorrow.', code: 'global_cap' }, 503,
+                { 'Retry-After': _retryAfterMidnight() });
   }
 
   // 5) clamp output tokens to the engine max (cost ceiling per call)
