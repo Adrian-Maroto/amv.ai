@@ -1010,7 +1010,31 @@ async function triggerGoogle() {
     }
     return;
   }
-  // No Client ID configured yet - Google sign-in isn't set up. Be honest, no fake prompt.
+  /* TWO CAUSES REACH THIS LINE, AND IT USED TO NAME THE WRONG ONE.
+
+     `window.google.accounts.id` is missing either because nobody configured
+     Google sign-in, or because the browser could not fetch
+     accounts.google.com at all. The second is not rare and not exotic: school
+     networks, corporate filtering and whole countries block it, and the GSI
+     tag in the head is `async defer`, so the page loads perfectly and the
+     object simply never appears.
+
+     Measured, with a client id configured and the host unreachable: the
+     script fails with ERR_CONNECTION_RESET after twelve seconds and this
+     branch fires - telling somebody whose network is the problem that AMV
+     "isn't enabled yet". That is AMV taking the blame for a thing it did
+     correctly, and it points the person at a fix that does not exist.
+
+     The client id is what tells them apart. It is configured or it is not,
+     and AMV knows which. There is no way to know EARLIER than the tap - a
+     script that has not arrived is indistinguishable from one still on its
+     way - so the tap is where this belongs, and both messages end at the
+     same working door. */
+  if(cid){
+    toast('Google Sign-In could not load - this network is blocking accounts.google.com. '
+        + 'Sign up with your email instead; it works exactly the same.','info',6500);
+    return;
+  }
   toast('Google Sign-In isn\u2019t enabled yet. Please sign up with your email - it only takes a second.','info',5500);
 }
 
