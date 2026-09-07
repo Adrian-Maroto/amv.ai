@@ -114,22 +114,51 @@ function startWorker(withSecrets) {
   });
 }
 
-const post = async (path, body, headers = {}) => {
-  const r = await fetch(B + path, {
+/* A DROPPED CONNECTION IS NOT AN ANSWER FROM THE WORKER.
+
+   CI run 679 went red here with `The real-runtime smoke test could not
+   complete: fetch failed`, on a commit whose 401 suites had all passed and
+   which had passed this same stage locally in 17.6s. The section it died in
+   fires EIGHT signups for one address simultaneously, on purpose - and each
+   one makes the Worker hash a password, which is deliberately expensive. On a
+   two-core runner one of those eight lost its socket before workerd answered.
+
+   `fetch` rejects for two completely different reasons and this script treated
+   them as one: the Worker gave a verdict AMV disagrees with, or the request
+   never reached it. Only the first is evidence about the product. The second
+   was reported in the same words, so a green product read as a broken one, and
+   the message named neither the request nor the reason.
+
+   Retried, briefly, and only for a transport failure - an HTTP error is an
+   answer and is passed straight through. If it still cannot connect after
+   three tries the throw NAMES the request, so the next person reads "POST
+   /auth/signup did not reach the Worker" instead of "fetch failed". */
+const TRANSPORT_TRIES = 3;
+const send = async (label, url, init) => {
+  let last;
+  for (let i = 0; i < TRANSPORT_TRIES; i++) {
+    try {
+      const r = await fetch(url, init);
+      let j = {};
+      try { j = await r.json(); } catch (e) {}
+      return { status: r.status, body: j, headers: r.headers };
+    } catch (e) {
+      last = e;
+      /* Backing off rather than hammering: the cause is the runtime being
+         busy, and an immediate retry is the same request into the same jam. */
+      await new Promise(r => setTimeout(r, 150 * (i + 1)));
+    }
+  }
+  throw new Error(`${label} never reached the Worker after ${TRANSPORT_TRIES} tries `
+    + `(${last && last.message}). That is the connection failing, not a verdict from AMV.`);
+};
+const post = (path, body, headers = {}) =>
+  send('POST ' + path, B + path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '13.0.0.1', ...headers },
     body: JSON.stringify(body || {}),
   });
-  let j = {};
-  try { j = await r.json(); } catch (e) {}
-  return { status: r.status, body: j, headers: r.headers };
-};
-const get = async (path, headers = {}) => {
-  const r = await fetch(B + path, { headers });
-  let j = {};
-  try { j = await r.json(); } catch (e) {}
-  return { status: r.status, body: j, headers: r.headers };
-};
+const get = (path, headers = {}) => send('GET ' + path, B + path, { headers });
 
 async function main() {
   if (!existsSync(WRANGLER)) {
