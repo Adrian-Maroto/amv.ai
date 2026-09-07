@@ -293,6 +293,25 @@ section('And the bar it puts up does not sit on a dialog somebody is answering')
      it, which is exactly why testing at 390x844 alone would have found this
      clean. */
   await page.setViewportSize({ width: 390, height: 620 });
+  /* START FROM A FRESH DOCUMENT, NOT A TIDIED ONE.
+
+     The first attempt at this cleared `#a-turnstile` and removed Cloudflare's
+     iframes, and CI still reported `took: SPAN` on the button that acts.
+     Turnstile does not confine itself to the element it was mounted on and it
+     re-renders asynchronously, so tearing down the pieces I could name was
+     always going to be a list I had not finished - one more element, one more
+     run, one more red email.
+
+     A reload ends the argument. Every section above this one has already made
+     its assertions; none of them needs its DOM to survive into this one, and
+     a fresh document cannot carry a third party's leftovers by construction.
+
+     Kept alongside the teardown below rather than replacing it, because the
+     reload is what makes this reliable and the teardown is what makes the
+     intent readable. */
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1400);
+
   /* TEAR THE CAPTCHA DOWN FIRST.
 
      The section above mounts a REAL Turnstile widget with a deliberately fake
