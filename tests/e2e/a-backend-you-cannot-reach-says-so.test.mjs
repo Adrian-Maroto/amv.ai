@@ -27,13 +27,25 @@ section('The page knows which hosts it is allowed to contact');
     own: _cspReachable(location.origin),
     workers: _cspReachable('https://amv-backend.someone.workers.dev'),
     stripe: _cspReachable('https://api.stripe.com'),
-    custom: _cspReachable('https://api.amv.homes'),
+    /* A HOST THAT CANNOT BECOME REAL.
+
+       This read `https://api.amv.homes` and passed for months, because that
+       host was not in the policy. Then it became AMV's actual backend - the
+       *.workers.dev address was blocked by school filters as free hosting -
+       and the fixture inverted: the suite asserted a permitted host was
+       forbidden and went red on a product that was correct.
+
+       example.com is reserved by RFC 2606 for exactly this. It can never be
+       AMV's backend, so this assertion can never mean the opposite of what it
+       says. A fixture that names a plausible domain is a fixture waiting for
+       somebody to register it. */
+    custom: _cspReachable('https://backend.example.com'),
     stranger: _cspReachable('https://evil.example'),
   }));
   ok(r.own === true, 'its own origin, which is what a same-origin build uses', r.own);
   ok(r.workers === true, 'a workers.dev backend, through the wildcard', r.workers);
   ok(r.stripe === true, 'a host named outright in the policy', r.stripe);
-  ok(r.custom === false, 'and it knows a custom domain is NOT permitted', r.custom);
+  ok(r.custom === false, 'and it knows a host outside the policy is NOT permitted', r.custom);
   ok(r.stranger === false, 'nor is anything else', r.stranger);
 }
 
@@ -43,7 +55,7 @@ section('Saving an unreachable backend says exactly that');
     const t = []; const real = window.toast;
     window.toast = (m, k) => { t.push((k || '') + ' | ' + m); return real(m, k); };
     const el = document.createElement('input');
-    el.id = 'be-url'; el.value = 'https://api.amv.homes';
+    el.id = 'be-url'; el.value = 'https://backend.example.com';
     document.body.appendChild(el);
     amvSaveBackend();
     window.toast = real; el.remove();
@@ -51,7 +63,11 @@ section('Saving an unreachable backend says exactly that');
   });
   ok(/not allowed to contact/i.test(said),
      'it says the page may not contact that host', said.slice(0, 70));
-  ok(/api\.amv\.homes/.test(said), 'naming the host, so there is nothing to guess at', true);
+  /* The detail is the MESSAGE, not `true`. When this went red it printed
+     "got: true", which says nothing about what the toast actually said - and
+     the whole point of the assertion is the wording. */
+  ok(/backend\.example\.com/.test(said),
+     'naming the host, so there is nothing to guess at', said.slice(0, 90));
   ok(/AMV_API_BASE/.test(said),
      'and names what actually fixes it, rather than only reporting a fault', true);
   ok(/error \|/.test(said), 'as an error, not as a cheerful "saved"', said.slice(0, 30));
@@ -81,7 +97,7 @@ section('When the policy cannot be read, nothing is claimed about it');
     const m = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
     const keep = m.content;
     m.content = 'default-src \'self\'';          // a policy with no connect-src
-    const unknown = _cspReachable('https://api.amv.homes');
+    const unknown = _cspReachable('https://backend.example.com');
     m.content = keep;
     return unknown;
   });
