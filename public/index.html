@@ -1247,7 +1247,7 @@ font-weight:400!important;max-width:58ch!important;
 .bd2:hover{background:rgba(248,81,73,.07)!important}
 input,textarea,select,.dna-field input,.dna-field select,.dna-field textarea,
 .vi textarea,.vi input[type=text],#mta{
-background:var(--surface)!important;border:1px solid transparent!important;
+background-color:var(--surface)!important;border:1px solid transparent!important;
 border-radius:var(--rad-xs)!important;box-shadow:none;
 }
 input:focus,textarea:focus,select:focus,.dna-field input:focus,.dna-field textarea:focus{
@@ -3080,11 +3080,11 @@ font-size:var(--t-sm);font-weight:600;font-family:var(--fn);
 width:auto;min-width:0;
 padding:6px 30px 6px 12px;
 font-size:var(--t-sm);font-weight:500;
-background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);
+background-color:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);
 color:var(--tx);cursor:pointer;
 transition:border-color .14s,background .14s;
 }
-.secmodel-sel:hover{background:var(--s3);border-color:var(--bdl)}
+.secmodel-sel:hover{background-color:var(--s3);border-color:var(--bdl)}
 .dev-openext,.lab-openext{
 background:transparent;border:1px solid transparent;border-radius:var(--r-sm);
 color:var(--mu);font-size:var(--t-sm);font-weight:500;
@@ -3333,10 +3333,6 @@ font-family:var(--mn,ui-monospace,monospace);font-size:var(--t-sm);line-height:1
 #lab-model,#dev-model,.secmodel-sel{
 min-width:150px;width:auto;text-overflow:ellipsis;
 padding-right:28px;
-appearance:none;-webkit-appearance:none;
-background-image:linear-gradient(45deg,transparent 50%,var(--mu) 50%),linear-gradient(135deg,var(--mu) 50%,transparent 50%);
-background-position:calc(100% - 15px) calc(50% - 2px),calc(100% - 10px) calc(50% - 2px);
-background-size:5px 5px,5px 5px;background-repeat:no-repeat;
 }
 .dev-hero-upload{display:flex;align-items:center;justify-content:center;gap:9px;margin-top:18px;flex-wrap:wrap}
 .dev-upload-btn{
@@ -7155,7 +7151,7 @@ transition:background .15s var(--ease),border-color .15s var(--ease);
 min-height:34px;max-width:100%;
 padding:0 var(--sp-2);
 border:1px solid var(--bd);border-radius:var(--r-sm);
-background:var(--s2);color:var(--tx);
+background-color:var(--s2);color:var(--tx);
 font:inherit;font-size:var(--t-sm);cursor:pointer;
 }
 .dvi-sel:focus-visible{ outline:2px solid var(--accent);outline-offset:2px; }
@@ -7955,6 +7951,32 @@ justify-content:safe center;
 @media(max-width:760px){
 .dev-shell.dev-blank .dev-bar-l > *:not(.dev-badge):not(.bld-home),
 .dev-shell.dev-blank .dev-bar-r{ display:none; }
+}
+@media(max-width:760px){
+.dev-shell .dvi-bar{
+display:grid; grid-template-columns:1fr 44px;
+align-items:center; gap:var(--sp-2);
+}
+.dev-shell .dvi-l,
+.dev-shell .dvi-r{ display:contents; }
+.dev-shell .dev-addwrap{ grid-column:2; grid-row:1; }
+.dev-shell #dev-apply-mode{ grid-column:1; grid-row:1; }
+.dev-shell #dev-model,
+.dev-shell .dev-input-v2 .secmodel-sel{ grid-column:1; grid-row:2; }
+.dev-shell #dev-effort{ grid-column:1; grid-row:3; }
+.dev-shell .dev-input-v2 .dev-send{ grid-column:2; grid-row:3; }
+.dev-shell .dvi-busy{ grid-column:1 / -1; grid-row:4; }
+.dev-shell .dvi-sel{ flex:initial; width:100%; min-width:0; max-width:100%; }
+}
+@media(max-width:760px){
+.dev-shell.dev-blank .build-head .pghd-sub,
+.lab-shell .build-head .pghd-sub{ display:none; }
+}
+.dev-input-v2 .dvi-sel,
+.dev-input-v2 .secmodel-sel,
+.dev-input-v2 #dev-model{
+font-weight:500;
+padding:0 30px 0 12px;
 }
 </style>
 <!-- BUILD:CSS:END -->

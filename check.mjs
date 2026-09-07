@@ -95,7 +95,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 12 : 16;
+const TOTAL = FAST ? 13 : 17;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -312,6 +312,58 @@ if (!FAST) step('All test suites', () => {
   if (!/All \d+ suites passed/.test(out)) {
     const tail = out.split('\n').slice(-12).join('\n');
     throw new Error(`the suite did not report a clean pass:\n${tail}`);
+  }
+});
+
+/* ── A COMMENT THAT CLOSED EARLY DELETED A WHOLE LAYER ──────────────────────
+   LAYER A177 was written, built, screenshotted and measured three times, and
+   every measurement came back saying its rules had no effect. They had no
+   effect because the note above them contained a close-comment marker in the
+   middle of its prose: the comment ended there, the remaining sentences were
+   parsed as a selector, and the media block that followed became part of it.
+   The whole layer never entered the CSSOM.
+
+   Nothing saw it. The build validated, the fast gate passed all twelve stages,
+   styles.css still looked like a stylesheet, and the browser reported the
+   surviving selectors as matching - they did match, they just never carried
+   any declarations. Three separate attempts at that layout were spent editing
+   a file that was not being read.
+
+   THE RULE. Outside a comment and outside a string, a close-comment marker is
+   never valid CSS, and an unclosed open marker swallows the rest of the file.
+   Both are always bugs, so this is a scan with no judgement in it and no
+   allow-list to keep. */
+step('No stylesheet comment closes early', () => {
+  const CLOSE = String.fromCharCode(42, 47);
+  for (const file of ['styles.css', 'index.html']) {
+    const raw = readFileSync(R(file), 'utf8');
+    /* index.html carries the generated copy between the BUILD:CSS markers; the
+       shell around it is HTML, where the marker is ordinary text. */
+    const css = file === 'index.html' ? (raw.split('BUILD:CSS')[1] || '') : raw;
+    let i = 0, line = 1, inComment = false, openedAt = 0, quote = '';
+    while (i < css.length) {
+      const c = css[i];
+      if (c === '\n') line++;
+      if (inComment) {
+        if (css.startsWith(CLOSE, i)) { inComment = false; i += 2; continue; }
+        i++; continue;
+      }
+      if (quote) {
+        if (c === '\\') { i += 2; continue; }
+        if (c === quote) quote = '';
+        i++; continue;
+      }
+      if (c === '"' || c === "'") { quote = c; i++; continue; }
+      if (c === '/' && css[i + 1] === '*') { inComment = true; openedAt = line; i += 2; continue; }
+      if (css.startsWith(CLOSE, i))
+        throw new Error(`${file} line ${line}: a close-comment marker outside any comment. `
+          + 'A comment above it closed early, so the prose that follows is being parsed as a '
+          + 'selector and the rules after that are silently discarded.');
+      i++;
+    }
+    if (inComment)
+      throw new Error(`${file}: the comment opened on line ${openedAt} is never closed, `
+        + 'so the rest of the stylesheet sits inside it and does nothing.');
   }
 });
 

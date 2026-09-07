@@ -10169,3 +10169,59 @@ documents in its own comments and defends against, in a suite that does not.
    survived in a click site AND in a SKIP list that names ids to leave alone -
    the second of which is silent when it goes stale, because skipping something
    that no longer exists looks exactly like skipping something that does.
+
+## 397. Three attempts at a layout, on a file the browser was not reading
+
+LAYER A177 was written, built, screenshotted and measured. It did nothing. I
+raised its specificity and measured again: nothing. I replaced the whole
+approach with an explicit grid and measured a third time: `display` still came
+back `flex`, `#dev-model` still `flex: 1 1 0px`. Each time I concluded the
+cascade was beating me and went looking for the `!important` or the ID rule
+that was winning.
+
+There wasn't one. The prose ABOVE the layer contained a close-comment marker in
+the middle of a sentence. The comment ended there; the rest of the note was
+parsed as a selector; the `@media` block that followed was swallowed into it.
+The layer never entered the CSSOM at all.
+
+1. "The selector matches but the declarations lose" has two explanations, and I
+   only ever considered one. Before hunting the cascade, confirm the rule is IN
+   the CSSOM - walk `document.styleSheets` and look for it. That probe found it
+   in seconds once I finally ran it, and it is the cheaper question.
+2. Nothing could have caught this. The build validated, the fast gate passed
+   every stage, the file still looked like a stylesheet, and the browser
+   reported the surviving selectors as matching - they did match, they just
+   carried nothing. Now stage 4 refuses a close-comment marker outside a
+   comment and an opener that is never closed, both in `styles.css` and in the
+   generated block of `index.html`. Mutation-tested against the real defect.
+3. The first draft of that stage's own comment contained the literal marker
+   while explaining it, and closed itself early. The check is worth having.
+
+## 398. Every dropdown in AMV has looked like a text field
+
+Chasing the composer's selects, I measured `background-image` on a bare
+`<select>` appended to the body: `none`. On a `<div>`, the same declaration
+applied. Inline, with `!important`, it applied to the select too - so nothing
+about `<select>` was rejecting it. An author rule was:
+
+    input,textarea,select,...{ background:var(--surface)!important; ... }
+
+`background` is a SHORTHAND. It set a colour and reset `background-image` to
+`none` on the way past, with `!important`, so the chevron that line 31 of this
+stylesheet draws on every dropdown in the product could never render and
+nothing could put it back. Three controls had noticed and hand-rolled their own
+arrow out of two gradients; every other select in AMV - including "what best
+describes your work?" sitting directly under two text inputs - was a box with
+no affordance that it opened anything.
+
+1. `background:` where `background-color:` was meant is a silent deletion of
+   four other properties. With `!important` it is a deletion nothing downstream
+   can undo. Reach for the longhand whenever the intent is one channel.
+2. The symptom was product-wide and invisible for the same reason: it removed
+   an affordance rather than adding a defect. Nothing overflowed, nothing was
+   unreadable, no contrast ratio moved. It took measuring a property against
+   what the stylesheet says it should be.
+3. Local workarounds hide the shared cause. The hand-rolled gradient arrow on
+   the three model pills was somebody hitting exactly this and patching around
+   it. When the root was fixed those pills drew two arrows at different sizes -
+   which is how the workaround finally announced itself.

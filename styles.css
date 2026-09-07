@@ -1394,9 +1394,17 @@ body.light{--hair:rgba(0,0,0,.09);--hair-strong:rgba(0,0,0,.14);--surface:#fffff
 .bd2:hover{background:rgba(248,81,73,.07)!important}
 
 /* ---- 7. Inputs: cleaner, flatter, less like separate blocks ---- */
+/* `background-color`, NOT `background`. The shorthand here set a colour and
+   silently reset `background-image` to `none` - with `!important`, so nothing
+   could put one back. The chevron that the base `select` rule at the top of
+   this file draws on every dropdown in AMV has therefore never rendered, on
+   any surface, since this rule was written: every select in the product looked
+   like a text field. Measured, not guessed - an inline
+   `background-image:linear-gradient(red,red)` on a bare `<select>` computed
+   `none`, and the same declaration with `!important` computed the gradient. */
 input,textarea,select,.dna-field input,.dna-field select,.dna-field textarea,
 .vi textarea,.vi input[type=text],#mta{
-  background:var(--surface)!important;border:1px solid transparent!important;
+  background-color:var(--surface)!important;border:1px solid transparent!important;
   border-radius:var(--rad-xs)!important;box-shadow:none;
 }
 input:focus,textarea:focus,select:focus,.dna-field input:focus,.dna-field textarea:focus{
@@ -3832,11 +3840,11 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
   width:auto;min-width:0;
   padding:6px 30px 6px 12px;
   font-size:var(--t-sm);font-weight:500;
-  background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);
+  background-color:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);
   color:var(--tx);cursor:pointer;
   transition:border-color .14s,background .14s;
 }
-.secmodel-sel:hover{background:var(--s3);border-color:var(--bdl)}
+.secmodel-sel:hover{background-color:var(--s3);border-color:var(--bdl)}
 
 /* Toolbar buttons: lighter, no heavy chrome */
 .dev-openext,.lab-openext{
@@ -4149,14 +4157,17 @@ html.reduce-motion #cv.cv-home .chome-greet{
 .lab-out-body > .lab-placeholder{background:none!important;border:none!important;padding:0!important;box-shadow:none!important}
 .lab-term-wrap,.lab-term-grid,.lab-term-head{all:unset}
 
-/* Model pill: don't truncate the label */
+/* Model pill: don't truncate the label.
+
+   The two-gradient arrow this rule used to draw is gone. It existed because
+   the base `select` chevron never rendered - an `!important` `background`
+   SHORTHAND on every input was resetting `background-image` - so these three
+   pills hand-rolled their own. With that shorthand corrected they were drawing
+   a SECOND arrow, at 5x5 against the chevron's 10x10, on the only three
+   selects in the product that had one. One arrow, drawn in one place. */
 #lab-model,#dev-model,.secmodel-sel{
   min-width:150px;width:auto;text-overflow:ellipsis;
   padding-right:28px;
-  appearance:none;-webkit-appearance:none;
-  background-image:linear-gradient(45deg,transparent 50%,var(--mu) 50%),linear-gradient(135deg,var(--mu) 50%,transparent 50%);
-  background-position:calc(100% - 15px) calc(50% - 2px),calc(100% - 10px) calc(50% - 2px);
-  background-size:5px 5px,5px 5px;background-repeat:no-repeat;
 }
 
 /* Dev hero: obvious upload affordance */
@@ -9947,7 +9958,7 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   min-height:34px;max-width:100%;
   padding:0 var(--sp-2);
   border:1px solid var(--bd);border-radius:var(--r-sm);
-  background:var(--s2);color:var(--tx);
+  background-color:var(--s2);color:var(--tx);
   font:inherit;font-size:var(--t-sm);cursor:pointer;
 }
 .dvi-sel:focus-visible{ outline:2px solid var(--accent);outline-offset:2px; }
@@ -11675,4 +11686,98 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 @media(max-width:760px){
   .dev-shell.dev-blank .dev-bar-l > *:not(.dev-badge):not(.bld-home),
   .dev-shell.dev-blank .dev-bar-r{ display:none; }
+}
+
+/* ── LAYER A177 · two composer selects were cut off, and nothing could see it ─
+   The Dev composer showed "Auto · pick…" and "Effort: engine" on a phone.
+   Three separate probes for overflow returned nothing, because a `<select>`
+   truncating its own selected option is INVISIBLE to
+   `scrollWidth > clientWidth` - the option text is not overflowing content in
+   the DOM, the widget just draws less of it. Measured properly, by rendering
+   the selected option's text to a canvas at the select's own computed font:
+
+     dev-apply-mode  "Ask before changes"      has 262  needs 159   103 SPARE
+     dev-model       "Auto · picks for you"    has 139  needs 179   40 SHORT
+     dev-effort      "Effort: engine default"  has 115  needs 165   50 SHORT
+
+   One select alone on a row with a hundred pixels going begging, and the two
+   that needed the room sharing the next row with the send button.
+
+   Redistributing does not fix it: the bar is 314px, and two selects that each
+   want 180 cannot sit side by side at any split. So on a phone they get a row
+   each. The composer grows by about 80px, which it can afford now that A168
+   and A169 took 225px of chrome off this screen - and the alternative was
+   editing the labels, which are deliberate product copy and read the same on
+   every other device.
+
+   TWO ATTEMPTS, BOTH CORRECTED BEFORE SHIPPING, AND THE ARITHMETIC THAT
+   SETTLED IT.
+
+   First: a row each, `flex:1 1 100%`. It stopped the truncation and cost five
+   rows - the plus and the send button each alone on one - and the taller box
+   pushed the heading back off the top of the screen, which is the fault A176
+   had just fixed. Trading a cut-off label for a cut-off heading is not a fix.
+
+   Second: `min-width:max-content`, to let each select ask for what it needs.
+   It changed nothing measurable, because the existing phone rule already sets
+   `.dvi-sel{flex:1 1 0}` and the engine picker is pinned by an ID selector - a
+   class cannot outrank an id however specific it looks, which the comment
+   above that rule already says in as many words.
+
+   So, the arithmetic rather than another guess. The bar is 314px. The three
+   labels need 159, 179 and 165. No two of them fit on one row together
+   (159+165 = 324 before any gap), so THREE rows is forced at this width - and
+   the waste in the first attempt was never the selects, it was the two 44px
+   icon buttons taking a row each.
+
+   Placed explicitly: a two-column grid, selects down the wide column, the plus
+   beside the first and send beside the last. `display:contents` on the two
+   groups so their children become items of the same grid, which is what lets a
+   button sit next to a select it is not a sibling of. Three rows, every label
+   whole. */
+@media(max-width:760px){
+  .dev-shell .dvi-bar{
+    display:grid; grid-template-columns:1fr 44px;
+    align-items:center; gap:var(--sp-2);
+  }
+  .dev-shell .dvi-l,
+  .dev-shell .dvi-r{ display:contents; }
+  .dev-shell .dev-addwrap{ grid-column:2; grid-row:1; }
+  .dev-shell #dev-apply-mode{ grid-column:1; grid-row:1; }
+  .dev-shell #dev-model,
+  .dev-shell .dev-input-v2 .secmodel-sel{ grid-column:1; grid-row:2; }
+  .dev-shell #dev-effort{ grid-column:1; grid-row:3; }
+  .dev-shell .dev-input-v2 .dev-send{ grid-column:2; grid-row:3; }
+  /* The status line gets its own row so it can never displace a control. */
+  .dev-shell .dvi-busy{ grid-column:1 / -1; grid-row:4; }
+  .dev-shell .dvi-sel{ flex:initial; width:100%; min-width:0; max-width:100%; }
+}
+
+/* ── LAYER A178 · the hero said twice what the choice now says once ──────────
+   The Build entry spends 106px on a phone before the choice, and the second
+   half of that is a sub-line that repeats what the mode note says immediately
+   below it: "Describe it in plain English. AMV writes the code, runs it, and
+   shows you the live result." above "Real software, written and running in a
+   sandbox".
+
+   Since A172 moved the hint out of the buttons, the note is the sentence that
+   describes the current mode - so on a phone the sub is the same information,
+   one line earlier, in more words. It stays at desktop, where there is room
+   for a fuller opening and the note is a short caption under the row. */
+@media(max-width:760px){
+  .dev-shell.dev-blank .build-head .pghd-sub,
+  .lab-shell .build-head .pghd-sub{ display:none; }
+}
+
+/* ── LAYER A179 · three dropdowns that did not look like dropdowns ───────────
+   The composer's three selects were measured against each other and came back
+   different: the engine picker sits at font-weight 500 and 12px of left
+   padding while the other two are 400 and 8px, so its label started on a
+   different line to theirs. Same weight, same text edge, and the padding-right
+   that reserves room for the chevron the base `select` rule draws. */
+.dev-input-v2 .dvi-sel,
+.dev-input-v2 .secmodel-sel,
+.dev-input-v2 #dev-model{
+  font-weight:500;
+  padding:0 30px 0 12px;
 }
