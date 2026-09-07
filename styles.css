@@ -11477,3 +11477,202 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .lab-shell > .build-modes{
   padding-left:var(--sp-5); padding-right:var(--sp-5);
 }
+
+/* ── LAYER A171 · the three surfaces read as blocks because nothing ranks ────
+   The owner's words: blocky, not aesthetic, hard to use. Screenshotted, the
+   fault is not one element - it is that on each entry screen six or seven
+   things have the SAME visual weight and THREE different widths, so the eye
+   has nowhere to start.
+
+   Measured on the Dev entry at 1440: the hero text runs to about 480px, the
+   three mode boxes span 930, and the composer - the thing the screen is
+   actually for - is 660 and last in the stack. Three measures down one centred
+   column reads as three unrelated bands rather than one composition.
+
+   ONE MEASURE. Everything on the entry column shares the composer's 660, so
+   the hero, the choice and the box you type in line up on both edges. Nothing
+   moves except the width of two elements, and the screen stops looking
+   assembled from parts. */
+@media(min-width:761px){
+  .dev-shell.dev-blank .dev-chat-pane > .build-head,
+  .dev-shell.dev-blank .dev-chat-pane > .build-modes{
+    width:100%; max-width:660px; margin-left:auto; margin-right:auto;
+  }
+}
+
+/* THE CHOICE IS A CHOICE, NOT THREE PANELS.
+
+   `.build-mode` was a filled box - `--s2` on `--bd`, the same fill as a card -
+   so three of them side by side read as three destinations of equal
+   consequence, which is exactly the blockiness. They are one control with
+   three states.
+
+   Quieter by default so the row recedes, and the SELECTED one carries the
+   accent outright rather than shifting one surface step. That is the whole
+   hierarchy this row needs: two options waiting, one chosen. */
+.build-mode{
+  background:transparent;
+  border-color:var(--bd);
+}
+.build-mode:hover{ background:var(--glass-soft); border-color:var(--bdl); }
+.build-mode.on{
+  background:var(--accent-soft);
+  border-color:var(--accent-txt);
+  color:var(--tx);
+}
+.build-mode.on .build-mode-t{ color:var(--accent-txt); }
+
+/* STUDIO'S RAIL: EIGHT PILLS, ONE OF THEM THE POINT.
+
+   Designs list, Add a design, the refine box, Apply change, History, Download
+   this, Export project - every one a filled rounded rectangle of the same
+   size. The blue Apply change was the only thing ranked, and it sat fourth.
+
+   The two `.studio-actions` rows are secondary by definition - they act on a
+   design that already exists - so they become quiet text buttons with a hair
+   line above them, which separates "make it" from "do something with it"
+   without adding a heading nobody needs. */
+.studio-side .studio-actions{
+  border-top:1px solid var(--bd);
+  padding-top:var(--sp-3);
+  margin-top:var(--sp-1);
+  gap:var(--sp-2);
+}
+.studio-side .studio-actions + .studio-actions{
+  border-top:none; padding-top:0; margin-top:calc(var(--sp-2) * -1);
+}
+.studio-side .studio-actions .btn{
+  background:transparent; border-color:transparent;
+  color:var(--mu); font-weight:500;
+}
+.studio-side .studio-actions .btn:hover{
+  background:var(--glass-soft); border-color:var(--bd); color:var(--tx);
+}
+
+/* ── LAYER A172 · the choice becomes one row, and says one thing ─────────────
+   With the hint moved out of the buttons (see `_buildModeSwitchHTML`), the row
+   is three short labels and can be what it always was: a three-way switch.
+
+   One grid at every width, so the phone and the desktop stop being two
+   different controls - A169 already made the phone a segmented row for the
+   same reason, and this is that rule generalised rather than a second one.
+
+   The note under it is the guidance that used to be printed three times at
+   once. Quiet, one line, about the option that is actually selected. */
+.build-modes{
+  display:grid; grid-template-columns:repeat(3,1fr);
+  gap:var(--sp-2); margin-bottom:var(--sp-2);
+}
+.build-mode{
+  flex:initial; min-width:0;
+  align-items:center; justify-content:center; text-align:center;
+  padding:var(--sp-3) var(--sp-2); min-height:44px;
+  hyphens:auto;
+}
+.build-mode-t{ font-size:var(--t-sm); font-weight:600; line-height:1.3; }
+.build-mode-note{
+  margin:0 0 var(--sp-5);
+  font-size:var(--t-sm); color:var(--dim); line-height:1.5;
+  text-align:center;
+}
+@media(max-width:760px){
+  .build-mode-note{ margin-bottom:var(--sp-3); text-align:left; }
+  .lab-shell > .build-mode-note{ padding-left:var(--sp-5); padding-right:var(--sp-5); }
+}
+/* The entry column's one measure, applied to the note as well, so it does not
+   run wider than the row it describes. */
+@media(min-width:761px){
+  .dev-shell.dev-blank .dev-chat-pane > .build-mode-note{
+    width:100%; max-width:660px; margin-left:auto; margin-right:auto;
+  }
+}
+
+/* ── LAYER A173 · one left edge, instead of two alignments in one column ─────
+   With the column on a single measure the last thing making it read as
+   assembled-from-parts is that it uses two alignments at once: the eyebrow,
+   the heading and the sub are left-aligned, while the mode note, the example
+   chips and the upload row are centred. Two edges down one 660px column, so
+   nothing lines up with the thing above it.
+
+   Left, for all of it. The composer is a full-width box on that measure, so
+   its left edge is the strongest line on the screen already - everything else
+   joining it gives the column one spine. Centred text also reads as marketing;
+   this screen is a workspace. */
+.build-mode-note{ text-align:left; }
+.dev-shell.dev-blank .dev-hero-chips,
+.dev-shell.dev-blank .dev-hero-upload{
+  justify-content:flex-start;
+}
+.dev-shell.dev-blank .dev-hero{
+  width:100%; max-width:660px; margin-left:auto; margin-right:auto;
+}
+
+/* ── LAYER A174 · the hint line did not join the column it describes ─────────
+   A172 padded `.build-mode-note` inside Lab only under `max-width:760`, so at
+   desktop it started at the shell edge while the heading it belongs to started
+   24px in. One line, out on its own, left of everything else - the exact fault
+   A170 fixed for the head and the mode row, missed for the sentence added
+   after them.
+
+   Same padding, every width, same as its neighbours. */
+.lab-shell > .build-mode-note{
+  padding-left:var(--sp-5); padding-right:var(--sp-5);
+}
+
+/* ── LAYER A175 · Dev's phone entry had three different left edges ───────────
+   Measured at 390, by where the TEXT starts rather than where the border box
+   does - padding lives inside the box, so a padded element and an unpadded one
+   report the same `left` while looking nothing alike:
+
+     eyebrow  0      hard against the screen edge
+     h2       0      the same
+     modes    41     the grid, shrink-wrapped and centred
+     note     71     the sentence, centred on its own width
+
+   Three edges in one column, and the heading touching glass. Lab measures 24
+   for all four at the same width, which is what this should look like.
+
+   The cause is `align-items:center` on the blank chat pane: it makes every
+   child shrink to its content and sit in the middle, so each one finds its own
+   left depending on how wide it happens to be. Stretch them instead and put
+   the inset on the pane, which is the same thing A170 did for Lab. */
+@media(max-width:760px){
+  .dev-shell.dev-blank .dev-chat-pane{
+    align-items:stretch;
+    padding-left:var(--sp-5); padding-right:var(--sp-5);
+  }
+  .dev-shell.dev-blank .dev-chat-pane > .build-head,
+  .dev-shell.dev-blank .dev-chat-pane > .build-modes,
+  .dev-shell.dev-blank .dev-chat-pane > .build-mode-note,
+  .dev-shell.dev-blank .dev-hero{ width:100%; max-width:none; }
+}
+
+/* ── LAYER A176 · centring a column taller than the screen hides its top ─────
+   Dev's blank entry lands on "What should we build?" cut through the middle of
+   its letters. The pane is `justify-content:center`, and when the content is
+   taller than the box, centring overflows it EQUALLY in both directions - so
+   the first line goes above the top edge, into space a scroll cannot reach,
+   because a flex container will not scroll to before its start.
+
+   `safe center` is the keyword for exactly this: centre while it fits, fall
+   back to flex-start the moment it does not. Declared after the plain value so
+   a browser that does not know it keeps the old behaviour rather than losing
+   the rule.
+
+   Only the phone needs it - at 1440 the column has room to spare - but the
+   fault is about content height rather than screen width, so it is stated for
+   every width and simply never engages where there is space. */
+.dev-shell.dev-blank .dev-chat-pane{
+  justify-content:center;
+  justify-content:safe center;
+}
+
+/* And Dev's blank toolbar wraps to two rows on a phone for the same reason
+   Lab's wrapped to three: it is holding controls that act on work that does
+   not exist yet. A168 hid Lab's; this is Dev's, on the same rule - the badge
+   and the way back stay, everything else waits until there is something to act
+   on. */
+@media(max-width:760px){
+  .dev-shell.dev-blank .dev-bar-l > *:not(.dev-badge):not(.bld-home),
+  .dev-shell.dev-blank .dev-bar-r{ display:none; }
+}

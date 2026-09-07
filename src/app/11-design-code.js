@@ -284,16 +284,30 @@ const _BUILD_MODE_TABS = [
   ['dev',    'Build an app','Real software, written and running in a sandbox'],
   ['lab',    'Work on code','Run, debug, review or refactor code you already have'],
 ];
+/* THREE DESCRIPTIONS COMPETING, WHEN ONLY ONE IS THE CURRENT ANSWER.
+
+   Each option carried its own hint inside its own box, so the row was three
+   titles and three sentences - about sixty words to make one choice, and three
+   blocks of equal weight, which is most of what made this screen read as
+   blocky. Constrained to the composer's measure the row could not even hold
+   them: it wrapped 2 + 1 and left an orphan.
+
+   The hint moves out and below, for the SELECTED option only. The row becomes
+   three short segments that fit on one line, and the guidance is still there -
+   one sentence, about the thing you have actually picked. The full text stays
+   on each button's `title`, so hovering an option you have not chosen still
+   tells you what it is. */
 function _buildModeSwitchHTML(active){
+  const cur = _BUILD_MODE_TABS.find(([tab]) => tab === active);
   return '<div class="build-modes" role="tablist" aria-label="What do you want to end up with?">'
     + _BUILD_MODE_TABS.map(([tab, label, hint]) =>
         '<button class="build-mode' + (tab === active ? ' on' : '') + '"'
         + ' role="tab" aria-selected="' + (tab === active ? 'true' : 'false') + '"'
         + ' data-bmode="' + tab + '" title="' + escH(hint) + '">'
         + '<span class="build-mode-t">' + escH(label) + '</span>'
-        + '<span class="build-mode-h">' + escH(hint) + '</span>'
       + '</button>').join('')
-  + '</div>';
+  + '</div>'
+  + (cur ? '<p class="build-mode-note">' + escH(cur[2]) + '</p>' : '');
 }
 /* THE BUILDS YOU ALREADY MADE, ON THE PAGE WHERE YOU LOOK FOR THEM.
 
