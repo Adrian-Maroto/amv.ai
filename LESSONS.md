@@ -10036,3 +10036,54 @@ test and would now fail on `lab-bar-r` itself.
    care about a hidden button. Almost any other dead-CSS mistake would have
    shipped in silence. That is the argument for the runtime approach, not for
    a better regex.
+
+## 394. The one keystroke that would have taken the launched site down
+
+The owner set `ALLOWED_ORIGIN`, which is the go-live step that pins the browser
+API to their own domain. Reading the path it goes down turned up two things.
+
+The first was a false alarm, and checking it was the right call: `corsFor(env)`
+is defined and called nowhere, which for a minute looked like the setting being
+inert. It is a leftover - AMV-028 already fixed that bug and moved enforcement
+to `_applyCors`, on the single line every response in the Worker passes
+through. The comment above it says so. Read the whole path before reporting a
+hole in it.
+
+The second was real. `Access-Control-Allow-Origin` must match the browser's
+`Origin` header character for character, and that header is only ever scheme +
+host. `_corsOrigin` returned the configured string raw - no trim, no
+normalisation - so:
+
+    ALLOWED_ORIGIN=https://amv.homes/     every browser call fails, everywhere
+
+One trailing slash. It is the shape a person types, the shape an address bar
+copies, and `wrangler secret put` reads from stdin so a trailing newline
+arrives the same way and is invisible. The failure is total and immediate and
+lands on the deployment that has just launched.
+
+Worse, the readiness screen - the thing built precisely so nobody finds this
+out later - reported any non-empty, non-`*` value as "API is pinned to your
+site". It would have said pinned about an API no browser could reach.
+
+Normalised rather than refused: the intent of `https://amv.homes/` is not in
+doubt, and a launched site staying up beats being right about punctuation.
+Verified against the real Worker rather than the helper - `https://amv.homes/`,
+`  https://amv.homes\n` and `https://amv.homes` all now emit exactly
+`https://amv.homes`, and `*`/unset are untouched.
+
+1. A setting whose wrong value is indistinguishable from its right value, at
+   the moment of setting it, needs the screen to say what it RESOLVED to, not
+   whether it is present. "Set" is not a state anybody cares about; "what the
+   browser will be told" is.
+2. Normalise the shapes that have exactly one possible intent, and report the
+   correction so it gets fixed at the source instead of living in the
+   normaliser forever. Silence there would mean the screen agrees with a value
+   that is still wrong in the operator's secret store.
+3. Padding is not worth a paragraph. A trailing newline trims to the same
+   origin and nothing behaves differently; saying so would be noise on a screen
+   whose entire value is that every line on it matters. The test asserts the
+   silence as deliberately as it asserts the warning.
+4. This setting also flips on the HttpOnly refresh cookie - `_cookieAuthOn` is
+   `_corsOrigin(env) !== '*'` - so pinning the origin changes the auth path
+   too. A go-live step with a second effect nobody mentions is a go-live step
+   that gets blamed for the wrong thing.

@@ -340,6 +340,49 @@ section('Sandbox and a wide-open API are states, reported as states');
     AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', ALLOWED_ORIGIN: 'https://amv.homes', PAYPAL_MODE: 'live' }));
   ok(find(pinned, 'apiOrigin').on === true, 'a real origin is pinned', find(pinned, 'apiOrigin').on);
   ok(find(pinned, 'paypalLive').on === true, 'and live mode reads as live', find(pinned, 'paypalLive').on);
+
+  /* THE ONE KEYSTROKE THAT TAKES THE WHOLE SITE DOWN.
+
+     `Access-Control-Allow-Origin` has to match the browser's `Origin` header
+     exactly, and that header is only ever scheme + host. `https://amv.homes/`
+     is the shape a person types and the shape an address bar copies, and it
+     matches nothing - every browser call to the API fails at once, on the
+     deployment that has just launched. `wrangler secret put` reads from stdin,
+     so a trailing newline arrives the same way and is invisible.
+
+     The row used to report any non-empty, non-'*' value as pinned, so the
+     screen would have said "pinned" about an API no browser could reach. */
+  for (const bad of ['https://amv.homes/', 'https://amv.homes/app']) {
+    const r = await get(Object.assign(bare(), {
+      AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', ALLOWED_ORIGIN: bad }));
+    const row = find(r, 'apiOrigin');
+    ok(row.on === true, 'a malformed origin is still pinned, not reported as open: ' + JSON.stringify(bad), row.on);
+    ok(/is not an origin/.test(row.turnsOn),
+       'and the screen says the value is wrong: ' + JSON.stringify(bad), row.turnsOn.slice(-150));
+    ok(/being read as https:\/\/amv\.homes\b/.test(row.turnsOn),
+       'naming the origin it is actually being read as: ' + JSON.stringify(bad), row.turnsOn.slice(-150));
+  }
+
+  /* Padding is not a mistake worth a paragraph. `wrangler secret put` reads
+     from stdin and a trailing newline arrives invisibly; trimmed, the value IS
+     the origin, nothing behaves differently, and saying so would be noise on a
+     screen whose whole value is that every line on it matters. */
+  {
+    const padded = await get(Object.assign(bare(), {
+      AMV_MODEL_KEY: 'k', JWT_SECRET: 'j', ALLOWED_ORIGIN: '  https://amv.homes\n' }));
+    const row = find(padded, 'apiOrigin');
+    ok(row.on === true, 'a padded origin is pinned', row.on);
+    ok(!/is not an origin/.test(row.turnsOn),
+       'and gets no correction notice, because trimming changed nothing that matters',
+       row.turnsOn.slice(0, 90));
+  }
+
+  /* And a correct value says nothing about corrections. */
+  ok(!/is not an origin/.test(find(pinned, 'apiOrigin').turnsOn),
+     'a well-formed origin gets no correction notice', find(pinned, 'apiOrigin').turnsOn.slice(0, 90));
+  ok(/www\./.test(find(pinned, 'apiOrigin').turnsOn),
+     'but it does warn that a different host - www. - is refused',
+     find(pinned, 'apiOrigin').turnsOn.slice(0, 160));
 }
 
 section('Nothing the Worker can switch on is missing from the screen');

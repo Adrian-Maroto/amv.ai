@@ -17,7 +17,33 @@
 // token, not the origin, is the security boundary). To lock the browser API
 // to ONLY your frontend in production, replace '*' with your domain, e.g.
 // 'https://app.yourdomain.com'. Webhooks are server-to-server and need no CORS.
-const _corsOrigin = (env) => (env && env.ALLOWED_ORIGIN) || '*';
+/* AN ORIGIN IS A SCHEME AND A HOST. NOTHING ELSE, AND NOTHING AROUND IT.
+
+   The browser's `Origin` header is exactly `https://amv.homes` - never with a
+   trailing slash, never with a path, never padded. `Access-Control-Allow-Origin`
+   has to match it character for character or the browser rejects the response,
+   so `https://amv.homes/` - one keystroke, and the shape a person naturally
+   types or copies out of an address bar - takes every browser call to this API
+   down at once, for everybody, on the deployment that has just launched.
+
+   `wrangler secret put` reads the value from stdin, which is the other way this
+   arrives wrong: a trailing newline is invisible and equally fatal.
+
+   Normalised rather than refused. The intent of `https://amv.homes/` is not in
+   doubt, and a launched site staying up beats being right about punctuation.
+   The readiness screen reports the correction so it gets fixed at the source
+   instead of living here forever. */
+const _originOf = (raw) => {
+  const v = String(raw == null ? '' : raw).trim();
+  if (!v || v === '*') return v;
+  try {
+    const u = new URL(v);
+    return u.origin;                    // scheme + host + non-default port
+  } catch (e) {
+    return v.replace(/\/+$/, '');       // not a URL at all - hand it back trimmed
+  }
+};
+const _corsOrigin = (env) => _originOf(env && env.ALLOWED_ORIGIN) || '*';
 const corsFor = (env) => ({
   'Access-Control-Allow-Origin': _corsOrigin(env),
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
@@ -21130,12 +21156,28 @@ function _readinessReport(env) {
        it means any site on the internet can call this API from a browser.
        The value is not a secret - it is in a response header on every
        request - so reporting whether it is pinned leaks nothing. */
+    /* THE VALUE'S SHAPE IS REPORTED, NOT JUST WHETHER IT IS SET.
+
+       `Access-Control-Allow-Origin` must match the browser's `Origin` header
+       character for character, and that header is only ever scheme + host.
+       `https://amv.homes/` is what a person types, and it matches nothing - so
+       the row that said "pinned" would be describing an API no browser could
+       call, on the deployment that had just launched. `_corsOrigin` normalises
+       it so the site stays up; this says so, so it gets fixed at the source. */
     { id: 'apiOrigin', name: 'API is pinned to your site', blocking: false,
-      on: !!String((env && env.ALLOWED_ORIGIN) || '').trim() && String(env.ALLOWED_ORIGIN).trim() !== '*',
-      turnsOn: (!String((env && env.ALLOWED_ORIGIN) || '').trim() || String((env && env.ALLOWED_ORIGIN) || '').trim() === '*')
-        ? 'Cross-origin calls are currently allowed from ANY site, which is the default. Every browser-side control still applies and the server is still the authority, but another site can call this API with a visitor\u2019s credentials in the browser. Pin it to your own origin before launch.'
-        : 'Browser calls to this API are accepted only from your own site.',
-      how: 'wrangler secret put ALLOWED_ORIGIN  (value: your site\u2019s origin, e.g. https://amv.homes)' },
+      on: !!_originOf(env && env.ALLOWED_ORIGIN) && _originOf(env && env.ALLOWED_ORIGIN) !== '*',
+      turnsOn: (() => {
+        const raw = String((env && env.ALLOWED_ORIGIN) || '');
+        const eff = _originOf(raw);
+        if (!eff || eff === '*')
+          return 'Cross-origin calls are currently allowed from ANY site, which is the default. Every browser-side control still applies and the server is still the authority, but another site can call this API with a visitor\u2019s credentials in the browser. Pin it to your own origin before launch.';
+        const line = 'Browser calls to this API are accepted only from ' + eff
+          + '. Anything served from a different host - www. against the bare domain, or your host\u2019s own preview address - is refused by the browser, so check the address people actually use.';
+        return raw.trim() === eff ? line
+          : line + ' NOTE: the value is set to \u201c' + raw + '\u201d, which is not an origin; it is being read as ' + eff
+                 + '. Set it to exactly ' + eff + ' - no trailing slash, no path, no spaces.';
+      })(),
+      how: 'wrangler secret put ALLOWED_ORIGIN  (value: your site\u2019s origin, exactly - e.g. https://amv.homes, no trailing slash)' },
   ];
 
   /* Storage is bound, not pasted, so it is reported separately - and what each
