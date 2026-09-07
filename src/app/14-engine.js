@@ -798,8 +798,7 @@ function renderLabView(){
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
     ${_buildEntryHeadHTML('lab','Drop in your code and AMV takes it from there',
       'Paste it, or upload files - any size, 10,000+ lines is fine. Then pick what you want done.')}
-    ${(typeof _buildHomeBtnHTML==='function' ? _buildHomeBtnHTML(!labBlank) : '')}
-    ${_buildBarHTML('lab')}
+    ${_buildBarHTML('lab', !labBlank)}
 
     <!-- ENTRY STATE: paste on the left, upload on the right -->
     <div class="lab-entry" id="lab-entry">

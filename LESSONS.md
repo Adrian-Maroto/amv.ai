@@ -10087,3 +10087,58 @@ Verified against the real Worker rather than the helper - `https://amv.homes/`,
    `_corsOrigin(env) !== '*'` - so pinning the origin changes the auth path
    too. A go-live step with a second effect nobody mentions is a go-live step
    that gets blamed for the wrong thing.
+
+## 395. "Blocky and hard to use" was four measurable faults, one of them fatal
+
+The owner asked for two things on Build, Dev and Lab: a way back that is always
+top-left, and for the three to stop feeling blocky. Both turned out to be
+specific rather than aesthetic, and the way to find that was to screenshot all
+three in the blank AND the working state, at 1440 and 390, before touching
+anything.
+
+THE WAY BACK existed on all three and no two were alike. Dev and Lab each spent
+a whole header band on one button, "All builds", alone above the toolbar - so a
+working Dev screen carried three different header heights down one page: 76px,
+128px, and the preview pane's own 81px. Studio's was a plain `.btn` reading
+"Studio home", first in a stack of EIGHT pills of identical weight, so the
+control that LEAVES the project looked exactly like the one that downloads it.
+One control now, `Build`, first item in each surface's own toolbar.
+
+THE BLOCKINESS, on a 390x844 phone, measured:
+
+    .build-head   129px      the hero
+    .build-modes  148px      three full-width stacked bars
+    .lab-bar      168px      the toolbar, wrapped to THREE rows
+    .lab-entry    224px      what was left for the actual work
+
+445 of chrome, 224 for the job. The entry needs 432px for its two cards, so the
+paste box - the primary action on that screen - was below the fold inside a
+nested scroller, and `elementFromPoint` at its centre returned `DIV.lab-bar-l`.
+Somebody opening Lab on a phone saw "Or upload files" and no way to paste.
+After: 220 of chrome, 454 for the work, and the textarea takes its own tap.
+
+And Lab's header had NO horizontal padding at any width - `left=0 right=390` on
+a phone, `right=1440` on a 1440 desktop - because the head and the mode row are
+SIBLINGS of `.lab-entry`, which is what carries the padding. That one omission
+is why Lab read as a different product from Dev in every screenshot.
+
+1. I got two of these wrong before I measured them. I read the screenshots as
+   "the third mode card overflows the viewport" and "the paste box is missing",
+   wrote both into the task, and both were false: nothing overflowed, and the
+   paste box was present and non-zero. The real faults - flush against the edge
+   rather than past it, and below the fold rather than absent - are adjacent to
+   what I claimed and have different fixes. An eye is good at "something is
+   wrong here" and bad at "this is what is wrong".
+2. Two measurements disagreeing is information, not noise. `#lab-paste` read as
+   present and visible while the screenshot plainly did not show it; chasing
+   that contradiction instead of picking the convenient answer is what found
+   the nested scroller.
+3. When a suite says a control disappeared, the answer is not always to put it
+   back. `the-build-surfaces-keep-every-control` failed on `#studio-back`,
+   which was the point - it is now `bld-home` on all three. The fixture's own
+   readme says a deliberate removal must delete the line AND lower the count in
+   the same commit, so the removal is a visible act rather than a green test.
+4. Hide, do not delete, when a renderer reads the thing unconditionally. That
+   same suite records that removing Lab's toolbar from the markup once made
+   `renderLabView` die on `$('lab-lang').value`. The phone fix is CSS: the
+   controls still answer, they stop taking up a screen.

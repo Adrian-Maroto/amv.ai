@@ -11348,3 +11348,132 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    `--s2` rather than `.int-ic`'s `rgba(255,255,255,.05)`: a translucent white
    is invisible on a white card, and the tile is meant to be a tile. */
 .tk-ic{ background:var(--s2); }
+
+/* ── LAYER A167 · one way out, in one place, on all three build surfaces ─────
+   Measured on Design, Dev and Lab, blank and working, at 1440 and 390. All
+   three had a way back to Build. No two were alike, and one of them did not
+   read as navigation at all:
+
+     Dev   "← All builds", alone on its own header row above the toolbar
+     Lab   the same, same wasted band
+     Studio "← Studio home", first in a stack of EIGHT pills of identical
+            weight - Add a design, Apply change, History, Download this,
+            Export project - so the control that LEAVES the project looked
+            exactly like the one that downloads it
+
+   The cost of the separate row was visible: a working Dev screen carried three
+   different header heights down one page - the back row at 76px, the DEV row
+   at 128px, and the preview pane's own row at 81px. Nothing shared a baseline,
+   which is most of why it read as blocky.
+
+   It is one control now, in the surface's own toolbar, first item, top-left.
+   `.bld-home` keeps its shape; what changes is that it is a row-mate rather
+   than a row, so the margin and the self-alignment that positioned it as a
+   block come off, and it gets a divider to say it belongs to navigation while
+   the badge beside it belongs to the surface. */
+.build-bar .bld-home{
+  align-self:center;
+  margin:0 var(--sp-1) 0 0;
+  padding-right:var(--sp-3);
+  border:none; border-right:1px solid var(--bd);
+  border-radius:0;
+  min-height:28px;
+}
+.build-bar .bld-home:hover{ color:var(--tx); border-right-color:var(--bdl); }
+
+/* Studio had no header at all - its rail began with a button. This is that
+   header: the same bar the other two use, so the three surfaces now start the
+   same way. */
+.studio-bar{
+  padding:0 0 var(--sp-3);
+  margin:0 0 var(--sp-1);
+  border-bottom:1px solid var(--bd);
+}
+
+/* ── LAYER A168 · on a phone, Lab spent 445px of chrome on a 844px screen ────
+   Measured at 390x844, Lab's blank state:
+
+     .build-head    58→187   129px   the hero
+     .build-modes  199→347   148px   the three choices
+     .lab-bar      363→531   168px   the toolbar, wrapped to THREE rows
+     .lab-entry    531→755   224px   what is left for the actual work
+
+   The entry needs about 430px for its two cards and gets 224, so the paste box
+   - the primary action on the screen - sits below the fold inside a nested
+   scroller. `elementFromPoint` at its centre returned `DIV.lab-bar-l`.
+   Somebody opening Lab on a phone sees "Or upload files" and no way to paste.
+
+   The toolbar is what has to give, and in the blank state it costs nothing to
+   give it: every control on it either acts on code that does not exist yet
+   (language, engine, line count, Run, Auto-Debug) or is already offered by the
+   entry screen itself (upload). The entry has its own "Run it" and "Find & fix
+   the bugs".
+
+   HIDDEN, NOT REMOVED. `renderLabView` reads `$('lab-lang').value`
+   unconditionally, and `the-build-surfaces-keep-every-control` records that
+   taking the toolbar out of the markup is what made it crash. The elements
+   stay in the DOM and keep answering; they stop taking up a phone screen.
+
+   Phone only. At desktop the bar is one row and costs nothing, and changing
+   what a working surface looks like there is a different decision from
+   rescuing one that does not fit. */
+@media(max-width:760px){
+  .lab-shell.lab-blank .lab-bar-l > *:not(.dev-badge):not(.bld-home),
+  .lab-shell.lab-blank .lab-bar-r{ display:none; }
+  .lab-shell.lab-blank .lab-bar{ padding-top:var(--sp-2); padding-bottom:var(--sp-2); }
+}
+
+/* ── LAYER A169 · three full-width bars is the blockiest thing on the phone ──
+   `.build-mode{flex:1 1 100%}` stacks the outcome choice as three full-width
+   bars, 148px of the 844 before any work is visible - and with the hint text
+   already hidden at this width, each bar is one short label in a lot of empty
+   box. That is the shape the owner meant by blocky, and it is the single
+   biggest block on the screen after the hero.
+
+   A segmented row instead: the same three choices, side by side, one row.
+   148px becomes about 52. Nothing is removed and nothing is renamed - a
+   segmented control is what a three-way exclusive choice looks like when it
+   does not need to be a card, and it reads as a switch rather than as three
+   destinations.
+
+   Centred text, because the labels are now short columns rather than lines,
+   and `hyphens:auto` so "Work on code" breaks where a person would break it
+   rather than overflowing its segment on a 320px screen. */
+@media(max-width:760px){
+  .build-modes{
+    display:grid; grid-template-columns:repeat(3,1fr);
+    gap:var(--sp-1); margin-bottom:var(--sp-3);
+  }
+  .build-mode{
+    flex:initial; min-width:0;
+    padding:var(--sp-2) var(--sp-1); min-height:44px;
+    align-items:center; justify-content:center; text-align:center;
+    hyphens:auto;
+  }
+  .build-mode-t{ font-size:var(--t-sm); line-height:1.25; }
+}
+
+/* ── LAYER A170 · Lab's header had no horizontal padding, at any width ───────
+   Measured, both sizes, both edges:
+
+     phone    .build-head  left=0    right=390    viewport 390
+     desktop  .build-head  left=250  right=1440   viewport 1440
+
+   Zero either side. The heading, the eyebrow and the paragraph sat hard
+   against the edge of the screen, and the third mode button ended exactly ON
+   the right edge with no margin at all - which is what made Lab read as a
+   different product from Dev in every screenshot, before anybody got as far as
+   the layout.
+
+   The cause is structural rather than a missing value. `.lab-entry` carries
+   `padding:32px 24px`, and the head and the mode row are its SIBLINGS, not its
+   children - so the padding that makes the entry look composed never applied
+   to the two things above it. Dev does not have this because its equivalents
+   live inside `.dev-chat-pane`, which is padded.
+
+   Same 24px, so the head lines up with the entry's content rather than with
+   the window. */
+.lab-shell > .build-head,
+.lab-shell > .build-modes{
+  padding-left:var(--sp-5); padding-right:var(--sp-5);
+}

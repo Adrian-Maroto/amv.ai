@@ -83,7 +83,7 @@ function _bIcoBtn(id, label, icon, extra){
    `studio-bar` twin. It is the standard build bar, badly named; a third class
    would mean copying its responsive rules a third time, which is the
    duplication this work exists to remove. */
-function _buildBarHTML(mode){
+function _buildBarHTML(mode, showHome){
   const isLab = mode === 'lab';
   const isDesign = mode === 'design';
   const badge = isLab ? 'Lab' : isDesign ? 'Studio' : 'Dev';
@@ -124,9 +124,30 @@ function _buildBarHTML(mode){
       + _bIcoBtn('dev-save','Save to your folder','save',' style="display:none"')
       + _bIcoBtn('dev-new','New session','fresh');
 
+  /* THE WAY OUT SITS IN THE BAR, NOT ON A ROW OF ITS OWN.
+
+     Measured on all three, blank and working. Dev and Lab each spent a whole
+     header band on one button - "All builds", alone, above the toolbar - so a
+     working Dev screen had THREE different header heights down one page: the
+     back row at 76px, the DEV row at 128px, and the preview pane's own row at
+     81px. Nothing lined up with anything.
+
+     Studio was worse in the other direction. Its way out was
+     `<button class="btn">← Studio home</button>`, first in a stack of EIGHT
+     pills of identical weight - Add a design, Apply change, History, Download
+     this, Export project - so the control that leaves the project looked
+     exactly like the control that downloads it, and read as neither.
+
+     One control now, in one place, with one label, on all three: first item in
+     this bar, which is the top-left of the surface. `Build` rather than "All
+     builds" or "Studio home" because that is the name of the place it goes
+     and the name in the sidebar. */
   const cls = isLab ? 'lab-bar' : 'dev-bar';
   return '<div class="'+cls+' build-bar">'
-    + '<div class="'+cls+'-l"><span class="dev-badge">'+badge+'</span>'+left+'</div>'
+    + '<div class="'+cls+'-l">'
+      + _buildHomeBtnHTML(showHome)
+      + '<span class="dev-badge">'+badge+'</span>'+left
+    + '</div>'
     + '<div class="'+cls+'-r">'+right+'</div>'
   + '</div>';
 }
@@ -433,8 +454,8 @@ function _wireBuildRecents(root){
 function _buildHomeBtnHTML(show){
   if(!show) return '';
   return '<button class="bld-home" id="bld-home" title="Back to Build">'
-    + '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>'
-    + 'All builds</button>';
+    + '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>'
+    + 'Build</button>';
 }
 try{ window._buildRecentsHTML=_buildRecentsHTML; window._wireBuildRecents=_wireBuildRecents; window._agoLabel=_agoLabel; }catch(e){}
 
@@ -672,7 +693,9 @@ function _studioShowCanvas(brief){
   _STUDIO.atHome=false;   /* opening a design is leaving home */
   vc.innerHTML = `<div class="studio-canvas">
     <div class="studio-side">
-      <button class="btn" id="studio-back">← Studio home</button>
+      <div class="dev-bar build-bar studio-bar">
+        <div class="dev-bar-l">${_buildHomeBtnHTML(true)}<span class="dev-badge">Studio</span></div>
+      </div>
       <div class="studio-arts-h">Designs in this project</div>
       <div class="studio-arts" id="studio-arts"></div>
       <button class="btn bs studio-add" id="studio-add">+ Add a design</button>
@@ -713,7 +736,7 @@ function _studioShowCanvas(brief){
     _setSectionModel('design', this.value);
     toast('Design model set to '+MODELS[this.value].label,'info',2500);
   });
-  on($('studio-back'),'click',()=>{ _STUDIO.atHome=true; setTab('studio'); });
+  on($('bld-home'),'click',()=>{ _STUDIO.atHome=true; try{ _sessFlush('studio'); }catch(e){} setBuildMode('design'); });
   on($('studio-refine-go'),'click',_studioRefine);
   on($('studio-add'),'click',_studioAddPrompt);
   on($('studio-history'),'click',_studioHistory);
@@ -1301,8 +1324,7 @@ function renderCodeView(){
     <div class="dev-chat-pane">
       ${_buildEntryHeadHTML('dev','What should we build?',
         'Describe it in plain English. AMV writes the code, runs it, and shows you the live result.')}
-      ${_buildHomeBtnHTML(!blank)}
-      ${_buildBarHTML('code')}
+      ${_buildBarHTML('code', !blank)}
 
       <div id="dev-hero" class="dev-hero">
         <div class="dev-hero-chips" id="dev-hero-chips">
