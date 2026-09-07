@@ -650,7 +650,7 @@ section('Every control on a Build surface actually does something');
      Inputs are fed first. "Does nothing when its box is empty" is not a defect;
      "does nothing when you have given it what it needs" is, and that is the
      path a person is actually on. */
-  const SKIP = ['studio-back', 'dev-new', 'lab-new', 'studio-export', 'studio-download',
+  const SKIP = ['bld-home', 'dev-new', 'lab-new', 'studio-export', 'studio-download',
                 'dev-download-proj', 'dev-deploy', 'lab-deploy', 'dev-open-ext', 'dev-tolab'];
   const FEEDS = { 'studio-refine-go': 'studio-refine', 'dev-send': 'dev-msg',
                   'lab-ask-go': 'lab-ask', 'lab-run': 'lab-code', 'lab-debug': 'lab-code' };

@@ -168,14 +168,24 @@ section('And Studio home still goes home');
      that button re-renders this view, so without it the canvas would reopen
      immediately and there would be no way to start something new. */
   const home = await page.evaluate(async () => {
-    document.getElementById('studio-back').click();
+    /* `bld-home`, not `studio-back`. Studio, Dev and Lab each had their own way
+       back to Build and no two were alike; they share this one now. Clicking a
+       missing id threw a TypeError out of `page.evaluate` and took the whole
+       suite with it - so the gate printed a Playwright stack where it should
+       have said which section could not run. Asserted rather than assumed, for
+       that reason. */
+    const back = document.getElementById('bld-home');
+    if (!back) return { missing: true };
+    back.click();
     await new Promise(r => setTimeout(r, 400));
     const first = { hero: !!document.querySelector('.dsn-hero'), canvas: !!document.querySelector('.studio-canvas') };
     setBuildMode('design');
     await new Promise(r => setTimeout(r, 300));
     return { first, stays: { hero: !!document.querySelector('.dsn-hero'), canvas: !!document.querySelector('.studio-canvas') } };
   });
-  ok(home.first.hero && !home.first.canvas, 'it returns to the hero', home.first);
+  ok(!home.missing, 'the way back out of a design is on the screen', home);
+  ok(!home.missing && home.first.hero && !home.first.canvas,
+     'it returns to the hero', home.first);
   ok(home.stays.hero && !home.stays.canvas, 'and stays there rather than bouncing back', home.stays);
 }
 

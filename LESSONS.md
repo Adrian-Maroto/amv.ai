@@ -10142,3 +10142,30 @@ is why Lab read as a different product from Dev in every screenshot.
    same suite records that removing Lab's toolbar from the markup once made
    `renderLabView` die on `$('lab-lang').value`. The phone fix is CSS: the
    controls still answer, they stop taking up a screen.
+
+## 396. A rename is not done when the code compiles
+
+`studio-back` became `bld-home` so that Design, Dev and Lab would share one way
+back to Build. The 90-assertion control manifest caught it immediately, I
+recorded the retirement properly in the fixture, and I thought that was the
+sweep. It was not: `the-preview-shows-what-is-there` clicks the button by id.
+
+    document.getElementById('studio-back').click();
+
+`getElementById` returns null, `.click()` on null throws a TypeError out of
+`page.evaluate`, and the uncaught rejection took the whole suite with it - so
+the gate printed a Playwright stack where it should have said which section
+could not run. Exactly the failure `the-build-surfaces-keep-every-control`
+documents in its own comments and defends against, in a suite that does not.
+
+1. The grep that finds a rename's callers has to cover the tests, not just the
+   source. I searched `src/app/*.js` and `styles.css`, saw the fixture failure,
+   fixed the fixture, and stopped - because a test had already caught it, which
+   felt like the check had happened.
+2. `document.getElementById(x).click()` inside `page.evaluate` converts a
+   missing element into a suite-destroying stack trace. Read it into a
+   variable, assert it exists, and the failure names the control instead.
+3. Three greps, three answers, and only the third was complete: `studio-back`
+   survived in a click site AND in a SKIP list that names ids to leave alone -
+   the second of which is silent when it goes stale, because skipping something
+   that no longer exists looks exactly like skipping something that does.
