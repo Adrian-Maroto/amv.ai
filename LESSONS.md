@@ -9981,46 +9981,58 @@ dark. Twenty-six screens, one hit.
    defect back, watch the suite go red, take it out again. A suite that has
    never failed has not been shown to work.
 
-## 393. The gate asked one direction of a question and not the other
+## 393. I deleted 346 CSS rules I could not prove were dead, and one was not
 
-`No class is applied without something to apply` has been in the gate since
-LESSONS 297's neighbours and it works. Nobody ever wrote the reverse, and
-styles.css had accumulated 346 rules - 511 selectors, 525 lines - for classes
-no module and no markup writes.
+`No class is applied without something to apply` has been in the gate for a
+while and it works. Nobody ever wrote the reverse, and a sweep suggested
+styles.css carried 346 rules - 511 selectors, 525 lines, 6,138 bytes gzipped -
+for classes no module and no markup writes, in families that match retired
+work: `lab-*` and `dev-*` from the three renderers D007 merged into Build,
+`chome-*` from a replaced chat home, `upg-*`, `pm-*`, `onb-*`, and
+`img-controls` / `vid-controls` left by removing image and video generation.
 
-Whole families, each matching work that was retired and whose CSS was not:
-`lab-*` and `dev-*` and `studio-brief` from the three renderers D007 merged
-into Build, `chome-*` from a chat home that was replaced, `upg-*`, `pm-*`,
-`onb-*`, and `img-controls` / `vid-controls` left behind by removing image and
-video generation. 6,138 bytes gzipped off a page with a ceiling on exactly
-that. Worse than the weight: somebody reads `.dev-term-body` and believes
-there is a terminal.
+I deleted them. Ten visual suites passed, `check:fast` passed, the page got
+6KB lighter, and the full gate went red on a suite I had not thought to run:
 
-Three things had to be got right before the deletion could be trusted, and two
-of them were wrong first:
+    Lab offers one run action per state
+      on the entry screen exactly one run action is offered
+      got: ["Run","Run it"]
 
-1. A class built as `'s-' + status` never appears whole in the source. A first
-   filter asked "does any prefix of this name appear before a `+` anywhere"
-   and cleared 263 of 265 candidates - worthless. The pattern has to be a
-   quoted string ENDING in that prefix, immediately concatenated; that finds
-   sixteen real prefixes and clears exactly the names they build. The stage
-   derives them from app.js rather than listing them, so it follows the code.
-2. The stage passed on a deliberately re-added dead rule. `index.html` split
-   at `BUILD:JS` still contains the whole generated stylesheet, so every
-   styled class was "found in the source" by matching its own rule. The shell
-   is what lies outside BOTH marker pairs. The existing stage uses the same
-   split harmlessly - it reads `class="..."` attributes out of it, and those
-   do not appear in CSS - which is exactly why the borrowed line looked right.
-3. "Every class in this selector is dead" is the wrong test; it leaves
-   `#sb .hist-list` behind. A selector can never match if ANY simple selector
-   in it is dead. Stated that way it also removes the right thing from a
-   comma-separated list, and the pass needs two rounds: trimming a list can
-   orphan a rule that the first round could not see.
+`.lab-shell.lab-blank .lab-bar-r #lab-run{display:none}` is what hides the
+toolbar Run while the entry screen is up. `lab-bar-r` appears nowhere in
+app.js. It is built:
 
-And a fourth, smaller: a one-line comment above a rule describes THAT rule, so
-it goes with it - 28 did - while a banner or a multi-line note is about the
-section and stays. A comment left standing over a deleted rule is a claim
-about code that is not there.
+    const cls = isLab ? 'lab-bar' : 'dev-bar';
+    '<div class="'+cls+'-r">'
 
-The mutation test is what caught (2). A stage that has never failed has not
-been shown to work, and this one was written, run, passed, and was wrong.
+so the class exists as a literal `lab-bar` and a literal `-r` with a variable
+between them, and every static scan I wrote read it as dead.
+
+I had already written down that this was the risk. The first filter cleared
+263 of 265 candidates and I called it worthless; the second found sixteen real
+`'prefix-' +` sites and I believed it. It does not find the shape above, where
+the VARIABLE holds the prefix. A third attempt - match a class if some source
+fragment is a prefix of it and the rest is another fragment - got `lab-bar-r`
+right and then called `chome-hero` and `img-controls` live (fragments that
+appear in unrelated strings) while still calling `s-succeeded` dead. Three
+detectors, three different wrong answers.
+
+REVERTED. All of it, including the gate stage, which uses the same unsound
+test and would now fail on `lab-bar-r` itself.
+
+1. Ten green suites are not proof that a deletion was safe. They are proof
+   that ten things still work. For a change whose whole risk is "something
+   somewhere silently stops being styled", passing the suites you thought to
+   run is exactly the evidence you cannot have.
+2. "I know this heuristic has false negatives" is not a caveat you get to ship
+   with when the action is deletion. It is the reason not to ship.
+3. This class of question may not have a sound static answer in a codebase
+   that assembles class names at runtime. A defensible version measures: walk
+   every surface and state in a browser, collect every class that actually
+   appears on an element, and treat THAT as the live set - with the honest
+   caveat that a state nobody visited is a class wrongly called dead. That is
+   a bigger piece of work than the 6KB is worth today.
+4. The gate is what caught this, on the one Lab assertion that happened to
+   care about a hidden button. Almost any other dead-CSS mistake would have
+   shipped in silence. That is the argument for the runtime approach, not for
+   a better regex.

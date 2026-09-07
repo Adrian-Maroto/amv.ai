@@ -95,7 +95,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 13 : 17;
+const TOTAL = FAST ? 12 : 16;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -458,72 +458,6 @@ step('No class is applied without something to apply', () => {
     throw new Error('these are written into a class attribute, have no rule in styles.css and are never read '
       + 'back by the code, so the element is named for a look nothing gives it: ' + [...bare].sort().join(', ')
       + '\n  Style it, use the class that already does the job, or add it to ALLOWED in check.mjs with a reason.');
-});
-
-/* ── AND THE OTHER DIRECTION, WHICH HAD NO STAGE AT ALL ───────────────────
-   The stage above fails when a class is APPLIED with nothing to apply. Nothing
-   ever asked the reverse, and 250 classes had accumulated in styles.css that no
-   module and no markup writes - 32,637 bytes of rules for elements that have
-   not existed since the work that used them was retired. Whole families:
-   `lab-*` and `dev-*` and `studio-brief` from the three renderers D007 merged
-   into Build, `chome-*` from a chat home that was replaced, `upg-*`,
-   `img-controls` and `vid-controls` left behind by removing image and video
-   generation. It is dead weight on a page the gzipped ceiling has to carry, and
-   worse, it is a trap: somebody reads `.dev-term-body` and believes there is a
-   terminal.
-
-   THE CONCATENATED PREFIXES ARE DERIVED, NOT LISTED. A class built as
-   `'s-' + status` or `'sl-status-' + x` never appears whole in the source, and
-   hardcoding the sixteen prefixes that do this would rot the moment somebody
-   adds a seventeenth. They are read out of app.js, so the allowance follows the
-   code. A first attempt filtered by "does any prefix of this name appear before
-   a `+` anywhere" and cleared 263 of 265 names - worthless. The pattern has to
-   be a quoted string ENDING in that prefix, immediately concatenated. */
-step('No rule is written for a class nothing applies', () => {
-  const css = readFileSync(R('styles.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-  const app = readFileSync(R('app.js'), 'utf8');
-  /* NOT `.split('BUILD:JS')[0]`, which is what the stage above uses. That half
-     of index.html still contains the BUILD:CSS block - the whole generated
-     stylesheet - so every styled class would be "found in the source" by
-     matching its own rule, and this stage would pass on anything. It did:
-     `.lab-term-wrap{display:flex}` added back deliberately went straight
-     through. The shell is what lies OUTSIDE both marker pairs. It does no harm
-     in the stage above, which reads `class="..."` attributes and
-     querySelector calls out of it, and neither appears in CSS. */
-  const html = readFileSync(R('index.html'), 'utf8');
-  const marks = [...html.matchAll(/BUILD:(?:CSS|JS)/g)].map(m => m.index);
-  const shell = marks.length >= 4
-    ? html.slice(0, marks[0]) + html.slice(marks[1], marks[2]) + html.slice(marks[3])
-    : html;
-  const src = app + '\n' + shell;
-
-  const prefixes = [...new Set([...app.matchAll(/['"`][^'"`]*?([A-Za-z][\w-]*-)['"`]\s*\+/g)]
-    .map(m => m[1]))];
-
-  const styled = new Set();
-  for (const m of css.matchAll(/([^{}@]+)\{/g))
-    for (const c of m[1].matchAll(/\.(-?[A-Za-z_][\w-]*)/g)) styled.add(c[1]);
-
-  if (styled.size < 400 || prefixes.length < 5)
-    throw new Error(`the scan found ${styled.size} styled names and ${prefixes.length} built prefixes, `
-      + 'which cannot be right - the scanner is broken, not the code.');
-
-  /* Empty on purpose. The strip that created this stage left nothing behind,
-     so an entry here means somebody chose to keep a rule for a class nothing
-     writes, and owes the next person the reason. */
-  const ALLOWED = {};
-  for (const [k, why] of Object.entries(ALLOWED))
-    if (!why || why.length < 12)
-      throw new Error(`the allowance for .${k} has no real reason written against it`);
-
-  const orphan = [...styled].filter(c =>
-    !src.includes(c) && !prefixes.some(p => c.startsWith(p)) && !ALLOWED[c]).sort();
-
-  if (orphan.length)
-    throw new Error(`styles.css has rules for ${orphan.length} classes that nothing in app.js or the `
-      + 'index.html shell ever writes: ' + orphan.slice(0, 30).join(', ')
-      + (orphan.length > 30 ? ', …' : '')
-      + '\n  Delete the rules, or add the class to ALLOWED in check.mjs with a reason.');
 });
 
 /* ── A GUARD THAT IS ALWAYS FALSE IS A FEATURE THAT NEVER RAN ─────────────
