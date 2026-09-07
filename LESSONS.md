@@ -9980,3 +9980,47 @@ dark. Twenty-six screens, one hit.
 3. Both new files mutation-test themselves before being believed: put the
    defect back, watch the suite go red, take it out again. A suite that has
    never failed has not been shown to work.
+
+## 393. The gate asked one direction of a question and not the other
+
+`No class is applied without something to apply` has been in the gate since
+LESSONS 297's neighbours and it works. Nobody ever wrote the reverse, and
+styles.css had accumulated 346 rules - 511 selectors, 525 lines - for classes
+no module and no markup writes.
+
+Whole families, each matching work that was retired and whose CSS was not:
+`lab-*` and `dev-*` and `studio-brief` from the three renderers D007 merged
+into Build, `chome-*` from a chat home that was replaced, `upg-*`, `pm-*`,
+`onb-*`, and `img-controls` / `vid-controls` left behind by removing image and
+video generation. 6,138 bytes gzipped off a page with a ceiling on exactly
+that. Worse than the weight: somebody reads `.dev-term-body` and believes
+there is a terminal.
+
+Three things had to be got right before the deletion could be trusted, and two
+of them were wrong first:
+
+1. A class built as `'s-' + status` never appears whole in the source. A first
+   filter asked "does any prefix of this name appear before a `+` anywhere"
+   and cleared 263 of 265 candidates - worthless. The pattern has to be a
+   quoted string ENDING in that prefix, immediately concatenated; that finds
+   sixteen real prefixes and clears exactly the names they build. The stage
+   derives them from app.js rather than listing them, so it follows the code.
+2. The stage passed on a deliberately re-added dead rule. `index.html` split
+   at `BUILD:JS` still contains the whole generated stylesheet, so every
+   styled class was "found in the source" by matching its own rule. The shell
+   is what lies outside BOTH marker pairs. The existing stage uses the same
+   split harmlessly - it reads `class="..."` attributes out of it, and those
+   do not appear in CSS - which is exactly why the borrowed line looked right.
+3. "Every class in this selector is dead" is the wrong test; it leaves
+   `#sb .hist-list` behind. A selector can never match if ANY simple selector
+   in it is dead. Stated that way it also removes the right thing from a
+   comma-separated list, and the pass needs two rounds: trimming a list can
+   orphan a rule that the first round could not see.
+
+And a fourth, smaller: a one-line comment above a rule describes THAT rule, so
+it goes with it - 28 did - while a banner or a multi-line note is about the
+section and stays. A comment left standing over a deleted rule is a claim
+about code that is not there.
+
+The mutation test is what caught (2). A stage that has never failed has not
+been shown to work, and this one was written, run, passed, and was wrong.

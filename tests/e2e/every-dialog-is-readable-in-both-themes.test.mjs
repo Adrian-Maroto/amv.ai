@@ -1,28 +1,39 @@
-/* THE SCREEN EVERY VISITOR SEES FIRST HAD NEVER HAD A COLOUR MEASURED.
+/* NO DIALOG HAD EVER HAD A COLOUR MEASURED.
 
-   `text-you-can-actually-read-in-both-themes` walks `#app *`. The marketing
-   landing page is `#land` - 188 pieces of text, the hero, the pricing, the
-   FAQ, "Sign up free" - and every dialog is `#ovr`: the delete-account
-   confirmation, the checkout sheet, the approval gate, the policy documents.
-   Neither is inside `#app`, so neither was ever looked at.
+   `text-you-can-actually-read-in-both-themes` walks `#app *`. Every dialog is
+   `#ovr`: the delete-account confirmation, the share sheet, the feedback form,
+   the forgot-password flow, the one-time API key. None of them is inside
+   `#app`, so none had ever been looked at.
 
-   Measured, the dialogs had one: `.fp-warn` at 1.82:1 in the light theme -
-   the warning line on the confirmation for deleting an account. `--amber` is
-   defined once, for the dark theme, and `body.light` never redefines it, so
-   it was painting #e0b341 on a white card. LAYER A165.
+   Measured, one was wrong: `.fp-warn` at 1.82:1 in the light theme - the
+   warning line on the confirmation for deleting an account. `--amber` is
+   defined once, for the dark theme, and `body.light` never redefines it, so it
+   was painting #e0b341 on a white card. LAYER A165.
 
-   TWO THINGS THIS FILE HAS TO DO THAT ARE NOT OBVIOUS:
+   A dialog is opened by calling its own function rather than by clicking a
+   path to it: the point is to measure the dialog, and half of these are
+   reached from places a signed-out or unpaid visitor cannot go. A function
+   that renders nothing REPORTS that, rather than passing quietly on an empty
+   set - which is the failure mode a file like this actually has.
 
-   1. `#land` is hidden by `html.booted-in #land{display:none!important}` once
-      the app takes over, and by a `.hidden` class. Removing one is not enough;
-      an inline `display:block` loses to the `!important`. Both come off, and
-      the display is set with priority.
+   THE LANDING SECTION IS NOT ABOUT TODAY'S FIRST IMPRESSION, and it would be
+   easy to read it that way. `#land` holds 188 pieces of text - the hero, the
+   pricing, the FAQ, "Sign up free" - and NOBODY EVER SEES IT. The head boot
+   script adds `booted-in` to <html> unconditionally and
+   `html.booted-in #land{display:none!important}`; amv.homes opens straight
+   into a chat, signed in or not, deliberately (see the comment on that line,
+   and the `hero-rd-*` entries in check.mjs's ALLOWED list, which say the same
+   thing). The markup stays because it carries the h1, the product description
+   and the pricing copy, and it is the only thing a crawler can read on this
+   page.
 
-   2. A dialog is opened by calling its own function, not by clicking a path
-      to it - the point is to measure the dialog, and half of these are
-      reached from places a signed-out or unpaid visitor cannot go. A function
-      that does not render (a network read the harness has no backend for)
-      reports that it rendered nothing rather than passing quietly.
+   So this measures it unpainted-but-rendered, against the day somebody shows
+   it again. That is worth a few hundred milliseconds and it is NOT a claim
+   that a visitor is looking at any of it.
+
+   Unhiding it takes both steps: the `.hidden` class comes off AND
+   `booted-in`, and the display is set with priority - an inline `display:block`
+   loses to the `!important`.
 
    The floor is AA: 4.5, or 3 for large text. No allowance. */
 import { bootApp } from '../lib/harness.mjs';
@@ -122,17 +133,17 @@ for (const theme of ['dark', 'light']) {
   dialogs[theme] = [...new Set(bad)];
 }
 
-section('The landing page was actually rendered and read');
+section('The landing markup was actually rendered and read');
 {
   /* The negative control. `#land` is hidden two different ways once the app
      boots; if either unhide stops working this file passes on nothing. */
-  ok(landing.dark.count > 100, 'the landing page shows its text in dark', landing.dark.count);
+  ok(landing.dark.count > 100, 'the landing markup shows its text in dark', landing.dark.count);
   ok(landing.light.count > 100, 'and in light', landing.light.count);
 }
 
-section('The first page a visitor sees is readable in both themes');
+section('The landing markup would be readable if it were ever shown');
 {
-  ok(landing.dark.bad.length === 0, 'nothing on the landing page is under AA in dark',
+  ok(landing.dark.bad.length === 0, 'nothing in the landing markup is under AA in dark',
      landing.dark.bad.slice(0, 8));
   ok(landing.light.bad.length === 0, 'nor in light', landing.light.bad.slice(0, 8));
 }
@@ -149,6 +160,6 @@ section('Every dialog opened, and every dialog is readable');
 }
 
 ok(errors.length === 0, 'no console errors', errors.slice(0, 3));
-if (report('the-first-page-and-every-dialog-are-readable') > 0) process.exitCode = 1;
+if (report('every-dialog-is-readable-in-both-themes') > 0) process.exitCode = 1;
 done();
 await app.close();
