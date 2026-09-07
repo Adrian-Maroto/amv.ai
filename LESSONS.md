@@ -9871,3 +9871,50 @@ pointed at what it LOOKS like with real content in it.
    candidate on Build - a heading apparently starting off the left edge -
    measured clean at 390, 360 and 1280: it was the tab transition caught
    mid-animation, not a layout fault.
+
+## 390. A suite named thirteen screens and measured the same 404 three times
+
+The badge added earlier today was unreadable in the light theme, and the
+question afterwards was why `text-you-can-actually-read-in-both-themes` - a
+suite that composites alpha correctly, scans every text node under `#app`, and
+holds the AA floor at zero exceptions - had let it through.
+
+Its tab list was the answer, and it was worse than one missing entry.
+
+    ['chat','build','crew','tasks','projects','memory','usage',
+     'plans','settings','integrations','market','teams','activity']
+
+`projects`, `teams` and `activity` are not cases in `setTab`'s switch. All
+three fell through to the not-found screen. The suite was measuring one 404
+three times and reporting it as three screens - and the not-found screen has
+about thirty pieces of text on it, so the totals looked plausible and the
+negative control ("hundreds of pieces of text were measured") passed.
+
+The real surfaces it never visited were `billing` (where the plan chooser and
+the new badge live), `team`, `prompts`, `apps`, `extensions`, `help`,
+`handoff`, `dashboard`, and seven of the eight Settings panes - Settings is
+reached by `goSettings(pane)`, and calling `setTab('settings')` renders only
+whichever pane was already selected.
+
+Pointed at the surfaces that exist, the same unchanged scan found three more
+controls under the floor immediately: "New project" at 1.32:1 in dark (a
+<button> among <div> siblings, so it fell back to the UA's `buttontext` and
+painted near-black on a near-black card), the selected text-size label at
+3.30:1 using `--accent` - a fill colour - as 10px text, and the active filter
+chip on Prompts at 3.02:1 using `--blue`, a deprecated alias that `body.light`
+never redefines, so the light theme was painting a dark-theme blue.
+
+1. A list of surfaces inside a suite is a claim about coverage, and nothing
+   checks it. Every name in it should be resolved against the thing that
+   actually dispatches - the switch, the router, the section table - not
+   trusted because it reads like a screen.
+2. A navigation that silently does nothing produces a passing test, not a
+   failing one. `setTab` swallows an unknown tab into the 404; the suite's
+   `try{}catch{}` around it swallows the rest. Neither is wrong on its own.
+3. The negative control asked whether the scan found text. It should have
+   asked whether the scan found DIFFERENT text - three identical measurements
+   is exactly the shape this bug had.
+4. A screen reachable only through a second axis - a pane, a tab within a tab,
+   a step in a flow - is a screen the surface list will forget. Name the axis
+   in the list (`settings:spending`) rather than hoping the default lands
+   somewhere useful.

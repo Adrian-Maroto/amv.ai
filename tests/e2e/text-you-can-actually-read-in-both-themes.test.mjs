@@ -47,8 +47,24 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const INVISIBLE = 3.0;      // below this, nobody can read it in any theme
 const AA = 4.5;
-const TABS = ['chat','build','crew','tasks','projects','memory','usage',
-              'plans','settings','integrations','market','teams','activity'];
+/* THREE OF THESE USED TO BE THE SAME 404.
+
+   The list read 'projects', 'teams' and 'activity' - none of which is a case
+   in `setTab`'s switch, so all three rendered the not-found screen. Thirteen
+   named screens were ten, one of them measured three times. It also omitted
+   'billing', which is the screen the plan chooser is on, and every Settings
+   pane but whichever one happens to be selected. A `settings:<pane>` entry
+   goes through `goSettings`, which is how a person reaches them.
+
+   Widening it found three controls under the floor - see LAYER A164. Add a
+   surface here when one is built; a screen nobody measures is a screen that
+   can ship white text on white. */
+const TABS = ['chat','build','crew','tasks','memory','usage','billing','plans',
+              'settings','settings:account','settings:privacy','settings:billing',
+              'settings:spending','settings:capabilities','settings:integrations',
+              'settings:teamset','settings:appearance','settings:about',
+              'integrations','market','team','prompts','apps','extensions',
+              'help','handoff','dashboard'];
 
 /* Zero. Measured at zero across thirteen screens in both themes after LAYER
    A152; anything above it is a regression with a name attached, not a backlog
@@ -91,7 +107,8 @@ const measure = async (page, theme) => {
   const invisible = [], marginal = [];
   let counted = 0;
   for (const tab of TABS) {
-    await page.evaluate(t => { try { setTab(t); } catch (e) {} }, tab);
+    await page.evaluate(t => { try { const i = t.indexOf(':');
+      if (i > 0) goSettings(t.slice(i + 1)); else setTab(t); } catch (e) {} }, tab);
     await page.waitForTimeout(300);
     for (const x of await collect(page, tab)) {
       let bg = parse(x.stack[x.stack.length - 1]); if (!bg) continue; bg[3] = 1;

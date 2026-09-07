@@ -11210,3 +11210,35 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   display:inline-flex; align-items:center;
   padding:5px 8px; margin:-5px -8px;
 }
+
+/* ── LAYER A164 · three unreadable controls the contrast suite never visited ──
+   `text-you-can-actually-read-in-both-themes` names thirteen screens. Three of
+   the thirteen - 'projects', 'teams', 'activity' - are not tabs at all: they
+   fall through `setTab`'s switch to the not-found screen, so the suite has
+   been measuring the same 404 three times and calling it three surfaces. And
+   the list omitted 'billing', 'team', 'prompts', 'apps', 'extensions', 'help',
+   'handoff', 'dashboard' and every Settings pane but the default one.
+
+   Widened to the surfaces that actually exist, the same scan found three
+   controls under the floor. All three are the failure LAYER A152 was written
+   for, arriving by three different routes:
+
+   1. "New project" at 1.32:1 in dark - the primary action for creating a
+      workspace, effectively invisible. `.wsc-add` is the only `.wsc` that is a
+      <button>; the rest are <div>s inheriting `--tx` from the body. Nothing in
+      the `.wsc` chain sets a colour, so the button fell back to the UA's
+      `buttontext` - near-black - and painted it on a near-black card. Fixed on
+      `.wsc`, not on `.wsc-add`: any card promoted to a button later has the
+      same latent bug.
+
+   2. `.fs-opt.on .fs-lbl` at 3.30:1 dark / 4.47:1 light - the label under the
+      selected text-size swatch, 10px, coloured `var(--accent)`. `--accent` is
+      a FILL; `--accent-txt` is the same hue tuned for text, and exists.
+
+   3. `.stb.on` at 3.02:1 dark / 3.26:1 light - the active filter chip on
+      Prompts, coloured `var(--blue)` with `border-color:var(--blued)`. Both
+      are deprecated aliases, and `body.light` never redefines either, so the
+      light theme was painting a dark-theme blue on a light chip. */
+.wsc{ color:var(--tx); }
+.fs-opt.on .fs-lbl{ color:var(--accent-txt); }
+.stb.on{ color:var(--accent-txt); border-color:var(--accent); }
