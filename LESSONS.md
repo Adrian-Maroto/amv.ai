@@ -9918,3 +9918,65 @@ never redefines, so the light theme was painting a dark-theme blue.
    a step in a flow - is a screen the surface list will forget. Name the axis
    in the list (`settings:spending`) rather than hoping the default lands
    somewhere useful.
+
+## 391. Seven colour parsers, all wrong the same way, all passing
+
+Chasing why a badge shipped unreadable led to widening the contrast sweep, and
+widening it turned up `.rw-note` at 3.13:1 in a dialog that plainly reads fine.
+Measuring the element instead of trusting the number: its background computed
+to `color(srgb 0.952 0.964 0.989882)`.
+
+Every colour parser in this repository is `c.match(/[\d.]+/g)`. Given that
+string it returns (0.95, 0.96, 0.99) and treats them as bytes - black.
+Chromium returns that form for anything computed from `color-mix()`, and this
+stylesheet uses `color-mix()` in 95 rules. Seven suites had grown their own
+copy of that parser.
+
+The false alarm was the lucky half. The other half is a false PASS: light text
+measured against a black that is not there scores 18:1, and the guard says the
+screen is fine. The one that surfaced did so only because the arithmetic
+happened to run the wrong way that time.
+
+1. A copied helper is a copied bug, and the copies do not fail together - they
+   fail in whichever direction each call site happens to point. `tests/lib/`
+   exists; a parser belongs in it. The reason there were seven is real
+   (a helper inside `page.evaluate` cannot import), and the answer is to bring
+   the computed strings out and parse in Node, which one of the seven was
+   already doing.
+2. A measurement that disagrees with your eyes is a measurement to check
+   BEFORE it is a defect to fix. Four of today's findings were real and this
+   one was the instrument.
+3. `color-mix()`, `oklch()`, `color()` and relative colour syntax all compute
+   to forms a `[\d.]+` scrape gets wrong. A parser for computed colour has to
+   know what space it is in.
+
+## 392. A black tile is not a contrast failure, so nothing found it
+
+`.tk-ic{background:#161b22}` - a hardcoded near-black, not a token - is the
+38x38 square behind the emoji on every row of the Tasks screen. In the light
+theme the list ran down a white page as a column of black tiles.
+
+It is the same bug as LESSONS 112, where `.tk-t{color:#e6edf3}` made every
+Tasks title invisible in light and seven siblings had the same shape. The
+colour sweep written after that one has held the line ever since - on TEXT.
+An emoji paints itself, so it is perfectly legible on black, and the tile was
+never text on a bad ground. Every ratio came back fine because every ratio was
+fine.
+
+What found it was asking the other question: composite each element's
+background up the tree in the light theme, and report anything that lands
+dark. Twenty-six screens, one hit.
+
+1. A guard measures the relation it was written for. `.tk-t` and `.tk-ic` are
+   the same defect - a hardcoded colour from one theme - and the guard built
+   for the first could not see the second, because contrast is about a pair
+   and this was about one of them alone.
+2. The first threshold was wrong in the way thresholds usually are. At 0.15
+   luminance it returned forty rows, every one the primary button, the avatar
+   or the selected chip: the accent in the light theme is #3366d4, luminance
+   0.150. A guard that fires on the design working is a guard somebody
+   deletes. 0.055 sits below every accent AMV offers and above nothing but
+   genuine near-black.
+3. Both new files mutation-test themselves before being believed: put the
+   defect back, watch the suite go red, take it out again. A suite that has
+   never failed has not been shown to work.

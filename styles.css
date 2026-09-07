@@ -11242,3 +11242,109 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .wsc{ color:var(--tx); }
 .fs-opt.on .fs-lbl{ color:var(--accent-txt); }
 .stb.on{ color:var(--accent-txt); border-color:var(--accent); }
+
+/* ── LAYER A165 · status colour as TEXT, in a theme that never redefined it ───
+   `:root` gives --grn #4ade80, --red #ff4d4d, --gold #e0b341, plus the
+   deprecated aliases --green, --amber, --blue and --blued. `body.light`
+   redefines NONE of them. It does redefine --grn-txt, --red-txt, --gold-txt
+   and --accent-txt, which is the whole reason those exist: the fill value of a
+   status colour is chosen to sit on a dark ground, and reads as text only
+   there.
+
+   Thirty-six rules paint TEXT with the fill token. In the light theme they are
+   painting a dark-theme colour on a near-white page:
+
+     --grn / --green  #4ade80 on #fbfbfa   1.70:1   invisible
+     --gold / --amber #e0b341 on #fbfbfa   1.93:1   invisible
+     --red            #ff4d4d on #fbfbfa   3.20:1   under AA
+     --blue / --blued #3f76f5 on #fbfbfa   4.00:1   under AA, worse on a chip
+
+   These are not decorative. `.fp-msg.ok` is the line that says the password
+   reset email went out. `.ckl` is the cookie banner's link to the policy.
+   `.asw button` is "Log in" on the sign-up sheet. `.mdlbtn.on` is the engine
+   you have selected. `.err-tag`, `.ae.ae-ok`, `.chat-run.bad .chat-run-h` and
+   `.fp-warn` are the ways AMV tells somebody what happened.
+
+   Nothing caught them because they live in STATES - a hover, a `.bad`, a
+   `.gl-done`, a message that only appears after a request - and the contrast
+   sweep walks a screen in its resting state. LESSONS 389 said to seed the
+   shapes real content has; this is the same rule for the states real use has.
+
+   Only the TEXT role moves. --grn and friends stay exactly as they are for the
+   backgrounds, borders and rules that use them - 100-odd declarations where the
+   fill value is the right value and the light theme composites it over a light
+   surface deliberately.
+
+   `.hero-pill` is not here: a later layer already forces it to --mu, so a rule
+   for it would be dead. `.stb.on` is not here either - LAYER A164 did it.
+   `.ae.ae-ok` is the one rule here that needs `!important`, because the rule
+   it corrects has it - measured at 1.60:1 in light with a plain override,
+   which is how it was caught rather than assumed. The
+   two `svg` rules (`.snb.on svg`, `.sn-btn.on svg`) are not here: an icon is
+   not text, and 4.00:1 clears the 3:1 a non-text component needs. `.deploy-dot`
+   IS here - at 1.70:1 it fails even that.
+
+   Four more rules are not here because the classes they name are DEAD - no
+   module and no markup in this repository ever writes `mdlbtn`, `step-n`,
+   `mkt-review-badge`, `ctx-warn` or `ctx-l`. The model bar they belong to is
+   referred to in one comment in `05-ui-blocks.js` as something that was
+   removed, and the marketplace writes `mkt-review`, `-h`, `-by`, `-when` and
+   `-text` but never `-badge`. Their base rules are still in this stylesheet
+   and should come out on a pass that can check the exported and generated
+   HTML too; adding an override for a selector nothing matches would only make
+   the file bigger.
+
+   The clearest evidence this is the intended direction is one line up from
+   `.toast.info .ticon`: its two siblings, `.toast.success .ticon` and
+   `.toast.error .ticon`, already read --grn-txt and --red-txt. The info one
+   was left behind. */
+.bb{ color:var(--accent-txt); }
+.asw button{ color:var(--accent-txt); }
+.an button{ color:var(--accent-txt); }
+.ckl{ color:var(--accent-txt); }
+.toast.info .ticon{ color:var(--accent-txt); }
+.fck{ color:var(--accent-txt); }
+.hi.on .hiic{ color:var(--accent-txt); }
+.faq-q:hover{ color:var(--accent-txt); }
+.tt-del:hover{ color:var(--red-txt); }
+.int-disc:hover{ color:var(--red-txt); }
+.sl-file-x:hover{ color:var(--red-txt); }
+.sl-del:hover{ color:var(--red-txt); }
+.cw-ws-clear:hover{ color:var(--red-txt); }
+.site-del:hover{ color:var(--red-txt); }
+.adm-livebadge{ color:var(--grn-txt); }
+.chat-run-h{ color:var(--grn-txt); }
+.chat-run.bad .chat-run-h{ color:var(--red-txt); }
+.deploy-live{ color:var(--grn-txt); }
+.chat-deployed .deploy-dot{ color:var(--grn-txt); }
+.chat-deployed b{ color:var(--grn-txt); }
+.lc-applied{ color:var(--grn-txt); }
+.err-tag{ color:var(--red-txt); }
+.ae.ae-ok{ color:var(--grn-txt)!important; }  /* its base rule is !important */
+.fp-msg.err{ color:var(--red-txt); }
+.fp-msg.ok{ color:var(--grn-txt); }
+.fp-warn{ color:var(--gold-txt); }
+.gl-row.gl-done .gl-ic{ color:var(--grn-txt); }
+.gl-row.gl-done .gl-tag{ color:var(--grn-txt); }
+
+/* ── LAYER A166 · a black tile in the light theme ────────────────────────────
+   `.tk-ic{background:#161b22}` - a hardcoded near-black, not a token. It is
+   the 38x38 square behind the emoji on every row of the Tasks screen, so in
+   the light theme the list ran down the page as a column of black tiles.
+
+   This is the background half of the bug at the top of
+   `text-you-can-actually-read-in-both-themes`: `.tk-t{color:#e6edf3}`, a
+   hardcoded near-white, made every Tasks title invisible in light. Seven
+   sibling rules were fixed then. Nothing found this one because that suite
+   measures the CONTRAST of text, and an emoji paints itself - it is legible
+   on black - so the tile was never text on a bad ground, just a black square
+   in a light room.
+
+   What found it was asking a different question: composite every element's
+   background up the tree, in the light theme, and report anything that comes
+   out dark. Twenty-six screens, one hit. See
+   `nothing-paints-a-dark-panel-in-the-light-theme`.
+
+   `--s2` rather than `.int-ic`'s `rgba(255,255,255,.05)`: a translucent white
+   is invisible on a white card, and the tile is meant to be a tile. */
+.tk-ic{ background:var(--s2); }

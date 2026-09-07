@@ -77,7 +77,10 @@ try {
   {
     const seen = await app.page.evaluate(async () => {
       const out = {};
-      const lum = (c) => { const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+      /* `color-mix()` computes to `color(srgb r g b)` on a 0..1 scale, not
+         0..255; read as bytes it is black. See tests/lib/color.mjs. */
+      const lum = (c) => { const k = /^color\(/i.test(String(c).trim()) ? 255 : 1;
+        const [r, g, b] = String(c).match(/[\d.]+/g).slice(0, 3).map(v => +v * k).map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
       const bgOf = (n) => { while (n && n !== document.documentElement) { const c = getComputedStyle(n).backgroundColor; const m = c.match(/[\d.]+/g); if (m && (m.length < 4 || +m[3] === 1)) return c; n = n.parentElement; } return getComputedStyle(document.body).backgroundColor; };
       for (const light of [false, true]) {
         document.body.classList.toggle('light', light);

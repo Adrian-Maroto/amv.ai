@@ -61,7 +61,14 @@ const measure = (light) => page.evaluate(async ([sels, useLight]) => {
   if (peek) peek.click();
   await new Promise(s => setTimeout(s, 250));
 
-  const rgb = (s) => { const m = s.match(/[\d.]+/g); return m ? m.map(Number) : null; };
+  /* `color-mix()` computes to `color(srgb r g b)` with 0..1 components. Read
+     as bytes those are black, and text on a mixed background then measures
+     against black and passes at 18:1. This file's own comment says every new
+     card uses colour-mix, so it was the most exposed of the seven copies of
+     this parser. See tests/lib/color.mjs. */
+  const rgb = (s) => { const m = String(s).match(/[\d.]+/g); if (!m) return null;
+    const n = m.map(Number), k = /^color\(/i.test(String(s).trim()) ? 255 : 1;
+    return [n[0] * k, n[1] * k, n[2] * k, ...n.slice(3)]; };
   const over = (fg, bg) => { const a = fg[3] === undefined ? 1 : fg[3];
     return [0, 1, 2].map(i => fg[i] * a + bg[i] * (1 - a)); };
   /* Composited up the tree: a translucent fill is not the colour the eye

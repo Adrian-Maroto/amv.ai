@@ -14,6 +14,7 @@
    the screen answered "Nothing is due", flatly, to somebody with homework. */
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { bootApp } from '../lib/harness.mjs';
+import { parseColor, contrast } from '../lib/color.mjs';
 
 const A = (name, course) => ({ id: name, name, course, courseId: 'c1', docs: [], dueAt: null });
 
@@ -119,13 +120,10 @@ try {
       document.body.classList.remove('light');
       return out;
     });
-    const lum = (c) => {
-      const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map(Number).map(v => {
-        v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-      });
-      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    };
-    const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+    /* Parsed in Node from the strings the page handed back, so this one can
+       use the shared parser - which knows that a `color-mix()` result arrives
+       as `color(srgb r g b)` on a 0..1 scale. */
+    const ratio = (a, b) => contrast(parseColor(a), parseColor(b));
     for (const k of ['dark', 'light']) {
       if (!seen[k]) { ok(false, 'the warning was rendered at all in ' + k, seen[k]); continue; }
       const r = ratio(seen[k].fg, seen[k].bg);

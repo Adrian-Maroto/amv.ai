@@ -56,7 +56,10 @@ for (const theme of ['dark','light']) {
        showing - warm cache here, cold cache on CI. */
     try{ await document.fonts.ready; }catch(e){}
     await new Promise(r=>setTimeout(r,500));
-    const parse=(c)=>{const m=c.match(/[\d.]+/g); return m?m.slice(0,3).map(Number):null;};
+    /* `color-mix()` computes to `color(srgb r g b)` on a 0..1 scale. */
+    const parse=(c)=>{const m=String(c).match(/[\d.]+/g); if(!m) return null;
+      const k=/^color\(/i.test(String(c).trim())?255:1;
+      return m.slice(0,3).map(v=>+v*k);};
     const lum=r=>{const s=r.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return .2126*s[0]+.7152*s[1]+.0722*s[2];};
     const cr=(a,b)=>{const A=lum(a),B=lum(b);return (Math.max(A,B)+.05)/(Math.min(A,B)+.05);};
     /* A gradient sets background-IMAGE, not background-color, so walking up for

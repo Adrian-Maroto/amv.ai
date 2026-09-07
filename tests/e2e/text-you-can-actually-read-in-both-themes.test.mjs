@@ -43,6 +43,7 @@
    takes the money, and "Manual" on Integrations at 2.19:1. So the allowance is
    zero now, in both themes, and this file is a rule rather than a ratchet. */
 import { bootApp } from '../lib/harness.mjs';
+import { parseColor, contrast, flatten } from '../lib/color.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const INVISIBLE = 3.0;      // below this, nobody can read it in any theme
@@ -72,12 +73,11 @@ const TABS = ['chat','build','crew','tasks','memory','usage','billing','plans',
    visible decision somebody has to write down. */
 const MARGINAL_ALLOWED = { dark: 0, light: 0 };
 
-const parse = c => { const p = (c || '').match(/[\d.]+/g); if (!p) return null;
-  const n = p.map(Number); return [n[0], n[1], n[2], n.length > 3 ? n[3] : 1]; };
-const over = (f, b) => [f[0]*f[3]+b[0]*(1-f[3]), f[1]*f[3]+b[1]*(1-f[3]), f[2]*f[3]+b[2]*(1-f[3]), 1];
-const lum = ([r,g,b]) => { const f = v => { v/=255; return v<=.03928 ? v/12.92 : Math.pow((v+.055)/1.055,2.4); };
-  return .2126*f(r)+.7152*f(g)+.0722*f(b); };
-const ratio = (a,b) => { const L1=lum(a), L2=lum(b); return (Math.max(L1,L2)+.05)/(Math.min(L1,L2)+.05); };
+/* The parser this file used to carry read `color(srgb 0.95 0.96 0.99)` - what
+   Chromium returns for anything computed from `color-mix()`, which this
+   stylesheet uses in 95 rules - as the byte triple (0.95, 0.96, 0.99), which
+   is black. Text on such a background was measured against black and passed
+   at 18:1. See tests/lib/color.mjs. */
 
 const collect = (page, tab) => page.evaluate(t => {
   const EMOJI = /^[\s\p{Extended_Pictographic}\p{Emoji_Component}←-⇿☀-➿️]+$/u;
@@ -111,10 +111,10 @@ const measure = async (page, theme) => {
       if (i > 0) goSettings(t.slice(i + 1)); else setTab(t); } catch (e) {} }, tab);
     await page.waitForTimeout(300);
     for (const x of await collect(page, tab)) {
-      let bg = parse(x.stack[x.stack.length - 1]); if (!bg) continue; bg[3] = 1;
-      for (let i = x.stack.length - 2; i >= 0; i--) { const l = parse(x.stack[i]); if (l) bg = over(l, bg); }
-      const fg0 = parse(x.fg); if (!fg0) continue;
-      const c = ratio(fg0[3] < 1 ? over(fg0, bg) : fg0, bg);
+      const bg = flatten(x.stack); if (!bg) continue;
+      const fg0 = parseColor(x.fg); if (!fg0) continue;
+      const c = contrast(fg0[3] < 1 ? [fg0[0]*fg0[3]+bg[0]*(1-fg0[3]), fg0[1]*fg0[3]+bg[1]*(1-fg0[3]),
+                                       fg0[2]*fg0[3]+bg[2]*(1-fg0[3]), 1] : fg0, bg);
       counted++;
       const large = x.size >= 24 || (x.size >= 18.66 && x.weight >= 700);
       const need = large ? 3 : AA;

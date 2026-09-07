@@ -114,9 +114,11 @@ section('And the badge is readable in BOTH themes');
     const tag = document.querySelector('.bill-swap-tag');
     if (!tag) return { found: false };
     const btn = tag.closest('button');
-    const rgb = s => (String(s).match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    /* 0..1 components when the value came from `color-mix()`, 0..255 otherwise. */
+    const k = s => /^color\(/i.test(String(s).trim()) ? 255 : 1;
+    const rgb = s => (String(s).match(/[\d.]+/g) || []).slice(0, 3).map(v => +v * k(s));
     const rgba = s => { const m = (String(s).match(/[\d.]+/g) || []).map(Number);
-      return { c: m.slice(0, 3), a: m.length > 3 ? m[3] : 1 }; };
+      return { c: m.slice(0, 3).map(v => v * k(s)), a: m.length > 3 ? m[3] : 1 }; };
     const over = (f, a, b) => f.map((v, i) => v * a + b[i] * (1 - a));
     const lum = c => { const [r, g, b] = c.map(v => { v /= 255;
       return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
