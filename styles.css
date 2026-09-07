@@ -11147,11 +11147,37 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    ribbon on a full-width button on a 390px phone either overlaps the label or
    pushes it off-centre, and this one has to sit beside a price. */
 .bill-swap-lead{ position:relative; }
+/* DARKENS THE BUTTON, RATHER THAN LIGHTENING IT.
+
+   This was `rgba(255,255,255,.18)` with no colour of its own, so it inherited
+   the button's white text onto a pill that had just been lightened towards
+   white. In dark theme that reads; in light theme the accent is lighter to
+   begin with and the badge came out white-on-near-white - washed out on the
+   one button this whole layer exists to make lead.
+
+   Found by rendering the screen in light theme and looking at it. The
+   contrast pass reported it as 1.00, which was its own artifact - it does not
+   composite alpha - but the picture agreed and the picture was right.
+
+   AND NO FILL AT ALL, WHICH TOOK TWO TRIES TO SEE. Lightening it broke light
+   theme; darkening it then broke DARK theme, measured with real alpha
+   compositing at 3.22 against the 4.5 it needs. The two themes put OPPOSITE
+   text colours on this button - white on the light accent, near-black on the
+   dark one - so any fill moves the background towards one of them. There is
+   no shade that is safe for both.
+
+   So the pill does not touch the background. An outline in `currentColor`
+   marks it out while the text keeps the exact contrast the button already
+   has, which is a ratio somebody already chose deliberately for each theme.
+   The one treatment that cannot be wrong is the one that changes nothing
+   behind the text. */
 .bill-swap-tag{
   display:inline-block; margin-left:var(--sp-2);
-  padding:2px var(--sp-2);
+  padding:1px var(--sp-2);
   border-radius:var(--r-pill);
-  background:rgba(255,255,255,.18);
+  background:transparent;
+  border:1px solid currentColor;
+  color:inherit;
   font-size:var(--t-xs); font-weight:650; letter-spacing:.02em;
   vertical-align:middle; white-space:nowrap;
 }

@@ -7784,9 +7784,11 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .bill-swap-lead{ position:relative; }
 .bill-swap-tag{
 display:inline-block; margin-left:var(--sp-2);
-padding:2px var(--sp-2);
+padding:1px var(--sp-2);
 border-radius:var(--r-pill);
-background:rgba(255,255,255,.18);
+background:transparent;
+border:1px solid currentColor;
+color:inherit;
 font-size:var(--t-xs); font-weight:650; letter-spacing:.02em;
 vertical-align:middle; white-space:nowrap;
 }

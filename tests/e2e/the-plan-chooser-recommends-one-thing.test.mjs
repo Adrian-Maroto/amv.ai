@@ -88,6 +88,60 @@ section('Nothing was hidden or made harder to press');
   }
 }
 
+section('And the badge is readable in BOTH themes');
+{
+  /* THE BADGE WAS ADDED WITH A BACKGROUND AND NO COLOUR OF ITS OWN, twice.
+
+     First `rgba(255,255,255,.18)`, which reads in dark theme and came out
+     white-on-near-white in light. Then `rgba(0,0,0,.22)`, which fixed light
+     and broke DARK - measured with real alpha compositing at 3.22 against
+     the 4.5 it needs.
+
+     The two themes put OPPOSITE text colours on this button: white on the
+     light accent, near-black on the dark one. So there is no fill that is
+     safe for both, and the pill now uses an outline and touches nothing
+     behind the text. That is the property asserted here - not a number I
+     picked, but that the badge's contrast EQUALS the button's own, which
+     somebody already chose deliberately for each theme.
+
+     Composited properly. A ratio taken without compositing alpha reported
+     1.00 for a badge that was merely washed out, which is a number that
+     sends somebody looking for the wrong bug. */
+  const readable = (theme) => page.evaluate(async (t) => {
+    try { applyTheme(t); } catch (e) { document.body.classList.toggle('light', t === 'light'); }
+    setTab('billing');
+    await new Promise(r => setTimeout(r, 800));
+    const tag = document.querySelector('.bill-swap-tag');
+    if (!tag) return { found: false };
+    const btn = tag.closest('button');
+    const rgb = s => (String(s).match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+    const rgba = s => { const m = (String(s).match(/[\d.]+/g) || []).map(Number);
+      return { c: m.slice(0, 3), a: m.length > 3 ? m[3] : 1 }; };
+    const over = (f, a, b) => f.map((v, i) => v * a + b[i] * (1 - a));
+    const lum = c => { const [r, g, b] = c.map(v => { v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const ratio = (a, b) => { const L1 = lum(a), L2 = lum(b);
+      return (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05); };
+    const btnBg = rgb(getComputedStyle(btn).backgroundColor);
+    const pill = rgba(getComputedStyle(tag).backgroundColor);
+    const eff = pill.a === 0 ? btnBg : over(pill.c, pill.a, btnBg);
+    return { found: true,
+             badge: +ratio(rgb(getComputedStyle(tag).color), eff).toFixed(2),
+             button: +ratio(rgb(getComputedStyle(btn).color), btnBg).toFixed(2) };
+  }, theme);
+
+  for (const theme of ['light', 'dark']) {
+    const r = await readable(theme);
+    ok(r.found, theme + ': the badge is on screen', r);
+    ok(r.badge >= 4.5, theme + ': it clears 4.5:1 against what is actually behind it', r);
+    ok(Math.abs(r.badge - r.button) < 0.01,
+       theme + ': and reads exactly as well as the button it sits on, because the pill '
+       + 'changes nothing behind the text', r);
+  }
+  await page.evaluate(() => { try { applyTheme('dark'); } catch (e) {} });
+}
+
 section('And the badge does not invent social proof');
 {
   const html = await page.evaluate(() => document.getElementById('vc').innerHTML);
