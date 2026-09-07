@@ -11753,21 +11753,12 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .dev-shell .dvi-sel{ flex:initial; width:100%; min-width:0; max-width:100%; }
 }
 
-/* ── LAYER A178 · the hero said twice what the choice now says once ──────────
-   The Build entry spends 106px on a phone before the choice, and the second
-   half of that is a sub-line that repeats what the mode note says immediately
-   below it: "Describe it in plain English. AMV writes the code, runs it, and
-   shows you the live result." above "Real software, written and running in a
-   sandbox".
-
-   Since A172 moved the hint out of the buttons, the note is the sentence that
-   describes the current mode - so on a phone the sub is the same information,
-   one line earlier, in more words. It stays at desktop, where there is room
-   for a fuller opening and the note is a short caption under the row. */
-@media(max-width:760px){
-  .dev-shell.dev-blank .build-head .pghd-sub,
-  .lab-shell .build-head .pghd-sub{ display:none; }
-}
+/* ── LAYER A178 · RETIRED, because the element it hid is gone ────────────────
+   A178 hid the Build hero's sub-line on a phone, where it repeated what the
+   mode note said one line later in fewer words. The sub-line is now removed
+   from `_buildEntryHeadHTML` outright, at every width, so this rule had
+   nothing left to select. Kept as a note rather than a silent deletion: the
+   number is spent, and the next A-layer is A180. */
 
 /* ── LAYER A179 · three dropdowns that did not look like dropdowns ───────────
    The composer's three selects were measured against each other and came back
@@ -11780,4 +11771,285 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .dev-input-v2 #dev-model{
   font-weight:500;
   padding:0 30px 0 12px;
+}
+
+/* ── LAYER A180 · the one fact the sub-line carried that the note does not ────
+   Lab's sub-line said "any size, 10,000+ lines is fine" - the reassurance
+   somebody needs at the moment they are looking at a 12,000-line file and
+   wondering whether this will take it. Removing the sub-lines would have lost
+   it, so it moved to the drop zone, under the file-type hint, where the person
+   who needs it is already standing.
+
+   Quieter than the line above it, because it answers a worry rather than
+   telling you what to do, and it inherits the hover colour with everything
+   else in the zone so the card still reads as one surface. */
+.lab-drop-size{
+  font-size:var(--t-xs);
+  color:var(--dim);
+  margin-top:2px;
+}
+.lab-drop:hover .lab-drop-size,
+.lab-drop.on .lab-drop-size{ color:inherit; opacity:.85; }
+
+/* ── LAYER A181 · one entry column, instead of three that agree on nothing ───
+   A171, A173 and A175 each gave one entry screen a single measure and a single
+   left edge. Every one of them was right about its own screen, and together
+   they missed the fault the owner is actually describing: the three entries do
+   not agree WITH EACH OTHER, and the control that moves between them sits on
+   all three.
+
+   Measured at 1440, the same header component on the same page:
+
+     surface   head left   head width   head top   toolbar
+     Lab        250          1190          58      in flow, under the note
+     Studio     413           864         118      in flow, pulled up 42px
+     Dev        515           660         289      absolute, ABOVE the heading
+
+   Three left edges, three measures, three top offsets, and the toolbar in
+   three different places - one of them above the heading it belongs under.
+   Clicking Design -> Build an app -> Work on code moves the row you just
+   clicked by 231px vertically and 265px horizontally, three times. Nothing is
+   broken and nothing overflows; it simply reads as three products sharing a
+   switcher, which is the whole of "blocky and hard to use".
+
+   ONE COLUMN. Same inset from the shell edge, same 660 measure for the header
+   block, same top offset, toolbar in the same place under the note. Each
+   mode's WORK AREA below keeps whatever width it needs - a two-card upload
+   grid and a live canvas are not the same shape and should not pretend to be -
+   but they start on the column's left edge, so the page has one spine from the
+   eyebrow all the way down.
+
+   Left rather than centred, following A173: this is a workspace, and a centred
+   column reads as a document. It is also what Lab already did, which A175
+   named as the one to match. */
+
+/* Dev's blank entry was the only one centred vertically, which is what put its
+   heading 231px below Lab's. Top, like the other two. A176 added `safe center`
+   to stop the centring hiding the first line off the top of a phone; with no
+   centring left there is nothing for it to make safe, so it goes with it. */
+.dev-shell.dev-blank .dev-chat-pane{
+  justify-content:flex-start;
+  align-items:stretch;
+  padding-left:var(--sp-5); padding-right:var(--sp-5);
+}
+/* And the toolbar joins the flow. Pinned to the top of the shell it painted
+   ABOVE the eyebrow - a DEV badge floating over "BUILD / What should we
+   build?" - which is the one placement none of the three should have. */
+.dev-shell.dev-blank .dev-bar{
+  position:static;
+  padding-left:0; padding-right:0;
+}
+
+/* STUDIO'S HEADER INHERITED A 60px GAP MEANT FOR ITS SECTIONS.
+
+   `.dsn-wrap` is a flex column with `gap:60px`, which is right for the bands
+   below - hero, recents, starting points. The head, the switcher, the note and
+   the toolbar are its direct children too, so each of them took the same 60px:
+   83px between the heading and the choice where Lab and Dev have 23, and the
+   toolbar 42px adrift of the sentence it follows. A104 had already noticed the
+   last of those and pulled the bar back up by hand; this is the same fault, one
+   level up, so that pull is no longer needed and is cancelled here.
+
+   `gap` cannot be overridden per child, so the gap becomes a margin - the same
+   60px, restated as a rule the four header elements can opt out of. */
+.dsn-wrap{ gap:0; }
+.dsn-wrap > *{ margin-top:60px; }
+.dsn-wrap > *:first-child{ margin-top:0; }
+/* Zero, not a spacing token: each of these already carries its own margin from
+   the rule that defines it, and Lab and Dev get their rhythm from exactly
+   those. Adding a token on top is what made Studio's gaps 16px wider than the
+   other two even after the 60px was gone. Measured against Lab at 1440 - 23px,
+   8px, 24px - rather than picked. */
+.dsn-wrap > .build-modes{ margin-top:0; }
+.dsn-wrap > .build-mode-note{ margin-top:0; }
+.dsn-wrap > .build-bar{ margin-top:0; margin-bottom:0; }
+
+/* ONE LEFT EDGE AND ONE MEASURE, ON ALL THREE.
+
+   660 is the measure A171 chose for Dev, for the reason that it is the width of
+   the composer - the thing the screen is for. Left rather than centred, per
+   A173: a workspace has a spine, and Lab already had one.
+
+   The header block only. Each mode's work area below keeps its own width,
+   because a two-card upload grid, a live canvas and a chat column are not the
+   same shape - but they all start on this edge. */
+@media(min-width:761px){
+  .dsn-wrap{ margin-left:0; margin-right:auto; padding-left:var(--sp-4); }
+  .dev-shell.dev-blank .dev-chat-pane > .build-head,
+  .dev-shell.dev-blank .dev-chat-pane > .build-modes,
+  .dev-shell.dev-blank .dev-chat-pane > .build-mode-note,
+  .dsn-wrap > .build-head,
+  .dsn-wrap > .build-modes,
+  .dsn-wrap > .build-mode-note,
+  .lab-shell > .build-head,
+  .lab-shell > .build-modes,
+  .lab-shell > .build-mode-note{
+    width:100%; max-width:660px; margin-left:0; margin-right:auto;
+  }
+}
+
+/* Studio's entry is the only one of the three inside a generic `.sv` page
+   scroller, which carries its own 30px inset and 32px of top padding on top of
+   whatever the wrap adds - so its column started 60px right of and 60px below
+   the other two however the wrap itself was set. `.bld-sv` is a hook on that
+   one element, so the inset comes from the same place on all three surfaces
+   rather than from three different ancestors. */
+/* `#vc .sv` at 1200+ sets `padding:52px 44px 84px!important`, an id selector,
+   so a bare class cannot reach it however important it is marked. Same
+   specificity, later in the file. */
+#vc .bld-sv,
+.bld-sv{
+  padding-top:0!important;
+  padding-left:var(--sp-5)!important;
+  padding-right:var(--sp-5)!important;
+}
+.bld-sv > .dsn-wrap{ padding-left:0; padding-right:0; padding-top:0; }
+
+/* STUDIO'S BODY WAS STILL CENTRED UNDER A LEFT-ALIGNED HEAD.
+
+   A173 fixed exactly this on Dev - two alignments in one column, so nothing
+   lines up with the thing above it. With the head, the switcher, the note and
+   the toolbar now on a left spine, Studio's hero was the one thing left
+   centring itself: the composer, the hint under it, the Design DNA paragraph
+   and the colour strip all found their own middle.
+
+   LAYER A6 set that centring with `!important` on `.dsn-hero`,
+   `.dsn-input-wrap`, `.dsn-hint` and `.dsn-dna-explain`, so this has to match
+   its weight to reach it. Same selectors, same specificity, later in the file.
+
+   The composer also comes to 660 from 720, which is the measure the head above
+   it uses and the one Dev's composer already had - the two surfaces put the
+   box you type in at the same size and the same place now.
+
+   And 72px of top padding above the hero, on top of the 60px band gap, left
+   about 160px of nothing between the toolbar and the composer on a 900px
+   screen. The band gap is the spacing decision; the padding was doubling it. */
+.dsn-hero{ text-align:left!important; align-items:flex-start!important; padding:var(--sp-6) 0 var(--sp-2)!important; }
+.dsn-input-wrap{ margin-left:0!important; margin-right:auto!important; max-width:660px!important; }
+.dsn-hint{ text-align:left; }
+.dsn-dna-explain{ text-align:left; }
+
+/* THE BODY OF ALL THREE, ON THE SAME SPINE AS THE HEAD.
+
+   With the header block left-aligned, every one of the three work areas was
+   still finding its own middle - and now visibly, because it had a left edge
+   above it to be out of line with. Measured at 1440, head text at 274:
+
+     Dev     hero chips and composer   515   the 660 column, centred
+     Lab     the two entry cards       445   centred in the shell
+     Studio  fixed above
+
+   Each of these centres for the same reason - `align-items:center` or
+   `margin:0 auto` on a column that used to be the whole screen. They are not
+   the whole screen any more; they sit under a heading.
+
+   `justify-content:center` goes too, on both. It was holding the entry in the
+   middle of a tall empty pane, which put 110-120px of nothing between the
+   toolbar and the first thing you can use, and pushed the real controls below
+   the fold on a phone for the same reason A176 had to fix on Dev. */
+.dev-shell.dev-blank .dev-hero,
+.dev-shell.dev-blank .dev-input{ margin-left:0!important; margin-right:auto!important; }
+
+.lab-shell.lab-blank .lab-entry{
+  align-items:flex-start;
+  justify-content:flex-start;
+  text-align:left;
+  /* The same inset the head above it uses, not zero - the first version of
+     this dropped the 24px with the centring and left the cards 24px left of
+     the heading, which is the fault it was fixing, one element over. */
+  padding-left:var(--sp-5); padding-right:var(--sp-5);
+}
+.lab-shell.lab-blank .lab-entry > *{ margin-left:0; margin-right:auto; }
+.lab-entry-acts{ align-items:flex-start; }
+.lab-go-row{ justify-content:flex-start; }
+
+/* STUDIO'S COMPOSER: THREE THINGS, MEASURED ON THE REBUILT COLUMN.
+
+   1. 92px of nothing between the toolbar and the box you type in - the 60px
+      band gap plus 32px of hero padding, two spacing decisions stacked. The
+      band gap is the one that belongs to the column, so the padding goes and
+      the gap comes down to the 24px Dev uses between its note and its bar.
+
+   2. A box inside a box. `.dsn-input-wrap` is the composer's frame, and the
+      textarea inside it was painting its own surface and radius - because the
+      global `input,textarea,select` rule sets both with `!important`, which a
+      rule written for this textarea in 2 lines cannot reach. Transparent, so
+      the frame is the only edge, which is what Dev's composer already looks
+      like.
+
+   3. On a phone the placeholder is two lines and the box is one line tall, so
+      "A sleek dark pricing page for an AI startup, three tiers, purple
+      accents..." was cut through the middle of its second line. 58px of height
+      for 15 + 48 + 15 of content. Measured, then set to fit. */
+.dsn-wrap > .dsn-hero{ margin-top:var(--sp-5); }
+.dsn-hero{ padding-top:0!important; }
+.dsn-input-wrap textarea{ background-color:transparent!important; border-color:transparent!important; border-radius:0!important; }
+@media(max-width:560px){
+  .dsn-input-wrap textarea{ min-height:80px!important; }
+}
+/* And the toolbar fits one row on a phone: the engine picker is pinned to a
+   150px minimum by an id selector, so with the badge and the add button beside
+   it the row came to more than 342 and the button wrapped onto its own line -
+   the same 150px that LESSONS 2 rows above the Dev composer is about. */
+@media(max-width:760px){
+  .dsn-wrap > .build-bar #studio-model,
+  .dsn-wrap > .build-bar .secmodel-sel{ min-width:0; flex:0 1 auto; }
+  /* SHRINK, not grow. `flex:1 1 auto` was the first attempt and it made the
+     picker take the whole row, which pushed the add button onto a second one -
+     the fault it was meant to fix, from the other direction. */
+  .dsn-wrap > .build-bar{ flex-wrap:nowrap; }
+  /* `.dev-bar-l,.dev-bar-r{flex-wrap:wrap}` is what actually put the badge and
+     the picker on separate lines - the wrap is inside the left group, not on
+     the bar. With the picker allowed to shrink there is nothing left to wrap. */
+  .dsn-wrap > .build-bar .dev-bar-l,
+  .dsn-wrap > .build-bar .dev-bar-r{ min-width:0; flex-wrap:nowrap; }
+  /* The room goes to the picker, not to the empty space beside one 44px
+     button: without this the right group grew to 192 and squeezed
+     "Auto - picks for you" into 70px, which is the truncation the Dev composer
+     took three attempts to get rid of. */
+  .dsn-wrap > .build-bar .dev-bar-l{ flex:1 1 auto; }
+  .dsn-wrap > .build-bar .dev-bar-r{ flex:0 0 auto; }
+  .dsn-wrap > .build-bar #studio-model,
+  .dsn-wrap > .build-bar .secmodel-sel{ flex:1 1 auto; }
+}
+
+/* ── LAYER A182 · a rule that says 44 in its comment and 40 in its value ─────
+   Found by measuring `#studio-new` on the Studio entry at 390: 40x44, four
+   pixels under the standard this product holds everything else to. Not a
+   one-off - it comes from a block at 760px whose own heading reads
+
+     /* ---- Tap targets: nothing interactive smaller than 44px ---- *[/]
+
+   and which then sets `min-height:40px; min-width:40px` on three groups of
+   controls: the toolbar icon buttons on Dev and Lab, the little buttons in
+   section heads and the preview actions, and `.stb / .chip / .seg-btn /
+   .pill-btn`. Wherever the min IS the size, the control is 40.
+
+   `every-control-is-big-enough-to-hit` passes today because its sweep never
+   reaches the Studio Build entry - the Build tab opens in code mode, so the
+   design entry's toolbar is not among the hundreds of controls it measures.
+   A control the check cannot see is exactly the case the 44 was written for.
+
+   The comment was right. The values are now what it says. */
+@media (max-width: 760px) {
+  .dev-ico, .dev-openext, .lab-ico,
+  .dev-pt, .lab-pt, .rb-tab,
+  .sec-head button, .dev-prev-acts button,
+  .stb, .chip, .seg-btn, .pill-btn{
+    min-height:44px;
+    min-width:44px;
+  }
+  /* Studio's generate button, 42x42 by its own rule. Found by the same sweep
+     once it was pointed at Build - the second control on that surface to be a
+     few pixels under, which is what a check nobody had aimed there produces. */
+  .dsn-go{ width:44px; height:44px; }
+}
+
+/* The 60px between Studio's bands is a desktop measurement. On a phone it is
+   most of a screenful of nothing between the colour strip and the first
+   starting point, which is the same "blocky" the rest of this layer is about -
+   half of it there. */
+@media(max-width:760px){
+  .dsn-wrap > *{ margin-top:var(--sp-6); }
+  .dsn-wrap > *:first-child{ margin-top:0; }
 }

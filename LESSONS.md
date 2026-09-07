@@ -10225,3 +10225,57 @@ no affordance that it opened anything.
    the three model pills was somebody hitting exactly this and patching around
    it. When the root was fixed those pills drew two arrows at different sizes -
    which is how the workaround finally announced itself.
+
+## 399. Three layers each fixed one screen, and none of them saw the three together
+
+A171 gave Dev's entry one measure. A173 gave it one left edge. A170 and A174
+gave Lab's head the padding it never had. A104 pulled Studio's toolbar up
+against its heading. Every one of those was correct about the screen it was
+looking at, and after all four the three Build entries still looked like three
+different products - because nothing had ever measured them against EACH OTHER.
+
+At 1440, the same header component on the same page:
+
+    surface   head left   head width   head top   toolbar
+    Lab        250          1190          58      in flow, under the note
+    Studio     413           864         118      in flow, pulled up 42px
+    Dev        515           660         289      absolute, ABOVE the heading
+
+Clicking Design → Build an app → Work on code moved the row you had just
+clicked by 231px vertically and 265px horizontally, three times in a row. Every
+individual screen passed every check.
+
+1. When one control switches between surfaces, the surfaces have to be measured
+   in the same run, not one per session. Three separate "is this screen
+   aligned?" passes cannot see a fault that only exists between screens.
+2. The owner said "blocky and hard to use" twice. The first time I read it as
+   per-screen rank and spacing, which was real and worth doing and was not what
+   they meant. Measuring all three at once is what turned the adjective into
+   numbers.
+3. The unification exposed the next layer down: with the heads on one spine,
+   all three BODIES were still centring themselves, and that only becomes
+   visible once there is a left edge above them to be out of line with. Fixing
+   alignment is iterative because each fix reveals what it was hiding.
+
+## 400. A rule whose comment says 44 and whose value is 40
+
+    /* ---- Tap targets: nothing interactive smaller than 44px ---- */
+    .dev-ico, .dev-openext, .lab-ico, ... { min-height: 40px; min-width: 40px; }
+
+Found by measuring `#studio-new` on the Studio entry at 390: 40x44. The rule
+covers toolbar icon buttons, section-head buttons, preview actions, chips,
+segmented buttons and pill buttons - so wherever the min IS the size, the
+control is four pixels under the standard the comment claims.
+
+`every-control-is-big-enough-to-hit` was green throughout. Its TABS list has
+fifteen entries and `build` is not one of them, so Design, Build an app and
+Work on code had never been measured on a phone at all - the surface the
+product is named for.
+
+1. A number in a comment is not a number in the code. This one had been read by
+   whoever wrote the check that quotes the same 44, and neither noticed.
+2. A sweep is only as good as its list, and a list does not know what it is
+   missing. Adding `build:design`, `build:code` and `build:lab` immediately
+   found a second control - Studio's generate button at 42x44.
+3. Both misses were a few pixels. Neither would ever have been reported by
+   looking; both were one measurement away the whole time.

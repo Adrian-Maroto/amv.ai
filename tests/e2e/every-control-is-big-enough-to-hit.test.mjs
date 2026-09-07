@@ -26,8 +26,20 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const MIN = 44, EPS = 0.5;
 const PHONE = { width: 390, height: 844 };
+/* BUILD WAS NOT IN THIS LIST AT ALL.
+
+   Fifteen tabs, and the surface where somebody actually builds something was
+   not one of them - so none of Design, Build an app or Work on code has ever
+   been measured on a phone. It was found the way these are always found: by
+   measuring one control by hand. `#studio-new` on the Studio entry came back
+   40x44, four pixels under, from a rule whose own comment says 44 (A182).
+
+   A tab name alone cannot reach them, because Build opens in code mode and the
+   other two are a click inside it. `build:<mode>` says which section to select
+   once Build is open. */
 const TABS = ['chat','dashboard','workspaces','memory','usage','billing','plans',
-              'settings','help','apps','tasks','integrations','crew','market','team'];
+              'settings','help','apps','tasks','integrations','crew','market','team',
+              'build:design','build:code','build:lab'];
 
 const app = await bootApp({ tab: 'chat', user: { name: 'T', email: 't@x.com', ini: 'T' }, viewport: PHONE });
 const { page, errors } = app;
@@ -38,7 +50,12 @@ const escaped = [];
 let counted = 0;
 
 for (const tab of TABS) {
-  await page.evaluate(t => { try { setTab(t); } catch (e) {} }, tab);
+  await page.evaluate(t => {
+    try {
+      if (t.indexOf('build:') === 0) { setTab('build'); setBuildMode(t.slice(6)); }
+      else setTab(t);
+    } catch (e) {}
+  }, tab);
   await page.waitForTimeout(350);
   const r = await page.evaluate(({ t, min, eps }) => {
     const out = [];

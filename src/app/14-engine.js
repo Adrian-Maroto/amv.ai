@@ -796,8 +796,7 @@ function renderLabView(){
   if(typeof _LAB_HANDOFF!=='undefined' && _LAB_HANDOFF){ _LAB.code=_LAB_HANDOFF; _LAB_HANDOFF=''; }
   const labBlank = !String(_LAB.code||'').trim();
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
-    ${_buildEntryHeadHTML('lab','Drop in your code and AMV takes it from there',
-      'Paste it, or upload files - any size, 10,000+ lines is fine. Then pick what you want done.')}
+    ${_buildEntryHeadHTML('lab','What code should we work on?')}
     ${_buildBarHTML('lab', !labBlank)}
 
     <!-- ENTRY STATE: paste on the left, upload on the right -->
@@ -813,6 +812,7 @@ function renderLabView(){
             <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <b>Drop files here</b>
             <span>or click to browse \u00b7 .js .py .ts .html and more</span>
+            <span class="lab-drop-size">Any size \u00b7 10,000+ lines is fine</span>
           </div>
         </div>
       </div>

@@ -19129,12 +19129,28 @@ try{ window._buildRecentsHTML=_buildRecentsHTML; window._wireBuildRecents=_wireB
 
 /* The header is the shared .pghd from AMV-D070 rather than a fourth bespoke
    one - that duplication is what AMV-D013 is about, and this is the surface
-   that would otherwise have added to it. */
-function _buildEntryHeadHTML(active, title, sub){
+   that would otherwise have added to it.
+
+   THE SUB-LINE IS GONE, AND IT WAS SAYING THE SAME THING TWICE.
+
+   Since A172 moved the per-option hints out of the three buttons, the note
+   under the switcher is the sentence that describes the mode you are on. The
+   sub-line above the switcher described the same mode, in more words, one line
+   earlier - so every entry explained itself twice with the choice sandwiched
+   in between, and did it at three different lengths: three sentences on
+   Studio, one on Dev, one and a half on Lab.
+
+   A178 had already hidden it on a phone, where 106px of chrome before the
+   choice was the difference between seeing the composer and not. Removing it
+   outright is the same judgement applied at every width, and it leaves the
+   head reading in one direction: what do you want, pick one, here is what that
+   one does. The one fact the sub-line carried that the note does not - that
+   Lab takes files of any size - moved into the drop zone, which is where
+   somebody is standing when they need to know it. */
+function _buildEntryHeadHTML(active, title){
   return '<header class="pghd build-head"><div class="pghd-l">'
       + '<span class="eyebrow">Build</span>'
       + '<h2>' + escH(title) + '</h2>'
-      + '<p class="pghd-sub">' + escH(sub) + '</p>'
     + '</div></header>'
     + _buildModeSwitchHTML(active);
 }
@@ -19228,9 +19244,8 @@ function renderDesignView(){
     ['\uD83C\uDFA8','Poster / graphic','Social post, banner or flyer'],
     ['\uD83E\uDDE9','Component','A single button, card or form']
   ];
-  vc.innerHTML = `<div class="sv fi"><div class="dsn-wrap">
-    ${_buildEntryHeadHTML('studio','What should we make?',
-      'Describe what you want and AMV creates it on a live canvas, then refines it as you chat. Or switch above to build a running app, or work on code you already have.')}
+  vc.innerHTML = `<div class="sv fi bld-sv"><div class="dsn-wrap">
+    ${_buildEntryHeadHTML('studio','What should we make?')}
     ${_buildBarHTML('design')}
 
     <section class="dsn-hero">
@@ -19990,8 +20005,7 @@ function renderCodeView(){
   const blank = _devIsHome();
   vc.innerHTML = `<div class="dev-shell${blank?' dev-blank':''}" id="dev-shell">
     <div class="dev-chat-pane">
-      ${_buildEntryHeadHTML('dev','What should we build?',
-        'Describe it in plain English. AMV writes the code, runs it, and shows you the live result.')}
+      ${_buildEntryHeadHTML('dev','What should we build?')}
       ${_buildBarHTML('code', !blank)}
 
       <div id="dev-hero" class="dev-hero">
@@ -29149,8 +29163,7 @@ function renderLabView(){
   if(typeof _LAB_HANDOFF!=='undefined' && _LAB_HANDOFF){ _LAB.code=_LAB_HANDOFF; _LAB_HANDOFF=''; }
   const labBlank = !String(_LAB.code||'').trim();
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
-    ${_buildEntryHeadHTML('lab','Drop in your code and AMV takes it from there',
-      'Paste it, or upload files - any size, 10,000+ lines is fine. Then pick what you want done.')}
+    ${_buildEntryHeadHTML('lab','What code should we work on?')}
     ${_buildBarHTML('lab', !labBlank)}
 
     <!-- ENTRY STATE: paste on the left, upload on the right -->
@@ -29166,6 +29179,7 @@ function renderLabView(){
             <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <b>Drop files here</b>
             <span>or click to browse \u00b7 .js .py .ts .html and more</span>
+            <span class="lab-drop-size">Any size \u00b7 10,000+ lines is fine</span>
           </div>
         </div>
       </div>

@@ -19,7 +19,12 @@ import { dirname, join } from 'path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const OUT = process.env.SHOT_DIR || join(ROOT, '.shots');
-const PORT = +(process.env.SHOT_PORT || 9400);
+/* 0 asks the kernel for a free port, the same fix `serveApp` and
+   `serveArtifact` already carry. On a fixed 9400 two runs collide and the
+   second dies with EADDRINUSE before it takes a single screenshot - which is
+   what happened, and which reads as a broken harness rather than a busy one.
+   SHOT_PORT still pins it when somebody needs a predictable URL. */
+const PORT = +(process.env.SHOT_PORT || 0);
 
 export const SIZES = {
   phone:   { width: 390,  height: 844 },
@@ -48,6 +53,7 @@ export async function shoot({ tabs, themes = ['dark'], sizes = ['phone', 'deskto
     res.end(readFileSync(abs));
   });
   await new Promise(r => server.listen(PORT, r));
+  const port = server.address().port;
   const browser = await chromium.launch(LAUNCH);
   const made = [];
 
@@ -56,7 +62,7 @@ export async function shoot({ tabs, themes = ['dark'], sizes = ['phone', 'deskto
       const page = await browser.newPage({ viewport: SIZES[sizeName] });
       const errors = [];
       page.on('pageerror', e => errors.push(e.message));
-      await page.goto(`http://localhost:${PORT}`, { waitUntil: 'load' });
+      await page.goto(`http://localhost:${port}`, { waitUntil: 'load' });
       await page.waitForTimeout(700);
       /* Theme and consent are read once, during boot. Setting them after the
          app has started leaves the page in whatever state it loaded in - which
