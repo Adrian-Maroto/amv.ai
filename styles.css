@@ -12053,3 +12053,92 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .dsn-wrap > *{ margin-top:var(--sp-6); }
   .dsn-wrap > *:first-child{ margin-top:0; }
 }
+
+/* ── LAYER A183 · one rule for the blank entry's toolbar, on all three ───────
+   A168 hid Lab's phone toolbar on the blank entry and put the language and the
+   engine in the "acts on code that does not exist yet" bucket. The engine
+   belongs there. THE LANGUAGE DOES NOT, and the consequence is a real one:
+
+     - the entry's "Run it" calls `_labRun()` immediately, on the same click
+     - `_labRun` runs `runCode(code, _LAB.lang)`
+     - `_LAB.lang` defaults to js and is only set elsewhere by UPLOADING a file,
+       whose extension picks it - pasting sets nothing
+     - on a phone `#lab-lang` is `display:none` on that screen
+
+   So somebody who pastes Python into Lab on a phone and presses Run runs it as
+   JavaScript, having never been shown the control that would have said
+   otherwise. Verified by measurement: at 390 the picker reports hidden on the
+   blank entry and 96x28 on the same screen at desktop.
+
+   THE RULE, now the same on all three surfaces and at every width: a control
+   that configures what happens NEXT stays; a control that acts on work that
+   does not exist yet goes. Lab already applied the second half at every width
+   for Run, Auto-Debug, agents and deploy, with the reasoning written down; this
+   is the first half, and Dev's equivalent, which was never applied.
+
+   The room comes from the badge. On the blank entry the switcher sits directly
+   above it with the current mode lit, so "LAB" under "Work on code" is the same
+   word twice - and it was costing 70px of a 342px row that the language picker
+   needed. It stays on the working states, where the switcher is not on screen. */
+@media(max-width:760px){
+  /* The language and the engine come back: both are decisions about the run
+     that the entry's own buttons are about to start. */
+  .lab-shell.lab-blank .lab-bar-l > #lab-lang,
+  .lab-shell.lab-blank .lab-bar-l > #lab-model,
+  .lab-shell.lab-blank .lab-bar-l > .secmodel-sel{ display:block; }
+  /* Split the row by what each label needs, not evenly. `max-width:44vw` caps
+     both at 172px on a 390 screen, and "Auto - picks for you" needs 178 - so
+     the engine picker was truncated by six pixels while "JavaScript" sat in
+     172px of room for 114. Measured with the option text against the select's
+     own computed font, because a `<select>` clipping its own label is
+     invisible to `scrollWidth > clientWidth` (LESSONS 397's neighbour).
+
+     The cap is a phone rule for a row that used to hold five controls. On the
+     blank entry it holds two, so it does not need one. */
+  /* And nowrap: with the cap gone they each took their natural width and wrapped
+     onto a row apiece, which is two rows of chrome on the screen A168 exists to
+     keep clear. One row, shared by need. */
+  .lab-shell.lab-blank .lab-bar-l{ display:flex; gap:var(--sp-2); min-width:0; flex-wrap:nowrap; }
+  /* The engine picker gets the room it needs and the language absorbs the rest.
+     `flex:0 1 auto` on one and `1 1 auto` on the other is not enough on its
+     own: a select's natural basis is its WIDEST OPTION, not its selected one,
+     so the engine had the larger basis, shrank more in absolute terms, and
+     ended up the narrow one - the reverse of what was asked for. A floor on
+     the engine states it directly. */
+  .lab-shell.lab-blank .lab-bar-l .lab-lang-sel{ flex:0 1 auto; min-width:0; max-width:none; }
+  .lab-shell.lab-blank .lab-bar-l #lab-model{ flex:1 1 auto; min-width:190px; max-width:none; }
+  /* And the badge goes, on all three, because the choice above it says it. */
+  .lab-shell.lab-blank .dev-badge,
+  .dev-shell.dev-blank .dev-badge,
+  .dsn-wrap > .build-bar .dev-badge{ display:none; }
+  /* Dev's blank bar keeps New, which is how you start again, and nothing else -
+     A176 hid all of it including New. */
+  .dev-shell.dev-blank .dev-bar-r{ display:flex; }
+  .dev-shell.dev-blank .dev-bar-r > *:not(#dev-new){ display:none; }
+}
+/* DEV'S "DEBUG IN LAB", ON AN EMPTY PROJECT, AT EVERY WIDTH.
+
+   Its handler ends `else { toast('Build something first, then send it to Lab') }`
+   - a control whose only possible outcome on this screen is telling you it
+   cannot work. That is exactly what Lab hides Run, Auto-Debug, agents and
+   deploy for on its own blank entry; Dev's equivalent was left visible.
+   Hidden, not removed: it returns the moment there is a project. */
+.dev-shell.dev-blank .dev-bar-r #dev-tolab{ display:none; }
+
+/* THE LAST TWO OFF THE SPINE, MEASURED RATHER THAN EYEBALLED.
+
+   With everything else at 24 on a phone and 274 at 1440:
+
+     Lab   the blank toolbar's first control   12    its own 12px padding
+     Dev   the hero chips                      44    `.dev-hero`'s 20px padding
+
+   Both are left over from when each of those was the whole width of its own
+   screen and carried its own inset. The inset is on the column now, so theirs
+   is doubling it in one case and halving it in the other. */
+@media(max-width:760px){
+  /* `!important`, because the phone rule that sets this is
+     `.lab-bar{padding:10px 12px!important}` - a shorthand marked important, so
+     a more specific plain declaration loses to it. */
+  .lab-shell.lab-blank .lab-bar{ padding-left:var(--sp-5)!important; padding-right:var(--sp-5)!important; }
+}
+.dev-shell.dev-blank .dev-hero{ padding-left:0; padding-right:0; }

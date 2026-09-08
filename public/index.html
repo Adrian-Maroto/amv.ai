@@ -8063,6 +8063,24 @@ min-width:44px;
 .dsn-wrap > *{ margin-top:var(--sp-6); }
 .dsn-wrap > *:first-child{ margin-top:0; }
 }
+@media(max-width:760px){
+.lab-shell.lab-blank .lab-bar-l > #lab-lang,
+.lab-shell.lab-blank .lab-bar-l > #lab-model,
+.lab-shell.lab-blank .lab-bar-l > .secmodel-sel{ display:block; }
+.lab-shell.lab-blank .lab-bar-l{ display:flex; gap:var(--sp-2); min-width:0; flex-wrap:nowrap; }
+.lab-shell.lab-blank .lab-bar-l .lab-lang-sel{ flex:0 1 auto; min-width:0; max-width:none; }
+.lab-shell.lab-blank .lab-bar-l #lab-model{ flex:1 1 auto; min-width:190px; max-width:none; }
+.lab-shell.lab-blank .dev-badge,
+.dev-shell.dev-blank .dev-badge,
+.dsn-wrap > .build-bar .dev-badge{ display:none; }
+.dev-shell.dev-blank .dev-bar-r{ display:flex; }
+.dev-shell.dev-blank .dev-bar-r > *:not(#dev-new){ display:none; }
+}
+.dev-shell.dev-blank .dev-bar-r #dev-tolab{ display:none; }
+@media(max-width:760px){
+.lab-shell.lab-blank .lab-bar{ padding-left:var(--sp-5)!important; padding-right:var(--sp-5)!important; }
+}
+.dev-shell.dev-blank .dev-hero{ padding-left:0; padding-right:0; }
 </style>
 <!-- BUILD:CSS:END -->
 <script>

@@ -10279,3 +10279,38 @@ product is named for.
    found a second control - Studio's generate button at 42x44.
 3. Both misses were a few pixels. Neither would ever have been reported by
    looking; both were one measurement away the whole time.
+
+## 401. Pasted Python ran as JavaScript, and the cause was a layout decision
+
+A168 hid Lab's toolbar on the blank entry at phone widths, to stop 445px of
+chrome pushing the paste box below the fold. Its reasoning sorted the controls
+into two piles: things that act on code that does not exist yet (hide) and
+things that are how you get code in (keep). The language picker went in the
+first pile.
+
+It belongs in neither. The entry screen's own "Run it" button calls `_labRun()`
+on the same click, `_labRun` calls `runCode(code, _LAB.lang)`, and `_LAB.lang`
+defaults to `js` and is set elsewhere only by UPLOADING a file, whose extension
+picks it - pasting sets nothing. So on a phone: paste Python, press Run, watch
+it run as JavaScript, having never been shown the control that would have said
+otherwise. The picker measured `display:none` at 390 and 96x28 at 1440 on the
+same screen.
+
+1. "Acts on work that does not exist" and "configures what happens next" are
+   different piles, and a control that the CURRENT screen's buttons read is
+   always the second one. The engine picker really was the first pile; the
+   language sat beside it and got sorted with it.
+2. A hiding decision is a functional decision when the hidden thing is an input
+   to something still on screen. Worth asking of every `display:none` added for
+   space: what reads this value, and is that thing still reachable?
+3. The room came from the badge. On the blank entry the switcher sits directly
+   above with the current mode lit, so "LAB" under "Work on code" is the same
+   word twice - 70px of a 342px row, spent saying nothing new.
+4. Four attempts to fit both pickers on one row, each wrong for a different
+   reason worth keeping: `flex:1 1 auto` made the picker grow instead of
+   shrink; `flex-wrap` on `.lab-bar-l` rather than the bar was what actually
+   split them; `max-width:44vw` (172px at 390) was the real cap, not flex; and
+   with the cap gone, `flex:0 1 auto` vs `1 1 auto` still gave the engine the
+   NARROWER share, because a select's flex basis is its widest option, not its
+   selected one, so the larger basis shrank more. A floor on the engine said it
+   directly.
