@@ -83,7 +83,7 @@ function _bIcoBtn(id, label, icon, extra){
    `studio-bar` twin. It is the standard build bar, badly named; a third class
    would mean copying its responsive rules a third time, which is the
    duplication this work exists to remove. */
-function _buildBarHTML(mode, showHome){
+function _buildBarHTML(mode, showHome, fresh){
   const isLab = mode === 'lab';
   const isDesign = mode === 'design';
   const badge = isLab ? 'Lab' : isDesign ? 'Studio' : 'Dev';
@@ -142,8 +142,19 @@ function _buildBarHTML(mode, showHome){
      this bar, which is the top-left of the surface. `Build` rather than "All
      builds" or "Studio home" because that is the name of the place it goes
      and the name in the sidebar. */
+  /* NOTHING TO START OVER FROM, SO NO BUTTON THAT STARTS OVER.
+
+     The New-session control sat next to the mode switcher on a screen that IS a
+     new session - pressing it cleared empty state and said "New Dev session".
+     The owner called it pointless, and they are right; it was noticed here
+     earlier and kept anyway, for a consistency that was not worth having.
+
+     `fresh` rather than "blank" because they are not the same on Studio: the
+     entry page shows while a project's designs are still held, and there the
+     button really does start a new one. Hidden exactly when it can do nothing,
+     which is a fact about the state rather than about the screen. */
   const cls = isLab ? 'lab-bar' : 'dev-bar';
-  return '<div class="'+cls+' build-bar">'
+  return '<div class="'+cls+' build-bar'+(fresh ? ' build-bar-fresh' : '')+'">'
     + '<div class="'+cls+'-l">'
       + _buildHomeBtnHTML(showHome)
       + '<span class="dev-badge">'+badge+'</span>'+left
@@ -425,21 +436,35 @@ try{ window._wireSplit=_wireSplit; window._splitGet=_splitGet; window.DEV_SPLIT_
      window.DEV_SPLIT_MAX=DEV_SPLIT_MAX; }catch(e){}
 
 const BUILD_RECENTS_MAX = 8;
-function _buildRecentsHTML(){
+/* ONE SECTION'S OWN WORK, AT THE BOTTOM OF THAT SECTION.
+
+   This used to list all three kinds together, badged, on the argument that
+   "past builds" is how somebody thinks of them. The owner uses it and does not:
+   they asked for each section to show only its own, which is the reading that
+   matches the rest of the screen - you came to Build to design something, and a
+   list of half-finished code sessions under the design composer is somebody
+   else's errand.
+
+   With one kind per list the badge said the same word on every row, so it is
+   gone, and the heading carries the name instead: three headings, one per
+   section, rather than one generic heading and a column of repeated labels. */
+const BUILD_RECENTS_H = { studio:'Your designs', dev:'Your apps', lab:'Your code' };
+function _buildRecentsHTML(kind){
   let rows = [];
   try{
     rows = (Array.isArray(_SESSIONS) ? _SESSIONS : [])
-      .filter(s => s && SESSION_KINDS[s.kind])
+      .filter(s => s && SESSION_KINDS[s.kind] && (!kind || s.kind === kind))
       .slice().sort((a, b) => (b.updated || 0) - (a.updated || 0))
       .slice(0, BUILD_RECENTS_MAX);
   }catch(e){ rows = []; }
+  /* Nothing rather than an empty heading: a first visit should be the thing you
+     came to do, not a title over a blank space. */
   if(!rows.length) return '';
-  const KIND = { dev:'App', studio:'Design', lab:'Code' };
-  return '<section class="bld-recents"><h3 class="bld-recents-h">Pick up where you left off</h3>'
+  return '<section class="bld-recents"><h3 class="bld-recents-h">'
+      + escH(BUILD_RECENTS_H[kind] || 'Pick up where you left off') + '</h3>'
     + '<div class="bld-recents-list">'
     + rows.map(s =>
         '<button class="bld-recent" data-bsess="' + escH(s.id) + '">'
-        + '<span class="bld-recent-k">' + escH(KIND[s.kind] || s.kind) + '</span>'
         + '<span class="bld-recent-t">' + escH(s.title || 'Untitled') + '</span>'
         + '<span class="bld-recent-w">' + escH(_agoLabel(s.updated)) + '</span>'
       + '</button>').join('')
@@ -592,7 +617,7 @@ function renderDesignView(){
   ];
   vc.innerHTML = `<div class="sv fi bld-sv"><div class="dsn-wrap">
     ${_buildEntryHeadHTML('studio','What should we make?')}
-    ${_buildBarHTML('design')}
+    ${_buildBarHTML('design', false, !((_STUDIO.artifacts||[]).length))}
 
     <section class="dsn-hero">
       <div class="dsn-input-wrap">
@@ -610,8 +635,6 @@ function renderDesignView(){
       <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
     </section>
 
-    ${_buildRecentsHTML()}
-
     <section class="dsn-starts">
       ${starts.map(([ic,t,d],n)=>`<button class="dsn-tile${n===0?' feat':''}" data-dact="designStart" data-darg="${escH(t)}">
         <span class="dsn-tile-ic">${ic}</span>
@@ -627,6 +650,7 @@ function renderDesignView(){
       <div class="dsn-callout-orb"></div>
     </section>
     ${_ownedMarketHTML('studio')}
+    ${_buildRecentsHTML('studio')}
   </div></div>`;
   _wireBuildModes(vc);
   _wireBuildRecents(vc);
@@ -1352,7 +1376,7 @@ function renderCodeView(){
   vc.innerHTML = `<div class="dev-shell${blank?' dev-blank':''}" id="dev-shell">
     <div class="dev-chat-pane">
       ${_buildEntryHeadHTML('dev','What should we build?')}
-      ${_buildBarHTML('code', !blank)}
+      ${_buildBarHTML('code', !blank, blank)}
 
       <div id="dev-hero" class="dev-hero">
         <div class="dev-hero-chips" id="dev-hero-chips">
@@ -1369,7 +1393,6 @@ function renderCodeView(){
           <span class="dev-hero-or">to work on code you already have</span>
         </div>
         ${_ownedMarketHTML('dev')}
-        ${_buildRecentsHTML()}
       </div>
 
       <div id="dev-log" class="dev-log" data-no-i18n></div>
@@ -1384,6 +1407,7 @@ function renderCodeView(){
         <input type="file" id="dev-files" multiple style="display:none">
         <input type="file" id="dev-folderinput" webkitdirectory directory multiple style="display:none">
       </div>
+      ${blank ? _buildRecentsHTML('dev') : ''}
     </div>
 
     <div class="dev-split" id="dev-split" role="separator" tabindex="0"

@@ -10314,3 +10314,60 @@ same screen.
    NARROWER share, because a select's flex basis is its widest option, not its
    selected one, so the larger basis shrank more. A floor on the engine said it
    directly.
+
+## 402. The left spine was right, and the owner still could not use it
+
+A181 put all three Build entries on one left spine at 274, argued from A173:
+this is a workspace, a workspace has a spine, a centred column reads as a
+document. Every measurement supported it. The owner opened it on their own
+screen and said "it's very far left so it's not centered at all".
+
+They were right and the reasoning was not wrong - it was incomplete. At 1440
+the content area runs 250..1440 and a 660px column pinned at 274 leaves 500px
+of empty space down the right. The column was internally consistent and sat
+lopsided in its container, and no measurement I took could see that, because
+every one of them compared elements to each other rather than to the space
+around them.
+
+1. "Aligned" and "balanced" are different properties. I checked the first
+   exhaustively - left edges, top offsets, one measure - and never once asked
+   what fraction of the available width the column occupied or where its centre
+   fell. A ratio would have shown it immediately.
+2. Centring the COLUMN and centring the TEXT are separate decisions, and only
+   the first was ever the complaint. The text stays ragged-right on a left
+   edge; A173's argument survives intact inside a centred column.
+3. When the person who uses it every day contradicts a conclusion I measured my
+   way to, the measurement was answering a different question than the one they
+   are asking. Find that question rather than re-presenting the numbers.
+
+## 403. Three deliberate choices the person who uses it disagreed with
+
+The Build entry carried three decisions, each documented with its reasoning,
+each overruled in one voice-typed message:
+
+- ONE RECENTS LIST FOR ALL THREE MODES, badged by kind - "past builds is how
+  somebody thinks about them". They think about them per section: they came to
+  Build to design something, and a column of half-finished code sessions under
+  the design composer is somebody else's errand.
+- THE NEW-SESSION BUTTON ON A BLANK ENTRY. I had already found this one, called
+  it "a no-op on a blank screen", and kept it anyway for consistency with a rule
+  Lab had written for itself. The owner called it pointless. Consistency with a
+  wrong thing is not a reason.
+- RECENTS IN THE MIDDLE of the page, between the composer and the starting
+  points. Intro, then the work, then what you did before, at the bottom.
+
+And the one nobody had decided at all: Lab never listed anything, because
+`_buildRecentsHTML` was simply never called there. Two surfaces had the feature
+and the third silently did not - no comment, no test, nothing to notice it by.
+
+1. A documented reason is not a right answer, it is a legible one. Every one of
+   these was defensible when written and wrong for the person using it, and the
+   documentation is what made them quick to change rather than quick to defend.
+2. When a feature exists on two of three parallel surfaces, that is a bug until
+   proven otherwise. The asymmetry was invisible because nothing enumerated the
+   three and compared them.
+3. The test suite asserted the OLD rule ("one list rather than one per mode")
+   in a section written to explain why. Changing behaviour means rewriting the
+   assertion to state the new rule, not deleting it - the rewritten suite tests
+   more than the old one did, because it now names what each section must NOT
+   show.

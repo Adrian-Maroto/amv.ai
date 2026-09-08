@@ -797,7 +797,7 @@ function renderLabView(){
   const labBlank = !String(_LAB.code||'').trim();
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
     ${_buildEntryHeadHTML('lab','What code should we work on?')}
-    ${_buildBarHTML('lab', !labBlank)}
+    ${_buildBarHTML('lab', !labBlank, labBlank)}
 
     <!-- ENTRY STATE: paste on the left, upload on the right -->
     <div class="lab-entry" id="lab-entry">
@@ -837,6 +837,7 @@ function renderLabView(){
       </div>
       <input type="file" id="lab-files" multiple style="display:none">
     </div>
+    ${labBlank ? _buildRecentsHTML('lab') : ''}
 
     <div class="lab-split">
       <section class="lab-editor">
@@ -931,6 +932,11 @@ function renderLabView(){
 
   // Entry-state paste box → loads straight into the editor
   _wireBuildModes(vc);
+  /* Lab lists past sessions now, so it needs the handler that opens one. Studio
+     and Dev have called this since recents existed; Lab had no list, so nothing
+     here noticed the omission - and a row that renders and does nothing when
+     clicked is worse than no row at all. */
+  _wireBuildRecents(vc);
   const pasteBox=$('lab-paste');
   if(pasteBox){
     /* THE BUTTON THAT COULD NOT BE CLICKED.

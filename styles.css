@@ -12142,3 +12142,96 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .lab-shell.lab-blank .lab-bar{ padding-left:var(--sp-5)!important; padding-right:var(--sp-5)!important; }
 }
 .dev-shell.dev-blank .dev-hero{ padding-left:0; padding-right:0; }
+
+/* ── LAYER A184 · centred, because the owner is the one looking at it ────────
+   A181 put the whole Build entry on a left spine at 274 and argued for it from
+   A173: a workspace has a spine, a centred column reads as a document. The
+   owner opened it on their own screen and said it is "very far left so it's not
+   centered at all", which is the answer that counts. At 1440 the content area
+   runs 250..1440 and a 660px column pinned at 274 leaves 500px of nothing down
+   the right-hand side - the reasoning was sound and the result was lopsided.
+
+   The COLUMN centres; the text inside it stays left-aligned. Those are two
+   different decisions and only the first one was ever wrong: ragged-right text
+   on a left edge is what makes a paragraph readable, and centring the words as
+   well would undo A173 for no reason the owner asked for.
+
+   Everything that A181 lined up moves together, so the spine survives - it is
+   just in the middle of the screen now instead of against the sidebar. */
+@media(min-width:761px){
+  .dev-shell.dev-blank .dev-chat-pane > .build-head,
+  .dev-shell.dev-blank .dev-chat-pane > .build-modes,
+  .dev-shell.dev-blank .dev-chat-pane > .build-mode-note,
+  .dsn-wrap > .build-head,
+  .dsn-wrap > .build-modes,
+  .dsn-wrap > .build-mode-note,
+  .lab-shell > .build-head,
+  .lab-shell > .build-modes,
+  .lab-shell > .build-mode-note{
+    margin-left:auto; margin-right:auto;
+  }
+  /* The work areas join it, or the head would be centred over a left-aligned
+     body - which is the two-edges fault A173 is about, reintroduced. */
+  .dsn-wrap{ margin-left:auto; margin-right:auto; }
+  .dsn-input-wrap{ margin-left:auto!important; margin-right:auto!important; }
+  .dev-shell.dev-blank .dev-hero,
+  .dev-shell.dev-blank .dev-input{ margin-left:auto!important; margin-right:auto!important; }
+  .dev-shell.dev-blank .dev-chat-pane > .build-bar{
+    width:100%; max-width:660px; margin-left:auto; margin-right:auto;
+  }
+  .lab-shell.lab-blank .lab-entry > *{ margin-left:auto; margin-right:auto; }
+  .lab-shell > .build-bar,
+  .dsn-wrap > .build-bar{ width:100%; max-width:660px; margin-left:auto; margin-right:auto; }
+  /* Lab's entry cards are wider than the 660 measure the header uses, so they
+     centre on their own width rather than being forced into it - the two
+     columns need the room and squeezing them would cost more than the
+     alignment gains. */
+  .lab-shell.lab-blank .lab-entry{ align-items:center; }
+  .lab-shell.lab-blank .lab-entry > *{ width:100%; max-width:800px; }
+}
+
+/* THE "+" ON A SCREEN THAT IS ALREADY NEW.
+
+   `build-bar-fresh` is set by the renderer when the surface has nothing to
+   start over from. The New-session button is the only thing it hides, because
+   that is the only control on the bar whose whole job is to get you to the
+   state you are already in. */
+.build-bar-fresh #studio-new,
+.build-bar-fresh #dev-new,
+.build-bar-fresh #lab-new{ display:none; }
+
+/* RECENTS ARE THE LAST THING ON THE PAGE NOW, SO THEY GET AIR ABOVE THEM.
+   They used to sit mid-page between the composer and the starting points; at
+   the bottom of a scroll they need to read as a separate band rather than as
+   more of whatever ended above them. */
+.bld-recents{
+  margin-top:var(--sp-7);
+  padding-top:var(--sp-5);
+  border-top:1px solid var(--bd);
+}
+
+/* STUDIO'S HERO HELD TWO WIDTHS, ONE OF THEM THE COMPOSER'S.
+   Measured at 1440 with the column centred: the composer 515..1175, and the
+   hint under it, the Design DNA row, its paragraph and the colour strip all
+   starting at 405 - because those are children of the 880px wrap while the
+   composer carries its own 660. Two left edges, four elements apart, directly
+   under the box they describe. The hero takes the composer's measure. */
+@media(min-width:761px){
+  .dsn-hero{ width:100%; max-width:660px; margin-left:auto; margin-right:auto; }
+}
+
+/* A BAR HOLDING ONE WORD THAT THE BUTTON ABOVE IT ALREADY SAID.
+
+   With the New-session button hidden on a fresh entry, Dev's toolbar was a
+   "DEV" badge alone in a bordered band - and the badge repeats the switcher
+   directly above it, where "Build an app" is the lit option. A183 had already
+   hidden the badge on a phone for exactly that reason; on a fresh entry the
+   reasoning does not depend on the width.
+
+   So: no badge on a fresh entry anywhere, and Dev's bar goes with it, because
+   the badge was all it had. Studio and Lab keep theirs - their bars still carry
+   the engine picker, and Lab the language too, which are decisions about the
+   run those screens are about to start. All of it returns the moment there is
+   work, where the switcher is no longer on screen to say where you are. */
+.build-bar-fresh .dev-badge{ display:none; }
+.dev-shell.dev-blank .dev-bar.build-bar-fresh{ display:none; }
