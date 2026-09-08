@@ -426,6 +426,33 @@ function _freqNext(f, from){
    spending their quota on another person's work. */
 function _loadSched(){ try{ const v = load('amv_autosched'); return Array.isArray(v) ? v : []; }catch(e){ return []; } }
 function _saveSched(l){ try{ store('amv_autosched', l); }catch(e){} }
+/* THE TWO BOUNDS THE USER SET, WHICH NOTHING HAD EVER READ.
+
+   Auto Approve stores its scope at creation - `{run:'once'|'every', until}` -
+   and the modal says so in as many words: "AMV may finish this every day on
+   its own - for the first run only until 12/03/2026."
+
+   `scope` was written, copied into the sync payload, and read by nothing. Both
+   bounds were fiction: a job set to auto-approve ONCE, UNTIL A DATE, approved
+   every run for ever. The promise was in the copy and not in the code, which
+   is the shape this repository keeps finding (LESSONS 363-365).
+
+   Worse, the first version of the policy wiring below read `t.until` - a field
+   that does not exist on the record, because the date lives at
+   `t.scope.until`. An undefined date is a falsy date, so the expiry check
+   passed silently and always allowed. Three layers of the same mistake.
+
+   The engine already knew how to enforce both: `max_runs` against `runs_used`,
+   and `expires_at`. This hands it the numbers the user actually chose. */
+function _schedRuleOf(t){
+  const sc = (t && t.scope) || {};
+  const until = sc.until ? Date.parse(sc.until + 'T23:59:59') : 0;
+  const rule = { name: _recurTitle(t), tools: ['crew.run'], max_risk: 'R2' };
+  /* "The first run only" is a budget of one. */
+  if(sc.run === 'once') rule.max_runs = 1;
+  if(until) rule.expires_at = until;
+  return rule;
+}
 async function _runDueAuto(){
   if(typeof _autonomyPaused==='function' && _autonomyPaused()) return;
   const list=_loadSched(); if(!list.length) return;
@@ -455,24 +482,29 @@ async function _runDueAuto(){
            than assumed. ALLOW runs it. Anything else prepares a draft and asks,
            which is what this path already did for every other job. */
         const auto = t.approval === 'auto';
+        const rule = auto ? _schedRuleOf(t) : null;
         let mayRun = false;
         try{
           const decision = amvPolicyEvaluate(amvActionContract({
             goal: t.goal || 'scheduled job', tool: 'crew.run',
             required_scope: 'crew.run', risk_class: 'R2',
             reversible: false, user_id: (S.user && S.user.email) || 'local',
-            expires_at: t.until ? Date.parse(t.until) || 0 : 0,
           }), {
             now, granted_scopes: ['crew.run'],
             autonomy_level: auto ? AMV_AUTONOMY.BOUNDED : AMV_AUTONOMY.NOTIFY,
             user_paused: (typeof _autonomyPaused==='function') && _autonomyPaused(),
-            rule: auto ? { name: _recurTitle(t), tools: ['crew.run'], max_risk: 'R2',
-                           expires_at: t.until ? Date.parse(t.until) || 0 : 0 } : null,
+            rule, runs_used: Number(t.autoRuns) || 0,
           });
           mayRun = decision.decision === AMV_DECISION.ALLOW;
         }catch(e){ mayRun = false; }   /* a decision that cannot be made is a no */
-        if(mayRun){ await runAutonomous(t.goal,{silent:true}); }   // autonomous: runs and (backend) sends
-        else { await _recurMakeApproval(t); }                     // ask-first: prepare a fresh draft to approve
+        if(mayRun){
+          /* Counted BEFORE the run, not after. "For the first run only" has to
+             hold even when the run throws - otherwise a job that keeps failing
+             keeps getting free automatic attempts for ever. */
+          t.autoRuns = (Number(t.autoRuns) || 0) + 1; changed = true;
+          await runAutonomous(t.goal,{silent:true});   // autonomous: runs and (backend) sends
+        }
+        else { await _recurMakeApproval(t); }          // ask-first: prepare a fresh draft to approve
       }catch(e){ _logErr('scheduledTask', e); }
     }
   }

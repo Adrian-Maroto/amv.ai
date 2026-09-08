@@ -10445,3 +10445,36 @@ way to tell which it is.
    one: the export line goes back the day ingestion and the planner exist. A
    function that is reachable is not the same as a door that is offered, and
    only the second is a promise.
+
+## 406. The bound was in the copy, and never in the code
+
+Auto Approve lets somebody say "run this on its own - for the first run only,
+until 12 March". The modal says it back to them in those words. The choice is
+stored on the schedule record as `scope: {run:'once'|'every', until}`.
+
+`scope` was written at creation, copied into the sync payload, and read by
+nothing. Both bounds were fiction: a job set to auto-approve ONCE, UNTIL A DATE
+auto-approved every run, for ever.
+
+Then I made it worse. Wiring the policy engine into that path, I read
+`t.until` - a field the record does not have, because the date lives at
+`t.scope.until`. An undefined date is a falsy date, so the expiry check passed
+silently and always allowed. Three layers of the same mistake, and the third
+was mine, written the same day I added a module whose whole purpose is to stop
+exactly this.
+
+1. A field being WRITTEN is not evidence it is READ. `scope` had a producer, a
+   serialiser and a sync payload - everything except a consumer. Grep for the
+   read, not the write; the write is what makes it look alive.
+2. My own engine's 45 assertions were green through all three versions, because
+   they tested the engine with a rule handed to it. Nothing tested whether the
+   caller built that rule out of the fields the record actually has. A unit
+   that is correct in isolation and fed garbage is a unit that is correct.
+   The suite that catches this has to drive the real scheduler.
+3. The check exists for this exact shape - RESPONSE SHAPES was built after
+   LESSONS 363-365, three defects where the client read a field the endpoint
+   does not send. It maps API responses, so a client-side record read wrongly
+   sails past it. The lesson generalises further than the stage does.
+4. The budget is spent BEFORE the run, not after. Counting on success means a
+   job that throws every time keeps earning fresh automatic attempts, which is
+   the opposite of "the first run only".
