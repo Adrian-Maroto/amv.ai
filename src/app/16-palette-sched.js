@@ -214,7 +214,7 @@ try{ window.openShortcutSheet=openShortcutSheet; }catch(e){}
    is nothing to configure, so there is nothing to warn about, and no way to
    turn the protection off by accident. */
 const AUTO_APPROVE_RISK_CAP = 'low';
-let _AUTOAPP={mode:'require', run:'every', risk:AUTO_APPROVE_RISK_CAP, until:null};
+let _AUTOAPP={mode:'require', run:'every', risk:AUTO_APPROVE_RISK_CAP, until:null, cap:5};
 /* The goal-text risk classifier lived here and only ever fed the warning
    banners. The real protection was never this regex - it is the approval gate
    on the server, which stops on the ACTION being taken rather than on a guess
@@ -228,19 +228,29 @@ function _aaRefresh(){
   if(!on) return;
   const permit=document.getElementById('aa-permit');
   const when = (typeof _SCHED!=='undefined' && _SCHED.cad!=='once') ? _schedHuman().toLowerCase() : 'each time it runs';
-  const runTxt=_AUTOAPP.run==='once'?'the first run only':'every run';
+  const capRow=document.getElementById('aa-cap-row');
+  if(capRow) capRow.style.display = _AUTOAPP.run==='capped' ? '' : 'none';
+  /* Each branch carries its own connector. "for at most 5 runs a day" is the
+     kind of sentence that comes out of gluing a noun phrase onto a fixed
+     preposition, and this paragraph is the one place the person is told what
+     they are agreeing to - it has to read like somebody wrote it. */
+  const runTxt=_AUTOAPP.run==='once' ? 'for the first run only'
+             : _AUTOAPP.run==='capped' ? ('at most '+_aaCapOf(_AUTOAPP.cap)+' times a day')
+             : 'for every run';
   const untilTxt=_AUTOAPP.until?(' until '+new Date(_AUTOAPP.until+'T00:00:00').toLocaleDateString()):'';
   /* One calm sentence about what will happen, and one about what will not.
      No warnings that change as the user types - a box that starts flashing at
      the word "buy" makes the product feel dangerous rather than careful. */
   if(permit) permit.innerHTML='<b>Auto Approve enabled.</b> AMV may finish this '+escH(when)+
-    ' on its own - for '+runTxt+untilTxt+'. Anything that spends money, deletes, publishes or sends '+
+    ' on its own - '+runTxt+untilTxt+'. Anything that spends money, deletes, publishes or sends '+
     'on your behalf still comes to you first. Turn this off anytime in Mission Control.';
 }
 function _aaInit(){
-  _AUTOAPP={mode:'require', run:'every', risk:AUTO_APPROVE_RISK_CAP, until:null};
+  _AUTOAPP={mode:'require', run:'every', risk:AUTO_APPROVE_RISK_CAP, until:null, cap:5};
   document.querySelectorAll('input[name="aa-mode"]').forEach(r=>on(r,'change',()=>{ _AUTOAPP.mode=r.value; document.querySelectorAll('.aa-opt').forEach(o=>o.classList.remove('on')); const l=r.closest('.aa-opt'); if(l) l.classList.add('on'); _aaRefresh(); }));
   document.querySelectorAll('#aa-run button').forEach(b=>on(b,'click',()=>{ document.querySelectorAll('#aa-run button').forEach(x=>x.classList.remove('on')); b.classList.add('on'); _AUTOAPP.run=b.dataset.aarun; _aaRefresh(); }));
+  const cap=document.getElementById('aa-cap');
+  if(cap) on(cap,'input',()=>{ _AUTOAPP.cap=_aaCapOf(cap.value); _aaRefresh(); });
   const u=document.getElementById('aa-until'); if(u) on(u,'change',()=>{ _AUTOAPP.until=u.value||null; _aaRefresh(); });
   const uc=document.getElementById('aa-until-clear'); if(uc) on(uc,'click',()=>{ _AUTOAPP.until=null; if(u) u.value=''; _aaRefresh(); });
   _aaRefresh();
@@ -293,7 +303,8 @@ function openCowork(){
         <div class="aa-config" id="aa-config" style="display:none">
           <div class="aa-permit" id="aa-permit"></div>
           <div class="aa-scope">
-            <div class="aa-scope-row"><span class="aa-scope-k">Applies to</span><div class="aa-seg" id="aa-run"><button type="button" data-aarun="every" class="on">Every run</button><button type="button" data-aarun="once">First run only</button></div></div>
+            <div class="aa-scope-row"><span class="aa-scope-k">Applies to</span><div class="aa-seg" id="aa-run"><button type="button" data-aarun="every" class="on">Every run</button><button type="button" data-aarun="capped">At most</button><button type="button" data-aarun="once">First run only</button></div></div>
+            <div class="aa-scope-row" id="aa-cap-row" style="display:none"><span class="aa-scope-k">Each day</span><input type="number" id="aa-cap" class="aa-date" min="1" max="50" step="1" value="5" aria-label="Automatic runs allowed each day"><span class="aa-cap-note">runs, then it asks</span></div>
             <div class="aa-scope-row"><span class="aa-scope-k">Until</span><input type="date" id="aa-until" class="aa-date"><button type="button" class="aa-clear" id="aa-until-clear">No end date</button></div>
           </div>
         </div>
@@ -393,7 +404,7 @@ async function _coworkStart(){
   _coworkClarified=false;   // reset for the next task
   const cad=(_SCHED&&_SCHED.cad)||'once';
   let _schedId=null;
-  if(cad!=='once'){ _schedId=_scheduleAuto2(goal, Object.assign({},_SCHED), {approval:(_AUTOAPP&&_AUTOAPP.mode)||'require', scope:_AUTOAPP?{run:_AUTOAPP.run,risk:_AUTOAPP.risk,until:_AUTOAPP.until}:null}); }
+  if(cad!=='once'){ _schedId=_scheduleAuto2(goal, Object.assign({},_SCHED), {approval:(_AUTOAPP&&_AUTOAPP.mode)||'require', scope:_AUTOAPP?{run:_AUTOAPP.run,risk:_AUTOAPP.risk,until:_AUTOAPP.until,cap:_aaCapOf(_AUTOAPP.cap)}:null}); }
   $('cw-step1').style.display='none'; $('cw-step2').style.display='block';
   if(cad!=='once'){ _autoLog('<div class="auto-ev plan"><b>Scheduled</b><div>'+_schedHuman()+'. Running the first one now. AMV runs this automatically when due (and catches up when you return). Connect the backend for true 24/7.</div></div>'); }
   const ws=AMVWorkspace.files.length?AMVWorkspace:null;
@@ -444,12 +455,47 @@ function _saveSched(l){ try{ store('amv_autosched', l); }catch(e){} }
 
    The engine already knew how to enforce both: `max_runs` against `runs_used`,
    and `expires_at`. This hands it the numbers the user actually chose. */
+function _aaCapOf(v){
+  const n = Math.floor(Number(v));
+  /* A cap that is not a number is not a cap. Falling back to 1 rather than to
+     "unlimited" means a broken value costs somebody one automatic run, not
+     every automatic run they would ever have had. */
+  if(!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(50, n);
+}
+
+/* WHICH DAY THE RUNS WERE SPENT ON.
+
+   A per-day budget needs a period, and the period has to be the user's day
+   rather than UTC - somebody in Madrid setting "5 a day" means their day. The
+   local date string is the period key; when it changes, the count starts
+   again. Storing the key rather than a timestamp means a device that wakes up
+   a week later resets once instead of trying to reconstruct six missed days. */
+function _schedDayKey(now){
+  const d = new Date(now || Date.now());
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+/* How many automatic runs this job has already spent against its bound. Two
+   different questions depending on the bound: "the first run only" is a
+   LIFETIME budget, "at most N a day" is a budget that refills. */
+function _schedRunsUsed(t, now){
+  const sc = (t && t.scope) || {};
+  if(sc.run === 'capped')
+    return (t.autoDay === _schedDayKey(now)) ? (Number(t.autoToday) || 0) : 0;
+  return Number(t.autoRuns) || 0;
+}
+
 function _schedRuleOf(t){
   const sc = (t && t.scope) || {};
   const until = sc.until ? Date.parse(sc.until + 'T23:59:59') : 0;
   const rule = { name: _recurTitle(t), tools: ['crew.run'], max_risk: 'R2' };
-  /* "The first run only" is a budget of one. */
+  /* "The first run only" is a budget of one, for ever. "At most N a day" is a
+     budget of N that refills at midnight. Both land on the same `max_runs` the
+     engine already enforces - what differs is the number handed to
+     `runs_used`, which is what `_schedRunsUsed` decides. */
   if(sc.run === 'once') rule.max_runs = 1;
+  else if(sc.run === 'capped') rule.max_runs = _aaCapOf(sc.cap);
   if(until) rule.expires_at = until;
   return rule;
 }
@@ -493,7 +539,7 @@ async function _runDueAuto(){
             now, granted_scopes: ['crew.run'],
             autonomy_level: auto ? AMV_AUTONOMY.BOUNDED : AMV_AUTONOMY.NOTIFY,
             user_paused: (typeof _autonomyPaused==='function') && _autonomyPaused(),
-            rule, runs_used: Number(t.autoRuns) || 0,
+            rule, runs_used: _schedRunsUsed(t, now),
           });
           mayRun = decision.decision === AMV_DECISION.ALLOW;
         }catch(e){ mayRun = false; }   /* a decision that cannot be made is a no */
@@ -501,7 +547,11 @@ async function _runDueAuto(){
           /* Counted BEFORE the run, not after. "For the first run only" has to
              hold even when the run throws - otherwise a job that keeps failing
              keeps getting free automatic attempts for ever. */
-          t.autoRuns = (Number(t.autoRuns) || 0) + 1; changed = true;
+          const day = _schedDayKey(now);
+          if(t.autoDay !== day){ t.autoDay = day; t.autoToday = 0; }
+          t.autoRuns = (Number(t.autoRuns) || 0) + 1;
+          t.autoToday = (Number(t.autoToday) || 0) + 1;
+          changed = true;
           await runAutonomous(t.goal,{silent:true});   // autonomous: runs and (backend) sends
         }
         else { await _recurMakeApproval(t); }          // ask-first: prepare a fresh draft to approve

@@ -3650,6 +3650,36 @@ async function autoPause(request, env){
    Require-approval automations stop before delivery: the completed work
    waits in the approval queue exactly like an interactive draft would. */
 const AUTO_APPROVALS_MAX = 50;
+/* THE ID IS WHAT A DECISION IS AIMED AT.
+
+   Approve and reject both address one item by this string, so two items
+   sharing one means somebody's decision lands on the wrong piece of work -
+   silently, and in the direction of acting on something they never saw. It
+   used to be the millisecond plus four base-36 characters from Math.random:
+   about 1.7 million values inside a millisecond, which is a coin flip nobody
+   should be taking on the identifier that gates an action. Two enqueued in
+   the same tick is not hypothetical - the cron runs a batch.
+
+   `crypto.randomUUID` is available in the Workers runtime and is the right
+   source for this. The timestamp prefix stays because it keeps the ids
+   sortable and readable in an audit line; the uniqueness no longer rests on
+   it. */
+function _approvalId(now){ return _tickId('ap', now); }
+/* The result records written beside them have exactly the same problem for
+   exactly the same reason: `runDueAutomations` walks a batch of due items in
+   one tick, so several are minted in the same millisecond by construction, and
+   the id is what "mark read" and the timeline address. Same helper. */
+function _resultId(now){ return _tickId('r', now); }
+/* No separator between the two halves, deliberately. A hyphen made the id
+   easier to read and broke an existing assertion that pulled the id out of a
+   tool listing with `[a-z0-9]+` - which is the useful signal: something was
+   already relying on these being one alphanumeric run, and every other id in
+   this file is. Readability is not worth finding out later which consumer the
+   other one was. */
+function _tickId(prefix, now){
+  return prefix + Number(now || Date.now()).toString(36) +
+         crypto.randomUUID().replace(/-/g, '');
+}
 async function _enqueueApproval(env, email, item, out){
   const now = Date.now();
   /* AMV-206: the queue is one list on one record, written by an autonomous run
@@ -3657,7 +3687,7 @@ async function _enqueueApproval(env, email, item, out){
      or an enqueue lands on top of an approve and the decision is gone - which
      puts an item somebody rejected back in front of them, or loses it. */
   const entry = {
-    id: 'ap' + now.toString(36) + Math.random().toString(36).slice(2,6),
+    id: _approvalId(now),
     icon: item.kind === 'research' ? '\uD83D\uDD0D' : '\u2709\uFE0F',
     title: String(item.detail || 'Scheduled task').slice(0,140),
     requesting: 'Review the finished result from your scheduled task before it goes out.',
@@ -4526,7 +4556,7 @@ async function runDueAutomations(env, atMs){
          tokens, sends nothing, and waits to be asked. */
       if(level === 'suggest'){
         rec.results = (rec.results||[]).concat({
-          id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+          id: _resultId(),
           autoId: item.id, detail: item.detail, at: Date.now(), read: false,
           /* Zero, stated rather than left absent. The timeline adds these up,
              and a missing field reads as unknown where the whole point of this
@@ -4557,7 +4587,7 @@ async function runDueAutomations(env, atMs){
       const needs = _autoNeedsFor(item, connected, item.discoveredNeeds);
       if(!needs.ready){
         rec.results = (rec.results||[]).concat({
-          id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+          id: _resultId(),
           autoId: item.id, detail: item.detail, at: now, read: false,
           kind: 'needs_access', approval: level, outcome: 'needs_access', costUSD: 0,
           /* Carried as data as well as prose so the interface can list them,
@@ -4603,7 +4633,7 @@ async function runDueAutomations(env, atMs){
                       : (item.notify === 'email' && env.EMAIL_API_KEY) ? 'emailed'
                       : 'in-app';
         rec.results = (rec.results||[]).concat({
-          id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+          id: _resultId(),
           autoId: item.id, detail: item.detail, out, at: Date.now(), read: false, kind: item.kind||'task',
           /* The level this run actually executed at, recorded rather than
              inferred later from the job's current setting - which is the one
@@ -4653,7 +4683,7 @@ async function runDueAutomations(env, atMs){
            call for opposite responses. It goes in the record, with the reason
            and with whether the job has now been switched off for repeating. */
         rec.results = (rec.results||[]).concat({
-          id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+          id: _resultId(),
           autoId: item.id, detail: item.detail, at: Date.now(), read: false,
           kind: 'failed', approval: level, outcome: 'failed', costUSD: 0,
           out: 'This run did not complete: ' + why

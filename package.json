@@ -25,5 +25,10 @@
     "playwright": "^1.44.0",
     "terser": "^5.49.1",
     "wrangler": "^4.123.0"
+  },
+
+  "//overrides": "sharp arrives here only as a transitive dependency of miniflare, which is wrangler's local runtime. 0.35.2 and earlier bundle a libheif with two high-severity advisories (GHSA-g89c-p67h-r497, GHSA-2jg2-4ch7-h545). Nothing in this repository decodes HEIF - the vulnerable path needs an attacker-supplied image - but an unassessed high is exactly what the dependency gate exists to stop, and the fix is a patch release. Pinned forward rather than upgrading wrangler itself, so the version that deploys the Worker stays the version this repository was tested against.",
+  "overrides": {
+    "sharp": "^0.35.4"
   }
 }

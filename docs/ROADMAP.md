@@ -65,6 +65,18 @@ never a rule created because approval happened often enough.
 approved answers" is a rule the engine enforces - and the sixth application does
 not happen.
 
+**Budgets: done.** Auto Approve has a third bound - "at most N runs a day" -
+and it is the sixth-run half of that sentence. It is a real per-day period in
+the user's own timezone, not a lifetime count wearing a daily label: the count
+starts again when the local date changes, while "the first run only" stays a
+lifetime budget that never refills. A cap that cannot be read falls back to one
+run rather than to unlimited, and both bounds hold together - budget left over
+does not outlive the end date.
+
+**Still to come here:** allowlists and denylists ("never defence"), time
+windows, and the offer-a-rule flow. Those are what turn the rest of that
+sentence into something the engine can be handed.
+
 ## Milestone 6 — The first Auto agent end to end
 
 One of the owner's ten. Not the riskiest - the one with a reversible outcome and

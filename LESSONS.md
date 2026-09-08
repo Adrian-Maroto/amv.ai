@@ -10478,3 +10478,104 @@ exactly this.
 4. The budget is spent BEFORE the run, not after. Counting on success means a
    job that throws every time keeps earning fresh automatic attempts, which is
    the opposite of "the first run only".
+
+## 407. Two budgets that look the same and expire differently
+
+"At most 5 a day" and "the first run only" both arrive at the policy engine as
+`max_runs`. The engine cannot tell them apart and should not try - a budget is
+a number, and how it is spent is the caller's business. The entire difference
+between them is what the caller hands over as `runs_used`.
+
+Which means the whole risk lives in one function. Getting it wrong fails in the
+two worst directions available at once:
+
+- A daily cap that never refills quietly becomes "the first N runs, ever". The
+  job stops on its own and nobody is told, because nothing failed - it asked,
+  politely, for ever.
+- A lifetime cap that DOES refill turns "the first run only" back into the
+  fiction 406 was about, on a one-day delay.
+
+The rules that came out of building it:
+
+1. "A day" is the user's day. A UTC day key means somebody in Madrid gets their
+   budget back at two in the morning, and somebody in Auckland loses a day's
+   worth every day. Store the local date STRING as the period key, not a
+   timestamp - a device that wakes up a week later then resets once, instead of
+   trying to reconstruct six missed days it was asleep for.
+2. A fallback for a bad value has a direction, and the direction matters more
+   than the value. `cap: 'lots'` falling back to unlimited would hand somebody
+   unbounded automatic action on the strength of a typo. It falls back to 1: a
+   broken record costs one run, never every run.
+3. The client-side record can say anything - a hand-edited export, a value from
+   before the field existed. The input says max 50; the code clamps to 50 too,
+   because the input is not what the scheduler reads.
+4. Assert on the SHAPE of the sequence, not the totals. "Three ran then one
+   asked" and "one asked then three ran" have identical totals and only one of
+   them is a budget.
+5. Both bounds at once are AND, not OR. Budget left over must not outlive the
+   end date; an unexpired date must not refill a spent budget.
+
+## 408. A test that fails seven times in a hundred on correct code
+
+The gate went red on `approval ids do not repeat`, on a tree whose only change
+was elsewhere. It was not a regression. It was a coin flip that had been in the
+suite the whole time, and it finally came up tails.
+
+The assertion drew 500 ids in one millisecond and required all 500 to differ.
+The id was the millisecond plus four base-36 characters - about 1.7 million
+values - so the birthday bound puts a collision at roughly SEVEN PER CENT per
+run. Not once in a blue moon. Once every fourteen full gates.
+
+Two separate faults, and the second is the one that matters:
+
+1. **The test re-implemented the thing it was testing.** It built its own
+   `idOf()` inline rather than calling the server's. The server could have
+   changed its id scheme entirely and this assertion would still have passed,
+   green and meaningless. A test that copies the implementation tests the copy.
+2. **The id was genuinely too weak, and the test was right to be nervous.**
+   Approve and reject both address one item by that string. Two items sharing
+   one means somebody's decision lands on work they never saw - silently, and
+   in the direction of acting. The live queue caps at 50, so the real odds were
+   about 1 in 1400 rather than 1 in 14; that is not a number to leave on the
+   identifier that gates an action. `crypto.randomUUID` is available in the
+   Workers runtime and costs nothing here.
+
+The same four-character suffix was minting the RESULT records in the same batch
+loop - the ids "mark read" and the timeline address - so those went with it.
+
+The rule: **when a probabilistic test fails, check whether the probability was
+always there before looking for what you broke.** And a flaky test is rarely
+only flaky - this one was sitting on top of a real weakness, and re-running it
+until it passed would have hidden both.
+
+## 409. The suite that measured a phone with a mouse
+
+The tap-target suite renders at 390x844 and its own comment says it measures
+"what a thumb would actually be aiming at". It did not. The Playwright context
+reported a mouse, because `hasTouch` is off by default and nobody had turned it
+on - so `@media(hover:none)` never applied, and that query is exactly where
+this stylesheet puts the minimum height of a control on a phone.
+
+Every one of those rules was unmeasured. Behind that blind spot, three still
+said 40 - the number this product used before LESSONS 400 raised the target to
+44. They survived the raise the way anything survives a sweep it is invisible
+to. One of them was Mission Control's pause: the control somebody reaches for
+when an autonomous job is doing something they want stopped.
+
+The finding was not made by the suite. It was made by measuring one new control
+by hand and noticing the rule meant to save it asked for 38.
+
+**A harness's defaults are part of what it asserts.** `hasTouch: false` is not
+a neutral setting on a suite whose entire subject is touch - it silently
+changed which stylesheet the suite was reading. Whenever a suite emulates a
+device, check that every default it inherited agrees with the device it claims
+to be, because the ones that disagree do not fail. They pass, on the wrong
+measurement.
+
+Two smaller things fell out of the same afternoon:
+
+- The tap-target sweep walks TABS, so no modal in the product has ever been
+  sized at all. The row this started with lives in one.
+- Turning the emulation on was safe to try because touch rules here only ever
+  RAISE a minimum - the change could not shrink anything. That is worth
+  checking before flipping a device default, not assuming.

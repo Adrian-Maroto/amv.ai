@@ -258,8 +258,16 @@ export async function bootApp(opts = {}) {
   const { url, server } = await serveApp(
     { apiBase: opts.apiBase === undefined ? '' : opts.apiBase });
   const browser = await chromium.launch(LAUNCH);
+  /* `hasTouch` is off unless a suite asks. It is not cosmetic: it decides
+     whether `@media(hover:none)` applies, and this stylesheet uses that query
+     to set the minimum height of controls on a phone. Without it the tap-target
+     suite measured the DESKTOP size of every control while claiming to measure
+     a thumb - which is how three rules sat at 40px, under the 44 this product
+     settled on, with a green gate the whole time. */
   const page = await browser.newPage({
-    viewport: opts.viewport || { width: 1280, height: 860 }
+    viewport: opts.viewport || { width: 1280, height: 860 },
+    hasTouch: !!opts.hasTouch,
+    isMobile: !!opts.hasTouch,
   });
 
   const errors = [];

@@ -59,6 +59,36 @@ Widening autonomy is always an explicit act by the user, creating a rule with
 its own budget, allowlist and expiry. The agent may *offer* to create that rule.
 It may not create one for itself.
 
+## What a budget means
+
+A rule can carry `max_runs`, and the policy engine refuses once `runs_used`
+reaches it. The engine deliberately does not know what period that number
+covers - a budget is a number, and the period belongs to whoever is counting.
+
+Two periods exist today, and they are different promises:
+
+| The user said | The period | Refills |
+|---|---|---|
+| "the first run only" | the job's whole life | never |
+| "at most N runs a day" | the user's local calendar day | at their midnight |
+
+"The user's local day" is deliberate: a UTC period hands somebody in Madrid
+their budget back at two in the morning and takes a day off somebody in
+Auckland every day. The period key is the local date string, so a device that
+was asleep for a week resets once rather than trying to replay six days it
+missed.
+
+A budget is spent when the run STARTS, not when it succeeds. Otherwise a job
+that fails every time keeps earning fresh automatic attempts, which is the
+opposite of a bound. And a bound that cannot be read - a corrupted record, a
+value from before the field existed - falls back to one run, never to
+unlimited: a typo may cost somebody an automatic run, it may not grant them
+unbounded automatic action.
+
+Budgets compose with every other bound as AND. An unspent budget does not
+outlive an expiry date, an unexpired date does not refill a spent budget, and
+the autonomy pause outranks both.
+
 ## Silence is not approval
 
 An approval that expires is a denial. An approval nobody answered is a denial.

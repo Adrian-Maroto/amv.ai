@@ -14,7 +14,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'autonomy.harness.mjs');
 writeFileSync(harness, src + `
-export { runDueAutomations, _enqueueApproval, autoPause, _autoKey, autoUpdate, AUTO_INTERVALS, crewApprovalAct };
+export { runDueAutomations, _enqueueApproval, autoPause, _autoKey, autoUpdate, AUTO_INTERVALS, crewApprovalAct, _approvalId };
 export function __setRequireUser(fn){ requireUser = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -232,11 +232,31 @@ section('Approving a held result actually delivers it');
 
   /* The property the guard above rests on, stated rather than assumed: two
      approvals created in the same millisecond still get different ids, so a
-     permanent per-approval claim can never swallow a real second item. */
+     permanent per-approval claim can never swallow a real second item.
+
+     This used to re-implement the id inline, which meant it proved nothing
+     about the server - the server could have changed and this would still have
+     passed - and it was ALSO a coin flip. The old id was the millisecond plus
+     four base-36 characters: about 1.7 million values, and 500 of them drawn in
+     one millisecond collide roughly seven times in a hundred by the birthday
+     bound. A test that fails seven per cent of the time on correct code is a
+     test people learn to re-run instead of read.
+
+     Both halves are fixed by asking the real function. `_approvalId` now draws
+     from `crypto.randomUUID`, so 20,000 in the same millisecond is not a
+     tight budget - it is far outside anything the queue can produce, which is
+     the point of stating it here. */
   {
-    const idOf = () => 'ap' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-    const ids = new Set(); for (let i = 0; i < 500; i++) ids.add(idOf());
-    ok(ids.size === 500, 'approval ids do not repeat', ids.size);
+    const now = Date.now();
+    const ids = new Set(); for (let i = 0; i < 20000; i++) ids.add(W._approvalId(now));
+    ok(ids.size === 20000, 'approval ids do not repeat', ids.size);
+    /* One alphanumeric run, and the timestamp is still the front of it. Both
+       halves are asserted because both are load-bearing: the listing tool hands
+       ids to the model inside `[...]` and something pulls them back out with
+       `[a-z0-9]+`, so a separator here breaks a caller silently. */
+    const sample = W._approvalId(now);
+    ok(/^ap[0-9a-z]+$/.test(sample) && sample.startsWith('ap' + now.toString(36)),
+       'and each one is one alphanumeric run that still starts with its timestamp', sample);
   }
 }
 

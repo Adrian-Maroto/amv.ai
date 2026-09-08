@@ -41,7 +41,14 @@ const TABS = ['chat','dashboard','workspaces','memory','usage','billing','plans'
               'settings','help','apps','tasks','integrations','crew','market','team',
               'build:design','build:code','build:lab'];
 
-const app = await bootApp({ tab: 'chat', user: { name: 'T', email: 't@x.com', ini: 'T' }, viewport: PHONE });
+/* MEASURED WITHOUT TOUCH, WHICH IS NOT WHAT A PHONE IS.
+
+   The viewport was 390x844 but the context reported a mouse, so
+   `@media(hover:none)` never applied - and that query is where this stylesheet
+   puts the minimum height of a control on a phone. Every one of those rules was
+   unmeasured, and three of them still said 40. `hasTouch` closes the gap: the
+   sizes below are now the sizes a phone actually gets. */
+const app = await bootApp({ tab: 'chat', user: { name: 'T', email: 't@x.com', ini: 'T' }, viewport: PHONE, hasTouch: true });
 const { page, errors } = app;
 
 const small = [];

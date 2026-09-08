@@ -12253,3 +12253,58 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 @media(min-width:761px){
   .bld-sv > .dsn-wrap{ max-width:660px; }
 }
+
+/* ── LAYER A186 · the run-budget row in Auto Approve ─────────────────────────
+   "At most N a day" needed a number beside the segmented control and a word
+   after it, so the row reads as a sentence rather than a bare input: a label,
+   a number, and what the number means.
+
+   `.aa-cap-note` takes the same quiet treatment as `.aa-scope-k` on the other
+   side of the row - it is the tail of a sentence, not a second control, and
+   should not compete with the value the person is setting. The number itself
+   reuses `.aa-date`, which is already the modal's input, rather than forking a
+   near-identical one. */
+.aa-cap-note{
+  font-size:var(--t-sm);
+  color:var(--mu);
+}
+#aa-cap{
+  width:76px;
+  /* Spinners on a 1-50 field are a bigger tap target than the digits and get
+     hit by accident on a trackpad; the value is typed or arrowed. */
+  -moz-appearance:textfield;
+}
+#aa-cap::-webkit-outer-spin-button,
+#aa-cap::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+
+/* THIS ROW HAS NEVER BEEN MEASURED ON A PHONE.
+
+   The tap-target suite walks tabs, and this is a modal - so nothing in it has
+   ever been sized by the gate. Measured by hand at 390x844 the segment's
+   buttons are 25px, and the touch rule that was meant to save them asks for
+   38, which is under the 44 this product settled on (A182, LESSONS 400) for
+   the reason given there: a mis-tap here is not a mis-tap, it is a permission.
+
+   Raised for the whole row rather than only for the control being added -
+   fixing the new button to 44 while the two beside it stayed at 38 would make
+   the row worse, not better. */
+@media(hover:none){
+  .aa-seg button,.aa-clear,.aa-date,#aa-cap{ min-height:44px; }
+}
+
+/* ── LAYER A187 · the touch floor is 44 everywhere, not only where it was seen
+   Three more rules still said 40 - the value this product used BEFORE
+   LESSONS 400 raised the target to 44. They survived the raise because the
+   tap-target suite measured without touch emulation, so `@media(hover:none)`
+   never applied and none of them was ever looked at. The suite emulates touch
+   now; these are the rules that were hiding behind it.
+
+   Mission Control's pause is the clearest case for the larger number: it is
+   the control somebody reaches for when an autonomous job is doing something
+   they want stopped, and a mis-tap there costs more than a mis-tap anywhere
+   else on the screen. */
+@media(hover:none){
+  .mc-pause,.mc-mini,
+  .rr-controls button,
+  .mc-cmd-go,.mc-cmd-chip{ min-height:44px; }
+}
