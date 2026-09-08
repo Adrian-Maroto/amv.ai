@@ -441,8 +441,38 @@ async function _runDueAuto(){
       if(!canRun) continue;                    // can't run without the engine - just reschedule
       ranAny=true;
       try{
-        if(t.approval==='auto'){ await runAutonomous(t.goal,{silent:true}); }   // autonomous: runs and (backend) sends
-        else { await _recurMakeApproval(t); }                                    // ask-first: prepare a fresh draft to approve
+        /* THE WHOLE AUTONOMY DECISION USED TO BE `t.approval==='auto'`.
+
+           One string comparison on a client-side record, deciding whether a
+           scheduled job runs and sends on somebody's behalf. It was not wrong -
+           the server gate behind it is the real protection - but it was the
+           only thing standing here, and it could not see the autonomy pause,
+           a risk ceiling, an expiry, or a run budget.
+
+           It goes through the trust plane now. The user's own "auto" setting IS
+           the rule, so somebody who switched a job to autonomous still gets
+           what they asked for; what is new is that the rule is checked rather
+           than assumed. ALLOW runs it. Anything else prepares a draft and asks,
+           which is what this path already did for every other job. */
+        const auto = t.approval === 'auto';
+        let mayRun = false;
+        try{
+          const decision = amvPolicyEvaluate(amvActionContract({
+            goal: t.goal || 'scheduled job', tool: 'crew.run',
+            required_scope: 'crew.run', risk_class: 'R2',
+            reversible: false, user_id: (S.user && S.user.email) || 'local',
+            expires_at: t.until ? Date.parse(t.until) || 0 : 0,
+          }), {
+            now, granted_scopes: ['crew.run'],
+            autonomy_level: auto ? AMV_AUTONOMY.BOUNDED : AMV_AUTONOMY.NOTIFY,
+            user_paused: (typeof _autonomyPaused==='function') && _autonomyPaused(),
+            rule: auto ? { name: _recurTitle(t), tools: ['crew.run'], max_risk: 'R2',
+                           expires_at: t.until ? Date.parse(t.until) || 0 : 0 } : null,
+          });
+          mayRun = decision.decision === AMV_DECISION.ALLOW;
+        }catch(e){ mayRun = false; }   /* a decision that cannot be made is a no */
+        if(mayRun){ await runAutonomous(t.goal,{silent:true}); }   // autonomous: runs and (backend) sends
+        else { await _recurMakeApproval(t); }                     // ask-first: prepare a fresh draft to approve
       }catch(e){ _logErr('scheduledTask', e); }
     }
   }

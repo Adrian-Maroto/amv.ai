@@ -10408,3 +10408,40 @@ the measurement could have supported.
    near, and the failure mode is a screen silently losing its styling for
    somebody who was not looking. Not worth it. Task #144 is closed as WON'T DO
    with this reasoning rather than left pending for a third attempt.
+
+## 405. I shipped a trust plane nothing consulted, and the gate said so
+
+Milestone 1 of the autonomy brief added a policy engine, canonical events,
+action contracts and a risk taxonomy - 45 assertions, all green, every
+adversarial case covered. The full gate went red on a suite I had not thought
+about: `every-entry-point-has-a-door`.
+
+    ✗ nothing is offered as a way in that nothing can open
+      got: ["amvActionContract","amvCanonicalEvent","amvEvidenceIsSafe","amvPolicyEvaluate"]
+
+Four entry points declared on `window`, and nothing in the bundle called any of
+them. The engine was tested, documented, correct - and load-bearing for nothing.
+
+That is worse than not having it. A policy engine nothing consults looks like
+protection while providing none, and the next person to read the file has no
+way to tell which it is.
+
+1. "Tested" and "wired" are different claims, and a green suite of my own
+   writing cannot tell them apart - my test called the functions, so coverage
+   proved only that I could reach them, not that the product does. The suite
+   that caught it asks a question I never think to ask: not "does this work"
+   but "does anything use it".
+2. The tempting fix was the wrong one twice over. Adding the four names to
+   `NOT_A_DOOR` with "engine, not screen" is the exact rot that file's own
+   comments document - `runAgentic` had carried that rationale while the claim
+   was false in both halves. And quietly deleting the export line would have
+   hidden the finding rather than answering it.
+3. The real fix was to make it true. The scheduled-job path decided autonomy
+   with `t.approval === 'auto'` - one string comparison on a client record,
+   unable to see the autonomy pause, a risk ceiling, an expiry or a budget. It
+   goes through the engine now, with the user's own setting supplied AS the
+   rule so nobody's existing job changes behaviour.
+4. For the two with genuinely no caller yet, the honest answer is to not claim
+   one: the export line goes back the day ingestion and the planner exist. A
+   function that is reachable is not the same as a door that is offered, and
+   only the second is a promise.

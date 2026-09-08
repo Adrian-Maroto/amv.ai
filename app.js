@@ -31012,8 +31012,38 @@ async function _runDueAuto(){
       if(!canRun) continue;                    // can't run without the engine - just reschedule
       ranAny=true;
       try{
-        if(t.approval==='auto'){ await runAutonomous(t.goal,{silent:true}); }   // autonomous: runs and (backend) sends
-        else { await _recurMakeApproval(t); }                                    // ask-first: prepare a fresh draft to approve
+        /* THE WHOLE AUTONOMY DECISION USED TO BE `t.approval==='auto'`.
+
+           One string comparison on a client-side record, deciding whether a
+           scheduled job runs and sends on somebody's behalf. It was not wrong -
+           the server gate behind it is the real protection - but it was the
+           only thing standing here, and it could not see the autonomy pause,
+           a risk ceiling, an expiry, or a run budget.
+
+           It goes through the trust plane now. The user's own "auto" setting IS
+           the rule, so somebody who switched a job to autonomous still gets
+           what they asked for; what is new is that the rule is checked rather
+           than assumed. ALLOW runs it. Anything else prepares a draft and asks,
+           which is what this path already did for every other job. */
+        const auto = t.approval === 'auto';
+        let mayRun = false;
+        try{
+          const decision = amvPolicyEvaluate(amvActionContract({
+            goal: t.goal || 'scheduled job', tool: 'crew.run',
+            required_scope: 'crew.run', risk_class: 'R2',
+            reversible: false, user_id: (S.user && S.user.email) || 'local',
+            expires_at: t.until ? Date.parse(t.until) || 0 : 0,
+          }), {
+            now, granted_scopes: ['crew.run'],
+            autonomy_level: auto ? AMV_AUTONOMY.BOUNDED : AMV_AUTONOMY.NOTIFY,
+            user_paused: (typeof _autonomyPaused==='function') && _autonomyPaused(),
+            rule: auto ? { name: _recurTitle(t), tools: ['crew.run'], max_risk: 'R2',
+                           expires_at: t.until ? Date.parse(t.until) || 0 : 0 } : null,
+          });
+          mayRun = decision.decision === AMV_DECISION.ALLOW;
+        }catch(e){ mayRun = false; }   /* a decision that cannot be made is a no */
+        if(mayRun){ await runAutonomous(t.goal,{silent:true}); }   // autonomous: runs and (backend) sends
+        else { await _recurMakeApproval(t); }                     // ask-first: prepare a fresh draft to approve
       }catch(e){ _logErr('scheduledTask', e); }
     }
   }
@@ -39019,10 +39049,26 @@ function amvEvidenceIsSafe(events, contract) {
   return { safe: reasons.length === 0, reasons };
 }
 
+/* EXPORTED ONLY WHERE SOMETHING ACTUALLY OPENS THE DOOR.
+
+   `every-entry-point-has-a-door` refuses a `window.X = X` that nothing in the
+   bundle reaches, and it caught this file on its first run: four entry points
+   declared, none called. It was right. A trust plane nothing consults is worse
+   than no trust plane, because it looks like protection.
+
+   `amvActionContract` and `amvPolicyEvaluate` now govern the scheduled-job
+   decision in 16-palette-sched, so they are doors. `amvCanonicalEvent` and
+   `amvEvidenceIsSafe` have no caller until ingestion and the planner exist
+   (Milestones 2 and 3), so they are not declared as doors yet - writing the
+   export line would be claiming a caller that does not exist, which is the rot
+   that check's own comments describe. They are top-level function
+   declarations, so they remain reachable for their tests; the export line goes
+   back the day something calls them.
+
+   The constants are exported because the wiring above reads them by name. */
 try {
   window.AMV_RISK = AMV_RISK; window.AMV_AUTONOMY = AMV_AUTONOMY;
   window.AMV_DECISION = AMV_DECISION; window.AMV_TRUST = AMV_TRUST;
-  window.amvCanonicalEvent = amvCanonicalEvent; window.amvDedupKey = amvDedupKey;
-  window.amvIdempotencyKey = amvIdempotencyKey; window.amvActionContract = amvActionContract;
-  window.amvPolicyEvaluate = amvPolicyEvaluate; window.amvEvidenceIsSafe = amvEvidenceIsSafe;
+  window.amvDedupKey = amvDedupKey; window.amvIdempotencyKey = amvIdempotencyKey;
+  window.amvActionContract = amvActionContract; window.amvPolicyEvaluate = amvPolicyEvaluate;
 } catch (e) {}
