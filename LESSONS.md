@@ -10371,3 +10371,40 @@ and the third silently did not - no comment, no test, nothing to notice it by.
    assertion to state the new rule, not deleting it - the rewritten suite tests
    more than the old one did, because it now names what each section must NOT
    show.
+
+## 404. I built the runtime measurement, and it says the deletion is still not safe
+
+LESSONS 393 reverted a 346-rule dead-CSS deletion after one of them turned out
+to be live, and left the rule: measure at runtime, do not infer from a regex.
+Task #144 has sat pending on that ever since. So I built it - drive the real
+app, walk every tab, every Build mode and state, every Settings pane, every
+dialog, and collect every class that actually lands on an element.
+
+It works. It is also not enough, and the numbers say so plainly:
+
+    10 tabs walked          433 distinct classes reached
+    classes in styles.css   well over a thousand
+
+Extending the walk to every pane and dialog might reach 700-900. The gap is not
+dead code. It is states the walk cannot cheaply reach: empty states, error
+states, loading states, plan-gated views, admin views, and every list whose rows
+only exist when there is data to put in them. A marketplace listing card renders
+when somebody has listed something; no amount of `setTab` produces one.
+
+So "never rendered" does not imply "dead" here, and that is the only inference
+the measurement could have supported.
+
+1. The runtime walk is a good WHITELIST and a bad blacklist. It proves a class
+   IS used; it cannot prove one is not. I set out to build the second and only
+   ever had the first.
+2. Building the thing LESSONS 393 asked for was still worth doing - it turned
+   "we think this is hard" into a number. 433 out of a thousand-odd is an
+   argument; "it feels risky" is not.
+3. What IS provable is a different question: not "does any element carry this
+   class" but "does the FEATURE this styles still exist". Image and video
+   generation were removed end to end, so `.img-controls` and `.vid-controls`
+   are dead by construction. That is two selectors, not 6KB.
+4. The honest close: 6KB of a 1.9MB page is 0.3%, the page-weight ceiling is not
+   near, and the failure mode is a screen silently losing its styling for
+   somebody who was not looking. Not worth it. Task #144 is closed as WON'T DO
+   with this reasoning rather than left pending for a third attempt.

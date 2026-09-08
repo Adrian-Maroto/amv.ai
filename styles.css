@@ -5260,8 +5260,12 @@ body.light #ovr.on:has(> .nudge-modal){ background:rgba(40,40,50,.55); }
     padding-bottom: 9px;
   }
 
-  /* ---- Images / Video / Crew control rows wrap instead of squeezing ---- */
-  .img-controls, .vid-controls, #vc .row-controls {
+  /* ---- Crew control rows wrap instead of squeezing ---- */
+  /* `.img-controls` and `.vid-controls` were here too. Image and video
+     GENERATION were removed end to end (LESSONS 349, 353) and their markup went
+     with them, so those two selectors have styled nothing since. Provably dead,
+     unlike the rest of the stylesheet - see LESSONS 404. */
+  #vc .row-controls {
     flex-wrap: wrap;
     gap: 8px;
   }
@@ -12235,3 +12239,17 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    work, where the switcher is no longer on screen to say where you are. */
 .build-bar-fresh .dev-badge{ display:none; }
 .dev-shell.dev-blank .dev-bar.build-bar-fresh{ display:none; }
+
+/* ── LAYER A185 · Studio's gallery was the last thing on its own measure ─────
+   With the hero capped at the composer's 660, the starting-point tiles, the
+   callout, the owned-marketplace strip and the recents were still taking
+   `.dsn-wrap`'s 880 - so the page ran 660, then 880, then 660 again down one
+   centred column. Measured at 1440: hero 515..1175, tiles 405..1285.
+
+   The wrap takes the measure instead of each child arguing for its own. The
+   two-column grid of starting points comes to about 322 per tile, which is
+   wider than the Lab entry cards already are and reads fine; a gallery does not
+   need to be wider than the box you type into to get to it. */
+@media(min-width:761px){
+  .bld-sv > .dsn-wrap{ max-width:660px; }
+}
