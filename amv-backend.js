@@ -3928,6 +3928,58 @@ function _subMerchant(from){
   return name ? name.charAt(0).toUpperCase() + name.slice(1) : '';
 }
 
+/* ── WHAT IT ADDS UP TO ────────────────────────────────────────────────────
+   THE NUMBER PEOPLE ACT ON, SO IT HAS TO BE THE RIGHT ONE.
+
+   "You are paying 84 a month" is the sentence that makes somebody go and
+   cancel something. Handing a model a list and letting it total that list is
+   where this goes wrong quietly - it will add a yearly plan in as though it
+   were monthly, and it will add pounds to dollars and put one symbol on the
+   answer. So the arithmetic is done here, and what cannot be added is left
+   out and COUNTED rather than folded in.
+
+   Three rules, each of which is a way somebody would otherwise be told a wrong
+   number about their own money:
+
+   1. CURRENCIES ARE NEVER SUMMED. A total mixing GBP and USD is wrong in both.
+      They are grouped, always, however inconvenient that is to display.
+   2. A charge with no cadence is NOT assumed monthly. Assuming would report a
+      yearly plan at twelve times its cost, which is the single largest error
+      available here and it points at alarming somebody.
+   3. A charge with no amount is not estimated from the others. It is counted
+      as unknown so the answer can say "and three more I could not price".
+
+   A month is 52/12 weeks, not four. Four is wrong by eight per cent - a whole
+   month of a weekly subscription over a year - and it is wrong in the
+   comfortable direction, which is how it survives review. */
+const _SUB_PER_MONTH = { weekly: 52 / 12, monthly: 1, quarterly: 1 / 3, yearly: 1 / 12 };
+
+function _subTotals(rows){
+  const by = new Map();
+  let priced = 0, noAmount = 0, noCadence = 0;
+  for(const r of (Array.isArray(rows) ? rows : [])){
+    if(!r) continue;
+    if(r.amount === null || r.amount === undefined){ noAmount++; continue; }
+    const per = _SUB_PER_MONTH[r.cadence];
+    if(!per){ noCadence++; continue; }
+    const cur = String(r.currency || '');
+    if(!cur){ noAmount++; continue; }   /* money with no currency is not money */
+    const e = by.get(cur) || { currency: cur, monthly: 0, count: 0 };
+    /* Summed first, rounded once at the end. Rounding each row and then adding
+       accumulates the error rather than removing it. */
+    e.monthly += r.amount * per;
+    e.count++;
+    by.set(cur, e);
+    priced++;
+  }
+  const byCurrency = [...by.values()]
+    .map(e => ({ currency: e.currency, count: e.count,
+                 monthly: Math.round(e.monthly * 100) / 100,
+                 yearly: Math.round(e.monthly * 12 * 100) / 100 }))
+    .sort((a, b) => b.monthly - a.monthly || a.currency.localeCompare(b.currency));
+  return { byCurrency, priced, noAmount, noCadence };
+}
+
 /* One pass over what the mailbox already handed us. Nothing is fetched, so
    this costs no request and no token; it is reading text that was read
    anyway. */
@@ -4315,6 +4367,19 @@ async function _autoAccountContext(env, item, email){
                 + ' | from: ' + x.evidence).join('\n')
             + '\n\nAn amount marked NOT STATED was genuinely absent - say so rather than estimating one. A cadence that is not stated must not be assumed monthly. '
             + 'These are the charges AMV could see in this window of mail; it is not necessarily every subscription the person has, and you must not present it as a complete list of what they pay for.';
+          /* The total, computed rather than left to the model. Adding a yearly
+             plan in as monthly, or adding pounds to dollars, are both easy
+             mistakes to make from a list and both produce a confident wrong
+             number about somebody's money. */
+          const tot = _subTotals(subs);
+          if(tot.byCurrency.length){
+            block += '\n\nWHAT THOSE COME TO PER MONTH (AMV worked this out, currencies kept separate because a mixed total is wrong in both - use these figures and do not add anything up yourself):\n'
+              + tot.byCurrency.map(c => '- ' + c.currency + ' ' + c.monthly.toFixed(2) + ' a month (' + c.yearly.toFixed(2) + ' a year) across ' + c.count + ' charge' + (c.count === 1 ? '' : 's')).join('\n');
+          }
+          if(tot.noAmount || tot.noCadence){
+            block += '\n\nNOT INCLUDED IN THOSE TOTALS: ' + tot.noAmount + ' with no amount stated and ' + tot.noCadence
+              + ' where how often it recurs was not stated. Say that the total leaves them out rather than quietly presenting it as everything.';
+          }
         }
         parts.push(block);
 

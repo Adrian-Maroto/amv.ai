@@ -10784,3 +10784,48 @@ than a stated failure, because an assertion read `.amount` straight off a
 result that had become null. It still failed, so the gate would still have
 caught it - but it failed without naming the currency that stopped parsing.
 A test that crashes tells you something broke; a test that fails tells you what.
+
+## 415. A fixed sleep is a bet, and the gate is where it loses
+
+`the-seller-actually-gets-it` failed in the gate on "nothing is waiting once it
+has been read", and passed twice in a row alone. The mechanism, once actually
+looked at rather than guessed:
+
+`markThreadRead` tells the server and deliberately does NOT await it - a badge
+is not worth failing a click over - and `unreadCount` prefers the server's
+count when there is one. The test slept 200ms and then synced. So the assertion
+was a bet that a fire-and-forget POST completes inside 200ms, and inside the
+gate, with several suites running at once, it does not: the sync pulls back the
+server's still-unread count and overwrites the local zero.
+
+Task #49 swept the bootLive suites for exactly this shape. This one survived,
+because it is not a bootLive suite - the sweep was scoped by directory and the
+defect is not.
+
+The replacement polls to a deadline, and the distinction that makes it a test
+rather than a delay: **a condition wait that cannot fail is a sleep with extra
+steps.** Verified in both directions by deleting the POST from
+`markThreadRead` - the count stays at 1, the deadline runs out, the assertion
+fails. Without that check I would have shipped something that waits until it
+passes.
+
+Two suites in two turns have now failed only under parallelism, both because
+they asserted on state that another actor writes asynchronously. The general
+rule: **if the thing you are asserting on is written by somebody else, wait for
+the thing, never for the clock.**
+
+## 416. A test that crashes tells you something broke; one that fails tells you what
+
+Twice in one turn, a mutation produced a stack trace instead of a named
+failure - `_subMoney(...)` returning null and the assertion reading `.amount`
+off it, then `byCurrency.find(...)` returning undefined and the assertion
+reading `.monthly`. Both still failed, so the gate would still have stopped
+them. Both failed without saying which currency stopped parsing, or which
+currency had vanished into a shared bucket.
+
+The fix is one line in each: read through a helper that returns a shaped empty
+object rather than off the result directly. It costs nothing and it converts
+"TypeError at line 59" into "with the local decimal convention: expected 12.99".
+
+Worth doing specifically in suites about money and privacy, where the person
+reading the failure at some later date is trying to work out how bad it is.

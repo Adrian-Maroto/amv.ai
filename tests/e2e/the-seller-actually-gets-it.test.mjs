@@ -189,9 +189,28 @@ section('Opening it clears the badge, and it stays cleared');
     if (!t) return -1;
     const other = t.a === AMVMarket._me() ? t.b : t.a;
     AMVMarket.markThreadRead(other);
-    await new Promise(r => setTimeout(r, 200));
-    await AMVMarket.syncThreads();
-    return AMVMarket.unreadCount();
+    /* WAIT FOR THE CONDITION, NOT FOR A NUMBER OF MILLISECONDS.
+
+       `markThreadRead` tells the server and deliberately does not await it -
+       the badge is not worth failing a click over - and `unreadCount` prefers
+       the SERVER's count when there is one. So a fixed sleep is a bet that the
+       fire-and-forget POST lands inside it, and inside the gate, where several
+       suites run at once, that bet loses: the sync pulls back the server's
+       still-unread count and overwrites the local zero.
+
+       This is the shape task #49 swept the bootLive suites for and this one
+       survived. It polls instead, and it is not a test that waits until it
+       passes: a read that genuinely never reaches the server stays at 1 and
+       the assertion fails when the deadline runs out. */
+    const deadline = Date.now() + 8000;
+    let n = -1;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 100));
+      await AMVMarket.syncThreads();
+      n = AMVMarket.unreadCount();
+      if (n === 0) break;
+    }
+    return n;
   });
   ok(cleared === 0, 'nothing is waiting once it has been read', cleared);
 }
