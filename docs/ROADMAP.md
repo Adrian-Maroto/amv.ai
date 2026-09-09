@@ -28,14 +28,26 @@ policy engine - no model in the path - layered law → region → org → househ
 user → rule, where a lower layer can never widen a higher one. An untrusted-
 content gate that runs *after* the model has spoken.
 
-## Milestone 2 — One event actually flowing
+## ✅ Milestone 2 — One event actually flowing (done)
 
-Wire the spine to something real. A connector emits a `CanonicalEvent`, it is
-deduplicated, stored against a cursor, and reconciliation backfills what the
-webhook missed. No new connector yet - use what exists.
+`ingest` records + `tests/worker/ingest-cursor.test.mjs`, 39 assertions.
+
+Gmail reads through a cursor, a bounded ring of ids already reported, and a
+recorded hole. The same message is never reported twice; a burst bigger than
+one page is reconciled by walking DOWN into the hole with a bounded window,
+because `after:` alone can never reach it; and while a hole is open the model
+is told the list is not everything that came in. The cursor advances only once
+the result is durable, so every failure costs a repeat rather than a loss.
 
 *Done when:* the same source event delivered three times produces one event, and
 a deliberate gap in delivery is closed by reconciliation without duplicating.
+**Both are asserted against the real cron path**, not the filter in isolation -
+a mutation deleting the hand-off from `_autoExecute` left the unit assertions
+green, which is how the end-to-end one came to exist.
+
+*Not yet:* calendar and school-work read the same way each run. They are much
+smaller windows (7 days ahead, current coursework) where a repeat is the
+correct behaviour rather than a defect, so they were left alone deliberately.
 
 ## Milestone 3 — Proposals through the engine
 

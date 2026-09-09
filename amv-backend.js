@@ -3778,13 +3778,99 @@ const AUTO_MAIL_MAX = 25;          // headers, not bodies
 const AUTO_EVENTS_MAX = 20;
 const AUTO_SNIPPET_MAX = 180;
 
-async function _fetchGmailHeads(token){
-  const r = await fetchDeadline(
-    'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=' + AUTO_MAIL_MAX + '&labelIds=INBOX',
-    { headers: { Authorization: 'Bearer ' + token } }, 15000);
+/* WHERE EACH SOURCE GOT TO, AND WHAT IT HAS ALREADY SAID.
+
+   Until this existed, every scheduled run asked Gmail for the newest 25 INBOX
+   messages and handed all of them to the model, whatever it had seen before.
+   Two failures came out of that, and the second is the serious one:
+
+   1. A daily job reported the SAME message every day until it fell out of the
+      top 25. "What needs a reply" answered with yesterday's answer, so the
+      person learned to skim it, which is how the one new thing gets missed.
+   2. If more than 25 arrived between runs, the older ones were never seen -
+      and nothing recorded that they had been missed. The run read as complete.
+      An inbox digest that quietly reports on a fraction looks identical to an
+      inbox with nothing else in it.
+
+   So each source keeps three things per account:
+
+     cursor  the highest occurred_at actually DELIVERED to the person. Not the
+             newest message seen, and never arrival time - a redelivery has a
+             new arrival time and the same fact.
+     seen    a bounded ring of source ids already reported. The fetch overlaps
+             the cursor by a couple of minutes on purpose, because a boundary
+             that has to be exact is a boundary that loses a message; the ring
+             removes the overlap rather than trusting the arithmetic.
+     gap     set when the window could not be read back to the cursor. It is
+             stated to the model in words rather than logged, for the same
+             reason `_fetchClassroom` names the classes it could not read.
+
+   Within one source's bucket the source id IS the deduplication key - the
+   connector and account are implied by which bucket it is in, so the hashed
+   composite in the event model would only make the same statement in a form
+   nobody can read in a stored record. */
+const INGEST_SEEN_MAX = 300;
+/* The fetch reaches back slightly BEFORE the cursor. Gmail's `after:` is a
+   coarse instrument and clocks differ; asking for exactly what we do not have
+   is how one message falls down the crack between two runs. Overlap, then
+   dedupe. */
+const INGEST_OVERLAP_MS = 120000;
+const INGEST_SRC_MAIL = 'google.mail';
+
+const _ingestEmpty = () => ({ v: 1, src: {} });
+
+/* "COULD NOT BE READ" FALLS TOWARDS REPEATING, AND THIS ONE HEALS.
+
+   AMV-012 says a record that could not be read must never be written over,
+   because the original is then lost. That rule is about records that hold
+   something - a wallet, an entitlement. This one holds a cursor and a list of
+   ids AMV has already mentioned, and it is derived: everything in it can be
+   rebuilt by simply reporting the newest mail again.
+
+   So the trade runs the other way here, and deliberately. Refusing to write
+   would leave a corrupt record corrupt for ever, which means deduplication
+   never works again for that account - the daily repeat comes back and nothing
+   ever fixes it. Replacing it costs exactly one repeated digest.
+
+   What must never happen is the third option: treating an unreadable record as
+   "has seen everything", which would silently drop mail. `DB.get` returns null
+   for a corrupt value (audited and alerted, see its own comment) and the empty
+   state means "has seen nothing", so the failure lands on the repeat. */
+async function _ingestRead(env, email){
+  const rec = await DB.get(env, 'ingest', String(email || '').toLowerCase());
+  return rec && rec.src ? rec : _ingestEmpty();
+}
+
+async function _fetchGmailHeads(token, opts){
+  const o = opts || {};
+  const max = Math.max(1, Math.min(AUTO_MAIL_MAX, Number(o.max) || AUTO_MAIL_MAX));
+  let url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=' + max + '&labelIds=INBOX';
+  /* Two windows, and the second is what makes a missed batch recoverable.
+
+     `since` walks FORWARD from the cursor - ordinary "what is new". `until`
+     bounds the window from above, which is the only way to reach mail OLDER
+     than what has already been reported: Gmail answers newest-first and caps
+     the page, so a burst bigger than one page leaves a hole BELOW the newest
+     25 and `after:` alone will return that same newest 25 for ever. */
+  const since = Number(o.since) || 0;
+  const until = Number(o.until) || 0;
+  const q = [];
+  /* The overlap belongs to the FRONTIER fetch only. It exists so a message
+     landing either side of "now" is not lost between two runs - a real risk
+     at a moving edge. A backfill is bounded on both sides and its lower bound
+     is a cursor already trusted, so widening it there buys nothing and costs
+     real page slots: the window fills up with mail that was reported long ago,
+     and the walk crawls instead of converging. */
+  if(since > 0) q.push('after:' + Math.floor(Math.max(0, until > 0 ? since : since - INGEST_OVERLAP_MS) / 1000));
+  /* Ceil, so the boundary message itself is excluded rather than fetched again
+     on every backfill pass - the one direction where an off-by-one does not
+     just cost a duplicate, it stops the backfill making progress. */
+  if(until > 0) q.push('before:' + Math.ceil(until / 1000));
+  if(q.length) url += '&q=' + encodeURIComponent(q.join(' '));
+  const r = await fetchDeadline(url, { headers: { Authorization: 'Bearer ' + token } }, 15000);
   if(!r.ok) throw new Error('gmail_' + r.status);
   const d = await r.json().catch(()=>({}));
-  const ids = (d.messages || []).slice(0, AUTO_MAIL_MAX);
+  const ids = (d.messages || []).slice(0, max);
   const out = [];
   for(const m of ids){
     const mr = await fetchDeadline(
@@ -3795,14 +3881,23 @@ async function _fetchGmailHeads(token){
     const md = await mr.json().catch(()=>({}));
     const h = (md.payload && md.payload.headers) || [];
     const g = n => (h.find(x => x.name === n) || {}).value || '';
-    out.push({ from: g('From').slice(0,120), subject: g('Subject').slice(0,160),
+    out.push({ id: String(md.id || m.id || ''),
+               /* Gmail's own timestamp for the message, in ms. This is the
+                  fact's time; `Date:` is a header the sender wrote and can say
+                  anything at all. */
+               occurred_at: Number(md.internalDate) || 0,
+               from: g('From').slice(0,120), subject: g('Subject').slice(0,160),
                date: g('Date').slice(0,40),
                /* The snippet is Gmail's own one-line preview. Enough to judge
                   whether something needs a reply; not the message. */
                snippet: String(md.snippet || '').slice(0, AUTO_SNIPPET_MAX),
                unread: Array.isArray(md.labelIds) && md.labelIds.indexOf('UNREAD') >= 0 });
   }
-  return out;
+  /* A full page means Gmail had at least this many in the window and may have
+     had more. That is the only honest signal available without paging the
+     whole history, and paging somebody's inbox because we happen to hold a
+     token is exactly what the event model says not to do. */
+  return { items: out, capped: (d.messages || []).length >= max };
 }
 
 async function _fetchCalendar(token){
@@ -3893,6 +3988,10 @@ async function _autoAccountContext(env, item, email){
   const jobId = String((item && item.id) || '').slice(0, 40);
   const parts = [];
   const missing = [];
+  /* Deferred writes. Everything that advances "AMV has told them this" waits
+     until the result is durable, so a run that reads the inbox and then dies
+     before producing anything leaves the next run seeing the same mail. */
+  const commits = [];
 
   for(const need of uses){
     if(AUTO_USES_ALLOWED.indexOf(need) < 0) continue;
@@ -3914,9 +4013,120 @@ async function _autoAccountContext(env, item, email){
     }
     try{
       if(need === 'mail.read'){
-        const mail = await _fetchGmailHeads(got.token);
-        parts.push('REAL INBOX (' + mail.length + ' most recent, headers and one-line previews only - you do not have the message bodies):\n'
-          + mail.map(m => '- ' + (m.unread ? '[unread] ' : '') + 'From ' + m.from + ' | ' + m.subject + ' | ' + m.date + '\n  ' + m.snippet).join('\n'));
+        const state = await _ingestRead(env, email);
+        const st = (state.src && state.src[INGEST_SRC_MAIL]) || {};
+        const cursor = Number(st.cursor) || 0;
+        const seen = new Set(Array.isArray(st.seen) ? st.seen : []);
+        const oldGap = st.gap && Number(st.gap.to) ? st.gap : null;
+
+        /* PASS ONE: what is new. */
+        const live = await _fetchGmailHeads(got.token, { since: cursor });
+        /* Everything the overlap dragged back in, and every redelivery, drops
+           out here. What is left is what this person has not been told about. */
+        let fresh = live.items.filter(m => m.id && !seen.has(m.id));
+
+        /* A FULL PAGE MEANS A HOLE UNDERNEATH IT.
+
+           Gmail answers newest-first, so a burst bigger than one page hands
+           back the newest 25 and leaves the older ones unreported. Advancing
+           the cursor to the NEWEST of them - which is what the first version of
+           this did - skips those older ones permanently, which is the exact
+           bug this record exists to prevent, rebuilt one layer up.
+
+           The frontier still moves to the newest, because that is where "what
+           is new" resumes from. The hole is tracked separately, and pass two
+           below is what walks down into it. */
+        let gap = oldGap;
+        if(cursor > 0 && live.capped && live.items.length){
+          /* The boundary is the oldest of the WHOLE page, not the oldest of the
+             fresh ones. Everything on the page has now been dealt with - the
+             already-seen ones were reported on an earlier run - so this is how
+             far down the walk has genuinely got. Measuring it from `fresh`
+             alone leaves the backfill re-asking for a page it has already
+             considered, for ever, whenever that page is all duplicates. */
+          const low = live.items.reduce((a, m) => Math.min(a, Number(m.occurred_at) || 0), Infinity);
+          /* A HOLE ONLY EVER GETS SHALLOWER FROM THE TOP - never deeper again.
+
+             The frontier fetch overlaps backwards, so on a quiet run it can
+             return a full page of mail already reported. Taking that page's
+             floor as the new boundary would raise the hole back up and undo
+             every backfill pass already done - the walk would step down one
+             page and up one page for ever, and the oldest mail would never be
+             reached. Whichever boundary is LOWER is the one that is true. */
+          const prev = (oldGap && Number(oldGap.to)) || Infinity;
+          gap = { from: (oldGap && Number(oldGap.from)) || cursor, to: Math.min(low, prev), at: Date.now() };
+        }
+
+        /* PASS TWO: RECONCILIATION. One page down into the hole per run,
+           bounded from above so it reaches what `after:` never can. One page,
+           not a loop: a run has a deadline, and a backfill that tries to drain
+           a huge burst in one tick starves every other job on the tick. */
+        let backfilled = [];
+        if(gap && Number(gap.to) > 0){
+          try{
+            const back = await _fetchGmailHeads(got.token, { since: Number(gap.from) || 0, until: Number(gap.to) });
+            backfilled = back.items.filter(m => m.id && !seen.has(m.id) && !fresh.some(f => f.id === m.id));
+            /* WHAT CLOSES THE HOLE IS A SHORT PAGE, NOT AN EMPTY HARVEST.
+
+               A full page that happened to be entirely already-seen means the
+               window still has more underneath it - reading "nothing new" as
+               "nothing left" would abandon the rest of the burst silently,
+               which is the failure this whole pass exists to prevent. Only a
+               page that came back SHORT proves the bottom was reached. */
+            if(back.capped && back.items.length){
+              const low = back.items.reduce((a, m) => Math.min(a, Number(m.occurred_at) || 0), Infinity);
+              gap = { from: gap.from, to: Math.min(low, Number(gap.to)), at: Date.now() };
+            } else {
+              gap = null;
+            }
+          }catch(e){
+            /* The backfill failing is not the run failing. The gap stays
+               recorded, so the next run tries again rather than forgetting. */
+            audit(env, 'ingest_backfill_failed', { error: String((e && e.message) || e).slice(0,120) });
+          }
+        }
+
+        const all = fresh.concat(backfilled);
+        const head = cursor > 0
+          ? 'REAL INBOX - NEW SINCE AMV LAST LOOKED (' + all.length + ', headers and one-line previews only - you do not have the message bodies):'
+          : 'REAL INBOX (' + all.length + ' most recent, headers and one-line previews only - you do not have the message bodies):';
+
+        let block = head + '\n' + (all.length
+          ? all.map(m => '- ' + (m.unread ? '[unread] ' : '') + 'From ' + m.from + ' | ' + m.subject + ' | ' + m.date + '\n  ' + m.snippet).join('\n')
+          /* Said in words, because "no new mail" and "an empty inbox" are
+             different facts and a model handed an empty list will report
+             whichever one reads better. */
+          : (cursor > 0
+              ? '(nothing new - AMV already reported everything currently in this inbox. This does NOT mean the inbox is empty; it means nothing has arrived since the last run. Say that, and do not describe the inbox as empty or invent messages.)'
+              : '(no messages in the inbox)'));
+
+        if(gap && Number(gap.to) > 0){
+          block += '\n\nSTILL CATCHING UP: more mail arrived than AMV can read in one pass, so OLDER UNREPORTED MAIL EXISTS below the list above and AMV is still working back through it. Say this plainly and do not present the list as everything that came in.';
+        }
+        parts.push(block);
+
+        /* NOT COMMITTED HERE. The cursor moves only once the person can
+           actually read the result - see `commit` below. Marking mail as told
+           about and then failing to tell them is the one outcome this whole
+           record exists to prevent. */
+        const gapChanged = JSON.stringify(gap && { from: gap.from, to: gap.to }) !== JSON.stringify(oldGap && { from: oldGap.from, to: oldGap.to });
+        if(all.length || gapChanged){
+          const ids = all.map(m => m.id);
+          const high = all.reduce((a, m) => Math.max(a, Number(m.occurred_at) || 0), cursor);
+          const nextGap = gap;
+          commits.push(async () => {
+            await _withKind(env, 'ingest', String(email || '').toLowerCase(), (rec) => {
+              if(!rec.src) rec.src = {};
+              const b = (rec.src[INGEST_SRC_MAIL] = rec.src[INGEST_SRC_MAIL] || {});
+              /* Never backwards. Two runs racing must not let the older one
+                 rewind the newer one's cursor and replay a digest. */
+              b.cursor = Math.max(Number(b.cursor) || 0, high);
+              b.seen = (Array.isArray(b.seen) ? b.seen : []).concat(ids).slice(-INGEST_SEEN_MAX);
+              b.gap = nextGap;
+              b.at = Date.now();
+            }, _ingestEmpty());
+          });
+        }
       } else if(need === 'calendar.read'){
         const ev = await _fetchCalendar(got.token);
         parts.push('REAL CALENDAR (next 7 days, ' + ev.length + ' events):\n'
@@ -3943,7 +4153,15 @@ async function _autoAccountContext(env, item, email){
     }
   }
 
-  return { text: parts.join('\n\n'), missing };
+  return {
+    text: parts.join('\n\n'), missing,
+    /* Run this only once the person can actually read the result. It is
+       deliberately safe to never call: nothing is lost, the next run simply
+       reports the same mail again. */
+    commit: async () => { for(const fn of commits){ try{ await fn(); }catch(e){
+      audit(env, 'ingest_commit_failed', { error: String((e && e.message) || e).slice(0,120) });
+    } } },
+  };
 }
 
 async function _autoExecute(env, item, budget, email, standing){
@@ -4052,7 +4270,11 @@ async function _autoExecute(env, item, budget, email, standing){
   // burn compute (a research watch every 10 min = thousands of calls/month).
   const usage = data.usage || {};
   return { text, usage: { input: usage.input_tokens||0, output: usage.output_tokens||0,
-                          webSearches: (usage.server_tool_use && usage.server_tool_use.web_search_requests)||0 } };
+                          webSearches: (usage.server_tool_use && usage.server_tool_use.web_search_requests)||0 },
+           /* Handed up rather than called here. What this marks as "told them"
+              is only true once the result is somewhere they can read it, and
+              that happens two levels up. */
+           commitIngest: acct.commit };
 }
 
 /* Estimate USD cost of an automation run (worst-case-ish, matches the web path's
@@ -4378,6 +4600,10 @@ async function runDueAutomations(env, atMs){
     processed++;
 
     let changed = false;
+    /* Held until the results this account produced are durable. See the end of
+       this block: advancing "AMV has told them about this mail" before they can
+       read it is how a message gets silently skipped for ever. */
+    const ingestCommits = [];
     // The plan's monthly cost ceiling - automations spend real money and must
     // count against it, exactly like interactive use. Compute once per user.
     /* One definition of the budget, shared with autoCreate - the cron used to
@@ -4612,6 +4838,10 @@ async function runDueAutomations(env, atMs){
       try{
         const exec = await _autoExecute(env, item, budget, email, rec.standing || '');
         const out = (exec && exec.text) || '';
+        /* Held, not called. See the write-back below: what a run has told
+           somebody about is only true once the result is in the record they
+           read it from. */
+        if(exec && typeof exec.commitIngest === 'function') ingestCommits.push(exec.commitIngest);
         // record the real cost of this run against the monthly cap
         let runCost = 0;
         /* SETTLED against the two reservations taken before the run, not added
@@ -4719,6 +4949,24 @@ async function runDueAutomations(env, atMs){
         const fresher = produced.filter(r => r && r.id && !known.has(r.id));
         if(fresher.length) fresh.results = (fresh.results||[]).concat(fresher).slice(-AUTO_RESULTS_KEEP);
       }, { items:[], results:[] });
+    }
+
+    /* ONLY NOW. The results are in the record the person reads them from, so
+       the mail they were built out of has genuinely been reported and the next
+       run should start after it.
+
+       Deliberately AFTER the write-back rather than inside it: these take a
+       lock on a different record, and taking a second lock while holding the
+       automation record is how a tick that already runs on a deadline acquires
+       a way to deadlock. It is also the only ordering that is honest - a
+       cursor that moved before the results were saved is a claim that has not
+       been earned yet.
+
+       Every failure mode here is a repeat, never a loss: if this does not run,
+       or runs and fails, the next run sees the same mail and reports it again. */
+    for(const fn of ingestCommits){
+      try{ await fn(); }
+      catch(e){ audit(env, 'ingest_commit_failed', { email, error: String((e && e.message) || e).slice(0,120) }); }
     }
   }
 

@@ -38873,7 +38873,7 @@ function amvDedupKey(e) {
     o.source_event_id || '', o.event_type || '',
     /* occurred_at, not received_at - see above. */
     String(Number(o.occurred_at) || 0),
-  ].join(' '));
+  ].join('\0'));
 }
 
 /* ── IDEMPOTENCY ──────────────────────────────────────────────────────────
@@ -38889,7 +38889,7 @@ function amvIdempotencyKey(userId, tool, args, bucket) {
     String(userId || ''), String(tool || ''),
     _amvStable(args || {}),
     String(bucket || ''),
-  ].join(' '));
+  ].join('\0'));
 }
 
 /* Argument order must not change the key, or a retry that serialises its

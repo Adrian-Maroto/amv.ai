@@ -10579,3 +10579,44 @@ Two smaller things fell out of the same afternoon:
 - Turning the emulation on was safe to try because touch rules here only ever
   RAISE a minimum - the change could not shrink anything. That is worth
   checking before flipping a device default, not assuming.
+
+## 410. The fake honoured half the query, so the feature tested itself
+
+Building the mail cursor, the suite went red on the backfill. I looked for the
+bug in the code. It was in the fake: my stand-in Gmail parsed `after:` and
+silently ignored `before:` - and `before:` is the entire mechanism. Gmail
+answers newest-first, so mail OLDER than what has already been reported can
+only be reached by bounding the window from above. A fake that drops that bound
+returns the same newest page for ever, and the reconciliation pass looks like
+it runs while doing nothing.
+
+Had the assertion been weaker - "the gap is recorded" rather than "the older
+five are reported" - it would have passed against a fake that made the feature
+impossible, and the code would have shipped never backfilling anything.
+
+**A test double must fail loudly on input it does not implement, or it silently
+narrows what the suite can see.** Parsing one of two parameters and ignoring
+the other is not a simplification; it is an assertion that the second one does
+not matter, made silently, in the one place nobody reviews.
+
+Four more things came out of that same afternoon, and all four were real bugs
+the suite caught rather than design I got right:
+
+1. **The frontier and a backfill need different windows.** The live fetch
+   overlaps backwards so a message at a moving edge is not lost between runs.
+   Applying that same overlap to a bounded backfill fills the page with mail
+   reported long ago and the walk stops converging.
+2. **A hole must only ever get shallower.** A quiet run's overlapping page can
+   come back entirely already-seen; taking its floor as the new boundary raises
+   the hole back up and undoes every backfill already done. The walk then steps
+   down one page and up one page for ever.
+3. **A short page closes a hole; an empty harvest does not.** A full page that
+   happened to be all duplicates means there is still more underneath.
+   Reading "nothing new" as "nothing left" abandons the rest of the burst.
+4. **The first version advanced the cursor to the NEWEST of a capped page** -
+   which skips everything older, permanently. That is the exact bug the record
+   was built to prevent, rebuilt one layer up, by me, in the same hour.
+
+And the mutation test found the hole the assertions could not: deleting the
+hand-off from `_autoExecute` left all 35 green, because every assertion called
+`commit()` itself. Same shape as 405. The suite now drives `runDueAutomations`.
