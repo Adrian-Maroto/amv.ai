@@ -46,6 +46,25 @@ const fn = (name) => {
   return next < 0 ? worker.slice(i) : worker.slice(i, i + lead + next);
 };
 
+/* THE WHOLE LIST, NOT THE FIRST N CHARACTERS OF IT.
+
+   The same failure the `fn` slicer above already documents, applied to arrays:
+   a fixed window over a list that is designed to grow, and whose every entry
+   carries a comment saying why it is there, stops covering the end of the list
+   the moment somebody adds one. It then fails in the worst direction - saying
+   a record is missing from a privacy roster it is actually on - or passes on an
+   empty string, which is worse because nobody looks.
+
+   `backup-covers-everything` already parses these properly; this file was still
+   slicing. */
+const listBody = (name) => {
+  /* Arrays AND object literals: `EXPORT_REDACTED` is a map of kind to the
+     reason it is withheld, not a list, and a helper that silently returns ''
+     for it would put this file straight back into the failure it is fixing. */
+  const m = worker.match(new RegExp('const ' + name + '\\s*=\\s*([\\[{][\\s\\S]*?\\n[\\]}]);'));
+  return m ? m[1] : '';
+};
+
 const app = await bootApp({ tab: 'chat', user: { name: 'Adrian', email: 'a@amv.dev', ini: 'A' } });
 const { page, errors } = app;
 await page.evaluate(() => document.getElementById('ck')?.remove());
@@ -144,15 +163,36 @@ section('Closing an account ends every grant it held');
   ok(/conn_revoked_on_erasure/.test(seg), 'deletion revokes connected accounts');
   ok(/conn_revoke_failed_on_erasure/.test(seg),
      'and records the ones it could not, because that is a live grant nobody can reach now');
-  ok(/'conn'/.test(worker.slice(worker.indexOf('const PER_USER_KINDS'), worker.indexOf('const PER_USER_KINDS') + 2200)),
+  /* READ THE WHOLE LIST, NOT THE FIRST 2200 CHARACTERS OF IT.
+
+     This used a fixed-length slice from the declaration. `PER_USER_KINDS` is a
+     list designed to grow, and every entry on it carries a comment explaining
+     why it is there - so the window stopped covering the end of the list the
+     moment somebody added one, and this reported "conn is not on the roster"
+     while conn sat on the roster a few lines further down.
+
+     A check that fails as the codebase legitimately grows is a check that gets
+     deleted, and this one fails in the worst direction available: it accuses
+     the code of a privacy defect that is not there. Parse the array. */
+  const kindsBody = listBody('PER_USER_KINDS');
+  ok(kindsBody.length > 200, 'the roster was found to read', kindsBody.length);
+  ok(/'conn'/.test(kindsBody),
      'and the record is on the roster that erasure and export both walk');
 }
 
 section('It is not in a backup, and not in an export');
 {
-  const never = worker.slice(worker.indexOf('const BACKUP_NEVER'), worker.indexOf('const BACKUP_NEVER') + 2500);
+  /* Both of these were fixed-length windows too, and `BACKUP_NEVER` had already
+     outgrown its by more than half - 5350 characters of list against a 2500
+     character slice. It passed only because `'conn:'` happens to sit near the
+     top; three entries below it were outside the window entirely, so any
+     assertion about those would have been reading an empty string and calling
+     it a pass. */
+  const never = listBody('BACKUP_NEVER');
+  ok(never.length > 500, 'the exclusion list was found to read', never.length);
   ok(/'conn:'/.test(never), 'connected accounts are excluded from backups');
-  const red = worker.slice(worker.indexOf('const EXPORT_REDACTED'), worker.indexOf('const EXPORT_REDACTED') + 1600);
+  const red = listBody('EXPORT_REDACTED');
+  ok(red.length > 100, 'the redaction list was found to read', red.length);
   ok(/conn:/.test(red), 'and redacted from a data export');
 }
 

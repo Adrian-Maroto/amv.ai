@@ -10711,3 +10711,40 @@ almost always failed to manipulate the thing it names. Before believing a
 probe, check it can produce the negative result - and I had corrected a right
 answer into a wrong one in between, which is what happens when you change code
 on a theory instead of a measurement.
+
+## 413. The check accused the code of a privacy defect that was not there
+
+`a-connected-account-is-a-key-somebody-lent-you` failed on "the record is on
+the roster that erasure and export both walk". `'conn'` was on the roster. The
+assertion sliced a fixed 2200 characters from the declaration of
+`PER_USER_KINDS`, and the comment I had added a few entries above pushed
+`'conn'` past the end of the window.
+
+So a green codebase was reported as having a privacy hole. That is the worst
+direction a check can fail in - worse than a miss, because somebody chasing it
+goes looking for a bug that does not exist, and the check that cries wolf is
+the check that eventually gets deleted.
+
+The file's own header already documents this exact failure for its FUNCTION
+slicer, in these words: "a window too short drops the code the assertion is
+about and reports the guard missing". The lists in the same file were still
+being sliced. A lesson learned in one paragraph and not applied ten lines down.
+
+Two of the three windows here had already rotted:
+
+- `BACKUP_NEVER` is 5350 characters against a 2500 character slice. It passed
+  only because `'conn:'` happens to sit near the top; three entries below were
+  outside the window entirely, so any assertion about those would have been
+  matching against a string that did not contain them and calling it a pass.
+- `EXPORT_REDACTED` is an object literal, not an array - so the first version
+  of my own fix returned '' for it and two assertions went red. A helper that
+  silently answers '' is the same bug in a new coat.
+
+**A fixed-length window over something designed to grow is a check with an
+expiry date nobody wrote down.** Parse the declaration.
+
+And the probe I reached for first was wrong again: I removed `'ingest:'` from
+`BACKUP_NEVER` and the suite stayed green, which I nearly read as the parse
+failing - this file never asserts on `'ingest:'`. The probe that means anything
+is to move `'conn:'` to the END of the list: offset 5339 of 5347. The parse
+finds it, the old window does not.
