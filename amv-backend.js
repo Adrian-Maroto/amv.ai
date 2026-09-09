@@ -3649,6 +3649,20 @@ async function autoPause(request, env){
 /* ---- Enqueue a finished scheduled-task result for the user's approval ----
    Require-approval automations stop before delivery: the completed work
    waits in the approval queue exactly like an interactive draft would. */
+/* How often the job behind an approval runs, in the words the card shows.
+   Derived from the record rather than stored, so a job whose cadence was
+   edited does not leave an old label on the next thing it produces. */
+function _autoScheduleLabel(item){
+  const r = String((item && item.repeat) || '').toLowerCase();
+  const named = { '10min': 'every 10 minutes', '30min': 'every 30 minutes',
+                  hourly: 'hourly', daily: 'daily', weekly: 'weekly' };
+  if(named[r]) return named[r];
+  const ms = Number(item && item.interval) || 0;
+  if(!ms) return '';
+  for(const [k, v] of Object.entries(AUTO_INTERVALS)) if(v === ms) return named[k] || k;
+  return '';
+}
+
 const AUTO_APPROVALS_MAX = 50;
 /* AN APPROVAL THAT EXPIRES IS A DENIAL - ON THIS QUEUE TOO.
 
@@ -3733,6 +3747,25 @@ async function _enqueueApproval(env, email, item, out){
     result: { type:'doc', title: String(item.detail||'').slice(0,140), body: String(out||'').slice(0,8000) },
     preview: String(out||'').slice(0,4000),
     startedAt: now, readyAt: now, autoApprove: false,
+    /* WHO GETS IT, ON THE PATH THAT MATTERS MOST.
+
+       The same thing - "your running job prepared something, approve it" -
+       is built in two places: here, when the cron ran while nobody was
+       looking, and in `_recurMakeApproval` on the client when AMV happened
+       to be open. The client one carried the recipient, the count, and which
+       job it came from. This one carried none of it, so the card was poorer
+       on exactly the occasion autonomy is FOR - the run you were not there
+       for.
+
+       The recipient is not a guess and cannot be one: `_autoEmailResult`
+       takes the address from the account, so an autonomous send reaches the
+       owner and nobody else. Saying so is reassurance rather than detail -
+       "this goes to you" is the answer to the question somebody actually has
+       when a machine offers to send something on their behalf. */
+    destination: item.notify === 'email' ? String(email || '') : '',
+    recipients: item.notify === 'email' ? 1 : null,
+    fromJob: String(item.id || ''),
+    jobSchedule: _autoScheduleLabel(item),
     /* Written down rather than derived, so the deadline a person was shown is
        the deadline that is enforced even if the default changes later. */
     expiresAt: now + AUTO_APPROVAL_TTL_MS,

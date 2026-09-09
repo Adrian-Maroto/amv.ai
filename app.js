@@ -31192,6 +31192,16 @@ async function _recurMakeApproval(t){
     resultType: to?'email':'doc',
     destination: to||'', recipients: to?1:null,
     account:(S.user&&S.user.email)||'', autoApprove:false,
+    /* THE SAME SHAPE THE SERVER WRITES.
+
+       This builder and `_enqueueApproval` produce the same card, and they had
+       drifted: this one carried the recipient and the job, that one carried
+       the deadline and whether it can be undone. A card is only as honest as
+       the poorer of the two paths that can create it, so both now carry all
+       of it. A suite compares them, because two builders of one thing drift
+       the moment somebody adds a field to whichever they happened to open. */
+    expiresAt: Date.now() + 7*86400000,
+    reversible: !to,
     readyAt:Date.now(), fromJob:t.id, jobTitle:title, jobSchedule:schedLabel,
     result: to?{type:'email',from:(S.user&&S.user.email)||'',to,subject:title,body}:{type:'doc',body}
   });

@@ -11021,3 +11021,36 @@ so the "chat is refused for everyone" page reaches nobody on a deployment
 without one. That is correct behaviour - the push channel is the owner's to
 configure - and the readiness screen is the pull channel that answers it. The
 system was fine; only the instruction was wrong.
+
+## 422. Two builders of one card, drifted in opposite directions
+
+"Your running job prepared something, approve it" is built in two places:
+`_enqueueApproval` on the server, for the run nobody was present for, and
+`_recurMakeApproval` on the client, for the one where AMV happened to be open.
+
+They had drifted, and in OPPOSITE directions - which is why neither looked
+wrong from inside its own file. The client one carried who it goes to, how
+many, and which job produced it. The server one carried the deadline and
+whether it can be taken back. Each was complete by the standard of whoever
+last edited it.
+
+So the same approval showed a different amount of truth depending on which
+path made it, and the poorer one was the SERVER path - the run you were not
+there for, which is the entire point of autonomy. Found by listing what the
+card reads and diffing it against what each builder writes: seventeen fields
+read, twelve written on one side.
+
+**When one thing is built in two places, the honest version is the poorer of
+the two, and neither author can see it.** Reviewing either file in isolation
+shows a builder that sets everything its own comments mention. The defect only
+exists in the gap.
+
+The guard is a test that reads BOTH builders from source and compares them
+against the fields the card renders - deliberately not against a list written
+in the test, because a list in the test is a third place to keep in step and
+would go stale exactly the way the two builders did.
+
+One judgement inside it worth keeping: `recipients` is `null` for a result
+that stays in the app, not `0`. "Nobody" and "not applicable" are different
+answers, and a card that says 0 recipients invites the question of who the
+zero people are.
