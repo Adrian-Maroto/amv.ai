@@ -8159,11 +8159,13 @@ background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-md);
 font-size:var(--t-sm); color:var(--mu);
 }
 .mc-quiet-on{ display:inline-flex; align-items:center; gap:var(--sp-2); color:var(--tx); cursor:pointer; }
-.mc-quiet-on input{ width:18px; height:18px; accent-color:var(--accent); flex:0 0 auto; }
+.mc-quiet-on input{ width:32px; height:32px; accent-color:var(--accent); flex:0 0 auto; margin:0; }
 .mc-quiet-when{ display:inline-flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2); }
 .mc-quiet-k{ color:var(--mu); }
 .mc-quiet-note{ color:var(--dim); }
-.mc-quiet select{ min-width:88px; }
+.mc-quiet select{ flex:0 0 auto; width:auto; min-width:96px; max-width:120px; }
+.mc-quiet-when{ flex:0 1 auto; }
+.mc-quiet-on{ min-height:32px; }
 @media(hover:none){
 .mc-quiet-on{ min-height:44px; }
 .mc-quiet select{ min-height:44px; }

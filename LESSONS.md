@@ -11172,3 +11172,29 @@ Two smaller things learned inside the fix:
   is added by the handler behind the checkbox, so passing a zone in by hand only
   proved the test could type one - a mutation removing `_mcQuietTz()` survived.
   Driving the CHECKBOX kills it.
+
+## 428. The touch floor was two-faced again, on a control I had just written
+
+Lesson 151 was "the touch floor is 44 where the suite can see and 40 where it
+cannot". The quiet-hours checkbox reproduced it inside the same file that
+records it. The rule read:
+
+    /* The label is the tap target, not the 18px box inside it. */
+    @media(hover:none){ .mc-quiet-on{ min-height:44px; } }
+
+`every-control-is-big-enough-to-hit` boots with touch emulated, so `hover:none`
+matched, it measured 44 and passed. `mobile-sweep` does not emulate touch, so
+the query never matched and it measured the raw 18px checkbox. Both suites
+measured honestly. The RULE was the thing with two faces.
+
+**A minimum size behind a media query is a minimum size on some machines.** The
+box is now a real target whatever is pointing at it - which is also just
+better, because a control worth putting on screen is worth being able to hit
+with a mouse. The 44px row floor stays touch-only, because that one is about
+finger room AROUND the control rather than the control itself.
+
+A second thing the screenshot caught that no suite would have: the two hour
+selects had inherited the full-width styling meant for real text inputs and
+stretched across the row, so on a desktop it read as two large empty fields
+with "From" and "to" lost between them. Every automated check passed on it.
+**Suites answer "is it broken"; only looking answers "is it right".**

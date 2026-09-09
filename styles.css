@@ -12349,13 +12349,31 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   font-size:var(--t-sm); color:var(--mu);
 }
 .mc-quiet-on{ display:inline-flex; align-items:center; gap:var(--sp-2); color:var(--tx); cursor:pointer; }
-.mc-quiet-on input{ width:18px; height:18px; accent-color:var(--accent); flex:0 0 auto; }
+.mc-quiet-on input{ width:32px; height:32px; accent-color:var(--accent); flex:0 0 auto; margin:0; }
 .mc-quiet-when{ display:inline-flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2); }
 .mc-quiet-k{ color:var(--mu); }
 .mc-quiet-note{ color:var(--dim); }
-.mc-quiet select{ min-width:88px; }
+/* A select showing "23:00" needs the width of "23:00". Left to itself it
+   inherited the full-width form styling used for real inputs elsewhere and
+   stretched across the row, which read as two large empty fields with the
+   words "From" and "to" lost between them. */
+.mc-quiet select{ flex:0 0 auto; width:auto; min-width:96px; max-width:120px; }
+.mc-quiet-when{ flex:0 1 auto; }
 
-/* The label is the tap target, not the 18px box inside it. */
+/* THE BOX IS THE TAP TARGET, ON EVERY POINTER.
+
+   This first said "the label is the tap target, not the 18px box inside it"
+   and put the floor behind `@media(hover:none)` - which is lesson 151 repeated
+   exactly: a floor that exists only where one suite happens to look. The
+   tap-target suite emulates touch, so it saw 44 and passed; `mobile-sweep`
+   does not, so it measured the raw 18px checkbox and failed. Both were
+   measuring honestly. The rule was the thing that was two-faced.
+
+   The checkbox is now a real target whatever is pointing at it, which is also
+   simply better: a control worth putting on the screen is worth being able to
+   hit with a mouse. The 44px row floor stays touch-only because it is about
+   finger room around the control, not about the control itself. */
+.mc-quiet-on{ min-height:32px; }
 @media(hover:none){
   .mc-quiet-on{ min-height:44px; }
   .mc-quiet select{ min-height:44px; }
