@@ -16730,11 +16730,16 @@ function _mcSchedRow(t, st){
     : (auto ? '<span class="mc-sched-mode auto">Autonomous - sends automatically</span>'
             : '<span class="mc-sched-mode req">Ask first - you approve each one</span>');
   const waitChip = (!auto && waiting) ? `<span class="mc-sched-waiting">${waiting} waiting in Needs your approval</span>` : '';
+  /* A job the quiet-hours window pushed back says so on its own row. Otherwise
+     the only evidence is a "next" time that moved, which reads like the
+     schedule being wrong rather than like the setting working. */
+  const heldChip = (t.heldUntil && t.heldUntil > Date.now())
+    ? '<span class="mc-sched-quiet">Held until your quiet hours end</span>' : '';
   return `<div class="mc-sched-row">
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(t.goal||'Scheduled job')}</div>
       <div class="mc-sched-meta">${escH(when)}${ran?` · last ran ${escH(ran)}`:''}${next?` · next ${escH(next)}`:''}${t.localOnly?' · runs while AMV is open':''}</div>
-      <div class="mc-sched-mode-row">${mode}${waitChip}</div>
+      <div class="mc-sched-mode-row">${mode}${waitChip}${heldChip}</div>
     </div>
     <div class="mc-sched-acts">
       <button class="btn mc-mini ${auto?'ghost':'bp'}" data-dact="_schedToggleApproval" data-darg="${t.id}">${auto?'Make me approve first':'Make autonomous'}</button>
@@ -17238,8 +17243,16 @@ function _mcServerSchedRow(x){
         const say = { suggest:'Suggest only - it will not run until you ask',
                       require:'Ask first - each result waits for your approval',
                       auto:'Autonomous - results are delivered for you' }[eff];
+        /* Two different sentences that both begin "held". The gold one is the
+           account ceiling holding a job BELOW the level it was set to, which
+           is permanent until somebody raises the ceiling. The quiet one is
+           tonight's window pushing this run back a few hours. A row can
+           honestly show both at once. */
+        const quiet = (x.heldUntil && x.heldUntil > Date.now())
+          ? `<span class="mc-sched-quiet">Held until your quiet hours end</span>` : '';
         return `<span class="mc-sched-mode ${eff==='auto'?'auto':''}">${escH(say)}</span>`
-             + (eff!==own?`<span class="mc-sched-held">held back from “${escH(own)}” by your account setting</span>`:'');
+             + (eff!==own?`<span class="mc-sched-held">held back from “${escH(own)}” by your account setting</span>`:'')
+             + quiet;
       })()}</div>
     </div>
     <div class="mc-sched-acts">
@@ -17523,6 +17536,135 @@ function _mcDoneCard(t){
    the user hits with no explanation. */
 const CREW_REQUIRED_PLAN='pro';
 const CREW_JOBS_BY_PLAN={free:0,pro:5,elite:25,ultra:100};
+/* ── QUIET HOURS, THE CONTROL ──────────────────────────────────────────────
+   The server has enforced these since the tick learned about them, and the
+   bound was unreachable: nothing in the product could set one. That is the
+   `scope` defect read from the other end - a rule the code obeys and nobody
+   can write - and it is why this row exists rather than a settings page nobody
+   opens.
+
+   Two hours and the zone this browser is in. The zone is not a preference and
+   is not asked for: it is read from the machine, because somebody choosing
+   "11pm" means eleven at night where they are, and asking them to also name a
+   timezone is asking them to do arithmetic to express something they already
+   said. It travels with the window so the server can read the hour on THEIR
+   clock, which is what stops the window drifting an hour when the clocks
+   change. */
+const _MC_QUIET_HOURS = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
+function _mcQuietTz(){
+  try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; }catch(e){ return 'UTC'; }
+}
+function _mcQuiet(){
+  try{ const q = load('amv_auto_quiet'); return (q && Number.isInteger(q.from)) ? q : null; }catch(e){ return null; }
+}
+function _mcQuietLabel(h){ return String(h).padStart(2,'0') + ':00'; }
+
+/* ── QUIET HOURS, THE SECOND ENFORCER ──────────────────────────────────────
+   The cron holds server-side jobs. It cannot hold the ones that only exist in
+   this browser: work scheduled before a backend was connected, or by an
+   account whose plan cannot schedule server-side, runs from `_runDueAuto` in
+   16-palette-sched while the tab is open. That tick is the OTHER place an
+   unattended run begins, and it did not know the window existed - so somebody
+   who ticked "don't run jobs overnight" and left a laptop open still got the
+   3am run. A bound that holds on one of the two paths is not a bound.
+
+   Deliberately NOT routed through the policy engine's `in_quiet_hours`, even
+   though that branch exists. Quiet hours decide WHEN the tick looks at a job,
+   before any rule is read - a scheduling fact, not a permission one. Making it
+   both would give one promise two enforcement points that drift, which is the
+   thing this file already learned the hard way about approval cards.
+
+   The answers must match the server's exactly, so the shape below is the same
+   shape as `_quietNow` / `_quietEndsAt` in the worker, and a suite drives both
+   over the same table rather than trusting that they look alike. */
+function _mcQuietHourAt(tz, atMs){
+  try{
+    const h = new Intl.DateTimeFormat('en-GB', {
+      timeZone: String(tz || 'UTC').slice(0, 64),
+      hour: 'numeric', hour12: false,
+    }).format(new Date(atMs));
+    const n = parseInt(h, 10);
+    return Number.isInteger(n) ? (n % 24) : null;
+  }catch(e){ return null; }
+}
+/* Fails OPEN, like the server: an unreadable window does not silence. A job
+   that stops running and says nothing is harder to notice than one run at an
+   awkward hour, so the fallback goes towards the mistake somebody can see. */
+function _mcQuietNow(atMs, q){
+  const w = (q === undefined) ? _mcQuiet() : q;
+  if(!w) return false;
+  const from = Number(w.from), to = Number(w.to);
+  if(!Number.isInteger(from) || !Number.isInteger(to)) return false;
+  if(from < 0 || from > 23 || to < 0 || to > 23) return false;
+  if(from === to) return false;
+  const h = _mcQuietHourAt(w.tz, atMs);
+  if(h === null) return false;
+  return from < to ? (h >= from && h < to) : (h >= from || h < to);
+}
+/* Walked hour by hour rather than computed, so a clock change inside the
+   window is answered by the calendar instead of by offset arithmetic. */
+function _mcQuietEndsAt(atMs, q){
+  const w = (q === undefined) ? _mcQuiet() : q;
+  for(let i = 1; i <= 24; i++){
+    const t = atMs + i * 3600000;
+    if(!_mcQuietNow(t, w)) return t;
+  }
+  return atMs + 3600000;
+}
+function _mcQuietRowHTML(){
+  const q = _mcQuiet();
+  const opts = (sel) => _MC_QUIET_HOURS.map(h =>
+    `<option value="${h}"${h===sel?' selected':''}>${_mcQuietLabel(h)}</option>`).join('');
+  return `<div class="mc-quiet">
+    <label class="mc-quiet-on">
+      <input type="checkbox" id="mc-quiet-on" ${q?'checked':''} data-dact="mcQuietToggle">
+      <span>Don’t run jobs overnight</span>
+    </label>
+    <div class="mc-quiet-when" ${q?'':'hidden'}>
+      <span class="mc-quiet-k">From</span>
+      <select id="mc-quiet-from" aria-label="Quiet hours start" data-dact="mcQuietChange">${opts(q?q.from:23)}</select>
+      <span class="mc-quiet-k">to</span>
+      <select id="mc-quiet-to" aria-label="Quiet hours end" data-dact="mcQuietChange">${opts(q?q.to:7)}</select>
+      <span class="mc-quiet-note">your time · jobs due in this window run when it ends</span>
+    </div>
+  </div>`;
+}
+/* Saved to the server, because the browser is asleep at the hour this is for.
+   Stored locally too so the row draws right away on the next load rather than
+   waiting for a round trip to know what it already knows. */
+async function _mcQuietSave(q){
+  try{ store('amv_auto_quiet', q); }catch(e){}
+  if(!(window.AMV_API && AMV_API.live)){
+    toast('Saved on this device. It only holds jobs overnight once AMV is connected to a backend - that is where they run.','info',6000);
+    return;
+  }
+  try{
+    await AMV_API._fetch('/v1/auto/update', { method:'POST',
+      body: JSON.stringify({ action:'quiet', quiet: q }) });
+    toast(q ? ('Jobs will wait between ' + _mcQuietLabel(q.from) + ' and ' + _mcQuietLabel(q.to) + '.')
+            : 'Jobs can run at any hour again.', 'success', 4000);
+  }catch(e){
+    /* The one thing that must not happen quietly: the row showing a window the
+       server never received. */
+    toast('That did NOT save - your jobs can still run overnight. ' + ((e&&e.message)||''), 'error', 7000);
+  }
+}
+function mcQuietToggle(){
+  const on = !!(document.getElementById('mc-quiet-on')||{}).checked;
+  _mcQuietSave(on ? { from:23, to:7, tz:_mcQuietTz() } : null).then(()=>renderCrewView());
+}
+function mcQuietChange(){
+  const f = +(document.getElementById('mc-quiet-from')||{}).value;
+  const t = +(document.getElementById('mc-quiet-to')||{}).value;
+  if(!Number.isInteger(f) || !Number.isInteger(t)) return;
+  if(f === t){
+    toast('A window that starts and ends at the same hour is not a window - untick it to turn quiet hours off.','info',5000);
+    return;
+  }
+  _mcQuietSave({ from:f, to:t, tz:_mcQuietTz() });
+}
+try{ window.mcQuietToggle = mcQuietToggle; window.mcQuietChange = mcQuietChange; }catch(e){}
+
 function _planAllowsCrew(){
   const plan=loadStr('amv_plan')||'free';
   const need=PLAN_RANK[CREW_REQUIRED_PLAN]||1;
@@ -17825,6 +17967,7 @@ function renderCrewView(){
       <div id="mc-cmd-result" class="mc-cmd-result"></div>
     </div>
     ${paused?`<div class="mc-paused-banner"><b>Autonomous work is paused.</b> Scheduled and standing jobs won’t run until you resume. Anything already waiting still needs your approval.</div>`:''}
+    ${_mcQuietRowHTML()}
     <div class="mc-tiles">${tiles.map(t=>`<button class="mc-tile mc-${t[3]}${t[2]?'':' zero'}" data-mcjump="mc-${t[0]}"><span class="mc-tile-n">${t[2]}</span><span class="mc-tile-l">${t[1]}</span></button>`).join('')}</div>
 
     ${_mcCeilingHTML()}
@@ -27932,6 +28075,12 @@ function _autoServerHTML(){
        silence that used to stand for both. */
     const err = it.lastError
       ? '<div class="asrv-err">Last run: '+escH(String(it.lastError))+'</div>' : '';
+    /* A job the quiet-hours window pushed back. Said in its own words rather
+       than through `lastError`, which this row prefixes with "Last run:" - a
+       job that was held did not have a run, and calling a deferral the outcome
+       of one is how a row starts lying in small ways. */
+    const held = (it.heldUntil && it.heldUntil > Date.now())
+      ? '<div class="asrv-held">Held until your quiet hours end</div>' : '';
     /* And what it WILL need, resolved by the server for every job on this
        list. Without this, the only place a missing permission is said is
        against a run that already stopped - so somebody schedules a job at noon
@@ -27946,6 +28095,7 @@ function _autoServerHTML(){
       +'</div>'
       +'<div class="asrv-meta">'+escH(_autoWhenLabel(it))+' · run '+runs+' time'+(runs===1?'':'s')+'</div>'
       + err
+      + held
       + willNeed
       +'<div class="asrv-acts">'
       +'<button class="btn bs asrv-b" data-auto-act="'+(it.active?'pause':'resume')+'" data-auto-id="'+escH(String(it.id))+'">'+(it.active?'Pause':'Resume')+'</button>'
@@ -30240,6 +30390,36 @@ async function _autoRefresh(){
     _AUTO_RESULTS = d.results || [];
     if(typeof d.standing === 'string') _AUTO_STANDING = d.standing;
     if(typeof d.ceiling === 'string') _AUTO_CEILING = d.ceiling;
+    /* QUIET HOURS BELONG TO THE ACCOUNT, NOT TO THE DEVICE THEY WERE SET ON.
+
+       The window is written on whichever device somebody happened to be
+       holding, and the browser tick that has to honour it may be a different
+       one entirely. Read back here so a window set on a phone holds the jobs
+       running in a laptop tab, instead of each browser obeying only what was
+       typed into it. `quiet` is present on every response from this route, so
+       an absent key means an old server rather than "no window" - only an
+       explicit null switches it off. */
+    if('quiet' in d){ try{ store('amv_auto_quiet', d.quiet || null); }catch(e){} }
+    /* QUIET HOURS BELONG TO THE ACCOUNT, NOT TO THE DEVICE THEY WERE SET ON.
+
+       The window is written on whichever device somebody happened to be
+       holding, and the browser tick that has to honour it may be a different
+       one entirely. Read back here so a window set on a phone holds the jobs
+       running in a laptop tab, instead of each browser obeying only what was
+       typed into it. `quiet` is present on every response from this route, so
+       an absent key means an old server rather than "no window" - only an
+       explicit null switches it off. */
+    
+    /* QUIET HOURS BELONG TO THE ACCOUNT, NOT TO THE DEVICE THEY WERE SET ON.
+
+       The window is written on whichever device somebody happened to be
+       holding, and the browser tick that has to honour it may be a different
+       one entirely. Read back here so a window set on a phone holds the jobs
+       running in a laptop tab, instead of each browser obeying only what was
+       typed into it. `quiet` is present on every response from this route, so
+       an absent key means an old server rather than "no window" - only an
+       explicit null switches it off. */
+    
     _AUTO_LOADED = true; _AUTO_LOAD_ERR = '';
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
     if(typeof d.canSchedule === 'boolean') _AUTO_CAN_SCHEDULE = d.canSchedule;
@@ -31114,11 +31294,30 @@ async function _runDueAuto(){
   // If the AI backend isn't connected, scheduled work can't actually run.
   // Roll overdue tasks forward silently (no misleading "running" toast).
   const canRun = (typeof _aiBackendReady==='function') ? _aiBackendReady() : false;
+  /* THE SAME WINDOW THE SERVER HOLDS FOR, ASKED ONCE PER TICK.
+
+     This list is the work the cron never sees - scheduled before a backend was
+     connected, or by an account whose plan cannot schedule server-side - and it
+     runs from here while the tab is open. Without this, "don't run jobs
+     overnight" held the server's jobs and let these ones through, so somebody
+     who left a laptop open still got the 3am run from the half of the system
+     that was never told. */
+  const inQuiet = (typeof _mcQuietNow === 'function') && _mcQuietNow(now);
+  const quietEnd = inQuiet && (typeof _mcQuietEndsAt === 'function') ? _mcQuietEndsAt(now) : 0;
   for(const t of list){
     if(t.paused) continue;
     if(t.next<=now){
+      /* HELD, NOT SKIPPED - and held BEFORE lastRun is stamped, because it did
+         not run. `next` moves to the far side of the window rather than staying
+         in the past, so the job goes when the window closes instead of the
+         instant it does, and `heldUntil` is what the row reads to say so. */
+      if(inQuiet && quietEnd){
+        t.next = quietEnd; t.heldUntil = quietEnd; changed = true;
+        continue;
+      }
       // always advance the schedule so a past-due task can't re-fire every load
       t.lastRun=now; t.next=(t.sched?_schedNext(t.sched,now):_freqNext(t.freq,now)); changed=true;
+      t.heldUntil = 0;
       if(!canRun) continue;                    // can't run without the engine - just reschedule
       ranAny=true;
       try{

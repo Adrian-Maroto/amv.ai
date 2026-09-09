@@ -106,6 +106,44 @@ Budgets compose with every other bound as AND. An unspent budget does not
 outlive an expiry date, an unexpired date does not refill a spent budget, and
 the autonomy pause outranks both.
 
+## Quiet hours
+
+Two integers and a timezone: from an hour, to an hour, in the zone the browser
+reports. `23` to `7` is the ordinary case and the one a naive range check gets
+wrong by covering nothing at all - the start is inclusive, the end exclusive,
+and the window may cross midnight.
+
+The zone is stored WITH the window and the hour is read in it. Storing the
+window in UTC looks right and drifts by an hour twice a year, so somebody's
+quiet hours would silently move when the clocks did.
+
+**A job that comes due inside the window is HELD, not skipped.** Nothing runs,
+nothing is spent, and `next` moves to the far side of the window rather than
+staying in the past - otherwise every held job in the account fires at the same
+second the window closes. The record carries `heldUntil`, and the row says
+"Held until your quiet hours end" so a `next` time that moved does not read as
+a broken schedule. It is deliberately not written into `lastError`, which the
+row prefixes with "Last run:" - a held job did not have a run.
+
+**Enforced in both places an unattended run can begin.** The cron holds the
+jobs the account runs on the server; the browser tick holds the ones that only
+exist in a device's storage. A suite runs both implementations over one table
+and compares them case by case, because two enforcers of one promise drift the
+moment somebody edits whichever file they had open.
+
+**Quiet hours FAIL OPEN.** An unreadable window - a zone no machine can
+resolve, an hour outside 0-23, a window that starts and ends at the same hour -
+does not silence anything. That is the opposite direction from the approval
+deadline below, which refuses when it cannot read the age, and the principle is
+the same both times: fall towards the mistake somebody can see. A job that
+stops running and says nothing is much harder to notice than one email at an
+awkward hour.
+
+They are a scheduling bound, not a permission one: they decide WHEN the tick
+looks at a job, before any rule is read. That is why they are not routed
+through the policy engine's `in_quiet_hours` branch - one promise with two
+enforcement points is how bounds drift.
+
 ## Silence is not approval
 
 An approval that expires is a denial. An approval nobody answered is a denial.

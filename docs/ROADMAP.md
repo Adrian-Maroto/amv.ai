@@ -170,8 +170,13 @@ reading the account back confirms it, and the timeline says what happened.
 
 ## Milestone 7 — Quiet by default
 
-Interruption scoring, quiet hours, digest aggregation, the feedback buttons.
-The brief is right that the product fails at 40 alerts a day.
+Interruption scoring, digest aggregation, the feedback buttons. The brief is
+right that the product fails at 40 alerts a day.
+
+Quiet hours are DONE and shipped ahead of this milestone, because they were the
+one writable bound in M5 that had something to bind to on the path that
+actually exists. See AUTONOMY.md: held not skipped, enforced by both the cron
+and the browser tick, and the two compared over one table.
 
 ## Milestone 8 — International by architecture
 

@@ -1812,6 +1812,36 @@ async function _autoRefresh(){
     _AUTO_RESULTS = d.results || [];
     if(typeof d.standing === 'string') _AUTO_STANDING = d.standing;
     if(typeof d.ceiling === 'string') _AUTO_CEILING = d.ceiling;
+    /* QUIET HOURS BELONG TO THE ACCOUNT, NOT TO THE DEVICE THEY WERE SET ON.
+
+       The window is written on whichever device somebody happened to be
+       holding, and the browser tick that has to honour it may be a different
+       one entirely. Read back here so a window set on a phone holds the jobs
+       running in a laptop tab, instead of each browser obeying only what was
+       typed into it. `quiet` is present on every response from this route, so
+       an absent key means an old server rather than "no window" - only an
+       explicit null switches it off. */
+    if('quiet' in d){ try{ store('amv_auto_quiet', d.quiet || null); }catch(e){} }
+    /* QUIET HOURS BELONG TO THE ACCOUNT, NOT TO THE DEVICE THEY WERE SET ON.
+
+       The window is written on whichever device somebody happened to be
+       holding, and the browser tick that has to honour it may be a different
+       one entirely. Read back here so a window set on a phone holds the jobs
+       running in a laptop tab, instead of each browser obeying only what was
+       typed into it. `quiet` is present on every response from this route, so
+       an absent key means an old server rather than "no window" - only an
+       explicit null switches it off. */
+    
+    /* QUIET HOURS BELONG TO THE ACCOUNT, NOT TO THE DEVICE THEY WERE SET ON.
+
+       The window is written on whichever device somebody happened to be
+       holding, and the browser tick that has to honour it may be a different
+       one entirely. Read back here so a window set on a phone holds the jobs
+       running in a laptop tab, instead of each browser obeying only what was
+       typed into it. `quiet` is present on every response from this route, so
+       an absent key means an old server rather than "no window" - only an
+       explicit null switches it off. */
+    
     _AUTO_LOADED = true; _AUTO_LOAD_ERR = '';
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;
     if(typeof d.canSchedule === 'boolean') _AUTO_CAN_SCHEDULE = d.canSchedule;

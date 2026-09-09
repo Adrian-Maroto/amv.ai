@@ -506,11 +506,30 @@ async function _runDueAuto(){
   // If the AI backend isn't connected, scheduled work can't actually run.
   // Roll overdue tasks forward silently (no misleading "running" toast).
   const canRun = (typeof _aiBackendReady==='function') ? _aiBackendReady() : false;
+  /* THE SAME WINDOW THE SERVER HOLDS FOR, ASKED ONCE PER TICK.
+
+     This list is the work the cron never sees - scheduled before a backend was
+     connected, or by an account whose plan cannot schedule server-side - and it
+     runs from here while the tab is open. Without this, "don't run jobs
+     overnight" held the server's jobs and let these ones through, so somebody
+     who left a laptop open still got the 3am run from the half of the system
+     that was never told. */
+  const inQuiet = (typeof _mcQuietNow === 'function') && _mcQuietNow(now);
+  const quietEnd = inQuiet && (typeof _mcQuietEndsAt === 'function') ? _mcQuietEndsAt(now) : 0;
   for(const t of list){
     if(t.paused) continue;
     if(t.next<=now){
+      /* HELD, NOT SKIPPED - and held BEFORE lastRun is stamped, because it did
+         not run. `next` moves to the far side of the window rather than staying
+         in the past, so the job goes when the window closes instead of the
+         instant it does, and `heldUntil` is what the row reads to say so. */
+      if(inQuiet && quietEnd){
+        t.next = quietEnd; t.heldUntil = quietEnd; changed = true;
+        continue;
+      }
       // always advance the schedule so a past-due task can't re-fire every load
       t.lastRun=now; t.next=(t.sched?_schedNext(t.sched,now):_freqNext(t.freq,now)); changed=true;
+      t.heldUntil = 0;
       if(!canRun) continue;                    // can't run without the engine - just reschedule
       ranAny=true;
       try{

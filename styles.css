@@ -12333,3 +12333,58 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .apv-term.oneway{ color:var(--gold); }
 .apv-term.lapsed{ color:var(--red); }
 
+/* ── LAYER A189 · quiet hours, sitting where autonomy is governed ────────────
+   A row rather than a settings page, directly under the pause it belongs
+   beside: both answer "when may AMV act without me", and separating them puts
+   half the answer somewhere nobody looks.
+
+   Off by default and quiet about itself when off - one line and a checkbox.
+   The hours only appear once somebody has said they want them, because a
+   control for a feature you have not switched on is noise on the screen that
+   matters most. */
+.mc-quiet{
+  display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2) var(--sp-4);
+  margin:var(--sp-3) 0 0; padding:var(--sp-3) var(--sp-4);
+  background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-md);
+  font-size:var(--t-sm); color:var(--mu);
+}
+.mc-quiet-on{ display:inline-flex; align-items:center; gap:var(--sp-2); color:var(--tx); cursor:pointer; }
+.mc-quiet-on input{ width:18px; height:18px; accent-color:var(--accent); flex:0 0 auto; }
+.mc-quiet-when{ display:inline-flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2); }
+.mc-quiet-k{ color:var(--mu); }
+.mc-quiet-note{ color:var(--dim); }
+.mc-quiet select{ min-width:88px; }
+
+/* The label is the tap target, not the 18px box inside it. */
+@media(hover:none){
+  .mc-quiet-on{ min-height:44px; }
+  .mc-quiet select{ min-height:44px; }
+}
+
+
+/* ── LAYER A190 · a job the window pushed back says so on its own row ────────
+   The chip sits beside the mode label on a scheduled row. It is deliberately
+   the same weight and shape as .mc-sched-waiting rather than an alarm colour:
+   a held job is a job doing exactly what it was told, not a job in trouble.
+
+   NOT called `.mc-sched-held`, which was the first name and was already taken:
+   that class is the gold line explaining that the ACCOUNT CEILING is holding a
+   job back from the level it was set to. Two different sentences, one class -
+   and because CSS here is append-only override layers, the new rule silently
+   restyled the existing one instead of colliding loudly. The unstyled-class
+   stage cannot see this: it looks for classes with NO rule, not for a name
+   that already means something else. */
+.mc-sched-quiet{
+  display:inline-block; margin-left:var(--sp-2);
+  font-size:var(--t-xs); font-weight:600;
+  color:var(--mu); background:var(--s3);
+  border:1px solid var(--bdl); border-radius:var(--r-pill);
+  padding:2px 9px;
+}
+
+/* The same thing said on a server-run job's row, which is a stacked block
+   rather than a chip row. Muted, not an alarm: a held job is doing exactly
+   what it was told. */
+.asrv-held{
+  margin-top:var(--sp-1); font-size:var(--t-xs); color:var(--mu);
+}

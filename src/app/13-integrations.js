@@ -1386,6 +1386,12 @@ function _autoServerHTML(){
        silence that used to stand for both. */
     const err = it.lastError
       ? '<div class="asrv-err">Last run: '+escH(String(it.lastError))+'</div>' : '';
+    /* A job the quiet-hours window pushed back. Said in its own words rather
+       than through `lastError`, which this row prefixes with "Last run:" - a
+       job that was held did not have a run, and calling a deferral the outcome
+       of one is how a row starts lying in small ways. */
+    const held = (it.heldUntil && it.heldUntil > Date.now())
+      ? '<div class="asrv-held">Held until your quiet hours end</div>' : '';
     /* And what it WILL need, resolved by the server for every job on this
        list. Without this, the only place a missing permission is said is
        against a run that already stopped - so somebody schedules a job at noon
@@ -1400,6 +1406,7 @@ function _autoServerHTML(){
       +'</div>'
       +'<div class="asrv-meta">'+escH(_autoWhenLabel(it))+' · run '+runs+' time'+(runs===1?'':'s')+'</div>'
       + err
+      + held
       + willNeed
       +'<div class="asrv-acts">'
       +'<button class="btn bs asrv-b" data-auto-act="'+(it.active?'pause':'resume')+'" data-auto-id="'+escH(String(it.id))+'">'+(it.active?'Pause':'Resume')+'</button>'

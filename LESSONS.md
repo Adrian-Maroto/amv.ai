@@ -11054,3 +11054,86 @@ One judgement inside it worth keeping: `recipients` is `null` for a result
 that stays in the app, not `0`. "Nobody" and "not applicable" are different
 answers, and a card that says 0 recipients invites the question of who the
 zero people are.
+
+## 423. Quiet hours held the server's jobs and let the browser's through
+
+The window is one checkbox and one sentence: "Don't run jobs overnight". Two
+entirely separate pieces of code have to keep it. The cron holds the jobs the
+account runs on the server. `_runDueAuto` in the browser holds the ones that
+only exist in this device's storage - work scheduled before a backend was
+connected, or by a plan that cannot schedule server-side.
+
+Only the server was told. So somebody who ticked the box and left a laptop open
+still got the 3am run, from the half of the system nobody had informed. The
+setting was not broken; it was enforced in one of the two places an unattended
+run can begin, which is the same thing as not being enforced.
+
+**A bound that holds on one of two paths is not a bound.** And the fix is not
+just "the browser checks too" - it is that the two answers must be the SAME
+answer, which has to be measured rather than assumed. Both implementations now
+run over one table in one suite, the server's in node and the browser's in a
+real page, and are compared case by case: midnight, both edges, daylight
+saving, a half-hour offset zone, and a zone no machine can resolve.
+
+The deliberate asymmetry worth keeping: quiet hours FAIL OPEN on both sides -
+an unreadable window does not silence anything - which is the opposite
+direction from the approval deadline, which refuses when it cannot read the
+age. Same principle both times: fall towards the mistake somebody can see. A
+job that stops running and says nothing is much harder to notice than one run
+at an awkward hour.
+
+Quiet hours are also deliberately NOT routed through the policy engine's
+`in_quiet_hours` branch, even though it exists. They decide WHEN the tick looks
+at a job, before any rule is read - a scheduling fact, not a permission one.
+Making it both would give one promise two enforcement points that drift, which
+is lesson 422 all over again.
+
+## 424. A deferral written into `lastError` becomes "Last run: held"
+
+The held job first recorded itself by setting `item.lastError = 'held until
+your quiet hours end'`. The row that renders that field prefixes it with "Last
+run: ". So a job that had explicitly NOT run reported the deferral as the
+outcome of a run - and, worse, overwrote whatever real error the last actual
+run had recorded.
+
+**A status field carries the sentence its renderer wraps it in, not just the
+words you put in it.** Check what the screen does with a field before writing
+to it. The hold now has its own field, `heldUntil`, which the rows say in their
+own words and which is cleared the moment the job actually runs, so no row goes
+on calling a job that has since gone out "held".
+
+## 425. Append-only CSS layers make a name collision silent
+
+The new chip was called `.mc-sched-held`. That class already existed, meaning
+something else entirely: the gold line explaining that the ACCOUNT CEILING is
+holding a job below the level it was set to. Because CSS here is append-only
+override layers, the new rule did not collide - it quietly restyled the
+existing one, turning a gold warning into a grey pill on a screen no failing
+test looks at.
+
+The unstyled-class stage cannot catch this. It looks for classes with NO rule.
+A name that already means something else has a rule; that is the problem.
+
+**Before naming a class in a new layer, grep the stylesheet for the name.** The
+new one is `.mc-sched-quiet`, and both sentences can now appear on one row,
+which they should: the ceiling holds a job permanently, the window holds it
+until morning, and those are different facts about the same job.
+
+## 426. The mutation runner left the tree mutated
+
+A mutation script restored the two files it expected to touch, by name. A
+mutation to a THIRD file was applied and never undone; the next mutation then
+took its "clean" backup from the already-damaged file, so the good version was
+lost from both places. It surfaced as a verification probe that could not
+possibly pass, and the first instinct was to debug the product.
+
+A second bug in the same script: `restore()` referred to `$2`, which inside a
+shell function is the function's argument, not the script's. It printed a `cp`
+error to a path of `''` and carried on.
+
+**A mutation runner that can leave the tree mutated is more dangerous than any
+mutation it applies**, because everything measured after it is measuring
+something nobody wrote. The rule now: back up the file being mutated by its own
+path, restore from that path, and `diff` afterwards to prove the restore
+happened - the same "check the mutation applied" discipline from 414 and 419,
+pointed at the other end of the run.

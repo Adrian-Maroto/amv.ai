@@ -2082,6 +2082,7 @@ async function autoList(request, env){
                    so the screen and the chat show the same standing instruction
                    rather than each remembering its own. */
                 standing: rec.standing || '',
+                quiet: (rec.quiet && Number.isInteger(rec.quiet.from)) ? rec.quiet : null,
                 /* The highest level any of this account's jobs may reach. The
                    screen has to show it, because a job displaying "autonomous"
                    under a ceiling of "ask first" would be lying about what
@@ -3466,6 +3467,78 @@ async function autoCreate(request, env){
 }
 
 /* ---- delete / pause an automation ---- */
+/* ── QUIET HOURS ───────────────────────────────────────────────────────────
+   THE HOUR NOBODY WANTS TO BE EMAILED AT.
+
+   The policy engine has understood quiet hours since it was written - it
+   refuses a rule breach with "It is your quiet hours, so I held this rather
+   than acting". Nothing has ever passed `in_quiet_hours: true`, so the branch
+   has never once been taken. A bound with no producer is the same defect as a
+   `scope` with no consumer, read from the other end.
+
+   It has to live HERE rather than only in the page, because the hour this
+   protects is exactly the hour AMV is closed. A quiet window enforced by the
+   browser is a window that does nothing on the night it was set for.
+
+   AN HOUR IS A LOCAL FACT. Storing the window in UTC would look right and
+   drift by an hour twice a year: 23:00 in London is 23:00 UTC in winter and
+   22:00 UTC in summer, so a person's quiet hours would silently move when the
+   clocks did. The zone is stored with the window and the hour is computed in
+   it, which is what makes daylight saving somebody else's problem. */
+const QUIET_MAX_TZ = 64;
+
+/* The hour, 0-23, as it reads on a clock in that zone right now. Returns null
+   when the zone is unusable rather than falling back to UTC - a wrong hour is
+   worse than no answer, because it would silence the wrong part of the day. */
+function _quietLocalHour(tz, atMs){
+  try{
+    const h = new Intl.DateTimeFormat('en-GB', {
+      timeZone: String(tz || 'UTC').slice(0, QUIET_MAX_TZ),
+      hour: 'numeric', hour12: false,
+    }).format(new Date(atMs));
+    const n = parseInt(h, 10);
+    return Number.isInteger(n) ? (n % 24) : null;
+  }catch(e){ return null; }
+}
+
+/* IS IT QUIET RIGHT NOW.
+
+   The window may cross midnight - 23 to 7 is the normal case and the one a
+   naive `h >= from && h < to` gets wrong by covering nothing at all. `from`
+   is inclusive and `to` is exclusive, so 23-7 is quiet at 23:00 and working
+   again at 07:00.
+
+   THE FALLBACK RUNS THE OTHER WAY FROM THE APPROVAL DEADLINE, deliberately.
+   An unreadable expiry refuses, because sending something of unknown age is
+   worse than a re-run. An unreadable quiet window does NOT silence, because a
+   job that stops running and says nothing is the failure this codebase keeps
+   finding, and it is much harder to notice than one email at an awkward hour.
+   Same principle both times: fall towards the mistake somebody can see. */
+function _quietNow(quiet, atMs){
+  const q = quiet || {};
+  const from = Number(q.from), to = Number(q.to);
+  if(!Number.isInteger(from) || !Number.isInteger(to)) return false;
+  if(from < 0 || from > 23 || to < 0 || to > 23) return false;
+  /* A zero-length window is no window. Reading it as "always quiet" would
+     switch somebody's automation off entirely from one mis-set field. */
+  if(from === to) return false;
+  const h = _quietLocalHour(q.tz, atMs);
+  if(h === null) return false;
+  return from < to ? (h >= from && h < to) : (h >= from || h < to);
+}
+
+/* When the window ends, walked hour by hour rather than computed by
+   arithmetic - so a clock change inside the window is handled by asking the
+   calendar again rather than by being clever about offsets. Bounded at 24, so
+   a window that somehow never ends still returns something. */
+function _quietEndsAt(quiet, atMs){
+  for(let i = 1; i <= 24; i++){
+    const t = atMs + i * 3600000;
+    if(!_quietNow(quiet, t)) return t;
+  }
+  return atMs + 3600000;
+}
+
 /* Long enough for a real standing instruction, short enough that it cannot
    become a second prompt smuggled into every unattended run. */
 const AUTO_STANDING_MAX = 1200;
@@ -3504,6 +3577,26 @@ async function autoUpdate(request, env){
     }, { items:[], results:[] });
     audit(env, 'auto_standing_set', { by: user.email, len: text.length });
     return json({ ok:true, standing: text, appliesTo: items.length });
+  }
+
+  /* Quiet hours. Two integers and a zone, or nothing at all to switch it off.
+     Validated here rather than trusted: an out-of-range hour that reached the
+     record would silence a window nobody chose, and the tick reads this
+     without a person present to notice. */
+  if(body.action === 'quiet'){
+    const q = body.quiet;
+    let next = null;
+    if(q && q.from != null && q.to != null){
+      const from = Math.floor(Number(q.from)), to = Math.floor(Number(q.to));
+      if(!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || from > 23 || to < 0 || to > 23)
+        return json({ error: 'Quiet hours must be two whole hours between 0 and 23.', code: 'bad_quiet' }, 400);
+      if(from === to)
+        return json({ error: 'A quiet window that starts and ends at the same hour is not a window. Turn it off instead.', code: 'bad_quiet' }, 400);
+      next = { from, to, tz: String(q.tz || 'UTC').slice(0, QUIET_MAX_TZ) };
+    }
+    await _withAuto(env, key, (fresh) => { if(fresh) fresh.quiet = next; }, { items:[], results:[] });
+    audit(env, 'auto_quiet_set', { by: user.email, on: !!next });
+    return json({ ok:true, quiet: next });
   }
 
   /* THE CEILING - the highest level ANY of this account's background jobs may
@@ -4887,7 +4980,7 @@ async function _autoDueCandidates(env, now) {
 
    Named here, and asserted against what the tick actually assigns, so adding a
    seventh forces the decision instead of quietly not persisting. */
-const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'lastError', 'lastLevel', 'lastNeeds'];
+const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'lastError', 'lastLevel', 'lastNeeds', 'heldUntil'];
 
 async function runDueAutomations(env, atMs){
   const now = +atMs || Date.now();
@@ -5114,6 +5207,24 @@ async function runDueAutomations(env, atMs){
       }
       scanned++;
       if(!item.active || item.next > now) continue;
+      /* HELD, NOT SKIPPED. The job does not run and nothing is spent - and
+         `next` moves to the far side of the window rather than staying in the
+         past, so it goes at a reasonable hour instead of the moment the window
+         closes for every job at once. Nothing is lost: this is a deferral, and
+         the row says so rather than going quiet. */
+      if(_quietNow(rec && rec.quiet, now)){
+        item.next = _quietEndsAt(rec.quiet, now);
+        /* `heldUntil`, NOT `lastError`. The screen prefixes lastError with
+           "Last run:", and a held job did not have a run - describing a
+           deferral as the outcome of a run is the kind of small lie that makes
+           somebody distrust the whole row. It also would have overwritten a
+           real error from the last time the job actually ran. The row reads
+           this field and says "held until your quiet hours end" in its own
+           words. */
+        item.heldUntil = item.next;
+        changed = true;
+        continue;
+      }
       /* What this item booked before it ran. Reset per item, and handed back by
          every path below that decides not to run after all - a skipped job that
          keeps its reservation quietly eats the allowance of the jobs behind it
@@ -5273,6 +5384,10 @@ async function runDueAutomations(env, atMs){
         }).slice(-AUTO_MAX_RESULTS);
         item.runs = (item.runs||0) + 1;
         item.lastLevel = level;
+        /* It ran, so it is not being held any more. A stale hold would leave
+           the row saying "held until your quiet hours end" about a job that
+           has since gone out. */
+        item.heldUntil = 0;
         /* A soft failure ran fine and DELIVERED the reason - an institution that
            was down, or nothing linked yet. It is recorded so the job's row shows
            it, but it does not count toward the give-up counter: a bank having a
