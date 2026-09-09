@@ -51,6 +51,17 @@ correct behaviour rather than a defect, so they were left alone deliberately.
 
 ## Milestone 3 — Proposals through the engine
 
+**Started with the two facts a person could not see before pressing Approve.**
+The card showed a title, a request line and four buttons. It did not say whether
+the action could be taken back - "Send" and "Save a draft" looked identical - and
+it did not say when the permission lapsed, because nothing lapsed. Both now come
+from fields the server writes when the work is enqueued (`reversible`,
+`expiresAt`), and the server refuses an expired approval whatever the screen drew.
+
+*Still to come here:* the evidence an action rests on, who is affected, and the
+reasons object from `amvPolicyEvaluate` rendered directly rather than restated
+by each surface.
+
 Route the existing approval surfaces through `amvPolicyEvaluate` instead of
 their own scattered checks. The 425 sites become one decision with reasons.
 

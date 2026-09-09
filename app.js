@@ -17679,8 +17679,41 @@ function renderCrewView(){
       <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="Turn ${escH(j.title)} ${j.on?'off':'on'}"><span class="cw-knob"></span></button>
     </div>`;
   };
+  /* WHAT THE CARD COULD NOT SAY BEFORE YOU PRESSED THE BUTTON.
+
+     It showed a title, a line about what was requested, and four buttons. Two
+     things a person needs in order to decide were missing, and both of them
+     are the difference between a considered click and a reflex:
+
+       - WHETHER IT CAN BE TAKEN BACK. "Send" and "Save a draft" looked
+         identical. A sent email cannot be recalled and the card said nothing
+         about that at the one moment it mattered.
+       - WHEN THE PERMISSION LAPSES. An item written a fortnight ago is not the
+         same decision as one written this morning, and nothing on the screen
+         distinguished them.
+
+     Both come from the item the server wrote, not from a guess made here: the
+     server sets `expiresAt` and `reversible` when the work is enqueued, and it
+     refuses an expired approval regardless of what this screen drew. This is
+     defence in depth and an explanation, in that order. */
+  const _apvLapse=a=>{
+    const exp=Number(a.expiresAt)||(Number(a.readyAt)?Number(a.readyAt)+7*86400000:0);
+    if(!exp) return { expired:true, text:'AMV cannot tell how old this is' };
+    const left=exp-Date.now();
+    if(left<=0) return { expired:true, text:'Expired - run the job again for a fresh one' };
+    const d=Math.floor(left/86400000), h=Math.floor(left/3600000);
+    return { expired:false,
+      text: d>=1 ? ('Expires in '+d+' day'+(d===1?'':'s'))
+          : h>=1 ? ('Expires in '+h+' hour'+(h===1?'':'s'))
+          : 'Expires within the hour' };
+  };
   const apprCard=a=>{
     const act=_apvAction(a);
+    const lapse=_apvLapse(a);
+    /* Absent means unknown, and unknown is not "safe". An older item carries no
+       `reversible` field, so it is described by what the action does rather
+       than reassured about. */
+    const oneWay = a.reversible === false || (a.reversible === undefined && act.verb === 'send');
     const meta=[
       a.project?['Project',a.project]:null,
       a.crewName?['Crew',a.crewName]:null,
@@ -17701,6 +17734,10 @@ function renderCrewView(){
       ${a.fromJob?`<div class="apv-fromjob">↻ From your running job${a.jobSchedule?` · ${escH(a.jobSchedule)}`:''}. It keeps running - you'll get a new one to review each time. The job stays in <b>Running jobs</b>.</div>`:''}
       ${meta.length?`<div class="apv-meta">${meta.map(m=>`<span class="apv-mi"><span class="apv-mk">${escH(m[0])}</span>${escH(m[1])}</span>`).join('')}</div>`:''}
       ${a.warning?`<div class="apv-warn">${escH(a.warning)}</div>`:''}
+      <div class="apv-terms">
+        <span class="apv-term ${oneWay?'oneway':'undoable'}">${oneWay?'Cannot be undone once sent':'You can undo this'}</span>
+        <span class="apv-term ${lapse.expired?'lapsed':''}">${escH(lapse.text)}</span>
+      </div>
       <div class="apv-act">
         <button class="btn apv-preview" data-dact="apvPreview" data-darg="${a.id}">Preview</button>
         <button class="btn apv-ghost" data-dact="apvEdit" data-darg="${a.id}">Edit</button>

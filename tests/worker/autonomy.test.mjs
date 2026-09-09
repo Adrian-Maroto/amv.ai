@@ -182,8 +182,13 @@ section('Approving a held result actually delivers it');
     seedN++;
     SEND = 'ap-send-' + seedN; REVIEW = 'ap-review-' + seedN;
     return putRec('approvals','o@x.com', { items: [
-      { id:SEND,   actionType:'send',   title:'Email the brief', result:{ type:'doc', body:'the finished brief' } },
-      { id:REVIEW, actionType:'review', title:'Look at this',    result:{ type:'doc', body:'reading only' } },
+      /* `readyAt` is on every approval the server writes, and the queue refuses
+         one it cannot date - an item of unknown age could be from March, and
+         sending it is the worse direction. Without it these two are refused as
+         expired and this whole section fails for a reason unrelated to what it
+         is about. */
+      { id:SEND,   actionType:'send',   title:'Email the brief', readyAt:Date.now(), result:{ type:'doc', body:'the finished brief' } },
+      { id:REVIEW, actionType:'review', title:'Look at this',    readyAt:Date.now(), result:{ type:'doc', body:'reading only' } },
     ] });
   };
 

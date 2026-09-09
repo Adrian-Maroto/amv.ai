@@ -12308,3 +12308,28 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .rr-controls button,
   .mc-cmd-go,.mc-cmd-chip{ min-height:44px; }
 }
+
+/* ── LAYER A188 · what an approval costs you, said before you press it ───────
+   Two facts the card never carried: whether the action can be taken back, and
+   when the permission lapses. They sit directly above the buttons, because
+   that is where the decision is made - a warning further up the card is a
+   warning read before the person had decided anything.
+
+   Deliberately quiet by default and only coloured when the answer is the one
+   worth pausing on. A row where every line shouts is a row nobody reads, and
+   most approvals ARE undoable and fresh; the point is that the irreversible
+   one looks different from its neighbour. */
+.apv-terms{
+  display:flex; flex-wrap:wrap; gap:var(--sp-2) var(--sp-4);
+  margin:var(--sp-3) 0 0;
+  font-size:var(--t-sm); color:var(--mu);
+}
+.apv-term{ display:inline-flex; align-items:center; gap:var(--sp-1); }
+.apv-term::before{
+  content:''; width:6px; height:6px; border-radius:var(--r-pill);
+  background:currentColor; opacity:.55; flex:0 0 auto;
+}
+/* The one that changes what somebody should do before clicking. */
+.apv-term.oneway{ color:var(--gold); }
+.apv-term.lapsed{ color:var(--red); }
+

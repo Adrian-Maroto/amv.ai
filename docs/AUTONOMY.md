@@ -94,6 +94,31 @@ the autonomy pause outranks both.
 An approval that expires is a denial. An approval nobody answered is a denial.
 The agent may re-ask later; it may not treat the absence of an answer as one.
 
+**Enforced on both queues, which it was not.** The web-agent ticket has always
+expired after ten minutes. The crew queue - the one holding finished work that
+SENDS EMAIL when approved - had no expiry at all, so an item could sit for a
+month and go out on a click carrying facts that were true when it was written.
+The doctrine was in this file and the enforcement was in another; that is the
+failure this codebase keeps finding in itself.
+
+| | how long | what happens after |
+|---|---|---|
+| web-agent ticket | 10 minutes | refused; the agent stops and asks again |
+| crew approval | 7 days | refused; the recurring job produces a fresh one |
+
+Seven days is short enough that the world has not moved on and long enough that
+a job running at 3am survives a weekend. **A bound that breaks the feature is
+not a bound, it is a bug people work around.**
+
+Three rules the crew queue follows:
+
+- **The deadline is enforced by the server**, not by the screen that draws the
+  countdown. The client is also the half a stale tab controls.
+- **Expiry refuses, it does not delete.** The draft stays visible; silently
+  binning somebody's work to enforce a deadline is worse than the deadline.
+- **An item that cannot be dated is treated as expired**, not as fresh.
+  Refusing costs one re-run; the other direction sends something of unknown age.
+
 ## What is deliberately not built
 
 - autonomous money movement

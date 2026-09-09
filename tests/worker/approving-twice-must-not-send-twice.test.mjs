@@ -77,7 +77,13 @@ const act = (env, token, id, action) => W.crewApprovalAct(new Request('https://w
 
 async function seed(env) {
   await W.DB.put(env, 'approvals', USER, { items: [
-    { id: 'ap_1', title: 'Weekly note to the team', actionType: 'send',
+    /* `readyAt` is what `_enqueueApproval` always writes, and the queue now
+       refuses an approval it cannot date - an undateable item could be from
+       this morning or from March, and sending something of unknown age is the
+       worse direction. This fixture omitted it, so it described a record the
+       server never produces. Present here so these assertions keep testing the
+       double-send guard rather than the expiry guard. */
+    { id: 'ap_1', title: 'Weekly note to the team', actionType: 'send', readyAt: Date.now(),
       preview: 'Here is this week.', result: { body: 'Here is this week.' } } ] });
 }
 
@@ -123,8 +129,8 @@ section('A second approval of a DIFFERENT item still sends');
 {
   const env = makeEnv(); sends = 0;
   await W.DB.put(env, 'approvals', USER, { items: [
-    { id: 'ap_1', title: 'One', actionType: 'send', result: { body: 'a' } },
-    { id: 'ap_2', title: 'Two', actionType: 'send', result: { body: 'b' } } ] });
+    { id: 'ap_1', title: 'One', actionType: 'send', readyAt: Date.now(), result: { body: 'a' } },
+    { id: 'ap_2', title: 'Two', actionType: 'send', readyAt: Date.now(), result: { body: 'b' } } ] });
   const tok = await tokenFor(env, USER);
   await Promise.all([act(env, tok, 'ap_1', 'approve'), act(env, tok, 'ap_2', 'approve')]);
   ok(sends === 2, 'two different approvals send two emails', sends);

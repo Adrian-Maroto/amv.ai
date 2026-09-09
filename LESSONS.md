@@ -10865,3 +10865,38 @@ explaining the attack. Documentation of a thing read as the thing - which the
 DEAD GUARDS stage already strips comments to avoid, and which bit this
 repository once before when a stage's own comment contained a close-comment
 marker. It looks inside string literals now.
+
+## 418. The doctrine was enforced on one queue and not the other
+
+`docs/AUTONOMY.md` states it plainly: an approval that expires is a denial. The
+web-agent path enforces exactly that - a ticket lives ten minutes, with a
+comment saying an old approval left in a tab is not a standing licence.
+
+The crew queue enforced nothing at all. That is the queue holding finished work
+which SENDS EMAIL when approved. An item could sit in it for a month and go out
+on a click, carrying facts that were true when it was written - the weekly
+update to a client who was dropped a fortnight ago.
+
+Two things worth keeping.
+
+**A rule written in a document is not a rule.** This is the fourth or fifth
+time in this repository that a claim in one file had its enforcement in
+another, or nowhere: the pause that read a field that did not exist, the
+`scope` nothing consulted, the export roster a new record never joined. The
+pattern is always the same shape - the sentence is true of the surface somebody
+was looking at when they wrote it, and silently false of the others. **When a
+doctrine names a class of thing, go and count the members of that class.** I
+found this by asking "does the code do what AUTONOMY.md says", which took one
+grep and is the cheapest audit available.
+
+**A bound that breaks the feature is not a bound.** Ten minutes is right for a
+live browser action and would be absurd here - a job that runs at 3am would be
+unapprovable by breakfast, and people would learn to ignore or disable the
+whole queue. Seven days is short enough that the world has not moved on. The
+temptation with a security bound is to pick the strictest number; the strictest
+number gets worked around, and a bound people route around protects nobody.
+
+And the direction of every fallback: an item that cannot be DATED is treated as
+expired rather than fresh, because refusing costs one re-run and the other way
+sends something of unknown age. Expiry refuses rather than deletes, because
+binning somebody's draft to enforce a deadline is the worse outcome.

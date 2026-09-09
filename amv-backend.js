@@ -3650,6 +3650,42 @@ async function autoPause(request, env){
    Require-approval automations stop before delivery: the completed work
    waits in the approval queue exactly like an interactive draft would. */
 const AUTO_APPROVALS_MAX = 50;
+/* AN APPROVAL THAT EXPIRES IS A DENIAL - ON THIS QUEUE TOO.
+
+   AUTONOMY.md states that rule and the web-agent path enforces it: a ticket
+   lives ten minutes, with a comment saying an old approval left in a tab is
+   not a standing licence. THIS queue - the one holding finished work that
+   SENDS EMAIL when approved - had no expiry of any kind. An item could sit for
+   a month and go out on a click, carrying facts that were true when it was
+   written.
+
+   The doctrine was in one file and the enforcement in another, which is the
+   failure this repository keeps finding in itself.
+
+   Seven days. Short enough that the world has not moved on, long enough that a
+   job running at 3am is still approvable after a weekend - a bound that breaks
+   the feature is not a bound, it is a bug people work around.
+
+   EXPIRY REFUSES, IT DOES NOT DELETE. The work stays visible and the recurring
+   job will produce a fresh one; silently binning somebody's draft to enforce a
+   deadline is a worse outcome than the deadline. Rejecting stays available for
+   ever: you can always say no. */
+const AUTO_APPROVAL_TTL_MS = 7 * 86400000;
+
+/* An item written before this existed has no `expiresAt`, so it is derived
+   from when it was ready. An item with NEITHER cannot be dated at all, and an
+   undateable approval is treated as expired rather than as fresh: refusing
+   costs one re-run, and the other direction sends something of unknown age. */
+function _apvExpiresAt(item){
+  const explicit = Number(item && item.expiresAt) || 0;
+  if(explicit) return explicit;
+  const ready = Number(item && item.readyAt) || 0;
+  return ready ? ready + AUTO_APPROVAL_TTL_MS : 0;
+}
+function _apvExpired(item, now){
+  const exp = _apvExpiresAt(item);
+  return !exp || (Number(now) || Date.now()) > exp;
+}
 /* THE ID IS WHAT A DECISION IS AIMED AT.
 
    Approve and reject both address one item by this string, so two items
@@ -3696,7 +3732,14 @@ async function _enqueueApproval(env, email, item, out){
     resultType: 'doc',
     result: { type:'doc', title: String(item.detail||'').slice(0,140), body: String(out||'').slice(0,8000) },
     preview: String(out||'').slice(0,4000),
-    startedAt: now, readyAt: now, autoApprove: false
+    startedAt: now, readyAt: now, autoApprove: false,
+    /* Written down rather than derived, so the deadline a person was shown is
+       the deadline that is enforced even if the default changes later. */
+    expiresAt: now + AUTO_APPROVAL_TTL_MS,
+    /* Whether this can be taken back, decided where the action is known rather
+       than guessed on the screen. A sent email cannot be recalled; a result
+       somebody only reads has nothing to undo. */
+    reversible: item.notify !== 'email'
   };
   await _withKind(env, 'approvals', email, (rec) => {
     rec.items = (rec.items||[]).concat(entry).slice(-AUTO_APPROVALS_MAX);
@@ -8321,6 +8364,22 @@ async function crewApprovalAct(request, env){
      finished work waits until you say go", and nothing was behind the go.
      Only an item the job asked to be EMAILED has anything to deliver; a
      review-only one is genuinely resolved by being read. */
+  /* THE DEADLINE IS ENFORCED HERE, not on the screen that shows it. The client
+     draws the countdown; the client is also the half an attacker or a stale tab
+     controls, so the answer to "may this still go out" is given by the server
+     or it is not given at all. */
+  if(action === 'approve' && _apvExpired(item, Date.now())){
+    const exp = _apvExpiresAt(item);
+    audit(env, 'approval_expired', { by: user.email, action: 'approve', expiredAt: exp || null });
+    return json({
+      error: 'approval_expired',
+      expiredAt: exp || null,
+      message: exp
+        ? 'This has been waiting since before it expired, so AMV did not send it. The facts in it may have moved on. Run the job again for a fresh one.'
+        : 'AMV cannot tell how old this is, so it did not send it. Run the job again for a fresh one.',
+    }, 409);
+  }
+
   let delivered = null;
   if(action === 'approve' && item.actionType === 'send'){
     if(!env.EMAIL_API_KEY){

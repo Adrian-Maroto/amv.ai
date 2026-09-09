@@ -41,7 +41,11 @@ let d = await r.json();
 ok(d.jobs.some(j=>j.key==='research' && j.on_flag), 'a toggled job is saved and returned', d.jobs);
 
 section('Approvals list + resolve');
-store.set('approvals:alice@test.com', JSON.stringify({ items:[{id:'ap1',title:'Send email'},{id:'ap2',title:'Post tweet'}] }));
+/* `readyAt` is part of every approval the server writes, and the queue refuses
+   one it cannot date. Without it these two are treated as of unknown age and
+   refused, which would make this section fail for a reason that has nothing to
+   do with what it is about. */
+store.set('approvals:alice@test.com', JSON.stringify({ items:[{id:'ap1',title:'Send email',readyAt:Date.now()},{id:'ap2',title:'Post tweet',readyAt:Date.now()}] }));
 r = await W.crewApprovals(req(undefined,'GET'), env); d = await r.json();
 ok(d.approvals.length === 2, 'pending approvals are listed', d.approvals.length);
 await W.crewApprovalAct(req({ id:'ap1', action:'approve' }), env);
