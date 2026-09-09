@@ -3778,6 +3778,199 @@ const AUTO_MAIL_MAX = 25;          // headers, not bodies
 const AUTO_EVENTS_MAX = 20;
 const AUTO_SNIPPET_MAX = 180;
 
+/* ── WHAT IS RENEWING, AND WHAT IT COSTS ──────────────────────────────────
+   READ BY RULE, NOT BY PROMPT.
+
+   "Auto Cancel Subscriptions" starts with knowing what somebody is paying
+   for. The obvious way to answer that is to hand the inbox to a model and ask
+   - and it is the wrong way, for the same reason `_investCheckin` does its
+   arithmetic itself: this is MONEY. A model given twenty-five subject lines
+   will produce a confident number, and the number will sometimes be the price
+   in an advertisement, or last month's, or one it rounded. Somebody then
+   cancels the wrong thing, or does not cancel the right one.
+
+   So the extraction is deterministic. It costs nothing to run, it cannot be
+   talked into anything by the contents of a message, and every figure it
+   reports can be pointed back at the exact text it came from. What it cannot
+   work out, it says it cannot work out.
+
+   THE FALSE POSITIVE IS THE EXPENSIVE ONE. Calling a one-off purchase a
+   subscription puts a thing on somebody's cancel list that was never
+   recurring, so BOTH a recurring signal and an amount are required before a
+   charge is claimed. A merchant that looks like a subscription with no
+   readable amount is reported WITHOUT one rather than with a guess.
+
+   Deliberately not here: any attempt to decide whether a subscription is
+   worth keeping. That is the person's call and it is not one an inbox can
+   answer - a service somebody uses twice a year may be the most valuable
+   thing on the list. */
+const SUB_MAX = 40;
+
+/* Words that mean "this is a recurring charge", not "this is a charge". A
+   receipt on its own is a receipt; a receipt for a SUBSCRIPTION is what this
+   is looking for. Kept as whole words so "renewal" does not match "renewals
+   are closed" in a newsletter about something else. */
+const _SUB_RECUR_RE = /\b(subscription|subscribed|renew(?:s|ed|al|ing)?|auto-?renew\w*|recurring|billing cycle|next payment|membership|plan renews)\b/i;
+/* And the words that mean money moved or is about to. Without one of these a
+   message mentioning a subscription is talk about one, not a charge. */
+const _SUB_CHARGE_RE = /\b(receipt|invoice|payment|charged?|billed?|order confirmation|payment confirmation|we(?:'| ha)?ve charged|will be charged|amount due)\b/i;
+/* The direction matters: a refund or a cancellation notice is not a renewal,
+   and reporting one as an active charge is how somebody cancels a thing they
+   already cancelled. */
+const _SUB_NEGATIVE_RE = /\b(refund(?:ed|s)?|cancell?(?:ed|ation)|expired?|has ended|will not renew|won'?t renew|failed|declined|unpaid|trial ends?)\b/i;
+
+/* Cadence, in the words people's providers actually use. Absent is a real
+   answer - plenty of receipts do not say - and it is left null rather than
+   assumed monthly, which would silently multiply an annual charge by twelve
+   on any screen that adds these up. */
+/* HOW OFTEN, NOT WHEN.
+
+   The first version of this matched a bare `week`, so "your plan renews next
+   week" - which says nothing about frequency and is perfectly normal on an
+   ANNUAL plan - came back as a weekly charge. Off by fifty-two on any screen
+   that adds these up, from a sentence that was not about frequency at all.
+   Bare `month` and `year` had the same fault: "next month", "last year".
+
+   So only the forms that can ONLY mean frequency are here: the -ly words,
+   `per X`, `/X`, `every X`, `each X`. Deliberately absent is `a month`, as in
+   "£9 a month" - it is common and it is also how "renews in a month" reads,
+   and there is no way to tell them apart from a subject line. An unread
+   cadence is reported as unknown, which is the honest answer and the one that
+   cannot misprice anything.
+
+   And the boundaries are per branch, not wrapped around the whole group. The
+   first version put `\b` before an alternation whose branches begin with `/` -
+   a slash is not a word character, so ` / mo` never had a boundary to match
+   and the commonest way anybody writes a monthly price silently did nothing. */
+const _SUB_CADENCE = [
+  /* Yearly first: "12 months" is a year, and testing monthly first would claim
+     it as a monthly charge. */
+  [/\b(?:yearly|annually|annual)\b|\bper (?:year|annum)\b|\/\s?(?:yr|year)\b|\b(?:every|each) year\b|\b12 months?\b/i, 'yearly'],
+  [/\bquarterly\b|\bper quarter\b|\b(?:every|each) (?:quarter|3 months?)\b/i, 'quarterly'],
+  [/\bweekly\b|\bper week\b|\/\s?(?:wk|week)\b|\b(?:every|each) week\b/i, 'weekly'],
+  [/\bmonthly\b|\bper month\b|\/\s?(?:mo|month)\b|\b(?:every|each) month\b/i, 'monthly'],
+];
+
+/* Currency by symbol and by code. Symbols first because that is how they are
+   written; the code form catches "USD 9.99" and "12.99 EUR". */
+const _SUB_SYMBOLS = { '$': 'USD', '£': 'GBP', '€': 'EUR', '¥': 'JPY', '₹': 'INR', '₩': 'KRW', '₽': 'RUB', '₦': 'NGN', '₱': 'PHP', '₪': 'ILS' };
+const _SUB_CODES = ['USD','EUR','GBP','JPY','CAD','AUD','NZD','CHF','SEK','NOK','DKK','PLN','CZK','HUF','RON','TRY','ILS','AED','SAR','INR','PKR','BDT','THB','VND','IDR','MYR','SGD','HKD','TWD','KRW','CNY','PHP','ZAR','NGN','KES','GHS','EGP','MAD','BRL','MXN','ARS','CLP','COP','PEN','UYU','RUB','UAH','KZT'];
+
+/* A NUMBER A HUMAN WROTE, IN WHATEVER CONVENTION THEIR COUNTRY USES.
+
+   `12,99` is twelve euros ninety-nine in most of Europe and twelve thousand
+   nine hundred in none of them; `1,299.00` is one thousand two hundred and
+   ninety-nine everywhere that writes it that way. Reading either wrongly is
+   off by a factor of a hundred on a screen about somebody's money, so both
+   conventions are handled explicitly rather than by hoping parseFloat is
+   right. Returns null when it cannot tell, which is the only honest answer
+   for something like `1,234` on its own. */
+function _subAmount(raw){
+  let t = String(raw || '').trim();
+  if(!t) return null;
+  const hasDot = t.indexOf('.') >= 0, hasComma = t.indexOf(',') >= 0;
+  if(hasDot && hasComma){
+    /* Whichever separator comes LAST is the decimal one: 1.299,00 is European
+       and 1,299.00 is not. */
+    t = t.lastIndexOf(',') > t.lastIndexOf('.')
+      ? t.replace(/\./g, '').replace(',', '.')
+      : t.replace(/,/g, '');
+  } else if(hasComma){
+    const after = t.length - t.lastIndexOf(',') - 1;
+    /* Exactly two digits after a lone comma is a decimal comma. Three is a
+       thousands separator. Anything else is unreadable, and unreadable is
+       reported as unknown rather than guessed. */
+    if(after === 2) t = t.replace(',', '.');
+    else if(after === 3) t = t.replace(/,/g, '');
+    else return null;
+  }
+  const n = Number(t);
+  if(!Number.isFinite(n) || n <= 0) return null;
+  /* Rounded to the minor unit. A fraction of a penny in a receipt is a parse
+     that went wrong, not a price. */
+  return Math.round(n * 100) / 100;
+}
+
+/* The money in one line of text, with its currency. Returns null rather than a
+   number with no currency attached: "9.99" alone could be dollars or euros and
+   putting the wrong symbol on somebody's money is worse than saying unknown. */
+function _subMoney(text){
+  const t = String(text || '');
+  const sym = Object.keys(_SUB_SYMBOLS).map(c => '\\' + c).join('');
+  let m = new RegExp('([' + sym + '])\\s?([0-9][0-9.,]*)').exec(t);
+  if(m){ const v = _subAmount(m[2]); if(v !== null) return { amount: v, currency: _SUB_SYMBOLS[m[1]] }; }
+  const codes = _SUB_CODES.join('|');
+  m = new RegExp('\\b(' + codes + ')\\s?([0-9][0-9.,]*)', 'i').exec(t);
+  if(m){ const v = _subAmount(m[2]); if(v !== null) return { amount: v, currency: m[1].toUpperCase() }; }
+  m = new RegExp('([0-9][0-9.,]*)\\s?\\b(' + codes + ')\\b', 'i').exec(t);
+  if(m){ const v = _subAmount(m[1]); if(v !== null) return { amount: v, currency: m[2].toUpperCase() }; }
+  return null;
+}
+
+/* Who charged. The display name if the sender has one, otherwise the sending
+   domain with the obvious noise stripped - `billing@mail.spotify.com` is
+   Spotify, not "mail". Never the local part: `no-reply` is not a merchant. */
+function _subMerchant(from){
+  const f = String(from || '').trim();
+  const named = /^\s*"?([^"<]+?)"?\s*</.exec(f);
+  if(named){
+    const n = named[1].trim().replace(/\s+/g, ' ');
+    if(n && !/^(no-?reply|do-?not-?reply|info|support|billing|accounts?)$/i.test(n)) return n.slice(0, 60);
+  }
+  const at = /@([A-Za-z0-9.-]+)/.exec(f);
+  if(!at) return '';
+  const parts = at[1].toLowerCase().split('.').filter(p => !/^(mail|email|e|mailer|send|smtp|news|notify|notifications|billing|no-?reply|www|m|t)$/.test(p));
+  /* Drop the public suffix, one label or two (`co.uk`). Whatever is left at
+     the end is the name people would recognise. */
+  if(parts.length >= 3 && /^(co|com|org|net|gov|ac)$/.test(parts[parts.length - 2])) parts.splice(-2);
+  else if(parts.length >= 2) parts.pop();
+  const name = parts[parts.length - 1] || '';
+  return name ? name.charAt(0).toUpperCase() + name.slice(1) : '';
+}
+
+/* One pass over what the mailbox already handed us. Nothing is fetched, so
+   this costs no request and no token; it is reading text that was read
+   anyway. */
+function _detectSubscriptions(mail){
+  const out = [];
+  const seen = new Set();
+  for(const m of (Array.isArray(mail) ? mail : [])){
+    const line = String(m && m.subject || '') + ' — ' + String(m && m.snippet || '');
+    if(!_SUB_RECUR_RE.test(line)) continue;
+    if(_SUB_NEGATIVE_RE.test(line)) continue;
+    const merchant = _subMerchant(m && m.from);
+    if(!merchant) continue;
+    const money = _SUB_CHARGE_RE.test(line) ? _subMoney(line) : null;
+    let cadence = null;
+    for(const [re, name] of _SUB_CADENCE){ if(re.test(line)){ cadence = name; break; } }
+    /* One row per merchant: a provider that sends a receipt and a reminder for
+       the same charge is one subscription, and listing it twice makes a total
+       that is wrong in the direction of alarming somebody. The row that wins is
+       the one that actually carries an amount. */
+    const key = merchant.toLowerCase();
+    const prev = seen.has(key) ? out.find(x => x.merchant.toLowerCase() === key) : null;
+    if(prev){
+      if(prev.amount === null && money){ prev.amount = money.amount; prev.currency = money.currency; prev.evidence = String(m && m.subject || '').slice(0, 120); }
+      if(!prev.cadence && cadence) prev.cadence = cadence;
+      continue;
+    }
+    seen.add(key);
+    out.push({
+      merchant,
+      amount: money ? money.amount : null,
+      currency: money ? money.currency : null,
+      cadence,
+      at: Number(m && m.occurred_at) || 0,
+      /* The line this came from, so every figure can be checked against the
+         message rather than believed. */
+      evidence: String(m && m.subject || '').slice(0, 120),
+    });
+    if(out.length >= SUB_MAX) break;
+  }
+  return out;
+}
+
+
 /* WHERE EACH SOURCE GOT TO, AND WHAT IT HAS ALREADY SAID.
 
    Until this existed, every scheduled run asked Gmail for the newest 25 INBOX
@@ -4102,6 +4295,26 @@ async function _autoAccountContext(env, item, email){
 
         if(gap && Number(gap.to) > 0){
           block += '\n\nSTILL CATCHING UP: more mail arrived than AMV can read in one pass, so OLDER UNREPORTED MAIL EXISTS below the list above and AMV is still working back through it. Say this plainly and do not present the list as everything that came in.';
+        }
+
+        /* THE AMOUNTS ARE EXTRACTED, NOT INFERRED.
+
+           Handed the same subject lines, a model will produce a confident
+           figure for what somebody is paying - and sometimes it will be the
+           price from an advertisement, or last month's, or a rounding. This
+           states the ones that could be read by rule, with the line each came
+           from, and tells the model to use these and not to compute its own.
+           Where a merchant looks like a subscription but no amount could be
+           read, it says so rather than leaving a blank a model will fill. */
+        const subs = _detectSubscriptions(all);
+        if(subs.length){
+          block += '\n\nRECURRING CHARGES AMV READ OUT OF THOSE MESSAGES (extracted by rule, not estimated - use these figures and do not calculate your own from the subject lines):\n'
+            + subs.map(x => '- ' + x.merchant
+                + ' | ' + (x.amount === null ? 'AMOUNT NOT STATED IN THE MESSAGE' : (x.currency + ' ' + x.amount.toFixed(2)))
+                + ' | ' + (x.cadence || 'how often is not stated')
+                + ' | from: ' + x.evidence).join('\n')
+            + '\n\nAn amount marked NOT STATED was genuinely absent - say so rather than estimating one. A cadence that is not stated must not be assumed monthly. '
+            + 'These are the charges AMV could see in this window of mail; it is not necessarily every subscription the person has, and you must not present it as a complete list of what they pay for.';
         }
         parts.push(block);
 

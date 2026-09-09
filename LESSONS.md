@@ -10748,3 +10748,39 @@ And the probe I reached for first was wrong again: I removed `'ingest:'` from
 failing - this file never asserts on `'ingest:'`. The probe that means anything
 is to move `'conn:'` to the END of the list: offset 5339 of 5347. The parse
 finds it, the old window does not.
+
+## 414. Two inert mutations in one run, on the code that reads money
+
+Six mutations against the subscription detector. Four went red. Two - the
+European decimal comma and the yearly cadence - came back "45 passed, 0 failed"
+and "no output at all". I had written LESSONS 412 about exactly this a few
+hours earlier and still nearly recorded both as proof the suite was thorough.
+
+Neither mutation had applied. One anchor string did not exist in the file; the
+other python replacement had its backslashes eaten so the pattern never
+matched. A mutation that does not apply is a test run of unmodified code, and
+unmodified code passing is not information.
+
+The cheap fix, now used: `diff` the file against its backup before believing
+any mutation result, and say "MUTATION DID NOT APPLY" out loud when it matches.
+Two lines, and it converts a silent false positive into a visible one.
+
+The mutations, once they really applied, found the two bugs that mattered most
+in a module about money:
+
+- `12,99` read as 1299. A hundredfold error on somebody's subscription total,
+  from the convention most of Europe writes prices in.
+- A bare `week` in the cadence pattern matched "your plan renews next week" -
+  a sentence about WHEN, not how often, and perfectly normal on an annual
+  plan. Reported as a weekly charge: out by fifty-two.
+
+Both are the same shape. **In code that reads money, every ambiguity has a
+factor attached to it**, and the factor is never small - a hundred, a twelve,
+a fifty-two. Guessing is not a mild failure mode here; the honest answer is to
+report the figure as unread, which is what it now does.
+
+One more, from the same run: the M1 mutation surfaced as a stack trace rather
+than a stated failure, because an assertion read `.amount` straight off a
+result that had become null. It still failed, so the gate would still have
+caught it - but it failed without naming the currency that stopped parsing.
+A test that crashes tells you something broke; a test that fails tells you what.

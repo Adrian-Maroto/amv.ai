@@ -91,6 +91,37 @@ sentence into something the engine can be handed.
 
 ## Milestone 6 — The first Auto agent end to end
 
+**Blocked on an owner decision, and it is worth stating precisely why.**
+`AUTO_USES_ALLOWED` is `['mail.read', 'calendar.read', 'school.read']`: an
+unattended run may READ and may not write. So no scheduled job can cancel
+anything, send anything, or touch an account - by design, and it is a good
+design. Building an agent that "cancels" today would mean either widening
+unattended write scope (an owner decision, not an implementation detail) or
+shipping something that says it cancelled and did not.
+
+So the FIND half is built and the DO half is not. What exists now:
+
+- `_detectSubscriptions` reads recurring charges out of the mail the ingestion
+  already fetches - merchant, amount, currency, cadence, and the line each
+  figure came from. Deterministic, for the same reason `_investCheckin` does
+  its own arithmetic: this is money, and a model handed receipts produces a
+  confident number that is sometimes the price from an advertisement.
+- A charge is claimed only when BOTH a recurring signal and an amount are
+  present, so a one-off order is never put on a cancel list. Refunds, failed
+  payments, cancellation confirmations and un-charged trials are excluded.
+- What cannot be read is reported as unread rather than estimated, and an
+  unstated cadence is never assumed monthly - which would misprice a yearly
+  plan by twelve on any screen that adds these up.
+
+*The decision to make:* whether an unattended run may ever send on somebody's
+behalf. Three honest options, in increasing order of what they ask for:
+**(a)** it drafts the cancellation and stops for approval, which needs nothing
+new; **(b)** `mail.send` becomes available unattended only inside a rule the
+person wrote, with the policy engine holding the bound; **(c)** provider APIs
+per merchant, which is the only route that can read the cancellation back and
+verify it. Until one is chosen, AMV tells you what is renewing and does not
+pretend it can stop it.
+
 One of the owner's ten. Not the riskiest - the one with a reversible outcome and
 a clear verification: **Auto Cancel Subscriptions**, where the action can be
 checked by reading the subscription back, and a mistake costs a re-subscribe
