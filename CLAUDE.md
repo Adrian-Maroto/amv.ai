@@ -27,6 +27,22 @@ Companion docs (do not duplicate them here - read them):
 - Usable on EVERY device. Hard to lose money.
 - Auto-push to `main` after each prompt (Stop hook + `.claude/auto-push-main.sh`).
 - If a tool or change would make AMV worse, do not use it. Say so instead.
+- **Every decision put to the owner gets answered at scale.** Standing
+  instruction: when asked to choose, do not survey the options - give the
+  answer a top-tier company would give if this were serving a billion people
+  and a great deal of money. In practice that means:
+  - Recommend one thing. Say which options to take OFF the table, not just how
+    to rank them, and say why the comfortable-looking middle option is usually
+    the trap.
+  - Reason from the failure that ends the company, not the one that spoils the
+    demo. Count blast radius in people: "a rare edge case" at a billion users
+    is a stadium full of them every week.
+  - Prefer the option that can be VERIFIED over the one that can be shipped
+    sooner. An action AMV cannot read back is an action AMV cannot claim.
+  - Say plainly when an earlier framing of mine was too optimistic and the
+    decision changes because of it. A correction is cheaper than a wrong bet.
+  - Name what the owner alone can decide (money, permissions, scope,
+    infrastructure) and stop there rather than deciding it quietly.
 
 ## Architecture reality (know this before editing)
 - The app ships as a SINGLE-FILE build, but the JS SOURCE is MODULAR:
