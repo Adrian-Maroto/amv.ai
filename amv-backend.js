@@ -21604,8 +21604,37 @@ async function _qualityReport(env) {
    and treating it as configured is how a deploy silently half-works. */
 function _has(env, name) { return !!String((env && env[name]) || '').trim(); }
 
+/* The Worker's own name, so the dashboard path below points at the thing this
+   code is running as rather than at a guess. It matches `name` in
+   wrangler.toml; a deployment that renamed one and not the other would send
+   somebody to a page that is not theirs. */
+const WORKER_NAME = 'amv-ai';
+
 function _readinessReport(env) {
-  const put = n => 'wrangler secret put ' + n;
+  /* AN INSTRUCTION THE READER CAN ACTUALLY CARRY OUT.
+
+     Every row said `wrangler secret put NAME`. That is correct and it is
+     useless to the person this screen exists for: setting a secret needs Node
+     and a terminal, and this deployment's owner is on a managed laptop that
+     cannot install either - which is exactly why the deploy runs in CI rather
+     than from a machine.
+
+     So the screen named the one thing blocking the entire product, marked it
+     blocking, and then gave a way out that required software the reader does
+     not have. That is LESSONS 349 again - the launch checklist that told
+     somebody to buy things AMV cannot use - and the same rule applies: a
+     document that tells you to DO something is code with a slower compiler,
+     and an instruction nobody can follow is a bug.
+
+     The dashboard route comes first because it needs nothing but a browser.
+     The command stays, second, for whoever does have a terminal - dropping it
+     would trade one unusable instruction for another. The Worker name is the
+     one in wrangler.toml, so the path is the real path and not a guess. */
+  const put = (n, hint) =>
+    'Cloudflare dashboard > Workers & Pages > ' + WORKER_NAME
+    + ' > Settings > Variables and Secrets > Add > type Secret, named ' + n
+    + (hint ? ' (value: ' + hint + ')' : '')
+    + '. With a terminal instead: wrangler secret put ' + n;
   /* `blocking` means the product does not do its core job without it.
      Everything else is a real feature that degrades honestly. */
   const items = [
@@ -21788,7 +21817,7 @@ function _readinessReport(env) {
       turnsOn: String((env && env.PAYPAL_MODE) || '') === 'live'
         ? 'PayPal is pointed at the live API. Real money moves.'
         : 'PayPal is in SANDBOX, which is the default. Checkouts complete against PayPal\u2019s test servers and no real money arrives. Set it to live when you are ready to be paid - only after the webhook above is verified.',
-      how: 'wrangler secret put PAYPAL_MODE  (value: live)' },
+      how: put('PAYPAL_MODE', 'live') },
 
     { id: 'sms', name: 'Text messages', blocking: false,
       on: _has(env, 'TWILIO_ACCOUNT_SID') && _has(env, 'TWILIO_AUTH_TOKEN') && _has(env, 'TWILIO_FROM_NUMBER'),
@@ -21858,7 +21887,7 @@ function _readinessReport(env) {
           : line + ' NOTE: the value is set to \u201c' + raw + '\u201d, which is not an origin; it is being read as ' + eff
                  + '. Set it to exactly ' + eff + ' - no trailing slash, no path, no spaces.';
       })(),
-      how: 'wrangler secret put ALLOWED_ORIGIN  (value: your site\u2019s origin, exactly - e.g. https://amv.homes, no trailing slash)' },
+      how: put('ALLOWED_ORIGIN', 'your site\u2019s origin, exactly - e.g. https://amv.homes, no trailing slash') },
   ];
 
   /* Storage is bound, not pasted, so it is reported separately - and what each

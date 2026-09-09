@@ -10,6 +10,35 @@ precisely what's missing. Green = ready to deploy.
 
 ---
 
+## FIRST: you do not need a terminal for any of this
+
+Every command below is written as `wrangler secret put NAME`, which needs Node
+and a terminal. **Every one of them can be done in a browser instead**, and on
+a managed or locked-down machine that is the only route that works:
+
+> **Cloudflare dashboard > Workers & Pages > `amv-ai` > Settings >
+> Variables and Secrets > Add > type: Secret**
+> Name it exactly as written below, paste the value, Save, then **Deploy**.
+
+The name must match character for character - a secret called `AMV_MODEL_KEY `
+with a trailing space is a secret the Worker never finds, and nothing will say
+so beyond the feature staying off.
+
+Two things are worth knowing before you start:
+
+- **A secret set to an empty string is not set.** The readiness screen treats
+  empty as missing on purpose, because a half-configured deploy that reports
+  itself ready is worse than one that reports itself unconfigured.
+- **The one that blocks everything is `AMV_MODEL_KEY`.** Without it chat is
+  refused for every visitor - honestly, saying nothing was charged - and no
+  scheduled job can run. Everything else on this list degrades a single
+  feature; that one stops the product.
+
+The commands are kept below for whoever does have a terminal. Neither route is
+better; use the one you can actually run.
+
+---
+
 ## YOUR LIST - the commands that stand between AMV and taking money
 
 Everything below in this file explains WHY. This is the WHAT, in order, and it

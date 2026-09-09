@@ -10976,3 +10976,48 @@ a milestone look finished.
 
 **A milestone written as a count is a milestone measured by motion.** Ask what
 the thing protects, then count the places that need protecting.
+
+## 421. The screen named the thing blocking everything, then said "run this command"
+
+Auditing what a visitor sees with no model key. The chain is well built: the
+server refuses up front, says nothing was charged, and pages an operator; the
+client keeps AMV's sentence verbatim rather than rewriting it as "a snag"; the
+readiness screen names `AMV_MODEL_KEY`, marks it blocking, and says what it
+turns on.
+
+And then tells the reader to run `wrangler secret put AMV_MODEL_KEY`.
+
+That needs Node and a terminal. This deployment's owner is on a managed laptop
+that can install neither - which is exactly why the deploy runs in CI rather
+than from a machine, a fact already recorded in this repository. So the one
+screen whose entire job is "here is what is stopping your product and here is
+how to fix it" identified the problem correctly and handed over a solution
+requiring software the reader does not have.
+
+LESSONS 349 is the same shape: a launch checklist telling somebody to buy
+things AMV cannot use. The rule from it applies unchanged - **a document that
+tells you to DO something is code with a slower compiler** - and this is the
+sharper version of it: an instruction the reader cannot follow is not a wording
+preference, it is a bug, and it is the most expensive kind because it stops
+everything downstream while looking like guidance.
+
+Three things worth carrying:
+
+1. **"Is there an instruction" is the wrong test. "Can this reader carry it
+   out" is the right one.** The old text would pass any check that asked
+   whether a fix was documented.
+2. **Both routes, not one swapped for the other.** Dropping the command would
+   trade one unusable instruction for another - somebody scripting a deploy
+   needs it. The one needing no software goes first; the assertion checks the
+   order, not just the presence.
+3. **The dashboard path names the Worker from `wrangler.toml`.** A hardcoded
+   name that drifted would send somebody confidently to a page that is not
+   theirs, where they would look, see no key, and conclude something false.
+   That is worse than saying nothing, so a test pins the two together.
+
+Also confirmed while looking, and worth writing down because I nearly reported
+it as a fault: `alertOnce` returns immediately when `ALERT_WEBHOOK` is unset,
+so the "chat is refused for everyone" page reaches nobody on a deployment
+without one. That is correct behaviour - the push channel is the owner's to
+configure - and the readiness screen is the pull channel that answers it. The
+system was fine; only the instruction was wrong.
