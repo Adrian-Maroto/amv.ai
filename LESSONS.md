@@ -10935,3 +10935,44 @@ deleting the POST, deleting the throttle - because a repair to a flaky test is
 the easiest place in a codebase to accidentally build something that cannot
 fail. I have now done that twice by accident this session and caught it twice
 by asking for the negative result. Ask every time.
+
+## 420. Counting call sites answered the wrong question
+
+M3 was written as "route the 425 approval sites through the engine". That
+number came from grepping for approval-shaped code, and it made the milestone
+sound like a sweep. It is the wrong unit.
+
+What the policy engine decides is whether something may happen WITH NOBODY
+PRESENT - the risk ceiling for an autonomy level, R4 and R5 being unreachable,
+R1 silent only when genuinely reversible, a rule's budget and expiry. Every one
+of those is a question about an unattended moment.
+
+Measured, there is exactly ONE unattended decision point in this product, and
+it was routed in Milestone 1. The other several hundred sites have a person
+looking at the screen, and for an attended approval the person IS the
+authority. Passing somebody's own click through an engine to be told they may
+click is ceremony - and **ceremony in a security path is worse than nothing,
+because it looks like protection while adding none.** It also costs the thing
+that matters most: attention. A screen that stops you for everything trains you
+to click through the one that mattered.
+
+Three things this cost me nothing to establish and would have cost a week to
+build to:
+
+1. `grep -c amvPolicyEvaluate` - one caller.
+2. `grep` for the unattended entry points - one, plus its server twin.
+3. Reading `_autoEmailResult` - the recipient comes from the ACCOUNT, so a
+   scheduled job cannot reach a third party whatever its settings say. That is
+   a structural guarantee no engine call could improve on, and I had been about
+   to write a finding claiming three sites created autonomy the user never
+   asked for. They do not. **Check before raising the alarm; a false finding
+   spends the same credibility as a missed one.**
+
+And the reason `amvEvidenceIsSafe` has no caller is the same shape read
+forwards: nothing yet lets a model propose an ACTION out of mail. Wiring it now
+would make it load-bearing for nothing, which is what LESSONS 405 is about - I
+would have been building the same defect that check caught, on purpose, to make
+a milestone look finished.
+
+**A milestone written as a count is a milestone measured by motion.** Ask what
+the thing protects, then count the places that need protecting.

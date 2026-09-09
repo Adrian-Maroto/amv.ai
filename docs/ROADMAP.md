@@ -58,9 +58,36 @@ it did not say when the permission lapsed, because nothing lapsed. Both now come
 from fields the server writes when the work is enqueued (`reversible`,
 `expiresAt`), and the server refuses an expired approval whatever the screen drew.
 
-*Still to come here:* the evidence an action rests on, who is affected, and the
-reasons object from `amvPolicyEvaluate` rendered directly rather than restated
-by each surface.
+**The rest of this milestone was framed wrongly, and the framing is corrected
+here rather than built to.** "Route the 425 approval sites through the engine"
+counts call sites, and call sites are not the unit that matters.
+
+What the engine decides is whether something may happen WITH NOBODY PRESENT:
+the risk ceiling for an autonomy level, R4 and R5 being unreachable, R1 being
+silent only when it is genuinely reversible, a rule's budget and expiry. Every
+one of those is a question about an unattended moment.
+
+Measured: there is exactly ONE unattended decision point in the product -
+`_runDueAuto`, and its server twin `runDueAutomations` - and it was routed
+through the engine in Milestone 1. Everywhere else a person is looking at the
+screen, and for an attended approval the person IS the authority. Passing their
+own click through a policy engine to be told they are allowed to click is
+ceremony, and ceremony in a security path is worse than nothing because it
+looks like protection.
+
+*What was actually missing* was the other half, and it is done: what the person
+can see before they press the button - whether the action can be taken back and
+when the permission lapses, both enforced by the server rather than drawn by the
+screen.
+
+*Genuinely still open:* `amvEvidenceIsSafe` has no caller, and correctly so. It
+refuses an R2+ action whose only support is content a stranger wrote - the exact
+shape of a successful injection. Nothing calls it because no path yet lets a
+model PROPOSE an action out of mail: an unattended run produces text, and
+`_autoEmailResult` can only ever reach the account owner. The day an Auto agent
+can act on what it read, that gate is the thing standing between somebody's
+inbox and their behalf - and wiring it before then would make it load-bearing
+for nothing, which is the trap LESSONS 405 is about.
 
 Route the existing approval surfaces through `amvPolicyEvaluate` instead of
 their own scattered checks. The 425 sites become one decision with reasons.

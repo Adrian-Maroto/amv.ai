@@ -48,6 +48,23 @@ available to make.
 money, trading, filing tax or signing a contract is being added. Naming the
 class is how the engine denies it, not how it enables it.
 
+## Where these rules are actually enforced
+
+This document describes what the POLICY ENGINE guarantees. Being precise about
+what consults it matters more than the guarantees themselves, because a rule
+enforced in a module that one path uses is a rule that one path has.
+
+| | |
+|---|---|
+| Consults `amvPolicyEvaluate` | `_runDueAuto` / `runDueAutomations` - the scheduled runner. The only place AMV decides anything with nobody present. |
+| Does not, deliberately | every attended surface. A person looking at the screen is the authority; asking an engine whether they may click is ceremony. |
+| Enforced elsewhere, by construction | an unattended run can only ever email THE ACCOUNT OWNER - `_autoEmailResult` takes the address from the account, not from the job. It is not possible for a scheduled job to send to a third party, whatever its settings say. |
+
+Two things follow. Autonomy CANNOT currently reach a stranger, which is why the
+Auto agents in the brief stop at "prepare and ask". And the engine's guarantees
+become the product's guarantees only for paths that consult it - so when a new
+unattended path is added, routing it is not optional polish.
+
 ## The rule that keeps this honest
 
 **Autonomy is never learned.** Approving the same thing twenty times does not
