@@ -10620,3 +10620,35 @@ the suite caught rather than design I got right:
 And the mutation test found the hole the assertions could not: deleting the
 hand-off from `_autoExecute` left all 35 green, because every assertion called
 `commit()` itself. Same shape as 405. The suite now drives `runDueAutomations`.
+
+## 411. A new per-person record is a privacy decision, not a storage detail
+
+The ingestion cursor shipped past every check I ran and the full gate stopped
+it: `erasure-covers-every-key` reported one uncovered kind, `ingest`. I had
+added a new per-account record and not put it on the roster that account
+deletion walks. A deleted account would have kept it for ever, with nothing in
+the product able to reach it.
+
+The reasoning that let it through is the interesting part, because it sounded
+sensible: the record is DERIVED. It holds a timestamp and a list of message
+ids, all rebuildable, nothing anybody typed. I had already argued in its own
+comments that being derived is why a corrupt one can safely be replaced.
+
+Derived is not the same as impersonal. That list is a record of somebody's
+MAILBOX - which message arrived when, and which ones AMV surfaced. It is small
+and it is dull and it is still theirs.
+
+Two rules out of it:
+
+1. **Adding a per-user record kind is a step with a checklist, not a line of
+   code.** Erasure and export both walk one roster here on purpose, so that a
+   new record cannot be written into the product and remembered afterwards. I
+   wrote the record and skipped the roster - the exact move the roster exists
+   to catch, and the same one that left `kyc` behind when the payout engine
+   landed.
+2. **"It's only derived" is a claim about how the data got there, and erasure
+   is a question about who it is about.** Those are different questions and I
+   answered the wrong one.
+
+The check is worth its runtime for this alone. It fired on the one thing eleven
+minutes of my own verification did not look at.

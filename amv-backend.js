@@ -10660,6 +10660,14 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
      are retained - that is the tax record - and this is only a pointer, so it
      goes with the account. */
   'wdopen',
+  /* Where each connector got to for this person, plus the ids of the messages
+     AMV has already told them about. It is derived and small, but it is a
+     record OF THEIR MAILBOX - which message arrived when, and which ones were
+     surfaced - so it belongs to the account and goes with it. Caught by the
+     erasure roster on the run that added it, which is what that check is for:
+     a new per-person record is exactly the kind of thing that gets written
+     first and remembered second. */
+  'ingest',
   'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',
   /* AMV-SP-02: the Google grant. It was erased - by a hand-written delete in
