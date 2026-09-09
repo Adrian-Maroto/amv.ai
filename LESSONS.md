@@ -11137,3 +11137,38 @@ something nobody wrote. The rule now: back up the file being mutated by its own
 path, restore from that path, and `diff` afterwards to prove the restore
 happened - the same "check the mutation applied" discipline from 414 and 419,
 pointed at the other end of the run.
+
+## 427. The quiet-hours save posted to a route that does not exist
+
+The control stored the window locally, showed a success toast, and posted to
+`/v1/auto/update`. The router answers `/auto/update`. So against a real backend
+every save would have failed, the toast would have said it failed - and the row
+would still have drawn the window from the copy it had stored locally, because
+the local write happens first and is not conditional on the request.
+
+That is a setting that looks saved and is not. It is the exact defect quiet
+hours were written to prevent one layer up, reproduced in the control that
+prevents it.
+
+Two static suites caught it - `the-app-asks-for-routes-that-exist` and
+`every-route-decides` both compare the paths the app asks for against the
+router's own table. They exist because this has happened before, and they
+earned their keep again.
+
+What did NOT catch it was the suite written for this feature, which drove the
+control, checked the toast, checked localStorage, and never once looked at what
+went over the wire. **A suite that drives a control and never checks what it
+sent is testing the screen's opinion of itself.** It now records the call and
+asserts the path, the action, the window and the zone.
+
+Two smaller things learned inside the fix:
+
+- The assertions first ran against a control that had taken its offline branch
+  and sent nothing, and passed nothing rather than failing loudly. `AMV_API.live`
+  and `hasSession` are GETTERS over `base` and `token`; assigning to them is
+  silently ignored. The suite now asserts the harness really is standing in for
+  a connected backend before asserting anything about what it sent.
+- Driving `_mcQuietSave` directly proved less than it looked like. The timezone
+  is added by the handler behind the checkbox, so passing a zone in by hand only
+  proved the test could type one - a mutation removing `_mcQuietTz()` survived.
+  Driving the CHECKBOX kills it.

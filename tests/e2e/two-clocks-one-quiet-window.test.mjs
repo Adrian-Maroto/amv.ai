@@ -174,6 +174,76 @@ section('No window means no change to what already worked');
   ok(r.ran === 1, 'an account that never set quiet hours is untouched by any of this', r);
 }
 
+section('Ticking the box actually sends the window to the server');
+{
+  /* THE ASSERTION THIS SUITE WAS MISSING, AND WHICH COST A GATE RUN.
+
+     The first version of the save posted to `/v1/auto/update` through a
+     different door; the router answers `/auto/update`. Every save would have
+     failed against a real backend while the row went on showing the window it
+     had stored locally - a setting that looks saved and is not, which is the
+     precise defect quiet hours exist to avoid one layer up. Nothing here
+     watched the call, so nothing noticed. Two static suites did, which is why
+     they are there; this one now watches the call as well, because a suite
+     that drives a control and never checks what it sent is testing the
+     screen's opinion of itself. */
+  /* The save refuses to pretend when there is no backend, which is right and
+     is also why this has to be switched on deliberately: the harness runs with
+     no API, so without these two flags the control takes the "saved on this
+     device" branch and sends nothing at all - and the assertions below would
+     have been measuring that instead. */
+  const wasLive = await page.evaluate(() => {
+    /* `live` and `hasSession` are getters over `base` and `token` - assigning
+       to them is silently ignored, which is how the first attempt at this
+       ended up asserting against a control that had taken the offline branch
+       and sent nothing. Set what they read instead. */
+    const was = { base: AMV_API.base, token: AMV_API.token };
+    AMV_API.base = 'https://backend.test'; AMV_API.token = 'test-token';
+    return { was, live: AMV_API.live, hasSession: AMV_API.hasSession };
+  });
+  ok(wasLive.live && wasLive.hasSession,
+     'the harness is standing in for a connected backend, or the rest of this section proves nothing',
+     wasLive);
+
+  /* Driven from the CONTROL, not from the save function - the zone is added
+     by the handler behind the checkbox, so calling the save directly with a
+     zone already in hand proves only that the suite can type one. */
+  const sent = await page.evaluate(() => {
+    saveStr('amv_plan', 'pro');
+    renderCrewView();
+    const box = document.getElementById('mc-quiet-on');
+    if(!box) return null;
+    box.checked = true;
+    const calls = [];
+    window._autoApi = async (path, body) => { calls.push({ path, body }); return { ok: true, quiet: body.quiet }; };
+    mcQuietToggle();
+    return new Promise(r => setTimeout(() => r(calls), 60));
+  });
+  ok(sent !== null, 'the checkbox is on the screen to tick', sent);
+  ok(sent.length === 1, 'saving makes exactly one request', sent);
+  ok(sent[0] && sent[0].path === '/auto/update',
+     'to the route the worker actually answers, not a spelling that only looks right', sent[0]);
+  ok(sent[0] && sent[0].body.action === 'quiet' && sent[0].body.quiet.from === 23 && sent[0].body.quiet.to === 7,
+     'carrying the window itself', sent[0] && sent[0].body);
+  ok(sent[0] && typeof sent[0].body.quiet.tz === 'string' && sent[0].body.quiet.tz.length > 0,
+     'and the zone, without which the server would read the hour on the wrong clock', sent[0] && sent[0].body.quiet);
+
+  /* And a save that fails says so, loudly, because the alternative is a row
+     showing a window the server never received. */
+  const said = await page.evaluate(() => {
+    const msgs = [];
+    window.toast = (m, kind) => { msgs.push({ m: String(m), kind }); };
+    window._autoApi = async () => { throw new Error('the network went away'); };
+    return _mcQuietSave({ from: 1, to: 5, tz: 'UTC' }).then(() => msgs);
+  });
+  ok(said.some(x => x.kind === 'error' && /did NOT save/i.test(x.m)),
+     'a failed save says it failed, rather than leaving a window nobody is enforcing', said);
+  ok(said.some(x => /still run overnight/i.test(x.m)),
+     'and says what that means for tonight', said);
+
+  await page.evaluate((was) => { AMV_API.base = was.base; AMV_API.token = was.token; }, wasLive.was);
+}
+
 section('The window belongs to the account, not to the device it was typed on');
 {
   /* Somebody sets quiet hours on their phone. The browser tick that has to

@@ -17634,13 +17634,18 @@ function _mcQuietRowHTML(){
    waiting for a round trip to know what it already knows. */
 async function _mcQuietSave(q){
   try{ store('amv_auto_quiet', q); }catch(e){}
-  if(!(window.AMV_API && AMV_API.live)){
+  /* Through `_autoApi`, the one door onto this route - which is also the only
+     spelling of it that exists. The first version of this posted to
+     `/v1/auto/update` through `AMV_API._fetch`; the router answers
+     `/auto/update`, so every save would have failed against a real backend
+     while the row went on showing the window it had stored locally. Exactly
+     the defect this control was written to fix, one layer up. */
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
     toast('Saved on this device. It only holds jobs overnight once AMV is connected to a backend - that is where they run.','info',6000);
     return;
   }
   try{
-    await AMV_API._fetch('/v1/auto/update', { method:'POST',
-      body: JSON.stringify({ action:'quiet', quiet: q }) });
+    await _autoApi('/auto/update', { action:'quiet', quiet: q });
     toast(q ? ('Jobs will wait between ' + _mcQuietLabel(q.from) + ' and ' + _mcQuietLabel(q.to) + '.')
             : 'Jobs can run at any hour again.', 'success', 4000);
   }catch(e){
