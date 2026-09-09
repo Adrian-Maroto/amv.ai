@@ -10900,3 +10900,38 @@ And the direction of every fallback: an item that cannot be DATED is treated as
 expired rather than fresh, because refusing costs one re-run and the other way
 sends something of unknown age. Expiry refuses rather than deletes, because
 binning somebody's draft to enforce a deadline is the worse outcome.
+
+## 419. Three parallel-only flakes, three different mechanisms, one shape
+
+In one session the gate produced three failures that passed alone and failed
+under the parallel runner. They looked like the same problem and were not:
+
+1. **A budget an earlier section had spent.** The quota assertion stood in a
+   per-minute queue it had built itself by driving the retry path just above.
+2. **A fire-and-forget write that had not landed.** `markThreadRead` tells the
+   server without awaiting it, and a 200ms sleep was a bet on the round trip.
+3. **A counting window rolling under the burst.** Eight attempts against a
+   five-a-minute limit left three of headroom, so a minute boundary landing
+   mid-burst split them four and four and neither window reached the limit.
+
+Three causes, one shape: **the assertion depended on something whose timing it
+did not control, and load changed the timing.** Not shared state, not
+parallelism as such - timing that was implicit.
+
+The three repairs are worth separating, because they are not interchangeable:
+
+- **Clear the state you did not mean to depend on** (1). The cheapest, when the
+  dependency is incidental.
+- **Wait for the condition, never the clock** (2), with a deadline so it can
+  still fail.
+- **Widen the margin past what a single boundary can spoil** (3). Eleven, not
+  eight: however one boundary falls, the larger side is at least six, which is
+  past a limit of five. Arithmetic, not a bigger sleep.
+
+What none of them is: re-running until green, or deleting the assertion.
+
+And every one of the three was verified by breaking the thing it guards -
+deleting the POST, deleting the throttle - because a repair to a flaky test is
+the easiest place in a codebase to accidentally build something that cannot
+fail. I have now done that twice by accident this session and caught it twice
+by asking for the negative result. Ask every time.

@@ -149,12 +149,27 @@ section('Guessing at the confirmation is bounded');
      a guessing surface. */
   const env = mkEnv();
   const tok = await signedIn(env);
+  /* ENOUGH ATTEMPTS TO SURVIVE THE WINDOW ROLLING UNDER YOUR FEET.
+
+     The limit is five a minute, and the window key is the current minute - so
+     eight attempts left only three of headroom, and a minute boundary landing
+     mid-burst split them four and four. Neither window reached five, no 429
+     ever came back, and the suite reported the throttle missing on a codebase
+     where it works. Green alone, red in the gate, where everything is slower.
+
+     Eleven is the number that cannot be defeated by one boundary: however it
+     falls, the larger side is at least six, which is past the limit. It stays
+     under the twenty-a-day ceiling on purpose, so what this proves is still
+     the MINUTE limiter rather than the daily one quietly standing in for it. */
   const codes = [];
-  for (let i = 0; i < 8; i++) {
+  const startedMinute = Math.floor(Date.now() / 60000);
+  for (let i = 0; i < 11; i++) {
     const r = await del(env, tok, { password: 'guess-' + i });
     codes.push(r.status);
   }
-  ok(codes.some(c => c === 429), 'a run of wrong passwords is throttled', codes);
+  const rolled = Math.floor(Date.now() / 60000) !== startedMinute;
+  ok(codes.some(c => c === 429), 'a run of wrong passwords is throttled',
+     { codes, rolled });
   ok(alive(env), 'and the account is still there', alive(env));
 }
 
