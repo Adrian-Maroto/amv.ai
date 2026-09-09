@@ -317,6 +317,24 @@ section('A usage limit still shows the countdown card, not an error card');
   await setPlan('free');
   for (const k of [...env.AMV_KV._map.keys()]) {
     if (/^ctr:usg:/.test(k) && k.includes(EMAIL)) await env.AMV_KV.put(k, '600000');
+    /* AND THE PER-MINUTE LIMITER, WHICH IS NOT WHAT THIS SECTION IS ABOUT.
+
+       The section above deliberately fails a request so it is RETRIED, and
+       every retry spends the same per-minute budget this account has. Whether
+       enough is left by the time we get here depends on how many retries ran
+       and whether they landed in the same wall-clock minute - so this passed
+       alone and failed inside the gate, where the suites run several at a time
+       and the timing shifts.
+
+       The product was right both times: a minute-limited request SHOULD say
+       "slow down a moment". The test was asking about the DAILY quota card
+       while standing in a queue it had built itself. Cleared, so the assertion
+       depends only on the thing it names. */
+    /* `rl:rl:<email>:<minute>` - the counter's KV fallback prefixes `rl:` onto
+       a name that already begins `rl:`, and `ctr:` onto everything else. Worth
+       naming, because a pattern that matches nothing looks exactly like a
+       pattern that works. */
+    if (/^(rl:|ctr:act:)/.test(k) && k.includes(EMAIL)) await env.AMV_KV.delete(k);
   }
   const a = await askInChat('one more');
   ok(a.quota === true, 'the quota card is what appears', { quota: a.quota, error: a.error });

@@ -10676,3 +10676,38 @@ message history to save one repeated digest.
 
 **When a gate rejects you for missing a list, the fix is to find every list of
 that kind, not to add yourself to the one that spoke.**
+
+## 412. Two verifications in a row that verified nothing
+
+A gate run failed on `the-refusal-reaches-the-person`: the section asserting
+the daily-quota card got the per-minute "slow down a moment" instead. The
+section before it deliberately fails a request so it is RETRIED, and every
+retry spends the same per-minute budget - so whether any was left by the time
+the quota assertion ran depended on timing. Green alone, red in the gate, where
+suites run several at a time.
+
+The product was right in both runs. A minute-limited request SHOULD say slow
+down. The test was asking about the daily quota while standing in a queue it
+had built itself, so the fix is to clear that counter before asserting.
+
+The lesson is not the flake. It is that I then "verified" the fix twice, and
+both verifications were worthless:
+
+1. **Wrong key.** I pre-filled `ctr:act:chat:<email>:<minute>`, guessed from a
+   different limiter. Nothing matched, so exhausting the budget did nothing and
+   the test passed with AND without my fix. Two identical passes look like
+   proof of robustness; they were proof that my probe was inert.
+2. **Wrong order.** With the real key found, I injected the exhaustion AFTER
+   the clear it was supposed to defeat. It failed both ways, which looked like
+   the fix not working, and was actually the experiment testing nothing again.
+
+The real key is `rl:rl:<email>:<minute>` - the counter's KV fallback prefixes
+`rl:` onto a name that already begins `rl:`. Exhausting THAT, BEFORE the clear:
+passes with the fix, fails without it, three consecutive clean runs.
+
+**A verification that cannot fail is not a verification.** Both times, the
+tell was there and I read past it: an experiment whose two arms agree has
+almost always failed to manipulate the thing it names. Before believing a
+probe, check it can produce the negative result - and I had corrected a right
+answer into a wrong one in between, which is what happens when you change code
+on a theory instead of a measurement.
