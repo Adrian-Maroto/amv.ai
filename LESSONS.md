@@ -10652,3 +10652,27 @@ Two rules out of it:
 
 The check is worth its runtime for this alone. It fired on the one thing eleven
 minutes of my own verification did not look at.
+
+**And then it happened again on the next run.** Fixing erasure, I did not go
+looking for the other rosters - so the following gate failed on
+`backup-covers-everything`, which forces every durable kind to be explicitly
+backed up or explicitly excluded. Same omission, second list, twenty-two more
+minutes.
+
+Two rejections of the same shape is a process fault, not two mistakes. There
+are exactly THREE rosters a new per-user record must appear on, and the fix
+after the first failure was to enumerate them rather than patch the one that
+had complained:
+
+| roster | question it forces |
+|---|---|
+| `PER_USER_KINDS` | erasure deletes it, and the data export returns it |
+| `BACKUP_PREFIXES` | an operator's snapshot can restore it |
+| `BACKUP_NEVER` | or explicitly must not carry it, with the reason written down |
+
+`ingest:` went to the first and the third: the user can see it in their own
+export, and an admin's downloadable snapshot does not carry a copy of everyone's
+message history to save one repeated digest.
+
+**When a gate rejects you for missing a list, the fix is to find every list of
+that kind, not to add yourself to the one that spoke.**
