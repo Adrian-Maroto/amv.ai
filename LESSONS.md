@@ -11348,3 +11348,57 @@ is unreachable for the fixture in use.
 **A mutation that survives is a claim about the tests, so it has to be earned.**
 When one survives, check it changed behaviour before believing it - the cheapest
 version is to make the mutation something the code cannot ignore, and re-run.
+
+## 435. The permission gate was asking a record nothing writes any more
+
+`_autoConnected` answered "is Google connected?" from `goauth:` - the record
+`googleOAuthExchange` used to write. That route was DELETED when Connected
+accounts replaced it, deliberately and correctly: an endpoint that hands a
+provider token to a page is one somebody finds a use for. Nothing has written
+`goauth:` since.
+
+So `connected.google` was **false for every account in existence**, and
+`_autoNeedsFor` refuses any job whose text mentions Gmail, Drive, Docs, Calendar
+or a meeting unless it is true. `mail` had the same shape one step milder: read
+only from `mailcfg:`, the app-password connector, so a Google mailbox never
+satisfied an inbox job either.
+
+The result is that the calendar jobs and the mailbox jobs - the heart of the
+catalogue - told people to connect an account they had already connected, while
+the READER, which goes through `connUse` and the `conn:` record, could have read
+it perfectly. Reproduced before touching anything: a connection granting
+mail.read, calendar.read and school.read produced `{google:false, mail:false,
+school:false}` and three refusals.
+
+**A wrong "no" from a permission check does not look like a bug.** It looks like
+the product working as designed. Nobody files it; they go and reconnect an
+account that was already connected, and when that does not help either they
+stop using the feature. That is why this survived a deletion, a replacement, and
+every suite in the repository.
+
+Two rules from it:
+
+- **When a store is retired, the consumers are part of the deletion.** Removing
+  the writer and leaving the readers is not half a job, it is a worse state
+  than either - the code still compiles, still runs, and now answers
+  confidently from an empty drawer.
+- **A capability answer and the code that acts on that capability must read the
+  same record.** They were two stores, and nothing anywhere said they must not
+  be. Same shape as the two quiet-hours enforcers and the two approval builders,
+  but pointed the other way: those disagreed about what to DO, this one
+  disagreed about what the person is ALLOWED to do, and the half that says no
+  always wins.
+
+## 436. My own fixture reached for the legacy path to make itself pass
+
+The cancellation suite needed to get a run past that gate. It seeded `goauth:`
+and `mailcfg:` - and it worked, so I moved on. That is precisely how a test ends
+up agreeing with a defect: the fixture takes whatever route makes the assertion
+green, and the route it took was the one no real account has.
+
+Had it seeded a Connected account, as every real user has, it would have failed
+and found lesson 435 an hour earlier.
+
+**Seed the fixture the way production gets there, not the way that makes the
+bar go green.** When a fixture needs something surprising to work, that is the
+finding, not the obstacle.

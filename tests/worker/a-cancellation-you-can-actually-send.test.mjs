@@ -328,9 +328,18 @@ section('And the run WRITES them onto the result, which is the seam that matters
   /* The cron gates a run on what the ACCOUNT has connected, separately from
      whether a token can be fetched - so `connUse` answering is not enough and
      the run stops at "needs access" without it. Seeded rather than stubbed,
-     because the gate is a real part of the path being tested. */
-  await env.AMV_KV.put('goauth:' + ME, JSON.stringify({ refresh_token: 'r', access_token: 'a' }));
-  await env.AMV_KV.put('mailcfg:' + ME, JSON.stringify({ secret: 'x' }));
+     because the gate is a real part of the path being tested.
+
+     Seeded as a CONNECTED ACCOUNT, which is the only way anybody connects
+     Google now. The first version of this used `goauth:` and `mailcfg:`
+     instead - the legacy records - and it worked, which is exactly why it was
+     wrong: the gate was answering from a store nothing writes any more, and a
+     fixture that reaches for the legacy path to "make the test pass" is a
+     fixture that agrees with the defect. See
+     a-gate-that-asks-a-record-nobody-writes. */
+  await env.AMV_KV.put('conn:' + ME, JSON.stringify({ c1: {
+    provider: 'google', unattended: true, sealed: 'x',
+    scopes: ['mail.read', 'calendar.read'] } }));
   await env.AMV_KV.put('auto:' + ME, JSON.stringify({
     items: [{ id: 'j9', detail: 'inbox digest', repeat: 'daily', interval: 86400000,
               next: Date.now() - 60000, kind: 'task', approval: 'auto', notify: 'app',

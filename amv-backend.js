@@ -24292,11 +24292,47 @@ const AUTO_CAPABILITIES = [
    every due job and the cost has to be flat. */
 async function _autoConnected(env, email) {
   const get = async (kind) => { try { return await DB.get(env, kind, email); } catch (e) { return null; } };
-  const [g, mail, school] = await Promise.all([get('goauth'), get('mailcfg'), get('school')]);
+  const [g, mail, school, conns] = await Promise.all([
+    get('goauth'), get('mailcfg'), get('school'), get(CONN_KV)]);
+
+  /* WHAT THE PERSON HAS ACTUALLY CONNECTED, asked of the record that holds it.
+
+     This used to answer from `goauth:` and `mailcfg:` alone. `goauth` is where
+     `googleOAuthExchange` stored a refresh token - and that route was DELETED
+     when Connected accounts replaced it, deliberately, because an endpoint that
+     hands a provider token to a page is one somebody finds a use for. So
+     nothing has written `goauth:` since, and `connected.google` was false for
+     every account in existence.
+
+     The effect was not a subtle one. `_autoNeedsFor` refuses a job whose text
+     mentions Gmail, Drive, Docs, Calendar or a meeting unless `google` is true,
+     so every calendar job and every mailbox job in the catalogue told people to
+     connect an account they had already connected - while the READER, which
+     goes through `connUse` and the `conn:` record, could have read it perfectly.
+     A permission gate consulting a store nothing writes is a gate that is
+     always shut.
+
+     The legacy records are still ORed in rather than dropped: somebody whose
+     mailbox is connected with an app password has a real connection, and it is
+     not this function's business to decide that theirs has stopped counting. */
+  const byProvider = new Set();
+  const scopes = new Set();
+  for(const k of Object.keys(conns || {})){
+    const c = conns[k];
+    if(!c) continue;
+    if(c.provider) byProvider.add(String(c.provider));
+    if(Array.isArray(c.scopes)) c.scopes.forEach(s => scopes.add(String(s)));
+  }
+
   return {
-    google: !!(g && (g.refresh_token || g.access_token)),
-    mail:   !!(mail && mail.secret),
-    school: !!(school && school.token),
+    google: byProvider.has('google') || !!(g && (g.refresh_token || g.access_token)),
+    mail:   scopes.has('mail.read')  || !!(mail && mail.secret),
+    school: scopes.has('school.read') || !!(school && school.token),
+    /* The exact grants, carried so a later, finer check can ask "does this
+       connection cover Drive" rather than only "is Google connected" - the
+       coarse answer is right for the remedy it prints ("connect your Google
+       account") and is not right for ever. */
+    scopes: [...scopes],
   };
 }
 
