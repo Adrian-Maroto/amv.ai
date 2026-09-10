@@ -187,6 +187,32 @@ cannot claim, and "we sent a cancellation request" is not the same sentence as
 so it arrives one provider at a time - and (a) is what makes the wait bearable
 rather than a blank screen.
 
+**How an approved cancellation reaches the merchant.** Every send path in AMV
+addresses the ACCOUNT OWNER, deliberately - `_autoEmailResult` takes the
+address from the account, which is what makes "a scheduled job cannot email a
+stranger" structurally true rather than carefully maintained. A cancellation
+has to reach the merchant, so that question had to be answered on purpose.
+
+*The owner's decision:* **hand the person a ready-to-send draft now; sending
+from their own mailbox is the path; AMV never sends to strangers from its own
+domain.**
+
+- **Now:** the draft is handed over as something their own mail client sends -
+  the letter opens in their mail app, or they copy it. No new scope, no new
+  permission, and it works the day a key is set. It is also the only version
+  where the person literally sees the thing that went out, in their own Sent
+  folder.
+- **The path:** sending on their behalf from their own connected mailbox, so
+  the cancellation comes FROM them. That needs a new Google scope and a consent
+  review, so it is a deliberate later step rather than something to slip in.
+- **Refused:** AMV sending to third parties from AMV's own domain. It is the
+  option that feels most automatic and it fails twice. It makes AMV a sending
+  relay, so one abuse wave burns the domain's reputation and takes password
+  resets and receipts down for every user at once - the failure that ends the
+  company, not the one that spoils the demo. And it does not even work: a
+  merchant cannot verify that a robot address is the account holder, so a
+  cancellation from `amv.homes` is exactly the one they are entitled to ignore.
+
 **The honest limit of (a), stated in the product and not only here.** A
 cancellation emailed to the address a receipt came from often does nothing:
 plenty of providers send from `no-reply@` and cancel only from their own

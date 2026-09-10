@@ -12406,3 +12406,24 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .asrv-held{
   margin-top:var(--sp-1); font-size:var(--t-xs); color:var(--mu);
 }
+
+/* ── LAYER A191 · the cancellation you can actually send ─────────────────────
+   Sits under the run that produced it, in the timeline, because that is where
+   somebody is when they learn what they are paying for. Restrained on purpose:
+   this is a row in a list of runs, not a card competing with the run itself.
+
+   The two controls are 44px on EVERY pointer, not only where a media query
+   says the pointer is coarse - see LAYER A189's note and lesson 428. A control
+   worth putting on the screen is worth being able to hit with a mouse. */
+.mc-draft{
+  display:flex; flex-direction:column; gap:var(--sp-2);
+  margin-top:var(--sp-3); padding:var(--sp-3);
+  background:var(--s2); border:1px solid var(--bdl); border-radius:var(--r-md);
+}
+.mc-draft-h{ font-size:var(--t-sm); font-weight:600; color:var(--tx); }
+.mc-draft-row{
+  display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2);
+}
+.mc-draft-t{ flex:1 1 200px; min-width:0; font-size:var(--t-sm); color:var(--mu); overflow-wrap:anywhere; }
+.mc-draft-go{ min-height:44px; display:inline-flex; align-items:center; text-decoration:none; }
+.mc-draft-note{ font-size:var(--t-xs); color:var(--dim); line-height:1.5; }

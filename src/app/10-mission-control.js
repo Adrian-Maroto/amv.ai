@@ -1991,6 +1991,69 @@ function _mcMoney(n){
   if(v < 0.01) return 'under a cent';
   return '$' + v.toFixed(2);
 }
+/* ── A LETTER YOU CAN ACTUALLY SEND ────────────────────────────────────────
+   The end of option (a), and the reason it is worth anything.
+
+   A run can find a subscription, work out that its receipts come from a
+   mailbox somebody reads, and write the cancellation - and if that letter only
+   exists inside a paragraph of prose, the person has to retype it. That is the
+   difference between a feature and a mention of one.
+
+   IT IS HANDED OVER, NOT SENT. The owner's decision: the person's own mail
+   client now, their own mailbox later, never AMV's domain. AMV sending to
+   strangers from its own domain fails twice over - it makes the product a
+   sending relay, so one abuse wave burns the reputation that carries every
+   password reset and receipt; and a merchant cannot verify that a robot
+   address is the account holder, so it is exactly the cancellation they are
+   entitled to ignore. Coming from the person's own address is not a lesser
+   version of this. It is the version that works.
+
+   Only ever drafts the server marked deliverable - a letter to an unattended
+   mailbox is not offered at all, because offering it is offering an action
+   that does not exist. */
+function _mcMailto(d){
+  const q = 'subject=' + encodeURIComponent(String(d.subject || ''))
+          + '&body=' + encodeURIComponent(String(d.body || ''));
+  return 'mailto:' + encodeURIComponent(String(d.to || '')).replace(/%40/g, '@') + '?' + q;
+}
+/* The plain-text form, for the copy that goes into a client this browser
+   cannot open. Headers included, because a body with no recipient is half a
+   letter and the address is the part that must not be retyped from memory. */
+function _mcDraftText(d){
+  return 'To: ' + String(d.to || '') + '\nSubject: ' + String(d.subject || '') + '\n\n' + String(d.body || '');
+}
+function _mcDraftsHTML(r){
+  const ds = (r && Array.isArray(r.drafts)) ? r.drafts : [];
+  if(!ds.length) return '';
+  return `<span class="mc-draft">
+    <span class="mc-draft-h">${escH(ds.length === 1 ? 'A cancellation is ready to send' : ds.length + ' cancellations are ready to send')}</span>
+    ${ds.map((d, i) => `<span class="mc-draft-row">
+      <span class="mc-draft-t">${escH(String(d.merchant || 'Subscription'))} · to ${escH(String(d.to || ''))}</span>
+      <a class="btn mc-mini bp mc-draft-go" href="${escH(_mcMailto(d))}">Open in your mail app</a>
+      <button class="btn mc-mini ghost mc-draft-go" data-dact="mcCopyDraft" data-darg="${escH(String(r.id))}|${i}">Copy it</button>
+    </span>`).join('')}
+    <span class="mc-draft-note">AMV cannot send these itself. Opening one puts it in your own mail app, from your own address - which is the version a provider will act on, and the only one you can check in your Sent folder.</span>
+  </span>`;
+}
+/* Copy is a real action with a real failure mode - a browser that refuses the
+   clipboard, a page without focus - and saying "Copied" on a clipboard that is
+   still empty is the small version of saying "Sent" on a send that never
+   happened. */
+async function mcCopyDraft(arg){
+  const [id, ix] = String(arg || '').split('|');
+  const all = (typeof _AUTO_RESULTS !== 'undefined' && Array.isArray(_AUTO_RESULTS)) ? _AUTO_RESULTS : [];
+  const r = all.find(x => String(x.id) === String(id));
+  const d = r && Array.isArray(r.drafts) ? r.drafts[Number(ix)] : null;
+  if(!d){ toast('That draft is no longer here - run the job again for a fresh one.', 'error', 5000); return; }
+  try{
+    await navigator.clipboard.writeText(_mcDraftText(d));
+    toast('Copied, with the address and subject - paste it into your mail app.', 'success', 4000);
+  }catch(e){
+    toast('Your browser would not let AMV use the clipboard, so nothing was copied. Open it in your mail app instead.', 'error', 6000);
+  }
+}
+try{ window.mcCopyDraft = mcCopyDraft; }catch(e){}
+
 function _mcActivityHTML(){
   const all = (typeof _AUTO_RESULTS!=='undefined' && Array.isArray(_AUTO_RESULTS)) ? _AUTO_RESULTS : [];
   const rows = all.slice().sort((a,b)=>(b.at||0)-(a.at||0)).slice(0, MC_ACT_SHOWN);
@@ -2025,6 +2088,7 @@ function _mcActivityHTML(){
             ${r.approval?`<span class="mc-act-sep">·</span>ran as “${escH((MC_LEVELS.find(l=>l.id===r.approval)||{}).label || r.approval)}”`:''}
           </span>
           ${_mcNeeds(r)}
+          ${_mcDraftsHTML(r)}
         </span>
       </div>`;
     }).join('')}</div>

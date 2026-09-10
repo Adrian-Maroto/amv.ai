@@ -11310,3 +11310,41 @@ Two further rules taken from it:
 Found while wiring the cancellation card onto this same path. Worth saying: the
 feature work was the reason the defect was found, and the defect mattered more
 than the feature.
+
+## 433. Two correct halves and an untested seam, again
+
+The context builder produced the cancellation letters. The screen rendered
+cancellation letters. Both had suites. Nothing tested the RESULT ENTRY that
+carries them from one to the other - and a mutation deleting that single line
+passed everything.
+
+This is the third time in this codebase: the ingestion commit (lesson from M2),
+the two approval builders (422), and now this. The pattern is identical - the
+pieces are easy to test in isolation and the seam is the only place the feature
+actually exists. **A suite per half is not coverage of a whole.** The section
+that catches it drives the real cron and reads the record it left behind.
+
+Getting that section to run turned up something else worth writing down: the
+cron gates a run on what the ACCOUNT has connected, which is a different signal
+from whether a token can be fetched. Stubbing the token source was not enough;
+the run stopped at "needs access" and wrote a result that existed but carried
+nothing. The first version of the test asserted on that result and reported the
+wiring as broken. **A test that reaches a different branch than the one it
+names will happily report a defect that is not there.**
+
+## 434. A mutation can apply perfectly and still change nothing
+
+Checking that a mutation APPLIED - lessons 414 and 419 - is not the same as
+checking that it BITES. One here inserted `drafts: []` at the front of an
+object literal that already had `drafts` later in the same literal. The text
+changed, the file parsed, the suite ran, and the later key won: the mutation
+was a no-op and the "SURVIVED" result was measuring nothing at all.
+
+Duplicate object keys are the obvious version. The general shape is any edit
+the language, the cascade or the runtime quietly discards - a second
+declaration, a rule an append-only layer overrides later (425), a branch that
+is unreachable for the fixture in use.
+
+**A mutation that survives is a claim about the tests, so it has to be earned.**
+When one survives, check it changed behaviour before believing it - the cheapest
+version is to make the mutation something the code cannot ignore, and re-run.

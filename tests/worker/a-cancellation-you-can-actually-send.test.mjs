@@ -30,7 +30,7 @@ mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'cancel.harness.mjs');
 writeFileSync(harness, src + `
 export { _detectSubscriptions, _subFromAddr, _cancelDeliverable, _cancelDraft, _cancelVerdict,
-         AUTO_USES_ALLOWED, _autoAccountContext };
+         AUTO_USES_ALLOWED, _autoAccountContext, runDueAutomations };
 export function __setConnUse(fn){ connUse = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -298,6 +298,54 @@ section('And the run says, in the prompt itself, that nothing has been sent');
      'and the whole route is described as unable to act', true);
   ok(/Never tell them a subscription is cancelled/.test(text),
      'with the one sentence the model must never produce named explicitly', true);
+}
+
+section('And the letters come out of the run as data, not only as prose');
+{
+  /* The screen hands these to the person's own mail client. A letter that
+     exists only inside the model's paragraph is a letter somebody has to
+     retype out of a summary, which is the difference between a feature and a
+     mention of one. */
+  const ds = (ctx && ctx.drafts) || [];
+  ok(ds.length === 1,
+     'exactly one - the no-reply merchant produced no letter, because there is nowhere to send it', ds);
+  ok(ds[0] && ds[0].to === 'billing@acme.com', 'addressed to the mailbox somebody reads', ds[0]);
+  ok(ds[0] && ds[0].merchant === 'Acme', 'named, so the row can say which subscription it is', ds[0]);
+  ok(ds[0] && /^Cancel my subscription/.test(String(ds[0].subject || '')), 'with a subject', ds[0] && ds[0].subject);
+  ok(ds[0] && /Please cancel my subscription/.test(String(ds[0].body || '')), 'and the whole letter', ds[0] && ds[0].body);
+  ok(!ds.some(d => /no-reply/i.test(String(d.to || ''))),
+     'and nothing addressed to an unattended mailbox got in', ds.map(d => d.to));
+}
+
+section('And the run WRITES them onto the result, which is the seam that matters');
+{
+  /* The two halves can both be perfect and meet at nothing. The context
+     builder returning drafts and the screen rendering drafts are separate
+     facts from the result entry carrying them between the two - and that seam
+     is exactly where a mutation survived, twice, in earlier milestones. So
+     this drives the real cron and reads the record it left behind. */
+  store.clear();
+  /* The cron gates a run on what the ACCOUNT has connected, separately from
+     whether a token can be fetched - so `connUse` answering is not enough and
+     the run stops at "needs access" without it. Seeded rather than stubbed,
+     because the gate is a real part of the path being tested. */
+  await env.AMV_KV.put('goauth:' + ME, JSON.stringify({ refresh_token: 'r', access_token: 'a' }));
+  await env.AMV_KV.put('mailcfg:' + ME, JSON.stringify({ secret: 'x' }));
+  await env.AMV_KV.put('auto:' + ME, JSON.stringify({
+    items: [{ id: 'j9', detail: 'inbox digest', repeat: 'daily', interval: 86400000,
+              next: Date.now() - 60000, kind: 'task', approval: 'auto', notify: 'app',
+              active: true, runs: 0, uses: ['mail.read'] }],
+    results: [] }));
+  await W.runDueAutomations(env);
+  const rec = JSON.parse(store.get('auto:' + ME) || '{}');
+  const res = (rec.results || [])[0] || {};
+  ok(res.id, 'the run produced a result', JSON.stringify(res).slice(0, 400));
+  ok(Array.isArray(res.drafts) && res.drafts.length === 1,
+     'and the letter travelled with it, which is the only way the screen can hand it over', res.drafts);
+  ok(res.drafts && res.drafts[0] && res.drafts[0].to === 'billing@acme.com',
+     'still addressed to the mailbox somebody reads', res.drafts && res.drafts[0]);
+  ok(res.drafts && res.drafts[0] && /Please cancel my subscription/.test(String(res.drafts[0].body || '')),
+     'with the whole letter, not a summary of one', res.drafts && res.drafts[0] && res.drafts[0].body);
 }
 
 globalThis.fetch = realFetch;

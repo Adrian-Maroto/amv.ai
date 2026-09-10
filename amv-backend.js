@@ -4592,6 +4592,16 @@ async function _autoAccountContext(env, item, email){
   const jobId = String((item && item.id) || '').slice(0, 40);
   const parts = [];
   const missing = [];
+  /* THE LETTERS THE PERSON CAN ACTUALLY SEND, carried out of the run as data
+     rather than left inside the prompt.
+
+     The owner's decision on how an approved cancellation reaches a merchant:
+     hand it to the person's own mail client now, their own mailbox later,
+     never AMV's domain. That only means anything if the draft survives as a
+     structured thing - a letter described in a paragraph of model prose is a
+     letter somebody has to retype, which is the difference between a feature
+     and a mention of one. */
+  const drafts = [];
   /* Deferred writes. Everything that advances "AMV has told them this" waits
      until the result is durable, so a run that reads the inbox and then dies
      before producing anything leaves the next run seeing the same mail. */
@@ -4760,6 +4770,10 @@ async function _autoAccountContext(env, item, email){
           block += '\n\nWHETHER EACH ONE CAN BE CANCELLED BY EMAIL (worked out by rule from the address the receipt came from - repeat these verdicts, do not form your own and do not guess a cancellation address):\n'
             + acts.map(a => '- ' + a.sub.merchant + ': ' + a.v.say).join('\n');
           const sendable = acts.filter(a => a.v.can);
+          for(const a of sendable){
+            const d = _cancelDraft(a.sub, email);
+            drafts.push({ merchant: d.merchant, to: d.to, subject: d.subject, body: d.body });
+          }
           if(sendable.length){
             block += '\n\nFOR THE ONES THAT CAN BE EMAILED, THIS IS THE EXACT TEXT AMV WOULD SEND IF THEY ASK. It has NOT been sent and you must not say or imply that it has. Offer it; do not act on it:\n'
               + sendable.map(a => {
@@ -4821,7 +4835,7 @@ async function _autoAccountContext(env, item, email){
   }
 
   return {
-    text: parts.join('\n\n'), missing,
+    text: parts.join('\n\n'), missing, drafts,
     /* Run this only once the person can actually read the result. It is
        deliberately safe to never call: nothing is lost, the next run simply
        reports the same mail again. */
@@ -4945,7 +4959,12 @@ async function _autoExecute(env, item, budget, email, standing){
            /* Handed up rather than called here. What this marks as "told them"
               is only true once the result is somewhere they can read it, and
               that happens two levels up. */
-           commitIngest: acct.commit };
+           commitIngest: acct.commit,
+           /* The cancellation letters, carried up to the result so the screen
+              can hand them to the person's own mail client. Passed as data, not
+              folded into the prose - a letter somebody has to retype out of a
+              paragraph is not a letter they were handed. */
+           drafts: acct.drafts || [] };
 }
 
 /* Estimate USD cost of an automation run (worst-case-ish, matches the web path's
@@ -5559,7 +5578,17 @@ async function runDueAutomations(env, atMs){
              thing that will have changed by the time anybody reads it back. */
           approval: level,
           outcome,
-          costUSD: Math.round(runCost * 1e6) / 1e6
+          costUSD: Math.round(runCost * 1e6) / 1e6,
+          /* WHAT THEY CAN ACT ON, not just read about.
+
+             Only ever cancellations AMV could address to a mailbox somebody
+             reads - `_cancelVerdict` decided that before any of these were
+             built - and only ever handed over, never sent. AMV has no path
+             from here to a stranger's inbox and is not getting one: the
+             owner's decision was their own mail client now, their own mailbox
+             later, never AMV's domain. Omitted entirely when there are none,
+             so an old result and a run that found nothing read the same. */
+          ...(exec && exec.drafts && exec.drafts.length ? { drafts: exec.drafts.slice(0, 10) } : {}),
         }).slice(-AUTO_MAX_RESULTS);
         item.runs = (item.runs||0) + 1;
         item.lastLevel = level;
