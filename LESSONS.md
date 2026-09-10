@@ -11270,3 +11270,43 @@ where the same words would assert a fact AMV cannot see.
 three verdicts may never tell the person it is cancelled; the letter may never
 report a cancellation as done, and its one "is cancelled" is checked to be the
 request for proof.
+
+## 432. "Sent" was said on the strength of an answer that meant "I have nothing"
+
+`crewApprovalAct` answers `{found:false, delivered:null}` for any approval the
+server does not hold, and it holds only the ones its own cron enqueued. Every
+card `_recurMakeApproval` builds lives in the browser's storage and has never
+been near the server - so `found:false` was not an edge case, it was the NORMAL
+answer for a job that only runs while AMV is open.
+
+`_apvDoApprove` checked `d.delivered === false`. In that answer `delivered` is
+**null**, so the check sailed past, the code reached `toast('Sent')`, and the
+draft was deleted on the line above. The person was told their email had gone
+out, the draft was gone, and nothing had been sent to anybody.
+
+The comment directly above that function already names this failure - "an email
+that was never sent, reported as sent, is the kind of mistake somebody loses a
+client over" - and the fix it describes covered a failed request and a missing
+provider. This third road to the same place stayed open, and it was the one the
+default path took.
+
+**`null` is not `false`, and a three-state answer needs three branches.**
+`delivered` has always had three meanings - sent, refused, and nothing was
+attempted - and only two were ever read. Anywhere a field can be null, absent,
+or false, the "or" that treats them alike is where a lie gets told.
+
+Two further rules taken from it:
+
+- **Never delete the work while claiming the outcome.** The draft was removed
+  before the outcome was even determined, which destroyed the evidence along
+  with the letter. Removal now happens after, and only for outcomes that
+  actually resolved something.
+- **The guard is not "did this specific case get handled" but "can two
+  different outcomes produce the same sentence".** The suite ends by driving
+  three different server answers and asserting the person is told three
+  different things - the specific-case check would pass again the next time a
+  fourth answer is added, and that one would not.
+
+Found while wiring the cancellation card onto this same path. Worth saying: the
+feature work was the reason the defect was found, and the defect mattered more
+than the feature.

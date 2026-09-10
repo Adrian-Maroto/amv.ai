@@ -3621,6 +3621,32 @@ async function _apvDoApprove(a){
     renderCrewView();
     return { ok:false, code:'failed', error:(e&&e.message)||'' };
   }
+  /* THE SERVER HAD NOTHING TO SEND, WHICH IS NOT A SEND.
+
+     `crewApprovalAct` answers `{found:false, delivered:null}` for any approval
+     it does not hold - and it holds only the ones its own cron enqueued. Every
+     card `_recurMakeApproval` builds lives in this browser's storage and has
+     never been near the server, so `found:false` is the NORMAL answer for a
+     job that only runs while AMV is open.
+
+     `delivered` is null there, not false, so the check below sailed past it and
+     the code fell through to `toast('Sent')` - after deleting the draft. The
+     person was told their email had gone out, the draft was gone, and nothing
+     had been sent to anybody. That is the exact failure the comment above this
+     function describes as the one somebody loses a client over; it was fixed
+     for a failed request and a missing provider, and this third way of getting
+     there was left open.
+
+     Only for a SEND. A review-only card genuinely is resolved by being read,
+     and the server having no copy of it changes nothing about that. */
+  if(d && d.found === false && a.actionType === 'send'){
+    toast('That was NOT sent. This draft was made by a job that only runs on this device, so your '
+        + 'backend has no copy of it and had nothing to send. It is still in your approvals - open it '
+        + 'to copy the text, or set the job up again now that AMV is connected so it runs on the server.',
+      'error', 10000);
+    renderCrewView();
+    return { ok:false, code:'not_on_server', delivered:false };
+  }
   _cwSaveApprovals(_cwApprovals().filter(x=>x.id!==a.id));
   /* Somebody else is already delivering this one - a double press, a retry, a
      second tab. The server now refuses to send it twice, so this request made
