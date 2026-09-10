@@ -11198,3 +11198,75 @@ selects had inherited the full-width styling meant for real text inputs and
 stretched across the row, so on a desktop it read as two large empty fields
 with "From" and "to" lost between them. Every automated check passed on it.
 **Suites answer "is it broken"; only looking answers "is it right".**
+
+## 429. The middle option was the one to refuse
+
+The cancellation decision had three shapes: (a) draft it and stop for
+approval; (b) let an unattended run send inside a rule the person wrote, with
+the policy engine holding the bound; (c) provider APIs, the only route that can
+read the cancellation back.
+
+(b) looks like the grown-up answer. It is the trap, and the reason is not about
+rules being hard to write. It is that today `AUTO_USES_ALLOWED` makes one
+sentence true without qualification - **an unattended run may read and may not
+write** - and that sentence is checkable by anyone, in one list, in a second.
+(b) replaces it with "may not write unless a rule said so", and from that moment
+nobody can answer "can it send without me?" with a flat no. The blast radius is
+not a wrong email; it is the permanent loss of a property the whole product
+rests on.
+
+It also buys almost nothing over (a). Both ask the person to be right once; (b)
+asks them to be right EARLIER, about a rule covering cases they have not seen,
+instead of about the letter in front of them. That is the harder judgement at
+the worse moment.
+
+**Prefer the option that keeps a guarantee checkable over the one that keeps a
+workflow short.** And when three options are offered, suspect the middle one
+first: it is where the appearance of the third gets bought with the safety of
+the first.
+
+## 430. Most cancellation emails go to a mailbox nobody reads
+
+The obvious build for (a) is: find the renewal, draft a cancellation, address it
+to the sender of the receipt, done. It demos perfectly.
+
+It is also useless for most subscriptions, because most receipts come from
+`no-reply@`. A cancellation posted there is a letter into a void - and unlike
+most failures, this one is worse than doing nothing at all: the person stops
+looking for the real cancel button believing it is handled, and finds out a
+month later on a statement.
+
+So deliverability is decided BEFORE anything is offered, and a draft is produced
+only for addresses somebody actually reads. Where it cannot be sent, AMV says so
+and names what to do instead. Three details that matter:
+
+- Matched on the LOCAL PART, not the domain. A sending domain called
+  `noreply.example.com` often accepts replies routed elsewhere; the local part
+  is where a mailbox declares itself unattended.
+- Tagged forms (`no-reply+billing@`) are the common real-world spelling, not an
+  edge case.
+- When one merchant writes from both a no-reply and a real mailbox, the real one
+  wins - and a later no-reply must not overwrite it, or the answer depends on
+  which receipt happened to arrive last. A mutation proved that the "keep
+  looking for a better address" branch would happily accept a second no-reply as
+  an upgrade; two unattended receipts must still add up to "nowhere to write".
+
+And the sentence that is never available on this route at all: **it is
+cancelled**. Emailing a request and being unbilled are different facts, and only
+(c) can ever join them. The most AMV claims is that a request was sent.
+
+## 431. The same words are a promise or a lie depending on who is reading
+
+An assertion in the new suite failed on the drafted letter, because the letter
+contains "please confirm in writing that it is cancelled" and the rule was
+"nothing says it is cancelled".
+
+The rule was too blunt, not the code. The LETTER is addressed to the merchant,
+where asking them to confirm a cancellation is exactly right - asking for proof
+is the entire point of that sentence. The VERDICTS are addressed to the person,
+where the same words would assert a fact AMV cannot see.
+
+**A copy rule has an audience or it is wrong.** The check is now split: the
+three verdicts may never tell the person it is cancelled; the letter may never
+report a cancellation as done, and its one "is cancelled" is checked to be the
+request for proof.

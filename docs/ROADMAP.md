@@ -151,14 +151,48 @@ So the FIND half is built and the DO half is not. What exists now:
   unstated cadence is never assumed monthly - which would misprice a yearly
   plan by twelve on any screen that adds these up.
 
-*The decision to make:* whether an unattended run may ever send on somebody's
-behalf. Three honest options, in increasing order of what they ask for:
-**(a)** it drafts the cancellation and stops for approval, which needs nothing
-new; **(b)** `mail.send` becomes available unattended only inside a rule the
-person wrote, with the policy engine holding the bound; **(c)** provider APIs
-per merchant, which is the only route that can read the cancellation back and
-verify it. Until one is chosen, AMV tells you what is renewing and does not
-pretend it can stop it.
+*The decision, made by the owner:* **(a) is what ships now, (c) is the path,
+(b) is off the table permanently.**
+
+The three options were: **(a)** it drafts the cancellation and stops for
+approval, which needs nothing new; **(b)** `mail.send` becomes available
+unattended inside a rule the person wrote, with the policy engine holding the
+bound; **(c)** provider APIs per merchant, the only route that can read the
+cancellation back and verify it.
+
+**Why (b) is refused rather than deferred.** It is the comfortable middle and
+it is the trap. It buys the appearance of autonomy by giving up the one
+property that makes the rest of this system defensible: that an unattended run
+can READ and cannot WRITE. That sentence is currently true without qualification
+- it is enforced by `AUTO_USES_ALLOWED`, not by care - and it is what lets AMV
+say "nothing goes out on its own" without a footnote. (b) replaces it with
+"nothing goes out on its own unless a rule said so", and every rule engine ever
+written has had a bug. The blast radius is not a bad email; it is that the
+guarantee stops being checkable, so nobody can ever again answer "can it send
+without me?" with a flat no.
+
+And it buys almost nothing (a) does not already give. The person still has to
+be right about the rule up front instead of right about the letter in front of
+them, which is a worse moment to ask them to be right - the bounded version
+asks for the harder judgement earlier and with less information.
+
+**Why (a) can ship today.** It needs no new scope at all. The unattended half
+stays read-only; the send happens only after a person presses a button, on a
+path that already exists and is already audited.
+
+**Why (c) is the destination and not the start.** It is the only option where
+AMV can read the outcome back. An action AMV cannot verify is an action AMV
+cannot claim, and "we sent a cancellation request" is not the same sentence as
+"you are not being billed any more". (c) is per-merchant work with no shortcut,
+so it arrives one provider at a time - and (a) is what makes the wait bearable
+rather than a blank screen.
+
+**The honest limit of (a), stated in the product and not only here.** A
+cancellation emailed to the address a receipt came from often does nothing:
+plenty of providers send from `no-reply@` and cancel only from their own
+account page. AMV says so on the card rather than drafting a letter into a
+void, and it never reports a cancellation as done - the most it claims is that
+a request was sent.
 
 One of the owner's ten. Not the riskiest - the one with a reversible outcome and
 a clear verification: **Auto Cancel Subscriptions**, where the action can be

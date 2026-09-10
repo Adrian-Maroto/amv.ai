@@ -4097,6 +4097,140 @@ function _subMerchant(from){
   return name ? name.charAt(0).toUpperCase() + name.slice(1) : '';
 }
 
+/* ── WHERE A CANCELLATION COULD ACTUALLY GO ────────────────────────────────
+   THE ADDRESS IS READ, NEVER INVENTED.
+
+   A cancellation has to be addressed to somebody, and there are exactly two
+   honest sources for that address: the person, or the message the charge was
+   found in. Anything else - `support@` + the merchant's domain, a model asked
+   where to write - is a guess, and a guess here means somebody's cancellation
+   goes to a stranger who now has their name and their account details. This
+   takes the sender of the receipt, verbatim, or returns nothing.
+
+   The card then says WHERE the address came from, because "the address on the
+   receipt" and "an address you gave me" are different levels of confidence and
+   the person is the only one who can close that gap. */
+function _subFromAddr(from){
+  const m = /<\s*([^<>\s]+@[^<>\s]+)\s*>/.exec(String(from || ''))
+         || /([^<>\s,;]+@[^<>\s,;]+)/.exec(String(from || ''));
+  if(!m) return '';
+  const a = m[1].trim().replace(/[.,;]+$/, '');
+  return /^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(a) ? a.toLowerCase().slice(0, 200) : '';
+}
+
+/* AND WHETHER WRITING TO IT CAN POSSIBLY WORK.
+
+   This is the part that decides whether the feature is real or a demo. Most
+   subscription receipts come from an unattended mailbox: a cancellation posted
+   to `no-reply@` is a letter into a void, and drafting one without saying so
+   is the "says it did something and did not" failure this product forbids -
+   worse than useless, because somebody stops looking for the real cancel
+   button believing it is handled.
+
+   Matched on the LOCAL PART only. A domain called `noreply.example.com` is a
+   sending domain, and plenty of them accept replies routed elsewhere; the
+   local part is where a mailbox actually declares itself unattended. */
+const _CANCEL_NOREPLY_RE = /^(no-?reply|do-?not-?reply|donotreply|noreply|bounce[sd]?|mailer-?daemon|notifications?|automated|auto-?confirm|postmaster)([.+_-]|$)/i;
+function _cancelDeliverable(addr){
+  const a = String(addr || '').trim().toLowerCase();
+  if(!a) return { ok: false, why: 'no_address' };
+  const local = a.split('@')[0] || '';
+  if(_CANCEL_NOREPLY_RE.test(local)) return { ok: false, why: 'no_reply' };
+  return { ok: true, why: '' };
+}
+
+/* ── THE CANCELLATION ITSELF ───────────────────────────────────────────────
+   OPTION (a), AND EXACTLY WHAT IT IS.
+
+   The owner's decision was (a) now, (c) as the path, (b) never - see
+   docs/ROADMAP.md for why the bounded-unattended-send middle option is the
+   trap rather than the compromise. What (a) means in code is this: an
+   unattended run may build this and may not send it. That is not a rule
+   somebody has to remember, it is `AUTO_USES_ALLOWED`, which does not contain
+   `mail.send` - so the draft below can only ever reach a person, and the send
+   happens on a path a human pressed a button on.
+
+   THE LETTER IS WRITTEN HERE, NOT BY A MODEL. A cancellation is a legal-ish
+   statement about somebody's money and it has exactly one job; a generated one
+   would be fluent, would vary run to run, and would occasionally hedge - and a
+   hedged cancellation is a cancellation the other side can decline to act on.
+   The figures come from `_detectSubscriptions`, which reads them by rule, so
+   nothing in this text is estimated either.
+
+   It asks for two things the person actually needs and would forget to ask
+   for: written confirmation, and the date billing stops. Without those, "I
+   cancelled it" is a belief rather than a fact. */
+const CANCEL_BODY_MAX = 1200;
+function _cancelDraft(sub, accountEmail){
+  const s = sub || {};
+  const merchant = String(s.merchant || 'your service').slice(0, 60);
+  const money = (s.amount !== null && s.amount !== undefined && s.currency)
+    ? (s.currency + ' ' + Number(s.amount).toFixed(2)) : '';
+  const every = s.cadence ? (' ' + s.cadence) : '';
+  /* What is claimed is only what was read. No amount and no cadence means the
+     letter simply does not mention them, rather than describing a charge in
+     terms nobody verified. */
+  const charge = money
+    ? ('the' + every + ' charge of ' + money)
+    : (s.cadence ? ('the' + every + ' charge') : 'the recurring charge');
+
+  const lines = [
+    'Hello,',
+    '',
+    'Please cancel my subscription and stop ' + charge + ' on this account'
+      + (s.evidence ? ' (most recently: "' + String(s.evidence).slice(0, 120) + '")' : '') + '.',
+    '',
+    'Please confirm in writing that it is cancelled, and tell me the date the '
+      + 'last billing period ends so I know when charges stop.',
+    '',
+    'If this address is not the right one for cancellations, please forward '
+      + 'this or tell me where to send it.',
+    '',
+    'Thank you,',
+    String(accountEmail || ''),
+  ];
+  return {
+    subject: ('Cancel my subscription - ' + merchant).slice(0, 160),
+    body: lines.join('\n').slice(0, CANCEL_BODY_MAX),
+    to: String(s.from || ''),
+    merchant,
+  };
+}
+
+/* WHETHER SENDING IT CAN DO ANYTHING, IN WORDS THE PERSON CAN ACT ON.
+
+   Three answers, and the middle one is the one that matters. A draft addressed
+   to an unattended mailbox is not a smaller version of a cancellation - it is
+   nothing at all, and presenting it as an action is how somebody stops looking
+   for the real cancel button. So it is said before they press anything, on the
+   card, with what to do instead.
+
+   None of these three claims the subscription is cancelled. That sentence is
+   not available on this route at all: emailing a request and being unbilled
+   are different facts, and only (c) - the provider's own API, read back - can
+   ever join them. */
+function _cancelVerdict(sub){
+  const s = sub || {};
+  const d = _cancelDeliverable(s.from);
+  if(d.why === 'no_address') return {
+    can: false, code: 'no_address',
+    say: 'AMV could not read a return address off that receipt, so there is nowhere to send this. '
+       + 'Cancel it from ' + String(s.merchant || 'the provider') + '\u2019s own account page.',
+  };
+  if(d.why === 'no_reply') return {
+    can: false, code: 'no_reply',
+    say: 'That receipt came from ' + String(s.from || 'an unattended mailbox')
+       + ', which is not read by anyone - sending this there would do nothing. '
+       + 'Cancel it from ' + String(s.merchant || 'the provider') + '\u2019s own account page instead.',
+  };
+  return {
+    can: true, code: 'ok',
+    say: 'This goes to ' + String(s.from) + ', the address the receipt came from - not one AMV looked up. '
+       + 'It is a request: it asks them to cancel and to confirm in writing. AMV cannot see whether they act on it, '
+       + 'so check for their reply, and check your next statement.',
+  };
+}
+
 /* ── WHAT IT ADDS UP TO ────────────────────────────────────────────────────
    THE NUMBER PEOPLE ACT ON, SO IT HAS TO BE THE RIGHT ONE.
 
@@ -4173,15 +4307,30 @@ function _detectSubscriptions(mail){
     if(prev){
       if(prev.amount === null && money){ prev.amount = money.amount; prev.currency = money.currency; prev.evidence = String(m && m.subject || '').slice(0, 120); }
       if(!prev.cadence && cadence) prev.cadence = cadence;
+      /* A merchant that writes from a real mailbox as well as a no-reply one
+         should be remembered by the address somebody can actually reply to.
+         Upgrade only: a later no-reply must not overwrite a usable address, or
+         the answer would depend on which receipt happened to arrive last. */
+      if(!prev.deliverable){
+        const alt = _subFromAddr(m && m.from);
+        if(alt && _cancelDeliverable(alt).ok){ prev.from = alt; prev.deliverable = true; }
+        else if(!prev.from && alt) prev.from = alt;
+      }
       continue;
     }
     seen.add(key);
+    const addr = _subFromAddr(m && m.from);
     out.push({
       merchant,
       amount: money ? money.amount : null,
       currency: money ? money.currency : null,
       cadence,
       at: Number(m && m.occurred_at) || 0,
+      /* The only address a cancellation may be sent to, and where it came
+         from. Carried on the row rather than looked up later, because looking
+         it up later means looking it up somewhere other than the message. */
+      from: addr,
+      deliverable: _cancelDeliverable(addr).ok,
       /* The line this came from, so every figure can be checked against the
          message rather than believed. */
       evidence: String(m && m.subject || '').slice(0, 120),
@@ -4590,6 +4739,36 @@ async function _autoAccountContext(env, item, email){
             block += '\n\nNOT INCLUDED IN THOSE TOTALS: ' + tot.noAmount + ' with no amount stated and ' + tot.noCadence
               + ' where how often it recurs was not stated. Say that the total leaves them out rather than quietly presenting it as everything.';
           }
+
+          /* WHAT CAN ACTUALLY BE DONE ABOUT EACH ONE - option (a), on the
+             surface that already exists.
+
+             Knowing you pay for something is half an answer; the other half is
+             where the cancel button is, and for most of these the answer is
+             NOT "reply to this receipt". Most subscription mail comes from an
+             unattended mailbox, so a cancellation posted back to it is a letter
+             into a void - and a digest that offered to send one would be the
+             "says it did something and did not" failure, with the extra harm
+             that somebody stops looking for the real cancel button.
+
+             So each row carries a verdict computed by rule, and the model is
+             told to pass it on rather than to have an opinion about it. The
+             drafted letter is included ONLY for the ones that could genuinely
+             be sent, because showing somebody a letter that cannot be
+             delivered is offering them an action that does not exist. */
+          const acts = subs.map(x => ({ sub: x, v: _cancelVerdict(x) }));
+          block += '\n\nWHETHER EACH ONE CAN BE CANCELLED BY EMAIL (worked out by rule from the address the receipt came from - repeat these verdicts, do not form your own and do not guess a cancellation address):\n'
+            + acts.map(a => '- ' + a.sub.merchant + ': ' + a.v.say).join('\n');
+          const sendable = acts.filter(a => a.v.can);
+          if(sendable.length){
+            block += '\n\nFOR THE ONES THAT CAN BE EMAILED, THIS IS THE EXACT TEXT AMV WOULD SEND IF THEY ASK. It has NOT been sent and you must not say or imply that it has. Offer it; do not act on it:\n'
+              + sendable.map(a => {
+                  const d = _cancelDraft(a.sub, email);
+                  return '- To ' + d.to + ' | subject: ' + d.subject + '\n' + d.body.split('\n').map(l => '  | ' + l).join('\n');
+                }).join('\n');
+          }
+          block += '\n\nNOTHING ON THIS ROUTE CANCELS ANYTHING BY ITSELF. AMV cannot send mail on a schedule at all, so no cancellation has gone out and none will without them asking. '
+            + 'Never tell them a subscription is cancelled - the most that is ever true here is that a request was sent, and even then AMV cannot see whether the provider acted on it.';
         }
         parts.push(block);
 
