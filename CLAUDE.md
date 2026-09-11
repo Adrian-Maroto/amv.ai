@@ -147,9 +147,11 @@ Companion docs (do not duplicate them here - read them):
   which was left on hand-picked numbers until a collision showed up as
   EADDRINUSE from inside a suite - so nothing binds a fixed one and two runs no
   longer collide.
-- `npm run check:fast` is the ITERATION loop: ~8 seconds, ten stages (syntax,
-  worker loads, build fresh, unstyled classes, response shapes, window reads,
-  dead guards, page weight, deps, preflight). It
+- `npm run check:fast` is the ITERATION loop: ~8 seconds, fourteen stages
+  (syntax, worker loads, build fresh, stylesheet comments, unstyled classes,
+  response shapes, window reads, secrets on the readiness screen, removed
+  features in translations, dead guards, stores nothing writes, page weight,
+  deps, preflight). It
   deliberately SKIPS the suites and the workerd stage, so it catches a broken
   build and a stale artifact but NOT a behavioural regression. Use it between
   edits; use the full `npm run check` before calling anything done.
@@ -160,6 +162,18 @@ Companion docs (do not duplicate them here - read them):
   Four separate comments in this repo warn about it and a fifth site still
   shipped it, which is what turned the warning into a stage. A `var` is not
   flagged: a top-level `var` really does create a window property.
+- The STORES NOTHING WRITES stage exists because of LESSONS 435. A KV kind that
+  is READ and never WRITTEN is a drawer somebody emptied and nobody stopped
+  opening: `goauth:` lost its writer when Connected accounts replaced the older
+  Google grant, and `_autoConnected` went on asking it whether Google was
+  connected - so the answer was no for every account, and every calendar and
+  mailbox job told people to connect something they already had. A wrong "no"
+  from a permission check looks exactly like the product working, which is why
+  it survived everything else here.
+  It allows a kind per READER, not per kind, and that distinction is the point:
+  excusing `goauth` outright - which the first draft did - would have excused
+  the defect it was written for. Erasure may read it to revoke a leftover
+  token; nothing may answer a capability question from it.
 - The DEAD GUARDS stage exists because of LESSONS 297. It fails when
   `typeof X === 'function'` names something defined nowhere - a guard that can
   never pass, so whatever it protects never runs. That is not theoretical: it

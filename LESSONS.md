@@ -11402,3 +11402,31 @@ and found lesson 435 an hour earlier.
 **Seed the fixture the way production gets there, not the way that makes the
 bar go green.** When a fixture needs something surprising to work, that is the
 finding, not the obstacle.
+
+## 437. The first draft of the guard excused the bug it was written for
+
+Lesson 435 became a gate stage: a KV kind that is READ and never WRITTEN is a
+drawer somebody emptied and nobody stopped opening. The stage found exactly two
+such kinds in the Worker, and the first draft handled them with an allowlist
+keyed by kind - `goauth`, with a reason, because erasure legitimately reads it
+to revoke a token left on an old account.
+
+That stage passes on the defective code. `_autoConnected` reading `goauth` is
+the bug; `authDeleteAccount` reading it is fine; the kind is the same in both.
+**An allowance written at the wrong granularity is an allowance for the thing
+you are guarding against.** The allowance is now per READER: erasure may read
+it, anything else fails, and the check understands the local `get(kind)` alias
+a function defines for itself - which is how `_autoConnected` read it, so a
+check that only knew `DB.get(env, ...)` would have missed it twice over.
+
+Verified the only way that means anything: the original defect was put back,
+and both the stage and the suite failed. A guard nobody has watched fail is a
+guard nobody has tested.
+
+It also immediately earned its keep on my own repair. The fix had kept
+`goauth` in an `||` chain "so nobody loses anything" - but a fallback to a store
+nothing writes can never fire, so it did not make the function more forgiving,
+it made it look like it had a safety net it did not have. (The dead branch read
+`g.refresh_token`; the record's only other reader writes `g.refreshToken`. Two
+spellings of a field nobody was reading.) **Deleting a writer means deleting its
+readers, including the ones shaped like kindness.**

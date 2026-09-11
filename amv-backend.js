@@ -24292,8 +24292,8 @@ const AUTO_CAPABILITIES = [
    every due job and the cost has to be flat. */
 async function _autoConnected(env, email) {
   const get = async (kind) => { try { return await DB.get(env, kind, email); } catch (e) { return null; } };
-  const [g, mail, school, conns] = await Promise.all([
-    get('goauth'), get('mailcfg'), get('school'), get(CONN_KV)]);
+  const [mail, school, conns] = await Promise.all([
+    get('mailcfg'), get('school'), get(CONN_KV)]);
 
   /* WHAT THE PERSON HAS ACTUALLY CONNECTED, asked of the record that holds it.
 
@@ -24312,9 +24312,17 @@ async function _autoConnected(env, email) {
      A permission gate consulting a store nothing writes is a gate that is
      always shut.
 
-     The legacy records are still ORed in rather than dropped: somebody whose
-     mailbox is connected with an app password has a real connection, and it is
-     not this function's business to decide that theirs has stopped counting. */
+     `mailcfg:` and `school:` are still ORed in, because those stores are still
+     written - somebody whose mailbox is connected with an app password has a
+     real connection, and it is not this function's business to decide theirs
+     has stopped counting. `goauth:` is NOT, and that distinction is the whole
+     lesson: a fallback to a store nothing writes can never fire, so keeping it
+     does not make the function more forgiving, it makes it look like it has a
+     safety net it does not have. (The dead branch also read `g.refresh_token`
+     while the only other reader of that record writes `g.refreshToken` - two
+     spellings of a field nobody could have been reading.) The gate stage 'No
+     decision is read out of a store nothing writes' now refuses to let it
+     back. */
   const byProvider = new Set();
   const scopes = new Set();
   for(const k of Object.keys(conns || {})){
@@ -24325,7 +24333,7 @@ async function _autoConnected(env, email) {
   }
 
   return {
-    google: byProvider.has('google') || !!(g && (g.refresh_token || g.access_token)),
+    google: byProvider.has('google'),
     mail:   scopes.has('mail.read')  || !!(mail && mail.secret),
     school: scopes.has('school.read') || !!(school && school.token),
     /* The exact grants, carried so a later, finer check can ask "does this

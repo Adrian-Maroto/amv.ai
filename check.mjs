@@ -95,7 +95,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 13 : 17;
+const TOTAL = FAST ? 14 : 18;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -1020,6 +1020,101 @@ step('No guard names a function that does not exist', () => {
       + 'so the call throws a ReferenceError into an empty catch and whatever it was supposed to do silently '
       + 'does not happen: ' + [...swallowed.keys()].join(', ')
       + '. This is LESSONS 297: it is how a deleted feature ships through every gate.');
+});
+
+/* ── 4a-bis. A store nothing writes ────────────────────────────────────────
+   LESSONS 435. `_autoConnected` answered "is Google connected?" from `goauth:`
+   - the record `googleOAuthExchange` used to write. That route was DELETED
+   when Connected accounts replaced it, and nothing has written `goauth:`
+   since, so the answer was false for every account in existence and every
+   calendar and mailbox job in the catalogue told people to connect an account
+   they had already connected.
+
+   A wrong "no" from a permission check does not look like a bug. It looks like
+   the product working, so it survived a deletion, a replacement and every
+   suite here. What makes it findable mechanically is the shape: a KV kind that
+   is READ and never WRITTEN is a drawer somebody emptied and nobody stopped
+   opening. */
+step('No decision is read out of a store nothing writes', () => {
+  const src = codeOnly(readFileSync(R('amv-backend.js'), 'utf8'));
+
+  /* Only strings already PROVEN to be KV kinds - each appears at least once in
+     a position where this codebase names a kind. Inferring kinds from bare
+     string literals would flag half the file. */
+  const KIND_POS = /(?:DB\.(?:get|getStrict|put|putIfRev|del)|_with(?:Kind|KV|Record))\(\s*env\s*,\s*'([a-z][a-z0-9_]*)'/g;
+  /* Every shape that WRITES one. Missing one of these is how this stage would
+     cry wolf, and a stage that cries wolf is a stage somebody deletes - `data`
+     is written only through `putIfRev`, and the first draft of this reported
+     it. The fixed-kind helpers are listed because their kind is inside the
+     helper rather than at the call site. */
+  const WRITE_POS = /(?:DB\.(?:put|putIfRev)|_with(?:Kind|KV|Record))\(\s*env\s*,\s*'([a-z][a-z0-9_]*)'/g;
+  const FIXED_KIND_WRITERS = { _withAcct: ['acct'], _withAuto: ['auto'], _withEnt: ['ent', 'fam'],
+                               _withFam: ['fam'], _withTeam: ['fam', 'team'], _withWallet: ['wmut'] };
+
+  const kinds = new Set(); const written = new Set();
+  for (const m of src.matchAll(KIND_POS)) kinds.add(m[1]);
+  for (const m of src.matchAll(WRITE_POS)) written.add(m[1]);
+  for (const [fn, ks] of Object.entries(FIXED_KIND_WRITERS))
+    if (new RegExp('\\b' + fn + '\\(').test(src)) ks.forEach(k => written.add(k));
+
+  /* THE NEGATIVE CONTROL (LESSONS 294). If the patterns stop matching, every
+     kind reads as never-written and this fails on everything - or the reverse.
+     Named, so a broken scanner says so instead of blaming the code. */
+  if (kinds.size < 20 || written.size < 20)
+    throw new Error(`the kind scan found ${kinds.size} kinds and ${written.size} writers, which cannot be right - `
+      + 'the scanner is broken, not the code.');
+
+  /* Read but never written, and allowed to be - each with the reason AND the
+     only functions permitted to read it.
+
+     EXCUSING THE KIND WOULD HAVE EXCUSED THE DEFECT. The first draft of this
+     stage listed `goauth` and passed, which means the exact bug it was written
+     for would have sailed through it. `goauth` is legitimately read in ONE
+     place - erasure, revoking a refresh token left on an old account, which is
+     a cleanup and not a decision. `_autoConnected` reading it to answer "is
+     Google connected?" is the defect. Same kind, same store, different reader:
+     so the allowance is per reader, and any other function touching it fails
+     here. */
+  const ALLOWED = {
+    goauth: { readers: ['authDeleteAccount'],
+      reason: 'retired with googleOAuthExchange. Erasure still revokes a refresh token left behind on an '
+            + 'old account - a cleanup, not a decision. Nothing may answer a capability question from it '
+            + '(LESSONS 435).' },
+  };
+
+  const orphans = [...kinds].filter(k => !written.has(k)).sort();
+  const unexpected = orphans.filter(k => !ALLOWED[k]);
+
+  /* WHO reads an excused kind. Any read shape, including the local `get(kind)`
+     aliases a function defines for itself - `_autoConnected` read it that way,
+     so a check that only understood `DB.get(env, ...)` would have missed it. */
+  for (const [kind, rule] of Object.entries(ALLOWED)) {
+    if (!orphans.includes(kind)) continue;
+    const seen = new Set();
+    for (const m of src.matchAll(new RegExp("(?:get|getStrict|del)\\(\\s*(?:env\\s*,\\s*)?'" + kind + "'", 'g'))) {
+      const head = src.slice(0, m.index);
+      const fns = [...head.matchAll(/\n(?:async\s+)?function\s+([A-Za-z0-9_$]+)\s*\(/g)];
+      seen.add(fns.length ? fns[fns.length - 1][1] : '(top level)');
+    }
+    const strangers = [...seen].filter(f => !rule.readers.includes(f));
+    if (strangers.length)
+      throw new Error(`'${kind}' is a store nothing writes, excused only for ${rule.readers.join(', ')}. `
+        + `It is now also read in: ${strangers.join(', ')}. ${rule.reason} `
+        + 'Whatever those read, they read out of an empty drawer.');
+  }
+  if (unexpected.length)
+    throw new Error('these KV kinds are read and never written, so whatever reads them answers from an empty '
+      + 'drawer: ' + unexpected.join(', ')
+      + '. Either the writer was deleted and its readers were left behind (LESSONS 435 - a permission check '
+      + 'that answers "no" for everybody looks exactly like the product working), or the read is dead. '
+      + 'Delete the reader, point it at the record that IS written, or add it to ALLOWED with a reason.');
+
+  /* And the allowlist may not go stale in the other direction: an entry that
+     is no longer an orphan is an excuse for a problem that is gone. */
+  const stale = Object.keys(ALLOWED).filter(k => !orphans.includes(k));
+  if (stale.length)
+    throw new Error('these are excused as read-but-never-written and are no longer that: ' + stale.join(', ')
+      + '. Take them out of ALLOWED, or the next real one hides behind a stale excuse.');
 });
 
 /* ── 4b. Page weight ──────────────────────────────────────────────────────
