@@ -11430,3 +11430,32 @@ it made it look like it had a safety net it did not have. (The dead branch read
 `g.refresh_token`; the record's only other reader writes `g.refreshToken`. Two
 spellings of a field nobody was reading.) **Deleting a writer means deleting its
 readers, including the ones shaped like kindness.**
+
+
+## 438. The suite that covered the function was why nobody looked
+
+Removing the dead `goauth` fallback failed `a-run-asks-for-what-it-needs`, which
+seeded `goauth:` and asserted that Google was therefore connected. That suite
+had covered `_autoConnected` since before the grant was retired, and it passed
+every single run - because it seeded the retired path itself.
+
+So the function was tested, thoroughly, against a record no account has had for
+months. That is worse than untested: an uncovered function invites a look, and a
+green one closes the question.
+
+This is the second instance in two days (436 was my own new fixture doing it).
+The shape is the same and worth stating as a rule of its own: **when a store is
+retired, its fixtures are part of the deletion too.** A suite seeding a dead
+path keeps the dead path alive in everybody's head, and it is the last place
+anyone thinks to look, because it is green.
+
+The repair is not just reseeding. The suite now also asserts the NEGATIVE - a
+leftover `goauth` record does NOT make Google connected - so the dead path is
+pinned as dead rather than merely unmentioned.
+
+And a process note on how I found it, which is the uncomfortable part: the new
+gate stage made me delete that fallback, and I re-ran the fast gate and one
+suite, not the suite set. The full gate caught it. **A behaviour change needs
+the suites that name that behaviour, not the checks that run in eight seconds** -
+`check:fast` skips the suites by design and says so, and I used it as though it
+did not.

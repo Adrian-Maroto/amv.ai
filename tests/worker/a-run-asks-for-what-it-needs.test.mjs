@@ -74,11 +74,31 @@ section('What a person has connected is read from where the server keeps it');
   let c = await W._autoConnected(env, 'a@t.com');
   ok(!c.google && !c.mail && !c.school, 'a fresh account has nothing connected', c);
 
-  store.set('goauth:a@t.com', JSON.stringify({ refresh_token: 'r' }));
+  /* GOOGLE IS SEEDED AS A CONNECTED ACCOUNT, because that is the only way
+     anybody connects one. This used to seed `goauth:` - the record the older
+     grant wrote - and it passed, which is why `_autoConnected` could go on
+     answering from a store whose writer had been deleted and no suite noticed.
+     A test that seeds a retired path proves the retired path still works, and
+     nothing else. See LESSONS 435-436. */
+  store.set('conn:a@t.com', JSON.stringify({ c1: {
+    provider: 'google', unattended: true, sealed: 'x', scopes: ['calendar.read'] } }));
   store.set('mailcfg:a@t.com', JSON.stringify({ secret: 'enc' }));
   store.set('school:a@t.com', JSON.stringify({ token: 't', base: 'https://x.instructure.com' }));
   c = await W._autoConnected(env, 'a@t.com');
   ok(c.google && c.mail && c.school, 'and each one is seen once it is', c);
+
+  /* And the retired record on its own is NOT a connection, whatever is left in
+     it. Nothing writes it; a fallback that reads it can never fire, and one
+     that looks like it might is worse than none. */
+  store.delete('conn:a@t.com');
+  store.set('goauth:a@t.com', JSON.stringify({ refresh_token: 'r', access_token: 'a' }));
+  const legacy = await W._autoConnected(env, 'a@t.com');
+  ok(legacy.google === false,
+     'a leftover goauth record does not make Google connected - nothing has written that store since '
+     + 'Connected accounts replaced it', legacy);
+  store.delete('goauth:a@t.com');
+  store.set('conn:a@t.com', JSON.stringify({ c1: {
+    provider: 'google', unattended: true, sealed: 'x', scopes: ['calendar.read'] } }));
 
   /* A mail record with no ciphertext is a record, not a connection. */
   store.set('mailcfg:a@t.com', JSON.stringify({ address: 'x@qq.com' }));
