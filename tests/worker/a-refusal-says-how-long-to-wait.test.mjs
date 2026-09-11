@@ -94,10 +94,25 @@ section('And the number it sends is a sane one');
   /* The helpers are pure, so they are run rather than described. A header
      that says 0 is a header that means "retry immediately", which is worse
      than none at all. */
-  const src = code.slice(code.indexOf('const _retryAfterWindow'),
-                         code.indexOf('const _retryAfterUntil') + 400);
-  ok(/_retryAfterWindow/.test(src) && /_retryAfterUntil/.test(src),
-     'both helpers exist', true);
+  /* From the first of the two helpers to the end of the SECOND ONE, found by
+     the next top-level declaration rather than by a character count. This read
+     400 characters past `_retryAfterUntil`, which is 1,435 long, so two thirds
+     of the code these assertions are about sat outside the text being
+     searched.
+
+     NOT `functionBody`, which is the right tool for `function name(...)` and
+     returns an EMPTY STRING for `const name = (...) => {...}` - these two are
+     arrow consts. It does that silently, so a suite that reached for it here
+     would search '' and every negative assertion would pass by saying nothing.
+     The length check below is what makes that impossible. */
+  const from = code.indexOf('const _retryAfterWindow');
+  const second = code.indexOf('const _retryAfterUntil');
+  const after = code.slice(second + 'const _retryAfterUntil'.length);
+  const endsAt = after.search(/\n(?:async function |function |const [A-Za-z_])/);
+  const src = code.slice(from, endsAt < 0 ? undefined
+    : second + 'const _retryAfterUntil'.length + endsAt);
+  ok(src.length > 400 && /_retryAfterWindow/.test(src) && /_retryAfterUntil/.test(src),
+     'both helpers exist, and were really read out of the worker', src.length);
 
   const _retryAfterWindow = () => Math.max(1, 60 - Math.floor((Date.now() % 60000) / 1000));
   const _retryAfterUntil = (at) => {

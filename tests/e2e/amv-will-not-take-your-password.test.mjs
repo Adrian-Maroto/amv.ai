@@ -20,6 +20,7 @@
    requests gets switched off, and then it guards nothing. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody } from '../lib/source.mjs';
 import { readFile } from 'node:fs/promises';
 
 const app = await bootApp({ tab: 'chat', user: { name: 'Adrian', email: 'a@amv.dev', ini: 'A' } });
@@ -157,7 +158,22 @@ section('The server refuses it too, because a client check is a suggestion');
 {
   const worker = await readFile(new URL('../../amv-backend.js', import.meta.url), 'utf8');
   ok(/function _detailSecrets\(/.test(worker), 'the worker has its own detector');
-  const create = worker.slice(worker.indexOf('async function autoCreate('), worker.indexOf('async function autoCreate(') + 3000);
+  /* THE WHOLE FUNCTION, not a round number of characters.
+
+     This read the first 3000 characters of `autoCreate` and looked for the
+     guard in there. Adding a comment above the guard pushed it to offset 3858,
+     and the suite reported that /auto/create no longer refuses credentials -
+     false, and the worst kind of false: an alarm about a security control,
+     raised by the test's own arithmetic.
+
+     `functionBody` already existed for exactly this, with its own note saying
+     the fixed window "has now failed two gate runs on correct code". I wrote a
+     fourth implementation of it before looking. Use the one that is there. */
+  const create = functionBody(worker, 'autoCreate');
+  /* A slice that came back empty would make every assertion below pass by
+     saying nothing. Named, so a broken slice reads as a broken slice. */
+  ok(create.length > 2000,
+     'the create handler was actually read from the worker', create.length);
   ok(/_detailSecrets\(detail\)/.test(create) && /credentials_in_detail/.test(create),
      'and /auto/create refuses before anything is written');
   /* Edit writes to the same field. A guard only on create is not a guard. */

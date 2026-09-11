@@ -11509,3 +11509,43 @@ inherits the implementation's blind spots; one written from what a person would
 actually type does not. And an alternative in a regex that no case exercises is
 an alternative nobody has checked - the mutation that "only" deleted some extra
 words was pointing at three untested branches.
+
+## 441. The fixed-window slice, the helper that already fixed it, and the silent empty string
+
+Adding a comment above a guard in `autoCreate` pushed it from offset 3000-ish
+to 3858, and `amv-will-not-take-your-password` reported that **/auto/create no
+longer refuses credentials**. It does. The suite sliced the first 3000
+characters of the function and looked for the guard inside them.
+
+An alarm about a security control, raised by the test's own arithmetic, is the
+worst kind of false alarm: it is the one that teaches people to stop believing
+this directory.
+
+Three things came out of chasing it.
+
+**One: the fix already existed and I wrote a fourth copy of it.**
+`tests/lib/source.mjs` has `functionBody`, written for precisely this, with its
+own note saying the fixed window "has now failed two gate runs on correct
+code". I hand-rolled a slice helper in the suite before looking for the one
+that was there. Check for the helper before writing the helper.
+
+**Two: three other suites were reading a partial view and nobody knew.** A
+window smaller than the thing it slices is wrong in both directions - it
+false-alarms on an insertion, and it silently never checks the part past the
+cut, while the section name says it does. `build-model-fits-the-plan` read 1,600
+of 2,495 characters of `_autoRoute`; `quality-tiers` 9,000 of 10,195 of
+`runAutonomous`; `a-refusal-says-how-long-to-wait` 400 of 1,435. Found by
+measuring every such slice against its source rather than waiting for each to
+misfire in turn.
+
+**Three: `functionBody` returns an EMPTY STRING for `const f = () => {}`.** It
+handles `function` declarations only, and says nothing about the rest. A suite
+reaching for it on an arrow const searches '' - and every negative assertion,
+every `!/x/.test(slice)`, passes by saying nothing. That is a test that cannot
+fail, arrived at by using the right tool on the wrong shape. The limitation is
+now written in the helper, and the one suite that needs an arrow const slices by
+boundary and asserts the slice is not empty.
+
+**A slice is an assumption about where something ends. Assert it found
+something, always** - the cheap line `ok(slice.length > N)` is what turns a
+silent nothing into a named failure.

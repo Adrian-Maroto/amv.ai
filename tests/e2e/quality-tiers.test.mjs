@@ -17,6 +17,7 @@ import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody } from '../lib/source.mjs';
 
 const app = await bootApp({ tab: 'chat', user: { name: 'U', email: 'u@x.com', ini: 'U' } });
 const { page, errors } = app;
@@ -170,8 +171,10 @@ section('Crew spends the money where the quality is decided');
   /* Read from the built bundle, because the property that matters is which tier
      each call in the real loop asks for - not whether a helper exists. */
   const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
-  const loop = bundle.slice(bundle.indexOf('async function runAutonomous(goal'),
-                            bundle.indexOf('async function runAutonomous(goal') + 9000);
+  /* The whole function - it is 10,195 characters and this was reading 9,000 of
+     them, so the last fifth of the loop was outside everything asserted below
+     while the section name implied otherwise. */
+  const loop = functionBody(bundle, 'runAutonomous');
   ok(/qRun\('plan'/.test(loop), 'planning asks for the plan tier', /qRun\('plan'/.test(loop));
   ok(/qRun\('step'/.test(loop), 'each step asks for the step tier', /qRun\('step'/.test(loop));
   ok(/qRun\('final'/.test(loop), 'and the deliverable for the final tier', /qRun\('final'/.test(loop));

@@ -37,6 +37,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { functionBody } from '../lib/source.mjs';
 import { readFile } from 'node:fs/promises';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -171,8 +172,11 @@ section('Auto is safe from every plan, which is what makes it a safe default');
   const worker = await readFile(new URL('../../amv-backend.js', import.meta.url), 'utf8');
   ok(/rawModel === 'auto' \|\| rawModel === 'amv-auto'/.test(worker),
      'the worker recognises auto rather than treating it as an unknown engine');
-  const router = worker.slice(worker.indexOf('function _autoRoute('),
-                              worker.indexOf('function _autoRoute(') + 1600);
+  /* The whole function. A fixed window reads a partial view of the thing the
+     assertions name, so it misses a regression past the cut AND false-alarms
+     the moment somebody adds a comment - `functionBody` exists for this and
+     says so in its own note. This one was reading 1600 of 2495 characters. */
+  const router = functionBody(worker, '_autoRoute');
   /* Anchored on the comparison and the value it returns, not on the sentence
      above them. The first version of this matched the comment that explains the
      cap - so deleting the comment would have failed the check, and gutting the

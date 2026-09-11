@@ -38,6 +38,17 @@
    Returns '' when there is no such function, so a caller that names one wrongly
    gets an empty string and a failing assertion rather than a silent pass on a
    window that happened to contain something. */
+/* WHAT THIS DOES NOT COVER, said here rather than discovered.
+
+   It finds `function name(...)` and `async function name(...)`. It does NOT
+   find `const name = (...) => {...}`, and for those it returns an EMPTY
+   STRING rather than complaining - which is the dangerous half. A suite that
+   slices with '' searches nothing, and every assertion of the shape
+   `!/x/.test(slice)` passes by saying nothing at all.
+
+   So: when the target is an arrow const, slice to the next top-level
+   declaration yourself AND assert the slice is not empty.
+   `a-refusal-says-how-long-to-wait` does both and says why. */
 export function functionBody(src, name) {
   const m = src.match(new RegExp('(?:async\\s+)?function\\s+' + name.replace(/[$]/g, '\\$') + '\\s*\\('));
   if (!m) return '';
