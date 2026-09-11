@@ -11459,3 +11459,53 @@ suite, not the suite set. The full gate caught it. **A behaviour change needs
 the suites that name that behaviour, not the checks that run in eight seconds** -
 `check:fast` skips the suites by design and says so, and I used it as though it
 did not.
+
+## 439. The job you set up by asking for it read nothing, and reported anyway
+
+`_autoAccountContext` walks `item.uses` to decide what to open, and returns
+immediately when the list is empty. The Crew screen fills `uses` in from the
+catalogue entry. The chat tool did not: `crew_add` posts detail, repeat, kind,
+approval and notify.
+
+So a job somebody set up by ASKING for it - "summarise my inbox each morning",
+the headline way to create one - ran every morning, spent real money, and
+summarised an empty string while its own instruction told the model to report an
+inbox. A model handed nothing does not report nothing. It reports something.
+
+Measured before changing anything: the gate said READY, the model got **0
+characters** of account context; the identical job with `uses` got 2,460.
+
+The gate said ready because **the gate reads the DETAIL and the runner reads
+`uses`** - the same question, "what does this job need", answered by two
+different mechanisms, and only one of them was being filled in. Both halves
+were working exactly as written, which is what makes this the hardest of the
+three instances of this shape found in two days.
+
+The fix derives `uses` from the detail **on the server, in `autoCreate`**, not
+in the tool - the tool is one caller of three and the next one will forget too.
+It is a floor rather than a cap (an explicit list still wins if larger), and
+`connUse` still refuses a scope the connection does not carry, so deriving one
+cannot conjure access nobody granted.
+
+**Where two mechanisms answer one question, the fix belongs at the point they
+both pass through, not at whichever one you noticed.**
+
+## 440. A test written for the phrasing found a bug the regex review did not
+
+The derivation table matches how people ask for things, and I wrote its test
+cases from the table. A mutation deleting two alternatives - `diary`, `what's
+on` - survived, because nothing exercised them.
+
+Adding cases for the real phrasings immediately failed on one:
+**"Tell me what's on today" with a curly apostrophe.** The pattern knew only the
+straight ASCII `'`. Every phone autocorrects to `’`, so the matcher would have
+failed for most of the people typing that sentence - and failed by deriving
+NOTHING, silently, which is the precise failure the table exists to prevent.
+
+I had read that regex several times. I had not typed the sentence.
+
+**Test the phrasing, not the pattern.** A case written from the implementation
+inherits the implementation's blind spots; one written from what a person would
+actually type does not. And an alternative in a regex that no case exercises is
+an alternative nobody has checked - the mutation that "only" deleted some extra
+words was pointing at three untested branches.

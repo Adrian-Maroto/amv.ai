@@ -3317,9 +3317,29 @@ async function autoCreate(request, env){
      a request, not a grant - connUse still checks the connection actually
      carries the scope, so naming one here cannot conjure access that was never
      given. */
-  const uses = Array.isArray(body.uses)
+  const asked = Array.isArray(body.uses)
     ? body.uses.map(String).filter(u => AUTO_USES_ALLOWED.indexOf(u) >= 0).slice(0, 4)
     : [];
+  /* AND WHAT IT PLAINLY NEEDS, WHEN THE CALLER DID NOT SAY.
+
+     `uses` is what `_autoAccountContext` walks: an empty list means the run
+     opens nothing and the model is handed the job's instruction and no data at
+     all. The Crew screen fills it in from the catalogue entry. The CHAT tool
+     did not - `crew_add` posts detail, repeat, kind, approval and notify - so
+     a job somebody set up by asking for it ("summarise my inbox each morning")
+     ran every morning, spent real money, and summarised an empty string while
+     its own instruction told the model to report an inbox. The permission gate
+     said it was ready, because the gate reads the DETAIL and the reader reads
+     `uses`: two answers to "what does this job need", and only one of them was
+     being filled in.
+
+     Derived here rather than in the tool, because the tool is one caller of
+     three and the next one will forget too. It is a floor, not a cap: an
+     explicit list still wins if it is larger, and `connUse` still refuses a
+     scope the connection does not carry, so deriving one cannot conjure access
+     nobody granted. */
+  const derived = _autoUsesFromText(detail);
+  const uses = [...new Set(asked.concat(derived))].slice(0, 4);
   if(!detail) return json({ error:'detail required' }, 400);
   if(detail.length > 2000) return json({ error:'detail too long' }, 400);
   /* NOTHING CREDENTIAL-SHAPED IS EVER WRITTEN TO KV.
@@ -3943,6 +3963,38 @@ function _investText(r){
    quietly reports on nothing looks identical to an inbox with nothing in it,
    which is how somebody misses a fortnight of mail believing AMV was watching. */
 const AUTO_USES_ALLOWED = ['mail.read', 'calendar.read', 'school.read'];
+
+/* WHAT A JOB PLAINLY NEEDS, READ OFF WHAT IT SAYS IT DOES.
+
+   The permission gate already answers a question of this shape - it reads the
+   detail and decides whether the account can cover it - and the RUNNER answers
+   a different one, off `uses`. Two matchers for one question is how a job ends
+   up passing the gate and then reading nothing, which is exactly what happened
+   to every job created from chat.
+
+   Deliberately narrow. Each entry names a scope an unattended run may actually
+   hold (`AUTO_USES_ALLOWED`), so a detail about Drive derives nothing rather
+   than deriving a calendar it never asked for - the run then reports what it
+   could not see instead of quietly answering a different question. A suite
+   drives this and the gate over one table and requires them to agree.
+
+   BOTH APOSTROPHES. A phone autocorrects "what's on" to a curly one, so a
+   matcher that knows only the straight ASCII form fails for most of the people
+   typing it - and fails by deriving NOTHING, which is silent and is the exact
+   failure this table exists to stop. Found by a test case written for the
+   phrasing rather than for the regex. */
+const AUTO_USES_FROM_TEXT = [
+  [/\b(gmail|my e-?mails?|e-?mails? (?:i|from)|inbox|unread|mailbox|read (?:my )?(?:e-?mail|mail)|reply to)\b/i, 'mail.read'],
+  [/\b(calendar|meetings?|appointments?|my (?:day|week|schedule)|diary|what(?:['’]| i)?s on)\b/i, 'calendar.read'],
+  [/\b(canvas|classroom|assignments?|homework|coursework|my class(?:es)?|due (?:today|tomorrow|this week)|deadlines?)\b/i, 'school.read'],
+];
+function _autoUsesFromText(text){
+  const s = String(text || '');
+  const out = [];
+  for(const [re, use] of AUTO_USES_FROM_TEXT)
+    if(re.test(s) && AUTO_USES_ALLOWED.indexOf(use) >= 0 && out.indexOf(use) < 0) out.push(use);
+  return out;
+}
 const AUTO_MAIL_MAX = 25;          // headers, not bodies
 const AUTO_EVENTS_MAX = 20;
 const AUTO_SNIPPET_MAX = 180;
