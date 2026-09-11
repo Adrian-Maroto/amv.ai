@@ -11549,3 +11549,54 @@ boundary and asserts the slice is not empty.
 **A slice is an assumption about where something ends. Assert it found
 something, always** - the cheap line `ok(slice.length > N)` is what turns a
 silent nothing into a named failure.
+
+## 442. The bound people actually write is a refusal, not a permission
+
+The policy engine has had `allowed_destinations` since it was written, and
+nothing ever passed one. That was read as missing wiring for two milestones. It
+is not: **an allowlist of everybody AMV may contact is a list nobody can
+finish.** Nobody thinks "here are the eleven addresses you may write to". They
+think "never my employer, never that bank, never anyone at the school" - a short
+list of the places where being wrong is expensive.
+
+So the bound that shipped is a denylist, and the engine's allowlist stays
+unused on purpose rather than by omission.
+
+**What it binds to had to be stated exactly, or the control would be the
+defect.** AMV cannot send to a third party at all, so this is not a send filter
+- there are no sends to filter. It governs what AMV PROPOSES: the cancellation
+letters it writes with an address already filled in. That is worth governing
+precisely because those addresses are read out of MAIL, which makes a draft's
+destination the one field here an outsider has any influence over. The control
+says that on its face, and a suite asserts it never claims to stop a send that
+cannot happen anyway.
+
+Two details worth keeping:
+
+- **A domain covers its subdomains.** Receipts arrive from `mail.bank.com` far
+  more often than from `bank.com`, and "never @bank.com" plainly did not mean
+  "except that one". The lookalike cases are checked in both directions:
+  `notbank.com` does not match, and neither does `bank.com.evil.test`.
+- **The entries are never written to the audit log; the count is.** This list is
+  somebody naming an employer, a bank, an ex. An audit log is the last place
+  that belongs.
+
+## 443. A rule that silently matches nothing is worse than one that is refused
+
+`*@bank.com` is what somebody types when they mean everyone there. The first
+normaliser accepted it - `*` is a legal local-part character - and stored it as
+a literal ADDRESS, which could never match anything. The person would have a
+rule on their screen, saved, confirmed, covering nothing.
+
+`http://bank.com` passed too, because the domain test was "anything without an
+at sign and a dot in it", and was stored as `@http://bank.com`.
+
+Both were found by writing the test cases from what a person would type rather
+than from the pattern I had written - the same method that found the curly
+apostrophe a commit earlier (440), and the second time in two days it has paid.
+
+The fix is not only tighter character classes. It is that `*@domain` now means
+what it obviously means. **Refusing an entry is honest; accepting one and
+quietly matching nothing is not** - and between those two, the loudest possible
+handling of "I am not sure what you meant" is the right one, because the whole
+point of the list is the cases where being wrong is expensive.

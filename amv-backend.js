@@ -2083,6 +2083,7 @@ async function autoList(request, env){
                    rather than each remembering its own. */
                 standing: rec.standing || '',
                 quiet: (rec.quiet && Number.isInteger(rec.quiet.from)) ? rec.quiet : null,
+                never: _neverList(rec),
                 /* The highest level any of this account's jobs may reach. The
                    screen has to show it, because a job displaying "autonomous"
                    under a ceiling of "ask first" would be lying about what
@@ -3619,6 +3620,27 @@ async function autoUpdate(request, env){
     return json({ ok:true, quiet: next });
   }
 
+  /* The never list. Whole addresses, `@domain`, or a bare domain; anything
+     else is REFUSED and named, rather than stored as something AMV alone can
+     interpret. A bound whose meaning is a guess is not a bound, and the person
+     would find out it was a guess at the worst possible moment. */
+  if(body.action === 'never'){
+    const raw = Array.isArray(body.never) ? body.never.slice(0, NEVER_MAX) : [];
+    const bad = raw.filter(x => String(x || '').trim() && !_neverNorm(x))
+                   .map(x => String(x).trim().slice(0, 60));
+    if(bad.length)
+      return json({ error: 'AMV could not read ' + bad.join(', ')
+                         + ' as an address or a domain. Use somebody@example.com, or example.com for everyone there.',
+                    code: 'bad_never', rejected: bad }, 400);
+    const list = [...new Set(raw.map(_neverNorm).filter(Boolean))].slice(0, NEVER_MAX);
+    await _withAuto(env, key, (fresh) => { if(fresh) fresh.never = list; }, { items:[], results:[] });
+    /* The COUNT is audited, not the entries. This list is somebody naming the
+       people and institutions that matter most to them - an employer, a bank,
+       an ex - and an audit log is the last place that belongs. */
+    audit(env, 'auto_never_set', { by: user.email, count: list.length });
+    return json({ ok:true, never: list });
+  }
+
   /* THE CEILING - the highest level ANY of this account's background jobs may
      reach, now or in future.
 
@@ -4191,6 +4213,78 @@ function _cancelDeliverable(addr){
   return { ok: true, why: '' };
 }
 
+/* ── THE NEVER LIST ────────────────────────────────────────────────────────
+   A BOUND WRITTEN AS A REFUSAL, WHICH IS THE ONLY KIND PEOPLE ACTUALLY WRITE.
+
+   The policy engine has understood `allowed_destinations` since it was written
+   and nothing ever passed one, for a good reason: an ALLOWLIST of everybody
+   AMV may contact is a list nobody can finish. People do not think "here are
+   the eleven addresses you may write to". They think "never my employer",
+   "never that bank", "never anyone at the school" - a short list of the places
+   where being wrong would be expensive.
+
+   WHAT IT BINDS TO, precisely, because overstating this would be the whole
+   defect. AMV cannot send to a third party at all: `_autoEmailResult` takes the
+   address from the ACCOUNT, and `AUTO_USES_ALLOWED` has no send in it. So this
+   is not a send filter - there are no sends to filter. It governs what AMV
+   PROPOSES: the cancellation letters it writes and puts in front of somebody
+   with the address already filled in and a button that opens their mail app.
+
+   That is worth governing on its own. Those addresses are read out of MAIL -
+   content somebody else wrote - so the destination of a draft is the one field
+   in this product that an outsider has any influence over. A person who says
+   "never write to my bank" has said something exact about a real risk, and the
+   answer must not be a letter to their bank sitting one tap from sent. */
+const NEVER_MAX = 40;
+const NEVER_ENTRY_MAX = 200;
+
+/* One entry, normalised. Three shapes a person would actually type: a whole
+   address, `@domain`, or a bare domain - the last because nobody types the at
+   sign when they mean "anyone at this company". Anything else is refused
+   rather than half-understood: a pattern AMV interprets loosely is a bound
+   whose meaning only AMV knows. */
+const _NEVER_LOCAL = "[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]+";
+const _NEVER_DOMAIN = '[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\\.[A-Za-z]{2,}';
+const _NEVER_ADDR_RE = new RegExp('^' + _NEVER_LOCAL + '@' + _NEVER_DOMAIN + '$');
+const _NEVER_DOM_RE = new RegExp('^@?' + _NEVER_DOMAIN + '$');
+function _neverNorm(entry){
+  let s = String(entry == null ? '' : entry).trim().toLowerCase().slice(0, NEVER_ENTRY_MAX);
+  if(!s) return '';
+  /* "*@bank.com" is what somebody types when they mean everybody there, and
+     the first version of this accepted it as a literal ADDRESS - `*` is a legal
+     local-part character - so it was stored as a rule that could never match
+     anything. A bound that silently matches nothing is worse than a refused
+     one: the person believes they are covered. */
+  if(s.indexOf('*@') === 0) s = s.slice(1);
+  /* The character classes are real address characters, not "anything without
+     an at sign". `http://bank.com` passed the loose version and was stored as
+     `@http://bank.com` - garbage kept as if it were a rule. */
+  if(_NEVER_ADDR_RE.test(s)) return s;                       // a whole address
+  if(_NEVER_DOM_RE.test(s)) return s.indexOf('@') === 0 ? s : '@' + s;
+  return '';
+}
+function _neverList(rec){
+  const raw = rec && Array.isArray(rec.never) ? rec.never : [];
+  return raw.map(_neverNorm).filter(Boolean).slice(0, NEVER_MAX);
+}
+/* The entry that blocks this address, or ''. Domain entries match the domain
+   and every subdomain of it, because somebody who wrote "never @bank.com"
+   did not mean "except mail.bank.com" - and a receipt's sender is very often
+   exactly that subdomain. */
+function _neverBlocks(list, addr){
+  const a = String(addr || '').trim().toLowerCase();
+  if(!a) return '';
+  const at = a.indexOf('@');
+  const dom = at >= 0 ? a.slice(at + 1) : '';
+  for(const e of (list || [])){
+    if(e.indexOf('@') === 0){
+      const d = e.slice(1);
+      if(dom === d || dom.endsWith('.' + d)) return e;
+    } else if(a === e) return e;
+  }
+  return '';
+}
+
 /* ── THE CANCELLATION ITSELF ───────────────────────────────────────────────
    OPTION (a), AND EXACTLY WHAT IT IS.
 
@@ -4638,7 +4732,12 @@ function _fenceUntrusted(text, tag){
   return '--- REAL DATA ' + tag + ' ---\n' + body + '\n--- END REAL DATA ' + tag + ' ---';
 }
 
-async function _autoAccountContext(env, item, email){
+/* `never` is threaded in rather than read here: the tick already holds the
+   account record, and re-reading it per item would be one extra KV read per
+   job for a list that cannot have changed since the run started. Defaulted, so
+   a caller that has no list is a caller with no refusals rather than an
+   error. */
+async function _autoAccountContext(env, item, email, never){
   const uses = Array.isArray(item && item.uses) ? item.uses : [];
   if(!uses.length) return { text: '', missing: [] };
   const jobId = String((item && item.id) || '').slice(0, 40);
@@ -4818,7 +4917,23 @@ async function _autoAccountContext(env, item, email){
              drafted letter is included ONLY for the ones that could genuinely
              be sent, because showing somebody a letter that cannot be
              delivered is offering them an action that does not exist. */
-          const acts = subs.map(x => ({ sub: x, v: _cancelVerdict(x) }));
+          /* THE NEVER LIST, APPLIED WHERE A DESTINATION IS PROPOSED.
+
+             Not a send filter - there are no sends here to filter. This is the
+             one place AMV puts an address in front of somebody with a letter
+             already written and a button that opens their mail app, and the
+             address came out of MAIL, which is content an outsider wrote. So
+             "never write to my bank" has to mean the letter is not offered,
+             not that it is offered with a warning. */
+          const refuse = Array.isArray(never) ? never : [];
+          const acts = subs.map(x => {
+            const blocked = _neverBlocks(refuse, x.from);
+            return blocked
+              ? { sub: x, v: { can: false, code: 'never',
+                    say: 'You told AMV never to write to ' + blocked + ', so it has not written this one. '
+                       + 'Cancel it from ' + String(x.merchant || 'the provider') + '\u2019s own account page.' } }
+              : { sub: x, v: _cancelVerdict(x) };
+          });
           block += '\n\nWHETHER EACH ONE CAN BE CANCELLED BY EMAIL (worked out by rule from the address the receipt came from - repeat these verdicts, do not form your own and do not guess a cancellation address):\n'
             + acts.map(a => '- ' + a.sub.merchant + ': ' + a.v.say).join('\n');
           const sendable = acts.filter(a => a.v.can);
@@ -4897,7 +5012,7 @@ async function _autoAccountContext(env, item, email){
   };
 }
 
-async function _autoExecute(env, item, budget, email, standing){
+async function _autoExecute(env, item, budget, email, standing, never){
   /* An investing check-in does not go to a model at all - it reads the accounts
      and states the arithmetic. So it costs nothing, cannot drift, and cannot
      invent a balance. */
@@ -4963,7 +5078,7 @@ async function _autoExecute(env, item, budget, email, standing){
      be read is stated with the same prominence as what could, and the model is
      told to pass that on: "AMV could not see your inbox" and "your inbox was
      quiet" must never come back looking the same. */
-  const acct = await _autoAccountContext(env, item, email);
+  const acct = await _autoAccountContext(env, item, email, never);
   let userTurn = item.detail;
   if(acct.text){
     /* The tag is minted here, per run, and appears in both markers and in the
@@ -5596,7 +5711,7 @@ async function runDueAutomations(env, atMs){
       if(item.lastNeeds && item.lastNeeds.length) item.lastNeeds = [];
 
       try{
-        const exec = await _autoExecute(env, item, budget, email, rec.standing || '');
+        const exec = await _autoExecute(env, item, budget, email, rec.standing || '', _neverList(rec));
         const out = (exec && exec.text) || '';
         /* Held, not called. See the write-back below: what a run has told
            somebody about is only true once the result is in the record they

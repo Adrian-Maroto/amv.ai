@@ -144,6 +144,46 @@ looks at a job, before any rule is read. That is why they are not routed
 through the policy engine's `in_quiet_hours` branch - one promise with two
 enforcement points is how bounds drift.
 
+## The never list
+
+A short list of addresses and domains AMV must never approach. Three shapes a
+person would actually type: a whole address, `@domain`, or a bare domain (and
+`*@domain`, which means the same as the second and was the one the first
+implementation got wrong - `*` is a legal local-part character, so it validated
+as a literal address and became a rule that could never match anything).
+
+A domain entry covers its subdomains, because a receipt arrives from
+`mail.bank.com` far more often than from `bank.com`, and somebody who wrote
+"never @bank.com" did not mean "except that one".
+
+**A refusal list, not an allowlist, and that is the whole design.** The policy
+engine has understood `allowed_destinations` since it was written and nothing
+ever passed one: an allowlist of everybody AMV may contact is a list nobody can
+finish. People do not think "here are the eleven addresses you may write to";
+they think "never my employer, never that bank" - a short list of the places
+where being wrong is expensive.
+
+**What it binds to, exactly.** AMV cannot send to a third party at all -
+`_autoEmailResult` takes the address from the ACCOUNT and `AUTO_USES_ALLOWED`
+holds no send - so this is not a send filter, because there are no sends to
+filter. It governs what AMV **proposes**: the cancellation letters it writes
+with the address filled in and a button that opens somebody's mail app. That is
+worth governing on its own, because those addresses are read out of MAIL, which
+makes the destination of a draft the one field in this product an outsider has
+any influence over.
+
+A refused destination gets no letter written - not a letter with a warning
+attached - and the run says the refusal is why, so a subscription AMV found is
+still reported. Refusing to write is not refusing to tell them.
+
+**The entries are never audited by name.** The count is. This list is somebody
+naming the people and institutions that matter most to them, and an audit log
+is the last place that belongs.
+
+An entry AMV cannot read refuses the WHOLE save and names the line, rather than
+keeping the half it understood. A bound whose meaning is a guess is not a bound,
+and the person would discover it was a guess at the worst possible moment.
+
 ## Silence is not approval
 
 An approval that expires is a denial. An approval nobody answered is a denial.

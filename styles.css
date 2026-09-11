@@ -12427,3 +12427,25 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .mc-draft-t{ flex:1 1 200px; min-width:0; font-size:var(--t-sm); color:var(--mu); overflow-wrap:anywhere; }
 .mc-draft-go{ min-height:44px; display:inline-flex; align-items:center; text-decoration:none; }
 .mc-draft-note{ font-size:var(--t-xs); color:var(--dim); line-height:1.5; }
+
+/* ── LAYER A192 · who AMV may never approach ─────────────────────────────────
+   Beside quiet hours, because they are the same kind of promise: something
+   said once that has to hold while nobody is watching. Typed as a list rather
+   than built a row at a time - four names is four seconds of typing and twelve
+   taps of widget, and on a phone that decides whether it gets written at all. */
+.mc-never{
+  display:flex; flex-direction:column; gap:var(--sp-2);
+  margin:var(--sp-3) 0 0; padding:var(--sp-3) var(--sp-4);
+  background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-md);
+}
+.mc-never-h{ font-size:var(--t-sm); font-weight:600; color:var(--tx); }
+.mc-never-box{
+  width:100%; box-sizing:border-box; resize:vertical; min-height:72px;
+  padding:var(--sp-2) var(--sp-3);
+  font-family:var(--mn); font-size:var(--t-sm); line-height:1.6;
+  color:var(--tx); background:var(--s1);
+  border:1px solid var(--bd); border-radius:var(--r-sm);
+}
+.mc-never-foot{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2) var(--sp-4); }
+.mc-never-note{ flex:1 1 220px; min-width:0; font-size:var(--t-xs); color:var(--dim); line-height:1.5; }
+.mc-never-foot .btn{ min-height:44px; }

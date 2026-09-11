@@ -123,9 +123,14 @@ lifetime budget that never refills. A cap that cannot be read falls back to one
 run rather than to unlimited, and both bounds hold together - budget left over
 does not outlive the end date.
 
-**Still to come here:** allowlists and denylists ("never defence"), time
-windows, and the offer-a-rule flow. Those are what turn the rest of that
-sentence into something the engine can be handed.
+**Done since:** time windows (quiet hours) and the "never defence", which
+turned out to be a DENYLIST rather than the allowlist the engine was built to
+take - see AUTONOMY.md for why an allowlist of everybody AMV may contact is a
+list nobody can finish.
+
+**Still to come here:** the offer-a-rule flow - AMV noticing it has asked the
+same question three times and offering to write the rule itself. Worth doing
+only once there are enough bounds to be worth composing, which there now are.
 
 ## Milestone 6 — The first Auto agent end to end
 

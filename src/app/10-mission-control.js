@@ -2708,6 +2708,64 @@ function mcQuietChange(){
 }
 try{ window.mcQuietToggle = mcQuietToggle; window.mcQuietChange = mcQuietChange; }catch(e){}
 
+/* ── THE NEVER LIST, THE CONTROL ───────────────────────────────────────────
+   Beside quiet hours because they answer the same question from two sides:
+   WHEN may AMV act without me, and WHO may it never approach. Both are things
+   somebody says once and expects to hold for ever.
+
+   A plain list, one per line, rather than a builder with add and remove
+   buttons. Somebody writing this is thinking of three or four names and wants
+   to type them; a row-at-a-time widget turns four seconds of typing into
+   twelve taps, and on a phone that is the difference between writing it down
+   and meaning to.
+
+   What it does is stated exactly on the control, because overstating it would
+   be the whole defect: AMV cannot send to anybody but the account holder, so
+   this governs what it OFFERS - the cancellation letters it writes with an
+   address already filled in. */
+const MC_NEVER_MAX = 40;
+function _mcNever(){
+  try{ const v = load('amv_auto_never'); return Array.isArray(v) ? v : []; }catch(e){ return []; }
+}
+function _mcNeverRowHTML(){
+  const list = _mcNever();
+  return `<div class="mc-never">
+    <label class="mc-never-h" for="mc-never-box">Never write to</label>
+    <textarea id="mc-never-box" class="mc-never-box" rows="3" spellcheck="false"
+      aria-describedby="mc-never-note"
+      placeholder="mybank.com&#10;boss@work.com">${escH(list.join('\n'))}</textarea>
+    <div class="mc-never-foot">
+      <span id="mc-never-note" class="mc-never-note">One per line. An address, or a domain for everyone there. AMV never emails anyone but you - this stops it <b>offering</b> to write to them, which is the one place an address it read out of your mail would end up in front of you.</span>
+      <button class="btn mc-mini" data-dact="mcNeverSave">Save</button>
+    </div>
+  </div>`;
+}
+async function mcNeverSave(){
+  const box = document.getElementById('mc-never-box');
+  if(!box) return;
+  const list = String(box.value || '').split(/[\n,]/).map(s => s.trim()).filter(Boolean).slice(0, MC_NEVER_MAX);
+  if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
+    toast('Saved on this device. It only holds once AMV is connected to a backend - that is where the jobs run.','info',6000);
+    try{ store('amv_auto_never', list); }catch(e){}
+    return;
+  }
+  try{
+    const d = await _autoApi('/auto/update', { action:'never', never: list });
+    try{ store('amv_auto_never', d.never || []); }catch(e){}
+    toast(list.length
+      ? 'Saved. AMV will not offer to write to ' + (list.length === 1 ? list[0] : list.length + ' of them') + '.'
+      : 'Cleared. AMV can offer to write to anyone again.', 'success', 4000);
+    renderCrewView();
+  }catch(e){
+    /* The server refuses the WHOLE list when one entry is unreadable, and says
+       which - so the person fixes that line rather than hunting for it. Saying
+       "saved" here would leave them believing a rule holds that was refused. */
+    toast('NOT saved' + ((e && e.message) ? ' - ' + e.message : '.')
+        + ' Nothing has changed, so anything you had before is still in force.', 'error', 9000);
+  }
+}
+try{ window.mcNeverSave = mcNeverSave; }catch(e){}
+
 function _planAllowsCrew(){
   const plan=loadStr('amv_plan')||'free';
   const need=PLAN_RANK[CREW_REQUIRED_PLAN]||1;
@@ -3011,6 +3069,7 @@ function renderCrewView(){
     </div>
     ${paused?`<div class="mc-paused-banner"><b>Autonomous work is paused.</b> Scheduled and standing jobs won’t run until you resume. Anything already waiting still needs your approval.</div>`:''}
     ${_mcQuietRowHTML()}
+    ${_mcNeverRowHTML()}
     <div class="mc-tiles">${tiles.map(t=>`<button class="mc-tile mc-${t[3]}${t[2]?'':' zero'}" data-mcjump="mc-${t[0]}"><span class="mc-tile-n">${t[2]}</span><span class="mc-tile-l">${t[1]}</span></button>`).join('')}</div>
 
     ${_mcCeilingHTML()}

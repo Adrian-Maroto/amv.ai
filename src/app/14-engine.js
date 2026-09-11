@@ -1822,6 +1822,9 @@ async function _autoRefresh(){
        an absent key means an old server rather than "no window" - only an
        explicit null switches it off. */
     if('quiet' in d){ try{ store('amv_auto_quiet', d.quiet || null); }catch(e){} }
+    /* Same reasoning as the window above: the refusals belong to the account,
+       not to the browser they were typed into. */
+    if('never' in d){ try{ store('amv_auto_never', Array.isArray(d.never) ? d.never : []); }catch(e){} }
     /* QUIET HOURS BELONG TO THE ACCOUNT, NOT TO THE DEVICE THEY WERE SET ON.
 
        The window is written on whichever device somebody happened to be
