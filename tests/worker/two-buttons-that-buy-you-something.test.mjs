@@ -115,6 +115,25 @@ section('A result that is not there is said so, not silently counted');
      'because a tap that silently did nothing is worse than one that says it could not', r.body);
 }
 
+section('A result with no job behind it is still their answer');
+{
+  /* The first version used "no job id" to mean "no such result", so a result
+     that exists but carries no job was WRITTEN TO and then reported as a 404.
+     Telling somebody their tap failed after taking it is the plainest form of
+     the thing this codebase is not allowed to do. There is no offer to earn
+     here - there is no job to make quieter - but the answer is theirs and the
+     button still has to show it. */
+  seed();
+  const r0 = JSON.parse(store.get('auto:' + ME));
+  delete r0.results[0].autoId;
+  store.set('auto:' + ME, JSON.stringify(r0));
+  const r = await say('r0', 'down');
+  ok(r.status === 200 && r.body.ok === true, 'the answer is accepted, not refused', r.body);
+  ok(rec().results.find(x => x.id === 'r0').feel === 'down',
+     'and it is on the result, which is what the button reads',
+     rec().results.find(x => x.id === 'r0').feel);
+}
+
 section('A run of "not worth it" earns the smallest change that answers it');
 {
   seed();

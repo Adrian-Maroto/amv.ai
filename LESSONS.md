@@ -11844,3 +11844,29 @@ offer would mean somebody who declined one question is never asked the other, fo
 ever. A mutation that swapped the two was caught only because the suite asserts
 the OTHER flag is still false - an assertion that looks redundant right up to the
 moment it is the only one that fails.
+
+## 455. The comment said which direction was dangerous, and the code went that way anyway
+
+`_runDigest` decides whether a run said the same thing as last time, and its own
+comment says the thin normalisation exists because making two different results
+look identical would suppress a real change - the expensive direction - while
+missing a repeat only costs an offer nobody was owed.
+
+Three lines below, it stripped bare clock times. So "your next meeting is at
+9:00" and "your next meeting is at 14:30" digested identically. Once somebody
+accepted "email me only when it changes", a calendar job, a departure board, a
+delivery window - every job whose entire purpose is to report a time - would
+have been held back on the morning the time moved. Nothing AMV writes into a
+result stamps a bare HH:MM; the only stamp is a date. The strip could therefore
+only ever remove content.
+
+Found by reading the diff line by line after it had already shipped and gone
+green. Every gate stage passed it, twelve mutations passed it, and the suite had
+an assertion for the date case and none for the time case - because I wrote the
+test from the same wrong idea as the code.
+
+The rule that would have caught it: when a normalisation removes something,
+name the exact producer of the thing being removed. "Timestamps a run stamps on
+itself" was true of the date and false of the time, and one word of imprecision
+in a comment was enough to hide a suppressed change. If no producer can be
+named, it is content.

@@ -28399,27 +28399,41 @@ function _wireAutoServer(root){
       try{ renderTasksView(); }catch(e){}
     });
   });
-  /* One answer per result, posted where it is given. The button shows its own
-     pending state rather than redrawing the whole screen under the person's
-     finger - and a failure says so and puts the button back, because a tap that
-     silently did nothing is worse than one that says it could not. */
+  /* One answer per result, posted where it is given. The pair shows the answer
+     immediately so the tap is acknowledged before the round trip, and the whole
+     view IS redrawn afterwards - an answer can earn an offer, and an offer
+     somebody has to reload to find is one they never see.
+
+     A failure says so and puts both buttons back the way they were, because a
+     tap that silently did nothing is worse than one that says it could not.
+     `aria-pressed` moves with the class: a screen reader announcing the old
+     answer while the screen shows the new one is the same defect, for the
+     person least able to check. */
   root.querySelectorAll('[data-feel]').forEach(b=>{
     b.addEventListener('click', async ()=>{
       const said = b.dataset.feel, id = b.dataset.feelId;
       if(!id) return;
       const row = b.parentNode;
-      const was = row ? [...row.querySelectorAll('[data-feel]')].map(x=>x.className) : [];
-      if(row) row.querySelectorAll('[data-feel]').forEach(x=>{
-        x.disabled = true; x.classList.toggle('on', x === b); });
+      const pair = row ? [...row.querySelectorAll('[data-feel]')] : [];
+      const was = pair.map(x=>({ cls:x.className, pressed:x.getAttribute('aria-pressed') }));
+      pair.forEach(x=>{
+        x.disabled = true;
+        x.classList.toggle('on', x === b);
+        x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+      });
       try{
         await _autoApi('/auto/update', { action:'feel', result:id, said });
-        /* Refreshed because an answer can earn an OFFER, and an offer somebody
-           has to reload to see is one they never see. */
         try{ await _autoRefresh(); }catch(e){}
         try{ renderTasksView(); }catch(e){}
       }catch(e){
-        if(row) row.querySelectorAll('[data-feel]').forEach((x,i)=>{
-          x.disabled = false; if(was[i] !== undefined) x.className = was[i]; });
+        pair.forEach((x,i)=>{
+          x.disabled = false;
+          if(was[i]){
+            x.className = was[i].cls;
+            if(was[i].pressed === null) x.removeAttribute('aria-pressed');
+            else x.setAttribute('aria-pressed', was[i].pressed);
+          }
+        });
         if(typeof toast==='function')
           toast('AMV could not record that: '+((e&&e.message)||'try again'),'error',4500);
       }

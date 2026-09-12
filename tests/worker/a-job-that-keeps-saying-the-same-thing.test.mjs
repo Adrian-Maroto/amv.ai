@@ -106,6 +106,22 @@ section('The digest answers one question and does not overreach');
      'a real change alongside a date is still a change', true);
   ok(W._runDigest('$40 due') !== W._runDigest('$4,000 due'),
      'and a number is content, never noise', true);
+  /* THE ONE THAT SHIPPED WRONG. The first version stripped bare clock times
+     along with the date, which made the two sentences below identical - so a
+     calendar or a departure board, the jobs whose whole purpose is to report a
+     time, would have been called unchanged and held back from somebody who had
+     asked to hear when it changed. Nothing AMV writes into a result stamps a
+     bare HH:MM, so that strip could only ever remove content. */
+  ok(W._runDigest('Your next meeting is at 9:00 with Priya.')
+     !== W._runDigest('Your next meeting is at 14:30 with Priya.'),
+     'and so is a clock time - a meeting moving is the change, not the noise', true);
+  ok(W._runDigest('Train leaves 07:12.') !== W._runDigest('Train leaves 08:45.'),
+     'which is the whole job, for the jobs that report a time', true);
+  /* And the stamp itself still goes, time half included, because it belongs to
+     the date it is part of rather than to anything the run found. */
+  ok(W._runDigest('Generated 2026-09-11T04:10:16Z\nAll clear.')
+     === W._runDigest('Generated 2026-09-12T22:31:02Z\nAll clear.'),
+     'while a full ISO stamp is still the run talking about itself', true);
 }
 
 section('It counts, and says nothing until it has asked');

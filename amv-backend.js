@@ -3639,11 +3639,17 @@ async function autoUpdate(request, env){
   if(body.action === 'feel'){
     const resId = String(body.result || '');
     const said = body.said === 'up' ? 'up' : 'down';
-    let jobId = '';
+    /* TWO FACTS, NOT ONE. The first version tracked only the job id and used
+       "no job id" to mean "no such result" - so a result that exists but
+       carries no job was written to and THEN reported as a 404. Telling
+       somebody their tap failed after taking it is the plainest form of the
+       thing this file is not allowed to do. */
+    let found = false, jobId = '';
     await _withAuto(env, key, (fresh) => {
       if(!fresh) return;
       const r = (fresh.results || []).find(x => x && x.id === resId);
       if(!r) return;
+      found = true;
       /* The same answer twice is one answer, not two. Without this a person
          tapping to confirm what they already said would push a streak over the
          line and be offered a change they never asked for. */
@@ -3652,9 +3658,12 @@ async function autoUpdate(request, env){
       jobId = String(r.autoId || '');
       if(jobId) _feelRecord(fresh, jobId, said);
     }, { items:[], results:[] });
-    if(!jobId) return json({ error: 'That result is not on this account any more.',
+    if(!found) return json({ error: 'That result is not on this account any more.',
                              code: 'no_result' }, 404);
-    audit(env, 'auto_result_feel', { by: user.email, job: jobId, said });
+    /* Recorded on the result either way. A result with no job behind it cannot
+       earn an offer - there is nothing to make quieter - but the answer is
+       still theirs and the button still shows it. */
+    if(jobId) audit(env, 'auto_result_feel', { by: user.email, job: jobId, said });
     return json({ ok: true, said });
   }
 
@@ -4417,13 +4426,22 @@ const OFFER_AFTER_SAME = 4;
    NORMALISATION IS DELIBERATELY THIN. Stripping more would make two genuinely
    different results look identical, and suppressing a real change is the
    dangerous direction of this error; missing a repeat only costs an offer
-   nobody was owed. So: the timestamps a run stamps on its own output, and
-   whitespace. Nothing that could be content. */
+   nobody was owed. So: the date stamp a run writes onto its own output, and
+   whitespace. Nothing that could be content.
+
+   A BARE CLOCK TIME IS CONTENT, and the first version of this stripped it. That
+   made "your next meeting is at 9:00" and "your next meeting is at 14:30"
+   identical, so a calendar or a departure-board job - the jobs whose entire
+   purpose is to report a time - would have been called unchanged and held back
+   from somebody who had asked to hear when it changed. Nothing AMV writes into
+   a result stamps a bare HH:MM; the only stamp is a date. So the strip could
+   only ever remove content, which is exactly the direction this comment says
+   not to go. The full ISO form is still removed because its time half belongs
+   to the stamp it is part of. */
 function _runDigest(text){
   const s = String(text || '')
     .replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g, '')   // the ISO stamp a run writes
     .replace(/\d{4}-\d{2}-\d{2}/g, '')
-    .replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   if(!s) return '';

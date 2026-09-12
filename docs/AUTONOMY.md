@@ -275,10 +275,13 @@ their behalf that they did not mean it is how an account is lost; one boring
 email is not. So this is an OFFER, on the same terms as everything else here:
 
 - A run digests its own output. The normalisation is deliberately thin - the
-  timestamp a run stamps on itself, and whitespace. Nothing that could be
+  date stamp a run writes onto itself, and whitespace. Nothing that could be
   content, because making two different answers look identical would suppress a
   real change, and that is the expensive direction of this error. Missing a
-  repeat only costs an offer nobody was owed.
+  repeat only costs an offer nobody was owed. A bare clock time counts as
+  content: the first version stripped it, which made "your next meeting is at
+  9:00" and "at 14:30" identical and would have held back exactly the jobs
+  whose purpose is to report a time.
 - After five identical mornings on a job set to email, AMV asks once: email you
   only when the answer changes? Every one of those five mornings was still
   emailed. Nothing is suppressed before the answer.
