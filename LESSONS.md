@@ -12148,3 +12148,89 @@ check whether the environment detail is part of what the test is asserting. An
 address, a port, a locale, a timezone, a filesystem case-sensitivity - each is
 sometimes incidental and sometimes the subject, and the ones that are the
 subject do not announce it.
+
+## 466. Three controls on every dollar in AMV, in code no test had run
+
+`AMVCounter` is the Durable Object that arbitrates every spend ceiling and
+every money lock in the product. Three of its guards could be deleted without
+breaking anything:
+
+- `if (next > body.cap)` - the single line that stops an unbounded overshoot.
+  Without it a $10 ceiling admits a $40 call (AMV-017, found once already).
+- `!Number.isFinite(amount) || amount < 0` - and this one is not a bypass but a
+  GIFT: `next = cur + amount` with a negative amount LOWERS the total everybody
+  else on that counter is measured against, so one crafted reservation buys
+  headroom for every other caller.
+- `Math.max(0, ...)` in `incr` - the same gift by the other door, since a
+  refund larger than the spend leaves a negative total. Release paths are
+  best-effort and never throw, so a double release genuinely happens.
+
+Eight suites are about money ceilings and every one of them drives a TEST
+DOUBLE. The doubles are honest - "a counter that behaves like the Durable
+Object" - and right for the question those suites ask, which is whether the
+CALLERS compose: do they reserve before spending, do they settle the difference
+instead of charging twice. They answer it well, and one caught a real double
+charge during this audit.
+
+But it means the tested sentence was "the callers are right" and the untested
+one was "the counter is right". Exactly one test file constructs the real class,
+for `claim` and `release` - and its single `reserve` call deliberately uses an
+env whose Durable Object is UNREACHABLE, to cover the degraded path. So a
+reasonable reader counts that as coverage of reserve when it is coverage of the
+opposite branch: the most expensive kind of near-miss, because the gap looks
+closed.
+
+`the-ceiling-is-decided-inside-the-counter` now drives the real object for the
+ops that guard money, asserting both directions at every boundary - what is
+refused, and that a refusal DID NOT BOOK. A ceiling that refuses the call and
+charges anyway is worse than no ceiling: the money moves and the audit says it
+was stopped.
+
+The rule: a double you wrote of a component you ship is not coverage of that
+component. It is a claim that two implementations agree, and that claim needs
+its own test. And the tell is a compliment in a comment - every one of these
+doubles is introduced by a sentence praising its fidelity, which is the author
+telling you the fidelity matters and is unverified.
+
+## 467. I reported the opposite of the truth, twice, from exit codes
+
+This finding took three attempts, and the two wrong ones failed in opposite
+directions from the same root cause: I was reading the wrong signal.
+
+Attempt one screened each mutation against a hand-picked list of suites whose
+names sounded like money. Nothing on the list noticed, so the report said
+UNNOTICED. That list could not be trusted - I chose it by reading names, having
+just spent hours establishing that reading is what misses things - so a narrow
+list can produce a false UNNOTICED about well-covered code.
+
+Attempt two ran every suite and inferred "caught" from a NON-ZERO EXIT CODE.
+All three mutations came back caught, so I announced a correction: no holes, my
+harness had been at fault, and I deleted a drafted lesson as false. That
+correction was itself false. Two Playwright suites - an aria-live toast test and
+a Build console-error test - were failing under load, because I was running two
+full 454-suite passes concurrently in two worktrees. A test suite exiting
+non-zero says SOMETHING failed, not that the thing you broke was noticed.
+
+Attempt three stopped measuring and proved it. Only one test file constructs
+`AMVCounter`; every other `AMV_COUNTER` in the suites is a hand-built object
+literal. Nothing can reach the real `reserve` or `incr` branch, by
+construction. No run, no flakiness, no attribution problem - and it agrees with
+attempt one.
+
+Three rules, each of which would have saved a wrong report.
+
+Attribution needs the FAILING ASSERTION to match the mutation semantically. A
+mutation to a spend ceiling that "breaks" a toast test broke nothing; the exit
+code cannot tell you that and the assertion text can.
+
+Never run two full suites at once and then trust either. The contention makes
+timing-sensitive tests fail, and those failures look exactly like detection.
+
+And where reachability can be PROVED, prove it. "Which suites executed this
+branch" is often a question about imports and constructors, answerable in one
+grep and immune to every flake.
+
+The uncomfortable part is that the second report was the confident one. It came
+with a full-suite run behind it and a tidy story about my own error, which made
+it more persuasive than the finding it overturned. A correction is not more
+likely to be right than what it corrects.

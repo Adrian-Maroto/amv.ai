@@ -186,5 +186,42 @@ section('Every phase reports into the same list, not just the one that always di
   ok(reports >= 15, 'and the phases that can fail all report into one list', reports);
 }
 
+section('A team membership that could not be removed is NOT reported as deleted');
+{
+  /* THE PHASE THAT REPORTED EVERYWHERE EXCEPT TO THE PERSON.
+
+     Found by deleting `_eraseFailed('team membership')` and watching every
+     suite in the repository stay green. It survives the two checks that look
+     like they cover it, for reasons worth writing down:
+
+     The silent-catch check requires a catch that SAYS NOTHING, and this catch
+     still audits and still pages an operator - so it is correctly excluded.
+     The count check requires at least fifteen reports and there are
+     twenty-seven, so losing one leaves twenty-six and passes.
+
+     Both are reasonable rules. Neither asserts the sentence the comment beside
+     this phase actually claims: "until now the ROUTE still answered deleted".
+     An operator being paged is not the person being told. Erasure is a legal
+     obligation to the PERSON, and a reply of `deleted: true` is the thing they
+     keep. */
+  const env = makeEnv();
+  const a = await signup(env, 'mem@x.com');
+  await env.AMV_KV.put('userteam:mem@x.com', 't1');
+  await env.AMV_KV.put('team:t1', JSON.stringify({
+    id: 't1', ownerEmail: 'boss@x.com', members: [{ email: 'mem@x.com' }, { email: 'boss@x.com' }] }));
+  env._failWrite = /^team:/;   // armed only now the fixture is in place
+
+  const r = await erase(env, 'mem@x.com', a.token);
+  ok(r.body.deleted === false, 'the answer is not "deleted"', JSON.stringify(r.body.deleted));
+  ok(r.body.incomplete === true, 'it is marked incomplete', r.body.incomplete);
+  ok((r.body.failed || []).some(f => /team/i.test(f)),
+     'and names the team membership as what survived', JSON.stringify(r.body.failed));
+
+  const team = JSON.parse(env._kv.get('team:t1') || '{}');
+  ok((team.members || []).some(m => m.email === 'mem@x.com'),
+     'and the membership row really did survive, so this is not a false alarm',
+     JSON.stringify(team.members));
+}
+
 if (report('an-erasure-that-half-worked-has-to-say-so') > 0) process.exitCode = 1;
 done();

@@ -210,7 +210,14 @@ Companion docs (do not duplicate them here - read them):
   consent dialog whose "Deny" was discarded, and a forged Stripe webhook that
   granted plans. `docs/TRUST-AUDIT.md` records what was attacked, what survived,
   and what is still unmeasured.
-  Two rules came out of it and both are cheap to apply:
+  Attribute a catch by the FAILING ASSERTION, never by an exit code: a suite
+  exiting non-zero says something failed, not that the thing you broke was
+  noticed - two flaky browser suites under load once made three real holes look
+  covered, and the confident correction was the wrong report (LESSONS 467).
+  Never run two full suites at once and trust either. And where reachability can
+  be PROVED - "does any suite construct this class" is one grep - prove it
+  instead of measuring it.
+  Two more rules and both are cheap to apply:
   a test that reads source can only check a line is PRESENT, and the mutation
   that defeats it does not have to remove it - so a VERIFIER and the ROUTE that
   uses it are two separate claims, and only the first can be checked by reading.

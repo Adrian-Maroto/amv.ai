@@ -89,6 +89,33 @@ origin in one place.
 
 ---
 
+## The counter, and erasure - 9 attacked, 4 unnoticed
+
+Added after the four paths above. Both were reported wrongly before they were
+reported correctly; LESSONS 467 has the method failure in full.
+
+| # | Attack | Was | Now caught by |
+|---|--------|-----|---------------|
+| 1 | **`reserve` stops enforcing the cap (unbounded overshoot)** | **unnoticed** | `the-ceiling-is-decided-inside-the-counter` |
+| 2 | **`reserve` accepts a negative amount (free budget for everyone)** | **unnoticed** | same |
+| 3 | **`incr` lets a refund drive the counter negative** | **unnoticed** | same |
+| 4 | `release` deletes a lock it does not own | caught | `a-lock-that-expired-is-somebody-elses-lock` |
+| 5 | A half-worked erasure answers `ok:true` | caught | three suites |
+| 6 | The reauth answer is computed and discarded | caught | `erasing-everything-needs-more-than-a-token` |
+| 7 | Unsettled payouts no longer block deletion | caught | same |
+| 8 | A failed payout lookup reads as "nothing outstanding" | caught | same |
+| 9 | **One erasure phase (team membership) fails silently** | **unnoticed** | `an-erasure-that-half-worked-has-to-say-so` |
+
+1-3 are the guards on every dollar in the product, in the one class no suite
+ever ran: eight money suites all drive a test double of it.
+
+9 is the connector-consent shape once more. The phase audits AND pages an
+operator, so the suite's silent-catch check correctly skips it, and its count
+check passes with 26 reports where 15 are required. Nothing asserted the thing
+the code's own comment claims - that the ROUTE stops answering "deleted". An
+operator being paged is not the person being told, and erasure is an obligation
+to the person.
+
 ## What this does NOT cover
 
 Said plainly, because an audit that implies more than it measured is worse than
