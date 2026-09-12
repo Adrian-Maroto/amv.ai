@@ -26,7 +26,8 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'wsig.harness.mjs');
 writeFileSync(harness, src + `
-export { verifyStripeSignature };
+export { verifyStripeSignature, stripeWebhook, paypalWebhook, DB };
+export function __setVerifyPaypal(fn){ verifyPaypalWebhook = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -136,6 +137,100 @@ section('The worker verifies before it parses');
      'the signature is checked before the payload is read', true);
   ok(/audit\(env, 'forged_webhook'/.test(body),
      'and a refused event is recorded, because a forged webhook is an attack', true);
+}
+
+/* ── AND THE ROUTE ACTUALLY REFUSES, WHICH IS A DIFFERENT CLAIM ─────────────
+
+   Everything above proves `verifyStripeSignature` is a correct verifier, and
+   the section above that proves the route MENTIONS it in the right order. None
+   of it proves the route acts on the answer.
+
+   It did not. Changing the handler to
+
+     if (false) { audit(env, 'forged_webhook', …); return new Response(…, 400); }
+
+   leaves both of those source strings exactly where they were, in the same
+   order - and every money suite in the repository still passed while a forged
+   event granted plans. This is the same shape as a verifier that is called and
+   whose result is dropped, and it is on the one path where the consequence is
+   anybody on the internet giving themselves whatever they like.
+
+   So the route is DRIVEN here: a forged event in, a refusal and an untouched
+   store out. */
+const mkEnv = (extra) => {
+  const m = new Map();
+  return Object.assign({
+    STRIPE_WEBHOOK_SECRET: SECRET,
+    PAYPAL_WEBHOOK_ID: 'wh-test',
+    AMV_KV: {
+      _map: m,
+      async get(k){ return m.has(k) ? m.get(k) : null; },
+      async put(k, v){ m.set(k, v); },
+      async delete(k){ m.delete(k); },
+      async list({ prefix }){ return { keys: [...m.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; },
+    },
+  }, extra || {});
+};
+const post = (fn, env, body, headers) => fn(new Request('https://x/v1/stripe/webhook', {
+  method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, headers || {}), body,
+}), env, { waitUntil(){} });
+
+/* A real-shaped grant: the event that upgrades somebody's plan. If a forgery
+   were accepted, THIS is what it would buy. */
+const GRANT = JSON.stringify({ id: 'evt_forged_1', type: 'checkout.session.completed',
+  data: { object: { id: 'cs_1', mode: 'subscription', customer: 'cus_1',
+    customer_email: 'attacker@example.com', subscription: 'sub_1',
+    metadata: { email: 'attacker@example.com', plan: 'ultra' } } } });
+
+section('A forged event is refused by the ROUTE, not only by the verifier');
+{
+  const env = mkEnv();
+  const before = env.AMV_KV._map.size;
+  const t = now();
+  const r = await post(W.stripeWebhook, env, GRANT, { 'Stripe-Signature': `t=${t},v1=` + '0'.repeat(64) });
+  ok(r.status === 400, 'the request is refused', r.status);
+  ok(env.AMV_KV._map.size === before,
+     'and nothing at all was written - no entitlement, no claim, no record',
+     [...env.AMV_KV._map.keys()]);
+  const ent = await W.DB.get(env, 'ent', 'attacker@example.com');
+  ok(!ent, 'in particular, nobody got a plan out of it', ent);
+}
+
+section('And the same event, correctly signed, is not refused');
+{
+  /* The other direction matters just as much: a rejected genuine webhook means
+     somebody paid and got nothing, which they experience as theft. This asserts
+     the route is a gate and not a wall - it gets past the signature check. */
+  const env = mkEnv();
+  const t = now();
+  const v1 = await sign(SECRET, GRANT, t);
+  const r = await post(W.stripeWebhook, env, GRANT, { 'Stripe-Signature': `t=${t},v1=${v1}` });
+  ok(r.status !== 400, 'a genuine event is not turned away as a forgery', r.status);
+  ok(env.AMV_KV._map.size > 0, 'and the worker got far enough to do real work',
+     [...env.AMV_KV._map.keys()].slice(0, 6));
+}
+
+section('PayPal refuses at the route too, by the same measurement');
+{
+  /* The second money path, with the same shape of verifier and the same shape
+     of hole available. Its verification is a call to PayPal, so that call is
+     the thing stubbed - everything from the answer inward is the real route. */
+  const env = mkEnv();
+  W.__setVerifyPaypal(async () => false);
+  const body = JSON.stringify({ id: 'WH-forged', event_type: 'BILLING.SUBSCRIPTION.ACTIVATED',
+    resource: { id: 'I-1', custom_id: 'attacker@example.com|ultra' } });
+  const r = await W.paypalWebhook(new Request('https://x/v1/paypal/webhook',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }), env, { waitUntil(){} });
+  ok(r.status === 400, 'an unverified PayPal event is refused', r.status);
+  ok(env.AMV_KV._map.size === 0, 'with nothing written', [...env.AMV_KV._map.keys()]);
+  const ent = await W.DB.get(env, 'ent', 'attacker@example.com');
+  ok(!ent, 'and no plan granted', ent);
+
+  W.__setVerifyPaypal(async () => true);
+  const env2 = mkEnv();
+  const r2 = await W.paypalWebhook(new Request('https://x/v1/paypal/webhook',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body }), env2, { waitUntil(){} });
+  ok(r2.status !== 400, 'while a verified one gets through', r2.status);
 }
 
 if (report('webhook-signature') > 0) process.exitCode = 1;

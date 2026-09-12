@@ -11971,3 +11971,39 @@ And a comment that says "this is safe because X, Y and Z bound it" is a list of
 things to go and test. It is the clearest possible statement of what the code
 depends on, written by the person who knew, and it is worth more as a test plan
 than as prose.
+
+## 460. The same hole, in the same shape, on the money path
+
+The connector audit found that a test reading source can only check a line is
+PRESENT. Pointing the same five mutations at the money path found it again, in
+the place where it is worst.
+
+`webhook-signature` proves `verifyStripeSignature` is a correct HMAC verifier -
+eleven assertions covering the replay window, secret rotation, malformed
+headers, a tampered body. It is thorough and it is right. Then one section
+claims to check the ROUTE, and does it by reading source text: that
+`verifyStripeSignature` appears before `JSON.parse`, and that
+`audit('forged_webhook')` appears.
+
+Change the handler to
+
+    if (false) { audit(env, 'forged_webhook', …); return new Response(…, 400); }
+
+and both strings are still there, in the same order. Every money suite in the
+repository passed while anybody on the internet could POST a
+`checkout.session.completed` and grant themselves any plan. PayPal had the same
+shape available.
+
+Four of the five other money mutations were caught, and caught well - a lapsed
+subscription keeping its plan, a payout over the review limit, a refused spend
+reservation treated as allowed, a missing ceiling meaning no counter. The money
+path is well tested. It had exactly one hole and it was the front door.
+
+The rule, now stated twice from two directions: **a verifier and the route that
+uses it are two different claims, and only one of them can be checked by
+reading.** Test the verifier with inputs. Test the route by sending it a forged
+request and looking at what was written.
+
+And the tell to look for: a suite that tests a function exhaustively and then
+has one short section about "the worker" made of `indexOf` and regex. That
+section is where the hole is.
