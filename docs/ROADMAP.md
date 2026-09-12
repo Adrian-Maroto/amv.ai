@@ -128,9 +128,13 @@ turned out to be a DENYLIST rather than the allowlist the engine was built to
 take - see AUTONOMY.md for why an allowlist of everybody AMV may contact is a
 list nobody can finish.
 
-**Still to come here:** the offer-a-rule flow - AMV noticing it has asked the
-same question three times and offering to write the rule itself. Worth doing
-only once there are enough bounds to be worth composing, which there now are.
+**Done.** The offer-a-rule flow shipped last: AMV counts how a person has
+answered about each job and, once the answer is established, offers to write it
+down - deliver without asking, or pause a job whose output keeps being thrown
+away. Both directions exist, and that is not a nicety: an offer that only ever
+points towards more autonomy is a growth nudge in the costume of helpfulness,
+and would be worth more to AMV than to the person. Declined once, never raised
+again. See AUTONOMY.md.
 
 ## Milestone 6 — The first Auto agent end to end
 

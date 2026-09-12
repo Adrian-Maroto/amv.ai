@@ -12449,3 +12449,21 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .mc-never-foot{ display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2) var(--sp-4); }
 .mc-never-note{ flex:1 1 220px; min-width:0; font-size:var(--t-xs); color:var(--dim); line-height:1.5; }
 .mc-never-foot .btn{ min-height:44px; }
+
+/* ── LAYER A193 · the one thing AMV proposes ─────────────────────────────────
+   Both answers are buttons of equal size. A "yes" styled as the obvious choice
+   and a "no" styled as a link is not an offer, it is a funnel - and this one
+   can propose LESS autonomy as readily as more, which is the only reason it is
+   defensible. Styling it as a decision rather than a prompt is part of that. */
+.mc-offer{
+  display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-3) var(--sp-4);
+  margin:var(--sp-3) 0 0; padding:var(--sp-4);
+  background:var(--s2); border:1px solid var(--bd); border-left:3px solid var(--accent);
+  border-radius:var(--r-md);
+}
+.mc-offer-pause{ border-left-color:var(--gold); }
+.mc-offer-b{ flex:1 1 260px; min-width:0; display:flex; flex-direction:column; gap:var(--sp-1); }
+.mc-offer-t{ font-size:var(--t-sm); font-weight:600; color:var(--tx); }
+.mc-offer-s{ font-size:var(--t-sm); color:var(--mu); line-height:1.55; }
+.mc-offer-acts{ display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+.mc-offer-go{ min-height:44px; }

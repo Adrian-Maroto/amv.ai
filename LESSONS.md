@@ -11600,3 +11600,53 @@ what it obviously means. **Refusing an entry is honest; accepting one and
 quietly matching nothing is not** - and between those two, the loudest possible
 handling of "I am not sure what you meant" is the right one, because the whole
 point of the list is the cases where being wrong is expensive.
+
+## 444. An offer that only points one way is a nudge, not an offer
+
+The last M5 bound is the only one AMV proposes itself: after somebody has
+approved the same job five times running, it offers to stop asking.
+
+Written that way and stopped there, it would be a growth mechanic. Every
+acceptance moves the product towards more autonomy, none moves it back, and the
+sentence "you have approved this six times" is true no matter how much it
+happens to suit the one asking. It would be worth more to AMV than to the
+person, which is the test that matters.
+
+So it points both ways: a run of REFUSALS offers to pause the job, because a job
+whose output keeps being thrown away costs money to produce rubbish. The suite
+has a section whose only purpose is to fail if that direction is ever removed,
+and a mutation deleting it is caught.
+
+Three smaller decisions in the same spirit:
+
+- **Both answers are buttons of the same size.** A "yes" styled as the obvious
+  choice and a "no" styled as a link is a funnel with good manners, and the e2e
+  asserts the tag name and the height of both.
+- **Declined means never again**, not "not now". The flag is set when the offer
+  is shown and never cleared - ten further approvals do not bring it back.
+- **Never offer what the account forbids.** Proposing autonomy under an
+  ask-first ceiling would be offering something that cannot happen, and somebody
+  who accepted would have been lied to twice.
+
+**When building something the product asks FOR rather than waits to be told,
+write down who it is worth more to.** If the answer is the product, the design
+is not finished.
+
+## 445. A test that reads the constant cannot hold the line the constant draws
+
+The suite checked "nothing is offered before the threshold" by looping up to
+`OFFER_AFTER_YES`. A mutation setting that constant to **1** survived: the loop
+simply ran zero times and every assertion still passed.
+
+The threshold is not an implementation detail. It is the entire difference
+between an offer and pestering - offering to write a rule after one approval is
+the behaviour this design exists to be the opposite of. A suite that reads the
+constant tests that the code is self-consistent, which it always is.
+
+So it now asserts the line as well as the behaviour: at least four approvals
+before AMV suggests a habit, at least three refusals before it suggests pausing
+something somebody deliberately set up.
+
+**Where a number encodes a judgement, assert the judgement.** Reading the number
+back and comparing it to itself proves nothing, and it is a comfortable kind of
+nothing, because it looks like coverage.

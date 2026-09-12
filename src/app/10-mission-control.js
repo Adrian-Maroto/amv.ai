@@ -2708,6 +2708,57 @@ function mcQuietChange(){
 }
 try{ window.mcQuietToggle = mcQuietToggle; window.mcQuietChange = mcQuietChange; }catch(e){}
 
+/* ── THE OFFER ─────────────────────────────────────────────────────────────
+   The only thing on this screen AMV proposes rather than waits to be told, so
+   it has to earn its place every time it appears.
+
+   Both answers are buttons of equal weight. A "yes" styled as the obvious
+   choice and a "no" styled as a link is not an offer, it is a funnel - and
+   this one can propose LESS autonomy as easily as more, which is the reason it
+   is defensible at all.
+
+   It disappears the moment it is answered, either way, and the server never
+   raises it again for that job. */
+function _mcOfferHTML(){
+  const o = (typeof window._autoOffer === 'function') ? window._autoOffer() : null;
+  if(!o || !o.say) return '';
+  return `<section class="mc-offer mc-offer-${escH(String(o.kind || 'auto'))}">
+    <div class="mc-offer-b">
+      <div class="mc-offer-t">${escH(o.kind === 'pause' ? 'This job keeps producing something you do not use'
+                                                        : 'You have said yes to this every time')}</div>
+      <div class="mc-offer-s">${escH(String(o.say))}</div>
+    </div>
+    <div class="mc-offer-acts">
+      <button class="btn mc-offer-go" data-dact="mcOfferAnswer" data-darg="yes">${escH(String(o.accept || 'Yes'))}</button>
+      <button class="btn ghost mc-offer-go" data-dact="mcOfferAnswer" data-darg="no">${escH(String(o.decline || 'No'))}</button>
+    </div>
+  </section>`;
+}
+async function mcOfferAnswer(arg){
+  const o = (typeof window._autoOffer === 'function') ? window._autoOffer() : null;
+  if(!o) return;
+  const accept = String(arg) === 'yes';
+  /* Cleared before the request, so a second press cannot answer twice - and
+     restored if the request fails, because an offer that vanished without
+     being recorded is one the person will never be asked about again. */
+  try{ window._autoOfferClear(); }catch(e){}
+  renderCrewView();
+  try{
+    const d = await _autoApi('/auto/update', { action:'offer', job:o.job, accept });
+    if(!accept) toast('AMV will not ask about that one again.','info',4000);
+    else if(d.applied === 'auto') toast('Done - this job delivers without asking now. You can change it back on its row.','success',6000);
+    else if(d.applied === 'pause') toast('Paused. It stops running and stops costing anything; resume it on its row whenever you want.','success',6000);
+    else toast('Nothing changed - that offer was no longer valid for this job.','info',5000);
+    try{ await _autoRefresh(); }catch(e){}
+    renderCrewView();
+  }catch(e){
+    toast('That did NOT go through' + ((e&&e.message)?' ('+e.message+')':'') + ', so nothing has changed. It will be offered again.','error',7000);
+    try{ await _autoRefresh(); }catch(_){}
+    renderCrewView();
+  }
+}
+try{ window.mcOfferAnswer = mcOfferAnswer; }catch(e){}
+
 /* ── THE NEVER LIST, THE CONTROL ───────────────────────────────────────────
    Beside quiet hours because they answer the same question from two sides:
    WHEN may AMV act without me, and WHO may it never approach. Both are things
@@ -3068,6 +3119,7 @@ function renderCrewView(){
       <div id="mc-cmd-result" class="mc-cmd-result"></div>
     </div>
     ${paused?`<div class="mc-paused-banner"><b>Autonomous work is paused.</b> Scheduled and standing jobs won’t run until you resume. Anything already waiting still needs your approval.</div>`:''}
+    ${_mcOfferHTML()}
     ${_mcQuietRowHTML()}
     ${_mcNeverRowHTML()}
     <div class="mc-tiles">${tiles.map(t=>`<button class="mc-tile mc-${t[3]}${t[2]?'':' zero'}" data-mcjump="mc-${t[0]}"><span class="mc-tile-n">${t[2]}</span><span class="mc-tile-l">${t[1]}</span></button>`).join('')}</div>

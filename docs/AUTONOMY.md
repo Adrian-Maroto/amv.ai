@@ -184,6 +184,42 @@ An entry AMV cannot read refuses the WHOLE save and names the line, rather than
 keeping the half it understood. A bound whose meaning is a guess is not a bound,
 and the person would discover it was a guess at the worst possible moment.
 
+## The rule you already wrote
+
+Somebody who has approved the same job's result every morning for a week has
+answered that question. Asking an eighth time is not caution - it is a tax on
+having set the job up - and the person is the only one who can turn their answer
+into a rule.
+
+So AMV counts, per job, how the answers have run, and offers once:
+
+| what happened | what is offered |
+|---|---|
+| five approvals in a row | deliver this without asking from now on |
+| three refusals in a row | pause it - it costs money to produce something you throw away |
+
+**Both directions, and that is the design rather than a nicety.** An offer that
+only ever points towards more autonomy is a growth nudge in the costume of
+helpfulness, and would be worth more to AMV than to the person. The suite that
+covers this fails if the pause direction disappears.
+
+Four rules it follows:
+
+- **A streak, not a total.** One "no" resets the count. Somebody who said no
+  once has not said yes five times in a row, and that "no" was the most
+  informative answer in the sequence.
+- **Declined means never again.** The flag is set when the offer is shown and is
+  never cleared. A prompt somebody declined and then sees again is not an offer.
+- **It never offers what the account forbids.** Proposing autonomy under a
+  ceiling of "ask first" would be offering something that cannot happen, and
+  accepting it would have lied to them twice.
+- **The answer is re-derived under the lock, not trusted from the request.**
+  Otherwise "accept: make it autonomous" would be a way to raise a job's
+  permissions by asking for it.
+
+Both answers are buttons of the same size. A "yes" styled as the obvious choice
+and a "no" styled as a link is a funnel with good manners.
+
 ## Silence is not approval
 
 An approval that expires is a denial. An approval nobody answered is a denial.

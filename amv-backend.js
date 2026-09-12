@@ -2084,6 +2084,10 @@ async function autoList(request, env){
                 standing: rec.standing || '',
                 quiet: (rec.quiet && Number.isInteger(rec.quiet.from)) ? rec.quiet : null,
                 never: _neverList(rec),
+                /* AT MOST ONE, ever. Two offers on one screen is a settings
+                   page nobody asked for, and the whole justification for this
+                   is that it arrives where the person already is. */
+                offer: (rec.items || []).map(it => _offerFor(rec, it)).filter(Boolean)[0] || null,
                 /* The highest level any of this account's jobs may reach. The
                    screen has to show it, because a job displaying "autonomous"
                    under a ceiling of "ask first" would be lying about what
@@ -3620,6 +3624,36 @@ async function autoUpdate(request, env){
     return json({ ok:true, quiet: next });
   }
 
+  /* ANSWERING AN OFFER. Accepting applies the change AND marks it offered;
+     declining only marks it. Both are final - the flag is never cleared, so a
+     "no" means AMV stops asking about this job rather than waiting a while and
+     trying again, which is what "no" means everywhere else. */
+  if(body.action === 'offer'){
+    const jobId = String(body.job || '');
+    const take = body.accept === true;
+    let applied = '';
+    await _withAuto(env, key, (fresh) => {
+      if(!fresh) return;
+      const it = (fresh.items || []).find(x => x && x.id === jobId);
+      if(!it) return;
+      const off = _offerFor(fresh, it);
+      /* Re-derived under the lock rather than trusted from the request. A
+         client that says "accept: make it autonomous" for a job that never
+         earned the offer would otherwise be raising its own permissions. */
+      if(!off) return;
+      if(take){
+        if(off.kind === 'auto'){ it.approval = 'auto'; applied = 'auto'; }
+        else if(off.kind === 'pause'){ it.active = false; applied = 'pause'; }
+      }
+      if(!fresh.tally || typeof fresh.tally !== 'object') fresh.tally = {};
+      const t = fresh.tally[jobId] || { yes:0, no:0 };
+      t.offered = true;
+      fresh.tally[jobId] = t;
+    }, { items:[], results:[] });
+    audit(env, 'auto_offer_answered', { by: user.email, job: jobId, accepted: take, applied });
+    return json({ ok:true, applied: applied || null, accepted: take });
+  }
+
   /* The never list. Whole addresses, `@domain`, or a bare domain; anything
      else is REFUSED and named, rather than stored as something AMV alone can
      interpret. A bound whose meaning is a guess is not a bound, and the person
@@ -4283,6 +4317,82 @@ function _neverBlocks(list, addr){
     } else if(a === e) return e;
   }
   return '';
+}
+
+/* ── ASKING THE SAME QUESTION FOREVER IS NOT RESPECT ───────────────────────
+   THE LAST OF THE BOUNDS, AND THE ONLY ONE AMV PROPOSES ITSELF.
+
+   Somebody who has approved the same job's result every morning for a week has
+   answered that question. Asking an eighth time is not caution, it is a tax on
+   having set the job up at all - and the person is the only one who can say
+   whether the answer is now a rule.
+
+   SYMMETRIC, AND THAT IS THE WHOLE POINT. An offer that only ever points
+   towards MORE autonomy is a growth nudge wearing the costume of helpfulness,
+   and it would be worth more to AMV than to the person. So a run of REJECTIONS
+   is offered the opposite: pause the job, because a job whose output you keep
+   throwing away is a job costing money to produce rubbish. If only one
+   direction had shipped, this would be the wrong feature.
+
+   OFFERED ONCE. A prompt somebody declined and then sees again is not an
+   offer, it is pestering, and the honest reading of "no" is "stop asking about
+   this". `offered` is set when it is shown and never cleared.
+
+   Counted here rather than inferred from the results list, because a result
+   records what the RUN did and this is about what the PERSON said - and the
+   two are different questions that would drift apart the moment either changed
+   shape. */
+const OFFER_AFTER_YES = 5;
+const OFFER_AFTER_NO = 3;
+
+/* One person's answering history for one job. Deliberately tiny: two streaks
+   and a flag. Not a log - a log of somebody's decisions is a thing to be
+   careful with, and nothing here needs the individual answers. */
+function _tallyOf(rec, jobId){
+  const all = (rec && rec.tally) || {};
+  const t = all[String(jobId || '')] || {};
+  return { yes: Number(t.yes) || 0, no: Number(t.no) || 0, offered: !!t.offered };
+}
+function _tallyRecord(rec, jobId, said){
+  const id = String(jobId || '');
+  if(!id) return;
+  if(!rec.tally || typeof rec.tally !== 'object') rec.tally = {};
+  const t = rec.tally[id] || { yes: 0, no: 0, offered: false };
+  /* A STREAK, not a total. Somebody who approved something four times, once
+     said no, and has approved twice since has not answered the same way seven
+     times - and the "no" is the most informative answer in that sequence. The
+     opposite streak resets, so the count always describes an unbroken run. */
+  if(said === 'yes'){ t.yes = (Number(t.yes) || 0) + 1; t.no = 0; }
+  else { t.no = (Number(t.no) || 0) + 1; t.yes = 0; }
+  rec.tally[id] = t;
+}
+
+/* What, if anything, is worth offering about this job - computed, never
+   stored, so it cannot go stale against the record it describes.
+
+   `ceiling` is respected: offering to make a job autonomous under an account
+   that holds everything at "ask first" would be offering something that cannot
+   happen, and a person who accepted it would have been lied to twice. */
+function _offerFor(rec, item){
+  if(!item || item.active === false) return null;
+  const t = _tallyOf(rec, item.id);
+  if(t.offered) return null;
+  const ceiling = _autoApprovalOf(rec && rec.ceiling, 'auto');
+  if(t.no >= OFFER_AFTER_NO) return {
+    job: item.id, kind: 'pause', count: t.no,
+    say: 'You have turned down what this job produced ' + t.no + ' times in a row. '
+       + 'It runs whether or not you use the result, so it is costing you money to make something '
+       + 'you keep throwing away. Pause it?',
+    accept: 'Pause it', decline: 'Keep it running',
+  };
+  if(t.yes >= OFFER_AFTER_YES && String(item.approval || 'require') !== 'auto' && ceiling === 'auto') return {
+    job: item.id, kind: 'auto', count: t.yes,
+    say: 'You have approved this job ' + t.yes + ' times in a row without changing anything. '
+       + 'AMV can deliver it without asking from now on. You can put it back to asking at any time, '
+       + 'and nothing else about the job changes.',
+    accept: 'Stop asking me', decline: 'Keep asking',
+  };
+  return null;
 }
 
 /* ── THE CANCELLATION ITSELF ───────────────────────────────────────────────
@@ -8961,6 +9071,17 @@ async function crewApprovalAct(request, env){
   await _withKind(env, 'approvals', user.email, (fresh) => {
     fresh.items = (fresh.items || []).filter(a => a.id !== id);   // approve/reject both resolve it
   }, { items: [] });
+  /* WHAT THEY SAID, against the job that asked. Only for a card a job produced:
+     a one-off draft has no rule to offer and counting it would put somebody's
+     answer about one thing onto a job they were not thinking about. */
+  if(item && item.fromJob){
+    try{
+      await _withAuto(env, _autoKey(user.email), (fresh) => {
+        if(fresh) _tallyRecord(fresh, item.fromJob, action === 'approve' ? 'yes' : 'no');
+      }, { items:[], results:[] });
+    }catch(e){ /* the decision stands whether or not the tally did - this is a
+                  convenience, and it must never be able to fail a real one. */ }
+  }
   audit(env, 'approval_act', { by:user.email, action: action || 'resolved', delivered });
   return json({ ok:true, action: action || 'resolved', found:true, delivered });
 }

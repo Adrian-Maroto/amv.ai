@@ -1825,6 +1825,10 @@ async function _autoRefresh(){
     /* Same reasoning as the window above: the refusals belong to the account,
        not to the browser they were typed into. */
     if('never' in d){ try{ store('amv_auto_never', Array.isArray(d.never) ? d.never : []); }catch(e){} }
+    /* Computed fresh by the server on every read, never stored there, so it
+       cannot describe a job that has since changed. Held here only until the
+       screen draws. */
+    if('offer' in d) _AUTO_OFFER = d.offer || null;
     /* QUIET HOURS BELONG TO THE ACCOUNT, NOT TO THE DEVICE THEY WERE SET ON.
 
        The window is written on whichever device somebody happened to be
@@ -1904,6 +1908,11 @@ async function _autoMarkRead(){
    ABOVE this text and are not editable from here. */
 let _AUTO_STANDING = '';
 
+/* The one thing AMV proposes about how it should be governed, rather than
+   waiting to be told. Null unless somebody has answered the same way about one
+   job enough times for their answer to be a rule they might want written down. */
+let _AUTO_OFFER = null;
+
 /* THE HIGHEST LEVEL ANY OF THIS ACCOUNT'S BACKGROUND JOBS MAY REACH.
 
    Kept beside the standing instruction because they are the same kind of thing:
@@ -1930,6 +1939,7 @@ try{
   window._autoRefresh=_autoRefresh; window._autoAction=_autoAction; window._autoMarkRead=_autoMarkRead;
   window._autoStanding=_autoStanding; window._autoStandingText=()=>_AUTO_STANDING;
   window._autoCeiling=_autoCeiling; window._autoCeilingLevel=()=>_AUTO_CEILING;
+  window._autoOffer=()=>_AUTO_OFFER; window._autoOfferClear=()=>{ _AUTO_OFFER = null; };
 }catch(e){}
 window.openTaskPanel=openTaskPanel; window.amvOpenFile=amvOpenFile;
 // On open: pull anything that ran in the background while you were away.
