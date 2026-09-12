@@ -308,10 +308,28 @@ section('A command is not a path, and nothing pretends otherwise');
   ok(outWrite.exitCode === 0 && existsSync(join(box, 'FROM_EXEC.txt')),
      'and writes one the write route refuses', outWrite.exitCode);
 
+  /* A FILE THIS TEST MADE, NOT ONE THE MACHINE HAPPENS TO HAVE.
+
+     This read `/etc/hosts`, on the reasonable-sounding assumption that a file
+     that exists on every unix exists here too. It does not: this suite went red
+     on a container with no `/etc/hosts`, and the gate then refused a release
+     for a reason that had nothing to do with AMV. A gate that can fail for
+     reasons of its own is a gate people learn to re-run instead of read.
+
+     `box` is the temp directory this file created and `proj` is the bridge's
+     root INSIDE it, so `box/SECRET.txt` is genuinely outside the project folder
+     and genuinely exists. That is a stronger claim than /etc/hosts made, and it
+     holds on any machine.
+
+     The two other places that name /etc paths are safe as they are: they assert
+     those paths are REFUSED, and the refusal happens by resolving the path, so
+     it does not matter whether the file is there. */
+  const outsideAbs = join(box, 'SECRET.txt');
   const abs = await jsonOf(await call('exec', {
-    command: 'head -1 /etc/hosts' }, { token: TOKEN }));
-  ok(abs.exitCode === 0 && (abs.stdout || '').length > 0,
-     'and an absolute path outside the folder resolves', abs.exitCode);
+    command: 'cat "' + outsideAbs + '"' }, { token: TOKEN }));
+  ok(abs.exitCode === 0 && /must never be readable/.test(abs.stdout || ''),
+     'and an absolute path outside the folder resolves',
+     abs.exitCode + ' ' + JSON.stringify((abs.stdout || '').slice(0, 40)));
 
   /* WHAT THE PERSON IS TOLD WHILE THEY DECIDE. The banner is the last thing
      read before the code is typed into AMV, and the card is what is on

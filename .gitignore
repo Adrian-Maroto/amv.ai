@@ -45,3 +45,8 @@ tests/e2e/.build/
 # a real exposure the day the static host was found to be publishing the
 # repository root rather than public/.
 mcp-session.txt
+
+# A machine-local permission cache written by the tooling. It names paths from
+# one session scratchpad, so committing it would push one machine state into the
+# repository - and the "local" in its name is the clue.
+.claude/settings.local.json

@@ -12044,3 +12044,78 @@ a breach", it is exactly the kind that rots unnoticed.
 (Also worth recording: the first version of these assertions failed, because my
 hand-built token left out `nbf`, which the verifier requires. The verifier being
 stricter than my fixture is the right direction for that surprise to run.)
+
+## 462. The bridge was clean, and that is a finding too
+
+Four paths were attacked this session. The bridge - the daemon that runs
+commands on somebody's own computer, the largest blast radius in the product -
+gave up nothing. Five attacks, five caught, all by one suite.
+
+Worth recording for two reasons.
+
+An audit that only reports holes teaches people that auditing means finding
+holes, and the next clean result looks like a wasted afternoon instead of
+evidence. "Nothing survived" is the answer you want and it has to be written
+down when it happens, or the practice only ever looks expensive.
+
+And the reason it was clean is legible. `the-bridge-only-reaches-one-folder` was
+written after a real defect - the daemon promised "that folder and nowhere else"
+while exec reached anywhere - and whoever wrote it covered the whole boundary in
+one place: confinement, symlinks, the refusal list, the session token, the
+origin. It DRIVES the daemon rather than reading it. Every one of the eight
+holes found elsewhere was in a suite that read source text instead.
+
+So the pattern to copy is not "test the security-critical function". It is
+"stand outside the thing and send it the request an attacker would send".
+
+## 463. The gate failed for a reason that had nothing to do with AMV
+
+A run went red on `the-bridge-only-reaches-one-folder`, on an assertion that a
+command can read an absolute path outside the project folder. The command was
+`head -1 /etc/hosts`. This container has no `/etc/hosts`.
+
+Nothing about AMV had changed. The suite had passed all night and the same
+commit passed twenty minutes earlier. A file that exists on every unix turns
+out not to exist on every container, and the gate then refused a release for a
+reason that was not about the product.
+
+That is the failure this repository already has a rule about - a gate that can
+fail for reasons of its own is a gate people learn to re-run rather than read -
+and it arrived from a direction nobody had guarded: not flakiness, not timing,
+not a port collision, but an assumption about the machine.
+
+The fix is the same one that applies to fixtures generally: use something the
+test MADE. The suite already creates a temp directory with the bridge's root
+inside it, so a file in the parent is genuinely outside the project folder and
+genuinely there. It is a stronger claim than /etc/hosts was making and it holds
+anywhere.
+
+Two details worth keeping. The same suite names `/etc/passwd` and `/etc/hosts`
+in two other places and those are FINE, because they assert the paths are
+refused - and a refusal resolves the path without touching the disk. Existence
+only matters when the test needs the read to succeed. And the tell for this
+class is a test that reads from outside its own sandbox at all: every such read
+is a bet on the environment, and the ones that look safest are the ones nobody
+re-examines.
+
+## 464. A background shell committed nothing and said so in a place nobody was reading
+
+The same run failed to commit at all: `unable to auto-detect email address`.
+The git identity was in the interactive shell's environment and a backgrounded
+shell did not inherit it, so `git commit` refused, `git push` then failed too,
+and the chain carried on to the gate as though the work had been saved.
+
+The work was not lost - the files were still in the tree - but for a while the
+branch was behind what had been reported, which is the part that matters. A
+step that can fail silently in the middle of a chain is one whose failure has to
+be looked at, not assumed.
+
+Fixed at the root rather than by remembering: the identity is now in the
+repository's own config, where every shell sees it, matching the author of every
+previous commit.
+
+And a second thing the same check turned up: `git add -A` had staged
+`.claude/settings.local.json`, a machine-local permission cache naming a path
+from this session's scratchpad. It is now ignored. `-A` stages whatever is
+there, including files written by tooling since the last look, so what it staged
+is worth reading before the commit rather than after the push.

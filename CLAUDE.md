@@ -203,6 +203,19 @@ Companion docs (do not duplicate them here - read them):
   Deliberately conservative - a handler returning anything but a literal is
   skipped rather than guessed at - because a false alarm is what gets a stage
   deleted.
+- **A guard is measured by breaking it, not by reading it.** Before trusting
+  that a security control is covered, change the code so the control fails and
+  see whether any suite says so. Twenty-three such mutations across connectors,
+  money, auth and the bridge found EIGHT that nothing noticed - including a
+  consent dialog whose "Deny" was discarded, and a forged Stripe webhook that
+  granted plans. `docs/TRUST-AUDIT.md` records what was attacked, what survived,
+  and what is still unmeasured.
+  Two rules came out of it and both are cheap to apply:
+  a test that reads source can only check a line is PRESENT, and the mutation
+  that defeats it does not have to remove it - so a VERIFIER and the ROUTE that
+  uses it are two separate claims, and only the first can be checked by reading.
+  And a comment saying "this is safe because X, Y and Z bound it" is a test plan
+  written by the person who knew; go and test X, Y and Z.
 - **Performance is measured, not inferred.** There used to be one perf check, a
   ceiling on the gzipped size of `index.html`, and the page sat comfortably
   inside it the whole time it was taking 12.6 SECONDS to paint - a
