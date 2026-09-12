@@ -36,7 +36,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'inboxfill.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { _sendEmail, _emailBudgetOk, EMAIL_DAY_CAP, DB };\n' +
+  '\nexport { _sendEmail, _emailBudgetOk, EMAIL_DAY_CAP, DB, runDueAutomations };\n' +
   '\nexport { default as worker } from "./inbox.harness.mjs";\n'.replace(/^.*$/, ''));
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
@@ -219,11 +219,58 @@ section('The reset limit is reserved, not read and rewritten');
 
 section('An automation whose email was held says so');
 {
-  const tick = codeOnly(src);
-  ok(/wentOut\s*=\s*await\s*_autoEmailResult/.test(tick),
-     'the tick reads the boolean the send answers with', true);
-  ok(/lastError\s*=\s*wentOut\s*\?/.test(tick),
-     'and records it when nothing was delivered, rather than showing the job green', true);
+  /* MEASURED, NOT MATCHED. This used to be two regexes over the source, and
+     they were wrong in both directions. The first looked for
+     `wentOut = await _autoEmailResult` "in the tick" and was satisfied by the
+     APPROVAL delivery path, a different function entirely - so it would have
+     passed with the tick reading nothing at all. The second was pinned to one
+     spelling of the assignment and failed the moment the send moved out of the
+     per-item loop and became one email per tick, even though the behaviour it
+     was written to protect was intact and better.
+
+     A budget refusing a send is the whole subject of this file, so the check
+     is the real thing: spend the day's task budget for one address, run a tick
+     that wants to mail that address, and read what the job says afterwards. */
+  const ME = 'held@example.com';
+  const env = mkEnv({ JWT_SECRET: 'a-long-random-secret-at-least-32-chars-xx',
+                      APP_URL: 'https://amv.test' });
+  const m = env.AMV_KV._map;
+  /* mkEnv lists nothing, which is right for every other section here and would
+     make the tick find no accounts at all. */
+  env.AMV_KV.list = async ({ prefix }) => ({
+    keys: [...m.keys()].filter(k => k.startsWith(prefix)).map(name => ({ name })),
+    list_complete: true });
+  m.set('ent:' + ME, JSON.stringify({ plan: 'ultra' }));
+  m.set('auto:' + ME, JSON.stringify({ results: [], items: [{
+    id: 'j0', detail: 'weekly note', repeat: 'daily', interval: 86400000,
+    next: Date.now() - 60000, kind: 'task', approval: 'auto', notify: 'email',
+    active: true, runs: 0, uses: [] }] }));
+
+  /* The class an automation result is sent AS - 'auto', not 'task'. Spending
+     the wrong budget leaves the send perfectly allowed and the section quietly
+     measuring nothing, which is how the regex it replaces went unnoticed. */
+  sent = [];
+  for (let i = 0; i < W.EMAIL_DAY_CAP.auto; i++)
+    await W._sendEmail(env, ME, 's', '<p>x</p>', 'x', 'auto');
+  ok(await W._sendEmail(env, ME, 's', '<p>x</p>', 'x', 'auto') === false,
+     'the day\u2019s budget for automation mail to this address really is spent', sent.length);
+
+  const prevFetch = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    if (String(url).includes('api.resend.com')) return prevFetch(url, opts);
+    return new Response(JSON.stringify({ content: [{ text: 'Result.' }],
+      usage: { input_tokens: 5, output_tokens: 5 } }), { status: 200 });
+  };
+  await W.runDueAutomations(env);
+  globalThis.fetch = prevFetch;
+
+  const job = (JSON.parse(m.get('auto:' + ME) || '{}').items || [])[0] || {};
+  ok(job.runs === 1, 'the job did run - this is about delivery, not about the work', job.runs);
+  ok(/could not be delivered/i.test(String(job.lastError || '')),
+     'and records it when nothing was delivered, rather than showing the job green',
+     job.lastError);
+  ok(/here in AMV/i.test(String(job.lastError || '')),
+     'and says where the result actually is, because it is there', job.lastError);
 }
 
 globalThis.fetch = realFetch;

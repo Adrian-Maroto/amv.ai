@@ -11715,3 +11715,30 @@ DELETING the line changed no test result, which is the signal that a line either
 does nothing or does something nobody is watching. It was the second. A statement
 that exists to make state tidy is still a write, and it has to be justified
 against what the field already holds, not against what it might have held.
+
+## 449. A regex about "the tick" was satisfied by a different function
+
+The email-budget suite held one claim that matters: an automation whose email
+was refused by the budget must say so, rather than showing green. It held it
+with two regexes over the source. Moving the send out of the per-item loop broke
+the second one and the gate stopped the release - correctly, in the sense that
+something had changed, and wrongly, in the sense that the behaviour it protects
+was intact and better than before.
+
+Reading them properly was worse than the false alarm. The first,
+`wentOut = await _autoEmailResult`, was described as "the tick reads the boolean
+the send answers with" and matched the APPROVAL delivery path, a different
+function several thousand lines away. It would have passed with the tick reading
+nothing at all. So the pair had one assertion that was brittle and one that was
+vacuous, and between them they looked like coverage.
+
+Replaced with the thing itself: spend the day's budget for one address, run a
+tick that wants to mail it, read what the job says afterwards. Writing that
+found a third problem immediately - automation mail is sent as class `auto`, not
+`task`, so the obvious fixture spends a budget nobody was going to use and
+measures a send that was never refused. A regex cannot make that mistake,
+because a regex is not asking the question.
+
+Rule: a claim about what happens at runtime is asserted at runtime. Source
+matching is for claims that are ABOUT the source - that a name exists, that a
+call site declares its class, that a removed thing is really gone.
