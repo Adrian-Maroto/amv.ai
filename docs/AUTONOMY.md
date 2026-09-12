@@ -263,6 +263,41 @@ Held by `one-morning-is-one-email` and `a-job-waiting-on-you-says-so-once`,
 whose assertions were checked against seventeen mutations of the sending and
 blocking code.
 
+## The job that keeps saying the same thing
+
+A digest fixed the multiplier - one email instead of five. It did not answer
+whether any of the five were worth sending. A job that has produced the same
+answer every morning for a week is not telling anybody anything, and it is the
+clearest case in the product for not sending an email.
+
+It is still not AMV's call. The person said "email me daily", and deciding on
+their behalf that they did not mean it is how an account is lost; one boring
+email is not. So this is an OFFER, on the same terms as everything else here:
+
+- A run digests its own output. The normalisation is deliberately thin - the
+  timestamp a run stamps on itself, and whitespace. Nothing that could be
+  content, because making two different answers look identical would suppress a
+  real change, and that is the expensive direction of this error. Missing a
+  repeat only costs an offer nobody was owed.
+- After five identical mornings on a job set to email, AMV asks once: email you
+  only when the answer changes? Every one of those five mornings was still
+  emailed. Nothing is suppressed before the answer.
+- Declining is final, like every offer here.
+- Accepting means a repeat stays in AMV - in full, not as a note saying
+  something was withheld - and the job's row reads "same answer since <date> ·
+  in AMV, not your inbox". That line is the whole bargain: without it, a job
+  running quietly because it has nothing to say looks exactly like a job that
+  has quietly stopped working.
+- The moment the answer changes, it arrives again, and the row stops saying it
+  is quiet.
+
+Deliberately NOT built: a score. A model-guessed urgency number is a fiction
+that gets trusted; a rule-based number still hides a threshold nobody can see,
+so somebody who asked to be emailed and was not cannot find out why.
+
+Held by `a-job-that-keeps-saying-the-same-thing`, checked against twelve
+mutations of the digest, the offer and the suppression.
+
 ## Silence is not approval
 
 An approval that expires is a denial. An approval nobody answered is a denial.

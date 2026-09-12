@@ -262,12 +262,25 @@ failure in the tick: it returned before the notify branch, so it told nobody.
 It now says so once, in that morning's one email, and again only if what it is
 waiting for changes.
 
+**Interruption scoring is DONE, and not as a score.** Two reasons the shape in
+the original line is wrong. A model asked "how urgent is this" returns a
+confident number with nothing behind it, and a number nobody can trace is worse
+than none because it gets acted on. But a rule-based score is barely better: it
+still hides a threshold the person cannot see, so somebody who asked to be
+emailed daily and was not has no way to find out why. And overriding an explicit
+request silently is the failure that loses an account - one boring email is not.
+
+So the one rule with nothing to guess about is used as an OFFER, through the
+machinery M5 already built. A run digests its own output; five identical
+mornings on a job set to email earns "this job has said exactly the same thing
+five times in a row - email you only when the answer changes?" Refusable, final
+either way, and until they tap, every morning is still emailed. Once accepted, a
+repeat stays in AMV and the job's ROW says "same answer since <date> · in AMV,
+not your inbox" - because a job running quietly must never look like a job that
+has quietly stopped working. The moment the answer changes, it arrives again.
+
 Still open in M7:
 
-- **Interruption scoring.** Only the rule-based version should ship. A model
-  asked "how urgent is this" produces a confident number with nothing behind
-  it, and a number nobody can trace is worse than no scoring at all, because it
-  gets trusted.
 - **The feedback buttons**, which is the only honest way to find out whether the
   quiet defaults are actually the right ones.
 

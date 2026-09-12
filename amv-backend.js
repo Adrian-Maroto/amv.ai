@@ -3644,6 +3644,7 @@ async function autoUpdate(request, env){
       if(take){
         if(off.kind === 'auto'){ it.approval = 'auto'; applied = 'auto'; }
         else if(off.kind === 'pause'){ it.active = false; applied = 'pause'; }
+        else if(off.kind === 'quiet'){ it.quietUnchanged = true; applied = 'quiet'; }
       }
       if(!fresh.tally || typeof fresh.tally !== 'object') fresh.tally = {};
       const t = fresh.tally[jobId] || { yes:0, no:0 };
@@ -4344,6 +4345,51 @@ function _neverBlocks(list, addr){
    shape. */
 const OFFER_AFTER_YES = 5;
 const OFFER_AFTER_NO = 3;
+/* Five identical mornings, counted as the first plus four repeats. Chosen to be
+   past coincidence: two the same is normal for a weekly summary read daily,
+   five is the job telling you it has nothing to say. */
+const OFFER_AFTER_SAME = 4;
+
+/* ── "IT SAID THE SAME THING AGAIN" ────────────────────────────────────────
+   THE ONLY RULE HERE WITH NOTHING TO GUESS ABOUT.
+
+   The milestone this belongs to is written as "interruption scoring", and a
+   score is the wrong shape twice over. A model asked how urgent something is
+   returns a confident number with nothing behind it, and a number nobody can
+   trace is worse than none because it gets acted on. But a RULE-based score is
+   barely better: it still hides a threshold the person cannot see, so somebody
+   who asked to be emailed daily and was not has no way to find out why.
+
+   What a run actually knows for free is whether it produced the same thing as
+   last time. That is checkable by anybody, it is not an opinion, and it is the
+   single strongest signal that an email is not worth sending. It is used as an
+   OFFER rather than as an override - see `_offerFor` - because overriding
+   somebody's explicit "email me daily" silently is the failure that loses an
+   account, and one boring email is not.
+
+   NORMALISATION IS DELIBERATELY THIN. Stripping more would make two genuinely
+   different results look identical, and suppressing a real change is the
+   dangerous direction of this error; missing a repeat only costs an offer
+   nobody was owed. So: the timestamps a run stamps on its own output, and
+   whitespace. Nothing that could be content. */
+function _runDigest(text){
+  const s = String(text || '')
+    .replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z?/g, '')   // the ISO stamp a run writes
+    .replace(/\d{4}-\d{2}-\d{2}/g, '')
+    .replace(/\b\d{1,2}:\d{2}(:\d{2})?\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if(!s) return '';
+  /* FNV-1a over the normalised text. Not a security hash and never used as
+     one - it answers "is this the same string", where a collision costs one
+     offer that is not made. */
+  let h = 0x811c9dc5;
+  for(let i = 0; i < s.length; i++){
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36) + '-' + s.length.toString(36);
+}
 
 /* One person's answering history for one job. Deliberately tiny: two streaks
    and a flag. Not a log - a log of somebody's decisions is a thing to be
@@ -4391,6 +4437,24 @@ function _offerFor(rec, item){
        + 'AMV can deliver it without asking from now on. You can put it back to asking at any time, '
        + 'and nothing else about the job changes.',
     accept: 'Stop asking me', decline: 'Keep asking',
+  };
+  /* THE QUIET OFFER, AND WHY IT IS AN OFFER.
+
+     A job that has produced the same text several mornings running is not
+     telling anybody anything, and it is the clearest case in the product for
+     not sending an email. It is still not AMV's call: the person said "email me
+     daily", and deciding on their behalf that they did not mean it is how an
+     account is lost. Nothing is suppressed until they tap.
+
+     Only offered for a job set to email, because in-app results are not an
+     interruption and there is nothing to trade away. */
+  if(item.notify === 'email' && !item.quietUnchanged
+     && (Number(item.sameRuns) || 0) >= OFFER_AFTER_SAME) return {
+    job: item.id, kind: 'quiet', count: (Number(item.sameRuns) || 0) + 1,
+    say: 'This job has said exactly the same thing ' + ((Number(item.sameRuns) || 0) + 1)
+       + ' times in a row. AMV can keep running it every time and email you only when the answer '
+       + 'actually changes - every run still lands in AMV either way, so you lose nothing by looking.',
+    accept: 'Email me when it changes', decline: 'Email me every time',
   };
   return null;
 }
@@ -5510,7 +5574,13 @@ async function _autoDueCandidates(env, now) {
 
    Named here, and asserted against what the tick actually assigns, so adding a
    seventh forces the decision instead of quietly not persisting. */
-const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'lastError', 'lastLevel', 'lastNeeds', 'heldUntil'];
+/* `lastDigest` and `sameRuns` are carried for the same reason `next` is: they
+   are what the RUN learned, and the write-back merges a run's findings onto
+   whatever the person changed meanwhile. `quietUnchanged` is deliberately NOT
+   here - that one is the person's answer, set through /auto/update, and a tick
+   must never carry a stale copy of it back over a fresher decision. */
+const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'lastError', 'lastLevel', 'lastNeeds', 'heldUntil',
+                         'lastDigest', 'sameRuns', 'quietSince'];
 
 async function runDueAutomations(env, atMs){
   const now = +atMs || Date.now();
@@ -5908,6 +5978,23 @@ async function runDueAutomations(env, atMs){
       try{
         const exec = await _autoExecute(env, item, budget, email, rec.standing || '', _neverList(rec));
         const out = (exec && exec.text) || '';
+        /* DID THIS RUN SAY ANYTHING NEW.
+
+           Counted for every job, whether or not it is set to email, because the
+           count is what earns the offer and the offer is only worth making to
+           somebody who has actually been getting the same email repeatedly.
+           `sameAgain` is the narrower question: does this particular run get to
+           skip the inbox, which needs the person to have accepted. */
+        const digest = _runDigest(out);
+        if(digest && digest === item.lastDigest) item.sameRuns = (Number(item.sameRuns) || 0) + 1;
+        else { item.sameRuns = 0; item.lastDigest = digest; }
+        const sameAgain = !!item.quietUnchanged && (Number(item.sameRuns) || 0) > 0;
+        /* NOT SILENT. The run happened, it cost money, and the person agreed to
+           stop being emailed about repeats - not to stop being told. The row
+           reads this and says the answer has not changed since this date, so a
+           job that has quietly stopped working never looks the same as a job
+           that is working and has nothing new to report. */
+        item.quietSince = sameAgain ? (item.quietSince || now) : 0;
         /* Held, not called. See the write-back below: what a run has told
            somebody about is only true once the result is in the record they
            read it from. */
@@ -5972,7 +6059,7 @@ async function runDueAutomations(env, atMs){
            the whole point of the ceiling is that it cannot be got past. */
         if(level === 'require'){
           try{ await _enqueueApproval(env, email, item, out); }catch(e){ /* best-effort */ }
-        } else if(item.notify === 'email' && env.EMAIL_API_KEY){
+        } else if(item.notify === 'email' && env.EMAIL_API_KEY && !sameAgain){
           /* HELD, NOT SENT - see `_autoEmailBatch`. Sending here meant one
              email per job, so five jobs due at seven in the morning were five
              separate interruptions carrying one morning's information. They go

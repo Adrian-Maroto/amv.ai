@@ -11765,3 +11765,44 @@ is not "is this case an error" but "does this case need saying".
 The fix is a sentence and a comparison, not a subscription - told on the
 TRANSITION, so the second morning is silent. A notice that repeats daily is a
 notice people filter, and then the day it changes they do not see it either.
+
+## 451. A test whose mornings are a millisecond apart is not testing mornings
+
+Two suites drove the tick several times in a row by pulling each job's `next`
+back to `Date.now() - 60000`. Runs then vanished at random: five ticks would
+produce three runs, or four, differing between runs of the same file.
+
+Nothing was wrong. `_claimOnce` leases a run slot keyed by
+`email:jobId:next`, so two overlapping cron invocations cannot both execute the
+same due job - one model call, one email, once. Real mornings are a day apart
+and never collide. Mine were sub-millisecond apart and asked for the SAME slot,
+so the lease refused every run after the first, and did it faster or slower
+depending on how warm the process was.
+
+The lesson is not about leases. A fixture that compresses time is a fixture that
+has silently removed the thing distinguishing one event from the next, and the
+mechanisms that exist BECAUSE events are distinct - idempotency keys, dedupe
+windows, once-per-period counters - are exactly the ones that then misfire. Give
+each simulated occurrence its own time, far enough apart to be a real one.
+
+And the tell was in the shape of the failure, not its content: a test that gives
+different answers on identical input is never "flaky". It is measuring
+something nobody chose.
+
+## 452. Two mutations survived, and both were the same mistake in different clothes
+
+The suite for the quiet offer was written against `OFFER_AFTER_SAME`, so
+changing that constant from 4 to 1 changed what the suite asked for and nothing
+failed - a threshold chosen to be past coincidence could have quietly become one
+that fires on a coincidence. That is LESSONS 445 again, in a file written after
+445.
+
+The second: accepting the offer was simulated by writing `quietUnchanged` onto
+the record by hand. That measured the tick perfectly and left the half that
+turns a tap into that flag entirely unmeasured, which is how a button posting to
+a route nobody implemented ships looking fine (LESSONS 427).
+
+Both are the same error: the test stood where the code stands instead of where
+the PERSON stands. The fixes are the same shape too - assert the floor in
+literal numbers, and go through the endpoint. Worth writing down because knowing
+the rule is evidently not enough to follow it; only running the mutation is.

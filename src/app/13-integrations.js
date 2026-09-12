@@ -254,6 +254,14 @@ window.taskRequirementMessage=taskRequirementMessage;
 async function runAgentTask(instruction, opts){
   opts=opts||{};
   const available=Object.entries(INTEGRATION_ACTIONS).filter(([k,a])=>{
+/* A past date in the person's own locale. `_autoWhenLabel` answers "when
+   next", which reads as nonsense for something that already happened. */
+function _asrvDay(ts){
+  const d = Number(ts) || 0;
+  if(!d) return '';
+  try { return new Date(d).toLocaleDateString(undefined, { month:'short', day:'numeric' }); }
+  catch(e){ return new Date(d).toISOString().slice(0, 10); }
+}
     /* A server-held grant, asked of the server's own list. This used to ask
        whether a Google token was in this browser, which stopped being the
        question when the token stopped coming here - and would have answered
@@ -1392,6 +1400,13 @@ function _autoServerHTML(){
        of one is how a row starts lying in small ways. */
     const held = (it.heldUntil && it.heldUntil > Date.now())
       ? '<div class="asrv-held">Held until your quiet hours end</div>' : '';
+    /* Running, and deliberately not emailing, because this job kept saying the
+       same thing and the person accepted "only when it changes". Said out loud
+       for the same reason as the line above: a job that stopped working must
+       never look like a job with nothing new to report. */
+    const same = it.quietSince
+      ? '<div class="asrv-held">Same answer since ' + escH(_asrvDay(it.quietSince))
+        + ' \u00b7 in AMV, not your inbox</div>' : '';
     /* And what it WILL need, resolved by the server for every job on this
        list. Without this, the only place a missing permission is said is
        against a run that already stopped - so somebody schedules a job at noon
@@ -1407,6 +1422,7 @@ function _autoServerHTML(){
       +'<div class="asrv-meta">'+escH(_autoWhenLabel(it))+' · run '+runs+' time'+(runs===1?'':'s')+'</div>'
       + err
       + held
+      + same
       + willNeed
       +'<div class="asrv-acts">'
       +'<button class="btn bs asrv-b" data-auto-act="'+(it.active?'pause':'resume')+'" data-auto-id="'+escH(String(it.id))+'">'+(it.active?'Pause':'Resume')+'</button>'

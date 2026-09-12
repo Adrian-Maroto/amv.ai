@@ -58,11 +58,23 @@ const seed = (items) => {
   store.set('ent:' + ME, JSON.stringify({ plan: 'ultra' }));
   store.set('auto:' + ME, JSON.stringify({ items, results: [] }));
 };
+/* A DISTINCT MORNING EACH TIME, WHICH IS NOT A DETAIL.
+
+   `_claimOnce` leases a run slot keyed by `email:jobId:next`, so two overlapping
+   cron invocations cannot both execute the same due job - one model call, one
+   email. Real mornings are a day apart and never collide. Ticks in a test fire
+   within the same millisecond, so reusing `Date.now() - 60000` for each one
+   asks for the SAME slot and the lease refuses every run after the first,
+   nondeterministically depending on how fast the process is going. That is the
+   lease working. Each tick therefore gets its own due-time, a day further back,
+   which is what a sequence of mornings actually looks like. */
+let _morning = 0;
 /* Each tick is a separate morning: the jobs are daily, so `next` is pulled back
    into the past the way a day passing would do it. */
 const tick = async () => {
   const rec = JSON.parse(store.get('auto:' + ME) || '{}');
-  for(const it of (rec.items || [])) it.next = Date.now() - 60000;
+  _morning++;
+  for(const it of (rec.items || [])) it.next = Date.now() - (_morning * 86400000);
   store.set('auto:' + ME, JSON.stringify(rec));
   const realFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({

@@ -2288,9 +2288,18 @@ function _mcServerSchedRow(x){
            honestly show both at once. */
         const quiet = (x.heldUntil && x.heldUntil > Date.now())
           ? `<span class="mc-sched-quiet">Held until your quiet hours end</span>` : '';
+        /* A THIRD SENTENCE, AND THE REASON IT HAS TO BE HERE.
+
+           This job is running and is deliberately not emailing, because the
+           person accepted "email me only when it changes". Without a line
+           saying so, a job that has quietly stopped working looks exactly like
+           a job that is working and has nothing new to say - and the whole
+           bargain was that they lose nothing by not looking. */
+        const same = x.quietSince
+          ? `<span class="mc-sched-same">Same answer since ${escH(_mcDay(x.quietSince))} · in AMV, not your inbox</span>` : '';
         return `<span class="mc-sched-mode ${eff==='auto'?'auto':''}">${escH(say)}</span>`
              + (eff!==own?`<span class="mc-sched-held">held back from “${escH(own)}” by your account setting</span>`:'')
-             + quiet;
+             + quiet + same;
       })()}</div>
     </div>
     <div class="mc-sched-acts">
@@ -2298,6 +2307,15 @@ function _mcServerSchedRow(x){
       <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
     </div>
   </div>`;
+}
+/* A past date in the person's own locale, for the one line that names a day
+   rather than a countdown. `_mcWhen` answers "how long until", which reads as
+   nonsense for something that already happened. */
+function _mcDay(ts){
+  const d = Number(ts) || 0;
+  if(!d) return '';
+  try { return new Date(d).toLocaleDateString(undefined, { month:'short', day:'numeric' }); }
+  catch(e){ return new Date(d).toISOString().slice(0, 10); }
 }
 /* Frequencies in the words a person uses, shared with the chat tools. */
 const _CREW_EVERY_UI = { '10min':'every 10 minutes', '30min':'every 30 minutes',
@@ -2724,8 +2742,11 @@ function _mcOfferHTML(){
   if(!o || !o.say) return '';
   return `<section class="mc-offer mc-offer-${escH(String(o.kind || 'auto'))}">
     <div class="mc-offer-b">
-      <div class="mc-offer-t">${escH(o.kind === 'pause' ? 'This job keeps producing something you do not use'
-                                                        : 'You have said yes to this every time')}</div>
+      <div class="mc-offer-t">${escH({
+        pause: 'This job keeps producing something you do not use',
+        quiet: 'This job keeps saying the same thing',
+        auto:  'You have said yes to this every time',
+      }[String(o.kind || 'auto')] || 'You have said yes to this every time')}</div>
       <div class="mc-offer-s">${escH(String(o.say))}</div>
     </div>
     <div class="mc-offer-acts">

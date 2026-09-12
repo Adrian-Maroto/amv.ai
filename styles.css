@@ -12467,3 +12467,18 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .mc-offer-s{ font-size:var(--t-sm); color:var(--mu); line-height:1.55; }
 .mc-offer-acts{ display:flex; flex-wrap:wrap; gap:var(--sp-2); }
 .mc-offer-go{ min-height:44px; }
+
+/* ── LAYER A194 · a job that says the same thing every morning ───────────────
+   Two additions, both about the same bargain. The OFFER gets its own left edge
+   so it is visibly a different proposal from the two before it - this one
+   trades away emails, not autonomy. The ROW line is the half that matters
+   more: a job running quietly because it has nothing new to say must never
+   look like a job that has quietly stopped working, and without a line there
+   is nothing to tell them apart. Muted rather than coloured, because it is a
+   state, not a warning. */
+.mc-offer-quiet{ border-left-color:var(--grn); }
+.mc-sched-same{
+  display:inline-block; font-size:var(--t-xs); color:var(--mu);
+  background:var(--s3); border:1px solid var(--bd); border-radius:var(--r-pill);
+  padding:2px var(--sp-2); margin-left:var(--sp-2); line-height:1.6;
+}

@@ -17314,9 +17314,18 @@ function _mcServerSchedRow(x){
            honestly show both at once. */
         const quiet = (x.heldUntil && x.heldUntil > Date.now())
           ? `<span class="mc-sched-quiet">Held until your quiet hours end</span>` : '';
+        /* A THIRD SENTENCE, AND THE REASON IT HAS TO BE HERE.
+
+           This job is running and is deliberately not emailing, because the
+           person accepted "email me only when it changes". Without a line
+           saying so, a job that has quietly stopped working looks exactly like
+           a job that is working and has nothing new to say - and the whole
+           bargain was that they lose nothing by not looking. */
+        const same = x.quietSince
+          ? `<span class="mc-sched-same">Same answer since ${escH(_mcDay(x.quietSince))} · in AMV, not your inbox</span>` : '';
         return `<span class="mc-sched-mode ${eff==='auto'?'auto':''}">${escH(say)}</span>`
              + (eff!==own?`<span class="mc-sched-held">held back from “${escH(own)}” by your account setting</span>`:'')
-             + quiet;
+             + quiet + same;
       })()}</div>
     </div>
     <div class="mc-sched-acts">
@@ -17324,6 +17333,15 @@ function _mcServerSchedRow(x){
       <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
     </div>
   </div>`;
+}
+/* A past date in the person's own locale, for the one line that names a day
+   rather than a countdown. `_mcWhen` answers "how long until", which reads as
+   nonsense for something that already happened. */
+function _mcDay(ts){
+  const d = Number(ts) || 0;
+  if(!d) return '';
+  try { return new Date(d).toLocaleDateString(undefined, { month:'short', day:'numeric' }); }
+  catch(e){ return new Date(d).toISOString().slice(0, 10); }
 }
 /* Frequencies in the words a person uses, shared with the chat tools. */
 const _CREW_EVERY_UI = { '10min':'every 10 minutes', '30min':'every 30 minutes',
@@ -17750,8 +17768,11 @@ function _mcOfferHTML(){
   if(!o || !o.say) return '';
   return `<section class="mc-offer mc-offer-${escH(String(o.kind || 'auto'))}">
     <div class="mc-offer-b">
-      <div class="mc-offer-t">${escH(o.kind === 'pause' ? 'This job keeps producing something you do not use'
-                                                        : 'You have said yes to this every time')}</div>
+      <div class="mc-offer-t">${escH({
+        pause: 'This job keeps producing something you do not use',
+        quiet: 'This job keeps saying the same thing',
+        auto:  'You have said yes to this every time',
+      }[String(o.kind || 'auto')] || 'You have said yes to this every time')}</div>
       <div class="mc-offer-s">${escH(String(o.say))}</div>
     </div>
     <div class="mc-offer-acts">
@@ -27149,6 +27170,14 @@ window.taskRequirementMessage=taskRequirementMessage;
 async function runAgentTask(instruction, opts){
   opts=opts||{};
   const available=Object.entries(INTEGRATION_ACTIONS).filter(([k,a])=>{
+/* A past date in the person's own locale. `_autoWhenLabel` answers "when
+   next", which reads as nonsense for something that already happened. */
+function _asrvDay(ts){
+  const d = Number(ts) || 0;
+  if(!d) return '';
+  try { return new Date(d).toLocaleDateString(undefined, { month:'short', day:'numeric' }); }
+  catch(e){ return new Date(d).toISOString().slice(0, 10); }
+}
     /* A server-held grant, asked of the server's own list. This used to ask
        whether a Google token was in this browser, which stopped being the
        question when the token stopped coming here - and would have answered
@@ -28287,6 +28316,13 @@ function _autoServerHTML(){
        of one is how a row starts lying in small ways. */
     const held = (it.heldUntil && it.heldUntil > Date.now())
       ? '<div class="asrv-held">Held until your quiet hours end</div>' : '';
+    /* Running, and deliberately not emailing, because this job kept saying the
+       same thing and the person accepted "only when it changes". Said out loud
+       for the same reason as the line above: a job that stopped working must
+       never look like a job with nothing new to report. */
+    const same = it.quietSince
+      ? '<div class="asrv-held">Same answer since ' + escH(_asrvDay(it.quietSince))
+        + ' \u00b7 in AMV, not your inbox</div>' : '';
     /* And what it WILL need, resolved by the server for every job on this
        list. Without this, the only place a missing permission is said is
        against a run that already stopped - so somebody schedules a job at noon
@@ -28302,6 +28338,7 @@ function _autoServerHTML(){
       +'<div class="asrv-meta">'+escH(_autoWhenLabel(it))+' · run '+runs+' time'+(runs===1?'':'s')+'</div>'
       + err
       + held
+      + same
       + willNeed
       +'<div class="asrv-acts">'
       +'<button class="btn bs asrv-b" data-auto-act="'+(it.active?'pause':'resume')+'" data-auto-id="'+escH(String(it.id))+'">'+(it.active?'Pause':'Resume')+'</button>'
