@@ -12482,3 +12482,22 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   background:var(--s3); border:1px solid var(--bd); border-radius:var(--r-pill);
   padding:2px var(--sp-2); margin-left:var(--sp-2); line-height:1.6;
 }
+
+/* ── LAYER A195 · was that worth telling you about ───────────────────────────
+   Two answers, the same weight, on the result they are about. A "yes" styled
+   as the obvious choice would make the count it feeds worthless, and the count
+   is what earns somebody an offer to be interrupted less - so the styling has
+   to stay as even-handed as the question. Quiet until answered: this sits under
+   every result on the screen, and twenty coloured pairs would read as the point
+   of the page rather than a footnote to it. */
+.asrv-feel{
+  display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2);
+  margin-top:var(--sp-2);
+}
+.asrv-feel-q{ font-size:var(--t-xs); color:var(--dim); margin-right:var(--sp-1); }
+.asrv-feel-b{ min-height:44px; color:var(--mu); }
+.asrv-feel-b.on{ border-color:var(--accent); color:var(--tx); background:var(--accent-soft); }
+.asrv-feel-b[disabled]{ opacity:.6; }
+.mc-offer-inapp,
+.mc-offer-stop{ border-left-color:var(--gold); }
+.mc-offer-unquiet{ border-left-color:var(--accent); }

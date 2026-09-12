@@ -17774,9 +17774,12 @@ function _mcOfferHTML(){
   return `<section class="mc-offer mc-offer-${escH(String(o.kind || 'auto'))}">
     <div class="mc-offer-b">
       <div class="mc-offer-t">${escH({
-        pause: 'This job keeps producing something you do not use',
-        quiet: 'This job keeps saying the same thing',
-        auto:  'You have said yes to this every time',
+        pause:   'This job keeps producing something you do not use',
+        quiet:   'This job keeps saying the same thing',
+        inapp:   'You keep telling AMV this was not worth an email',
+        stop:    'You keep telling AMV this was not worth making',
+        unquiet: 'AMV held this back and you wanted it',
+        auto:    'You have said yes to this every time',
       }[String(o.kind || 'auto')] || 'You have said yes to this every time')}</div>
       <div class="mc-offer-s">${escH(String(o.say))}</div>
     </div>
@@ -28354,7 +28357,26 @@ function _autoServerHTML(){
       +'<span class="asrv-when">'+escH(when)+'</span></div>'
       +'<div class="asrv-out" data-no-i18n>'
       + escH(body.slice(0,2000)) + (body.length>2000?'\n...(truncated)':'')
-      +'</div></div>';
+      +'</div>'
+      /* THE TWO BUTTONS, AND WHY THEY ARE NOT ANALYTICS.
+
+         They buy the person something. A run of "not worth it" earns an offer
+         to stop emailing this job, or to pause it if it was never emailing -
+         and a run of "worth it" on a job AMV has been holding back earns an
+         offer to undo that. A button whose only effect is a number on somebody
+         else's dashboard costs a tap and gives nothing back.
+
+         The answer is shown, not just taken, and it can be changed: a first tap
+         that cannot be corrected is a trap, and people are allowed to change
+         their minds. */
+      +'<div class="asrv-feel">'
+      +'<span class="asrv-feel-q">Worth telling you about?</span>'
+      +'<button class="btn bs asrv-feel-b'+(r.feel==='up'?' on':'')+'" data-feel="up" data-feel-id="'+escH(String(r.id||''))+'"'
+      +(r.feel==='up'?' aria-pressed="true"':' aria-pressed="false"')+'>Yes</button>'
+      +'<button class="btn bs asrv-feel-b'+(r.feel==='down'?' on':'')+'" data-feel="down" data-feel-id="'+escH(String(r.id||''))+'"'
+      +(r.feel==='down'?' aria-pressed="true"':' aria-pressed="false"')+'>Not really</button>'
+      +'</div>'
+      +'</div>';
   }).join('');
 
   return '<section class="asrv">'
@@ -28375,6 +28397,32 @@ function _wireAutoServer(root){
       b.disabled=true; b.textContent='Checking\u2026';
       try{ await _autoRefresh(); }catch(e){}
       try{ renderTasksView(); }catch(e){}
+    });
+  });
+  /* One answer per result, posted where it is given. The button shows its own
+     pending state rather than redrawing the whole screen under the person's
+     finger - and a failure says so and puts the button back, because a tap that
+     silently did nothing is worse than one that says it could not. */
+  root.querySelectorAll('[data-feel]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const said = b.dataset.feel, id = b.dataset.feelId;
+      if(!id) return;
+      const row = b.parentNode;
+      const was = row ? [...row.querySelectorAll('[data-feel]')].map(x=>x.className) : [];
+      if(row) row.querySelectorAll('[data-feel]').forEach(x=>{
+        x.disabled = true; x.classList.toggle('on', x === b); });
+      try{
+        await _autoApi('/auto/update', { action:'feel', result:id, said });
+        /* Refreshed because an answer can earn an OFFER, and an offer somebody
+           has to reload to see is one they never see. */
+        try{ await _autoRefresh(); }catch(e){}
+        try{ renderTasksView(); }catch(e){}
+      }catch(e){
+        if(row) row.querySelectorAll('[data-feel]').forEach((x,i)=>{
+          x.disabled = false; if(was[i] !== undefined) x.className = was[i]; });
+        if(typeof toast==='function')
+          toast('AMV could not record that: '+((e&&e.message)||'try again'),'error',4500);
+      }
     });
   });
   root.querySelectorAll('[data-auto-act]').forEach(b=>{

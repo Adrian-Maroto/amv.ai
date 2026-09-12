@@ -3624,6 +3624,40 @@ async function autoUpdate(request, env){
     return json({ ok:true, quiet: next });
   }
 
+  /* WAS THAT RESULT WORTH TELLING ME ABOUT.
+
+     Two buttons on a result, and the reason they are not analytics is that they
+     buy the person something: a run of "not worth it" earns an offer to make
+     the job quieter or stop it, and a run of "worth it" on a job AMV has been
+     holding back earns an offer to undo that. A button whose only effect is a
+     number on somebody else's dashboard costs a tap and returns nothing.
+
+     Recorded against the JOB, and also onto the result itself so the button can
+     show which way it was answered rather than resetting every time the screen
+     redraws. Changing the answer is allowed - people are allowed to change
+     their minds, and a first tap that cannot be corrected is a trap. */
+  if(body.action === 'feel'){
+    const resId = String(body.result || '');
+    const said = body.said === 'up' ? 'up' : 'down';
+    let jobId = '';
+    await _withAuto(env, key, (fresh) => {
+      if(!fresh) return;
+      const r = (fresh.results || []).find(x => x && x.id === resId);
+      if(!r) return;
+      /* The same answer twice is one answer, not two. Without this a person
+         tapping to confirm what they already said would push a streak over the
+         line and be offered a change they never asked for. */
+      if(r.feel === said) { jobId = String(r.autoId || ''); return; }
+      r.feel = said;
+      jobId = String(r.autoId || '');
+      if(jobId) _feelRecord(fresh, jobId, said);
+    }, { items:[], results:[] });
+    if(!jobId) return json({ error: 'That result is not on this account any more.',
+                             code: 'no_result' }, 404);
+    audit(env, 'auto_result_feel', { by: user.email, job: jobId, said });
+    return json({ ok: true, said });
+  }
+
   /* ANSWERING AN OFFER. Accepting applies the change AND marks it offered;
      declining only marks it. Both are final - the flag is never cleared, so a
      "no" means AMV stops asking about this job rather than waiting a while and
@@ -3645,11 +3679,24 @@ async function autoUpdate(request, env){
         if(off.kind === 'auto'){ it.approval = 'auto'; applied = 'auto'; }
         else if(off.kind === 'pause'){ it.active = false; applied = 'pause'; }
         else if(off.kind === 'quiet'){ it.quietUnchanged = true; applied = 'quiet'; }
+        else if(off.kind === 'inapp'){ it.notify = 'app'; applied = 'inapp'; }
+        else if(off.kind === 'stop'){ it.active = false; applied = 'stop'; }
+        else if(off.kind === 'unquiet'){ it.quietUnchanged = false; it.quietSince = 0; applied = 'unquiet'; }
       }
-      if(!fresh.tally || typeof fresh.tally !== 'object') fresh.tally = {};
-      const t = fresh.tally[jobId] || { yes:0, no:0 };
-      t.offered = true;
-      fresh.tally[jobId] = t;
+      /* Marked on the side the offer CAME FROM. Writing `tally.offered` for an
+         offer earned by result feedback would silence the approval offers too,
+         and somebody would never be asked the other question at all. */
+      if(off.kind === 'inapp' || off.kind === 'stop' || off.kind === 'unquiet'){
+        if(!fresh.feel || typeof fresh.feel !== 'object') fresh.feel = {};
+        const fl = fresh.feel[jobId] || { up:0, down:0 };
+        fl.offered = true;
+        fresh.feel[jobId] = fl;
+      } else {
+        if(!fresh.tally || typeof fresh.tally !== 'object') fresh.tally = {};
+        const t = fresh.tally[jobId] || { yes:0, no:0 };
+        t.offered = true;
+        fresh.tally[jobId] = t;
+      }
     }, { items:[], results:[] });
     audit(env, 'auto_offer_answered', { by: user.email, job: jobId, accepted: take, applied });
     return json({ ok:true, applied: applied || null, accepted: take });
@@ -4391,6 +4438,35 @@ function _runDigest(text){
   return h.toString(36) + '-' + s.length.toString(36);
 }
 
+/* WAS THAT WORTH TELLING ME. A SEPARATE COUNT, DELIBERATELY.
+
+   The obvious thing is to feed this into the tally above and be done. It is
+   wrong: that tally counts APPROVALS - "yes, send this" - and this counts
+   whether a result was worth an interruption. Somebody can approve a
+   cancellation every time and still not want an email about it, and somebody
+   can find a result useful and decline to act on it. Two different questions
+   answered with the same word would make both counts mean nothing, and the
+   thing they drive is a change to somebody's delivery.
+
+   Same shape as the tally: streaks, not totals, and the opposite answer resets.
+   No log of individual answers - nothing here needs them, and a log of
+   somebody's opinions is a thing to be careful with. */
+const OFFER_AFTER_MEH = 3;
+function _feelOf(rec, jobId){
+  const all = (rec && rec.feel) || {};
+  const f = all[String(jobId || '')] || {};
+  return { up: Number(f.up) || 0, down: Number(f.down) || 0, offered: !!f.offered };
+}
+function _feelRecord(rec, jobId, said){
+  const id = String(jobId || '');
+  if(!id) return;
+  if(!rec.feel || typeof rec.feel !== 'object') rec.feel = {};
+  const f = rec.feel[id] || { up: 0, down: 0, offered: false };
+  if(said === 'up'){ f.up = (Number(f.up) || 0) + 1; f.down = 0; }
+  else { f.down = (Number(f.down) || 0) + 1; f.up = 0; }
+  rec.feel[id] = f;
+}
+
 /* One person's answering history for one job. Deliberately tiny: two streaks
    and a flag. Not a log - a log of somebody's decisions is a thing to be
    careful with, and nothing here needs the individual answers. */
@@ -4438,6 +4514,48 @@ function _offerFor(rec, item){
        + 'and nothing else about the job changes.',
     accept: 'Stop asking me', decline: 'Keep asking',
   };
+  /* WHAT A RUN OF "NOT WORTH TELLING ME" EARNS.
+
+     One offer, chosen by what the job actually does, rather than a menu. A
+     three-way choice about a notification somebody did not want is itself an
+     interruption, and the whole point is to make the product quieter.
+
+     The job emails: the complaint is almost certainly the email, so the offer
+     is to stop emailing and leave the results in AMV - the smallest change that
+     answers what they said. The job is already in-app only: there is no
+     interruption left to remove, so what is left is a job costing money to
+     produce something they have told AMV three times running they do not want.
+     That one is offered a pause.
+
+     Placed ABOVE the repeat offer so an explicit answer beats an inference. */
+  const f = _feelOf(rec, item.id);
+  if(!f.offered && f.down >= OFFER_AFTER_MEH) return {
+    job: item.id, kind: item.notify === 'email' ? 'inapp' : 'stop', count: f.down,
+    say: item.notify === 'email'
+      ? 'You have told AMV this was not worth telling you about ' + f.down + ' times in a row. '
+        + 'It can keep running and stop emailing you - every result still lands in AMV, so nothing '
+        + 'is lost and nothing arrives uninvited.'
+      : 'You have told AMV this was not worth telling you about ' + f.down + ' times in a row. '
+        + 'It still runs, and running it costs you money to produce something you keep saying you '
+        + 'do not want. Pause it?',
+    accept: item.notify === 'email' ? 'Stop emailing me this' : 'Pause it',
+    decline: item.notify === 'email' ? 'Keep emailing me' : 'Keep it running',
+  };
+  /* AND THE OTHER DIRECTION, which is what stops this being a one-way ratchet.
+
+     They accepted "email me only when it changes", and then said a result they
+     were NOT emailed about was worth telling them. That is direct evidence the
+     suppression was the wrong call, from the only person who can judge it, so
+     AMV offers to undo its own bargain rather than waiting to be found in a
+     settings screen. */
+  if(!f.offered && item.quietUnchanged && f.up >= OFFER_AFTER_MEH) return {
+    job: item.id, kind: 'unquiet', count: f.up,
+    say: 'AMV has been holding this back when the answer does not change, and you have said the '
+       + 'last ' + f.up + ' were worth telling you about. That was AMV\u2019s call and it looks wrong. '
+       + 'Go back to emailing you every time?',
+    accept: 'Email me every time', decline: 'Leave it as it is',
+  };
+
   /* THE QUIET OFFER, AND WHY IT IS AN OFFER.
 
      A job that has produced the same text several mornings running is not

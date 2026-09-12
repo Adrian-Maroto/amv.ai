@@ -2748,9 +2748,12 @@ function _mcOfferHTML(){
   return `<section class="mc-offer mc-offer-${escH(String(o.kind || 'auto'))}">
     <div class="mc-offer-b">
       <div class="mc-offer-t">${escH({
-        pause: 'This job keeps producing something you do not use',
-        quiet: 'This job keeps saying the same thing',
-        auto:  'You have said yes to this every time',
+        pause:   'This job keeps producing something you do not use',
+        quiet:   'This job keeps saying the same thing',
+        inapp:   'You keep telling AMV this was not worth an email',
+        stop:    'You keep telling AMV this was not worth making',
+        unquiet: 'AMV held this back and you wanted it',
+        auto:    'You have said yes to this every time',
       }[String(o.kind || 'auto')] || 'You have said yes to this every time')}</div>
       <div class="mc-offer-s">${escH(String(o.say))}</div>
     </div>

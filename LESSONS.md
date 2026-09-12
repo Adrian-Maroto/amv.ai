@@ -11806,3 +11806,41 @@ Both are the same error: the test stood where the code stands instead of where
 the PERSON stands. The fixes are the same shape too - assert the floor in
 literal numbers, and go through the endpoint. Worth writing down because knowing
 the rule is evidently not enough to follow it; only running the mutation is.
+
+## 453. A feedback button is a tax until it buys something
+
+Two buttons on a result - was this worth telling you about - are trivial to add,
+and the default version of them is worthless. If the only effect is a number
+somebody else reads, the button costs a tap and returns nothing; people stop
+pressing within a week, and the number stops describing the product at all. It
+describes the few people still pressing.
+
+So the design question was never "where do the buttons go". It was "what does
+answering earn". Three "not worth it" earns an offer to stop emailing that job -
+the smallest change that answers what was actually said, with the job left
+running because the complaint was the email. Three on a job that never emailed
+anybody earns an offer to pause it, because there is no interruption left to
+remove and what is left is money spent on something unwanted.
+
+And the half that is easy to skip: three "worth it" on a job AMV has been
+HOLDING BACK earns an offer to undo that. Every other rule in this milestone
+pushes towards silence. Without one that pushes the other way, a product that
+guesses wrong about somebody once keeps being wrong, and the only person who can
+tell it so has no way to.
+
+## 454. Two counts that use the same word are one count that means nothing
+
+The obvious implementation was to feed "was this worth telling me" into the
+tally that already exists - it has yes/no streaks and it already drives offers.
+It would have been wrong. That tally counts APPROVALS: "yes, send this."
+Somebody can approve a cancellation every single time and still not want an
+email about it, and can find a result useful and decline to act on it. Merged,
+neither count answers its own question, and the thing they drive is a change to
+somebody's delivery.
+
+The same applies one level down, and that one nearly did ship: both counts carry
+an "already asked" flag, and writing the approval flag when answering a feedback
+offer would mean somebody who declined one question is never asked the other, for
+ever. A mutation that swapped the two was caught only because the suite asserts
+the OTHER flag is still false - an assertion that looks redundant right up to the
+moment it is the only one that fails.

@@ -298,6 +298,37 @@ so somebody who asked to be emailed and was not cannot find out why.
 Held by `a-job-that-keeps-saying-the-same-thing`, checked against twelve
 mutations of the digest, the offer and the suppression.
 
+## Two buttons that buy you something
+
+Every result carries the same question: was this worth telling you about. The
+answer is shown and can be changed, because a first tap that cannot be corrected
+is a trap, and the same answer twice is one answer rather than two.
+
+They are not analytics, and the difference is what answering earns:
+
+- **Three "not worth it" in a row on a job that emails** offers to stop emailing
+  it. The job keeps running and every result still lands in AMV - that is the
+  smallest change that answers what was actually said.
+- **Three in a row on a job that was never emailing anybody** offers to pause it
+  instead. There is no interruption left to remove, so what is left is money
+  spent producing something they have now said three times they do not want.
+- **Three "worth it" in a row on a job AMV has been holding back** offers to undo
+  that. AMV made that call from a repeated answer; the person is the only one
+  who can judge whether it was right, and without this the product only ever
+  ratchets towards silence.
+
+One offer, chosen by what the job does, never a menu - a three-way choice about
+a notification somebody did not want is itself an interruption.
+
+Counted apart from the approval tally on purpose. "Yes, send this" and "that was
+worth telling me" are different sentences: somebody can approve a cancellation
+every time and still not want an email about it. Their "already asked" flags are
+separate too, so answering one question never silences the other.
+
+Held by `two-buttons-that-buy-you-something`, checked against twelve mutations
+including the one this section exists to prevent - recording the answer and
+earning nothing from it.
+
 ## Silence is not approval
 
 An approval that expires is a denial. An approval nobody answered is a denial.

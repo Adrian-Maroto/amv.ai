@@ -237,7 +237,7 @@ rather than money.
 *Done when:* a renewal is detected, a rule authorises it, the cancellation runs,
 reading the account back confirms it, and the timeline says what happened.
 
-## Milestone 7 — Quiet by default
+## ✅ Milestone 7 — Quiet by default (done)
 
 Interruption scoring, digest aggregation, the feedback buttons. The brief is
 right that the product fails at 40 alerts a day.
@@ -279,10 +279,26 @@ repeat stays in AMV and the job's ROW says "same answer since <date> · in AMV,
 not your inbox" - because a job running quietly must never look like a job that
 has quietly stopped working. The moment the answer changes, it arrives again.
 
-Still open in M7:
+**The feedback buttons are DONE, and they are not analytics.** Two buttons on a
+result - was this worth telling you about - are trivial to add and worthless by
+default: a button whose only effect is a number on somebody else's dashboard
+costs a tap and returns nothing, and within a week the number describes only the
+few people still pressing it.
 
-- **The feedback buttons**, which is the only honest way to find out whether the
-  quiet defaults are actually the right ones.
+So answering buys something. Three "not worth it" in a row earns an offer to
+stop EMAILING that job (the complaint was the email; the job keeps running and
+every result still lands in AMV) - or, for a job that was never emailing anybody
+and so has no interruption left to remove, an offer to pause it rather than keep
+spending on something they have said three times they do not want. And three
+"worth it" in a row on a job AMV has been holding back earns an offer to undo
+that: AMV made that call, the person is the only one who can judge it, and
+without this the product would only ever ratchet towards silence.
+
+Counted separately from the approval tally, because "yes, send this" and "that
+was worth telling me" are different sentences, and their "already asked" flags
+are separate too - answering one question must never silence the other.
+
+**Milestone 7 is complete.**
 
 ## Milestone 8 — International by architecture
 
