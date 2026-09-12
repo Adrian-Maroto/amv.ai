@@ -241,5 +241,79 @@ section('A share link is long enough to be a password, because it is one');
      'it comes from the cryptographic source', true);
 }
 
+/* ── THE TWO CONTROLS YOU REACH FOR AFTER A BREACH ─────────────────────────
+
+   Both were attacked as mutations against every auth suite in the repository
+   and both went unnoticed. They are not the same kind of control as the
+   signature check - that one refuses a forged token, and these two refuse a
+   token that is perfectly well signed. They are the levers, and a lever nobody
+   has pulled is a lever nobody knows is disconnected. */
+
+section('The algorithm is pinned, so a header cannot choose the check');
+{
+  /* The oldest JWT attack there is: the token names its own algorithm, so the
+     token gets to say how carefully it should be examined. `alg: "none"` says
+     "do not examine it". AMV pins HS256 and always verifies with HMAC, so
+     removing the pin is not exploitable TODAY - and that is exactly why it
+     needs a test. The pin exists so a future edit that dispatches on `alg`
+     cannot quietly become the vulnerable shape, and a defence whose whole job
+     is to survive a later change has to be the thing that notices the change. */
+  /* Every claim the verifier requires, because it requires all of them: a
+     token missing `nbf` or `typ` is refused by design (see AMV-054 above), and
+     a fixture missing one would make the positive assertions below fail for a
+     reason that has nothing to do with the algorithm. */
+  const nowS = Math.floor(Date.now()/1000);
+  const payload = { email: 'a@b.com', ver: W.TOKEN_VER, typ: 'access',
+                    iat: nowS, nbf: nowS, exp: nowS + 600 };
+  const body = b64(payload);
+
+  /* Unsigned, announcing itself as unsigned. */
+  const none = b64({ alg: 'none', typ: 'JWT' }) + '.' + body + '.';
+  ok(await W.verifyToken(none, SECRET, env, 'access') === null,
+     'a token that says it needs no signature is refused', true);
+
+  /* Signed correctly, but claiming another algorithm - the confusion attack in
+     the form that gets past a verifier which trusts the header. */
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(SECRET),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const wrongAlg = b64({ alg: 'RS256', typ: 'JWT' });
+  const macA = new Uint8Array(await crypto.subtle.sign('HMAC', key,
+    new TextEncoder().encode(wrongAlg + '.' + body)));
+  const sigA = Buffer.from(macA).toString('base64url');
+  ok(await W.verifyToken(wrongAlg + '.' + body + '.' + sigA, SECRET, env, 'access') === null,
+     'and so is one naming an algorithm AMV does not use, however well signed', true);
+
+  const wrongTyp = b64({ alg: W.JWT_ALG, typ: 'JWE' });
+  const macT = new Uint8Array(await crypto.subtle.sign('HMAC', key,
+    new TextEncoder().encode(wrongTyp + '.' + body)));
+  const sigT = Buffer.from(macT).toString('base64url');
+  ok(await W.verifyToken(wrongTyp + '.' + body + '.' + sigT, SECRET, env, 'access') === null,
+     'or a type that is not a JWT at all', true);
+
+  ok(await W.verifyToken(await handMade(payload), SECRET, env, 'access') !== null,
+     'while the real header is accepted, so this is a pin and not a wall', true);
+}
+
+section('The version is the lever that invalidates every token at once');
+{
+  /* `TOKEN_VER` is what you bump after a secret leaks, an employee leaves, or a
+     dependency turns out to have been logging headers. It is the ONE action
+     that signs everybody out - and a token minted before the bump is still
+     perfectly signed, so nothing else refuses it. If this check is not
+     enforced, the lever moves and nothing happens, which is the worst possible
+     time to find out. */
+  const t0 = Math.floor(Date.now()/1000);
+  const base = { email: 'a@b.com', typ: 'access', iat: t0, nbf: t0, exp: t0 + 600 };
+  ok(await W.verifyToken(await handMade({ ...base, ver: W.TOKEN_VER }), SECRET, env, 'access') !== null,
+     'a token of the current era works', true);
+  ok(await W.verifyToken(await handMade({ ...base, ver: W.TOKEN_VER - 1 }), SECRET, env, 'access') === null,
+     'one from before the last bump does not, however well signed it is', true);
+  ok(await W.verifyToken(await handMade({ ...base, ver: W.TOKEN_VER + 1 }), SECRET, env, 'access') === null,
+     'and neither does one claiming an era that has not happened', true);
+  ok(await W.verifyToken(await handMade(base), SECRET, env, 'access') === null,
+     'nor one that simply does not say - a claim checked only when present is not a check',
+     true);
+}
+
 if (report('what-a-token-does-not-say') > 0) process.exitCode = 1;
 done();

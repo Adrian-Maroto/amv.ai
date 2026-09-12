@@ -12007,3 +12007,40 @@ request and looking at what was written.
 And the tell to look for: a suite that tests a function exhaustively and then
 has one short section about "the worker" made of `indexOf` and regex. That
 section is where the hole is.
+
+## 461. The controls nobody has ever pulled are the ones nobody knows are disconnected
+
+Three critical paths were attacked the same way this session - connectors,
+money, auth. Twenty-three mutations in total, eight of them unnoticed by every
+suite in the repository. The auth path gave up two, and they have a shape in
+common that the others did not.
+
+Both are controls that refuse a PERFECTLY VALID token.
+
+The algorithm pin rejects a token whose header names `none` or `RS256` - the
+oldest attack on JWTs, where the token gets to say how carefully it should be
+examined. AMV always verifies with HMAC, so removing the pin is not exploitable
+today, and that is exactly the argument for testing it: the pin exists so a
+future edit that dispatches on `alg` cannot quietly become the vulnerable shape.
+A defence whose whole job is to survive a later change has to be the thing that
+notices the change.
+
+The version check is the lever you pull after a secret leaks, an employee
+leaves, or a dependency turns out to have been logging headers. Bumping
+`TOKEN_VER` is the one action that signs everybody out. A token minted before
+the bump is still perfectly signed, so nothing else refuses it - if this check
+is not enforced, the lever moves and nothing happens, and the moment you find
+that out is the worst possible moment.
+
+Neither is reachable from a normal request, which is why neither had a test and
+why a signature test does not cover them. A test suite naturally grows around
+what users do. Controls that only matter on the worst day of the company's life
+have no user to grow a test around, so they have to be written for deliberately.
+
+The way to find them: read the code for a refusal that cannot happen today, and
+ask what it is FOR. If the answer is "in case something else changes" or "after
+a breach", it is exactly the kind that rots unnoticed.
+
+(Also worth recording: the first version of these assertions failed, because my
+hand-built token left out `nbf`, which the verifier requires. The verifier being
+stricter than my fixture is the right direction for that surprise to run.)
