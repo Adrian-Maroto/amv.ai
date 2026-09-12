@@ -11650,3 +11650,34 @@ something somebody deliberately set up.
 **Where a number encodes a judgement, assert the judgement.** Reading the number
 back and comparing it to itself proves nothing, and it is a comfortable kind of
 nothing, because it looks like coverage.
+
+## 446. A surface that renders only from state had never had a colour measured
+
+The app-wide contrast suite walks every tab. That covers the quiet-hours row
+and the never list, which render whenever the crew screen does - and misses the
+two newest surfaces on that screen entirely, because they only exist when there
+is something to say: the offer AMV makes about a job somebody keeps answering
+the same way, and the cancellation letters it hands to a mail client.
+
+Walking a tab is not the same as seeing a tab. **"Renders conditionally" is not
+"renders rarely"** - the offer is the one thing on that screen that appears
+without anybody asking for it, and it was the only text there nothing could
+measure. The tab now seeds both.
+
+Two things about the verification, and the second is the real lesson.
+
+The first probe I wrote to check the light theme **measured dark twice**. It set
+`data-theme`, which this app does not use - the theme is `body.light` - so the
+numbers came back identical and I nearly reported light as verified. Identical
+results across two conditions is not agreement, it is a missing switch.
+
+And the guard I wrote against the seeding being deleted **sat inside the block
+it was guarding**. `if (tab === 'crew') { ...seed...; if (!seeded) throw; }` -
+delete the block and the check goes with it. A mutation proved it: the suite
+passed while measuring less than it claimed. It now records which classes were
+actually measured and asserts that outside the loop, where removing the seed
+cannot remove the assertion.
+
+**A check for a thing must not live inside the thing.** That is the same shape
+as a dead `typeof` guard and a silent empty slice, arrived at from a third
+direction.

@@ -105,17 +105,52 @@ const measure = async (page, theme) => {
   await page.evaluate(t => document.body.classList.toggle('light', t === 'light'), theme);
   await page.waitForTimeout(400);
   const invisible = [], marginal = [];
+  /* WHAT WAS ACTUALLY LOOKED AT, so the seeding above cannot be removed
+     silently. The first version of this guard lived inside the `if (tab ===
+     'crew')` block - which meant deleting the block deleted the guard too, and
+     a mutation proved it: the suite went on passing while measuring less than
+     it claimed. A check for a thing must not sit inside the thing. */
+  const seen = new Set();
   let counted = 0;
   for (const tab of TABS) {
     await page.evaluate(t => { try { const i = t.indexOf(':');
       if (i > 0) goSettings(t.slice(i + 1)); else setTab(t); } catch (e) {} }, tab);
     await page.waitForTimeout(300);
+    /* CREW HAS TWO SURFACES THAT ONLY EXIST WHEN THERE IS SOMETHING TO SAY:
+       the offer AMV makes about a job somebody keeps answering the same way,
+       and the cancellation letters it hands over for a mail client to send.
+       Walking the tab does not produce either, so neither had ever had a
+       colour measured - they are the newest text in the product and they were
+       the only text on this screen nothing here could see.
+
+       Seeded rather than skipped: a surface that renders conditionally is not
+       a surface that renders rarely, and the offer in particular is the one
+       thing on this screen that appears without anybody asking for it. */
+    if (tab === 'crew') {
+      await page.evaluate(() => {
+        try {
+          saveStr('amv_plan', 'pro');
+          store('amv_auto_quiet', { from: 23, to: 7, tz: 'UTC' });
+          store('amv_auto_never', ['@example.com']);
+          window._autoApi = async () => ({ items: [], results: [{
+            id: 'r1', autoId: 'j1', detail: 'Inbox digest', at: Date.now(), read: false,
+            kind: 'task', approval: 'auto', outcome: 'in-app', costUSD: 0.01, out: 'x',
+            drafts: [{ merchant: 'Acme', to: 'billing@acme.com',
+                       subject: 'Cancel my subscription - Acme', body: 'Hello,\n\nPlease cancel.' }] }],
+            offer: { job: 'j1', kind: 'auto', count: 6, accept: 'Stop asking me',
+                     decline: 'Keep asking', say: 'You have approved this job 6 times in a row.' } });
+          return _autoRefresh().then(() => renderCrewView());
+        } catch (e) { return null; }
+      });
+      await page.waitForTimeout(250);
+    }
     for (const x of await collect(page, tab)) {
       const bg = flatten(x.stack); if (!bg) continue;
       const fg0 = parseColor(x.fg); if (!fg0) continue;
       const c = contrast(fg0[3] < 1 ? [fg0[0]*fg0[3]+bg[0]*(1-fg0[3]), fg0[1]*fg0[3]+bg[1]*(1-fg0[3]),
                                        fg0[2]*fg0[3]+bg[2]*(1-fg0[3]), 1] : fg0, bg);
       counted++;
+      if (x.cls) String(x.cls).split(/\s+/).forEach(c => seen.add(c));
       const large = x.size >= 24 || (x.size >= 18.66 && x.weight >= 700);
       const need = large ? 3 : AA;
       const label = `${x.tab}/${x.cls || '(none)'} ${c.toFixed(2)}:1 ${x.size}px "${x.text}"`;
@@ -123,7 +158,7 @@ const measure = async (page, theme) => {
       else if (c < need - 0.01) marginal.push(label);
     }
   }
-  return { invisible: [...new Set(invisible)], marginal: [...new Set(marginal)], counted };
+  return { invisible: [...new Set(invisible)], marginal: [...new Set(marginal)], counted, seen };
 };
 
 const app = await bootApp({ tab: 'chat', viewport: { width: 1280, height: 900 },
@@ -132,6 +167,25 @@ const { page, errors } = app;
 
 const dark = await measure(page, 'dark');
 const light = await measure(page, 'light');
+
+section('The surfaces that only exist when there is something to say were measured');
+{
+  /* The newest text in the product renders only from state: the offer AMV
+     makes about a job somebody keeps answering the same way, and the
+     cancellation letters it hands to a mail client. Walking the tab does not
+     produce either, so the crew tab above seeds them - and this is what stops
+     that seeding being deleted silently.
+
+     Deliberately OUTSIDE the loop. The first version of this check sat inside
+     the `if (tab === 'crew')` block, so removing the block removed the check
+     as well, and the suite went on passing while measuring less than it said.
+     A check for a thing must not live inside the thing. */
+  for (const cls of ['mc-offer-s', 'mc-offer-t', 'mc-draft-note', 'mc-draft-t', 'mc-quiet-note', 'mc-never-note']) {
+    ok(dark.seen.has(cls) && light.seen.has(cls),
+       cls + ' had its colour measured in both themes',
+       { dark: dark.seen.has(cls), light: light.seen.has(cls) });
+  }
+}
 
 section('The scan actually looked at something');
 {
