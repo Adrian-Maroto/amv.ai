@@ -247,8 +247,21 @@ grain a person actually experiences as "this morning's email":
   so afterwards. See LESSONS 448: blanking that field on the way into the batch
   looked tidy and turned a bad read into a green row.
 
-Held by `one-morning-is-one-email`, whose assertions were checked against nine
-mutations of the sending code.
+- **A job waiting on a connection says so once.** This branch returns before the
+  notify branch, so a job blocked on access told nobody at all: somebody who set
+  up "inbox digest, email me daily" and never connected a mailbox got silence,
+  every morning, for ever - and silence reads as the product doing nothing
+  rather than as the product waiting on them. It is now told the first time, and
+  again only when what it is waiting for changes. Not every tick: they know by
+  the second one, and a milestone about interruptions does not get to invent a
+  daily nag. It rides in the same email as that morning's real results. Nothing
+  is written to `lastError` for it - the job has not failed, it is waiting.
+  Connecting the thing produces the actual result next run, which is the signal
+  that it worked; there is no second email to announce good news.
+
+Held by `one-morning-is-one-email` and `a-job-waiting-on-you-says-so-once`,
+whose assertions were checked against seventeen mutations of the sending and
+blocking code.
 
 ## Silence is not approval
 

@@ -11742,3 +11742,26 @@ because a regex is not asking the question.
 Rule: a claim about what happens at runtime is asserted at runtime. Source
 matching is for claims that are ABOUT the source - that a name exists, that a
 call site declares its class, that a removed thing is really gone.
+
+## 450. The quietest branch is the one that returns early
+
+A due job that finds it has no access to what it needs writes a "connect this
+first" result and returns - and the return was placed above the branch that
+decides whether to email. So the one case where a person could fix the problem
+themselves, in under a minute, was the one case AMV said nothing about.
+Somebody who set up "inbox digest, email me daily" and never connected a mailbox
+got silence every morning, beside a result piling up in a screen they had
+explicitly asked not to have to open.
+
+It reads as the product doing nothing. That is the damage: not the missing
+information, but the wrong conclusion drawn from its absence.
+
+Worth noticing about the shape rather than the instance: early returns are where
+delivery gets lost, because each one is written while thinking about the
+condition that caused it and not about the work further down the function.
+Whenever a branch returns before something that speaks to a person, the question
+is not "is this case an error" but "does this case need saying".
+
+The fix is a sentence and a comparison, not a subscription - told on the
+TRANSITION, so the second morning is silent. A notice that repeats daily is a
+notice people filter, and then the day it changes they do not see it either.

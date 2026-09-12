@@ -5857,6 +5857,7 @@ async function runDueAutomations(env, atMs){
          pasted a token yet has not broken anything. */
       const needs = _autoNeedsFor(item, connected, item.discoveredNeeds);
       if(!needs.ready){
+        const needsMsg = _autoNeedsMessage(item, needs.missing, now);
         rec.results = (rec.results||[]).concat({
           id: _resultId(),
           autoId: item.id, detail: item.detail, at: now, read: false,
@@ -5865,11 +5866,35 @@ async function runDueAutomations(env, atMs){
              link each one to the place it is fixed, and stop showing it the
              moment it is connected. */
           needs: needs.missing,
-          out: _autoNeedsMessage(item, needs.missing, now)
+          out: needsMsg
         }).slice(-AUTO_MAX_RESULTS);
         audit(env, 'auto_needs_access', { email, item: item.id, missing: needs.missing.map(m=>m.id) });
         item.runs = (item.runs||0) + 1;
-        item.lastNeeds = needs.missing.map(m=>m.id);
+        /* TOLD ONCE, ON THE TRANSITION.
+
+           This branch returns before the notify branch, so a job waiting on a
+           connection told NOBODY. Somebody who set up "inbox digest, email me
+           daily" and has not connected a mailbox got silence every morning,
+           for ever - and silence reads as the product doing nothing, not as
+           the product waiting on them. It is the worst place in the whole tick
+           to be quiet, because it is the one failure the person can actually
+           fix in a minute.
+
+           Every tick would be a nag, and they already know by the second one.
+           So: only when the set of things it is waiting for has something new
+           in it, which includes the first time. `lastNeeds` is a carried key,
+           so the comparison survives the write-back. It joins the SAME batch as
+           that morning's real results rather than arriving as its own email -
+           a milestone about interruptions does not get to add one.
+
+           Nothing is written to lastError here. The job has not failed; it is
+           waiting, which the row says in its own words from `lastNeeds`. */
+        const wasWaitingFor = Array.isArray(item.lastNeeds) ? item.lastNeeds : [];
+        const nowWaitingFor = needs.missing.map(m=>m.id);
+        const newlyBlocked = nowWaitingFor.some(id => wasWaitingFor.indexOf(id) < 0);
+        item.lastNeeds = nowWaitingFor;
+        if(newlyBlocked && item.notify === 'email' && env.EMAIL_API_KEY)
+          mails.push({ item, out: needsMsg });
         item.next = now + (item.interval || AUTO_INTERVALS.daily);
         ran++; changed = true;
         /* Blocked on access it does not have, so no model call happened. */

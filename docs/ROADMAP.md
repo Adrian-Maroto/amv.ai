@@ -257,6 +257,11 @@ told to every job that was in it, because a person waiting on an email that is
 never coming, beside a row showing green, is the failure this was meant to
 prevent rather than a new way to cause it.
 
+A job BLOCKED on a connection is part of the same picture and was the quietest
+failure in the tick: it returned before the notify branch, so it told nobody.
+It now says so once, in that morning's one email, and again only if what it is
+waiting for changes.
+
 Still open in M7:
 
 - **Interruption scoring.** Only the rule-based version should ship. A model
