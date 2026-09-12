@@ -2296,7 +2296,7 @@ function _mcServerSchedRow(x){
            a job that is working and has nothing new to say - and the whole
            bargain was that they lose nothing by not looking. */
         const same = x.quietSince
-          ? `<span class="mc-sched-same">Same answer since ${escH(_mcDay(x.quietSince))} · in AMV, not your inbox</span>` : '';
+          ? `<span class="mc-sched-same">Same answer since ${escH(_dayLabel(x.quietSince))} · in AMV, not your inbox</span>` : '';
         return `<span class="mc-sched-mode ${eff==='auto'?'auto':''}">${escH(say)}</span>`
              + (eff!==own?`<span class="mc-sched-held">held back from “${escH(own)}” by your account setting</span>`:'')
              + quiet + same;
@@ -2308,10 +2308,15 @@ function _mcServerSchedRow(x){
     </div>
   </div>`;
 }
-/* A past date in the person's own locale, for the one line that names a day
-   rather than a countdown. `_mcWhen` answers "how long until", which reads as
-   nonsense for something that already happened. */
-function _mcDay(ts){
+/* A past date in the person's own locale, for the lines that name a day rather
+   than a countdown. `_mcWhen` answers "how long until", which reads as nonsense
+   for something that already happened.
+
+   ONE definition, used from the Integrations job rows too. The first draft had
+   a byte-identical `_asrvDay` over there and the gate refused it, correctly:
+   the two rows say the same sentence about the same field, and two copies of
+   the formatting is how one of them ends up saying it differently. */
+function _dayLabel(ts){
   const d = Number(ts) || 0;
   if(!d) return '';
   try { return new Date(d).toLocaleDateString(undefined, { month:'short', day:'numeric' }); }
