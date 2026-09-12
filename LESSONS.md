@@ -11912,3 +11912,28 @@ assertion passed the mutation that reproduced the bug it existed for.
 Aggregates hide the case. The fix was to check ADJACENCY - every figure must
 have a code immediately in front of it - which is the actual rule, stated
 directly instead of through a proxy that happens to correlate with it.
+
+## 458. A negated assertion goes vacuous the moment the format it names changes
+
+Changing the check-in to name its currency instead of printing a `$` broke one
+assertion loudly and silenced two others.
+
+The loud one was easy: a suite asserted `-$2,000.00` and the gate refused the
+release. That is the system working.
+
+The quiet ones were the point. Two guards read "there must be no `$` followed by
+a digit here" - one on a failed check-in's words, one on the JSON a failed
+endpoint returns. The moment nothing writes a `$` any more, both pass on every
+possible input, including the one they exist to catch: a failed run quoting
+yesterday's balance as today's. They went from guarding something to guarding
+nothing, in a change made several hundred lines away, and nothing reported it.
+Worse, the JSON one could never have failed at all - JSON numbers have no
+symbol, so it was born vacuous.
+
+The rule: a negated assertion must name the THING that must not be there, not a
+format that thing currently happens to wear. "No figure" survives a change of
+currency, of symbol, of locale. "No dollar sign" survives nothing and announces
+nothing when it dies.
+
+And the check that proves it: mutate the code to do the forbidden thing. Both
+guards now fail when a failed check-in quotes a balance. Before, neither did.

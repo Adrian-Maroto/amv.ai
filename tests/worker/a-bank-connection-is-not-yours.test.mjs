@@ -242,12 +242,21 @@ section('And when the bank will not answer, AMV reports that instead of guessing
 
   const d = await jsonOf(await req(env, '/v1/finance/checkin', {}, tok));
   ok(d.ok === false, 'the check-in fails rather than succeeding emptily', d);
-  ok(!/\$\s?\d/.test(JSON.stringify(d)), 'with no figure in it', JSON.stringify(d).slice(0, 140));
+  /* A FIGURE, not a dollar sign. This response is JSON - its numbers are
+     `"total":10000`, with no symbol anywhere - so a check for "$ then a digit"
+     could never have failed here, whatever the endpoint returned. */
+  ok(!/\d[\d,]*\.\d{2}|"(total|balance|change[A-Za-z]*)":\s*-?\d/.test(JSON.stringify(d)),
+     'with no figure in it', JSON.stringify(d).slice(0, 140));
 
   /* The words a scheduled check-in would send are built from the provider's
      numbers, never written by a model - so a failure has nothing to embellish. */
   const words = W._investText({ ok: false, code: 'provider_error' });
-  ok(typeof words === 'string' && !/\$\s?\d/.test(words),
+  /* Also a figure rather than a symbol, and for a second reason: the check-in
+     stopped writing '$' at all when it started naming the currency, so this
+     assertion would have passed on every possible input from that day onward -
+     including a failed run that quoted yesterday's balance, which is the exact
+     thing it exists to catch. */
+  ok(typeof words === 'string' && !/\d[\d,]*\.\d{2}/.test(words),
      'and the message for a failed run quotes no balance', words.slice(0, 120));
 }
 

@@ -226,7 +226,13 @@ section('The scheduled one reads the accounts rather than asking a model');
   globalThis.fetch = async () => ({ ok: true, json: async () => ({ accounts: [acct('1', 'Brokerage', 'brokerage', 8000)] }) });
   const second = await W._autoExecute(env, { kind: 'invest' }, {}, 'd@x.com');
   ok(/Down/.test(second.text), 'a loss is named as a loss', second.text.slice(0, 120));
-  ok(/-\$2,000\.00/.test(second.text), 'with the exact money figure', second.text);
+  /* The figure AND the currency it is in. This assertion used to read
+     `-$2,000.00`, which was the right number wearing a symbol that belongs to
+     seven countries - and the check-in is sent to people whose accounts are not
+     in dollars. See `a-figure-never-wears-another-currencys-symbol`. */
+  ok(/USD -2,000\.00/.test(second.text), 'with the exact money figure', second.text);
+  ok(!second.text.includes('$'),
+     'and no symbol that could belong to a currency this is not in', second.text);
   ok(/-20%/.test(second.text), 'and the percentage a person would work out');
   ok(/not financial advice/.test(second.text), 'and it does not pretend to be advice');
 }
@@ -237,7 +243,15 @@ section('A bank having a bad week does not switch the check-in off');
   serveBalances([], { fail: true });
   const bad = await W._autoExecute(env, { kind: 'invest' }, {}, 'd@x.com');
   ok(/institution down|could not/i.test(bad.text), 'the run says what went wrong', bad.text.slice(0, 120));
-  ok(!/\$\s*[\d,]/.test(bad.text),
+  /* WAS "no dollar followed by a digit", WHICH NOTHING CAN NOW FAIL.
+
+     The moment the check-in stopped writing a '$' at all, this assertion became
+     one that passes on every possible input, including the one it exists to
+     catch - a stale total reported as today's. A guard that cannot fail is not
+     a guard, and this one went vacuous as a side effect of a change several
+     hundred lines away. It now looks for a FIGURE, which is the thing that must
+     not be there, in whatever currency it might be written. */
+  ok(!/\d[\d,]*\.\d{2}/.test(bad.text),
      'and shows no money figure at all rather than yesterday\'s dressed as today\'s', bad.text);
   ok(/nothing here is estimated/i.test(bad.text), 'saying outright that nothing was guessed');
   ok(bad.soft === 'provider_error',
