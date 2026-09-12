@@ -11870,3 +11870,45 @@ name the exact producer of the thing being removed. "Timestamps a run stamps on
 itself" was true of the date and false of the time, and one word of imprecision
 in a comment was enough to hide a suppressed change. If no producer can be
 named, it is content.
+
+## 456. Two renderings of the same numbers, and the wrong one was the one that left
+
+The investing check-in's figures are rendered twice: by the page, and by the
+Worker for the unattended email. The page formatted them through `Intl` with the
+account's real currency and was correct. The Worker printed a literal `$` in
+front of every number and appended the currency code once, at the end of the
+first line - so the email read "Total: $12,345.00 EUR", and then "Up $1,234.00"
+and "Pension: $9,000.00 (+$120.00)" with the wrong symbol and no currency at all.
+
+Somebody's pension, reported while they were asleep, in a currency that is not
+theirs.
+
+Nothing was hidden. Both renderings were a few hundred lines apart and one of
+them was right. What made it survivable is that only ONE of them is in front of
+a person who could notice: the page is read by somebody who knows what currency
+their own accounts are in and would see it immediately, and the email is read at
+seven in the morning by somebody who is not auditing it. When the same values
+are formatted in two places, the one that goes out unattended is the one to
+check first, because it is the one with no reader who will report it.
+
+Also: a symbol is not a currency. `$` belongs to the US, Canada, Australia, New
+Zealand, Hong Kong, Singapore and Mexico among others, and `¥` is both the yen
+and the yuan. Replacing one hardcoded symbol with a symbol table would have
+moved the bug rather than fixed it. The ISO code is what written statements
+about money use, and it needs no locale data to be unambiguous.
+
+## 457. Counting two things and comparing the totals is not the same as checking each one
+
+The assertion written to hold the currency fix counted the figures in the
+message, counted the currency codes, and required at least as many codes as
+figures. A mutation that stripped the code from exactly ONE line survived it -
+the totals still matched, because the mutation removed a code and a figure
+together.
+
+The defect being guarded against was precisely one bare line: the original bug
+was a currency code on the first figure and nothing on the rest. So the
+assertion passed the mutation that reproduced the bug it existed for.
+
+Aggregates hide the case. The fix was to check ADJACENCY - every figure must
+have a code immediately in front of it - which is the actual rule, stated
+directly instead of through a proxy that happens to correlate with it.

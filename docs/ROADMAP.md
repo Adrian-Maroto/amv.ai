@@ -306,6 +306,41 @@ are separate too - answering one question must never silence the other.
 currency, channel preferences, regional retention. The data-plane split is a
 deployment change because nothing above storage names the store.
 
+**Country packs: already done.** `EVERYDAY_BY_COUNTRY` carries 105 countries and
+525 jobs, and the crew catalogue draws its examples straight from it, so the two
+cannot drift.
+
+**Currency: done, and it opened with a defect.** The unattended investing
+check-in printed a literal `$` in front of every figure and appended the
+currency code once, at the end of the first line - so somebody in Frankfurt read
+"Total: $12,345.00 EUR", then "Up $1,234.00" and "Pension: $9,000.00
+(+$120.00)", which carried the wrong symbol and no currency at all. Their
+pension, reported while they were asleep, in a currency that is not theirs. The
+PAGE had it right the whole time, so two renderings of one set of numbers
+disagreed and the wrong one was the one that left the building. Now the ISO code
+on every figure - `$` belongs to seven countries and `¥` to two, so a symbol
+table trades one ambiguity for another - with no minor unit on the currencies
+that have none. Held by
+`a-figure-never-wears-another-currencys-symbol`, nine mutations, all caught.
+
+**Dates: already correct**, and checked rather than assumed. Everything a person
+reads goes through `toLocaleDateString(undefined, …)`, which is their own
+locale; the only fixed format left is the ISO date a run stamps on its own
+output, which is unambiguous by construction and is deliberately not localised -
+`_runDigest` strips exactly that stamp to decide whether a run said anything
+new, and a stamp that changed shape by locale would break it.
+
+Still open, and each needs the owner rather than the repository:
+
+- **Channel preferences by region.** Email is the only channel AMV has. Adding
+  one (SMS in markets where mail is not how people are reached) is a cost and a
+  compliance decision, not an engineering one.
+- **Regional retention.** How long results are kept, per region. The machinery
+  to erase exists and is proven; what is missing is the POLICY, and picking a
+  retention period on the owner's behalf is picking their legal exposure.
+- **The data-plane split.** A deployment change: nothing above storage names the
+  store. It needs an account, a region and a bill.
+
 ## Milestone 9 — Connector SDK and manifests
 
 Only after the trust model holds. The brief is explicit: no marketplace before

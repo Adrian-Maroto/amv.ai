@@ -4005,6 +4005,50 @@ async function _enqueueApproval(env, email, item, out){
   }, { items: [] });
 }
 
+/* ── A FIGURE NEVER WEARS ANOTHER CURRENCY'S SYMBOL ─────────────────────────
+
+   This used to print a literal '$' in front of every number and append the
+   currency code once, at the end of the first line. So somebody in Frankfurt
+   read "Total: $12,345.00 EUR" - a sentence that contradicts itself - and then
+   "Up $1,234.00" and "Pension: $9,000.00 (+$120.00)", which carried no currency
+   at all and the wrong symbol. It is their pension, reported while they are
+   asleep, in a currency that is not theirs.
+
+   The page had it right the whole time: `_invMoney` formats the same numbers
+   through Intl with the real currency. Two renderings of one set of figures
+   disagreed, and the WRONG one was the one that leaves the building.
+
+   THE CODE, NOT A SYMBOL. '$' belongs to the US, Canada, Australia, New
+   Zealand, Hong Kong, Singapore and Mexico among others, and '¥' is both the
+   yen and the yuan, so a symbol table trades one ambiguity for another. Written
+   statements about money use the ISO code for exactly this reason, and it is
+   unambiguous in every locale without any locale data. On EVERY figure, so no
+   line is left bare.
+
+   No Intl, for the reason the old comment gave and got right: this runs at the
+   edge, where locale data is not something to bet a money figure on, and a
+   formatter that throws takes the whole check-in down with it.
+
+   The sign goes after the code. "-EUR 40.00" reads as a negative currency;
+   "EUR -40.00" reads as a negative amount, which is what it is. */
+const _ZERO_DECIMAL_CCY = new Set(['JPY','KRW','VND','CLP','ISK','XAF','XOF',
+  'XPF','KMF','DJF','GNF','PYG','RWF','UGX','VUV','BIF']);
+function _investMoney(n, cur){
+  const code = String(cur || 'USD').toUpperCase().slice(0, 8);
+  const v = Number(n) || 0;
+  const neg = v < 0;
+  /* A yen amount has no fractional part. "JPY 1,234.00" is not a sum of money
+     anybody in Japan would recognise, and two decimal places invented for a
+     currency that has none is a figure AMV made up. */
+  const dp = _ZERO_DECIMAL_CCY.has(code) ? 0 : 2;
+  const fixed = Math.abs(v).toFixed(dp);
+  const dot = fixed.indexOf('.');
+  const whole = dot < 0 ? fixed : fixed.slice(0, dot);
+  const frac = dot < 0 ? '' : fixed.slice(dot);
+  return code + ' ' + (neg ? '-' : '')
+       + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + frac;
+}
+
 /* ---- Execute ONE automation against the real model ---- */
 /* An investing check-in's words, built from the provider's numbers.
 
@@ -4021,15 +4065,8 @@ function _investText(r){
       + '\n\nNo figures are shown because none could be read. Nothing here is estimated.';
   }
   const cur = r.currency || 'USD';
-  /* Grouped by hand rather than through Intl: this runs on the edge, where
-     locale data is not something to bet a money figure on, and a formatter that
-     throws here would take the whole check-in down. */
-  const money = (n) => {
-    const neg = n < 0;
-    const [whole, frac] = Math.abs(n).toFixed(2).split('.');
-    return (neg ? '-' : '') + '$' + whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + '.' + frac;
-  };
-  let out = 'Investment check-in\n\nTotal: ' + money(r.total) + ' ' + cur + '\n';
+  const money = (n) => _investMoney(n, cur);
+  let out = 'Investment check-in\n\nTotal: ' + money(r.total) + '\n';
   if(r.first){
     out += '\nThis is the first check-in, so there is nothing to compare it against yet. '
          + 'The next one will show what changed.\n';
@@ -8017,6 +8054,11 @@ function _investDelta(now, prev){
     if(was == null) return { name: a.name, balance: a.balance, isNew: true };
     return { name: a.name, balance: a.balance, change: Math.round((a.balance - was) * 100) / 100 };
   });
+  /* `changeUSD` holds the change in the ACCOUNT'S currency, not in dollars, and
+     the name is how a dollar sign ended up in front of a euro figure. It is not
+     renamed because it is on the wire to a page the service worker caches: a
+     stale client reading a renamed field would show 0.00, and a window of wrong
+     money is a worse trade than a wrong name. Read it with `currency`. */
   return { first: false, since: prev.at, changeUSD: abs, changePct: pct,
            direction: abs > 0 ? 'up' : abs < 0 ? 'down' : 'flat', byAccount };
 }
