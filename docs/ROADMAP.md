@@ -346,6 +346,45 @@ Still open, and each needs the owner rather than the repository:
 Only after the trust model holds. The brief is explicit: no marketplace before
 the connector security model exists.
 
+### The trust model was audited before anything was built on it
+
+Eight attacks were made on the connector path and run against every connector
+suite in the repository. **Five went unnoticed**, including the one the whole
+model rests on: show the consent dialog, discard the answer, call the connector
+anyway. The only test that looked at the dispatch read the source for
+`if(!allowed)`, which a mutation setting `allowed = true` one line earlier
+satisfies perfectly.
+
+The other four were the bounds `_safeTools`'s own comment names as the reason
+admitting third-party tool names by shape is safe - the tool count, the
+description length, the schema size, and the name shape itself. The claim was
+true and nothing held it.
+
+Both are closed now, measured rather than described:
+`the-bounds-that-make-a-connector-safe-to-admit` feeds hostile input to
+`_safeTools` directly, and `a-connector-acts-on-your-real-accounts` now drives
+AMV's real dispatch with the model loop stubbed and the person denying - so
+"deny" is proven to stop the connector, not merely to close the dialog. All
+eight attacks are caught.
+
+### The marketplace itself is the owner's decision, not the repository's
+
+The audit above says the RUNTIME model holds. It says nothing about provenance,
+which is what a marketplace changes and what M9 actually is.
+
+Today a connector is a command the person typed into the connect card. They
+chose it, and the bridge runs it on their own machine. A marketplace replaces
+"I typed this" with "AMV listed this", and that is a transfer of
+responsibility, not a feature. Nothing in the current model covers who may
+publish, what review a listing gets before it appears, whether packages are
+pinned by hash or float to latest, or what happens on the day a listed
+connector is compromised upstream and runs on every machine that installed it.
+
+Those are not engineering unknowns - they are decisions about liability, cost
+and who AMV vouches for. Building the marketplace and answering them afterwards
+is the failure that ends the company, so M9 stays closed until the owner
+answers them. What can be built without those answers is already built.
+
 ---
 
 ## What is deliberately not on this roadmap

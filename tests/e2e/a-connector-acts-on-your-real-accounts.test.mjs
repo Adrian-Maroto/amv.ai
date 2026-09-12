@@ -151,6 +151,57 @@ section('Nothing happens on a real account without being asked');
   ok(await dlg === false, 'and declining means declining', true);
 }
 
+section('Denying it is what stops it, not just what closes the dialog');
+{
+  /* THE ASSERTION EVERY OTHER ONE HERE DEPENDS ON, AND IT WAS NOT BEING MADE.
+
+     Above, `_confirmModelTool` is driven directly and returns false when the
+     person cancels. That proves the DIALOG answers correctly. It says nothing
+     about whether the dispatch around it obeys the answer - and the only test
+     that looked at the dispatch read the source for `if(!allowed)`, which a
+     mutation setting `allowed = true` one line earlier satisfies perfectly.
+
+     So: `const allowed = true; await _confirmModelTool(...)` - the dialog shown,
+     the answer discarded, the connector called anyway - passed every connector
+     suite in this repository. That is the whole trust model failing silently,
+     on the surface a marketplace of third-party connectors would sit on.
+
+     Measured here instead. The model loop is stubbed because the point is not
+     what a model decides; the point is that AMV's own code between the model's
+     request and the connector's execution honours a "no". Everything from
+     `runTool` inward is the real thing. */
+  const out = await page.evaluate(async () => {
+    const realLoop = window.aiAgentLoop, realRun = window.runMcpTool,
+          realModal = window._showModalAsync;
+    const called = [];
+    window.runMcpTool = async (n) => { called.push(n); return { ok: true, text: 'the connector ran' }; };
+    let answer = false;
+    window._showModalAsync = async () => answer;
+
+    let denied = null, allowedRes = null;
+    window.aiAgentLoop = async (o) => { denied = await o.runTool('mcp__echo__shout', { text: 'hi' }); return { text: '', rounds: 1 }; };
+    await window.runAgentic('code', 'shout hello', {});
+    const afterDeny = called.length;
+
+    answer = true;
+    window.aiAgentLoop = async (o) => { allowedRes = await o.runTool('mcp__echo__shout', { text: 'hi' }); return { text: '', rounds: 1 }; };
+    await window.runAgentic('code', 'shout hello', {});
+    const afterAllow = called.length;
+
+    window.aiAgentLoop = realLoop; window.runMcpTool = realRun; window._showModalAsync = realModal;
+    return { afterDeny, afterAllow, denied, allowedRes };
+  });
+
+  ok(out.afterDeny === 0,
+     'the connector is not called at all when the person says no', out.afterDeny);
+  ok(/DENIED/.test(String(out.denied && out.denied.text)),
+     'and the model is told plainly, so it does not simply try again', out.denied);
+  ok(out.afterAllow === 1,
+     'while saying yes really does run it - this is a gate, not a wall', out.afterAllow);
+  ok(/connector ran/.test(String(out.allowedRes && out.allowedRes.text)),
+     'and its answer comes back', out.allowedRes);
+}
+
 section('And one argument cannot push another off the screen');
 {
   /* THE PREVIEW WAS TRUNCATABLE, WHICH MADE IT WORSE THAN NO PREVIEW.

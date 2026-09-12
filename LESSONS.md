@@ -11937,3 +11937,37 @@ nothing when it dies.
 
 And the check that proves it: mutate the code to do the forbidden thing. Both
 guards now fail when a failed check-in quotes a balance. Before, neither did.
+
+## 459. Five of eight attacks on the security model went unnoticed
+
+Before building a connector marketplace on the connector trust model, the model
+was attacked rather than read: eight mutations of the consent path and the
+admission bounds, each run against every connector suite in the repository.
+Three were caught. Five were not.
+
+The worst was this. The consent dialog is the entire trust model for a
+third-party connector - AMV cannot classify somebody else's tool, so it asks.
+Change the dispatch to
+
+    const allowed = true; await _confirmModelTool(name, input);
+
+and the dialog still appears, the person still clicks Deny, and the connector
+runs anyway. Every suite passed. The one test that looked at the dispatch read
+the source for `if(!allowed)` - which that mutation leaves exactly in place.
+
+The other four were the bounds on how many tools, how long a description and how
+large a schema a client may ship, plus the name-shape check. `_safeTools`'s own
+comment names those three constants as the reason admitting third-party tool
+names by shape is not a hole. The argument was sound and nothing tested it, so
+deleting any one of them was invisible.
+
+Two rules come out of this.
+
+A test that reads source can only ever check that a line is PRESENT. Security
+is about what happens, and a line being present is not that - the mutation that
+defeats it does not have to remove it.
+
+And a comment that says "this is safe because X, Y and Z bound it" is a list of
+things to go and test. It is the clearest possible statement of what the code
+depends on, written by the person who knew, and it is worth more as a test plan
+than as prose.
