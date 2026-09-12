@@ -12234,3 +12234,36 @@ The uncomfortable part is that the second report was the confident one. It came
 with a full-suite run behind it and a tidy story about my own error, which made
 it more persuasive than the finding it overturned. A correction is not more
 likely to be right than what it corrects.
+
+## 468. The test passed because of a different refusal than the one it named
+
+`linkRevoke` refuses a stranger twice over. The record is fetched under the
+CALLER's own key, so a link they have nothing to do with is not in it - 404,
+"no such link". Behind that sits the ownership check: the item is in your
+record but names two other people - 403, "that link is not yours".
+
+The suite asserted `ok(!!nosy.error, 'a stranger cannot revoke somebody else's
+link')`. Any error passes that. The stranger was being refused by the 404, so
+the 403 branch had never once executed in a test, and deleting it broke
+nothing.
+
+Two different guarantees, one assertion covering whichever happened first. The
+weaker one answered, so the stronger one was free.
+
+That is the whole shape, and it is worth more than this one route: asserting
+that a call FAILED is not asserting WHY. Where a route refuses for more than
+one reason, a test that only checks "there was an error" pins the first
+refusal and leaves every later one untested - and the later ones are usually
+the deeper guarantees, because the cheap check is the one you put first.
+
+Fixed by pinning the status on the existing case (404, which is a real
+guarantee and worth stating) and driving the ownership branch directly, with
+the item planted in the stranger's record so only that branch can refuse.
+
+The branch is defence in depth - the scoped read means it should be
+unreachable in ordinary operation - and that is the argument FOR testing it,
+not against. It exists for the day a restore, a sync merge or a half-finished
+write puts an item where it does not belong, and a guard that only matters
+once an invariant has already failed cannot be tested by relying on that
+invariant. Untested, it reads as dead code to anybody tidying up, which is
+exactly how it would leave.

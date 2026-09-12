@@ -192,13 +192,70 @@ section('Either side can end it, and nobody else can');
   await req(env, '/v1/link/accept', { id: 'inv1', code: '123456' }, owner);
   const id = (await linksOf(env, OWNER))[0].id;
 
-  const nosy = await jsonOf(await req(env, '/v1/link/revoke', { id }, stranger));
+  /* THE REFUSAL HAS TO BE THE RIGHT REFUSAL.
+
+     This asserted only that a stranger got AN error, and it passed for a
+     reason nobody intended: `linkRevoke` loads the links record belonging to
+     the CALLER, so a stranger's record does not contain this link at all and
+     the route answers 404 "no such link" long before the ownership check. The
+     403 branch below it - `link.owner !== user.email && link.grantee !==
+     user.email` - was never once reached by a test, and deleting it broke
+     nothing in the repository.
+
+     Both refusals are wanted, and they are different guarantees: one says the
+     link is not in your record, the other says it is but it is not yours. The
+     second is the one that matters if a record ever carries an item it should
+     not - a restore, a sync merge, a half-finished write - and it is the only
+     thing standing between that and somebody cancelling a stranger's access.
+     So the status is pinned here, and the ownership branch is driven directly
+     below. */
+  const nosyRes = await req(env, '/v1/link/revoke', { id }, stranger);
+  const nosy = await jsonOf(nosyRes);
   ok(!!nosy.error, 'a stranger cannot revoke somebody else’s link', nosy.error);
+  ok(nosyRes.status === 404, 'refused because it is not in their record at all', nosyRes.status);
   ok((await activeLink(env, OWNER)).length === 1, 'and it is still live', 1);
 
   const byGrantee = await jsonOf(await req(env, '/v1/link/revoke', { id }, grantee));
   ok(!byGrantee.error, 'the person who was given access can hand it back', byGrantee.error || 'ok');
   ok((await activeLink(env, OWNER)).length === 0, 'and that ends it', 0);
+}
+
+section('A link sitting in your record that names other people is still not yours');
+{
+  /* The ownership branch of linkRevoke, driven for the first time.
+
+     It is defence in depth rather than a live hole: the record is fetched by
+     the caller's own key, so in ordinary operation an item naming two other
+     accounts cannot be there. Records do get written by more than one path
+     though - accepting an invitation, revoking from either side, a restore,
+     a sync merge - and this is the guard that decides what happens when one of
+     them puts something where it does not belong.
+
+     A guard whose whole job is to hold when an invariant has already failed
+     cannot be tested by relying on the invariant, so the item is planted
+     directly. Without this, the branch reads as dead code to anybody tidying
+     up - which is exactly how it would be removed. */
+  const env = mkEnv();
+  const owner = await signup(env, OWNER);
+  const grantee = await signup(env, GRANTEE);
+  const stranger = await signup(env, STRANGER);
+  await invitation(env);
+  await req(env, '/v1/link/accept', { id: 'inv1', code: '123456' }, owner);
+  const id = (await linksOf(env, OWNER))[0].id;
+
+  /* Put the owner's link into the STRANGER's own record, so the lookup finds
+     it and only the ownership check can refuse. */
+  const planted = { id, owner: OWNER, grantee: GRANTEE, scopes: ['read'], active: true };
+  await W.DB.put(env, 'links', STRANGER, { items: [planted] });
+
+  const res = await req(env, '/v1/link/revoke', { id }, stranger);
+  const body = await jsonOf(res);
+  ok(res.status === 403, 'the third party is refused with 403, not found-but-allowed', res.status);
+  ok(/not yours/i.test(body.error || ''), 'and told it is not theirs', body.error);
+  ok((await activeLink(env, OWNER)).length === 1,
+     'the owner still has access, so the refusal actually refused', 1);
+  ok((await activeLink(env, GRANTEE)).length === 1,
+     'and so does the person it was granted to', 1);
 }
 
 section('Taking a page down really stops serving it');
