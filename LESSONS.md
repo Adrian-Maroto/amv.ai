@@ -12319,3 +12319,35 @@ So the rule for reading an audit: UNNOTICED asks a question, it does not answer
 one. Find what the code promises the user, and test THAT. Sometimes the promise
 is the guard; sometimes, as here, the promise is that losing the guard does not
 matter.
+
+## 471. Revocation worked by the door that was tested, not the one that fails
+
+`apiKeyRevoke` does two things: it marks the item `revoked`, and it deletes the
+`apikey:<hash>` row the request path reads. A suite called "Revoking actually
+stops it working" proves a revoked key is dead - via the DELETE. The marked
+flag is never what refuses, so `if (!item || item.revoked) return null;` could
+be removed from `_userFromApiKey` and nothing in the repository noticed.
+
+That is the fourth guard of this shape found in one audit, after the JWT
+algorithm pin, the token-version check and the admin rate limit. Each is a
+second lock that only acts once the first has failed, so nothing routine ever
+reaches it and no test grows around it by accident.
+
+What makes this one worse than the others is that the first lock is allowed to
+fail SILENTLY:
+
+    if (hash) { try { await env.AMV_KV.delete(`apikey:${hash}`); } catch (e) {} }
+
+and the route answers `{ok:true, revoked:true}` regardless. One failed KV delete
+leaves the lookup row in place and tells the customer their key is dead. From
+there, `item.revoked` is the only thing between a leaked credential and a live
+account - and revocation is exactly what somebody does when a key has leaked.
+"I revoked it" is what they will have told their own customers.
+
+The test now drives the losing path: the delete is made to fail, the route is
+checked to still claim success, the lookup row is asserted to have SURVIVED so
+the case is real, and the key must be refused anyway.
+
+The general rule, which is the same one as LESSONS 468 in a different costume:
+where two mechanisms produce one outcome, a test of the outcome proves whichever
+runs first. Make the first one lose, and see if the promise still holds.

@@ -25,10 +25,14 @@ const W = await import(harness + '?t=' + Date.now());
 
 function makeEnv() {
   const kv = new Map();
-  return { _kv: kv, JWT_SECRET: 'test-secret-abcdefghijklmnop',
+  const env = { _kv: kv, JWT_SECRET: 'test-secret-abcdefghijklmnop',
+    /* Set to a pattern to make matching deletes fail, so the best-effort
+       cleanup in apiKeyRevoke can be exercised on the path where it loses. */
+    _failDelete: null,
     AMV_KV: { get: async k => (kv.has(k) ? kv.get(k) : null), put: async (k, v) => { kv.set(k, String(v)); },
-      delete: async k => { kv.delete(k); },
+      delete: async k => { if (env._failDelete && env._failDelete.test(String(k))) throw new Error('storage fault'); kv.delete(k); },
       list: async ({ prefix }) => ({ keys: [...kv.keys()].filter(k => k.startsWith(prefix || '')).map(name => ({ name })), list_complete: true }) } };
+  return env;
 }
 const tokenFor = (env, email) => W.signToken({ email }, env.JWT_SECRET, 3600, env, 'access');
 const post = (path, token, body) => new Request('https://w' + path,
@@ -99,6 +103,46 @@ section('Revoking actually stops it working');
 
   const list = await (await W.apiKeyList(post('/v1/keys/list', t), env)).json();
   ok(list.keys[0].revoked === true, 'the record says so too', list.keys[0].revoked);
+}
+
+section('A revocation the cleanup could not finish still kills the key');
+{
+  /* THE HALF OF REVOCATION NOBODY HAD TESTED.
+
+     Revoking does two things: it marks the item `revoked`, and it deletes the
+     `apikey:<hash>` row the request path reads. The suite above proves
+     revocation works - but it works via the DELETE, so the marked flag is
+     never what refuses. Removing `item.revoked` from `_userFromApiKey` broke
+     no suite in this repository.
+
+     That matters because the delete is best-effort and SWALLOWS:
+
+         if (hash) { try { await env.AMV_KV.delete(`apikey:${hash}`); } catch (e) {} }
+
+     and the route answers `{ok:true, revoked:true}` either way. So a single
+     failed KV delete leaves the lookup row in place, tells the customer the key
+     is dead, and leaves `item.revoked` as the only thing between a leaked
+     credential and a live account. Revocation is precisely what somebody does
+     when a key has leaked, and "I revoked it" is what they will tell their
+     own customers.
+
+     Driven on the losing path: the delete is made to fail, and the key must
+     still be refused. */
+  const env = makeEnv();
+  const t = await paidUser(env, 'rot@x.com');
+  const d = await (await W.apiKeyCreate(post('/v1/keys/create', t, {}), env)).json();
+  ok(!!(await W.requireUser(withKey(d.key), env)), 'the key works to begin with');
+
+  env._failDelete = /^apikey:/;                     // the cleanup will lose
+  const res = await W.apiKeyRevoke(post('/v1/keys/revoke', t, { id: d.item.id }), env);
+  const body = await res.json();
+  ok(body.revoked === true, 'the route still reports the key revoked', body.revoked);
+
+  const hashKeys = [...env._kv.keys()].filter(k => k.startsWith('apikey:'));
+  ok(hashKeys.length === 1, 'and the lookup row really did survive, so this is not a false alarm', hashKeys.length);
+
+  ok((await W.requireUser(withKey(d.key), env)) === null,
+     'but the key is refused anyway, on the revoked flag alone', 'refused');
 }
 
 section('A key cannot reach another account');
