@@ -116,6 +116,41 @@ the code's own comment claims - that the ROUTE stops answering "deleted". An
 operator being paged is not the person being told, and erasure is an obligation
 to the person.
 
+## Authorization, payouts and the admin door - 12 attacked, 2 unnoticed
+
+Run on the rebuilt instrument, which prepends a CONTROL mutation with a known
+answer to every run and ABORTS if the control is not caught. Six wrong results
+preceded it; LESSONS 467 and 471 have the method failures.
+
+| # | Attack | Was | Now caught by |
+|---|--------|-----|---------------|
+| 1 | A deployed site edited by a stranger | caught | `letting-somebody-into-your-account` |
+| 2 | A share listed/unlisted by a stranger | caught | `cross-account-writes`, `share-pages` |
+| 3 | **A permission link revoked by a third party** | **unnoticed** | `letting-somebody-into-your-account` |
+| 4 | An invite redeemed by whoever holds the link | caught | `team-security` |
+| 5 | An OAuth state from another account accepted | caught | `a-connected-account-is-a-key-somebody-lent-you` |
+| 6 | Somebody else's listing deleted | caught | `the-routes-nobody-tested` |
+| 7 | The payout settle lock removed | caught | `payout-settles-once` |
+| 8 | An already-settled payout settled again | caught | `a-claim-kept-after-a-failure-is-a-lie` |
+| 9 | A rejected payout not recording money owed | caught | same |
+| 10 | A settled payout left named in the in-flight index | unnoticed - **correctly** | see below |
+| 11 | The admin token check removed | caught | `a-restore-brings-it-back` |
+| 12 | **The admin rate limit no longer refuses** | **unnoticed** | `admin-security` |
+
+3 is a test passing for the wrong reason. `linkRevoke` refuses a stranger twice
+- 404 because the links record is read under the CALLER's key, then 403 for
+ownership - and the suite asserted only that SOME error came back. The 404
+answered, so the 403 branch had never run. Asserting a call failed is not
+asserting why.
+
+12 is the second lock: the limit bounds what a STOLEN admin token is worth on
+the route that reads every record under every prefix.
+
+10 is NOT a defect and was deliberately not pinned - `_payoutsInFlight` re-reads
+each id and trusts the record's own status, so the index is allowed to be
+stale. What was missing is a test of that TOLERANCE, since a stale entry that
+DID block would refuse somebody's erasure for ever over money already paid.
+
 ## What this does NOT cover
 
 Said plainly, because an audit that implies more than it measured is worse than

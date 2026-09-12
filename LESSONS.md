@@ -12267,3 +12267,55 @@ write puts an item where it does not belong, and a guard that only matters
 once an invariant has already failed cannot be tested by relying on that
 invariant. Untested, it reads as dead code to anybody tidying up, which is
 exactly how it would leave.
+
+## 469. The second lock, which only matters once the first one is lost
+
+`_adminGate` rate-limits BEFORE it checks the admin token, and the comment on
+backup export says why: it reads every record under every prefix, and "anything
+faster than that is either a script gone wrong or somebody draining the store
+through a token they should not have."
+
+So it is not a politeness limit. The token check stops a stranger; this bounds
+what a STOLEN token is worth - the scenario in which every other admin defence
+has already failed. Deleting the refusal broke no suite in the repository.
+
+Same shape as the JWT algorithm pin and the token-version check from earlier in
+this audit, and now common enough to name: a defence that only acts after
+another defence has failed has no ordinary path through it, so no test grows
+around it by accident. Every one of them has to be written deliberately or it
+is not there. The three found so far were all in code with a comment explaining
+exactly why the guard mattered.
+
+Both directions are pinned, because the other one is easy to "fix" by mistake:
+when the counter store is unreachable the gate deliberately does NOT refuse.
+Readiness exists to report that storage is broken and must not be the first
+casualty of it, and the token check is untouched and still fails closed, so it
+widens nothing to a stranger. Without a test saying so, a later reader turns a
+considered fail-open into a fail-closed and locks the operator out in the
+middle of the incident the route exists for.
+
+## 470. An unnoticed mutation is not always a hole
+
+Removing `_openPayoutRemove` - the line that takes a settled payout out of the
+seller's in-flight index - broke nothing, and that is the right answer.
+`_payoutsInFlight` re-reads every id and trusts the record's own status, on the
+stated principle that "an index is a convenience; the payout's own status is
+the truth". The housekeeping is deliberately best-effort and the system is
+built to tolerate its failure.
+
+Pinning it would have been a real mistake: a test demanding the entry be gone
+converts a tolerated condition into a required one and fails a future correct
+change for no user-visible reason. Three of the twelve findings in this audit
+were guards whose absence changed nothing a user could see; the difference is
+that those guards were the only thing standing between a user and harm, and
+this one has a second answer behind it.
+
+What was missing is the TOLERANCE. Nothing asserted that a stale entry fails to
+block an erasure - and if it ever did block, the person could never delete their
+account: every attempt would answer "you have payouts still being sent" about
+money already paid, for ever. An erasure refused by a bookkeeping artefact.
+
+So the rule for reading an audit: UNNOTICED asks a question, it does not answer
+one. Find what the code promises the user, and test THAT. Sometimes the promise
+is the guard; sometimes, as here, the promise is that losing the guard does not
+matter.

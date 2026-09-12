@@ -362,5 +362,42 @@ section('The reauthentication happens before anything is touched');
 }
 
 globalThis.fetch = realFetch;
+section('A settled payout still named in the index does not trap the account');
+{
+  /* THE TOLERANCE, NOT THE HOUSEKEEPING.
+
+     Settling a payout writes the status and then removes it from the seller's
+     in-flight index. Those are two writes, and a crash between them leaves the
+     index naming a payout that is finished. Deleting the removal outright
+     breaks no suite in the repository, and that is CORRECT rather than a gap:
+     `_payoutsInFlight` re-reads each id and checks the record's own status,
+     precisely so "an index is a convenience; the payout's own status is the
+     truth".
+
+     So the housekeeping is deliberately best-effort and must not be pinned - a
+     test demanding the entry be gone would turn a tolerated condition into a
+     required one and fail a future correct change for no user-visible reason.
+
+     What must hold is the tolerance itself, and that had no test either. If a
+     stale entry DID block, the person could never delete their account: every
+     attempt would answer "you have payouts still being sent" about money that
+     was already paid, for ever, with nothing they could do about it. That is
+     an erasure refused by a bookkeeping artefact. */
+  const env = mkEnv();
+  const tok = await signedIn(env);
+
+  await env.AMV_KV.put('withdraw:wd_settled1', JSON.stringify({
+    id: 'wd_settled1', seller: USER, amount: 40, status: 'paid', ts: Date.now() }));
+  await env.AMV_KV.put('wdopen:' + USER, JSON.stringify({
+    ids: ['wd_settled1'], built: Date.now() }));
+
+  const held = await W._payoutsInFlight(env, USER);
+  ok(held.length === 0, 'a finished payout in the index counts as nothing in flight', held.length);
+
+  const r = await del(env, tok, { password: PW });
+  ok(r.status !== 409, 'so the deletion is not blocked by it', r.status);
+  ok(r.body.deleted === true, 'and the account really goes', JSON.stringify(r.body.deleted));
+}
+
 if (report('erasing-everything-needs-more-than-a-token') > 0) process.exitCode = 1;
 done();
