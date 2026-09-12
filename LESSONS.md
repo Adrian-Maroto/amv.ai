@@ -12119,3 +12119,32 @@ And a second thing the same check turned up: `git add -A` had staged
 from this session's scratchpad. It is now ignored. `-A` stages whatever is
 there, including files written by tooling since the last look, so what it staged
 is worth reading before the commit rather than after the push.
+
+## 465. The obvious fix would have changed what thirty suites measure
+
+Restoring `/etc/hosts` fixed the run, and the tempting follow-up was to remove
+the dependency entirely: the harness builds its URLs as `http://localhost:PORT`,
+so point it at `127.0.0.1` and no test ever needs a hosts file again. Five lines
+in `tests/lib`.
+
+It is the wrong move, and the reason is worth more than the fix.
+
+`localhost` and `127.0.0.1` are DIFFERENT ORIGINS. They are different for CSP
+`'self'`, different for CORS, different for `postMessage`, and different to the
+bridge's own origin allowlist. Thirty suites reference `localhost` directly, and
+several of them are about exactly those boundaries - what a page may connect to,
+what the daemon accepts a request from, what a framed page is refused. Changing
+the address they run under would change the thing being measured, silently, in
+the tests whose whole job is to measure it.
+
+So the choice was between a one-line repair to a container that had lost a
+standard file, and a five-line change that quietly re-points thirty
+security-adjacent suites at a different origin. The second one LOOKS like the
+more thorough answer, which is what makes it the trap: it converts a visible,
+understood environment fault into an invisible change of meaning.
+
+The general form: before removing a dependency a test has on its environment,
+check whether the environment detail is part of what the test is asserting. An
+address, a port, a locale, a timezone, a filesystem case-sensitivity - each is
+sometimes incidental and sometimes the subject, and the ones that are the
+subject do not announce it.
