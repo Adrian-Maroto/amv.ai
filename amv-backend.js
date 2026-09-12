@@ -5280,14 +5280,74 @@ function _autoCostUSD(usage){
   return inUSD + outUSD + searchUSD;
 }
 
+/* The markdown-ish result as simple HTML, shared by the single-job mail and the
+   batched one. Extracted rather than copied: this conversion has a bug history
+   (see below) and a second copy of it is a second place for that history to
+   repeat quietly. */
+const _autoMailEsc = (t)=>String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function _autoMailHtml(out){
+  return _autoMailEsc(out)
+    .replace(/^### (.*)$/gm,'<h3 style="margin:18px 0 6px;font-size:15px">$1</h3>')
+    .replace(/^## (.*)$/gm,'<h2 style="margin:20px 0 8px;font-size:17px">$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
+    .replace(/\n\n/g,'</p><p style="margin:0 0 12px;line-height:1.6;color:#333">')
+    .replace(/\n/g,'<br>');
+}
+
+/* ── ONE EMAIL, NOT ONE PER JOB ────────────────────────────────────────────
+   THE FAILURE THIS MILESTONE IS NAMED AFTER.
+
+   The tick sent from INSIDE the per-item loop, so somebody with five jobs due
+   at seven in the morning got five separate emails, every morning. That is not
+   five times as much information; it is one piece of information and four
+   interruptions, and it is exactly how a product that people liked at two jobs
+   becomes one they mute at six.
+
+   The cheapest honest fix is also the right one: collect what a tick produced
+   for one account and send it once. Nothing is summarised, shortened or
+   reordered - every job's result appears in full, in the order they ran, under
+   its own heading. A digest that drops something is worse than four emails.
+
+   The ONE-job case still sends exactly the mail it sent before. A person with
+   a single job has no aggregation problem, and giving them a "digest" wrapper
+   around one item would be a worse email for no reason. */
+async function _autoEmailBatch(env, email, entries){
+  const list = (entries || []).filter(e => e && e.item);
+  if(!list.length) return true;
+  if(list.length === 1) return _autoEmailResult(env, email, list[0].item, list[0].out);
+
+  const appUrl = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/, '');
+  const subject = 'AMV: ' + list.length + ' updates';
+  const sections = list.map((e, i) => {
+    const label = String((e.item && e.item.detail) || 'Background job').slice(0, 80);
+    return (i > 0 ? '<hr style="border:none;border-top:1px solid #eee;margin:22px 0">' : '')
+      + '<h2 style="margin:0 0 8px;font-size:16px">' + _autoMailEsc(label) + '</h2>'
+      + '<div style="font-size:14px"><p style="margin:0 0 12px;line-height:1.6;color:#333">'
+      + _autoMailHtml(e.out) + '</p></div>';
+  }).join('');
+  const html = _emailShell(
+    list.length + ' updates from your background jobs',
+    '<p style="margin:0 0 16px;font-size:13px;color:#777">'
+      + 'These ran together, so AMV has sent them together rather than one email each.</p>'
+    + sections,
+    appUrl ? { label: 'Open in AMV', url: appUrl } : null,
+    '<hr style="border:none;border-top:1px solid #eee;margin:16px 0"><p style="margin:0;font-size:11px;color:#999">You set these recurring checks up in AMV. Manage or stop any of them in the Tasks tab.</p>',
+    'Automated update from AMV.'
+  );
+  const text = list.length + ' updates from AMV\n\n'
+    + list.map(e => '— ' + String((e.item && e.item.detail) || 'Background job').slice(0, 80)
+                  + '\n\n' + e.out).join('\n\n\n')
+    + '\n\nManage these recurring checks in AMV -> Tasks.'
+    + (appUrl ? '\n' + appUrl : '');
+  return _sendEmail(env, email, subject, html, text, 'auto');
+}
+
 /* ---- Deliver an automation result by email ---- */
 async function _autoEmailResult(env, email, item, out){
   const isResearch = item.kind === 'research';
   const label = String(item.detail||'').slice(0, 80);
   const subject = (isResearch ? 'AMV watch: ' : 'AMV update: ') + label;
-  // Convert the markdown-ish result to simple HTML paragraphs (no heavy renderer
-  // in the Worker - keep it robust and dependency-free).
-  const esc = (t)=>String(t).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+  const esc = _autoMailEsc;
   /* AMV-080. These four patterns were written with doubled backslashes, which
      changed what every one of them meant. An escaped backslash followed by a
      star is "zero or more backslashes", not a literal star - so the bold
@@ -5299,12 +5359,7 @@ async function _autoEmailResult(env, email, item, out){
 
      This is the artifact a paying customer receives on a schedule, which makes
      it the last place in the product that should have been rendering wrong. */
-  const htmlBody = esc(out)
-    .replace(/^### (.*)$/gm,'<h3 style="margin:18px 0 6px;font-size:15px">$1</h3>')
-    .replace(/^## (.*)$/gm,'<h2 style="margin:20px 0 8px;font-size:17px">$1</h2>')
-    .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
-    .replace(/\n\n/g,'</p><p style="margin:0 0 12px;line-height:1.6;color:#333">')
-    .replace(/\n/g,'<br>');
+  const htmlBody = _autoMailHtml(out);
   /* A link back. Without it this email is a dead end: it tells someone their
      background work finished and gives them nowhere to go, which is the exact
      moment they were most likely to return. */
@@ -5673,6 +5728,11 @@ async function runDueAutomations(env, atMs){
     const allowedIds = new Set(
       (rec.items || []).filter(x => x.active).slice(0, budget.max).map(x => x.id));
 
+    /* What this tick will mail this account, gathered rather than sent as it
+       goes. Per ACCOUNT, inside the loop over accounts and outside the loop
+       over their jobs, which is exactly the grain a person experiences as
+       "this morning's email". */
+    const mails = [];
     for(const item of rec.items){
       if(item.active && !allowedIds.has(item.id)){
         if(item.lastError !== 'above your plan\u2019s job limit'){
@@ -5888,13 +5948,20 @@ async function runDueAutomations(env, atMs){
         if(level === 'require'){
           try{ await _enqueueApproval(env, email, item, out); }catch(e){ /* best-effort */ }
         } else if(item.notify === 'email' && env.EMAIL_API_KEY){
-          /* A refused send comes back FALSE, not as a throw. Dropping that on
-             the floor leaves somebody waiting on an email that is never coming,
-             next to a job showing green. The result itself is safe - it is in
-             the app - so this says which half arrived. */
-          let wentOut = false;
-          try{ wentOut = await _autoEmailResult(env, email, item, out); }catch(e){}
-          item.lastError = wentOut ? '' : 'The result is here in AMV. The email could not be delivered.';
+          /* HELD, NOT SENT - see `_autoEmailBatch`. Sending here meant one
+             email per job, so five jobs due at seven in the morning were five
+             separate interruptions carrying one morning's information. They go
+             out together once the loop is done.
+
+             `lastError` is NOT cleared here. The line above already set it from
+             this run's own outcome - null on a clean run, and the SOFT code
+             when the run finished with a warning, which is how an investing
+             check-in says its provider read failed. Blanking it on the way into
+             the batch looked tidy and threw that warning away for every job set
+             to email: the row went green while the numbers behind it came from
+             a read that did not work. The send below writes to this field only
+             when it has something true to put there. */
+          mails.push({ item, out });
         }
       }catch(e){
         const why = String(e.message||e).slice(0,200);
@@ -5922,6 +5989,28 @@ async function runDueAutomations(env, atMs){
       item.next = now + (item.interval || AUTO_INTERVALS.daily);
       changed = true;
     }
+
+    /* THE ONE EMAIL. Before the write-back, so `lastError` - which is a carried
+       key - reaches the record with what actually happened rather than with
+       what was hoped for.
+
+       A refused send comes back FALSE, not as a throw. Dropping that leaves
+       somebody waiting on an email that is never coming, beside a job showing
+       green, so every job in the batch is told. The results themselves are
+       safe either way: they are in the app, and this only ever describes which
+       half arrived. */
+    if(mails.length){
+      let wentOut = false;
+      try{ wentOut = await _autoEmailBatch(env, email, mails); }catch(e){ wentOut = false; }
+      if(!wentOut){
+        const why = mails.length > 1
+          ? 'The results are here in AMV. The one email carrying them could not be delivered.'
+          : 'The result is here in AMV. The email could not be delivered.';
+        for(const m of mails) m.item.lastError = why;
+      }
+      changed = true;
+    }
+
     /* AMV-205: the tick holds this record for the whole of a run, which can be
        seconds, and used to write its whole stale copy back at the end. Anything
        the person did meanwhile - pausing, adding a job, editing one, clearing

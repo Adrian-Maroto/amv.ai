@@ -11681,3 +11681,37 @@ cannot remove the assertion.
 **A check for a thing must not live inside the thing.** That is the same shape
 as a dead `typeof` guard and a silent empty slice, arrived at from a third
 direction.
+
+## 447. A fixture written to look realistic stopped measuring the thing
+
+The batching suite seeded three jobs called "weekly note", "inbox digest" and
+"calendar look-ahead" - the jobs somebody really has, which is why they were
+chosen. Two of them never reached the code under test. `_autoNeedsFor` derives a
+job's required access from its own words, so "inbox digest" came due, found no
+mailbox on the account and returned "connect this first" before the notify
+branch; the same for the calendar. One job made it into the batch, the suite
+reported the digest as broken, and the digest was fine.
+
+It cost a debugging session and very nearly cost a correct implementation, which
+is the expensive part: the obvious next move when a new feature's own suite fails
+is to change the feature. The fixture has to be an account that can actually have
+the problem being fixed. Realism in a fixture is worth having only where it is on
+the path being measured - everywhere else it is an extra way for the test to be
+about something you did not choose.
+
+## 448. Tidying a field is writing to it
+
+The collector blanked `item.lastError` on the way into the batch, with a comment
+saying the outcome was not known yet so nothing stale should be left standing.
+Both halves read as careful and both were wrong. The line above it had already
+set the field from this run's own outcome - `null` on a clean run and the SOFT
+code when the run finished with a warning, which is how an investing check-in
+reports that it could not read its provider. So for every job set to email, the
+blanking threw the warning away: the row went green while the figures behind it
+came from a read that did not work.
+
+Mutation testing is what found it, and only because the mutation was inverted -
+DELETING the line changed no test result, which is the signal that a line either
+does nothing or does something nobody is watching. It was the second. A statement
+that exists to make state tidy is still a write, and it has to be justified
+against what the field already holds, not against what it might have held.

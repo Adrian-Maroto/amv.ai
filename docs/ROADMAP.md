@@ -247,6 +247,25 @@ one writable bound in M5 that had something to bind to on the path that
 actually exists. See AUTONOMY.md: held not skipped, enforced by both the cron
 and the browser tick, and the two compared over one table.
 
+**Digest aggregation is DONE.** A tick used to send from inside the per-job
+loop, so five jobs due at seven in the morning were five separate emails. They
+are now collected per ACCOUNT and sent once - nothing summarised, shortened or
+reordered, every result in full under its own heading, in the order they ran. A
+person with ONE job still gets exactly the email they always got; a digest
+wrapper around a single item is a worse email for no reason. A refused send is
+told to every job that was in it, because a person waiting on an email that is
+never coming, beside a row showing green, is the failure this was meant to
+prevent rather than a new way to cause it.
+
+Still open in M7:
+
+- **Interruption scoring.** Only the rule-based version should ship. A model
+  asked "how urgent is this" produces a confident number with nothing behind
+  it, and a number nobody can trace is worse than no scoring at all, because it
+  gets trusted.
+- **The feedback buttons**, which is the only honest way to find out whether the
+  quiet defaults are actually the right ones.
+
 ## Milestone 8 — International by architecture
 
 `home_region` is already on every event. Country packs, locale-correct dates and

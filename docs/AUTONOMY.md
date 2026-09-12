@@ -220,6 +220,36 @@ Four rules it follows:
 Both answers are buttons of the same size. A "yes" styled as the obvious choice
 and a "no" styled as a link is a funnel with good manners.
 
+## One email, not one per job
+
+A tick used to send from inside the loop over a person's jobs. Five jobs due at
+seven in the morning were five separate emails, every morning. That is not five
+times as much information - it is one morning's information and four
+interruptions, and it is how a product somebody liked at two jobs becomes one
+they mute at six.
+
+What a tick produces for one account is now collected and sent once, at the
+grain a person actually experiences as "this morning's email":
+
+- **Nothing is dropped, shortened or reordered.** Every job's result appears in
+  full, under its own heading, in the order they ran. A digest that summarises
+  is worse than four emails, because the person has to open the app anyway and
+  cannot tell which parts they are missing.
+- **One job is not a digest.** A person with a single job has no aggregation
+  problem and still gets exactly the email they always got, subject and all.
+- **A refused send is told to every job that was in it.** The mail provider
+  refusing comes back as a `false`, not as a throw. Dropping that would leave
+  somebody waiting on an email that is never coming, beside a row showing green.
+  Each job says the result is safe in AMV and that the one email carrying it did
+  not arrive, which is exactly what happened.
+- **A warning from the run survives the batch.** A job that finished with a soft
+  failure - an investing check-in whose provider could not be read - still says
+  so afterwards. See LESSONS 448: blanking that field on the way into the batch
+  looked tidy and turned a bad read into a green row.
+
+Held by `one-morning-is-one-email`, whose assertions were checked against nine
+mutations of the sending code.
+
 ## Silence is not approval
 
 An approval that expires is a denial. An approval nobody answered is a denial.
