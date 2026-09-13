@@ -78,6 +78,22 @@ function _cwDefaultJobs(){ return [
     sample:['3 things you said you would do and have not.','You told Priya on the 4th you would send the revised figures \'tomorrow\'. That was 9 days ago.','Two people are waiting on a reply: the landlord (6 days) and the accountant (3 days).','You asked the supplier a question on the 8th and never got an answer. Worth chasing before the order.'],
     prompt:'Review recent emails and calendar entries. List: promises the user made that have no follow-up, messages awaiting their reply, questions they asked that were never answered, and commitments with an approaching date. Be specific - quote the sentence and name the person. Only include real, evidenced items.' },
 
+  /* THE ONE JOB THAT ENDS WITH SOMETHING OTHER PEOPLE OPEN.
+
+     Every other entry here produces text to read. This produces a link: the
+     run writes the questions, the server turns them into a real game, and the
+     link arrives with the result. `kind:'game'` is what tells the run loop to
+     do that - see _autoMakeGame.
+
+     Weekly rather than daily on purpose. A game night that happens every night
+     is not a game night, and a job that asks a group for their attention seven
+     times a week is the kind of thing people turn off and resent. */
+  { id:'friday_game', every:'weekly', cat:'Home & life', icon:'\uD83C\uDFB2', title:'Friday night game', needs:'Nothing', on:false, kind:'game',
+    desc:'Every Friday evening, a fresh set of questions about your group, turned into a link you send to the chat. Anybody can answer without an account. Nobody sees the answers until you reveal them.',
+    asks:{ q:'Who is in the group, and what are they like?', ph:'First names and anything that makes them them - e.g. "Sam always late, Alex films everything, Priya wins every argument, Tom claims he can cook"' },
+    sample:['MOST LIKELY TO ARRIVE LAST AND BLAME THE TRAIN?','WHO WOULD SURVIVE LONGEST WITH NO PHONE?','WHOSE CAMERA ROLL WOULD BE THE MOST EMBARRASSING TO SCROLL?','WHO IS MOST LIKELY TO START AN ARGUMENT ABOUT SOMETHING THEY GOOGLED ONCE?','Your game is ready - send this to the group: amv.homes/g/...'],
+    prompt:'Write between five and eight short questions for a group of friends to answer about each other, using ONLY the names and details the user gave you. Each question on its own line, no numbering, no preamble, no closing line. Make them specific to these people rather than generic - a question that would work for any group is a wasted question. Keep them warm: teasing is the point, humiliation is not, and nothing about anybody\u2019s body, money, health, family or relationships. Never invent a fact about somebody that the user did not tell you. Ask nothing that involves payment, cards or accounts of any kind.' },
+
   { id:'renewal_watchdog', cat:'Money', icon:'\uD83D\uDCC4', title:'Contract & renewal watchdog', needs:'Email', on:false,
     desc:'Finds subscriptions, insurance, leases, warranties, domains and memberships heading for renewal, warns you BEFORE the auto-charge, and prepares the cancel-or-renegotiate message.',
     sample:['3 renewals inside 30 days. One of them is bad value.','Insurance auto-renews on the 22nd at 840 - up from 690 last year, for the same cover.','Domain renews on the 30th, 14. Fine, leave it.','Gym renews on the 2nd, 45/month. You have been twice since November.','Cancellation email for the gym and a renegotiation email for the insurance, both drafted and NOT sent.'],
@@ -3505,7 +3521,12 @@ async function _cwToggleReal(jobs, j){
       const detail = (j.prompt||j.desc||j.title)
         + (extra ? '\n\nWhat the user has told you, which is the only information you have about them - use it and do not invent anything beyond it:\n' + j.answer : '');
       item=await _scheduleTask({ detail, repeat:(j.every||'daily'),
-                                 kind:'research', notify:'app', approval:'auto',
+                                 /* Most jobs end by writing text, and 'research'
+                                    is that. A job that declares its own kind
+                                    ends by DOING something instead - a game job
+                                    mints a real link - so the catalogue entry
+                                    decides rather than this line. */
+                                 kind:(j.kind||'research'), notify:'app', approval:'auto',
                                  /* So the unattended run may open the account
                                     this job says it needs. The server filters
                                     this against its own allow-list and still

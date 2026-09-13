@@ -6150,7 +6150,28 @@ async function runDueAutomations(env, atMs){
 
       try{
         const exec = await _autoExecute(env, item, budget, email, rec.standing || '', _neverList(rec));
-        const out = (exec && exec.text) || '';
+        let out = (exec && exec.text) || '';
+        /* A game job ends by making something the group can open, not by
+           writing about one. Appended to the output so the link travels
+           wherever the result travels - the in-app card, the email, the
+           digest - rather than living somewhere they have to go and find. */
+        if (item.kind === 'game' && out) {
+          try {
+            const made = await _autoMakeGame(env, email, item, out);
+            if (made && made.url) {
+              out += '\n\nYour game is ready - send this to the group:\n' + made.url
+                   + '\n\nNobody sees the answers until you reveal them, in Crew.';
+            } else if (made && made.refused) {
+              out += '\n\n' + made.refused;
+            }
+          } catch (e) {
+            /* The questions are still worth having. A run that reports failure
+               because a link could not be minted has thrown away the work it
+               did. */
+            audit(env, 'game_from_automation_failed', { email, error: String((e && e.message) || e) });
+            out += '\n\n(The questions are above - AMV could not create the game link this time.)';
+          }
+        }
         /* DID THIS RUN SAY ANYTHING NEW.
 
            Counted for every job, whether or not it is set to email, because the
@@ -15368,6 +15389,55 @@ async function gamePage(request, env, id) {
        origin. Narrower than 'unsafe-inline' and not reusable elsewhere. */
     'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-" + nonce + "'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   } });
+}
+
+
+/* A SCHEDULED JOB THAT MAKES SOMETHING PLAYABLE.
+
+   Every other job kind ends by writing text somebody reads. This one ends by
+   creating a real game and handing back the link, which is the difference
+   between "Crew wrote you some questions" and "Crew set up Friday night".
+
+   Called from the run loop after the model has produced its lines, so the
+   questions are this week's rather than a fixed list. If game creation fails
+   the run is NOT failed: the questions are still worth having, and a job that
+   reports failure because a link could not be minted has thrown away the work
+   it did. The result says which happened.
+
+   The age gate reaches in here exactly as it does on the route, because people
+   answer these by link with no account and no birth year on record. A job whose
+   questions drift towards money produces no game and says so. */
+async function _autoMakeGame(env, email, item, text) {
+  const lines = String(text || '')
+    .split('\n')
+    .map(l => l.replace(/^[-*\d.)\s]+/, '').trim())
+    .filter(l => l.length > 3 && l.length <= 300 && /\?|most likely|would you|who/i.test(l))
+    .slice(0, 10);
+  if (!lines.length) return null;
+
+  const title = String(item.detail || 'Crew game').slice(0, 120);
+  const scan = title + ' ' + lines.join(' ');
+  if (GAME_FORBIDDEN.test(scan)) {
+    audit(env, 'game_money_refused', { email, via: 'automation' });
+    return { refused: 'A game cannot ask about money - these are answered by people with no account, so AMV cannot know how old they are.' };
+  }
+
+  const id = _gameId();
+  const rec = {
+    id, title, kind: 'crew',
+    prompts: lines.map((t, i) => ({ id: 'q' + i, text: _gameSafeText(t, 300), options: null })),
+    owner: String(email).toLowerCase(),
+    state: 'open', at: Date.now(), closesAt: null,
+    players: [], answers: [], results: null,
+  };
+  await _withKind(env, 'game', id, (fresh) => { Object.assign(fresh, rec); }, rec);
+  await _withKind(env, 'gameown', rec.owner, (r) => {
+    r.ids = [id].concat((r.ids || []).filter(x => x !== id)).slice(0, 200);
+  }, { ids: [] });
+  audit(env, 'game_created', { email, id, kind: 'crew', prompts: rec.prompts.length, via: 'automation' });
+
+  const base = String(env.APP_URL || '').replace(/\/$/, '');
+  return { id, url: (base || '') + '/g/' + id, count: rec.prompts.length };
 }
 
 const SHARE_MAX_BYTES = 512 * 1024;

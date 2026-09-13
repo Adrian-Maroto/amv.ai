@@ -22,7 +22,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'game.harness.mjs');
-writeFileSync(harness, src + '\nexport { gameCreate, gameJoin, gameAnswer, gameState, gameClose, gameReveal, gameMine, gamePage, authSignup, issueTokens };\n');
+writeFileSync(harness, src + '\nexport { gameCreate, gameJoin, gameAnswer, gameState, gameClose, gameReveal, gameMine, gamePage, _autoMakeGame, authSignup, issueTokens };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const PW = 'A-real-Passw0rd!';
@@ -234,6 +234,53 @@ section('A wrong or missing game says so without saying more');
   await W.gamePage(new Request('https://api.amv.test/g/x'), env, 'x'.repeat(9000));
   env.AMV_KV.get = realGet;
   ok(reached === 0, 'an absurdly long id is refused before it reaches storage', reached);
+}
+
+section('A scheduled job ends with something the group can open');
+{
+  /* The difference between "Crew wrote you some questions" and "Crew set up
+     Friday night". Every other job kind finishes by writing text; this one
+     finishes by minting a real game, so the link travels with the result
+     wherever the result goes. */
+  const text = [
+    'Most likely to arrive last and blame the train?',
+    'Who would survive longest with no phone?',
+    'Whose camera roll would be most embarrassing?',
+    'this line is not a question and should be dropped',
+  ].join('\n');
+  const made = await W._autoMakeGame(env, 'host@x.com', { detail: 'Friday night game' }, text);
+  ok(made && made.id, 'a real game is created by the run, not described', made && made.id);
+  ok(made.count === 3, 'only the lines that read as questions become questions', made.count);
+  ok(/\/g\/[a-z0-9]{24}$/.test(made.url || ''), 'and the link is one somebody can open', made.url);
+
+  /* It has to be a REAL game, not a record that looks like one. */
+  const p = await jj(await W.gameJoin(req('/v1/game/join', { id: made.id, nick: 'Kit' }, null, '9.7.7.7'), env));
+  ok(p.status === 200 && p.body.token, 'a stranger can join the game a cron made', p.status);
+  const a = await jj(await W.gameAnswer(req('/v1/game/answer', { id: made.id, token: p.body.token, values: { q0: 'Sam' } }, null, '9.7.7.7'), env));
+  ok(a.body.recorded === true, 'and answer it', a.body.recorded);
+
+  /* And it belongs to the person whose job made it, so it shows up on their
+     screen and is erased with their account. */
+  const mine = await jj(await W.gameMine(req('/v1/game/mine', {}, host), env));
+  ok((mine.body.games || []).some(g => g.id === made.id), 'it is listed for the account that scheduled it', true);
+}
+
+section('A scheduled game cannot drift towards money either');
+{
+  /* The route refuses this, and so must the cron - the people answering arrive
+     by link with no account and no birth year on record, however the game came
+     to exist. */
+  const bad = await W._autoMakeGame(env, 'host@x.com', { detail: 'Payment night' },
+    'Who is most likely to forget their credit card at the bar?');
+  ok(bad && bad.refused, 'the run makes no game at all', bad && bad.refused);
+  ok(/how old they are/i.test(bad.refused || ''), 'and says why', bad.refused);
+  ok(!bad.id, 'nothing was created', bad.id);
+}
+
+section('A run that produces no questions produces no game');
+{
+  const none = await W._autoMakeGame(env, 'host@x.com', { detail: 'Empty' }, 'Nothing here at all.');
+  ok(none === null, 'rather than an empty game nobody can play', none);
 }
 
 if (report('a-game-strangers-can-join-by-link') > 0) process.exitCode = 1;
