@@ -12616,3 +12616,91 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   margin-right:var(--sp-2);
 }
 .build-bar .bld-home:hover{ background:var(--s3); border-color:var(--bdl); color:var(--tx); }
+
+/* ── LAYER A198 · the five at the top, and a country control that filters ────
+
+   Three changes to the Crew catalogue, all asked for.
+
+   The five come first, as full catalogue cards rather than a ranked list of
+   rows - a row you can read is not a job you can turn on, and the whole point
+   of putting them first is that they are the ones somebody would pay for. The
+   rank and the count sit above the card when there IS a count, and simply do
+   not exist when there is not, which is what stops the AMV-chosen five from
+   ever looking like a measurement.
+
+   The country control moved out of a panel of its own and into the filter row
+   beside the search box, because that is the only place a filter reads as a
+   filter. `.cw-filters` is that row.
+
+   And the group it produces gets a sub-line, which no category has, because
+   "only in Japan" needs explaining once and the categories do not. */
+.cw-filters{
+  display:flex;align-items:center;gap:var(--sp-4);flex-wrap:wrap;
+  margin:var(--sp-5) 0 var(--sp-3);
+}
+.cw-filters .cw-find-wrap{ margin:0; flex:1 1 320px; }
+.cw-cfilter{ display:flex;align-items:center;gap:var(--sp-2);flex:0 0 auto; }
+.cw-cfilter-l{ font-size:var(--t-sm);font-weight:600;color:var(--mu);letter-spacing:.02em; }
+.cw-cfilter select{
+  min-height:40px;min-width:190px;max-width:100%;
+  background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-pill);
+  padding:8px 12px;color:var(--tx);font-size:var(--t-base);font-family:var(--fn);
+}
+.cw-cfilter select:focus{ outline:none;border-color:var(--accent); }
+@media (max-width:720px){
+  .cw-filters{ gap:var(--sp-3); }
+  .cw-cfilter{ width:100%; }
+  .cw-cfilter select{ flex:1 1 auto;width:100%; }
+}
+
+.cw-cat-sub{
+  font-size:var(--t-sm);color:var(--mu);line-height:1.6;
+  margin:0 0 var(--sp-3);max-width:72ch;
+}
+
+/* The five. A grid rather than a list, on the same measure as the catalogue
+   below so the page has one rhythm - the old ranking was a full-width list of
+   rows and read as a different component from everything under it. */
+.cw-top5{
+  display:grid;gap:var(--sp-3);
+  grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+  margin-bottom:var(--sp-6);
+}
+.cw-top5-item{ position:relative;display:flex;flex-direction:column; }
+.cw-top5-item .cw-job{ flex:1; }
+.cw-top5-rank{
+  position:absolute;top:-7px;left:-7px;z-index:2;
+  width:24px;height:24px;border-radius:var(--r-pill);
+  display:flex;align-items:center;justify-content:center;
+  background:var(--accent);color:#fff;
+  font-size:var(--t-xs);font-weight:700;font-variant-numeric:tabular-nums;
+  box-shadow:var(--sh-sm);
+}
+.cw-top5-n{
+  position:absolute;top:-9px;right:8px;z-index:2;
+  padding:2px 8px;border-radius:var(--r-pill);
+  background:var(--s3);border:1px solid var(--bd);
+  font-size:var(--t-xs);color:var(--mu);font-variant-numeric:tabular-nums;
+}
+.cw-pop{ margin-top:var(--sp-5); }
+.cw-pop-body .sec-head{ margin-bottom:var(--sp-4); }
+/* Five cards side by side are a comparison, and a comparison needs the rows to
+   be the same shape. Left alone, one 60-word description made its whole row
+   320px tall and the four beside it were mostly empty space. Three lines each,
+   with the full text one click away in the card - which is what the card is
+   for. */
+.cw-top5 .cw-job-d{
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;
+  overflow:hidden;
+}
+.cw-top5 .cw-job{ align-self:start; }
+
+/* The sample line, now a footnote under the five rather than the only thing in
+   the block. `.cw-pop-prog` and its parts already have their look from A118;
+   this is the row that holds it and the sentence beside it. */
+.cw-pop-prog-row{
+  display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;
+  margin:calc(-1 * var(--sp-3)) 0 var(--sp-6);
+  font-size:var(--t-sm);color:var(--dim);
+}
+.cw-pop-prog-l{ line-height:1.5; }

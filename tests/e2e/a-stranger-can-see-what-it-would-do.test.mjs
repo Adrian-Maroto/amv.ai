@@ -47,7 +47,16 @@ section('What they get is the catalogue, not a pitch');
   const seen = await page.evaluate(() => ({
     locked: document.querySelectorAll('.cw-locked').length,
     jobs: document.querySelectorAll('#vc .cw-job').length,
-    bands: [...document.querySelectorAll('.cw-split-h b')].map(b => b.textContent.trim()),
+    /* The jobs that hold in every country used to live in a panel of their
+       own under a "The same everywhere" heading. That panel is gone - they are
+       ordinary catalogue jobs now - so what is checked is that they are STILL
+       ON THE PAGE, by id, rather than that a heading above them still exists.
+       A heading is how they were presented; being reachable is the promise. */
+    universal: (() => {
+      const ids = new Set(_cwUniversalJobs().map(j => j.id));
+      return [...document.querySelectorAll('#vc [data-dact="cwPeek"]')]
+        .filter(b => ids.has(b.dataset.darg)).length;
+    })(),
     picker: !!document.getElementById('cw-country'),
     find: !!document.getElementById('cw-find'),
   }));
@@ -55,7 +64,7 @@ section('What they get is the catalogue, not a pitch');
   ok(seen.jobs > 20, 'with real jobs on it, not a description of jobs', seen.jobs);
   ok(seen.picker, 'the country picker is there', seen.picker);
   ok(seen.find, 'and so is the search box', seen.find);
-  ok(seen.bands.some(t => /same everywhere/i.test(t)), 'the universal half is labelled', seen.bands);
+  ok(seen.universal > 0, 'the work that holds in every country is on the page', seen.universal);
 }
 
 section('The half that is only true where they live reaches them too');

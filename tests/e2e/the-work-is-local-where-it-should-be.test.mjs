@@ -56,7 +56,7 @@ const pick = (code) => page.evaluate(async (cc) => {
   return {
     state: _cwLocalState[cc],
     local: _cwLocalJobs(cc).map(j => j.title),
-    onScreen: [...document.querySelectorAll('.cw-country .cw-job-t')].map(e => e.textContent),
+    onScreen: [...document.querySelectorAll('#cw-country-group .cw-job-t')].map(e => e.textContent),
   };
 }, code);
 
@@ -113,12 +113,25 @@ section('The half that only exists where you are');
      'and no two countries share a local job - these are not one shape repeated', shared);
 }
 
-section('Both halves are on the screen, and labelled as what they are');
+section('Both halves are on the screen, and one of them names the country');
 {
-  const seen = await page.evaluate(() =>
-    [...document.querySelectorAll('.cw-split-h b')].map(b => b.textContent));
-  ok(seen.some(t => /same everywhere/i.test(t)), 'the common half says so', seen);
-  ok(seen.some(t => /only in spain/i.test(t)), 'and the local half names the country', seen);
+  /* The two used to be a panel split by a pair of headings - "The same
+     everywhere" over one grid, "Only in Spain" over another - sitting above a
+     catalogue that ignored the choice entirely. The choice drives the
+     catalogue now, so the local half is a group IN the list and the universal
+     half is simply in the list, unlabelled, because it needs no label there.
+     What still has to be true is that both sets of jobs are reachable and that
+     the local group says which country it is. */
+  const seen = await page.evaluate(() => ({
+    group: (document.querySelector('#cw-country-group .cw-cat-h') || {}).textContent || '',
+    universal: (() => {
+      const ids = new Set(_cwUniversalJobs().map(j => j.id));
+      return [...document.querySelectorAll('#vc [data-dact="cwPeek"]')]
+        .filter(b => ids.has(b.dataset.darg)).length;
+    })(),
+  }));
+  ok(seen.universal > 0, 'the work that is the same everywhere is in the list', seen.universal);
+  ok(/only in spain/i.test(seen.group), 'and the local half names the country', seen.group);
 }
 
 section('A country with nothing written for it says so rather than inventing');
@@ -133,7 +146,7 @@ section('A country with nothing written for it says so rather than inventing');
              text: (document.querySelector('.cw-country-empty') || {}).textContent || '' };
   });
   ok(none.local === 0, 'nothing is fabricated for it', none.local);
-  ok(/still apply|same everywhere/i.test(none.text),
+  ok(/still appl|same everywhere/i.test(none.text),
      'and it says the universal ones still hold, which is true', none.text.slice(0, 80));
 }
 

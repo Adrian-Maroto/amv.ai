@@ -47,13 +47,25 @@ async function showCrew(reply, opts = {}) {
     return {
       present: !!sec,
       text: body ? body.textContent.replace(/\s+/g, ' ').trim() : '',
-      rows: [...(body ? body.querySelectorAll('.cw-pop-row') : [])].map(r => ({
-        rank: (r.querySelector('.cw-pop-rank') || {}).textContent || '',
-        title: (r.querySelector('.cw-pop-t') || {}).textContent || '',
-        id: (r.querySelector('.cw-pop-b') || {}).dataset?.darg || '',
-        n: ((r.querySelector('.cw-pop-n-t b') || {}).textContent || ''),
-      })),
-      hasList: !!(body && body.querySelector('.cw-pop-list')),
+      /* The block is five catalogue CARDS now rather than a list of rows - a
+         row you can read is not a job you can turn on, and the five at the
+         head of the catalogue are the ones somebody is deciding about. What is
+         read here moved with it; what it has to prove did not.
+
+         `rank` and `n` are the two that matter: they are rendered ONLY when
+         there is a count behind them, so a block with cards but no ranks and
+         no counts is the honest "no ranking yet" state, and `hasRanking` is
+         still the single thing every case below turns on. */
+      rows: [...(body ? body.querySelectorAll('.cw-top5-item') : [])]
+        .filter(r => r.querySelector('.cw-top5-rank'))
+        .map(r => ({
+          rank: (r.querySelector('.cw-top5-rank') || {}).textContent || '',
+          title: (r.querySelector('.cw-job-t') || {}).textContent || '',
+          id: (r.querySelector('[data-dact="cwPeek"]') || {}).dataset?.darg || '',
+          n: ((r.querySelector('.cw-top5-n') || {}).textContent || '').replace(/\D+.*$/, ''),
+        })),
+      hasList: !!(body && body.querySelector('.cw-top5-rank')),
+      cards: body ? body.querySelectorAll('.cw-top5-item .cw-job').length : 0,
       retry: !!(body && body.querySelector('[data-dact="cwPopReload"]')),
     };
   }, { reply, plan: opts.plan });
@@ -70,15 +82,18 @@ section('With no backend there is nothing counted, and nothing is invented');
   const r = await showCrew(null);
   ok(r.present, 'the most-used band is on the Crew page');
   ok(!r.hasList, 'no ranking is drawn');
-  ok(/not connected|servers/i.test(r.text), 'and it says why there is none', r.text.slice(0, 120));
+  ok(r.cards === 5, 'five jobs are still offered, so the block is not a blank apology', r.cards);
+  ok(/not connected|server/i.test(r.text), 'and it says why there is none', r.text.slice(0, 160));
+  ok(/own pick/i.test(r.text), 'and says plainly that AMV chose them', r.text.slice(0, 200));
 }
 
 section('Below the floor it says so, and still shows no order');
 {
   const r = await showCrew({ enough: false, total: 6, need: 25, top: [] });
-  ok(!r.hasList, 'six starts do not become a top ten');
-  ok(/not enough/i.test(r.text), 'it says there is not enough data yet', r.text.slice(0, 100));
-  ok(/6 \/ 25/.test(r.text), 'and shows the real distance to a real sample', r.text.slice(0, 160));
+  ok(!r.hasList, 'six starts do not become a ranking');
+  ok(/not enough/i.test(r.text), 'it says there is not enough data yet', r.text.slice(0, 140));
+  ok(/own pick/i.test(r.text), 'and that these five are AMV’s choice, not a count', r.text.slice(0, 220));
+  ok(/6 \/ 25/.test(r.text), 'and shows the real distance to a real sample', r.text.slice(-160));
 }
 
 section('Above the floor the order is the counts, unedited');
@@ -104,7 +119,17 @@ section('Above the floor the order is the counts, unedited');
 
 section('A row opens the job it names');
 {
-  await page.click('.cw-pop-row:first-child .cw-pop-b');
+  /* Dispatched rather than driven by the mouse. Crew repaints on its own for
+     a second or two after it opens - the server answer, the connector list,
+     the games panel - and Playwright waits for a target to hold still before
+     it will click one, which on this screen it does not. The claim is that the
+     card the ranking drew leads to that job's own page, and a real click
+     through the delegated handler is exactly that claim. */
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    document.querySelector('.cw-top5-item [data-dact="cwPeek"]')
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
   await page.waitForTimeout(250);
   const opened = await page.evaluate(() => {
     const t = document.querySelector('#cwp-t');
@@ -129,15 +154,16 @@ section('An id the catalogue no longer carries is dropped, not printed raw');
 section('Every id gone means an empty band, not an empty leaderboard');
 {
   const r = await showCrew({ enough: true, total: 143, top: [{ id: 'gone', n: 9 }] }, { plan: 'pro' });
-  ok(!r.hasList, 'no list frame is drawn around nothing');
-  ok(r.text.length > 20, 'a sentence explains it instead', r.text.slice(0, 120));
+  ok(!r.hasList, 'no ranking is drawn around nothing');
+  ok(r.cards === 5, 'the five AMV chose are shown instead', r.cards);
+  ok(/own pick/i.test(r.text), 'said to be chosen, not counted', r.text.slice(0, 200));
 }
 
 section('A failed read says it failed');
 {
   const r = await showCrew({ __throw: 'network down' }, { plan: 'pro' });
   ok(!r.hasList, 'a failure does not render as "nobody uses anything"');
-  ok(/could not be loaded/i.test(r.text), 'it says the ranking could not load', r.text.slice(0, 120));
+  ok(/could not be read/i.test(r.text), 'it says the ranking could not load', r.text.slice(0, 160));
   ok(r.retry, 'and offers a way to try again');
 }
 
@@ -152,7 +178,7 @@ section('Try again really re-requests');
     return { calls, text: body ? body.textContent.replace(/\s+/g, ' ').trim() : '' };
   });
   ok(after.calls === 1, 'the button asks the server again', after.calls);
-  ok(/not enough/i.test(after.text), 'and the band updates with the new answer', after.text.slice(0, 90));
+  ok(/not enough/i.test(after.text), 'and the band updates with the new answer', after.text.slice(0, 140));
 }
 
 section('The band is reachable from the shipped bundle, not just from a test');

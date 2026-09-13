@@ -1112,7 +1112,12 @@ function _cwStrength(j){
 let _cwShowcaseCache = null;
 function _cwShowcase(){
   if(_cwShowcaseCache) return _cwShowcaseCache;
-  const home = (()=>{ try{ return _cwJobs() || []; }catch(e){ return []; } })();
+  /* The jobs that are the same in every country used to live only inside the
+     country panel, so removing that panel would have removed them from the
+     product. They are ordinary catalogue jobs and they belong in the list with
+     everything else. */
+  const home = (()=>{ try{ return (_cwJobs() || []).concat(_cwUniversalJobs() || []); }
+                      catch(e){ return _cwJobs() || []; } })();
   const on   = home.filter(j => j && j.on);
   const rest = home.filter(j => !(j && j.on));
   /* Sorted by strength, stable within a band so the order does not churn. */
@@ -1222,13 +1227,25 @@ try{ window.cwPromptSelf=cwPromptSelf; }catch(e){}
    guessed from the browser the first time so the common case needs no
    choosing at all. */
 let _cwCountry = (()=>{ try{ return loadStr('amv_cw_country') || ''; }catch(e){ return ''; } })();
+/* EVERYWHERE HAS TO BE A CHOICE, NOT THE ABSENCE OF ONE.
+
+   An empty value meant "nobody has picked yet", which is why the browser's
+   guess filled it in - and the guess is the right default on a first visit.
+   But once the control offers "Everywhere" as an option, picking it stored the
+   same empty value, so the guess ran again and the page came back showing the
+   United States. Somebody who deliberately chose to see the whole catalogue
+   got a country they never asked for and no way to refuse it.
+
+   `-` is the stored form of "everywhere, on purpose". Never guessed, never a
+   country code, and distinguishable from the first-visit blank. */
 function cwCountry(code){
-  _cwCountry = String(code || '');
+  _cwCountry = String(code || '-');
   try{ saveStr('amv_cw_country', _cwCountry); }catch(e){}
   renderCrewView();
 }
 try{ window.cwCountry = cwCountry; }catch(e){}
 function _cwCountryGuess(){
+  if(_cwCountry === '-') return '';
   if(_cwCountry) return _cwCountry;
   try{
     if(typeof _everydayGuess === 'function'){
@@ -1238,62 +1255,72 @@ function _cwCountryGuess(){
   }catch(e){}
   return '';
 }
-function _cwCountryHTML(){
+/* THE COUNTRY CONTROL THAT DID NOT FILTER ANYTHING.
+
+   Reported: "when I pick like Uzbekistan it still says the same thing". It was
+   true and it was worse than it sounded. The control was real - the Worker
+   carries 105 country packs, five genuine jobs each, and picking one really
+   did fetch that country's five - but they were fetched into a PANEL OF THEIR
+   OWN at the top of the catalogue, under a heading about where you live, while
+   the hundred cards below it never moved. So the page you were looking at was
+   identical before and after, and the one part that had changed was the part
+   that had already scrolled past.
+
+   It is a filter now, in the filter row, beside the search box and the
+   category chips - which is where somebody looks for it and what they expect
+   it to do. Choosing a country puts that country's own work at the top of the
+   list as its own group, and choosing "Everywhere" takes it away again. The
+   jobs that are the same in every country are no longer in a panel either:
+   they are in the catalogue with everything else, which is what they always
+   were. */
+function _cwCountryFilterHTML(){
   const cur = _cwCountryGuess();
   const opts = CW_WORLD_COUNTRIES.slice()
     .sort((a, b) => a[1].localeCompare(b[1]))
     .map(([cc, name, flag]) =>
       `<option value="${escH(cc)}"${cc === cur ? ' selected' : ''}>${flag} ${escH(name)}</option>`).join('');
-  const row = CW_WORLD_COUNTRIES.find(c => c[0] === cur);
-  const name = row ? row[1] : '';
-  const universal = _cwUniversalJobs();
   /* Asked BEFORE the state is read, not after. _cwLoadLocal settles what it can
      answer with no round trip - no backend, or already asked - synchronously,
      and reading the state first meant the render used the value from before
      that and left "Looking up..." on screen for a lookup that was never going
      to happen. It is a no-op once it has the answer or is already asking. */
   if(cur){ try{ _cwLoadLocal(cur); }catch(e){} }
-  const local = cur ? _cwLocalJobs(cur) : [];
-  const state = cur ? (_cwLocalState[cur] || 'loading') : '';
-
-  const localBlock = !cur
-    ? `<div class="cw-country-empty">Pick a country and AMV shows the work that only exists there - the forms,
-         the bills and the deadlines that have local names and local dates.</div>`
-    : state === 'ok' && local.length
-      ? `<div class="cw-jobs-grid">${local.map(_cwCountryCard).join('')}</div>`
+  return `<label class="cw-cfilter">
+      <span class="cw-cfilter-l">Country</span>
+      <select id="cw-country" aria-label="Show work specific to a country">
+        <option value=""${cur ? '' : ' selected'}>\uD83C\uDF0D Everywhere</option>
+        ${opts}
+      </select>
+    </label>`;
+}
+/* The group the filter produces, at the head of the list. Separate from the
+   categories rather than folded into one of them: "only exists in Japan" is
+   not a kind of job, it is a fact about where it applies, and burying five
+   Japanese jobs inside Home & life is how the old panel managed to be
+   invisible. */
+function _cwCountryGroupHTML(jobCard){
+  const cc = _cwCountryGuess();
+  if(!cc) return '';
+  const row = CW_WORLD_COUNTRIES.find(c => c[0] === cc);
+  const name = row ? row[1] : cc;
+  const local = _cwLocalJobs(cc);
+  const state = _cwLocalState[cc] || 'loading';
+  const note = t => `<div class="cw-country-empty">${t}</div>`;
+  const body = state === 'ok' && local.length
+      ? `<div class="cw-jobs-grid cw-cat-grid">${local.map(jobCard).join('')}</div>`
     : state === 'offline'
-      ? `<div class="cw-country-empty">The work specific to ${escH(name)} is held on AMV\u2019s servers and this copy
-           cannot reach them right now. Everything above still applies here - those are the same everywhere.</div>`
+      ? note(`The work specific to ${escH(name)} is held on AMV\u2019s servers and this copy cannot reach them
+              right now. Everything else in this list still applies there - those are the same everywhere.`)
     : state === 'ok'
-      ? `<div class="cw-country-empty">Nothing specific to ${escH(name)} is written yet. The ten above still apply -
-           they are the same everywhere - and anything else you can describe, Crew will take.</div>`
-      : `<div class="cw-country-empty">Looking up what is different in ${escH(name)}\u2026</div>`;
-
-  return `<section class="cw-country">
-    <div class="cw-country-head">
-      <div>
-        <h3>What AMV does where you live</h3>
-        <p class="cw-country-sub">Every one of these runs on AMV\u2019s servers on a schedule, so it happens whether
-          or not this window is open. Some of it is the same wherever you are. Some of it only exists in one place.</p>
-      </div>
-      <label class="cw-country-pick">
-        <span>Country</span>
-        <select id="cw-country" aria-label="Choose your country">
-          <option value=""${cur ? '' : ' selected'}>Choose\u2026</option>
-          ${opts}
-        </select>
-      </label>
-    </div>
-
-    <div class="cw-split-h"><b>The same everywhere</b><span>Bills, renewals, parcels, letters - everyone has these,
-      whatever country they are in.</span></div>
-    <div class="cw-jobs-grid">${universal.map(_cwCountryCard).join('')}</div>
-
-    <div class="cw-split-h"><b>${cur ? 'Only in ' + escH(name) : 'Only where you are'}</b><span>${cur
-      ? 'The forms, taxes and bills that exist in ' + escH(name) + ' and nowhere else, under the names they actually have.'
-      : 'Different in every country - the paperwork, the taxes, the utilities.'}</span></div>
-    ${localBlock}
-  </section>`;
+      ? note(`Nothing specific to ${escH(name)} is written yet. Everything else in this list still applies there,
+              and anything else you can describe, Crew will take.`)
+      : note(`Looking up what is different in ${escH(name)}\u2026`);
+  return `<div class="cw-cat" id="cw-country-group">
+      <div class="cw-cat-h">Only in ${escH(name)}${state === 'ok' && local.length ? `<span class="cw-cat-n">${local.length}</span>` : ''}</div>
+      <p class="cw-cat-sub">The forms, taxes, bills and deadlines that exist in ${escH(name)} and nowhere else,
+        under the names they actually have there.</p>
+      ${body}
+    </div>`;
 }
 /* The catalogue's own card, so a country job is visibly the same kind of thing
    as any other job rather than a second-class listing. It opens the peek,
@@ -1352,68 +1379,125 @@ function _cwPopPaint(){
 function cwPopReload(){ _cwPop={ state:'idle', data:null, err:'' }; _cwPopPaint(); _cwLoadPopular(); }
 try{ window.cwPopReload=cwPopReload; }catch(e){}
 
+/* ── THE FIVE AT THE TOP, AND WHERE THEIR ORDER COMES FROM ───────────────────
+
+   Asked for: introduce Crew, then the top five most popular in the world - the
+   ones that would make somebody pay - and everything else below that.
+
+   There are two possible answers to "most popular" and only one of them is
+   honest at any given moment. When enough jobs have been started across AMV
+   the server has a real count, and that count is the order. Below the server's
+   floor there is no ranking, and the old behaviour - an empty box with a
+   progress bar reading 6/25 - answered the question by refusing to, which is
+   truthful and useless to the person who opened this page to find out what
+   Crew is for.
+
+   So the fallback is five AMV chose, SAID to be five AMV chose. It is never
+   dressed as a count: the heading changes, the sub-line changes, and the
+   figures only appear when there are figures. The five are the ones that work
+   on something of yours and keep working while the window is shut - which is
+   the same thing `_cwStrength` ranks by, and the same thing somebody is
+   deciding about when they decide whether to pay.
+
+   Everything below still lists the whole catalogue, so nothing here is the
+   menu; it is the front of the shelf. */
+const CW_START_HERE = ['money_leaks','inbox_digest','price_protect','unusual_spend','job_hunt'];
+
+function _cwStartHereJobs(){
+  const byId={}; (_cwJobs()||[]).forEach(j=>{ if(j&&j.id) byId[j.id]=j; });
+  const picked = CW_START_HERE.map(id=>byId[id]).filter(Boolean);
+  /* A curated id that the catalogue no longer carries must not silently
+     shorten this block to four. Anything missing is topped up from the same
+     ranking the catalogue itself uses. */
+  if(picked.length < 5){
+    const seen=new Set(picked.map(j=>j.id));
+    (_cwJobs()||[]).slice()
+      .sort((a,b)=>_cwStrength(b)-_cwStrength(a))
+      .forEach(j=>{ if(picked.length<5 && j && !seen.has(j.id)){ seen.add(j.id); picked.push(j); } });
+  }
+  return picked.slice(0,5);
+}
+function _cwCountedTop(){
+  const st=_cwPop;
+  if(st.state!=='done' || !st.data || !st.data.enough) return null;
+  const byId={}; (_cwJobs()||[]).forEach(j=>{ if(j&&j.id) byId[j.id]=j; });
+  const rows=(Array.isArray(st.data.top)?st.data.top:[])
+    .map(x=>({ n:Math.max(0,(x&&x.n)|0), job:byId[(x&&x.id)||''] }))
+    .filter(x=>x.job && x.n>0)
+    .slice(0,5);
+  /* However many RESOLVE, not five or nothing. The server has already said
+     the sample is big enough; if only three of the counted ids are still in
+     the catalogue then three is what was counted, and topping them up to five
+     from AMV's own picks would put chosen entries under a heading that says
+     counted. Five is the ceiling here, never the quota. */
+  return rows.length ? rows : null;
+}
+
 function _cwPopularHTML(){
   /* Kicked off from the render that first puts the container on the page, so
      the request is made once per load rather than once per repaint. */
   try{ setTimeout(_cwLoadPopular, 0); }catch(e){}
   return `<section class="cw-pop" id="cw-pop">
-    <div class="sec-head"><h3>${escH(T('Most used right now'))}</h3><span class="sec-sub">${escH(T('Ranked by how many times these jobs have actually been started across AMV. Counts only - no names, and nothing about what any job did.'))}</span></div>
     <div id="cw-pop-body" class="cw-pop-body">${_cwPopBodyHTML()}</div>
   </section>`;
 }
 
 function _cwPopBodyHTML(){
+  const counted=_cwCountedTop();
+  if(counted){
+    const total=Math.max(0,(_cwPop.data&&_cwPop.data.total)|0);
+    return `<div class="sec-head"><h3>${escH(T('The five most started across AMV'))}</h3>
+        <span class="sec-sub">${escH(T('Counted on AMV\u2019s servers from'))} ${total} ${escH(T(total===1?'job started worldwide. Counts only - no names, and nothing about what any job did.':'jobs started worldwide. Counts only - no names, and nothing about what any job did.'))}</span></div>
+      <div class="cw-top5">${counted.map((x,i)=>`<div class="cw-top5-item">
+        <span class="cw-top5-rank" aria-hidden="true">${i+1}</span>
+        <span class="cw-top5-n">${x.n} ${escH(T(x.n===1?'start':'starts'))}</span>
+        ${_cwAnyCard(x.job)}
+      </div>`).join('')}</div>`;
+  }
+  /* Every remaining state shows the same five and says, in its own words, why
+     they are not a count. A note where the jobs should be is the version of
+     this screen the owner asked to be rid of. */
   const st=_cwPop;
-  if(st.state==='off')
-    return `<div class="cw-pop-note">${escH(T('This ranking is counted on AMV’s servers. This copy is not connected to one, so there is no real data to show - and an invented order would be worse than an empty space.'))}</div>`;
-  if(st.state==='idle' || st.state==='loading')
-    return `<div class="cw-pop-note" aria-busy="true">${escH(T('Reading what people are starting most...'))}</div>`;
-  if(st.state==='error')
-    return `<div class="cw-pop-note">${escH(T('The ranking could not be loaded'))}${st.err?' ('+escH(st.err)+')':''}. <button class="mc-sec-link" data-dact="cwPopReload">${escH(T('Try again'))}</button></div>`;
+  const why = st.state==='off'
+      ? T('This copy of AMV is not connected to a server, so there is no worldwide count to read. These five are AMV\u2019s own pick.')
+    : st.state==='error'
+      ? T('The worldwide count could not be read right now, so these five are AMV\u2019s own pick.')
+    : st.state==='done'
+      ? T('Not enough jobs have been started across AMV yet for a ranking to mean anything, so these five are AMV\u2019s own pick - the real order takes over here the moment there is one.')
+      : T('These five are AMV\u2019s own pick while the worldwide count is read.');
+  const retry = st.state==='error'
+    ? ` <button class="mc-sec-link" data-dact="cwPopReload">${escH(T('Try again'))}</button>` : '';
+  /* HOW FAR OFF THE REAL ORDER IS, WHEN THE SERVER SAYS.
 
-  const d=st.data||{};
-  if(!d.enough){
-    const have=Math.max(0, d.total|0);
-    const need=Math.max(1, (d.need|0)||25);
+     This used to be the whole of this block - a progress bar reading 6 / 25
+     where the jobs should have been. As the only content it was useless to
+     somebody who came here to see what Crew does; as a footnote under five
+     real cards it is the honest part it always was, and it is the difference
+     between "AMV picked these" and "AMV picked these, for now". */
+  const d = st.state==='done' ? (st.data||{}) : null;
+  const prog = (d && !d.enough) ? (()=>{
+    const have=Math.max(0, d.total|0), need=Math.max(1,(d.need|0)||25);
     const pct=Math.min(100, Math.round((have/need)*100));
-    return `<div class="cw-pop-note cw-pop-early">
-      <b>${escH(T('Not enough data yet.'))}</b>
-      ${escH(T('A ranking needs a real sample behind it. Once enough jobs have been started, the ten people reach for most appear here, counted rather than chosen.'))}
-      <span class="cw-pop-prog" role="img" aria-label="${escH(have+' of '+need+' starts needed before a ranking is shown')}">
+    return `<div class="cw-pop-prog-row">
+      <span class="cw-pop-prog" role="img" aria-label="${escH(have+' of '+need+' starts needed before a worldwide ranking is shown')}">
         <span class="cw-pop-prog-bar"><span style="width:${pct}%"></span></span>
         <span class="cw-pop-prog-n">${have} / ${need}</span>
       </span>
+      <span class="cw-pop-prog-l">${escH(T('starts counted across AMV so far'))}</span>
     </div>`;
-  }
-
-  /* Ids the catalogue no longer carries are dropped rather than shown raw. A
-     row reading "gmail_sweep_v2  41 starts" is not a job anybody can open. */
-  const byId={}; (_cwJobs()||[]).forEach(j=>{ if(j&&j.id) byId[j.id]=j; });
-  const rows=(Array.isArray(d.top)?d.top:[])
-    .map(x=>({ n:Math.max(0,(x&&x.n)|0), job:byId[(x&&x.id)||''] }))
-    .filter(x=>x.job && x.n>0);
-  if(!rows.length)
-    return `<div class="cw-pop-note">${escH(T('What people are running most was described in their own words rather than picked from a card, so there is nothing here to rank yet. The box above takes anything you can write down.'))}</div>`;
-
-  const max=rows[0].n||1;
-  const total=Math.max(0, d.total|0);
-  return `<ol class="cw-pop-list">`+rows.map((x,i)=>`<li class="cw-pop-row">
-      <span class="cw-pop-rank" aria-hidden="true">${i+1}</span>
-      <span class="cw-pop-ic" aria-hidden="true">${x.job.icon||'✨'}</span>
-      <button class="cw-pop-b" data-dact="cwPeek" data-darg="${escH(x.job.id)}"
-              aria-label="${escH('Number '+(i+1)+'. '+x.job.title+'. '+x.n+' start'+(x.n===1?'':'s')+'. See what it does')}">
-        <span class="cw-pop-t">${escH(x.job.title)}</span>
-        <span class="cw-pop-d">${escH(x.job.desc)}</span>
-      </button>
-      <span class="cw-pop-n">
-        <span class="cw-pop-meter" aria-hidden="true"><span style="width:${Math.max(6,Math.round((x.n/max)*100))}%"></span></span>
-        <span class="cw-pop-n-t"><b>${x.n}</b> ${escH(T(x.n===1?'start':'starts'))}</span>
-      </span>
-    </li>`).join('')+`</ol>
-    <div class="cw-pop-foot">${escH(T('Counted from'))} ${total} ${escH(T(total===1?'job started across AMV.':'jobs started across AMV.'))}</div>`;
+  })() : '';
+  return `<div class="sec-head"><h3>${escH(T('Start with these five'))}</h3>
+      <span class="sec-sub">${escH(why)}${retry}</span></div>
+    <div class="cw-top5">${_cwStartHereJobs().map(j=>`<div class="cw-top5-item">${_cwAnyCard(j)}</div>`).join('')}</div>
+    ${prog}`;
 }
 
 function _cwJobsBody(jobs, jobCard){
+  /* The country's own work heads the list whenever a country is chosen and
+     nothing narrower is being asked for. A search or a category is a narrower
+     question and answering it with an unrelated group on top would be the old
+     fault the other way round. */
+  const cgroup = (!_cwFind && _cwCat==='all') ? _cwCountryGroupHTML(jobCard) : '';
   if(_cwFind){
     /* SEARCHES THE WHOLE POOL, NOT THE HUNDRED ON SCREEN.
 
@@ -1435,7 +1519,7 @@ function _cwJobsBody(jobs, jobCard){
      but renders nowhere is the failure this whole screen keeps having. */
   const known=CW_CATS.filter(c=>jobs.some(j=>j.cat===c));
   const rest=jobs.filter(j=>CW_CATS.indexOf(j.cat)<0);
-  return known.map(c=>`<div class="cw-cat">
+  return cgroup + known.map(c=>`<div class="cw-cat">
       <div class="cw-cat-h">${escH(c)}<span class="cw-cat-n">${jobs.filter(j=>j.cat===c).length}</span></div>
       <div class="cw-jobs-grid cw-cat-grid">${jobs.filter(j=>j.cat===c).map(jobCard).join('')}</div>
     </div>`).join('')
@@ -2184,6 +2268,45 @@ try{
    and where the switch would be it says what unlocks it. A dead toggle that
    silently does nothing would teach them the product is broken, which is a
    worse outcome than not selling to them. */
+/* ONE CARD, REACHABLE FROM OUTSIDE THE RENDER.
+
+   This was a closure inside renderCrewView, which is fine until something
+   OTHER than that function needs to draw a job - and the ranking at the top of
+   the catalogue repaints on its own when the server answers, long after the
+   render has returned. A second copy of a card is a second thing to keep in
+   step with `cw-job`, `cwPeek` and `cwToggle`, and the copy is always the one
+   that goes stale. */
+function _cwJobCard(j){
+  /* What this job declares it needs, against what is actually connected.
+     Switching a job on used to flip a flag and nothing else, so a job needing
+     a bank or a mailbox that was never linked sat there looking active and
+     quietly did nothing forever. The card says which it is. */
+  const miss=_cwNeedsMissing(j);
+  const note=miss.length
+    ? `<div class="cw-job-miss">${j.on?'Cannot run yet':'Needs'}: ${escH(miss.join(', '))} not connected. <button class="cw-job-fix" data-dact="cwConnect">Connect</button></div>`
+    : '';
+  /* The body is a real button, so the card opens with a keyboard and reads
+     as something you can press. It was a div: the only interactive thing on
+     a card was the toggle, which meant the only way to find out what a job
+     did was to switch it on. */
+  return `<div class="cw-job ${j.on?'on':''}${miss.length?' blocked':''}">
+    <div class="cw-job-ic" aria-hidden="true">${j.icon}</div>
+    <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}"
+            aria-label="See what ${escH(j.title)} does">
+      <span class="cw-job-t">${escH(j.title)}</span>
+      <span class="cw-job-d">${escH(j.desc)}</span>
+      <span class="cw-job-need">Uses: ${escH(j.needs)}
+        <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
+      </span>
+      <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See an example \u2192':'See what it does \u2192'}</span>
+    </button>
+    ${note}
+    <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="Turn ${escH(j.title)} ${j.on?'off':'on'}"><span class="cw-knob"></span></button>
+  </div>`;
+}
+/* Which of the two a catalogue card should be is a fact about the account, not
+   about the caller, so it is decided here rather than at each call site. */
+function _cwAnyCard(j){ return _planAllowsCrew() ? _cwJobCard(j) : _cwLockedCard(j); }
 function _cwLockedCard(j){
   return `<div class="cw-job locked">
     <div class="cw-job-ic" aria-hidden="true">${j.icon}</div>
@@ -2965,11 +3088,13 @@ function renderCrewView(){
             Same reason "most used" moved down: it ranks what other people
             run, which is interesting once you know what this is and noise
             before. */ ''}
-      ${_cwCountryHTML()}
-      ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
+      ${_cwPopularHTML()}
+      <div class="cw-filters">
+        ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
+        ${_cwCountryFilterHTML()}
+      </div>
       ${_cwCatChips(_cwShowcase())}
       ${_cwJobsBody(_cwShowcase(), _cwLockedCard)}
-      ${_cwPopularHTML()}
       ${_cwErrandsHTML()}
       ${/* ONE LINE, NOT A BAND.
 
@@ -2990,34 +3115,7 @@ function renderCrewView(){
     return;
   }
   const jobs=_cwJobs(); const appr=_cwApprovals();
-  const jobCard=j=>{
-    /* What this job declares it needs, against what is actually connected.
-       Switching a job on used to flip a flag and nothing else, so a job needing
-       a bank or a mailbox that was never linked sat there looking active and
-       quietly did nothing forever. The card says which it is. */
-    const miss=_cwNeedsMissing(j);
-    const note=miss.length
-      ? `<div class="cw-job-miss">${j.on?'Cannot run yet':'Needs'}: ${escH(miss.join(', '))} not connected. <button class="cw-job-fix" data-dact="cwConnect">Connect</button></div>`
-      : '';
-    /* The body is a real button, so the card opens with a keyboard and reads
-       as something you can press. It was a div: the only interactive thing on
-       a card was the toggle, which meant the only way to find out what a job
-       did was to switch it on. */
-    return `<div class="cw-job ${j.on?'on':''}${miss.length?' blocked':''}">
-      <div class="cw-job-ic" aria-hidden="true">${j.icon}</div>
-      <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}"
-              aria-label="See what ${escH(j.title)} does">
-        <span class="cw-job-t">${escH(j.title)}</span>
-        <span class="cw-job-d">${escH(j.desc)}</span>
-        <span class="cw-job-need">Uses: ${escH(j.needs)}
-          <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
-        </span>
-        <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See an example →':'See what it does →'}</span>
-      </button>
-      ${note}
-      <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="Turn ${escH(j.title)} ${j.on?'off':'on'}"><span class="cw-knob"></span></button>
-    </div>`;
-  };
+  const jobCard=_cwJobCard;
   /* WHAT THE CARD COULD NOT SAY BEFORE YOU PRESSED THE BUTTON.
 
      It showed a title, a line about what was requested, and four buttons. Two
@@ -3213,19 +3311,6 @@ function renderCrewView(){
       <div class="mc-grid">${st.done.slice(-6).reverse().map(_mcDoneCard).join('')}</div>
     </section>`:''}
 
-    <div class="crew-jobs-sec mc-start">
-      <div class="sec-head"><h3>Start new work</h3><span class="sec-sub">Turn on a standing job - AMV runs it automatically and emails you results.</span></div>
-      <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
-      ${/* Same order as the locked view, for the same reason: the standing
-            work first, the one-offs last. */ ''}
-      ${_cwCountryHTML()}
-      ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
-      ${_cwCatChips(_cwShowcase())}
-      ${_cwJobsBody(_cwShowcase(), jobCard)}
-      ${_cwPopularHTML()}
-      ${_cwErrandsHTML()}
-    </div>
-
     <div class="crew-split-even">
       <section class="crew-do">
         <div class="sec-head"><h3>Run something now</h3><span class="sec-sub">AMV opens a workspace, asks what it needs, and actually does it.</span></div>
@@ -3259,6 +3344,30 @@ function renderCrewView(){
       </section>
     </div>
     ${_mcBoughtCrewsHTML()}
+    ${/* NOTHING COMES AFTER THE CATALOGUE.
+
+           Asked for, and right: the list of what Crew can do is what somebody
+           came to this page to read, and it used to have three more sections
+           and a marketplace panel stacked under it - so browsing to the bottom
+           of a hundred jobs delivered you into "Recurring work", which is a
+           second list of the same kind of thing. What is happening NOW goes
+           above (it is state, and state is news), what Crew CAN do goes last
+           and ends the page. */ ''}
+    <div class="crew-jobs-sec mc-start">
+      <div class="sec-head"><h3>Start new work</h3><span class="sec-sub">Turn on a standing job - AMV runs it automatically and emails you results.</span></div>
+      <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
+      ${/* Same order as the locked view, for the same reason: the standing
+            work first, the one-offs last. */ ''}
+      ${_cwPopularHTML()}
+      <div class="cw-filters">
+        ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
+        ${_cwCountryFilterHTML()}
+      </div>
+      ${_cwCatChips(_cwShowcase())}
+      ${_cwJobsBody(_cwShowcase(), jobCard)}
+      ${_cwErrandsHTML()}
+    </div>
+
   </div></div>`;
   try{ vc.querySelectorAll('[data-mcjump]').forEach(function(b){ on(b,'click',function(){ var el=document.getElementById(b.dataset.mcjump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }); }); }catch(e){}
   _cwWireCmd(vc);
