@@ -12351,3 +12351,57 @@ the case is real, and the key must be refused anyway.
 The general rule, which is the same one as LESSONS 468 in a different costume:
 where two mechanisms produce one outcome, a test of the outcome proves whichever
 runs first. Make the first one lose, and see if the promise still holds.
+
+## 472. Mentioned three times, executed zero
+
+`aiAgentLoop` is the turn-taking behind Crew: it asks the model what to do, runs
+tools on somebody's own machine, and comes back for more, up to two dozen times,
+while the person who started it is asleep. Four things stand between that and a
+runaway - a stop flag read before every round, the SAME flag read before every
+individual tool call, a hard round ceiling, and a wall-clock deadline.
+
+All four could be deleted without breaking a single suite.
+
+Not because coverage looked thin. Three suites name `aiAgentLoop`, and every
+signal a reader has says it is handled. None of them runs it:
+
+  · `a-timer-cannot-act-on-your-behalf` greps the SOURCE for the string, to
+    prove the cron runner cannot reach it. A real check, of a different thing.
+  · `a-connector-acts-on-your-real-accounts` REPLACES `window.aiAgentLoop` with
+    a stub - correctly, because its subject is consent, not turn-taking.
+  · `every-entry-point-has-a-door` names it in a registry description.
+
+Mentioned three times, executed zero. That is the most expensive shape a gap can
+take: grep finds it, the file looks covered, and the suite names sound exactly
+right. The only way to see it is to ask whether any test CALLS the function, and
+the answer took one grep for `aiAgentLoop` across tests/ plus reading what each
+hit actually does with it.
+
+The rule: a symbol appearing in a test file is not coverage. A name can be
+asserted about, stubbed out, or described - three uses that leave the code
+itself untouched - and all three read as coverage from a distance.
+
+## 473. I fell into my own trap, two hours after writing it down
+
+The first version of the new suite asserted `why === 'stopped'` after a mid-job
+stop. It passed with the between-rounds guard DELETED, because four lines
+further down the tool loop sets `why = 'stopped'` when it is cut. Two guards,
+one verdict, and a test of the verdict proves whichever ran first.
+
+That is exactly LESSONS 468 - the `linkRevoke` refusal that was answered by a
+404 while the 403 branch it claimed to test had never executed - and I wrote it
+the same evening.
+
+Worth recording plainly, because the lesson clearly does not transfer by being
+known. Asserting the OUTCOME feels like testing the promise; it is the natural
+way to write the test, and it is wrong whenever two mechanisms can produce that
+outcome. The question that works is not "did the right thing happen" but "what
+would be different if only THIS guard were gone" - here, whether another turn
+was bought from the model, which the tool-loop cut cannot fake.
+
+Two more of my own errors in the same file, both worth the note. The
+round-ceiling case would HANG rather than fail when the ceiling was removed, so
+a broken ceiling produced no result instead of a red one - a test that cannot
+fail loudly is not much better than no test. And the stop predicate used `>`
+where it needed `>=`, so the case asserting a job stopped before it starts never
+reaches the model was quietly asking for something else entirely.
