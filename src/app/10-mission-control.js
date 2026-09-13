@@ -2322,6 +2322,29 @@ function _cwLockedCard(j){
   </div>`;
 }
 
+/* THE PAGE YOU READ TO DECIDE, AND WHY IT WAS HARD TO READ.
+
+   Measured on Money leak detector at 1280x900: 271 words, and the button that
+   turns the job on was 71px below the bottom of the panel. So the one screen
+   whose whole purpose is "do I want this running" opened without its answer
+   visible, under a raw 90-word instruction, two warning boxes and two
+   explanatory footnotes.
+
+   Asked for: simple, very easy to read, and a clear description.
+
+   Four changes and nothing is deleted.
+
+     - The description leads, at reading size, on its own.
+     - The facts that used to be scattered - how often, where it runs, what it
+       uses, what it still needs - are one short list, in one place, in the
+       same order every time.
+     - The exact instruction is still the exact instruction and is still one
+       click away. It is behind a disclosure because somebody deciding whether
+       they want a thing is not yet reading its source, and it was the single
+       biggest block of text on the page.
+     - The decision sits in a footer that does not scroll away. That is the
+       actual fix: the rest is legibility, this is the difference between a
+       screen that works and one that does not. */
 function cwPeek(id){
   const j = (_cwAllJobs()||[]).find(x=>x.id===id); if(!j) return;
   const r = $('ovr'); if(!r) return;
@@ -2331,53 +2354,71 @@ function cwPeek(id){
   const every = j.every ? (_CREW_EVERY_UI[j.every] || j.every) : 'every day';
   const P = (typeof PLANS!=='undefined' && PLANS[CREW_REQUIRED_PLAN]) || { name:'Pro', price:15 };
 
+  /* One row per fact, and the row that is a PROBLEM is marked as one rather
+     than given a box of its own further down the page. Two warning panels for
+     two facts about the same job was most of what made this feel heavy. */
+  const fact = (label, value, cls) =>
+    `<div class="cwp-fact${cls?' '+cls:''}"><dt>${escH(label)}</dt><dd>${value}</dd></div>`;
+  const facts =
+      fact('How often', escH('Runs ' + every))
+    + fact('Where it runs', bg
+        ? 'On AMV\u2019s servers, whether or not this window is open'
+        : 'In this browser, while AMV is open \u2014 it needs something that lives here')
+    + (j.needs ? fact('What it uses', escH(j.needs)) : '')
+    + (miss.length
+        ? fact('Not ready yet', escH(miss.join(', ')) + ' '
+            + (miss.length>1?'are':'is') + ' not connected, so it will not run until '
+            + (miss.length>1?'they are':'it is') + '. AMV will not pretend otherwise.', 'warn')
+        : '')
+    /* The wording is the wording it had. This row replaced a section of its
+       own, and the sentence explaining WHY it asks went with the section on
+       the first pass - which is the half that stops the question feeling like
+       an interrogation when it arrives. It is a fact about the job and it
+       belongs in the facts. */
+    + (j.asks && j.asks.q
+        ? fact('It will ask you for', '<b>'+escH(j.asks.q)+'</b>'
+            + (j.asks.ph?'<span class="cwp-fact-ph">'+escH(j.asks.ph)+'</span>':'')
+            + '<span class="cwp-fact-ph">This job works from what you tell it, so AMV asks once when you '
+            + 'switch it on rather than running on nothing.</span>')
+        : '');
+
   r.innerHTML = `<div class="ov" id="cwp-bg"><div class="cwp" role="dialog" aria-modal="true" aria-labelledby="cwp-t">
-    <button class="cwp-x" id="cwp-close" aria-label="Close">✕</button>
-    <div class="cwp-head">
-      <span class="cwp-ic" aria-hidden="true">${j.icon||'✨'}</span>
-      <div>
+    <button class="cwp-x" id="cwp-close" aria-label="Close">\u2715</button>
+    <div class="cwp-scroll">
+      <div class="cwp-head">
+        <span class="cwp-ic" aria-hidden="true">${j.icon||'\u2728'}</span>
         <h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
-        <div class="cwp-meta">
-          <span class="cwp-pill">Runs ${escH(every)}</span>
-          <span class="cwp-pill ${bg?'bg':'open'}">${bg?'Runs with AMV closed':'Runs while AMV is open'}</span>
-          ${j.needs?`<span class="cwp-pill quiet">Uses ${escH(j.needs)}</span>`:''}
+      </div>
+      <p class="cwp-desc">${escH(j.desc)}</p>
+
+      ${Array.isArray(j.sample)&&j.sample.length?`<div class="cwp-sec">
+        <div class="cwp-sec-h">What you get</div>
+        <div class="cwp-sample" aria-label="Example of what this job produces">
+          ${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}
         </div>
-      </div>
+        <div class="cwp-note">An example of the shape and the level of detail. Your version is built from your own information, so the specifics will be yours, not these.</div>
+      </div>`:''}
+
+      <dl class="cwp-facts">${facts}</dl>
+
+      ${j.prompt?`<details class="cwp-more">
+        <summary>The exact instruction AMV follows</summary>
+        <pre class="cwp-prompt">${escH(j.prompt)}</pre>
+        <div class="cwp-note">This is the real instruction, not a summary of it. You can change it after you turn the job on.</div>
+      </details>`:''}
     </div>
-    <p class="cwp-desc">${escH(j.desc)}</p>
-
-    ${Array.isArray(j.sample)&&j.sample.length?`<div class="cwp-sec">
-      <div class="cwp-sec-h">What you get</div>
-      <div class="cwp-sample" aria-label="Example of what this job produces">
-        ${j.sample.map(l=>`<div class="cwp-line">${escH(l)}</div>`).join('')}
-      </div>
-      <div class="cwp-note">An example of the shape and the level of detail. Your version is built from your own information, so the specifics will be yours, not these.</div>
-    </div>`:''}
-
-    ${j.prompt?`<div class="cwp-sec">
-      <div class="cwp-sec-h">The exact instruction AMV follows</div>
-      <pre class="cwp-prompt">${escH(j.prompt)}</pre>
-      <div class="cwp-note">This is the real instruction, not a summary of it. You can change it after you turn the job on.</div>
-    </div>`:''}
-
-    ${j.asks&&j.asks.q?`<div class="cwp-sec">
-      <div class="cwp-sec-h">It will ask you for</div>
-      <div class="cwp-asks"><b>${escH(j.asks.q)}</b><span>${escH(j.asks.ph||'')}</span></div>
-      <div class="cwp-note">This job works from what you tell it. Without it there is nothing for it to look at, so AMV asks once when you switch it on rather than running on nothing.</div>
-    </div>`:''}
-
-    ${miss.length?`<div class="cwp-warn"><b>Not ready yet.</b> This one needs ${escH(miss.join(', '))}, which ${miss.length>1?'are':'is'} not connected. It will not run until ${miss.length>1?'they are':'it is'} - AMV will not pretend otherwise.</div>`:''}
-    ${!bg?`<div class="cwp-warn quiet">This job needs things that live in this browser, so it runs while AMV is open rather than on AMV's servers.</div>`:''}
 
     <div class="cwp-act">
       ${allowed
-        ? `<button class="btn bp" id="cwp-go">${j.on?'Turn it off':'Turn it on'}</button>
-           <button class="btn bs" id="cwp-cancel">Close</button>`
+        ? `<button class="btn bs" id="cwp-cancel">Close</button>
+           <button class="btn bp" id="cwp-go">${j.on?'Turn it off':'Turn it on'}</button>`
         : `<div class="cwp-buy">
-             <div class="cwp-buy-t">Included with ${escH(P.name)} · $${P.price}/month</div>
-             <div class="cwp-buy-s">${escH(P.name)} runs ${CREW_JOBS_BY_PLAN.pro} jobs like this in the background at once. Every one of them is real - this is the instruction it runs and the shape of what it sends back.</div>
-             <button class="btn bp" id="cwp-plans">See plans →</button>
-             <button class="btn bs" id="cwp-cancel">Close</button>
+             <div class="cwp-buy-t">Included with ${escH(P.name)} \u00b7 $${P.price}/month</div>
+             <div class="cwp-buy-s">${escH(P.name)} runs ${CREW_JOBS_BY_PLAN.pro} jobs like this in the background at once.</div>
+             <div class="cwp-buy-b">
+               <button class="btn bs" id="cwp-cancel">Close</button>
+               <button class="btn bp" id="cwp-plans">See plans \u2192</button>
+             </div>
            </div>`}
     </div>
   </div></div>`;

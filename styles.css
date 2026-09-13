@@ -12704,3 +12704,86 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   font-size:var(--t-sm);color:var(--dim);
 }
 .cw-pop-prog-l{ line-height:1.5; }
+
+/* ── LAYER A199 · the job page you read before you decide ────────────────────
+
+   Measured on Money leak detector at 1280x900 before any of this: 271 words,
+   and the button that turns the job on sat 71px below the bottom of the panel.
+   A screen whose entire purpose is "do I want this running" opened with its
+   answer off the bottom, behind a raw 90-word instruction, two warning boxes
+   and two footnotes.
+
+   The panel is a column now: one part that scrolls and one that does not. The
+   decision lives in the part that does not, so it is on the screen from the
+   moment the panel opens however long the job's own text is. The facts that
+   were scattered through the body - how often, where, what it uses, what it
+   still needs - are one list, in one order, every time. And the instruction is
+   still the whole instruction, one click away, because somebody deciding
+   whether they want a thing is not yet reading its source. */
+.cwp{
+  display:flex; flex-direction:column;
+  overflow:hidden;                 /* the inner column is what scrolls now */
+  padding:0;
+}
+.cwp-scroll{
+  flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain;
+  padding:var(--sp-6) var(--sp-6) var(--sp-5);
+}
+.cwp-head{ align-items:center; }
+.cwp .cwp-t{ font-size:var(--t-2xl); line-height:1.2; }
+.cwp-desc{
+  margin:var(--sp-4) 0 0; font-size:var(--t-lg); line-height:1.6;
+  color:var(--tx); max-width:60ch;
+}
+
+/* One row per fact. The label column is fixed so the five rows read down a
+   single edge instead of each starting wherever its own word ends. */
+.cwp-facts{ margin:var(--sp-5) 0 0; display:flex; flex-direction:column; gap:0; }
+.cwp-fact{
+  display:grid; grid-template-columns:150px 1fr; gap:var(--sp-4);
+  padding:var(--sp-3) 0; border-top:1px solid var(--bd);
+  font-size:var(--t-base); line-height:1.6;
+}
+.cwp-fact:last-child{ border-bottom:1px solid var(--bd); }
+.cwp-fact dt{ color:var(--mu); font-weight:600; }
+.cwp-fact dd{ margin:0; color:var(--tx); }
+.cwp-fact.warn dt{ color:var(--gold); }
+.cwp-fact.warn dd{ color:var(--mu); }
+.cwp-fact-ph{ display:block; margin-top:2px; color:var(--mu); font-size:var(--t-sm); }
+
+.cwp-more{ margin-top:var(--sp-5); }
+.cwp-more > summary{
+  cursor:pointer; list-style:none;
+  display:inline-flex; align-items:center; gap:var(--sp-2);
+  padding:7px 13px; border:1px solid var(--bd); border-radius:var(--r-pill);
+  background:var(--s2); color:var(--mu);
+  font-size:var(--t-sm); font-weight:600;
+}
+.cwp-more > summary::-webkit-details-marker{ display:none; }
+.cwp-more > summary::after{ content:'\25BE'; font-size:10px; opacity:.7; }
+.cwp-more[open] > summary::after{ content:'\25B4'; }
+.cwp-more > summary:hover{ background:var(--s3); color:var(--tx); border-color:var(--bdl); }
+.cwp-more[open] > summary{ margin-bottom:var(--sp-3); }
+
+.cwp-act{
+  flex:0 0 auto; margin:0;
+  padding:var(--sp-4) var(--sp-6);
+  border-top:1px solid var(--bd); background:var(--s2);
+  display:flex; gap:var(--sp-2); justify-content:flex-end; align-items:center;
+  flex-wrap:wrap;
+}
+.cwp-buy{ background:none; border:none; padding:0; display:flex;
+  align-items:center; justify-content:space-between; gap:var(--sp-4); flex-wrap:wrap; }
+.cwp-buy-s{ margin:2px 0 0; }
+.cwp-buy-b{ display:flex; gap:var(--sp-2); flex-shrink:0; }
+.cwp-buy .btn{ margin:0; }
+.cwp-x{ z-index:2; }
+
+@media (max-width:560px){
+  .cwp{ padding:0; }
+  .cwp-scroll{ padding:var(--sp-4) var(--sp-4) var(--sp-4); }
+  .cwp-act{ padding:var(--sp-3) var(--sp-4); }
+  .cwp-fact{ grid-template-columns:1fr; gap:2px; }
+  .cwp-buy{ flex-direction:column; align-items:stretch; }
+  .cwp-buy-b{ flex-direction:column; }
+}
