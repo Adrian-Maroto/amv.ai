@@ -12458,3 +12458,58 @@ unfamiliar-but-real signal into an abort. Strictness that cannot tell "the thing
 I am measuring is broken" from "my instrument is broken" is not strictness, it
 is just a different way of being wrong - and the baseline is what tells them
 apart.
+
+## 476. The suite that opens by describing the loss, and tests the other half of it
+
+`two-clicks-is-not-two-purchases` begins with this, in its own words: "the buyer
+is charged for a thing they already own and nothing anywhere notices, because
+from the inside the duplicate credit was correctly refused. The safety mechanism
+is what makes the loss silent."
+
+Every case in it is about ONE checkout - a double click, five at once, a retry
+storm. They prove the same session is handed back while it is still in flight,
+and they prove it well.
+
+None of them covers the other half of the sentence: somebody who bought the
+thing last week, forgot, and presses Buy again. That is a different guard -
+`_ownsItem` - and removing it broke nothing. EIGHT suites drive `marketBuy` and
+not one noticed.
+
+Two halves of one promise, a suite named after it, and only the concurrent half
+tested. The word that did the damage is "twice": the author read it as "twice at
+once", which is the interesting engineering problem, and the boring sequential
+case is the one that actually empties somebody's pocket.
+
+So a suite named after a promise is evidence about the promise, not proof of it.
+Read what its cases actually DO before counting it as cover - and when a file
+opens by naming a failure in prose, check that a case exists for the failure as
+described, not for the version that was fun to solve.
+
+## 477. Four false findings from a hand-picked suite list, so the list is derived now
+
+Four times in this audit a mutation was reported UNNOTICED because the suite
+that covers it was not in the list I passed:
+
+  · `family.test.mjs`, dropped for having a name that is a prefix of three others
+  · the three suites that drive `aiAgentLoop`, none of which is named for it
+  · `two-clicks-is-not-two-purchases`, which contains the word "market" nowhere
+  · and an earlier round where nonexistent names scored every mutation as caught
+
+The cause is structural rather than careless. Suites in this repository are
+named after the PROMISE they protect - `a-refund-that-skipped-the-wallet-lock`,
+`nobody-can-fill-your-inbox`, `a-timer-cannot-act-on-your-behalf` - which is a
+good naming scheme for a reader and a useless one for a keyword search. The
+suite that tests a function almost never contains its name.
+
+So the harness derives the list: every identifier in the mutated code is grepped
+across tests/, and whatever names come back are added however unrelated they
+look. Two refinements were needed. Identifiers appearing in more than thirty
+suites are dropped - `json` and `env` are evidence about nothing - and the
+enclosing ROUTE function matters more than the helper, because tests call the
+route.
+
+It is still not sufficient on its own: `two-clicks` does not name `_ownsItem`
+either, and was found only by asking which suites drive `marketBuy` and running
+all of them. The rule that actually holds: a negative result needs the widest
+net you can afford, and "I could not find a suite" is never the same sentence as
+"no suite covers it".

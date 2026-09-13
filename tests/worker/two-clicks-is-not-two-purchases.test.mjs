@@ -158,6 +158,50 @@ section('Clicking buy again hands back the SAME checkout');
      sessions.length);
 }
 
+section('And not again next week, once they already own it');
+{
+  /* THE LOSS THIS SUITE OPENS BY DESCRIBING, IN THE SHAPE NOTHING TESTED.
+
+     The comment at the top of this file says it exactly: "the buyer is charged
+     for a thing they already own and nothing anywhere notices, because from the
+     inside the duplicate credit was correctly refused. The safety mechanism is
+     what makes the loss silent."
+
+     Every case above is about ONE checkout - a double click, a retry storm,
+     concurrency. They prove the same session is handed back while it is still
+     in flight. None of them covers the other half: somebody who bought the
+     thing last week, forgot, and presses Buy again. That is a different guard -
+
+         if (await _ownsItem(env, user.email, id)) return ... owned: true
+
+     - and removing it broke nothing in this repository. Eight suites drive
+     marketBuy and not one noticed, including this one.
+
+     Without it the buyer reaches Stripe a second time for a thing they already
+     have. The entitlement is already recorded, so the second payment grants
+     nothing; they are simply out the money, and every internal check looks
+     correct while it happens. */
+  const env = mkEnv();
+  listing(env, ITEM);
+  const tok = await buyer(env, A);
+
+  const first = await buy(env, tok);
+  ok(first.body.ok === true, 'the first purchase goes through', first.body);
+
+  /* Delivered: the entitlement the webhook writes when the payment lands.
+     Seeded directly because the point is what happens on the NEXT visit, not
+     how the first one completed. */
+  env.AMV_KV._map.set(`entitleitem:${A}:${ITEM}`, JSON.stringify({ at: Date.now() }));
+  const before = sessions.length;
+
+  const again = await buy(env, tok);
+  ok(again.status === 400, 'buying it a second time is refused', again.status);
+  ok(again.body.owned === true, 'and says they already own it', again.body.owned);
+  ok(sessions.length === before,
+     'Stripe was never asked again, so they are not charged for what they have',
+     { before, after: sessions.length });
+}
+
 section('And five at once produce one');
 {
   /* A double-click is the ordinary case; a retry storm is the one that proves
