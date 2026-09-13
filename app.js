@@ -26262,6 +26262,10 @@ function openAuth(mode){
   document.getElementById('g-btn')?.addEventListener('click',triggerGoogle);
   document.getElementById('auth-submit')?.addEventListener('click',()=>isL?doLoginForm():doSignupForm());
   try{ _mountTurnstile(); }catch(e){}
+  /* The sheet is open and "Continue with Google" is on screen, so this is the
+     last moment the library can still be needed - and the first moment we know
+     it is actually wanted. */
+  try{ if(typeof _gauthStart==='function') _gauthStart(); }catch(e){}
   document.getElementById('auth-sw')?.addEventListener('click',()=>openAuth(isL?'signup':'login'));
   document.getElementById('auth-forgot')?.addEventListener('click',()=>{ const em=(document.getElementById('a-email')?.value||'').trim(); closeOvr(); openForgot(em); });
   document.getElementById('a-terms')?.addEventListener('click',()=>{closeOvr();openTerms();});
@@ -26503,8 +26507,41 @@ _restoreAccent();
 // Apply saved font size (zoom-based, applied when app boots via _applyFontSize)
 try{ _applyFontSize&&_applyFontSize(); }catch(e){}
 
-// Init Google auth after load
-window.addEventListener('load',()=>{ setTimeout(initGAuth,500); });
+/* GOOGLE SIGN-IN MUST NOT WAIT FOR THE SLOWEST THING ON THE PAGE.
+
+   This was `window.addEventListener('load', () => setTimeout(initGAuth, 500))`,
+   and `load` does not fire until every async script has resolved - including
+   `accounts.google.com/gsi/client`, which is the very script this is waiting
+   for. So initialisation was chained to the slowest resource on the page and
+   then delayed a further half second.
+
+   Measured: first paint at 236ms, `loadEventEnd` at 12,567ms on a network
+   where Google's host does not answer. Signing up is the first thing a new
+   person does, and "Continue with Google" is the first button on the sheet -
+   so for that whole window the button is on screen and dead. A school or
+   workplace filter blocking accounts.google.com does not degrade sign-in, it
+   removes it, silently, while the page looks ready.
+
+   Now it starts from whichever happens first: the library already being
+   present, its own script finishing, or somebody opening the auth sheet. None
+   of those is coupled to `load`. */
+function _gauthStart(){
+  try{
+    if(window.__amvGAuthStarted) return;
+    if(window.google && google.accounts){ window.__amvGAuthStarted = true; initGAuth(); return; }
+    const s = document.querySelector('script[src*="accounts.google.com/gsi/client"]');
+    if(s && !s.dataset.amvHooked){
+      s.dataset.amvHooked = '1';
+      s.addEventListener('load', ()=>{ if(!window.__amvGAuthStarted){ window.__amvGAuthStarted = true; try{ initGAuth(); }catch(e){} } }, { once:true });
+    }
+  }catch(e){}
+}
+try{ window._gauthStart = _gauthStart; }catch(e){}
+_gauthStart();
+/* A late safety net for the case where the script was already cached and
+   fired its load before this ran. Cheap, bounded, and not on the critical
+   path of anything. */
+try{ setTimeout(_gauthStart, 800); }catch(e){}
 // Init PWA (installable app + offline shell)
 try{ _initPWA(); }catch(e){}
 /* The public settings a visitor needs - the Google client id above all, since

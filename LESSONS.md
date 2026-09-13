@@ -12547,3 +12547,39 @@ progress. Check `ps` and the result file, not the fact that something is still
 "running" - this session has now been fooled by a stale lock file, a stale
 result file, and a self-matching waiter, all of which look exactly like a
 healthy run in progress.
+
+## 479. Sign-in waited for the script it was waiting for
+
+Reported as "signing up is very laggy". The server route is 76ms and the client
+steps after it are 2-9ms, so neither is the cost. It was this:
+
+    window.addEventListener('load', () => setTimeout(initGAuth, 500));
+
+`load` does not fire until every async script has resolved - including
+`accounts.google.com/gsi/client`, the very library `initGAuth` needs. So
+initialisation was chained to the slowest resource on the page, then delayed a
+further half second for good measure.
+
+Measured on a network where Google's host does not answer: first paint 236ms,
+`loadEventEnd` 12,567ms. "Continue with Google" is the first button on the
+sign-up sheet and signing up is the first thing a new person does, so for twelve
+seconds the button is on screen and dead. A school or workplace filter does not
+degrade sign-in there - it removes it, silently, while the page looks ready.
+
+Three things worth keeping.
+
+`load` is not "the page is ready", it is "the slowest thing finished". Anything
+hung off it inherits the worst resource on the page, and the more third parties
+are added the later it gets. `DOMContentLoaded`, the specific script's own
+`load`, or the moment the user asks for the feature are all better anchors.
+
+The existing perf rule did not catch it, and was not wrong to miss it. This repo
+measures FIRST PAINT with third parties dead, and first paint was fine - 236ms
+with everything blocked. The page painted perfectly and a button on it did
+nothing. A budget only covers the thing it measures.
+
+And the fix is not a faster wait, it is no wait. Initialisation now starts from
+whichever comes first: the library already being present, its own script
+finishing, or somebody opening the sheet. The test pins the DECOUPLING rather
+than a millisecond figure - a timing assertion would be an assertion about the
+machine, and a flaky budget is a budget somebody deletes.
