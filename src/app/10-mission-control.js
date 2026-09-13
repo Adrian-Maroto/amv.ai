@@ -3223,6 +3223,10 @@ function renderCrewView(){
         <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
       </section>
       <section>
+        <div class="sec-head"><h3>Games you are running</h3><span class="sec-sub">A game is a link anybody can open - no account needed. You see who has answered; nobody sees the answers until you reveal them.</span></div>
+        <div id="crew-games"></div>
+      </section>
+      <section>
         <div class="sec-head"><h3>Recurring work</h3><span class="sec-sub">Pick one to set it on a schedule - or describe your own. Many can run at once.</span></div>
         <div class="tpl-grid">
           ${[
@@ -3242,6 +3246,9 @@ function renderCrewView(){
   </div></div>`;
   try{ vc.querySelectorAll('[data-mcjump]').forEach(function(b){ on(b,'click',function(){ var el=document.getElementById(b.dataset.mcjump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }); }); }catch(e){}
   _cwWireCmd(vc);
+  /* Filled after the view exists, never before: the panel renders into an
+     element this function has only just written. */
+  try{ if(typeof renderGames==='function') renderGames(); }catch(e){}
 }
 /* WIRED FROM BOTH VIEWS.
 

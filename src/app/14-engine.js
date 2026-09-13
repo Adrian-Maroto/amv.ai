@@ -1338,6 +1338,12 @@ function _crewResultsHTML(){
         '<span class="crew-res-s">'+(r.status==='running'?(r.note||'working…'):r.status==='done'?'completed':'failed')+'</span></div>'+
       (r.body?'<div class="crew-res-body">'+(typeof md==='function'?md(r.body):escH(r.body))+'</div>':'')+
       (r.actions?'<div class="crew-res-act">'+r.actions+'</div>':'')+
+      /* A finished result can become something the group plays. Offered only
+         when there is a body to make questions from, because a button that
+         explains why it cannot work is worse than no button. */
+      (r.status==='done'&&r.body
+        ? '<div class="crew-res-act"><button class="btn bs" data-dact="gameFromCrewResult" data-darg="'+escH(r.id)+'">Make this a game</button></div>'
+        : '')+
     '</div>'
   )).join('')+'</div>';
 }

@@ -125,3 +125,29 @@ async function gameFromPrompts(title, lines, kind){
   return { id: d.id, url: gameLink(d.id) };
 }
 try{ window.gameFromPrompts = gameFromPrompts; }catch(e){}
+
+/* THE DOOR gameFromPrompts IS FOR.
+
+   A Crew result is a block of text; this turns the lines of it into questions
+   the group can actually answer. It is the whole reason the execution layer
+   exists - a job thinks of the questions, and this makes them playable - so it
+   is wired to a button rather than left as an export nothing opens. */
+async function gameFromCrewResult(id){
+  try{
+    const res = (typeof _CREW_RESULTS !== 'undefined' ? _CREW_RESULTS : []).find(r => r.id === id);
+    if(!res){ toast('That result is gone','warn'); return; }
+    const lines = String(res.body || '')
+      .split('\n')
+      .map(l => l.replace(/^[-*\d.\s]+/, '').trim())
+      .filter(l => l.length > 3 && l.length < 300)
+      .slice(0, 10);
+    if(!lines.length){ toast('Nothing in that result reads as a question','warn'); return; }
+    const made = await gameFromPrompts(res.title || 'Crew game', lines, res.kind);
+    try{ await navigator.clipboard.writeText(made.url); }catch(e){}
+    toast('Game made - link copied. Paste it into the group chat.','ok');
+    renderGames();
+  }catch(e){
+    toast(e.message || 'Could not make a game from that','warn');
+  }
+}
+try{ window.gameFromCrewResult = gameFromCrewResult; }catch(e){}

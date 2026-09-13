@@ -18289,6 +18289,10 @@ function renderCrewView(){
         <div id="crew-live" class="crew-live">${_crewResultsHTML()}</div>
       </section>
       <section>
+        <div class="sec-head"><h3>Games you are running</h3><span class="sec-sub">A game is a link anybody can open - no account needed. You see who has answered; nobody sees the answers until you reveal them.</span></div>
+        <div id="crew-games"></div>
+      </section>
+      <section>
         <div class="sec-head"><h3>Recurring work</h3><span class="sec-sub">Pick one to set it on a schedule - or describe your own. Many can run at once.</span></div>
         <div class="tpl-grid">
           ${[
@@ -18308,6 +18312,9 @@ function renderCrewView(){
   </div></div>`;
   try{ vc.querySelectorAll('[data-mcjump]').forEach(function(b){ on(b,'click',function(){ var el=document.getElementById(b.dataset.mcjump); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }); }); }catch(e){}
   _cwWireCmd(vc);
+  /* Filled after the view exists, never before: the panel renders into an
+     element this function has only just written. */
+  try{ if(typeof renderGames==='function') renderGames(); }catch(e){}
 }
 /* WIRED FROM BOTH VIEWS.
 
@@ -30295,6 +30302,12 @@ function _crewResultsHTML(){
         '<span class="crew-res-s">'+(r.status==='running'?(r.note||'working…'):r.status==='done'?'completed':'failed')+'</span></div>'+
       (r.body?'<div class="crew-res-body">'+(typeof md==='function'?md(r.body):escH(r.body))+'</div>':'')+
       (r.actions?'<div class="crew-res-act">'+r.actions+'</div>':'')+
+      /* A finished result can become something the group plays. Offered only
+         when there is a body to make questions from, because a button that
+         explains why it cannot work is worse than no button. */
+      (r.status==='done'&&r.body
+        ? '<div class="crew-res-act"><button class="btn bs" data-dact="gameFromCrewResult" data-darg="'+escH(r.id)+'">Make this a game</button></div>'
+        : '')+
     '</div>'
   )).join('')+'</div>';
 }
@@ -39262,6 +39275,32 @@ async function gameFromPrompts(title, lines, kind){
   return { id: d.id, url: gameLink(d.id) };
 }
 try{ window.gameFromPrompts = gameFromPrompts; }catch(e){}
+
+/* THE DOOR gameFromPrompts IS FOR.
+
+   A Crew result is a block of text; this turns the lines of it into questions
+   the group can actually answer. It is the whole reason the execution layer
+   exists - a job thinks of the questions, and this makes them playable - so it
+   is wired to a button rather than left as an export nothing opens. */
+async function gameFromCrewResult(id){
+  try{
+    const res = (typeof _CREW_RESULTS !== 'undefined' ? _CREW_RESULTS : []).find(r => r.id === id);
+    if(!res){ toast('That result is gone','warn'); return; }
+    const lines = String(res.body || '')
+      .split('\n')
+      .map(l => l.replace(/^[-*\d.\s]+/, '').trim())
+      .filter(l => l.length > 3 && l.length < 300)
+      .slice(0, 10);
+    if(!lines.length){ toast('Nothing in that result reads as a question','warn'); return; }
+    const made = await gameFromPrompts(res.title || 'Crew game', lines, res.kind);
+    try{ await navigator.clipboard.writeText(made.url); }catch(e){}
+    toast('Game made - link copied. Paste it into the group chat.','ok');
+    renderGames();
+  }catch(e){
+    toast(e.message || 'Could not make a game from that','warn');
+  }
+}
+try{ window.gameFromCrewResult = gameFromCrewResult; }catch(e){}
 /* ══════════════════════════════════════════════════════════════════════
    WHAT AMV KNOWS ABOUT THIS PROJECT, AND HOW IT CAME TO KNOW IT.
 

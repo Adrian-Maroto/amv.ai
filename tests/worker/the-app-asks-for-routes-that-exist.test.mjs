@@ -28,8 +28,27 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
 const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 
-/* Every path the worker will answer. */
-const ROUTES = new Set([...worker.matchAll(/case\s+'(\/[^']+)'/g)].map(m => m[1]));
+/* Every path the worker will answer.
+
+   Two shapes, not one. Most routes are `case '/v1/thing':` in the table, but
+   the public PAGES are matched by prefix before that table is reached -
+   `path.startsWith('/s/')` for a deployed site, `/c/` for a shared
+   conversation, `/g/` for a game. Those are real answers, and a sweep that
+   only reads the case table calls them missing.
+
+   It came up when the app started building a game link: `/g/` was reported as
+   a spelling the worker does not answer, while the worker answers it three
+   lines above the table. Parsing both shapes is the honest fix - an exception
+   entry would have hidden the same gap for the next page route too. */
+const ROUTES = new Set([
+  ...[...worker.matchAll(/case\s+'(\/[^']+)'/g)].map(m => m[1]),
+  ...[...worker.matchAll(/path\.startsWith\('(\/[a-z0-9-]+\/)'\)/g)].map(m => m[1]),
+]);
+/* A prefix answers everything under it, so a link built as `base + '/g/' + id`
+   resolves against the prefix rather than against a literal path. */
+const PAGE_PREFIXES = [...ROUTES].filter(r => r.endsWith('/'));
+const answered = (p) => ROUTES.has(p.replace(/\/$/, '')) || ROUTES.has(p)
+  || PAGE_PREFIXES.some(pre => p === pre || p.startsWith(pre));
 
 /* Every path the app asks for, in each of the shapes it uses to ask.
 
@@ -62,7 +81,7 @@ section('Both sides were read');
 section('Every path the app asks its own backend for is a route that exists');
 {
   const missing = [...ASKED.keys()]
-    .filter(p => !ROUTES.has(p.replace(/\/$/, '')))
+    .filter(p => !answered(p))
     .filter(p => !(p in FOREIGN))
     /* A prefix, resolved separately below. */
     .filter(p => !PREFIXED.includes(p))
