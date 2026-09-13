@@ -12886,3 +12886,68 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   font-size:var(--t-sm); padding:6px 12px;
 }
 .vi-help .hc-group + .hc-group{ margin-top:var(--sp-5); }
+
+/* ── LAYER A202 · connecting the one account this job needs ─────────────────
+
+   A full-bleed step rather than a card floating on the Crew page, because it
+   is a moment with one question in it and the answer decides whether the thing
+   somebody just switched on can do anything at all. Everything behind it is
+   covered on purpose.
+
+   It replaces a toast and a jump to the Connectors tab - a list of every
+   provider AMV supports, with no mention of the job that sent you there. */
+.cwc-ov{ align-items:stretch!important; justify-content:stretch!important; padding:0!important; }
+.cwc{
+  position:relative; width:100%; height:100%;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--bg); overflow-y:auto; cursor:auto;
+}
+.cwc-inner{
+  width:100%; max-width:560px;
+  padding:var(--sp-7) var(--sp-5);
+  display:flex; flex-direction:column; align-items:flex-start; gap:var(--sp-4);
+}
+.cwc-mark{
+  width:44px; height:44px; border-radius:var(--r-lg);
+  display:flex; align-items:center; justify-content:center;
+  background:var(--accent-soft); color:var(--accent-txt);
+}
+.cwc-t{
+  margin:0; font-family:var(--fdisplay);
+  font-size:var(--t-3xl); font-weight:640; letter-spacing:-.7px;
+  line-height:1.15; color:var(--tx);
+}
+.cwc-lead{ margin:0; font-size:var(--t-lg); line-height:1.6; color:var(--mu); }
+.cwc-lead b{ color:var(--tx); font-weight:640; }
+.cwc-facts{
+  margin:var(--sp-2) 0 0; padding:0; list-style:none;
+  display:flex; flex-direction:column; gap:var(--sp-3);
+  font-size:var(--t-base); line-height:1.6; color:var(--mu);
+  border-top:1px solid var(--bd); padding-top:var(--sp-4);
+}
+.cwc-facts li{ position:relative; padding-left:22px; }
+.cwc-facts li::before{
+  content:''; position:absolute; left:2px; top:.55em;
+  width:6px; height:6px; border-radius:50%; background:var(--accent);
+}
+.cwc-facts b{ color:var(--tx); font-weight:640; }
+.cwc-acts{ display:flex; gap:var(--sp-3); flex-wrap:wrap; margin-top:var(--sp-3); }
+.cwc-go{ font-size:var(--t-md); padding:11px 20px; }
+.cwc-none{
+  margin:var(--sp-3) 0 0; padding:var(--sp-4);
+  border:1px dashed var(--bd); border-radius:var(--r-lg);
+  font-size:var(--t-base); line-height:1.6; color:var(--mu);
+}
+.cwc-later{
+  margin-top:var(--sp-2); padding:0; border:none; background:none;
+  color:var(--dim); font-family:inherit; font-size:var(--t-base);
+  text-decoration:underline; text-underline-offset:3px; cursor:pointer;
+}
+.cwc-later:hover{ color:var(--mu); }
+.cwc .cwp-x{ position:absolute; top:var(--sp-4); right:var(--sp-4); }
+
+@media (max-width:560px){
+  .cwc-inner{ padding:var(--sp-6) var(--sp-4); }
+  .cwc-t{ font-size:var(--t-2xl); }
+  .cwc-acts .btn{ width:100%; }
+}

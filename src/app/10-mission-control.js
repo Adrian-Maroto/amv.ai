@@ -661,10 +661,15 @@ function _cwDefaultJobs(){ return [
 
    Web research and web automation run server-side and need nothing from the
    user, which is why they are absent here. */
+/* `cap` is the capability the check asks about, written out beside the check
+   that asks it. The two were the same string already; saying it once means the
+   connect screen can offer the providers that really grant it, read from the
+   server's own provider list, instead of a second table here that would drift
+   from this one the first time a provider was added. */
 const CW_NEEDS_CHECK = {
-  'Email':           { label:'Gmail',            has:()=>_cwConnHas('mail.read') },
-  'Calendar':        { label:'Google Calendar',  has:()=>_cwConnHas('calendar.read') },
-  'Drive':           { label:'Google Drive',     has:()=>_cwConnHas('drive.read') },
+  'Email':           { label:'Gmail',            cap:'mail.read',     has:()=>_cwConnHas('mail.read') },
+  'Calendar':        { label:'Google Calendar',  cap:'calendar.read', has:()=>_cwConnHas('calendar.read') },
+  'Drive':           { label:'Google Drive',     cap:'drive.read',    has:()=>_cwConnHas('drive.read') },
   /* Read-only, and on the same Google connection - so a student who has linked
      Google for their mail already has this. A job needing it that runs with
      nothing connected would switch on and do nothing for ever, which is the
@@ -674,7 +679,7 @@ const CW_NEEDS_CHECK = {
      being used to answer this one: a student who had only ever pressed Sign in
      with Google was told Classroom was available, switched the job on, and it
      ran every morning with no permission to read anything. */
-  'Classroom':       { label:'Google Classroom', has:()=>_cwConnHas('school.read') },
+  'Classroom':       { label:'Google Classroom', cap:'school.read',   has:()=>_cwConnHas('school.read') },
   /* Through the one accessor, so "is an account linked" has a single definition
      that the server refresh keeps current. Reading the key directly here meant
      this screen and the investing pane could disagree. */
@@ -761,7 +766,154 @@ function _cwNeedsMissing(j){
   });
   return out;
 }
-function cwConnect(){ try{ S.tab='integrations'; setTab('integrations'); }catch(e){} }
+/* ── CONNECTING THE ONE ACCOUNT THIS JOB NEEDS ───────────────────────────────
+
+   Asked for: turning a job on should take you to a screen that says "connect
+   X to your AMV", then a dialog that asks for what the connection needs, and
+   then it is connected. Simple.
+
+   What happened instead was a toast - "Saved, but this cannot run until you
+   connect Gmail" - and a Connect button that dropped you on the Connectors
+   tab, in front of every provider AMV supports, with no mention of the job you
+   had just switched on. Two screens away from the thing you asked for, and the
+   reason you were there was on neither of them.
+
+   ON NOT ASKING FOR A PASSWORD. The owner's words were "whatever password,
+   email etc needed verification so people cant hack or do this trick to see
+   other emails" - and the way to get that is the opposite of a password field.
+   AMV must never ask for somebody's Google or Microsoft password: a product
+   that renders a form asking for another company's credentials has taught its
+   own users to fall for the next thing that looks like it. The sign-in happens
+   at the provider, on the provider's own domain, and what comes back is a
+   scoped grant held by the server against the signed-in AMV account. That is
+   what makes "nobody can trick their way into somebody else's mail" true:
+   there is no credential here to steal and no field to phish.
+
+   The providers offered are the ones the SERVER says grant the capability this
+   job needs, so a deployment that registers Microsoft gets Microsoft offered
+   for mail without a line changing here. */
+/* Only what a CONNECTOR can supply. A bank link is a missing requirement too
+   and `_cwNeedsMissing` rightly reports it, but it is not an OAuth grant and
+   there is no provider to offer for it - it is linked from the investing pane
+   through its own flow. Returning it here would put a job in front of a screen
+   whose only honest answer was "there is nothing to connect", which is worse
+   than the sentence it already gets. */
+function _cwMissingNeeds(j){
+  const out=[];
+  String((j&&j.needs)||'').split(',').map(x=>x.trim()).filter(Boolean).forEach(n=>{
+    const c=CW_NEEDS_CHECK[n];
+    if(c && c.cap && !c.has() && !out.some(x=>x.cap===c.cap)) out.push({ need:n, label:c.label, cap:c.cap });
+  });
+  return out;
+}
+/* Providers the server says can grant this capability, and whether the
+   deployment has an app registered with each. Empty is an answer: it means
+   nobody has set this up, and the screen says that rather than showing a
+   button that cannot work. */
+function _cwProvidersFor(cap){
+  try{
+    const d=(typeof _connState!=='undefined'&&_connState)?_connState.data:null;
+    return ((d&&d.providers)||[]).filter(p=>p&&Array.isArray(p.scopes)&&p.scopes.indexOf(cap)>=0);
+  }catch(e){ return []; }
+}
+/* Which job asked. Saved rather than held in memory because connecting leaves
+   this page entirely - the provider's sign-in is a full navigation - and the
+   whole point is to come back and finish what was being turned on. */
+function _cwConnWant(v){
+  try{ if(v===undefined) return load('amv_cw_conn_want')||null;
+       if(v===null) store('amv_cw_conn_want',null); else store('amv_cw_conn_want',v); }catch(e){}
+  return null;
+}
+function openCrewConnect(jobId){
+  const j=(_cwAllJobs()||[]).find(x=>x.id===jobId);
+  const r=$('ovr'); if(!j||!r) return;
+  try{ if(typeof _connLoad==='function') _connLoad(false); }catch(e){}
+  const missing=_cwMissingNeeds(j);
+  /* Nothing here to connect - either it is all connected already, or what is
+     missing is not a connector. The Connectors page is the honest destination
+     either way. Never a toggle: this is reached from a card whose job may
+     already be on, and turning it off because somebody pressed Connect is the
+     opposite of what they asked for. */
+  if(!missing.length){ try{ S.tab='integrations'; setTab('integrations'); }catch(e){} return; }
+  const m=missing[0];
+  const provs=_cwProvidersFor(m.cap);
+  const ready=provs.filter(p=>p.ready);
+  const words=(typeof _connScopeWords==='function') ? _connScopeWords([m.cap]) : [m.cap];
+
+  const buttons = ready.length
+    /* One filled button. Two providers that both grant mail are two ways to do
+       the same thing, and rendering both as the primary action asks somebody to
+       choose between identical-looking buttons before they know there is no
+       wrong answer. The first is offered; the rest are available. */
+    ? ready.map((p,i)=>'<button class="btn '+(i?'bs':'bp')+' cwc-go" data-conn-prov="'+escH(p.id)+'">'
+        +(i?'Use ':'Connect with ')+escH(p.name)+'</button>').join('')
+    : '';
+  const none = provs.length
+    ? '<p class="cwc-none">No '+escH(m.label)+' app is registered on this deployment yet, so there is nothing to connect to. '
+      + 'Until that is set up this job cannot run, and AMV will not pretend otherwise.</p>'
+    : '<p class="cwc-none">This copy of AMV cannot hold an account key, so there is nothing to connect. '
+      + 'The job is saved and will start the moment a connection is possible.</p>';
+
+  r.innerHTML =
+    '<div class="ov cwc-ov" id="cwc-bg"><div class="cwc" role="dialog" aria-modal="true" aria-labelledby="cwc-t">'+
+      '<button class="cwp-x" id="cwc-x" aria-label="Close">\u2715</button>'+
+      '<div class="cwc-inner">'+
+        '<div class="cwc-mark" aria-hidden="true">'+
+          '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+
+          '<path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg></div>'+
+        '<h1 class="cwc-t" id="cwc-t">Connect '+escH(m.label)+' to your AMV</h1>'+
+        '<p class="cwc-lead">You are turning on <b>'+escH(j.title)+'</b>. To do it, AMV needs to '+
+          escH(words.join(' and '))+'.</p>'+
+        '<ul class="cwc-facts">'+
+          '<li>You sign in at '+escH((ready[0]&&ready[0].name)||m.label)+', not here. '+
+            '<b>AMV never sees your password</b> - it receives a permission slip and nothing else.</li>'+
+          '<li>The permission covers only what you tick on the next screen, and it is held against '+
+            'this AMV account alone.</li>'+
+          '<li>You can take it back at any time, and every use is recorded with the name of the job '+
+            'that used it.</li>'+
+        '</ul>'+
+        (buttons ? '<div class="cwc-acts">'+buttons+'</div>' : none)+
+        '<button class="cwc-later" id="cwc-later">Not now</button>'+
+      '</div>'+
+    '</div></div>';
+  r.classList.add('on');
+  const close=()=>{ try{ closeOvr(); }catch(e){} };
+  on($('cwc-x'),'click',close);
+  on($('cwc-later'),'click',close);
+  onBackdrop($('cwc-bg'),close);
+  r.querySelectorAll('[data-conn-prov]').forEach(b=>on(b,'click',()=>{
+    /* Remembered BEFORE leaving, because the next thing that happens is a
+       navigation away from this page. */
+    _cwConnWant({ job:j.id, cap:m.cap, at:Date.now() });
+    close();
+    try{ connAdd(b.dataset.connProv); }catch(e){}
+  }));
+}
+try{ window.openCrewConnect=openCrewConnect; }catch(e){}
+/* Called when a connection has just completed. Finishes the job that asked for
+   it, and only that one - a connection somebody made from the Connectors page
+   for its own sake must not silently switch a job on. */
+function cwConnectResume(){
+  const want=_cwConnWant();
+  _cwConnWant(null);
+  if(!want||!want.job) return;
+  /* Stale intent is no intent. An hour-old note about a job somebody may have
+     forgotten they touched is not permission to start it. */
+  if(!want.at || Date.now()-want.at > 30*60000) return;
+  const j=(_cwJobs()||[]).find(x=>x.id===want.job)||(_cwAllJobs()||[]).find(x=>x.id===want.job);
+  if(!j || j.on) return;
+  if(_cwMissingNeeds(j).length) return;      // still not connected: nothing to resume
+  try{ setTab('crew'); }catch(e){}
+  try{ cwToggle(j.id); }catch(e){}
+}
+try{ window.cwConnectResume=cwConnectResume; }catch(e){}
+/* The catalogue card's Connect button knows which job it is on, so it opens
+   that job's connect screen. Called bare it still has to do something sensible,
+   which is the Connectors page it always went to. */
+function cwConnect(jobId){
+  if(jobId){ try{ openCrewConnect(jobId); return; }catch(e){} }
+  try{ S.tab='integrations'; setTab('integrations'); }catch(e){}
+}
 try{ window.cwConnect=cwConnect; }catch(e){}
 
 
@@ -2283,7 +2435,7 @@ function _cwJobCard(j){
      quietly did nothing forever. The card says which it is. */
   const miss=_cwNeedsMissing(j);
   const note=miss.length
-    ? `<div class="cw-job-miss">${j.on?'Cannot run yet':'Needs'}: ${escH(miss.join(', '))} not connected. <button class="cw-job-fix" data-dact="cwConnect">Connect</button></div>`
+    ? `<div class="cw-job-miss">${j.on?'Cannot run yet':'Needs'}: ${escH(miss.join(', '))} not connected. <button class="cw-job-fix" data-dact="cwConnect" data-darg="${escH(j.id)}">Connect</button></div>`
     : '';
   /* The body is a real button, so the card opens with a keyboard and reads
      as something you can press. It was a div: the only interactive thing on
@@ -3508,7 +3660,20 @@ function cwToggle(id){
      told that now beats discovering it from an empty inbox in a fortnight. */
   const miss=j.on?_cwNeedsMissing(j):[];
   if(miss.length){
-    toast('Saved, but "'+j.title+'" cannot run until you connect '+miss.join(' and ')+'.','info',7000);
+    /* The toast this replaces was true and was the end of the road: it named
+       what was missing and left somebody on a screen with no way to supply it
+       except a Connect button two screens from the job they had just switched
+       on. The intent is still kept - the job stays on and starts the moment the
+       account is linked - and now the next step is in front of them.
+
+       Deliberately after the save, not instead of it. Somebody who closes this
+       screen has still turned the job on, and the card says what it is waiting
+       for. */
+    /* The screen only when there is something on it to press. A requirement no
+       connector can satisfy still gets the sentence, because the sentence is
+       true and a screen offering nothing is not an improvement on it. */
+    if(_cwMissingNeeds(j).length){ try{ openCrewConnect(j.id); }catch(e){} }
+    else toast('Saved, but "'+j.title+'" cannot run until you connect '+miss.join(' and ')+'.','info',7000);
   } else if(j.on){
     toast('On: '+j.title+' - it runs while AMV is open.','info',5000);
   } else {

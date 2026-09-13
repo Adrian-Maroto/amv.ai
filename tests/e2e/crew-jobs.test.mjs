@@ -401,12 +401,35 @@ section('The plan\'s job number is enforced, not just displayed');
 
 section('The fix is one tap from the card');
 {
+  /* This used to check that Connect landed on the Connectors tab. It lands
+     somewhere better now - the connect screen for THAT job, naming the account
+     it needs - and the tab does not change, which is why the old assertion
+     reads "crew" rather than a failure of the button. The promise is unchanged
+     and is what is checked: one tap from the card reaches the place where this
+     account gets linked, and it knows which account that is.
+
+     The Connectors page is still the destination when nothing on the card can
+     be satisfied by a connector, and `a-job-that-needs-an-account-asks-for-it`
+     is where that branch is pinned. */
   const went = await page.evaluate(async () => {
-    document.querySelector('.cw-job-fix').click();
-    await new Promise(r => setTimeout(r, 300));
-    return S.tab;
+    const fix = document.querySelector('.cw-job-fix');
+    const id = fix.dataset.darg;
+    fix.click();
+    await new Promise(r => setTimeout(r, 350));
+    const screen = document.querySelector('.cwc');
+    const out = { id, tab: S.tab, shown: !!screen,
+                  title: (document.querySelector('.cwc-t') || {}).textContent || '',
+                  provs: document.querySelectorAll('[data-conn-prov]').length,
+                  fields: screen ? screen.querySelectorAll('input,textarea').length : -1 };
+    try { closeOvr(); } catch (e) {}
+    return out;
   });
-  ok(went === 'integrations', 'Connect goes to where the account is linked', went);
+  ok(!!went.id, 'the button knows which job it is on', went.id);
+  ok(went.shown, 'Connect opens the screen for linking that account', JSON.stringify(went));
+  ok(/^Connect .+ to your AMV$/.test(went.title.trim()),
+     'which names the account rather than listing every provider', went.title);
+  ok(went.fields === 0,
+     'and asks for nothing here - the sign-in happens at the provider', String(went.fields));
 }
 
 section('Syncing with the server does not eat the catalogue');

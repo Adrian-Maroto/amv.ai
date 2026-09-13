@@ -1022,6 +1022,13 @@ async function _connectFinish(code, state){
   }
   try{ const back=loadStr('amv_conn_return')||'integrations'; saveStr('amv_conn_return',''); setTab(back); }catch(e){}
   connReload();
+  /* A job may have sent somebody here. Finishing it is the point of the trip,
+     and it has to wait for the connection list to come back - `cwConnectResume`
+     asks whether the thing is actually connected now, and asking before the
+     refresh lands answers no every time. It refuses a stale or unrelated
+     intent itself, so a connection made from the Connectors page for its own
+     sake switches nothing on. */
+  try{ setTimeout(()=>{ try{ if(typeof cwConnectResume==='function') cwConnectResume(); }catch(e){} }, 900); }catch(e){}
 }
 try{ window._connectFinish=_connectFinish; }catch(e){}
 
