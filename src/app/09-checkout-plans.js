@@ -879,22 +879,14 @@ const HABIT_FEATURES = {
   team:   { label:'Teams',  plan:'elite', counts:'opens', gain:'shared projects, roles and one bill for everyone' },
 };
 
-/* SCOPED TO THE ACCOUNT, because the claim is about a PERSON.
-
-   The log lives in localStorage, so two accounts sharing a browser were adding
-   to one count and each being told it was theirs. Scoping understates for
-   somebody who uses two devices - their real total is higher than the number
-   shown - and understating is the safe direction for a sentence used to ask
-   for money. */
-function _habitWho(){ try{ return (S.user && S.user.email) ? String(S.user.email).toLowerCase() : ''; }catch(e){ return ''; } }
-function _habitLog(){
-  try{ const all = load('amv_habit') || {}; const me = _habitWho(); return (me && all[me]) || {}; }
-  catch(e){ return {}; }
-}
-function _habitSave(h){
-  try{ const me = _habitWho(); if(!me) return; const all = load('amv_habit') || {}; all[me] = h; store('amv_habit', all); }
-  catch(e){}
-}
+/* Already per-account: `store`/`load` route every key that is not in
+   _GLOBAL_KEYS through `_scopeKey`, which prefixes `u:<email>|`. `amv_habit` is
+   not a global key, so two people sharing a browser already have separate
+   counts. A second layer of scoping was written here and removed again - it was
+   duplicated logic dressed as a fix, and the only thing it added was a nested
+   shape nobody else reads. */
+function _habitLog(){ try{ return load('amv_habit') || {}; }catch(e){ return {}; } }
+function _habitSave(h){ try{ store('amv_habit', h); }catch(e){} }
 
 /* Called when a surface is opened. Keeps timestamps rather than a bare count so
    the window can actually roll - a count with no dates only ever grows. */

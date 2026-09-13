@@ -12583,3 +12583,46 @@ whichever comes first: the library already being present, its own script
 finishing, or somebody opening the sheet. The test pins the DECOUPLING rather
 than a millisecond figure - a timing assertion would be an assertion about the
 machine, and a flaky budget is a budget somebody deletes.
+
+## 480. The fix that was already in the storage layer
+
+The upgrade nudge's count lives in localStorage, so the obvious second half of
+fixing it was to scope the log per account - two people sharing a browser were
+otherwise adding to one number and each being told it was theirs.
+
+That scoping already existed. `store`/`load` route every key that is not in
+`_GLOBAL_KEYS` through `_scopeKey`, which prefixes `u:<email>|`, and `amv_habit`
+is not a global key. The counts were separate the whole time.
+
+So the change added a second layer of scoping inside an already-scoped key,
+producing a nested shape nobody else reads, in the name of fixing something that
+was not broken. Removed again.
+
+Worth writing down because the reasoning that produced it was sound and still
+wrong: localStorage IS per-device, two accounts CAN share a browser, and the
+conclusion followed - from a premise nobody checked. One grep for how the key is
+written would have settled it before the code was.
+
+The rule: before adding a guarantee, find out whether the layer underneath
+already provides it. A duplicated invariant is not twice as safe. It is two
+things that can disagree, and the day they do the bug is in whichever one the
+reader did not know about.
+
+## 481. The gate caught my test with its own rule
+
+The suite written to pin the nudge read `window.HABIT_FEATURES` and `window.S`.
+Both are top-level `const` in a classic script - script bindings, never window
+properties - so both were undefined and the assertions failed for a reason that
+had nothing to do with the code under test.
+
+The WINDOW READS stage failed the build and named all three lines. That stage
+exists because this exact mistake shipped five times in the product (LESSONS
+371-372), and it has now caught a sixth in a test file written by somebody who
+had read the rule that morning.
+
+Two things follow. A guard is worth more when it covers TESTS as well as
+product code - a broken test is a broken claim, and this one would have passed
+vacuously if the reads had been in a try/catch. And the stage paid for itself
+again by naming the line rather than reporting a failure: "reads window.S, which
+is a top-level binding and not a window property" is a sentence that ends the
+investigation before it starts.
