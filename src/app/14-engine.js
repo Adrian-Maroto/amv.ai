@@ -1371,6 +1371,10 @@ try{ window._cwQuick=_cwQuick; }catch(e){}
 
 async function crewRun(kind, title, opts){
   opts=opts||{};
+  /* A job really starting is what "you have been using Crew" is allowed to
+     mean. Counted here rather than on the tab, so the upgrade nudge quotes
+     work done instead of glances taken. */
+  try{ if(typeof _habitAction==='function') _habitAction('crew'); }catch(e){}
   const res={id:'cr'+Date.now(), kind, title, status:'running', note:'starting…', body:'', actions:''};
   _CREW_RESULTS.push(res); _crewRender();
   const up=(p)=>{ Object.assign(res,p); _crewRender(); const el=$('crew-live'); if(el) el.scrollTop=0; };

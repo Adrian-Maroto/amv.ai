@@ -851,25 +851,54 @@ const HABIT_QUIET_MS  = 14 * 86400000; // at most one per fortnight, dismissed o
 /* Which surfaces are worth mentioning, what a heavier plan actually adds, and
    the plan that adds it. Anything not listed here never nudges - there is no
    point telling somebody their chat habit could be improved by paying. */
+/* `counts` is what the number in the nudge actually MEASURES, and the copy is
+   built from it rather than assuming.
+
+   Every entry used to be counted by `setTab`, which fires when somebody opens
+   the tab and leaves again - and the nudge then said "You have been using Crew
+   a lot. 15 times in the last two weeks." Fifteen glances read as fifteen jobs.
+   This is the one dialog in the product that asks for money, so the sentence
+   behind it has to be the thing the plan improves: Pro runs jobs in the
+   background, and the evidence for that offer is jobs RUN.
+
+   Crew has a single place where a job really starts (`crewRun`), so it counts
+   runs. The others have no equivalent single action, so they still count opens
+   and the copy says "opened" - which is true, and weaker on purpose. The same
+   file already dropped its `images` entry rather than ask for money on the
+   strength of something that could not be received; this is that rule applied
+   to the number instead of the feature. */
 const HABIT_FEATURES = {
-  crew:   { label:'Crew',   plan:'pro',   gain:'run jobs in the background while AMV is closed' },
-  dev:    { label:'Build',  plan:'pro',   gain:'build and ship real apps, with the app sandbox' },
-  studio: { label:'Studio', plan:'pro',   gain:'every model, and designs that keep their own style' },
-  lab:    { label:'Lab',    plan:'pro',   gain:'the deeper engine on debugging, and longer files' },
+  crew:   { label:'Crew',   plan:'pro',   counts:'runs',  gain:'run jobs in the background while AMV is closed' },
+  dev:    { label:'Build',  plan:'pro',   counts:'opens', gain:'build and ship real apps, with the app sandbox' },
+  studio: { label:'Studio', plan:'pro',   counts:'opens', gain:'every model, and designs that keep their own style' },
+  lab:    { label:'Lab',    plan:'pro',   counts:'opens', gain:'the deeper engine on debugging, and longer files' },
   /* No `images` entry. It offered "a far larger daily allowance and HD output"
      for a feature that no longer exists - so the one nudge that asks somebody
      for money was ready to ask for it on the strength of something they could
      never receive. */
-  team:   { label:'Teams',  plan:'elite', gain:'shared projects, roles and one bill for everyone' },
+  team:   { label:'Teams',  plan:'elite', counts:'opens', gain:'shared projects, roles and one bill for everyone' },
 };
 
-function _habitLog(){ try{ return load('amv_habit') || {}; }catch(e){ return {}; } }
-function _habitSave(h){ try{ store('amv_habit', h); }catch(e){} }
+/* SCOPED TO THE ACCOUNT, because the claim is about a PERSON.
+
+   The log lives in localStorage, so two accounts sharing a browser were adding
+   to one count and each being told it was theirs. Scoping understates for
+   somebody who uses two devices - their real total is higher than the number
+   shown - and understating is the safe direction for a sentence used to ask
+   for money. */
+function _habitWho(){ try{ return (S.user && S.user.email) ? String(S.user.email).toLowerCase() : ''; }catch(e){ return ''; } }
+function _habitLog(){
+  try{ const all = load('amv_habit') || {}; const me = _habitWho(); return (me && all[me]) || {}; }
+  catch(e){ return {}; }
+}
+function _habitSave(h){
+  try{ const me = _habitWho(); if(!me) return; const all = load('amv_habit') || {}; all[me] = h; store('amv_habit', all); }
+  catch(e){}
+}
 
 /* Called when a surface is opened. Keeps timestamps rather than a bare count so
    the window can actually roll - a count with no dates only ever grows. */
-function _habitTouch(tab){
-  if(!HABIT_FEATURES[tab]) return;
+function _habitRecord(tab){
   try{
     const h=_habitLog(); const now=Date.now();
     const list=(h[tab]||[]).filter(t=>now-t < HABIT_WINDOW_MS);
@@ -878,7 +907,20 @@ function _habitTouch(tab){
     h[tab]=list; _habitSave(h);
   }catch(e){}
 }
-try{ window._habitTouch=_habitTouch; }catch(e){}
+/* Navigation. Skips anything counted by a real action, so opening the tab to
+   look at yesterday's jobs does not become evidence that you ran any. */
+function _habitTouch(tab){
+  const f = HABIT_FEATURES[tab];
+  if(!f || f.counts !== 'opens') return;
+  _habitRecord(tab);
+}
+/* A real use of the feature, called from where the work actually starts. */
+function _habitAction(tab){
+  const f = HABIT_FEATURES[tab];
+  if(!f || f.counts !== 'runs') return;
+  _habitRecord(tab);
+}
+try{ window._habitTouch=_habitTouch; window._habitAction=_habitAction; }catch(e){}
 
 function _habitCandidate(){
   const plan = loadStr('amv_plan') || 'free';
@@ -917,7 +959,13 @@ function maybeHabitNudge(){
     el.innerHTML=
       '<button class="habit-x" id="habit-x" aria-label="'+escH(T('Close'))+'">×</button>'+
       '<div class="habit-t">'+escH(T('You have been using')+' '+c.label+' '+T('a lot'))+'</div>'+
-      '<p class="habit-p">'+escH(c.uses+' '+T('times in the last two weeks')+'. '+P.name+' '+T('lets you')+' '+c.gain+'.')+'</p>'+
+      /* The verb matches the counter. "Ran" is a claim about work done and is
+         only made where a run is what was counted; everywhere else it says
+         "opened", which is exactly what the number is. */
+      '<p class="habit-p">'+escH((c.counts==='runs'
+          ? T('Ran')+' '+c.uses+' '+T('jobs in the last two weeks')
+          : T('Opened it')+' '+c.uses+' '+T('times in the last two weeks'))
+        +'. '+P.name+' '+T('lets you')+' '+c.gain+'.')+'</p>'+
       '<div class="habit-acts">'+
         '<button class="btn bp habit-go" id="habit-go">'+escH(T('See')+' '+P.name)+'</button>'+
         '<button class="btn bs" id="habit-later">'+escH(T('Not now'))+'</button>'+
