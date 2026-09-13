@@ -151,6 +151,46 @@ each id and trusts the record's own status, so the index is allowed to be
 stale. What was missing is a test of that TOLERANCE, since a stale entry that
 DID block would refuse somebody's erasure for ever over money already paid.
 
+## Round three - 19 attacked, 3 unnoticed
+
+Run on the self-calibrating instrument: every run prepends a CONTROL mutation
+with a known answer and ABORTS if the control is not caught, so no number
+reaches this table from a run that could not detect a known bug.
+
+| # | Attack | Was | Now caught by |
+|---|--------|-----|---------------|
+| 1 | A revoked API key still authenticates | **unnoticed** | `api-keys` |
+| 2 | A key from a deleted account authenticates | caught | `api-keys` |
+| 3 | The API key prefix check accepts anything | unnoticed - **harmless** | not pinned; a non-key falls through to JWT unchanged |
+| 4 | A past-due subscription keeps its plan | caught | `renewal-sweep`, `subscription-lifecycle` |
+| 5 | The grace period runs backwards | caught | `renewal-sweep` |
+| 6 | A child's monthly cap ignored | caught | `a-parents-limit-reaches-the-cron` |
+| 7 | A child's cap RAISES the plan ceiling | caught | same |
+| 8 | A child barred from the marketplace buys | caught | `family` |
+| 9 | A child barred from payouts withdraws | caught | `family` |
+| 10 | **The agent stop flag ignored between rounds** | **unnoticed** | `stop-really-stops-the-agent` |
+| 11 | **The stop flag ignored between TOOL CALLS** | **unnoticed** | same |
+| 12 | **The round ceiling no longer ends the loop** | **unnoticed** | same |
+| 13 | **The wall clock no longer ends the loop** | **unnoticed** | same |
+| 14 | The proxy accepts `stream:false` | caught | stream suites |
+| 15 | A tampered snapshot writes any key | caught | `a-backup-nobody-has-ever-restored` |
+| 16 | **The snapshot key ceiling is not enforced** | **unnoticed** | same |
+| 17 | An oversized record restored not reported | caught | same |
+| 18 | A blocked account is off hold | caught | `a-hold-that-only-stops-buying` |
+| 19 | `GLOBAL_KILL` no longer pauses the cron | caught | `stop-means-stop-spending` |
+
+10-13 are one finding and the worst of the session: `aiAgentLoop` runs tools on
+somebody's own machine unattended, and NO TEST HAD EVER CALLED IT. Three suites
+name it - one greps the source, one replaces it with a stub, one describes it in
+a registry. Mentioned three times, executed zero.
+
+16 is a ceiling that was declared, exported, and had a test asserting it EXISTS,
+while nothing checked the importer obeys it.
+
+1 is revocation working by the door that was tested: the revoke deletes the
+lookup row AND marks the item, the suite proves the key dies, and it dies by the
+delete - which is wrapped in a catch that swallows.
+
 ## What this does NOT cover
 
 Said plainly, because an audit that implies more than it measured is worse than
