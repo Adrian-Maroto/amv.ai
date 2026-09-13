@@ -325,5 +325,75 @@ section('AMV-100: a team stops being Elite when the card stops paying for it')
      'restoring the whole team in one payment');
 }
 
+section('The role check inside the lock is the one that holds under a race');
+{
+  /* TWO CHECKS, ONE OUTCOME, AND ONLY THE OUTER ONE WAS EVER EXERCISED.
+
+     teamRemove refuses an admin-removing-an-admin twice: once against the copy
+     of the team read at the top of the request, and again against `fresh`
+     inside _withTeam. Deleting the INNER one broke no suite in this repository,
+     because every existing case reaches the outer one first - the same shape as
+     the 404 that hid linkRevoke's 403.
+
+     The inner check is not a duplicate. AMV-197 is written beside it: the
+     removal happens against the team AS IT IS NOW, because a decision made on a
+     copy read before the lock can be raced. The window is real - a role change
+     landing between the outer read and the lock - and in it the outer check is
+     answering about a team that no longer exists.
+
+     Reproduced by making the store return a DIFFERENT team inside the lock than
+     the one the request read: carol is a plain member when the request starts
+     and an admin by the time the lock is taken. Only the inner check can refuse
+     that, and it must, or an admin removes an admin.
+
+     The owner case beside it is deliberately NOT tested this way: an owner is
+     protected three times over - both checks plus the filter, which keeps any
+     member whose role is owner - so removing the inner check there changes
+     nothing observable. Guarded, rather than merely unnoticed.
+
+     Fixture is built from scratch rather than reusing the team above: this file
+     shares one store across sections, and a case that depends on what earlier
+     ones left behind fails for reasons that have nothing to do with it. */
+  const RID = 'team_' + 'r'.repeat(32);
+  const mk = (carolRole) => JSON.stringify({
+    id: RID, name: 'Race', ownerEmail: 'raceowner@x.com', plan: 'elite',
+    members: [
+      { email: 'raceowner@x.com', role: 'owner', joinedAt: 1 },
+      { email: 'racebob@x.com', role: 'admin', joinedAt: 2 },
+      { email: 'racecarol@x.com', role: carolRole, joinedAt: 3 },
+    ],
+  });
+  store.set('team:' + RID, mk('member'));
+  for (const who of ['raceowner@x.com', 'racebob@x.com', 'racecarol@x.com']) {
+    store.set('userteam:' + who, RID);
+  }
+  await W.setEntitlement(env, 'raceowner@x.com', 'elite');
+
+  let reads = 0;
+  const realGet = env.AMV_KV.get.bind(env.AMV_KV);
+  env.AMV_KV.get = async (k) => {
+    if (k === 'team:' + RID) {
+      reads++;
+      /* The first read is the request's own copy; everything after it happens
+         inside the lock, which is exactly where the race lands. */
+      return reads === 1 ? mk('member') : mk('admin');
+    }
+    return realGet(k);
+  };
+
+  const bobTok = await tok('racebob@x.com');
+  const res = await W.teamRemove(req({ email: 'racecarol@x.com' }, bobTok), env);
+  const body = await jget(res);
+  env.AMV_KV.get = realGet;
+
+  ok(reads >= 2, 'the team really was read again inside the lock', reads);
+  ok(res.status === 403, 'an admin cannot remove somebody who became an admin mid-request', res.status);
+  ok(/only the owner/i.test(body.error || ''), 'and is told why', body.error);
+  const after = JSON.parse(store.get('team:' + RID) || '{}');
+  ok((after.members || []).some(m => m.email === 'racecarol@x.com'),
+     'and she is still on the team, so the refusal actually refused',
+     (after.members || []).map(m => m.email).join(','));
+}
+
 if (report() > 0) process.exitCode = 1;
 done();

@@ -12513,3 +12513,37 @@ either, and was found only by asking which suites drive `marketBuy` and running
 all of them. The rule that actually holds: a negative result needs the widest
 net you can afford, and "I could not find a suite" is never the same sentence as
 "no suite covers it".
+
+## 478. A waiter that matched its own command line, and spun for six hours
+
+A background step meant to run the gate after an audit finished did this:
+
+    until ! pgrep -f "audit.mjs" >/dev/null; do sleep 30; done
+
+`pgrep -f` matches full COMMAND LINES, and that shell's own command line
+contains the string `audit.mjs` - it is right there in the loop. So the
+condition could never become false: the process was waiting for itself to exit.
+It sat there for 22,776 seconds while the audit it was waiting for had finished
+minutes in, with its result on disk the whole time.
+
+Nothing failed. No error, no timeout, no red anywhere - and that is the point.
+The work was DONE and the reporting was stuck, which from outside is
+indistinguishable from work still running. It took somebody saying "it has been
+six hours" to find it.
+
+Three rules from it, all cheap:
+
+A wait condition must be able to distinguish itself from what it waits for.
+`pgrep -f "audit\\.mjs"` in a heredoc still matches; the fix is to wait on a
+RESULT rather than a process - the file the audit writes when it finishes - or
+to match a pattern that cannot appear in the waiter.
+
+Every unbounded wait needs a deadline. `until COND; do sleep 30; done` with no
+iteration cap is an infinite loop with extra steps, and the failure mode is
+silence rather than an error.
+
+And a long-running step that reports nothing for hours is not evidence of
+progress. Check `ps` and the result file, not the fact that something is still
+"running" - this session has now been fooled by a stale lock file, a stale
+result file, and a self-matching waiter, all of which look exactly like a
+healthy run in progress.
