@@ -12501,3 +12501,32 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .mc-offer-inapp,
 .mc-offer-stop{ border-left-color:var(--gold); }
 .mc-offer-unquiet{ border-left-color:var(--accent); }
+
+/* ── LAYER A196 · the games this person is running ───────────────────────────
+   The host's half of Crew games. The player's screen is served whole by the
+   Worker at /g/<id> and has its own styles, because somebody arriving from a
+   group chat has no account to load this bundle with - so nothing here renders
+   a game, only the list of them.
+
+   Uses the existing tokens rather than a parallel scale: surfaces, borders and
+   spacing are the same ones every other card on the Crew screen uses, so a
+   game does not arrive looking like it came from a different product. */
+.gm-card{
+  background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-lg);
+  padding:var(--sp-3); margin:0 0 var(--sp-2);
+}
+.gm-h{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2); }
+.gm-h b{ font-size:var(--t-md); }
+.gm-s{ font-size:var(--t-xs); color:var(--mu); white-space:nowrap; }
+.gm-p{ font-size:var(--t-sm); color:var(--mu); margin-top:var(--sp-1); }
+.gm-r{
+  display:flex; justify-content:space-between; gap:var(--sp-2);
+  font-size:var(--t-sm); padding:var(--sp-1) 0; border-top:1px solid var(--bdl);
+  margin-top:var(--sp-1);
+}
+.gm-r b{ color:var(--tx); }
+.gm-acts{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:var(--sp-2); }
+@media (max-width:520px){
+  .gm-h{ flex-wrap:wrap; }
+  .gm-acts .btn{ flex:1 1 auto; }
+}

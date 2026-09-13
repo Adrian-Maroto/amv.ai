@@ -45,6 +45,13 @@ const EXEMPT = {
   '/auth/reset/status':  'diagnostic for the reset flow; the flow itself works without it',
   '/team/members':       'superseded by /team/get, which already returns the roster',
   '/team/data':          'superseded by /team/share and /team/shared',
+  /* Called by the game page the WORKER serves at /g/<id>, not by this bundle -
+     somebody arriving from a group chat has no account to load the app with, so
+     their screen is a self-contained page with its own inline script. The three
+     owner-side game routes are called from the app and are found normally. */
+  '/v1/game/join':       'called by the served /g/<id> page, which is not this bundle',
+  '/v1/game/answer':     'the same page',
+  '/v1/game/state':      'the same page',
 };
 
 /* Paths the client composes at runtime rather than writing out. */

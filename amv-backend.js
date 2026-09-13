@@ -9633,6 +9633,7 @@ const BACKUP_PREFIXES = [
   'teamtasks:', 'sites:', 'site:', 'abuse:', 'seller:', 'widget:', 'market:',
   'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:', 'mktreport:',
   'consent:', 'apikeys:', 'billing:', 'fam:', 'links:', 'approvals:',
+  'game:', 'gameown:',
   'handoff:', 'crewjobs:', 'share:', 'shares:', 'widget_owner:',
   /* Added after a check compared this list against every durable record kind
      and found these unbacked - each one silently unrecoverable from a restore. */
@@ -9704,6 +9705,11 @@ const BACKUP_PREFIXES = [
 /* Never exported. Listed so the omission reads as a decision, not an oversight.
    Two reasons appear here: it is a CREDENTIAL and must not sit in a snapshot
    file, or it is genuinely ephemeral and regenerates on its own. */
+/* A game and the index of who made it. Both are per-user data with a 30-day
+   life, and a restore that brought back somebody's account without the games
+   they were running would be a restore that lost work. The participants inside
+   a game have no account of their own, so this is the only place their answers
+   exist - which is also why erasing the creator takes them with it. */
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
   /* A mailbox app password opens the whole mailbox, and for most providers the
@@ -15050,7 +15056,10 @@ async function gameCreate(request, env) {
     state: 'open', at: Date.now(), closesAt,
     players: [], answers: [], results: null,
   };
-  await DB.put(env, 'game', id, rec);
+  /* Through the lock, like every other writer of this kind. A fresh id cannot
+     race anything today, but "this one is safe to write raw" is the sentence
+     that ends with two writers and one of them lost. */
+  await _withKind(env, 'game', id, (fresh) => { Object.assign(fresh, rec); }, rec);
   await _withKind(env, 'gameown', rec.owner, (r) => {
     r.ids = [id].concat((r.ids || []).filter(x => x !== id)).slice(0, 200);
   }, { ids: [] });
@@ -15331,20 +15340,20 @@ async function gamePage(request, env, id) {
     'try{tok=localStorage.getItem(K)||""}catch(e){}' +
     'var $=function(i){return document.getElementById(i)};' +
     'function say(t){$("msg").textContent=t||""}' +
-    'function post(p,b){return fetch(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}).then(function(r){return r.json().catch(function(){return{}})})}' +
+    'function post(n,b){return fetch("/v1/game/"+n,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}).then(function(r){return r.json().catch(function(){return{}})})}' +
     'function vals(){var o={};document.querySelectorAll(".q").forEach(function(q){var k=q.getAttribute("data-q");var s=q.querySelector(\'.opt[aria-pressed="true"]\');var i=q.querySelector(".ans");var v=s?s.getAttribute("data-v"):(i?i.value:"");if(v)o[k]=v});return o}' +
     'document.querySelectorAll(".opts").forEach(function(g){g.addEventListener("click",function(e){var b=e.target.closest(".opt");if(!b)return;g.querySelectorAll(".opt").forEach(function(x){x.setAttribute("aria-pressed","false")});b.setAttribute("aria-pressed","true")})});' +
     'function showResults(g){var h="";Object.keys(g.results&&g.results.tally||{}).forEach(function(k){var t=g.results.tally[k];h+=\'<div class="res"><div class="qt">\'+esc(t.text)+\'</div>\';(t.ranked||[]).forEach(function(r,i){h+=\'<div class="row"><span class="\'+(i===0&&!t.tied?"win":"")+\'">\'+esc(r.value)+\'</span><span>\'+r.votes+\'</span></div>\'});h+="</div>"});$("resbox").innerHTML=h;$("resbox").hidden=false;$("playbox").hidden=true;$("joinbox").hidden=true;$("sub").textContent=(g.results?g.results.answered:0)+" answered";}' +
     'function esc(s){var d=document.createElement("div");d.textContent=String(s==null?"":s);return d.innerHTML}' +
-    'function refresh(){return post("/v1/game/state",{id:ID,token:tok}).then(function(d){var g=d&&d.game;if(!g)return;if(g.state==="revealed"){showResults(g);return}' +
+    'function refresh(){return post("state",{id:ID,token:tok}).then(function(d){var g=d&&d.game;if(!g)return;if(g.state==="revealed"){showResults(g);return}' +
     'if(tok){$("joinbox").hidden=true;$("playbox").hidden=false;' +
     'if(g.you&&g.you.answered){$("send").disabled=true;$("send").textContent="Answer sent";say("Waiting for the others. "+g.players+" playing.")}else{say(g.players+" playing.")}}' +
     'if(g.state==="closed"&&!(g.you&&g.you.answered)){$("send").disabled=true;say("Answers are closed.")}})}' +
     '$("joinbtn").addEventListener("click",function(){var n=$("nick").value.trim();if(!n){say("Pick a name first.");return}' +
-    '$("joinbtn").disabled=true;post("/v1/game/join",{id:ID,nick:n}).then(function(d){$("joinbtn").disabled=false;' +
+    '$("joinbtn").disabled=true;post("join",{id:ID,nick:n}).then(function(d){$("joinbtn").disabled=false;' +
     'if(!d||!d.token){say(d&&d.error||"Could not join.");return}tok=d.token;try{localStorage.setItem(K,tok)}catch(e){}refresh()})});' +
     '$("send").addEventListener("click",function(){var v=vals();if(!Object.keys(v).length){say("Answer at least one.");return}' +
-    '$("send").disabled=true;post("/v1/game/answer",{id:ID,token:tok,values:v}).then(function(d){' +
+    '$("send").disabled=true;post("answer",{id:ID,token:tok,values:v}).then(function(d){' +
     'if(d&&d.ok){$("send").textContent="Answer sent";say("Waiting for the others.")}else{$("send").disabled=false;say(d&&d.error||"Could not send.")}})});' +
     'refresh();setInterval(refresh,5000);' +
     '})();</script></body></html>';

@@ -37,6 +37,13 @@ const SELF = /user\.email|_autoKey\(|owner\b|\bme\b/;
 
 /* Every cross-account write, and why it is allowed to be one. */
 const CLASSIFIED = {
+  /* A game is keyed by its own id rather than by anybody's email, so all three
+     of these write "elsewhere" by construction. Every one of them re-reads the
+     record and compares `g.owner` against the caller before touching it, and a
+     game that is not theirs is answered as not found rather than forbidden. */
+  gameCreate: 'creates a game under a fresh id; the owner is recorded from the caller',
+  gameClose:  'owner-only, compared against g.owner, and not-theirs reads as not-found',
+  gameReveal: 'owner-only, same comparison, and the tally is computed once inside the lock',
   authDeleteAccount: 'erasure reaches into the team, family and link records this account is part of',
   /* Newly VISIBLE rather than newly true: the thread write used a bare `key`
      variable, which neither pattern above could match, so a route that writes a

@@ -60,6 +60,13 @@ const PUBLIC = {
   '/v1/market/view':     'a view counter on a public listing',
   '/v1/widget/config-public': 'the embeddable widget runs on other peoples sites',
   '/v1/widget/chat':     'the same widget, gated by its own key and rate limits',
+  /* A game is played by people who have no account, which is the whole point:
+     a link lands in a group chat and everybody taps it. The link is the
+     credential, the participant token is the session, and both are checked on
+     every one of these. */
+  '/v1/game/join':       'joining by link is how somebody with no account gets a token',
+  '/v1/game/answer':     'the participant token is the credential, checked on every call',
+  '/v1/game/state':      'the same token, reading only what that player may see',
   '/widget.js':          'the loader script itself',
   '/errors':             'a telemetry sink from browsers that may have no session',
   /* Read before anybody has an account - it is what tells a first-time
