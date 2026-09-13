@@ -12626,3 +12626,32 @@ vacuously if the reads had been in a try/catch. And the stage paid for itself
 again by naming the line rather than reporting a failure: "reads window.S, which
 is a top-level binding and not a window property" is a sentence that ends the
 investigation before it starts.
+
+## 482. `git checkout <file>` threw away an hour of uncommitted work
+
+The Crew games layer was written, spliced into the Worker, verified against five
+mutations, and then lost - by the line that was supposed to clean up after the
+mutations:
+
+    git checkout amv-backend.js
+
+The layer was not committed yet. `git checkout <path>` restores from HEAD, and
+HEAD did not have it, so the file went back to the version before the feature
+existed. The commit that followed captured the test and the documentation and
+none of the code.
+
+It failed loudly, which is the only good part: the suite could not even import,
+because `gameAnswer` was exported from a file that no longer defined it. Had the
+feature been smaller - a single guard rather than seven routes - the tests would
+have quietly gone back to passing against the old code and nothing would have
+said a word.
+
+The mutation runs each restored correctly, from `cp /tmp/keep.js` - a copy taken
+before the first mutation. The final cleanup reached for git instead, and git's
+idea of "restore" is "make it match the last commit", which is a different
+sentence entirely.
+
+So: while work is uncommitted, restore from the COPY, never from version
+control. And the cheaper habit underneath it - commit the code before testing
+it, not after. Everything after this line was recovered from files in the
+scratchpad, which is the only reason it cost twenty minutes rather than an hour.

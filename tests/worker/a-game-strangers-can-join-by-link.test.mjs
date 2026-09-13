@@ -22,7 +22,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'game.harness.mjs');
-writeFileSync(harness, src + '\nexport { gameCreate, gameJoin, gameAnswer, gameState, gameClose, gameReveal, gameMine, authSignup, issueTokens };\n');
+writeFileSync(harness, src + '\nexport { gameCreate, gameJoin, gameAnswer, gameState, gameClose, gameReveal, gameMine, gamePage, authSignup, issueTokens };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const PW = 'A-real-Passw0rd!';
@@ -169,6 +169,71 @@ section('An answer is bounded, and control characters are stripped');
   ok(said.length <= 280, 'a five thousand character answer is cut to the bound', said.length);
   ok(said.indexOf(String.fromCharCode(0)) < 0 && said.indexOf(String.fromCharCode(27)) < 0,
      'and control characters never reach another player’s screen', true);
+}
+
+section('The page a stranger opens needs no account and no app');
+{
+  /* Somebody arriving from a group chat on a phone should not download the
+     whole bundle to answer two questions - and has no account to load it
+     with - so /g/<id> is served whole by the Worker. */
+  const mk = await jj(await W.gameCreate(req('/v1/game/create', {
+    title: 'Page test', prompts: [{ text: 'Pick a colour', options: ['red', 'blue'] }],
+  }, host), env));
+  const pid = mk.body.id;
+
+  const r = await W.gamePage(new Request('https://api.amv.test/g/' + pid), env, pid);
+  const html = await r.text();
+  ok(r.status === 200, 'the page is served', r.status);
+  ok(html.indexOf('Page test') > 0, 'with the game title on it', true);
+  ok(html.indexOf('Pick a colour') > 0, 'and the question', true);
+
+  /* The share page next door bans scripts entirely, which is right for static
+     text. A game must join and submit, so it gets a per-response NONCE instead
+     of the lazy answer, which would be 'unsafe-inline'. */
+  const csp = r.headers.get('Content-Security-Policy') || '';
+  ok(/script-src 'nonce-[a-z0-9]{16}'/.test(csp), 'the script is pinned to this response by nonce', csp.slice(0, 120));
+  ok(csp.indexOf("'unsafe-inline'") < 0 || csp.indexOf("script-src 'unsafe-inline'") < 0,
+     'and inline scripts are not simply allowed', csp);
+  ok(/connect-src 'self'/.test(csp), 'it may only talk to this origin', true);
+  ok(/default-src 'none'/.test(csp), 'and nothing else is permitted at all', true);
+  ok((r.headers.get('X-Robots-Tag') || '').indexOf('noindex') >= 0,
+     'a private game is not offered to search engines', r.headers.get('X-Robots-Tag'));
+}
+
+section('The page leaks nothing before the reveal');
+{
+  const mk = await jj(await W.gameCreate(req('/v1/game/create', {
+    title: 'Secrets', prompts: [{ text: 'Say a word' }],
+  }, host), env));
+  const sid = mk.body.id;
+  const p = await jj(await W.gameJoin(req('/v1/game/join', { id: sid, nick: 'Quiet' }, null, '9.8.8.8'), env));
+  await W.gameAnswer(req('/v1/game/answer', { id: sid, token: p.body.token, values: { q0: 'pineapple' } }, null, '9.8.8.8'), env);
+
+  const html = await (await W.gamePage(new Request('https://api.amv.test/g/' + sid), env, sid)).text();
+  ok(html.indexOf('pineapple') < 0, 'nobody’s answer is in the HTML before the reveal', true);
+  ok(html.indexOf(p.body.token) < 0, 'and no participant token is ever rendered', true);
+  ok(html.indexOf('Quiet') < 0, 'nor who has already joined', true);
+}
+
+section('A wrong or missing game says so without saying more');
+{
+  const bad = await W.gamePage(new Request('https://api.amv.test/g/nope'), env, 'nope');
+  ok(bad.status === 404, 'a malformed id is not found', bad.status);
+  const gone = await W.gamePage(new Request('https://api.amv.test/g/' + 'a'.repeat(24)), env, 'a'.repeat(24));
+  ok(gone.status === 404, 'and neither is a well-formed id that is not a game', gone.status);
+  const h = await gone.text();
+  ok(h.indexOf('script') < 0, 'the not-found page runs nothing at all', true);
+
+  /* The shape check is a fast path - a bad id would be refused by the lookup
+     anyway - so removing it changes no answer. What it DOES change is whether
+     unbounded caller input reaches the store, and that is the part worth
+     holding: a ten-kilobyte id has no business becoming a KV key. */
+  let reached = 0;
+  const realGet = env.AMV_KV.get;
+  env.AMV_KV.get = async (k) => { if (String(k).startsWith('game:')) reached++; return realGet(k); };
+  await W.gamePage(new Request('https://api.amv.test/g/x'), env, 'x'.repeat(9000));
+  env.AMV_KV.get = realGet;
+  ok(reached === 0, 'an absurdly long id is refused before it reaches storage', reached);
 }
 
 if (report('a-game-strangers-can-join-by-link') > 0) process.exitCode = 1;
