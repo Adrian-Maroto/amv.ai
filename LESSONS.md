@@ -12405,3 +12405,56 @@ a broken ceiling produced no result instead of a red one - a test that cannot
 fail loudly is not much better than no test. And the stop predicate used `>`
 where it needed `>=`, so the case asserting a job stopped before it starts never
 reaches the model was quietly asking for something else entirely.
+
+## 474. The ceiling was declared, and the declaration is what got tested
+
+`backupImport` bounds a snapshot at `BACKUP_MAX_KEYS` so a crafted or simply
+enormous file cannot walk the store one KV write at a time until the Worker's
+budget is gone (AMV-036). The suite asserts:
+
+    ok(typeof W.BACKUP_MAX_KEYS === 'number' && W.BACKUP_MAX_KEYS > 0, ...)
+
+which says the ceiling EXISTS. Nothing said the importer obeys it, so deleting
+the check broke nothing.
+
+This is the same shape as the connector finding earlier in the audit - a comment
+naming the bounds that make something safe is a test plan written by the person
+who knew - with one extra turn of the screw: here the bound was not just
+described in prose, it was exported and asserted on. A constant with a test
+beside it reads as covered from any distance.
+
+Restore is the worst place for this. It is the one route where a file somebody
+uploads becomes authoritative state, and it runs at the moment things have
+already gone wrong.
+
+The test now drives a snapshot one key past the ceiling and asserts three
+things: refused with 413, a sentence an operator can act on, and NOT ONE KEY
+WRITTEN - because a bound that gives up half way through has already imported
+half a tampered snapshot. The exact boundary is deliberately not driven: a
+snapshot of precisely BACKUP_MAX_KEYS would push half a million records through
+the real handler on every gate run, and that cost is not worth the single
+off-by-one it would catch. Said in the test rather than left as a silent gap.
+
+## 475. A crash is a catch, and the harness was throwing it away
+
+Removing the "is this actually an AMV snapshot" check made `Object.entries(null)`
+throw, which killed the test runner before it printed a summary. The suite
+failed; the gate would go red; the mutation was caught.
+
+The harness recorded "no summary line" and ABORTED the whole run, because a
+missing summary had only meant one thing to it: that the harness itself was
+broken. Which it had been, three separate times, so the strictness was earned -
+but it was answering the wrong question.
+
+The baseline pass already holds the answer. A suite that summarises on clean
+code and crashes under a mutation was changed BY that mutation, and the crash
+line is better evidence than a failed assertion: it names the exact operation
+the missing guard let through. A suite that cannot summarise even at baseline is
+still a hard abort, because then the instrument really is the problem.
+
+The general form, and it took five harness defects to see it: every check I
+added was a rule about what a HEALTHY run looks like, and each one turned an
+unfamiliar-but-real signal into an abort. Strictness that cannot tell "the thing
+I am measuring is broken" from "my instrument is broken" is not strictness, it
+is just a different way of being wrong - and the baseline is what tells them
+apart.

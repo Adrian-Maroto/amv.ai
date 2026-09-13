@@ -166,6 +166,47 @@ section('A refused control key is not the same event as a lost record');
      { ok: out.ok, status: res.status });
 }
 
+section('A snapshot with too many keys is refused, not imported one key at a time');
+{
+  /* THE CEILING WAS DECLARED, NEVER APPLIED.
+
+     The section below asserts `BACKUP_MAX_KEYS` is a positive number - that it
+     EXISTS. Nothing asserted the importer obeys it, so deleting the check
+
+         if(entries.length > BACKUP_MAX_KEYS) return json({...}, 413);
+
+     broke no suite in this repository. That is the same shape as a comment
+     saying "this is safe because X bounds it": the bound is stated, and the
+     statement is what gets tested.
+
+     AMV-036 is what it is for - a crafted or simply enormous snapshot walking
+     the store one KV write at a time until the Worker's budget is gone, during
+     a restore, which is by definition a moment when things are already wrong.
+
+     The refusal is asserted to happen BEFORE anything is written, because a
+     bound that gives up half way through has imported half a tampered
+     snapshot. */
+  const env = mkEnv();
+  const data = {};
+  for (let i = 0; i <= W.BACKUP_MAX_KEYS; i++) data['acct:' + i] = 'x';
+  const res = await W.backupImport(ireq({ _amv_backup: 1, data }), env);
+  const out = await res.json().catch(() => ({}));
+
+  ok(res.status === 413, 'a snapshot past the ceiling is refused with 413', res.status);
+  ok(/too many keys/i.test(out.error || ''), 'and says why in words an operator can act on', out.error);
+  ok(env._map.size === 0, 'and not one key was written before it gave up', env._map.size);
+
+  /* The other direction, cheaply: the check must not refuse ordinary restores.
+     The exact boundary - a snapshot of precisely BACKUP_MAX_KEYS - is not
+     driven here on purpose: it would import half a million records through the
+     real handler on every gate run, and the cost is not worth the one
+     off-by-one it would catch. */
+  const small = mkEnv();
+  const ok2 = await W.backupImport(ireq({ _amv_backup: 1, data: { 'acct:one': 'v' } }), small);
+  ok(ok2.status === 200, 'while an ordinary snapshot still restores', ok2.status);
+  ok(small._map.get('acct:one') === 'v', 'and its records really land', small._map.get('acct:one'));
+}
+
 section('The two halves share one set of limits, so they cannot drift apart');
 {
   ok(typeof W.BACKUP_MAX_VALUE_BYTES === 'number' && W.BACKUP_MAX_VALUE_BYTES > 0,
