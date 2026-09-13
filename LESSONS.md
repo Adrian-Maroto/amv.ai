@@ -12655,3 +12655,38 @@ So: while work is uncommitted, restore from the COPY, never from version
 control. And the cheaper habit underneath it - commit the code before testing
 it, not after. Everything after this line was recovered from files in the
 scratchpad, which is the only reason it cost twenty minutes rather than an hour.
+
+## 483. A comment broke a safety check, because stripping is not removing
+
+The gate failed with "delivery branches on the EFFECTIVE level, not the job's
+own setting" - which reads as a safety check having gone missing, the most
+alarming thing a suite can say. Nothing was missing.
+
+`a-timer-cannot-act-on-your-behalf` found the delivery guard by reading 8,000
+characters forward from the line that computes `level`. That number was measured
+honestly when it was written: the branch was 4,797 away. Ordinary work since
+pushed the region to 7,673, leaving 327 characters of headroom that nothing
+announced, and a one-line call plus a five-line comment spent 400 of them.
+
+The part worth keeping is WHY a comment cost anything. `codeOnly` blanks
+comments to whitespace of the SAME LENGTH rather than deleting them - which is
+right, because it keeps every other offset in the file honest - so a comment
+inside a measured window spends the budget exactly as code does. Explaining
+yourself in the wrong place can fail a security assertion.
+
+Two fixes, and both were needed.
+
+The call site is now one folded expression with no comment above it, and the
+reasoning lives with the helper where it costs nothing. My net footprint in that
+window is 41 characters.
+
+And the check no longer measures a distance. The delivery branches are inside
+the same function as the anchor, so the honest bound is the function: it now
+reads to the next top-level declaration. That cannot be exhausted by writing
+more of the function it is checking. Verified by pointing delivery at
+`item.approval` instead of `level` - the assertion still fails, so the check is
+broader rather than weaker.
+
+The general rule: a proxy with a hard number in it decays silently, and the day
+it runs out it reports the thing it guards as broken rather than itself. If the
+real boundary is structural - a function, a block, a file - measure that.

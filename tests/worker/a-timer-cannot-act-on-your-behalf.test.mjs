@@ -92,14 +92,29 @@ section('What a job produces is still gated at delivery');
      never read as the whole story. */
   ok(/function _autoEffective/.test(code),
      'the effective approval level is computed', true);
-  /* The window is MEASURED, not guessed. From the line that computes `level`,
-     the suggest branch is 401 characters away and the require branch 4,797 -
-     the run itself sits between them. The first version of this used 4,000
-     and reported the require branch missing, which is a false alarm about a
-     safety check being absent: exactly the kind of finding that gets a suite
-     deleted rather than believed. */
+  /* BOUNDED BY THE FUNCTION, NOT BY A CHARACTER COUNT.
+
+     This used to read 8000 characters forward from the line that computes
+     `level`. That number was measured honestly - the require branch was 4,797
+     away when it was written - but a distance is a proxy that decays: the
+     region grew to 7,673 through ordinary work, leaving 327 characters of
+     headroom, and the next edit in it failed this check by 73. The failure
+     reads as "a safety check is missing", which is the most alarming thing a
+     suite can say and was not true.
+
+     Two things made it worse than a plain off-by-one. `codeOnly` blanks
+     comments to whitespace of the SAME LENGTH rather than removing them, so a
+     five-line explanation in that window spends 390 characters of the budget
+     exactly as code would - a comment can break this. And the budget is
+     invisible: nothing tells you it is nearly spent until it is.
+
+     The delivery branches are inside the same function as the anchor, so the
+     honest bound is the function. Searching to the next top-level declaration
+     covers every line that could be the delivery decision and cannot be
+     exhausted by writing more of it. */
   const anchor = code.indexOf('const level = _autoEffective(item, rec);');
-  const deliver = code.slice(anchor, anchor + 8000);
+  const nextFn = code.indexOf('\nasync function ', anchor);
+  const deliver = code.slice(anchor, nextFn > anchor ? nextFn : anchor + 20000);
   ok(/level === 'require'/.test(deliver),
      'and delivery branches on the EFFECTIVE level, not the job\'s own setting', true);
   ok(/level === 'suggest'/.test(deliver),

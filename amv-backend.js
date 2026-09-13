@@ -6150,28 +6150,7 @@ async function runDueAutomations(env, atMs){
 
       try{
         const exec = await _autoExecute(env, item, budget, email, rec.standing || '', _neverList(rec));
-        let out = (exec && exec.text) || '';
-        /* A game job ends by making something the group can open, not by
-           writing about one. Appended to the output so the link travels
-           wherever the result travels - the in-app card, the email, the
-           digest - rather than living somewhere they have to go and find. */
-        if (item.kind === 'game' && out) {
-          try {
-            const made = await _autoMakeGame(env, email, item, out);
-            if (made && made.url) {
-              out += '\n\nYour game is ready - send this to the group:\n' + made.url
-                   + '\n\nNobody sees the answers until you reveal them, in Crew.';
-            } else if (made && made.refused) {
-              out += '\n\n' + made.refused;
-            }
-          } catch (e) {
-            /* The questions are still worth having. A run that reports failure
-               because a link could not be minted has thrown away the work it
-               did. */
-            audit(env, 'game_from_automation_failed', { email, error: String((e && e.message) || e) });
-            out += '\n\n(The questions are above - AMV could not create the game link this time.)';
-          }
-        }
+        const out = await _autoAppendGame(env, email, item, (exec && exec.text) || '');
         /* DID THIS RUN SAY ANYTHING NEW.
 
            Counted for every job, whether or not it is set to email, because the
@@ -15407,6 +15386,37 @@ async function gamePage(request, env, id) {
    The age gate reaches in here exactly as it does on the route, because people
    answer these by link with no account and no birth year on record. A job whose
    questions drift towards money produces no game and says so. */
+/* Turn a game job's questions into a real game and hand the link back with the
+   text, so it travels wherever the result travels - the in-app card, the email,
+   the digest - rather than living somewhere they have to go and find.
+
+   A no-op for every other kind, and called as a single folded expression at the
+   call site with NO comment above it. That is deliberate: `a-timer-cannot-act-
+   on-your-behalf` finds the delivery guard by searching 8000 characters forward
+   from `const level = ...`, and `codeOnly` blanks comments to whitespace of the
+   SAME LENGTH rather than removing them - so a comment sitting in that window
+   spends the budget exactly as code would. Five lines of explanation there cost
+   390 characters and pushed a safety check out of range.
+
+   A failure here does NOT fail the run. The questions are still worth having,
+   and a job that reports failure because a link could not be minted has thrown
+   away the work it did. */
+async function _autoAppendGame(env, email, item, out) {
+  if (item.kind !== 'game' || !out) return out;
+  try {
+    const made = await _autoMakeGame(env, email, item, out);
+    if (made && made.url) {
+      return out + '\n\nYour game is ready - send this to the group:\n' + made.url
+                 + '\n\nNobody sees the answers until you reveal them, in Crew.';
+    }
+    if (made && made.refused) return out + '\n\n' + made.refused;
+    return out;
+  } catch (e) {
+    audit(env, 'game_from_automation_failed', { email, error: String((e && e.message) || e) });
+    return out + '\n\n(The questions are above - AMV could not create the game link this time.)';
+  }
+}
+
 async function _autoMakeGame(env, email, item, text) {
   const lines = String(text || '')
     .split('\n')
