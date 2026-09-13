@@ -468,7 +468,7 @@ function _trustBadge(svg,title,sub){
 /* === HELP CENTER === */
 const FAQS=[
   {c:'start', q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, an image, deep research. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
-  {c:'start', q:'What can AMV actually do?', a:'One place for everything: chat and research, image and video generation, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve.'},
+  {c:'start', q:'What can AMV actually do?', a:'One place for everything: chat and deep research, reading the files and images you upload, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve. AMV reads an image you give it; it does not generate one.'},
   {c:'auto', q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing - what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
   {c:'auto', q:'How do approvals work - Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},
   {c:'auto', q:'What is Auto Approve?', a:'When you trust a recurring task, turn on Auto Approve while setting it up. AMV then completes and performs the final action on its own - scoped to every run or just the first, capped by risk level, with an optional end date. High-risk actions still stop and ask unless you allow them. You can pause all autonomous work anytime from Mission Control.'},
@@ -523,7 +523,7 @@ try{ window.render404View=render404View; }catch(e){}
 const FAQ_CATS=[
   ['start','Getting started'],
   ['chat','Chat and results'],
-  ['create','Images, video and design'],
+  ['create','Design and 3D'],
   ['build','Building apps'],
   ['auto','Automations and approvals'],
   ['connect','Connections, teamwork and marketplace'],
@@ -549,7 +549,8 @@ function renderHelpView(){
     '</section>';
   }).join('');
   vc.innerHTML=
-    '<div class="sv fi"><div class="vi">'+
+    '<div class="sv fi"><div class="vi vi-help">'+
+      '<span class="eyebrow">Help</span>'+
       '<h2>Help Center</h2>'+
       '<p class="vsub">Pick a topic, or search if you already know the word for it.</p>'+
       '<div class="ss2">'+

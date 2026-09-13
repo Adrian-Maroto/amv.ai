@@ -13394,31 +13394,58 @@ function renderBillingView(targetEl){
   const downTargets=Object.keys(PLANS).filter(k=>LADDER(k)&&PLAN_RANK[k]<PLAN_RANK[plan]);
 
   vc.innerHTML=
-    '<div class="sv fi"><div class="vi">'+
+    '<div class="sv fi"><div class="vi vi-bill">'+
       '<span class="eyebrow">Billing</span>'+
       '<h2>Subscription</h2><p class="vsub">Your plan, billing dates, and the details on file. Payments are processed securely - AMV never stores your full card.</p>'+
-      // CURRENT PLAN
-      '<div class="ss2 bill-current"><h3>Current plan</h3>'+
-        '<div class="bill-plan">'+
-          '<div class="bill-plan-l">'+
-            '<div><div class="bill-plan-n">'+P.name+(plan==='free'?'':' \u00b7 $'+P.price+'/mo')+'</div>'+
-            '<div class="bill-plan-d">'+escH(P.blurb||'')+'</div></div></div>'+
-          '<span class="badge bg3">Active</span>'+
+      /* ONE CARD, NOT TWO THAT DISAGREE ABOUT NOTHING.
+
+         Reported as looking horrible and unprofessional, and the first thing
+         to find on it was that the same three facts were printed twice:
+         "Current plan" said Pro, $15/mo, Active, and "Subscription details"
+         underneath said Plan Pro, Price $15/month, Status Active. Two headed
+         sections, two borders, two blocks of vertical space, for one fact.
+
+         So there is one summary: what you are on and what it costs, said once
+         and said large, with the dates and the email under it and the control
+         that changes any of it beside them. Everything the second section
+         carried that the first did not - the dates, the email, the usage
+         figures on a custom plan - is still here. What is gone is the second
+         copy of the first three rows and the heading over it.
+
+         A DATE NOBODY HAS IS NOT A DASH. `amv_plan_since` is written by the
+         browser that took the payment, so opening billing on a second device
+         showed "Started -" and "Renews -" to a paying customer, which reads as
+         a broken page rather than as a fact this device does not hold. It says
+         what is true instead, and points at the one place that does know. */
+      '<div class="ss2 bill-sum">'+
+        /* The heading stays. Merging the two sections took it away with the
+           second one, and a suite that pins the READING ORDER of this page -
+           what you are on, what you have used, what you could move to, then
+           the payment reassurance - lost its first anchor. It was right to:
+           every other section here is announced, and the one that is not reads
+           as a card that floated in. */
+        '<h3>Current plan</h3>'+
+        '<div class="bill-sum-top">'+
+          '<div class="bill-sum-l">'+
+            '<span class="bill-sum-ic" aria-hidden="true">'+ic+'</span>'+
+            '<div>'+
+              '<div class="bill-sum-n">'+escH(P.name)+
+                (plan==='free'?'<span class="bill-sum-p">Free</span>'
+                              :'<span class="bill-sum-p">$'+P.price+' / month</span>')+'</div>'+
+              '<div class="bill-sum-d">'+escH(P.blurb||'')+'</div>'+
+            '</div>'+
+          '</div>'+
+          '<span class="badge bg3 bill-sum-st">Active</span>'+
         '</div>'+
-      '</div>'+
-      // SUBSCRIPTION DETAILS (only when on a paid plan)
-      (plan!=='free'?
-      '<div class="ss2"><h3>Subscription details</h3>'+
-        '<div class="bill-detail">'+
-          _drow('Plan',P.name+(P.mult?' ('+P.mult+' usage)':''))+
-          _drow('Price','$'+P.price+' / month')+
-          (customSummary?_drow('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
-          (customSummary?_drow('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
-          _drow('Status','<span style="color:var(--grn-txt)">Active</span>')+
-          _drow('Started',fmt(sinceDate))+
-          _drow('Renews',fmt(nextDate))+
-          _drow('Billing email',escH(email))+
-        '</div>'+
+        (plan!=='free'?
+        '<dl class="bill-facts">'+
+          _bfact('Started', sinceDate?escH(fmt(sinceDate)):'<span class="bill-unknown">Not recorded on this device</span>')+
+          _bfact('Renews', nextDate?escH(fmt(nextDate)):'<span class="bill-unknown">Open Manage billing for the exact date</span>')+
+          _bfact('Billing email', escH(email))+
+          (P.mult?_bfact('Usage', escH(P.mult)+' the free allowance'):'')+
+          (customSummary?_bfact('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
+          (customSummary?_bfact('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
+        '</dl>'+
         /* The billing portal is the only place a card can be changed or a
            subscription cancelled. The handler for this button already existed
            and had done nothing for as long as the button did not: a paying
@@ -13427,10 +13454,11 @@ function renderBillingView(targetEl){
         '<div class="bill-acts">'+
           '<button class="btn bp" id="portal-open-btn">Manage billing</button>'+
           (plan==='custom'?'<button class="btn bs" id="bill-resize">Resize my plan</button>':'')+
-        '</div>'+
-        '<p class="bill-acts-s">Change your card, download receipts, or cancel. '+
-          'Cancelling keeps your plan until the end of the period you have paid for.</p>'+
-      '</div>':'')+
+          '<span class="bill-acts-s">Change your card, download receipts, or cancel. '+
+            'Cancelling keeps your plan until the end of the period you have paid for.</span>'+
+        '</div>':
+        '<p class="bill-acts-s bill-free-s">You are not paying for anything. Nothing is on file and nothing renews.</p>')+
+      '</div>'+
       /* WHERE USAGE AND SPENDING GO.
 
          In Settings this pane is followed by two appended sections - the
@@ -13644,6 +13672,11 @@ async function _loadInvoices(){
   }catch(e){ if(el) el.innerHTML='<div class="bill-inv-empty">Couldn\u2019t load invoices right now.</div>'; _logErr('loadInvoices',e); }
 }
 function _drow(k,v){ return '<div class="bd-row"><span class="bd-k">'+k+'</span><span class="bd-v">'+v+'</span></div>'; }
+/* A real definition list rather than rows of spans, because that is what these
+   are and because a screen reader then reads the label with its value instead
+   of eight loose fragments. `v` is already escaped or already markup at every
+   call site - same contract as `_drow` beside it. */
+function _bfact(k,v){ return '<div class="bill-fact"><dt>'+escH(k)+'</dt><dd>'+v+'</dd></div>'; }
 /* Per-plan local usage caps (the browser guardrail; server enforces the real ones). */
 /* Kept in step with the server's PLAN_LIMITS (AMV-072). If the browser guard is
    tighter than the server's, the user is stopped early by a number the server
@@ -14056,7 +14089,12 @@ function _cpInclFeatures(hasApex){
   return [
     hasApex?'All models incl. Apex (top models)':'All Pro models (Fast, Core, Coding)',
     'Autonomous agents & Crew',
-    'Images, video & 3D',
+    /* NOT "Images, video & 3D". Image and video generation were removed from
+       this product end to end, and a plan's feature list is the single worst
+       place for a promise of something that does not exist - somebody reads it
+       while deciding what to pay. AMV reads an image you upload; it does not
+       make one. */
+    'Reads your files and images \u00b7 interactive 3D',
     'Build & ship apps',
     'Priority speed',
     'Hard cap - no overage charges'
@@ -23695,7 +23733,7 @@ function _trustBadge(svg,title,sub){
 /* === HELP CENTER === */
 const FAQS=[
   {c:'start', q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, an image, deep research. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
-  {c:'start', q:'What can AMV actually do?', a:'One place for everything: chat and research, image and video generation, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve.'},
+  {c:'start', q:'What can AMV actually do?', a:'One place for everything: chat and deep research, reading the files and images you upload, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve. AMV reads an image you give it; it does not generate one.'},
   {c:'auto', q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing - what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
   {c:'auto', q:'How do approvals work - Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},
   {c:'auto', q:'What is Auto Approve?', a:'When you trust a recurring task, turn on Auto Approve while setting it up. AMV then completes and performs the final action on its own - scoped to every run or just the first, capped by risk level, with an optional end date. High-risk actions still stop and ask unless you allow them. You can pause all autonomous work anytime from Mission Control.'},
@@ -23750,7 +23788,7 @@ try{ window.render404View=render404View; }catch(e){}
 const FAQ_CATS=[
   ['start','Getting started'],
   ['chat','Chat and results'],
-  ['create','Images, video and design'],
+  ['create','Design and 3D'],
   ['build','Building apps'],
   ['auto','Automations and approvals'],
   ['connect','Connections, teamwork and marketplace'],
@@ -23776,7 +23814,8 @@ function renderHelpView(){
     '</section>';
   }).join('');
   vc.innerHTML=
-    '<div class="sv fi"><div class="vi">'+
+    '<div class="sv fi"><div class="vi vi-help">'+
+      '<span class="eyebrow">Help</span>'+
       '<h2>Help Center</h2>'+
       '<p class="vsub">Pick a topic, or search if you already know the word for it.</p>'+
       '<div class="ss2">'+

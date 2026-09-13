@@ -12787,3 +12787,102 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .cwp-buy{ flex-direction:column; align-items:stretch; }
   .cwp-buy-b{ flex-direction:column; }
 }
+
+/* ── LAYER A200 · the billing page, said once ───────────────────────────────
+
+   Reported as looking horrible and unprofessional. Screenshotted at 1280x900
+   the faults were countable rather than a matter of taste.
+
+   The same three facts were printed twice. "Current plan" said Pro, $15/mo,
+   Active. "Subscription details" beneath it said Plan Pro, Price $15/month,
+   Status Active - a second heading, a second border and a second block of
+   space for a fact already given. That is fixed in the markup; this is what it
+   is fixed INTO.
+
+   And the page was mostly gaps. `.vi` sets a 26px flex gap between children
+   and `.ss2 + .ss2` adds 26px of margin on top of it, so consecutive sections
+   sat 52px apart, with another 8px from `.ss2`'s own margin - 60px of nothing
+   between every two things on a page of short sections. Scoped to this view
+   rather than fixed globally: the same pair of rules governs every Settings
+   pane, and changing spacing everywhere to fix one screen is how a design
+   system stops meaning anything. */
+.vi-bill{ gap:var(--sp-4)!important; }
+.vi-bill .ss2 + .ss2{ margin-top:0!important; }
+.vi-bill .ss2{ margin-top:0!important; }
+
+.bill-sum-top{
+  display:flex; align-items:flex-start; justify-content:space-between;
+  gap:var(--sp-4); flex-wrap:wrap;
+}
+.bill-sum-l{ display:flex; align-items:center; gap:var(--sp-4); min-width:0; }
+.bill-sum-ic{
+  flex:0 0 auto; width:46px; height:46px; border-radius:var(--r-lg);
+  display:flex; align-items:center; justify-content:center;
+  background:var(--accent-soft); color:var(--accent-txt); font-size:var(--t-xl);
+}
+.bill-sum-n{
+  display:flex; align-items:baseline; gap:var(--sp-3); flex-wrap:wrap;
+  font-family:var(--fdisplay); font-size:var(--t-2xl); font-weight:640;
+  letter-spacing:-.4px; color:var(--tx); line-height:1.15;
+}
+.bill-sum-p{
+  font-family:var(--fn); font-size:var(--t-md); font-weight:600;
+  color:var(--mu); letter-spacing:0;
+}
+.bill-sum-d{ margin-top:3px; font-size:var(--t-base); color:var(--mu); line-height:1.55; }
+.bill-sum-st{ flex:0 0 auto; }
+
+/* The facts, on one label column so they read down a single edge. */
+.bill-facts{
+  margin:var(--sp-5) 0 0; display:grid; gap:0;
+  border-top:1px solid var(--bd);
+}
+.bill-fact{
+  display:grid; grid-template-columns:170px 1fr; gap:var(--sp-4);
+  padding:var(--sp-3) 0; border-bottom:1px solid var(--bd);
+  font-size:var(--t-base); line-height:1.55;
+}
+.bill-fact dt{ color:var(--mu); font-weight:600; }
+.bill-fact dd{ margin:0; color:var(--tx); }
+/* Not a dash. A dash where a date should be reads as a broken page; this reads
+   as a fact about which device you are on, which is what it is. */
+.bill-unknown{ color:var(--dim); font-style:italic; }
+
+.vi-bill .bill-acts{
+  display:flex; align-items:center; gap:var(--sp-3);
+  flex-wrap:wrap; margin-top:var(--sp-4);
+}
+.vi-bill .bill-acts-s{
+  flex:1 1 260px; margin:0; font-size:var(--t-sm);
+  color:var(--mu); line-height:1.55;
+}
+.bill-free-s{ margin-top:var(--sp-4)!important; }
+
+@media (max-width:600px){
+  .bill-fact{ grid-template-columns:1fr; gap:2px; }
+  .bill-sum-top{ flex-direction:column; align-items:flex-start; }
+  .vi-bill .bill-acts .btn{ width:100%; }
+}
+
+/* ── LAYER A201 · the Help Center, on one column with one rhythm ────────────
+
+   Same spacing fault as the billing page and fixed the same scoped way: `.vi`
+   contributes a 26px flex gap and `.ss2 + .ss2` adds 26px of margin on top of
+   it, so three short sections sat 52px apart on a page that is mostly short
+   sections.
+
+   The header gains the eyebrow every other view in this product has, so Help
+   stops being the one screen that starts with a bare heading - which is most
+   of what made it read as unfinished beside Billing and Plans.
+
+   The chips are a filter, so they are sized like one. Nine full-weight pills
+   across two rows were the heaviest thing on a page whose point is the
+   questions underneath them. */
+.vi-help{ gap:var(--sp-4)!important; }
+.vi-help .ss2 + .ss2{ margin-top:0!important; }
+.vi-help .ss2{ margin-top:0!important; }
+.vi-help #faq-search{ margin-bottom:var(--sp-4)!important; }
+.vi-help .hc-chip{
+  font-size:var(--t-sm); padding:6px 12px;
+}
+.vi-help .hc-group + .hc-group{ margin-top:var(--sp-5); }
