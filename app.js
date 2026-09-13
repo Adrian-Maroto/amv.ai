@@ -4473,7 +4473,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
    the collapsible it managed no longer exists. The function stayed behind,
@@ -23413,6 +23413,54 @@ async function hoDone(id){
 window.hoSend=hoSend;window.hoOpen=hoOpen;window.hoDone=hoDone;
 
 /* === RENDER VIEW ROUTER === */
+/* ONE OPENING, ONE ENTRANCE.
+
+   Every view writes `<div class="sv fi">` and `.fi` is a 180ms fade-and-rise.
+   That is right the first time a screen appears and wrong every time after -
+   and several screens repaint three or four times in their first second, on
+   purpose. Crew paints from what is on disk, again when the server answers
+   what it is running, and again when the connector list lands; Handoff does
+   the same with the handoffs sent to you. Each repaint replayed the entrance
+   and dropped the scroll offset back to the top, so from the outside the
+   screen flickers and jerks upward while somebody is trying to read it.
+
+   The repaints themselves are correct - a screen briefly out of date beats one
+   permanently wrong about another device - so what changes here is only how
+   they look. A repaint of the SAME tab keeps its scroll offset and skips the
+   entrance; a move to a DIFFERENT tab gets both. The observer runs as a
+   microtask, which is before the frame is painted, so the animation is never
+   started rather than cut off halfway.
+
+   It is central on purpose: renderCrewView alone is called from about thirty
+   places, and a rule enforced at thirty call sites is a rule that holds until
+   somebody adds the thirty-first. */
+let _vcTab = '', _vcScroll = 0;
+function _vcResetScroll(){ _vcScroll = 0; }
+function _vcSettleObserve(){
+  const vc = document.getElementById('vc');
+  if(!vc || vc._vcObs) return;
+  const obs = new MutationObserver(()=>{
+    /* Which tab we are on is recorded whether or not this view HAS a `.sv` -
+       chat does not - because the alternative was returning early and leaving
+       `_vcTab` naming the tab before last. Measured: crew, then chat, then
+       crew again was treated as a repaint of crew, so coming back to it
+       skipped the entrance and restored a scroll offset from the visit
+       before. */
+    const same = _vcTab === S.tab;
+    if(!same){ _vcTab = S.tab; _vcScroll = 0; }
+    const sv = vc.querySelector('.sv');
+    if(!sv) return;
+    if(same){
+      sv.classList.remove('fi');
+      if(_vcScroll > 0) sv.scrollTop = _vcScroll;
+    }
+    if(sv._vcHooked) return;
+    sv._vcHooked = 1;
+    sv.addEventListener('scroll', ()=>{ _vcScroll = sv.scrollTop; }, { passive:true });
+  });
+  obs.observe(vc, { childList:true });
+  vc._vcObs = obs;
+}
 function renderView(){
   const vc=$('vc'); if(!vc) return;
   switch(S.tab){
@@ -29846,7 +29894,7 @@ function renderLabView(){
         <div class="lab-chat" id="lab-chat">
           <div class="lab-chat-log" id="lab-chat-log"></div>
           <div class="lab-chat-in">
-            <textarea id="lab-ask" rows="1" placeholder="Tell Lab what to do - &quot;fix that&quot;, &quot;this still doesn\u2019t work&quot;, &quot;make it faster&quot;\u2026"></textarea>
+            <textarea id="lab-ask" rows="1" placeholder="Tell Lab what to do next\u2026"></textarea>
             <button id="lab-ask-go" class="lab-ask-go" title="Send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
           </div>
         </div>
@@ -29954,9 +30002,29 @@ function renderLabView(){
       if(onEntry){ labShell.classList.add('lab-blank'); }
       else { pasteBox.value=''; }
     };
-    on(pasteBox,'input',()=>{ /* live: don't steal focus, just track */ });
+    /* THE PAGE GETS LONGER, THE BOX DOES NOT GET ITS OWN SCROLLBAR.
+
+       At 150px tall with `overflow-y:auto`, pasting anything real turned this
+       into a second scroll region inside a screen that was already one - so
+       reading back what you had just pasted meant scrolling the box, while
+       scrolling the page moved something else. The owner's words for it: you
+       can only slide within that box.
+
+       It grows with its content up to a ceiling, and past the ceiling the box
+       scrolls - because a 4,000-line file has to stop somewhere and a page
+       that never ends is not better than a box that scrolls. The ceiling is
+       generous enough that pasting a file you would actually work on shows the
+       whole thing. */
+    const growPaste=()=>{
+      pasteBox.style.height='auto';
+      const h=Math.min(pasteBox.scrollHeight+2, 640);
+      pasteBox.style.height=h+'px';
+      pasteBox.style.overflowY = pasteBox.scrollHeight > 640 ? 'auto' : 'hidden';
+    };
+    on(pasteBox,'input',growPaste);
     on(pasteBox,'blur',takePaste);
-    on(pasteBox,'paste',()=>setTimeout(takePaste,30));
+    on(pasteBox,'paste',()=>setTimeout(()=>{ growPaste(); takePaste(); },30));
+    growPaste();
   }
 
   // Upload: click the drop zone, the top icon, or drag files anywhere

@@ -861,7 +861,7 @@ function renderLabView(){
         <div class="lab-chat" id="lab-chat">
           <div class="lab-chat-log" id="lab-chat-log"></div>
           <div class="lab-chat-in">
-            <textarea id="lab-ask" rows="1" placeholder="Tell Lab what to do - &quot;fix that&quot;, &quot;this still doesn\u2019t work&quot;, &quot;make it faster&quot;\u2026"></textarea>
+            <textarea id="lab-ask" rows="1" placeholder="Tell Lab what to do next\u2026"></textarea>
             <button id="lab-ask-go" class="lab-ask-go" title="Send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg></button>
           </div>
         </div>
@@ -969,9 +969,29 @@ function renderLabView(){
       if(onEntry){ labShell.classList.add('lab-blank'); }
       else { pasteBox.value=''; }
     };
-    on(pasteBox,'input',()=>{ /* live: don't steal focus, just track */ });
+    /* THE PAGE GETS LONGER, THE BOX DOES NOT GET ITS OWN SCROLLBAR.
+
+       At 150px tall with `overflow-y:auto`, pasting anything real turned this
+       into a second scroll region inside a screen that was already one - so
+       reading back what you had just pasted meant scrolling the box, while
+       scrolling the page moved something else. The owner's words for it: you
+       can only slide within that box.
+
+       It grows with its content up to a ceiling, and past the ceiling the box
+       scrolls - because a 4,000-line file has to stop somewhere and a page
+       that never ends is not better than a box that scrolls. The ceiling is
+       generous enough that pasting a file you would actually work on shows the
+       whole thing. */
+    const growPaste=()=>{
+      pasteBox.style.height='auto';
+      const h=Math.min(pasteBox.scrollHeight+2, 640);
+      pasteBox.style.height=h+'px';
+      pasteBox.style.overflowY = pasteBox.scrollHeight > 640 ? 'auto' : 'hidden';
+    };
+    on(pasteBox,'input',growPaste);
     on(pasteBox,'blur',takePaste);
-    on(pasteBox,'paste',()=>setTimeout(takePaste,30));
+    on(pasteBox,'paste',()=>setTimeout(()=>{ growPaste(); takePaste(); },30));
+    growPaste();
   }
 
   // Upload: click the drop zone, the top icon, or drag files anywhere

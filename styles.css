@@ -12530,3 +12530,89 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .gm-h{ flex-wrap:wrap; }
   .gm-acts .btn{ flex:1 1 auto; }
 }
+
+/* ── LAYER A197 · one column, one scroll, and no dead end on Build ───────────
+
+   Four faults the owner reported on these screens, measured in a browser
+   before any of this was written.
+
+   OUT OF THE SCREEN. `.lab-shell` is `overflow:hidden` and `.lab-entry` took
+   `flex:1` with its own `overflow-y:auto` inside it, so the entry screen was a
+   scrolling box nested in a fixed one. On a 390x844 phone that box was 482px
+   tall holding 735px of content: the paste card, the upload card and then the
+   row of things AMV can do with the code, which began at y=759 - below the
+   window - and could only be reached by finding and dragging the inner
+   scrollbar. Worse on a 700px-tall laptop, where the same row sat under the
+   cookie bar. The page scrolls now and the box does not.
+
+   TWO MEASURES ON ONE PAGE. A181 put the head, the switcher and the note on a
+   660px column. The entry grid below them was 800, centred on its own width -
+   so the heading started 70px right of the cards it introduced and the screen
+   read as two pages stacked. One measure, the one the rest of Build uses.
+
+   STUCK ON LAB. Once code is loaded the switcher is hidden, and the sidebar's
+   Build entry re-renders whichever section you were last in - so from a loaded
+   Lab there was no visible route to Dev or Studio at all, and the one control
+   that left, `.bld-home`, was unbordered text in a row of bordered buttons.
+   The switcher stays, compact, and the way out is shaped like a control.
+
+   TOO HIGH. Build's entry ran 58→439 in an 860px window and left 363px of
+   nothing under it. Auto margins rather than `justify-content:center`, because
+   centring a flex column clips the top when the content is taller than the box
+   and there is then no way to scroll back up to it - which is the fault this
+   layer is fixing two paragraphs above. */
+
+/* Lab's entry: one document scroll, not a box inside a box. */
+.lab-shell.lab-blank{ overflow-y:auto; overflow-x:hidden; }
+.lab-shell.lab-blank > *{ flex:0 0 auto; }
+.lab-shell.lab-blank .lab-entry{
+  flex:0 0 auto; overflow:visible; min-height:0;
+  justify-content:flex-start; padding-top:0; padding-bottom:var(--sp-7);
+}
+/* The paste box extends the page instead of scrolling inside itself. The
+   height is set by script on every input, so it must size to that height
+   rather than to whatever the flex row has left - `flex:1` from the rule that
+   defines it would ignore it. */
+.lab-shell.lab-blank #lab-paste{ flex:0 0 auto; overflow-y:hidden; resize:none; }
+
+/* One measure, shared with the head above it. */
+@media(min-width:761px){
+  .lab-shell.lab-blank .lab-entry-grid,
+  .lab-shell.lab-blank .lab-entry-do{ max-width:660px; }
+}
+
+/* Build's entry sits in the middle of the window. */
+@media(min-width:761px){
+  .dev-shell.dev-blank > .dev-chat-pane > :first-child{ margin-top:auto; }
+  .dev-shell.dev-blank > .dev-chat-pane > :last-child{ margin-bottom:auto; }
+}
+
+/* Nothing is a dead end: the section switcher survives into the working
+   screen, quieter and half the height, and the sentence explaining the
+   section you already chose does not. */
+.lab-shell:not(.lab-blank) > .build-modes,
+.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-modes{
+  display:grid; margin-top:var(--sp-3); margin-bottom:var(--sp-2);
+}
+.lab-shell:not(.lab-blank) > .build-modes .build-mode,
+.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-modes .build-mode{
+  min-height:30px; padding-top:0; padding-bottom:0;
+}
+.lab-shell:not(.lab-blank) > .build-modes .build-mode-t,
+.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-modes .build-mode-t{
+  font-size:var(--t-sm);
+}
+.lab-shell:not(.lab-blank) > .build-mode-note,
+.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-mode-note{ display:none; }
+
+/* The way out is shaped like the thing it is. */
+/* `.build-bar .bld-home` rather than `.bld-home`: A168 stripped the border to
+   a single divider on the left of the toolbar, and a bare class selector loses
+   to it. Measured rather than assumed - the first version of this rule
+   computed to a 0px border and the suite said so. */
+.build-bar .bld-home{
+  border:1px solid var(--bd); background:var(--s2); color:var(--tx);
+  border-radius:var(--r-md); padding:5px 11px 5px 8px; font-weight:600;
+  margin-right:var(--sp-2);
+}
+.build-bar .bld-home:hover{ background:var(--s3); border-color:var(--bdl); color:var(--tx); }

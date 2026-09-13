@@ -336,6 +336,54 @@ async function hoDone(id){
 window.hoSend=hoSend;window.hoOpen=hoOpen;window.hoDone=hoDone;
 
 /* === RENDER VIEW ROUTER === */
+/* ONE OPENING, ONE ENTRANCE.
+
+   Every view writes `<div class="sv fi">` and `.fi` is a 180ms fade-and-rise.
+   That is right the first time a screen appears and wrong every time after -
+   and several screens repaint three or four times in their first second, on
+   purpose. Crew paints from what is on disk, again when the server answers
+   what it is running, and again when the connector list lands; Handoff does
+   the same with the handoffs sent to you. Each repaint replayed the entrance
+   and dropped the scroll offset back to the top, so from the outside the
+   screen flickers and jerks upward while somebody is trying to read it.
+
+   The repaints themselves are correct - a screen briefly out of date beats one
+   permanently wrong about another device - so what changes here is only how
+   they look. A repaint of the SAME tab keeps its scroll offset and skips the
+   entrance; a move to a DIFFERENT tab gets both. The observer runs as a
+   microtask, which is before the frame is painted, so the animation is never
+   started rather than cut off halfway.
+
+   It is central on purpose: renderCrewView alone is called from about thirty
+   places, and a rule enforced at thirty call sites is a rule that holds until
+   somebody adds the thirty-first. */
+let _vcTab = '', _vcScroll = 0;
+function _vcResetScroll(){ _vcScroll = 0; }
+function _vcSettleObserve(){
+  const vc = document.getElementById('vc');
+  if(!vc || vc._vcObs) return;
+  const obs = new MutationObserver(()=>{
+    /* Which tab we are on is recorded whether or not this view HAS a `.sv` -
+       chat does not - because the alternative was returning early and leaving
+       `_vcTab` naming the tab before last. Measured: crew, then chat, then
+       crew again was treated as a repaint of crew, so coming back to it
+       skipped the entrance and restored a scroll offset from the visit
+       before. */
+    const same = _vcTab === S.tab;
+    if(!same){ _vcTab = S.tab; _vcScroll = 0; }
+    const sv = vc.querySelector('.sv');
+    if(!sv) return;
+    if(same){
+      sv.classList.remove('fi');
+      if(_vcScroll > 0) sv.scrollTop = _vcScroll;
+    }
+    if(sv._vcHooked) return;
+    sv._vcHooked = 1;
+    sv.addEventListener('scroll', ()=>{ _vcScroll = sv.scrollTop; }, { passive:true });
+  });
+  obs.observe(vc, { childList:true });
+  vc._vcObs = obs;
+}
 function renderView(){
   const vc=$('vc'); if(!vc) return;
   switch(S.tab){
