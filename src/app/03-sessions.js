@@ -185,14 +185,24 @@ const _TOOL_DEFAULTS = {
          deploySlug:'', deployedOnce:false, lastHTML:'', name:'', files:[],
          handoff:null, dirHandle:null, usingWorkspace:false, busy:false,
          compact:null, atHome:false },
-  lab: { code:'', files:[], chat:[], busy:false, deploySlug:'' },
+  /* `atHome` is the same view intent Dev declares above and Studio below, and
+     Lab is the one of the three that did not have it until the sidebar's Build
+     entry needed a way home that does not delete somebody's code. A new session
+     has nothing to return to, so it resets with the rest - and the reset check
+     is what required this line, within the hour of the field being added. */
+  lab: { code:'', files:[], chat:[], busy:false, deploySlug:'', atHome:false },
   /* atHome is view intent, not a device setting: it records that somebody
      pressed "Studio home" and wants the hero rather than the canvas they just
      left. A new session has no canvas to return to, so it resets with the
      rest. Declared here because the reset check requires every _STUDIO field
      to be one or the other - which is how this was caught the moment it was
      added, rather than as a stale screen months later. */
-  studio: { artifacts:[], activeId:'', prompt:'', html:'', history:[], atHome:false },
+  /* `openWip` is the other half of the same intent: a design that has been
+     RESUMED is open even though nothing has been generated for it yet. It
+     resets with everything else, because a new session has no design in
+     progress - and leaving it set would open a canvas for artifacts the next
+     session does not have. */
+  studio: { artifacts:[], activeId:'', prompt:'', html:'', history:[], atHome:false, openWip:false },
 };
 /* `lang` is a preference, not work - somebody who writes Python should not have
    to say so again every session. `sessId` is owned by the session machinery,
