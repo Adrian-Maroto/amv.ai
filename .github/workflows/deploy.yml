@@ -116,3 +116,99 @@ jobs:
           done
           echo "::error::The Worker deployed but https://api.amv.homes/v1/health did not report ok:true."
           exit 1
+
+  # THE WEBSITE, READ BACK THE SAME WAY THE WORKER IS.
+  #
+  # The Worker deploys here and then proves itself against /v1/health. The
+  # website had no equivalent: it is published by a static host watching `main`
+  # on its own schedule, so "the gate passed and main moved" and "visitors have
+  # the new page" were two separate facts with nothing joining them. A fix could
+  # be merged, green, and deployed to the Worker while every visitor kept
+  # downloading the old page, and the only signal would have been somebody
+  # saying the bug is still there. That happened.
+  #
+  # This does not deploy the site and deliberately does not try to. The host
+  # owns that, and adding a second publisher is how two things race to write the
+  # same bucket. It asks one question instead - is what is being served the page
+  # this commit built - and says so loudly when the answer is no.
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The same three guards as the Worker job, for the same reasons.
+    if: >
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.head_branch == 'main'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Wait for the site to serve this build
+        env:
+          # A repository variable so the domain is not welded into the workflow;
+          # unset, it checks the domain the product actually runs on.
+          SITE: ${{ vars.SITE_URL || 'https://amv.homes' }}
+        run: |
+          set -u
+          want="$(grep -o 'name="amv-build" content="[a-f0-9]*"' public/index.html \
+                  | head -1 | sed 's/.*content="//; s/"//')"
+          if [ -z "$want" ]; then
+            echo "::error::public/index.html carries no build id. build.mjs stamps one; this commit was not built."
+            exit 1
+          fi
+          echo "This commit built: $want"
+          echo "Asking $SITE what it is serving."
+
+          # Fifteen minutes. A static host queues, builds and swaps over on its
+          # own schedule, and being slower than CI is normal, not broken.
+          got=""
+          for i in $(seq 1 45); do
+            body="$(curl -fsS --max-time 20 "$SITE/" || true)"
+            got="$(printf '%s' "$body" \
+                   | grep -o 'name="amv-build" content="[a-f0-9]*"' \
+                   | head -1 | sed 's/.*content="//; s/"//')"
+            if [ "$got" = "$want" ]; then
+              echo "Live site is serving $got - this build."
+              exit 0
+            fi
+            echo "attempt $i: live=${got:-'(no build id / no answer)'} want=$want"
+            sleep 20
+          done
+
+          {
+            echo "### The live site is not serving this build"
+            echo
+            echo "- this commit built: \`$want\`"
+            echo "- \`$SITE\` is serving: \`${got:-nothing readable}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$got" ]; then
+            echo "::error::$SITE served no build id after 15 minutes. Either the host is not publishing, or it is not publishing the public/ folder."
+          else
+            echo "::error::$SITE is still serving build $got, not $want, after 15 minutes. The host has not picked up this commit."
+          fi
+          exit 1
+
+      # WHAT THE HOST MUST NOT HAND OUT.
+      #
+      # The site is one file at the ROOT of this repository, so a host pointed
+      # at the repository rather than at public/ serves amv-backend.js and
+      # wrangler.toml to anyone who asks - which it did, confirmed live. A suite
+      # checks the folder is correct; only this checks the HOST is pointed at
+      # it, and that is a different claim that no amount of local testing makes.
+      - name: Check the host is not handing out the source
+        env:
+          SITE: ${{ vars.SITE_URL || 'https://amv.homes' }}
+        run: |
+          set -u
+          bad=0
+          for f in amv-backend.js wrangler.toml package.json check.mjs app.js; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$SITE/$f" || echo 000)"
+            if [ "$code" = "200" ]; then
+              echo "::error::$SITE/$f is being served to the public. The host is publishing the repository root, not public/."
+              bad=1
+            else
+              echo "ok: /$f -> $code"
+            fi
+          done
+          exit $bad

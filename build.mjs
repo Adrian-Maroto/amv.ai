@@ -311,6 +311,45 @@ async function rebuild() {
   //    inline script on the page. See sealScriptCSP.
   html = sealScriptCSP(html, app);
 
+  /* WHAT BUILD IS THE LIVE SITE ACTUALLY SERVING.
+     
+     There was no way to ask. The Worker deploy reads itself back from
+     /v1/health, but the website is published by a host watching `main` on its
+     own schedule, so "the gate passed and main moved" and "visitors have the
+     new page" were two different facts with nothing connecting them - which is
+     how a fixed bug stays visibly broken and everyone reads the green tick.
+     
+     The obvious candidate for a fingerprint was already there and was useless:
+     the CSP script hashes cover the small inline boot scripts only, so they are
+     BYTE-IDENTICAL from one build to the next while the whole app changes
+     underneath them. Checking those would have passed on a site months stale.
+     
+     This hashes the two things a visitor actually downloads. It is not the
+     commit SHA on purpose: two commits that build the same bytes are the same
+     page to a visitor, and a docs-only commit should not report the site as
+     out of date. */
+  /* Hashed from the FINISHED PAGE, not from the variables that went into it.
+     The two are not the same string - the page's copies have been through the
+     marker replacement and the CSP sealing - and hashing the inputs produced a
+     stamp that nothing could reproduce from the artifact. A build id that can
+     only be recomputed by re-running this script is a build id no test can
+     check and no support question can use. These two reads are the exact
+     substrings a visitor downloads. */
+  const cssOut = (html.match(/<!-- BUILD:CSS:START -->\s*<style>([\s\S]*?)<\/style>\s*<!-- BUILD:CSS:END -->/) || [, null])[1];
+  const jsOut = (html.match(/<script id="amv-app-code" type="text\/plain">\n([\s\S]*?)\n<\/script>/) || [, null])[1];
+  if (cssOut === null || jsOut === null) {
+    throw new Error('cannot read back the page payload to stamp it - aborting write');
+  }
+  const buildId = createHash('sha256')
+    .update(Buffer.from(jsOut, 'utf8'))
+    .update(Buffer.from(cssOut, 'utf8'))
+    .digest('hex').slice(0, 16);
+  const stamp = '<meta name="amv-build" content="' + buildId + '">';
+  html = /<meta name="amv-build" content="[^"]*">/.test(html)
+    ? html.replace(/<meta name="amv-build" content="[^"]*">/, stamp)
+    : html.replace(/(<meta name="viewport"[^>]*>)/, '$1\n' + stamp);
+  if (!html.includes(stamp)) throw new Error('build id could not be stamped - aborting write');
+
   writeFileSync('index.html', html);
 
   /* Record what was emitted, so the NEXT build can tell a hand-edit from a
