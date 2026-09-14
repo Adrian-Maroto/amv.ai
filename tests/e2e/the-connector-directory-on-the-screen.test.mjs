@@ -61,7 +61,10 @@ section('Ten of each category, with a way to see the rest');
     queries: window.__asked.map(a => a.q),
   }));
   ok(r.rows >= 10, 'there are categories, not one long list', String(r.rows));
-  ok(r.perRow.every(n => n === 10), 'ten in each of them', r.perRow.join(','));
+  /* Five, not ten, and asked for in those terms: twenty categories at ten each
+     is two hundred tiles before anybody has decided anything. Five shows what a
+     category MEANS and the rest are behind the control at the end of the row. */
+  ok(r.perRow.every(n => n === 5), 'five in each of them', r.perRow.join(','));
   ok(r.seeAll === r.rows, 'and every one has a way to see the rest', String(r.seeAll));
   /* The row headings are not decoration: each one really asked the registry
      its own question, which is what stops a row being a label over whatever
@@ -125,8 +128,15 @@ section('The panel names the command before anything is added');
     return {
       shown: !!el,
       codes: [...document.querySelectorAll('.cdir-code')].map(c => c.textContent.trim()),
-      warns: /somebody else/i.test(t),
-      says: /AMV did not write it/i.test(t),
+      /* THE CLAIM, NOT THE SENTENCE. This used to grep for "somebody else" and
+         "AMV did not write it" - the exact words of a four-line paragraph that
+         was replaced by one line, because a wall of warning is read as
+         boilerplate and skipped. The thing worth protecting is that the panel
+         still says whose program this is and where it runs, so that is what is
+         matched. The apostrophe is a character class because the copy uses a
+         typographic one. */
+      warns: /runs on your( connected)? computer/i.test(t),
+      says: /AMV (did|didn.t) ?n?o?t? ?write/i.test(t),
       added: MCP.servers.length,
     };
   });

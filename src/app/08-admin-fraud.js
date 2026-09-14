@@ -1010,15 +1010,26 @@ try{ window._invoiceTableHTML=_invoiceTableHTML; }catch(e){}
 function _billingTxnsHTML(){
   const txns=(typeof _loadTxns==='function')?_loadTxns():[];
   const live=!!(window.AMV_API&&AMV_API.live);
-  /* AN EMPTY LOCAL LEDGER HAS NOTHING TO SAY, SO IT SAYS NOTHING.
+  /* SHORTER, NOT GONE - AND DELETING IT WAS A MISTAKE WORTH RECORDING.
 
-     This used to render a heading and sixty words explaining why the list
-     below it was empty, which is a section whose entire content is an excuse
-     for its own existence. The explanation only matters to somebody looking at
-     ENTRIES and wondering why a purchase they remember is missing - so it
-     stays, below, where there are entries to explain. Invoices above are the
-     real record either way. */
-  if(!txns.length) return '';
+     I took this out as a section whose only content was an excuse for its own
+     existence. It is not. It is what somebody sees ON THEIR PHONE AFTER PAYING
+     ON A LAPTOP, and it used to be absent: they found no record of the money
+     they had just spent and nothing telling them where to look. That is the
+     defect this block was written for, and hiding it again brings it straight
+     back.
+
+     So it stays and says the same four things - the record is local, another
+     device will not be here, Invoices above is the real one, bought items are
+     in Purchases - in one sentence instead of sixty words. The complaint was
+     that this page reads as a wall of text, and that is answered by saying it
+     shorter, not by not saying it. */
+  if(!txns.length){
+    if(!live) return '';
+    return '<div class="ss2 bill-txns"><h3>Payments recorded on this device</h3>'+
+      '<p class="bill-txns-sub">Nothing in this browser yet. Paid on another device? '+
+      'It will not be here - Invoices above is the full record, and anything bought is in Purchases.</p></div>';
+  }
   const money=n=>'$'+(Number(n)||0).toFixed(2);
   return '<div class="ss2 bill-txns"><h3>Payments recorded on this device</h3>'+
     '<p class="bill-txns-sub">Kept in this browser, so a purchase made on another device will not be here. '+
@@ -1218,12 +1229,22 @@ function renderBillingView(targetEl){
           upTargets.map((k,ix)=>{
             const lead = ix === 0;
             const badge = lead
-              /* The tag used to sit INSIDE the button, a pill inside a pill,
-                 which is the shape of a badge stuck on an afterthought. Being
-                 first and being the primary button already says this is the
-                 next step; a label repeating it only made the control wider
-                 and the row harder to scan. */
-              ? ''
+              /* KEPT, AND I WAS WRONG TO TAKE IT OUT.
+
+                 It looked like a pill inside a pill and I deleted it for that.
+                 It is load-bearing: this label is the reason nobody writes
+                 "Most popular" on the lead button, which is the obvious phrase
+                 and a claim about other customers that AMV cannot stand behind.
+                 "Start here" and "Next step up" describe where the button sits
+                 on the ladder, which is true on the first day and every day
+                 after, and a suite exists whose stated job is to fail if anyone
+                 reaches for the easier words. Deleting the label removed the
+                 thing that guard reads.
+
+                 The complaint about how it LOOKED was fair, so that is fixed
+                 where it belongs - in A210, which takes away the outline and
+                 the fill and leaves the words. */
+              ? '<span class="bill-swap-tag">'+(plan==='free'?'Start here':'Next step up')+'</span>'
               : '';
             return '<button class="btn '+(lead?'bp bill-swap-lead':'bs')+'" data-pay="'+escH(k)+'">'
               + 'Upgrade to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo'+badge+'</button>';

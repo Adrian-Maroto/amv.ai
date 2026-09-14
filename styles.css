@@ -13472,3 +13472,35 @@ p.bill-leave-s{
    related things rather than three orphans. */
 .vi-bill .ss2{ margin-top:var(--sp-6); }
 .vi-bill .ss2:first-of-type{ margin-top:var(--sp-5); }
+
+/* ======================================================================
+   LAYER A210 - the plan label, without the pill around it
+   ====================================================================== */
+
+/* "Start here" / "Next step up" sat in an outlined pill INSIDE a pill-shaped
+   button, which is the shape of a badge stuck on as an afterthought, and it
+   made the row hard to scan. I deleted it for that and was wrong: the label is
+   why nobody writes "Most popular" there - the obvious phrase, and a claim
+   about customers AMV does not have. A suite exists to fail if anyone reaches
+   for the easier words, and it reads this element.
+
+   So the words stay and the pill goes. No outline, no fill, just a lighter
+   weight after a separator - the same relationship a subtitle has to a title.
+
+   It keeps `color:inherit` and no background of its own on purpose: the
+   contrast check asks that the label read exactly as well as the button it
+   sits on, which is only true while nothing is painted behind the text. */
+.bill-swap-tag{
+  border:none!important;
+  padding:0!important;
+  border-radius:0!important;
+  background:none!important;
+  font-weight:500;
+  opacity:.72;
+  letter-spacing:0;
+}
+.bill-swap-tag::before{
+  content:"·";
+  margin:0 var(--sp-2) 0 0;
+  opacity:.55;
+}

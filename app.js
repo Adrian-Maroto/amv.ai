@@ -13385,15 +13385,26 @@ try{ window._invoiceTableHTML=_invoiceTableHTML; }catch(e){}
 function _billingTxnsHTML(){
   const txns=(typeof _loadTxns==='function')?_loadTxns():[];
   const live=!!(window.AMV_API&&AMV_API.live);
-  /* AN EMPTY LOCAL LEDGER HAS NOTHING TO SAY, SO IT SAYS NOTHING.
+  /* SHORTER, NOT GONE - AND DELETING IT WAS A MISTAKE WORTH RECORDING.
 
-     This used to render a heading and sixty words explaining why the list
-     below it was empty, which is a section whose entire content is an excuse
-     for its own existence. The explanation only matters to somebody looking at
-     ENTRIES and wondering why a purchase they remember is missing - so it
-     stays, below, where there are entries to explain. Invoices above are the
-     real record either way. */
-  if(!txns.length) return '';
+     I took this out as a section whose only content was an excuse for its own
+     existence. It is not. It is what somebody sees ON THEIR PHONE AFTER PAYING
+     ON A LAPTOP, and it used to be absent: they found no record of the money
+     they had just spent and nothing telling them where to look. That is the
+     defect this block was written for, and hiding it again brings it straight
+     back.
+
+     So it stays and says the same four things - the record is local, another
+     device will not be here, Invoices above is the real one, bought items are
+     in Purchases - in one sentence instead of sixty words. The complaint was
+     that this page reads as a wall of text, and that is answered by saying it
+     shorter, not by not saying it. */
+  if(!txns.length){
+    if(!live) return '';
+    return '<div class="ss2 bill-txns"><h3>Payments recorded on this device</h3>'+
+      '<p class="bill-txns-sub">Nothing in this browser yet. Paid on another device? '+
+      'It will not be here - Invoices above is the full record, and anything bought is in Purchases.</p></div>';
+  }
   const money=n=>'$'+(Number(n)||0).toFixed(2);
   return '<div class="ss2 bill-txns"><h3>Payments recorded on this device</h3>'+
     '<p class="bill-txns-sub">Kept in this browser, so a purchase made on another device will not be here. '+
@@ -13593,12 +13604,22 @@ function renderBillingView(targetEl){
           upTargets.map((k,ix)=>{
             const lead = ix === 0;
             const badge = lead
-              /* The tag used to sit INSIDE the button, a pill inside a pill,
-                 which is the shape of a badge stuck on an afterthought. Being
-                 first and being the primary button already says this is the
-                 next step; a label repeating it only made the control wider
-                 and the row harder to scan. */
-              ? ''
+              /* KEPT, AND I WAS WRONG TO TAKE IT OUT.
+
+                 It looked like a pill inside a pill and I deleted it for that.
+                 It is load-bearing: this label is the reason nobody writes
+                 "Most popular" on the lead button, which is the obvious phrase
+                 and a claim about other customers that AMV cannot stand behind.
+                 "Start here" and "Next step up" describe where the button sits
+                 on the ladder, which is true on the first day and every day
+                 after, and a suite exists whose stated job is to fail if anyone
+                 reaches for the easier words. Deleting the label removed the
+                 thing that guard reads.
+
+                 The complaint about how it LOOKED was fair, so that is fixed
+                 where it belongs - in A210, which takes away the outline and
+                 the fill and leaves the words. */
+              ? '<span class="bill-swap-tag">'+(plan==='free'?'Start here':'Next step up')+'</span>'
               : '';
             return '<button class="btn '+(lead?'bp bill-swap-lead':'bs')+'" data-pay="'+escH(k)+'">'
               + 'Upgrade to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo'+badge+'</button>';
@@ -16406,7 +16427,7 @@ async function _cwLoadLocal(code){
        nothing, which is a different and false statement. */
     _cwLocalState[cc] = 'offline';
   }
-  try{ if(S.tab === 'crew') _reRenderSoon(renderCrewView); }catch(e){}
+  try{ if(S.tab === 'crew') _cwRepaintSoon(); }catch(e){}
 }
 try{ window._cwUniversalJobs=_cwUniversalJobs; window._cwLocalJobs=_cwLocalJobs;
      window._cwLoadLocal=_cwLoadLocal; window.CW_EVERYDAY_UNIVERSAL=CW_EVERYDAY_UNIVERSAL; }catch(e){}
@@ -16729,6 +16750,28 @@ async function _cwLoadPopular(){
   }
   _cwPopPaint();
 }
+/* A BACKGROUND REDRAW DOES NOT GET TO WIPE A RESULT SOMEBODY ASKED FOR.
+
+   Coalescing the async redraws onto a trailing edge moved them LATER, and
+   later is long enough for somebody to have typed a command and be reading its
+   answer. The whole Crew view is rebuilt by these, so the answer went with it -
+   caught by a suite that asks a question as a signed-out visitor and then finds
+   the box it was answered in has been replaced by a fresh screen.
+
+   The rule is already written a few hundred lines down for the same reason and
+   in almost the same words: the stored state is updated either way, so nothing
+   is lost by not redrawing, and the next open is correct. This says the same
+   thing about the command box. */
+function _cwRepaintSoon(){
+  _reRenderSoon(function(){
+    try{
+      const r = document.getElementById('mc-cmd-result');
+      if(r && (r.textContent || '').trim()) return;
+    }catch(e){}
+    renderCrewView();
+  });
+}
+
 function _cwPopPaint(){
   try{ const el=document.getElementById('cw-pop-body'); if(el) el.innerHTML=_cwPopBodyHTML(); }catch(e){}
 }
@@ -17010,7 +17053,7 @@ async function _crewSyncLive(){
        are now reading replaced by the one they left - the stored state above is
        still updated, which is the point, so the next time they open Crew it is
        correct without anything being redrawn under them. */
-    if(S.tab === 'crew' || S.tab === 'extensions') _reRenderSoon(renderCrewView);
+    if(S.tab === 'crew' || S.tab === 'extensions') _cwRepaintSoon();
   }catch(e){}
 }
 /* ============================================================
@@ -23948,46 +23991,24 @@ function _vcRemember(e){
   if(!(el.scrollTop > 0)) return;
   _vcScroll = { cls: el.classList[0], top: el.scrollTop };
 }
-/* TWO WRITES OF THE SAME PAGE ARE ONE PAGE AND ONE FLICKER.
+/* A DEDUPE ON THE VIEW CONTAINER WAS TRIED HERE AND TAKEN BACK OUT.
 
-   Measured on the published build with a backend taking 700ms: opening Crew
-   rebuilt the ENTIRE view four times inside 900ms (39, 55, 720, 807) and
-   Handoff twice. Every rebuild throws away the DOM and makes a new one, which
-   loses scroll position, loses focus, and restarts anything mid-transition -
-   and two of the four wrote byte-identical HTML, so the screen was destroyed
-   and rebuilt to look exactly the same.
+   The idea was to drop a write to `innerHTML` that would produce what is
+   already on screen. It measured as worth nothing: Crew's rebuild count went
+   from four to three and Handoff's from two to one, and BOTH of those came
+   from the coalescing below - the dedupe never fired on a write that mattered,
+   because two renders 7ms apart are two different states, not the same one
+   twice.
 
-   Suppressing the entrance ANIMATION, which is what the earlier fix did, does
-   not help with that. The animation was the visible symptom; the churn is the
-   cause, and it is what "crew and handoff still lag" is describing.
+   It was not free, though. A renderer writes `innerHTML` and then attaches to
+   the nodes it just made; skipping the write leaves the OLD nodes in place and
+   the attach runs against them again. The gate found the consequences in three
+   suites - controls that did nothing, downloads that produced no file - which
+   is a worse outcome than the flicker it was aimed at, for no measured gain.
 
-   This shadows `innerHTML` on the view container alone and drops a write that
-   would produce what is already there. It is deliberately at this level rather
-   than in each renderer: every view writes through this one property, so one
-   guard covers the ones nobody has complained about yet, and no render
-   function has to remember to opt in.
-
-   Skipping also keeps a regional repaint that has landed since - `_cwPopPaint`
-   writes one block of Crew directly - which is the outcome you want anyway: a
-   full write identical to the last full write would have thrown that away and
-   made the block paint itself a second time. */
-function _vcDedupe(vc){
-  if(!vc || vc._vcDeduped) return;
-  const d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
-  if(!d || !d.set || !d.get) return;   /* no property to shadow: leave it alone */
-  try{
-    Object.defineProperty(vc, 'innerHTML', {
-      configurable: true,
-      get(){ return d.get.call(this); },
-      set(html){
-        if(this._vcLastHTML === html) return;
-        this._vcLastHTML = html;
-        d.set.call(this, html);
-      }
-    });
-    vc._vcDeduped = true;
-  }catch(e){}
-}
+   Written down rather than silently dropped: the next person to notice
+   repeated identical renders will reach for exactly this, and the reason it
+   does not work is not visible from the idea. */
 
 /* A DATA ARRIVAL IS NOT A REASON TO REDRAW IMMEDIATELY.
 
@@ -24011,7 +24032,6 @@ function _reRenderSoon(fn){
 function _vcSettleObserve(){
   const vc = document.getElementById('vc');
   if(!vc || vc._vcObs) return;
-  _vcDedupe(vc);
   vc.addEventListener('scroll', _vcRemember, true);
   const obs = new MutationObserver(()=>{
     /* Which tab we are on is recorded whether or not this view has anything to

@@ -52,8 +52,16 @@ const headings = (plan) => page.evaluate((pl) => {
   S.tab = 'settings'; S.settingsPane = 'billing';
   renderSettingsView();
   const pane = document.getElementById('set-pane');
-  return [...pane.querySelectorAll('.ss2, h2, h3')].map((el) => {
+  return [...pane.querySelectorAll('.ss2, h2, h3, .bill-sec-line')].map((el) => {
     if (el.classList.contains('bill-sum')) return 'SECTION:current-plan';
+    /* The payment-security block used to be four emoji cards under a heading.
+       It is one line now and has no heading, so anchoring on its words would
+       find nothing - which is what happened, and the failure read as "the
+       block is missing" when what had changed was its SHAPE. The claim this
+       file makes is about ORDER: reassurance last, out of the way. That claim
+       is unchanged and is what is still checked; the block just got smaller,
+       which if anything is more out of the way than before. */
+    if (el.classList.contains('bill-sec-line')) return 'SECTION:payment-security';
     if (el.classList.contains('ss2')) {
       const h = el.querySelector('h3');
       return h ? h.textContent.trim() : '';
@@ -75,7 +83,7 @@ section('The billing pane reads in the order somebody uses it');
     const current = at(hs, /^SECTION:current-plan$/);
     const usage   = at(hs, /^Usage$/);
     const change  = at(hs, /^Change plan$/);
-    const secure  = at(hs, /protect your payment/i);
+    const secure  = at(hs, /^SECTION:payment-security$/);
 
     ok(current >= 0 && usage >= 0 && change >= 0 && secure >= 0,
        `[${plan}] all four sections are present`, hs);

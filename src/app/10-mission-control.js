@@ -1195,7 +1195,7 @@ async function _cwLoadLocal(code){
        nothing, which is a different and false statement. */
     _cwLocalState[cc] = 'offline';
   }
-  try{ if(S.tab === 'crew') _reRenderSoon(renderCrewView); }catch(e){}
+  try{ if(S.tab === 'crew') _cwRepaintSoon(); }catch(e){}
 }
 try{ window._cwUniversalJobs=_cwUniversalJobs; window._cwLocalJobs=_cwLocalJobs;
      window._cwLoadLocal=_cwLoadLocal; window.CW_EVERYDAY_UNIVERSAL=CW_EVERYDAY_UNIVERSAL; }catch(e){}
@@ -1518,6 +1518,28 @@ async function _cwLoadPopular(){
   }
   _cwPopPaint();
 }
+/* A BACKGROUND REDRAW DOES NOT GET TO WIPE A RESULT SOMEBODY ASKED FOR.
+
+   Coalescing the async redraws onto a trailing edge moved them LATER, and
+   later is long enough for somebody to have typed a command and be reading its
+   answer. The whole Crew view is rebuilt by these, so the answer went with it -
+   caught by a suite that asks a question as a signed-out visitor and then finds
+   the box it was answered in has been replaced by a fresh screen.
+
+   The rule is already written a few hundred lines down for the same reason and
+   in almost the same words: the stored state is updated either way, so nothing
+   is lost by not redrawing, and the next open is correct. This says the same
+   thing about the command box. */
+function _cwRepaintSoon(){
+  _reRenderSoon(function(){
+    try{
+      const r = document.getElementById('mc-cmd-result');
+      if(r && (r.textContent || '').trim()) return;
+    }catch(e){}
+    renderCrewView();
+  });
+}
+
 function _cwPopPaint(){
   try{ const el=document.getElementById('cw-pop-body'); if(el) el.innerHTML=_cwPopBodyHTML(); }catch(e){}
 }
@@ -1799,7 +1821,7 @@ async function _crewSyncLive(){
        are now reading replaced by the one they left - the stored state above is
        still updated, which is the point, so the next time they open Crew it is
        correct without anything being redrawn under them. */
-    if(S.tab === 'crew' || S.tab === 'extensions') _reRenderSoon(renderCrewView);
+    if(S.tab === 'crew' || S.tab === 'extensions') _cwRepaintSoon();
   }catch(e){}
 }
 /* ============================================================

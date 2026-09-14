@@ -375,46 +375,24 @@ function _vcRemember(e){
   if(!(el.scrollTop > 0)) return;
   _vcScroll = { cls: el.classList[0], top: el.scrollTop };
 }
-/* TWO WRITES OF THE SAME PAGE ARE ONE PAGE AND ONE FLICKER.
+/* A DEDUPE ON THE VIEW CONTAINER WAS TRIED HERE AND TAKEN BACK OUT.
 
-   Measured on the published build with a backend taking 700ms: opening Crew
-   rebuilt the ENTIRE view four times inside 900ms (39, 55, 720, 807) and
-   Handoff twice. Every rebuild throws away the DOM and makes a new one, which
-   loses scroll position, loses focus, and restarts anything mid-transition -
-   and two of the four wrote byte-identical HTML, so the screen was destroyed
-   and rebuilt to look exactly the same.
+   The idea was to drop a write to `innerHTML` that would produce what is
+   already on screen. It measured as worth nothing: Crew's rebuild count went
+   from four to three and Handoff's from two to one, and BOTH of those came
+   from the coalescing below - the dedupe never fired on a write that mattered,
+   because two renders 7ms apart are two different states, not the same one
+   twice.
 
-   Suppressing the entrance ANIMATION, which is what the earlier fix did, does
-   not help with that. The animation was the visible symptom; the churn is the
-   cause, and it is what "crew and handoff still lag" is describing.
+   It was not free, though. A renderer writes `innerHTML` and then attaches to
+   the nodes it just made; skipping the write leaves the OLD nodes in place and
+   the attach runs against them again. The gate found the consequences in three
+   suites - controls that did nothing, downloads that produced no file - which
+   is a worse outcome than the flicker it was aimed at, for no measured gain.
 
-   This shadows `innerHTML` on the view container alone and drops a write that
-   would produce what is already there. It is deliberately at this level rather
-   than in each renderer: every view writes through this one property, so one
-   guard covers the ones nobody has complained about yet, and no render
-   function has to remember to opt in.
-
-   Skipping also keeps a regional repaint that has landed since - `_cwPopPaint`
-   writes one block of Crew directly - which is the outcome you want anyway: a
-   full write identical to the last full write would have thrown that away and
-   made the block paint itself a second time. */
-function _vcDedupe(vc){
-  if(!vc || vc._vcDeduped) return;
-  const d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
-  if(!d || !d.set || !d.get) return;   /* no property to shadow: leave it alone */
-  try{
-    Object.defineProperty(vc, 'innerHTML', {
-      configurable: true,
-      get(){ return d.get.call(this); },
-      set(html){
-        if(this._vcLastHTML === html) return;
-        this._vcLastHTML = html;
-        d.set.call(this, html);
-      }
-    });
-    vc._vcDeduped = true;
-  }catch(e){}
-}
+   Written down rather than silently dropped: the next person to notice
+   repeated identical renders will reach for exactly this, and the reason it
+   does not work is not visible from the idea. */
 
 /* A DATA ARRIVAL IS NOT A REASON TO REDRAW IMMEDIATELY.
 
@@ -438,7 +416,6 @@ function _reRenderSoon(fn){
 function _vcSettleObserve(){
   const vc = document.getElementById('vc');
   if(!vc || vc._vcObs) return;
-  _vcDedupe(vc);
   vc.addEventListener('scroll', _vcRemember, true);
   const obs = new MutationObserver(()=>{
     /* Which tab we are on is recorded whether or not this view has anything to
