@@ -1016,6 +1016,20 @@ const AMV_API = {
      it, and somebody clicking through five countries costs five cached reads
      rather than five calls. */
   async everyday(country){ const r=await this._fetch('/v1/everyday?country='+encodeURIComponent(country||'')); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load these.'); return d; },
+  /* The public connector directory. The whole query is in the URL because the
+     answer is a catalogue rather than anything of this account's - which is
+     what lets the edge cache it and what makes it readable without an account
+     at all. The error message is the server's own where there is one: "the
+     directory could not be reached" and "there is nothing matching that" are
+     different facts and the screen says which. */
+  async connectors(q, cursor, limit){
+    const r=await this._fetch('/v1/connectors?q='+encodeURIComponent(q||'')
+      +'&cursor='+encodeURIComponent(cursor||'')
+      +'&limit='+encodeURIComponent(String(limit||24)));
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||'The connector directory could not be reached.');
+    return d;
+  },
   /* WHAT AMV DOES, PER COUNTRY. Computed on the server from the same
      registries the features use, so this can never claim more than exists. */
   async coverage(){ const r=await this._fetch('/v1/coverage',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load coverage.'); return d; },

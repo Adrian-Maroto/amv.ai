@@ -91,6 +91,20 @@ const PUBLIC = {
      It only READS, and it is bounded per IP because an endpoint anybody can
      reach without a credential is the one worth hammering. */
   '/crew/popular':       'a ranking of a public catalogue, read by people deciding what to try',
+  /* THE CONNECTOR DIRECTORY, AND WHY A LOGIN WOULD PROTECT NOTHING.
+
+     It reads the open MCP registry - a list anybody can fetch from the registry
+     itself - filters it to the servers AMV can actually start, and hands back a
+     package name and a command. Nothing is keyed to an account, nothing is
+     stored against one, and the answer is identical for every caller, which is
+     what makes it cacheable at the edge and at the KV.
+
+     Public for the same reason /v1/everyday is: "what does this connect to" is
+     the question somebody asks BEFORE they have an account, and answering it
+     with a sign-in wall answers a different question instead. The only input is
+     a search word, a cursor and a count, all bounded, and the number of upstream
+     reads one request can cause is bounded too. */
+  '/v1/connectors':      'a catalogue of what AMV connects to, read before anybody signs up',
   /* The catalogue itself, opened deliberately and with the owner's sign-off.
      The handler returns three constants and nothing else - the ten universal
      jobs, the five for the country asked about, and the country names for the

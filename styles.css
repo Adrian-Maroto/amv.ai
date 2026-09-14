@@ -12951,3 +12951,150 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .cwc-t{ font-size:var(--t-2xl); }
   .cwc-acts .btn{ width:100%; }
 }
+
+/* ── LAYER A203 · the connector directory, and a page that stops being blocky ─
+
+   The owner's words for this screen were blocky, and the measurement behind
+   them is simple: it opened with two of the largest cards in the product - the
+   bridge download and the connector command form - inside a section headed
+   "Email & calendar", which they have nothing to do with. Somebody arriving to
+   find out what AMV connects to met a command line.
+
+   Those two are folded into "Your computer" and everything else is a tile: an
+   initial, a name, a line about it, and the credential it needs if it needs
+   one. No border per entry, no button per entry, no badge per entry. The page
+   is the object and the entries are quiet, which is the difference between a
+   directory and a stack of panels.
+
+   Ten to a row and a See all on each, because a category is a search here and
+   the row is the front of it. The full page behind it pages through the rest. */
+.vi-conn{ gap:var(--sp-4)!important; }
+.vi-conn .ss2 + .ss2{ margin-top:0!important; }
+.vi-conn .ss2{ margin-top:0!important; }
+
+/* The setup, closed. */
+.conn-machine{
+  border:1px solid var(--bd); border-radius:var(--r-lg);
+  background:var(--s1); overflow:hidden;
+}
+.conn-machine > summary{
+  cursor:pointer; list-style:none; padding:var(--sp-4) var(--sp-5);
+  display:flex; align-items:baseline; gap:var(--sp-3); flex-wrap:wrap;
+}
+.conn-machine > summary::-webkit-details-marker{ display:none; }
+.conn-machine > summary::after{ content:'\25BE'; margin-left:auto; color:var(--dim); font-size:11px; }
+.conn-machine[open] > summary::after{ content:'\25B4'; }
+.conn-machine > summary:hover{ background:var(--s2); }
+.conn-machine-t{ font-size:var(--t-md); font-weight:640; color:var(--tx); }
+.conn-machine-s{ font-size:var(--t-sm); color:var(--mu); }
+.conn-machine-b{ padding:0 var(--sp-5) var(--sp-5); display:flex; flex-direction:column; gap:var(--sp-4); }
+
+.cdir{ margin-top:var(--sp-2); }
+.cdir-find-wrap{ display:flex; gap:var(--sp-3); align-items:center; flex-wrap:wrap; margin:var(--sp-4) 0 var(--sp-6); }
+.cdir-find-wrap .cw-find{ flex:1 1 320px; max-width:none; }
+.cdir-row{ margin-bottom:var(--sp-6); }
+.cdir-row-h{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--sp-3); margin-bottom:var(--sp-3); }
+.cdir-row-h h3{ margin:0; font-size:var(--t-md); font-weight:640; color:var(--tx); letter-spacing:-.2px; }
+.cdir-more{
+  border:none; background:none; padding:0; cursor:pointer; font-family:inherit;
+  font-size:var(--t-sm); font-weight:600; color:var(--accent-txt); white-space:nowrap;
+}
+.cdir-more:hover{ text-decoration:underline; text-underline-offset:3px; }
+
+.cdir-grid{ display:grid; gap:var(--sp-2); grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
+.cdir-skel{ display:block; height:62px; border-radius:var(--r-md); }
+.cdir-tile{
+  display:flex; gap:var(--sp-3); align-items:flex-start; text-align:left;
+  padding:var(--sp-3); border:1px solid transparent; border-radius:var(--r-md);
+  background:none; font-family:inherit; cursor:pointer; width:100%;
+  transition:background .12s var(--ease), border-color .12s var(--ease);
+}
+.cdir-tile:hover{ background:var(--s2); border-color:var(--bd); }
+.cdir-tile:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.cdir-ic{
+  flex:0 0 auto; width:32px; height:32px; border-radius:var(--r-sm);
+  display:flex; align-items:center; justify-content:center;
+  background:var(--s3); color:var(--mu);
+  font-size:var(--t-md); font-weight:700; font-family:var(--fdisplay);
+}
+.cdir-ic-lg{ background:var(--accent-soft); color:var(--accent-txt); font-family:var(--fdisplay); font-weight:700; }
+.cdir-body{ min-width:0; display:flex; flex-direction:column; gap:2px; }
+.cdir-name{ font-size:var(--t-base); font-weight:600; color:var(--tx); line-height:1.35; }
+.cdir-desc{
+  font-size:var(--t-sm); color:var(--mu); line-height:1.5;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
+}
+.cdir-need{ margin-top:3px; font-size:var(--t-xs); color:var(--dim); }
+
+.cdir-note{ margin:0; font-size:var(--t-base); color:var(--mu); line-height:1.6; }
+.cdir-end{ margin:var(--sp-4) 0 0; font-size:var(--t-sm); color:var(--dim); }
+.cdir-more-row{ margin-top:var(--sp-4); display:flex; justify-content:center; }
+.cdir-back{
+  border:none; background:none; padding:0; margin-bottom:var(--sp-3); cursor:pointer;
+  font-family:inherit; font-size:var(--t-sm); font-weight:600; color:var(--mu);
+}
+.cdir-back:hover{ color:var(--tx); }
+.cdir-code{
+  font-family:var(--mn,ui-monospace,monospace); font-size:var(--t-sm);
+  background:var(--s3); border-radius:var(--r-xs); padding:2px 6px;
+  word-break:break-all; color:var(--tx);
+}
+.cdir-env{ display:block; margin-bottom:var(--sp-2); }
+.cdir-env b{ font-family:var(--mn,ui-monospace,monospace); font-size:var(--t-sm); color:var(--tx); }
+.cdir-req{ font-size:var(--t-xs); color:var(--gold); }
+.cdir-env-d{ display:block; font-size:var(--t-sm); color:var(--mu); line-height:1.5; }
+/* Somebody else's program, about to run on somebody's own computer. This is the
+   one paragraph on the panel that must not be skimmable away. */
+.cdir-warn{
+  margin:var(--sp-5) 0 0; padding:var(--sp-4);
+  border:1px solid var(--gold); border-radius:var(--r-lg);
+  background:color-mix(in srgb, var(--gold) 8%, transparent);
+  font-size:var(--t-base); line-height:1.6; color:var(--mu);
+}
+.cdir-warn b{ color:var(--tx); }
+
+@media (max-width:600px){
+  .cdir-grid{ grid-template-columns:1fr; }
+  .cdir-find-wrap .cw-find{ flex:1 1 100%; }
+  .cdir-find-go{ width:100%; }
+}
+
+/* The native catalogue joins the directory's language. Two lists of the same
+   kind of thing on one page, one drawn as bordered cards inside bordered
+   sections with a filled button each and the other as quiet tiles, is the
+   blockiness the owner meant - and the cards were the louder half. The badge
+   stays, because Autonomous and Manual is a real difference somebody needs
+   before they press anything; it just stops shouting. */
+.vi-conn #int-catalog .ss2{
+  background:none!important; border:none!important; padding:0!important;
+  border-radius:0!important; box-shadow:none!important; backdrop-filter:none!important;
+  margin-bottom:var(--sp-6)!important;
+}
+.vi-conn #int-catalog .ss2 h3{
+  font-size:var(--t-md)!important; font-weight:640!important;
+  letter-spacing:-.2px; text-transform:none!important;
+  margin-bottom:var(--sp-3)!important; color:var(--tx)!important;
+}
+.vi-conn .int-list{ gap:var(--sp-2); grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
+.vi-conn .int-card{
+  background:none; border:1px solid transparent; border-radius:var(--r-md);
+  padding:var(--sp-3); align-items:flex-start; gap:var(--sp-3);
+  transition:background .12s var(--ease), border-color .12s var(--ease);
+}
+.vi-conn .int-card:hover{ background:var(--s2); border-color:var(--bd); transform:none; }
+.vi-conn .int-ic{ width:32px!important; height:32px!important; font-size:var(--t-md)!important; border-radius:var(--r-sm)!important; }
+.vi-conn .int-name{ font-size:var(--t-base)!important; font-weight:600!important; }
+.vi-conn .int-desc{ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.vi-conn .int-act .btn{ font-size:var(--t-sm)!important; padding:5px 12px; }
+/* The offer is one press away, not fifteen filled buttons down a page. */
+.vi-conn .int-act{ margin-left:auto; align-self:center; }
+.vi-conn .int-act .btn.bp{
+  background:var(--s3)!important; color:var(--tx)!important;
+  border:1px solid var(--bd)!important; box-shadow:none!important; font-weight:600;
+}
+.vi-conn .int-card:hover .int-act .btn.bp{
+  background:var(--accent)!important; color:#fff!important; border-color:transparent!important;
+}
+.vi-conn .ax-legend{ background:none; border:none; padding:0; margin:0 0 var(--sp-5); }
+.vi-conn .sec-head{ display:block; }
+.vi-conn .sec-head h3{ margin-bottom:4px; }

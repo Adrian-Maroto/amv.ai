@@ -677,15 +677,12 @@ function _integrationsCatalogHTML(){
          it survives the tab closing. So the row points there. Nothing is
          removed - the capability moves to the entry that actually delivers it,
          which is the difference between a catalogue and a promise. */
-      /* THE MACHINE, FIRST IN THE LIST. Every other row here connects an
-         account so AMV can read or send something. This one connects a
-         computer, which is the difference between AMV writing your project
-         and AMV building it - so it goes at the top rather than among the
-         mail providers. */
-      _bridgeCardHTML()+
-      /* Directly under the machine they run on: a connector without one
-         cannot start, so the two belong on the screen together. */
-      _mcpCardHTML()+
+      /* THE MACHINE USED TO BE FIRST IN THIS LIST, and it was in the wrong
+         list: "Email & calendar" opened with a download button and a command
+         line for a daemon that has nothing to do with either. Both cards moved
+         up the page into "Your computer", where they are together, closed, and
+         findable by the person who wants them. They are unchanged; only their
+         home is. */
       intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically. Set up under Connected accounts above, where you choose what AMV may do.',auto:true,connected:_connHasProvider('google'),icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
       intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:isConn('amv_outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})+
       /* The rest of the world. Google and Microsoft cover a lot of people and
@@ -1107,8 +1104,23 @@ function _connBodyHTML(){
 
 function renderIntegrationsView(){
   const vc=$('vc'); if(!vc) return;
+  /* SEE ALL OPENS A PAGE, NOT A LONGER SCROLL.
+
+     The first version rendered the full directory in place, under the
+     connected accounts, the machine panel and the whole native catalogue - so
+     pressing See all left you looking at exactly what you had been looking at,
+     with more of it somewhere below. What was asked for was a page, and a page
+     is a screen with one thing on it and a way back. */
+  if(typeof _cdirOpenNow === 'function' && _cdirOpenNow()){
+    vc.innerHTML = '<div class="sv fi"><div class="vi vi-conn">' + connectorDirectoryHTML() + '</div></div>';
+    try{
+      const f=$('cdir-find');
+      if(f) on(f,'keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cdirSearch(); } });
+    }catch(e){}
+    return;
+  }
   vc.innerHTML=
-    '<div class="sv fi"><div class="vi">'+
+    '<div class="sv fi"><div class="vi vi-conn">'+
       /* ONE NAME FOR ONE THING. This screen said "Integrations" while the
          Settings pane showing the same catalogue said "Connectors", so the
          product had two words for the thing somebody is looking for - which
@@ -1119,12 +1131,44 @@ function renderIntegrationsView(){
          buttons; what matters now, and what somebody deciding whether to hand
          over a mailbox actually wants to know, is that the grant is scoped,
          held by the server rather than this browser, and revocable. */
-      '<h2>Connectors</h2>'+
-      '<p class="vsub">Connect an account once and AMV can work inside it. A connection is a real sign-in at the provider - AMV never sees your password, only a grant limited to what you allow, and you can take it back at any time. <b style="color:var(--tx)">Autonomous</b> ones keep working when AMV is closed; <b style="color:var(--tx)">manual</b> ones you trigger or upload to.</p>'+
+      '<span class="eyebrow">Connectors</span>'+
+      '<h2>Everything AMV can work inside</h2>'+
+      '<p class="vsub">Connect an account once and AMV can work inside it. A connection is a real sign-in at the provider - AMV never sees your password, only a grant limited to what you allow, and you can take it back at any time.</p>'+
       _connSectionHTML()+
+      /* THE SETUP, FOLDED AWAY UNTIL IT IS WANTED.
+
+         The bridge card and the connector form are two of the largest blocks
+         in this product and they used to open this page - above the catalogue,
+         inside a section called "Email & calendar" that they have nothing to
+         do with. So the first thing somebody saw when they came looking for
+         what AMV connects to was a download button and a command line.
+
+         They are not moved or reduced; they are closed. Anybody who needs them
+         is looking for them, and anybody browsing is not. */
+      '<details class="conn-machine">'+
+        '<summary><span class="conn-machine-t">Your computer</span>'+
+          '<span class="conn-machine-s">'+
+            ((typeof BRIDGE!=='undefined' && BRIDGE.connected)
+              ? 'Connected \u00b7 AMV can run connectors and work in your files'
+              : 'Not connected \u00b7 needed before any connector below can start')+
+          '</span></summary>'+
+        '<div class="conn-machine-b">'+_bridgeCardHTML()+_mcpCardHTML()+'</div>'+
+      '</details>'+
       '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
+      /* Last, and the biggest thing on the page: nine thousand connectors read
+         live from the open registry. It goes after what AMV does natively
+         because those are the ones most people want and the ones that need no
+         computer connected - and a directory of nine thousand in front of them
+         would bury the four that matter. */
+      connectorDirectoryHTML()+
     '</div></div>';
   _wireIntegrationCatalog(vc);
+  /* Enter searches, because a search box that only responds to a button is a
+     search box somebody presses Enter on and thinks is broken. */
+  try{
+    const f=$('cdir-find');
+    if(f) on(f,'keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cdirSearch(); } });
+  }catch(e){}
   try{ _killTokenAutofill&&_killTokenAutofill(); }catch(e){}
 }
 window.renderIntegrationsView=renderIntegrationsView;

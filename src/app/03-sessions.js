@@ -1319,6 +1319,9 @@ function setTab(t){
     return;
   }
   try{ if(t!=='team' && window.AMVTeam && AMVTeam.stopPresence) AMVTeam.stopPresence(); }catch(e){}
+  /* The connector directory's own page state. A screen somebody left is not
+     where they are when they come back. */
+  try{ if(t!=='integrations' && typeof _cdirReset==='function') _cdirReset(); }catch(e){}
   try{ if(t!=='chat' && window.AMVSpeech){ AMVSpeech.stop(); _voiceMode=false; const vb=$('voicemode-btn'); if(vb) vb.classList.remove('on'); } }catch(e){}
   try{ if(typeof AEGIS!=='undefined' && AEGIS.log && t && t!==S.tab){ const _fmap={chat:'chat',dev:'dev',lab:'lab',crew:'crew',studio:'studio',handoff:'handoff',workspaces:'projects',memory:'memory',team:'team',market:'marketplace',tasks:'tasks'}; if(_fmap[t]) AEGIS.log('feature',{name:_fmap[t]}); } }catch(e){}
   S.tab=t;

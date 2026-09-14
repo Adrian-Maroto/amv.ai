@@ -12690,3 +12690,112 @@ broader rather than weaker.
 The general rule: a proxy with a hard number in it decays silently, and the day
 it runs out it reports the thing it guards as broken rather than itself. If the
 real boundary is structural - a function, a block, a file - measure that.
+
+## 484. A control whose effect is off the screen is a control that does nothing
+
+Reported as "when I pick like Uzbekistan it still says the same thing", and the
+interesting part is that nothing was broken. The Worker carries 105 country
+packs of five real jobs each. Picking Uzbekistan really did fetch Uzbekistan's
+five. They arrived in a PANEL OF THEIR OWN at the top of the catalogue, under a
+heading about where you live, while the hundred cards below it never moved.
+
+So by the time somebody had scrolled far enough to use the control, the only
+part of the page that responded to it was above them. Every visible thing was
+identical before and after. The feature worked, the data was real, the endpoint
+was right, and the product was indistinguishable from one where the control was
+a decoration.
+
+The rule: a filter has to change the thing it sits next to. If the result lands
+somewhere else on the page, it will be judged - correctly - as having done
+nothing. Put the control in the filter row and let it drive the list, or do not
+ship the control.
+
+The same session's second half of this: "Everywhere" was stored as an empty
+value, which also meant "nobody has chosen yet", so choosing it let the browser
+guess again and handed back the United States. A deliberate choice and the
+absence of one must never be the same value.
+
+## 485. A repaint is not an arrival
+
+Crew paints from what is on disk, then again when the server answers what it is
+running, then again when the connector list lands. Handoff does the same. Every
+one of those wrote a fresh `<div class="sv fi">`, and `.fi` is a 180ms
+fade-and-rise - so opening Crew played the entrance three or four times in its
+first second and threw the scroll offset back to the top each time.
+
+The owner's words: they start buffering and glitching, they move very very fast.
+
+Each repaint was correct. A screen briefly out of date beats one permanently
+wrong about another device, and every one of those renders exists for a reason.
+What was wrong is that they were drawn as arrivals.
+
+The fix is one MutationObserver on `#vc`, not thirty call sites: a repaint of
+the tab you are already on keeps its scroll and skips the entrance; a move to a
+different tab gets both. The observer runs as a microtask, which is before the
+frame is painted, so the animation is never started rather than cut off.
+
+And the bug INSIDE the fix is the lesson's second half. The first version
+returned early when a view had no `.sv` - chat has none - so it never recorded
+that it had been to chat, and crew → chat → crew read as a repaint of crew. The
+thing you are tracking has to be recorded on every pass, not only on the passes
+where you also have something to do.
+
+## 486. The decision was 71px below the bottom of the panel
+
+Measured on Money leak detector at 1280x900: the Crew job panel was 792px tall
+holding 863px of content, and "Turn it on" was the last thing in it. So the one
+screen whose entire purpose is deciding whether to run a job opened with the
+decision off the bottom, under a raw 90-word instruction, two warning boxes and
+two footnotes.
+
+Nothing was broken. Nothing reported anything. It simply asked somebody to
+scroll past the source code of a thing in order to find out they were allowed
+to want it.
+
+Two parts to the fix and only one of them is layout. The panel is a column with
+a scrolling body and a footer that does not scroll, so the action is on screen
+however heavy the job's own text is. And the body was reordered around the
+question being asked: description first at reading size, the facts as one list
+in one order, and the exact instruction - still exact, still complete - behind a
+disclosure, because somebody deciding whether they want a thing is not yet
+reading its source.
+
+The check that pins it drives the LONGEST job in the catalogue. A panel that
+fits the short ones was never the problem.
+
+## 487. Nine thousand connectors, and why writing them down would have been the
+wrong answer
+
+Asked for far more things AMV can connect to, with a full page of a thousand
+behind a "see more".
+
+The obvious build is a list in the source. It is also the worst one. A thousand
+hand-written entries are a thousand guesses, each correct on the day it was
+typed and rotting from then on, and the first dead `npx -y @somebody/thing` is
+the moment somebody stops believing the rest of the page. It would also cost
+about 150KB on a page with a weight ceiling, to ship a snapshot that is wrong by
+the next release.
+
+So the long tail is READ rather than written. The Worker asks the official MCP
+registry - real package names, real versions, the environment each server
+actually declares - and filters it to the ones AMV's own bridge can start.
+Measured when this was built: 20,000 registered servers, 9,451 with a package
+AMV can run. Every tile on the screen is therefore a thing that connects.
+
+The filter is the whole value. Most registered servers are remote HTTP
+endpoints and AMV runs a local program, so offering one would be a button that
+cannot work - and a directory's only promise is that pressing Connect starts
+something. An entry AMV cannot start is not shown.
+
+Three smaller rules came out of the same work:
+
+  - A category with no data behind it is a guess repeated nine thousand times.
+    The registry publishes no categories, so each row RUNS A REAL QUERY and
+    shows what comes back. That is why a row can be short.
+  - Filtering hard means one upstream page can yield two entries, and answering
+    with two makes a full directory look empty. Keep reading until there is a
+    page worth showing - bounded, so a search matching nothing cannot walk the
+    whole registry.
+  - "Nothing matches" and "the directory could not be reached" are different
+    facts. Showing the first when the second is true tells somebody this product
+    connects to nothing.

@@ -9712,6 +9712,11 @@ const BACKUP_PREFIXES = [
    exist - which is also why erasing the creator takes them with it. */
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
+  /* A cached page of the public connector directory. Nobody's data - it is the
+     same answer for everyone and it rebuilds itself from the registry within
+     six hours. Putting it in a backup would bulk up the file with a copy of
+     somebody else's catalogue and restore a stale one. */
+  'mcpcat:',
   /* A mailbox app password opens the whole mailbox, and for most providers the
      account behind it. One leaked export file must not be a way into every
      connected inbox, so this is excluded on purpose rather than forgotten. */
@@ -11070,6 +11075,12 @@ async function _route(request, env, ctx) {
        names. A GET so a browser and the edge can cache it, which is what keeps
        a public catalogue cheap. */
     '/v1/everyday',             // what AMV does where you live
+    /* The same shape and the same reason: a catalogue, read-only, identical
+       for everyone who asks, and the thing somebody reads before they have an
+       account. It holds nothing belonging to anybody - it reads the public MCP
+       registry, filters it to what AMV's bridge can actually start, and caches
+       the answer. A GET so the edge can serve it. */
+    '/v1/connectors',           // everything AMV can be connected to
     /* A READ THAT WAS ANSWERING 405 TO ITS ONLY CALLER.
 
        AMV_API.crewPopular() calls this with no method, which is a GET, and
@@ -11294,6 +11305,7 @@ async function _route(request, env, ctx) {
     case '/v1/coverage':        return coverageMap(request, env);
     // --- WHAT PEOPLE ALREADY DO EVERY WEEK, WHERE THEY LIVE ---
     case '/v1/everyday':        return everydayJobs(request, env);
+    case '/v1/connectors':      return connectorDirectory(request, env);
     // --- TELEGRAM (official Bot API; the messenger most of the world uses) ---
     case '/v1/telegram/status':     return telegramStatus(request, env);
     case '/v1/telegram/connect':    return telegramConnect(request, env);
@@ -15448,6 +15460,184 @@ async function _autoMakeGame(env, email, item, text) {
 
   const base = String(env.APP_URL || '').replace(/\/$/, '');
   return { id, url: (base || '') + '/g/' + id, count: rec.prompts.length };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE CONNECTOR DIRECTORY, AND WHY IT IS NOT A LIST IN THIS FILE.
+
+   Asked for: far more things AMV can connect to, from everywhere, with ten of
+   each category on the screen and a full directory of a thousand behind it.
+
+   A thousand entries written out here would be a thousand guesses. The only
+   thing that makes a directory entry worth anything is that pressing Connect
+   starts something real, and a hand-typed `npx -y @somebody/server-thing` that
+   does not exist is worse than no entry: it fails at the one moment somebody
+   was trusting the product. Shipping a list like that would also freeze it -
+   every entry correct on the day it was written and rotting from then on.
+
+   So the long tail is READ, not written. The official MCP registry publishes
+   every server anybody has registered, with its real package name, its real
+   version and the environment variables it actually needs, and it is the same
+   list the rest of the ecosystem uses. AMV asks it, filters it to the ones its
+   own bridge can actually run, and hands back a command that works. An entry
+   AMV cannot start is not shown, because the promise of this screen is that
+   what is on it connects.
+
+   THROUGH THE WORKER RATHER THAN FROM THE PAGE, for three reasons and all of
+   them matter: the page's connect-src does not include the registry and is not
+   going to be widened for a catalogue; the answer is identical for everybody,
+   so caching it once here costs one request instead of one per visitor; and a
+   registry that is slow or down becomes one honest message rather than a
+   browser error somebody has to interpret.
+
+   Public, like /v1/everyday and /v1/market/list, and for the same reason: a
+   catalogue of what a product can do is the thing somebody reads BEFORE they
+   have an account. Nothing here is keyed to a caller and nothing is stored
+   against one. */
+const MCPREG_BASE   = 'https://registry.modelcontextprotocol.io/v0/servers';
+const MCPREG_TTL    = 6 * 3600;          // seconds a mapped page stays in KV
+const MCPREG_MAX    = 50;                // entries per answer
+const MCPREG_PAGES  = 6;                 // upstream pages read to fill one answer
+const MCPREG_TIMEOUT = 8000;
+/* What the bridge can actually start. `dnx` and anything else is left out
+   rather than guessed at - a command AMV cannot run has no business being
+   offered, and the filter is the whole reason this directory is trustworthy. */
+const MCPREG_RUNTIME = {
+  npm:  (id, ver) => ({ command: 'npx',    args: ['-y', ver ? id + '@' + ver : id] }),
+  pypi: (id, ver) => ({ command: 'uvx',    args: [ver ? id + '@' + ver : id] }),
+  oci:  (id)      => ({ command: 'docker', args: ['run', '-i', '--rm', id] }),
+};
+function _mcpRegText(v, max) {
+  /* Registry text is written by whoever published the server, so it is treated
+     as hostile input: printable characters only, then a hard length. It is
+     escaped again on the way into the page, and this is the other end of that. */
+  const src = String(v == null ? '' : v);
+  let out = '';
+  for (const ch of src) {
+    const c = ch.codePointAt(0);
+    if (c >= 32 && c !== 127) out += ch;
+    if (out.length >= max) break;
+  }
+  return out.trim();
+}
+/* One registry record to one thing AMV can offer, or null. Null is the normal
+   answer: most registered servers are remote HTTP endpoints, and AMV's
+   connector support runs a local program through the bridge. Offering a remote
+   one would be a button that cannot work. */
+function _mcpRegMap(rec) {
+  const s = (rec && rec.server) || {};
+  const pkgs = Array.isArray(s.packages) ? s.packages : [];
+  for (const p of pkgs) {
+    const t = (p && p.transport && p.transport.type) || 'stdio';
+    if (t !== 'stdio') continue;
+    const make = MCPREG_RUNTIME[String((p && p.registryType) || '').toLowerCase()];
+    if (!make) continue;
+    const id = _mcpRegText(p.identifier, 140);
+    if (!id) continue;
+    const run = make(id, _mcpRegText(p.version, 40));
+    /* Runtime arguments the publisher declared - `-y` and friends. Positional
+       values only: a named argument needs a value from the person, and this
+       screen does not ask for one, so a half-filled command is not offered. */
+    const extra = (Array.isArray(p.runtimeArguments) ? p.runtimeArguments : [])
+      .filter((a) => a && a.type === 'positional' && a.value)
+      .map((a) => _mcpRegText(a.value, 60))
+      .filter(Boolean)
+      .slice(0, 4);
+    const args = run.command === 'npx'
+      ? run.args                              // npx already carries -y
+      : extra.concat(run.args);
+    const env = (Array.isArray(p.environmentVariables) ? p.environmentVariables : [])
+      .filter((e) => e && e.name)
+      .slice(0, 8)
+      .map((e) => ({
+        name: _mcpRegText(e.name, 60),
+        required: !!e.isRequired,
+        secret: !!e.isSecret,
+        desc: _mcpRegText(e.description, 160),
+      }));
+    const full = _mcpRegText(s.name, 160);
+    return {
+      id: full,
+      /* A short name for the card. Registry ids are reverse-DNS
+         (`io.github.someone/thing`), and the half after the slash is the part a
+         person recognises. */
+      name: _mcpRegText(s.title, 80) || full.split('/').pop() || full,
+      by: full.split('/')[0] || '',
+      desc: _mcpRegText(s.description, 300),
+      version: _mcpRegText(s.version, 40),
+      command: run.command,
+      args,
+      env,
+    };
+  }
+  return null;
+}
+async function connectorDirectory(request, env) {
+  const u = new URL(request.url);
+  const q = _mcpRegText(u.searchParams.get('q'), 60);
+  const cursor = _mcpRegText(u.searchParams.get('cursor'), 200);
+  const want = Math.max(1, Math.min(MCPREG_MAX, parseInt(u.searchParams.get('limit'), 10) || 24));
+  /* THE KV DIRECTLY, AND THIS IS THE ONE PLACE THAT IS RIGHT.
+
+     Everything else here goes through DB, which is what lets a deployment run
+     on D1 or on KV from the same code. A cache is the exception and for a
+     mechanical reason: the only thing that makes this safe is that it expires,
+     `expirationTtl` is a KV feature, and the D1 path would write rows nothing
+     ever prunes - a cache that never goes stale is not a cache, it is a stale
+     copy of somebody else's catalogue kept for ever.
+
+     Named `..._CACHE_KEY` on purpose. A GET that writes is refused by
+     a-link-is-not-a-command unless the thing it writes is a named cache key,
+     and that rule is the reason this endpoint is allowed to be a GET at all. */
+  const MCPREG_CACHE_KEY = 'mcpcat:' + encodeURIComponent(q) + ':' + encodeURIComponent(cursor) + ':' + want;
+  try {
+    const hit = await env.AMV_KV.get(MCPREG_CACHE_KEY);
+    if (hit) return json(JSON.parse(hit), 200, { 'Cache-Control': 'public, max-age=1800' });
+  } catch (e) {}
+
+  const out = [];
+  let next = cursor;
+  let read = 0;
+  try {
+    /* Kept reading until there is a page's worth, because filtering to what the
+       bridge can run drops most of what comes back - one upstream page can
+       yield two entries, and answering with two would look like the directory
+       is nearly empty when it is not. Bounded, so a search matching nothing
+       cannot walk the whole registry. */
+    while (out.length < want && read < MCPREG_PAGES) {
+      read++;
+      const url = MCPREG_BASE + '?limit=100&version=latest'
+        + (q ? '&search=' + encodeURIComponent(q) : '')
+        + (next ? '&cursor=' + encodeURIComponent(next) : '');
+      const r = await fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(MCPREG_TIMEOUT),
+      });
+      if (!r.ok) throw new Error('registry ' + r.status);
+      const d = await r.json();
+      const list = Array.isArray(d && d.servers) ? d.servers : [];
+      for (const rec of list) {
+        const m = _mcpRegMap(rec);
+        /* One entry per server id. The registry keeps every version, so an
+           unfiltered page is the same connector five times. */
+        if (m && !out.some((x) => x.id === m.id)) out.push(m);
+        if (out.length >= want) break;
+      }
+      next = (d && d.metadata && d.metadata.nextCursor) || '';
+      if (!next || !list.length) break;
+    }
+  } catch (e) {
+    /* Named, never swallowed into an empty list. "No connectors found" and "the
+       directory could not be reached" are different facts, and showing the
+       first when the second is true tells somebody this product connects to
+       nothing. */
+    return json({ ok: false, error: 'The connector directory could not be reached.',
+                  code: 'directory_unreachable' }, 503);
+  }
+
+  const body = { ok: true, servers: out, cursor: out.length >= want ? next : '', q };
+  try { await env.AMV_KV.put(MCPREG_CACHE_KEY, JSON.stringify(body), { expirationTtl: MCPREG_TTL }); } catch (e) {}
+  return json(body, 200, { 'Cache-Control': 'public, max-age=1800' });
 }
 
 const SHARE_MAX_BYTES = 512 * 1024;

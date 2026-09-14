@@ -1016,6 +1016,20 @@ const AMV_API = {
      it, and somebody clicking through five countries costs five cached reads
      rather than five calls. */
   async everyday(country){ const r=await this._fetch('/v1/everyday?country='+encodeURIComponent(country||'')); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load these.'); return d; },
+  /* The public connector directory. The whole query is in the URL because the
+     answer is a catalogue rather than anything of this account's - which is
+     what lets the edge cache it and what makes it readable without an account
+     at all. The error message is the server's own where there is one: "the
+     directory could not be reached" and "there is nothing matching that" are
+     different facts and the screen says which. */
+  async connectors(q, cursor, limit){
+    const r=await this._fetch('/v1/connectors?q='+encodeURIComponent(q||'')
+      +'&cursor='+encodeURIComponent(cursor||'')
+      +'&limit='+encodeURIComponent(String(limit||24)));
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error||'The connector directory could not be reached.');
+    return d;
+  },
   /* WHAT AMV DOES, PER COUNTRY. Computed on the server from the same
      registries the features use, so this can never claim more than exists. */
   async coverage(){ const r=await this._fetch('/v1/coverage',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load coverage.'); return d; },
@@ -4747,6 +4761,9 @@ function setTab(t){
     return;
   }
   try{ if(t!=='team' && window.AMVTeam && AMVTeam.stopPresence) AMVTeam.stopPresence(); }catch(e){}
+  /* The connector directory's own page state. A screen somebody left is not
+     where they are when they come back. */
+  try{ if(t!=='integrations' && typeof _cdirReset==='function') _cdirReset(); }catch(e){}
   try{ if(t!=='chat' && window.AMVSpeech){ AMVSpeech.stop(); _voiceMode=false; const vb=$('voicemode-btn'); if(vb) vb.classList.remove('on'); } }catch(e){}
   try{ if(typeof AEGIS!=='undefined' && AEGIS.log && t && t!==S.tab){ const _fmap={chat:'chat',dev:'dev',lab:'lab',crew:'crew',studio:'studio',handoff:'handoff',workspaces:'projects',memory:'memory',team:'team',market:'marketplace',tasks:'tasks'}; if(_fmap[t]) AEGIS.log('feature',{name:_fmap[t]}); } }catch(e){}
   S.tab=t;
@@ -28108,15 +28125,12 @@ function _integrationsCatalogHTML(){
          it survives the tab closing. So the row points there. Nothing is
          removed - the capability moves to the entry that actually delivers it,
          which is the difference between a catalogue and a promise. */
-      /* THE MACHINE, FIRST IN THE LIST. Every other row here connects an
-         account so AMV can read or send something. This one connects a
-         computer, which is the difference between AMV writing your project
-         and AMV building it - so it goes at the top rather than among the
-         mail providers. */
-      _bridgeCardHTML()+
-      /* Directly under the machine they run on: a connector without one
-         cannot start, so the two belong on the screen together. */
-      _mcpCardHTML()+
+      /* THE MACHINE USED TO BE FIRST IN THIS LIST, and it was in the wrong
+         list: "Email & calendar" opened with a download button and a command
+         line for a daemon that has nothing to do with either. Both cards moved
+         up the page into "Your computer", where they are together, closed, and
+         findable by the person who wants them. They are unchanged; only their
+         home is. */
       intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically. Set up under Connected accounts above, where you choose what AMV may do.',auto:true,connected:_connHasProvider('google'),icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
       intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:isConn('amv_outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})+
       /* The rest of the world. Google and Microsoft cover a lot of people and
@@ -28538,8 +28552,23 @@ function _connBodyHTML(){
 
 function renderIntegrationsView(){
   const vc=$('vc'); if(!vc) return;
+  /* SEE ALL OPENS A PAGE, NOT A LONGER SCROLL.
+
+     The first version rendered the full directory in place, under the
+     connected accounts, the machine panel and the whole native catalogue - so
+     pressing See all left you looking at exactly what you had been looking at,
+     with more of it somewhere below. What was asked for was a page, and a page
+     is a screen with one thing on it and a way back. */
+  if(typeof _cdirOpenNow === 'function' && _cdirOpenNow()){
+    vc.innerHTML = '<div class="sv fi"><div class="vi vi-conn">' + connectorDirectoryHTML() + '</div></div>';
+    try{
+      const f=$('cdir-find');
+      if(f) on(f,'keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cdirSearch(); } });
+    }catch(e){}
+    return;
+  }
   vc.innerHTML=
-    '<div class="sv fi"><div class="vi">'+
+    '<div class="sv fi"><div class="vi vi-conn">'+
       /* ONE NAME FOR ONE THING. This screen said "Integrations" while the
          Settings pane showing the same catalogue said "Connectors", so the
          product had two words for the thing somebody is looking for - which
@@ -28550,12 +28579,44 @@ function renderIntegrationsView(){
          buttons; what matters now, and what somebody deciding whether to hand
          over a mailbox actually wants to know, is that the grant is scoped,
          held by the server rather than this browser, and revocable. */
-      '<h2>Connectors</h2>'+
-      '<p class="vsub">Connect an account once and AMV can work inside it. A connection is a real sign-in at the provider - AMV never sees your password, only a grant limited to what you allow, and you can take it back at any time. <b style="color:var(--tx)">Autonomous</b> ones keep working when AMV is closed; <b style="color:var(--tx)">manual</b> ones you trigger or upload to.</p>'+
+      '<span class="eyebrow">Connectors</span>'+
+      '<h2>Everything AMV can work inside</h2>'+
+      '<p class="vsub">Connect an account once and AMV can work inside it. A connection is a real sign-in at the provider - AMV never sees your password, only a grant limited to what you allow, and you can take it back at any time.</p>'+
       _connSectionHTML()+
+      /* THE SETUP, FOLDED AWAY UNTIL IT IS WANTED.
+
+         The bridge card and the connector form are two of the largest blocks
+         in this product and they used to open this page - above the catalogue,
+         inside a section called "Email & calendar" that they have nothing to
+         do with. So the first thing somebody saw when they came looking for
+         what AMV connects to was a download button and a command line.
+
+         They are not moved or reduced; they are closed. Anybody who needs them
+         is looking for them, and anybody browsing is not. */
+      '<details class="conn-machine">'+
+        '<summary><span class="conn-machine-t">Your computer</span>'+
+          '<span class="conn-machine-s">'+
+            ((typeof BRIDGE!=='undefined' && BRIDGE.connected)
+              ? 'Connected \u00b7 AMV can run connectors and work in your files'
+              : 'Not connected \u00b7 needed before any connector below can start')+
+          '</span></summary>'+
+        '<div class="conn-machine-b">'+_bridgeCardHTML()+_mcpCardHTML()+'</div>'+
+      '</details>'+
       '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
+      /* Last, and the biggest thing on the page: nine thousand connectors read
+         live from the open registry. It goes after what AMV does natively
+         because those are the ones most people want and the ones that need no
+         computer connected - and a directory of nine thousand in front of them
+         would bury the four that matter. */
+      connectorDirectoryHTML()+
     '</div></div>';
   _wireIntegrationCatalog(vc);
+  /* Enter searches, because a search box that only responds to a button is a
+     search box somebody presses Enter on and thinks is broken. */
+  try{
+    const f=$('cdir-find');
+    if(f) on(f,'keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cdirSearch(); } });
+  }catch(e){}
   try{ _killTokenAutofill&&_killTokenAutofill(); }catch(e){}
 }
 window.renderIntegrationsView=renderIntegrationsView;
@@ -29392,6 +29453,288 @@ async function openEveryday(){
 }
 window.openEveryday = openEveryday;
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THE CONNECTOR DIRECTORY.
+
+   Asked for: far more things AMV can connect to, from everywhere, ten of each
+   category on the screen and a full page of a thousand behind a See more.
+
+   Nine thousand of them are real and none of them are written down here. The
+   Worker reads the official MCP registry - twenty thousand registered servers,
+   9,451 of which ship a package AMV's own bridge can start - filters it to
+   exactly those, and hands back a command that runs. Every tile on this screen
+   is therefore a thing that connects; an entry AMV could not start is not
+   shown, because the only promise a directory makes is that pressing Connect
+   starts something.
+
+   Why not a list in the page: a hand-written thousand would be a thousand
+   guesses, each correct on the day it was typed and rotting from then on, and
+   the first dead `npx -y @somebody/thing` is the moment somebody stops
+   believing the rest of the screen. It would also cost about 150KB on a page
+   with a weight ceiling, to ship a snapshot that is wrong by the next release.
+
+   A CATEGORY IS A SEARCH, NOT A TAXONOMY. The registry publishes no
+   categories, so inventing one per server would mean guessing nine thousand
+   times. Each row runs a real query and shows what genuinely comes back, which
+   is why a row can be short and why an empty one says so rather than hiding.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* The rows, in reading order. The query is what the row really asks the
+   registry, and the two are kept side by side so nobody can rename a row into
+   a claim its query does not support. */
+const CDIR_CATS = [
+  ['dev',      'Developer tools',        'developer'],
+  ['data',     'Data & analytics',       'database'],
+  ['comm',     'Communication',          'messaging'],
+  ['prod',     'Productivity',           'productivity'],
+  ['biz',      'Business & operations',  'crm'],
+  ['cloud',    'Cloud & infrastructure', 'cloud'],
+  ['finance',  'Finance',                'finance'],
+  ['commerce', 'Commerce & payments',    'ecommerce'],
+  ['edu',      'Education & research',   'research'],
+  ['create',   'Creativity & design',    'design'],
+  ['market',   'Marketing',              'marketing'],
+  ['maps',     'Maps & location',        'maps'],
+  ['travel',   'Travel',                 'travel'],
+  ['health',   'Health',                 'health'],
+  ['security', 'Security',               'security'],
+];
+const CDIR_ROW_N = 10;          // per row on the overview, as asked for
+const CDIR_PAGE_N = 36;         // per page on the full directory
+
+/* query -> { state, servers, cursor, err }. One entry per query rather than per
+   row, so a row and the full page behind it share the fetch instead of asking
+   the same question twice. */
+const _cdir = {};
+/* Which page is showing: '' is the overview, anything else is the full
+   directory for that query. Held rather than derived because the back control
+   has to have somewhere to go back TO. */
+let _cdirOpen = null;           // { q, title } or null
+let _cdirFind = '';
+
+/* Asked rather than read, because the view that needs to know lives in another
+   module and a top-level `let` in this bundle is a script binding, not a
+   property of window - reading `window._cdirOpen` from there would be
+   `undefined` with no error either way, which the gate has a whole stage for. */
+function _cdirOpenNow(){ return !!_cdirOpen; }
+/* Leaving the tab closes the page. Without this, opening Finance, going to
+   Chat and coming back to Connectors landed on Finance again - a screen
+   somebody left a quarter of an hour ago, presented as where they are now. */
+function _cdirReset(){ _cdirOpen = null; }
+function _cdirKey(q){ return String(q || '').toLowerCase(); }
+function _cdirGet(q){ return _cdir[_cdirKey(q)] || { state:'idle', servers:[], cursor:'', err:'' }; }
+
+async function _cdirLoad(q, want){
+  const k = _cdirKey(q);
+  const cur = _cdir[k] || { state:'idle', servers:[], cursor:'', err:'' };
+  if(cur.state === 'loading') return;
+  /* Already has enough for what is being asked for. A row wants ten and the
+     full page wants thirty-six, so "enough" depends on the caller. */
+  if(cur.state === 'done' && cur.servers.length >= (want || CDIR_ROW_N)) return;
+  if(cur.state === 'error' || cur.state === 'off') return;
+  if(!(window.AMV_API && AMV_API.live && AMV_API.connectors)){
+    _cdir[k] = { state:'off', servers:[], cursor:'', err:'' }; _cdirPaint(); return;
+  }
+  _cdir[k] = { ...cur, state:'loading' };
+  try{
+    const d = await AMV_API.connectors(q, cur.cursor || '', want || CDIR_ROW_N);
+    const got = Array.isArray(d && d.servers) ? d.servers : [];
+    const seen = new Set(cur.servers.map(s => s.id));
+    _cdir[k] = { state:'done',
+                 servers: cur.servers.concat(got.filter(s => s && !seen.has(s.id))),
+                 cursor: (d && d.cursor) || '', err:'' };
+  }catch(e){
+    /* Named. An unreachable directory and an empty one are different facts,
+       and showing the second when the first is true tells somebody this
+       product connects to nothing. */
+    _cdir[k] = { state:'error', servers:cur.servers, cursor:cur.cursor,
+                 err:String((e && e.message) || '').slice(0, 140) };
+  }
+  _cdirPaint();
+}
+function _cdirPaint(){
+  try{ if(S.tab === 'integrations' && typeof renderIntegrationsView === 'function') renderIntegrationsView(); }catch(e){}
+}
+
+/* ── A CONNECTOR AS A TILE ──────────────────────────────────────────────────
+   Deliberately not a card with a border and a button row. The owner's word for
+   the old screen was blocky, and the thing that makes a directory read as a
+   directory rather than a stack of panels is that the entries are quiet and
+   the page is the object. */
+function _cdirTile(s){
+  const need = (s.env || []).filter(e => e && e.required);
+  const mark = (s.name || '?').trim().charAt(0).toUpperCase() || '?';
+  return '<button class="cdir-tile" data-dact="cdirOpen" data-darg="' + escH(s.id) + '">'
+    + '<span class="cdir-ic" aria-hidden="true">' + escH(mark) + '</span>'
+    + '<span class="cdir-body">'
+      + '<span class="cdir-name">' + escH(s.name) + '</span>'
+      + '<span class="cdir-desc">' + escH(s.desc || 'No description was published for this one.') + '</span>'
+      + (need.length
+          ? '<span class="cdir-need">Needs ' + escH(need.map(e => e.name).slice(0, 2).join(', ')) + '</span>'
+          : '')
+    + '</span>'
+  + '</button>';
+}
+
+function _cdirRowHTML(cat){
+  const [key, title, q] = cat;
+  const st = _cdirGet(q);
+  try{ setTimeout(() => _cdirLoad(q, CDIR_ROW_N), 0); }catch(e){}
+  let body;
+  if(st.state === 'off')
+    body = '<p class="cdir-note">' + escH(T('The directory is read from AMV’s servers, and this copy is not connected to one.')) + '</p>';
+  else if(st.state === 'error')
+    body = '<p class="cdir-note">' + escH(T('This could not be loaded')) + (st.err ? ' (' + escH(st.err) + ')' : '')
+         + '. <button class="mc-sec-link" data-dact="cdirRetry" data-darg="' + escH(q) + '">' + escH(T('Try again')) + '</button></p>';
+  else if(st.state === 'idle' || (st.state === 'loading' && !st.servers.length))
+    body = '<div class="cdir-grid" aria-busy="true">'
+         + new Array(4).fill('<span class="cdir-skel skl"></span>').join('') + '</div>';
+  else if(!st.servers.length)
+    body = '<p class="cdir-note">' + escH(T('Nothing in the directory matches this yet.')) + '</p>';
+  else
+    body = '<div class="cdir-grid">' + st.servers.slice(0, CDIR_ROW_N).map(_cdirTile).join('') + '</div>';
+
+  return '<section class="cdir-row" data-cdir-row="' + escH(key) + '">'
+    + '<div class="cdir-row-h">'
+      + '<h3>' + escH(title) + '</h3>'
+      + '<button class="cdir-more" data-dact="cdirAll" data-darg="' + escH(q) + '">'
+        + escH(T('See all')) + ' →</button>'
+    + '</div>'
+    + body
+  + '</section>';
+}
+
+/* The overview: every row, ten each. */
+function connectorDirectoryHTML(){
+  if(_cdirOpen) return _cdirFullHTML();
+  return '<section class="cdir">'
+    + '<div class="sec-head"><h3>' + escH(T('Everything AMV can connect to')) + '</h3>'
+      + '<span class="sec-sub">' + escH(T('Read live from the open connector registry and filtered to the ones AMV can actually start on your computer - so everything here runs. Ten of each below; search or open a category for the rest.')) + '</span></div>'
+    + '<div class="cdir-find-wrap">'
+      + '<input id="cdir-find" class="cw-find" type="search" autocomplete="off" value="' + escH(_cdirFind) + '"'
+        + ' placeholder="' + escH(T('Search every connector - slack, postgres, stripe, figma…')) + '">'
+      + '<button class="btn bs cdir-find-go" data-dact="cdirSearch">' + escH(T('Search')) + '</button>'
+    + '</div>'
+    + CDIR_CATS.map(_cdirRowHTML).join('')
+  + '</section>';
+}
+
+function _cdirFullHTML(){
+  const q = _cdirOpen.q;
+  const st = _cdirGet(q);
+  try{ setTimeout(() => _cdirLoad(q, CDIR_PAGE_N), 0); }catch(e){}
+  let body;
+  if(st.state === 'off')
+    body = '<p class="cdir-note">' + escH(T('The directory is read from AMV’s servers, and this copy is not connected to one.')) + '</p>';
+  else if(st.state === 'error' && !st.servers.length)
+    body = '<p class="cdir-note">' + escH(T('The directory could not be reached')) + (st.err ? ' (' + escH(st.err) + ')' : '')
+         + '. <button class="mc-sec-link" data-dact="cdirRetry" data-darg="' + escH(q) + '">' + escH(T('Try again')) + '</button></p>';
+  else if(!st.servers.length && st.state === 'loading')
+    body = '<div class="cdir-grid" aria-busy="true">'
+         + new Array(9).fill('<span class="cdir-skel skl"></span>').join('') + '</div>';
+  else if(!st.servers.length)
+    body = '<p class="cdir-note">' + escH(T('Nothing in the directory matches that. The registry is searched by name and description, so a shorter word usually finds more.')) + '</p>';
+  else
+    body = '<div class="cdir-grid cdir-grid-full">' + st.servers.map(_cdirTile).join('') + '</div>'
+      + (st.cursor
+          ? '<div class="cdir-more-row"><button class="btn bs" data-dact="cdirMore" data-darg="' + escH(q) + '">'
+            + (st.state === 'loading' ? escH(T('Loading…')) : escH(T('Load more')))
+            + '</button></div>'
+          : '<p class="cdir-end">' + escH(T('That is everything the registry has for this.')) + '</p>');
+
+  return '<section class="cdir cdir-full">'
+    + '<button class="cdir-back" data-dact="cdirBack">← ' + escH(T('All categories')) + '</button>'
+    + '<div class="sec-head"><h3>' + escH(_cdirOpen.title) + '</h3>'
+      + '<span class="sec-sub">' + escH(T('Every one of these runs on your own computer through the bridge, and AMV drives it.')) + '</span></div>'
+    + body
+  + '</section>';
+}
+
+/* ── WHAT HAPPENS WHEN SOMEBODY PICKS ONE ───────────────────────────────────
+
+   The detail panel, and it is where the honesty of this screen is decided. It
+   names the exact command that will run, the machine it will run on, and every
+   environment variable the publisher declared - because a connector is a
+   PROGRAM SOMEBODY ELSE WROTE and AMV is about to start it on this person's
+   computer. Consent for that has to be informed or it is not consent.
+
+   Adding it does not run it: it goes into the connector list beside the
+   bridge, where starting it is a separate, visible act. */
+function cdirOpen(id){
+  let s = null;
+  for(const k in _cdir){ const f = (_cdir[k].servers || []).find(x => x.id === id); if(f){ s = f; break; } }
+  const r = $('ovr'); if(!s || !r) return;
+  const cmd = (s.command + ' ' + (s.args || []).join(' ')).trim();
+  const bridged = !!(typeof BRIDGE !== 'undefined' && BRIDGE.connected);
+  const env = s.env || [];
+  const fact = (k, v, cls) => '<div class="cwp-fact' + (cls ? ' ' + cls : '') + '"><dt>' + escH(k) + '</dt><dd>' + v + '</dd></div>';
+  r.innerHTML =
+    '<div class="ov" id="cdir-bg"><div class="cwp" role="dialog" aria-modal="true" aria-labelledby="cdir-t">'+
+      '<button class="cwp-x" id="cdir-x" aria-label="Close">✕</button>'+
+      '<div class="cwp-scroll">'+
+        '<div class="cwp-head"><span class="cwp-ic cdir-ic-lg" aria-hidden="true">'+escH((s.name||'?').charAt(0).toUpperCase())+'</span>'+
+          '<h2 class="cwp-t" id="cdir-t">'+escH(s.name)+'</h2></div>'+
+        '<p class="cwp-desc">'+escH(s.desc || 'No description was published for this one.')+'</p>'+
+        '<dl class="cwp-facts">'+
+          fact('Published as', '<code class="cdir-code">'+escH(s.id)+(s.version?' · '+escH(s.version):'')+'</code>')+
+          fact('AMV will run', '<code class="cdir-code">'+escH(cmd)+'</code>')+
+          fact('Where', bridged
+            ? 'On the computer you have connected, through the bridge.'
+            : '<span class="bill-unknown">Nowhere yet - a connector is a program, so it needs a computer connected above.</span>',
+            bridged ? '' : 'warn')+
+          (env.length
+            ? fact('It asks for', env.map(e =>
+                '<span class="cdir-env"><b>'+escH(e.name)+'</b>'+(e.required?' <span class="cdir-req">required</span>':'')+
+                (e.desc?'<span class="cdir-env-d">'+escH(e.desc)+'</span>':'')+'</span>').join(''))
+            : fact('It asks for', 'Nothing. It needs no credential to start.'))+
+        '</dl>'+
+        '<p class="cdir-warn"><b>This is somebody else’s program.</b> AMV did not write it and does not vouch for it. '+
+          'It will run on your computer with your files and your network, and anything you put in its environment box '+
+          'is handed to it. Read what it is before you start it - the name above is the real package.</p>'+
+      '</div>'+
+      '<div class="cwp-act">'+
+        '<button class="btn bs" id="cdir-cancel">Close</button>'+
+        '<button class="btn bp" id="cdir-add">Add this connector</button>'+
+      '</div>'+
+    '</div></div>';
+  r.classList.add('on');
+  onBackdrop($('cdir-bg'), closeOvr);
+  on($('cdir-x'), 'click', closeOvr);
+  on($('cdir-cancel'), 'click', closeOvr);
+  on($('cdir-add'), 'click', () => {
+    /* The existing add path, with its own name, duplicate and credential
+       rules. Nothing here reimplements them: a second copy of the rule that
+       refuses a token in an argument is a second copy that can disagree. */
+    try{
+      const short = (s.id.split('/').pop() || s.name || 'connector');
+      _mcpAdd(short, s.command, s.args || [], null);
+      closeOvr();
+      toast('Added. Start it from Connectors, and put any credential in its environment box - it stays in this tab.', 'success', 7000);
+      renderIntegrationsView();
+    }catch(e){
+      toast(String((e && e.message) || 'That could not be added.'), 'error', 7000);
+    }
+  });
+}
+function cdirAll(q){
+  const row = CDIR_CATS.find(c => c[2] === q);
+  _cdirOpen = { q, title: row ? row[1] : ('Connectors matching “' + q + '”') };
+  renderIntegrationsView();
+  try{ const sv = document.querySelector('#vc .sv'); if(sv) sv.scrollTop = 0; }catch(e){}
+}
+function cdirBack(){ _cdirOpen = null; renderIntegrationsView(); }
+function cdirRetry(q){ _cdir[_cdirKey(q)] = { state:'idle', servers:[], cursor:'', err:'' }; _cdirPaint(); }
+function cdirMore(q){ _cdirLoad(q, CDIR_PAGE_N); _cdirPaint(); }
+function cdirSearch(){
+  const el = $('cdir-find');
+  const q = el ? String(el.value || '').trim() : '';
+  _cdirFind = q;
+  if(!q){ _cdirOpen = null; renderIntegrationsView(); return; }
+  cdirAll(q);
+}
+try{ window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdirOpen=cdirOpen; window.cdirAll=cdirAll; window.cdirBack=cdirBack;
+     window.cdirRetry=cdirRetry; window.cdirMore=cdirMore; window.cdirSearch=cdirSearch;
+     window.connectorDirectoryHTML=connectorDirectoryHTML; window.CDIR_CATS=CDIR_CATS; }catch(e){}
 /* ============================================================
    AMV ENGINE - real working backbone for the dev/agent tools
    aiComplete(): single-shot AI text. runCode(): real execution.
