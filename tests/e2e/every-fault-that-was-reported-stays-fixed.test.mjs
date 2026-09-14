@@ -145,11 +145,33 @@ section('3. The three Build sections sit the same way, so nothing jumps');
       const kids = [...root.querySelectorAll('*')].filter(e => e.getBoundingClientRect().height > 6);
       const bot = Math.max(...kids.map(e => e.getBoundingClientRect().bottom));
       return { above: head ? Math.round(head.getBoundingClientRect().top - rr.top) : -1,
-               overflow: Math.round(bot - rr.bottom) };
+               overflow: Math.round(bot - rr.bottom),
+               scrollable: Math.round(root.scrollHeight - root.clientHeight),
+               overflowY: getComputedStyle(root).overflowY };
     }, m);
   }
+  /* REACHABLE, NOT "FITS". The first version of this demanded overflow <= 0,
+     and it is worth saying why that was the wrong claim rather than just
+     loosening it.
+
+     The three entries share one top offset - that is the whole fix for the
+     jump - and Studio's entry is the tall one. Any offset large enough to
+     answer "it is way too high, move it down" is by definition an offset the
+     tall entry cannot absorb on a short window. "Fits" is therefore not a
+     property all three can have at once, and a rule that demands it is a rule
+     that gets deleted the first time somebody adds a line of copy.
+
+     What must never happen is content a person cannot get to. That is a real
+     fault this codebase has already paid for once, with a modal whose Save
+     button sat 250px below a centred box that would not scroll to it. So the
+     claim is: it fits, or it scrolls far enough to reach the part that does
+     not. Verified by mutation - setting the container to overflow:hidden with
+     content past the edge fails this line. */
   for (const m of ['code', 'design', 'lab']) {
-    ok(where[m].overflow <= 0, m + ' fits the window rather than running off it', JSON.stringify(where[m]));
+    const w = where[m];
+    const reachable = w.overflow <= 0
+      || (/(auto|scroll)/.test(w.overflowY) && w.scrollable >= w.overflow);
+    ok(reachable, m + ' keeps every part of the entry reachable', JSON.stringify(w));
   }
   /* TWO CLAIMS, BECAUSE ONE OF THEM DOES NOT DISTINGUISH ANYTHING.
 
@@ -160,8 +182,17 @@ section('3. The three Build sections sit the same way, so nothing jumps');
      green. The second claim is the one that bites, and it is the owner's actual
      words - "way too high ... needs to move more down". */
   const tops = ['code', 'design', 'lab'].map(m => where[m].above);
-  ok(Math.max(...tops) - Math.min(...tops) < 140,
-     'and they start within a screenful of each other', tops.join(' / '));
+  /* 24, not 140. The first number here was 140 - "within a screenful" - and it
+     passed a real 57px jump: the rule had been written in the middle of the
+     stylesheet, so Design lost it to a later `!important` and measured 81 / 24
+     / 81 while this line called it fine. A threshold loose enough to pass the
+     defect it guards is the same useless assertion as before, wearing a
+     number. All three take ONE rule, so the honest expectation is that they
+     agree exactly; 24 is slack for a border or a rounded margin, not room for
+     a different rule to win. */
+  ok(Math.max(...tops) - Math.min(...tops) < 24,
+     'and they start at the same place, because one rule sets all three',
+     tops.join(' / '));
   for (const m of ['code', 'design', 'lab']) {
     ok(where[m].above > 20,
        m + ' is not slammed against the top of the window', JSON.stringify(where[m]));

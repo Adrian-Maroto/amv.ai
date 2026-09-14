@@ -8273,11 +8273,6 @@ justify-content:flex-start; padding-top:0; padding-bottom:var(--sp-7);
 .lab-shell.lab-blank .lab-entry-grid,
 .lab-shell.lab-blank .lab-entry-do{ max-width:660px; }
 }
-@media(min-width:761px){
-.dev-shell.dev-blank > .dev-chat-pane,
-.lab-shell.lab-blank{ padding-top:clamp(24px, 9vh, 110px); }
-#vc .sv.bld-sv{ padding-top:clamp(24px, 9vh, 110px)!important; }
-}
 .lab-shell.lab-blank{ overflow-y:auto; overflow-x:hidden; }
 .lab-shell.lab-blank > *{ flex:0 0 auto; }
 .lab-shell.lab-blank .lab-entry{
@@ -8714,6 +8709,11 @@ text-decoration:underline; text-underline-offset:3px; flex:0 0 auto;
 .vi-bill .bill-fact{ grid-template-columns:1fr; gap:2px; padding:var(--sp-2) 0; }
 .vi-bill .bill-acts .btn{ width:100%; }
 .bill-leave{ flex-direction:column; gap:var(--sp-2); }
+}
+@media(min-width:761px){
+#vc .dev-shell.dev-blank > .dev-chat-pane,
+#vc .lab-shell.lab-blank,
+#vc .sv.bld-sv{ padding-top:clamp(24px, 9vh, 110px)!important; }
 }
 </style>
 <!-- BUILD:CSS:END -->

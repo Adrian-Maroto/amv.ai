@@ -12636,12 +12636,17 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    The measurement that missed this is worth recording too: it took the first
    DESCENDANT of the view root, and Build's root has a full-height pane as its
    only child, so the answer was always zero and could not tell centred from
-   top-aligned. It reads `.build-head` now, which all three render. */
-@media(min-width:761px){
-  .dev-shell.dev-blank > .dev-chat-pane,
-  .lab-shell.lab-blank{ padding-top:clamp(24px, 9vh, 110px); }
-  #vc .sv.bld-sv{ padding-top:clamp(24px, 9vh, 110px)!important; }
-}
+   top-aligned. It reads `.build-head` now, which all three render.
+
+   THE RULE ITSELF IS AT THE END OF THIS FILE, NOT HERE. Stated here it was
+   two thirds of a fix: Build and Lab took it and Design did not, because
+   `#vc .sv.bld-sv{ padding-top:var(--sp-5)!important }` is written LATER in
+   this stylesheet at the same specificity, and later wins - `!important` on
+   both sides does not change that. Measured on the published page: 81 / 24 /
+   81, so Design still started 57px above the other two. That is the same
+   defect as before, one third the size, which is the size that gets called
+   fixed. See LAYER A206. */
+
 
 /* Lab's entry: one document scroll, not a box inside a box. */
 .lab-shell.lab-blank{ overflow-y:auto; overflow-x:hidden; }
@@ -13323,4 +13328,30 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .vi-bill .bill-fact{ grid-template-columns:1fr; gap:2px; padding:var(--sp-2) 0; }
   .vi-bill .bill-acts .btn{ width:100%; }
   .bill-leave{ flex-direction:column; gap:var(--sp-2); }
+}
+
+/* ======================================================================
+   LAYER A206 - the shared Build entry offset, stated where it can win.
+   ====================================================================== */
+
+/* Build, Studio and Lab are three entries into one section that a person
+   moves between with one click, so what has to stay constant is where the
+   FIRST CONTENT lands. Centring cannot do that - they are different heights,
+   and centring a short column puts its heading far down the page while
+   centring a tall one puts its heading near the top, which is what produced a
+   204px jump between them. One offset for all three instead.
+
+   It lives at the END of the stylesheet because the first attempt did not.
+   Written in the middle, it lost `.bld-sv` to a `padding-top:var(--sp-5)
+   !important` further down the file - same specificity, later wins - and the
+   result measured 81 / 24 / 81 while the check said the spread was acceptable.
+   Appending is not a style preference here; it is the only position that
+   beats a rule you have not read.
+
+   Clamped rather than fixed: 110px is most of a short laptop screen, and 9vh
+   keeps it proportional to the window it is actually in. */
+@media(min-width:761px){
+  #vc .dev-shell.dev-blank > .dev-chat-pane,
+  #vc .lab-shell.lab-blank,
+  #vc .sv.bld-sv{ padding-top:clamp(24px, 9vh, 110px)!important; }
 }
