@@ -92,11 +92,37 @@ const arrive = (tab) => page.evaluate(async (t) => {
   return window.__an.filter(a => a === 'viewEnter').length;
 }, tab);
 
+/* A SECOND RENDER, FORCED, BECAUSE WAITING FOR ONE PROVES NOTHING ON HALF
+   THE TABS.
+
+   `arrive` below only sees a replay where the view actually re-renders itself,
+   and that means where it FETCHES: Crew, Handoff and Integrations load data and
+   paint again when it lands. Build and Chat render synchronously and never
+   repaint here, so "arrives once" was true for them whatever the code did -
+   proved by deleting the suppression and watching only crew, handoff and
+   integrations fail while build, chat, lab and billing stayed green.
+
+   Two of those - build and chat - are tabs the flicker was reported on, so a
+   vacuous pass there is the whole problem this file exists to stop. The fix is
+   to stop waiting for a repaint and cause one: `renderView()` is the dispatch
+   the app itself re-runs when data arrives, so calling it is the same event,
+   minus the wait. The entrance must not play again. */
+const repaint = (tab) => page.evaluate(async (t) => {
+  setTab(t); await new Promise(r => setTimeout(r, 1200));
+  window.__an = [];
+  renderView(); await new Promise(r => setTimeout(r, 900));
+  return window.__an.filter(a => a === 'viewEnter').length;
+}, tab);
+
 section('1. Opening a screen does not play its entrance twice');
 {
   for (const t of ['crew', 'handoff', 'build', 'chat', 'lab', 'integrations', 'billing']) {
     const n = await arrive(t);
     ok(n <= 1, t + ' arrives once', String(n));
+  }
+  for (const t of ['crew', 'handoff', 'build', 'chat', 'lab', 'integrations', 'billing']) {
+    const n = await repaint(t);
+    ok(n === 0, t + ' does not replay its entrance when it repaints', String(n));
   }
 }
 

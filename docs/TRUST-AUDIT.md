@@ -209,3 +209,68 @@ none.
   connector's description goes into the model's context verbatim; the bound on
   its length is a cost control. What stops a tool call the person did not want
   is the consent dialog, which is why attack 2 above mattered so much.
+
+## Round two: the owner's own fault list, attacked the same way
+
+The security audit above measured guards by breaking them. This round applies
+the same test to the suite that checks the fourteen faults the owner reported,
+`every-fault-that-was-reported-stays-fixed`. Every assertion in it was written
+to protect a complaint the owner made in their own words, so an assertion that
+cannot fail is a complaint nobody is actually watching.
+
+Thirteen mutations, one per claim, each reverted immediately.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 1 | repaint suppression deleted | 10 assertions, incl. build and chat |
+| 2 | the shared Build offset deleted | 3 assertions |
+| 3 | the Build entry made unscrollable past its edge | reachability |
+| 4 | `_STUDIO.openWip` never set on resume | 2 assertions |
+| 5 | `buildHome()` dropped from the sidebar | pressing Build lands on Build |
+| 6 | `cwCountry` made to ignore its argument | 2 assertions |
+| 7 | the top block cut from five to three | five jobs lead the catalogue |
+| 8 | a credential field added to the connect screen | asks for no credential |
+| 9 | the job panel's action pushed below the fold | the decision is on screen |
+| 10 | the price rendered twice | states the price once |
+| 11 | a removed feature promised again in Help | Help promises nothing removed |
+| 12 | Lab made a scroller inside a scroller | 3 assertions |
+| 13 | `CW_START_HERE` cut to three entries | NOTHING - and correctly so |
+
+13 is not a hole. The code tops the block back up to five from the catalogue
+ranking when a curated id is missing, deliberately, so the mutation changed
+nothing a person would see. A mutation that does not change behaviour cannot
+measure an assertion, and recording it as a miss would have been the wrong
+report. Mutation 7 tested the real claim and was caught.
+
+### What this round actually found
+
+One real hole, and it was on the complaint made most often.
+
+Deleting the repaint suppression originally failed only THREE assertions -
+crew, handoff, integrations - while build, chat, lab and billing stayed green.
+Those four were not protected; they were vacuous. The reason is mechanical:
+`arrive` waits for a view to repaint itself, and a view only repaints when it
+FETCHES. Crew, Handoff and Integrations load data. Build and Chat render
+synchronously and never repaint under test, so their assertion was true no
+matter what the code did.
+
+Build and chat are two of the four screens the owner named. A test that cannot
+fail on the exact screen somebody complained about is the failure mode this
+file was written to prevent, reproduced inside the file itself.
+
+Fixed by causing the repaint instead of waiting for it: `renderView()` is the
+dispatch the app re-runs when data lands, so calling it is the same event
+without the wait. The same mutation now fails ten assertions, build and chat
+among them.
+
+### Still unmeasured
+
+- **The live site.** Everything here drives `public/` served locally. Whether
+  `amv.homes` serves these bytes is the host's business and is not checked from
+  the repository.
+- **Billing is checked for what it SAYS, not how it looks.** "It has to look
+  professional" is not a property a DOM assertion holds. The checks cover the
+  price appearing once, no bare dash where a date belongs, one surface rather
+  than a stack of boxes, and the one action that matters being present.
+- **Thirteen mutations is not every assertion.** Sections 4 to 7 each have one
+  or two claims proven able to fail, not all of them.
