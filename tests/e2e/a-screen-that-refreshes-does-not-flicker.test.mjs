@@ -69,8 +69,27 @@ section('A screen that repaints several times still only arrives once');
   ok(crew.paints >= 3, 'Crew really does repaint while the server answers', JSON.stringify(crew));
   ok(crew.enter <= 1, 'and the entrance plays at most once', JSON.stringify(crew));
 
+  /* HANDOFF IS THE OTHER WAY AROUND NOW, AND THAT IS THE FIX.
+
+     This used to require `paints >= 2` as a PRECONDITION: Handoff repainted
+     when its sync came back, and the claim worth making was that the entrance
+     did not replay across those repaints.
+
+     It does not repaint any more. The sync compares what it fetched against
+     what is already stored and only redraws when something CHANGED, so the
+     common case - polling that returns the same two lists - draws once and
+     leaves the screen alone. Requiring two paints here would now be requiring
+     the defect back, which is how a precondition quietly becomes a rule.
+
+     So the assertion is inverted, and it is a stronger claim than the one it
+     replaces: not "the flicker is hidden" but "there is nothing to hide". The
+     entrance count is still checked, because one paint must still be one
+     arrival. Crew above still repaints three times or more - it has several
+     requests genuinely landing at different moments - so the original claim is
+     still being made where it applies. */
   const handoff = await open('handoff');
-  ok(handoff.paints >= 2, 'so does Handoff', JSON.stringify(handoff));
+  ok(handoff.paints === 1, 'Handoff does not repaint when nothing changed',
+     JSON.stringify(handoff));
   ok(handoff.enter <= 1, 'and it arrives once too', JSON.stringify(handoff));
 }
 
