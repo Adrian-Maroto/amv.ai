@@ -34,12 +34,37 @@ const SRC = join(ROOT, 'src', 'app');
 const app = await bootApp({ apiBase: '' });
 const { page, errors } = app;
 
+/* SECTIONS, NOT HEADINGS.
+
+   This read the h2s and h3s and looked for one called "Current plan". That
+   heading is gone on purpose: it labelled a card whose first word was the plan
+   and whose second was the price, which is a label for something already
+   labelled - and five headed, bordered panels down one page is what made this
+   screen read as a settings form rather than a product.
+
+   The promise has not changed and is what is still checked: what you are on,
+   then what you have used, then what you could move to, then the
+   payment-security block, last and out of the way. Anchoring on the SECTIONS
+   rather than on the words inside them is what makes it survive the next time
+   somebody rewrites a heading, which is exactly what happened here. */
 const headings = (plan) => page.evaluate((pl) => {
   saveStr('amv_plan', pl);
   S.tab = 'settings'; S.settingsPane = 'billing';
   renderSettingsView();
   const pane = document.getElementById('set-pane');
-  return [...pane.querySelectorAll('h2,h3')].map(h => h.textContent.trim()).filter(Boolean);
+  return [...pane.querySelectorAll('.ss2, h2, h3')].map((el) => {
+    if (el.classList.contains('bill-sum')) return 'SECTION:current-plan';
+    if (el.classList.contains('ss2')) {
+      const h = el.querySelector('h3');
+      return h ? h.textContent.trim() : '';
+    }
+    /* A section's own heading would otherwise be counted twice - once as the
+       section and once as itself - which made the last entry a duplicate and
+       "is it last" impossible to answer. Headings OUTSIDE a section still
+       count: the usage panes are appended as bare blocks. */
+    if (el.tagName === 'H3' && el.closest('.ss2')) return '';
+    return el.textContent.trim();
+  }).filter(Boolean);
 }, plan);
 const at = (hs, re) => hs.findIndex(h => re.test(h));
 
@@ -47,7 +72,7 @@ section('The billing pane reads in the order somebody uses it');
 {
   for (const plan of ['free', 'elite']) {
     const hs = await headings(plan);
-    const current = at(hs, /^Current plan$/);
+    const current = at(hs, /^SECTION:current-plan$/);
     const usage   = at(hs, /^Usage$/);
     const change  = at(hs, /^Change plan$/);
     const secure  = at(hs, /protect your payment/i);

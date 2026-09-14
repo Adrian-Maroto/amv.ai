@@ -1076,8 +1076,13 @@ function renderBillingView(targetEl){
 
   vc.innerHTML=
     '<div class="sv fi"><div class="vi vi-bill">'+
-      '<span class="eyebrow">Billing</span>'+
-      '<h2>Subscription</h2><p class="vsub">Your plan, billing dates, and the details on file. Payments are processed securely - AMV never stores your full card.</p>'+
+      /* ONE HEADING. It had an eyebrow, a title and a two-line paragraph - three
+         levels of introduction for a page with one fact on it, above a stack of
+         five bordered panels. The sentence about card security was the page's
+         opening line; it is true, it is not what somebody came here to read,
+         and it is still on the screen at the bottom where the rest of the
+         payment-security detail lives. */
+      '<h2 class="bill-h">Billing</h2>'+
       /* ONE CARD, NOT TWO THAT DISAGREE ABOUT NOTHING.
 
          Reported as looking horrible and unprofessional, and the first thing
@@ -1105,25 +1110,29 @@ function renderBillingView(targetEl){
            the payment reassurance - lost its first anchor. It was right to:
            every other section here is announced, and the one that is not reads
            as a card that floated in. */
-        '<h3>Current plan</h3>'+
+        /* The plan and what it costs, said once and said large, with the state
+           of it on the line underneath. The heading that used to sit here said
+           "Current plan" above a card whose first word was the plan - a label
+           for something already labelled. */
         '<div class="bill-sum-top">'+
-          '<div class="bill-sum-l">'+
-            '<span class="bill-sum-ic" aria-hidden="true">'+ic+'</span>'+
-            '<div>'+
-              '<div class="bill-sum-n">'+escH(P.name)+
-                (plan==='free'?'<span class="bill-sum-p">Free</span>'
-                              :'<span class="bill-sum-p">$'+P.price+' / month</span>')+'</div>'+
-              '<div class="bill-sum-d">'+escH(P.blurb||'')+'</div>'+
-            '</div>'+
-          '</div>'+
-          '<span class="badge bg3 bill-sum-st">Active</span>'+
+          '<div class="bill-sum-n">'+escH(P.name)+'</div>'+
+          '<div class="bill-sum-p">'+(plan==='free'?'Free':'$'+P.price+' <span>/ month</span>')+'</div>'+
+        '</div>'+
+        '<div class="bill-sum-sub">'+
+          '<span class="bill-dot'+(plan==='free'?' free':'')+'"></span>'+
+          (plan==='free'
+            ? 'You are not paying for anything. Nothing is on file and nothing renews.'
+            : 'Active'+(nextDate?' \u00b7 renews '+escH(fmt(nextDate)):'')+
+              ' \u00b7 '+escH(P.blurb||''))+
         '</div>'+
         (plan!=='free'?
+        /* Renewal moved up into the line under the plan, where somebody looks
+           for it, so it is not repeated here. */
         '<dl class="bill-facts">'+
-          _bfact('Started', sinceDate?escH(fmt(sinceDate)):'<span class="bill-unknown">Not recorded on this device</span>')+
-          _bfact('Renews', nextDate?escH(fmt(nextDate)):'<span class="bill-unknown">Open Manage billing for the exact date</span>')+
           _bfact('Billing email', escH(email))+
           (P.mult?_bfact('Usage', escH(P.mult)+' the free allowance'):'')+
+          _bfact('Started', sinceDate?escH(fmt(sinceDate)):'<span class="bill-unknown">Not recorded on this device</span>')+
+          (nextDate?'':_bfact('Renews','<span class="bill-unknown">Open Manage billing for the exact date</span>'))+
           (customSummary?_bfact('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
           (customSummary?_bfact('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
         '</dl>'+
@@ -1212,10 +1221,16 @@ function renderBillingView(targetEl){
          this opens the processor's own portal, which is the only place a
          subscription actually ends. */
       (plan!=='free'?
-      '<div class="ss2"><h3>Cancel</h3>'+
-        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0 0 10px">'+
-          'You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
-        '<button class="btn bs" id="bill-cancel" style="font-size:var(--t-sm);color:var(--red-txt);border-color:var(--red-txt)">Cancel subscription</button>'+
+      /* Cancelling is one line at the foot of the page, not a panel of its own
+         with a red-outlined button in it. A product that frames leaving as a
+         section with a warning colour is a product that thinks about leaving
+         more than the person does - and the promise on the pricing page is that
+         it takes one click. It still says exactly what happens, and it still
+         goes through the processor, which is the only thing that can really end
+         a subscription. */
+      '<div class="ss2 bill-leave">'+
+        '<button class="bill-cancel-link" id="bill-cancel">Cancel subscription</button>'+
+        '<span class="bill-leave-s">You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</span>'+
         '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
       '</div>':'')+
       // INVOICES

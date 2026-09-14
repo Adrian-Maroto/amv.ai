@@ -13222,3 +13222,102 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    in its overflow fallback and leave this entry pinned to the top while the
    other two were centred. Invisible height is still height. */
 .dsn-wrap > *:empty{ display:none; }
+
+/* ── LAYER A205 · the billing page, as a premium product does it ────────────
+
+   Reported twice, the second time as "this really honestly looks horrible".
+   The first pass removed a duplicated block, which was a correctness fix and
+   not a design one - the page still read as a settings form.
+
+   What every product this is measured against actually does - Stripe's own
+   billing, Linear, the assistants - is the same shape: state the plan once and
+   large, put the handful of facts beneath it quietly, offer ONE primary action,
+   and hand everything else off to the payment processor. None of them build a
+   billing interface; they state a fact and get out of the way.
+
+   The faults here were countable rather than a matter of taste. Five bordered
+   panels stacked down one page - plan, change plan, cancel, invoices, security
+   - so the eye had five equal places to start. A "CURRENT PLAN" label inside a
+   card whose first word was the plan. An eyebrow, a title and a two-line
+   paragraph before any of it. And "Cancel" given a section and a red-outlined
+   button, which frames leaving as an event.
+
+   One surface now. The panels become sections divided by a hairline, which is
+   the difference between a page and a stack of cards. */
+.vi-bill .bill-h{ font-size:var(--t-3xl)!important; letter-spacing:-.6px; margin-bottom:var(--sp-5)!important; }
+
+/* Everything except the summary loses its box and becomes a section. */
+.vi-bill .ss2{
+  background:none!important; border:none!important; border-radius:0!important;
+  box-shadow:none!important; backdrop-filter:none!important;
+  /* Symmetric, so the hairline sits between two equal spaces rather than tight
+     under the section above it and far from the one below. */
+  padding:var(--sp-5) 0!important; margin:0!important;
+}
+.vi-bill .ss2 + .ss2{ border-top:1px solid var(--bd)!important; }
+.vi-bill .ss2 > h3{
+  font-size:var(--t-sm)!important; font-weight:600!important;
+  letter-spacing:.04em; text-transform:uppercase;
+  color:var(--dim)!important; margin-bottom:var(--sp-4)!important;
+}
+
+/* The summary keeps a real surface - it is the one thing on the page. */
+.vi-bill .ss2.bill-sum{
+  background:var(--s1)!important; border:1px solid var(--bd)!important;
+  border-radius:var(--r-2xl)!important; padding:var(--sp-6)!important;
+}
+.vi-bill .ss2.bill-sum + .ss2{ border-top:none!important; }
+.bill-sum-top{ display:flex; align-items:baseline; gap:var(--sp-4); flex-wrap:wrap; }
+.bill-sum-n{
+  font-family:var(--fdisplay); font-size:var(--t-3xl); font-weight:680;
+  letter-spacing:-.8px; line-height:1; color:var(--tx);
+}
+.bill-sum-p{
+  margin-left:auto; font-family:var(--fdisplay); font-size:var(--t-2xl);
+  font-weight:600; letter-spacing:-.5px; color:var(--tx); white-space:nowrap;
+}
+.bill-sum-p span{ font-family:var(--fn); font-size:var(--t-md); font-weight:500; color:var(--mu); letter-spacing:0; }
+.bill-sum-sub{
+  margin-top:var(--sp-3); display:flex; align-items:center; gap:var(--sp-2);
+  flex-wrap:wrap; font-size:var(--t-base); color:var(--mu); line-height:1.5;
+}
+.bill-dot{ width:7px; height:7px; border-radius:50%; background:var(--grn); flex:0 0 auto; }
+.bill-dot.free{ background:var(--dim); }
+
+.vi-bill .bill-facts{ margin-top:var(--sp-5); border-top:1px solid var(--bd); }
+.vi-bill .bill-fact{ border-bottom:none; padding:var(--sp-2) 0; grid-template-columns:150px 1fr; }
+.vi-bill .bill-fact:first-child{ padding-top:var(--sp-4); }
+.vi-bill .bill-fact dt{ font-weight:500; color:var(--dim); }
+
+.vi-bill .bill-acts{ margin-top:var(--sp-5); align-items:baseline; }
+.vi-bill .bill-acts .btn.bp{ padding:9px 18px; font-size:var(--t-base); }
+.vi-bill .bill-acts-s{ font-size:var(--t-sm); color:var(--dim); }
+
+/* Leaving is a line, not an event. */
+.bill-leave{ display:flex; align-items:baseline; gap:var(--sp-3); flex-wrap:wrap; }
+.bill-cancel-link{
+  border:none; background:none; padding:0; cursor:pointer; font-family:inherit;
+  font-size:var(--t-base); font-weight:600; color:var(--mu);
+  text-decoration:underline; text-underline-offset:3px; flex:0 0 auto;
+}
+.bill-cancel-link:hover{ color:var(--red-txt); }
+.bill-leave-s{ flex:1 1 260px; font-size:var(--t-sm); color:var(--dim); line-height:1.55; }
+
+/* The payment-security block was four bordered items; it is four short facts. */
+.vi-bill .sec-grid{ gap:var(--sp-4) var(--sp-6); }
+.vi-bill .sec-item{ gap:var(--sp-3); }
+
+@media (max-width:600px){
+  /* `margin-left:auto` is what puts the price on the right of the plan name,
+     and on a narrow screen that same rule throws it onto its own line hard
+     against the right edge, under a name on the left. Stacked and left-aligned
+     instead: the two read as one statement rather than two corners. */
+  .bill-sum-p{ margin-left:0; }
+  .bill-sum-top{ gap:var(--sp-1); }
+  /* The dot is part of the sentence, not a bullet above it. */
+  .bill-sum-sub{ display:block; }
+  .bill-dot{ display:inline-block; margin-right:var(--sp-2); vertical-align:middle; }
+  .vi-bill .bill-fact{ grid-template-columns:1fr; gap:2px; padding:var(--sp-2) 0; }
+  .vi-bill .bill-acts .btn{ width:100%; }
+  .bill-leave{ flex-direction:column; gap:var(--sp-2); }
+}
