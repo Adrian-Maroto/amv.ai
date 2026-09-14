@@ -43,9 +43,24 @@ const CDIR_CATS = [
   ['travel',   'Travel',                 'travel'],
   ['health',   'Health',                 'health'],
   ['security', 'Security',               'security'],
+  /* The last five take the list to twenty, which is what was asked for. Each
+     is a REAL query against the registry like the others - none of them is a
+     heading with a hand-written list behind it - so a row here can come back
+     short or empty, and that is the honest answer rather than a padded one. */
+  ['files',    'Files & storage',        'storage'],
+  ['email',    'Email',                  'email'],
+  ['calendar', 'Calendar & scheduling',  'calendar'],
+  ['support',  'Customer support',       'support'],
+  ['auto',     'Automation',             'automation'],
 ];
-const CDIR_ROW_N = 10;          // per row on the overview, as asked for
-const CDIR_PAGE_N = 36;         // per page on the full directory
+/* FIVE on the overview, not ten. Twenty categories at ten each is two hundred
+   tiles before you have decided anything, which is a directory that reads as a
+   wall. Five is enough to show what a category MEANS; the rest are one click
+   away and there are far more of them there than a scrolling row could hold. */
+const CDIR_ROW_N = 5;
+/* Under the server's own per-request ceiling, so a page is one round trip.
+   More arrive on the same page as you go. */
+const CDIR_PAGE_N = 48;
 
 /* query -> { state, servers, cursor, err }. One entry per query rather than per
    row, so a row and the full page behind it share the fetch instead of asking
@@ -170,13 +185,21 @@ function _cdirRowHTML(cat){
   else
     body = '<div class="cdir-grid">' + st.servers.slice(0, CDIR_ROW_N).map(_cdirTile).join('') + '</div>';
 
-  return '<section class="cdir-row" data-cdir-row="' + escH(key) + '">'
-    + '<div class="cdir-row-h">'
-      + '<h3>' + escH(title) + '</h3>'
+  /* The way out of a row sits at the END of it. It used to be in the heading,
+     which is where a designer puts it and not where a person looks for it: you
+     read the five, you want more of THOSE, and the control was back up at the
+     top past the thing you just read. Asked for in as many words - a see more
+     after the five, before the next category starts. */
+  const more = (st.state === 'done' || st.state === 'loading') && st.servers.length
+    ? '<div class="cdir-row-more">'
       + '<button class="cdir-more" data-dact="cdirAll" data-darg="' + escH(q) + '">'
-        + escH(T('See all')) + ' →</button>'
+        + escH(T('See more in')) + ' ' + escH(title.toLowerCase()) + ' →</button>'
     + '</div>'
+    : '';
+  return '<section class="cdir-row" data-cdir-row="' + escH(key) + '">'
+    + '<div class="cdir-row-h"><h3>' + escH(title) + '</h3></div>'
     + body
+    + more
   + '</section>';
 }
 
@@ -185,7 +208,7 @@ function connectorDirectoryHTML(){
   if(_cdirOpen) return _cdirFullHTML();
   return '<section class="cdir">'
     + '<div class="sec-head"><h3>' + escH(T('Everything AMV can connect to')) + '</h3>'
-      + '<span class="sec-sub">' + escH(T('Read live from the open connector registry and filtered to the ones AMV can actually start on your computer - so everything here runs. Ten of each below; search or open a category for the rest.')) + '</span></div>'
+      + '<span class="sec-sub">' + escH(T('Read live from the open connector registry and filtered to the ones AMV can actually start on your computer - so everything here runs. Five of each below; open a category for everything in it.')) + '</span></div>'
     + '<div class="cdir-find-wrap">'
       + '<input id="cdir-find" class="cw-find" type="search" autocomplete="off" value="' + escH(_cdirFind) + '"'
         + ' placeholder="' + escH(T('Search every connector - slack, postgres, stripe, figma…')) + '">'
@@ -264,9 +287,18 @@ function cdirOpen(id){
                 (e.desc?'<span class="cdir-env-d">'+escH(e.desc)+'</span>':'')+'</span>').join(''))
             : fact('It asks for', 'Nothing. It needs no credential to start.'))+
         '</dl>'+
-        '<p class="cdir-warn"><b>This is somebody else’s program.</b> AMV did not write it and does not vouch for it. '+
-          'It will run on your computer with your files and your network, and anything you put in its environment box '+
-          'is handed to it. Read what it is before you start it - the name above is the real package.</p>'+
+        /* ONE LINE. The paragraph that was here said four true things and was
+           asked about with "what is this?", which is what a wall of warning
+           gets: it is read as boilerplate and skipped, so it protected nobody.
+
+           Everything it spelled out is already ON this panel as facts - what
+           AMV will run, where it runs, what it asks for - stated once each,
+           where somebody looking for them will find them. What is left is the
+           single thing those facts do not say: AMV did not write this.
+
+           The real control was never this text. It is the per-call consent in
+           chat, which cannot be skipped by not reading. */
+        '<p class="cdir-warn">' + escH(T('AMV didn’t write this one. It runs on your connected computer with the access shown above.')) + '</p>'+
       '</div>'+
       '<div class="cwp-act">'+
         '<button class="btn bs" id="cdir-cancel">Close</button>'+

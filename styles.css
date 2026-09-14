@@ -13387,3 +13387,88 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .dev-shell.dev-blank .dev-bar{
   border-bottom-color:var(--bdl);
 }
+
+/* ======================================================================
+   LAYER A208 - the way out of a category, at the end of the category
+   ====================================================================== */
+
+/* The control that opens the rest of a category used to live in its heading.
+   It moved to the end of the row, which is where somebody is when they have
+   read the five and want more of them, so it needs a shape down there: a full
+   width line rather than a small link floating under a grid, and a rule above
+   it so it reads as the close of this category and not the start of the next.
+
+   `--bdl` rather than `--bd` for the same reason A207 uses it: this line has a
+   job, which is to say one category ended. */
+.cdir-row-more{
+  margin-top:var(--sp-3);
+  padding-top:var(--sp-3);
+  border-top:1px solid var(--bd);
+  display:flex;
+  justify-content:flex-start;
+}
+.cdir-row-more .cdir-more{
+  display:inline-flex;
+  align-items:center;
+  gap:var(--sp-2);
+  padding:var(--sp-2) var(--sp-3);
+  border:1px solid var(--bd);
+  border-radius:var(--r-pill);
+  background:var(--s1);
+  color:var(--mu);
+  font-family:var(--fn);
+  font-size:var(--t-sm);
+  font-weight:540;
+  cursor:pointer;
+  transition:background .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
+}
+.cdir-row-more .cdir-more:hover{
+  background:var(--s2);
+  color:var(--tx);
+  border-color:var(--bdl);
+}
+.cdir-row-more .cdir-more:focus-visible{
+  outline:2px solid var(--accent);
+  outline-offset:2px;
+}
+/* Rows are separated by their own closing line now, so the section below does
+   not need a second one stacked on top of it. */
+.cdir-row + .cdir-row{ border-top:none; }
+
+/* ======================================================================
+   LAYER A209 - billing, with the apologies and the sales pitch taken out
+   ====================================================================== */
+
+/* The fine print under "Manage billing" and under "Cancel subscription" used
+   to be a <span> sitting BESIDE the control, taking whatever width was left.
+   On a phone that was three words to a line. They are paragraphs now and this
+   gives them a paragraph's shape: full width, below, quiet, readable. */
+.bill-acts{ display:flex; flex-wrap:wrap; gap:var(--sp-3); align-items:center; }
+p.bill-acts-s,
+p.bill-leave-s{
+  display:block;
+  width:100%;
+  max-width:62ch;
+  margin:var(--sp-3) 0 0;
+  font-size:var(--t-sm);
+  line-height:1.6;
+  color:var(--mu);
+}
+.bill-leave{ display:block; }
+.bill-leave .bill-cancel-link{ display:inline-block; }
+
+/* What replaced four emoji cards. One sentence, set as an aside rather than as
+   a section: it is a footnote to the card on file, not a topic of its own. */
+.bill-sec-line{
+  margin:var(--sp-5) 0 0;
+  max-width:62ch;
+  font-size:var(--t-sm);
+  line-height:1.6;
+  color:var(--dim);
+}
+
+/* The gaps between the plan card, Change plan and Cancel were large enough to
+   read as missing content. Tightened to one rhythm so the page reads as three
+   related things rather than three orphans. */
+.vi-bill .ss2{ margin-top:var(--sp-6); }
+.vi-bill .ss2:first-of-type{ margin-top:var(--sp-5); }

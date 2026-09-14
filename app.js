@@ -13385,13 +13385,15 @@ try{ window._invoiceTableHTML=_invoiceTableHTML; }catch(e){}
 function _billingTxnsHTML(){
   const txns=(typeof _loadTxns==='function')?_loadTxns():[];
   const live=!!(window.AMV_API&&AMV_API.live);
-  if(!txns.length){
-    if(!live) return '';
-    return '<div class="ss2 bill-txns"><h3>Payments recorded on this device</h3>'+
-      '<p class="bill-txns-sub">Nothing has been recorded in this browser. This list is kept locally, so a purchase '+
-      'made on another device will not appear here - the Invoices above are the full record of your subscription '+
-      'payments, and anything you have bought is in your Purchases.</p></div>';
-  }
+  /* AN EMPTY LOCAL LEDGER HAS NOTHING TO SAY, SO IT SAYS NOTHING.
+
+     This used to render a heading and sixty words explaining why the list
+     below it was empty, which is a section whose entire content is an excuse
+     for its own existence. The explanation only matters to somebody looking at
+     ENTRIES and wondering why a purchase they remember is missing - so it
+     stays, below, where there are entries to explain. Invoices above are the
+     real record either way. */
+  if(!txns.length) return '';
   const money=n=>'$'+(Number(n)||0).toFixed(2);
   return '<div class="ss2 bill-txns"><h3>Payments recorded on this device</h3>'+
     '<p class="bill-txns-sub">Kept in this browser, so a purchase made on another device will not be here. '+
@@ -13506,8 +13508,21 @@ function renderBillingView(targetEl){
         '<dl class="bill-facts">'+
           _bfact('Billing email', escH(email))+
           (P.mult?_bfact('Usage', escH(P.mult)+' the free allowance'):'')+
-          _bfact('Started', sinceDate?escH(fmt(sinceDate)):'<span class="bill-unknown">Not recorded on this device</span>')+
-          (nextDate?'':_bfact('Renews','<span class="bill-unknown">Open Manage billing for the exact date</span>'))+
+          /* A ROW WHOSE VALUE IS AN APOLOGY IS NOT A ROW.
+
+             These two printed "Not recorded on this device" and "Open Manage
+             billing for the exact date" into a table of facts about somebody's
+             subscription. Both are honest and both are the wrong shape: a
+             definition list is a place for answers, and putting "we do not
+             know" in one twice, in italics, is the single thing that made this
+             screen read as unfinished rather than as a product somebody pays
+             fifteen dollars a month for.
+
+             So they appear when there is something to say and are absent when
+             there is not. Nothing is hidden by this - the renewal date is on
+             the status line above when it is known, and the processor's own
+             portal is one button away and is the authority on both. */
+          (sinceDate?_bfact('Started', escH(fmt(sinceDate))):'')+
           (customSummary?_bfact('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
           (customSummary?_bfact('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
         '</dl>'+
@@ -13516,12 +13531,15 @@ function renderBillingView(targetEl){
            and had done nothing for as long as the button did not: a paying
            customer could not reach their own billing, which is a support ticket
            at best and a complaint to their bank at worst. */
+        /* The sentence sits UNDER the button now. Beside it, it was a
+           paragraph squeezed into whatever width was left over, setting at
+           three words a line on a phone and reading as something jammed in. */
         '<div class="bill-acts">'+
           '<button class="btn bp" id="portal-open-btn">Manage billing</button>'+
           (plan==='custom'?'<button class="btn bs" id="bill-resize">Resize my plan</button>':'')+
-          '<span class="bill-acts-s">Change your card, download receipts, or cancel. '+
-            'Cancelling keeps your plan until the end of the period you have paid for.</span>'+
-        '</div>':
+        '</div>'+
+        '<p class="bill-acts-s">Change your card, download receipts, or cancel. '+
+          'Cancelling keeps your plan until the end of the period you have paid for.</p>':
         '<p class="bill-acts-s bill-free-s">You are not paying for anything. Nothing is on file and nothing renews.</p>')+
       '</div>'+
       /* WHERE USAGE AND SPENDING GO.
@@ -13575,7 +13593,12 @@ function renderBillingView(targetEl){
           upTargets.map((k,ix)=>{
             const lead = ix === 0;
             const badge = lead
-              ? '<span class="bill-swap-tag">'+(plan==='free'?'Start here':'Next step up')+'</span>'
+              /* The tag used to sit INSIDE the button, a pill inside a pill,
+                 which is the shape of a badge stuck on an afterthought. Being
+                 first and being the primary button already says this is the
+                 next step; a label repeating it only made the control wider
+                 and the row harder to scan. */
+              ? ''
               : '';
             return '<button class="btn '+(lead?'bp bill-swap-lead':'bs')+'" data-pay="'+escH(k)+'">'
               + 'Upgrade to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo'+badge+'</button>';
@@ -13605,7 +13628,7 @@ function renderBillingView(targetEl){
          a subscription. */
       '<div class="ss2 bill-leave">'+
         '<button class="bill-cancel-link" id="bill-cancel">Cancel subscription</button>'+
-        '<span class="bill-leave-s">You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</span>'+
+        '<p class="bill-leave-s">You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
         '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
       '</div>':'')+
       // INVOICES
@@ -13613,15 +13636,24 @@ function renderBillingView(targetEl){
         '<div id="bill-invoices">'+(liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate))+'</div>'+
       '</div>':'')+
       _billingTxnsHTML()+
-      // SECURITY
-      '<div class="ss2"><h3>How we protect your payment</h3>'+
-        '<div class="sec-grid">'+
-          _secItem('🔒','Card data never touches AMV','Card details are entered in a secure field hosted by our payment processor. They never reach our code or storage.')+
-          _secItem('🛡️','PCI-DSS Level 1','Payments run through a Level 1 certified processor - the highest security standard there is.')+
-          _secItem('🔑','Tokenized, not stored','We keep only the last 4 digits to show which card is on file. The full number is never saved.')+
-          _secItem('📡','256-bit TLS','Every payment is encrypted in transit and screened for fraud.')+
-        '</div>'+
-      '</div>'+
+      /* FOUR EMOJI REASSURANCE CARDS, REMOVED FROM THE SETTINGS SCREEN.
+
+         "PCI-DSS Level 1", "256-bit TLS" and two more, each with an emoji for
+         an icon, took more vertical space than the subscription itself. That
+         block is written for somebody DECIDING whether to hand over a card -
+         it belongs where the card is asked for, and it is on the pricing and
+         checkout surfaces, which is where it does its job.
+
+         Here it is addressed to somebody who paid weeks ago and came to change
+         a card or read an invoice. To them it is four paragraphs of a stranger
+         insisting they are trustworthy, between them and the thing they came
+         for. Nothing true was deleted: the facts are unchanged and still
+         stated where they are load-bearing.
+
+         One line stays, because one thing here IS worth saying at the moment
+         somebody looks at their card: AMV never had the number. */
+      '<p class="bill-sec-line">Card details are held by our payment processor, never by AMV. '+
+        'We keep the last four digits so you can tell which card is on file.</p>'+
       (isAdmin()?(
       '<div class="ss2" style="border:1px dashed var(--bd);border-radius:var(--r-md);padding:14px 16px">'+
         '<h3 style="margin-top:0">Payment test mode <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(only you see this)</span></h3>'+
@@ -29687,9 +29719,24 @@ const CDIR_CATS = [
   ['travel',   'Travel',                 'travel'],
   ['health',   'Health',                 'health'],
   ['security', 'Security',               'security'],
+  /* The last five take the list to twenty, which is what was asked for. Each
+     is a REAL query against the registry like the others - none of them is a
+     heading with a hand-written list behind it - so a row here can come back
+     short or empty, and that is the honest answer rather than a padded one. */
+  ['files',    'Files & storage',        'storage'],
+  ['email',    'Email',                  'email'],
+  ['calendar', 'Calendar & scheduling',  'calendar'],
+  ['support',  'Customer support',       'support'],
+  ['auto',     'Automation',             'automation'],
 ];
-const CDIR_ROW_N = 10;          // per row on the overview, as asked for
-const CDIR_PAGE_N = 36;         // per page on the full directory
+/* FIVE on the overview, not ten. Twenty categories at ten each is two hundred
+   tiles before you have decided anything, which is a directory that reads as a
+   wall. Five is enough to show what a category MEANS; the rest are one click
+   away and there are far more of them there than a scrolling row could hold. */
+const CDIR_ROW_N = 5;
+/* Under the server's own per-request ceiling, so a page is one round trip.
+   More arrive on the same page as you go. */
+const CDIR_PAGE_N = 48;
 
 /* query -> { state, servers, cursor, err }. One entry per query rather than per
    row, so a row and the full page behind it share the fetch instead of asking
@@ -29814,13 +29861,21 @@ function _cdirRowHTML(cat){
   else
     body = '<div class="cdir-grid">' + st.servers.slice(0, CDIR_ROW_N).map(_cdirTile).join('') + '</div>';
 
-  return '<section class="cdir-row" data-cdir-row="' + escH(key) + '">'
-    + '<div class="cdir-row-h">'
-      + '<h3>' + escH(title) + '</h3>'
+  /* The way out of a row sits at the END of it. It used to be in the heading,
+     which is where a designer puts it and not where a person looks for it: you
+     read the five, you want more of THOSE, and the control was back up at the
+     top past the thing you just read. Asked for in as many words - a see more
+     after the five, before the next category starts. */
+  const more = (st.state === 'done' || st.state === 'loading') && st.servers.length
+    ? '<div class="cdir-row-more">'
       + '<button class="cdir-more" data-dact="cdirAll" data-darg="' + escH(q) + '">'
-        + escH(T('See all')) + ' →</button>'
+        + escH(T('See more in')) + ' ' + escH(title.toLowerCase()) + ' →</button>'
     + '</div>'
+    : '';
+  return '<section class="cdir-row" data-cdir-row="' + escH(key) + '">'
+    + '<div class="cdir-row-h"><h3>' + escH(title) + '</h3></div>'
     + body
+    + more
   + '</section>';
 }
 
@@ -29829,7 +29884,7 @@ function connectorDirectoryHTML(){
   if(_cdirOpen) return _cdirFullHTML();
   return '<section class="cdir">'
     + '<div class="sec-head"><h3>' + escH(T('Everything AMV can connect to')) + '</h3>'
-      + '<span class="sec-sub">' + escH(T('Read live from the open connector registry and filtered to the ones AMV can actually start on your computer - so everything here runs. Ten of each below; search or open a category for the rest.')) + '</span></div>'
+      + '<span class="sec-sub">' + escH(T('Read live from the open connector registry and filtered to the ones AMV can actually start on your computer - so everything here runs. Five of each below; open a category for everything in it.')) + '</span></div>'
     + '<div class="cdir-find-wrap">'
       + '<input id="cdir-find" class="cw-find" type="search" autocomplete="off" value="' + escH(_cdirFind) + '"'
         + ' placeholder="' + escH(T('Search every connector - slack, postgres, stripe, figma…')) + '">'
@@ -29908,9 +29963,18 @@ function cdirOpen(id){
                 (e.desc?'<span class="cdir-env-d">'+escH(e.desc)+'</span>':'')+'</span>').join(''))
             : fact('It asks for', 'Nothing. It needs no credential to start.'))+
         '</dl>'+
-        '<p class="cdir-warn"><b>This is somebody else’s program.</b> AMV did not write it and does not vouch for it. '+
-          'It will run on your computer with your files and your network, and anything you put in its environment box '+
-          'is handed to it. Read what it is before you start it - the name above is the real package.</p>'+
+        /* ONE LINE. The paragraph that was here said four true things and was
+           asked about with "what is this?", which is what a wall of warning
+           gets: it is read as boilerplate and skipped, so it protected nobody.
+
+           Everything it spelled out is already ON this panel as facts - what
+           AMV will run, where it runs, what it asks for - stated once each,
+           where somebody looking for them will find them. What is left is the
+           single thing those facts do not say: AMV did not write this.
+
+           The real control was never this text. It is the per-call consent in
+           chat, which cannot be skipped by not reading. */
+        '<p class="cdir-warn">' + escH(T('AMV didn’t write this one. It runs on your connected computer with the access shown above.')) + '</p>'+
       '</div>'+
       '<div class="cwp-act">'+
         '<button class="btn bs" id="cdir-cancel">Close</button>'+

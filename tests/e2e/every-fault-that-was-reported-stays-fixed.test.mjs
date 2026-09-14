@@ -316,6 +316,118 @@ section('7. Billing says the plan once, and Help promises nothing removed');
   ok(!r.promises, 'Help no longer offers a feature AMV removed', r.promises);
 }
 
+section('9. The round after that one');
+{
+  /* REBUILDS, NOT ANIMATIONS. "crew and handoff still lag" came after the
+     entrance-animation fix, because the animation was the symptom. Measured on
+     the published build against a 700ms backend, opening Crew replaced the
+     whole view four times in 900ms and Handoff twice - each one throwing the
+     DOM away, losing scroll and focus. Counting full replacements of the view
+     container is counting the thing that actually costs. */
+  const rebuilds = (tab) => page.evaluate(async (t) => {
+    setTab('chat'); await new Promise(r => setTimeout(r, 300));
+    const vc = document.getElementById('vc');
+    let n = 0;
+    const obs = new MutationObserver(ms => { for (const m of ms)
+      if (m.type === 'childList' && m.target === vc) n++; });
+    obs.observe(vc, { childList: true });
+    setTab(t); await new Promise(r => setTimeout(r, 2500));
+    obs.disconnect();
+    return n;
+  }, tab);
+  ok(await rebuilds('handoff') <= 1, 'Handoff draws itself once, not twice');
+  ok(await rebuilds('crew') <= 3, 'Crew stops redrawing itself four times');
+
+  /* The divider between the controls and the work. It asked for var(--bd),
+     which is redefined further down to 7% white - a hairline, and the reason
+     it read as faded. --bdl is the token for a border meant to be seen. */
+  const bar = await page.evaluate(async () => {
+    setTab('build'); setBuildMode('lab'); await new Promise(r => setTimeout(r, 700));
+    const e = document.querySelector('.lab-bar');
+    return e ? getComputedStyle(e).borderBottomColor : 'absent';
+  });
+  ok(!/0\.0[0-9]\)|, 0\.1\)/.test(bar) && bar !== 'absent',
+     'the line under the controls is a border, not a hairline', bar);
+
+  /* Billing. A definition list is a place for answers, and this one printed
+     "Not recorded on this device" and "Open Manage billing for the exact
+     date" into two of its rows. Absent is the right answer when there is no
+     answer - the processor's portal is the authority and is one button away. */
+  const bill = await page.evaluate(async () => {
+    setTab('billing'); await new Promise(r => setTimeout(r, 900));
+    const vc = document.getElementById('vc');
+    const t = (vc.textContent || '').replace(/\s+/g, ' ');
+    const fine = vc.querySelector('p.bill-acts-s');
+    return { apologies: /Not recorded on this device|Open Manage billing for the exact date/.test(t),
+             badges: vc.querySelectorAll('.sec-item').length,
+             emoji: /🔒|🛡️|🔑|📡/.test(t),
+             emptyLedger: /Nothing has been recorded in this browser/.test(t),
+             fineIsBlock: fine ? getComputedStyle(fine).display : 'absent',
+             manage: /Manage billing/.test(t) };
+  });
+  ok(bill.manage, 'billing still offers the one action that matters');
+  ok(!bill.apologies, 'no row answers with an apology instead of a fact');
+  ok(bill.badges === 0 && !bill.emoji, 'the emoji reassurance cards are gone from settings',
+     String(bill.badges));
+  ok(!bill.emptyLedger, 'an empty local ledger says nothing rather than explaining itself');
+  ok(bill.fineIsBlock === 'block', 'the fine print sits under the button, not beside it',
+     bill.fineIsBlock);
+
+  /* Integrations: five per category across twenty categories, and the way into
+     the rest of a category at the END of it, which is where somebody is when
+     they have read the five. */
+  const dir = await page.evaluate(async () => {
+    AMV_API.connectors = async (o) => {
+      await new Promise(r => setTimeout(r, 60));
+      const q = (o && o.q) || 'x', lim = (o && o.limit) || 48, out = [];
+      for (let i = 0; i < lim; i++) out.push({ id: '@a/' + q + '-' + i, name: q + ' ' + i,
+        version: '1.0.0', description: 'd', runtime: { command: 'npx', args: ['-y', '@a/' + q + '-' + i] } });
+      return { ok: true, q, cursor: '', servers: out };
+    };
+    /* The cache is cleared and the stub installed BEFORE the first render.
+       Without that every row answers from whatever was already fetched, comes
+       back empty, and the count assertions below pass on nothing - which is
+       what happened the first time this was written. */
+    /* `_cdirReset()` only forgets which PAGE is showing. What has to go is the
+       answer cache and the "already asked" set, both of which still hold the
+       empty result from the stub installed at the top of this file. */
+    try { _cdirReset();
+      Object.keys(_cdir).forEach(k => delete _cdir[k]);
+      Object.keys(_cdirTried).forEach(k => delete _cdirTried[k]);
+    } catch (e) {}
+    setTab('integrations'); await new Promise(r => setTimeout(r, 2600));
+    const rows = [...document.querySelectorAll('.cdir-row')];
+    return { cats: rows.length,
+             perRow: rows.map(r => r.querySelectorAll('.cdir-grid > *').length),
+             moreLast: rows.filter(r => r.lastElementChild
+                        && r.lastElementChild.classList.contains('cdir-row-more')).length };
+  });
+  ok(dir.cats === 20, 'twenty categories, not fifteen', String(dir.cats));
+  /* Not `n === 0 || n <= 5`, which was the first version and passes when every
+     row is EMPTY - it went green against a directory that had fetched nothing.
+     Rows must actually be full, and full means five. */
+  ok(dir.perRow.length === 20 && dir.perRow.every(n => n === 5),
+     'five in a category, not ten', dir.perRow.join(','));
+  ok(dir.moreLast === dir.cats, 'and the way to the rest is at the end of each one',
+     dir.moreLast + ' of ' + dir.cats);
+
+  /* The connector note. A paragraph of warning gets read as boilerplate and
+     skipped; the facts it spelled out are on the panel as facts. What is left
+     is the one thing they do not say. */
+  const note = await page.evaluate(async () => {
+    const t = document.querySelector('.cdir-grid > *'); if (!t) return '(no tile)';
+    t.click(); await new Promise(r => setTimeout(r, 600));
+    const w = document.querySelector('.cdir-warn');
+    const s = w ? w.textContent.trim() : '';
+    try { closeOvr(); } catch (e) {}
+    return s;
+  });
+  ok(note.length > 0 && note.length < 160,
+     'the connector note is a line, not a paragraph', String(note.length));
+  ok(/AMV/.test(note) && /didn/.test(note),
+     'and it still says AMV did not write it', note);
+}
+
 section('8. Nothing threw while all of that happened');
 {
   ok(errors.length === 0, 'no page errors across every screen', errors.slice(0, 4).join(' | '));
