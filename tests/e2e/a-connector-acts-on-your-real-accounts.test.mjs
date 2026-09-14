@@ -57,6 +57,14 @@ const CODE = (await waitFor(/([0-9A-F]{4}(?:-[0-9A-F]{4}){5})/, 8000) || [])[1] 
 const A = await bootApp({ tab: 'chat' });
 const { page } = A;
 await page.evaluate(() => { document.getElementById('cookie-consent-banner')?.remove(); setTab('integrations'); });
+/* The connector form lives inside "Your computer", which starts closed - it
+   used to open this page, so somebody coming to see what AMV connects to met a
+   command line first. Opened here the way a person opens it, by clicking the
+   summary, so the app's own record of the panel being open is set: this file
+   re-renders the view repeatedly (adding a connector, starting one), and a
+   panel that forgot it was open would take the form somebody is typing in with
+   it every time. */
+await page.click('details.conn-machine > summary', { timeout: 8000 });
 await page.waitForSelector('.mcp', { timeout: 8000 });
 
 section('A connector is added through the screen, not by hand');

@@ -65,7 +65,21 @@ await page.evaluate(() => {
   document.getElementById('cookie-consent-banner')?.remove();
   setTab('integrations');
 });
-await page.waitForSelector('.brg', { timeout: 8000 });
+/* The bridge card lives inside "Your computer", which starts closed. It used
+   to open this page - a download button and a command line as the first thing
+   somebody saw when they came to find out what AMV connects to - and folding
+   it away is the point of that change rather than an accident of it.
+
+   Opened here rather than worked around, because what this file is about is
+   whether the file somebody downloads is the file the bridge tests drive, and
+   a disclosure between them changes nothing about that. What it does NOT do is
+   assert the panel is open: that would pin the layout this change deliberately
+   moved away from. */
+await page.evaluate(() => {
+  const d = document.querySelector('details.conn-machine');
+  if (d) d.open = true;
+});
+await page.waitForSelector('.brg', { timeout: 8000, state: 'attached' });
 
 section('The card hands it over instead of naming a command nobody published');
 {

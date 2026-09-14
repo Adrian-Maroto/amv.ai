@@ -28551,6 +28551,14 @@ function _connBodyHTML(){
     '<div class="conn-add-row">'+add+'</div>';
 }
 
+/* WHETHER THE SETUP PANEL IS OPEN, REMEMBERED.
+
+   `<details>` keeps its own state in the element, and this view rewrites its
+   markup on every render - adding a connector, a connection landing, the
+   directory answering. So the panel somebody had opened to type a command into
+   snapped shut the moment they pressed Add, taking the form they were using
+   with it. Held here instead, and restored on every paint. */
+let _connMachineOpen = false;
 function renderIntegrationsView(){
   const vc=$('vc'); if(!vc) return;
   /* SEE ALL OPENS A PAGE, NOT A LONGER SCROLL.
@@ -28594,7 +28602,7 @@ function renderIntegrationsView(){
 
          They are not moved or reduced; they are closed. Anybody who needs them
          is looking for them, and anybody browsing is not. */
-      '<details class="conn-machine">'+
+      '<details class="conn-machine"'+(_connMachineOpen?' open':'')+'>'+
         '<summary><span class="conn-machine-t">Your computer</span>'+
           '<span class="conn-machine-s">'+
             ((typeof BRIDGE!=='undefined' && BRIDGE.connected)
@@ -28612,6 +28620,10 @@ function renderIntegrationsView(){
       connectorDirectoryHTML()+
     '</div></div>';
   _wireIntegrationCatalog(vc);
+  try{
+    const d=vc.querySelector('details.conn-machine');
+    if(d) on(d,'toggle',()=>{ _connMachineOpen = !!d.open; });
+  }catch(e){}
   /* Enter searches, because a search box that only responds to a button is a
      search box somebody presses Enter on and thinks is broken. */
   try{
