@@ -1474,13 +1474,6 @@ function _cwCountryGroupHTML(jobCard){
       ${body}
     </div>`;
 }
-/* The catalogue's own card, so a country job is visibly the same kind of thing
-   as any other job rather than a second-class listing. It opens the peek,
-   which offers "Turn it on" to anybody whose plan runs jobs and the price to
-   anybody whose does not - so one card serves both without a second branch
-   here that could disagree with the one in cwPeek. */
-function _cwCountryCard(j){ return _cwLockedCard(j); }
-
 function _cwCatChips(jobs){
   const count=c=>jobs.filter(j=>j.cat===c).length;
   const chip=(k,label,n)=>`<button class="cw-chip${_cwCat===k?' on':''}" data-dact="cwCat" data-darg="${escH(k)}">${escH(label)}<span class="cw-chip-n">${n}</span></button>`;

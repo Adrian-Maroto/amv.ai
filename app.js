@@ -13688,11 +13688,15 @@ async function _loadInvoices(){
     }).join('')+'</div>';
   }catch(e){ if(el) el.innerHTML='<div class="bill-inv-empty">Couldn\u2019t load invoices right now.</div>'; _logErr('loadInvoices',e); }
 }
-function _drow(k,v){ return '<div class="bd-row"><span class="bd-k">'+k+'</span><span class="bd-v">'+v+'</span></div>'; }
 /* A real definition list rather than rows of spans, because that is what these
    are and because a screen reader then reads the label with its value instead
    of eight loose fragments. `v` is already escaped or already markup at every
-   call site - same contract as `_drow` beside it. */
+   call site.
+
+   It replaced `_drow`, which stood here and rendered the same facts as two
+   spans in a div. That had exactly one caller - the subscription-details block
+   that was merged away - so it left with it rather than staying as a second
+   way to draw a row that nothing draws. */
 function _bfact(k,v){ return '<div class="bill-fact"><dt>'+escH(k)+'</dt><dd>'+v+'</dd></div>'; }
 /* Per-plan local usage caps (the browser guardrail; server enforces the real ones). */
 /* Kept in step with the server's PLAN_LIMITS (AMV-072). If the browser guard is
@@ -16595,13 +16599,6 @@ function _cwCountryGroupHTML(jobCard){
       ${body}
     </div>`;
 }
-/* The catalogue's own card, so a country job is visibly the same kind of thing
-   as any other job rather than a second-class listing. It opens the peek,
-   which offers "Turn it on" to anybody whose plan runs jobs and the price to
-   anybody whose does not - so one card serves both without a second branch
-   here that could disagree with the one in cwPeek. */
-function _cwCountryCard(j){ return _cwLockedCard(j); }
-
 function _cwCatChips(jobs){
   const count=c=>jobs.filter(j=>j.cat===c).length;
   const chip=(k,label,n)=>`<button class="cw-chip${_cwCat===k?' on':''}" data-dact="cwCat" data-darg="${escH(k)}">${escH(label)}<span class="cw-chip-n">${n}</span></button>`;
