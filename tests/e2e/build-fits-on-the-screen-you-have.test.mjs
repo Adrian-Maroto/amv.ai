@@ -73,23 +73,40 @@ section('The head and the cards share one measure');
 
 section('A loaded Lab is not a room with no door');
 {
+  /* The first version of this asserted the SWITCHER survived into the working
+     screen, and two suites refused it - rightly, twice over. A172 hides it once
+     there is work because the screen belongs to the work, and bringing it back
+     also put a dead control on the page: the active section's own button does
+     nothing when you are already on that section.
+
+     The fault the owner actually hit was that the way out was unbordered text
+     in a row of bordered buttons, so it did not read as a control at all. That
+     is what is pinned here: one exit, visible, shaped like a control, and
+     leading to the page all three sections live on.
+
+     The orphaned caption is checked too. The head and the switcher are hidden
+     on a working surface; the sentence explaining the section you chose was
+     not, so a loaded Lab opened with a line of help floating above the toolbar
+     for a choice no longer on screen. */
   const m = await page.evaluate(async () => {
     _LAB.code = 'const a = 1;\n'.repeat(80);
     renderBuildView();
     await new Promise(r => setTimeout(r, 200));
     const vis = el => !!(el && el.getBoundingClientRect().height > 0);
-    const modes = document.querySelector('.lab-shell > .build-modes');
     const home = document.getElementById('bld-home');
     const cs = home ? getComputedStyle(home) : null;
     return {
-      switcher: vis(modes),
-      others: modes ? modes.querySelectorAll('[data-bmode]').length : 0,
+      switcher: vis(document.querySelector('.lab-shell > .build-modes')),
+      orphan: vis(document.querySelector('.lab-shell > .build-mode-note')),
       home: vis(home),
       homeBorder: cs ? cs.borderTopWidth : '',
+      dead: [...document.querySelectorAll('#vc [data-bmode]')]
+        .filter(b => b.getBoundingClientRect().height > 0 && b.classList.contains('on')).length,
     };
   });
-  ok(m.switcher, 'the section switcher survives into the working screen', JSON.stringify(m));
-  ok(m.others === 3, 'with all three sections still reachable', JSON.stringify(m));
+  ok(!m.switcher, 'the switcher steps out of the way, as it always did', JSON.stringify(m));
+  ok(!m.orphan, 'and the sentence explaining it goes with it', JSON.stringify(m));
+  ok(m.dead === 0, 'so no control on the screen is one that does nothing', String(m.dead));
   ok(m.home, 'the way out is on the screen', JSON.stringify(m));
   ok(parseFloat(m.homeBorder) > 0, 'and is shaped like a control, not like text', m.homeBorder);
 }

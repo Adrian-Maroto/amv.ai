@@ -12550,11 +12550,17 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    so the heading started 70px right of the cards it introduced and the screen
    read as two pages stacked. One measure, the one the rest of Build uses.
 
-   STUCK ON LAB. Once code is loaded the switcher is hidden, and the sidebar's
-   Build entry re-renders whichever section you were last in - so from a loaded
-   Lab there was no visible route to Dev or Studio at all, and the one control
-   that left, `.bld-home`, was unbordered text in a row of bordered buttons.
-   The switcher stays, compact, and the way out is shaped like a control.
+   STUCK ON LAB, which was the way OUT rather than the way onward. The control
+   that leaves a loaded surface, `.bld-home`, was unbordered text in a row of
+   bordered buttons - so the exit was on the screen and did not read as one.
+
+   The first attempt kept the section switcher visible on the working screen
+   instead, and two suites refused it. A172 hides it once there is work for a
+   reason worth keeping - the screen belongs to the work - and bringing it back
+   also put a DEAD CONTROL on the page: the active section's own button, on the
+   surface it already names, does nothing at all. Fixing the exit was the
+   smaller and the correct change. What did stay hidden is the caption under
+   the switcher, which had been left behind on its own.
 
    TOO HIGH. Build's entry ran 58→439 in an 860px window and left 363px of
    nothing under it. Auto margins rather than `justify-content:center`, because
@@ -12587,21 +12593,23 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .dev-shell.dev-blank > .dev-chat-pane > :last-child{ margin-bottom:auto; }
 }
 
-/* Nothing is a dead end: the section switcher survives into the working
-   screen, quieter and half the height, and the sentence explaining the
-   section you already chose does not. */
-.lab-shell:not(.lab-blank) > .build-modes,
-.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-modes{
-  display:grid; margin-top:var(--sp-3); margin-bottom:var(--sp-2);
-}
-.lab-shell:not(.lab-blank) > .build-modes .build-mode,
-.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-modes .build-mode{
-  min-height:30px; padding-top:0; padding-bottom:0;
-}
-.lab-shell:not(.lab-blank) > .build-modes .build-mode-t,
-.dev-shell:not(.dev-blank) > .dev-chat-pane > .build-modes .build-mode-t{
-  font-size:var(--t-sm);
-}
+/* THE ORPHANED CAPTION, AND THE SWITCHER THAT SHOULD STAY HIDDEN.
+
+   A172 hides the head and the switcher once there is work on the surface, for
+   a reason worth keeping: the screen belongs to the work. The sentence UNDER
+   the switcher was not hidden with them, so a loaded Lab opened with "Run,
+   debug, review or refactor code you already have" floating above the toolbar,
+   explaining a choice that was no longer on the screen.
+
+   The first attempt at "stuck on Lab" brought the switcher back instead, and
+   the suites were right to refuse it twice over. It contradicted the principle
+   above, and it put a DEAD CONTROL on the screen: the active section's own
+   button, pressed on the surface it already names, does nothing at all.
+
+   The real fault the owner hit was that the way out was unbordered text in a
+   row of bordered buttons - so it is the exit that is fixed, below, and the
+   switcher stays where A172 put it. One control, and it goes to the page all
+   three sections live on. */
 .lab-shell:not(.lab-blank) > .build-mode-note,
 .dev-shell:not(.dev-blank) > .dev-chat-pane > .build-mode-note{ display:none; }
 

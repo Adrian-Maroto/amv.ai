@@ -1027,7 +1027,11 @@ const AMV_API = {
       +'&cursor='+encodeURIComponent(cursor||'')
       +'&limit='+encodeURIComponent(String(limit||24)));
     const d=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(d.error||'The connector directory could not be reached.');
+    /* `ok:false` in the body, not a 5xx status: a third party being unreachable
+       is not this server falling over, so the route answers 200 and says what
+       happened. Both shapes are still refused here, because a caller that only
+       checked the status would render "nothing matches" over an outage. */
+    if(!r.ok || (d && d.ok === false)) throw new Error(d.error||'The connector directory could not be reached.');
     return d;
   },
   /* WHAT AMV DOES, PER COUNTRY. Computed on the server from the same

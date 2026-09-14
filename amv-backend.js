@@ -15574,6 +15574,20 @@ function _mcpRegMap(rec) {
 }
 async function connectorDirectory(request, env) {
   const u = new URL(request.url);
+  /* BOUNDED, BECAUSE ANYBODY CAN REACH IT WITHOUT A CREDENTIAL.
+
+     One request here can cause up to six reads of somebody else's server, and
+     this route needs no account - which is exactly the combination worth
+     hammering. Per IP, like the other public reads, and generous enough that a
+     person browsing fifteen categories and then searching never meets it.
+
+     A cached answer costs nothing upstream, but the limit is taken BEFORE the
+     cache is consulted on purpose: a cap that a cache hit slips past is a cap
+     an attacker only has to guess their way around. */
+  const ip = (request.headers.get('CF-Connecting-IP')
+           || request.headers.get('X-Forwarded-For') || 'noip').slice(0, 45);
+  const gate = await guardAction(env, `connectors:${ip}`, 60, 1500, 'directory searches');
+  if (gate) return gate;
   const q = _mcpRegText(u.searchParams.get('q'), 60);
   const cursor = _mcpRegText(u.searchParams.get('cursor'), 200);
   const want = Math.max(1, Math.min(MCPREG_MAX, parseInt(u.searchParams.get('limit'), 10) || 24));
@@ -15609,10 +15623,12 @@ async function connectorDirectory(request, env) {
       const url = MCPREG_BASE + '?limit=100&version=latest'
         + (q ? '&search=' + encodeURIComponent(q) : '')
         + (next ? '&cursor=' + encodeURIComponent(next) : '');
-      const r = await fetch(url, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(MCPREG_TIMEOUT),
-      });
+      /* Through the wrapper, not a bare fetch. `fetchDeadline` is what every
+         outbound call in this file uses and what a-redirect-is-not-a-way-
+         around-the-gate sweeps for - a deadline written inline here would be a
+         correct one that the sweep cannot see, which is the same thing as not
+         having one the day somebody edits it. */
+      const r = await fetchDeadline(url, { headers: { 'Accept': 'application/json' } }, MCPREG_TIMEOUT);
       if (!r.ok) throw new Error('registry ' + r.status);
       const d = await r.json();
       const list = Array.isArray(d && d.servers) ? d.servers : [];
@@ -15630,9 +15646,23 @@ async function connectorDirectory(request, env) {
     /* Named, never swallowed into an empty list. "No connectors found" and "the
        directory could not be reached" are different facts, and showing the
        first when the second is true tells somebody this product connects to
-       nothing. */
+       nothing.
+
+       200 AND `ok:false`, NOT A 5XX, and the distinction is the point. A 5xx
+       means this server is broken: it is what alerting counts, what an error
+       budget is spent on, and what somebody gets paged for. AMV is not broken
+       here - an OPTIONAL third party is unreachable, and AMV answered that
+       question correctly and at once. Reporting somebody else's outage as our
+       own crash is how a monitor becomes a thing people learn to ignore, and
+       the-first-session is the suite that noticed: it watches for any 5xx
+       across a whole first visit, and fifteen category rows on a machine that
+       cannot reach the registry made forty-five of them.
+
+       Nothing is swallowed by it: the code travels, the screen names it, and
+       the retry is on the screen. The client branches on `ok` and on `code`,
+       never on the list being empty. */
     return json({ ok: false, error: 'The connector directory could not be reached.',
-                  code: 'directory_unreachable' }, 503);
+                  code: 'directory_unreachable' });
   }
 
   const body = { ok: true, servers: out, cursor: out.length >= want ? next : '', q };

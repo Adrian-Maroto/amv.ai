@@ -1027,7 +1027,11 @@ const AMV_API = {
       +'&cursor='+encodeURIComponent(cursor||'')
       +'&limit='+encodeURIComponent(String(limit||24)));
     const d=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(d.error||'The connector directory could not be reached.');
+    /* `ok:false` in the body, not a 5xx status: a third party being unreachable
+       is not this server falling over, so the route answers 200 and says what
+       happened. Both shapes are still refused here, because a caller that only
+       checked the status would render "nothing matches" over an outage. */
+    if(!r.ok || (d && d.ok === false)) throw new Error(d.error||'The connector directory could not be reached.');
     return d;
   },
   /* WHAT AMV DOES, PER COUNTRY. Computed on the server from the same
@@ -29521,6 +29525,22 @@ function _cdirReset(){ _cdirOpen = null; }
 function _cdirKey(q){ return String(q || '').toLowerCase(); }
 function _cdirGet(q){ return _cdir[_cdirKey(q)] || { state:'idle', servers:[], cursor:'', err:'' }; }
 
+/* WHAT HAS ALREADY BEEN ASKED, AND UNDER WHAT CONDITIONS.
+
+   Measured in the first-session suite before this existed: opening Connectors
+   made FORTY-FIVE requests to /v1/connectors. Fifteen rows each ask on render;
+   each answer repaints the whole view; each repaint schedules fifteen more
+   asks, and the ones whose state had not yet settled went out again. It is the
+   same shape as the runaway `_cwLocalTried` fixed in Crew - a render that asks,
+   an answer that re-renders, and nothing recording that the question was
+   already put.
+
+   The key is the SITUATION rather than a flat "asked", because the one thing
+   that would make asking again sensible - a backend becoming reachable - is
+   what it records. `want` is in it too: a row asked for ten and the full page
+   asks for thirty-six, and that is a different question about the same word. */
+const _cdirTried = {};
+function _cdirCtx(){ return (window.AMV_API && AMV_API.live) ? '1' : '0'; }
 async function _cdirLoad(q, want){
   const k = _cdirKey(q);
   const cur = _cdir[k] || { state:'idle', servers:[], cursor:'', err:'' };
@@ -29529,6 +29549,9 @@ async function _cdirLoad(q, want){
      full page wants thirty-six, so "enough" depends on the caller. */
   if(cur.state === 'done' && cur.servers.length >= (want || CDIR_ROW_N)) return;
   if(cur.state === 'error' || cur.state === 'off') return;
+  const tk = k + '|' + (want || CDIR_ROW_N) + '|' + _cdirCtx();
+  if(_cdirTried[tk]) return;
+  _cdirTried[tk] = 1;
   if(!(window.AMV_API && AMV_API.live && AMV_API.connectors)){
     _cdir[k] = { state:'off', servers:[], cursor:'', err:'' }; _cdirPaint(); return;
   }
@@ -29549,8 +29572,20 @@ async function _cdirLoad(q, want){
   }
   _cdirPaint();
 }
+/* ONE REPAINT FOR HOWEVER MANY ANSWERS ARRIVE TOGETHER.
+
+   Fifteen rows answering within a few hundred milliseconds of each other used
+   to be fifteen full re-renders of the page, and the page is what schedules the
+   asking - so each repaint was also a fresh round of questions. Coalesced into
+   one frame: the answers that have landed are drawn together and the ones still
+   in flight redraw on the next tick. */
+let _cdirPaintT = 0;
 function _cdirPaint(){
-  try{ if(S.tab === 'integrations' && typeof renderIntegrationsView === 'function') renderIntegrationsView(); }catch(e){}
+  if(_cdirPaintT) return;
+  _cdirPaintT = setTimeout(() => {
+    _cdirPaintT = 0;
+    try{ if(S.tab === 'integrations' && typeof renderIntegrationsView === 'function') renderIntegrationsView(); }catch(e){}
+  }, 60);
 }
 
 /* ── A CONNECTOR AS A TILE ──────────────────────────────────────────────────
@@ -29720,7 +29755,14 @@ function cdirAll(q){
   try{ const sv = document.querySelector('#vc .sv'); if(sv) sv.scrollTop = 0; }catch(e){}
 }
 function cdirBack(){ _cdirOpen = null; renderIntegrationsView(); }
-function cdirRetry(q){ _cdir[_cdirKey(q)] = { state:'idle', servers:[], cursor:'', err:'' }; _cdirPaint(); }
+function cdirRetry(q){
+  const k = _cdirKey(q);
+  _cdir[k] = { state:'idle', servers:[], cursor:'', err:'' };
+  /* Try again has to mean try again: every record of having asked this is
+     cleared, or the button would repaint a screen and ask nothing. */
+  Object.keys(_cdirTried).forEach(t => { if(t.indexOf(k + '|') === 0) delete _cdirTried[t]; });
+  _cdirPaint();
+}
 function cdirMore(q){ _cdirLoad(q, CDIR_PAGE_N); _cdirPaint(); }
 function cdirSearch(){
   const el = $('cdir-find');

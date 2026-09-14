@@ -152,12 +152,20 @@ section('Being signed in with Google is not having granted this');
      in with Google". Those are different questions and one was standing in for
      the other, which is the same defect the Integrations row had. */
   /* The CW_NEEDS_CHECK row, not the job that names Classroom in its `needs`
-     string hundreds of lines earlier. Anchored on the label that only the row
-     carries. */
-  const cAt = client.indexOf('Google Classroom\', has:');
-  const cAt2 = cAt > 0 ? cAt : client.indexOf('Google Classroom');
+     string hundreds of lines earlier.
+
+     Anchored on `label:'Google Classroom'`, which is the field only the row
+     has. It used to anchor on `'Google Classroom', has:` - the label and the
+     check with nothing between them - and a later commit put a `cap:` field
+     between the two. The anchor stopped matching, the fallback found the JOB
+     instead, and the assertion failed against a string that was never the
+     subject. That is the trap the comment above was already warning about,
+     sprung by the anchor itself, and it is the same shape as LESSONS 483: a
+     check written against the incidental arrangement of a line rather than
+     against the thing the line means. */
+  const cAt2 = client.indexOf("label:'Google Classroom'");
   ok(cAt2 > 0, 'the availability row was found', cAt2);
-  const check = client.slice(Math.max(0, cAt2 - 60), cAt2 + 200);
+  const check = client.slice(cAt2, cAt2 + 240);
   ok(/_cwConnHas\(['"]school\.read['"]\)/.test(check),
      'availability is asked of the connection', check.slice(0, 140));
   ok(!/_cwHasGoogle\(\)/.test(check.slice(0, 200)),

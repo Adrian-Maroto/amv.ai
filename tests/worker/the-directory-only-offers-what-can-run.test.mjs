@@ -154,9 +154,13 @@ section('An unreachable registry says so rather than saying empty');
   pages = [{ fail: true }];
   const r = await W.connectorDirectory(get('?q=slack'), makeEnv());
   const d = await r.json();
-  ok(r.status === 503, 'the status says the upstream failed', String(r.status));
+  /* NOT a 5xx. AMV answered the question correctly and at once; it is the
+     optional third party that is down, and reporting somebody else's outage as
+     our own crash is how alerting becomes noise nobody reads. The failure is
+     carried in the body, where it cannot be mistaken for an answer. */
+  ok(r.status === 200, 'the route itself did not fall over', String(r.status));
   ok(d.ok === false && d.code === 'directory_unreachable',
-     'with a code the screen can act on', JSON.stringify(d));
+     'and the body says plainly that it failed, with a code the screen can act on', JSON.stringify(d));
   ok(!Array.isArray(d.servers), 'and no empty list to be mistaken for an answer', JSON.stringify(d));
 }
 
@@ -171,7 +175,12 @@ section('The same question is not asked of the registry twice');
   ok(served === 1, 'the second read is served from the cache', String(served));
   ok(JSON.stringify(a.servers) === JSON.stringify(b.servers), 'with the same answer', String(b.servers.length));
   const keys = [...env._kv.keys()];
-  ok(keys.length === 1 && keys[0].startsWith('mcpcat:'), 'under a key named for what it is', keys.join(','));
+  /* Not "the only key": the route is rate limited per IP, so the limiter's own
+     counters live here too. What matters is that the CACHE is one entry under a
+     name that says what it holds - a cache under an unnamed key is the kind
+     nobody later dares delete. */
+  const cached = keys.filter(k => k.startsWith('mcpcat:'));
+  ok(cached.length === 1, 'under a key named for what it is', keys.join(','));
 }
 
 section('A cache of a public catalogue stays out of backups');

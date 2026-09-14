@@ -158,7 +158,13 @@ section('Adding it goes through the rule that refuses a credential in a command'
 section('A directory that cannot be reached does not read as an empty one');
 {
   await CONNECT('down');
-  await page.evaluate(() => { for (const k in _cdir) delete _cdir[k]; });
+  /* Both, because asking is guarded by two things: what came back, and whether
+     the question has already been put. Clearing only the first is a reset that
+     resets nothing - the screen stays idle and never asks again. */
+  await page.evaluate(() => {
+    for (const k in _cdir) delete _cdir[k];
+    for (const k in _cdirTried) delete _cdirTried[k];
+  });
   await open();
   const r = await page.evaluate(() => {
     const t = document.querySelector('.cdir').textContent.replace(/\s+/g, ' ');
@@ -175,7 +181,11 @@ section('A directory that cannot be reached does not read as an empty one');
 
 section('A deployment with no backend says that instead');
 {
-  await page.evaluate(() => { AMV_API.base = ''; for (const k in _cdir) delete _cdir[k]; });
+  await page.evaluate(() => {
+    AMV_API.base = '';
+    for (const k in _cdir) delete _cdir[k];
+    for (const k in _cdirTried) delete _cdirTried[k];
+  });
   await open();
   const r = await page.evaluate(() => {
     const t = document.querySelector('.cdir').textContent.replace(/\s+/g, ' ');
