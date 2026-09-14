@@ -12857,3 +12857,35 @@ publishes - with the backend stubbed at 400ms. An instant stub was the other
 half of the earlier miss: the repaints coalesce before the first frame, so the
 flicker being investigated cannot occur. A test environment faster than
 reality does not test reality.
+
+## 490. You cannot statically detect "my rule lost" in a stylesheet built on last-one-wins
+
+After 489 the obvious follow-up was a gate stage: find every declaration a
+later rule overrides, and fail. It does not work here, and the reason is worth
+writing down so nobody builds it twice.
+
+This stylesheet is 200+ append-only LAYERS. "A later rule beats an earlier one"
+is not the bug - it is the ARCHITECTURE. Measured on the shipped file: 390
+pairs where an `!important` declaration is beaten by a later `!important` on
+the same selector, and 24 same-selector value conflicts inside one session's
+own layers. Every one examined was deliberate: a redesign superseding the
+version it replaced. A stage firing 390 times on correct code is a stage
+somebody deletes in a week, and it would have buried the one real defect among
+them.
+
+The audit itself also had to be fixed before it could say anything, which is
+the same lesson one level up. Its first version bucketed rules by selector AND
+media query, so a rule inside `@media(min-width:761px)` was never compared with
+the unconditional rule that beat it - which is EXACTLY the shape of the defect
+it was written to find. It reported a clean result and the clean result was
+worthless. Running it against the known-broken file first is what exposed that;
+an audit that has not been shown to catch a bug you already have is an opinion.
+
+So the defence is not static. It is measuring the COMPUTED value in a browser:
+open the screen, read `getComputedStyle`, compare against the intent. That is
+what 81 / 24 / 81 came from, and no amount of reading the source would have
+produced it, because the source looked right - every rule was present and
+correct, and one of them simply did not win.
+
+The general form: when a system's semantics are "last writer wins", presence of
+a rule proves nothing about its effect. Only the resolved state is evidence.
