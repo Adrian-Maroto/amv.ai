@@ -12799,3 +12799,61 @@ Three smaller rules came out of the same work:
   - "Nothing matches" and "the directory could not be reached" are different
     facts. Showing the first when the second is true tells somebody this product
     connects to nothing.
+
+## 488. Centring each of three screens is what made them jump
+
+Two reports arrived a round apart and read like opposites. Build's entry "is
+way too high and not in the middle at all, needs to move more down." Then, once
+that was fixed: Design "shifts up too high."
+
+Both were true, and the first fix caused the second.
+
+Build, Studio and Lab are three entries into the same section, and a person
+switches between them with one click. They are not the same height - Build's
+entry is short, Studio's nearly fills the window, Lab's sits in between.
+Centring a short column puts its heading far down the page; centring a tall one
+puts its heading near the top. So the more exactly each one is centred, the
+further apart they start. Measured from `.build-head` with the centring in
+place: 231px, 27px, 98px. That 204px spread IS the jump, and it was produced by
+the fix for the first complaint.
+
+The rule: a screen is not positioned alone. Three views that a person moves
+between are one surface, and the thing to hold constant is where the FIRST
+CONTENT lands, not where the block's centre lands. They share one top offset
+now - clamped, because a fixed 110px is most of a short laptop screen - so
+nothing moves when you switch and nothing is against the top edge.
+
+A smaller note worth keeping: `justify-content: center` clips the top of
+anything taller than its box and leaves no way to scroll back to it. If
+centring is ever right here, it is `safe center`. It was not right here.
+
+## 489. An assertion that passes in both states is not a test
+
+The check guarding 488 said: all three entries start within a screenful of each
+other. That sentence is true when all three are centred. It is also true when
+all three are pinned to the top. It could not fail, so it never did, and the
+defect shipped under a green suite.
+
+Underneath it the MEASUREMENT was broken too, and in a way that hid itself. It
+read the first DESCENDANT of the view root to find where content begins.
+Build's root has a single full-height pane as its only child, so the answer was
+always 0 - not an error, not a warning, just a number that looked like an
+answer. Reading `.build-head` instead, which all three actually render, gave
+231 / 27 / 98 immediately.
+
+Two rules, and the second is the one that generalises:
+
+  - Before trusting an assertion, write down what the BROKEN state looks like
+    and check the sentence is false for it. "Within a screenful of each other"
+    fails this on sight. This is the same discipline as breaking a guard to see
+    whether anything notices, applied to layout instead of security.
+  - A measurement that returns a plausible number is not a working measurement.
+    `0` and `undefined` and "the first child" are the three shapes a broken
+    probe takes, and all three read as data. Print what the probe returns on a
+    known-good and a known-bad case before building an assertion on it.
+
+The suite this produced serves `public/` - the bytes the host actually
+publishes - with the backend stubbed at 400ms. An instant stub was the other
+half of the earlier miss: the repaints coalesce before the first frame, so the
+flicker being investigated cannot occur. A test environment faster than
+reality does not test reality.
