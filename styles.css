@@ -13355,3 +13355,35 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   #vc .lab-shell.lab-blank,
   #vc .sv.bld-sv{ padding-top:clamp(24px, 9vh, 110px)!important; }
 }
+
+/* ======================================================================
+   LAYER A207 - the line between the controls and the work
+   ====================================================================== */
+
+/* "the line to separate the buttons and actions from the actual code/work is
+   kind of faded" - and it was, for a reason worth recording rather than just
+   nudging a number.
+
+   These bars ask for `1px solid var(--bd)`, which reads as a proper border
+   because that is what `--bd` means everywhere else. But `--bd` is redefined
+   further down the stylesheet to rgba(255,255,255,.07) - seven percent white
+   on a near-black surface, which is a HAIRLINE. It is the right weight for
+   dividing two rows of a list and the wrong weight for the boundary between
+   the controls and the thing being worked on, which is the strongest
+   structural division on either screen.
+
+   `--bdl` is the existing token for a border meant to be seen - #333 on dark,
+   #c8c5bd on light - so this is not a new value, a new scale or a hardcoded
+   colour. It is the same division stated at the weight it actually has, and it
+   follows the theme because the token does.
+
+   Only the bottom edge is touched. Everything else these bars do - layout,
+   padding, wrapping on a phone - is set elsewhere and is not this layer's
+   business. */
+.dev-bar,
+.lab-bar,
+.build-bar,
+.dsn-wrap > .build-bar,
+.dev-shell.dev-blank .dev-bar{
+  border-bottom-color:var(--bdl);
+}

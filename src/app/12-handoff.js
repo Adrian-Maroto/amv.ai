@@ -42,7 +42,7 @@ async function _handoffSyncLive(){
     }
     /* Only if they are still on it - see _crewSyncLive. The store above is
        updated either way, so nothing is lost by not redrawing. */
-    if(S.tab === 'handoff') renderHandoffView();
+    if(S.tab === 'handoff') _reRenderSoon(renderHandoffView);
   }catch(e){}
 }
 function renderHandoffView(){
@@ -375,9 +375,70 @@ function _vcRemember(e){
   if(!(el.scrollTop > 0)) return;
   _vcScroll = { cls: el.classList[0], top: el.scrollTop };
 }
+/* TWO WRITES OF THE SAME PAGE ARE ONE PAGE AND ONE FLICKER.
+
+   Measured on the published build with a backend taking 700ms: opening Crew
+   rebuilt the ENTIRE view four times inside 900ms (39, 55, 720, 807) and
+   Handoff twice. Every rebuild throws away the DOM and makes a new one, which
+   loses scroll position, loses focus, and restarts anything mid-transition -
+   and two of the four wrote byte-identical HTML, so the screen was destroyed
+   and rebuilt to look exactly the same.
+
+   Suppressing the entrance ANIMATION, which is what the earlier fix did, does
+   not help with that. The animation was the visible symptom; the churn is the
+   cause, and it is what "crew and handoff still lag" is describing.
+
+   This shadows `innerHTML` on the view container alone and drops a write that
+   would produce what is already there. It is deliberately at this level rather
+   than in each renderer: every view writes through this one property, so one
+   guard covers the ones nobody has complained about yet, and no render
+   function has to remember to opt in.
+
+   Skipping also keeps a regional repaint that has landed since - `_cwPopPaint`
+   writes one block of Crew directly - which is the outcome you want anyway: a
+   full write identical to the last full write would have thrown that away and
+   made the block paint itself a second time. */
+function _vcDedupe(vc){
+  if(!vc || vc._vcDeduped) return;
+  const d = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  if(!d || !d.set || !d.get) return;   /* no property to shadow: leave it alone */
+  try{
+    Object.defineProperty(vc, 'innerHTML', {
+      configurable: true,
+      get(){ return d.get.call(this); },
+      set(html){
+        if(this._vcLastHTML === html) return;
+        this._vcLastHTML = html;
+        d.set.call(this, html);
+      }
+    });
+    vc._vcDeduped = true;
+  }catch(e){}
+}
+
+/* A DATA ARRIVAL IS NOT A REASON TO REDRAW IMMEDIATELY.
+
+   Crew's two remaining rebuilds were two different requests landing 87ms
+   apart, each redrawing the whole screen. Nobody can read a screen that is
+   replaced twice in a tenth of a second, and the second one is the one that
+   matters, so the first is pure churn. Trailing edge on purpose: the render
+   runs once, after things have stopped arriving, with everything that arrived.
+
+   Only the ASYNC callers use this. A render caused by somebody clicking
+   something stays synchronous, because a control that responds on the next
+   frame feels broken in a way this is meant to fix. */
+let _rrTimer = null, _rrFn = null;
+function _reRenderSoon(fn){
+  _rrFn = fn;
+  if(_rrTimer) return;
+  _rrTimer = setTimeout(()=>{ _rrTimer = null; const f = _rrFn; _rrFn = null;
+    try{ if(typeof f === 'function') f(); }catch(e){} }, 120);
+}
+
 function _vcSettleObserve(){
   const vc = document.getElementById('vc');
   if(!vc || vc._vcObs) return;
+  _vcDedupe(vc);
   vc.addEventListener('scroll', _vcRemember, true);
   const obs = new MutationObserver(()=>{
     /* Which tab we are on is recorded whether or not this view has anything to

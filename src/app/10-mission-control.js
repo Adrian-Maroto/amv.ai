@@ -1195,7 +1195,7 @@ async function _cwLoadLocal(code){
        nothing, which is a different and false statement. */
     _cwLocalState[cc] = 'offline';
   }
-  try{ if(S.tab === 'crew') renderCrewView(); }catch(e){}
+  try{ if(S.tab === 'crew') _reRenderSoon(renderCrewView); }catch(e){}
 }
 try{ window._cwUniversalJobs=_cwUniversalJobs; window._cwLocalJobs=_cwLocalJobs;
      window._cwLoadLocal=_cwLoadLocal; window.CW_EVERYDAY_UNIVERSAL=CW_EVERYDAY_UNIVERSAL; }catch(e){}
@@ -1799,7 +1799,7 @@ async function _crewSyncLive(){
        are now reading replaced by the one they left - the stored state above is
        still updated, which is the point, so the next time they open Crew it is
        correct without anything being redrawn under them. */
-    if(S.tab === 'crew' || S.tab === 'extensions') renderCrewView();
+    if(S.tab === 'crew' || S.tab === 'extensions') _reRenderSoon(renderCrewView);
   }catch(e){}
 }
 /* ============================================================
