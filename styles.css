@@ -12613,31 +12613,34 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .lab-shell.lab-blank .lab-entry-do{ max-width:660px; }
 }
 
-/* ALL THREE ENTRIES SIT THE SAME WAY, WHICH IS THE HALF I GOT WRONG FIRST.
+/* ALL THREE ENTRIES SIT THE SAME WAY, AND CENTRING WAS THE WRONG INSTINCT.
 
-   Build's entry ran 58 to 439 in an 860px window with 363px of nothing under
-   it, so it was centred. Studio and Lab were not - and the next report was that
-   Design "shifts up too high", which is exactly what happens when one of three
-   sections of the same screen is centred and the other two are pinned to the
-   top: switching between them throws the page upward. One rule now, for all
-   three.
+   Build's entry was top-aligned with 363px of nothing under it - "way too high
+   and not in the middle at all, needs to move more down" - so it was centred,
+   and the next report was that Design "shifts up too high". Both were true at
+   once, and centring is why.
 
-   `safe center` rather than plain `center`, and rather than the auto margins
-   this started as. Plain centring CLIPS the top when the content is taller than
-   the box and leaves no way to scroll back to it - a real fault, not a
-   theoretical one, and the reason the first version used margins instead. The
-   `safe` keyword says exactly what is wanted: centre it, and if it does not
-   fit, align to the start so nothing is ever unreachable.
+   The three entries are different heights: Build's is short, Studio's nearly
+   fills the window, Lab's is in between. Centring a short column puts its
+   heading far down the page and centring a tall one puts its heading near the
+   top, so the more exactly each is centred, the further apart they start.
+   Measured from `.build-head` with the centring in place: 231px, 27px and
+   98px. That 204px gap IS the jump, and it was caused by the fix for the first
+   complaint.
 
-   It also removes a hack. The auto-margin version had to anchor Lab on
-   `:nth-last-child(2)`, because Lab's last child is `.lab-split` and a
-   `display:none` element is not a flex item, so its margin never resolved and
-   the entry sat against the bottom of the window. `safe center` has no such
-   edge: it aligns whatever the visible items are. */
+   One shared offset instead. Every entry begins the same distance down
+   whatever it weighs, so nothing moves when you switch between them and
+   nothing is against the top edge. It scales with the window and stops
+   growing, because a fixed 110px is most of a short laptop screen.
+
+   The measurement that missed this is worth recording too: it took the first
+   DESCENDANT of the view root, and Build's root has a full-height pane as its
+   only child, so the answer was always zero and could not tell centred from
+   top-aligned. It reads `.build-head` now, which all three render. */
 @media(min-width:761px){
-  .dev-shell.dev-blank > .dev-chat-pane{ justify-content:safe center; }
-  .sv.bld-sv{ display:flex; flex-direction:column; justify-content:safe center; }
-  .lab-shell.lab-blank{ justify-content:safe center; }
+  .dev-shell.dev-blank > .dev-chat-pane,
+  .lab-shell.lab-blank{ padding-top:clamp(24px, 9vh, 110px); }
+  #vc .sv.bld-sv{ padding-top:clamp(24px, 9vh, 110px)!important; }
 }
 
 /* Lab's entry: one document scroll, not a box inside a box. */

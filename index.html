@@ -8274,9 +8274,9 @@ justify-content:flex-start; padding-top:0; padding-bottom:var(--sp-7);
 .lab-shell.lab-blank .lab-entry-do{ max-width:660px; }
 }
 @media(min-width:761px){
-.dev-shell.dev-blank > .dev-chat-pane{ justify-content:safe center; }
-.sv.bld-sv{ display:flex; flex-direction:column; justify-content:safe center; }
-.lab-shell.lab-blank{ justify-content:safe center; }
+.dev-shell.dev-blank > .dev-chat-pane,
+.lab-shell.lab-blank{ padding-top:clamp(24px, 9vh, 110px); }
+#vc .sv.bld-sv{ padding-top:clamp(24px, 9vh, 110px)!important; }
 }
 .lab-shell.lab-blank{ overflow-y:auto; overflow-x:hidden; }
 .lab-shell.lab-blank > *{ flex:0 0 auto; }

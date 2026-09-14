@@ -128,10 +128,20 @@ section('Build opens in the middle of the window, not against the top');
     };
   });
   ok(m.above > 60, 'there is room above the heading', JSON.stringify(m));
-  /* Not equality: the pane carries its own padding, and a rule that demands
-     the two match to the pixel is a rule somebody deletes the first time a
-     designer changes the padding. Balance is the claim. */
-  ok(Math.abs(m.above - m.below) < 120, 'and about as much below it', JSON.stringify(m));
+  /* "And about as much below it" was the claim while this entry was CENTRED,
+     and centring has been deliberately given up. The three Build sections are
+     different heights - Build's entry is short, Studio's nearly fills the
+     window - so centring each one exactly is what guarantees their headings
+     start in different places, and switching between them jumped 204px.
+     They share one top offset now, which is why the space below is no longer
+     expected to match the space above.
+
+     What replaced that claim lives in
+     every-fault-that-was-reported-stays-fixed: all three start within a
+     screenful of each other and none is against the top edge. Checked there
+     because it is a claim about the three together, which this file, driving
+     one of them, cannot make. */
+  ok(m.below > 0, 'and the entry is not taller than the window', JSON.stringify(m));
 }
 
 await app.close();
