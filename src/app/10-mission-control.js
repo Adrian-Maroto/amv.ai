@@ -1537,7 +1537,7 @@ function _cwRepaintSoon(){
       if(r && (r.textContent || '').trim()) return;
     }catch(e){}
     renderCrewView();
-  });
+  }, S.tab === 'extensions' ? 'extensions' : 'crew');
 }
 
 function _cwPopPaint(){

@@ -16769,7 +16769,7 @@ function _cwRepaintSoon(){
       if(r && (r.textContent || '').trim()) return;
     }catch(e){}
     renderCrewView();
-  });
+  }, S.tab === 'extensions' ? 'extensions' : 'crew');
 }
 
 function _cwPopPaint(){
@@ -23643,6 +23643,7 @@ function _hoSaveIn(a){ store('amv_handoffs_in', a); }
 
 async function _handoffSyncLive(){
   if(!(window.AMV_API && AMV_API.live)) return;
+  const before = JSON.stringify([load('amv_handoffs_in') || [], load('amv_handoffs_out') || []]);
   try{ const d=await AMV_API.listHandoff();
     if(d.incoming) store('amv_handoffs_in', d.incoming.map(h=>({id:h.id,from:h.from_email,title:h.title,context:h.context,when:''})));
     if(d.sent){
@@ -23656,9 +23657,12 @@ async function _handoffSyncLive(){
       const seen=new Set(fromServer.map(h=>h.id));
       store('amv_handoffs_out', fromServer.concat(keep.filter(h=>!seen.has(h.id))));
     }
-    /* Only if they are still on it - see _crewSyncLive. The store above is
-       updated either way, so nothing is lost by not redrawing. */
-    if(S.tab === 'handoff') _reRenderSoon(renderHandoffView);
+    /* Only if they are still on it - see _crewSyncLive - AND only if the sync
+       actually changed something. Polling that returns the same two lists is
+       the common case, and redrawing the whole screen to display what is
+       already on it is the entire complaint this round started with. */
+    const after = JSON.stringify([load('amv_handoffs_in') || [], load('amv_handoffs_out') || []]);
+    if(S.tab === 'handoff' && after !== before) _reRenderSoon(renderHandoffView, 'handoff');
   }catch(e){}
 }
 function renderHandoffView(){
@@ -24021,11 +24025,56 @@ function _vcRemember(e){
    Only the ASYNC callers use this. A render caused by somebody clicking
    something stays synchronous, because a control that responds on the next
    frame feels broken in a way this is meant to fix. */
-let _rrTimer = null, _rrFn = null;
-function _reRenderSoon(fn){
-  _rrFn = fn;
+/* A BACKGROUND REDRAW MUST NOT DESTROY WHAT SOMEBODY IS TYPING.
+
+   Coalescing moved these redraws LATER, and later is long enough for a person
+   to have filled in a form. The whole view is rebuilt by them, so the fields
+   come back empty - and the suite that found it did exactly what a person does:
+   typed a title, a note and an address, and then sent. The send saw an empty
+   title and did nothing at all. A background sync that silently eats an unsent
+   handoff is far worse than the flicker this was meant to fix.
+
+   So a redraw that nobody asked for yields to a screen in use. Nothing is lost
+   by waiting: the data that arrived is already stored, and the next time the
+   view is drawn it is correct - which is the rule this file already applies a
+   few hundred lines up, for the same reason, in almost the same words. */
+function _vcInUse(){
+  try{
+    const vc = document.getElementById('vc');
+    if(!vc) return false;
+    const a = document.activeElement;
+    if(a && vc.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+    return [...vc.querySelectorAll('input, textarea')].some(el => {
+      const t = (el.type || '').toLowerCase();
+      if(t === 'checkbox' || t === 'radio' || t === 'hidden') return false;
+      return String(el.value || '').trim().length > 0;
+    });
+  }catch(e){ return false; }
+}
+
+let _rrTimer = null, _rrFn = null, _rrTab = '';
+function _reRenderSoon(fn, tab){
+  _rrFn = fn; _rrTab = tab || '';
   if(_rrTimer) return;
-  _rrTimer = setTimeout(()=>{ _rrTimer = null; const f = _rrFn; _rrFn = null;
+  _rrTimer = setTimeout(()=>{
+    _rrTimer = null;
+    const f = _rrFn, want = _rrTab; _rrFn = null; _rrTab = '';
+    /* THE TAB IS CHECKED WHEN THIS FIRES, NOT WHEN IT WAS SCHEDULED.
+
+       This is what made delaying these dangerous. Every caller asks "are they
+       still on my screen?" before scheduling, which was the right question at
+       the wrong moment: 120ms is long enough to leave, and the renderer then
+       ran anyway and painted its own screen over the one somebody had moved
+       to. A suite caught it by opening Handoff straight after Crew, typing
+       into the form and sending - the form had been replaced by Crew, the
+       send found nothing to send, and an unsent handoff vanished in silence.
+
+       Asking again here is the whole guard: a redraw belongs to the screen it
+       was scheduled for, and if that is not the screen in front of somebody it
+       does not happen at all. The state it would have shown is stored either
+       way and the next open is correct. */
+    if(want && S.tab !== want) return;
+    if(_vcInUse()) return;
     try{ if(typeof f === 'function') f(); }catch(e){} }, 120);
 }
 
