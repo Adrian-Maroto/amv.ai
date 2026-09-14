@@ -12568,6 +12568,32 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    and there is then no way to scroll back up to it - which is the fault this
    layer is fixing two paragraphs above. */
 
+/* A REPAINT IS NOT AN ARRIVAL, AND THIS IS WHERE IT IS SAID.
+
+   `#vc > *` carries `viewEnter`, so every view animates in - which is right on
+   arrival and wrong on the two-to-four repaints Crew, Handoff and Connectors
+   each make in their first second while the server answers. `.vc-repaint` is
+   put on the view's root by the observer in `_vcSettleObserve` when the tab has
+   not changed.
+
+   The first rule is the one that matters and it is deliberately on the ROOT
+   only: `animation:none` there stops `viewEnter` without reaching a single
+   descendant, so the spinner, the streaming cursor, the typing dots and every
+   other looping animation inside the view keep running. A blanket
+   `animation:none` on the subtree would freeze all of them.
+
+   The second rule is the entry animations that sit INSIDE a view. `staggerIn`
+   needs its opacity put back by hand: it starts at 0 and relies on `forwards`
+   to end at 1, so removing the animation without restoring opacity would leave
+   the list invisible - which is a worse bug than the flicker. `amvRise` fills
+   `both`, so dropping it simply returns the element to its normal state. */
+#vc > .vc-repaint{ animation:none!important; }
+#vc > .vc-repaint .lab-entry,
+#vc > .vc-repaint .dsn-hero,
+#vc > .vc-repaint .auto-ev,
+#vc > .vc-repaint .chome-recent{ animation:none!important; }
+#vc > .vc-repaint .stagger-in > *{ animation:none!important; opacity:1!important; }
+
 /* Lab's entry: one document scroll, not a box inside a box. */
 .lab-shell.lab-blank{ overflow-y:auto; overflow-x:hidden; }
 .lab-shell.lab-blank > *{ flex:0 0 auto; }
@@ -12587,10 +12613,50 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   .lab-shell.lab-blank .lab-entry-do{ max-width:660px; }
 }
 
-/* Build's entry sits in the middle of the window. */
+/* ALL THREE ENTRIES SIT THE SAME WAY, WHICH IS THE HALF I GOT WRONG FIRST.
+
+   Build's entry ran 58 to 439 in an 860px window with 363px of nothing under
+   it, so it was centred. Studio and Lab were not - and the next report was that
+   Design "shifts up too high", which is exactly what happens when one of three
+   sections of the same screen is centred and the other two are pinned to the
+   top: switching between them throws the page upward. One rule now, for all
+   three.
+
+   `safe center` rather than plain `center`, and rather than the auto margins
+   this started as. Plain centring CLIPS the top when the content is taller than
+   the box and leaves no way to scroll back to it - a real fault, not a
+   theoretical one, and the reason the first version used margins instead. The
+   `safe` keyword says exactly what is wanted: centre it, and if it does not
+   fit, align to the start so nothing is ever unreachable.
+
+   It also removes a hack. The auto-margin version had to anchor Lab on
+   `:nth-last-child(2)`, because Lab's last child is `.lab-split` and a
+   `display:none` element is not a flex item, so its margin never resolved and
+   the entry sat against the bottom of the window. `safe center` has no such
+   edge: it aligns whatever the visible items are. */
 @media(min-width:761px){
-  .dev-shell.dev-blank > .dev-chat-pane > :first-child{ margin-top:auto; }
-  .dev-shell.dev-blank > .dev-chat-pane > :last-child{ margin-bottom:auto; }
+  .dev-shell.dev-blank > .dev-chat-pane{ justify-content:safe center; }
+  .sv.bld-sv{ display:flex; flex-direction:column; justify-content:safe center; }
+  .lab-shell.lab-blank{ justify-content:safe center; }
+}
+
+/* Lab's entry: one document scroll, not a box inside a box. */
+.lab-shell.lab-blank{ overflow-y:auto; overflow-x:hidden; }
+.lab-shell.lab-blank > *{ flex:0 0 auto; }
+.lab-shell.lab-blank .lab-entry{
+  flex:0 0 auto; overflow:visible; min-height:0;
+  justify-content:flex-start; padding-top:0; padding-bottom:var(--sp-7);
+}
+/* The paste box extends the page instead of scrolling inside itself. The
+   height is set by script on every input, so it must size to that height
+   rather than to whatever the flex row has left - `flex:1` from the rule that
+   defines it would ignore it. */
+.lab-shell.lab-blank #lab-paste{ flex:0 0 auto; overflow-y:hidden; resize:none; }
+
+/* One measure, shared with the head above it. */
+@media(min-width:761px){
+  .lab-shell.lab-blank .lab-entry-grid,
+  .lab-shell.lab-blank .lab-entry-do{ max-width:660px; }
 }
 
 /* THE ORPHANED CAPTION, AND THE SWITCHER THAT SHOULD STAY HIDDEN.
@@ -13106,3 +13172,53 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .vi-conn .ax-legend{ background:none; border:none; padding:0; margin:0 0 var(--sp-5); }
 .vi-conn .sec-head{ display:block; }
 .vi-conn .sec-head h3{ margin-bottom:4px; }
+
+/* ── LAYER A204 · the design entry, cut to the size of the window ───────────
+
+   Measured at 1280x900: the Studio entry column was 1328px in an 842px
+   viewport. That is why it could not sit where Build and Lab do - a block
+   taller than its container has nowhere to be centred - so it pinned to the
+   top and scrolled while the other two were centred, and switching sections
+   threw the page upward. Reported as "when I click design, it shifts up too
+   high", and it was the centring of Build alone that caused it.
+
+   Three cuts, no feature among them. The 60px rhythm between sections was
+   worth 120px on its own; the starting points were 350px of tall tiles for
+   four short labels; and the marketing callout came off in the markup. What is
+   left is 767px, which fits, which means all three entries obey one rule. */
+.dsn-wrap > *{ margin-top:var(--sp-6); }
+/* `#vc` in the selector, because `#vc .bld-sv` sets this padding with an id in
+   it and an `!important` - a plain `.sv.bld-sv` loses to that however many
+   classes it stacks, and loses silently. The measured effect was an 84px bottom
+   padding nobody asked for, which is what kept this column 29px taller than its
+   window and therefore pinned to the top while the other two centred. */
+#vc .sv.bld-sv{ padding-bottom:var(--sp-5)!important; }
+.dsn-starts .dsn-tile{ padding:var(--sp-4) var(--sp-5); border-radius:var(--r-xl); }
+.dsn-starts .dsn-tile.feat{ padding:var(--sp-5); }
+.dsn-starts .dsn-tile-ic{ width:40px; height:40px; font-size:var(--t-xl); border-radius:var(--r-lg); }
+.dsn-starts .dsn-tile.feat .dsn-tile-ic{ width:44px; height:44px; font-size:var(--t-2xl); }
+.dsn-starts .dsn-tile-t{ font-size:var(--t-base); }
+.dsn-starts .dsn-tile.feat .dsn-tile-t{ font-size:var(--t-lg); }
+.dsn-starts .dsn-tile-d{ font-size:var(--t-sm); }
+/* The last 84px, which is the difference between this entry centring like the
+   other two and pinning to the top. The inline margins in the hero need
+   `!important` to reach - they are written on the elements themselves - and the
+   Design DNA swatch strip is decoration, so it gives up its gap first. */
+#vc .sv.bld-sv{ padding-top:var(--sp-5)!important; }
+.dsn-wrap > *{ margin-top:var(--sp-5); }
+.dsn-hero > div[style*="margin-top:22px"]{ margin-top:var(--sp-4)!important; }
+.dsn-hero > div[style*="margin-top:12px"]{ margin-top:var(--sp-2)!important; height:14px!important; }
+.dsn-dna-explain{ margin-top:var(--sp-2); margin-bottom:0; }
+/* The featured starting point stops spanning both columns. That span cost a
+   whole extra row - three rows for four tiles - and it is the last thing
+   standing between this entry and fitting. The emphasis it carried was never
+   the width: it keeps its accent fill and its larger title, which is what made
+   it read as the suggested one. */
+.dsn-starts .dsn-tile.feat{ grid-column:auto; }
+/* An empty section still takes its margin. `_ownedMarketHTML` and
+   `_buildRecentsHTML` render nothing when there is nothing to show, but the
+   `.dsn-wrap > *` rhythm still gave each placeholder 24px - so the column
+   measured 29px taller than it looked, which was enough to keep `safe center`
+   in its overflow fallback and leave this entry pinned to the top while the
+   other two were centred. Invisible height is still height. */
+.dsn-wrap > *:empty{ display:none; }

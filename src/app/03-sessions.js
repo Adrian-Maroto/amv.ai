@@ -257,7 +257,9 @@ function _sessResume(id){
      resume path is a second door into the same room and never learned it. */
   try{
     if(k==='dev' && typeof _DEV!=='undefined') _DEV.atHome=false;
-    if(k==='studio' && typeof _STUDIO!=='undefined') _STUDIO.atHome=false;
+    if(k==='studio' && typeof _STUDIO!=='undefined'){ _STUDIO.atHome=false; _STUDIO.openWip=true; }
+    /* Lab has the flag now too, and resuming is the other door into the room. */
+    if(k==='lab' && typeof _LAB!=='undefined') _LAB.atHome=false;
   }catch(e){}
   const tab=SESSION_KINDS[k]?.tab||'chat';
   setTab(tab);
@@ -1262,6 +1264,31 @@ function _restoreSidebarState(){
   }catch(e){}
 }
 try{ window._restoreSidebarState=_restoreSidebarState; }catch(e){}
+/* PRESSING BUILD IN THE SIDEBAR GOES TO BUILD.
+
+   Reported: "when I go to my recents and I click build, it should show the main
+   screen. However it's still showing the recents that I clicked on lastly."
+
+   It did. `_buildMode()` returns the section you were last in, and all three
+   sections hold a flag meaning "show me the work, not the list", so the sidebar
+   entry re-opened whichever project was open. A sidebar entry that does not
+   reach its own destination is the definition of being stuck.
+
+   Nothing is lost: the work is already written to Recents by the flush in
+   setTab, and it is the first thing on the screen this lands on.
+
+   THIS IS CALLED FROM THE SIDEBAR BUTTON, NOT FROM `setTab`. The first attempt
+   put it inside setTab under `t === 'build'`, which was wrong and measurably
+   so: `setBuildMode` and every deep link route through setTab too, so opening a
+   design sent Studio home a moment before it tried to draw the canvas, and the
+   canvas never appeared. Only a person pressing the entry means "take me to
+   the list". */
+function buildHome(){
+  try{ if(typeof _DEV!=='undefined')    _DEV.atHome=true; }catch(e){}
+  try{ if(typeof _STUDIO!=='undefined'){ _STUDIO.atHome=true; _STUDIO.openWip=false; } }catch(e){}
+  try{ if(typeof _LAB!=='undefined')    _LAB.atHome=true; }catch(e){}
+}
+try{ window.buildHome=buildHome; }catch(e){}
 function setTab(t){
   try{ if(t==='settings' && S.tab && S.tab!=='settings') S._preSettingsTab=S.tab; }catch(e){}
   /* Counted here because this is the one place every surface is opened through,
@@ -1322,8 +1349,6 @@ function setTab(t){
   /* The connector directory's own page state. A screen somebody left is not
      where they are when they come back. */
   try{ if(t!=='integrations' && typeof _cdirReset==='function') _cdirReset(); }catch(e){}
-  try{ if(t!=='chat' && window.AMVSpeech){ AMVSpeech.stop(); _voiceMode=false; const vb=$('voicemode-btn'); if(vb) vb.classList.remove('on'); } }catch(e){}
-  try{ if(typeof AEGIS!=='undefined' && AEGIS.log && t && t!==S.tab){ const _fmap={chat:'chat',dev:'dev',lab:'lab',crew:'crew',studio:'studio',handoff:'handoff',workspaces:'projects',memory:'memory',team:'team',market:'marketplace',tasks:'tasks'}; if(_fmap[t]) AEGIS.log('feature',{name:_fmap[t]}); } }catch(e){}
   S.tab=t;
   try{ _renderBottomNav(); }catch(e){}
   document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));

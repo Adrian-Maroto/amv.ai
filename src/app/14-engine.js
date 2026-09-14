@@ -789,12 +789,28 @@ async function analyzeCode(code, lang, kind){
 /* Lab starts EMPTY on purpose. It used to ship with demo code, which meant the
    entry screen ("Drop in your code and AMV takes it from there") never appeared
    - so nobody learned how to paste or upload. Empty = the instructions show. */
-const _LAB = { lang:'js', code:'', busy:false, files:[], chat:[], deploySlug:'' };
+/* `atHome` is the same flag Dev and Studio carry, and Lab is the one of the
+   three that never had it. Its entry screen was defined purely by "there is no
+   code", so the only way back to it was to delete the work - which is why
+   pressing Build in the sidebar left somebody looking at a loaded Lab. A flag
+   costs nothing and means the way home never has to destroy anything. */
+const _LAB = { lang:'js', code:'', busy:false, files:[], chat:[], deploySlug:'', atHome:false };
 
+/* Lab is at home when there is nothing to work on, or when somebody asked to
+   go home. One function, so the markup and every later recomputation cannot
+   disagree - see the comment on `setBlank`, which is what happened when they
+   were two.
+
+   `code` is optional: the live textarea value during typing, `_LAB.code`
+   otherwise. */
+function _labIsHome(code){
+  const txt = code === undefined ? (_LAB.code || '') : (code || '');
+  return !String(txt).trim() || !!_LAB.atHome;
+}
 function renderLabView(){
   const vc=$('vc'); if(!vc) return;
   if(typeof _LAB_HANDOFF!=='undefined' && _LAB_HANDOFF){ _LAB.code=_LAB_HANDOFF; _LAB_HANDOFF=''; }
-  const labBlank = !String(_LAB.code||'').trim();
+  const labBlank = _labIsHome();
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
     ${_buildEntryHeadHTML('lab','What code should we work on?')}
     ${_buildBarHTML('lab', !labBlank, labBlank)}
@@ -882,12 +898,26 @@ function renderLabView(){
   });
   // ── Loading code into Lab: paste, upload, or drag & drop ──
   const labShell=$('lab-shell');
-  const setBlank=()=>{ if(labShell) labShell.classList.toggle('lab-blank', !String(codeEl.value||'').trim()); };
+  /* THROUGH `_labIsHome`, NOT A SECOND COPY OF THE RULE.
+
+     This recomputed "is Lab empty" from the textarea alone and ran at the end
+     of every render, so it overwrote the class the markup had just set from
+     `labBlank` - which is how pressing Build in the sidebar left somebody
+     looking at their loaded code with the home flag set to true. Two
+     definitions of one truth, and the later one won.
+
+     The textarea is passed in because it is fresher than `_LAB.code` while
+     somebody is typing. */
+  const setBlank=()=>{ if(labShell) labShell.classList.toggle('lab-blank', _labIsHome(codeEl.value)); };
 
   // Load code in and leave the entry state.
   const labLoad=(code, name)=>{
     codeEl.value=String(code||'');
     _LAB.code=codeEl.value;
+    /* Loading code is leaving home, the same way opening a build is for Dev and
+       opening a design is for Studio. Without this the entry screen would win
+       over the work somebody just pasted. */
+    _LAB.atHome=false;
     if(name){ _LAB.files=_LAB.files||[]; if(!_LAB.files.includes(name)) _LAB.files.push(name); }
     paint(); labCount(); labFilesBar(); setBlank();
     try{ _sessTouch('lab'); }catch(e){}
@@ -1056,7 +1086,9 @@ function renderLabView(){
   codeEl.value=_LAB.code||'';
   paint();
   on(codeEl,'scroll',syncScroll);
-  on(codeEl,'input',()=>{ paint(); setBlank(); });
+  /* Typing into the editor is working on something, which is leaving home -
+     otherwise the entry screen would reappear over the code being written. */
+  on(codeEl,'input',()=>{ if(String(codeEl.value||'').trim()) _LAB.atHome=false; paint(); setBlank(); });
   labFilesBar(); setBlank();
 
   // Live size readout - shows Lab is handling big files.

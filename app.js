@@ -3703,7 +3703,9 @@ function _sessResume(id){
      resume path is a second door into the same room and never learned it. */
   try{
     if(k==='dev' && typeof _DEV!=='undefined') _DEV.atHome=false;
-    if(k==='studio' && typeof _STUDIO!=='undefined') _STUDIO.atHome=false;
+    if(k==='studio' && typeof _STUDIO!=='undefined'){ _STUDIO.atHome=false; _STUDIO.openWip=true; }
+    /* Lab has the flag now too, and resuming is the other door into the room. */
+    if(k==='lab' && typeof _LAB!=='undefined') _LAB.atHome=false;
   }catch(e){}
   const tab=SESSION_KINDS[k]?.tab||'chat';
   setTab(tab);
@@ -4708,6 +4710,31 @@ function _restoreSidebarState(){
   }catch(e){}
 }
 try{ window._restoreSidebarState=_restoreSidebarState; }catch(e){}
+/* PRESSING BUILD IN THE SIDEBAR GOES TO BUILD.
+
+   Reported: "when I go to my recents and I click build, it should show the main
+   screen. However it's still showing the recents that I clicked on lastly."
+
+   It did. `_buildMode()` returns the section you were last in, and all three
+   sections hold a flag meaning "show me the work, not the list", so the sidebar
+   entry re-opened whichever project was open. A sidebar entry that does not
+   reach its own destination is the definition of being stuck.
+
+   Nothing is lost: the work is already written to Recents by the flush in
+   setTab, and it is the first thing on the screen this lands on.
+
+   THIS IS CALLED FROM THE SIDEBAR BUTTON, NOT FROM `setTab`. The first attempt
+   put it inside setTab under `t === 'build'`, which was wrong and measurably
+   so: `setBuildMode` and every deep link route through setTab too, so opening a
+   design sent Studio home a moment before it tried to draw the canvas, and the
+   canvas never appeared. Only a person pressing the entry means "take me to
+   the list". */
+function buildHome(){
+  try{ if(typeof _DEV!=='undefined')    _DEV.atHome=true; }catch(e){}
+  try{ if(typeof _STUDIO!=='undefined'){ _STUDIO.atHome=true; _STUDIO.openWip=false; } }catch(e){}
+  try{ if(typeof _LAB!=='undefined')    _LAB.atHome=true; }catch(e){}
+}
+try{ window.buildHome=buildHome; }catch(e){}
 function setTab(t){
   try{ if(t==='settings' && S.tab && S.tab!=='settings') S._preSettingsTab=S.tab; }catch(e){}
   /* Counted here because this is the one place every surface is opened through,
@@ -4768,8 +4795,6 @@ function setTab(t){
   /* The connector directory's own page state. A screen somebody left is not
      where they are when they come back. */
   try{ if(t!=='integrations' && typeof _cdirReset==='function') _cdirReset(); }catch(e){}
-  try{ if(t!=='chat' && window.AMVSpeech){ AMVSpeech.stop(); _voiceMode=false; const vb=$('voicemode-btn'); if(vb) vb.classList.remove('on'); } }catch(e){}
-  try{ if(typeof AEGIS!=='undefined' && AEGIS.log && t && t!==S.tab){ const _fmap={chat:'chat',dev:'dev',lab:'lab',crew:'crew',studio:'studio',handoff:'handoff',workspaces:'projects',memory:'memory',team:'team',market:'marketplace',tasks:'tasks'}; if(_fmap[t]) AEGIS.log('feature',{name:_fmap[t]}); } }catch(e){}
   S.tab=t;
   try{ _renderBottomNav(); }catch(e){}
   document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
@@ -20105,13 +20130,44 @@ function renderDesignView(){
      atHome is what keeps "Studio home" meaningful. That button re-renders this
      view, so without an explicit intent the canvas would reopen immediately
      and there would be no way back to start something new. */
+  /* IF IT WAS WORTH SAVING, IT IS WORTH SHOWING.
+
+     Reported: opening a design from Recents goes back to the homepage. It did,
+     and the cause was two predicates disagreeing about what a session is.
+
+     `_sessHasContent` saves a Studio session as soon as an artifact has html OR
+     A BRIEF - which is right, because somebody who described a poster and had
+     the generation fail has still done work worth keeping. This branch then
+     required `a.html` before it would open the canvas. So a design saved at the
+     moment it was described, or one whose generation errored, resumed straight
+     past its own canvas onto the hero, and the work was invisible even though
+     it was listed in Recents and loaded into memory.
+
+     It opens for an artifact that EXISTS now, and the preview says plainly when
+     there is nothing rendered yet rather than the whole screen pretending the
+     session was never opened. Saving and showing use the same test. */
   try{
     if(!_STUDIO.atHome){
-      const a=_studioActive()||_STUDIO.artifacts.find(x=>x.html);
-      if(a && a.html){
+      /* `_STUDIO.openWip` says a design with no result YET is deliberately
+         open - set by _sessResume, cleared only by going home. A design being
+         RESUMED opens even when nothing has been generated for it; a design
+         merely sitting in memory while somebody navigates to Studio does not,
+         because that screen is the starting point and should stay one.
+
+         It is not a one-shot. The first version spent it on the first render,
+         so switching to Build and back closed a design that had never been
+         generated - and "it closed itself when I looked away" is a worse bug
+         than the one being fixed. What ends it is the thing that means it: the
+         person asking for the list. */
+      const wip = !!_STUDIO.openWip;
+      const a=_studioActive()
+           || _STUDIO.artifacts.find(x=>x.html)
+           || (wip ? _STUDIO.artifacts.find(x=>x && (x.brief || x.name)) : null);
+      if(a && (a.html || wip)){
         _STUDIO.activeId=a.id;
         _studioShowCanvas(a.brief||a.name||'');
-        _studioRenderPreview(a.html);
+        _studioRenderPreview(a.html||'');
+        if(!a.html) _studioStatus('Nothing was generated for this one yet - say what you want and AMV designs it.');
         _studioRenderArtifacts();
         return;
       }
@@ -20134,12 +20190,12 @@ function renderDesignView(){
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
       </div>
-      <div class="dsn-hint">Press generate, or pick a starting point below</div>
+      <div class="dsn-hint">Press generate, or pick a starting point below · every design stays editable, so keep chatting and AMV reshapes it</div>
       <div style="margin-top:22px;display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap">
         <button class="dna-btn" data-dact="openDNA"><span class="dna-dot"></span>Design DNA</button>
         <span class="dna-active-chip">${_DNA.colors.length} colors · ${escH(_DNA.themeFamily)} · ${escH(_DNA.theme)}</span>
       </div>
-      <p class="dsn-dna-explain">Design DNA is your reusable style guide - set your colors, fonts, shapes and vibe once, and everything AMV designs follows it. Optional: skip it and AMV picks tasteful defaults.</p>
+      <p class="dsn-dna-explain">Your reusable style guide - set it once and everything AMV designs follows it. Optional.</p>
       <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
     </section>
 
@@ -20150,13 +20206,22 @@ function renderDesignView(){
       </button>`).join('')}
     </section>
 
-    <section class="dsn-callout">
-      <div class="dsn-callout-text">
-        <h3>It&rsquo;s a conversation, not a form</h3>
-        <p>Every design stays editable. Keep chatting and AMV reshapes the canvas live - tweak copy, swap layouts, change the whole vibe in a sentence.</p>
-      </div>
-      <div class="dsn-callout-orb"></div>
-    </section>
+    ${/* THE MARKETING BLOCK CAME OFF THIS SCREEN.
+
+           "It's a conversation, not a form" and a glowing orb, 201px tall plus
+           its margin, at the bottom of a tool's starting page. It was the
+           single largest thing here after the starting points and it told
+           somebody who had already opened Studio why Studio is good.
+
+           It is the reason this entry could not sit where the other two do.
+           Measured at 1280x900: the column was 1328px in an 842px viewport, so
+           it pinned itself to the top and scrolled while Build and Lab were
+           centred - which is the jump the owner reported as "design shifts up
+           too high". Without it the column is 767px and all three behave the
+           same way.
+
+           The fact it carried is still on the screen, one line under the
+           composer where somebody is actually deciding what to type. */ ''}
     ${_ownedMarketHTML('studio')}
     ${_buildRecentsHTML('studio')}
   </div></div>`;
@@ -20194,7 +20259,10 @@ const _STUDIO = { html:'', prompt:'', history:[],
   /* Somebody pressed "Studio home" and wants the hero, not the canvas they
      just left. Without it, re-rendering the view would reopen the canvas and
      that button would do nothing. */
-  atHome:false };
+  atHome:false,
+  /* "A design with no result yet is deliberately open." Set by _sessResume,
+     cleared by buildHome and by Studio home - never by a render. */
+  openWip:false };
 function _studioActive(){ return _STUDIO.artifacts.find(a=>a.id===_STUDIO.activeId)||null; }
 function _studioNewArtifact(name, type, brief){
   const id='art_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4);
@@ -20297,7 +20365,7 @@ function _studioShowCanvas(brief){
     _setSectionModel('design', this.value);
     toast('Design model set to '+MODELS[this.value].label,'info',2500);
   });
-  on($('bld-home'),'click',()=>{ _STUDIO.atHome=true; try{ _sessFlush('studio'); }catch(e){} setBuildMode('design'); });
+  on($('bld-home'),'click',()=>{ _STUDIO.atHome=true; _STUDIO.openWip=false; try{ _sessFlush('studio'); }catch(e){} setBuildMode('design'); });
   on($('studio-refine-go'),'click',_studioRefine);
   on($('studio-add'),'click',_studioAddPrompt);
   on($('studio-history'),'click',_studioHistory);
@@ -23786,48 +23854,62 @@ window.hoSend=hoSend;window.hoOpen=hoOpen;window.hoDone=hoDone;
 /* === RENDER VIEW ROUTER === */
 /* ONE OPENING, ONE ENTRANCE.
 
-   Every view writes `<div class="sv fi">` and `.fi` is a 180ms fade-and-rise.
-   That is right the first time a screen appears and wrong every time after -
-   and several screens repaint three or four times in their first second, on
-   purpose. Crew paints from what is on disk, again when the server answers
-   what it is running, and again when the connector list lands; Handoff does
-   the same with the handoffs sent to you. Each repaint replayed the entrance
-   and dropped the scroll offset back to the top, so from the outside the
-   screen flickers and jerks upward while somebody is trying to read it.
+   Every view is a child of `#vc`, and `#vc > *` carries `viewEnter` - a fade
+   and an 8px rise. That is right the first time a screen appears and wrong
+   every time after, and several screens repaint two to four times in their
+   first second on purpose: Crew paints from what is on disk, again when the
+   server answers what it is running, again when the connector list lands.
+   Handoff and Connectors do the same.
 
-   The repaints themselves are correct - a screen briefly out of date beats one
-   permanently wrong about another device - so what changes here is only how
-   they look. A repaint of the SAME tab keeps its scroll offset and skips the
-   entrance; a move to a DIFFERENT tab gets both. The observer runs as a
-   microtask, which is before the frame is painted, so the animation is never
-   started rather than cut off halfway.
+   MEASURED, AND THE FIRST ATTEMPT AT THIS MEASURED THE WRONG THING. It removed
+   the `fi` class from `.sv`, which is a legacy entrance a later layer had
+   already superseded - so it changed nothing, and it could not have covered
+   Build, Lab or Chat in any case, because those write `.dev-shell`,
+   `.lab-shell` and their own markup rather than `.sv`. The owner reported
+   exactly those two still buffering and was right.
 
-   It is central on purpose: renderCrewView alone is called from about thirty
-   places, and a rule enforced at thirty call sites is a rule that holds until
-   somebody adds the thirty-first. */
-let _vcTab = '', _vcScroll = 0;
-function _vcResetScroll(){ _vcScroll = 0; }
+   With server answers stubbed to arrive instantly the repaints all land before
+   the first frame and the browser coalesces them, which is why this looked
+   fixed. Given a realistic 400ms, Crew replays the entrance TWICE, Handoff
+   twice, Connectors twice. That is the flicker.
+
+   So it is handled where it actually lives - on `#vc`'s own child, whatever
+   that child is - and every view is covered by construction rather than by a
+   list somebody has to extend. A repaint of the tab you are already on keeps
+   its scroll and skips the entrance; a move to a different tab gets both. The
+   observer runs as a microtask, before the frame is painted, so the animation
+   is never started rather than cut off halfway. */
+let _vcTab = '', _vcScroll = null;
+function _vcResetScroll(){ _vcScroll = null; }
+/* The scrolled element is remembered by its first class rather than by a list
+   of the containers each view happens to use - `.sv` on most, `.lab-shell` on
+   Lab, `.dev-chat-pane` on Build. A list of those is a list that goes stale the
+   next time somebody adds a surface. */
+function _vcRemember(e){
+  const el = e.target;
+  if(!el || el === document || !el.classList || !el.classList.length) return;
+  if(!(el.scrollTop > 0)) return;
+  _vcScroll = { cls: el.classList[0], top: el.scrollTop };
+}
 function _vcSettleObserve(){
   const vc = document.getElementById('vc');
   if(!vc || vc._vcObs) return;
+  vc.addEventListener('scroll', _vcRemember, true);
   const obs = new MutationObserver(()=>{
-    /* Which tab we are on is recorded whether or not this view HAS a `.sv` -
-       chat does not - because the alternative was returning early and leaving
-       `_vcTab` naming the tab before last. Measured: crew, then chat, then
-       crew again was treated as a repaint of crew, so coming back to it
-       skipped the entrance and restored a scroll offset from the visit
-       before. */
+    /* Which tab we are on is recorded whether or not this view has anything to
+       restore - chat has no scroller of its own - because the alternative was
+       returning early and leaving `_vcTab` naming the tab before last. */
     const same = _vcTab === S.tab;
-    if(!same){ _vcTab = S.tab; _vcScroll = 0; }
-    const sv = vc.querySelector('.sv');
-    if(!sv) return;
-    if(same){
-      sv.classList.remove('fi');
-      if(_vcScroll > 0) sv.scrollTop = _vcScroll;
+    if(!same){ _vcTab = S.tab; _vcScroll = null; }
+    const root = vc.firstElementChild;
+    if(!root) return;
+    if(!same) return;
+    root.classList.add('vc-repaint');
+    if(_vcScroll){
+      const el = root.classList.contains(_vcScroll.cls)
+        ? root : root.querySelector('.' + _vcScroll.cls);
+      if(el) el.scrollTop = _vcScroll.top;
     }
-    if(sv._vcHooked) return;
-    sv._vcHooked = 1;
-    sv.addEventListener('scroll', ()=>{ _vcScroll = sv.scrollTop; }, { passive:true });
   });
   obs.observe(vc, { childList:true });
   vc._vcObs = obs;
@@ -26351,7 +26433,11 @@ function setupApp(){
 
   // All data-tab buttons in icon rail - includes the bottom-left tools row
   document.querySelectorAll('.snb[data-tab], .sb-tool[data-tab]').forEach(btn=>{
-    on(btn,'click',()=>{ if(btn.dataset.tab) setTab(btn.dataset.tab); });
+    on(btn,'click',()=>{ if(!btn.dataset.tab) return;
+      /* Pressing the Build entry means "show me the list", never "put me back
+         in what I had open". Every other tab is unaffected. */
+      if(btn.dataset.tab==='build' && typeof buildHome==='function') buildHome();
+      setTab(btn.dataset.tab); });
   });
   on($('hist-search'),'input',renderHist);
   /* The pressed state is one attribute rather than an inline colour, so what
@@ -26384,7 +26470,11 @@ function setupApp(){
   // Star filter
   // Sidebar nav tabs
   document.querySelectorAll('.snb[data-tab]').forEach(btn=>{
-    on(btn,'click',()=>{ if(btn.dataset.tab) setTab(btn.dataset.tab); });
+    on(btn,'click',()=>{ if(!btn.dataset.tab) return;
+      /* Pressing the Build entry means "show me the list", never "put me back
+         in what I had open". Every other tab is unaffected. */
+      if(btn.dataset.tab==='build' && typeof buildHome==='function') buildHome();
+      setTab(btn.dataset.tab); });
   });
   // History search
   on($('hist-search'),'input',renderHist);
@@ -30577,12 +30667,28 @@ async function analyzeCode(code, lang, kind){
 /* Lab starts EMPTY on purpose. It used to ship with demo code, which meant the
    entry screen ("Drop in your code and AMV takes it from there") never appeared
    - so nobody learned how to paste or upload. Empty = the instructions show. */
-const _LAB = { lang:'js', code:'', busy:false, files:[], chat:[], deploySlug:'' };
+/* `atHome` is the same flag Dev and Studio carry, and Lab is the one of the
+   three that never had it. Its entry screen was defined purely by "there is no
+   code", so the only way back to it was to delete the work - which is why
+   pressing Build in the sidebar left somebody looking at a loaded Lab. A flag
+   costs nothing and means the way home never has to destroy anything. */
+const _LAB = { lang:'js', code:'', busy:false, files:[], chat:[], deploySlug:'', atHome:false };
 
+/* Lab is at home when there is nothing to work on, or when somebody asked to
+   go home. One function, so the markup and every later recomputation cannot
+   disagree - see the comment on `setBlank`, which is what happened when they
+   were two.
+
+   `code` is optional: the live textarea value during typing, `_LAB.code`
+   otherwise. */
+function _labIsHome(code){
+  const txt = code === undefined ? (_LAB.code || '') : (code || '');
+  return !String(txt).trim() || !!_LAB.atHome;
+}
 function renderLabView(){
   const vc=$('vc'); if(!vc) return;
   if(typeof _LAB_HANDOFF!=='undefined' && _LAB_HANDOFF){ _LAB.code=_LAB_HANDOFF; _LAB_HANDOFF=''; }
-  const labBlank = !String(_LAB.code||'').trim();
+  const labBlank = _labIsHome();
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
     ${_buildEntryHeadHTML('lab','What code should we work on?')}
     ${_buildBarHTML('lab', !labBlank, labBlank)}
@@ -30670,12 +30776,26 @@ function renderLabView(){
   });
   // ── Loading code into Lab: paste, upload, or drag & drop ──
   const labShell=$('lab-shell');
-  const setBlank=()=>{ if(labShell) labShell.classList.toggle('lab-blank', !String(codeEl.value||'').trim()); };
+  /* THROUGH `_labIsHome`, NOT A SECOND COPY OF THE RULE.
+
+     This recomputed "is Lab empty" from the textarea alone and ran at the end
+     of every render, so it overwrote the class the markup had just set from
+     `labBlank` - which is how pressing Build in the sidebar left somebody
+     looking at their loaded code with the home flag set to true. Two
+     definitions of one truth, and the later one won.
+
+     The textarea is passed in because it is fresher than `_LAB.code` while
+     somebody is typing. */
+  const setBlank=()=>{ if(labShell) labShell.classList.toggle('lab-blank', _labIsHome(codeEl.value)); };
 
   // Load code in and leave the entry state.
   const labLoad=(code, name)=>{
     codeEl.value=String(code||'');
     _LAB.code=codeEl.value;
+    /* Loading code is leaving home, the same way opening a build is for Dev and
+       opening a design is for Studio. Without this the entry screen would win
+       over the work somebody just pasted. */
+    _LAB.atHome=false;
     if(name){ _LAB.files=_LAB.files||[]; if(!_LAB.files.includes(name)) _LAB.files.push(name); }
     paint(); labCount(); labFilesBar(); setBlank();
     try{ _sessTouch('lab'); }catch(e){}
@@ -30844,7 +30964,9 @@ function renderLabView(){
   codeEl.value=_LAB.code||'';
   paint();
   on(codeEl,'scroll',syncScroll);
-  on(codeEl,'input',()=>{ paint(); setBlank(); });
+  /* Typing into the editor is working on something, which is leaving home -
+     otherwise the entry screen would reappear over the code being written. */
+  on(codeEl,'input',()=>{ if(String(codeEl.value||'').trim()) _LAB.atHome=false; paint(); setBlank(); });
   labFilesBar(); setBlank();
 
   // Live size readout - shows Lab is handling big files.

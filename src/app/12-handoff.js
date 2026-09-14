@@ -338,48 +338,62 @@ window.hoSend=hoSend;window.hoOpen=hoOpen;window.hoDone=hoDone;
 /* === RENDER VIEW ROUTER === */
 /* ONE OPENING, ONE ENTRANCE.
 
-   Every view writes `<div class="sv fi">` and `.fi` is a 180ms fade-and-rise.
-   That is right the first time a screen appears and wrong every time after -
-   and several screens repaint three or four times in their first second, on
-   purpose. Crew paints from what is on disk, again when the server answers
-   what it is running, and again when the connector list lands; Handoff does
-   the same with the handoffs sent to you. Each repaint replayed the entrance
-   and dropped the scroll offset back to the top, so from the outside the
-   screen flickers and jerks upward while somebody is trying to read it.
+   Every view is a child of `#vc`, and `#vc > *` carries `viewEnter` - a fade
+   and an 8px rise. That is right the first time a screen appears and wrong
+   every time after, and several screens repaint two to four times in their
+   first second on purpose: Crew paints from what is on disk, again when the
+   server answers what it is running, again when the connector list lands.
+   Handoff and Connectors do the same.
 
-   The repaints themselves are correct - a screen briefly out of date beats one
-   permanently wrong about another device - so what changes here is only how
-   they look. A repaint of the SAME tab keeps its scroll offset and skips the
-   entrance; a move to a DIFFERENT tab gets both. The observer runs as a
-   microtask, which is before the frame is painted, so the animation is never
-   started rather than cut off halfway.
+   MEASURED, AND THE FIRST ATTEMPT AT THIS MEASURED THE WRONG THING. It removed
+   the `fi` class from `.sv`, which is a legacy entrance a later layer had
+   already superseded - so it changed nothing, and it could not have covered
+   Build, Lab or Chat in any case, because those write `.dev-shell`,
+   `.lab-shell` and their own markup rather than `.sv`. The owner reported
+   exactly those two still buffering and was right.
 
-   It is central on purpose: renderCrewView alone is called from about thirty
-   places, and a rule enforced at thirty call sites is a rule that holds until
-   somebody adds the thirty-first. */
-let _vcTab = '', _vcScroll = 0;
-function _vcResetScroll(){ _vcScroll = 0; }
+   With server answers stubbed to arrive instantly the repaints all land before
+   the first frame and the browser coalesces them, which is why this looked
+   fixed. Given a realistic 400ms, Crew replays the entrance TWICE, Handoff
+   twice, Connectors twice. That is the flicker.
+
+   So it is handled where it actually lives - on `#vc`'s own child, whatever
+   that child is - and every view is covered by construction rather than by a
+   list somebody has to extend. A repaint of the tab you are already on keeps
+   its scroll and skips the entrance; a move to a different tab gets both. The
+   observer runs as a microtask, before the frame is painted, so the animation
+   is never started rather than cut off halfway. */
+let _vcTab = '', _vcScroll = null;
+function _vcResetScroll(){ _vcScroll = null; }
+/* The scrolled element is remembered by its first class rather than by a list
+   of the containers each view happens to use - `.sv` on most, `.lab-shell` on
+   Lab, `.dev-chat-pane` on Build. A list of those is a list that goes stale the
+   next time somebody adds a surface. */
+function _vcRemember(e){
+  const el = e.target;
+  if(!el || el === document || !el.classList || !el.classList.length) return;
+  if(!(el.scrollTop > 0)) return;
+  _vcScroll = { cls: el.classList[0], top: el.scrollTop };
+}
 function _vcSettleObserve(){
   const vc = document.getElementById('vc');
   if(!vc || vc._vcObs) return;
+  vc.addEventListener('scroll', _vcRemember, true);
   const obs = new MutationObserver(()=>{
-    /* Which tab we are on is recorded whether or not this view HAS a `.sv` -
-       chat does not - because the alternative was returning early and leaving
-       `_vcTab` naming the tab before last. Measured: crew, then chat, then
-       crew again was treated as a repaint of crew, so coming back to it
-       skipped the entrance and restored a scroll offset from the visit
-       before. */
+    /* Which tab we are on is recorded whether or not this view has anything to
+       restore - chat has no scroller of its own - because the alternative was
+       returning early and leaving `_vcTab` naming the tab before last. */
     const same = _vcTab === S.tab;
-    if(!same){ _vcTab = S.tab; _vcScroll = 0; }
-    const sv = vc.querySelector('.sv');
-    if(!sv) return;
-    if(same){
-      sv.classList.remove('fi');
-      if(_vcScroll > 0) sv.scrollTop = _vcScroll;
+    if(!same){ _vcTab = S.tab; _vcScroll = null; }
+    const root = vc.firstElementChild;
+    if(!root) return;
+    if(!same) return;
+    root.classList.add('vc-repaint');
+    if(_vcScroll){
+      const el = root.classList.contains(_vcScroll.cls)
+        ? root : root.querySelector('.' + _vcScroll.cls);
+      if(el) el.scrollTop = _vcScroll.top;
     }
-    if(sv._vcHooked) return;
-    sv._vcHooked = 1;
-    sv.addEventListener('scroll', ()=>{ _vcScroll = sv.scrollTop; }, { passive:true });
   });
   obs.observe(vc, { childList:true });
   vc._vcObs = obs;
@@ -2903,7 +2917,11 @@ function setupApp(){
 
   // All data-tab buttons in icon rail - includes the bottom-left tools row
   document.querySelectorAll('.snb[data-tab], .sb-tool[data-tab]').forEach(btn=>{
-    on(btn,'click',()=>{ if(btn.dataset.tab) setTab(btn.dataset.tab); });
+    on(btn,'click',()=>{ if(!btn.dataset.tab) return;
+      /* Pressing the Build entry means "show me the list", never "put me back
+         in what I had open". Every other tab is unaffected. */
+      if(btn.dataset.tab==='build' && typeof buildHome==='function') buildHome();
+      setTab(btn.dataset.tab); });
   });
   on($('hist-search'),'input',renderHist);
   /* The pressed state is one attribute rather than an inline colour, so what
@@ -2936,7 +2954,11 @@ function setupApp(){
   // Star filter
   // Sidebar nav tabs
   document.querySelectorAll('.snb[data-tab]').forEach(btn=>{
-    on(btn,'click',()=>{ if(btn.dataset.tab) setTab(btn.dataset.tab); });
+    on(btn,'click',()=>{ if(!btn.dataset.tab) return;
+      /* Pressing the Build entry means "show me the list", never "put me back
+         in what I had open". Every other tab is unaffected. */
+      if(btn.dataset.tab==='build' && typeof buildHome==='function') buildHome();
+      setTab(btn.dataset.tab); });
   });
   // History search
   on($('hist-search'),'input',renderHist);

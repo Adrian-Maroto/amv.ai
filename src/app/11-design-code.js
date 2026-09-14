@@ -597,13 +597,44 @@ function renderDesignView(){
      atHome is what keeps "Studio home" meaningful. That button re-renders this
      view, so without an explicit intent the canvas would reopen immediately
      and there would be no way back to start something new. */
+  /* IF IT WAS WORTH SAVING, IT IS WORTH SHOWING.
+
+     Reported: opening a design from Recents goes back to the homepage. It did,
+     and the cause was two predicates disagreeing about what a session is.
+
+     `_sessHasContent` saves a Studio session as soon as an artifact has html OR
+     A BRIEF - which is right, because somebody who described a poster and had
+     the generation fail has still done work worth keeping. This branch then
+     required `a.html` before it would open the canvas. So a design saved at the
+     moment it was described, or one whose generation errored, resumed straight
+     past its own canvas onto the hero, and the work was invisible even though
+     it was listed in Recents and loaded into memory.
+
+     It opens for an artifact that EXISTS now, and the preview says plainly when
+     there is nothing rendered yet rather than the whole screen pretending the
+     session was never opened. Saving and showing use the same test. */
   try{
     if(!_STUDIO.atHome){
-      const a=_studioActive()||_STUDIO.artifacts.find(x=>x.html);
-      if(a && a.html){
+      /* `_STUDIO.openWip` says a design with no result YET is deliberately
+         open - set by _sessResume, cleared only by going home. A design being
+         RESUMED opens even when nothing has been generated for it; a design
+         merely sitting in memory while somebody navigates to Studio does not,
+         because that screen is the starting point and should stay one.
+
+         It is not a one-shot. The first version spent it on the first render,
+         so switching to Build and back closed a design that had never been
+         generated - and "it closed itself when I looked away" is a worse bug
+         than the one being fixed. What ends it is the thing that means it: the
+         person asking for the list. */
+      const wip = !!_STUDIO.openWip;
+      const a=_studioActive()
+           || _STUDIO.artifacts.find(x=>x.html)
+           || (wip ? _STUDIO.artifacts.find(x=>x && (x.brief || x.name)) : null);
+      if(a && (a.html || wip)){
         _STUDIO.activeId=a.id;
         _studioShowCanvas(a.brief||a.name||'');
-        _studioRenderPreview(a.html);
+        _studioRenderPreview(a.html||'');
+        if(!a.html) _studioStatus('Nothing was generated for this one yet - say what you want and AMV designs it.');
         _studioRenderArtifacts();
         return;
       }
@@ -626,12 +657,12 @@ function renderDesignView(){
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
       </div>
-      <div class="dsn-hint">Press generate, or pick a starting point below</div>
+      <div class="dsn-hint">Press generate, or pick a starting point below · every design stays editable, so keep chatting and AMV reshapes it</div>
       <div style="margin-top:22px;display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap">
         <button class="dna-btn" data-dact="openDNA"><span class="dna-dot"></span>Design DNA</button>
         <span class="dna-active-chip">${_DNA.colors.length} colors · ${escH(_DNA.themeFamily)} · ${escH(_DNA.theme)}</span>
       </div>
-      <p class="dsn-dna-explain">Design DNA is your reusable style guide - set your colors, fonts, shapes and vibe once, and everything AMV designs follows it. Optional: skip it and AMV picks tasteful defaults.</p>
+      <p class="dsn-dna-explain">Your reusable style guide - set it once and everything AMV designs follows it. Optional.</p>
       <div style="margin-top:12px;display:flex;height:22px;width:min(420px,80%);border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--hair)">${_DNA.colors.map(c2=>`<span style="flex:1;background:${c2.hex}"></span>`).join('')}</div>
     </section>
 
@@ -642,13 +673,22 @@ function renderDesignView(){
       </button>`).join('')}
     </section>
 
-    <section class="dsn-callout">
-      <div class="dsn-callout-text">
-        <h3>It&rsquo;s a conversation, not a form</h3>
-        <p>Every design stays editable. Keep chatting and AMV reshapes the canvas live - tweak copy, swap layouts, change the whole vibe in a sentence.</p>
-      </div>
-      <div class="dsn-callout-orb"></div>
-    </section>
+    ${/* THE MARKETING BLOCK CAME OFF THIS SCREEN.
+
+           "It's a conversation, not a form" and a glowing orb, 201px tall plus
+           its margin, at the bottom of a tool's starting page. It was the
+           single largest thing here after the starting points and it told
+           somebody who had already opened Studio why Studio is good.
+
+           It is the reason this entry could not sit where the other two do.
+           Measured at 1280x900: the column was 1328px in an 842px viewport, so
+           it pinned itself to the top and scrolled while Build and Lab were
+           centred - which is the jump the owner reported as "design shifts up
+           too high". Without it the column is 767px and all three behave the
+           same way.
+
+           The fact it carried is still on the screen, one line under the
+           composer where somebody is actually deciding what to type. */ ''}
     ${_ownedMarketHTML('studio')}
     ${_buildRecentsHTML('studio')}
   </div></div>`;
@@ -686,7 +726,10 @@ const _STUDIO = { html:'', prompt:'', history:[],
   /* Somebody pressed "Studio home" and wants the hero, not the canvas they
      just left. Without it, re-rendering the view would reopen the canvas and
      that button would do nothing. */
-  atHome:false };
+  atHome:false,
+  /* "A design with no result yet is deliberately open." Set by _sessResume,
+     cleared by buildHome and by Studio home - never by a render. */
+  openWip:false };
 function _studioActive(){ return _STUDIO.artifacts.find(a=>a.id===_STUDIO.activeId)||null; }
 function _studioNewArtifact(name, type, brief){
   const id='art_'+Date.now().toString(36)+Math.random().toString(36).slice(2,4);
@@ -789,7 +832,7 @@ function _studioShowCanvas(brief){
     _setSectionModel('design', this.value);
     toast('Design model set to '+MODELS[this.value].label,'info',2500);
   });
-  on($('bld-home'),'click',()=>{ _STUDIO.atHome=true; try{ _sessFlush('studio'); }catch(e){} setBuildMode('design'); });
+  on($('bld-home'),'click',()=>{ _STUDIO.atHome=true; _STUDIO.openWip=false; try{ _sessFlush('studio'); }catch(e){} setBuildMode('design'); });
   on($('studio-refine-go'),'click',_studioRefine);
   on($('studio-add'),'click',_studioAddPrompt);
   on($('studio-history'),'click',_studioHistory);
