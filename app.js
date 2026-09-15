@@ -24479,6 +24479,58 @@ function _vcRemember(e){
    command, the focus and the caret at offset 4 all survive. */
 
 
+/* WHAT SOMEBODY HAS TYPED, TAKEN BEFORE A REDRAW AND PUT BACK AFTER IT.
+
+   These two are what let the coalesced redraw stop cancelling itself. The
+   comment above described them before they existed: the call sites shipped and
+   the definitions did not, so _reRenderSoon threw a ReferenceError before
+   reaching the render - and every background repaint on Crew and Handoff was
+   dead rather than merely cancelled. Worse than the fault it replaced, and
+   silent, because the throw landed in a timer nobody was watching.
+
+   Keyed by id, which is what these renderers give their fields anyway. A field
+   with no id cannot be matched across a redraw and is left alone.
+
+   Only an EMPTY field is refilled. A renderer that puts a real value in - a
+   name that came back from the server, a corrected figure - has said something
+   newer than the draft, and overwriting it with what was on screen a tenth of
+   a second ago would be this function causing the exact loss it exists to
+   prevent. */
+function _vcSnapshotInputs(){
+  const out = [];
+  try{
+    const vc = document.getElementById('vc'); if(!vc) return out;
+    const active = document.activeElement;
+    vc.querySelectorAll('input[id], textarea[id], select[id]').forEach(el=>{
+      const focused = (el === active);
+      const val = (typeof el.value === 'string') ? el.value : '';
+      if(!focused && !val) return;
+      const rec = { id: el.id, val, focused, start: null, end: null };
+      /* selectionStart throws on the input types that do not support it
+         (email, number, date) - reading it is the check. */
+      try{ rec.start = el.selectionStart; rec.end = el.selectionEnd; }catch(e){}
+      out.push(rec);
+    });
+  }catch(e){}
+  return out;
+}
+function _vcRestoreInputs(keep){
+  if(!keep || !keep.length) return;
+  try{
+    for(const rec of keep){
+      const el = document.getElementById(rec.id);
+      if(!el || typeof el.value !== 'string') continue;
+      if(rec.val && !el.value) el.value = rec.val;
+      if(!rec.focused) continue;
+      try{ el.focus({ preventScroll:true }); }catch(e){ try{ el.focus(); }catch(e2){} }
+      if(rec.start === null || rec.start === undefined) continue;
+      try{ el.setSelectionRange(rec.start, rec.end); }catch(e){}
+    }
+  }catch(e){}
+}
+try{ window._vcSnapshotInputs=_vcSnapshotInputs;
+     window._vcRestoreInputs=_vcRestoreInputs; }catch(e){}
+
 let _rrTimer = null, _rrFn = null, _rrTab = '';
 function _reRenderSoon(fn, tab){
   _rrFn = fn; _rrTab = tab || '';
