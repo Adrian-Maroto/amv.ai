@@ -147,6 +147,9 @@ async function runAutonomous(goal, opts){
     if(s.needs_approval){
       try{ _rrBlocked(i); }catch(e){}
       const ok=await _autoApprove(s.step, s.action);
+      /* An approval waits on a person, so it is the longest gap in the loop and
+         the likeliest moment for Stop to be pressed. */
+      if(!_AUTO.running){ _autoLog('<div class="auto-ev stop">Stopped by user.</div>'); break; }
       if(!ok){ _autoLog('<div class="auto-ev skip">Skipped (not approved): '+escH(s.step)+'</div>'); continue; }
     }
     _autoSetStatus('Step '+(i+1)+'/'+plan.length+': '+s.step);
@@ -175,6 +178,20 @@ async function runAutonomous(goal, opts){
         ? await qAccurate('step', stepPrompt, stepSys, { prose:true, samples:2 })
         : await qRun('step', stepPrompt, stepSys, { refine:true, prose:true });
       const decide=stepRes.text;
+      /* STOP IS CHECKED HERE, BEFORE ANYTHING ACTS - NOT ONLY AT THE TOP.
+
+         Everything above this line is thinking; everything below it writes a
+         file to somebody's disk or executes code. The model call is the long
+         wait in a round, so it is exactly when Stop gets pressed - and it was
+         only honoured at the NEXT iteration, by which point the file was
+         written and the code had run. Measured before this existed: press Stop
+         while the step call is in flight and the run still wrote secret.txt
+         and still executed the block.
+
+         aiAgentLoop, the other agent loop in this product, checks its flag
+         before every round AND before every single tool call. This is that
+         same rule, in the loop that did not have it. */
+      if(!_AUTO.running){ _autoLog('<div class="auto-ev stop">Stopped by user.</div>'); break; }
       // file write?
       const fileWrite=decide.match(/WRITE_FILE:\s*([^\n`]+)\n([\s\S]*?)(?:```|$)/);
       if(_AUTO.workspace && fileWrite){
@@ -246,11 +263,39 @@ function _autoApprove(step, action){
   // without explicit approval, so skip any step that needs it.
   if(_AUTO.silent) return Promise.resolve(false);
   return new Promise(resolve=>{
+    let settled=false;
+    const finish=(v)=>{ if(settled) return; settled=true; clearInterval(watch); resolve(v); };
+    /* Stop must end a run that is WAITING on somebody, not just one that is
+       working. stopAutonomous only lowers a flag, so without this the promise
+       nobody answers is never resolved: the status reads "Stopping…" and the
+       loop sits on this line for the life of the tab. Skipping the step is the
+       right answer - a step that was never approved must not be treated as
+       approved because the run was cancelled. */
+    const watch=setInterval(()=>{ if(!_AUTO.running){ const a=$('appr'); if(a&&a.parentNode) a.parentNode.innerHTML=''; finish(false); } }, 150);
     const host=document.getElementById('rr-approve');
+    /* NOWHERE TO ASK IS NOT PERMISSION TO ACT.
+
+       This wrote the card into #rr-approve, or into the run feed if that was
+       missing. If BOTH are gone - somebody started a run on Crew and then went
+       to Chat, so the whole screen was replaced - the card went nowhere, the
+       button it asks you to click was never on the page, and the promise
+       nothing could resolve left the run sitting on this line for the life of
+       the tab.
+
+       Skipped, not approved, and that direction is the whole point: it is the
+       same answer _AUTO.silent already gives two lines up, for the same reason.
+       A step that asks permission and cannot be asked has not been given it. */
+    if(!host && !document.getElementById('auto-feed')){
+      try{ if(typeof toast==='function') toast('A step needed your approval and there was no run screen to ask on, so AMV skipped it: '+String(step||'').slice(0,60),'info',7000); }catch(e){}
+      /* finish, not resolve - it clears the stop watcher. A bare resolve here
+         left a setInterval running for the life of the tab on every skipped
+         approval. */
+      finish(false); return;
+    }
     const html='<div class="rr-appr" id="appr"><div class="rr-appr-h"><span class="rr-appr-ic">\u23F8</span><div><div class="rr-appr-t">Approval needed before AMV continues</div><div class="rr-appr-s">'+escH(step)+'</div></div></div><div class="rr-appr-d">'+escH(action)+'</div><div class="rr-appr-btns auto-appr-btns"><button class="btn bp" id="appr-y">Approve &amp; continue</button><button class="btn" id="appr-n">Skip this step</button></div></div>';
     if(host){ host.innerHTML=html; try{ host.scrollIntoView({block:'center'}); }catch(e){} } else { _autoLog(html); }
-    on($('appr-y'),'click',()=>{ const a=$('appr'); if(a){const b=a.querySelector('.auto-appr-btns'); if(b) b.innerHTML='<span class="tp-sched">\u2713 Approved</span>';} setTimeout(()=>{ if(host) host.innerHTML=''; },700); resolve(true); });
-    on($('appr-n'),'click',()=>{ const a=$('appr'); if(a){const b=a.querySelector('.auto-appr-btns'); if(b) b.innerHTML='<span class="auto-skip-l">Skipped</span>';} setTimeout(()=>{ if(host) host.innerHTML=''; },700); resolve(false); });
+    on($('appr-y'),'click',()=>{ const a=$('appr'); if(a){const b=a.querySelector('.auto-appr-btns'); if(b) b.innerHTML='<span class="tp-sched">\u2713 Approved</span>';} setTimeout(()=>{ if(host) host.innerHTML=''; },700); finish(true); });
+    on($('appr-n'),'click',()=>{ const a=$('appr'); if(a){const b=a.querySelector('.auto-appr-btns'); if(b) b.innerHTML='<span class="auto-skip-l">Skipped</span>';} setTimeout(()=>{ if(host) host.innerHTML=''; },700); finish(false); });
   });
 }
 function stopAutonomous(){ _AUTO.running=false; _autoSetStatus('Stopping…'); }
