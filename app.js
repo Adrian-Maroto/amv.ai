@@ -10984,7 +10984,7 @@ function _mktBrowse(body){
       const previewBtn='<button class="btn bs mk-preview" data-mk-id="'+escH(it.id)+'" style="font-size:var(--t-sm)">'+escH(T('Preview'))+'</button>';
       return '<div class="mk-card">'+
         '<div class="mk-card-top"><span class="mk-icon">'+_safeIcon(it.icon)+'</span>'+
-          '<span style="display:flex;gap:6px;align-items:center"><span class="mk-kind mk-kind-'+it.kind+'">'+escH(T(it.kind))+'</span>'+_mktPriceTag(it)+'</span></div>'+
+          '<span style="display:flex;gap:6px;align-items:center"><span class="mk-kind mk-kind-'+escH(it.kind)+'">'+escH(T(it.kind))+'</span>'+_mktPriceTag(it)+'</span></div>'+
         '<div class="mk-title">'+escH(it.title)+'</div>'+
         '<div class="mk-rating-row">'+_mktStars(it.rating,it.ratings)+'</div>'+
         '<div class="mk-desc">'+escH(it.desc||'')+'</div>'+
@@ -11156,7 +11156,7 @@ function _mktPreview(it, after){
     '<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:6px">'+
       '<div class="mkt-pv-ic">'+_safeIcon(it.icon)+'</div>'+
       '<div style="flex:1"><h2 style="margin:0 0 2px">'+escH(it.title)+'</h2>'+
-        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mk-kind mk-kind-'+it.kind+'">'+escH(T(it.kind))+'</span>'+_mktPriceTag(it)+_mktStars(it.rating,it.ratings)+'</div></div>'+
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="mk-kind mk-kind-'+escH(it.kind)+'">'+escH(T(it.kind))+'</span>'+_mktPriceTag(it)+_mktStars(it.rating,it.ratings)+'</div></div>'+
     '</div>'+
     '<p style="font-size:var(--t-sm);color:var(--mu);margin:8px 0">by <span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">'+escH(it.author||'community')+'</span> \u00b7 '+(it.sales?it.sales+' sold':(it.installs||0)+' installs')+' \u00b7 '+escH(it.cat||'')+'</p>'+
     '<div class="mkt-pv-desc">'+escH(previewText)+'</div>'+
@@ -12298,7 +12298,12 @@ function renderWsGrid(){
        The guard was doing nothing except breaking the thing it was attached to. */
     const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" style="font-size:var(--t-sm);color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
     return '<div class="wsc" data-dact="openWorkspace" data-darg="'+ws.id+'">'+
-      '<div class="wsic" style="background:rgba(85,144,255,.1)">'+ws.icon+'</div>'+
+      /* _safeIcon, like every other icon on a synced record. `workspaces` is in
+         _SYNC_KEYS, so this value arrives from the server and merges in from
+         other devices - and the picker that sets it locally says nothing about
+         what comes back. The same field is already read through _safeIcon in
+         the project switcher; these two disagreeing was the bug. */
+      '<div class="wsic" style="background:rgba(85,144,255,.1)">'+_safeIcon(ws.icon)+'</div>'+
       '<div class="wsn">'+escH(ws.name)+'</div>'+
       '<div class="wsd">'+escH(ws.desc||'')+'</div>'+
       (preview?'<div style="margin:8px 0 4px">'+preview+(chats.length>3?'<div style="font-size:var(--t-xs);color:var(--dim);padding-top:2px">+'+(chats.length-3)+' more</div>':'')+'</div>':'<div class="wsc-empty">No chats yet - open to start one</div>')+
