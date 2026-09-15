@@ -428,6 +428,42 @@ section('9. The round after that one');
      'and it still says AMV did not write it', note);
 }
 
+section('10. The home screen leaves when you leave it');
+{
+  /* REPORTED THREE TIMES WITH A SCREENSHOT, AND I FAILED TO REPRODUCE IT TWICE
+     BECAUSE I DROVE THE WRONG PATH - opening a session, resuming one, pressing
+     the sidebar. None of those flip the class without re-rendering.
+
+     The one that does is the transition a person actually makes: paste code on
+     the Lab home and press an action. `setBlank()` drops `lab-blank` and the
+     working screen appears, but the recents block was only CONDITIONALLY
+     RENDERED, so nothing tells it to go and it sits on top of the editor. This
+     drives that exact path. */
+  const r = await page.evaluate(async () => {
+    setTab('lab'); await new Promise(x => setTimeout(x, 400));
+    _LAB.code = 'console.log("first")'; _LAB.atHome = false; renderLabView();
+    await new Promise(x => setTimeout(x, 300));
+    document.getElementById('lab-new').click();
+    await new Promise(x => setTimeout(x, 800));
+    const seen = (sel) => {
+      const e = document.querySelector(sel); if (!e) return 0;
+      return Math.round(e.getBoundingClientRect().height);
+    };
+    const atHome = seen('.bld-recents');
+    const paste = document.getElementById('lab-paste');
+    paste.value = 'function v(){}';
+    paste.dispatchEvent(new Event('input', { bubbles: true }));
+    const go = document.querySelector('#lab-entry-acts [data-go]');
+    if (go) go.click();
+    await new Promise(x => setTimeout(x, 1000));
+    return { atHome, recents: seen('.bld-recents'), split: seen('.lab-split') };
+  });
+  ok(r.atHome > 0, 'the Lab home lists what you were working on', String(r.atHome));
+  ok(r.split > 0, 'and pressing an action opens the editor', String(r.split));
+  ok(r.recents === 0, 'and that list is gone, not sitting on top of the editor',
+     JSON.stringify(r));
+}
+
 section('8. Nothing threw while all of that happened');
 {
   ok(errors.length === 0, 'no page errors across every screen', errors.slice(0, 4).join(' | '));

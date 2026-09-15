@@ -13504,3 +13504,36 @@ p.bill-leave-s{
   margin:0 var(--sp-2) 0 0;
   opacity:.55;
 }
+
+/* ======================================================================
+   LAYER A211 - the home screen leaves when you leave the home screen
+   ====================================================================== */
+
+/* REPORTED THREE TIMES WITH A SCREENSHOT AND NOT REPRODUCED TWICE, BECAUSE I
+   KEPT DRIVING THE WRONG PATH.
+
+   What it looks like: a Lab session with the editor and the output open, and
+   "Your code" with its recent sessions sitting ON TOP of them, halfway down the
+   screen. Build does the same with "Your apps" above the conversation.
+
+   Both shells decide between the home screen and the working screen with ONE
+   class - `lab-blank`, `dev-blank` - and the entry block and the hero are
+   hidden and shown by that class, which is right. The recents block is not: it
+   is only ever CONDITIONALLY RENDERED, so its visibility was decided once, at
+   render time, and nothing keeps it honest afterwards.
+
+   That is fine until the class changes without a re-render, which is exactly
+   what both shells do on the transition that matters. Paste code on the Lab
+   home and press an action and `setBlank()` drops the class - the comment on
+   that line reads "leave the entry screen". Send a first message in Build and
+   `_devRenderLog()` drops `dev-blank` when the reply arrives. The working
+   screen appears; the recents block stays, because nothing ever told it to go.
+
+   So it is hidden by the same class that hides everything else belonging to the
+   home screen. One rule, no new state, and the class stays the single answer to
+   "which screen is this". Reproduced before writing this - recents 96px and the
+   split 609px on screen together - and checked again after. */
+.lab-shell:not(.lab-blank) .bld-recents,
+.dev-shell:not(.dev-blank) .bld-recents{
+  display:none!important;
+}
