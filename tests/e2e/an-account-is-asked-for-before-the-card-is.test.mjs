@@ -129,9 +129,14 @@ section('The plans that do not go through the card are untouched');
     try { const r2 = document.getElementById('ovr'); if (r2) r2.innerHTML = ''; } catch (e) {}
     return { before, team, needs: { free: _needsAccountToPay('free'),
                                     team: _needsAccountToPay('team'),
-                                    pro: _needsAccountToPay('pro') } };
+                                    pro: _needsAccountToPay('pro'),
+                                    custom: _needsAccountToPay('custom') } };
   });
   ok(r.needs.pro === true, 'a card plan needs an account', r.needs);
+  /* The custom plan reaches openPaymentSheet exactly like the rest, so it
+     reached the same card button and the same 401. The first version of this
+     excused it and repeated the bug for one plan. */
+  ok(r.needs.custom === true, 'and so does the custom plan', r.needs);
   ok(r.needs.free === false, 'Free does not', r.needs);
   ok(r.needs.team === false, 'and the per-seat plan asks its own question first', r.needs);
   ok(r.team.tab === 'team', 'so Team still goes to the seat screen', r.team);

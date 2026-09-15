@@ -14700,7 +14700,14 @@ function _resumePendingUpgrade(){
   return false;
 }
 function _needsAccountToPay(plan){
-  if(plan==='free' || plan==='team' || plan==='custom') return false;
+  /* Free changes nothing but a local setting, and the per-seat plan goes to
+     the seat screen, which is gated already and asks for the account itself.
+
+     `custom` is NOT on this list, though the first version of it was. It goes
+     straight to openPaymentSheet like every other paid plan, so it reached the
+     same card button and the same 401 - the one plan still told somebody their
+     session had expired. Excluding it was the bug repeated once. */
+  if(plan==='free' || plan==='team') return false;
   const signedIn=!!(typeof S!=='undefined' && S.user && S.user.email);
   if(signedIn) return false;
   /* Only when the SERVER is the one that would be asked. */
