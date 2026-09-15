@@ -475,6 +475,39 @@ section('10. The home screen leaves when you leave it');
   ok(r.split > 0, 'and pressing an action opens the editor', String(r.split));
   ok(r.recents === 0, 'and that list is gone, not sitting on top of the editor',
      JSON.stringify(r));
+
+  /* THE SAME DEFECT IN THE OTHER DIRECTION, REPORTED THE MOMENT THE ABOVE
+     SHIPPED: "add x for dev and lab now cus now it doesnt show".
+
+     The way back to Build was gated on the render-time value of the same
+     blank/working question, so on the runtime flip it was never put in the DOM
+     at all - a session you could start and not get out of. Both directions are
+     checked here because fixing one of them is what created the other. */
+  const out = await page.evaluate(async () => {
+    const vis = (id) => {
+      const e = document.getElementById(id); if (!e) return -1;
+      return Math.round(e.getBoundingClientRect().height);
+    };
+    setTab('lab'); await new Promise(x => setTimeout(x, 400));
+    _resetToolState('lab'); _LAB.atHome = true; renderLabView();
+    await new Promise(x => setTimeout(x, 400));
+    const atHome = vis('bld-home');
+    const paste = document.getElementById('lab-paste');
+    paste.value = 'function v(){}';
+    paste.dispatchEvent(new Event('input', { bubbles: true }));
+    const go = document.querySelector('#lab-entry-acts [data-go]');
+    if (go) go.click();
+    await new Promise(x => setTimeout(x, 900));
+    const working = vis('bld-home');
+    const btn = document.getElementById('bld-home');
+    if (btn) btn.click();
+    await new Promise(x => setTimeout(x, 900));
+    const root = document.querySelector('#vc > *');
+    return { atHome, working, landed: root ? root.className : '' };
+  });
+  ok(out.atHome <= 0, 'the Lab home offers no way back from nothing', String(out.atHome));
+  ok(out.working > 0, 'and once there is work, there is a way out of it', String(out.working));
+  ok(/dev-blank/.test(out.landed), 'which goes to the Build home', out.landed);
 }
 
 section('8. Nothing threw while all of that happened');

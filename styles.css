@@ -13643,3 +13643,27 @@ p.bill-leave-s{
 #vc .vi-bill .bill-swap .btn.bs{
   background:var(--s2); border:1px solid var(--bd); color:var(--tx);
 }
+
+/* ======================================================================
+   LAYER A213 - the way back to Build exists whenever there is work to leave
+   ====================================================================== */
+
+/* The same defect as A211, in the other direction, and it was reported the
+   moment A211 shipped: "add x for dev and lab now cus now it doesnt show".
+
+   `_buildHomeBtnHTML` returns nothing when told not to show, and Dev and Lab
+   decided that at RENDER time from whether the shell was blank. Both shells
+   then flip that class at RUNTIME - `setBlank()` on the Lab entry action,
+   `_devRenderLog()` when Build's first reply arrives - so the working screen
+   appeared and the button that leaves it had never been put in the DOM. A
+   session you could start and not get out of.
+
+   The button is always rendered now and this hides it on the home screen,
+   where there is nothing to go back from. One class answers the question for
+   the entry block, the recents list and the way out, which is the point:
+   whichever way the shell flips, everything that belongs to a screen agrees
+   about which screen it is. */
+.lab-shell.lab-blank .bld-home,
+.dev-shell.dev-blank .bld-home{
+  display:none!important;
+}

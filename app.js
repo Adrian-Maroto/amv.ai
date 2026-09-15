@@ -21148,7 +21148,10 @@ function renderCodeView(){
   vc.innerHTML = `<div class="dev-shell${blank?' dev-blank':''}" id="dev-shell">
     <div class="dev-chat-pane">
       ${_buildEntryHeadHTML('dev','What should we build?')}
-      ${_buildBarHTML('code', !blank, blank)}
+      ${/* Always rendered, hidden by the class. `_devRenderLog()` drops
+            `dev-blank` when the first reply lands, so a button gated on the
+            render-time value was absent for the whole session that followed. */ ''}
+      ${_buildBarHTML('code', true, blank)}
 
       <div id="dev-hero" class="dev-hero">
         <div class="dev-hero-chips" id="dev-hero-chips">
@@ -31006,7 +31009,13 @@ function renderLabView(){
   const labBlank = _labIsHome();
   vc.innerHTML = `<div class="lab-shell${labBlank?' lab-blank':''}" id="lab-shell">
     ${_buildEntryHeadHTML('lab','What code should we work on?')}
-    ${_buildBarHTML('lab', !labBlank, labBlank)}
+    ${/* ALWAYS RENDERED, HIDDEN BY THE CLASS - the same correction A211 made
+          for the recents block. Passing `!labBlank` decided at RENDER time
+          whether there is a way back, and this shell flips `lab-blank` at
+          RUNTIME: paste code, press an action, `setBlank()` drops the class and
+          the working screen appears. The button was never in the DOM, so there
+          was no way out of a session you had just started. */ ''}
+    ${_buildBarHTML('lab', true, labBlank)}
 
     <!-- ENTRY STATE: paste on the left, upload on the right -->
     <div class="lab-entry" id="lab-entry">
