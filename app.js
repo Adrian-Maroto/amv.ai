@@ -18164,7 +18164,7 @@ function _cwJobCard(j){
      a card was the toggle, which meant the only way to find out what a job
      did was to switch it on. */
   return `<div class="cw-job ${j.on?'on':''}${miss.length?' blocked':''}">
-    <div class="cw-job-ic" aria-hidden="true">${j.icon}</div>
+    <div class="cw-job-ic" aria-hidden="true">${_safeIcon(j.icon)}</div>
     <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}"
             aria-label="See what ${escH(j.title)} does">
       <span class="cw-job-t">${escH(j.title)}</span>
@@ -18183,7 +18183,7 @@ function _cwJobCard(j){
 function _cwAnyCard(j){ return _planAllowsCrew() ? _cwJobCard(j) : _cwLockedCard(j); }
 function _cwLockedCard(j){
   return `<div class="cw-job locked">
-    <div class="cw-job-ic" aria-hidden="true">${j.icon}</div>
+    <div class="cw-job-ic" aria-hidden="true">${_safeIcon(j.icon)}</div>
     <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}"
             aria-label="See what ${escH(j.title)} does">
       <span class="cw-job-t">${escH(j.title)}</span>
@@ -18219,6 +18219,24 @@ function _cwLockedCard(j){
      - The decision sits in a footer that does not scroll away. That is the
        actual fix: the rest is legibility, this is the difference between a
        screen that works and one that does not. */
+/* THE ICON ON A CREW CARD COMES FROM THE SERVER, SO IT GOES THROUGH _safeIcon.
+
+   The everyday catalogue is fetched - `AMV_API.everyday(cc)` - and
+   _cwEverydayJob carries `raw.icon` straight through from that response. It was
+   then interpolated into innerHTML with no escaping at all, on three surfaces:
+   the job card, the peek panel, and the approvals card, whose icon comes off a
+   stored record instead.
+
+   _safeIcon is the helper the marketplace already uses for exactly this, for
+   exactly this reason: an emoji or short label is escaped, and markup passes
+   only if it is one of AMV's own SVGs. Nothing about the rendered icon changes.
+
+   The strict CSP means an injected tag could not have RUN anything, which is
+   why this is a hole in the discipline rather than a live exploit - and the
+   discipline is the point. Reasoning about which strings are safe is the thing
+   escH exists to stop anybody having to do, and "the server sends it" stops
+   being reassuring the moment a catalogue takes a submission or somebody
+   points AMV at a different backend, which Settings lets them do. */
 function cwPeek(id){
   const j = (_cwAllJobs()||[]).find(x=>x.id===id); if(!j) return;
   const r = $('ovr'); if(!r) return;
@@ -18260,7 +18278,7 @@ function cwPeek(id){
     <button class="cwp-x" id="cwp-close" aria-label="Close">\u2715</button>
     <div class="cwp-scroll">
       <div class="cwp-head">
-        <span class="cwp-ic" aria-hidden="true">${j.icon||'\u2728'}</span>
+        <span class="cwp-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
         <h2 class="cwp-t" id="cwp-t">${escH(j.title)}</h2>
       </div>
       <p class="cwp-desc">${escH(j.desc)}</p>
@@ -19076,7 +19094,7 @@ function renderCrewView(){
     ].filter(Boolean);
     return `<div class="apv-card">
       <div class="apv-card-top">
-        <span class="apv-ic">${a.icon||'\u2709\uFE0F'}</span>
+        <span class="apv-ic">${_safeIcon(a.icon||'\u2709\uFE0F')}</span>
         <div class="apv-card-hd">
           <div class="apv-title">${escH(a.title)}</div>
           <div class="apv-req">${escH(a.requesting||act.line)}</div>
