@@ -872,6 +872,34 @@ async function _admUsersPage(offset){
   if(!d) return null;
   return { users:d.users||[], total:d.total||0, hasMore:!!d.hasMore, note:d.note||'' };
 }
+/* What /v1/admin/user answered, shown as it came back. Every figure here is
+   the server's - nothing is derived in the browser, because the point of
+   opening this is to see what the server believes. */
+function _admShowUser(d){
+  const r=$('ovr'); if(!r) return;
+  const ent=d.entitlement||{}; const u=d.usage||{}; const t=d.team;
+  const row=(k,v)=>'<div class="admu-row"><span>'+escH(k)+'</span><b>'+escH(String(v))+'</b></div>';
+  r.innerHTML='<div class="ov" id="admu-bg"><div class="ob admu-ob">'+
+    '<button class="oc" id="admu-x" aria-label="Close">&#215;</button>'+
+    '<h2>'+escH(d.email||'')+'</h2>'+
+    '<p class="ob-sub">Read from the server just now.</p>'+
+    '<div class="admu-grid">'+
+      row('Plan', ent.plan||'free')+
+      (ent.source?row('Set by', ent.source):'')+
+      (ent.blocked?row('Blocked','yes'):'')+
+      row('Tokens today', (u.dayTokens||0).toLocaleString())+
+      row('Tokens this month', (u.monthTokens||0).toLocaleString())+
+      row('AI cost this month', '$'+(u.monthCostUSD||0).toFixed(2))+
+      (t?row('Team', t.id+' \u00b7 '+(t.role||'')+' \u00b7 '+(t.plan||'')):'')+
+      (u.shared?row('Counted against', u.subject||''):'')+
+    '</div>'+
+    '<p class="admu-note">Changing a plan or signing this account out everywhere is not offered here.</p>'+
+  '</div></div>';
+  const close=()=>{ r.innerHTML=''; };
+  onBackdrop($('admu-bg'),close); on($('admu-x'),'click',close);
+}
+try{ window._admShowUser=_admShowUser; }catch(e){}
+
 async function _adminLoadUsers(backendLive){
   const el=$('adm-users'); if(!el) return;
   let users=[]; let total=0, hasMore=false, note='';
@@ -942,6 +970,46 @@ async function _adminLoadUsers(backendLive){
     });
   };
   wireMore();
+  /* MANAGE OPENED NOTHING.
+
+     The button was rendered with data-admuser on it, styled, and given a hover
+     state - and no click handler, no reader of that attribute anywhere in the
+     bundle. It looked exactly like a control and was a label. On the owner's
+     own screen, next to the account it names.
+
+     /v1/admin/user answers three things: inspect by default, setPlan, and
+     revoke. This wires the INSPECT, which is what "Manage" can honestly do
+     without a decision being made for somebody: entitlement, team and the
+     usage counters that account actually spends against.
+
+     setPlan grants a paid plan and revoke signs somebody out of every device.
+     Both are real and both are the owner's to switch on deliberately, not
+     something to appear under a button because the endpoint happened to
+     support it. */
+  on(el,'click', async (e)=>{
+    const b=e.target.closest('[data-admuser]'); if(!b) return;
+    e.stopPropagation();
+    const email=b.dataset.admuser||''; if(!email) return;
+    if(!(window.AMV_API && AMV_API.base)){
+      toast('Account detail is read from the server, and this page is not connected to one.','info',5000);
+      return;
+    }
+    const was=b.textContent; b.disabled=true; b.textContent='Reading\u2026';
+    try{
+      const base=AMV_API.base.replace(/\/$/,'');
+      const r=await fetchDeadline(base+'/v1/admin/user',{ method:'POST',
+        headers:{ 'Authorization':'Bearer '+(AMV_API.token||''), 'Content-Type':'application/json' },
+        body:JSON.stringify({ email }) });
+      const d=await r.json().catch(()=>null);
+      if(!r.ok || !d || !d.ok){
+        toast('That account could not be read: '+((d&&d.error)||('HTTP '+r.status)),'error',5000);
+        return;
+      }
+      _admShowUser(d);
+    }catch(err){
+      toast('That account could not be read. Check the connection and try again.','error',5000);
+    }finally{ b.disabled=false; b.textContent=was; }
+  });
   const q=$('adm-user-q'); if(q) on(q,'input',()=>{ const term=q.value.toLowerCase(); const filtered=users.filter(u=>(u.email+' '+(u.name||'')).toLowerCase().includes(term)); const list=$('adm-user-list'); if(list) list.innerHTML=filtered.map(row).join('')||'<div class="adm-users-loading">No matches.</div>'; });
 }
 
