@@ -1892,6 +1892,17 @@ async function limitAction(env, key, perMin, perDay = 0) {
 
 /* Convenience: run the limit and, if blocked, return the 429 response directly.
    `label` is a friendly noun for the message ("handoffs", "listings"). */
+/* WHO A HANDOFF MAY BE ADDRESSED TO.
+
+   Written out twice inline, which is two copies of a security bound and two
+   chances for one of them to drift. Named once so both sites ask the same
+   question, and so a test can hold THIS pattern rather than a second copy of
+   it that would keep passing after the real one changed.
+
+   The characters it excludes are the point: a space, a colon and a newline are
+   not typos in an address, they are the start of another mail header. */
+const HANDOFF_TO_RE = /^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/;
+
 async function guardAction(env, key, perMin, perDay, label) {
   const r = await limitAction(env, key, perMin, perDay);
   if (r.ok) return null;
@@ -2871,7 +2882,7 @@ const CONN_ACTIONS = {
     need: 'mail.send', writes: true,
     async run(token, args){
       const to = String(args.to || '').slice(0, 320);
-      if(!/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(to)) throw new Error('bad_recipient');
+      if(!HANDOFF_TO_RE.test(to)) throw new Error('bad_recipient');
       /* Header injection: a newline in a subject ends the header and starts
          another, which is how one message becomes a message with extra
          recipients nobody chose. The body is after the blank line and cannot
@@ -2956,7 +2967,7 @@ const CONN_ACTIONS = {
       const fileId = String(args.fileId || '').slice(0, 200);
       if(!/^[A-Za-z0-9_-]{5,}$/.test(fileId)) throw new Error('bad_file');
       const to = String(args.email || '').slice(0, 320);
-      if(!/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(to)) throw new Error('bad_recipient');
+      if(!HANDOFF_TO_RE.test(to)) throw new Error('bad_recipient');
       /* Reader or writer, and nothing else. `owner` transfers the document away
          from the student, which is not a share and is not undoable by them. */
       const role = args.role === 'reader' ? 'reader' : 'writer';

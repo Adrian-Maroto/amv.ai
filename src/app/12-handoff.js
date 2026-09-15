@@ -409,32 +409,20 @@ function _vcRemember(e){
    Only the ASYNC callers use this. A render caused by somebody clicking
    something stays synchronous, because a control that responds on the next
    frame feels broken in a way this is meant to fix. */
-/* A BACKGROUND REDRAW MUST NOT DESTROY WHAT SOMEBODY IS TYPING.
+/* `_vcInUse` WAS HERE AND IS GONE, WHICH IS THE BETTER ANSWER.
 
-   Coalescing moved these redraws LATER, and later is long enough for a person
-   to have filled in a form. The whole view is rebuilt by them, so the fields
-   come back empty - and the suite that found it did exactly what a person does:
-   typed a title, a note and an address, and then sent. The send saw an empty
-   title and did nothing at all. A background sync that silently eats an unsent
-   handoff is far worse than the flicker this was meant to fix.
+   It returned true when any field in the view held text, and the coalesced
+   redraw used it to CANCEL itself rather than risk wiping a draft. That is the
+   wrong trade on a screen where things arrive: a word left in the Crew command
+   box meant nothing new ever appeared - an approval waiting on somebody was not
+   shown until they cleared the box - and a screen that has quietly stopped
+   updating is worse than one that flickers.
 
-   So a redraw that nobody asked for yields to a screen in use. Nothing is lost
-   by waiting: the data that arrived is already stored, and the next time the
-   view is drawn it is correct - which is the rule this file already applies a
-   few hundred lines up, for the same reason, in almost the same words. */
-function _vcInUse(){
-  try{
-    const vc = document.getElementById('vc');
-    if(!vc) return false;
-    const a = document.activeElement;
-    if(a && vc.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
-    return [...vc.querySelectorAll('input, textarea')].some(el => {
-      const t = (el.type || '').toLowerCase();
-      if(t === 'checkbox' || t === 'radio' || t === 'hidden') return false;
-      return String(el.value || '').trim().length > 0;
-    });
-  }catch(e){ return false; }
-}
+   The redraw now happens and the typing is carried across it by
+   `_vcSnapshotInputs` / `_vcRestoreInputs` above: values, focus and the cursor
+   position. Measured: the field is genuinely replaced and the half-typed
+   command, the focus and the caret at offset 4 all survive. */
+
 
 let _rrTimer = null, _rrFn = null, _rrTab = '';
 function _reRenderSoon(fn, tab){
@@ -458,8 +446,22 @@ function _reRenderSoon(fn, tab){
        does not happen at all. The state it would have shown is stored either
        way and the next open is correct. */
     if(want && S.tab !== want) return;
-    if(_vcInUse()) return;
-    try{ if(typeof f === 'function') f(); }catch(e){} }, 120);
+    /* WHAT SOMEBODY TYPED IS CARRIED ACROSS THE REDRAW, NOT USED TO CANCEL IT.
+
+       This used to return here when any field in the view held text, so a
+       background arrival was dropped rather than risk wiping a draft. That is
+       the wrong trade on a screen where things ARRIVE: leave a word in the Crew
+       command box and nothing new ever appears - an approval waiting on you is
+       not shown until you clear the box, and a screen that silently stops
+       updating is worse than one that flickers.
+
+       So the redraw happens and the typing survives it. Values, focus and the
+       cursor position are taken before and put back after, keyed by id, which
+       is what the renderers give these fields anyway. */
+    const keep = _vcSnapshotInputs();
+    try{ if(typeof f === 'function') f(); }catch(e){}
+    _vcRestoreInputs(keep);
+  }, 120);
 }
 
 function _vcSettleObserve(){

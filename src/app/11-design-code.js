@@ -701,9 +701,17 @@ function renderDesignView(){
     toast('Design model set to '+MODELS[this.value].label,'info',2500);
   });
   on($('studio-new'),'click',()=>{
-    _sessNew('studio');
-    _STUDIO.html=''; _STUDIO.prompt=''; _STUDIO.history=[];
-    _STUDIO.artifacts=[]; _STUDIO.activeId='';
+    /* SAVE BEFORE CLEARING. This called `_sessNew` - which only unbinds - and
+       then emptied the working state, so everything since the last debounced
+       autosave was gone: press New a moment after a change and that change is
+       not in Recents and not on screen either. Lab's equivalent has flushed
+       first since it was written; this one never did.
+
+       `_sessLeave` is flush-then-unbind, and the reset uses the declared
+       defaults rather than a hand-written list of fields, which is how the
+       two that were added later - atHome and openWip - stay covered. */
+    try{ _sessLeave('studio'); }catch(e){}
+    try{ _resetToolState('studio'); }catch(e){}
     renderDesignView();
     toast('New Studio project','info',2000);
   });
@@ -832,7 +840,19 @@ function _studioShowCanvas(brief){
     _setSectionModel('design', this.value);
     toast('Design model set to '+MODELS[this.value].label,'info',2500);
   });
-  on($('bld-home'),'click',()=>{ _STUDIO.atHome=true; _STUDIO.openWip=false; try{ _sessFlush('studio'); }catch(e){} setBuildMode('design'); });
+  /* LEAVE, NOT JUST SAVE - the correction Dev and Lab already had.
+
+     `_sessFlush` writes the project to Recents and LEAVES IT BOUND as the
+     active session, and nothing cleared the working state. So the next design
+     opened with the previous one's artifacts still loaded and `activeId` still
+     pointing at it, and saving then wrote over the project you had just left.
+     Measured before this: after pressing back, artifacts 1 and activeId 'a1'. */
+  on($('bld-home'),'click',()=>{
+    try{ _sessLeave('studio'); }catch(e){}
+    try{ _resetToolState('studio'); }catch(e){}
+    _STUDIO.atHome=true; _STUDIO.openWip=false;
+    setBuildMode('design');
+  });
   on($('studio-refine-go'),'click',_studioRefine);
   on($('studio-add'),'click',_studioAddPrompt);
   on($('studio-history'),'click',_studioHistory);
