@@ -1244,6 +1244,16 @@ try{
 }catch(e){}
 
 let _sheetData=[];
+/* The screen the editor was opened from. openSheetEditor writes straight into
+   #vc without touching S.tab, so nothing else records where you came from -
+   and Close used to send everybody to a tab that renders Crew, which is not a
+   place anybody was. */
+let _sheetFrom='chat';
+function _sheetClose(){
+  const back=_sheetFrom||'chat';
+  try{ setTab(back); }catch(e){ try{ setTab('chat'); }catch(_){} }
+}
+try{ window._sheetClose=_sheetClose; }catch(e){}
 function handleSheetFile(file){
   // An unreadable or corrupt file used to do nothing at all, with no error -
   // the user just saw their upload vanish.
@@ -1263,13 +1273,14 @@ function handleSheetFile(file){
 }
 function openSheetEditor(data,name){
   const vc=$('vc'); if(!vc) return;
+  _sheetFrom=(typeof S!=='undefined'&&S.tab)?S.tab:'chat';
   vc.innerHTML=`<div style="display:flex;flex-direction:column;height:100%">
 <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(13,17,23,.95);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
   <span style="font-size:var(--t-base);font-weight:600">&#128200; ${escH(name||'Spreadsheet')}</span>
   <span style="font-size:var(--t-xs);color:var(--mu)">${data.length-1} rows &middot; ${data[0]&&data[0].length||0} cols</span>
   <div style="margin-left:auto;display:flex;gap:6px">
     <button class="btn bs" data-dact="_sheetDownloadCSV">&#8681; Download</button>
-    <button class="btn bs" data-stab="extensions">&#10005; Close</button>
+    <button class="btn bs" data-dact="_sheetClose">&#10005; Close</button>
   </div>
 </div>
 <div style="flex:1;overflow:auto;padding:12px">${csvToTable(data)}</div>

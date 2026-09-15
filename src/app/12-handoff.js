@@ -836,6 +836,14 @@ const ADMIN_SET_SECTIONS=[
   {id:'platform',label:'Platform',icon:'<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'},
 ];
 
+/* EVERY id the pane chain below actually renders - the merged ids included,
+   because renderSetPane(only) is called with them directly and bypasses
+   SET_MERGED_INTO. Anything not here falls back to Account rather than
+   rendering nothing at all. */
+const _KNOWN_SET_PANES=['about','account','api','apikeys','appearance','backend','billing',
+  'capabilities','dashboard','family','integrations','investing','invite','language','platform',
+  'privacy','projects','security','skills','spending','teamset','usage','widget'];
+
 /* AMV-089: money owed to sellers. A withdrawal used to zero a seller's balance
    and write a record nothing ever read - so this is the first screen that can
    see it, and the only place it can be settled. It leads the dashboard because
@@ -2159,10 +2167,22 @@ function _renderSetPaneInner(only, into){
   const _asked=only||S.settingsPane;
   let sp=only||_setPaneFor(_asked);
   const _wantSection=only?'':_setSectionFor(_asked);
-  // Hard gate: admin/operator panes are OWNER-ONLY. If a non-owner reaches one
-  // (forced state, stale pane), refuse and fall back to Account.
-  const _ADMIN_PANES=['dashboard','apikeys','backend','platform'];
+  /* Hard gate: admin/operator panes are OWNER-ONLY. If a non-owner reaches one
+     (forced state, stale pane), refuse and fall back to Account.
+
+     The list is READ OFF ADMIN_SET_SECTIONS rather than typed out again. It
+     was typed out again, and the two copies had already drifted: `widget` was
+     added to the sections and never to the gate, so the pane that configures
+     the embed somebody puts on their own website rendered in full for any
+     account that reached it. A gate maintained by hand beside the list it is
+     gating is a gate that is one addition away from being wrong. */
+  const _ADMIN_PANES=ADMIN_SET_SECTIONS.map(s=>s.id).filter(Boolean);
   if(_ADMIN_PANES.indexOf(sp)>=0 && !isAdmin()){ S.settingsPane='account'; sp='account'; }
+  /* An id nothing renders used to leave the content column EMPTY - a Settings
+     screen with a nav, a picker reading "Account", and nothing beside it. The
+     picker already falls back to the first section when it cannot place an id;
+     the pane now falls back to the same one, so the two cannot disagree. */
+  if(_KNOWN_SET_PANES.indexOf(sp)<0){ S.settingsPane='account'; sp='account'; }
   if(_wantSection){
     setTimeout(()=>{ try{
       const t=document.getElementById('set-sec-'+_wantSection);
