@@ -8903,7 +8903,8 @@ function planCards(inApp){
      The default now routes to checkout, so a tier added later cannot be dead
      by omission; the named branches only exist for the two operator-configured
      payment links. */
-  function pBtn(label, cls, plan, isLand){
+
+function pBtn(label, cls, plan, isLand){
     if(isLand) return '<button class="plnbtn pbs" data-auth="signup">'+label+'</button>';
     if(plan==='free'){
       /* Nothing to buy. Saying so beats a button that appears to sell the plan
@@ -9404,6 +9405,101 @@ function _ovWire(id){
 }
 window._ovShell=_ovShell; window._ovWire=_ovWire;
 
+  /* ── WHAT EACH PLAN ACTUALLY GIVES YOU, IN ONE PLACE ─────────────────────────
+
+   This copy existed once, inline in the plan cards on the pricing page, and
+   the upgrade page needed the same sentences. Two copies of a promise is two
+   copies that drift, and the one that drifts is the one nobody is looking at -
+   so both surfaces render from here.
+
+   `anchor` is the one line that says who the plan is for. `feats` are the
+   things you get, `ck` true for something included and false for something the
+   tier does not have. `reassure` is the line under the button.
+
+   Everything here was already on the pricing page and is unchanged. Nothing
+   was added to make the upgrade page sound better: the numbers a person can
+   check - the usage multiple, the agent count - are the ones the server
+   enforces, and this page has been burned before for selling a word the
+   backend did not honour. */
+/* A FUNCTION, NOT A CONST OBJECT, AND THE REASON IS WORTH KEEPING.
+
+   One of these lines calls `_rpmLabel('ultra')` to name the throughput, which
+   was fine inside the card markup because that markup is built when somebody
+   opens the page. Lifted into a top-level `const`, the same call ran at SCRIPT
+   LOAD - and it reads PLANS, which is declared in a later module. Temporal dead
+   zone, a throw before the app finished loading, and every symbol after it
+   undefined: the visible symptom was "Cannot access 'PLANS' before
+   initialization" from a sidebar function with nothing to do with plans.
+
+   Built on demand instead, so anything it calls is called at render time, which
+   is when it was always called before. */
+function _planPitch(key){
+  const P = {
+  free: {
+    anchor: 'Everything you need to explore',
+    feats: [
+      [1,'A monthly allowance, yours to spend how you like'],
+      [1,'Chat, code &amp; interactive 3D models'],
+      [1,'File analysis - PDF, images, code'],
+      [1,'Essays, code, math &amp; research'],
+      [0,'Autonomous agents &amp; Crew'],
+      [0,'Connected accounts (Gmail, Calendar)'],
+    ],
+    reassure: '',
+  },
+  pro: {
+    anchor: 'Replaces $60+/mo of separate AI tools',
+    feats: [
+      [1,'<b>5&times; the usage</b>, all models included'],
+      [1,'Autonomous agents &amp; Crew, run from <b>Mission Control</b>'],
+      [1,'<b>Preview &amp; approve</b> every action before it runs'],
+      [1,'<b>Auto Approve</b> for trusted recurring tasks'],
+      [1,'Build &amp; ship real apps in Dev'],
+      [1,'Connect Gmail, Calendar &amp; files'],
+      [1,'Scheduled &amp; background automation'],
+    ],
+    reassure: 'Everything below, one price, cancel anytime',
+  },
+  elite: {
+    anchor: 'For founders, builders &amp; power users',
+    feats: [
+      [1,'<b>Everything in Pro</b>, plus:'],
+      [1,'<b>20&times; the usage</b> - work all day'],
+      [1,'<b>AMV Apex first</b> - our most capable engine'],
+      [1,'<b>Full-stack app builder</b> + one-click deploy'],
+      [1,'Run up to <b>5 agents in parallel</b>'],
+      [1,'Multi-file projects, code review &amp; auto-debug'],
+      [1,'Priority speed &amp; 24/7 support'],
+    ],
+    reassure: 'Full-power engines and agents, without a per-seat bill',
+  },
+  ultra: {
+    anchor: 'For serious operators',
+    feats: [
+      [1,'<b>Everything in Elite</b>, plus:'],
+      [1,'<b>50× the usage</b> - effectively unlimited'],
+      [1,'<b>Highest throughput</b> - '+_rpmLabel('ultra')+''],
+      [1,'<b>Longest context</b> - whole codebases at once'],
+      [1,'Hand off a goal, get a finished result'],
+      [1,'Deploy &amp; host multiple live apps'],
+      [1,'👥 Team workspaces, roles &amp; shared projects'],
+    ],
+    reassure: 'The highest limits AMV offers',
+  },
+  };
+  return P[key] || null;
+}
+function _planFeatsHTML(key){
+  const p = _planPitch(key);
+  if(!p) return '';
+  return '<ul class="plnfl">' + p.feats.map(f =>
+    '<li><span class="' + (f[0] ? 'fck' : 'fxx') + '">' + (f[0] ? '✓' : '✗') + '</span>'
+    /* The text is wrapped so a row has exactly TWO children. The upgrade page
+       lays these rows out with flex, and a flex gap applies between EVERY
+       child - so an unwrapped row put a gap inside its own sentence, between
+       the bold opening and the rest of it: "Everything in Pro , plus:". */
+    + '<span class="plnft">' + f[1] + '</span></li>').join('') + '</ul>';
+}
 /* ============================================================
    TEAM / WORKSPACE MODE (frontend) - the B2B tier.
    Create a team, invite members with roles, share projects & prompts.
@@ -13790,6 +13886,13 @@ function renderBillingView(targetEl){
      own place again is its own small insult. */
   vc.querySelectorAll('[data-pay]').forEach(b=>on(b,'click',()=>{
     const want=b.dataset.pay;
+    /* ITS OWN PAGE, NOT A RING AROUND A CARD. This used to jump to the pricing
+       tab and highlight one card in a row of four - which leaves the plan you
+       chose sitting beside three you did not, at the same size, with what you
+       actually get a scroll away. openUpgrade gives that plan the whole screen
+       and one button. The old behaviour stays underneath as the fallback for
+       anything openUpgrade will not take, so no route to paying is removed. */
+    try{ if(typeof openUpgrade === 'function' && want && want !== 'free'){ openUpgrade(want); return; } }catch(e){}
     try{ setTab('plans'); }catch(e){ return; }
     setTimeout(()=>{
       try{
@@ -15281,6 +15384,97 @@ function maybeHabitNudge(){
   }catch(e){}
 }
 try{ window.maybeHabitNudge=maybeHabitNudge; }catch(e){}
+
+/* ── THE PAGE YOU LAND ON WHEN YOU PICK A PLAN ───────────────────────────────
+
+   Pressing "Upgrade to Elite" used to jump to the pricing tab and put a ring
+   around one card in a row of four. That is a highlight, not a decision: the
+   plan you chose is still sitting beside three you did not, at the same size,
+   and the thing you actually wanted - what do I get, and how do I pay - is a
+   scroll away inside a box.
+
+   So it opens its own page. One plan, its price, everything it gives you, and
+   one button. Nothing else on the screen competes with it.
+
+   The copy is _planPitch, which the pricing cards render from too, so this
+   page cannot drift away from what the pricing page promises. The two figures
+   under the price are the ones the server enforces - the usage multiple and
+   the scheduled-job cap - because this page has been burned before for selling
+   a word the backend did not honour, and a number somebody can check is more
+   convincing than an adjective anyway. */
+let _upgradeFor = '';
+function openUpgrade(key){
+  if(!PLANS[key] || key === 'free') return;
+  _upgradeFor = key;
+  try{ setTab('upgrade'); }catch(e){ _upgradeFor = ''; }
+}
+function closeUpgrade(){ _upgradeFor = ''; try{ setTab('billing'); }catch(e){} }
+try{ window.openUpgrade = openUpgrade; window.closeUpgrade = closeUpgrade; }catch(e){}
+
+function renderUpgradeView(){
+  const vc = $('vc'); if(!vc) return;
+  const key = _upgradeFor || 'pro';
+  const P = PLANS[key]; if(!P) return;
+  const pitch = (typeof _planPitch === 'function' && _planPitch(key)) || { anchor:'', feats:[], reassure:'' };
+  const jobs = (typeof AUTO_MAX_BY_PLAN !== 'undefined') ? AUTO_MAX_BY_PLAN[key] : null;
+  const now = (typeof S !== 'undefined' && S.plan) ? S.plan : (loadStr('amv_plan') || 'free');
+  const nowName = (PLANS[now] && PLANS[now].name) || 'Free';
+
+  vc.innerHTML =
+    '<div class="sv fi upg-sv"><div class="upg">'
+      + '<button class="upg-back" id="upg-back">'
+        + '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>'
+        + escH(T('Billing')) + '</button>'
+
+      + '<div class="upg-head">'
+        + '<span class="upg-eyebrow">' + escH(T('You are on')) + ' ' + escH(nowName) + '</span>'
+        + '<h1 class="upg-t">' + escH(P.name) + '</h1>'
+        + '<p class="upg-anchor">' + pitch.anchor + '</p>'
+        + '<div class="upg-price"><span class="upg-cur">$</span>' + P.price
+          + '<span class="upg-per">/' + escH(T('month')) + '</span></div>'
+        + '<p class="upg-per-note">' + escH(T('Cancel anytime. Changes are prorated, so you only pay the difference.')) + '</p>'
+      + '</div>'
+
+      + (typeof _planFeatsHTML === 'function'
+          ? '<div class="upg-feats">' + _planFeatsHTML(key) + '</div>' : '')
+
+      + ((P.mult || jobs)
+          ? '<div class="upg-figs">'
+            + (P.mult ? '<div class="upg-fig"><b>' + escH(P.mult) + '</b><span>'
+                + escH(T('the free allowance')) + '</span></div>' : '')
+            + (jobs ? '<div class="upg-fig"><b>' + jobs + '</b><span>'
+                + escH(T('scheduled jobs running for you')) + '</span></div>' : '')
+          + '</div>' : '')
+
+      + '<div class="upg-go">'
+        + '<button class="btn bp upg-cta" id="upg-pay" data-darg="' + escH(key) + '">'
+          + escH(T('Proceed to payment')) + '</button>'
+        + '<p class="upg-reassure">'
+          + (pitch.reassure ? pitch.reassure + ' &middot; ' : '')
+          + escH(T('Card details go straight to our payment processor - AMV never sees them.'))
+        + '</p>'
+      + '</div>'
+    + '</div></div>';
+
+  on($('upg-back'), 'click', closeUpgrade);
+  /* The existing checkout, not a second one. Whatever the pricing page does to
+     start a payment is what this button does - a parallel path to money is a
+     parallel path to getting money wrong. */
+  on($('upg-pay'), 'click', () => {
+    /* EXACTLY WHAT THE PRICING BUTTON DOES, including the direct-link case:
+       when a plan has its own payment link configured, that link is the path,
+       and `openCheckout` is the path when it does not. Reproducing the choice
+       here rather than calling one of them unconditionally is the difference
+       between this button working and this button working most of the time. */
+    try{
+      const direct = (key === 'pro' && S.sp) || (key === 'elite' && S.se);
+      if(direct && typeof _openPlanLink === 'function') return _openPlanLink(key);
+      if(typeof openCheckout === 'function') return openCheckout(key);
+    }catch(e){}
+    try{ setTab('plans'); }catch(e){}
+  });
+}
+try{ window.renderUpgradeView = renderUpgradeView; }catch(e){}
 /* ============================================================
    AMV CO-WORKER  - autonomous agent: standing jobs + approval inbox
    The differentiator: it watches your connected accounts and proposes
@@ -24278,6 +24472,10 @@ function renderView(){
     case 'team': renderTeamView(); break;
     case 'usage': renderUsageView(); break;
     case 'billing': renderBillingView(); break;
+    /* Its own tab, so it is a PAGE: it gets the whole view, the back control
+       goes somewhere real, and nothing from the screen you came from is left
+       around it competing for the decision. */
+    case 'upgrade': renderUpgradeView(); break;
     case 'plans': renderPlansView(); break;
     case 'settings': renderSettingsView(); break;
     case 'help': renderHelpView(); break;

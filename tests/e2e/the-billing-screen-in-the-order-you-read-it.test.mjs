@@ -122,29 +122,46 @@ section('Upgrading opens the plans screen, on the plan that was picked');
     /* Still a wait, because the handler defers by 60ms so the plans view has
        rendered - but with motion off there is nothing animating to wait out. */
     await new Promise(r => setTimeout(r, 400));
-    const picked = document.querySelector('.plnc-picked');
-    const vis = (el) => { const c = getComputedStyle(el), q = el.getBoundingClientRect();
+    const vis = (el) => { if(!el) return false;
+                          const c = getComputedStyle(el), q = el.getBoundingClientRect();
                           return c.display !== 'none' && c.visibility !== 'hidden' && q.width > 0 && q.height > 0; };
-    const rect = picked ? picked.getBoundingClientRect() : null;
+    const cta = document.getElementById('upg-pay');
+    const feats = document.querySelector('.upg-feats');
     return {
       label, tab: S.tab,
-      tier: picked ? picked.querySelector('.plntier').textContent.trim() : null,
-      visible: picked ? vis(picked) : false,
-      inViewport: rect ? (rect.top < innerHeight && rect.bottom > 0) : false,
-      inAppView: !!(picked && picked.closest('#vc')),
-      totalCards: document.querySelectorAll('.plnc').length,
+      onPage: !!document.querySelector('.upg'),
+      title: (document.querySelector('.upg-t') || {}).textContent || '',
+      feats: document.querySelectorAll('.upg-feats .plnfl li').length,
+      ctaText: cta ? cta.textContent.trim() : '',
+      ctaVisible: vis(cta),
+      ctaAfterFeats: (cta && feats)
+        ? cta.getBoundingClientRect().top > feats.getBoundingClientRect().top : false,
+      back: vis(document.getElementById('upg-back')),
     };
   });
   ok(!r.missing, 'the Change plan list offers Elite', r);
   ok(/Upgrade to Elite/.test(r.label), 'and says so plainly', r.label);
-  ok(r.tab === 'plans', 'clicking it opens the plans screen', r.tab);
-  ok(r.tier === 'Elite', 'with the Elite card marked', r.tier);
-  ok(r.visible && r.inViewport, 'and that card is on screen, not scrolled past', r);
-  /* The landing page carries its own set of plan cards in the same markup, so
-     an unscoped lookup can mark a hidden one - which would do nothing at all,
-     silently, and look like the button was broken. */
-  ok(r.totalCards > 4, 'there really are duplicate cards in the document', r.totalCards);
-  ok(r.inAppView, 'and the one marked is the visible one, not the landing copy', r);
+  /* ITS OWN PAGE NOW, NOT A RING AROUND A CARD.
+
+     This used to assert the plans tab opened with the Elite card marked and
+     scrolled into view, and the marking had to be scoped to #vc because the
+     landing page carries a second set of the same cards. That was all true of
+     a design that has been replaced: picking a plan left it sitting beside
+     three you did not pick, at the same size, with what it actually gives you
+     a scroll away inside a box.
+
+     The claim is the same one at heart - picking a plan must take you somewhere
+     that makes the decision, not somewhere you have to hunt - and it is
+     stronger here, because a page cannot be scrolled past or marked on the
+     wrong copy. What it must carry: the plan's name, what you get, and one
+     button, placed AFTER the argument rather than above it. */
+  ok(r.tab === 'upgrade', 'clicking it opens that plan\u2019s own page', r.tab);
+  ok(r.onPage && /Elite/.test(r.title), 'for the plan that was picked', r.title);
+  ok(r.feats >= 5, 'with what you actually get on it', String(r.feats));
+  ok(/payment/i.test(r.ctaText) && r.ctaVisible,
+     'and one control that goes to payment', r.ctaText);
+  ok(r.ctaAfterFeats, 'placed after the argument, not above it', r);
+  ok(r.back, 'and a way back to Billing', r.back);
   await page.emulateMedia({ reducedMotion: null });
 }
 

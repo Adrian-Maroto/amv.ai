@@ -972,3 +972,94 @@ function maybeHabitNudge(){
   }catch(e){}
 }
 try{ window.maybeHabitNudge=maybeHabitNudge; }catch(e){}
+
+/* ── THE PAGE YOU LAND ON WHEN YOU PICK A PLAN ───────────────────────────────
+
+   Pressing "Upgrade to Elite" used to jump to the pricing tab and put a ring
+   around one card in a row of four. That is a highlight, not a decision: the
+   plan you chose is still sitting beside three you did not, at the same size,
+   and the thing you actually wanted - what do I get, and how do I pay - is a
+   scroll away inside a box.
+
+   So it opens its own page. One plan, its price, everything it gives you, and
+   one button. Nothing else on the screen competes with it.
+
+   The copy is _planPitch, which the pricing cards render from too, so this
+   page cannot drift away from what the pricing page promises. The two figures
+   under the price are the ones the server enforces - the usage multiple and
+   the scheduled-job cap - because this page has been burned before for selling
+   a word the backend did not honour, and a number somebody can check is more
+   convincing than an adjective anyway. */
+let _upgradeFor = '';
+function openUpgrade(key){
+  if(!PLANS[key] || key === 'free') return;
+  _upgradeFor = key;
+  try{ setTab('upgrade'); }catch(e){ _upgradeFor = ''; }
+}
+function closeUpgrade(){ _upgradeFor = ''; try{ setTab('billing'); }catch(e){} }
+try{ window.openUpgrade = openUpgrade; window.closeUpgrade = closeUpgrade; }catch(e){}
+
+function renderUpgradeView(){
+  const vc = $('vc'); if(!vc) return;
+  const key = _upgradeFor || 'pro';
+  const P = PLANS[key]; if(!P) return;
+  const pitch = (typeof _planPitch === 'function' && _planPitch(key)) || { anchor:'', feats:[], reassure:'' };
+  const jobs = (typeof AUTO_MAX_BY_PLAN !== 'undefined') ? AUTO_MAX_BY_PLAN[key] : null;
+  const now = (typeof S !== 'undefined' && S.plan) ? S.plan : (loadStr('amv_plan') || 'free');
+  const nowName = (PLANS[now] && PLANS[now].name) || 'Free';
+
+  vc.innerHTML =
+    '<div class="sv fi upg-sv"><div class="upg">'
+      + '<button class="upg-back" id="upg-back">'
+        + '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>'
+        + escH(T('Billing')) + '</button>'
+
+      + '<div class="upg-head">'
+        + '<span class="upg-eyebrow">' + escH(T('You are on')) + ' ' + escH(nowName) + '</span>'
+        + '<h1 class="upg-t">' + escH(P.name) + '</h1>'
+        + '<p class="upg-anchor">' + pitch.anchor + '</p>'
+        + '<div class="upg-price"><span class="upg-cur">$</span>' + P.price
+          + '<span class="upg-per">/' + escH(T('month')) + '</span></div>'
+        + '<p class="upg-per-note">' + escH(T('Cancel anytime. Changes are prorated, so you only pay the difference.')) + '</p>'
+      + '</div>'
+
+      + (typeof _planFeatsHTML === 'function'
+          ? '<div class="upg-feats">' + _planFeatsHTML(key) + '</div>' : '')
+
+      + ((P.mult || jobs)
+          ? '<div class="upg-figs">'
+            + (P.mult ? '<div class="upg-fig"><b>' + escH(P.mult) + '</b><span>'
+                + escH(T('the free allowance')) + '</span></div>' : '')
+            + (jobs ? '<div class="upg-fig"><b>' + jobs + '</b><span>'
+                + escH(T('scheduled jobs running for you')) + '</span></div>' : '')
+          + '</div>' : '')
+
+      + '<div class="upg-go">'
+        + '<button class="btn bp upg-cta" id="upg-pay" data-darg="' + escH(key) + '">'
+          + escH(T('Proceed to payment')) + '</button>'
+        + '<p class="upg-reassure">'
+          + (pitch.reassure ? pitch.reassure + ' &middot; ' : '')
+          + escH(T('Card details go straight to our payment processor - AMV never sees them.'))
+        + '</p>'
+      + '</div>'
+    + '</div></div>';
+
+  on($('upg-back'), 'click', closeUpgrade);
+  /* The existing checkout, not a second one. Whatever the pricing page does to
+     start a payment is what this button does - a parallel path to money is a
+     parallel path to getting money wrong. */
+  on($('upg-pay'), 'click', () => {
+    /* EXACTLY WHAT THE PRICING BUTTON DOES, including the direct-link case:
+       when a plan has its own payment link configured, that link is the path,
+       and `openCheckout` is the path when it does not. Reproducing the choice
+       here rather than calling one of them unconditionally is the difference
+       between this button working and this button working most of the time. */
+    try{
+      const direct = (key === 'pro' && S.sp) || (key === 'elite' && S.se);
+      if(direct && typeof _openPlanLink === 'function') return _openPlanLink(key);
+      if(typeof openCheckout === 'function') return openCheckout(key);
+    }catch(e){}
+    try{ setTab('plans'); }catch(e){}
+  });
+}
+try{ window.renderUpgradeView = renderUpgradeView; }catch(e){}

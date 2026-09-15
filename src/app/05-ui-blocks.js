@@ -2625,7 +2625,8 @@ function planCards(inApp){
      The default now routes to checkout, so a tier added later cannot be dead
      by omission; the named branches only exist for the two operator-configured
      payment links. */
-  function pBtn(label, cls, plan, isLand){
+
+function pBtn(label, cls, plan, isLand){
     if(isLand) return '<button class="plnbtn pbs" data-auth="signup">'+label+'</button>';
     if(plan==='free'){
       /* Nothing to buy. Saying so beats a button that appears to sell the plan
@@ -3126,3 +3127,98 @@ function _ovWire(id){
 }
 window._ovShell=_ovShell; window._ovWire=_ovWire;
 
+  /* ── WHAT EACH PLAN ACTUALLY GIVES YOU, IN ONE PLACE ─────────────────────────
+
+   This copy existed once, inline in the plan cards on the pricing page, and
+   the upgrade page needed the same sentences. Two copies of a promise is two
+   copies that drift, and the one that drifts is the one nobody is looking at -
+   so both surfaces render from here.
+
+   `anchor` is the one line that says who the plan is for. `feats` are the
+   things you get, `ck` true for something included and false for something the
+   tier does not have. `reassure` is the line under the button.
+
+   Everything here was already on the pricing page and is unchanged. Nothing
+   was added to make the upgrade page sound better: the numbers a person can
+   check - the usage multiple, the agent count - are the ones the server
+   enforces, and this page has been burned before for selling a word the
+   backend did not honour. */
+/* A FUNCTION, NOT A CONST OBJECT, AND THE REASON IS WORTH KEEPING.
+
+   One of these lines calls `_rpmLabel('ultra')` to name the throughput, which
+   was fine inside the card markup because that markup is built when somebody
+   opens the page. Lifted into a top-level `const`, the same call ran at SCRIPT
+   LOAD - and it reads PLANS, which is declared in a later module. Temporal dead
+   zone, a throw before the app finished loading, and every symbol after it
+   undefined: the visible symptom was "Cannot access 'PLANS' before
+   initialization" from a sidebar function with nothing to do with plans.
+
+   Built on demand instead, so anything it calls is called at render time, which
+   is when it was always called before. */
+function _planPitch(key){
+  const P = {
+  free: {
+    anchor: 'Everything you need to explore',
+    feats: [
+      [1,'A monthly allowance, yours to spend how you like'],
+      [1,'Chat, code &amp; interactive 3D models'],
+      [1,'File analysis - PDF, images, code'],
+      [1,'Essays, code, math &amp; research'],
+      [0,'Autonomous agents &amp; Crew'],
+      [0,'Connected accounts (Gmail, Calendar)'],
+    ],
+    reassure: '',
+  },
+  pro: {
+    anchor: 'Replaces $60+/mo of separate AI tools',
+    feats: [
+      [1,'<b>5&times; the usage</b>, all models included'],
+      [1,'Autonomous agents &amp; Crew, run from <b>Mission Control</b>'],
+      [1,'<b>Preview &amp; approve</b> every action before it runs'],
+      [1,'<b>Auto Approve</b> for trusted recurring tasks'],
+      [1,'Build &amp; ship real apps in Dev'],
+      [1,'Connect Gmail, Calendar &amp; files'],
+      [1,'Scheduled &amp; background automation'],
+    ],
+    reassure: 'Everything below, one price, cancel anytime',
+  },
+  elite: {
+    anchor: 'For founders, builders &amp; power users',
+    feats: [
+      [1,'<b>Everything in Pro</b>, plus:'],
+      [1,'<b>20&times; the usage</b> - work all day'],
+      [1,'<b>AMV Apex first</b> - our most capable engine'],
+      [1,'<b>Full-stack app builder</b> + one-click deploy'],
+      [1,'Run up to <b>5 agents in parallel</b>'],
+      [1,'Multi-file projects, code review &amp; auto-debug'],
+      [1,'Priority speed &amp; 24/7 support'],
+    ],
+    reassure: 'Full-power engines and agents, without a per-seat bill',
+  },
+  ultra: {
+    anchor: 'For serious operators',
+    feats: [
+      [1,'<b>Everything in Elite</b>, plus:'],
+      [1,'<b>50× the usage</b> - effectively unlimited'],
+      [1,'<b>Highest throughput</b> - '+_rpmLabel('ultra')+''],
+      [1,'<b>Longest context</b> - whole codebases at once'],
+      [1,'Hand off a goal, get a finished result'],
+      [1,'Deploy &amp; host multiple live apps'],
+      [1,'👥 Team workspaces, roles &amp; shared projects'],
+    ],
+    reassure: 'The highest limits AMV offers',
+  },
+  };
+  return P[key] || null;
+}
+function _planFeatsHTML(key){
+  const p = _planPitch(key);
+  if(!p) return '';
+  return '<ul class="plnfl">' + p.feats.map(f =>
+    '<li><span class="' + (f[0] ? 'fck' : 'fxx') + '">' + (f[0] ? '✓' : '✗') + '</span>'
+    /* The text is wrapped so a row has exactly TWO children. The upgrade page
+       lays these rows out with flex, and a flex gap applies between EVERY
+       child - so an unwrapped row put a gap inside its own sentence, between
+       the bold opening and the rest of it: "Everything in Pro , plus:". */
+    + '<span class="plnft">' + f[1] + '</span></li>').join('') + '</ul>';
+}

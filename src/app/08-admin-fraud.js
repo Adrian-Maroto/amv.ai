@@ -1407,6 +1407,13 @@ function renderBillingView(targetEl){
      own place again is its own small insult. */
   vc.querySelectorAll('[data-pay]').forEach(b=>on(b,'click',()=>{
     const want=b.dataset.pay;
+    /* ITS OWN PAGE, NOT A RING AROUND A CARD. This used to jump to the pricing
+       tab and highlight one card in a row of four - which leaves the plan you
+       chose sitting beside three you did not, at the same size, with what you
+       actually get a scroll away. openUpgrade gives that plan the whole screen
+       and one button. The old behaviour stays underneath as the fallback for
+       anything openUpgrade will not take, so no route to paying is removed. */
+    try{ if(typeof openUpgrade === 'function' && want && want !== 'free'){ openUpgrade(want); return; } }catch(e){}
     try{ setTab('plans'); }catch(e){ return; }
     setTimeout(()=>{
       try{

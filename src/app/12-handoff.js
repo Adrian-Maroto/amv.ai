@@ -496,6 +496,10 @@ function renderView(){
     case 'team': renderTeamView(); break;
     case 'usage': renderUsageView(); break;
     case 'billing': renderBillingView(); break;
+    /* Its own tab, so it is a PAGE: it gets the whole view, the back control
+       goes somewhere real, and nothing from the screen you came from is left
+       around it competing for the decision. */
+    case 'upgrade': renderUpgradeView(); break;
     case 'plans': renderPlansView(); break;
     case 'settings': renderSettingsView(); break;
     case 'help': renderHelpView(); break;
