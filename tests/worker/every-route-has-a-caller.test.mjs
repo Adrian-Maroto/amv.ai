@@ -37,7 +37,6 @@ const EXEMPT = {
   '/sms/incoming':       'Twilio calls this, not a browser',
   '/auth/admin-reset':   'operator recovery, admin token, run by hand',
   '/v1/admin/support':   'operator inbox, admin token',
-  '/v1/admin/user':      'operator account inspector, admin token',
   '/admin/abuse/list':   'operator abuse review, admin token',
   '/admin/abuse/clear':  'operator abuse review, admin token',
   '/admin/backup/export':'operator backup, admin token',
