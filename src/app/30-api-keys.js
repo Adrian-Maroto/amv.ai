@@ -111,7 +111,10 @@ function _apiPaint(host, d){
 function _apiShowOnce(key){
   const ovr = document.getElementById('ovr'); if(!ovr) return;
   ovr.innerHTML =
-    '<div class="share-modal">'+
+    /* data-keep-open: Escape must not take the only copy of this away. The
+       comment below this function has always claimed it does not close by
+       accident; this is what makes that true. */
+    '<div class="share-modal" data-keep-open>'+
       '<div class="share-title">Your new API key</div>'+
       '<p class="share-sub">Copy it now. AMV stores only a hash of this key and <b>cannot show it again</b> - '+
         'if you lose it, revoke it and make another.</p>'+

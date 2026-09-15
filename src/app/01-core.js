@@ -1567,6 +1567,20 @@ function _initKeyboardNav(){
       // Escape closes any open overlay
       if(e.key==='Escape'){
         const ovr=$('ovr');
+        /* A DIALOG MAY REFUSE ESCAPE, AND ONE OF THEM HAS TO.
+
+           This closed anything sitting in #ovr, which is right for every
+           dialog that can be reopened. The new-API-key sheet cannot: the key
+           exists in the browser for that one moment, the server keeps only a
+           hash, and its own comment claimed it "does not close by accident"
+           while a stray Escape closed it. Measured before this: pressing
+           Escape removed the only copy.
+
+           Opt-in by marker rather than by naming that sheet here, so the next
+           show-once secret is covered by adding the attribute and not by
+           remembering this line exists. The dialog still closes - through the
+           button that says what closing means. */
+        if(ovr && ovr.children.length && ovr.querySelector('[data-keep-open]')){ e.preventDefault(); return; }
         if(ovr && ovr.children.length){ closeOvr(); e.preventDefault(); return; }
         const pop=document.querySelector('.sb-popup.on,.menu.on,.ctx-menu'); if(pop){ pop.classList.remove('on'); }
       }
