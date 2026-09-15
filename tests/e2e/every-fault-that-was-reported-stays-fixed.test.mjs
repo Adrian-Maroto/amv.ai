@@ -510,6 +510,39 @@ section('10. The home screen leaves when you leave it');
   ok(/dev-blank/.test(out.landed), 'which goes to the Build home', out.landed);
 }
 
+section('11. A second build is a second build');
+{
+  /* "click build and make one, then go back, then go to build again and make
+     another - it should not be part of the same chat".
+
+     The way back ran `_sessFlush`, which writes the work to Recents and leaves
+     it BOUND as the active session, and nothing cleared the working state. So
+     the next build inherited the previous conversation and then saved itself
+     over the session it inherited from - losing the first one's later turns.
+     `_sessLeave` is the primitive that already meant flush-then-unbind. */
+  const r = await page.evaluate(async () => {
+    setTab('build'); setBuildMode('code');
+    await new Promise(x => setTimeout(x, 700));
+    _DEV.log = [{ role: 'user', text: 'FIRST BUILD' }, { role: 'ai', text: 'made it' }];
+    _DEV.atHome = false;
+    try { _devRenderLog(); } catch (e) {}
+    _sessTouch('dev');
+    await new Promise(x => setTimeout(x, 900));
+    const before = _DEV.log.length;
+    document.getElementById('bld-home').click();
+    await new Promise(x => setTimeout(x, 900));
+    const saved = _SESSIONS.filter(s => s.kind === 'dev').length;
+    const cleared = _DEV.log.length;
+    _DEV.log.push({ role: 'user', text: 'SECOND BUILD' });
+    return { before, cleared, saved, texts: _DEV.log.map(m => m.text) };
+  });
+  ok(r.before === 2, 'the first build has a conversation', String(r.before));
+  ok(r.saved >= 1, 'and going back keeps it in Recents', String(r.saved));
+  ok(r.cleared === 0, 'and leaves nothing behind in the working state', String(r.cleared));
+  ok(!r.texts.some(t => /FIRST BUILD/.test(t)),
+     'so the next build is its own conversation', r.texts.join(' | '));
+}
+
 section('8. Nothing threw while all of that happened');
 {
   ok(errors.length === 0, 'no page errors across every screen', errors.slice(0, 4).join(' | '));

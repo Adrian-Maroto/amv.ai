@@ -898,8 +898,12 @@ function renderLabView(){
      lists your work, so the only exits were the sidebar or starting over.
      Same destination as Dev's, so "Builds" means one place from either. */
   on($('bld-home'),'click',()=>{
+    /* Same correction as Dev's: flush AND unbind, then clear the working
+       state. Saving alone left this session active, so the next code you
+       pasted joined it and overwrote it. */
+    try{ _sessLeave('lab'); }catch(e){}
+    try{ _resetToolState('lab'); }catch(e){}
     try{ _DEV.atHome = true; }catch(e){}
-    try{ _sessFlush('lab'); }catch(e){}
     try{ setBuildMode('code'); }catch(e){}
   });
   // ── Loading code into Lab: paste, upload, or drag & drop ──

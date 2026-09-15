@@ -21315,7 +21315,23 @@ function renderCodeView(){
   /* Back to the page that lists the builds. The work is already saved and stays
      listed, so this is a navigation rather than a discard - which is the
      difference between it and the new-build control beside it. */
-  on($('bld-home'),'click',()=>{ _DEV.atHome=true; try{ _sessFlush('dev'); }catch(e){} renderBuildView(); });
+  /* LEAVE, NOT JUST SAVE. This called `_sessFlush`, which writes the work to
+     Recents and LEAVES IT BOUND as the active session, and it never cleared the
+     working state. So the next thing you built carried the last conversation
+     with it: "go back then go to build again and make another - it should not
+     be part of the same chat". It was, and it also wrote itself over the
+     session you had just left.
+
+     `_sessLeave` is the primitive that already meant this - flush, then unbind -
+     and the state is reset behind it so the next build starts empty. Nothing is
+     lost: the flush happens first, the session is listed, and opening it from
+     Recents restores it exactly. */
+  on($('bld-home'),'click',()=>{
+    try{ _sessLeave('dev'); }catch(e){}
+    try{ _resetToolState('dev'); }catch(e){}
+    _DEV.atHome=true;
+    renderBuildView();
+  });
   on($('dev-download-proj'),'click',()=>_devDownloadProject());
   on($('dev-deploy'),'click',()=>_devDeploy());
   on($('dev-github'),'click',()=>_devPushToGitHub());
@@ -31145,8 +31161,12 @@ function renderLabView(){
      lists your work, so the only exits were the sidebar or starting over.
      Same destination as Dev's, so "Builds" means one place from either. */
   on($('bld-home'),'click',()=>{
+    /* Same correction as Dev's: flush AND unbind, then clear the working
+       state. Saving alone left this session active, so the next code you
+       pasted joined it and overwrote it. */
+    try{ _sessLeave('lab'); }catch(e){}
+    try{ _resetToolState('lab'); }catch(e){}
     try{ _DEV.atHome = true; }catch(e){}
-    try{ _sessFlush('lab'); }catch(e){}
     try{ setBuildMode('code'); }catch(e){}
   });
   // ── Loading code into Lab: paste, upload, or drag & drop ──
