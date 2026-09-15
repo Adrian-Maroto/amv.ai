@@ -65,9 +65,31 @@ section('A boot with no backend address does not use up the only attempt');
   ok((await state()).key === '', 'nothing arrives with no address, which is correct');
 
   await stubConfig('ok');
+  /* WAITED FOR, NOT ASSERTED ON THE INSTANT THE FIRST CALL RETURNS.
+
+     This failed once in CI and passed on a re-run of the identical commit, so
+     it is a race and not a defect - and a suite that fails at random is one
+     somebody eventually deletes, which would cost the real claim underneath it.
+
+     The race is over WHICH caller does the fetch. If anything else asks for the
+     config in the same tick, that call takes _publicConfigInFlight and this one
+     returns immediately, having done nothing - so reading localStorage on the
+     line after it is reading before the winner has finished.
+
+     THE CLAIM IS UNCHANGED, which is the part that matters. It is still "with
+     an address, the config arrives": if the no-address attempt had used up the
+     only one - the defect this whole file exists for - it never arrives, and
+     waiting two seconds for it does not make it. Verified by breaking it that
+     way: _loadPublicConfig returning early always still fails this. */
   const got = await page.evaluate(async () => {
     AMV_API.base = 'https://amv-e2e.workers.dev';
     await window._loadPublicConfig();
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      const v = localStorage.getItem('amv_turnstile_site') || '';
+      if (v) return v;
+      await new Promise(r => setTimeout(r, 25));
+    }
     return localStorage.getItem('amv_turnstile_site') || '';
   });
   ok(got === CONFIG.turnstileSiteKey,
