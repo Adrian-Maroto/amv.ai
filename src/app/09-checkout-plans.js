@@ -660,6 +660,26 @@ async function handlePaymentSuccess(plan, opts){
 try{ window.handlePaymentSuccess=handlePaymentSuccess; }catch(e){}
 
 /* When the user returns from an external checkout with ?paid=<plan>&pm=<method>, activate it. */
+/* _savePM WAS DELETED AND FOUR CALLS TO IT WERE NOT.
+
+   It was removed on purpose - it invented `token:'tok_'+random` and stored it
+   as though it meant something - and the comment recording that removal says
+   "Nothing ever called _savePM". Four things did, all of them here, all on the
+   path somebody is on immediately after paying.
+
+   So the call threw a ReferenceError and took the rest of the line with it.
+   Measured, with the server confirming plan 'pro':
+
+     · the return from a hosted checkout: _setPlan never ran, the plan stayed
+       `free`, and instead of "Payment complete - welcome to Pro!" the screen
+       said "Something hiccuped, but your work is safe";
+     · the in-page card subscribe: the subscription SUCCEEDED, then the throw
+       skipped _setPlan, closePaySheet and the success toast, and the catch
+       below it told the customer "Could not complete subscription. Try again."
+       - which invites paying twice for the thing they have already bought.
+
+   The card itself lives at Stripe and the control for it is the billing portal
+   this product already opens; nothing is lost by the calls going. */
 function _checkPayReturn(){
   try{
     const q=new URLSearchParams(window.location.search);
@@ -711,7 +731,7 @@ function _checkPayReturn(){
              read by nothing; it is not a field that exists. */
           const ent=(d&&d.entitlement)||null;
           if(ent&&ent.plan&&PLANS[ent.plan]&&ent.plan!=='free'){
-            _savePM({type:pm,brand:pm,last4:'••'}); _setPlan(ent.plan);
+            _setPlan(ent.plan);
             toast('Payment complete - welcome to '+PLANS[ent.plan].name+'!','success',5000);
             try{ if(typeof _showBillingNotice==='function') _showBillingNotice(d.billing||null); }catch(_e){}
             if(S.tab==='billing') renderBillingView();
@@ -726,7 +746,6 @@ function _checkPayReturn(){
              call blocked granted the plan outright - the exact faked unlock the
              server check exists to stop. Nothing is granted; it is retried, and
              the screen says what is happening. */
-          _savePM({type:pm,brand:pm,last4:'••'});
           setTimeout(()=>_verifyEntitlement(), 4000);
           try{ toast('Confirming your payment… this can take a moment.','info',4500); }catch(e){}
           if(S.tab==='billing') renderBillingView();
@@ -735,7 +754,6 @@ function _checkPayReturn(){
       }
       // No backend: this is local/demo mode only. A redirect param can't be
       // trusted as a real payment, so unlock only as a local preview and say so.
-      _savePM({type:pm,brand:pm,last4:(q.get('l4')||'••').replace(/[^0-9•]/g,'').slice(0,4)||'••'});
       _setPlan(paid);
       setTimeout(()=>{ toast('Local preview: '+PLANS[paid].name+' enabled on this device. Real payments activate once your backend is connected.','info',5000); if(S.tab==='billing') renderBillingView(); },400);
     }
@@ -800,8 +818,6 @@ function _mountStripe(pk,plan){
             sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month';
             return;   // no plan, no payment method saved
           }
-          const c=paymentMethod.card||{};
-          _savePM({type:'card',brand:c.brand||'card',last4:c.last4||'',exp:(c.exp_month?String(c.exp_month).padStart(2,'0'):'')+'/'+(c.exp_year?String(c.exp_year).slice(-2):'')});
           _setPlan(plan); closePaySheet(); renderBillingView(); toast('You are now on '+PLANS[plan].name+'!','success');
         }catch(e){ const el=$('stripe-card-errors'); if(el) el.textContent='Could not complete subscription. Try again.'; sb.disabled=false; sb.textContent='Pay $'+PLANS[plan].price+' / month'; }
       });
