@@ -13537,3 +13537,109 @@ p.bill-leave-s{
 .dev-shell:not(.dev-blank) .bld-recents{
   display:none!important;
 }
+
+/* ======================================================================
+   LAYER A212 - billing, rebuilt rather than adjusted
+   ====================================================================== */
+
+/* Said three times that this page looks unprofessional. Twice I moved things
+   around; this rebuilds it, and the first attempt at the rebuild was wrong in a
+   way worth keeping written down.
+
+   That attempt gave every section the same CARD - background, border, radius -
+   so the page would stop being one panel followed by two bare stretches of
+   text. It contradicted a decision already made here, and a check that holds
+   it: five headed, bordered panels down one page is what made this screen read
+   as a settings FORM, so all but one had been deliberately unboxed. Boxing them
+   again would have walked straight back into that.
+
+   Both complaints are real and they point the same way. The inconsistency is
+   the problem, not which of the two styles wins, and the resolution premium
+   settings pages actually use is NEITHER: one flat column, sections separated
+   by a hairline, no panels at all. Nothing floats, nothing is a form, and the
+   page has one rhythm from top to bottom.
+
+   Three other things the render showed:
+
+   The column was 860px wide, so the plan name went hard left and the price hard
+   right with a hole between them. A settings page is a column and this caps it
+   at 720. `#vc .vi-bill` with !important because `#vc .vi` already sets 860 the
+   same way - matching the weight of the rule being corrected, not raising it.
+
+   The price was the largest thing on the screen, set to somebody who has
+   already paid it and came to change a card. It sits beside the plan name now
+   at a size that informs.
+
+   And the upgrades were two pills of different colours side by side. They are
+   rows you read down - name, price, and which one is the next step - which is
+   also the only shape that survives a phone. */
+
+#vc .vi-bill{
+  max-width:720px!important;
+}
+
+/* ONE COLUMN, HAIRLINES, NO PANELS. */
+#vc .vi-bill .ss2,
+#vc .vi-bill .bill-sum{
+  background:none!important;
+  border:none!important;
+  border-top:1px solid var(--bd)!important;
+  border-radius:0!important;
+  padding:var(--sp-6) 0 0!important;
+  margin:var(--sp-6) 0 0!important;
+  box-shadow:none!important;
+  backdrop-filter:none!important;
+  -webkit-backdrop-filter:none!important;
+}
+/* The first section opens the page, so it has nothing to be divided from. */
+#vc .vi-bill .bill-sum{
+  border-top:none!important;
+  padding-top:var(--sp-2)!important;
+  margin-top:var(--sp-4)!important;
+}
+#vc .vi-bill .ss2 > h3{
+  margin:0 0 var(--sp-4)!important;
+  font-size:var(--t-sm);
+  font-weight:600;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  color:var(--mu);
+}
+
+/* The plan and its price read as one line. */
+#vc .vi-bill .bill-sum-top{
+  display:flex;
+  align-items:baseline;
+  justify-content:flex-start;
+  gap:var(--sp-3);
+  flex-wrap:wrap;
+}
+#vc .vi-bill .bill-sum-n{ font-size:var(--t-2xl); letter-spacing:-.4px; }
+#vc .vi-bill .bill-sum-p{
+  font-family:var(--fn); font-size:var(--t-md); font-weight:500;
+  color:var(--mu); letter-spacing:0;
+}
+#vc .vi-bill .bill-sum-sub{ margin-top:var(--sp-2); font-size:var(--t-sm); color:var(--mu); }
+
+/* Label beside value, close enough to read as a pair. */
+#vc .vi-bill .bill-facts{
+  margin:var(--sp-5) 0 0; padding:0; border:none;
+  display:flex; flex-direction:column; gap:var(--sp-3);
+}
+#vc .vi-bill .bill-facts > div{
+  display:flex; gap:var(--sp-3); align-items:baseline; font-size:var(--t-sm);
+}
+#vc .vi-bill .bill-facts dt{ flex:0 0 132px; color:var(--mu); }
+#vc .vi-bill .bill-facts dd{ margin:0; color:var(--tx); }
+
+/* Upgrades as rows, not pills. */
+#vc .vi-bill .bill-swap{
+  display:flex; flex-direction:column; gap:var(--sp-2); align-items:stretch;
+}
+#vc .vi-bill .bill-swap .btn{
+  width:100%; justify-content:space-between; text-align:left;
+  padding:var(--sp-3) var(--sp-4); border-radius:var(--r-md); font-size:var(--t-md);
+}
+#vc .vi-bill .bill-swap .btn.bs{
+  background:var(--s2); border:1px solid var(--bd); color:var(--tx);
+}

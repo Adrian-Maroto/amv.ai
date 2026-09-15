@@ -64,9 +64,25 @@ const open = (tab) => page.evaluate(async (t) => {
 
 section('A screen that repaints several times still only arrives once');
 {
-  /* Crew is the worst of them and the one that was reported. */
+  /* CREW WENT THE SAME WAY HANDOFF DID, AND FOR THE SAME REASON.
+
+     This required `paints >= 3` as a precondition - Crew was the worst of them
+     and the one that was reported - so that "the entrance plays at most once"
+     was a claim about something real.
+
+     Crew does not repaint three times any more. It starts two loads on every
+     render and each used to redraw the ENTIRE view when it resolved; they
+     repaint the job catalogue in place now, which is the only part those loads
+     change. Measured on a 700ms backend: three full rebuilds on open became
+     one, first visit and every visit after.
+
+     So this is inverted, like Handoff above. Requiring three paints would be
+     requiring the defect back - the precondition quietly becoming the rule -
+     and the stronger claim is that there is nothing left to flicker. The
+     entrance is still counted, because one paint must still be one arrival. */
   const crew = await open('crew');
-  ok(crew.paints >= 3, 'Crew really does repaint while the server answers', JSON.stringify(crew));
+  ok(crew.paints <= 1, 'Crew no longer rebuilds itself while the server answers',
+     JSON.stringify(crew));
   ok(crew.enter <= 1, 'and the entrance plays at most once', JSON.stringify(crew));
 
   /* HANDOFF IS THE OTHER WAY AROUND NOW, AND THAT IS THE FIX.

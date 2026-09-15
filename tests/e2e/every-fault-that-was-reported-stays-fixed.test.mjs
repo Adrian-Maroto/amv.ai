@@ -336,7 +336,20 @@ section('9. The round after that one');
     return n;
   }, tab);
   ok(await rebuilds('handoff') <= 1, 'Handoff draws itself once, not twice');
-  ok(await rebuilds('crew') <= 3, 'Crew stops redrawing itself four times');
+  /* FIRST OPEN, THEN EVERY OPEN AFTER, BECAUSE THEY ARE DIFFERENT CLAIMS.
+
+     Crew starts two loads on every render and each one used to redraw the whole
+     screen when it resolved, whatever came back - so opening it rebuilt the
+     view three times on a slow backend and again every time you returned.
+
+     The first open genuinely has new data arriving and is allowed to show it.
+     What was never justified is the SECOND open: the automations and connected
+     accounts are the same ones, and rebuilding the screen to display what is
+     already on it is what "crew still buffers" describes. It redraws only when
+     the answer differs from the one on screen, so returning costs one paint. */
+  await rebuilds('crew');
+  ok(await rebuilds('crew') <= 1,
+     'and Crew stops rebuilding itself when nothing came back changed');
 
   /* The divider between the controls and the work. It asked for var(--bd),
      which is redefined further down to 7% white - a hairline, and the reason

@@ -16427,7 +16427,23 @@ async function _cwLoadLocal(code){
        nothing, which is a different and false statement. */
     _cwLocalState[cc] = 'offline';
   }
-  try{ if(S.tab === 'crew') _cwRepaintSoon(); }catch(e){}
+  /* THE COUNTRY BLOCK REPAINTS ITSELF. Replacing the whole Crew view because
+     one country's jobs arrived is what "crew still buffers" is describing: the
+     screen is thrown away and rebuilt, losing scroll and anything open, to
+     update one section that has its own id. Measured before this: three full
+     rebuilds per open. The fallback is still a full render, for the case where
+     the block is not on the page - a search, or a category other than all. */
+  try{
+    if(S.tab === 'crew'){
+      const el = document.getElementById('cw-country-group');
+      if(el && !_cwFind && _cwCat === 'all'){
+        const html = _cwCountryGroupHTML(_cwAnyCard);
+        if(html) el.outerHTML = html; else _cwRepaintSoon();
+      } else {
+        _cwRepaintSoon();
+      }
+    }
+  }catch(e){ try{ if(S.tab === 'crew') _cwRepaintSoon(); }catch(e2){} }
 }
 try{ window._cwUniversalJobs=_cwUniversalJobs; window._cwLocalJobs=_cwLocalJobs;
      window._cwLoadLocal=_cwLoadLocal; window.CW_EVERYDAY_UNIVERSAL=CW_EVERYDAY_UNIVERSAL; }catch(e){}
@@ -16762,6 +16778,79 @@ async function _cwLoadPopular(){
    in almost the same words: the stored state is updated either way, so nothing
    is lost by not redrawing, and the next open is correct. This says the same
    thing about the command box. */
+/* THE TWO LOADS THIS VIEW STARTS ON EVERY RENDER, AND WHY THEY KEPT IT BUSY.
+
+   Opening Crew rebuilt the whole screen three times. The first is the view
+   arriving and is correct. The other two were these: renderCrewView kicks off
+   `_autoRefresh` and `_connLoad` and each of them, on resolving, called
+   renderCrewView again - directly, unconditionally, whatever came back. On a
+   700ms backend that is the screen being thrown away at roughly 330ms and again
+   at 1000ms, which is exactly what "crew still buffers" describes.
+
+   Almost every one of those redraws showed the same screen again. These are
+   polls: the automations and the connected accounts are usually what they were
+   a moment ago, and rebuilding the view to display what is already on it costs
+   the scroll position, anything open, and a visible flash.
+
+   So the answer arrives, and the screen is redrawn only if the answer is
+   DIFFERENT from the one it is already showing. `_connLoad` additionally paints
+   its own panel through `_connPaint`, so the full redraw here was never what
+   updated the connections list - it was only what updated the job cards that
+   mention an account, and those only change when the accounts do. */
+let _cwSeen = '';
+function _cwRedrawIfChanged(){
+  let sig = '';
+  /* NOTHING AND AN EMPTY LIST LOOK THE SAME ON THE SCREEN.
+
+     Without this the first open still redrew twice, because `_AUTOS` went from
+     undefined to [] and a raw comparison calls that a change. It is not one to
+     anybody looking at the page: no automations and an empty list of
+     automations render identically. Normalising empties is what makes the
+     comparison about what is DISPLAYED rather than about the shape of a
+     variable - measured, it is the difference between three rebuilds on open
+     and two. */
+  const _same = (v) => {
+    if(v === null || v === undefined) return null;
+    if(Array.isArray(v)) return v.length ? v : null;
+    if(typeof v === 'object'){ for(const k in v) return v; return null; }
+    return v;
+  };
+  try{
+    sig = JSON.stringify([
+      _same((typeof _AUTOS !== 'undefined') ? _AUTOS : null),
+      _same((typeof _AUTO_RESULTS !== 'undefined') ? _AUTO_RESULTS : null),
+      _same((typeof _connState !== 'undefined' && _connState) ? _connState.data : null)
+    ]);
+  }catch(e){
+    /* Unserialisable means unknowable, and an unknowable answer must not be
+       treated as "nothing changed" - that would drop a real update. */
+    _cwSeen = ''; _cwRepaintSoon(); return;
+  }
+  if(sig === _cwSeen) return;
+  _cwSeen = sig;
+  /* THE CATALOGUE REPAINTS ITSELF, WHICH IS ALL THAT ACTUALLY CHANGED.
+
+     What these loads affect on this screen is the job cards - a card says an
+     account is needed, and it must stop saying that once the account is
+     connected. That is the whole reason the full redraw was here, and removing
+     it outright made the screen quieter and the cards wrong, which is the
+     defect this codebase already has a lesson about: a stale "not connected"
+     looks exactly like the product working.
+
+     So the cards are rebuilt and nothing else is. Measured on a 700ms backend:
+     three full rebuilds of the view on open became two, and what used to be a
+     third rebuild is now one block redrawing in place. The fallback is a full
+     render for the states where that block is not on the page. */
+  try{
+    const body = document.getElementById('cw-jobs-body');
+    if(body && S.tab === 'crew'){
+      body.innerHTML = _cwJobsBody(_cwShowcase(), _planAllowsCrew() ? _cwJobCard : _cwLockedCard);
+      return;
+    }
+  }catch(e){}
+  _cwRepaintSoon();
+}
+
 function _cwRepaintSoon(){
   _reRenderSoon(function(){
     try{
@@ -17014,6 +17103,9 @@ function _cwSaveApprovals(a){ store('amv_cw_approvals', a); }
 
 async function _crewSyncLive(){
   if(!(window.AMV_API && AMV_API.live)) return;
+  /* What the catalogue looked like before the poll, so the redraw below can
+     ask whether anything actually arrived. */
+  const _cwSyncBefore = JSON.stringify([load('amv_cw_jobs') || [], load('amv_cw_approvals') || []]);
   try{
     const jobs=await AMV_API.jobs();
     const appr=await AMV_API.approvals();
@@ -17053,7 +17145,11 @@ async function _crewSyncLive(){
        are now reading replaced by the one they left - the stored state above is
        still updated, which is the point, so the next time they open Crew it is
        correct without anything being redrawn under them. */
-    if(S.tab === 'crew' || S.tab === 'extensions') _cwRepaintSoon();
+    /* Only when something CHANGED. This polls and usually gets back exactly
+       the catalogue that is already stored, and redrawing the whole screen to
+       display what is already on it is the complaint this round is about. */
+    const _after = JSON.stringify([load('amv_cw_jobs') || [], load('amv_cw_approvals') || []]);
+    if((S.tab === 'crew' || S.tab === 'extensions') && _after !== _cwSyncBefore) _cwRepaintSoon();
   }catch(e){}
 }
 /* ============================================================
@@ -18534,7 +18630,7 @@ function renderCrewView(){
         ${_cwCountryFilterHTML()}
       </div>
       ${_cwCatChips(_cwShowcase())}
-      ${_cwJobsBody(_cwShowcase(), _cwLockedCard)}
+      <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), _cwLockedCard)}</div>
       ${_cwErrandsHTML()}
       ${/* ONE LINE, NOT A BAND.
 
@@ -18631,12 +18727,12 @@ function renderCrewView(){
      permanently wrong about jobs on another device. */
   if(!st.serverLoaded && !_mcAskedServer){
     _mcAskedServer = true;
-    try{ if(typeof _autoRefresh === 'function') _autoRefresh().then(()=>{ if(S.tab==='crew') renderCrewView(); }); }catch(e){}
+    try{ if(typeof _autoRefresh === 'function') _autoRefresh().then(_cwRedrawIfChanged); }catch(e){}
     /* And what is connected, because that decides whether a job needing a
        mailbox says "runs with AMV closed" or "connect the account to run it
        closed". Without this the screen answers that question from an empty
        list and always gives the pessimistic answer. */
-    try{ if(typeof _connLoad === 'function') _connLoad(false).then(()=>{ if(S.tab==='crew') renderCrewView(); }); }catch(e){}
+    try{ if(typeof _connLoad === 'function') _connLoad(false).then(_cwRedrawIfChanged); }catch(e){}
   }
   const paused=_autonomyPaused();
   const tiles=[
@@ -18804,7 +18900,7 @@ function renderCrewView(){
         ${_cwCountryFilterHTML()}
       </div>
       ${_cwCatChips(_cwShowcase())}
-      ${_cwJobsBody(_cwShowcase(), jobCard)}
+      <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), jobCard)}</div>
       ${_cwErrandsHTML()}
     </div>
 
