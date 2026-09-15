@@ -9214,21 +9214,29 @@ function showProfMenu(trigger) {
       '</div>'+
       '<span class="badge bb prof-plan">'+plan+' Plan</span>'+
     '</div>'+
+    /* THE ORDER IS THE ONE THAT WAS ASKED FOR, AND IT IS ALSO THE RIGHT ONE.
+
+       It used to run upgrade, help, settings, subscription, apps - which puts
+       Help between the two money items and separates "Upgrade Plan" from
+       "Manage Subscription", the two things that are the same subject. The
+       money sits together at the top now, then the two places you configure
+       things, then Help, which is what you reach for when the rest did not
+       answer you. */
     '<button class="prof-item upgrade" id="pm-upgrade">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>'+
       'Upgrade Plan</button>'+
-    '<button class="prof-item" id="pm-learn">'+
-      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
-      'Help &amp; Learn More</button>'+
-    '<button class="prof-item" id="pm-settings">'+
-      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'+
-      'Settings</button>'+
     '<button class="prof-item" id="pm-billing">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>'+
       'Manage Subscription</button>'+
+    '<button class="prof-item" id="pm-settings">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'+
+      'Settings</button>'+
     '<button class="prof-item" id="pm-apps">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="9" height="9" rx="1"/><rect x="13" y="2" width="9" height="9" rx="1"/><rect x="2" y="13" width="9" height="9" rx="1"/><rect x="13" y="13" width="9" height="9" rx="1"/></svg>'+
       'Apps &amp; Extensions</button>'+
+    '<button class="prof-item" id="pm-learn">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
+      'Help &amp; Learn More</button>'+
     '<div class="prof-divider"></div>'+
     /* Two clearly different exits, plus the shared-computer case in between:
        - Sign out: reversible, your work is waiting when you return.
@@ -13551,7 +13559,12 @@ function renderBillingView(targetEl){
         '</div>'+
         '<p class="bill-acts-s">Change your card, download receipts, or cancel. '+
           'Cancelling keeps your plan until the end of the period you have paid for.</p>':
-        '<p class="bill-acts-s bill-free-s">You are not paying for anything. Nothing is on file and nothing renews.</p>')+
+        /* SAID ONCE. The status line under the plan name already says exactly
+           this sentence for a free account, and printing it again as a
+           paragraph two lines below is the same fault this page was rebuilt
+           for - the same fact, twice, taking two blocks of space. What a free
+           account needs here is the way UP, which is the next section. */
+        '')+
       '</div>'+
       /* WHERE USAGE AND SPENDING GO.
 
@@ -13621,10 +13634,48 @@ function renderBillingView(targetEl){
                  the fill and leaves the words. */
               ? '<span class="bill-swap-tag">'+(plan==='free'?'Start here':'Next step up')+'</span>'
               : '';
-            return '<button class="btn '+(lead?'bp bill-swap-lead':'bs')+'" data-pay="'+escH(k)+'">'
-              + 'Upgrade to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo'+badge+'</button>';
+            /* A ROW THAT SAYS WHAT YOU GET, NOT JUST WHAT IT COSTS.
+
+               "Upgrade to Elite · $75/mo" is a price with no reason attached,
+               and asking somebody to find the reason on another page is why
+               this screen was described as sloppy. The plan already carries a
+               sentence written for exactly this, and the two figures under it
+               are the ones the SERVER enforces - the allowance multiplier and
+               the scheduled-job cap from AUTO_MAX_BY_PLAN.
+
+               Nothing here is invented, and that is deliberate: this page sold
+               "unlimited scheduled automations" once while the server capped
+               Elite at 25, and somebody found out at their twenty-sixth job. A
+               number that is true is more persuasive than a word that is not,
+               and it is the only kind AMV is allowed to print. */
+            const P2 = PLANS[k];
+            const jobs = (typeof AUTO_MAX_BY_PLAN !== 'undefined') ? AUTO_MAX_BY_PLAN[k] : null;
+            const facts = [
+              P2.mult ? escH(P2.mult) + ' the free allowance' : '',
+              (jobs ? jobs + ' scheduled jobs' : '')
+            ].filter(Boolean).join(' \u00b7 ');
+            /* "Upgrade to Elite", not "Elite". A row naming a plan is a label;
+               a row saying what pressing it does is a control, and a suite
+               holds that wording. `bp` stays on the one that leads - it is what
+               makes it the filled primary, which is both the recommendation
+               and the only version of this row whose text clears 4.5:1. */
+            return '<button class="bill-plan-row'+(lead?' lead bill-swap-lead btn bp':'')+'" data-pay="'+escH(k)+'">'
+              + '<span class="bill-plan-main">'
+                + '<span class="bill-plan-h"><b>Upgrade to '+escH(P2.name)+'</b>'+badge+'</span>'
+                + '<span class="bill-plan-d">'+escH(P2.blurb||'')+'</span>'
+                + (facts ? '<span class="bill-plan-f">'+facts+'</span>' : '')
+              + '</span>'
+              + '<span class="bill-plan-price"><b>$'+P2.price+'</b><small>/mo</small></span>'
+            + '</button>';
           }).join('')+
-          downTargets.filter(k=>k!=='free').map(k=>'<button class="btn bs" data-pay="'+escH(k)+'">Switch to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo</button>').join('')+
+          downTargets.filter(k=>k!=='free').map(k=>
+            '<button class="bill-plan-row" data-pay="'+escH(k)+'">'
+            + '<span class="bill-plan-main">'
+              + '<span class="bill-plan-h"><b>Switch to '+escH(PLANS[k].name)+'</b></span>'
+              + '<span class="bill-plan-d">'+escH(PLANS[k].blurb||'')+'</span>'
+            + '</span>'
+            + '<span class="bill-plan-price"><b>$'+PLANS[k].price+'</b><small>/mo</small></span>'
+          + '</button>').join('')+
         '</div>'+
         '<p class="bill-acts-s">Changes take effect immediately and are prorated. '+
           'Working with other people? <a data-stab="team" style="color:var(--accent-txt);cursor:pointer">Teams is priced per person</a>.</p>'+

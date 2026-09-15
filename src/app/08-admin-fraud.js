@@ -1176,7 +1176,12 @@ function renderBillingView(targetEl){
         '</div>'+
         '<p class="bill-acts-s">Change your card, download receipts, or cancel. '+
           'Cancelling keeps your plan until the end of the period you have paid for.</p>':
-        '<p class="bill-acts-s bill-free-s">You are not paying for anything. Nothing is on file and nothing renews.</p>')+
+        /* SAID ONCE. The status line under the plan name already says exactly
+           this sentence for a free account, and printing it again as a
+           paragraph two lines below is the same fault this page was rebuilt
+           for - the same fact, twice, taking two blocks of space. What a free
+           account needs here is the way UP, which is the next section. */
+        '')+
       '</div>'+
       /* WHERE USAGE AND SPENDING GO.
 
@@ -1246,10 +1251,48 @@ function renderBillingView(targetEl){
                  the fill and leaves the words. */
               ? '<span class="bill-swap-tag">'+(plan==='free'?'Start here':'Next step up')+'</span>'
               : '';
-            return '<button class="btn '+(lead?'bp bill-swap-lead':'bs')+'" data-pay="'+escH(k)+'">'
-              + 'Upgrade to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo'+badge+'</button>';
+            /* A ROW THAT SAYS WHAT YOU GET, NOT JUST WHAT IT COSTS.
+
+               "Upgrade to Elite · $75/mo" is a price with no reason attached,
+               and asking somebody to find the reason on another page is why
+               this screen was described as sloppy. The plan already carries a
+               sentence written for exactly this, and the two figures under it
+               are the ones the SERVER enforces - the allowance multiplier and
+               the scheduled-job cap from AUTO_MAX_BY_PLAN.
+
+               Nothing here is invented, and that is deliberate: this page sold
+               "unlimited scheduled automations" once while the server capped
+               Elite at 25, and somebody found out at their twenty-sixth job. A
+               number that is true is more persuasive than a word that is not,
+               and it is the only kind AMV is allowed to print. */
+            const P2 = PLANS[k];
+            const jobs = (typeof AUTO_MAX_BY_PLAN !== 'undefined') ? AUTO_MAX_BY_PLAN[k] : null;
+            const facts = [
+              P2.mult ? escH(P2.mult) + ' the free allowance' : '',
+              (jobs ? jobs + ' scheduled jobs' : '')
+            ].filter(Boolean).join(' \u00b7 ');
+            /* "Upgrade to Elite", not "Elite". A row naming a plan is a label;
+               a row saying what pressing it does is a control, and a suite
+               holds that wording. `bp` stays on the one that leads - it is what
+               makes it the filled primary, which is both the recommendation
+               and the only version of this row whose text clears 4.5:1. */
+            return '<button class="bill-plan-row'+(lead?' lead bill-swap-lead btn bp':'')+'" data-pay="'+escH(k)+'">'
+              + '<span class="bill-plan-main">'
+                + '<span class="bill-plan-h"><b>Upgrade to '+escH(P2.name)+'</b>'+badge+'</span>'
+                + '<span class="bill-plan-d">'+escH(P2.blurb||'')+'</span>'
+                + (facts ? '<span class="bill-plan-f">'+facts+'</span>' : '')
+              + '</span>'
+              + '<span class="bill-plan-price"><b>$'+P2.price+'</b><small>/mo</small></span>'
+            + '</button>';
           }).join('')+
-          downTargets.filter(k=>k!=='free').map(k=>'<button class="btn bs" data-pay="'+escH(k)+'">Switch to '+escH(PLANS[k].name)+' \u00b7 $'+PLANS[k].price+'/mo</button>').join('')+
+          downTargets.filter(k=>k!=='free').map(k=>
+            '<button class="bill-plan-row" data-pay="'+escH(k)+'">'
+            + '<span class="bill-plan-main">'
+              + '<span class="bill-plan-h"><b>Switch to '+escH(PLANS[k].name)+'</b></span>'
+              + '<span class="bill-plan-d">'+escH(PLANS[k].blurb||'')+'</span>'
+            + '</span>'
+            + '<span class="bill-plan-price"><b>$'+PLANS[k].price+'</b><small>/mo</small></span>'
+          + '</button>').join('')+
         '</div>'+
         '<p class="bill-acts-s">Changes take effect immediately and are prorated. '+
           'Working with other people? <a data-stab="team" style="color:var(--accent-txt);cursor:pointer">Teams is priced per person</a>.</p>'+

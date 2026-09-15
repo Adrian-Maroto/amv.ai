@@ -13667,3 +13667,56 @@ p.bill-leave-s{
 .dev-shell.dev-blank .bld-home{
   display:none!important;
 }
+
+/* ======================================================================
+   LAYER A214 - the upgrade rows say what you get
+   ====================================================================== */
+
+/* "make it so compelling people can't resist" - and the previous version gave
+   somebody a price and nothing to weigh it against: "Upgrade to Elite ·
+   $75/mo", twice, in two colours. The reason to want it was on another page.
+
+   Each plan is a row now: its name, the sentence that plan already carries, the
+   two figures the SERVER actually enforces, and the price on the right where a
+   price belongs. The one that leads is filled; the rest are quiet but complete,
+   because a plan you cannot read is not an option you were offered.
+
+   Restrained on purpose. This is somebody's billing screen, not a pricing page:
+   nothing pulses, nothing is outlined in accent, and there is no "Most popular"
+   - AMV has no customers to count yet, and the row that leads says only where
+   it sits on the ladder. */
+.bill-plan-row{
+  display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
+  width:100%; text-align:left; cursor:pointer;
+  padding:var(--sp-4); border:1px solid var(--bd); border-radius:var(--r-lg);
+  background:var(--s1); color:var(--tx); font-family:var(--fn);
+  transition:border-color .15s var(--ease), background .15s var(--ease), transform .12s var(--ease);
+}
+.bill-plan-row:hover{ background:var(--s2); border-color:var(--bdl); }
+.bill-plan-row:active{ transform:translateY(1px); }
+.bill-plan-row:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+/* The lead keeps `bp`, the filled primary, rather than a tinted panel of its
+   own. The tint measured 3.03:1 for its own text - below the 4.5 this product
+   holds itself to - and a recommendation nobody can read is not one. Filled, it
+   is the same contrast the rest of the product's primary buttons have, and the
+   descriptions under it are set on that fill rather than inheriting a muted
+   grey that was chosen for a dark surface. */
+.bill-plan-row.lead .bill-plan-d{ color:rgba(255,255,255,.90); }
+.bill-plan-row.lead .bill-plan-f{ color:rgba(255,255,255,.78); }
+.bill-plan-row.lead .bill-plan-price small{ color:rgba(255,255,255,.82); }
+
+.bill-plan-main{ display:flex; flex-direction:column; gap:3px; min-width:0; }
+.bill-plan-h{ display:flex; align-items:baseline; gap:var(--sp-2); font-size:var(--t-md); }
+.bill-plan-h b{ font-weight:640; }
+.bill-plan-d{ font-size:var(--t-sm); color:var(--mu); line-height:1.5; }
+.bill-plan-f{ font-size:var(--t-xs); color:var(--dim); letter-spacing:.01em; }
+
+.bill-plan-price{ display:flex; align-items:baseline; gap:2px; white-space:nowrap; }
+.bill-plan-price b{ font-size:var(--t-lg); font-weight:640; letter-spacing:-.3px; }
+.bill-plan-price small{ font-size:var(--t-xs); color:var(--mu); }
+
+/* On a phone the price drops under the description rather than squeezing it. */
+@media(max-width:520px){
+  .bill-plan-row{ flex-direction:column; align-items:flex-start; gap:var(--sp-3); }
+  .bill-plan-price{ align-self:flex-start; }
+}
