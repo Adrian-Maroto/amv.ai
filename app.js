@@ -14658,8 +14658,67 @@ function _openPlanLink(which){
 }
 try{ window._openPlanLink=_openPlanLink; }catch(e){}
 
+/* THE ACCOUNT IS ASKED FOR BEFORE THE PAYMENT SHEET, NOT AFTER IT.
+
+   A signed-out visitor could walk the whole way: pick a plan, read its page,
+   press Proceed to payment, get the sheet, press Pay by card - and be told
+   "Session expired - sign in again". They never had a session. The server is
+   right to refuse (stripeCheckout and paypalSubscribe both requireUser, so no
+   money moved and nothing was granted to nobody), but the refusal arrives as a
+   401, and 01-core reads a 401 on any non-/auth call as an expired session.
+
+   So the last screen before paying blamed the visitor for a session they never
+   had. That is the worst place in the product to lose somebody, and it looked
+   like a bug in AMV rather than a step they had missed.
+
+   Asked only when the server is the one that would take the payment. A hosted
+   payment link collects the email at the processor and needs no account here,
+   and with no backend at all the sheet's own panels already say plainly that
+   nothing can be charged - putting a sign-up wall in front of either would be
+   demanding an account for something that does not need one. */
+let _pendingUpgrade='';
+function _rememberUpgrade(plan){
+  _pendingUpgrade=plan||'';
+  /* sessionStorage as well as the variable, so a sign-in that leaves the page
+     and comes back - the Google round trip - still knows what they were
+     buying. It is this tab only and it is cleared the moment it is used. */
+  try{ sessionStorage.setItem('amv_pending_upgrade', _pendingUpgrade); }catch(e){}
+}
+function _takePendingUpgrade(){
+  let p=_pendingUpgrade;
+  if(!p){ try{ p=sessionStorage.getItem('amv_pending_upgrade')||''; }catch(e){} }
+  _pendingUpgrade='';
+  try{ sessionStorage.removeItem('amv_pending_upgrade'); }catch(e){}
+  return p;
+}
+/* Called from _completeIntroLogin, beside _sendPendingMessage, which is the
+   same idea for a message typed before signing up. */
+function _resumePendingUpgrade(){
+  const plan=_takePendingUpgrade();
+  if(!plan || !PLANS[plan]) return false;
+  try{ if(typeof openUpgrade==='function'){ openUpgrade(plan); return true; } }catch(e){}
+  return false;
+}
+function _needsAccountToPay(plan){
+  if(plan==='free' || plan==='team' || plan==='custom') return false;
+  const signedIn=!!(typeof S!=='undefined' && S.user && S.user.email);
+  if(signedIn) return false;
+  /* Only when the SERVER is the one that would be asked. */
+  let live=false; try{ live=!!(window.AMV_API && AMV_API.live); }catch(e){}
+  return live;
+}
+try{ window._resumePendingUpgrade=_resumePendingUpgrade;
+     window._needsAccountToPay=_needsAccountToPay;
+     window._takePendingUpgrade=_takePendingUpgrade; }catch(e){}
+
 function openCheckout(plan, customPrice){
   try{ track('upgrade_checkout_started', { plan }); }catch(e){}
+  if(_needsAccountToPay(plan)){
+    _rememberUpgrade(plan);
+    try{ openAuth('signup'); }catch(e){}
+    try{ toast('Create a free account first - your plan needs somewhere to live. It takes a moment and you will come straight back here.','info',6000); }catch(e){}
+    return;
+  }
   if(plan==='free'){ _setPlan('free'); renderBillingView(); toast('Switched to Free','info'); return; }
   if(plan==='custom'){
     const cfg=load('amv_custom_cfg')||{}; const price=customPrice||cfg.price||30;
@@ -27474,6 +27533,10 @@ function _completeIntroLogin(acct){
   try{ saveStr('amv_onboarded','1'); }catch(e){}
   // if they typed a message before signing up, send it now
   try{ _sendPendingMessage(); }catch(e){}
+  /* And if they were part-way through buying a plan when they were asked for
+     an account, put them back on it rather than landing them in chat with no
+     sign that the thing they came for is still waiting. */
+  try{ if(typeof _resumePendingUpgrade==='function') _resumePendingUpgrade(); }catch(e){}
 }
 
 /* -- Keyboard shortcuts --

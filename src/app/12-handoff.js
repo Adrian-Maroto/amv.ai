@@ -3478,6 +3478,10 @@ function _completeIntroLogin(acct){
   try{ saveStr('amv_onboarded','1'); }catch(e){}
   // if they typed a message before signing up, send it now
   try{ _sendPendingMessage(); }catch(e){}
+  /* And if they were part-way through buying a plan when they were asked for
+     an account, put them back on it rather than landing them in chat with no
+     sign that the thing they came for is still waiting. */
+  try{ if(typeof _resumePendingUpgrade==='function') _resumePendingUpgrade(); }catch(e){}
 }
 
 /* -- Keyboard shortcuts --
