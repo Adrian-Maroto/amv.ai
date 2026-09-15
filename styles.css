@@ -13898,3 +13898,172 @@ p.bill-leave-s{
 .admu-note{
   font-size:var(--t-xs); color:var(--mu); line-height:1.5; margin:0;
 }
+
+/* ── LAYER A217 · the touch floor follows the FINGER, not the width ──────────
+   A187 said "the touch floor is 44 everywhere, not only where it was seen",
+   and it was right about the principle and one dimension short of it. The
+   rules that actually deliver 44 sit in `@media(max-width:560px)`, so the
+   signal they key on is how NARROW the screen is. A tablet is a touch device
+   that is not narrow, and none of them applied to it.
+
+   Measured, with touch emulated: 0 controls under 44px at 390x844, and 328 at
+   768x1024 - #snd, #tsb, #theme-btn, every plan button, every marketplace tab,
+   every control in Settings. An iPad is the ordinary way people use a product
+   like this on a sofa, and every target on it was under the size this product
+   holds itself to everywhere else.
+
+   `hover:none` is the question that was meant all along: does this person have
+   a fingertip or a cursor. The selectors are the ones the ≤560 block already
+   uses, repeated here rather than widened, so this changes WHEN they apply and
+   not WHAT they do.
+
+   Font sizing is deliberately not carried over. The ≤560 block also lifts
+   inputs to 16px to stop iOS zooming on focus, which is real on a tablet too -
+   but it is a type change, it moves layout, and it is not what is broken here.
+   Hit size is. */
+@media(hover:none){
+  .btn,.plnbtn,.gbtn,.pbp,.pbs,.pm-method,.pay-tab,.fb-type,
+  .accent-sw,.dna-btn,.es-btn,.mk-filter,.mkt-tab{ min-height:44px!important; }
+  .btn,.plnbtn{ padding-top:11px!important; padding-bottom:11px!important; }
+  /* Square icon buttons: 44, not the 40 the phone block settled for before
+     LESSONS 400 raised the target. */
+  .ib,.atb,.mact,.oc,.set-close{ min-width:44px!important; min-height:44px!important; }
+  #sb .snb{ min-height:44px!important; }
+
+  /* THE FLOOR, NOT A ROSTER.
+
+     The list above is the ≤560 block's list, and repeating it inherited its
+     gaps: it took 328 undersized controls to 166. The remainder were a long
+     tail of families nobody had thought to name - .sb-tool sixty times,
+     #hist-search, .hidots, .cw-chip, the chat send button.
+
+     That is the exact failure this product's tap-target suite was written to
+     end: "a list does not know about the next one". So the floor is applied to
+     the SAME selector family the suite measures, which means the rule and the
+     check cannot disagree about what a control is.
+
+     HEIGHT ONLY, on purpose. A height floor makes rows taller and cannot push
+     anything past the right edge; a blanket min-width would. The handful that
+     are too NARROW are square icon buttons, and they are named below because
+     they genuinely are a closed set. */
+  #app button, #app a[href], #app [role="button"], #app summary,
+  #app input:not([type="hidden"]), #app select, #app textarea{ min-height:44px; }
+  /* Square by nature: an icon with no label has nothing to make it wider. */
+  .hidots,#star-filter,#snd,.sb-tool,.mc-mini,.dna-x,.cwp-x{ min-width:44px!important; }
+  /* A two-character chip - "All", "New" - is 39px wide on its own text. */
+  .mk-filter,.hc-chip,.cw-chip,.mkt-tab{ min-width:44px!important; }
+}
+
+/* ── LAYER A218 · the Apps grid could not shrink, so it went off the screen ──
+   `.appx-grid` is `repeat(3,1fr)` with one breakpoint, at 680px, that drops it
+   to a single column. `1fr` is `minmax(auto,1fr)`, and that `auto` floor is the
+   card's min-content width - about 252px - so the tracks cannot shrink below
+   it. Between 680 and roughly 1030 the grid is three 252px columns inside a
+   container narrower than their sum, and the third one leaves the screen.
+
+   Measured at 768x1024 with touch: the "Connect Slack" button rendered from
+   813 to 1031 in a 768-wide window, and elementFromPoint at its centre did not
+   return the button. It was not merely ugly - it could not be pressed. The
+   page does not scroll sideways either, because the overflow is inside the
+   view's own scroller, so nothing about the screen suggested there was more to
+   the right.
+
+   The same floor bites at the bottom end: at 320 the single column still
+   measured 252px inside a 206px container.
+
+   Two changes, both about letting the grid do what a grid does. `minmax(0,1fr)`
+   removes the min-content floor so a track may actually shrink, and a
+   two-column step covers the tablet range that had nothing between three and
+   one. `min-width:0` on the card is the same fix one level down - a grid item's
+   default `min-width:auto` is what hands the track its floor. */
+.appx-grid,.appx-grid.two{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+.appx-card{ min-width:0; }
+@media(max-width:1040px){
+  .appx-grid,.appx-grid.two{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:680px){
+  .appx-grid,.appx-grid.two{ grid-template-columns:minmax(0,1fr); }
+}
+
+/* ── LAYER A219 · a badge that cannot wrap, in a row that cannot wrap ────────
+   Six pixels of sideways scroll on the Apps page at 320, and it predates the
+   grid fix above - measured with A218 removed and the number was identical.
+
+   `.ax-badge` is `white-space:nowrap`, which is right for "Manual" and wrong
+   for "Autonomous · runs in the background", and it sits in `.appx-card`, a
+   flex row that does not wrap. On the narrowest phone the card is 206px and
+   the badge alone wants 172, so the row spills.
+
+   Narrow screens only. On a wide one the nowrap badge is exactly what is
+   wanted - a pill that stays a pill - and this is not a reason to change it
+   everywhere. */
+@media(max-width:680px){
+  .appx-card{ flex-wrap:wrap; }
+  /* ANY ax-badge, not just the one in a card. The first version of this scoped
+     the rule to .appx-card and the pixel did not move: the badge that actually
+     overflows is the one in the connector LEGEND, which explains what
+     "Autonomous" means and is the longest of them all. Scoping a fix to where
+     the bug was first noticed is how it survives being fixed. */
+  .ax-badge{ white-space:normal; max-width:100%; }
+  .ax-legend-item{ flex-wrap:wrap; }
+}
+
+/* ── LAYER A220 · the same auto floor, one list over ─────────────────────────
+   `.int-card` overflowed the connector list by 8px at 320. Same cause as the
+   Apps grid two layers up and worth naming as a pattern rather than a third
+   coincidence: a grid or flex ITEM defaults to `min-width:auto`, which is its
+   min-content width, so a track sized `1fr` cannot shrink past whatever the
+   longest unbreakable thing inside it happens to be.
+
+   Every one of these found so far has been on the narrowest phone, where there
+   is no room to absorb it, and none of them scrolled the PAGE sideways - the
+   overflow is inside the view's own scroller, so nothing on screen says there
+   is more to the right. That is why they survive: they are invisible unless
+   something measures them. */
+.int-card{ min-width:0; }
+/* NOT a grid-template change. The first attempt rewrote .int-list here, at the
+   end of the file, where it beat the @media(max-width:560px) rule that already
+   collapses this list to one column - and made 320 worse, not better. The item
+   floor is the whole fix; the track sizing was already right. */
+
+/* ── LAYER A221 · three narrow-screen overflows, one of them mine ────────────
+   Measured at 320 with the view's own scroller, which is where these hide: the
+   PAGE never scrolls sideways, so nothing on screen suggests there is more to
+   the right. Baseline before this run was apps 6, integrations 8, crew 14 and
+   billing 43; apps is fixed two layers up, and these are the rest.
+
+   BILLING, 43px, and it is mine. The .bill-plan-row upgrade rows added earlier
+   in this session inherit `white-space:nowrap` from an ancestor, so the plan
+   name, its blurb and its footnote could not wrap - on the screen whose whole
+   job is to make an upgrade legible. The price keeps its own nowrap, which is
+   what that rule was for; the prose does not.
+
+   CREW and CONNECTORS are the min-width:auto floor again - a flex or grid item
+   will not shrink below its min-content unless told it may. `.int-card` got
+   that floor lifted a layer up and still overflowed, because the floor was
+   under its CONTENTS too. */
+.bill-plan-main,.bill-plan-h,.bill-plan-d,.bill-plan-f{ white-space:normal; }
+.cw-job{ min-width:0; }
+.int-card > *{ min-width:0; }
+
+/* ── LAYER A222 · a grid track with a fixed floor is a grid that cannot fit ──
+   The last two overflows at 320, and neither was the card: both cards were
+   already told they may shrink. Their TRACK was not.
+
+   `repeat(auto-fill,minmax(320px,1fr))` says "no column narrower than 320" on
+   a screen that is 320 wide before padding, so the column wins and the content
+   leaves the viewport. `.vi-conn .int-list` is the clearest case - it restates
+   a 300px floor further down the file than the `@media(max-width:560px)` rule
+   that collapses the same list to one column, so the floor was the one that
+   applied.
+
+   `min(Npx,100%)` is the fix and it costs nothing anywhere else: on any screen
+   wide enough, `min()` returns N and the track behaves exactly as before; only
+   when the container is narrower than N does it yield, which is precisely when
+   the old value was impossible to honour. */
+.int-list{ grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr)); }
+.cw-jobs-grid{ grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr)); }
+.cdir-grid{ grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr)); }
+.vi-conn .int-list{ grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr)); }
+.wg{ grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))!important; }
+@media(max-width:560px){ .int-list{ grid-template-columns:1fr; } }

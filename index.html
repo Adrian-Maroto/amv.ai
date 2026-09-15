@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="94e2db434e6951f8">
+<meta name="amv-build" content="2c6c154aa2aae04a">
 <!-- ============================================================
      THE BACKEND THIS COPY OF THE APP TALKS TO.
 
@@ -8990,6 +8990,40 @@ font-size:var(--t-sm);
 .admu-note{
 font-size:var(--t-xs); color:var(--mu); line-height:1.5; margin:0;
 }
+@media(hover:none){
+.btn,.plnbtn,.gbtn,.pbp,.pbs,.pm-method,.pay-tab,.fb-type,
+.accent-sw,.dna-btn,.es-btn,.mk-filter,.mkt-tab{ min-height:44px!important; }
+.btn,.plnbtn{ padding-top:11px!important; padding-bottom:11px!important; }
+.ib,.atb,.mact,.oc,.set-close{ min-width:44px!important; min-height:44px!important; }
+#sb .snb{ min-height:44px!important; }
+#app button, #app a[href], #app [role="button"], #app summary,
+#app input:not([type="hidden"]), #app select, #app textarea{ min-height:44px; }
+.hidots,#star-filter,#snd,.sb-tool,.mc-mini,.dna-x,.cwp-x{ min-width:44px!important; }
+.mk-filter,.hc-chip,.cw-chip,.mkt-tab{ min-width:44px!important; }
+}
+.appx-grid,.appx-grid.two{ grid-template-columns:repeat(3,minmax(0,1fr)); }
+.appx-card{ min-width:0; }
+@media(max-width:1040px){
+.appx-grid,.appx-grid.two{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:680px){
+.appx-grid,.appx-grid.two{ grid-template-columns:minmax(0,1fr); }
+}
+@media(max-width:680px){
+.appx-card{ flex-wrap:wrap; }
+.ax-badge{ white-space:normal; max-width:100%; }
+.ax-legend-item{ flex-wrap:wrap; }
+}
+.int-card{ min-width:0; }
+.bill-plan-main,.bill-plan-h,.bill-plan-d,.bill-plan-f{ white-space:normal; }
+.cw-job{ min-width:0; }
+.int-card > *{ min-width:0; }
+.int-list{ grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr)); }
+.cw-jobs-grid{ grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr)); }
+.cdir-grid{ grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr)); }
+.vi-conn .int-list{ grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr)); }
+.wg{ grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))!important; }
+@media(max-width:560px){ .int-list{ grid-template-columns:1fr; } }
 </style>
 <!-- BUILD:CSS:END -->
 <script>
