@@ -172,16 +172,64 @@ section('And you can always get back out, and into another one');
   /* THE ASSERTION THE WHOLE THING IS FOR. Without a way home, a build is a
      one-way door: the only control that left it started a new project. */
   const back = await page.evaluate(async () => {
+    /* A CHANGE THE DEBOUNCE HAS NOT WRITTEN YET, WHICH IS THE ONLY THING THE
+       FLUSH CAN BE MEASURED BY.
+
+       The first version of this just clicked back and checked the build came
+       back - and it passed with the flush DELETED, because `_sessTouch` had
+       already saved the session seconds earlier. The assertion was reading the
+       autosave and calling it the flush.
+
+       Saving on the way out exists for exactly the work that autosave has not
+       reached: the file written a moment ago, inside the debounce window. So
+       one is made here and the back button is pressed immediately, with no
+       wait. If leaving does not flush, this file is the thing that is lost. */
+    _DEV.project['LAST_MINUTE.txt'] = 'written just before leaving';
     document.getElementById('bld-home').click();
-    await new Promise(r => setTimeout(r, 300));
-    return { heroShown: !!document.querySelector('.dev-shell.dev-blank'),
-             rows: document.querySelectorAll('.bld-recent').length,
-             stillHeld: Object.keys(_DEV.project || {}).length };
+    await new Promise(r => setTimeout(r, 500));
+    const listed = document.querySelectorAll('.bld-recent').length;
+    const home = !!document.querySelector('.dev-shell.dev-blank');
+    /* RECOVERABLE, NOT LEFT LYING IN A GLOBAL.
+
+       This used to read `_DEV.project` after leaving and require the files to
+       still be sitting in it. That was true of a way back that only SAVED, and
+       it is what made a second build inherit the first one's conversation and
+       then overwrite it - leaving now flushes to Recents and clears the working
+       state, so the global is empty by design.
+
+       The claim is unchanged and is the one that matters to somebody: leaving a
+       build is a door, not a bin. So it is asked properly - the build is still
+       listed, and opening it brings the files and the conversation back. That
+       is a stronger test than the old one, which would have passed on a global
+       nothing could reach. */
+    const rec = (_SESSIONS || []).filter(x => x.kind === 'dev')
+                  .sort((a, b) => (b.updated || 0) - (a.updated || 0))[0];
+    let restored = -1, restoredLog = -1, lastMinute = false;
+    if (rec) {
+      _sessResume(rec.id);
+      await new Promise(r => setTimeout(r, 600));
+      restored = Object.keys(_DEV.project || {}).length;
+      restoredLog = (_DEV.log || []).length;
+      lastMinute = Object.keys(_DEV.project || {}).includes('LAST_MINUTE.txt');
+      /* Back to the list, because opening a session to prove it restores puts
+         this on that session's screen - and the block below this one carries on
+         from the home page and needs the rows to still be there. A check that
+         leaves the app somewhere else is a check that breaks its neighbours. */
+      const h = document.getElementById('bld-home');
+      if (h) { h.click(); await new Promise(r => setTimeout(r, 500)); }
+    }
+    return { heroShown: home, rows: listed, restored, restoredLog, lastMinute,
+             backOnList: document.querySelectorAll('.bld-recent').length };
   });
   ok(back.heroShown, 'the main page comes back', back);
   ok(back.rows === 2, 'with this section\u2019s builds still listed', back.rows);
-  ok(back.stillHeld === 1,
-     'and leaving a build does not discard it - it is a door, not a bin', back.stillHeld);
+  ok(back.restored >= 1,
+     'and leaving a build does not discard it - it is a door, not a bin', back);
+  ok(back.restoredLog >= 1, 'the conversation comes back with it', back.restoredLog);
+  ok(back.lastMinute,
+     'including a file written in the moment before leaving, which only saving on the way out catches',
+     back);
+  ok(back.backOnList === 2, 'and the list is where you are left', back.backOnList);
 
   const second = await page.evaluate(async () => {
     const row = [...document.querySelectorAll('.bld-recent')]
