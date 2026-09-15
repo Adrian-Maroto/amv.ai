@@ -18,7 +18,7 @@ const PHONE = { width: 390, height: 844 };
 const SMALL = { width: 320, height: 568 };     // the narrowest phone still in use
 
 /* Every tab reachable from the app shell. */
-const TABS = ['chat', 'workspaces', 'memory', 'usage', 'billing', 'plans',
+const TABS = ['chat', 'workspaces', 'memory', 'usage', 'billing', 'plans', 'upgrade',
               'settings', 'help', 'apps', 'tasks', 'integrations', 'crew', 'studio', 'dev',
               'handoff', 'lab', 'market'];
 

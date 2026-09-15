@@ -1529,7 +1529,7 @@ window._newPromptCTA=_newPromptCTA;
    Runs after render so it covers dynamically-created controls too.
    Enterprise buyers audit this; it also helps every keyboard user.
    ============================================================ */
-const _TAB_LABELS={dashboard:'Dashboard',chat:'Chat',workspaces:'Projects',memory:'Memory',team:'Team',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
+const _TAB_LABELS={dashboard:'Dashboard',chat:'Chat',workspaces:'Projects',memory:'Memory',team:'Team',usage:'Usage',billing:'Billing',plans:'Plans',upgrade:'Upgrade',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
 function _initA11y(){
   try{
     // landmark roles
@@ -4809,7 +4809,7 @@ function setTab(t){
   try{ _renderBottomNav(); }catch(e){}
   document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
   /* (old 'More' section removed - tools now live in the bottom-left row) */
-  const _titles={dashboard:'Dashboard',chat:'',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
+  const _titles={dashboard:'Dashboard',chat:'',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',upgrade:'Upgrade',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
   const _nt=document.getElementById('nav-title');
   if(_nt){ const lbl=_titles[t]!==undefined?_titles[t]:''; _nt.textContent=lbl; _nt.style.opacity=lbl?'1':'0'; }
   // On mobile, close the overlay sidebar after picking a destination
