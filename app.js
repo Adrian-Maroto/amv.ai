@@ -25468,6 +25468,43 @@ const INTEGRATION_META = {
   notion:  { name:'Notion',     key:'amv_notion',  oauth:'amv_notion_client' },
   canvas:  { name:'Canvas LMS', key:'amv_canvas' },
 };
+/* THE ROW ID IS NOT ALWAYS THE PROVIDER ID.
+
+   The server calls it `microsoft`. This catalogue calls the row `outlook`,
+   after the mail app people actually go looking for. Nothing translated
+   between the two, so every question asked about Microsoft was asked under a
+   name the framework has never heard of: _connOwnsProvider('outlook') was
+   false, so pressing Connect on Microsoft 365 skipped Connected accounts
+   entirely and produced "it needs its API key added by the operator" - about
+   the one non-Google provider that was fully built on the server.
+
+   One map, used by both questions, so a name the catalogue prefers cannot
+   again mean the framework is asked about a provider that does not exist. */
+const CONN_PROVIDER_ID = { outlook: 'microsoft' };
+function _provIdFor(rowId){ return CONN_PROVIDER_ID[rowId] || rowId; }
+/* IS THIS ROW CONNECTED - ASKED OF THE STORE THAT HAS A WRITER.
+
+   The catalogue used to answer this from loadStr('amv_github') and six keys
+   like it. Not one of them is written anywhere in the bundle any more: the
+   browser-side OAuth that wrote them was retired when the server took the
+   whole handshake over, and _OAUTH_COMPLETABLE is empty for exactly that
+   reason. So the answer was a permanent no.
+
+   A wrong "no" from a connection check does not look like a fault. It looks
+   like the product: somebody who really had connected GitHub through
+   Connected accounts saw a Connect button, no Disconnect, and no way to run
+   anything - and there was nothing to notice, because a row that says
+   "not connected" is what a row looks like before you connect it.
+
+   Google was moved to this question already. The rest were left behind. */
+function _rowConnected(rowId){
+  try{
+    return (typeof _connHasProvider === 'function')
+      ? !!_connHasProvider(_provIdFor(rowId)) : false;
+  }catch(e){ return false; }
+}
+try{ window.CONN_PROVIDER_ID=CONN_PROVIDER_ID; window._provIdFor=_provIdFor;
+     window._rowConnected=_rowConnected; }catch(e){}
 async function connectIntegration(id){
   const m = INTEGRATION_META[id];
   if(!m){ return; }
@@ -25501,9 +25538,10 @@ async function connectIntegration(id){
      Microsoft to the framework cannot leave a second door quietly running the
      old flow. The check in the catalogue stays as well - it costs nothing and
      it keeps the scroll-to-section behaviour attached to the click. */
-  if(typeof _connOwnsProvider === 'function' && _connOwnsProvider(id)){
-    if(typeof _connGoTo === 'function') return _connGoTo(id);
-    if(typeof connAdd === 'function') return connAdd(id);
+  const _pid = _provIdFor(id);
+  if(typeof _connOwnsProvider === 'function' && _connOwnsProvider(_pid)){
+    if(typeof _connGoTo === 'function') return _connGoTo(_pid);
+    if(typeof connAdd === 'function') return connAdd(_pid);
     toast('Connected accounts are not loaded on this page.','error',5000);
     return;
   }
@@ -28302,7 +28340,13 @@ const TASK_CAPABILITIES = [
   { id:'github', integration:'GitHub', label:'manage issues and repositories',
     api:'GitHub REST API', auth:'GitHub personal access token or OAuth',
     connectId:'github', tools:['github_list_issues','github_create_issue'],
-    isConnected:()=>!!loadStr('amv_github'),
+    /* Asked of the GRANT, like the three Google capabilities above it. The
+       tools underneath this entry were moved to the server - the comment on
+       github_list_issues says why, and names this exact symptom: "not
+       connected" said to somebody whose account WAS connected. The tools were
+       moved and this question was not, so the screen that decides whether AMV
+       can be asked to touch GitHub went on reading a key retired with them. */
+    isConnected:()=>_cwConnHas('repo.read'),
     keywords:['github','issue','repo','repository','pull request','pr ','commit','open an issue','bug ticket'] },
   { id:'slack', integration:'Slack', label:'post messages to Slack',
     api:'Slack Web API (or Incoming Webhook)', auth:'Slack bot token or webhook URL',
@@ -28815,8 +28859,8 @@ function _integrationsCatalogHTML(){
          up the page into "Your computer", where they are together, closed, and
          findable by the person who wants them. They are unchanged; only their
          home is. */
-      intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically. Set up under Connected accounts above, where you choose what AMV may do.',auto:true,connected:_connHasProvider('google'),icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
-      intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:isConn('amv_outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})+
+      intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically. Set up under Connected accounts above, where you choose what AMV may do.',auto:true,connected:_rowConnected('google'),icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
+      intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:_rowConnected('outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})+
       /* The rest of the world. Google and Microsoft cover a lot of people and
          not most of them: QQ and 163 in China, Naver in Korea, Yandex and
          Mail.ru in Russia, GMX in Germany, WP.pl in Poland, UOL in Brazil.
@@ -28849,7 +28893,7 @@ function _integrationsCatalogHTML(){
               icon:'\uD83C\uDF10',bg:'rgba(90,150,200,.14)'})
     )+
     cat('Messaging &amp; chat',
-      intRow({id:'slack',name:'Slack',desc:'Answers, summaries and tasks inside any channel with /amv.',auto:true,connected:isConn('amv_slack'),icon:'\uD83D\uDCAC',bg:'rgba(74,21,75,.16)'})+
+      intRow({id:'slack',name:'Slack',desc:'Answers, summaries and tasks inside any channel with /amv.',auto:true,connected:_rowConnected('slack'),icon:'\uD83D\uDCAC',bg:'rgba(74,21,75,.16)'})+
       intRow({id:'sms',name:'Text messages (SMS)',desc:'Run AMV from any phone by text - \u201ccheck Project X\u201d, \u201cdraft a reply\u201d.',auto:true,connected:!!smsPhone,icon:'\uD83D\uDCF1',bg:'rgba(63,185,80,.14)'})+
       /* The messenger most of the world actually uses. Free official API, no
          business verification, and it is the default across Russia, Ukraine,
@@ -28865,15 +28909,15 @@ function _integrationsCatalogHTML(){
                 : 'Run AMV from Telegram and get your background work there - through a bot you own and can revoke.',
               auto:true,connected:!!_TG_STATUS&&!!_TG_STATUS.connected,
               icon:'\u2708\uFE0F',bg:'rgba(42,171,238,.16)'})+
-      intRow({id:'discord',name:'Discord',desc:'Bring AMV into your servers for answers and automations.',auto:true,connected:isConn('amv_discord'),icon:'\uD83C\uDFAE',bg:'rgba(88,101,242,.16)'})
+      intRow({id:'discord',name:'Discord',desc:'Bring AMV into your servers for answers and automations.',auto:true,connected:_rowConnected('discord'),icon:'\uD83C\uDFAE',bg:'rgba(88,101,242,.16)'})
     )+
     cat('Developer',
-      intRow({id:'github',name:'GitHub',desc:'Reviews PRs, opens issues, reads repos and ships fixes you approve.',auto:true,connected:isConn('amv_github'),icon:'\uD83D\uDC19',bg:'rgba(255,255,255,.08)'})+
-      intRow({id:'vscode',name:'VS Code',desc:'Your AI pair-programmer inside the editor.',auto:true,connected:isConn('amv_vscode'),icon:'\uD83D\uDCBB',bg:'rgba(0,118,212,.14)'})+
-      intRow({id:'linear',name:'Linear',desc:'Creates, triages and updates issues from chat.',auto:true,connected:isConn('amv_linear'),icon:'\uD83D\uDCD0',bg:'rgba(94,106,210,.16)'})
+      intRow({id:'github',name:'GitHub',desc:'Reviews PRs, opens issues, reads repos and ships fixes you approve.',auto:true,connected:_rowConnected('github'),icon:'\uD83D\uDC19',bg:'rgba(255,255,255,.08)'})+
+      intRow({id:'vscode',name:'VS Code',desc:'Your AI pair-programmer inside the editor.',auto:true,connected:false/*the CLI, not a connection AMV can see*/,icon:'\uD83D\uDCBB',bg:'rgba(0,118,212,.14)'})+
+      intRow({id:'linear',name:'Linear',desc:'Creates, triages and updates issues from chat.',auto:true,connected:_rowConnected('linear'),icon:'\uD83D\uDCD0',bg:'rgba(94,106,210,.16)'})
     )+
     cat('Productivity',
-      intRow({id:'notion',name:'Notion',desc:'Reads and writes pages, builds docs in your workspace.',auto:true,connected:isConn('amv_notion'),icon:'\uD83D\uDCDD',bg:'rgba(255,255,255,.08)'})+
+      intRow({id:'notion',name:'Notion',desc:'Reads and writes pages, builds docs in your workspace.',auto:true,connected:_rowConnected('notion'),icon:'\uD83D\uDCDD',bg:'rgba(255,255,255,.08)'})+
       /* The description says what it does now. It used to promise "drafts
          answers from your notes, works overnight", which described an
          automation that was removed - and which had never run anyway, because

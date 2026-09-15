@@ -1472,6 +1472,43 @@ const INTEGRATION_META = {
   notion:  { name:'Notion',     key:'amv_notion',  oauth:'amv_notion_client' },
   canvas:  { name:'Canvas LMS', key:'amv_canvas' },
 };
+/* THE ROW ID IS NOT ALWAYS THE PROVIDER ID.
+
+   The server calls it `microsoft`. This catalogue calls the row `outlook`,
+   after the mail app people actually go looking for. Nothing translated
+   between the two, so every question asked about Microsoft was asked under a
+   name the framework has never heard of: _connOwnsProvider('outlook') was
+   false, so pressing Connect on Microsoft 365 skipped Connected accounts
+   entirely and produced "it needs its API key added by the operator" - about
+   the one non-Google provider that was fully built on the server.
+
+   One map, used by both questions, so a name the catalogue prefers cannot
+   again mean the framework is asked about a provider that does not exist. */
+const CONN_PROVIDER_ID = { outlook: 'microsoft' };
+function _provIdFor(rowId){ return CONN_PROVIDER_ID[rowId] || rowId; }
+/* IS THIS ROW CONNECTED - ASKED OF THE STORE THAT HAS A WRITER.
+
+   The catalogue used to answer this from loadStr('amv_github') and six keys
+   like it. Not one of them is written anywhere in the bundle any more: the
+   browser-side OAuth that wrote them was retired when the server took the
+   whole handshake over, and _OAUTH_COMPLETABLE is empty for exactly that
+   reason. So the answer was a permanent no.
+
+   A wrong "no" from a connection check does not look like a fault. It looks
+   like the product: somebody who really had connected GitHub through
+   Connected accounts saw a Connect button, no Disconnect, and no way to run
+   anything - and there was nothing to notice, because a row that says
+   "not connected" is what a row looks like before you connect it.
+
+   Google was moved to this question already. The rest were left behind. */
+function _rowConnected(rowId){
+  try{
+    return (typeof _connHasProvider === 'function')
+      ? !!_connHasProvider(_provIdFor(rowId)) : false;
+  }catch(e){ return false; }
+}
+try{ window.CONN_PROVIDER_ID=CONN_PROVIDER_ID; window._provIdFor=_provIdFor;
+     window._rowConnected=_rowConnected; }catch(e){}
 async function connectIntegration(id){
   const m = INTEGRATION_META[id];
   if(!m){ return; }
@@ -1505,9 +1542,10 @@ async function connectIntegration(id){
      Microsoft to the framework cannot leave a second door quietly running the
      old flow. The check in the catalogue stays as well - it costs nothing and
      it keeps the scroll-to-section behaviour attached to the click. */
-  if(typeof _connOwnsProvider === 'function' && _connOwnsProvider(id)){
-    if(typeof _connGoTo === 'function') return _connGoTo(id);
-    if(typeof connAdd === 'function') return connAdd(id);
+  const _pid = _provIdFor(id);
+  if(typeof _connOwnsProvider === 'function' && _connOwnsProvider(_pid)){
+    if(typeof _connGoTo === 'function') return _connGoTo(_pid);
+    if(typeof connAdd === 'function') return connAdd(_pid);
     toast('Connected accounts are not loaded on this page.','error',5000);
     return;
   }
