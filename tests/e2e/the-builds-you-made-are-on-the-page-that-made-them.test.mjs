@@ -64,7 +64,16 @@ const home = () => page.evaluate(() => ({
   })),
   heading: (document.querySelector('.bld-recents-h') || {}).textContent || '',
   heroShown: !!document.querySelector('.dev-shell.dev-blank'),
-  homeBtn: !!document.getElementById('bld-home'),
+  /* OFFERED, NOT PRESENT. The button used to be left out of the markup on the
+     home screen, so existence and offering were the same question. They are
+     not any more: it is always rendered and the shell's blank class hides it,
+     because it was being decided at render time while that class flips at
+     RUNTIME - so a session started from the entry screen had no way out of it.
+     What this file cares about is unchanged and is what is asked here: nothing
+     on the home screen offers a way back from it. A button with no box is not
+     an offer. */
+  homeBtn: (() => { const e = document.getElementById('bld-home');
+    return !!(e && e.getBoundingClientRect().height > 0); })(),
   freshBar: !!document.querySelector('.build-bar-fresh'),
   newBtnBox: (() => {
     const b = document.querySelector('#dev-new, #studio-new, #lab-new');
@@ -149,7 +158,8 @@ section('Opening one gives you the project back');
     await new Promise(r => setTimeout(r, 300));
     return { files: Object.keys(_DEV.project || {}), log: (_DEV.log || []).length,
              heroShown: !!document.querySelector('.dev-shell.dev-blank'),
-             homeBtn: !!document.getElementById('bld-home') };
+             homeBtn: (() => { const e = document.getElementById('bld-home');
+               return !!(e && e.getBoundingClientRect().height > 0); })() };
   });
   ok(r.files.includes('index.html'), 'the files are there', r.files);
   ok(r.log === 1, 'and the conversation that made them', r.log);

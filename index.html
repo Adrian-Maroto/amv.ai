@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="5c346d3d32d4e935">
+<meta name="amv-build" content="8670ee6834e109de">
 <!-- ============================================================
      THE BACKEND THIS COPY OF THE APP TALKS TO.
 
@@ -8869,17 +8869,22 @@ transition:border-color .15s var(--ease), background .15s var(--ease), transform
 .bill-plan-row:hover{ background:var(--s2); border-color:var(--bdl); }
 .bill-plan-row:active{ transform:translateY(1px); }
 .bill-plan-row:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
-.bill-plan-row.lead .bill-plan-d{ color:rgba(255,255,255,.90); }
-.bill-plan-row.lead .bill-plan-f{ color:rgba(255,255,255,.78); }
-.bill-plan-row.lead .bill-plan-price small{ color:rgba(255,255,255,.82); }
+.bill-plan-row.lead .bill-plan-d,
+.bill-plan-row.lead .bill-plan-f,
+.bill-plan-row.lead .bill-plan-price small{ color:#fff; }
+.bill-plan-row.lead{
+background:var(--accent-d)!important;
+border-color:var(--accent-d)!important;
+color:#fff!important;
+}
 .bill-plan-main{ display:flex; flex-direction:column; gap:3px; min-width:0; }
 .bill-plan-h{ display:flex; align-items:baseline; gap:var(--sp-2); font-size:var(--t-md); }
 .bill-plan-h b{ font-weight:640; }
-.bill-plan-d{ font-size:var(--t-sm); color:var(--mu); line-height:1.5; }
-.bill-plan-f{ font-size:var(--t-xs); color:var(--dim); letter-spacing:.01em; }
+.bill-plan-d{ font-size:var(--t-sm); color:var(--tx); line-height:1.5; }
+.bill-plan-f{ font-size:var(--t-xs); color:var(--tx); font-weight:500; letter-spacing:.01em; }
 .bill-plan-price{ display:flex; align-items:baseline; gap:2px; white-space:nowrap; }
 .bill-plan-price b{ font-size:var(--t-lg); font-weight:640; letter-spacing:-.3px; }
-.bill-plan-price small{ font-size:var(--t-xs); color:var(--mu); }
+.bill-plan-price small{ font-size:var(--t-xs); color:var(--tx); }
 @media(max-width:520px){
 .bill-plan-row{ flex-direction:column; align-items:flex-start; gap:var(--sp-3); }
 .bill-plan-price{ align-self:flex-start; }
