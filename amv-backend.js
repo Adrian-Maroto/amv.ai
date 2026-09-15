@@ -9154,7 +9154,7 @@ async function errorsList(request, env){
 /* POST /errors/resolve - mark a bug fixed (clears it from the board). */
 async function errorsResolve(request, env){
   const body = await request.json().catch(()=>({}));
-  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
+  { const g = await _adminGate(request, env, 'errors.resolve', 60, 2000); if (g) return g; }
   const idx = (await DB.get(env, 'errors', 'index')) || { groups:{} };
   if(body.all) idx.groups = {};
   else if(body.fp) delete idx.groups[String(body.fp)];
@@ -9193,7 +9193,7 @@ async function abuseList(request, env){
    Admin-only. */
 async function abuseClear(request, env){
   const body = await request.json().catch(()=>({}));
-  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
+  { const g = await _adminGate(request, env, 'abuse.clear', 60, 2000); if (g) return g; }
   const email = String(body.email||'').toLowerCase();
   if(!email) return json({ error:'email required' }, 400);
   const rec = await DB.get(env, 'abuse', email);
@@ -9901,6 +9901,25 @@ async function _adminRateLimit(request, env, what, perMin, perDay) {
   return null;
 }
 
+/* `what` NAMES THE ACTION, AND IT IS NOT DECORATION.
+
+   It is the rate-limit bucket - `admin:<what>:<ip>` - and it is what a refusal
+   is audited as. Every admin route passed 'read', including the ones that
+   reset somebody's password, lift an abuse flag, mark a payout settled and
+   change a plan. Two things followed from that and both are wrong.
+
+   The audit log said `read` for every one of them, so a denied attempt to
+   settle a payout was indistinguishable in the record from somebody loading a
+   dashboard. An audit trail that cannot name the action is not an audit trail.
+
+   And fifteen routes shared one counter. Opening the founder dashboard spends
+   that allowance on reads, and the write somebody needs next is refused for a
+   reason that has nothing to do with it - the money routes starved by the
+   screen that shows the money.
+
+   The numbers are unchanged on purpose: this separates the buckets and names
+   the actions, it does not decide that an operator may do less. Tightening a
+   limit an operator depends on is a different change and it is the owner's. */
 async function _adminGate(request, env, what, perMin, perDay) {
   const limited = await _adminRateLimit(request, env, what, perMin, perDay);
   if (limited) return limited;
@@ -10461,7 +10480,7 @@ async function sendResetCodeEmail(env, to, code) {
    simply rejected, and the token never leaves your machine. */
 async function authAdminReset(request, env){
   const body = await request.json().catch(()=>({}));
-  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
+  { const g = await _adminGate(request, env, 'auth.reset', 60, 2000); if (g) return g; }
 
   const email = String(body.email||'').toLowerCase().trim();
   const password = String(body.password||'');
@@ -21619,7 +21638,7 @@ async function adminPayouts(request, env) {
 
 /* POST /admin/payouts/mark { id, status, note } */
 async function adminPayoutMark(request, env) {
-  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
+  { const g = await _adminGate(request, env, 'payout.mark', 60, 2000); if (g) return g; }
   const body = await request.json().catch(() => ({}));
   const id = String(body.id || '');
   const status = String(body.status || '');
@@ -24079,7 +24098,7 @@ async function runWeeklyDigest(env) {
    action, so it takes an explicit flag rather than happening because someone
    opened a URL. */
 async function adminDigest(request, env) {
-  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
+  { const g = await _adminGate(request, env, 'digest', 60, 2000); if (g) return g; }
   const url = new URL(request.url);
   const send = url.searchParams.get('send') === '1';
   if (send) {
@@ -24103,7 +24122,7 @@ async function adminDigest(request, env) {
 
 // flip the global kill switch on/off
 async function adminKill(request, env) {
-  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
+  { const g = await _adminGate(request, env, 'kill', 60, 2000); if (g) return g; }
   const { on } = await request.json().catch(() => ({}));
   if (on) await env.AMV_KV.put('GLOBAL_KILL', '1');
   else await env.AMV_KV.delete('GLOBAL_KILL');
@@ -24113,7 +24132,7 @@ async function adminKill(request, env) {
 
 // inspect one user, or override their plan (e.g. comp an account, stop abuse)
 async function adminUser(request, env) {
-  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
+  { const g = await _adminGate(request, env, 'user.write', 60, 2000); if (g) return g; }
   const body = await request.json().catch(() => ({}));
   const email = String(body.email || '').toLowerCase().trim();
   if (!email) return json({ error: 'email required' }, 400);
