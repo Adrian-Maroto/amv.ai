@@ -1057,7 +1057,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} /* An address beats a remembered tab: somebody who opened #/billing asked for billing, not for wherever they were last time. */ try{ const _u=_tabFromURL(); if(_u) S.tab=_u; }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
    the collapsible it managed no longer exists. The function stayed behind,
@@ -1299,6 +1299,22 @@ function buildHome(){
   try{ if(typeof _LAB!=='undefined')    _LAB.atHome=true; }catch(e){}
 }
 try{ window.buildHome=buildHome; }catch(e){}
+/* The tabs that have an address of their own. Billing was asked for by name;
+   the rest are here because a link to them is a thing somebody would send. */
+const _URL_TABS={ billing:'billing', plans:'plans', upgrade:'upgrade',
+                  settings:'settings', help:'help', crew:'crew', market:'market' };
+/* Read the address on the way in, so the link works and not just the button. */
+function _tabFromURL(){
+  try{
+    const m=/^#\/([a-z]+)$/.exec(location.hash||'');
+    if(!m) return '';
+    const slug=m[1];
+    const hit=Object.keys(_URL_TABS).find(k=>_URL_TABS[k]===slug);
+    return hit||'';
+  }catch(e){ return ''; }
+}
+try{ window._tabFromURL=_tabFromURL; window._URL_TABS=_URL_TABS; }catch(e){}
+
 function setTab(t){
   try{ if(t==='settings' && S.tab && S.tab!=='settings') S._preSettingsTab=S.tab; }catch(e){}
   /* Counted here because this is the one place every surface is opened through,
@@ -1360,6 +1376,28 @@ function setTab(t){
      where they are when they come back. */
   try{ if(t!=='integrations' && typeof _cdirReset==='function') _cdirReset(); }catch(e){}
   S.tab=t;
+  /* THE ADDRESS BAR SAYS WHERE YOU ARE - AS A HASH, AND THAT IS DELIBERATE.
+
+     Asked for as "/billing". A bare path cannot be served: what the host
+     publishes is the `public/` folder as static files, with no rewrite rule
+     anywhere in this repository, so a visitor who reloads on /billing or
+     pastes the link gets a 404 from the host before AMV runs at all. A URL
+     that only works until somebody refreshes is worse than no URL.
+
+     `#/billing` is the same address in a form that survives both: the host
+     always serves index.html, and the hash is read back on boot below. If the
+     bare path is wanted, it is one rewrite rule on the host - every request to
+     index.html - and that is the owner's to add, not something this file can
+     assert from here. */
+  try{
+    const _slug=_URL_TABS[t];
+    if(_slug){
+      const want='#/'+_slug;
+      if(location.hash!==want) history.replaceState(null,'',location.pathname+location.search+want);
+    } else if(/^#\/[a-z]+$/.test(location.hash||'')){
+      history.replaceState(null,'',location.pathname+location.search);
+    }
+  }catch(e){}
   try{ _renderBottomNav(); }catch(e){}
   document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
   /* (old 'More' section removed - tools now live in the bottom-left row) */

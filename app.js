@@ -4556,7 +4556,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} /* An address beats a remembered tab: somebody who opened #/billing asked for billing, not for wherever they were last time. */ try{ const _u=_tabFromURL(); if(_u) S.tab=_u; }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
    the collapsible it managed no longer exists. The function stayed behind,
@@ -4798,6 +4798,22 @@ function buildHome(){
   try{ if(typeof _LAB!=='undefined')    _LAB.atHome=true; }catch(e){}
 }
 try{ window.buildHome=buildHome; }catch(e){}
+/* The tabs that have an address of their own. Billing was asked for by name;
+   the rest are here because a link to them is a thing somebody would send. */
+const _URL_TABS={ billing:'billing', plans:'plans', upgrade:'upgrade',
+                  settings:'settings', help:'help', crew:'crew', market:'market' };
+/* Read the address on the way in, so the link works and not just the button. */
+function _tabFromURL(){
+  try{
+    const m=/^#\/([a-z]+)$/.exec(location.hash||'');
+    if(!m) return '';
+    const slug=m[1];
+    const hit=Object.keys(_URL_TABS).find(k=>_URL_TABS[k]===slug);
+    return hit||'';
+  }catch(e){ return ''; }
+}
+try{ window._tabFromURL=_tabFromURL; window._URL_TABS=_URL_TABS; }catch(e){}
+
 function setTab(t){
   try{ if(t==='settings' && S.tab && S.tab!=='settings') S._preSettingsTab=S.tab; }catch(e){}
   /* Counted here because this is the one place every surface is opened through,
@@ -4859,6 +4875,28 @@ function setTab(t){
      where they are when they come back. */
   try{ if(t!=='integrations' && typeof _cdirReset==='function') _cdirReset(); }catch(e){}
   S.tab=t;
+  /* THE ADDRESS BAR SAYS WHERE YOU ARE - AS A HASH, AND THAT IS DELIBERATE.
+
+     Asked for as "/billing". A bare path cannot be served: what the host
+     publishes is the `public/` folder as static files, with no rewrite rule
+     anywhere in this repository, so a visitor who reloads on /billing or
+     pastes the link gets a 404 from the host before AMV runs at all. A URL
+     that only works until somebody refreshes is worse than no URL.
+
+     `#/billing` is the same address in a form that survives both: the host
+     always serves index.html, and the hash is read back on boot below. If the
+     bare path is wanted, it is one rewrite rule on the host - every request to
+     index.html - and that is the owner's to add, not something this file can
+     assert from here. */
+  try{
+    const _slug=_URL_TABS[t];
+    if(_slug){
+      const want='#/'+_slug;
+      if(location.hash!==want) history.replaceState(null,'',location.pathname+location.search+want);
+    } else if(/^#\/[a-z]+$/.test(location.hash||'')){
+      history.replaceState(null,'',location.pathname+location.search);
+    }
+  }catch(e){}
   try{ _renderBottomNav(); }catch(e){}
   document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
   /* (old 'More' section removed - tools now live in the bottom-left row) */
@@ -13625,7 +13663,7 @@ function _billingTxnsHTML(){
      back.
 
      So it stays and says the same four things - the record is local, another
-     device will not be here, Invoices above is the real one, bought items are
+     device will not be here, Recent transactions above is the real one, bought items are
      in Purchases - in one sentence instead of sixty words. The complaint was
      that this page reads as a wall of text, and that is answered by saying it
      shorter, not by not saying it. */
@@ -13633,12 +13671,12 @@ function _billingTxnsHTML(){
     if(!live) return '';
     return '<div class="ss2 bill-txns"><h3>Payments recorded on this device</h3>'+
       '<p class="bill-txns-sub">Nothing in this browser yet. Paid on another device? '+
-      'It will not be here - Invoices above is the full record, and anything bought is in Purchases.</p></div>';
+      'It will not be here - Recent transactions above is the full record, and anything bought is in Purchases.</p></div>';
   }
   const money=n=>'$'+(Number(n)||0).toFixed(2);
   return '<div class="ss2 bill-txns"><h3>Payments recorded on this device</h3>'+
     '<p class="bill-txns-sub">Kept in this browser, so a purchase made on another device will not be here. '+
-    'The Invoices above are the full record of your subscription payments. Only you can see this.</p>'+
+    'Recent transactions above is the full record of your subscription payments. Only you can see this.</p>'+
     '<div class="bill-txn-list">'+txns.slice(0,60).map(t=>{
       let d=''; try{ d=new Date(t.ts).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}); }catch(e){}
       const kind=t.type==='subscription'?'Subscription':t.type==='marketplace'?'Marketplace':'Payment';
@@ -13659,6 +13697,64 @@ function _billingTxnsHTML(){
     }).join('')+'</div></div>';
 }
 window._billingTxnsHTML=_billingTxnsHTML;
+/* WHAT THIS PLAN DOES, AND WHAT IT DOES NOT - FROM THE SAME SOURCE THE
+   PRICING PAGE SELLS FROM.
+
+   Asked for directly: say what somebody can do on their plan and what they
+   cannot, so the upgrade is a decision they can make on this screen instead of
+   a price they have to go and interpret somewhere else.
+
+   Both halves are read out of `_planPitch`, which is what the pricing cards and
+   the upgrade page already render. That matters more than it looks: a
+   hand-written list here would be a second description of the product, and the
+   two would drift the first time a plan changed. This cannot drift, because
+   there is only one list.
+
+   The "not on this plan" half is built differently depending on where somebody
+   is. Free already declares its own gaps - the entries marked 0 - so those are
+   used as they stand. A paid plan declares no gaps, and inventing some would be
+   writing marketing copy in a renderer; what is TRUE for a paid plan is what
+   the next step up adds, so that is what it shows, named as that plan. The
+   top of the ladder shows nothing, because there is nothing it cannot do. */
+function _billCanCantHTML(plan){
+  if(typeof _planPitch !== 'function') return '';
+  const pitch=_planPitch(plan); if(!pitch||!Array.isArray(pitch.feats)) return '';
+  const has=pitch.feats.filter(f=>f[0]).map(f=>f[1]);
+  let lacks=pitch.feats.filter(f=>!f[0]).map(f=>f[1]);
+  let lackLabel='Not on this plan';
+  if(!lacks.length){
+    /* The next rung, by rank, skipping the two that are not steps on this
+       ladder - Teams is per seat and Custom is sized to order, so neither is
+       "the next one up" from anywhere. */
+    const next=Object.keys(PLANS)
+      .filter(k=>k!=='custom'&&k!=='team'&&PLAN_RANK[k]>PLAN_RANK[plan])
+      .sort((a,b)=>PLAN_RANK[a]-PLAN_RANK[b])[0];
+    if(next){
+      const np=_planPitch(next);
+      if(np&&Array.isArray(np.feats)){
+        /* "Everything in Pro, plus:" is a pointer to the plan below, not a
+           capability, and listing it as something you are missing would be
+           telling somebody on Pro that they do not have Pro. */
+        lacks=np.feats.filter(f=>f[0]&&!/^\s*<b>Everything in/i.test(f[1])).map(f=>f[1]);
+        lackLabel='What '+((PLANS[next]||{}).name||next)+' adds';
+      }
+    }
+  }
+  if(!has.length&&!lacks.length) return '';
+  const col=(label,items,kind)=>
+    '<div class="bill-cc-col bill-cc-'+kind+'">'+
+      '<div class="bill-cc-h">'+escH(label)+'</div>'+
+      '<ul class="bill-cc-l">'+items.map(t=>
+        '<li><span class="bill-cc-m">'+(kind==='yes'?'\u2713':'\u2192')+'</span><span>'+t+'</span></li>').join('')+
+      '</ul>'+
+    '</div>';
+  return '<div class="bill-cc">'+
+    (has.length?col('What your plan does',has,'yes'):'')+
+    (lacks.length?col(lackLabel,lacks,'no'):'')+
+  '</div>';
+}
+try{ window._billCanCantHTML=_billCanCantHTML; }catch(e){}
+
 function renderBillingView(targetEl){
   // If billing is being shown inside Settings, render into the settings pane
   // so re-renders (after payment, plan change, etc.) stay in place.
@@ -13734,7 +13830,11 @@ function renderBillingView(targetEl){
            for something already labelled. */
         '<div class="bill-sum-top">'+
           '<div class="bill-sum-n">'+escH(P.name)+'</div>'+
-          '<div class="bill-sum-p">'+(plan==='free'?'Free':'$'+P.price+' <span>/ month</span>')+'</div>'+
+          /* NOT "Free" TWICE. The name beside this already says Free, and the
+             price rendered the same word again on the same line - the exact
+             duplication this page was rebuilt to remove, reintroduced at one
+             word. A free plan has no price to state, so it states none. */
+          (plan==='free'?'':'<div class="bill-sum-p">$'+P.price+' <span>/ month</span></div>')+
         '</div>'+
         '<div class="bill-sum-sub">'+
           '<span class="bill-dot'+(plan==='free'?' free':'')+'"></span>'+
@@ -13775,12 +13875,11 @@ function renderBillingView(targetEl){
         /* The sentence sits UNDER the button now. Beside it, it was a
            paragraph squeezed into whatever width was left over, setting at
            three words a line on a phone and reading as something jammed in. */
-        '<div class="bill-acts">'+
-          '<button class="btn bp" id="portal-open-btn">Manage billing</button>'+
-          (plan==='custom'?'<button class="btn bs" id="bill-resize">Resize my plan</button>':'')+
-        '</div>'+
-        '<p class="bill-acts-s">Change your card, download receipts, or cancel. '+
-          'Cancelling keeps your plan until the end of the period you have paid for.</p>':
+        /* The portal button used to sit here. It now lives under Payment
+           method, where somebody looking for their card goes - asked for in
+           that order, and it is the right one: this card answers "what am I
+           on", not "how do I change my card". */
+        '':
         /* SAID ONCE. The status line under the plan name already says exactly
            this sentence for a free account, and printing it again as a
            paragraph two lines below is the same fault this page was rebuilt
@@ -13801,6 +13900,10 @@ function renderBillingView(targetEl){
          reassurance. So the appended sections get a slot here rather than
          being dropped at the end, and the security block keeps its place at
          the bottom where it is available without being in the way. */
+      /* WHAT IT DOES AND WHAT IT DOES NOT, under the plan it describes.
+         A price with no capabilities beside it asks somebody to go and look up
+         what they are paying for; this is the answer on the same screen. */
+      _billCanCantHTML(plan)+
       (inSettings?'<div id="bill-usage-slot"></div>':'')+
       /* These two lists were computed on every render and shown nowhere, and the
          click handler below bound to buttons that never existed - so the billing
@@ -13808,7 +13911,25 @@ function renderBillingView(targetEl){
          change it. Teams and Custom are deliberately absent: neither has a
          single price to put on a button. */
       ((upTargets.length||downTargets.length)?
-      '<div class="ss2"><h3>Change plan</h3>'+
+      /* RECENT TRANSACTIONS, ABOVE THE UPGRADE AND BELOW THE PLAN.
+
+         The order asked for, and the order that reads: what I am on, what I
+         have been charged, what I could move to, how I pay. Invoices used to
+         sit near the bottom under the cancel link, which put the record of
+         somebody's money after the door marked leave.
+
+         NOTHING HERE IS INVENTED. This page once generated a row per month
+         between the start date and today, each stamped Paid, with no invoice
+         number and no amount from a processor. _invoiceTableHTML is the
+         processor's list or an honest sentence saying there is none; it is not
+         a table this file fills in. */
+      '<div class="ss2 bill-tx"><h3>Recent transactions</h3>'+
+        '<div id="bill-invoices">'+(plan==='free'
+          ? _invoiceTableHTML(plan,P,sinceDate)
+          : (liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate)))+'</div>'+
+      '</div>'+
+      _billingTxnsHTML()+
+      '<div class="ss2 bill-up"><h3>Upgrade your plan</h3>'+
         '<div class="bill-swap">'+
           /* ONE RECOMMENDATION, NOT THREE SHOUTS.
 
@@ -13925,11 +14046,25 @@ function renderBillingView(targetEl){
         '<p class="bill-leave-s">You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
         '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
       '</div>':'')+
-      // INVOICES
-      (plan!=='free'?'<div class="ss2"><h3>Invoices</h3>'+
-        '<div id="bill-invoices">'+(liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate))+'</div>'+
-      '</div>':'')+
-      _billingTxnsHTML()+
+      /* PAYMENT METHOD - the fourth section, and the last thing anybody needs.
+
+         The card itself is at the processor and AMV never held the number, so
+         this cannot print a Visa row from its own records the way the reference
+         screenshot does. What it can do is say which card is on file when the
+         processor has told us, and put the one control that actually changes it
+         directly underneath. Anything else here would be a picture of a card. */
+      '<div class="ss2 bill-pm"><h3>Payment method</h3>'+
+        '<div id="bill-pm-body">'+
+          (plan==='free'
+            ? '<p class="bill-pm-none">No card on file. You are on Free, so there is nothing to pay and nothing stored.</p>'
+            : '<p class="bill-pm-none">Your card is held by our payment processor. Open billing to see it, change it, or download a receipt.</p>')+
+        '</div>'+
+        (plan!=='free'?'<div class="bill-acts">'+
+          '<button class="btn bp" id="portal-open-btn">Manage billing</button>'+
+          (plan==='custom'?'<button class="btn bs" id="bill-resize">Resize my plan</button>':'')+
+        '</div>':'')+
+      '</div>'+
+
       /* FOUR EMOJI REASSURANCE CARDS, REMOVED FROM THE SETTINGS SCREEN.
 
          "PCI-DSS Level 1", "256-bit TLS" and two more, each with an emoji for

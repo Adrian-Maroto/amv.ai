@@ -83,7 +83,11 @@ try {
     });
     ok(r.length > 0, 'the section appears', r.length);
     ok(/another device/i.test(r), 'saying a purchase made elsewhere will not be here', r.slice(0, 300));
-    ok(/Invoices/.test(r), 'and pointing at the list that is authoritative', r.slice(0, 300));
+    /* The heading it points at is "Recent transactions" now - the section was
+       renamed when Billing was reordered. The claim is unchanged and is the
+       one that matters: this sentence has to send somebody to the list that IS
+       authoritative, by whatever that list is called. */
+    ok(/Recent transactions/i.test(r), 'and pointing at the list that is authoritative', r.slice(0, 300));
     ok(/Purchases/.test(r), 'and at where a bought item actually lives', r.slice(0, 300));
   }
 

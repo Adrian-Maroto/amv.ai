@@ -14067,3 +14067,55 @@ p.bill-leave-s{
 .vi-conn .int-list{ grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr)); }
 .wg{ grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))!important; }
 @media(max-width:560px){ .int-list{ grid-template-columns:1fr; } }
+
+/* ── LAYER A223 · Billing, in the order somebody reads it ────────────────────
+   Four sections, asked for in this order and it is the right one: what I am
+   on, what I have been charged, what I could move to, how I pay.
+
+   WHAT YOUR PLAN DOES / WHAT IT DOES NOT. Two columns, because the comparison
+   IS the argument - a single list of ticks says nothing about what is missing,
+   and the missing half is the reason anybody upgrades. They collapse to one
+   column on a phone in the order they are written, so the capability you have
+   is read before the one you do not.
+
+   The marks carry the meaning and the colour only reinforces it: a tick for
+   what you have, an arrow for what is one step away. The second column is not
+   red - nothing is wrong, and colouring it like a warning would tell somebody
+   their own plan is a mistake. */
+.bill-cc{
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:var(--sp-3); margin:var(--sp-4) 0 0;
+}
+@media(max-width:700px){ .bill-cc{ grid-template-columns:minmax(0,1fr); } }
+.bill-cc-col{
+  border:1px solid var(--bd); border-radius:var(--r-lg);
+  padding:var(--sp-3) var(--sp-4); background:var(--s1); min-width:0;
+}
+.bill-cc-h{
+  font-size:var(--t-xs); font-weight:700; letter-spacing:.06em;
+  text-transform:uppercase; color:var(--mu); margin-bottom:var(--sp-2);
+}
+.bill-cc-l{ list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:var(--sp-2); }
+.bill-cc-l li{ display:flex; gap:var(--sp-2); align-items:flex-start; font-size:var(--t-sm); line-height:1.5; color:var(--tx); }
+.bill-cc-m{ flex:0 0 auto; font-weight:700; line-height:1.5; }
+.bill-cc-yes .bill-cc-m{ color:var(--grn-txt); }
+.bill-cc-no  .bill-cc-m{ color:var(--accent-txt); }
+/* The half that is the offer gets the accent edge - quietly, one border. */
+.bill-cc-no{ border-color:var(--accent-soft); background:var(--accent-soft); }
+
+/* RECENT TRANSACTIONS. The reference is a plain ledger: date, what it was, and
+   the receipt. No card, no panel - a table reads as a record, and a record is
+   what somebody came here for. */
+.bill-tx h3{ margin-bottom:var(--sp-2); }
+
+/* UPGRADE. One recommendation leads and the rest stay quiet; that decision and
+   its styling live in A214. What this adds is room around the section so it
+   does not read as a continuation of the ledger above it. */
+.bill-up{ margin-top:var(--sp-5); }
+.bill-up h3{ margin-bottom:var(--sp-1); }
+
+/* PAYMENT METHOD. Last, small, and honest: AMV never had the number, so there
+   is a sentence and the one button that can actually change anything. */
+.bill-pm-none{
+  font-size:var(--t-sm); color:var(--mu); line-height:1.6; margin:0 0 var(--sp-3);
+}
