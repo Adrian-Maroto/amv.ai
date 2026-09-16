@@ -216,7 +216,16 @@ section('The floor lives on the server, where the client cannot move it');
   const fn = worker.slice(worker.indexOf('async function crewPopular'),
                           worker.indexOf('async function autoCreate'));
   ok(/guardAction\(/.test(fn), 'the endpoint is rate limited despite taking no token');
-  ok(/CF-Connecting-IP/.test(fn), 'per caller rather than globally');
+  /* WHO the limit counts, not how that is spelled. This read the literal
+     `CF-Connecting-IP` out of the function, which held until the twelve
+     hand-written copies of that header dance became one `_rlIp` - and then it
+     failed while the property it protects was stronger than before, because
+     `_rlIp` is also what stops a padded X-Forwarded-For buying a fresh bucket.
+
+     A check that reads source can only see that a line is PRESENT, so it has
+     to name the thing that must be there rather than one way of writing it.
+     A limiter keyed on nothing caller-specific still fails this. */
+  ok(/CF-Connecting-IP|_rlIp\(/.test(fn), 'per caller rather than globally');
   ok(/Cache-Control/.test(fn), 'and a repeat visit inside a few minutes does not re-read storage');
 }
 
