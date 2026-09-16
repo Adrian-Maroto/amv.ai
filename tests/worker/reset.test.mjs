@@ -242,5 +242,53 @@ ok(limited !== null && limited <= 5, 'it cuts off after ~5 requests per hour', l
 const rlResp = await (await W.authResetCode(post('/auth/reset/code', { email: 'rl@test.com' }), rlEnv)).json();
 ok(rlResp.ok === true, 'even when rate limited it returns ok (no account enumeration)', rlResp);
 
+section('One sender cannot bomb a thousand different inboxes');
+{
+  /* THE PER-EMAIL LIMIT DOES NOT BOUND THE SENDER, AND ITS COMMENT SAID IT DID.
+
+     "bomb a real person's inbox with reset codes, or burn through your email
+     quota" - per-email stops the first and cannot stop the second. A list of
+     real addresses is a separate bucket per address, each politely under its
+     own cap of five, and every one of them sends. One source, a thousand
+     inboxes, no limit ever reached.
+
+     Per-email stays exactly as it was: it is what stops one attacker locking
+     every account out of reset by exhausting something shared. This is the
+     other dimension, on the sender. */
+  const bombEnv = mkEnv({ EMAIL_API_KEY: 'k', RESET_EMAIL_FROM: 'AMV <no@amv.dev>' });
+  let sent = 0, refused = 0;
+  const fromOneSource = (body) => new Request('https://api.amv.dev/auth/reset/code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9' },
+    body: JSON.stringify(body),
+  });
+  /* A different address every time, so the per-email limit is never the thing
+     that refuses - if it were, this would pass without the new limit existing. */
+  for (let i = 0; i < 90; i++) {
+    const d = await (await W.authResetCode(fromOneSource({ email: 'victim' + i + '@test.com' }), bombEnv)).json();
+    if (d.rateLimited) refused++; else sent++;
+  }
+  ok(refused > 0, 'a single source is cut off before ninety different inboxes', { sent, refused });
+  ok(sent <= 60, 'and stopped at the ceiling rather than somewhere above it', sent);
+
+  /* The refusal must look like every other refusal here. A distinguishable
+     answer would turn this limit into the account-enumeration oracle the
+     per-email one is careful not to be. */
+  const d2 = await (await W.authResetCode(fromOneSource({ email: 'someone-else@test.com' }), bombEnv)).json();
+  ok(d2.ok === true, 'and still answers ok, revealing nothing about any address', d2);
+  ok(d2.sent === false, 'while being honest that nothing was sent', d2);
+
+  /* A DIFFERENT SENDER IS NOT AFFECTED. A ceiling that leaks across sources is
+     a denial of service written by the person adding the rate limit - one
+     attacker would lock out password reset for the whole internet. */
+  const other = new Request('https://api.amv.dev/auth/reset/code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '198.51.100.7' },
+    body: JSON.stringify({ email: 'innocent@test.com' }),
+  });
+  const d3 = await (await W.authResetCode(other, bombEnv)).json();
+  ok(d3.rateLimited !== true, 'somebody else on another address is unaffected', d3);
+}
+
 report();
 done();

@@ -10299,6 +10299,23 @@ async function _workerError(env, where, err, extra){
    ============================================================== */
 
 const RESET_CODE_TTL      = 15 * 60;   // seconds
+/* AND A CEILING ON THE SENDER, NOT ONLY ON THE RECIPIENT.
+
+   Per-email is deliberate and stays: it is what stops one attacker locking
+   every account out of password reset by exhausting a shared bucket. But the
+   comment beside that limit also claimed it stopped somebody "burning through
+   your email quota", and per-email cannot: a list of ten thousand real
+   addresses is ten thousand separate buckets, each politely under its own cap,
+   and every one of them sends. One source, ten thousand emails, no limit
+   reached - inbox bombing at scale and an email bill to match, which is the
+   thing the comment named and the code did not do.
+
+   Generous on purpose. An office, a school or a mobile carrier is one address
+   to us, and a reset somebody cannot complete is a support ticket on launch
+   day - so this sits far above any honest shared-IP usage and far below the
+   volume that makes bombing worth doing. */
+const RESET_IP_MAX        = 60;        // reset requests per source address...
+const RESET_IP_WINDOW_MS  = 60 * 60e3; // ...per hour
 const RESET_RL_MAX        = 5;         // reset codes per email...
 const RESET_RL_WINDOW_MS  = 60 * 60e3; // ...per hour
 const RESET_CODE_ATTEMPTS = 5;         // wrong guesses before the code dies
@@ -10334,6 +10351,30 @@ async function authResetCode(request, env) {
      a boundary and get two buckets' worth in a short span; that is the standard
      trade for an operation that cannot race, and it is a far smaller hole than
      the one it replaces. */
+  /* THE SOURCE FIRST, THEN THE RECIPIENT.
+
+     Order matters and it is not cosmetic. Reserving the victim's bucket before
+     checking the sender lets somebody who is already over their own ceiling
+     still burn down the five resets a real person gets in that hour - locking
+     them out of the route with a request that was never going to send anything
+     anyway. Checking the source first means a blocked sender consumes nothing
+     belonging to anybody else. */
+  const ipKey = (await _ipHash(env, request))
+             || request.headers.get('CF-Connecting-IP')
+             || String(request.headers.get('X-Forwarded-For') || '').split(',')[0].trim()
+             || 'unknown';
+  const ipBucket = Math.floor(Date.now() / RESET_IP_WINDOW_MS);
+  const ipRl = await counter(env, `resetip:${ipKey}:${ipBucket}`,
+                             { op: 'reserve', amount: 1, cap: RESET_IP_MAX, ttlMs: RESET_IP_WINDOW_MS * 2 });
+  if (!ipRl.allowed) {
+    /* Answered exactly like the per-email refusal: 200, ok:true, nothing about
+       whether this address is registered. A different shape here would turn the
+       new limit into the account-enumeration oracle the old one avoids. */
+    audit(env, ipRl.unavailable ? 'reset_limit_unavailable' : 'reset_ip_rate_limited', { ip: ipKey });
+    return json({ ok: true, sent: false, emailConfigured,
+                  rateLimited: !ipRl.unavailable, unavailable: !!ipRl.unavailable });
+  }
+
   const rlBucket = Math.floor(Date.now() / RESET_RL_WINDOW_MS);
   const rl = await counter(env, `resetcode:${email}:${rlBucket}`,
                            { op: 'reserve', amount: 1, cap: RESET_RL_MAX, ttlMs: RESET_RL_WINDOW_MS * 2 });
