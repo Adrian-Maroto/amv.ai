@@ -7504,6 +7504,21 @@ async function _callAI(msgs, _opts) {
     // test without a 30-second wait. Nothing in the product sets it.
     const IDLE_MS=(typeof window!=='undefined'&&window.__amvStreamIdleMs)||30000;
     let _stalled=false, _recovered=false;
+    /* DID THE OTHER END SAY IT WAS FINISHED, OR DID IT JUST STOP TALKING?
+
+       `_stalled` was set only when the reader TIMED OUT - silence for IDLE_MS
+       with text already in hand. A stream that is cut and then closed does not
+       time out: `read()` returns done, the loop breaks on the ordinary path,
+       and the half-sentence that arrived is rendered as a finished answer with
+       nothing to say otherwise. That is the common shape of a dropped upstream,
+       a proxy timeout, or a worker dying mid-answer.
+
+       Measured: an SSE body of three events with no terminal one leaves
+       "The answer is " on screen, `_interrupted` false, and no banner. The
+       machinery to say so already exists - `_interrupted` renders "The
+       connection dropped partway through" next to a Retry - it was simply
+       never reached from this direction. */
+    let _sawEnd=false;
     const _readOnce=()=>new Promise((resolve,reject)=>{
       const t=setTimeout(()=>reject(Object.assign(new Error('stream-stalled'),{_stall:true})),IDLE_MS);
       reader.read().then(v=>{ clearTimeout(t); resolve(v); },e=>{ clearTimeout(t); reject(e); });
@@ -7535,7 +7550,10 @@ async function _callAI(msgs, _opts) {
       for(const line of lines){
         if(!line.startsWith('data:')) continue;
         const data=line.slice(5).trim();
-        if(data==='[DONE]') continue;
+        /* The producer saying it has finished. Recorded, because the only
+           other way this loop ends is the socket closing - and those two mean
+           very different things to whoever is reading the answer. */
+        if(data==='[DONE]'){ _sawEnd=true; continue; }
         try{
           const evt=JSON.parse(data);
           if(evt.type==='message_start'&&evt.message?.usage){ _inTok=evt.message.usage.input_tokens||0; }
@@ -7580,7 +7598,8 @@ async function _callAI(msgs, _opts) {
             const t=_toolBlocks[evt.index];
             if(t) t.json += (evt.delta.partial_json||'');
           }
-          if(evt.type==='message_delta' && evt.delta?.stop_reason){ _stopReason=evt.delta.stop_reason; }
+          if(evt.type==='message_delta' && evt.delta?.stop_reason){ _stopReason=evt.delta.stop_reason; _sawEnd=true; }
+          if(evt.type==='message_stop'){ _sawEnd=true; }
           if(evt.type==='content_block_delta'&&evt.delta?.type==='text_delta'){
             _clearStatus();
             fullText+=evt.delta.text;
@@ -7667,6 +7686,10 @@ async function _callAI(msgs, _opts) {
       fullText = (fullText ? fullText + '\n\n' : '') +
         '_I stopped here after '+_TOOL_ROUND_MAX+' rounds of tool use on this message, so it could not loop. Say "keep going" if there is more to do._';
     }
+    /* Cut off, not concluded. Not for a stop the person pressed, and not when
+       the answer was recovered from the server afterwards - in both of those
+       the text on screen is the whole of what there is to say. */
+    if(!_sawEnd && fullText && !_userStopped && !_recovered) _stalled=true;
     if(!fullText) fullText='(no response)';
     const _base={r:'a',c:fullText,model:S.model};
     if(_ranEngine && S.model==='auto'){ _base._engine=_ranEngine; _base._engineWhy=_ranWhy; }

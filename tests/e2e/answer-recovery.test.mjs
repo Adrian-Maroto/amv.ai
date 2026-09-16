@@ -90,6 +90,76 @@ ok(/stalled|offline/i.test(resilient.err || ''), 'the user is told the stream st
 ok(!/resume|Failed to fetch/i.test(resilient.err || ''), 'not about the recovery attempt that also failed', resilient.err);
 ok(resilient.busy === false, 'and it stops rather than hanging');
 
+section('A stream that is cut and closed says so, instead of looking finished');
+{
+  /* `_stalled` was set only when the reader TIMED OUT - silence for IDLE_MS
+     with text already in hand, which is the case every section above is about.
+     A stream that is cut and then CLOSED does not time out: read() returns
+     done, the loop breaks on the ordinary path, and the half-sentence that
+     arrived is rendered as a finished answer with nothing to say otherwise.
+     That is the common shape of a dropped upstream, a proxy timeout, or a
+     worker dying mid-answer - and the machinery to report it already existed,
+     it was simply never reached from this direction.
+
+     The two cases are told apart by whether the producer said it had finished,
+     not by how the socket behaved: a terminal event or [DONE] means concluded,
+     and its absence means cut off. */
+  const sse = (evts) => evts.map(e => 'event: ' + e.e + '\ndata: ' + JSON.stringify(e.d) + '\n\n').join('');
+  const HEAD = [
+    { e: 'message_start', d: { type: 'message_start', message: { id: 'm', role: 'assistant', content: [], usage: { input_tokens: 1, output_tokens: 0 } } } },
+    { e: 'content_block_start', d: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } } },
+    { e: 'content_block_delta', d: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'The answer is ' } } },
+  ];
+  const run = (body) => page.evaluate(async (b) => {
+    window.__amvStreamIdleMs = 8000;            // long, so nothing here is a stall
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 'tok';
+    S.busy = false; setMsgs([]);
+    /* Three sends in a row from one page trips AMV's own send-rate guard, and
+       "Slow down a moment before sending again" is not the stream under test.
+       Cleared between cases so each one measures the stream it was given. */
+    try { AEGIS._lastSend = 0; AEGIS._times = []; } catch (e) {}
+    window.fetch = async (u) => {
+      if (String(u).includes('/v1/resume'))
+        return { ok: true, status: 200, headers: new Headers(), json: async () => ({ ok: true, text: '' }) };
+      return { ok: true, status: 200, headers: new Headers({ 'content-type': 'text/event-stream' }),
+        body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(b)); c.close(); } }) };
+    };
+    document.getElementById('mta').value = 'a question';
+    try { await sendMsg(); } catch (e) {}
+    for (let i = 0; i < 40 && S.busy; i++) await new Promise(r => setTimeout(r, 150));
+    await new Promise(r => setTimeout(r, 300));
+    const m = getMsgs(); const last = m[m.length - 1] || {};
+    const cm = document.getElementById('cm');
+    return { text: String(last.c || ''), interrupted: !!last._interrupted,
+             banner: !!cm.querySelector('.ai-cut'),
+             retry: !!cm.querySelector('.ai-cut .ai-snag-retry') };
+  }, body);
+
+  const cut = await run(sse(HEAD));
+  ok(cut.text === 'The answer is ', 'what arrived is kept, not thrown away', JSON.stringify(cut.text));
+  ok(cut.interrupted === true, 'and it is marked as cut off rather than finished', cut);
+  ok(cut.banner === true, 'so the screen says the connection dropped partway through', cut);
+  ok(cut.retry === true, 'with a way to ask again right there', cut);
+
+  /* A provider error arriving mid-stream ends the stream the same way, and the
+     half-answer before it is no more finished than any other half-answer. */
+  const boom = await run(sse([...HEAD,
+    { e: 'error', d: { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } } }]));
+  ok(boom.interrupted === true, 'an overloaded error mid-stream is cut off too', boom);
+
+  /* AND THE OTHER HALF, which is what stops this being "mark everything cut
+     off": a stream that concludes properly must stay unmarked, or the banner
+     appears on every healthy answer and stops meaning anything. */
+  const whole = await run(sse([...HEAD,
+    { e: 'content_block_delta', d: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'forty-two.' } } },
+    { e: 'content_block_stop', d: { type: 'content_block_stop', index: 0 } },
+    { e: 'message_delta', d: { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 5 } } },
+    { e: 'message_stop', d: { type: 'message_stop' } }]));
+  ok(whole.text === 'The answer is forty-two.', 'a complete answer arrives complete', whole.text);
+  ok(whole.interrupted === false, 'and is NOT marked cut off', whole);
+  ok(whole.banner === false, 'so the banner means something when it does appear', whole);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
