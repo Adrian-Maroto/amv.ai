@@ -1303,17 +1303,43 @@ try{ window.buildHome=buildHome; }catch(e){}
    the rest are here because a link to them is a thing somebody would send. */
 const _URL_TABS={ billing:'billing', plans:'plans', upgrade:'upgrade',
                   settings:'settings', help:'help', crew:'crew', market:'market' };
+const _tabForSlug=(slug)=>Object.keys(_URL_TABS).find(k=>_URL_TABS[k]===slug)||'';
+
+/* DOES THIS HOST SERVE THE APP AT A BARE PATH? ASK THE ADDRESS BAR.
+
+   `/billing` only works if the host is configured to serve index.html for
+   every path. Nothing in this repository can see that setting - but the page
+   can observe the CONSEQUENCE of it: if this script is running and the address
+   is `/billing`, then the host just served index.html for `/billing`, which is
+   the whole question. A rewrite that exists proves itself by the app being
+   here to ask.
+
+   That is why the path form is never WRITTEN unless it has already been seen
+   working. Writing it first is the trap the comment in setTab describes - an
+   address that works until somebody refreshes is worse than no address - and
+   on a host with no rewrite every one of those links would 404 the moment it
+   was shared. */
+let _pathRouting=false;
+function _slugFromPath(){
+  try{
+    const m=/^\/([a-z]+)\/?$/.exec(location.pathname||'');
+    return m?m[1]:'';
+  }catch(e){ return ''; }
+}
 /* Read the address on the way in, so the link works and not just the button. */
 function _tabFromURL(){
   try{
     const m=/^#\/([a-z]+)$/.exec(location.hash||'');
-    if(!m) return '';
-    const slug=m[1];
-    const hit=Object.keys(_URL_TABS).find(k=>_URL_TABS[k]===slug);
-    return hit||'';
+    if(m) return _tabForSlug(m[1]);
+    /* No hash. A path we recognise means the host rewrote to get here. */
+    const hit=_tabForSlug(_slugFromPath());
+    if(hit) _pathRouting=true;
+    return hit;
   }catch(e){ return ''; }
 }
-try{ window._tabFromURL=_tabFromURL; window._URL_TABS=_URL_TABS; }catch(e){}
+try{ window._tabFromURL=_tabFromURL; window._URL_TABS=_URL_TABS;
+     window._slugFromPath=_slugFromPath;
+     window._pathRoutingOn=()=>_pathRouting; }catch(e){}
 
 function setTab(t){
   try{ if(t==='settings' && S.tab && S.tab!=='settings') S._preSettingsTab=S.tab; }catch(e){}
@@ -1392,8 +1418,18 @@ function setTab(t){
   try{
     const _slug=_URL_TABS[t];
     if(_slug){
-      const want='#/'+_slug;
-      if(location.hash!==want) history.replaceState(null,'',location.pathname+location.search+want);
+      /* Paths only once this host has shown it serves them (see _tabFromURL).
+         Otherwise the hash, which needs nothing from the host and survives a
+         refresh anywhere. */
+      if(_pathRouting){
+        const want='/'+_slug;
+        if(location.pathname!==want) history.replaceState(null,'',want+location.search);
+      } else {
+        const want='#/'+_slug;
+        if(location.hash!==want) history.replaceState(null,'',location.pathname+location.search+want);
+      }
+    } else if(_pathRouting && _slugFromPath()){
+      history.replaceState(null,'','/'+location.search);
     } else if(/^#\/[a-z]+$/.test(location.hash||'')){
       history.replaceState(null,'',location.pathname+location.search);
     }

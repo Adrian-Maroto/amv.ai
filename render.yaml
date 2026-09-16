@@ -1,0 +1,31 @@
+# Render Blueprint for the AMV static site.
+#
+# TWO THINGS ONLY, and both have a dashboard equivalent that does the same job:
+#
+#   staticPublishPath  the folder a visitor is allowed to see. `node build.mjs`
+#                      writes `public/` and it holds the app, the service
+#                      worker, the manifest, two icons and the bridge - not
+#                      amv-backend.js, not wrangler.toml, not this file.
+#
+#   routes             serve index.html for a path there is no file for, so
+#                      /billing opens Billing instead of 404ing. Rewrite, not
+#                      redirect: a redirect changes the address and loses the
+#                      path it was asked for.
+#
+# A BLUEPRINT ONLY GOVERNS A SERVICE CREATED FROM IT. A static site made by
+# hand in the dashboard does not read this file, so for an existing site the
+# fields in DEPLOY.md are the ones that do the work. This is here so a new
+# environment comes up right, and so the intended configuration is written
+# down somewhere that is not a screenshot.
+#
+# The app does not depend on any of it: it writes path-form addresses only
+# after seeing the host serve one, and the hash form until then.
+services:
+  - type: web
+    name: amv
+    runtime: static
+    staticPublishPath: ./public
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

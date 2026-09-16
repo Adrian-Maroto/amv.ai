@@ -153,6 +153,60 @@ section('An address pasted into the bar boots onto that screen');
   ok(n.tab === 'chat', 'and no address still lands where it always did', n);
 }
 
+section('A bare /billing works where the host serves it, and is not faked where it does not');
+{
+  /* THE HALF THAT IS NOT THIS REPOSITORY'S TO CONFIGURE.
+
+     `/billing` needs the host to serve index.html for every path. Nothing here
+     can read that setting - but the page can observe its CONSEQUENCE: if this
+     script is running and the address is `/billing`, the host just served
+     index.html for `/billing`, which is the whole question. A rewrite that
+     exists proves itself by the app being here to ask.
+
+     So the path form is never WRITTEN until it has been seen working. Writing
+     it first is the trap setTab's own comment describes - an address that works
+     until somebody refreshes is worse than no address - and on a host with no
+     rewrite every shared link would 404. This asserts both halves: paths when
+     the host serves them, hashes when it has not shown that it does. */
+  const base = page.url().split('#')[0].replace(/\/$/, '');
+
+  const land = async (where) => {
+    await page.goto('about:blank');
+    await page.goto(base + where, { waitUntil: 'load' });
+    await page.waitForTimeout(800);
+    return page.evaluate(async () => {
+      const first = { tab: S.tab, path: location.pathname, hash: location.hash,
+                      pathRouting: typeof window._pathRoutingOn === 'function' && window._pathRoutingOn() };
+      /* And where it puts the address when you move somewhere else. */
+      setTab('plans');
+      await new Promise(r => setTimeout(r, 250));
+      return { ...first, thenPath: location.pathname, thenHash: location.hash };
+    });
+  };
+
+  const byPath = await land('/billing');
+  ok(byPath.tab === 'billing', 'arriving at /billing opens Billing', byPath);
+  ok(byPath.pathRouting === true,
+     'and the host serving it is taken as proof that it can serve the others', byPath);
+  ok(byPath.thenPath === '/plans' && byPath.thenHash === '',
+     'so moving on writes a real path, not a hash bolted onto one', byPath);
+
+  const byRoot = await land('/');
+  ok(byRoot.tab === 'chat', 'arriving at the root lands where it always did', byRoot);
+  ok(byRoot.pathRouting === false,
+     'and nothing has been proved about paths, so nothing is assumed', byRoot);
+  ok(byRoot.thenHash === '#/plans' && byRoot.thenPath === '/',
+     'moving on writes the hash, which needs nothing from the host', byRoot);
+
+  /* The hash keeps working even on a host that does rewrite - old links people
+     have already sent must not stop resolving because the host improved. */
+  await page.goto('about:blank');
+  await page.goto(base + '/#/billing', { waitUntil: 'load' });
+  await page.waitForTimeout(800);
+  const hashStill = await page.evaluate(() => ({ tab: S.tab }));
+  ok(hashStill.tab === 'billing', 'a link in the old hash form still opens Billing', hashStill);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

@@ -229,6 +229,42 @@ for `*.md`, `*.mjs` (except `amv-bridge.mjs`), `*.toml` and `amv-backend.js` -
 but that is a list somebody has to keep in step with the repository, which is
 why the folder exists.
 
+### The second field: serve the app for every path
+
+Optional, and the app is correct either way. This is what makes `amv.homes/billing`
+work as well as `amv.homes/#/billing`.
+
+The app is one file, so a request for `/billing` is a request the host has no
+file for. Told nothing, it answers 404 and the link somebody shared is dead.
+Told to rewrite, it serves `index.html` and the app reads the path and opens
+Billing.
+
+Render → the static site → **Settings → Redirects/Rewrites** → add
+Source `/*`, Destination `/index.html`, Action **Rewrite**. (Rewrite, not
+Redirect: a redirect changes the address in the bar and loses the path.)
+Netlify → a `_redirects` file containing `/*  /index.html  200`. Vercel →
+`rewrites` in `vercel.json`. Cloudflare Pages → serves `index.html` for
+unmatched paths already.
+
+`render.yaml` in this repository carries the same rule for Render, and applies
+if the service is managed by that Blueprint. A service created by hand in the
+dashboard is not, so for an existing site the dashboard field above is the one
+that does the work.
+
+**Nothing breaks if this is never set.** The app writes the path form ONLY
+after seeing the host serve one: arriving at `/billing` and running at all is
+proof the rewrite exists, and until that proof turns up every address it writes
+is the hash form, which needs nothing from the host. So an unconfigured host
+gets exactly the behaviour it has today rather than a set of links that 404 the
+moment they are shared. `billing-reads-in-the-order-you-decide-in` asserts both
+halves.
+
+Being straight about one thing: the Render syntax above is written from
+knowledge, not from their current documentation - render.com is unreachable
+from the environment this was set up in, so it could not be checked. The
+dashboard field is the part to trust; if `render.yaml` disagrees with what
+Render wants today, the dashboard still does the job and the file can go.
+
 ---
 
 ## The bridge (letting AMV work on somebody's computer)
