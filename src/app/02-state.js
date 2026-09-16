@@ -237,13 +237,46 @@ const SYNC_SOFT_LIMIT = 3.5 * 1024 * 1024;   // stay under the server's 4MB ceil
    ~680KB), and the server caps a sync payload at 4MB - so we upload newest-first
    and drop the heavy `state` blob from older sessions rather than failing the
    whole sync. Titles/ids always survive, so nothing disappears from Recents. */
+/* WHAT A RECENT IS, RECOVERED FROM WHAT IT CONTAINS.
+
+   For records that were uploaded by the version this fixes. They went up with
+   no kind at all, so the server's copy of somebody's Dev project cannot say it
+   is one - and on a new computer it came back as an untyped row and drew as an
+   ordinary chat. The shapes are distinct enough to tell apart, and guessing
+   from the contents is better than leaving real work mislabelled. */
+function _sessKindOf(rec){
+  try{
+    if(rec && rec.kind && SESSION_KINDS[rec.kind]) return rec.kind;
+    const st = (rec && rec.state) || {};
+    if(Array.isArray(st.artifacts)) return 'studio';
+    if(typeof st.code === 'string' || Array.isArray(st.files)) return 'lab';
+    if(Array.isArray(st.log) || (st.project && typeof st.project === 'object')) return 'dev';
+  }catch(e){}
+  return '';
+}
+try{ window._sessKindOf=_sessKindOf; }catch(e){}
+
 function _syncSessionList(){
   try{
     const list = (Array.isArray(_SESSIONS) ? _SESSIONS : []).slice()
       .sort((a,b)=>(b.updated||0)-(a.updated||0));
+    /* `kind` IS THE FIELD, AND THIS SENT `tool`.
+
+       A session record is {id, kind, title, updated, state}. This mapped
+       `tool: s.tool`, which is not a field on it, so every upload carried
+       `undefined` and the kind was simply absent from the server's copy.
+
+       Nothing looked broken on the device that made them, because _SESSIONS in
+       memory was always right. It only showed when somebody signed in
+       somewhere else: their Dev, Lab and Studio work came back with no kind,
+       could not be drawn as any of those, and appeared as ordinary chats
+       carrying the names they had given them.
+
+       `tool` is still sent, as a copy of kind, so a device still running the
+       old build reads something rather than nothing. */
     return list.map(s=>({
-      id:s.id, tool:s.tool, title:s.title, updated:s.updated, created:s.created,
-      state: s.state || null
+      id:s.id, kind:s.kind, tool:s.kind, title:s.title, updated:s.updated,
+      created:s.created, state: s.state || null
     }));
   }catch(e){ return []; }
 }
@@ -300,7 +333,13 @@ const AMVSync = {
           // device must survive a pull, not be replaced out of existence.
           const merged=_mergeById(Array.isArray(_SESSIONS)?_SESSIONS.slice():[], data.sessions);
           _SESSIONS.length = 0;
-          merged.forEach(x=>_SESSIONS.push(x));
+          /* Repair on the way in. Anything uploaded before the kind was sent
+             has none, and a Recent with no kind is the bug somebody actually
+             sees - their Dev project listed as a chat. */
+          merged.forEach(x=>{
+            if(x && !x.kind){ const k=_sessKindOf(x); if(k) x.kind=k; }
+            _SESSIONS.push(x);
+          });
           store(_sessKey(), _SESSIONS);
         }catch(e){ _logErr('sync.sessions', e); }
       }
