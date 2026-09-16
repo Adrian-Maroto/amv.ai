@@ -3386,13 +3386,31 @@ function openTerms(){
       '<p class="ob-sub">Effective '+escH(_legalEffective())+' - please read carefully.</p>'+
       '<div class="ts">'+
         '<h4>1. Acceptance</h4>By using AMV.AI you agree to these terms. If you disagree, stop using the platform.'+
-        '<h4>2. Content Policy</h4>Prohibited: explicit sexual/pornographic content; child sexual abuse material (CSAM - all violations reported to NCMEC and law enforcement); content intended to harass or harm; impersonation for fraud; attempts to generate malware or facilitate illegal activity. We may suspend accounts that violate this policy.'+
-        '<h4>3. Automation &amp; Connected Tools</h4>By enabling automation or connected features you grant AMV.AI permission to access the accounts and files you configure (e.g. browser, email, calendar), used solely for tasks you request. Revoke access in Settings at any time.'+
-        '<h4>4. AI Disclaimer</h4>AI outputs may be inaccurate. Do not rely on AMV.AI for medical, legal, or financial decisions without independent professional verification. AMV.AI does not provide financial advice; scheduled research reports information only.'+
-        '<h4>5. Payments &amp; Refunds</h4>Subscriptions are billed monthly by our payment processor and can be cancelled any time; access continues to the end of the paid period. Refunds are handled per our posted policy. Chargeback or refund abuse may result in account suspension.'+
-        '<h4>6. Acceptable Use &amp; Limits</h4>Each plan includes usage limits. Automated scraping of the service, reselling access, or circumventing limits is prohibited.'+
-        '<h4>7. Privacy</h4>Your use of AMV.AI is also governed by our <button class="lnk-inline" data-dact="_closeThenPrivacy">Privacy Policy</button>, which explains what we collect and how it is handled.'+
-        '<h4>8. Contact</h4>'+(_supportEmail()?escH(_supportEmail()):'Contact support from the Help Center in the app.')+
+        /* ELIGIBILITY, WHICH THESE TERMS DID NOT STATE AT ALL.
+
+           The Privacy Policy already says AMV is not directed to under-13s, so
+           the product had a position on age in the document that explains data
+           handling and none in the one that forms the agreement. Stated here
+           to match it rather than inventing a second number.
+
+           The payment line is not decoration. A minor cannot form a binding
+           contract, which is the reason the compliance module gives for gating
+           money at all - "which is exactly why a teenager's purchases come
+           straight back as chargebacks" - and it is what _moneyAgeGate
+           enforces on spending, buying and withdrawing.
+
+           The family sentence is there because AMV actually supports it: a
+           family manager pays, sets what may be spent, and decides whether
+           that person can buy or withdraw. Terms that ignored it would be
+           terms this product breaks on its own feature. */
+        '<h4>2. Who may use AMV</h4>You must be at least 13 to use AMV.AI, and at least 16 where your country sets a higher minimum for online services. You must be 18 or older to buy a subscription, purchase anything in the marketplace, withdraw money, or let AMV spend on your behalf - a minor cannot enter a binding contract. If you are under 18 you may use AMV through a family manager who is over 18, has accepted these terms, pays, and controls what may be spent. We may suspend an account we believe is held by somebody below these ages.'+
+        '<h4>3. Content Policy</h4>Prohibited: explicit sexual/pornographic content; child sexual abuse material (CSAM - all violations reported to NCMEC and law enforcement); content intended to harass or harm; impersonation for fraud; attempts to generate malware or facilitate illegal activity. We may suspend accounts that violate this policy.'+
+        '<h4>4. Automation &amp; Connected Tools</h4>By enabling automation or connected features you grant AMV.AI permission to access the accounts and files you configure (e.g. browser, email, calendar), used solely for tasks you request. Revoke access in Settings at any time.'+
+        '<h4>5. AI Disclaimer</h4>AI outputs may be inaccurate. Do not rely on AMV.AI for medical, legal, or financial decisions without independent professional verification. AMV.AI does not provide financial advice; scheduled research reports information only.'+
+        '<h4>6. Payments &amp; Refunds</h4>Subscriptions are billed monthly by our payment processor and can be cancelled any time; access continues to the end of the paid period. Refunds are handled per our posted policy. Chargeback or refund abuse may result in account suspension.'+
+        '<h4>7. Acceptable Use &amp; Limits</h4>Each plan includes usage limits. Automated scraping of the service, reselling access, or circumventing limits is prohibited.'+
+        '<h4>8. Privacy</h4>Your use of AMV.AI is also governed by our <button class="lnk-inline" data-dact="_closeThenPrivacy">Privacy Policy</button>, which explains what we collect and how it is handled.'+
+        '<h4>9. Contact</h4>'+(_supportEmail()?escH(_supportEmail()):'Contact support from the Help Center in the app.')+
       '</div>'+
       '<div style="display:flex;gap:9px"><button class="btn bp" data-dact="_acceptCookies" style="flex:1">I Accept</button><button class="btn bs" data-dact="closeOvr">Close</button></div>'+
     '</div></div>';
