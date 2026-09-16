@@ -40891,10 +40891,42 @@ try{ window._agentStop=_agentStop; window._agentSetRunning=_agentSetRunning; }ca
    answer this codebase has spent a lot of effort not giving. */
 async function _agentToggleTurn(t, id){
   const goingBack = !t.undone;
-  const target = goingBack ? t.before : t.after;
   const created = t.created || {};
   let failed = 0;
   try{ _devBusy(true, goingBack ? 'Rolling back' : 'Putting it back'); }catch(e){}
+
+  /* RE-READ THE DISK BEFORE ROLLING BACK, and the sibling function says why.
+
+     `_devToggleTurn` re-snapshots the browser project on the way down "so hand
+     edits made after the turn are not thrown away by Redo". This one wrote to
+     somebody's REAL FILES and did not. So: the turn edits a file, the person
+     opens their own editor and changes it further, then presses Undo. Undo
+     writes `before` over their work - which is what Undo means and is fine -
+     but `after` is still the version the TURN produced, so Redo does not bring
+     their change back. It overwrites it a second time, with older content, and
+     there is nothing left anywhere that holds it.
+
+     The browser half gives you a way back from that and the machine half did
+     not, on the copy that is not recoverable by reloading a page. Reading the
+     current bytes first costs one round trip per file on a path that already
+     writes one per file.
+
+     A file the turn CREATED is captured the same way: if the person has since
+     edited it, Redo puts back what they had rather than the turn's first draft.
+     A read that fails leaves the old snapshot in place - a stale `after` is a
+     worse Redo, while no `after` at all is no Redo. */
+  if(goingBack){
+    const fresh = {};
+    for(const path of Object.keys(Object.assign({}, t.after || {}, created))){
+      try{
+        const r = await bridgeRead(path);
+        if(r && typeof r.content === 'string') fresh[path] = r.content;
+      }catch(e){ /* gone or unreadable: fall through to what we had */ }
+    }
+    for(const path of Object.keys(fresh)) (t.after = t.after || {})[path] = fresh[path];
+  }
+
+  const target = goingBack ? t.before : t.after;
   for(const path of Object.keys(goingBack ? Object.assign({}, t.before, created) : t.after)){
     try{
       if(goingBack && created[path]) await bridgeDelete(path);
