@@ -3232,8 +3232,7 @@ async function crewPopular(request, env){
      Per IP, per minute, generous enough that a real person clicking around
      Crew never sees it. Behind it, a cache header, so a browser that visits
      the screen twice in a minute does not ask twice. */
-  const ip = (request.headers.get('CF-Connecting-IP')
-           || request.headers.get('X-Forwarded-For') || 'noip').slice(0, 45);
+  const ip = _rlIp(request);
   const blocked = await guardAction(env, 'crewpop:' + ip, 60, 0, 'this');
   if(blocked) return blocked;
   let rec = null;
@@ -9001,7 +9000,7 @@ function _errScrub(text, max) {
 async function errorsReport(request, env, ctx){
   // AMV-054: this is a PUBLIC (unauthenticated) telemetry sink. Rate-limit per IP
   // so it can't be flooded to amplify storage or poison the dashboard.
-  const eip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+  const eip = _rlIp(request);
   const erl = await limitAction(env, `errreport:${eip}`, 30, 500);
   if (!erl.ok) return json({ ok: true, accepted: 0, throttled: true });
   /* And a ceiling shared with the other non-essential writer, because a per-IP
@@ -9875,8 +9874,7 @@ function _adminTokenOK(request, env){
    both halves of the gate need it. */
 async function _adminIp(request, env) {
   return (await _ipHash(env, request))
-      || request.headers.get('CF-Connecting-IP')
-      || request.headers.get('X-Forwarded-For') || 'unknown';
+      || _rlIp(request);
 }
 
 async function _adminRateLimit(request, env, what, perMin, perDay) {
@@ -10361,8 +10359,7 @@ async function authResetCode(request, env) {
      belonging to anybody else. */
   const ipKey = (await _ipHash(env, request))
              || request.headers.get('CF-Connecting-IP')
-             || String(request.headers.get('X-Forwarded-For') || '').split(',')[0].trim()
-             || 'unknown';
+             || _rlIp(request);
   const ipBucket = Math.floor(Date.now() / RESET_IP_WINDOW_MS);
   const ipRl = await counter(env, `resetip:${ipKey}:${ipBucket}`,
                              { op: 'reserve', amount: 1, cap: RESET_IP_MAX, ttlMs: RESET_IP_WINDOW_MS * 2 });
@@ -11608,9 +11605,7 @@ async function authSignup(request, env){
      unidentifiable caller would share one bucket - five sign-ups a minute for
      the whole internet, a denial of service written by the person adding the
      rate limit. So it falls back to the address, then to a named bucket. */
-  const sIp = (await _ipHash(env, request))
-           || request.headers.get('CF-Connecting-IP')
-           || request.headers.get('X-Forwarded-For') || 'unknown';
+  const sIp = (await _ipHash(env, request)) || _rlIp(request);
   const sBlock = await guardAction(env, `signup:${sIp}`, 5, 40, 'sign-ups');
   if (sBlock) return sBlock;
   const capOk = await _verifyCaptcha(env, body.captchaToken, request);
@@ -11706,7 +11701,7 @@ async function authLogin(request, env) {
     const capOk = await _verifyCaptcha(env, body.captchaToken, request);
     if (!capOk) return json({ error:'Please complete the verification and try again.', code:'captcha_required' }, 400);
   }
-  const ip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+  const ip = _rlIp(request);
 
   /* HOW MANY TIMES ONE SOURCE MAY MAKE AMV HASH A PASSWORD.
 
@@ -11989,7 +11984,7 @@ async function authGoogle(request, env) {
      Bounded by source, before the outbound call rather than after it - a limit
      applied to the answer still pays for the question. A real person signs in a
      handful of times; this ceiling is nowhere near them. */
-  const gip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+  const gip = _rlIp(request);
   const gLimit = await limitAction(env, 'googlesig:' + gip, 20, 300);
   if (!gLimit.ok) {
     /* A counter that cannot be reached is a fault here, not a verdict. Refusing
@@ -15655,8 +15650,7 @@ async function connectorDirectory(request, env) {
      A cached answer costs nothing upstream, but the limit is taken BEFORE the
      cache is consulted on purpose: a cap that a cache hit slips past is a cap
      an attacker only has to guess their way around. */
-  const ip = (request.headers.get('CF-Connecting-IP')
-           || request.headers.get('X-Forwarded-For') || 'noip').slice(0, 45);
+  const ip = _rlIp(request);
   const gate = await guardAction(env, `connectors:${ip}`, 60, 1500, 'directory searches');
   if (gate) return gate;
   const q = _mcpRegText(u.searchParams.get('q'), 60);
@@ -16427,7 +16421,7 @@ async function widgetChat(request, env, ctx) {
   // AMV-022: per-visitor (IP) throttle so a single abuser can't drain the whole
   // widget's daily budget in a burst. The per-widget message/spend caps below
   // bound the total; this bounds any one caller.
-  const vip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+  const vip = _rlIp(request);
   const vRl = await limitAction(env, `widgetip:${key}:${vip}`, 15, 300);
   if (!vRl.ok) {
     audit(env, 'widget_visitor_throttle', { key });
@@ -17570,7 +17564,7 @@ function twiml(message) {
 async function waitlistAdd(request, env) {
   // AMV-060: rate-limit per IP so the public waitlist can't be used to spam
   // third-party addresses or inflate signups.
-  const wip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+  const wip = _rlIp(request);
   const wl = await limitAction(env, `waitlist:${wip}`, 5, 50);
   if (!wl.ok) return json({ error: 'Too many requests. Please try again later.' }, 429);
   const body = await request.json().catch(() => ({}));
@@ -17887,6 +17881,32 @@ const REFERRAL_DAY_CAP         = 20;                 // signups one code may min
 /* A keyed, pseudonymous fingerprint of the signup network. We never store the
    address: this is a truncated HMAC, so it can be COMPARED but not reversed
    into an IP, which is what the same-device check actually needs. */
+/* ONE ANSWER TO "WHO IS THIS", FOR EVERY RATE LIMIT.
+
+   Twelve places wrote this by hand and eleven took X-Forwarded-For whole.
+   `_ipHash` below is the one that did not, and its comment says exactly why:
+   XFF is a caller-SUPPLIED list, so appending junk to it buys a fresh
+   rate-limit bucket on every request just by lengthening the string. The limit
+   is still there and no longer limits anything - which is the worst shape a
+   limit can have, because the audit line still says it fired.
+
+   Behind the edge this does not bite: CF-Connecting-IP is always set, so the
+   fallback never runs. That is a reason it has not hurt anybody yet, not a
+   reason to keep it - the fallback exists precisely for running OFF the edge,
+   which is the one deployment where the header is attacker-controlled.
+
+   45 characters because that is the longest an IPv6 address gets, so a real
+   address is never truncated and a padded one cannot buy a second bucket by
+   being longer. */
+function _rlIp(request){
+  try{
+    const cf = request.headers.get('CF-Connecting-IP');
+    if (cf) return String(cf).trim().slice(0, 45);
+    const fwd = String(request.headers.get('X-Forwarded-For') || '').split(',')[0].trim();
+    return (fwd || 'noip').slice(0, 45);
+  }catch(e){ return 'noip'; }
+}
+
 async function _ipHash(env, request) {
   try {
     /* CF-Connecting-IP is set by the edge and cannot be forged from outside.
@@ -19928,7 +19948,7 @@ async function marketInstall(request, env) {
      can be manufactured is not a ranking signal, it is an advertisement. */
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'sign in to install' }, 401);
-  const iip = request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'noip';
+  const iip = _rlIp(request);
   const irl = await limitAction(env, `mktinstall:${iip}`, 30, 300);
   if (!irl.ok) return json({ ok: true, throttled: true });
   const { id } = await request.json().catch(() => ({}));
@@ -24539,8 +24559,7 @@ async function authResetConfirm(request, env) {
      store, and that every other door has a ceiling. Keyed per address so one
      source cannot spend everybody's. */
   const rcIp = (await _ipHash(env, request))
-            || request.headers.get('CF-Connecting-IP')
-            || request.headers.get('X-Forwarded-For') || 'unknown';
+            || _rlIp(request);
   const rcBlock = await guardAction(env, `resetconfirm:${rcIp}`, 10, 60, 'password resets');
   if (rcBlock) return rcBlock;
   { const bad = _passwordLengthProblem(password); if(bad) return json(bad, 400); }

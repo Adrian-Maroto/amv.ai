@@ -15,7 +15,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'ratelimit.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { limitAction, guardAction, handoffCreate, marketPublish, marketMessage, crewJobs, syncPush };' +
+  '\nexport { limitAction, guardAction, handoffCreate, marketPublish, marketMessage, crewJobs, syncPush, _rlIp };' +
   '\nexport function __setRequireUser(fn){ requireUser = fn; }\n');
 const W = await import(harness + '?t=' + Date.now());
 
@@ -209,6 +209,57 @@ const slowKV = {
   const goodEnv = { AMV_KV: slowKV, AMV_COUNTER: goodDO };
   const first = await W.limitAction(goodEnv, 'race:healthy', 30, 0);
   ok(first.ok === true, 'a healthy counter still lets normal use through', first);
+}
+
+/* ── Who a rate limit thinks you are ──────────────────────────────────────── */
+section('A caller cannot buy a fresh bucket by lengthening a header');
+{
+  /* X-FORWARDED-FOR IS A CALLER-SUPPLIED LIST, AND TWELVE PLACES TOOK IT WHOLE.
+
+     `_ipHash` was the one that did not, and its comment said why: append junk
+     and every request lands in a different bucket, so the limit is still there
+     and no longer limits anything - the worst shape a limit can have, because
+     the audit line still says it fired. Eleven others - login, signup, the
+     Google callback, the error sink, the waitlist, the embeddable widget, the
+     connector directory - keyed off the raw header.
+
+     Not exploitable behind the edge, where CF-Connecting-IP is always set and
+     the fallback never runs. That is why it drifted and why nothing caught it:
+     no test in the repository sent this header at all, so the fallback path -
+     the one that exists precisely for running OFF the edge, which is the one
+     deployment where the header is attacker-controlled - was never measured. */
+  const mk = (h) => new Request('https://api.amv.dev/x', { headers: h });
+
+  const padded = ['203.0.113.5', '203.0.113.5, 1.1.1.1', '203.0.113.5,2.2.2.2,3.3.3.3',
+                  '203.0.113.5 , 4.4.4.4'];
+  const seen = new Set(padded.map(v => W._rlIp(mk({ 'X-Forwarded-For': v }))));
+  ok(seen.size === 1 && seen.has('203.0.113.5'),
+     'every padding of one address is the same bucket', [...seen]);
+
+  /* And it really does limit, not merely agree with itself. */
+  let ok5 = 0;
+  await withFrozenClock(async () => {
+    for (const v of ['9.9.9.9', '9.9.9.9, a', '9.9.9.9, a, b', '9.9.9.9,c', '9.9.9.9,d', '9.9.9.9,e']) {
+      const r = await W.limitAction(env, 'xff:' + W._rlIp(mk({ 'X-Forwarded-For': v })), 3, 0);
+      if (r.ok) ok5++;
+    }
+  });
+  ok(ok5 === 3, 'six requests wearing six headers still spend one bucket of three', ok5);
+
+  /* The edge wins when it speaks, because that header cannot be forged from
+     outside and the forwarded list can. */
+  const both = W._rlIp(mk({ 'CF-Connecting-IP': '198.51.100.1', 'X-Forwarded-For': '203.0.113.5' }));
+  ok(both === '198.51.100.1', 'CF-Connecting-IP is preferred over anything supplied', both);
+
+  /* A very long header cannot become its own bucket by being long. 45 is the
+     longest an IPv6 address gets, so a real one is never truncated. */
+  const longest = W._rlIp(mk({ 'X-Forwarded-For': '2001:0db8:85a3:0000:0000:8a2e:0370:7334' }));
+  ok(longest === '2001:0db8:85a3:0000:0000:8a2e:0370:7334', 'a full IPv6 address survives whole', longest);
+  const a = W._rlIp(mk({ 'X-Forwarded-For': 'x'.repeat(400) }));
+  const b = W._rlIp(mk({ 'X-Forwarded-For': 'x'.repeat(900) }));
+  ok(a === b && a.length === 45, 'and two absurd ones are still one bucket', a.length);
+
+  ok(W._rlIp(mk({})) === 'noip', 'no headers at all is a named bucket, not an empty key', W._rlIp(mk({})));
 }
 
 report();
