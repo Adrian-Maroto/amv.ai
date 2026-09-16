@@ -21,7 +21,7 @@
    running is a timeout in name only, wearing the label that says it did
    not happen. */
 import { spawn } from 'child_process';
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, existsSync } from 'fs';
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, existsSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -167,6 +167,62 @@ section('The folder it was started in is the whole world');
   const w = await call('write', { path: '../ESCAPED.txt', content: 'x' }, { token: TOKEN });
   ok(w.status === 403, 'writing outside the folder is refused', w.status);
   ok(!existsSync(join(box, 'ESCAPED.txt')), 'and no file appeared out there', true);
+}
+
+section('A link out of the folder is still out of the folder');
+{
+  /* A DANGLING SYMLINK IS NOT AN ABSENT LEAF.
+
+     `safePath` walked up from the path to the nearest EXISTING ancestor and
+     realpath'd that, which is right for a write whose file does not exist yet.
+     But `existsSync` FOLLOWS a symlink, so a link inside the project pointing
+     at something that does not exist yet read as "nothing here" - the walk
+     stepped over the link to its parent, the parent was inside the root, and
+     the check passed. `writeFileSync` then followed the link and wrote
+     wherever it pointed.
+
+     Measured against this daemon before the fix: `write` answered 200 and put
+     the file OUTSIDE the root, while `read` of the SAME path answered 403 once
+     the target existed. Two guards over one path disagreeing is the whole
+     defect, and the one that said no was right.
+
+     It needed no second way in either. `ln -s` is not on the refusal list, so
+     `exec` plants the link and `write` walks through it - both routes the page
+     already drives. That is the case this section exists for: the daemon's one
+     promise is that folder and nowhere else. */
+  const linked = join(box, 'VIA-LINK.txt');
+  symlinkSync(linked, join(proj, 'danglingLink.txt'));       // target does not exist yet
+  const w = await call('write', { path: 'danglingLink.txt', content: 'escaped' }, { token: TOKEN });
+  const wd = await jsonOf(w);
+  ok(w.status === 403 && wd.error === 'outside_root',
+     'writing through a dangling link that points out is refused', wd.error || w.status);
+  ok(!existsSync(linked), 'and nothing was created out there', existsSync(linked));
+
+  /* The same link, planted the way the product could actually plant it. */
+  const viaExec = join(box, 'VIA-EXEC.txt');
+  const e = await call('exec', { command: 'ln -s ' + JSON.stringify(viaExec) + ' execLink.txt' }, { token: TOKEN });
+  ok(e.status === 200, 'the daemon will happily make a symlink, which is not the bug', e.status);
+  const w2 = await call('write', { path: 'execLink.txt', content: 'escaped' }, { token: TOKEN });
+  ok(w2.status === 403, 'and writing through that one is refused too', w2.status);
+  ok(!existsSync(viaExec), 'still nothing out there', existsSync(viaExec));
+
+  /* AND LINKS THAT STAY INSIDE KEEP WORKING, which is what stops the fix from
+     being "refuse every symlink" - a project with a linked package or a linked
+     folder is ordinary, and breaking it would be a worse bug than the one
+     being closed. */
+  mkdirSync(join(proj, 'pkg'), { recursive: true });
+  writeFileSync(join(proj, 'realTarget.txt'), 'real\n');
+  symlinkSync(join(proj, 'realTarget.txt'), join(proj, 'pkg', 'liveLink.txt'));
+  symlinkSync(join(proj, 'notYet.txt'), join(proj, 'pkg', 'insideDangling.txt'));
+  const r1 = await jsonOf(await call('read', { path: 'pkg/liveLink.txt' }, { token: TOKEN }));
+  ok(r1.content === 'real\n', 'a live link inside the folder still reads', JSON.stringify(r1.content));
+  const w3 = await call('write', { path: 'pkg/liveLink.txt', content: 'edited\n' }, { token: TOKEN });
+  ok(w3.status === 200, 'and still writes', w3.status);
+  ok(readFileSync(join(proj, 'realTarget.txt'), 'utf8') === 'edited\n',
+     'reaching the file it points at', true);
+  const w4 = await call('write', { path: 'pkg/insideDangling.txt', content: 'new\n' }, { token: TOKEN });
+  ok(w4.status === 200, 'a dangling link that points INSIDE still works', w4.status);
+  ok(existsSync(join(proj, 'notYet.txt')), 'and creates the file it pointed at', true);
 }
 
 section('It really writes, and really runs');

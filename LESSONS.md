@@ -12938,3 +12938,52 @@ Three things came out of it, in increasing order of how much they are worth:
    that reproduces a crash only on a paid account will sit green forever on a
    free one. Both were found by re-running the test against the defect on
    purpose, which is the only reason either is known.
+
+## 492. A dangling symlink is not an absent leaf
+
+The bridge makes one promise: that folder and nowhere else. `safePath` kept it
+by resolving the path, walking up to the nearest EXISTING ancestor, and
+`realpathSync`-ing that. Walking up is right - the leaf of a write does not
+exist yet, which is the whole point of a write.
+
+`existsSync` FOLLOWS a symlink. So a link inside the project pointing at
+something that does not exist yet answers false, the walk steps straight over
+the link to its parent, the parent is inside the root, and the check passes.
+`writeFileSync` then follows the link and writes wherever it points.
+
+Measured against the running daemon:
+
+    write  danglingLink.txt  ->  200, file created OUTSIDE the root
+    read   danglingLink.txt  ->  403 outside_root
+
+Two guards over one path, disagreeing. That asymmetry is what makes it a bug
+rather than a design decision, and the one that said no was right - `read` only
+differed because by then the target existed, so `existsSync` found it and
+`realpathSync` resolved it out of the root.
+
+It needed no second way in. `ln -s` is not on the refusal list, so `exec`
+plants the link and `write` walks through it, and both are routes the page
+already drives. `exec` being powerful does not excuse it: exec is consented per
+command inside the agent loop, while a write is one line of a changelist.
+
+Three things worth keeping:
+
+1. **A check that follows links cannot be the check that guards them.** Every
+   `exists`/`stat` in a confinement check is a link being followed on your
+   behalf. The leaf has to be examined with `lstat`, which does not follow, and
+   the link walked by hand - as a chain, because a link may point at a link.
+
+2. **Refusing every symlink would have been a worse bug.** A project with a
+   linked package or a linked folder is ordinary. The fix allows links that
+   stay inside and refuses ones that leave, which is the actual rule the
+   daemon's promise implies, and the test asserts both halves: a live inside
+   link still reads and writes through to its target, and a dangling inside
+   link still creates the file it pointed at.
+
+3. **The audit said this was covered.** TRUST-AUDIT records five bridge
+   mutations, 0 unnoticed, and names symlinks explicitly: "Symlinks are no
+   longer resolved, so a link escapes the root - caught." That mutation removed
+   the resolution from a path whose target EXISTED. Nothing had tried the
+   dangling case, so the row was true and the conclusion drawn from it - that
+   confinement was measured - was not. Five mutations is five mutations, and a
+   table of them is not a proof about the sixth.

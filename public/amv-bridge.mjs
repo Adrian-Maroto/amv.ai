@@ -59,7 +59,7 @@
 
 import { createServer } from 'http';
 import { spawn } from 'child_process';
-import { realpathSync, existsSync, statSync, readFileSync, writeFileSync,
+import { realpathSync, existsSync, statSync, lstatSync, readlinkSync, readFileSync, writeFileSync,
          mkdirSync, readdirSync, unlinkSync } from 'fs';
 import { resolve, join, dirname, relative, sep } from 'path';
 import { randomBytes, timingSafeEqual } from 'crypto';
@@ -323,16 +323,52 @@ function refuseReason(cmd){
 /* Every path AMV names is resolved and checked against the root. Resolved
    FIRST, then compared, because `a/../../etc` only looks like an escape once
    it has been normalised. */
+const _outside = () =>
+  Object.assign(new Error('outside the project folder'), { code: 'outside_root' });
+
+/* Is this resolved location inside the root? The nearest EXISTING ancestor is
+   what gets realpath'd, because the leaf of a write does not exist yet. */
+function _insideRoot(abs){
+  let base = abs;
+  while (base !== dirname(base) && !existsSync(base)) base = dirname(base);
+  const real = realpathSync(base);
+  return real === ROOT || real.startsWith(ROOT + sep);
+}
+
 function safePath(p){
   const abs = resolve(ROOT, String(p || '.'));
   /* The parent is resolved through symlinks so a link inside the project
      cannot point out of it; the leaf may not exist yet, which is the whole
      point of a write. */
-  let base = abs;
-  while (base !== dirname(base) && !existsSync(base)) base = dirname(base);
-  const real = realpathSync(base);
-  if (real !== ROOT && !real.startsWith(ROOT + sep)) {
-    throw Object.assign(new Error('outside the project folder'), { code: 'outside_root' });
+  if (!_insideRoot(abs)) throw _outside();
+
+  /* A DANGLING SYMLINK IS NOT AN ABSENT LEAF, AND THAT IS HOW WRITES GOT OUT.
+
+     `existsSync` FOLLOWS the link. So a link inside the project whose target
+     does not exist yet reads as "nothing here", the walk above steps straight
+     over it to the parent, the parent is inside the root, and the check
+     passes - and then `writeFileSync` follows the link and lands wherever it
+     points. Measured against the running daemon: `write` to such a link
+     answered 200 and created the file OUTSIDE the root, while `read` of the
+     very same path answered 403 once the target existed. Read and write
+     disagreeing about one path is the whole bug; read was right.
+
+     Nor did it need a second way in. `ln -s` is not on the refusal list, so
+     `exec` plants the link and `write` walks through it - both routes the page
+     already drives.
+
+     So the LEAF is examined with `lstat`, which does not follow, and a link is
+     followed by hand to where it really goes. Symlinks that stay inside the
+     project keep working; a chain is walked rather than trusted, because a
+     link may point at another link. */
+  let hops = 0, cur = abs;
+  for (;;) {
+    let st = null;
+    try { st = lstatSync(cur); } catch (e) { break; }   // nothing there: done
+    if (!st.isSymbolicLink()) break;
+    if (++hops > 12) throw _outside();                   // a loop, or deep enough to be one
+    cur = resolve(dirname(cur), readlinkSync(cur));
+    if (!_insideRoot(cur)) throw _outside();
   }
   return abs;
 }
