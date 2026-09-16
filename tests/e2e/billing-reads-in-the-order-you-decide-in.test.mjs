@@ -104,6 +104,55 @@ section('Billing has an address of its own');
   ok(back.readsBack === 'billing', 'a link to it resolves back to billing', back);
 }
 
+/* READING THE ADDRESS IS HALF THE FEATURE. LANDING ON IT IS THE HALF THAT
+   SOMEBODY EXPERIENCES.
+
+   The section above proves `_tabFromURL` parses and that `setTab` writes - two
+   claims about functions, neither of which needs a browser to have booted. The
+   thing a person does is paste the link and press enter, and that path runs
+   through boot, which is where it broke: the first goApp() is called at the top
+   level of 12-handoff while modules 13 and up are still evaluating, so honouring
+   the address there rendered a screen whose renderer read a binding that did not
+   exist yet. It threw ReferenceError and the app did not come up at all.
+
+   `#/crew` is in here beside `#/billing` deliberately: crew is the renderer that
+   reaches forward into a later module, so it is the one that fails if the
+   address is ever honoured too early again. A suite that only tried billing
+   would have stayed green through the outage. */
+section('An address pasted into the bar boots onto that screen');
+{
+  const base = page.url().split('#')[0];
+  /* about:blank first, and it is not decoration. Navigating from `/` to
+     `/#/billing` differs only in the fragment, so the browser treats it as a
+     SAME-DOCUMENT navigation: the script never re-runs and what gets measured
+     is the page that was already open. That is how the first version of this
+     read S.tab as 'chat' and looked like a broken feature - the only thing
+     broken was the test. Leaving the origin forces a real load, which is the
+     thing being claimed: somebody pasting a link gets a fresh document. */
+  const land = async (hash) => {
+    await page.goto('about:blank');
+    await page.goto(base + hash, { waitUntil: 'load' });
+    await page.waitForTimeout(800);
+    return page.evaluate(() => ({ tab: S.tab, whole: window._BUNDLE_READY === true }));
+  };
+
+  const b = await land('#/billing');
+  ok(b.tab === 'billing', 'a link to #/billing opens Billing, not the last tab used', b);
+
+  /* ON A PAID PLAN, and that is the whole of why this reproduces. Crew returns
+     the catalogue early for anybody who cannot run it, which stops short of the
+     line that reads the later module - so a free account walks the URL through
+     Crew and lands safely, and the version of this test that did not set a plan
+     went green against the exact fault it was written for. */
+  await page.evaluate(() => { _setPlan('pro'); });
+  const c = await land('#/crew');
+  ok(c.tab === 'crew', 'and #/crew opens Crew', c);
+  ok(c.whole === true, 'with the whole bundle evaluated, which is what makes it safe', c);
+
+  const n = await land('');
+  ok(n.tab === 'chat', 'and no address still lands where it always did', n);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

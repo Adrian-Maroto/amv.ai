@@ -62,6 +62,11 @@ const headings = (plan) => page.evaluate((pl) => {
        is unchanged and is what is still checked; the block just got smaller,
        which if anything is more out of the way than before. */
     if (el.classList.contains('bill-sec-line')) return 'SECTION:payment-security';
+    /* Same reasoning one section up. "Change plan" is called "Upgrade your
+       plan" now, and pinning the regex to the old words made four assertions
+       report the section as ABSENT when it had only been renamed - the exact
+       failure this file's own note says anchoring on sections avoids. */
+    if (el.classList.contains('bill-up')) return 'SECTION:upgrade';
     if (el.classList.contains('ss2')) {
       const h = el.querySelector('h3');
       return h ? h.textContent.trim() : '';
@@ -82,7 +87,7 @@ section('The billing pane reads in the order somebody uses it');
     const hs = await headings(plan);
     const current = at(hs, /^SECTION:current-plan$/);
     const usage   = at(hs, /^Usage$/);
-    const change  = at(hs, /^Change plan$/);
+    const change  = at(hs, /^SECTION:upgrade$/);
     const secure  = at(hs, /^SECTION:payment-security$/);
 
     ok(current >= 0 && usage >= 0 && change >= 0 && secure >= 0,

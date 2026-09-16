@@ -4556,7 +4556,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} /* An address beats a remembered tab: somebody who opened #/billing asked for billing, not for wherever they were last time. */ try{ const _u=_tabFromURL(); if(_u) S.tab=_u; }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} /* An address beats a remembered tab: somebody who opened #/billing asked for billing, not for wherever they were last time. But the FIRST goApp() runs at the top level of 12-handoff, while modules 13 and up are still evaluating - so a renderer that reads one of their top-level bindings throws, and `typeof x!=='undefined'` does NOT save it: typeof on a let/const still in its temporal dead zone throws too. Boot therefore always renders the tab it always rendered, and the address is applied on the next turn of the loop, once the bundle is whole. That turn is before the first paint, so there is nothing to see. */  try{ const _u=_tabFromURL(); if(_u){ if(window._BUNDLE_READY) S.tab=_u; else setTimeout(function(){ /* Closed over, NOT re-read: the setTab(S.tab) below has already run by now and it clears an address that does not match the tab it is opening, so asking the bar a second time returns nothing and the address is dropped - which is what happened. The hash is rewritten when this lands. */ try{ if(S.tab!==_u) setTab(_u); }catch(e){} },0); } }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
    the collapsible it managed no longer exists. The function stayed behind,
@@ -29915,7 +29915,14 @@ async function runSheetAI(query){
 
 window.amvOpenFile=amvOpenFile;
 /* 7. AUTOMATION VIEW - dark modal, real task queue */
-const _bgQueue = { tasks: [], running: false };
+/* `var`, not `const`, and the reason is the two guards in 10-mission-control
+   that read this from an EARLIER module: `typeof _bgQueue!=='undefined'`.
+   Against a `const` that guard is decorative - typeof on a binding still in its
+   temporal dead zone throws ReferenceError exactly as a bare read would, so the
+   guard cannot fail safely, it can only fail. A top-level `var` is hoisted and
+   really does read `undefined` before this line runs, which is the answer those
+   guards were written to get. */
+var _bgQueue = { tasks: [], running: false };
 function _bgAddTask(task){
   const t={id:'bg'+Date.now(),status:'queued',created:Date.now(),progress:0,...task};
   _bgQueue.tasks.push(t);
@@ -42083,3 +42090,13 @@ try {
   window.amvDedupKey = amvDedupKey; window.amvIdempotencyKey = amvIdempotencyKey;
   window.amvActionContract = amvActionContract; window.amvPolicyEvaluate = amvPolicyEvaluate;
 } catch (e) {}
+
+/* THE BUNDLE IS WHOLE FROM HERE.
+
+   This is the last module in concat order, so anything that ran before this
+   line ran while later modules were still evaluating - and a top-level
+   `let`/`const` in one of them is unreachable until then, `typeof` included.
+   Boot (at the top level of 12-handoff) is such a caller. goApp reads this to
+   know whether it may honour the address bar immediately or has to wait one
+   turn of the event loop for it. */
+try{ window._BUNDLE_READY = true; }catch(e){}

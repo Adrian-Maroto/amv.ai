@@ -12889,3 +12889,52 @@ correct, and one of them simply did not win.
 
 The general form: when a system's semantics are "last writer wins", presence of
 a rule proves nothing about its effect. Only the resolved state is evidence.
+
+## 491. `typeof` does not guard a binding that has not been reached yet
+
+Billing was asked for at an address of its own, so `goApp` learned to read
+`#/billing` off the URL and open that tab instead of the remembered one. Pasting
+`#/crew` then brought the whole app down with
+`ReferenceError: Cannot access '_bgQueue' before initialization`.
+
+The bundle is one script built by concatenating `src/app/NN-name.js` in name
+order, and BOOT RUNS AT THE TOP LEVEL OF `12-handoff.js` - two thirds of the way
+down. Everything from module 13 onward is still evaluating at that moment.
+`_bgQueue` is declared in `13-integrations.js`, one module later, and
+`_mcState` in module 10 reads it. Until now that never mattered, because boot
+always rendered chat; the address bar was the first thing that could make boot
+render something else.
+
+The part worth writing down is the guard that was already there and did not
+work:
+
+    const bg = (typeof _bgQueue !== 'undefined' && _bgQueue.tasks) ? ... : [];
+
+`typeof` is the idiom for "this name might not exist", and against an undeclared
+identifier it is exactly right - it returns `'undefined'` rather than throwing.
+Against a `let` or `const` in its temporal dead zone it throws the same
+ReferenceError a bare read would. So the guard could not fail safely; it could
+only fail. Two such guards were sitting in module 10 looking like protection.
+
+Three things came out of it, in increasing order of how much they are worth:
+
+1. The address is applied on the next turn of the event loop, not during boot.
+   `window._BUNDLE_READY` is set by the last module; before it, `goApp` defers
+   the URL-driven `setTab`. That turn happens before the first paint, so there
+   is nothing to see.
+2. `_bgQueue` is a `var`. A top-level `var` is hoisted and really does read
+   `undefined` early, which is the answer those two guards were written to get.
+   The rule generalises: if a binding is read by an EARLIER module than the one
+   declaring it, `let`/`const` gives you a crash where `var` gives you a
+   checkable value.
+3. The test that should have caught it needed two accidents removed before it
+   could. Navigating from `/` to `/#/billing` changes only the fragment, so the
+   browser does a SAME-DOCUMENT navigation and the script never re-runs - the
+   first version measured the page that was already open and reported the
+   feature broken when only the test was. And once it really did reload, it
+   still passed against the broken build, because the account was on the free
+   plan and `renderCrewView` returns the catalogue early for anybody who cannot
+   run Crew - stopping short of the line that reads the later module. A test
+   that reproduces a crash only on a paid account will sit green forever on a
+   free one. Both were found by re-running the test against the defect on
+   purpose, which is the only reason either is known.

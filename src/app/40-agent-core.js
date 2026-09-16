@@ -402,3 +402,13 @@ try {
   window.amvDedupKey = amvDedupKey; window.amvIdempotencyKey = amvIdempotencyKey;
   window.amvActionContract = amvActionContract; window.amvPolicyEvaluate = amvPolicyEvaluate;
 } catch (e) {}
+
+/* THE BUNDLE IS WHOLE FROM HERE.
+
+   This is the last module in concat order, so anything that ran before this
+   line ran while later modules were still evaluating - and a top-level
+   `let`/`const` in one of them is unreachable until then, `typeof` included.
+   Boot (at the top level of 12-handoff) is such a caller. goApp reads this to
+   know whether it may honour the address bar immediately or has to wait one
+   turn of the event loop for it. */
+try{ window._BUNDLE_READY = true; }catch(e){}

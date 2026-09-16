@@ -1328,7 +1328,14 @@ async function runSheetAI(query){
 
 window.amvOpenFile=amvOpenFile;
 /* 7. AUTOMATION VIEW - dark modal, real task queue */
-const _bgQueue = { tasks: [], running: false };
+/* `var`, not `const`, and the reason is the two guards in 10-mission-control
+   that read this from an EARLIER module: `typeof _bgQueue!=='undefined'`.
+   Against a `const` that guard is decorative - typeof on a binding still in its
+   temporal dead zone throws ReferenceError exactly as a bare read would, so the
+   guard cannot fail safely, it can only fail. A top-level `var` is hoisted and
+   really does read `undefined` before this line runs, which is the answer those
+   guards were written to get. */
+var _bgQueue = { tasks: [], running: false };
 function _bgAddTask(task){
   const t={id:'bg'+Date.now(),status:'queued',created:Date.now(),progress:0,...task};
   _bgQueue.tasks.push(t);
