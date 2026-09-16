@@ -1073,13 +1073,82 @@ try{ window.maybeHabitNudge=maybeHabitNudge; }catch(e){}
    a word the backend did not honour, and a number somebody can check is more
    convincing than an adjective anyway. */
 let _upgradeFor = '';
-function openUpgrade(key){
+/* WHERE THEY CAME FROM, SO BACK GOES BACK.
+
+   This always returned to Billing, because Billing was the only door into it.
+   Now the pricing cards and the quota nudge open it too, and sending somebody
+   who pressed "Go Elite" on the Plans screen back to Billing is the same small
+   insult as dropping them at the top of a page they were already halfway down.
+   The origin is remembered and the back button is LABELLED with it, so the
+   control says where it goes rather than guessing. */
+let _upgradeFrom = 'billing';
+function openUpgrade(key, from){
   if(!PLANS[key] || key === 'free') return;
   _upgradeFor = key;
+  /* The tab they are leaving, unless a caller names one. Never 'upgrade'
+     itself: pressing a plan while already on a plan page would otherwise make
+     back a loop with no way out. */
+  try{
+    const here = (from && typeof from === 'string') ? from : (S && S.tab) || 'billing';
+    _upgradeFrom = (here && here !== 'upgrade') ? here : 'billing';
+  }catch(e){ _upgradeFrom = 'billing'; }
   try{ setTab('upgrade'); }catch(e){ _upgradeFor = ''; }
 }
-function closeUpgrade(){ _upgradeFor = ''; try{ setTab('billing'); }catch(e){} }
+function closeUpgrade(){ _upgradeFor = ''; try{ setTab(_upgradeFrom || 'billing'); }catch(e){} }
 try{ window.openUpgrade = openUpgrade; window.closeUpgrade = closeUpgrade; }catch(e){}
+
+/* The label on the back button. `_TAB_LABELS` is the one place tab names live,
+   so this cannot drift from what the tab is actually called. */
+function _upgBackLabel(){
+  try{
+    const t = _upgradeFrom || 'billing';
+    if(typeof _TAB_LABELS !== 'undefined' && _TAB_LABELS[t]) return _TAB_LABELS[t];
+  }catch(e){}
+  return 'Billing';
+}
+
+/* "EVERYTHING IN PRO, PLUS:" IS A POINTER, NOT A LIST.
+
+   Elite's feature list opens with that line and Ultra's opens with the same
+   line about Elite. On the pricing grid that works, because Pro's card is
+   sitting right there being read at the same time. On this page the plan has
+   the whole screen to itself, so the one person looking at it - somebody on
+   Free deciding whether Elite is worth $75 - is told the most important part of
+   what they would get by being pointed at a card that is not on screen.
+
+   So the pointer is kept and then KEPT: every lower paid rung is expanded
+   underneath, in ladder order, from the same `_planPitch` the cards render
+   from. A second hand-written copy of what Pro includes would be a second
+   description of the product, and the two would disagree the first time a plan
+   changed.
+
+   Only the rows a plan HAS. A `[0, ...]` row is something a tier does not
+   include, and printing "no autonomous agents" under a heading saying what
+   comes free with Elite would be nonsense - Elite has them. */
+function _upgInheritedHTML(key){
+  try{
+    const ladder = ['pro','elite','ultra'];
+    const ix = ladder.indexOf(key);
+    if(ix <= 0) return '';
+    if(typeof _planPitch !== 'function') return '';
+    const groups = ladder.slice(0, ix).map(k=>{
+      const p = _planPitch(k);
+      const P2 = PLANS[k];
+      if(!p || !Array.isArray(p.feats) || !P2) return '';
+      const items = p.feats.filter(f=>f && f[0] && !/^\s*<b>Everything in/i.test(String(f[1]||'')));
+      if(!items.length) return '';
+      return '<div class="upg-inh-g">'
+        + '<h3 class="upg-inh-h">' + escH(T('Everything in')) + ' ' + escH(P2.name) + '</h3>'
+        + '<ul class="plnfl">'
+        + items.map(f=>'<li><span class="fck">\u2713</span><span class="plnft">' + f[1] + '</span></li>').join('')
+        + '</ul></div>';
+    }).filter(Boolean).join('');
+    if(!groups) return '';
+    return '<div class="upg-inh">'
+      + '<p class="upg-inh-lead">' + escH(T('Included too, because every plan carries the ones below it')) + '</p>'
+      + groups + '</div>';
+  }catch(e){ return ''; }
+}
 
 function renderUpgradeView(){
   const vc = $('vc'); if(!vc) return;
@@ -1094,7 +1163,7 @@ function renderUpgradeView(){
     '<div class="sv fi upg-sv"><div class="upg">'
       + '<button class="upg-back" id="upg-back">'
         + '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>'
-        + escH(T('Billing')) + '</button>'
+        + escH(T(_upgBackLabel())) + '</button>'
 
       + '<div class="upg-head">'
         + '<span class="upg-eyebrow">' + escH(T('You are on')) + ' ' + escH(nowName) + '</span>'
@@ -1107,6 +1176,8 @@ function renderUpgradeView(){
 
       + (typeof _planFeatsHTML === 'function'
           ? '<div class="upg-feats">' + _planFeatsHTML(key) + '</div>' : '')
+
+      + _upgInheritedHTML(key)
 
       + ((P.mult || jobs)
           ? '<div class="upg-figs">'

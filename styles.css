@@ -14119,3 +14119,54 @@ p.bill-leave-s{
 .bill-pm-none{
   font-size:var(--t-sm); color:var(--mu); line-height:1.6; margin:0 0 var(--sp-3);
 }
+
+/* ============================================================
+   LAYER A224 - What the plan below already gave you
+   ------------------------------------------------------------
+   The upgrade page opens with the target plan's own list, whose first row on
+   Elite and Ultra is a pointer: "Everything in Pro, plus:". This is the block
+   that keeps that promise instead of leaving it as a reference to a card the
+   reader cannot see.
+
+   It is deliberately QUIETER than the list above it. The plan's own additions
+   are the argument; the inherited tiers are reassurance that nothing is being
+   traded away, and styling them identically would make a Free reader's eye
+   bounce off twenty undifferentiated ticks. Muted text, a lighter tick, and a
+   rule above each group are enough to say "also included" without competing.
+   ============================================================ */
+.upg-inh{
+  margin-top:var(--sp-7);
+  padding-top:var(--sp-6);
+  border-top:1px solid var(--bdl);
+}
+.upg-inh-lead{
+  margin:0 0 var(--sp-5);
+  font-size:var(--t-sm); color:var(--mu); line-height:1.5;
+}
+.upg-inh-g + .upg-inh-g{ margin-top:var(--sp-6); }
+.upg-inh-h{
+  margin:0 0 var(--sp-4);
+  font-family:var(--fdisplay), var(--fn);
+  font-size:var(--t-md); font-weight:600; color:var(--tx);
+  letter-spacing:-0.01em;
+}
+.upg-inh .plnfl{
+  list-style:none; margin:0; padding:0;
+  display:flex; flex-direction:column; gap:var(--sp-2);
+}
+.upg-inh .plnfl li{
+  display:flex; align-items:flex-start; gap:var(--sp-3);
+  margin:0; padding:0; min-height:0;
+  font-size:var(--t-sm); line-height:1.5; color:var(--mu);
+}
+.upg-inh .plnfl li .plnft{ flex:1 1 auto; min-width:0; }
+/* The bold inside an inherited row would otherwise shout louder than the
+   heading of the group it sits under. */
+.upg-inh .plnfl li .plnft b{ font-weight:600; color:var(--tx); }
+.upg-inh .fck{
+  flex:0 0 18px; height:18px; margin-top:1px;
+  display:inline-flex; align-items:center; justify-content:center;
+  border-radius:var(--r-pill);
+  background:var(--s2); color:var(--mu);
+  font-size:var(--t-xs); font-weight:700;
+}

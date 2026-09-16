@@ -171,16 +171,26 @@ section('Every plan on the pricing page can actually be bought');
   const offered = [...cards.matchAll(/,'([a-z]+)',isLand\)/g)].map(m => m[1]);
   ok(offered.length >= 4, 'the tiers on the cards were found', offered);
 
-  const builder = bundle.slice(at, at + 1600);
+  const builder = bundle.slice(at, at + 2600);
   const paid = offered.filter(p => p !== 'free');
   const unreachable = paid.filter(p => {
-    /* Either named explicitly, or covered by the default that routes to
-       checkout. The default is what makes the next tier safe. */
+    /* Either named explicitly, or covered by the default. The default is what
+       makes the next tier safe. */
     const named = new RegExp("plan==='" + p + "'").test(builder);
-    /* The fallback used to be an inline onclick that interpolated the plan;
-       it is a delegated action with the plan as its argument now. Same rule -
-       a tier nobody named still reaches checkout - matched on what is there. */
-    const byDefault = /data-dact="openCheckout" data-darg="'\+escH\(plan\)\+'"/.test(builder);
+    /* WHERE THE DEFAULT GOES CHANGED, AND THE RULE DID NOT.
+
+       It used to be `openCheckout` - straight to the card form off a card in a
+       row of four. Every paid tier now goes to `openUpgrade`, the plan's own
+       page, which carries the argument and one control onward to exactly the
+       checkout this used to name. Two named branches went with it: `pro` and
+       `elite` had their own direct-payment-link buttons here, and that choice
+       now lives at the single moment a payment actually starts.
+
+       So the alternation is not a widening to keep an old spelling passing -
+       both are real routes to money and either satisfies the claim this file
+       makes, which is that no tier on the cards has a button that does nothing.
+       What must NOT pass is a tier with no route at all. */
+    const byDefault = /data-dact="(openUpgrade|openCheckout)" data-darg="'\+escH\(plan\)\+'"/.test(builder);
     return !named && !byDefault;
   });
   ok(unreachable.length === 0, 'no paid tier has a button that does nothing', unreachable);

@@ -1944,7 +1944,12 @@ function openUpgradeModal(lockedModel){
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
   onBackdrop($('upg-bg'),close); on($('upg-x'),'click',close);
-  r.querySelectorAll('[data-upg]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.upg; close(); if(k==='custom'){ openCustomPlan(); } else { openCheckout(k); } }));
+  /* The plan's own page, like every other route to a paid plan. A modal is the
+     smallest surface in the product and the worst place to decide on $75 a
+     month from; closing it and opening the full argument is what the pricing
+     cards and Billing's rows both do now. Custom is quoted, not listed, so it
+     keeps its own flow. */
+  r.querySelectorAll('[data-upg]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.upg; close(); if(k==='custom'){ openCustomPlan(); } else if(typeof openUpgrade==='function'){ openUpgrade(k); } else { openCheckout(k); } }));
   const cmp=$('upg-compare'); if(cmp) on(cmp,'click',()=>{ close(); openPlanCompare(needPlan); });
 }
 function openPlanCompare(highlight){
@@ -1994,7 +1999,7 @@ function openPlanCompare(highlight){
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
   onBackdrop($('pc-bg'),close); on($('pc-x'),'click',close);
-  r.querySelectorAll('[data-pcgo]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.pcgo; close(); if(k==='custom'){ openCustomPlan(); } else { openCheckout(k); } }));
+  r.querySelectorAll('[data-pcgo]').forEach(btn=>on(btn,'click',()=>{ const k=btn.dataset.pcgo; close(); if(k==='custom'){ openCustomPlan(); } else if(typeof openUpgrade==='function'){ openUpgrade(k); } else { openCheckout(k); } }));
 }
 window.openPlanCompare=openPlanCompare;
 

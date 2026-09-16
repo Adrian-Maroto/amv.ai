@@ -1730,7 +1730,14 @@ function bindChatEvents() {
     else if(action==='regen') regenerateMsg();
     else if(action==='retry-ai') retryLastAI();
     else if(action==='speak') speakMessage(idx);
-    else if(action==='quota-upgrade'){ setTab('plans'); }
+    /* "See plans" means the grid. "Upgrade to Pro" names one plan, so it opens
+       that plan - being sent to a row of four after pressing a button with a
+       plan's name on it is the nudge forgetting what it just offered. */
+    else if(action==='quota-upgrade'){
+      const want=el.dataset.plan;
+      if(want && typeof openUpgrade==='function'){ openUpgrade(want); }
+      else setTab('plans');
+    }
     else if(action==='seats-upgrade'){ setTab('team'); }
     else if(action==='quota-later'){ const m2=getMsgs(); if(m2[idx]&&m2[idx]._quota){ m2.splice(idx,1); setMsgs(m2); renderChatMsgs(); } }
   });
@@ -2103,7 +2110,10 @@ function renderChatMsgs() {
     let content;
     if(!isU && m._quota){
       const plan=(loadStr('amv_plan')||'free');
-      const nextPlan=plan==='free'?'Pro':plan==='pro'?'Elite':'Ultra';
+      /* The key and the label come off the same rung, so the button cannot end
+         up named after one plan and wired to another. */
+      const nextKey=plan==='free'?'pro':plan==='pro'?'elite':'ultra';
+      const nextPlan=(typeof PLANS!=='undefined'&&PLANS[nextKey]&&PLANS[nextKey].name)||'Pro';
       /* THREE THINGS THIS CARD USED TO GET WRONG, ALL AT ONCE.
 
          It always drew a countdown, falling back to `Date.now()` when no reset
@@ -2126,7 +2136,7 @@ function renderChatMsgs() {
           ? '<span>'+whenTxt+'Whoever manages your family can raise this limit - a bigger plan will not lift it.</span>'+
             '<div class="quota-actions"><button class="quota-later" data-action="quota-later" data-idx="'+i+'">Got it</button></div>'
           : '<span>'+whenTxt+'Upgrade to '+nextPlan+' for much higher limits and keep going right now.</span>'+
-            '<div class="quota-actions"><button class="quota-upgrade" data-action="quota-upgrade" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>'+
+            '<div class="quota-actions"><button class="quota-upgrade" data-action="quota-upgrade" data-plan="'+escH(nextKey)+'" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>'+
             '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">'+(when>Date.now()?'I\u2019ll wait':'Got it')+'</button></div>')+
         '</div></div>';
     } else if(!isU && m._error){
@@ -2637,9 +2647,22 @@ function pBtn(label, cls, plan, isLand){
         ? '<button class="plnbtn pbs" disabled aria-disabled="true">Your current plan</button>'
         : '<button class="plnbtn pbs" data-gs="billing">Manage plan</button>';
     }
-    if(plan==='pro' && S.sp) return '<button class="plnbtn pbp" data-dact="_openPlanLink" data-darg="pro">'+label+'</button>';
-    if(plan==='elite' && S.se) return '<button class="plnbtn pbs" data-dact="_openPlanLink" data-darg="elite">'+label+'</button>';
-    return '<button class="plnbtn '+(plan==='pro'?'pbp':'pbs')+'" data-dact="openCheckout" data-darg="'+escH(plan)+'">'+label+'</button>';
+    /* THE PLAN'S OWN PAGE FIRST, NOT THE CARD SLOT MACHINE.
+
+       These went straight to the payment sheet. A card in a row of four gives a
+       plan a price, a one-line anchor and six or seven clipped bullets, and the
+       button under it took somebody's money on the strength of that - with
+       Elite's list opening "Everything in Pro, plus:" while Pro's card was
+       being scrolled past. Somebody deciding on $75 a month deserves to read
+       what $75 a month is before a card form.
+
+       So every one of these opens the upgrade page, which is the same thing
+       Billing's rows already do - one route to money instead of three. The
+       direct-payment-link case is not lost: `upg-pay` reproduces exactly this
+       choice at the moment it is actually needed, which keeps the decision
+       about HOW a payment starts in one place rather than two that have to
+       agree. */
+    return '<button class="plnbtn '+(plan==='pro'?'pbp':'pbs')+'" data-dact="openUpgrade" data-darg="'+escH(plan)+'">'+label+'</button>';
   }
   const isLand=!inApp;
   return [
