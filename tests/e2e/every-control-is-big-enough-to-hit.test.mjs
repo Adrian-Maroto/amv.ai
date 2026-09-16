@@ -208,6 +208,108 @@ section('The permission checkboxes, which the tab sweep never reaches');
      r.rows.map(x => x.text).slice(0, 4));
 }
 
+section('And the floor does not stop at the edge of a dialog');
+{
+  /* THE SELECTOR ABOVE SAYS `#app`, AND EVERY DIALOG RENDERS INTO `#ovr`.
+
+     So not one control in not one modal had ever been measured by the file
+     whose whole subject is whether controls can be hit. Measured once the
+     query was widened, at this same 390x844 with touch: 37 controls under the
+     floor across 31 dialogs, 22 of them distinct. The close button was the
+     worst of it and is the most-tapped thing in any dialog - 29x27 on seven
+     of them, 21x22 on another. `.dna-x` read 44x32, which is A217's
+     `min-width` with no `min-height`: the same half-fix one dimension over,
+     which is the shape this file exists to catch.
+
+     INLINE TARGETS ARE EXEMPT AND THE EXEMPTION IS STATED. "By continuing you
+     agree to our Terms and Privacy Policy" puts two buttons inside a sentence.
+     WCAG 2.5.8 exempts a target in a block of text because growing it to 44px
+     breaks the line it lives in, and that is the right call here too. The test
+     works the exemption out rather than listing names: a control whose parent
+     carries real text of its own beside it is in a sentence. Listing names
+     would have let the next small button be added to the list instead of
+     fixed. */
+  const MODALS = {
+    openAuth: ['signup'], openCheckout: ['pro'], openCoverage: [], openCustomPlan: [],
+    openDNA: [], openEveryday: [], openJobBoards: [], openMailInbox: [],
+    openPaymentSheet: ['pro'], openPlanCompare: [], openResearchWatch: [], openSchedManager: [],
+    openShortcutSheet: [], openShortcuts: [], openStatusPanel: [], openTaskPanel: [],
+    openTelegramConnect: [], openTerms: [], openTripPlanner: [], openWhatsNew: [],
+    openUpgradeModal: [], openFeedback: [], openPrivacy: [], openErrors: [], openMySites: [],
+    openHandoffManager: [], openJobHunt: [], openMailConnect: [], openCommandPalette: [],
+    openSharedChatsManager: [], openForgot: [],
+  };
+  const small = [], inline = [], opened = [], wide = [];
+  for (const [fn, args] of Object.entries(MODALS)) {
+    const r = await page.evaluate(async ([name, argv, min, eps]) => {
+      const o = document.getElementById('ovr');
+      o.innerHTML = ''; o.className = '';
+      await new Promise(x => setTimeout(x, 60));
+      if (typeof window[name] !== 'function') return { missing: true };
+      try { window[name].apply(null, argv); } catch (e) { return { threw: String(e && e.message).slice(0, 120) }; }
+      await new Promise(x => setTimeout(x, 420));
+      if (!o.firstElementChild) return { drew: false };
+      const els = [...o.querySelectorAll(
+        'button, a[href], [role="button"], summary, input:not([type="hidden"]), select, textarea')];
+      const under = [], inl = [], off = [];
+      for (const e of els) {
+        const b = e.getBoundingClientRect();
+        if (b.width < 1 || b.height < 1) continue;
+        const cs = getComputedStyle(e);
+        if (cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity === 0) continue;
+        const lab = e.closest('label');
+        const lb = lab ? lab.getBoundingClientRect() : null;
+        const box = (lb && lb.height >= b.height && lb.width >= b.width) ? lb : b;
+        /* Past the edge, UNLESS it rides in a sideways scroller of its own.
+           The plan-comparison table is four columns of plans in `.pc-scroll`;
+           three of its Get buttons sit beyond 390px and every one of them is
+           reachable by scrolling that strip, while the page itself does not
+           move. That is the one shape this repo allows to be wider than the
+           screen - a table in its own overflow-x container - so flagging it
+           would be reporting the rule as a defect. What is still a defect is a
+           control pushed past the edge of something that does NOT scroll,
+           because nothing on the page says it is there. */
+        let inScroller = false;
+        for (let a = e.parentElement; a && a !== o; a = a.parentElement) {
+          const ov = getComputedStyle(a).overflowX;
+          if ((ov === 'auto' || ov === 'scroll') && a.scrollWidth > a.clientWidth + 4) { inScroller = true; break; }
+        }
+        if (!inScroller && (b.right > window.innerWidth + 1 || b.width > window.innerWidth + 1))
+          off.push(name + ' :: ' + (e.id ? '#' + e.id : (e.className || '').toString().slice(0, 24)));
+        if (box.width >= min - eps && box.height >= min - eps) continue;
+        /* In a sentence? The parent holds text of its own beside this control. */
+        const parent = e.parentElement;
+        let sibText = '';
+        if (parent) for (const n of parent.childNodes)
+          if (n.nodeType === 3) sibText += n.textContent;
+        const tag = (e.id ? '#' + e.id : (e.className || '').toString().slice(0, 24) || e.tagName)
+                  + ' ' + Math.round(box.width) + 'x' + Math.round(box.height);
+        (sibText.trim().length >= 3 ? inl : under).push(name + ' :: ' + tag);
+      }
+      return { drew: true, under, inl, off, n: els.length };
+    }, [fn, args, MIN, EPS]);
+    if (r.drew) {
+      opened.push(fn);
+      small.push(...r.under); inline.push(...r.inl); wide.push(...r.off);
+    }
+  }
+
+  ok(opened.length >= 25,
+     'enough dialogs actually drew to make this mean something', opened.length);
+  ok(small.length === 0,
+     'every standalone control in a dialog is at least ' + MIN + 'px on a phone',
+     small.slice(0, 10));
+  ok(wide.length === 0,
+     'and none of them is pushed off the right edge', wide.slice(0, 6));
+  /* Reported, never failed. If this list grows it is a design question, not a
+     regression - but it should never be a surprise. */
+  ok(inline.length <= 4,
+     'and the ones left small are inline in a sentence, where WCAG exempts them',
+     inline);
+
+  await page.evaluate(() => { try { closeOvr(); } catch (e) {} });
+}
+
 section('And nothing was made wide enough to push the page sideways');
 {
   /* The obvious way to fail this file is min-width on everything, which fixes

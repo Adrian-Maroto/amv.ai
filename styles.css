@@ -14170,3 +14170,57 @@ p.bill-leave-s{
   background:var(--s2); color:var(--mu);
   font-size:var(--t-xs); font-weight:700;
 }
+
+/* ============================================================
+   LAYER A225 - the touch floor did not survive the modal edge
+   ------------------------------------------------------------
+   A217 carried the 44px floor from "narrow screen" to "has a fingertip",
+   which was the right question. It kept the ≤560 block's selector roster
+   though, and that roster was written against the app shell. Every dialog in
+   the product renders into #ovr, and `every-control-is-big-enough-to-hit`
+   queries `#app button, #app a[href], ...` - so not one control in not one
+   modal has ever been measured.
+
+   Measured, at 390x844 with touch emulated, across 31 dialogs: 37 controls
+   under the floor, 22 distinct. The close button is the worst of it and the
+   most-tapped thing in any dialog - `.tp-x` at 29x27 on seven of them,
+   `.art-x` at 30x30 on three, `.wn-close` at 21x22. `.dna-x` reads 44x32
+   because A217 gave it `min-width` and no `min-height`, which is the same
+   half-fix one dimension over.
+
+   INLINE TARGETS ARE LEFT ALONE, on purpose. "By continuing you agree to our
+   Terms and Privacy Policy" puts two buttons inside a sentence; WCAG 2.5.8
+   exempts a target in a block of text precisely because growing it to 44px
+   breaks the line it lives in. Those stay as they are and the suite states
+   the exemption rather than quietly passing them.
+
+   `#auth-sw` is the exception to the exception. It sits after "No account?"
+   so it reads as inline, but it is the control that switches sign-up to
+   sign-in - the one secondary action on the screen that decides whether
+   somebody gets into the product at all - and at 37x14 it is a hard tap. It
+   gets the floor; the line it is on grows a little, which is the right trade.
+   ============================================================ */
+@media(hover:none){
+  /* Every close control, by every name the product gives them. */
+  #ovr .oc, #ovr .dna-x, #ovr .tp-x, #ovr .cwp-x, #ovr .art-x, #ovr .team-x,
+  #ovr .wn-close, #ovr .whybad-x, #ovr .trip-x, #ovr .prj-x, #ovr .next-step-x,
+  #ovr .habit-x, #ovr .fr-x, #ovr .emb-x, #ovr .bill-x, #ovr .sl-file-x,
+  #ovr .set-close{
+    min-width:44px!important; min-height:44px!important;
+    display:inline-flex!important; align-items:center; justify-content:center;
+  }
+  /* Option chips and segmented choices inside a dialog. */
+  #ovr .rw-opt, #ovr .pay-tab, #ovr .fb-type, #ovr .pm-method,
+  #ovr .mk-filter, #ovr .mkt-tab{ min-height:44px!important; }
+  /* Anything somebody types into. A 36px field is a miss and a mis-tap on a
+     form is a retyped form. */
+  #ovr input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),
+  #ovr select, #ovr textarea{ min-height:44px!important; }
+  /* A range thumb is the target, and the track is what you aim at to find it. */
+  #ovr input[type="range"], #ovr .cp-range{ min-height:44px!important; }
+  /* Standalone text buttons - a row of their own, not a word in a sentence. */
+  #ovr .upg-compare, #ovr #auth-sw{
+    min-height:44px!important;
+    display:inline-flex!important; align-items:center;
+  }
+}
