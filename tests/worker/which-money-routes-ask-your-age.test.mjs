@@ -1,42 +1,27 @@
-/* WHICH MONEY ROUTES ASK YOUR AGE - WRITTEN DOWN, BECAUSE THE ANSWER IS
-   CURRENTLY "SOME OF THEM" AND NOTHING SAID SO.
+/* WHICH MONEY ROUTES ASK YOUR AGE - ALL OF THEM NOW, AND THIS SAYS WHICH.
 
-   This file changes no behaviour. It records the set, so that the gap below is
-   visible and any change to it is deliberate rather than accidental.
+   This file used to record a gap. Three routes asked - the agent spending on
+   your behalf, buying a listing, taking money out - and three did not:
+   subscription checkout through Stripe, the same through PayPal, and listing
+   something for sale. So a $3 marketplace purchase asked, and a recurring
+   subscription, the largest and longest binding contract in the product, did
+   not.
 
-   The compliance module states the reason for the gate plainly: a minor cannot
-   form a binding contract, "which is exactly why a teenager's purchases come
-   straight back as chargebacks", so age gates "the features that create that
-   exposure". age-gate.test.mjs enforces that on three routes.
+   THE REASON IT WAS LEFT OPEN, AND WHY THAT REASON IS SPENT. `_moneyAgeGate`
+   answers `age_required` when no birth year is on file, which is true of every
+   account that existed before the gate did. Adding it to checkout would have
+   refused all of them at renewal and upgrade - so the fix was never the gate
+   on its own, it was the gate plus somewhere to answer the question. The
+   marketplace's buy has had that shape all along: ask, then retry. Checkout,
+   PayPal and publish now do the same, so an existing customer is ASKED once
+   rather than walled out of paying.
 
-   GATED (and covered by age-gate.test.mjs):
-     browserRun        - the agent spending on your behalf
-     marketBuy         - buying a listing
-     marketWithdraw    - taking money out
+   Publishing is gated for a different reason than the rest and the file says
+   so: a listing creates a payout relationship - AMV will owe that person money
+   - and that is a contract a minor cannot form either.
 
-   NOT GATED, and this is the open question:
-     stripeCheckout    - starting a paid subscription
-     paypalSubscribe   - the same, through PayPal
-     marketPublish     - listing something for sale, which creates a payout
-                         relationship
-
-   So a $3 marketplace purchase asks, and a recurring subscription - the largest
-   and longest binding contract in the product, and the one whose chargebacks
-   the comment is about - does not.
-
-   WHY THIS FILE RECORDS THE GAP INSTEAD OF CLOSING IT. _moneyAgeGate returns
-   `age_required` when no birth year is on file, and it is deliberately distinct
-   from a refusal because "an existing customer who has simply never been asked
-   needs a prompt, not a wall". Adding the gate to checkout would therefore
-   refuse every existing account that has never been asked - at renewal and at
-   upgrade. That is a decision about revenue and about existing customers, and
-   it belongs to the owner, not to a test.
-
-   The client has the same shape: AMVCompliance.gate() names six money
-   capabilities - spend, purchase, payout, withdraw, marketplace_sell, bank -
-   and only 'spend' is ever passed to it. The other five are asked about
-   nowhere. That is checked here too, so the list and its callers cannot drift
-   further apart in silence. */
+   The set is asserted rather than described, so adding or removing a route
+   from it is a decision somebody makes on purpose. */
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -55,9 +40,10 @@ function bodyOf(name) {
   return j < 0 ? rest : rest.slice(0, j);
 }
 
-section('The routes that do ask');
+section('Every route that moves money asks');
 {
-  for (const fn of ['browserRun', 'marketBuy', 'marketWithdraw']) {
+  for (const fn of ['browserRun', 'marketBuy', 'marketWithdraw',
+                    'stripeCheckout', 'paypalSubscribe', 'marketPublish']) {
     const b = bodyOf(fn);
     ok(b !== null, fn + ' exists to be checked', fn);
     ok((b || '').indexOf('_moneyAgeGate') >= 0,
@@ -65,18 +51,27 @@ section('The routes that do ask');
   }
 }
 
-section('The routes that do not - recorded, not endorsed');
+section('And a missing answer is a question, not a wall');
 {
-  /* If one of these gains the gate, this fails and the list gets updated on
-     purpose. That is the point: the gap should not be able to close or widen
-     without somebody noticing. */
-  for (const fn of ['stripeCheckout', 'paypalSubscribe', 'marketPublish']) {
-    const b = bodyOf(fn);
-    ok(b !== null, fn + ' exists to be checked', fn);
-    ok((b || '').indexOf('_moneyAgeGate') < 0,
-       fn + ' still does not ask - if this fails, the gate was added and this '
-       + 'list should say so', fn);
+  /* THE HALF THAT MAKES THE GATE SAFE TO ADD.
+
+     `age_required` means nobody ever asked. Answering it with a flat refusal
+     would take every account that predates the gate and stop it renewing, with
+     no way to fix that from the screen it happens on. 428 is the status that
+     says "answer this first", and the client is what asks. A gate with no
+     asker is a wall, so both halves are checked here - the route returning 428
+     and the caller retrying after it has an answer. */
+  for (const fn of ['stripeCheckout', 'paypalSubscribe', 'marketPublish', 'marketBuy']) {
+    const b = bodyOf(fn) || '';
+    ok(/age_required'\s*\?\s*428/.test(b.replace(/\s+/g, ' ')),
+       fn + ' answers 428 when the question has simply never been asked', fn);
   }
+  /* The client side of the same claim: it re-sends after getting an answer,
+     rather than surfacing the refusal. */
+  ok(/_withAge/.test(client), 'the client has one place that asks and retries', true);
+  ok(/_askBirthYear/.test(client), 'and something to ask with', true);
+  const retries = (client.match(/_askBirthYear\(\)/g) || []).length;
+  ok(retries >= 2, 'used by more than one money path', retries);
 }
 
 section('Deny by default, which is what makes the gated ones worth having');

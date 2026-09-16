@@ -18763,6 +18763,17 @@ async function getEntitlement(request, env) {
 async function stripeCheckout(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  /* A minor cannot form a binding contract, which is exactly why their
+     purchases come back as chargebacks - and a subscription is the longest one
+     this product sells. `age_required` is a QUESTION, not a refusal: it means
+     nobody has ever asked, which is true of every account that existed before
+     the gate did. The client asks and retries, the same way buying already
+     does, so an existing customer is asked once rather than walled out of
+     renewing. 428 says "answer this first"; 403 is the actual no. */
+  {
+    const ageBad = await _moneyAgeGate(env, user.email);
+    if (ageBad) return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
+  }
   /* Every call creates a Checkout Session at Stripe. Unbounded, one signed-in
      account can burn the whole platform's Stripe API rate limit and take
      checkout down for every real customer - so the damage is to revenue, not to
@@ -19814,6 +19825,14 @@ function _safeHttpUrl(u) {
 async function marketPublish(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'sign in to publish' }, 401);
+  /* Publishing is not a purchase, and it is gated for a different reason:
+     a listing creates a PAYOUT relationship - AMV will owe this person money
+     and has to be able to pay it - and that is a contract a minor cannot form
+     either. Same question-then-retry shape as the rest. */
+  {
+    const ageBad = await _moneyAgeGate(env, user.email);
+    if (ageBad) return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
+  }
   // Guard against listing spam - a handful a minute, a sane cap per day.
   const blocked = await guardAction(env, `mktpub:${user.email}`, 5, 50, 'listings');
   if (blocked) return blocked;
@@ -24276,6 +24295,17 @@ async function verifyStripeSignature(secret, payload, sigHeader) {
 async function paypalSubscribe(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  /* A minor cannot form a binding contract, which is exactly why their
+     purchases come back as chargebacks - and a subscription is the longest one
+     this product sells. `age_required` is a QUESTION, not a refusal: it means
+     nobody has ever asked, which is true of every account that existed before
+     the gate did. The client asks and retries, the same way buying already
+     does, so an existing customer is asked once rather than walled out of
+     renewing. 428 says "answer this first"; 403 is the actual no. */
+  {
+    const ageBad = await _moneyAgeGate(env, user.email);
+    if (ageBad) return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
+  }
   if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_SECRET)
     return json({ error: 'PayPal is not connected on this deployment yet, so it cannot be used to pay. Nothing has been charged.',
                   code: 'needs_service' }, 503);

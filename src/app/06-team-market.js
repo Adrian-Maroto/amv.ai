@@ -824,8 +824,18 @@ const AMVMarket = {
       }
     }catch(e){ if(e&&e.message) throw e; }
     if(this._live()){
-      const r=await AMV_API._fetch('/v1/market/publish',{method:'POST',body:JSON.stringify(item)});
-      const d=await r.json(); if(d.error) throw new Error(d.error); return d.item;
+      /* Publishing creates a payout relationship, so the server asks the same
+         age question buying does. Same answer here: ask and retry, rather than
+         refusing somebody who has simply never been asked. */
+      let r=await AMV_API._fetch('/v1/market/publish',{method:'POST',body:JSON.stringify(item)});
+      let d=await r.json();
+      if(d && d.code==='age_required' && typeof _askBirthYear==='function'){
+        const got=await _askBirthYear();
+        if(!got) throw new Error('AMV has to know your year of birth before you can list something for sale.');
+        r=await AMV_API._fetch('/v1/market/publish',{method:'POST',body:JSON.stringify(item)});
+        d=await r.json();
+      }
+      if(d.error) throw new Error(d.error); return d.item;
     }
     // local mode: save on device (files travel as data URLs inside the listing)
     const clean={ ...item, id:'usr_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5),

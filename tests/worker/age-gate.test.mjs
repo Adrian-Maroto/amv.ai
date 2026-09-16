@@ -24,7 +24,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'agegate.harness.mjs');
 writeFileSync(harness, src + `
-export { _moneyAgeGate, consentRecord, ADULT_AGE, DB, browserRun };
+export { _moneyAgeGate, consentRecord, ADULT_AGE, DB, browserRun, stripeCheckout, paypalSubscribe, marketPublish };
 export function __setRequireUser(fn){ requireUser = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -121,6 +121,73 @@ section('The gate is actually wired into the money routes');
     ok(b.indexOf('_moneyAgeGate') < b.indexOf('_getListing') || n !== 'marketBuy',
        'and checks it before reading the listing', n);
   });
+}
+
+section('A subscription asks too, and asks rather than refuses');
+{
+  /* THE ROUTE THAT WAS LEFT UNGATED, AND WHY IT COULD NOT JUST BE GATED.
+
+     `age_required` means nobody ever asked, which is true of every account
+     older than the gate. Answering that with a refusal stops those people
+     RENEWING - the largest and longest contract the product sells - from a
+     screen with no way to fix it. So the status has to be the one that means
+     "answer this first", and something has to ask.
+
+     Driven, not read: the gate is reached through the real route, with a real
+     KV, before and after an age is recorded. */
+  const payEnv = Object.assign({}, env, {
+    STRIPE_SECRET: 'sk_test', STRIPE_PRICE_PRO: 'price_pro',
+    PAYPAL_CLIENT_ID: 'id', PAYPAL_SECRET: 'sec',
+  });
+  const post = (path, body) => new Request('https://x' + path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.9' },
+    body: JSON.stringify(body || {}),
+  });
+
+  /* A fresh account, never asked. */
+  W.__setRequireUser(async () => ({ email: 'newpayer@x.com', plan: 'free' }));
+
+  for (const [name, fn, body] of [
+    ['stripeCheckout', W.stripeCheckout, { plan: 'pro' }],
+    ['paypalSubscribe', W.paypalSubscribe, { plan: 'pro' }],
+    ['marketPublish', W.marketPublish, { title: 'A prompt pack', price: 5 }],
+  ]) {
+    const r = await fn(post('/x', body), payEnv);
+    const d = await r.json().catch(() => ({}));
+    ok(r.status === 428, name + ' asks first rather than refusing', name + ' -> ' + r.status);
+    ok(d.code === 'age_required',
+       'and says which question it is, so the client knows to ask it', d.code);
+  }
+
+  /* Answer it once, the way the app does. */
+  W.__setRequireUser(async () => ({ email: 'newpayer@x.com', plan: 'free' }));
+  const rec = await W.consentRecord(new Request('https://x/v1/consent', {
+    method: 'POST', body: JSON.stringify({ termsVersion: '2026-08-05', birthYear: YEAR - 30 }),
+  }), payEnv);
+  ok(rec.status === 200, 'the answer is accepted', rec.status);
+
+  /* And the same call is no longer stopped by the gate. It may still fail for
+     its own reasons - there is no real Stripe here - but not with 428. */
+  for (const [name, fn, body] of [
+    ['stripeCheckout', W.stripeCheckout, { plan: 'pro' }],
+    ['marketPublish', W.marketPublish, { title: 'A prompt pack', price: 5 }],
+  ]) {
+    const r = await fn(post('/x', body), payEnv);
+    ok(r.status !== 428, name + ' no longer asks once it has been answered', name + ' -> ' + r.status);
+  }
+
+  /* Somebody under age is refused, and that IS a wall - which is the point of
+     telling the two apart. */
+  W.__setRequireUser(async () => ({ email: 'young@x.com', plan: 'free' }));
+  await W.consentRecord(new Request('https://x/v1/consent', {
+    method: 'POST', body: JSON.stringify({ termsVersion: '2026-08-05', birthYear: YEAR - 14 }),
+  }), payEnv);
+  const yr = await W.stripeCheckout(post('/x', { plan: 'pro' }), payEnv);
+  const yd = await yr.json().catch(() => ({}));
+  ok(yr.status === 403, 'a fourteen-year-old is refused, not asked again', yr.status);
+  ok(yd.code === 'age_blocked', 'with the code that means no', yd.code);
+
+  W.__setRequireUser(async () => ({ email: 'a@x.com' }));
 }
 
 section('The browser agent cannot be used to walk around it');

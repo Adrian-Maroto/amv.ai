@@ -971,7 +971,32 @@ const AMV_API = {
   async actHandoff(id,action){ return this._wrote('/api/handoff/act',{id,action},'That could not be updated.'); },
 
   // ---- PAYMENTS (secure backend) ----
-  async stripeCheckout(plan,email,seats){ const r=await this._fetch('/v1/stripe/checkout',{method:'POST',body:JSON.stringify({plan,email,seats})}); const d=await r.json(); if(!r.ok||!d.url){ const e=new Error(d.error||'checkout failed'); e.code=d.code; throw e; } return d.url; },
+  /* ASKED ONCE, NOT WALLED OUT.
+
+     The server gates money on age, and for every account that existed before
+     that gate it answers `age_required` - which means nobody has ever asked,
+     not that the answer was no. Left to itself that is a customer who presses
+     Upgrade, is refused, and has no idea what to do about it. So the question
+     is asked HERE, at the moment it matters, and the call is retried - the
+     same shape the marketplace's buy has used all along. Declining leaves them
+     exactly where they were, with a sentence saying why. */
+  async _withAge(run){
+    let d = await run();
+    if(d && d.code === 'age_required' && typeof _askBirthYear === 'function'){
+      const got = await _askBirthYear();
+      if(!got){ const e=new Error('AMV has to know your year of birth before it can take a payment.'); e.code='age_required'; throw e; }
+      d = await run();
+    }
+    return d;
+  },
+  async stripeCheckout(plan,email,seats){
+    const d=await this._withAge(async()=>{
+      const r=await this._fetch('/v1/stripe/checkout',{method:'POST',body:JSON.stringify({plan,email,seats})});
+      const j=await r.json(); j._ok=r.ok; return j;
+    });
+    if(!d._ok||!d.url){ const e=new Error(d.error||'checkout failed'); e.code=d.code; throw e; }
+    return d.url;
+  },
   /* There is deliberately no paypalCreate/paypalCapture here. Those routes
      back a one-time ORDER, and the browser flow that used them built the order
      with a client-stated amount and captured it client-side - so a plan could
@@ -979,7 +1004,14 @@ const AMV_API = {
      confirmed still unlocked a monthly plan. AMV sells subscriptions, and
      paypalSubscribe below is how: PayPal states the price from the plan the
      server registered, and the webhook is what grants anything. */
-  async paypalSubscribe(plan,email){ const r=await this._fetch('/v1/paypal/subscribe',{method:'POST',body:JSON.stringify({plan,email})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'subscribe failed'); return d.url; },
+  async paypalSubscribe(plan,email){
+    const d=await this._withAge(async()=>{
+      const r=await this._fetch('/v1/paypal/subscribe',{method:'POST',body:JSON.stringify({plan,email})});
+      const j=await r.json(); j._ok=r.ok; return j;
+    });
+    if(!d._ok||!d.url) throw new Error(d.error||'subscribe failed');
+    return d.url;
+  },
   /* A bug report that reaches a person. Returns what really happened - `ok`
      that it is stored server-side, and `notified` separately, because those
      are different promises and only one of them is always true. */
