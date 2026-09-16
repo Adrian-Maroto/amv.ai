@@ -228,7 +228,19 @@ section('The public writes are bounded');
      unless it is bounded. */
   const pop = bodyOf('crewPopular');
   ok(/limitAction\(|guardAction\(/.test(pop), 'and the public ranking read is limited too', true);
-  ok(/CF-Connecting-IP/.test(pop), 'per caller rather than as one global tap', true);
+  /* WHO the limit counts, not how that is spelled. This read the literal
+     `CF-Connecting-IP` out of the function, which was true right up until the
+     twelve hand-written copies of that header dance became one `_rlIp` - and
+     then this failed while the property it protects was not merely intact but
+     stronger, because `_rlIp` is also the thing that stops a padded
+     X-Forwarded-For buying a fresh bucket.
+
+     A source check can only see that a line is PRESENT, so it has to name the
+     thing that must be there rather than one way of writing it. Both spellings
+     count: the header read directly, or the one helper whose whole job is to
+     answer it. What still fails is a limiter keyed on nothing caller-specific
+     at all, which is the global tap this line is about. */
+  ok(/CF-Connecting-IP|_rlIp\(/.test(pop), 'per caller rather than as one global tap', true);
 }
 
 section('Every route the client asks for with a GET is allowed to answer one');
