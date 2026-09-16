@@ -118,6 +118,53 @@ section('Pro has nothing beneath it, and does not pretend otherwise');
      'no empty "everything in" section on the first paid rung', r);
 }
 
+section('The out-of-allowance nudge opens the plan it names');
+{
+  /* It said "Upgrade to Pro" and then dropped people on a grid of four, which
+     is the nudge forgetting what it just offered. "See plans" still means the
+     grid - that one names no plan, so there is nothing to open - and the two
+     are told apart by whether the button carries a plan, not by its label.
+
+     The plan and the label are now read off the same rung, so the button
+     cannot end up named after one plan and wired to another. That is what this
+     checks: the word on it and the plan behind it have to agree. */
+  const r = await page.evaluate(async () => {
+    _setPlan('free'); setTab('chat');
+    await new Promise(x => setTimeout(x, 200));
+    setMsgs([{ r: 'a', c: '', _quota: true, _quotaReset: Date.now() + 3600000 }]);
+    renderChatMsgs();
+    await new Promise(x => setTimeout(x, 300));
+    const b = document.querySelector('#cm .quota-upgrade');
+    if (!b) return { missing: true };
+    const named = b.textContent.trim(), plan = b.dataset.plan;
+    b.click();
+    await new Promise(x => setTimeout(x, 450));
+    const vc = document.getElementById('vc');
+    return { named, plan, tab: S.tab,
+             opened: (vc.querySelector('.upg-t') || {}).textContent };
+  });
+  ok(!r.missing, 'the nudge has its button', r);
+  ok(r.plan === 'pro', 'wired to the next rung up from Free', r);
+  ok(new RegExp(r.plan, 'i').test(r.named || ''),
+     'and named after the plan it is wired to', r);
+  ok(r.tab === 'upgrade', 'pressing it opens a plan, not a grid of four', r);
+  ok(/Pro/.test(r.opened || ''), 'the one it offered', r);
+
+  /* The other button on that card names no plan. It must still reach the grid,
+     because "See plans" is a request for the grid. */
+  const seePlans = await page.evaluate(async () => {
+    setTab('chat'); await new Promise(x => setTimeout(x, 200));
+    window.__refusalPlain = true;
+    const b = document.createElement('button');
+    b.className = 'ai-snag-retry'; b.dataset.action = 'quota-upgrade';
+    document.getElementById('cm').appendChild(b);
+    b.click();
+    await new Promise(x => setTimeout(x, 400));
+    return S.tab;
+  });
+  ok(seePlans === 'plans', 'a button naming no plan still reaches the grid', seePlans);
+}
+
 section('Back goes back to where they actually came from');
 {
   /* It always returned to Billing, which was right while Billing was the only

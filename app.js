@@ -8103,7 +8103,7 @@ function bindChatEvents() {
        that plan - being sent to a row of four after pressing a button with a
        plan's name on it is the nudge forgetting what it just offered. */
     else if(action==='quota-upgrade'){
-      const want=el.dataset.plan;
+      const want=btn.dataset.plan;
       if(want && typeof openUpgrade==='function'){ openUpgrade(want); }
       else setTab('plans');
     }
