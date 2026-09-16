@@ -12971,7 +12971,14 @@ Three things worth keeping:
 1. **A check that follows links cannot be the check that guards them.** Every
    `exists`/`stat` in a confinement check is a link being followed on your
    behalf. The leaf has to be examined with `lstat`, which does not follow, and
-   the link walked by hand - as a chain, because a link may point at a link.
+   the link walked by hand - as a chain, because a link may point at a link,
+   and for EVERY COMPONENT, not just the leaf. The first fix here walked only
+   the leaf, and `proj/dirLink/file.txt` with a dangling `dirLink` is the same
+   trick one directory up. That one did not escape - `mkdir` happened to fail
+   on it - which is luck rather than a guard, and luck stops holding the moment
+   the target directory exists. A guard that only works because an unrelated
+   call errors first is not a guard, and the test now asserts the REASON the
+   write is refused rather than only that it failed.
 
 2. **Refusing every symlink would have been a worse bug.** A project with a
    linked package or a linked folder is ordinary. The fix allows links that

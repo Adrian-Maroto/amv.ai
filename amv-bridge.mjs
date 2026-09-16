@@ -361,14 +361,26 @@ function safePath(p){
      followed by hand to where it really goes. Symlinks that stay inside the
      project keep working; a chain is walked rather than trusted, because a
      link may point at another link. */
-  let hops = 0, cur = abs;
-  for (;;) {
-    let st = null;
-    try { st = lstatSync(cur); } catch (e) { break; }   // nothing there: done
-    if (!st.isSymbolicLink()) break;
-    if (++hops > 12) throw _outside();                   // a loop, or deep enough to be one
-    cur = resolve(dirname(cur), readlinkSync(cur));
-    if (!_insideRoot(cur)) throw _outside();
+  /* EVERY COMPONENT, not just the leaf. A dangling link one directory UP is
+     the same trick one level higher: `proj/outLater/file.txt` where `outLater`
+     is a link to a directory that does not exist yet. The leaf is not a link,
+     so a leaf-only walk sees nothing, and the `existsSync` walk steps over
+     `outLater` for the same reason it stepped over a dangling leaf. That one
+     happened to fail at `mkdir` rather than escape - which is luck, not a
+     guard, and luck stops holding the moment the target directory exists. */
+  const rel = relative(ROOT, abs);
+  let cur = ROOT;
+  for (const part of (rel ? rel.split(sep) : [])) {
+    cur = join(cur, part);
+    let hops = 0, at = cur;
+    for (;;) {
+      let st = null;
+      try { st = lstatSync(at); } catch (e) { break; }  // nothing there: done
+      if (!st.isSymbolicLink()) break;
+      if (++hops > 12) throw _outside();                 // a loop, or deep enough to be one
+      at = resolve(dirname(at), readlinkSync(at));
+      if (!_insideRoot(at)) throw _outside();
+    }
   }
   return abs;
 }

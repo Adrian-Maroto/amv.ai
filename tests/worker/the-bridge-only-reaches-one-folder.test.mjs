@@ -206,6 +206,22 @@ section('A link out of the folder is still out of the folder');
   ok(w2.status === 403, 'and writing through that one is refused too', w2.status);
   ok(!existsSync(viaExec), 'still nothing out there', existsSync(viaExec));
 
+  /* ONE DIRECTORY UP IS THE SAME TRICK. `proj/outLater/file.txt` where
+     `outLater` links to a directory that does not exist yet: the leaf is not a
+     link, so a leaf-only walk sees nothing, and the existsSync walk steps over
+     `outLater` for exactly the reason it stepped over a dangling leaf. That
+     case failed at `mkdir` rather than escaping, which is luck and not a
+     guard - and luck stops holding the moment the target directory exists. So
+     every component is walked, and this asserts the REASON it is refused. */
+  const laterDir = join(box, 'laterDir');
+  symlinkSync(laterDir, join(proj, 'dirLink'));
+  const w5 = await call('write', { path: 'dirLink/inside.txt', content: 'x' }, { token: TOKEN });
+  const w5d = await jsonOf(w5);
+  ok(w5.status === 403 && w5d.error === 'outside_root',
+     'a dangling DIRECTORY link out is refused by the guard, not by mkdir failing',
+     w5d.error || w5.status);
+  ok(!existsSync(laterDir), 'and no directory was made out there', existsSync(laterDir));
+
   /* AND LINKS THAT STAY INSIDE KEEP WORKING, which is what stops the fix from
      being "refuse every symlink" - a project with a linked package or a linked
      folder is ordinary, and breaking it would be a worse bug than the one
