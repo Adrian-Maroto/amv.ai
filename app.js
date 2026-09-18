@@ -4511,6 +4511,7 @@ async function handleGoogleCred(resp) {
            unscoped bucket. saveStr would file it under this account, where the
            banner - which reads the raw key - can never find it again. */
         closeOvr(); accCk(); S.ck=true;
+        document.getElementById('land')?.classList.add('hidden');
         loginUser(acct); return;
       }
       // server rejected the token - do NOT fall back to trusting it locally
@@ -4527,6 +4528,7 @@ async function handleGoogleCred(resp) {
   }
   closeOvr();
   accCk(); S.ck=true;   // per device, through the same door the banner reads
+  document.getElementById('land')?.classList.add('hidden');
   loginUser(acct);
 }
 function initGAuth() {
@@ -4586,7 +4588,7 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} /* An address beats a remembered tab: somebody who opened #/billing asked for billing, not for wherever they were last time. But the FIRST goApp() runs at the top level of 12-handoff, while modules 13 and up are still evaluating - so a renderer that reads one of their top-level bindings throws, and `typeof x!=='undefined'` does NOT save it: typeof on a let/const still in its temporal dead zone throws too. Boot therefore always renders the tab it always rendered, and the address is applied on the next turn of the loop, once the bundle is whole. That turn is before the first paint, so there is nothing to see. */  try{ const _u=_tabFromURL(); if(_u){ if(window._BUNDLE_READY) S.tab=_u; else setTimeout(function(){ /* Closed over, NOT re-read: the setTab(S.tab) below has already run by now and it clears an address that does not match the tab it is opening, so asking the bar a second time returns nothing and the address is dropped - which is what happened. The hash is rewritten when this lands. */ try{ if(S.tab!==_u) setTab(_u); }catch(e){} },0); } }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} /* An address beats a remembered tab: somebody who opened #/billing asked for billing, not for wherever they were last time. But the FIRST goApp() runs at the top level of 12-handoff, while modules 13 and up are still evaluating - so a renderer that reads one of their top-level bindings throws, and `typeof x!=='undefined'` does NOT save it: typeof on a let/const still in its temporal dead zone throws too. Boot therefore always renders the tab it always rendered, and the address is applied on the next turn of the loop, once the bundle is whole. That turn is before the first paint, so there is nothing to see. */  try{ const _u=_tabFromURL(); if(_u){ if(window._BUNDLE_READY) S.tab=_u; else setTimeout(function(){ /* Closed over, NOT re-read: the setTab(S.tab) below has already run by now and it clears an address that does not match the tab it is opening, so asking the bar a second time returns nothing and the address is dropped - which is what happened. The hash is rewritten when this lands. */ try{ if(S.tab!==_u) setTab(_u); }catch(e){} },0); } }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
    the collapsible it managed no longer exists. The function stayed behind,
@@ -5300,6 +5302,7 @@ function signOut(){
   // Go straight to a usable no-account chat (no intro wall). Using any AMV feature
   // will prompt sign-up/login via the auth gate.
   if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
+  document.getElementById('land')?.classList.add('hidden');
   S.tab='chat'; goApp();
 }
 
@@ -27585,8 +27588,8 @@ function _applyZoom(scale){
      layout keep filling exactly 100vh, so every control stays reachable at any
      size. */
   const app=document.getElementById('app');
-  /* One shell now: the landing page it also reset is gone. */
-  [app].forEach(el=>{ if(!el) return;
+  const land=document.getElementById('land');
+  [app,land].forEach(el=>{ if(!el) return;
     el.style.zoom='';
     el.style.transform='';
     el.style.width='';
@@ -27617,23 +27620,49 @@ function openShortcuts(){
 }
 window.openShortcuts=openShortcuts;
 
-/* THE LANDING PAGE WAS REMOVED, AND `setupLanding` WITH IT.
+function setupLanding(){
+  try{ if(!sessionStorage.getItem('amv_visit_marked')){ sessionStorage.setItem('amv_visit_marked','1'); AEGIS.log('page',{name:'landing'}); } }catch(e){ try{ AEGIS.log('page',{name:'landing'}); }catch(_){} }
+  on($('brand-land'),'click',()=>{ window.scrollTo(0,0); });
+  on($('land-login'),'click',()=>{  openAuth('login'); });
+  on($('land-signup'),'click',()=>{  openAuth('signup'); });
+  on($('cta-btn'),'click',()=>openAuth('signup'));
+  on($('hero-go'),'click',()=>openAuth('signup'));
+  on($('hero-inp'),'keydown',e=>{if(e.key==='Enter')openAuth('signup');});
+  on($('fp-btn'),'click',openTerms);
+  on($('ft-btn'),'click',openTerms);
+  on($('fc-btn'),'click',openTerms);
+  // Fill landing pricing
+  /* The landing page is where most pricing decisions actually get made, so
+     Teams belongs here too - it was only on a tab you have to sign in to
+     reach, which is a strange place to keep the plan worth ten times the
+     others. Guarded on .cpb so a re-render does not stack duplicates. */
+  const lp=$('land-pricing'); if(lp){ lp.classList.add('pg-4'); lp.innerHTML=planCards(false); if(lp.parentNode && !lp.parentNode.querySelector('.cpb')){ lp.insertAdjacentHTML('afterend', _teamPlanBanner(false) + _customPlanBanner(false)); } }
+  // Hero tags
+  const tags=[
+    ['Research my competitors','Research my top 5 competitors and build a comparison table with pricing, positioning, and weaknesses'],
+    ['Build me a landing page','Build me a complete landing page for my product with a hero, features, pricing, and a call to action'],
+    ['Plan & run my week','Plan my week from my calendar, find conflicts, and block focus time'],
+    ['Draft my emails','Read my inbox, rank what needs attention, and draft a reply for each'],
+    ['Daily market brief','Every morning, brief me on overnight market moves and the 3 headlines that matter'],
+    ['Design a brand','Design a brand identity - logo concept, colors, and a landing page in that style'],
+    ['Build a working app','Build a complete, working web app and run it live'],
+    ['Write & ship content','Write a week of social posts for X and LinkedIn, ready to publish'],
+  ];
+  const htags=$('htags');
+  if(htags){
+    tags.forEach(([label,q])=>{
+      const btn=document.createElement('span');
+      btn.className='htag'; btn.textContent=label;
+      on(btn,'click',()=>{ const inp=$('hero-inp');if(inp)inp.value=q; openAuth('signup'); });
+      htags.appendChild(btn);
+    });
+  }
+  // Marquee
+  const items=['Autonomous agents','Runs in the background','Builds real apps','Designs live','Researches deeply','Drafts your email','Plans your week','Connects Gmail & Drive','Hands off to teammates','Scheduled work','Multi-step tasks','Approval before sending','Live code sandbox','Brand & landing pages','Market briefs','Inbox triage'];
+  const track=$('mtrack');
+  if(track) track.innerHTML=[...items,...items].map(t=>'<div class="mitem"><div class="mdot"></div>'+t+'</div>').join('');
+}
 
-   Every boot branch below hid `#land` and called `goApp()` - the signed-in
-   one, the "account is gone" one, and the first-ever-visit one, which says in
-   its own comment that a new visitor goes "straight into the app, gated at
-   first send". So nothing could ever display it. 13.4KB of markup and seven
-   buttons shipped to every visitor and no code path could reach any of them.
-
-   That also means nothing here measured it: the tap-target suite, the keyboard
-   suite and the contrast pass all walk `#app` and `#ovr`, so the landing
-   markup sat outside every check the rest of the product is held to. Dead code
-   that is also unmeasured is the worst kind to leave lying around - it looks
-   like a fallback somebody could switch back on, and switching it on would
-   ship seven controls nothing has ever looked at.
-
-   The plans grid it filled is not gone: `planCards(true)` renders it in-app,
-   which is the copy people actually see. */
 /* === APP SETUP === */
 function setupApp(){
   // -- Icon Rail wiring --
@@ -28066,6 +28095,7 @@ function _completeIntroLogin(acct){
   if(uc&&uc.length){S.convs=uc;S.cur=S.convs[0].id;}
   else{S.convs=[newConvObj()];S.cur=S.convs[0].id;}
   
+  document.getElementById('land')?.classList.add('hidden');
   S.tab='chat';   // new sign-ins land straight in chat
   goApp();
   setTab('chat');
@@ -28194,6 +28224,7 @@ try {
     try{ _initErrorBoundary(); }catch(e){ try{ console.error('AMV: the error boundary could not be armed', e); }catch(_){} }
   }
   // critical: the app must be usable right away
+  setupLanding();
   setupApp();
   setupKeyboard();
   try{ _initCookieConsent(); }catch(e){ try{ renderCk(); }catch(_){} }
@@ -28232,8 +28263,20 @@ try {
   console.error('Boot error:', e);
 }
 
-// The landing nav's scroll handler went with the landing page.
-
+// Nav scroll behavior
+(function(){
+  const land = document.getElementById('land');
+  const nav = document.getElementById('lnav');
+  if(land && nav){
+    land.addEventListener('scroll', function(){
+      if(land.scrollTop > 60){
+        nav.classList.add('scrolled');
+      } else {
+        nav.classList.remove('scrolled');
+      }
+    }, {passive: true});
+  }
+})();
 
 // Apply saved theme
 const savedTheme = loadStr('amv_theme');
@@ -28363,17 +28406,20 @@ if(typeof _checkSharedArtifact==='function' && _checkSharedArtifact()){
     else if(!S.convs.length){S.convs=[newConvObj()];S.cur=S.convs[0].id;}
     else if(!S.cur) S.cur=S.convs[0].id;
     try{ _loadSessions(); }catch(e){}
-      goApp();
+    document.getElementById('land')?.classList.add('hidden');
+    goApp();
   } else {
     // No account yet: skip the intro wall - let them into the app immediately.
     // Sign-up is required the moment they try to send a message (see sendMsg).
     S.user=null; localStorage.removeItem('amv_user');
-      if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
+    document.getElementById('land')?.classList.add('hidden');
+    if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
     S.tab='chat';   // always land in chat (never a gated tab that would pop signup on load)
     goApp();
   }
 } else {
   // First-ever visit, no session: straight into the app, gated at first send.
+  document.getElementById('land')?.classList.add('hidden');
   if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
   S.tab='chat';
   goApp();
@@ -28560,6 +28606,7 @@ try{ if(_analyticsAllowed()) _analyticsInit(); }catch(e){}
 /* 1. VOICE FIX - mic permission + better errors */
 (function(){
   // Keep the copyright year current everywhere it appears - never stale.
+  try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){}
 })();
 (function(){
   const orig = window.toggleVoice;
