@@ -164,12 +164,50 @@ section('And the sheet can be scrolled to its bottom if it is tall');
      'if it is taller than the screen, it scrolls', r);
 }
 
-section('Checkout is reached from the phone, and the server makes it');
+section('The age question a new payer meets is answerable on a phone');
 {
-  const r = await page.evaluate(async (base) => {
-    try { return { url: await AMV_API.stripeCheckout('pro', (S.user && S.user.email) || '') }; }
-    catch (e) { return { err: e.message }; }
-  }, BACKEND);
+  /* A brand new account has never been asked its year of birth, and the server
+     will not open a subscription without it. So this dialog now stands between
+     a phone and a payment - if it is not usable at 390px, nobody pays from a
+     phone at all, which is most people.
+
+     Started without awaiting: the call does not settle until the dialog is
+     answered, which is the point. */
+  const started = page.evaluate(() =>
+    AMV_API.stripeCheckout('pro', (S.user && S.user.email) || '')
+      .then(url => ({ url }), e => ({ err: e.message })));
+
+  await page.waitForFunction(() => {
+    const o = document.getElementById('ovr');
+    return !!(o && /year were you born/i.test(o.innerText || '') && o.querySelector('input'));
+  }, null, { timeout: 15000 });
+
+  const field = await reachable('#ovr input');
+  ok(field.found && field.onScreen, 'the year field is on the screen', field);
+  ok(!field.covered, 'and nothing is sitting on top of it', field);
+  ok(field.h >= 44, 'and it is big enough to tap', field);
+
+  const confirm = await page.evaluate(() => {
+    const b = [...document.querySelectorAll('#ovr button')]
+      .find(x => /confirm/i.test(x.textContent || ''));
+    if (!b) return { found: false };
+    b.id = b.id || 'age-confirm-probe';
+    return { found: true, sel: '#' + b.id };
+  });
+  ok(confirm.found, 'there is a button to confirm with', confirm);
+  const btn = await reachable(confirm.sel);
+  ok(btn.onScreen && !btn.covered, 'reachable, and not underneath anything', btn);
+  ok(btn.h >= 44, 'and thumb sized', btn);
+
+  /* Answer it the way somebody would, and the payment carries on. */
+  await page.evaluate((sel) => {
+    const i = document.querySelector('#ovr input');
+    i.value = String(new Date().getUTCFullYear() - 30);
+    i.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector(sel).click();
+  }, confirm.sel);
+
+  const r = await started;
   ok(/checkout\.stripe\.com/.test(r.url || ''),
      'a real processor URL comes back', r.url || r.err);
   const calls = outbound.sentTo(/checkout\/sessions/);

@@ -129,8 +129,8 @@ ok(pre.busy === false, 'and it stops, rather than waiting on nothing');
 
 section('No network call is left without a deadline');
 /* Read the shipped bundle rather than the sources: this is about what actually
-   runs. Three call sites manage their own AbortController and are listed by
-   name; everything else must go through _fetch or fetchDeadline. A new raw
+   runs. A handful of call sites manage their own AbortController and are listed
+   by name; everything else must go through _fetch or fetchDeadline. A new raw
    fetch() added later fails here instead of shipping a hang. */
 const { readFileSync } = await import('fs');
 const bundle = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
@@ -145,6 +145,13 @@ const OWN_CONTROLLER = [
      matching loosely here is how a raw fetch sneaks in beside it. */
   "'/v1/health',{signal:ctrl.signal}",
   "res=await fetch(_endpoint,",                       // chat stream - 45s + idle guard
+  /* Telling the server the year somebody was born - 10s of its own. It is
+     AWAITED, unlike the acceptance post beside it, because the retry after an
+     `age_required` stands behind it: a server that never answers would leave
+     somebody looking at a dialog that has already closed and a payment that
+     never starts. Pinned to the route, so a raw fetch cannot sneak in next to
+     it on the strength of looking similar. */
+  "await fetch(base + '/v1/consent'",
 ];
 const raw = bundle.split('\n')
   .map((l, i) => ({ n: i + 1, l }))
