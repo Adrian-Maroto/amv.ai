@@ -36776,11 +36776,21 @@ const AMVCompliance = {
         const base = (apiBase()||'').replace(/\/$/,'');
         const tok = (window.AMV_API && AMV_API.token)||'';
         if(!base || !tok) return false;
-        const res = await fetch(base + '/v1/consent', {
-          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
-          body: JSON.stringify({ termsVersion: r.termsVersion || this.TERMS_VERSION, birthYear:y })
-        });
-        return !!(res && res.ok);
+        /* A DEADLINE, because this one is AWAITED. The acceptance post above is
+           fire-and-forget and nothing waits on it; this is the call the retry
+           stands behind, so a server that never answers would leave somebody
+           looking at a dialog that has already closed and a payment that never
+           starts. Ten seconds is the same bound the rest of the client uses for
+           a small write. */
+        const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+        const to = ctrl ? setTimeout(()=>{ try{ ctrl.abort(); }catch(e){} }, 10000) : null;
+        try{
+          const res = await fetch(base + '/v1/consent', Object.assign({
+            method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+            body: JSON.stringify({ termsVersion: r.termsVersion || this.TERMS_VERSION, birthYear:y })
+          }, ctrl ? { signal: ctrl.signal } : {}));
+          return !!(res && res.ok);
+        } finally { if(to) clearTimeout(to); }
       }catch(e){ return false; }
     })();
     return { age, adult: age >= this.ADULT_AGE, sent };

@@ -41,7 +41,16 @@ const mkEnv = (extra = {}) => ({
   },
   ...extra,
 });
-const tok = async (env, email) => (await W.issueTokens(env, email, email.split('@')[0])).token;
+const tok = async (env, email) => {
+  /* Selling asks for an age now - a listing creates a payout relationship - and
+     this fixture mints its tokens directly, so it records the answer directly.
+     The gate is proved in age-gate.test.mjs. Note the oversized-file case above
+     still answers 413 rather than asking: the gate deliberately sits after the
+     request has been checked, so nobody is asked a personal question in order
+     to process a listing that was going to be refused anyway. */
+  await W.DB.put(env, 'consent', String(email).toLowerCase(), { birthYear: 1990, at: Date.now() });
+  return (await W.issueTokens(env, email, email.split('@')[0])).token;
+};
 const req = (body, token, headers = {}) => new Request('https://api.amv.dev/x', {
   method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...headers }, body: JSON.stringify(body),
 });

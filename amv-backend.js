@@ -19833,14 +19833,6 @@ function _safeHttpUrl(u) {
 async function marketPublish(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'sign in to publish' }, 401);
-  /* Publishing is not a purchase, and it is gated for a different reason:
-     a listing creates a PAYOUT relationship - AMV will owe this person money
-     and has to be able to pay it - and that is a contract a minor cannot form
-     either. Same question-then-retry shape as the rest. */
-  {
-    const ageBad = await _moneyAgeGate(env, user.email);
-    if (ageBad) return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
-  }
   // Guard against listing spam - a handful a minute, a sane cap per day.
   const blocked = await guardAction(env, `mktpub:${user.email}`, 5, 50, 'listings');
   if (blocked) return blocked;
@@ -19911,6 +19903,29 @@ async function marketPublish(request, env) {
     filesTotal += dlen;
   }
   if (filesTotal > MAX_FILES_B64_TOTAL) return json({ error: 'the attached files are too large in total - keep them under ~2MB or link them' }, 413);
+  /* AFTER the request has been checked, and for the same reason the checkout
+     gate sits after the configuration checks: do not ask somebody a personal
+     question in order to process a request that was going to be refused
+     anyway. A listing with a 3MB file attached is a 413 whatever the seller's
+     age is, and "confirm your age" followed by "that file is too big" is two
+     steps where one would do - the second of them avoidable.
+
+     The content screen runs BEFORE this, and I considered moving the gate above
+     it so a seller who has not passed the age check cannot collect a strike.
+     It cannot be both: the screen sits above the file-size checks, so anything
+     before the screen is also before the 413 this ordering exists to protect.
+     Leaving it here is the better trade - a strike is recorded for submitting
+     prohibited content, which is a thing somebody did regardless of how old
+     they are, and the size refusal is the one a real person hits by accident.
+
+     Publishing is gated at all for a different reason than buying: a listing
+     creates a PAYOUT relationship - AMV ends up owing this person money - and
+     that is a contract a minor cannot form either. Same question-then-retry
+     shape as the rest: 428 means nobody ever asked, 403 is the actual no. */
+  {
+    const ageBad = await _moneyAgeGate(env, user.email);
+    if (ageBad) return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
+  }
   let files = rawFiles.map(f => ({
     name: String(f.name || 'file').slice(0, 160),
     type: String(f.type || 'application/octet-stream').slice(0, 100),
