@@ -74,17 +74,38 @@ const AMVCompliance = {
     }
     const r = this._rec(); r.birthYear = y; r.ageSetAt = Date.now(); delete r.blockedUnderAge;
     this._save(r);
-    /* Sent now as well as at acceptance, because age is usually confirmed after
-       the terms - and the server refuses money until it has this. */
-    try{
-      const base = (apiBase()||'').replace(/\/$/,'');
-      const tok = (window.AMV_API && AMV_API.token)||'';
-      if(base && tok && r.termsVersion) fetch(base + '/v1/consent', {
-        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
-        body: JSON.stringify({ termsVersion:r.termsVersion, birthYear:y })
-      }).catch(()=>{});
-    }catch(e){}
-    return { age, adult: age >= this.ADULT_AGE };
+    /* TOLD TO THE SERVER, AND THE CALLER CAN WAIT FOR IT.
+
+       The server is the only copy that counts - `_moneyAgeGate` reads the
+       consent record, not this browser - and two things stopped this reaching
+       it.
+
+       It was guarded on `r.termsVersion`, which is set when somebody accepts
+       the terms THROUGH THIS RECORD. A new account that has not is every new
+       account, so the post was skipped entirely and the server never learned
+       the age at all: the person answered the question, the answer stayed in
+       their browser, and the next attempt to pay was refused for the same
+       reason as the first. The version falls back to the one the app is on,
+       which is what the server wants anyway.
+
+       And it was fire-and-forget, so even when it did fire, the retry that
+       follows an `age_required` raced it and usually lost. The promise is
+       returned now, and `_askBirthYear` waits for it before letting the caller
+       try again - because the whole point of asking is that the next call
+       succeeds. */
+    const sent = (async () => {
+      try{
+        const base = (apiBase()||'').replace(/\/$/,'');
+        const tok = (window.AMV_API && AMV_API.token)||'';
+        if(!base || !tok) return false;
+        const res = await fetch(base + '/v1/consent', {
+          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},
+          body: JSON.stringify({ termsVersion: r.termsVersion || this.TERMS_VERSION, birthYear:y })
+        });
+        return !!(res && res.ok);
+      }catch(e){ return false; }
+    })();
+    return { age, adult: age >= this.ADULT_AGE, sent };
   },
   age(){ const r=this._rec(); return r.birthYear ? (new Date().getFullYear() - r.birthYear) : null; },
   isAdult(){ const a=this.age(); return a == null ? false : a >= this.ADULT_AGE; },
@@ -134,7 +155,10 @@ async function _askBirthYear(){
     });
     if(!v) return false;
     try{
-      AMVCompliance.setBirthYear(v);
+      /* Waited for: the server is what refuses money, so an answer it has not
+         received yet is an answer the retry will be refused for. */
+      const out = AMVCompliance.setBirthYear(v);
+      try{ if(out && out.sent && typeof out.sent.then === 'function') await out.sent; }catch(e2){}
     }catch(e){
       if(typeof toast==='function') toast((e&&e.message)||'That did not look like a year.','error',6000);
       return false;

@@ -135,8 +135,47 @@ section('Asking for a paid plan they have not paid for changes nothing');
      'nothing was written to the entitlement record', { before, after });
 }
 
-section('Checkout is a real Stripe session, created by the server');
+section('Checkout asks a new account its age, once, and carries on');
 {
+  /* THE QUESTION A NEW PAYER NOW MEETS, ANSWERED THE WAY THEY ANSWER IT.
+
+     A minor cannot form a binding contract, so the server asks before it will
+     open a subscription - and a brand new account has never been asked, which
+     is this one exactly. The server answers 428, the client opens the year
+     dialog, and the call is retried with the answer.
+
+     Answered here rather than pre-recorded into storage, because pre-recording
+     would skip the whole mechanism on the one test that walks the paying
+     journey end to end. This is the only place the ask-and-retry runs in a
+     real browser. */
+  const asked = await page.evaluate(async () => {
+    const seen = { dialog: false };
+    const start = AMV_API.stripeCheckout('pro', (S.user && S.user.email) || '')
+      .then(url => ({ url }), e => ({ err: e.message }));
+
+    /* Wait for the dialog the retry puts up, then answer it the way a person
+       would - type a year and confirm. */
+    for (let i = 0; i < 60 && !seen.dialog; i++) {
+      await new Promise(r => setTimeout(r, 100));
+      const ovr = document.getElementById('ovr');
+      const input = ovr && ovr.querySelector('input');
+      const okBtn = ovr && [...ovr.querySelectorAll('button')]
+        .find(b => /confirm/i.test(b.textContent || ''));
+      if (input && okBtn && /year were you born/i.test(ovr.innerText || '')) {
+        seen.dialog = true;
+        input.value = String(new Date().getUTCFullYear() - 30);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        okBtn.click();
+      }
+    }
+    return Object.assign(seen, await start);
+  });
+  ok(asked.dialog === true,
+     'a new account is asked its year of birth before it can subscribe', asked);
+  ok(/checkout\.stripe\.com/.test(asked.url || ''),
+     'and once answered the checkout goes through', asked.url || asked.err);
+
+  /* And it is asked ONCE. The second attempt carries the stored answer. */
   const r = await page.evaluate(async () => {
     try { return { url: await AMV_API.stripeCheckout('pro', (S.user && S.user.email) || '') }; }
     catch (e) { return { err: e.message }; }
@@ -144,7 +183,10 @@ section('Checkout is a real Stripe session, created by the server');
   ok(/checkout\.stripe\.com/.test(r.url || ''),
      'the browser gets a processor URL it did not invent', r.url || r.err);
   const calls = outbound.sentTo(/checkout\/sessions/);
-  ok(calls.length === 1, 'and the server is what called Stripe', calls.length);
+  /* Two now: the one that got through after the answer, and this one. The
+     refused attempt never reached Stripe, which is the point of refusing
+     before the session is built. */
+  ok(calls.length === 2, 'and the server is what called Stripe', calls.length);
   ok(/price_pro_123/.test(calls[0].body),
      'with the price id from the Worker, not one sent by the browser', /price_pro_123/.test(calls[0].body));
   /* AMV-025: the redirect a customer is sent back to comes from the server's
