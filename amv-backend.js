@@ -18763,17 +18763,6 @@ async function getEntitlement(request, env) {
 async function stripeCheckout(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
-  /* A minor cannot form a binding contract, which is exactly why their
-     purchases come back as chargebacks - and a subscription is the longest one
-     this product sells. `age_required` is a QUESTION, not a refusal: it means
-     nobody has ever asked, which is true of every account that existed before
-     the gate did. The client asks and retries, the same way buying already
-     does, so an existing customer is asked once rather than walled out of
-     renewing. 428 says "answer this first"; 403 is the actual no. */
-  {
-    const ageBad = await _moneyAgeGate(env, user.email);
-    if (ageBad) return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
-  }
   /* Every call creates a Checkout Session at Stripe. Unbounded, one signed-in
      account can burn the whole platform's Stripe API rate limit and take
      checkout down for every real customer - so the damage is to revenue, not to
@@ -18814,6 +18803,25 @@ async function stripeCheckout(request, env) {
   // payment redirects, and there is no fallback to the request Origin.
   const origin = _paymentReturnOrigin(env);
   if (!origin) return _paymentOriginMissing();
+  /* AFTER every configuration refusal above, on purpose. If this deployment
+     cannot take a payment - no processor key, no price for the plan, nowhere
+     to return to - then "confirm your age" asks somebody for their birth year
+     under false pretences: they answer, and only then find out there is no
+     checkout. A configuration failure is about the deployment and is the
+     operator's to read; the age question is the person's to answer, and it is
+     only worth asking once the answer can lead somewhere.
+
+     A minor cannot form a binding contract, which is exactly why their
+     purchases come back as chargebacks - and a subscription is the longest one
+     this product sells. `age_required` is a QUESTION, not a refusal: it means
+     nobody has ever asked, which is true of every account that existed before
+     the gate did. The client asks and retries, the same way buying already
+     does, so an existing customer is asked once rather than walled out of
+     renewing. 428 says "answer this first"; 403 is the actual no. */
+  {
+    const ageBad = await _moneyAgeGate(env, user.email);
+    if (ageBad) return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
+  }
   const form = new URLSearchParams();
   /* HOW THE REST OF THE WORLD PAYS.
 
@@ -24295,7 +24303,16 @@ async function verifyStripeSignature(secret, payload, sigHeader) {
 async function paypalSubscribe(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
-  /* A minor cannot form a binding contract, which is exactly why their
+  if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_SECRET)
+    return json({ error: 'PayPal is not connected on this deployment yet, so it cannot be used to pay. Nothing has been charged.',
+                  code: 'needs_service' }, 503);
+  /* AFTER the service check above, on purpose. If this deployment cannot take a
+     payment at all, "confirm your age" asks somebody for their birth year
+     under false pretences - they answer, and only then find out there is no
+     processor. A configuration failure is about the deployment, not the
+     person, and it is the operator who needs to read it.
+
+     A minor cannot form a binding contract, which is exactly why their
      purchases come back as chargebacks - and a subscription is the longest one
      this product sells. `age_required` is a QUESTION, not a refusal: it means
      nobody has ever asked, which is true of every account that existed before
@@ -24306,9 +24323,6 @@ async function paypalSubscribe(request, env) {
     const ageBad = await _moneyAgeGate(env, user.email);
     if (ageBad) return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
   }
-  if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_SECRET)
-    return json({ error: 'PayPal is not connected on this deployment yet, so it cannot be used to pay. Nothing has been charged.',
-                  code: 'needs_service' }, 503);
   /* The same bound the card path has had all along, for the same reason: one
      account hammering this burns AMV's rate limit at PayPal, and the people
      who then cannot check out are everybody else. It was missing here because

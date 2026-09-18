@@ -76,6 +76,14 @@ async function signUp(p, email, name) {
     await until('the signup for ' + em, () => S.user && S.user.email === em, 20000);
     /* And the token the next request will carry actually exists. */
     await until('a session token for ' + em, () => !!(window.AMV_API && AMV_API.token), 20000);
+
+    /* Selling asks for an age - a listing creates a payout relationship - and a
+       signup has never been asked. In the product the client asks and retries;
+       this file calls the route directly, so it answers directly. The gate is
+       proved in age-gate.test.mjs; this file is about whether the seller ever
+       sees the buyer's question. */
+    await AMV_API._fetch('/v1/consent', { method: 'POST', body: JSON.stringify({
+      termsVersion: '2026-08-05', birthYear: new Date().getUTCFullYear() - 30 }) });
   }, [email, PW, name]);
 }
 

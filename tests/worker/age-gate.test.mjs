@@ -135,8 +135,16 @@ section('A subscription asks too, and asks rather than refuses');
 
      Driven, not read: the gate is reached through the real route, with a real
      KV, before and after an age is recorded. */
+  /* Configured enough to REACH the gate. The gate deliberately sits after
+     every configuration refusal - asking somebody's birth year on a deployment
+     that cannot take a payment is asking under false pretences - so an env
+     missing APP_URL answers 503 needs_service and never gets as far as the
+     question. That ordering is asserted in
+     the-fallback-that-was-never-only-for-development; here it just has to be
+     satisfied, or this section measures the wrong refusal. */
   const payEnv = Object.assign({}, env, {
-    STRIPE_SECRET: 'sk_test', STRIPE_PRICE_PRO: 'price_pro',
+    STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_PRICE_PRO: 'price_pro',
+    APP_URL: 'https://amv.test',
     PAYPAL_CLIENT_ID: 'id', PAYPAL_SECRET: 'sec',
   });
   const post = (path, body) => new Request('https://x' + path, {
@@ -166,15 +174,25 @@ section('A subscription asks too, and asks rather than refuses');
   }), payEnv);
   ok(rec.status === 200, 'the answer is accepted', rec.status);
 
-  /* And the same call is no longer stopped by the gate. It may still fail for
-     its own reasons - there is no real Stripe here - but not with 428. */
-  for (const [name, fn, body] of [
-    ['stripeCheckout', W.stripeCheckout, { plan: 'pro' }],
-    ['marketPublish', W.marketPublish, { title: 'A prompt pack', price: 5 }],
-  ]) {
-    const r = await fn(post('/x', body), payEnv);
-    ok(r.status !== 428, name + ' no longer asks once it has been answered', name + ' -> ' + r.status);
-  }
+  /* And the same call is no longer stopped by the gate. Past the gate it really
+     does try to open a Checkout Session, so the processor is stood in for -
+     otherwise this reaches the network and fails for a reason that has nothing
+     to do with age. */
+  const keepFetch = globalThis.fetch;
+  globalThis.fetch = async (u, o) => {
+    if (/checkout\/sessions$/.test(String(u)))
+      return new Response(JSON.stringify({ id: 'cs_1', url: 'https://pay.test/s' }), { status: 200 });
+    return keepFetch(u, o);
+  };
+  try {
+    for (const [name, fn, body] of [
+      ['stripeCheckout', W.stripeCheckout, { plan: 'pro' }],
+      ['marketPublish', W.marketPublish, { title: 'A prompt pack', price: 5 }],
+    ]) {
+      const r = await fn(post('/x', body), payEnv);
+      ok(r.status !== 428, name + ' no longer asks once it has been answered', name + ' -> ' + r.status);
+    }
+  } finally { globalThis.fetch = keepFetch; }
 
   /* Somebody under age is refused, and that IS a wall - which is the point of
      telling the two apart. */

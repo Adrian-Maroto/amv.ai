@@ -84,7 +84,16 @@ function mkEnv(extra = {}) {
   }, extra);
 }
 const EMAIL = 'buyer@example.com';
-const tokFor = async (env) => (await W.issueTokens(env, EMAIL, 'B')).token;
+const tokFor = async (env) => {
+  /* Checkout asks for an age now, the way buying always has. This fixture
+     issues its token directly, so it records the answer directly. The gate is
+     proved in age-gate.test.mjs; this file is about where a payment RETURNS
+     to - and note the gate deliberately sits after every configuration
+     refusal, so the unconfigured cases below still report the missing setting
+     rather than asking somebody their birth year first. */
+  env._map.set('consent:' + EMAIL, JSON.stringify({ birthYear: 1990, at: Date.now() }));
+  return (await W.issueTokens(env, EMAIL, 'B')).token;
+};
 const buyReq = async (env, origin) => new Request('https://api.amv.test/v1/stripe/checkout', {
   method: 'POST',
   headers: Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.1.1.1',

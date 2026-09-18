@@ -46,7 +46,13 @@ const mkEnv = (extra = {}) => ({
   },
   ...extra,
 });
-const tok = async (env, email) => (await W.issueTokens(env, email, 'U')).token;
+const tok = async (env, email) => {
+  /* Checkout asks for an age now, the way buying always has. This fixture mints
+     its token directly, so it records the answer directly. The gate is proved in
+     age-gate.test.mjs; this file is about how many seats get billed. */
+  await W.DB.put(env, 'consent', String(email).toLowerCase(), { birthYear: 1990, at: Date.now() });
+  return (await W.issueTokens(env, email, 'U')).token;
+};
 const post = (body, token) => new Request('https://api.amv.dev/v1/stripe/checkout',
   { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) });
 const jget = async (r) => { try { return await r.json(); } catch { return {}; } };
