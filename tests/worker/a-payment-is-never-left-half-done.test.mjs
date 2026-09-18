@@ -102,6 +102,12 @@ section('Starting a payment is what makes it findable later');
      something behind for the sweep. */
   const env = mkEnv();
   const tok = (await (await call(env, '/auth/signup', { email: BUYER, name: 'B', password: PW })).json()).token;
+  /* Checkout asks for an age now, the same way the purchase route already did.
+     A signup has never been asked, so without this the route answers 428 and
+     the section below measures a fixture problem instead of the product - which
+     is exactly what its own first assertion warns about. The purchase half of
+     this file has recorded consent this way all along. */
+  await W.DB.put(env, 'consent', BUYER, { birthYear: 1990, at: Date.now() });
   ok(!!tok, 'signed in', !!tok);
 
   /* Stripe answers checkout-session creation for the plan and the purchase. */

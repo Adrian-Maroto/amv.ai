@@ -93,6 +93,11 @@ function seedCatalogue() {
 
 async function tokenFor(email) {
   store.set('acct:' + email, JSON.stringify({ email }));
+  /* Publishing asks for an age now, the way buying always has - a listing
+     creates a payout relationship. This fixture mints accounts directly, so it
+     records the answer directly too. The gate itself is proved in
+     age-gate.test.mjs; this file is about how many reads a listing costs. */
+  store.set('consent:' + email, JSON.stringify({ birthYear: 1990, at: Date.now() }));
   return (await W.issueTokens(env, email, 'X')).token;
 }
 const asUser = async (path, email) => new Request('https://w' + path, {

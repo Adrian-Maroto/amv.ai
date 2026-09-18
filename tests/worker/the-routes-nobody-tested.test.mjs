@@ -92,8 +92,14 @@ const post = async (env, path, body, tok) => {
   const r = await call(env, path, body, tok);
   return { status: r.status, body: await r.json().catch(() => ({})) };
 };
-const signup = async (env, email, name) =>
-  (await (await call(env, '/auth/signup', { email, name: name || email.split('@')[0], password: PW })).json()).token;
+/* Selling and subscribing ask for an age now, the way buying always has. A
+   signup has never been asked, so the fixture answers once - the gate itself is
+   proved in age-gate.test.mjs and is not what this file is about. */
+const signup = async (env, email, name) => {
+  const tok = (await (await call(env, '/auth/signup', { email, name: name || email.split('@')[0], password: PW })).json()).token;
+  await W.DB.put(env, 'consent', String(email).toLowerCase(), { birthYear: 1990, at: Date.now() });
+  return tok;
+};
 
 /* Every one of these routes takes an account. Asserted once, for all of them,
    rather than sixteen near-identical sections - but asserted, because an

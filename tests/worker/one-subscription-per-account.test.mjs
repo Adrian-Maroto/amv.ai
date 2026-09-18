@@ -58,6 +58,12 @@ const env = {
 };
 W.__setRequireUser(async () => ({ email: 'buyer@x.com', plan: 'free', customCfg: null }));
 W.__setVerify(async () => true);
+/* Checkout asks for an age now, the way the purchase route always has - a
+   subscription is the longest binding contract the product sells. This fixture
+   mints its buyer directly, so it records the answer directly too. The gate is
+   proved in age-gate.test.mjs; this file is about not selling somebody two
+   subscriptions. */
+store.set('consent:buyer@x.com', JSON.stringify({ birthYear: 1990, at: Date.now() }));
 
 /* A tiny Stripe. Subscriptions live here so a cancellation is observable. */
 let SUBS = [];

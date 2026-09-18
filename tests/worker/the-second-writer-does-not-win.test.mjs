@@ -94,6 +94,13 @@ const signup = async (env, email) => (await (await call(env, '/auth/signup', { e
    in worker.test.mjs - this only stops it from standing in the way of the races
    that are actually under test here. */
 const canPublish = async (env, email) => { await W.setEntitlement(env, email, 'ultra'); };
+/* Listing something for sale creates a payout relationship, so the server asks
+   for an age the same way buying does - and a fresh signup has never been
+   asked, which is a 428 rather than a listing. Answered here for the same
+   reason the entitlement is set above: the age gate is proved in
+   age-gate.test.mjs, and this file is about two writes racing. */
+const isAdult = async (env, tok) => call(env, '/v1/consent',
+  { termsVersion: '2026-08-05', birthYear: new Date().getUTCFullYear() - 30 }, tok);
 const together = async (...ps) => (await Promise.allSettled(ps))
   .filter(r => r.status === 'rejected').map(r => String((r.reason && r.reason.message) || r.reason));
 
@@ -174,8 +181,10 @@ section('Looking at a listing cannot put a sold item back on sale');
      write in the marketplace raced the two that carry money. */
   const env = mkEnv();
   const seller = await signup(env, 'seller@example.com');
-  const item = (await post(env, '/v1/market/publish', { title: 'Vintage jacket', text: 'x', price: 40 }, seller)).body.item;
-  ok(!!(item && item.id), 'a listing exists', item && item.id);
+  await isAdult(env, seller);
+  const pub = await post(env, '/v1/market/publish', { title: 'Vintage jacket', text: 'x', price: 40 }, seller);
+  const item = pub.body.item;
+  ok(!!(item && item.id), 'a listing exists', item && item.id ? item.id : pub);
 
   await Promise.all([
     post(env, '/v1/market/view', { id: item.id }),
@@ -193,6 +202,7 @@ section('And a view does not rewrite the listing at all');
      second-per-key limit exactly on the listing that gets popular. */
   const env = mkEnv();
   const seller = await signup(env, 'seller2@example.com');
+  await isAdult(env, seller);
   const item = (await post(env, '/v1/market/publish', { title: 'Lamp', text: 'x', price: 10 }, seller)).body.item;
   const before = await env.AMV_KV.get(`market:${item.id}`);
 
