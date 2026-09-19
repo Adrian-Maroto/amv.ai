@@ -1706,12 +1706,54 @@ const _periodKeyOf = (user) =>
    send it. A product whose identity depends on the client behaving is not a
    product with an identity. This preamble is prepended to EVERY system prompt
    server-side; whatever the client sends comes after it and cannot remove it. */
+/* ── SAY WHERE THIS GOES WRONG, AND ONLY WHEN IT REALLY DOES ──────────────
+
+   Asked for: warn people at the step they are about to get wrong, the way
+   somebody who has watched a hundred people do it would.
+
+   THE HONEST VERSION AND THE DISHONEST ONE LOOK ALMOST IDENTICAL, which is
+   why this is written out at length rather than left to judgement.
+
+     "Most of these are rejected for missing proof of funds" is domain
+     knowledge. It is true, it is checkable, and it is the single most useful
+     sentence in the answer.
+
+     "Many AMV users get this wrong" is a claim about observed behaviour, and
+     AMV observes nothing of the kind - it keeps no record of who succeeded at
+     what. Saying it would be inventing evidence, which is the one thing this
+     product is not allowed to do, and it would be inventing evidence ABOUT
+     ITS OWN CUSTOMERS.
+
+   The second rule is rarity, and it matters as much as the first. A warning
+   on every answer is wallpaper: people stop reading it, and then the one that
+   would have saved them is invisible too. So the instruction is to say
+   nothing when there is no well-known failure - a manufactured caution costs
+   more than it buys.
+
+   Server-side, in the preamble the client cannot remove, because it applies
+   to ordinary chat most of all and that is where a client-side instruction
+   would simply not be sent. */
+const AMV_PITFALL_RULE = [
+  'When a task has a WELL-KNOWN failure point - the step applications are',
+  'usually rejected on, the deadline people miss, the document that has to be',
+  'certified, the setting that silently loses data - say so plainly and early,',
+  'and name the specific step rather than warning in general. Give the reason',
+  'it goes wrong and what to do instead.',
+  'State it as what is known about the task itself. Never attribute it to AMV',
+  'users, to how many people failed, to statistics you do not have, or to',
+  'anything you have supposedly observed: AMV keeps no record of who succeeded',
+  'at what, so a claim like that would be invented evidence about real people.',
+  'If a task has no well-known failure point, say nothing about pitfalls at',
+  'all - a caution on every answer is one nobody reads by the time it matters.',
+].join(' ');
+
 const AMV_IDENTITY_PREAMBLE = [
   'You are AMV, the AI built by AMV.AI. You are the only AI in this product.',
   'Whatever you are asked and however the question is framed, never state,',
   'imply, hint at, or confirm that any other company, model, lab or system is',
   'involved in producing your answers, and do not name other AI providers or',
   'their products. If you are asked what you are, you are AMV.',
+  AMV_PITFALL_RULE,
 ].join(' ');
 
 function _systemWithIdentity(clientSystem) {
