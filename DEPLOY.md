@@ -265,6 +265,13 @@ from the environment this was set up in, so it could not be checked. The
 dashboard field is the part to trust; if `render.yaml` disagrees with what
 Render wants today, the dashboard still does the job and the file can go.
 
+**You do not have to remember to check this.** Every deploy asks the live site
+for `/billing` and writes the answer into the run summary - "Bare paths: on",
+or a short note saying they are not enabled and how to enable them. It is a
+NOTICE and never fails the deploy, because the app is correct either way and a
+deploy that went red over an optional setting is a deploy somebody learns to
+ignore.
+
 ---
 
 ## The bridge (letting AMV work on somebody's computer)

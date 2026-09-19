@@ -212,3 +212,52 @@ jobs:
             fi
           done
           exit $bad
+
+      # DOES A BARE PATH WORK ON THIS HOST - REPORTED, NEVER FAILED.
+      #
+      # `/billing` only resolves if the host serves index.html for a path it has
+      # no file for. That is one field in the host's dashboard and nothing in
+      # this repository can read it, so the question used to live in DEPLOY.md
+      # as something somebody had to remember to go and check.
+      #
+      # It does not fail the deploy, and that is deliberate rather than timid:
+      # the app is correct either way. It writes the path form ONLY after seeing
+      # the host serve one - arriving at /billing and running at all is the
+      # proof - and until that proof turns up every address it writes is the
+      # hash form, which needs nothing from the host. A deploy that went red
+      # over an optional setting would teach somebody to ignore a red deploy.
+      #
+      # So it answers the question on every deploy instead, in the summary,
+      # where the answer is either "on" or a short note saying how to turn it on.
+      - name: Say whether bare paths work on this host
+        env:
+          SITE: ${{ vars.SITE_URL || 'https://amv.homes' }}
+        run: |
+          set -u
+          body="$(curl -fsS --max-time 20 "$SITE/billing" || true)"
+          got="$(printf '%s' "$body"                  | grep -o 'name="amv-build" content="[a-f0-9]*"' | head -1)"
+          if [ -n "$got" ]; then
+            echo "Bare paths resolve: $SITE/billing served the app."
+            {
+              echo "### Bare paths: on"
+              echo
+              echo "\`$SITE/billing\` serves the app, so links like it work as sent."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::notice::$SITE/billing does not serve the app, so bare paths are not enabled on this host. Nothing is broken - AMV uses the #/billing form until the host proves it can serve the other one."
+            {
+              echo "### Bare paths: not enabled (optional)"
+              echo
+              echo "\`$SITE/billing\` did not serve the app, so the host has no"
+              echo "rewrite for paths it has no file for."
+              echo
+              echo "**Nothing is broken.** AMV only writes path addresses after"
+              echo "seeing the host serve one, so it uses \`#/billing\` instead -"
+              echo "which needs nothing from the host and survives a refresh."
+              echo
+              echo "To turn it on: the static site's **Redirects/Rewrites**, with"
+              echo "source \`/*\`, destination \`/index.html\`, action **Rewrite**"
+              echo "(a redirect would change the address and lose the path)."
+              echo "See DEPLOY.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
