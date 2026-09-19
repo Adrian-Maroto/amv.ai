@@ -82,7 +82,7 @@ const PLAN_RPM={free:8,pro:20,elite:40,ultra:80};
 
    Mirrored from the Worker, with a test comparing both tables, exactly as
    before. */
-const PLAN_MONTH_TOKENS={free:325000,pro:490000,elite:2470000,ultra:6600000};
+const PLAN_MONTH_TOKENS={free:325000,pro:2340000,elite:9100000,ultra:23400000};
 /* Short enough to sit on a card, and never rounded UP - an advertised
    allowance is a promise, so 2,470,000 shows as 2.4M rather than 2.5M. */
 function _allowanceLabel(p){

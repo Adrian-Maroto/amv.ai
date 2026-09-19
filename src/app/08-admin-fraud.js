@@ -1747,9 +1747,9 @@ const PLAN_TIERS={
      names, in its other direction: it would let somebody spend past the point
      the server stops them, so the stop arrives as a refusal rather than as the
      limit they were shown. */
-  pro:   { dailyTokenCap:68000,    rpmMax:20, models:['fast','core','coding'] },
-  elite: { dailyTokenCap:318000,   rpmMax:40, models:['fast','core','coding','smart'] },
-  ultra: { dailyTokenCap:807000,   rpmMax:80, models:['fast','core','coding','smart'] },
+  pro:   { dailyTokenCap:325000,   rpmMax:20, models:['fast','core','coding'] },
+  elite: { dailyTokenCap:1170000,  rpmMax:40, models:['fast','core','coding','smart'] },
+  ultra: { dailyTokenCap:2860000,  rpmMax:80, models:['fast','core','coding','smart'] },
   /* The server's fallback for a custom plan with no explicit dayTokens is
      Math.round(50000 * TOKENIZER_SCALE) = 65,000. This said 52,000, which is
      the failure the comment above names: a browser guard TIGHTER than the

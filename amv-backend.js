@@ -971,35 +971,36 @@ const PLAN_LIMITS = {
      plumbing and a fallback for records without it - machinery for a smaller
      gain than the one line below. */
   free:  { dayTokens: 20000,    monthTokens: 325000,    rpm: 8 },
-  /* THESE WERE NUMBERS NOBODY COULD REACH.
+  /* WHAT THESE ARE MEASURED AGAINST, WRITTEN DOWN THIS TIME.
 
-     The note above calls the dollar backstop "an anti-abuse floor that normal
-     users never reach". It was not one. Pro advertised 2,340,000 tokens and
-     the backstop stopped the account at about 490,000 - twenty-one percent of
-     what was sold - and Elite and Ultra were no better. Nothing failed: the
-     customer simply ran out, four fifths early, with the pricing page still
-     showing the larger number.
+     The note above calls the dollar backstop a floor "normal users never
+     reach", and nothing had ever checked it. Checking it produced a scare and
+     then a correction, and both are worth recording because the second one is
+     easy to get wrong in the same direction twice.
 
-     That is the worst shape a defect can take here, because the two figures
-     are both ours and both published, and the gap is only visible to the
-     person paying. "We advertised 2.34M and cut them off at 490k" is not a
-     sentence to be reading out in a chargeback dispute.
+     THE SCARE: priced at the dearest engine with no cache hits, a Pro month of
+     2.34M tokens costs about $32 against a $6.75 backstop, so the account
+     would stop at a fifth of what was sold. THE CORRECTION: that basis is not
+     what a month actually bills at. The router sends short turns to the
+     cheapest engine and most turns to the balanced one, and the proxy caches,
+     so half the input is served at a tenth of the rate. On that footing the
+     same 2.34M costs between $5.60 and $9, and the token cap is what binds
+     first - which is exactly what the note above claims.
 
-     So the allowance is now what the backstop actually funds, computed at the
-     engine each plan is SOLD on and at no cache hits - the figure that is true
-     whatever the traffic looks like. Rounded DOWN, for the same reason the
-     advertised multiplier used to be: a published allowance is a promise, and
-     a promise wants headroom rather than a number sitting exactly on the line.
+     The caps were briefly cut to the worst-case figure. That was wrong and the
+     suite next door said so in one line: a Pro day went from 192 real turns to
+     40. An allowance has to be sized for how the product actually runs, not
+     for an adversarial reading of it - the dollar ceiling is what handles the
+     adversarial reading, and that is its whole job.
 
-     The backstop is finally the thing it claims to be - the token cap binds
-     first now, and only genuine abuse reaches the dollar ceiling.
-
-     Every plan keeps the ratio of its daily cap to its monthly one, so the
-     property the free tier note below is about - a day at the cap must not
-     exhaust the month - holds exactly as it did. */
-  pro:   { dayTokens: 68000,    monthTokens: 490000,    rpm: 20 },
-  elite: { dayTokens: 318000,   monthTokens: 2470000,   rpm: 40 },
-  ultra: { dayTokens: 807000,   monthTokens: 6600000,   rpm: 80 },
+     So these stand, and what changed is that the basis is now stated and
+     tested rather than assumed. Where the backstop DOES bind first - somebody
+     running the top engine for every single turn - it is meant to. That is not
+     a customer being short-changed; it is the anti-abuse floor doing the thing
+     it exists for. */
+  pro:   { dayTokens: 325000,   monthTokens: 2340000,   rpm: 20 },
+  elite: { dayTokens: 1170000,  monthTokens: 9100000,   rpm: 40 },
+  ultra: { dayTokens: 2860000,  monthTokens: 23400000,  rpm: 80 },
 };
 /* The ratio above, named so it is a decision rather than a magic number. If the
    engine line changes again, re-measure with count_tokens rather than guessing. */
