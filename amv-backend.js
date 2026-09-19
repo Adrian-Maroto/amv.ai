@@ -146,6 +146,11 @@ const ENGINES = {
   'amv-forge': { model: 'claude-fable-5',            minPlan: 'pro',   inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
   'amv-apex':  { model: 'claude-fable-5-1',          minPlan: 'elite', inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
 };
+/* The dearest input rate on the ladder. The weekly ceiling exists to bound
+   what the expensive engines cost, so which engines those ARE has to follow
+   the table rather than a number somebody typed while looking at it. */
+const _DEAREST_ENGINE_IN_COST = Math.max(...Object.values(ENGINES).map((e) => e.inCost));
+
 /* ── EFFORT: A REAL CONTROL, WITH THE PLAN AS ITS CEILING ─────────────────
    Effort decides how hard the engine thinks, which decides what the call
    costs. It was fixed per engine, and a picker that changes nothing would be
@@ -1044,7 +1049,8 @@ const PLAN_LIMITS = {
      is on the account record but not on the request path, so that needs new
      plumbing and a fallback for records without it - machinery for a smaller
      gain than the one line below. */
-  free:  { dayTokens: 20000,    monthTokens: 325000,    rpm: 8,   monthMessages: 3000 },
+  free:  { dayTokens: 20000,    monthTokens: 325000,    rpm: 8,   monthMessages: 3000,
+           messages5h: 25,     topMessagesWeek: 0 },
   /* WHAT THESE ARE MEASURED AGAINST, WRITTEN DOWN THIS TIME.
 
      The note above calls the dollar backstop a floor "normal users never
@@ -1072,9 +1078,24 @@ const PLAN_LIMITS = {
      running the top engine for every single turn - it is meant to. That is not
      a customer being short-changed; it is the anti-abuse floor doing the thing
      it exists for. */
-  pro:   { dayTokens: 325000,   monthTokens: 2340000,   rpm: 20,  monthMessages: 100000 },
-  elite: { dayTokens: 1170000,  monthTokens: 9100000,   rpm: 40,  monthMessages: 300000 },
-  ultra: { dayTokens: 2860000,  monthTokens: 23400000,  rpm: 80,  monthMessages: 1000000 },
+  /* THE WEEKLY NUMBER IS THE ONE DOING THE WORK.
+
+     The dearest engine costs about two and a half cents a message. A hundred
+     of those a week is roughly ten dollars and fifty cents a month, which is
+     exactly the compute budget a fifteen dollar plan has after overhead - so
+     the worst case a Pro customer can produce lands on the budget rather than
+     through it. That is what makes "the best engine at the cheapest paid
+     tier" a sentence that survives contact with the invoice.
+
+     The five-hour number is not a rationing device and is not meant to bind.
+     It is set where only a burst reaches it, so a person working hard for an
+     afternoon never meets it. */
+  pro:   { dayTokens: 325000,   monthTokens: 2340000,   rpm: 20,  monthMessages: 100000,
+           messages5h: 1000,   topMessagesWeek: 100 },
+  elite: { dayTokens: 1170000,  monthTokens: 9100000,   rpm: 40,  monthMessages: 300000,
+           messages5h: 3000,   topMessagesWeek: 500 },
+  ultra: { dayTokens: 2860000,  monthTokens: 23400000,  rpm: 80,  monthMessages: 1000000,
+           messages5h: 10000,  topMessagesWeek: 1300 },
 };
 /* The ratio above, named so it is a decision rather than a magic number. If the
    engine line changes again, re-measure with count_tokens rather than guessing. */
@@ -1549,6 +1570,35 @@ function _forwardSentry(env, ctx, e) {
 }
 
 const todayKey = () => new Date().toISOString().slice(0, 10);
+
+/* ── WHY A FIVE-HOUR WINDOW AND NOT A DAY OR A MONTH ──────────────────────
+   A monthly cap has one failure mode and it is severe: somebody who works
+   hard for three days is locked out for the remaining twenty-seven, and the
+   product they are paying for simply stops. A daily cap does the same thing
+   in miniature, with the lockout landing in the middle of whatever they were
+   doing and lasting until midnight in a timezone they may not live in.
+
+   A rolling five-hour window cannot lock anybody out for long. The worst wait
+   is a few hours, it arrives four or five times a day, and it bounds a burst -
+   which is the only thing a short window is actually good at - without ever
+   becoming a wall. That is why the products people compare AMV to are shaped
+   this way, and it is the right shape for the same reason.
+
+   Computed from absolute time, so the window does not move with a timezone
+   and cannot be reset by changing one. */
+const WINDOW_5H_MS = 5 * 60 * 60 * 1000;
+const window5hKey = (now = Date.now()) => String(Math.floor(now / WINDOW_5H_MS));
+
+/* The week the DEAREST engines are counted over. Long enough that somebody
+   doing a hard week of work is not stopped on Wednesday, short enough that a
+   month cannot be spent in a weekend. ISO-style: Monday starts it, and it is
+   derived from the same absolute clock for the same reason. */
+const weekKey = (now = Date.now()) => {
+  const d = new Date(now);
+  const day = (d.getUTCDay() + 6) % 7;                       // Monday = 0
+  const monday = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day);
+  return new Date(monday).toISOString().slice(0, 10);
+};
 const monthKey = () => new Date().toISOString().slice(0, 7);
 
 /* THE WINDOW AN ALLOWANCE IS ACTUALLY MEASURED OVER.
@@ -14536,6 +14586,11 @@ function _baseLimits(user) {
          would have no ceiling to check and the cap would simply not apply -
          which is the quiet way a limit stops existing. */
       monthMessages: c.monthMessages || PLAN_LIMITS.pro.monthMessages,
+      /* Same reasoning as the message cap above: a window with no number is a
+         window that does not apply, which is the quiet way a limit stops
+         existing. A custom plan falls back to the cheapest paid tier's. */
+      messages5h: c.messages5h || PLAN_LIMITS.pro.messages5h,
+      topMessagesWeek: c.topMessagesWeek || PLAN_LIMITS.pro.topMessagesWeek,
       allModels: true,
     };
   }
@@ -15036,20 +15091,93 @@ async function aiProxy(request, env, ctx) {
      meaning. */
   const msgName = `msgs:${subject}:${_periodKeyOf(user)}`;
   const msgCap = Number(limits.monthMessages) || 0;
+
+  /* THREE WINDOWS, AND THEY ANSWER DIFFERENT QUESTIONS.
+
+     The five-hour one bounds a burst and is the only one an ordinary person
+     will ever see - and seeing it costs them a few hours, not the rest of the
+     month. The weekly one bounds the DEAREST engine, which is where the money
+     actually goes, and is what makes the best engine affordable on the
+     cheapest paid plan. The monthly one is the backstop behind both.
+
+     Booked smallest-window-first so the message a customer gets names the
+     limit that will clear soonest. Refused the other way round, somebody a few
+     messages into a burst would be told to come back next month when in fact
+     they can come back at four o'clock.
+
+     Every one of them is given back by the same refund as the tokens, and a
+     refusal at any stage hands back everything booked before it - a partial
+     booking left behind is an allowance nobody spent. */
+  const nowMs = Date.now();
+  const win5Name = `msgs5h:${subject}:${window5hKey(nowMs)}`;
+  const win5Cap = Number(limits.messages5h) || 0;
+  const topName = `msgtop:${subject}:${weekKey(nowMs)}`;
+  const topCap = Number(limits.topMessagesWeek) || 0;
+  /* Only the engines that actually cost the money are counted weekly. The
+     cheaper ones are what everyday use runs on, and metering those against a
+     weekly ceiling would be rationing the thing that is nearly free.
+
+     DERIVED FROM THE TABLE, NOT TYPED. This read `inCost >= 10`, which is the
+     dearest rate as it happens to stand today. The moment a rate moves - and
+     one moved twice this week - that literal either meters an engine that is
+     no longer expensive or stops metering the one that is, silently, with the
+     weekly ceiling simply not applying to the thing it exists for. */
+  const isTopEngine = eng && eng.inCost >= _DEAREST_ENGINE_IN_COST;
+
+  const booked = [];
+  const unbook = async () => {
+    for (const b of booked) {
+      try { await counter(env, b.name, { op: 'incr', amount: -b.amount, ttlMs: b.ttlMs }); } catch (e) {}
+    }
+  };
+  const refuseWindow = async (message, code, resetAt) => {
+    await counter(env, dName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 35 });
+    await counter(env, mName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 70 });
+    await unbook();
+    return json({ error: message, code, resetAt }, 429, { 'Retry-After': _retryAfterUntil(resetAt) });
+  };
+
+  if (win5Cap > 0) {
+    const r5 = await counter(env, win5Name, { op: 'reserve', amount: 1, cap: win5Cap, ttlMs: WINDOW_5H_MS * 3 });
+    if (!r5.allowed) {
+      const resetAt = (Math.floor(nowMs / WINDOW_5H_MS) + 1) * WINDOW_5H_MS;
+      return await refuseWindow(
+        'That is a lot of messages in a short space of time, so this window is full. It reopens at '
+        + new Date(resetAt).toUTCString().replace(/ GMT$/, ' UTC') + ' - a few hours, not the rest of the month.',
+        'quota_window', resetAt);
+    }
+    booked.push({ name: win5Name, amount: 1, ttlMs: WINDOW_5H_MS * 3 });
+  }
+
+  if (topCap > 0 && isTopEngine) {
+    const rt = await counter(env, topName, { op: 'reserve', amount: 1, cap: topCap, ttlMs: 86400000 * 21 });
+    if (!rt.allowed) {
+      const monday = new Date(weekKey(nowMs) + 'T00:00:00Z').getTime();
+      const resetAt = monday + 7 * 86400000;
+      /* Named as what it is - the best engine, not "your plan" - because the
+         rest of the product is still working and telling somebody they are out
+         of messages when they are not is how a cancellation starts. */
+      return await refuseWindow(
+        'That is this week\u2019s allowance on AMV\u2019s best engine. Everything else still works, and the '
+        + 'best engine comes back on ' + new Date(resetAt).toUTCString().replace(/ GMT$/, ' UTC') + '.',
+        'quota_top_week', resetAt);
+    }
+    booked.push({ name: topName, amount: 1, ttlMs: 86400000 * 21 });
+  }
+
   let msgRes = { allowed: true };
   if (msgCap > 0) {
     msgRes = await counter(env, msgName, { op: 'reserve', amount: 1, cap: msgCap, ttlMs: 86400000 * 70 });
     if (!msgRes.allowed) {
-      await counter(env, dName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 35 });
-      await counter(env, mName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 70 });
       const resetAt = _periodResetAtOf(user);
       /* Reaching this is not an ordinary customer running out. The caps are set
          where only a script arrives, so the message says what is true rather
          than inviting somebody to buy their way past it. */
-      return json({ error: 'This account has sent far more messages than a person can send in a month, so it has been paused. If that was not you, change your password; if it was, get in touch and we will sort it out.',
-                    code: 'quota_messages', resetAt }, 429,
-                  { 'Retry-After': _retryAfterUntil(resetAt) });
+      return await refuseWindow(
+        'This account has sent far more messages than a person can send in a month, so it has been paused. If that was not you, change your password; if it was, get in touch and we will sort it out.',
+        'quota_messages', resetAt);
     }
+    booked.push({ name: msgName, amount: 1, ttlMs: 86400000 * 70 });
   }
 
   /* THE SHAPE OF THE DISTRIBUTION, COUNTED AT THE TWO MOMENTS IT CHANGES.
@@ -15083,10 +15211,12 @@ async function aiProxy(request, env, ctx) {
     try {
       await counter(env, dName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 35 });
       await counter(env, mName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 70 });
-      /* The message goes back with the tokens. Left out, a run of failed calls
+      /* Every window goes back with the tokens. Left out, a run of failed calls
          would eat an allowance nobody spent - and because the caps are large,
-         it would do it invisibly for a long time. */
-      if (msgCap > 0) await counter(env, msgName, { op: 'incr', amount: -1, ttlMs: 86400000 * 70 });
+         it would do it invisibly for a long time. `booked` is what was actually
+         taken, so this cannot drift from the bookings above the way three
+         hand-written refunds would. */
+      await unbook();
     } catch (e) { /* never throw out of a refund */ }
     /* AMV-004: and the dollars, which are booked before the model runs for the
        same reason the tokens are. Every refusal below already calls this, so
@@ -16579,6 +16709,11 @@ async function usageReport(request, env) {
      the screen is the number that would refuse the next message rather than a
      second tally that agrees with it most of the time. */
   const msgUsed = (await counter(env, `msgs:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
+  /* The same keys the proxy reserves against, read at the same instant, so the
+     screen cannot show one window while a different one refuses. */
+  const nowMs = Date.now();
+  const win5Used = (await counter(env, `msgs5h:${subject}:${window5hKey(nowMs)}`, { op: 'get' })).value || 0;
+  const topUsed = (await counter(env, `msgtop:${subject}:${weekKey(nowMs)}`, { op: 'get' })).value || 0;
   /* THE COST OF A MESSAGE, MEASURED RATHER THAN ASSUMED.
 
      What a month of messages really costs decides whether a large cap is
@@ -16595,6 +16730,23 @@ async function usageReport(request, env) {
     /* The unit the plan is sold in, so the app can show what was bought rather
        than translating tokens for somebody who never asked about tokens. */
     messages: { used: msgUsed, limit: limits.monthMessages || 0, perMessageUSD },
+    /* EACH WINDOW WITH THE TIME IT REOPENS, BECAUSE THAT IS THE ONLY PART
+       ANYBODY CARES ABOUT.
+
+       "You have used 812 of 1000" answers a question nobody asked. The
+       question is when they can carry on, and a window that cannot say so is
+       the same wall a monthly cap was - it just arrives sooner. Both reset
+       times are computed from the same absolute clock the counters are keyed
+       on, so the number on the screen is the moment the counter actually
+       rolls rather than an estimate of it. */
+    window5h: {
+      used: win5Used, limit: limits.messages5h || 0,
+      resetAt: (Math.floor(nowMs / WINDOW_5H_MS) + 1) * WINDOW_5H_MS,
+    },
+    topEngineWeek: {
+      used: topUsed, limit: limits.topMessagesWeek || 0,
+      resetAt: new Date(weekKey(nowMs) + 'T00:00:00Z').getTime() + 7 * 86400000,
+    },
     // `bonus` is the referral capacity folded into the monthly limit above, sent
     // separately so the app can say WHERE the extra allowance came from.
     month: { used: mUsed, limit: limits.monthTokens, costUSD: +mCost.toFixed(4), bonus: limits.bonusTokens || 0 },

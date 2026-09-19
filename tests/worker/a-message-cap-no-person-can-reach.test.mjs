@@ -81,11 +81,25 @@ section('The counter is reserved before the model runs, and given back if it doe
   const reserveAt = code.indexOf("op: 'reserve', amount: 1", at);
   ok(reserveAt > at, 'it is RESERVED, like the tokens', reserveAt > at);
 
-  /* The refund has to name it, or a failed call keeps the message. */
+  /* THE CLAIM, FOLLOWED TO WHERE IT IS ANSWERED.
+
+     This looked for `msgName` and `amount: -1` inside the refund, which was
+     true while three windows were refunded by three hand-written lines. They
+     are booked into one list now and given back by one `unbook()`, which is a
+     better shape for the reason this assertion exists - a fourth window cannot
+     be added above and forgotten below. So the check follows the claim: the
+     refund reaches the one path that gives bookings back, and that path really
+     does reverse what was taken. */
   const refundAt = code.indexOf('const refundReservation', at);
   const refundBody = code.slice(refundAt, refundAt + 900);
-  ok(/msgName/.test(refundBody) && /amount: -1/.test(refundBody),
-     'and the refund gives it back when the call never happens', true);
+  ok(/unbook\(\)/.test(refundBody),
+     'the refund reaches the path that gives bookings back', true);
+  const unbookAt = code.indexOf('const unbook = async');
+  const unbookBody = code.slice(unbookAt, unbookAt + 400);
+  ok(/amount: -b\.amount/.test(unbookBody) && /of booked/.test(unbookBody),
+     'and that path reverses exactly what was booked, whatever was booked', true);
+  ok(/booked\.push\(\{ name: msgName/.test(code),
+     'with the message itself among the bookings', true);
 
   /* AND A REFUSAL MUST NOT KEEP THE TOKENS IT ALREADY BOOKED.
 
@@ -107,10 +121,19 @@ section('The counter is reserved before the model runs, and given back if it doe
   }
   const branch = code.slice(branchStart, branchEnd);
   ok(branch.length > 50 && branch.length < 1400, 'and it is a branch, not the rest of the file', branch.length);
-  const refundsInBranch = (branch.match(/amount: -reserve/g) || []).length;
-  ok(refundsInBranch === 2,
-     'a refusal hands back BOTH token reservations it took a moment earlier',
-     refundsInBranch + ' refunds found in the refusal branch');
+  /* The refusal used to hand the tokens back inline, and counting those two
+     lines was how this was checked. Three windows can now refuse, so they
+     share one path rather than repeating the refund three times - and the
+     assertion moves with it, to that path, which is where the property now
+     lives. */
+  ok(/refuseWindow\(/.test(branch),
+     'a refusal goes through the one path that gives everything back', true);
+  const rwAt = code.indexOf('const refuseWindow');
+  const rw = code.slice(rwAt, rwAt + 420);
+  ok((rw.match(/amount: -reserve/g) || []).length === 2,
+     'and that path hands back BOTH token reservations', rw.match(/amount: -reserve/g).length);
+  ok(/unbook\(\)/.test(rw),
+     'along with every window booked before the refusal', true);
 }
 
 section('It is keyed like the money, not like the account');
