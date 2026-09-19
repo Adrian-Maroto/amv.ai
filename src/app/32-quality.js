@@ -132,7 +132,10 @@ async function qRun(task, prompt, system, opts){
 
   let out = '';
   try{
-    out = await aiComplete(prompt, (system || '') + rigor, Object.assign({}, o, { model }));
+    /* noFloor: this function IS the floor for its own call, and checks the
+       result below. Without it the shared one runs first and escalates on the
+       same fault, so the work is done twice and billed twice. */
+    out = await aiComplete(prompt, (system || '') + rigor, Object.assign({}, o, { model, noFloor: true }));
   }catch(e){ out = ''; }
 
   let why = qBad(out, guard);

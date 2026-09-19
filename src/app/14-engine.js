@@ -425,6 +425,47 @@ async function aiComplete(prompt, system, opts){
     if(typeof AEGIS!=='undefined') AEGIS.recordUsage(modelStr, inTok, outTok);
     if(typeof AMVUsage!=='undefined') AMVUsage.record((inTok||0)+(outTok||0));
   }catch(e){}
+  /* ── THE FLOOR, AT THE ONE PLACE EVERY CALL GOES THROUGH ─────────────────
+
+     The escalation that makes a cheap engine hold up already existed and was
+     wired to crew runs and nothing else. Every other surface - chat, Lab,
+     Dev, Studio, the automations - took whatever came back, so a truncated
+     answer, a refusal or a reply with "[insert name here]" still in it was
+     delivered as the finished thing.
+
+     That is the whole difference between a cheap tier and a cheap-FEELING
+     one. A smaller engine is not worse at everything; it is worse at noticing
+     when it has produced something unusable. Noticing is free - these are
+     structural faults, visible without understanding a word of the content -
+     and the moment one is found is exactly the moment worth spending real
+     money on a better engine.
+
+     ONCE, AND ONLY UPWARD. A second failure is not fixed by a third call, so
+     the better answer or the original is returned rather than a loop. And an
+     engine that is already the best this account can reach has nowhere to
+     escalate to, so it does not pay twice to find that out.
+
+     Opt out with `noFloor` - qRun does, because it runs this same check
+     itself and would otherwise pay for it twice. */
+  if (!opts.noFloor && typeof qBad === 'function' && typeof _nextTierModel === 'function') {
+    try {
+      const fault = qBad(text, { prose: !opts.json, json: !!opts.json, minLen: opts.minLen });
+      if (fault) {
+        const better = _nextTierModel(opts.task || 'draft');
+        if (better && better !== modelStr) {
+          const retry = await aiComplete(prompt, system,
+            Object.assign({}, opts, { model: better, noFloor: true }));
+          /* Only if the second answer is actually sound. A better engine can
+             fail the same way, and returning its failure over the first one
+             would be spending money to change nothing. */
+          if (retry && !qBad(retry, { prose: !opts.json, json: !!opts.json, minLen: opts.minLen })) {
+            try { _AI_LAST.escalated = fault; } catch (e) {}
+            return retry;
+          }
+        }
+      }
+    } catch (e) { /* the floor must never be the reason a call fails */ }
+  }
   return text;
 }
 
