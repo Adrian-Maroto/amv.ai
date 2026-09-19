@@ -14382,3 +14382,45 @@ p.bill-leave-s{
 @media(hover:none){
   .bill-ar-b{ min-height:44px; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYER A229 - Apple Pay, where the device has it
+   ───────────────────────────────────────────────────────────────────────────
+   Apple's mark is black-on-white or white-on-black and nothing else, so this
+   is the one control on the payment sheet that does NOT take the theme accent:
+   a recognisable button is the entire value of offering it, and a purple one
+   would be a button people do not trust on the screen where trust is the
+   product. It inverts with the theme, which is the permitted pair.
+
+   Full width and first, because on a phone it is the fastest path and the card
+   form below it is the fallback. The divider says so in words rather than
+   leaving two buttons to be compared.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pay-ap{
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  width:100%; min-height:46px;
+  margin:0 0 var(--sp-3);
+  background:#000; color:#fff; border:1px solid #000;
+  border-radius:var(--r-md);
+  font-size:var(--t-md); font-weight:600; letter-spacing:-.01em;
+}
+.pay-ap:hover{ background:#151515; border-color:#151515; }
+.pay-ap:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.pay-ap.busy{ opacity:.6; }
+.pay-ap-m{ font-size:17px; line-height:1; }
+:root[data-theme="light"] .pay-ap{ background:#000; color:#fff; }
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .pay-ap{ background:#fff; color:#000; border-color:#fff; }
+  :root:not([data-theme="light"]) .pay-ap:hover{ background:#ececec; border-color:#ececec; }
+}
+:root[data-theme="dark"] .pay-ap{ background:#fff; color:#000; border-color:#fff; }
+:root[data-theme="dark"] .pay-ap:hover{ background:#ececec; border-color:#ececec; }
+/* A rule, with the words sitting in it - not a heading over a second list. */
+.pay-or{
+  display:flex; align-items:center; gap:var(--sp-3);
+  margin:0 0 var(--sp-3);
+  font-size:var(--t-xs); color:var(--mu);
+}
+.pay-or::before, .pay-or::after{
+  content:""; flex:1 1 auto; height:1px; background:var(--bd);
+}

@@ -532,8 +532,40 @@ function _payRenderMethod(method,plan,cycle){
      a year. The hosted checkout below takes the cycle, so yearly falls through
      to it. */
   if(pk && liveBackend && cycle !== 'year'){
-    body.innerHTML='<div id="stripe-card-element" class="pay-stripe-el"></div><div id="stripe-card-errors" class="pay-err"></div>'+
+    /* APPLE PAY, ON THE DEVICES THAT HAVE IT, ABOVE THE FORM IT REPLACES.
+
+       Elements here is a card FIELD: a number, an expiry and a CVC, typed on a
+       phone. Apple Pay is one authentication and the card details never exist
+       as text at all - it is both faster and safer, and on a phone it is the
+       difference between a purchase and an abandoned one.
+
+       It is not mounted as a Payment Request Button on AMV's own domain, which
+       would need the domain registered with the processor before it renders at
+       all - an owner step that silently produces a missing button. It goes to
+       the processor's HOSTED checkout, which is on THEIR domain, already
+       verified, and offers Apple Pay there with no configuration. That is also
+       why this can be offered honestly: AMV is not claiming to take an Apple
+       Pay payment, it is taking somebody to the page that does.
+
+       The card form stays exactly where it was, underneath, for anybody whose
+       card is not in a Wallet. */
+    body.innerHTML=(_applePayLikely()
+      ? '<button class="btn pay-ap" id="pay-ap" type="button">'
+        + '<span class="pay-ap-m" aria-hidden="true">\uF8FF</span>'
+        + '<span>'+escH(T('Pay'))+'</span></button>'
+        + '<div class="pay-or"><span>'+escH(T('or pay by card'))+'</span></div>'
+      : '')+
+      '<div id="stripe-card-element" class="pay-stripe-el"></div><div id="stripe-card-errors" class="pay-err"></div>'+
       '<button class="btn bp pay-submit" id="pay-submit">Pay $'+price+' / month</button>';
+    /* The same hosted checkout the Stripe tab opens, and the same cycle. */
+    on($('pay-ap'),'click',async ()=>{
+      const ab=$('pay-ap'); const pre=_preopenPay();
+      if(ab){ ab.disabled=true; ab.classList.add('busy'); }
+      try{ const u=await AMV_API.stripeCheckout(plan,(S.user&&S.user.email)||'', undefined, cycle);
+           _openExternalPay(u,plan,'applepay',pre); }
+      catch(e){ _closePay(pre); if(!_payNotConnected(e)) toast('Apple Pay could not start: '+(e.message||'try again'),'error',4500); }
+      finally{ if(ab){ ab.disabled=false; ab.classList.remove('busy'); } }
+    });
     _mountStripe(pk,plan);
     return;
   }
@@ -657,6 +689,32 @@ function _payPalNoServer(plan){
     note.textContent='PayPal is not connected on this deployment yet, so no payment can be taken here.';
   }
 }
+/* CAN THIS DEVICE DO APPLE PAY AT ALL.
+
+   Asked of the browser, not guessed from a user-agent string. `ApplePaySession`
+   exists only where Apple Pay is actually available - Safari on a Mac with a
+   paired device, or an iPhone or iPad - and `canMakePayments()` is its own
+   answer to whether the device is set up for it.
+
+   Deliberately the cheap check and not `canMakePaymentsWithActiveCard`: that
+   one is asynchronous, needs a registered merchant identifier, and answers a
+   question nobody here is asking. This decides whether to OFFER Apple Pay. The
+   offer leads to Stripe's hosted checkout, which asks Apple itself and simply
+   does not show the button if there is no card in the Wallet - so the worst a
+   false positive costs is one extra tap on a page that was already the fastest
+   way to pay.
+
+   Wrapped, because touching ApplePaySession can throw in an insecure context
+   or a sandboxed frame, and a thrown exception here would take the whole
+   payment sheet with it. */
+function _applePayLikely(){
+  try{
+    if(typeof window.ApplePaySession === 'undefined' || !window.ApplePaySession) return false;
+    return !!window.ApplePaySession.canMakePayments();
+  }catch(e){ return false; }
+}
+try{ window._applePayLikely=_applePayLikely; }catch(e){}
+
 /* Take a card payment WITHOUT ever touching the card.
    Raw card numbers must never reach AMV's own servers: receiving a PAN puts
    the whole business in PCI-DSS scope, and storing a CVC is prohibited
