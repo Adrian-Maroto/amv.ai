@@ -117,11 +117,34 @@ const json = (o, s = 200, extra) => new Response(JSON.stringify(o), { status: s,
    that quietly did no research. So thinking stays on, effort controls the
    spend, and the output caps are sized to hold both.
    --------------------------------------------------------------------------- */
+/* ── THE LADDER, AND WHAT THE CHEAPEST PAID RUNG IS ───────────────────────
+   The paid floor runs the top-tier engine. That is a decision about what AMV
+   is: the least somebody can spend to become a customer buys the best widely
+   released model, and the tiers above it buy more of it rather than a better
+   one. It costs twice what the previous paid floor cost per token, and the
+   margin backstop below is unchanged, so the same money buys about half the
+   tokens it used to - that is the trade, made deliberately, and the allowance
+   is the owner's dial if it needs moving.
+
+   Free stays on the cheaper engine, because free is where cost has no
+   ceiling. A model that loses money on every request, on the tier with the
+   most accounts and no revenue, is the decision that ends companies.
+
+   Above the floor is the SUCCESSOR of the same family at the same published
+   rate, which is the only honest way to sell a rung above a top model:
+   nothing cheaper would be better, and nothing better is cheaper.
+
+   COSTS ARE PUBLISHED RATES, CHECKED, NOT REMEMBERED. The core engine sat at
+   3/15 - the previous generation's rate for a model that now bills 2/10. The
+   backstop spends against these numbers, so a 1.5x overstatement cut a paying
+   customer off after burning two thirds of what their money actually covers,
+   silently, exactly as the note above this table warns. Corrected here.
+   -------------------------------------------------------------------------- */
 const ENGINES = {
   'amv-pulse': { model: 'claude-haiku-4-5-20251001', minPlan: 'free',  inCost: 1,  outCost: 5,   maxOut: 4000,  cacheMin: 4096 },
-  'amv-core':  { model: 'claude-sonnet-5',           minPlan: 'free',  inCost: 3,  outCost: 15,  maxOut: 16000, cacheMin: 1024, thinking: true, effort: 'medium' },
-  'amv-forge': { model: 'claude-opus-5',             minPlan: 'pro',   inCost: 5,  outCost: 25,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
-  'amv-apex':  { model: 'claude-fable-5',            minPlan: 'elite', inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
+  'amv-core':  { model: 'claude-sonnet-5',           minPlan: 'free',  inCost: 2,  outCost: 10,  maxOut: 16000, cacheMin: 1024, thinking: true, effort: 'medium' },
+  'amv-forge': { model: 'claude-fable-5',            minPlan: 'pro',   inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
+  'amv-apex':  { model: 'claude-fable-5-1',          minPlan: 'elite', inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
 };
 /* ── EFFORT: A REAL CONTROL, WITH THE PLAN AS ITS CEILING ─────────────────
    Effort decides how hard the engine thinks, which decides what the call
@@ -177,10 +200,22 @@ const RAW_TO_KEY = {
   // real model strings
   'claude-haiku-4-5-20251001': 'amv-pulse', 'claude-haiku-4-5': 'amv-pulse',
   'claude-sonnet-5': 'amv-core',
-  'claude-opus-5': 'amv-forge',
-  'claude-fable-5': 'amv-apex',
-  // Previous-generation ids a cached client build may still send.
-  'claude-sonnet-4-6': 'amv-core', 'claude-opus-4-8': 'amv-forge', 'claude-opus-4-7': 'amv-forge',
+  'claude-fable-5': 'amv-forge',
+  'claude-fable-5-1': 'amv-apex',
+  /* THIS MAP HAS TO FOLLOW THE TABLE, AND IT IS THE THING THAT FORGETS.
+
+     Every entry here names a model string a client might send and the rung it
+     should land on. When the ladder moved, these kept pointing at the rungs
+     the strings USED to mean - the top engine's own model string resolved to
+     the paid floor, so a picker asking for the best model would quietly have
+     been served the one below it, with nothing failing anywhere.
+
+     The ids below are previous-generation, kept because a cached client build
+     still sends them. They resolve by CAPABILITY, not by the name they once
+     had: the retired mid-tier lands on the paid floor, which is the nearest
+     rung that is not a downgrade. */
+  'claude-sonnet-4-6': 'amv-core',
+  'claude-opus-5': 'amv-forge', 'claude-opus-4-8': 'amv-forge', 'claude-opus-4-7': 'amv-forge',
   // frontend short keys
   'fast': 'amv-pulse', 'core': 'amv-core', 'coding': 'amv-forge', 'smart': 'amv-apex',
   // amv-friendly aliases

@@ -96,12 +96,22 @@ section('Every route explains itself in words the user can read');
 section('The saving is real, not cosmetic');
 {
   const P = W.ENGINES['amv-pulse'], C = W.ENGINES['amv-core'], F = W.ENGINES['amv-forge'];
-  ok(C.inCost / P.inCost >= 3, 'Core costs 3x Pulse, so routing short turns down is the big win',
+  /* THIS NUMBER WAS PINNED TO A RATE THAT WAS WRONG.
+
+     It asserted 3x, which was true of a table claiming the balanced engine
+     billed 3 per million input. It does not - that was the previous
+     generation's rate, carried forward - and at the real 2 the multiple is 2x.
+     The number moved because the table was corrected, not because routing got
+     worse, so what is asserted is the CLAIM the section is named for: routing
+     a short turn down has to save a real fraction, not a rounding error.
+     Halving it qualifies; pinning the exact multiple to whatever today's price
+     list says would just break again on the next correction. */
+  ok(C.inCost / P.inCost >= 2, 'routing a short turn down at least halves what it costs',
      (C.inCost / P.inCost).toFixed(1) + 'x');
-  /* Forge is only ~1.7x Core on the real published rates, not the 5x the old
-     overstated table implied. The case for reserving it is therefore latency
-     and thinking spend, not raw per-token price - the routing still holds, but
-     for the honest reason. */
+  /* And the gap above widened rather than narrowed. Forge used to be ~1.7x
+     Core; with the paid floor on the top-tier engine it is 5x, so reserving it
+     for work that needs it is now a bigger saving than it was, not a smaller
+     one - on raw price as well as on thinking spend and latency. */
   ok(F.inCost > C.inCost, 'Forge still costs more per token than Core',
      (F.inCost / C.inCost).toFixed(1) + 'x');
   ok(F.effort === 'high' && C.effort === 'medium',

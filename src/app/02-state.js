@@ -882,10 +882,21 @@ const AEGIS = {
      conversation actually cost. */
   /* Keyed by AMV ENGINE, which is also the only thing the browser ever names
      or sends. What each engine runs on is a server decision and stays there. */
+  /* THE THIRD COPY OF NUMBERS THAT ALL HAVE TO AGREE.
+
+     The server's engine table is the authority; this exists so the browser can
+     show a running cost without asking. When the ladder moved these stayed
+     where they were, which would have UNDER-reported the paid floor by half -
+     the same defect the note above records, pointing the other way, and the
+     worse direction of the two: an overstatement makes somebody stop early, an
+     understatement makes them think they can afford what they cannot.
+
+     Checked by the gate now rather than by remembering, because this is the
+     third time these numbers have been wrong. */
   price: {
     'amv-apex':  { in: 10.00, out: 50.00 },
-    'amv-forge': { in: 5.00,  out: 25.00 },
-    'amv-core':  { in: 3.00,  out: 15.00 },
+    'amv-forge': { in: 10.00, out: 50.00 },
+    'amv-core':  { in: 2.00,  out: 10.00 },
     'amv-pulse': { in: 1.00,  out: 5.00 },
     /* An auto-routed call is sent as 'auto' and the SERVER decides the engine,
        so the browser does not know which one answered. Without an entry here
@@ -895,7 +906,7 @@ const AEGIS = {
        returns for everything it is not sure about, and the two engines it can
        pick instead sit either side of it. Marked estimated, which the label
        already says. */
-    'auto':      { in: 3.00,  out: 15.00 },
+    'auto':      { in: 2.00,  out: 10.00 },
   },
   _times: [],            // request timestamps (this session)
   _lastSend: 0,

@@ -95,7 +95,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 14 : 18;
+const TOTAL = FAST ? 15 : 19;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -625,6 +625,72 @@ step('No client reads a field the server does not send', () => {
      SHIPPABLE. A finding is a failure; only an absent stage is a note. */
   if (bad.length) {
     throw new Error('A client reads a field its endpoint never returns:\n  ' + bad.join('\n  '));
+  }
+});
+
+step('The price of an engine is the same number in both places', () => {
+  /* THE THIRD TIME THESE NUMBERS DISAGREED.
+
+     Two tables hold the per-million-token rate of each engine. The Worker's
+     ENGINES is the authority - the margin backstop spends against it, and a
+     wrong figure there cuts a paying customer off early or late. The browser
+     keeps its own copy so the usage view can show a running cost without a
+     round trip.
+
+     Every time the ladder has moved, one of them has been left behind. The
+     Worker's own table was overstated once (a paying user cut off after
+     burning two thirds of what their money covered); the browser's was
+     overstated once (a conversation shown at two to three times its real
+     cost); and when the paid floor changed engines the browser's stayed on the
+     old rate, which would have UNDER-reported spend by half. That direction is
+     the worse one: an overstatement makes somebody stop early, an
+     understatement makes them believe they can afford what they cannot.
+
+     Three wrongs is not a memory problem, it is a missing control. Both tables
+     are read here and compared number for number.
+
+     Read with comments stripped, so a comment quoting an old rate - and both
+     tables have one - is not mistaken for the rate itself. */
+  const strip = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const worker = strip(readFileSync(join(ROOT, 'amv-backend.js'), 'utf8'));
+  const client = strip(readFileSync(join(ROOT, 'src', 'app', '02-state.js'), 'utf8'));
+
+  const engBlock = /const ENGINES = \{([\s\S]*?)\n\};/.exec(worker);
+  if (!engBlock) return 'the engine table was not found, so nothing was compared';
+  const server = {};
+  for (const m of engBlock[1].matchAll(/'(amv-[a-z]+)':\s*\{[^}]*?inCost:\s*([\d.]+),\s*outCost:\s*([\d.]+)/g)) {
+    server[m[1]] = { in: parseFloat(m[2]), out: parseFloat(m[3]) };
+  }
+  const priceBlock = /price:\s*\{([\s\S]*?)\n\s*\},/.exec(client);
+  if (!priceBlock) return 'the browser price table was not found, so nothing was compared';
+  const browser = {};
+  for (const m of priceBlock[1].matchAll(/'([a-z-]+)':\s*\{\s*in:\s*([\d.]+),\s*out:\s*([\d.]+)/g)) {
+    browser[m[1]] = { in: parseFloat(m[2]), out: parseFloat(m[3]) };
+  }
+  if (!Object.keys(server).length || !Object.keys(browser).length) {
+    return 'one of the tables read as empty, so nothing was compared';
+  }
+
+  const bad = [];
+  for (const [key, rate] of Object.entries(server)) {
+    const b = browser[key];
+    if (!b) { bad.push(`${key}: the browser has no price for it, so its usage is costed at zero`); continue; }
+    if (b.in !== rate.in || b.out !== rate.out) {
+      bad.push(`${key}: the worker bills ${rate.in}/${rate.out} and the browser shows ${b.in}/${b.out}`);
+    }
+  }
+  /* `auto` is the router's own entry and names no engine, so it is not in the
+     worker table. It stands for whatever the router picked, and the comment
+     beside it says it is costed as the balanced engine - so that is what it
+     has to equal, or the operator's spend view drifts for every routed call. */
+  if (browser.auto && server['amv-core']) {
+    const c = server['amv-core'];
+    if (browser.auto.in !== c.in || browser.auto.out !== c.out) {
+      bad.push(`auto: costed at ${browser.auto.in}/${browser.auto.out} but stands for the balanced engine at ${c.in}/${c.out}`);
+    }
+  }
+  if (bad.length) {
+    throw new Error('An engine costs one thing on the server and another in the browser:\n  ' + bad.join('\n  '));
   }
 });
 
