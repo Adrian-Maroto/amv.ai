@@ -14596,3 +14596,102 @@ p.bill-leave-s{
             font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .pm-c-w{ margin:0 0 var(--sp-3); font-size:var(--t-sm); line-height:1.55; color:var(--gold); }
 @media(hover:none){ .pm-confirm .btn{ min-height:44px; } }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LAYER A234 - the composer is a place to type, not the room itself
+
+   The box was 128px tall on the home screen and 100px in a conversation, for
+   ONE line of text. It got there by stacking two sets of padding that neither
+   rule knew about: #cib padded its own inside by 16/16/10, and #mta padded
+   itself again by 16/18/6 within that. Nothing was wrong with either number on
+   its own, which is why it survived - the total is what somebody sees.
+
+   The tool row underneath carried the same double count: 6/12/12 of padding
+   around buttons that are already 34px of their own.
+
+   Trimmed rather than redesigned. The type size, the radius, the shadow and
+   the buttons are untouched; what goes is the air that was counted twice.
+
+   WHY THE TEXT FIELD IS SPLIT BY POINTER. A textarea is a control somebody
+   aims at, and on a phone it is aimed at with a thumb, so it keeps the 44px
+   floor that A53 sets for every other control. The one-line 34px shape is for
+   a mouse and a window wide enough to hold it - which is the exact complement
+   of A53's query, deliberately, so neither can quietly win over the other.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* The inner padding, once. #mta's base rule is !important (A6), so beating it
+   takes the same - not for the cascade order, which is already in our favour.
+   #itb's base rule (A6 again) is !important for the same reason. */
+#mta{ padding:9px 14px 3px !important; }
+#itb{ padding:2px 10px 8px !important; }
+
+/* The home screen keeps a little more room than a conversation, because it is
+   the only thing on the screen there. Less of it than before. */
+#cv.cv-home #cib{ min-height:0; padding:8px 12px 6px; }
+
+/* THE PADDING IS CHOSEN SO A LINE FITS WHOLE.
+
+   A textarea does not crop to a line; it shows whatever height is left, so a
+   box four pixels short of two lines displays one line and the top four pixels
+   of the next - a sliver of letter-tops under the placeholder. The first draft
+   of this layer did exactly that on a phone, where the placeholder wraps.
+
+   So the inner height is set against the line box rather than picked to look
+   right: 16px at 1.6 is 25.6, 14px at 1.6 is 22.4, and the padding either side
+   leaves at least that and never almost that. */
+@media (pointer:coarse),(max-width:560px){
+  /* The floor from A53, restated where the shrink could otherwise reach it. */
+  #mta,#cv.cv-home #mta{ min-height:44px; padding:12px 14px 6px !important; }
+}
+
+@media (pointer:fine) and (min-width:561px){
+  #mta,#cv.cv-home #mta{ min-height:35px; }
+  /* The starter chips, to match: they sit under a smaller box now, and at
+     33px they read as five more buttons rather than as suggestions. */
+  .chome-chip{ padding:6px 12px; gap:6px; font-size:var(--t-sm); }
+  .chome-chips{ gap:6px; padding-top:12px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LAYER A235 - a row of tools that stops being a row
+
+   The rail was a flex row of `flex:1` buttons, which is fine while the count
+   is fixed and wrong the moment it is not. It is not: Team appears when
+   somebody is on one, Admin is appended at runtime for an owner, and Pricing
+   has just been added. At seven buttons in a 205px sidebar each one was 28px
+   wide - and on a phone, where a floor holds each at 44px, two of them were
+   pushed clean OUTSIDE the rail rather than shrinking.
+
+   Neither failure is the button's fault. A single row cannot hold a variable
+   number of things in a fixed width; something has to give and flex chose
+   badly in both directions.
+
+   So it wraps, as a grid of four. Four because it divides the six-to-eight
+   the rail actually carries into two tidy rows at every width, and because
+   205/4 and 256/4 both clear the tap floor with room to spare. The collapsed
+   rail is one column, as it already was.
+   ══════════════════════════════════════════════════════════════════════════ */
+.sb-tools{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:2px;
+  align-items:stretch;
+}
+.sb-tool{ flex:none; width:auto; }
+
+body.sb-rail .sb-tools{ grid-template-columns:minmax(0,1fr); }
+body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
+
+/* ── `hidden` on a tool meant nothing, so Team was in everybody's rail ──────
+
+   `_revealTeamNav` sets `btn.hidden = !allowed` and has always done so. What it
+   could not do is win: the browser's own `[hidden]{display:none}` and this
+   stylesheet's `.sb-tool{display:flex}` have the same specificity, and an
+   author rule beats a user-agent one. So the attribute was set correctly, read
+   correctly by everything that asks, and had no effect on the screen - the
+   Team tool was in the rail for every account whether or not the plan has
+   teams at all.
+
+   The kind of defect that survives because both halves look right. The
+   JavaScript is not wrong and does not need changing. */
+.sb-tool[hidden]{ display:none !important; }

@@ -490,7 +490,11 @@ function renderTasksView(){
   vc.innerHTML = `<div class="sv fi"><div class="tasks-page">
     <header class="tasks-hero">
       <div>
-        <span class="eyebrow">What AMV can do</span>
+        <!-- Was "What AMV can do", which is now the name of the tab NEXT to
+             this one in the rail. Two neighbouring tools cannot introduce
+             themselves with the same sentence; this one is the ready-made
+             jobs, so it says so. -->
+        <span class="eyebrow">Tasks</span>
         <h2>Get something done.</h2>
         <p class="vsub">Start with something only AMV can do - or grab a ready-made task that opens a chat set up to deliver.</p>
       </div>
