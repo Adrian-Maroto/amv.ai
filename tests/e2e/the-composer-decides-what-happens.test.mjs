@@ -254,8 +254,26 @@ section('The turn really sends the effort and shows it is working');
   ok(body.length > 500, 'the turn function was found, so this has a subject', body.length);
   ok(/effort:\s*_devEffort\(\)/.test(body),
      'the turn passes the chosen effort to the engine', /effort/.test(body));
-  ok(/_devBusy\(true/.test(body) && /_devBusy\(false\)/.test(body),
-     'and it says when it is working, and stops saying it', true);
+  /* TWO CLAIMS, NOT ONE SPELLING.
+
+     This read `_devBusy(false)` out of _devSend and nothing else, so it broke
+     the day the five places that turned the indicator off were collected into
+     one `_devIdle()` - reporting a refactor as the indicator never coming down,
+     which is the exact failure mode a source-anchored check has: it can only
+     see that a LINE is present, and the mutation that defeats it does not have
+     to remove the line.
+
+     So the claim is followed to where it is answered. `_devSend` must turn it
+     on, and must reach the off either directly or through the one helper that
+     does it - and that helper is then read too, because "it calls _devIdle" is
+     worth nothing if _devIdle stopped clearing the flag. */
+  const clearsDirectly = /_devBusy\(false\)/.test(body);
+  const viaIdle = /_devIdle\(\)/.test(body);
+  const idle = viaIdle ? functionBody(src, '_devIdle') : '';
+  ok(/_devBusy\(true/.test(body), 'it says when it is working', true);
+  ok(clearsDirectly || (viaIdle && /_devBusy\(false\)/.test(idle)),
+     'and stops saying it, in the turn or in the one helper that ends a turn',
+     { clearsDirectly, viaIdle, idleLen: idle.length });
 
   /* And the indicator itself does something, rather than being a hidden
      element nobody ever unhides. */

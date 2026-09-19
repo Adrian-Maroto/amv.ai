@@ -14271,6 +14271,15 @@ p.bill-leave-s{
   padding:var(--sp-1); border-radius:var(--r-sm);
 }
 .dvq-x:hover{ color:var(--tx); background:var(--s3); }
+/* THE LAYOUT RULE BEAT `hidden`, SO THE EMPTY QUEUE WAS ON THE SCREEN.
+
+   `.dvq` sets a display, and any display beats the user-agent's
+   `[hidden]{display:none}` because an author rule outranks it. The slot is
+   rendered empty and marked hidden until something is queued, so this was a
+   blank bordered strip sitting above the composer on every Dev screen. Stated
+   here rather than by giving up the display, because the element genuinely
+   needs one when it IS shown. */
+.dvq[hidden]{ display:none; }
 @media(hover:none){
   .dvq-now, .dvq-x{ min-height:44px; min-width:44px;
     display:inline-flex; align-items:center; justify-content:center; }
