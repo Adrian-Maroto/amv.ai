@@ -3171,7 +3171,26 @@ function _ovWire(id){
   onBackdrop($(id+'-bg'),()=>{ r.innerHTML=''; });
   on($(id+'-x'),'click',()=>{ r.innerHTML=''; });
 }
-window._ovShell=_ovShell; window._ovWire=_ovWire;
+/* OPEN AN OVERLAY THAT IS ABOUT TO FETCH SOMETHING.
+
+   Every screen that opens onto a network call does the same four lines: paint
+   the shell, wire the close, show a loading line, then go and get the data.
+   Two screens written the same week had it character for character, which is
+   how a fifth copy gets made - somebody copies the nearest one, and the
+   nearest one is whichever they happened to open.
+
+   The reason to collapse it is not tidiness. `_ovWire` is what makes Escape
+   and the backdrop close the dialog, and a copied block that quietly omits it
+   produces a modal somebody cannot leave. One helper means that cannot happen
+   by being forgotten, because there is nowhere left to forget it. */
+function _ovOpenLoading(id, eyebrow, title, wide){
+  const r=$('ovr'); if(!r) return false;
+  r.innerHTML=_ovShell({ id, wide:wide!==false, eyebrow, title,
+                         body:'<p class="mu">'+escH(T('Loading\u2026'))+'</p>' });
+  _ovWire(id);
+  return true;
+}
+window._ovShell=_ovShell; window._ovWire=_ovWire; window._ovOpenLoading=_ovOpenLoading;
 
   /* ── WHAT EACH PLAN ACTUALLY GIVES YOU, IN ONE PLACE ─────────────────────────
 

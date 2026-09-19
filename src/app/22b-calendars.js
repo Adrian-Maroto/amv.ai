@@ -27,11 +27,7 @@ function _calRow(f) {
 }
 
 async function openCalendarFeeds() {
-  const r = $('ovr'); if (!r) return;
-  r.innerHTML = _ovShell({ id: 'cf', wide: true, eyebrow: 'Calendars',
-                           title: 'Connect any calendar',
-                           body: '<p class="mu">' + escH(T('Loading…')) + '</p>' });
-  _ovWire('cf');
+  if (!_ovOpenLoading('cf', 'Calendars', 'Connect any calendar')) return;
 
   let d = null;
   try { d = await AMV_API.calFeeds(); } catch (e) { d = null; }

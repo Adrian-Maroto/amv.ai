@@ -23,11 +23,7 @@ let _PQ = null;        // the quote awaiting confirmation, as the server describ
 function _pmMoney(n) { return '$' + (Math.round(Number(n) * 100) / 100).toFixed(2); }
 
 async function openPredictionMarkets() {
-  const r = $('ovr'); if (!r) return;
-  r.innerHTML = _ovShell({ id: 'pm', wide: true, eyebrow: 'Prediction markets',
-                           title: 'Trade on an outcome',
-                           body: '<p class="mu">' + escH(T('Loading…')) + '</p>' });
-  _ovWire('pm');
+  if (!_ovOpenLoading('pm', 'Prediction markets', 'Trade on an outcome')) return;
   _PQ = null;
 
   let d = null;

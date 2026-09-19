@@ -9671,7 +9671,26 @@ function _ovWire(id){
   onBackdrop($(id+'-bg'),()=>{ r.innerHTML=''; });
   on($(id+'-x'),'click',()=>{ r.innerHTML=''; });
 }
-window._ovShell=_ovShell; window._ovWire=_ovWire;
+/* OPEN AN OVERLAY THAT IS ABOUT TO FETCH SOMETHING.
+
+   Every screen that opens onto a network call does the same four lines: paint
+   the shell, wire the close, show a loading line, then go and get the data.
+   Two screens written the same week had it character for character, which is
+   how a fifth copy gets made - somebody copies the nearest one, and the
+   nearest one is whichever they happened to open.
+
+   The reason to collapse it is not tidiness. `_ovWire` is what makes Escape
+   and the backdrop close the dialog, and a copied block that quietly omits it
+   produces a modal somebody cannot leave. One helper means that cannot happen
+   by being forgotten, because there is nowhere left to forget it. */
+function _ovOpenLoading(id, eyebrow, title, wide){
+  const r=$('ovr'); if(!r) return false;
+  r.innerHTML=_ovShell({ id, wide:wide!==false, eyebrow, title,
+                         body:'<p class="mu">'+escH(T('Loading\u2026'))+'</p>' });
+  _ovWire(id);
+  return true;
+}
+window._ovShell=_ovShell; window._ovWire=_ovWire; window._ovOpenLoading=_ovOpenLoading;
 
   /* ── WHAT EACH PLAN ACTUALLY GIVES YOU, IN ONE PLACE ─────────────────────────
 
@@ -37167,11 +37186,7 @@ function _calRow(f) {
 }
 
 async function openCalendarFeeds() {
-  const r = $('ovr'); if (!r) return;
-  r.innerHTML = _ovShell({ id: 'cf', wide: true, eyebrow: 'Calendars',
-                           title: 'Connect any calendar',
-                           body: '<p class="mu">' + escH(T('Loading…')) + '</p>' });
-  _ovWire('cf');
+  if (!_ovOpenLoading('cf', 'Calendars', 'Connect any calendar')) return;
 
   let d = null;
   try { d = await AMV_API.calFeeds(); } catch (e) { d = null; }
@@ -37509,11 +37524,7 @@ let _PQ = null;        // the quote awaiting confirmation, as the server describ
 function _pmMoney(n) { return '$' + (Math.round(Number(n) * 100) / 100).toFixed(2); }
 
 async function openPredictionMarkets() {
-  const r = $('ovr'); if (!r) return;
-  r.innerHTML = _ovShell({ id: 'pm', wide: true, eyebrow: 'Prediction markets',
-                           title: 'Trade on an outcome',
-                           body: '<p class="mu">' + escH(T('Loading…')) + '</p>' });
-  _ovWire('pm');
+  if (!_ovOpenLoading('pm', 'Prediction markets', 'Trade on an outcome')) return;
   _PQ = null;
 
   let d = null;
