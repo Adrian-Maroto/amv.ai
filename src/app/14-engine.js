@@ -189,6 +189,18 @@ async function aiCompleteLong(prompt, system, opts){
   let round = 0;
 
   while(round < maxRounds){
+    /* ASKED BEFORE EACH ROUND, WHICH IS WHAT MAKES STOP REAL HERE.
+
+       A long completion is not one call - it is up to `maxRounds` of them,
+       each continuing the last. So there IS something to interrupt between
+       them, and a caller that can answer "should I stop" gets a stop that
+       lands at the next round rather than a button that waits out the whole
+       run. Checked at the top, so pressing Stop during round three does not
+       pay for round four.
+
+       Whatever has been written so far is returned, not discarded: the point
+       of stopping is usually that enough has happened already. */
+    try{ if(round > 0 && opts.shouldStop && opts.shouldStop()) break; }catch(e){}
     round++;
     const body = { model: modelStr, max_tokens: maxTok, messages: messages.slice() };
     if(system) body.system = system + (opts.noLang?'':_langInstruction());

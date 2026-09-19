@@ -22047,7 +22047,16 @@ function renderCodeView(){
   on(ta,'paste',()=>{ setTimeout(()=>_devOfferPaste(ta.value), 0); });
   on(ta,'keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); _devSend(); } });
   on($('dev-send'),'click',_devSend);
-  on($('dev-stop'),'click',_agentStop);
+  /* Whichever turn is running. The agent's stop lands between steps; the
+     in-browser one lands between continuations. Both say so on the busy line
+     rather than appearing to do nothing until the current piece of work is
+     over, because a Stop with no acknowledgement gets pressed again. */
+  on($('dev-stop'),'click',()=>{
+    _DEV.stop=true;
+    try{ if(typeof _AGENT!=='undefined' && _AGENT && _AGENT.running) _agentStop(); }catch(e){}
+    try{ _devBusy(true,'Stopping'); }catch(e){}
+    try{ _devRenderQueue(); }catch(e){}
+  });
   /* The two composer decisions that are not the message itself. Both persist,
      because somebody who has said "just apply it" once should not have to say
      it again every time they open Build. */
@@ -23114,7 +23123,12 @@ try{ window._devQueueNow=_devQueueNow; }catch(e){}
    go through here. */
 function _devIdle(){
   _DEV.busy=false;
+  _DEV.stop=false;
   try{ _devBusy(false); }catch(e){}
+  /* Only when nothing else is running - the agent path owns the button while
+     it is going, and taking it down under a live agent turn would leave Stop
+     unavailable for the one turn that most needs it. */
+  try{ if(!(typeof _AGENT!=='undefined' && _AGENT && _AGENT.running)) _devShowStop(false); }catch(e){}
   _devDrainQueue();
 }
 try{ window._devIdle=_devIdle; }catch(e){}
@@ -23145,6 +23159,9 @@ async function _devSend(){
   }
   const msg=ta?ta.value.trim():''; if(!msg) return;
   ta.value=''; ta.style.height='auto';
+  /* Cleared at the START of a turn, not the end: a Stop pressed during the
+     previous one must not silently cancel this one. */
+  _DEV.stop=false;
   /* Asking for something is leaving home, the same way opening a design is in
      Studio - otherwise the hero would stay up over the answer. */
   _DEV.atHome=false;
@@ -23170,6 +23187,10 @@ async function _devSend(){
     _devIdle();
     return;
   }
+  /* The agent path raises this itself through _agentSetRunning; this is the
+     in-browser turn, which had no Stop at all - Send was simply disabled and
+     there was nothing to press for however long the run took. */
+  try{ _devShowStop(true); }catch(e){}
   const hasProject=_devProjectFiles().length>0;
   /* Taken before anything is written, so the changelist at the end of the
      turn is measured rather than assembled from what the model claimed. */
@@ -23223,6 +23244,9 @@ async function _devSend(){
       const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI.\n\n':'')+_hist+_devProjectContext()+'\n\nCHANGE REQUEST: '+msg;
       const resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
         effort:_devEffort(),
+        /* Stop is real on this path too: a long completion is a run of
+           continuations, so this is asked between them. See aiCompleteLong. */
+        shouldStop:()=>_DEV.stop===true,
         onProgress:(p)=>_devProgress(p)});
       /* THE WRITES ARE PARSED ONCE, AND THE PATH IS SETTLED THERE.
 
@@ -31484,6 +31508,18 @@ async function aiCompleteLong(prompt, system, opts){
   let round = 0;
 
   while(round < maxRounds){
+    /* ASKED BEFORE EACH ROUND, WHICH IS WHAT MAKES STOP REAL HERE.
+
+       A long completion is not one call - it is up to `maxRounds` of them,
+       each continuing the last. So there IS something to interrupt between
+       them, and a caller that can answer "should I stop" gets a stop that
+       lands at the next round rather than a button that waits out the whole
+       run. Checked at the top, so pressing Stop during round three does not
+       pay for round four.
+
+       Whatever has been written so far is returned, not discarded: the point
+       of stopping is usually that enough has happened already. */
+    try{ if(round > 0 && opts.shouldStop && opts.shouldStop()) break; }catch(e){}
     round++;
     const body = { model: modelStr, max_tokens: maxTok, messages: messages.slice() };
     if(system) body.system = system + (opts.noLang?'':_langInstruction());
@@ -41083,8 +41119,14 @@ function _agentStopBtnHTML(){
     + '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
     + '<rect x="5" y="5" width="14" height="14" rx="2"/></svg></button>';
 }
-function _agentSetRunning(on){
-  _AGENT.running = !!on;
+/* THE BUTTON SWAP, SHARED BY BOTH KINDS OF TURN.
+
+   Two things can be running on this screen: an agent turn on somebody's own
+   computer, and an in-browser turn that is a run of continuations. Both need
+   Stop to replace Send for exactly as long as they last, and neither owns the
+   button - so the DOM half lives here on its own and the agent's flag is set
+   beside it rather than through it. */
+function _devShowStop(on){
   const send = document.getElementById('dev-send');
   const stop = document.getElementById('dev-stop');
   /* FOCUS FOLLOWS THE SWAP, or the keyboard loses its place.
@@ -41100,6 +41142,12 @@ function _agentSetRunning(on){
   if(stop) stop.hidden = !on;
   if(on && stop && hadFocus === send){ try{ stop.focus(); }catch(e){} }
   if(!on && send && hadFocus === stop){ try{ send.focus(); }catch(e){} }
+}
+try{ window._devShowStop=_devShowStop; }catch(e){}
+
+function _agentSetRunning(on){
+  _AGENT.running = !!on;
+  _devShowStop(on);
 }
 function _agentStop(){
   _AGENT.stop = true;

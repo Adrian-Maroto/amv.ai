@@ -118,6 +118,73 @@ section('Nothing is queued when nothing is running');
   ok(r.atHome === false, 'and the turn really started', r);
 }
 
+section('Stop is real on the in-browser turn, not only on the agent one');
+{
+  /* THERE WAS NOTHING TO PRESS. The agent turn on somebody's own computer has
+     had a Stop that lands between steps. The in-browser turn had none: Send was
+     disabled and that was all, for however long the run took.
+
+     It is not one call. A long completion is a run of continuations, so there
+     IS something to interrupt between them - which is what makes this a stop
+     rather than a button that waits out the work and then claims credit. */
+  const r = await page.evaluate(async () => {
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
+    let rounds = 0;
+    const real = window.fetchDeadline;
+    window.fetchDeadline = async () => {
+      rounds++;
+      return { ok: true, status: 200, headers: new Headers(),
+        json: async () => ({ content: [{ type: 'text', text: 'part ' + rounds }],
+                             stop_reason: rounds < 5 ? 'max_tokens' : 'end_turn',
+                             usage: { input_tokens: 1, output_tokens: 1 } }) };
+    };
+    let asked = 0;
+    const out = await aiCompleteLong('x', 'sys',
+      { maxRounds: 10, shouldStop: () => { asked++; return asked > 2; } });
+    const stoppedAt = rounds;
+    rounds = 0;
+    await aiCompleteLong('x', 'sys', { maxRounds: 10 });
+    const ranTo = rounds;
+    window.fetchDeadline = real;
+    /* It returns the joined text, not a message object - reading `.text` off
+       it is undefined, which is how this assertion first reported the product
+       throwing work away when it does not. */
+    return { stoppedAt, ranTo, kept: String(out || '') };
+  });
+  ok(r.ranTo === 5, 'left alone, the run continues until the model is done', r.ranTo);
+  ok(r.stoppedAt === 3, 'asked to stop, it stops early instead', r);
+  ok(r.stoppedAt < r.ranTo, 'which is the whole claim - a stop that lands', r);
+  ok(/part/.test(r.kept),
+     'and what was written before stopping comes back rather than being thrown away', r.kept.slice(0, 40));
+}
+
+section('The button swaps for both kinds of turn, and says it heard you');
+{
+  const r = await page.evaluate(async () => {
+    const send = () => document.getElementById('dev-send');
+    const stop = () => document.getElementById('dev-stop');
+    _devShowStop(true);
+    const running = { sendHidden: send().hidden === true, stopShown: stop().hidden === false };
+    _devShowStop(false);
+    const idle = { sendShown: send().hidden === false, stopHidden: stop().hidden === true };
+
+    _DEV.busy = true; _DEV.stop = false; _devShowStop(true);
+    stop().click();
+    await new Promise(x => setTimeout(x, 100));
+    const pressed = { flag: _DEV.stop === true,
+                      said: (document.getElementById('dev-busy').innerText || '').trim() };
+    _DEV.busy = false; _DEV.stop = false; _devShowStop(false);
+    return { running, idle, pressed };
+  });
+  ok(r.running.sendHidden && r.running.stopShown,
+     'while working, Stop replaces Send rather than sitting beside a dead one', r.running);
+  ok(r.idle.sendShown && r.idle.stopHidden, 'and back again when it is over', r.idle);
+  ok(r.pressed.flag === true, 'pressing Stop raises the flag the run reads', r.pressed);
+  ok(/stopping/i.test(r.pressed.said),
+     'and the busy line says so - a Stop with no acknowledgement gets pressed again',
+     r.pressed.said);
+}
+
 section('Nothing threw');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

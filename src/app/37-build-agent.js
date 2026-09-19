@@ -236,8 +236,14 @@ function _agentStopBtnHTML(){
     + '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">'
     + '<rect x="5" y="5" width="14" height="14" rx="2"/></svg></button>';
 }
-function _agentSetRunning(on){
-  _AGENT.running = !!on;
+/* THE BUTTON SWAP, SHARED BY BOTH KINDS OF TURN.
+
+   Two things can be running on this screen: an agent turn on somebody's own
+   computer, and an in-browser turn that is a run of continuations. Both need
+   Stop to replace Send for exactly as long as they last, and neither owns the
+   button - so the DOM half lives here on its own and the agent's flag is set
+   beside it rather than through it. */
+function _devShowStop(on){
   const send = document.getElementById('dev-send');
   const stop = document.getElementById('dev-stop');
   /* FOCUS FOLLOWS THE SWAP, or the keyboard loses its place.
@@ -253,6 +259,12 @@ function _agentSetRunning(on){
   if(stop) stop.hidden = !on;
   if(on && stop && hadFocus === send){ try{ stop.focus(); }catch(e){} }
   if(!on && send && hadFocus === stop){ try{ send.focus(); }catch(e){} }
+}
+try{ window._devShowStop=_devShowStop; }catch(e){}
+
+function _agentSetRunning(on){
+  _AGENT.running = !!on;
+  _devShowStop(on);
 }
 function _agentStop(){
   _AGENT.stop = true;
