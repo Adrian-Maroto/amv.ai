@@ -19071,21 +19071,46 @@ async function stripeAutoRenew(request, env) {
   const subId = String(ent.subId || '');
   if (!subId) return json({ error: 'No subscription to change.', code: 'no_subscription' }, 404);
 
-  const r = await fetchDeadline('https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(subId), {
+  const url = 'https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(subId);
+  const auth = { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` };
+  const custId = await env.AMV_KV.get(`stripecust:${user.email}`);
+  const ownerOf = (sub) => (typeof sub.customer === 'string' ? sub.customer : (sub.customer && sub.customer.id) || '');
+  const notOurs = (sub) => { const c = ownerOf(sub); return !!(custId && c && custId !== c); };
+
+  /* ASKED BEFORE IT IS TOUCHED, NOT AFTER.
+
+     This check used to run on the response to the UPDATE - which refused, and
+     returned 403, having already written cancel_at_period_end to whosever
+     subscription it was. The record was protected and the stranger's billing
+     was not, which is the wrong half: our record is recoverable and somebody
+     else's cancelled subscription is not.
+
+     Reaching that state needs `subId` to be wrong, and it is written only by
+     the signature-verified webhook for this account - so this is
+     defence-in-depth rather than a live hole. It is also one extra read on an
+     action somebody takes at most a few times in the life of an account, which
+     is about the cheapest a guarantee ever gets. */
+  const pre = await fetchDeadline(url, { method: 'GET', headers: auth });
+  const cur = await pre.json().catch(() => ({}));
+  if (!pre.ok) return json({ error: cur.error?.message || 'stripe error', code: 'stripe_error' }, 502);
+  if (notOurs(cur)) {
+    audit(env, 'autorenew_customer_mismatch', { email: user.email, sub: subId, expected: custId, got: ownerOf(cur), when: 'before' });
+    return json({ error: 'That subscription does not belong to this account.', code: 'forbidden' }, 403);
+  }
+
+  const r = await fetchDeadline(url, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: Object.assign({ 'Content-Type': 'application/x-www-form-urlencoded' }, auth),
     body: new URLSearchParams({ cancel_at_period_end: on ? 'false' : 'true' }).toString(),
   });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) return json({ error: d.error?.message || 'stripe error', code: 'stripe_error' }, 502);
 
-  /* The subscription Stripe just described must be the one billing THIS
-     account. If it is not, the id on the record is wrong and acting on it
-     again would be acting on a stranger's subscription. */
-  const custId = await env.AMV_KV.get(`stripecust:${user.email}`);
-  const subCust = typeof d.customer === 'string' ? d.customer : (d.customer && d.customer.id) || '';
-  if (custId && subCust && custId !== subCust) {
-    audit(env, 'autorenew_customer_mismatch', { email: user.email, sub: subId, expected: custId, got: subCust });
+  /* Asked again of what came back. The subscription cannot normally change
+     owner between two calls a moment apart, but the answer is in hand and a
+     record is the thing that outlives the request. */
+  if (notOurs(d)) {
+    audit(env, 'autorenew_customer_mismatch', { email: user.email, sub: subId, expected: custId, got: ownerOf(d), when: 'after' });
     return json({ error: 'That subscription does not belong to this account.', code: 'forbidden' }, 403);
   }
 

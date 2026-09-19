@@ -57,14 +57,20 @@ const post = (body) => new Request('https://x/v1/stripe/auto-renew', {
    which is the whole point: the route must believe THAT and not the request. */
 let sent = [];
 let reply = null;
+/* `before` answers the ownership READ, `reply` the update. Two knobs, because
+   the whole point of reading first is that the two can disagree. */
+let before = null;
 const keepFetch = globalThis.fetch;
+const writes = () => sent.filter(c => c.method === 'POST');
 globalThis.fetch = async (u, o) => {
   const url = String(u);
   if (/api\.stripe\.com\/v1\/subscriptions\//.test(url)) {
-    sent.push({ url, body: String((o && o.body) || '') });
-    if (reply && reply.status && reply.status !== 200)
-      return new Response(JSON.stringify(reply.json || { error: { message: 'no' } }), { status: reply.status });
-    return new Response(JSON.stringify(reply && reply.json ? reply.json : {}), { status: 200 });
+    const method = (o && o.method) || 'GET';
+    sent.push({ url, method, body: String((o && o.body) || '') });
+    const pick = method === 'GET' ? (before || reply) : reply;
+    if (pick && pick.status && pick.status !== 200)
+      return new Response(JSON.stringify(pick.json || { error: { message: 'no' } }), { status: pick.status });
+    return new Response(JSON.stringify(pick && pick.json ? pick.json : {}), { status: 200 });
   }
   return keepFetch(u, o);
 };
@@ -89,18 +95,19 @@ const ent = () => W.DB.get(env, 'ent', 'sub@x.com');
 section('Turning it off writes the one field Stripe answers this with');
 {
   await seed();
-  sent = []; reply = { json: sub({ cancel_at_period_end: true }) };
+  sent = []; before = null; reply = { json: sub({ cancel_at_period_end: true }) };
   const r = await W.stripeAutoRenew(post({ on: false }), env);
   const d = await r.json();
   ok(r.status === 200, 'the change is accepted', r.status);
-  ok(sent.length === 1 && /subscriptions\/sub_live$/.test(sent[0].url),
-     'exactly one call, to the subscription on the record', sent);
-  ok(/cancel_at_period_end=true/.test(sent[0].body),
-     'setting cancel_at_period_end, which is what auto-renew IS', sent[0].body);
+  ok(sent.every(c => /subscriptions\/sub_live$/.test(c.url)),
+     'every call is to the subscription on the record', sent.map(c => c.method + ' ' + c.url));
+  ok(writes().length === 1, 'and exactly one of them writes', writes());
+  ok(/cancel_at_period_end=true/.test(writes()[0].body),
+     'setting cancel_at_period_end, which is what auto-renew IS', writes()[0].body);
   /* Nothing else. A stray field here is a plan change or a price change on
      somebody's live subscription. */
-  ok(sent[0].body.split('&').length === 1,
-     'and nothing else about the subscription is touched', sent[0].body);
+  ok(writes()[0].body.split('&').length === 1,
+     'and nothing else about the subscription is touched', writes()[0].body);
   ok(d.renewal && d.renewal.autoRenew === false, 'the answer says it is off', d.renewal);
   const e = await ent();
   ok(e.autoRenew === false, 'and the record says so too', e.autoRenew);
@@ -113,7 +120,7 @@ section('What is stored is what Stripe said, not what was asked');
      partially applied change. Believing the request here tells somebody their
      billing has stopped when it has not, and the next charge arrives anyway. */
   await seed();
-  sent = []; reply = { json: sub({ cancel_at_period_end: false }) };
+  sent = []; before = null; reply = { json: sub({ cancel_at_period_end: false }) };
   const r = await W.stripeAutoRenew(post({ on: false }), env);
   const d = await r.json();
   const e = await ent();
@@ -127,7 +134,7 @@ section('The renewal date comes back with it, so no screen has to guess');
 {
   await seed();
   const end = Math.floor((Date.now() + 300 * 86400000) / 1000);
-  sent = []; reply = { json: sub({ cancel_at_period_end: true, current_period_end: end,
+  sent = []; before = null; reply = { json: sub({ cancel_at_period_end: true, current_period_end: end,
     items: { data: [{ price: { id: 'price_pro_y', recurring: { interval: 'year' } } }] } }) };
   const r = await W.stripeAutoRenew(post({ on: false }), env);
   const d = await r.json();
@@ -156,12 +163,25 @@ section('It will not act on a subscription that is not this account’s');
      customer stored for this email, the id is wrong and acting on it again
      would be acting on a stranger's billing. */
   await seed();
-  sent = []; reply = { json: sub({ customer: 'cus_someone_else', cancel_at_period_end: true }) };
+  sent = []; before = { json: sub({ customer: 'cus_someone_else' }) };
+  reply = { json: sub({ customer: 'cus_someone_else', cancel_at_period_end: true }) };
   const r = await W.stripeAutoRenew(post({ on: false }), env);
   ok(r.status === 403, 'refused', r.status);
+  /* THE ASSERTION THAT WOULD HAVE CAUGHT THE ORIGINAL ORDERING, AND DID NOT.
+
+     The first version checked only that OUR RECORD was untouched. That was
+     true while the route was already writing cancel_at_period_end to the
+     stranger's subscription and refusing afterwards - it protected the
+     recoverable half and left the unrecoverable one. A cancelled subscription
+     belonging to somebody else cannot be put back by fixing our copy.
+
+     So the claim is about the WRITE, and it is measured at the wire rather
+     than in our storage. Verified by restoring the old ordering and watching
+     this line fail. */
+  ok(writes().length === 0,
+     'the stranger’s subscription is never written to at all', sent.map(c => c.method));
   const e = await ent();
-  ok(e.autoRenew !== false,
-     'and nothing about the stranger’s subscription was written here', e.autoRenew);
+  ok(e.autoRenew !== false, 'nor is anything stored here about it', e.autoRenew);
 }
 
 section('With no subscription and no processor, it says so instead of failing');
@@ -184,7 +204,7 @@ section('With no subscription and no processor, it says so instead of failing');
 section('A Stripe refusal changes nothing here');
 {
   await seed();
-  sent = []; reply = { status: 402, json: { error: { message: 'card problem' } } };
+  sent = []; before = { json: sub() }; reply = { status: 402, json: { error: { message: 'card problem' } } };
   const r = await W.stripeAutoRenew(post({ on: false }), env);
   ok(r.status === 502, 'the refusal is reported', r.status);
   const e = await ent();
