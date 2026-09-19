@@ -102,6 +102,11 @@ section('It NEVER returns a secret, in any form');
     SENTRY_DSN: 'https://SUPERSECRET@sentry.example/1',
     POSTHOG_KEY: 'phc_SUPERSECRET',
     ALLOWED_ORIGIN: 'https://amv.test',
+    /* Yearly is optional - a deployment selling monthly only is correct and is
+       told so - but this fixture is the EVERYTHING one, and "everything is
+       configured" has to mean everything the screen lists. */
+    STRIPE_PRICE_PRO_YEAR: 'price_pro_y', STRIPE_PRICE_ELITE_YEAR: 'price_elite_y',
+    STRIPE_PRICE_ULTRA_YEAR: 'price_ultra_y', STRIPE_PRICE_TEAM_SEAT_YEAR: 'price_team_y',
     // Bindings too, or "everything configured" would not be true - which is
     // the point of the assertion below.
     DB: { prepare(){} }, AMV_COUNTER: {}, BROWSER: {},

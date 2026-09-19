@@ -38278,6 +38278,10 @@ const ACT_LABEL = {
   account_created:        ['Account created', ''],
   password_changed:       ['Password changed', 'warn'],
   plan_changed:           ['Plan changed', ''],
+  /* Toned, because on a compromised account this is how somebody quietly ends
+     a subscription - and the person it belongs to finds out when their plan
+     stops. The row says which way it went, below. */
+  autorenew_changed:      ['Auto-renew changed', 'warn'],
   /* The rest of what the server actually records. These were absent, so they
      fell through to the raw-word fallback and rendered as ordinary, untoned
      rows - and they are precisely the events somebody checks this screen to
@@ -38307,6 +38311,10 @@ function _actLabel(ev){
   const m = ACT_LABEL[ev.kind];
   let text = m ? m[0] : String(ev.kind || 'Activity').replace(/_/g, ' ');
   if(ev.kind === 'plan_changed' && ev.plan) text += ' to ' + ev.plan;
+  /* "Auto-renew changed" is half an answer to "was that me?". Which way it
+     went is the other half, and it is the half that says whether a plan is
+     about to end. */
+  if(ev.kind === 'autorenew_changed' && typeof ev.on === 'boolean') text = 'Auto-renew turned ' + (ev.on ? 'on' : 'off');
   if(ev.kind === 'signed_in' && ev.reason) text += ' with ' + ev.reason;
   /* Which number, without putting one on a screen. Somebody reading this row is
      asking "was that me?", and the last four digits is the whole of what they

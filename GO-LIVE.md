@@ -56,6 +56,26 @@ npx wrangler secret put STRIPE_PRICE_ULTRA    # the Ultra monthly price id
 npx wrangler secret put STRIPE_WEBHOOK_SECRET # from Stripe -> Developers -> Webhooks
 ```
 
+#### Selling by the year as well (optional)
+
+A yearly plan is not a discount AMV applies. It is a SECOND recurring price on
+the same product in Stripe, with a yearly interval, and whatever discount it
+carries is the one you set on it - AMV never computes a yearly amount of its
+own, it opens checkout with the price you created. That is deliberate: a figure
+computed here and a figure charged there are two numbers maintained in two
+places, and they drift.
+
+```bash
+npx wrangler secret put STRIPE_PRICE_PRO_YEAR       # the Pro yearly price id
+npx wrangler secret put STRIPE_PRICE_ELITE_YEAR     # the Elite yearly price id
+npx wrangler secret put STRIPE_PRICE_ULTRA_YEAR     # the Ultra yearly price id
+npx wrangler secret put STRIPE_PRICE_TEAM_SEAT_YEAR # the Teams per-seat yearly price id
+```
+
+Leave them out and nothing breaks: the Monthly/Yearly choice is simply not
+drawn for a plan with no yearly price, so nobody is offered an option that
+checkout would refuse. Add one later and it appears on its own.
+
 The webhook secret is the one that is BLOCKING once payments are on: nothing
 else grants a plan when somebody pays, and nothing else revokes one when they
 cancel, are refunded, or charge back.
@@ -295,6 +315,7 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 | `STRIPE_SECRET_KEY` | Real checkout for plans **and** marketplace paid items |
 | `STRIPE_WEBHOOK_SECRET` | Confirms payments so upgrades/purchases actually apply |
 | `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ELITE`, `STRIPE_PRICE_ULTRA` | The price IDs for each plan |
+| `STRIPE_PRICE_PRO_YEAR`, `STRIPE_PRICE_ELITE_YEAR`, `STRIPE_PRICE_ULTRA_YEAR`, `STRIPE_PRICE_TEAM_SEAT_YEAR` | Optional. The yearly price IDs, which is what makes the Monthly/Yearly choice appear |
 
 > Without Stripe configured, paid items are correctly **blocked** (no free
 > purchases) - the app degrades honestly.
