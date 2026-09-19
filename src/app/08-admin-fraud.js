@@ -1200,7 +1200,20 @@ function renderBillingView(targetEl){
   }
   const since=loadStr('amv_plan_since');
   const sinceDate=since?new Date(parseInt(since,10)):null;
-  const nextDate=sinceDate?new Date(sinceDate.getTime()+30*86400000):null;
+  /* A RENEWAL DATE IS A FACT ABOUT A SUBSCRIPTION, NOT ARITHMETIC ON A DEVICE.
+
+     This was `sinceDate + 30 days`: the day THIS browser happened to record a
+     payment, plus a month. It is wrong on a second device (which has no
+     `amv_plan_since` at all), wrong after any plan change, wrong by a day in
+     half the months of the year, and - now that a plan can be bought by the
+     year - wrong by eleven months for anybody who chose Yearly.
+
+     `S.renewal` is the processor's own answer, put there by the entitlement
+     sync, and it is null until the server has one. Null means the line says
+     nothing, which is what this card already does everywhere else a date is
+     not known. */
+  const rn=(typeof S!=='undefined' && S.renewal && typeof S.renewal==='object') ? S.renewal : null;
+  const nextDate=(rn && +rn.renewsAt) ? new Date(+rn.renewsAt) : null;
   const fmt=(d)=>d?d.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'-';
   const ic={free:'⚡',pro:'✦',elite:'★',ultra:'◆',custom:'⚙'}[plan]||'⚡';
   const email=(S.user&&S.user.email)||'-';
@@ -1265,7 +1278,10 @@ function renderBillingView(targetEl){
           '<span class="bill-dot'+(plan==='free'?' free':'')+'"></span>'+
           (plan==='free'
             ? 'You are not paying for anything. Nothing is on file and nothing renews.'
-            : 'Active'+(nextDate?' \u00b7 renews '+escH(fmt(nextDate)):'')+
+            /* "renews" and "ends" are opposite facts and the date alone
+               cannot tell them apart. Somebody who has switched auto-renew off
+               is looking for exactly this line to confirm it. */
+            : 'Active'+(nextDate?' \u00b7 '+(rn && rn.autoRenew===false?'ends ':'renews ')+escH(fmt(nextDate)):'')+
               ' \u00b7 '+escH(P.blurb||''))+
         '</div>'+
         (plan!=='free'?
@@ -1292,6 +1308,39 @@ function renderBillingView(targetEl){
           (customSummary?_bfact('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
           (customSummary?_bfact('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
         '</dl>'+
+        /* AUTO-RENEW, ANSWERED AND CHANGEABLE IN ONE PLACE.
+
+           A subscription renews by itself - that is what a subscription is -
+           so the only question worth a control is whether this one stops at
+           the end of the period already paid for. Stripe holds that as one
+           field and the server writes it, reading back what the subscription
+           became rather than what was asked of it.
+
+           DRAWN ONLY WHEN IT CAN ACT. `manageable` is the server saying there
+           is a subscription id to write to. Without one this is a switch wired
+           to nothing, and a switch wired to nothing on the screen that holds
+           somebody's money is worse than no switch - so the portal button
+           below stays the answer and this says nothing.
+
+           Turning it OFF is the end of something somebody is paying for, so it
+           is confirmed. Turning it back ON costs nothing and is immediate. */
+        ((rn && rn.manageable)
+          ? '<div class="bill-ar' + (rn.autoRenew===false?' off':'') + '">'
+            + '<div class="bill-ar-t">'
+              + '<span class="bill-ar-n">' + escH(T('Auto-renew')) + '</span>'
+              + '<span class="bill-ar-s">' + escH(rn.autoRenew===false ? T('Off') : T('On')) + '</span>'
+            + '</div>'
+            + '<p class="bill-ar-w">' + escH(rn.autoRenew===false
+                ? (nextDate
+                    ? T('Your plan stays fully active until') + ' ' + fmt(nextDate) + ', ' + T('then moves to Free. Nothing more will be charged.')
+                    : T('Your plan stays active to the end of the period you have paid for. Nothing more will be charged.'))
+                : (nextDate
+                    ? T('You will be charged again on') + ' ' + fmt(nextDate) + '.'
+                    : T('Your plan renews automatically at the end of each period.'))) + '</p>'
+            + '<button class="btn ' + (rn.autoRenew===false?'bp':'bs') + ' bill-ar-b" type="button" id="bill-ar-go" data-on="' + (rn.autoRenew===false?'1':'0') + '">'
+              + escH(rn.autoRenew===false ? T('Turn auto-renew back on') : T('Turn off auto-renew')) + '</button>'
+          + '</div>'
+          : '')+
         /* The billing portal is the only place a card can be changed or a
            subscription cancelled. The handler for this button already existed
            and had done nothing for as long as the button did not: a paying
@@ -1537,6 +1586,47 @@ function renderBillingView(targetEl){
     toast('Billing portal activates once your backend is connected','info',4000);
   };
   const pb=$('portal-open-btn'); if(pb) on(pb,'click',openPortal);
+  /* AUTO-RENEW. The server writes the field at Stripe and answers with what
+     the subscription became, so what lands back on the screen was read back
+     rather than assumed. Nothing local is set on the way: a failed call leaves
+     the screen saying exactly what it said before, which is the truth. */
+  on($('bill-ar-go'),'click',()=>{
+    const b=$('bill-ar-go'); if(!b) return;
+    const turningOn=b.dataset.on==='1';
+    const apply=async()=>{
+      const was=b.textContent;
+      b.disabled=true; b.textContent=turningOn?T('Turning on\u2026'):T('Turning off\u2026');
+      try{
+        const d=await AMV_API.autoRenew(turningOn);
+        try{ S.renewal=Object.assign({}, S.renewal||{}, d.renewal||{}, {manageable:true}); }catch(e){}
+        renderBillingView(targetEl);
+        toast(turningOn
+          ? T('Auto-renew is back on.')
+          : T('Auto-renew is off. Your plan runs to the end of the period you have paid for.'),'success',5000);
+      }catch(e){
+        b.disabled=false; b.textContent=was;
+        /* A deployment with no processor connected is not a failed change -
+           nothing was attempted. It says so in the words the rest of the
+           payment surfaces use. */
+        toast(e && e.code==='needs_service'
+          ? T('Payments are not connected on this deployment yet, so auto-renew cannot be changed here.')
+          : T('Could not change auto-renew: ')+((e&&e.message)||T('try again')),'error',5000);
+      }
+    };
+    /* Turning it back on costs nothing and is immediate. Turning it OFF ends
+       something somebody is paying for, so it is asked first - and the
+       question states what they keep, because the fear at this button is
+       losing access today. */
+    if(turningOn) return apply();
+    const until=nextDate?(' '+T('You keep everything until')+' '+fmt(nextDate)+'.'):'';
+    const asked=(typeof confirmModal==='function') && confirmModal(
+      T('Turn off auto-renew?'),
+      T('Your plan will not renew and nothing more will be charged.')+until+' '+T('You can turn it back on any time before then.'),
+      apply, { confirm: T('Turn it off'), cancel: T('Keep auto-renew') });
+    /* If the question could not be asked, the change is not made. An unasked
+       destructive action is the thing the confirm was for. */
+    if(!asked) toast(T('Could not open the confirmation, so nothing was changed.'),'error',5000);
+  });
   on($('bill-cancel'),'click',async()=>{
     const say=t=>{ const el=$('bill-cancel-say'); if(el) el.textContent=t||''; };
     if(liveBackend){
@@ -1741,6 +1831,13 @@ async function syncEntitlement(){
         }
       }
       try{ S._entVerified = { plan:serverPlan, at:Date.now() }; }catch(e){}
+      /* WHAT THE NEXT CHARGE IS, FROM THE ONLY THING THAT KNOWS.
+         The billing screen used to derive a renewal date from the day THIS
+         BROWSER recorded the payment plus thirty - a number with no
+         relationship to the subscription, wrong on any second device and wrong
+         by eleven months on a yearly plan. `renewal` is the processor's own
+         answer, or null, and null means the screen says nothing. */
+      try{ S.renewal = (d.renewal && typeof d.renewal === 'object') ? d.renewal : null; }catch(e){}
       /* A failed renewal is the one billing problem the user MUST hear about,
          and the only person who can fix it. Silence here means they lose the
          plan they wanted to keep and we lose the subscription. */

@@ -14334,3 +14334,51 @@ p.bill-leave-s{
 @media(prefers-reduced-motion:reduce){
   .upg-cyc{ transition:none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYER A228 - whether you will be charged again
+   ───────────────────────────────────────────────────────────────────────────
+   A row inside the plan summary, not a section of its own: it answers a
+   question about the subscription named two lines above it, and lifting it out
+   into a sixth bordered panel is exactly what this screen was rebuilt to stop.
+
+   The state is a word, not a switch graphic. A toggle would have to render a
+   position before the server has answered, and a control that shows a state it
+   has not read back is the thing this whole path was built to avoid - so the
+   state is written out, the button says what pressing it does, and neither can
+   be misread at a glance.
+
+   OFF IS NOT AN ERROR. It is a decision somebody made on purpose, and colouring
+   it red would tell them something is wrong with their account. The row picks
+   up a warm edge instead - enough to find, not enough to alarm - and the button
+   swaps to the primary style, because when renewal is off the useful press is
+   turning it back on.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.bill-ar{
+  margin-top:var(--sp-5);
+  padding:var(--sp-4);
+  background:var(--s2);
+  border:1px solid var(--bd);
+  border-left:3px solid var(--bd);
+  border-radius:var(--r-md);
+}
+.bill-ar.off{ border-left-color:var(--gold); }
+.bill-ar-t{
+  display:flex; align-items:baseline; gap:var(--sp-2);
+  flex-wrap:wrap;
+}
+.bill-ar-n{ font-size:var(--t-md); font-weight:650; color:var(--tx); }
+.bill-ar-s{
+  font-size:var(--t-xs); font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--grn);
+}
+.bill-ar.off .bill-ar-s{ color:var(--gold); }
+.bill-ar-w{
+  margin:var(--sp-2) 0 var(--sp-3);
+  font-size:var(--t-sm); line-height:1.55; color:var(--mu);
+  max-width:56ch;
+}
+.bill-ar-b{ font-size:var(--t-sm); }
+@media(hover:none){
+  .bill-ar-b{ min-height:44px; }
+}

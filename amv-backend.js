@@ -11331,6 +11331,7 @@ async function _route(request, env, ctx) {
     // --- PAYMENTS (real Stripe + PayPal) ---
     case '/v1/stripe/checkout': return stripeCheckout(request, env);
     case '/v1/stripe/portal':   return stripePortal(request, env);
+    case '/v1/stripe/auto-renew': return stripeAutoRenew(request, env);
     case '/v1/stripe/invoices': return stripeInvoices(request, env);
     case '/v1/stripe/webhook':  return stripeWebhook(request, env, ctx);
     /* There is no /v1/paypal/create or /v1/paypal/capture. They backed a
@@ -18190,7 +18191,15 @@ const ENT_CARRY_KEYS = ['refBonus', 'teamId', 'familyOf', 'renewedAt', 'lastEven
                         /* AMV-007: which subscription owns this plan, and the ones that no
                            longer do. Carried like every other fact that must survive a
                            write from a different source. */
-                        'subId', 'retiredSubs'];
+                        'subId', 'retiredSubs',
+                        /* What the next charge is. Written by the subscription
+                           webhook and by the auto-renew route; carried so a
+                           referral bonus or a seat change does not erase the
+                           only answer the billing screen has. Cleared below
+                           when the plan stops costing anything, because a
+                           renewal date on a free account is a date nobody is
+                           billed on. */
+                        'autoRenew', 'renewsAt', 'cycle'];
 
 /* AMV-007: WHOSE SUBSCRIPTION IS THIS PLAN?
 
@@ -18514,6 +18523,12 @@ async function setEntitlement(env, email, plan, extra = {}) {
   if ((extra.source === 'stripe' || extra.source === 'paypal') && _planPriceUSD(plan, ent.custom) > 0) {
     ent.renewedAt = Date.now();
   }
+  /* A cancelled or downgraded account has no next charge, and the carry above
+     would otherwise hand it the old one - so the billing screen would promise a
+     renewal to somebody who has just cancelled. */
+  if (_planPriceUSD(plan, ent.custom) <= 0) {
+    delete ent.autoRenew; delete ent.renewsAt; delete ent.cycle;
+  }
   await DB.put(env, 'ent', em, ent);
   // Keep the population counters true at the one place a plan can change.
   await _planPopShift(env, prev.plan ? _planOf(prev) : null, _planOf(ent),
@@ -18588,6 +18603,54 @@ function _planOf(ent) {
    card is still being retried, say it comes straight back - that is the window
    where most cards actually get fixed. Only after the processor has given up
    is it over, and only then should the message read that way. */
+/* WHAT A SUBSCRIPTION SAYS ABOUT ITS NEXT CHARGE.
+
+   Read off a Stripe SUBSCRIPTION object - the one Stripe sends with
+   customer.subscription.updated, and the one the auto-renew route gets back
+   from its own write. Never off an invoice or a checkout session: those carry
+   neither `cancel_at_period_end` nor the subscription's period, and guessing
+   from them is how a billing screen ends up stating a date nobody is billed on.
+
+   Returns null when the object cannot answer, and null means the app says
+   nothing rather than something reassuring it does not know. */
+function _renewalFromSub(sub) {
+  if (!sub || typeof sub !== 'object') return null;
+  const end = +sub.current_period_end || 0;
+  if (!end) return null;
+  const iv = sub.items?.data?.[0]?.price?.recurring?.interval || '';
+  return {
+    autoRenew: !sub.cancel_at_period_end,
+    renewsAt: end * 1000,
+    cycle: iv === 'year' ? 'year' : (iv === 'month' ? 'month' : ''),
+  };
+}
+
+/* THE ANSWER TO "WILL I BE CHARGED AGAIN, AND WHEN".
+
+   Only ever from facts a processor put on the record. An account with nothing
+   stored gets null and the screen stays quiet, which is the honest state for a
+   deployment whose webhook has not yet delivered a subscription event - a
+   confident "renews monthly" derived from the plan name would be a guess about
+   somebody's money.
+
+   A date that has passed is dropped rather than shown. Stripe moves
+   current_period_end forward on every renewal, so a stale one means the event
+   that would have moved it has not arrived - and "renews 3 weeks ago" is worse
+   than no date at all. */
+function _renewalState(ent) {
+  if (!ent || !ent.renewsAt) return null;
+  if (+ent.renewsAt < Date.now()) return null;
+  return {
+    autoRenew: ent.autoRenew !== false,
+    renewsAt: +ent.renewsAt,
+    cycle: ent.cycle === 'year' ? 'year' : (ent.cycle === 'month' ? 'month' : ''),
+    /* Whether the app may offer the switch at all. Without a subscription id
+       there is nothing to write to, and a control that cannot act is one that
+       fails at the moment somebody presses it. */
+    manageable: !!ent.subId,
+  };
+}
+
 function _billingState(ent) {
   if (!ent || !ent.pastDueSince) return null;
   const since = ent.pastDueSince;
@@ -18789,6 +18852,7 @@ async function getEntitlement(request, env) {
   // explain a mismatch so the app can ask them to fix their card.
   return json({ ok: true, entitlement: Object.assign({}, ent, { plan: _planOf(ent), sold: ent.plan || 'free' }),
                 billing: _billingState(ent),
+                renewal: _renewalState(ent),
                 bonusTokens: _bonusTokens(ent),
                 referralEarned: converted && converted.paidJoiner ? converted.tokens : 0 });
 }
@@ -18958,6 +19022,91 @@ async function stripePortal(request, env) {
   const d = await r.json();
   if (!r.ok) return json({ error: d.error?.message || 'stripe error' }, 502);
   return json({ url: d.url });
+}
+
+/* ---- Stripe: turn auto-renew off, or back on ----
+
+   A subscription renews by itself; that is what a subscription is. So "auto
+   renew" is really one question - does this one stop at the end of the period
+   it is already paid for - and Stripe answers it with a single field,
+   `cancel_at_period_end`. This route writes that field and nothing else.
+
+   WHY NOT JUST SEND THEM TO THE PORTAL. The billing portal is there and stays
+   there, but it is a page somewhere else that has to be configured in the
+   Stripe dashboard before it opens at all, and it cannot answer the question
+   on AMV's own screen. This can, and more importantly the result is READ BACK:
+   what gets written to the entitlement is what Stripe's response says the
+   subscription now is, not what was asked for. An action AMV cannot read back
+   is an action AMV cannot claim.
+
+   WHOSE SUBSCRIPTION. `subId` is put on the entitlement by the webhook for
+   this account, so it is this account's by construction - but "by
+   construction" is how an IDOR gets written. The customer on Stripe's response
+   is compared against the customer id stored for this email, and a mismatch is
+   refused and audited rather than quietly corrected. Nothing about the
+   subscription is taken from the request: the body carries one boolean.
+
+   NOTHING IS CHARGED OR REFUNDED HERE. Turning it off leaves the plan running
+   to the end of the period already paid for; turning it back on resumes the
+   schedule. That is why off is reversible right up to the last day, and the
+   response says when that day is. */
+async function stripeAutoRenew(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const sp = await guardAction(env, `stripear:${user.email}`, 12, 100, 'auto-renew changes');
+  if (sp) return sp;
+  if (!env.STRIPE_SECRET_KEY)
+    return json({ error: 'Payments are not connected on this deployment yet, so auto-renew cannot be changed here.',
+                  code: 'needs_service' }, 503);
+
+  let body = {};
+  try { body = await request.json(); } catch (e) {}
+  /* Explicit, both ways. A missing field is not "off" - it is a caller that
+     did not say, and guessing either way changes somebody's billing. */
+  if (typeof body.on !== 'boolean')
+    return json({ error: 'Say whether auto-renew should be on or off.', code: 'bad_request' }, 400);
+  const on = body.on;
+
+  const ent = (await DB.get(env, 'ent', user.email)) || {};
+  const subId = String(ent.subId || '');
+  if (!subId) return json({ error: 'No subscription to change.', code: 'no_subscription' }, 404);
+
+  const r = await fetchDeadline('https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(subId), {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ cancel_at_period_end: on ? 'false' : 'true' }).toString(),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) return json({ error: d.error?.message || 'stripe error', code: 'stripe_error' }, 502);
+
+  /* The subscription Stripe just described must be the one billing THIS
+     account. If it is not, the id on the record is wrong and acting on it
+     again would be acting on a stranger's subscription. */
+  const custId = await env.AMV_KV.get(`stripecust:${user.email}`);
+  const subCust = typeof d.customer === 'string' ? d.customer : (d.customer && d.customer.id) || '';
+  if (custId && subCust && custId !== subCust) {
+    audit(env, 'autorenew_customer_mismatch', { email: user.email, sub: subId, expected: custId, got: subCust });
+    return json({ error: 'That subscription does not belong to this account.', code: 'forbidden' }, 403);
+  }
+
+  /* From the RESPONSE, so the record says what the subscription is rather than
+     what was asked of it. */
+  const rn = _renewalFromSub(d);
+  await _withEnt(env, user.email, (e) => {
+    if (!e) return null;
+    if (rn) {
+      e.autoRenew = rn.autoRenew;
+      e.renewsAt = rn.renewsAt;
+      if (rn.cycle) e.cycle = rn.cycle;
+    } else {
+      e.autoRenew = !d.cancel_at_period_end;
+    }
+    return e;
+  });
+
+  audit(env, 'autorenew_set', { email: user.email, sub: subId, on: rn ? rn.autoRenew : on });
+  await _userEvent(env, request, user.email, 'autorenew_changed', { on: rn ? rn.autoRenew : on });
+  return json({ ok: true, renewal: rn || { autoRenew: !d.cancel_at_period_end, renewsAt: 0, cycle: '', manageable: true } });
 }
 
 // ---- Stripe: list this user's invoices (for the in-app billing history) ----
@@ -19406,6 +19555,13 @@ async function stripeWebhook(request, env, ctx) {
            client, a metadata field, or a number we stored at checkout and hoped
            stayed true through a seat change. */
         const extra = { source: 'stripe', sub: subId };
+        /* Only on a subscription event, because only that object carries them.
+           An invoice leaves them alone, so the last known answer stands rather
+           than being overwritten with a blank. */
+        if (type === 'customer.subscription.updated') {
+          const rn = _renewalFromSub(obj);
+          if (rn) { extra.autoRenew = rn.autoRenew; extra.renewsAt = rn.renewsAt; if (rn.cycle) extra.cycle = rn.cycle; }
+        }
         if (plan === 'team') {
           const qty = obj.items?.data?.[0]?.quantity ?? obj.lines?.data?.[0]?.quantity;
           extra.custom = { seats: _teamSeatCount({ seats: qty }) };
