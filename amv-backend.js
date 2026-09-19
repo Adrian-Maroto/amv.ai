@@ -10523,7 +10523,14 @@ async function authAdminReset(request, env){
   const email = String(body.email||'').toLowerCase().trim();
   const password = String(body.password||'');
   if(!email || !email.includes('@')) return json({ error:'valid email required' }, 400);
-  { const bad = _passwordLengthProblem(password); if(bad) return json(bad, 400); }
+  { const bad = _passwordProblem(password); if(bad) return json(bad, 400); }
+  /* The address is in hand here, so the account's own email cannot be set as
+     its password. An operator resetting somebody's account to their own
+     address - which is the obvious thing to type - hands the next person who
+     knows that address the account. */
+  if(_passwordIsPersonal(password, email, ''))
+    return json({ error:'That password is the account\u2019s own email address, which is the first thing anybody would try. Please choose another.',
+                  code:'password_is_personal' }, 400);
 
   const acct = await DB.get(env, 'acct', email);
   if(!acct) return json({ error:'No account with that email.' }, 404);
@@ -11456,11 +11463,113 @@ const PBKDF2_MAX_ITERATIONS = 100000;   // hard limit in the Workers runtime
 const PBKDF2_ITERATIONS = 100000;       // == the cap; see above before raising
 // AMV-051: reject the most common / trivially-weak passwords at signup.
 const _COMMON_PASSWORDS = new Set(['password','12345678','123456789','1234567890','qwerty123','password1','password123','iloveyou','admin123','welcome1','letmein1','abc12345','11111111','qwertyuiop','1q2w3e4r','sunshine1','football1','baseball1','trustno1','superman1']);
+
+/* THE WORD PEOPLE PUT A NUMBER AFTER.
+
+   A list of exact strings catches exactly the strings on it, and the way these
+   passwords are actually chosen is a word plus a year, a word plus "1", a word
+   plus "!". `monkey` is on every breach list ever published and `monkey2024`
+   is on none of them, while being just as guessable - the attacker's wordlist
+   has the same suffix rule this does.
+
+   So the BASE is listed and the decoration is described. Kept to words that
+   are GUESSED rather than words that are weak: a base list long enough to
+   catch a real passphrase would be a list that refuses good passwords, and a
+   password rule people fight is a password rule people defeat with a sticky
+   note. */
+const _COMMON_BASES = new Set([
+  'password','passwort','contrasena','motdepasse','senha','wachtwoord',
+  'welcome','letmein','changeme','default','qwerty','azerty','monkey','dragon',
+  'master','shadow','sunshine','princess','football','baseball','basketball',
+  'soccer','superman','batman','spiderman','starwars','pokemon','minecraft',
+  'fortnite','liverpool','arsenal','chelsea','barcelona','juventus','computer',
+  'internet','samsung','iphone','android','google','facebook','whatsapp',
+  'michael','jennifer','jessica','charlie','daniel','thomas','matthew','joshua',
+  'ashley','nicole','amanda','anthony','andrew','robert','william','richard',
+  'hunter','killer','ginger','chocolate','freedom','whatever','secret','trustno',
+  'iloveyou','admin','administrator','root','guest','test','demo','temp',
+  'amv','amvai',
+]);
+
+/* Rows of a keyboard, forwards. Reversed and case-folded where they are used,
+   so `mnbvcxz` and `POIUYTREWQ` are the same walk as `zxcvbnm` and `qwerty`. */
+const _KEY_WALKS = ['qwertyuiop','asdfghjkl','zxcvbnm','azertyuiop','qwertzuiop',
+                    '1234567890','1qaz2wsx','2wsx3edc','qazwsxedc','1q2w3e4r5t'];
+
 function _isCommonPassword(pw){
   const p = String(pw||'').toLowerCase();
+  if(!p) return false;
   if(_COMMON_PASSWORDS.has(p)) return true;
   if(/^(.)\1+$/.test(p)) return true;                       // all one repeated character
   if(/^(01234567|12345678|abcdefgh|87654321)/.test(p)) return true;   // obvious sequences
+
+  /* A run along a keyboard row, either direction, long enough to be the whole
+     idea rather than a coincidence inside a real password. */
+  const flat = p.replace(/[^a-z0-9]/g, '');
+  if(flat.length >= 6){
+    for(const row of _KEY_WALKS){
+      const back = row.split('').reverse().join('');
+      if(row.indexOf(flat) >= 0 || back.indexOf(flat) >= 0) return true;
+    }
+  }
+
+  /* A listed word wearing a hat.
+
+     THE DECORATION COMES OFF FIRST, AND THAT ORDER IS THE WHOLE TRICK. The
+     first version undid the letter-for-digit swaps before stripping, which
+     turned `monkey2024` into `monkey2o2a` - the trailing year was read as part
+     of the word and the word stopped being one. Strip first and it is `monkey`
+     again; the swaps then apply to the word alone, so `p4ssw0rd!` loses the
+     bang, becomes `p4ssw0rd`, and unleets to `password`. Leet digits live
+     INSIDE a word, decoration lives outside it, which is what lets one pass
+     remove the second without eating the first.
+
+     Only the decoration. A base word buried inside a longer phrase is left
+     alone, or "correct horse battery staple" would be refused for containing
+     "horse" - and a rule that refuses good passwords is a rule people defeat
+     with a sticky note. The spaces are what save it: stripping only touches
+     the ends, so the core is still the whole phrase and matches nothing. */
+  const bare = p.replace(/^[^a-z]+/,'').replace(/[^a-z]+$/,'');
+  /* ONE CHECK, BECAUSE THE SECOND ONE WAS THE FIRST ONE.
+
+     This read the stripped word, and then read it again unleeted. Deleting the
+     first line changed nothing any test could see - and that is not a missing
+     test, it is arithmetic: every base word is plain letters, and unleeting a
+     plain-letter word returns it unchanged. The first check could only ever
+     match when the second one would too.
+
+     Left in, it would read as two rules and carry the weight of two, while one
+     of them can never be the reason anything is refused. A dead line in a
+     password check is worse than a missing one: it is coverage somebody counts
+     on that is actually coming from somewhere else. */
+  const unleet = bare.replace(/[@4]/g,'a').replace(/3/g,'e').replace(/[1!|]/g,'i')
+                     .replace(/0/g,'o').replace(/[$5]/g,'s').replace(/7/g,'t');
+  if(unleet && _COMMON_BASES.has(unleet)) return true;
+  return false;
+}
+
+/* THE PASSWORD THAT IS THE ACCOUNT ITSELF.
+
+   Somebody's own email, the part in front of the @, or their own name. It
+   survives every rule above - `jessicamorgan` is nobody's idea of a common
+   password - and it is the first thing tried by anyone holding the address,
+   which by definition is whoever is attacking the account.
+
+   Separate from _isCommonPassword because it has to know WHO, and the routes
+   learn that at different moments. Compared on letters and digits only, so
+   `Jessica.Morgan` and `jessicamorgan99` are both caught. */
+function _passwordIsPersonal(password, email, name){
+  const flat = (v) => String(v||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+  const p = flat(password);
+  if(p.length < 3) return false;
+  const em = String(email||'').toLowerCase().trim();
+  for(const c of [flat(em), flat(em.split('@')[0]), flat(name)]){
+    if(c.length < 3) continue;
+    /* Equal, or that string with a little tacked on. Not "contains", which
+       would refuse a long passphrase that happens to include a short name. */
+    if(p === c) return true;
+    if(p.length <= c.length + 4 && p.indexOf(c) === 0) return true;
+  }
   return false;
 }
 /* AMV-SP-10: A PASSWORD IS A SECRET, NOT A WORKLOAD.
@@ -11489,11 +11598,31 @@ function _passwordTooLong(password){
    enforcing it at sign-in would lock out any account whose password predates
    the rule, which is a rule change turning into an outage for the people least
    able to explain it. */
-function _passwordLengthProblem(password){
+/* ONE GATE, AND IT IS THE ONE EVERY SET PATH ALREADY CALLS.
+
+   The common-password check used to live in authSignup and only there, as two
+   lines of its own. Two other routes set a password - the self-serve reset and
+   the admin reset - and both called this function for the length and stopped.
+   So a password AMV refused at signup could be set from the reset link, which
+   is the easier door to reach: it needs an email you can receive, not an
+   account you already have.
+
+   Folding it in here rather than repeating it three times is the whole point.
+   Every set path calls this because it has to bound the length before hashing,
+   so the strength rules now arrive with it - and the fourth route somebody
+   writes gets them without knowing they exist. Same reasoning as PASSWORD_MAX
+   above: a rule that has to be remembered is a rule that gets missed.
+
+   Renamed with it, because a name promising one check on a function doing
+   three is how the next person reads past it. */
+function _passwordProblem(password){
   const tooLong = _passwordTooLong(password);
   if(tooLong) return tooLong;
   if(String(password == null ? '' : password).length < PASSWORD_MIN)
     return { error:'Password must be at least ' + PASSWORD_MIN + ' characters.', code:'password_too_short' };
+  if(_isCommonPassword(password))
+    return { error:'That password is one of the most commonly guessed ones, so it would not protect the account. Please choose another.',
+             code:'password_too_common' };
   return null;
 }
 
@@ -11617,8 +11746,13 @@ async function authSignup(request, env){
   if(!em || em.length > 254 || !/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(em)) return json({ error:'valid email required' }, 400);
   // AMV-051: raise the password baseline - 8+ chars and reject the most common
   // passwords so a leaked hash has meaningfully more offline resistance.
-  { const bad = _passwordLengthProblem(password); if(bad) return json(bad, 400); }
-  if(_isCommonPassword(password)) return json({ error:'that password is too common - please choose a stronger one' }, 400);
+  /* Length, commonness and every other strength rule arrive together from the
+     one gate now - the separate common-password line that used to sit here is
+     exactly why the two reset routes did not have one. */
+  { const bad = _passwordProblem(password); if(bad) return json(bad, 400); }
+  if(_passwordIsPersonal(password, em, name))
+    return json({ error:'That password is your own email address or name, which is the first thing anybody holding your address would try. Please choose another.',
+                  code:'password_is_personal' }, 400);
   const safeName = String(name||'').slice(0, 80);
   const salt = crypto.randomUUID();
   const pwHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
@@ -24873,7 +25007,7 @@ async function authResetConfirm(request, env) {
             || _rlIp(request);
   const rcBlock = await guardAction(env, `resetconfirm:${rcIp}`, 10, 60, 'password resets');
   if (rcBlock) return rcBlock;
-  { const bad = _passwordLengthProblem(password); if(bad) return json(bad, 400); }
+  { const bad = _passwordProblem(password); if(bad) return json(bad, 400); }
   const stored = await env.AMV_KV.get(`reset:${token}`);
   if (!stored) return json({ error: 'This reset link is invalid or has expired. Please request a new one.' }, 400);
   /* Stored as {email, at}. The timestamp exists because erasure cannot reach
@@ -24888,6 +25022,16 @@ async function authResetConfirm(request, env) {
   if (!email) return json({ error: 'This reset link is invalid or has expired. Please request a new one.' }, 400);
   const acct = await DB.get(env, 'acct', email);
   if (!acct) return json({ error: 'account not found' }, 404);
+  /* HERE, AND NOT WITH THE OTHER PASSWORD RULES ABOVE.
+
+     Length and commonness are facts about the password alone, so they are
+     checked before anything is read from storage. Whether the password is the
+     account's OWN address cannot be asked until the token has said which
+     account this is - so it is asked at the first moment there is an answer,
+     which is also still before the expensive hash. */
+  if (_passwordIsPersonal(password, email, acct.name || ''))
+    return json({ error: 'That password is your own email address or name, which is the first thing anybody holding your address would try. Please choose another.',
+                  code: 'password_is_personal' }, 400);
   if (issuedAt && acct.createdAt && acct.createdAt > issuedAt) {
     await env.AMV_KV.delete(`reset:${token}`);
     audit(env, 'reset_token_predates_account', { email });
