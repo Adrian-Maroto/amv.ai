@@ -1122,6 +1122,14 @@ const AMV_API = {
   async calFeedAdd(url,label){ const r=await this._fetch('/v1/cal/feeds/add',{method:'POST',body:JSON.stringify({url,label})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not add that calendar.'),{code:d.code}); return d; },
   async calFeedRemove(id){ const r=await this._fetch('/v1/cal/feeds/remove',{method:'POST',body:JSON.stringify({id})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not remove that calendar.'),{code:d.code}); return d; },
   async calEvents(days){ const r=await this._fetch('/v1/cal/events',{method:'POST',body:JSON.stringify({days:days||7})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read your week.'),{code:d.code}); return d; },
+  /* Prediction markets. A trade is quoted first and executed by the id of
+     that quote, so nothing here can place one on its own - the terms live on
+     the server between the two calls. */
+  async predictMarkets(){ const r=await this._fetch('/v1/predict/markets',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read the markets.'),{code:d.code}); return d; },
+  async predictQuote(venue,market,side,usd){ const r=await this._fetch('/v1/predict/quote',{method:'POST',body:JSON.stringify({venue,market,side,usd})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not quote that trade.'),{code:d.code}); return d; },
+  /* Only the quote id. Resending the terms would be inviting a caller to
+     change what was approved, and the server ignores them anyway. */
+  async predictTrade(quoteId){ const r=await this._fetch('/v1/predict/trade',{method:'POST',body:JSON.stringify({quoteId})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not place that trade.'),{code:d.code}); return d; },
   async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };
 window.AMV_API = AMV_API;

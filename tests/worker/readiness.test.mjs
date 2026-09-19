@@ -107,6 +107,10 @@ section('It NEVER returns a secret, in any form');
        configured" has to mean everything the screen lists. */
     STRIPE_PRICE_PRO_YEAR: 'price_pro_y', STRIPE_PRICE_ELITE_YEAR: 'price_elite_y',
     STRIPE_PRICE_ULTRA_YEAR: 'price_ultra_y', STRIPE_PRICE_TEAM_SEAT_YEAR: 'price_team_y',
+    /* The prediction venues. Optional and regulated - a deployment is right to
+       leave both unset - but this fixture is the EVERYTHING one, and
+       "everything is configured" has to mean everything the screen lists. */
+    KALSHI_API_KEY: 'kalshi-SUPERSECRET', POLYMARKET_API_KEY: 'poly-SUPERSECRET',
     // Bindings too, or "everything configured" would not be true - which is
     // the point of the assertion below.
     DB: { prepare(){} }, AMV_COUNTER: {}, BROWSER: {},

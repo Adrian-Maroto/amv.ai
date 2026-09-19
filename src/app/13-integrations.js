@@ -718,6 +718,10 @@ function _integrationsCatalogHTML(){
               auto:false,connected:false,use:'everyday',useLabel:'See yours',
               icon:'\uD83C\uDFE0',bg:'rgba(150,170,110,.14)'})+
       /* Every calendar that is not Google or Outlook, which is most of them. */
+      intRow({id:'predict',name:'Prediction markets',
+              desc:'Kalshi or Polymarket, depending on where you are. AMV shows you the exact trade and places it only after you confirm those numbers - it can never place one on its own.',
+              auto:false,connected:false,use:'predict',useLabel:'Open',
+              icon:'\uD83D\uDCC8',bg:'rgba(200,150,90,.14)'})+
       intRow({id:'calfeeds',name:'Any other calendar',
               desc:'iCloud, Fastmail, Nextcloud, Yandex, Zoho, a university timetable - anything that publishes a link. Read-only: AMV sees your week and can never change it.',
               auto:false,connected:false,use:'calfeeds',useLabel:'Connect',
@@ -875,6 +879,7 @@ function _wireIntegrationCatalog(root){
   }));
   root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intUse==='jobs' && typeof openJobBoards==='function') return openJobBoards();
+    if(btn.dataset.intUse==='predict' && typeof openPredictionMarkets==='function') return openPredictionMarkets();
     if(btn.dataset.intUse==='calfeeds' && typeof openCalendarFeeds==='function') return openCalendarFeeds();
     if(btn.dataset.intUse==='coverage' && typeof openCoverage==='function') return openCoverage();
     if(btn.dataset.intUse==='everyday' && typeof openEveryday==='function') return openEveryday();

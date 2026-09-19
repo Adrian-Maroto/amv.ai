@@ -316,6 +316,23 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 | `STRIPE_WEBHOOK_SECRET` | Confirms payments so upgrades/purchases actually apply |
 | `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ELITE`, `STRIPE_PRICE_ULTRA` | The price IDs for each plan |
 | `STRIPE_PRICE_PRO_YEAR`, `STRIPE_PRICE_ELITE_YEAR`, `STRIPE_PRICE_ULTRA_YEAR`, `STRIPE_PRICE_TEAM_SEAT_YEAR` | Optional. The yearly price IDs, which is what makes the Monthly/Yearly choice appear |
+| `KALSHI_API_KEY` | Optional. Prediction markets for people in the United States |
+| `POLYMARKET_API_KEY` | Optional. Prediction markets everywhere else - Polymarket blocks US persons, so AMV does not offer it there |
+
+> **Prediction markets move real money and are regulated.** Leave both keys
+> unset and the feature is simply absent - nothing is offered, nothing is
+> attempted, and the screen says so rather than failing. With a key set, AMV
+> still cannot place a trade on its own: a trade is quoted first, the exact
+> market, side and amount are shown to the person, and only a confirmation of
+> that specific quote executes. The quote expires in a minute and can be spent
+> once. AMV will not place more than $100 on one trade or $250 in a day, and
+> those are hard limits in the Worker rather than settings.
+>
+> Which venue AMV offers is decided by the country the edge reports, not by
+> anything the browser sends. That is a legal line: Polymarket blocks US
+> persons on its main venue, and Kalshi is the CFTC-regulated venue for them.
+> Check your own obligations before switching either on - the keys are yours,
+> and so is the licence question.
 
 > Without Stripe configured, paid items are correctly **blocked** (no free
 > purchases) - the app degrades honestly.

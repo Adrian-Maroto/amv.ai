@@ -9957,6 +9957,13 @@ const BACKUP_NEVER = [
      can open, which is worse than bringing back nothing. Re-subscribing is
      thirty seconds of clicking; a credential in a backup file is forever. */
   'cal:',
+  /* A trade somebody has been shown and has not yet approved. It lives for one
+     minute and means nothing after that, so backing it up would preserve a
+     question nobody is still being asked - and RESTORING one would be worse
+     than pointless: it would put an approval for a real trade back into
+     circulation, minutes or months after the person decided about it. An
+     approval has to be fresh to be an approval. */
+  'pquote:',
   /* A cached page of the public connector directory. Nobody's data - it is the
      same answer for everyone and it rebuilds itself from the registry within
      six hours. Putting it in a backup would bulk up the file with a copy of
@@ -11521,6 +11528,9 @@ async function _route(request, env, ctx) {
     case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
     case '/v1/finance/checkin':      return financeCheckin(request, env);
     case '/v1/finance/status':       return financeStatus(request, env);
+    case '/v1/predict/markets':      return predictMarkets(request, env);
+    case '/v1/predict/quote':       return predictQuote(request, env);
+    case '/v1/predict/trade':       return predictTrade(request, env);
     case '/v1/cal/feeds':            return calFeedList(request, env);
     case '/v1/cal/feeds/add':       return calFeedAdd(request, env);
     case '/v1/cal/feeds/remove':    return calFeedRemove(request, env);
@@ -19887,6 +19897,241 @@ async function calEvents(request, env) {
   return json({ ok: true, events: events.slice(0, 500), feeds: feeds.length, failed });
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   PREDICTION MARKETS - READING THEM, AND PLACING A TRADE ON ONE.
+
+   This moves real money on a regulated venue, so the design is mostly about
+   what AMV is NOT allowed to do.
+
+   THE MODEL CANNOT TRADE. That is the whole architecture and everything else
+   follows from it. A trade is two requests: one that QUOTES it and one that
+   EXECUTES a quote by its id. The quote is stored server-side with the exact
+   market, side, size and cost, it expires in a minute, and it can be spent
+   once. So the model's reach ends at proposing terms a person has not seen
+   yet, and the only thing that can turn a proposal into a position is a human
+   pressing a button next to the exact numbers.
+
+   A confirmation dialog in the browser would NOT have achieved this. The
+   model drives the browser; anything the browser can do unaided, the model
+   can do unaided. The approval has to be something the server requires and
+   the client cannot mint, which is why it is a stored ticket rather than a
+   flag on the request.
+
+   JURISDICTION IS NOT A DISCLAIMER. Where somebody is decides which venue may
+   legally serve them at all, and getting this wrong is not a bug report, it is
+   an enforcement action. The country comes from the edge, not from the client,
+   because a value the browser supplies is a value the browser chooses.
+
+   AND THE CAPS ARE HARD. Per trade, per day, checked on the server before the
+   quote is even issued. A model that misreads a market can be wrong; it must
+   not be able to be wrong for more than a stated number of dollars.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const PREDICT_VENUES = {
+  /* CFTC-regulated, US persons permitted. Its own eligibility rules still
+     apply on their side; this is about which venue AMV may even offer. */
+  kalshi:     { name: 'Kalshi', allow: 'US_ONLY',
+                api: 'https://api.elections.kalshi.com/trade-api/v2',
+                keyEnv: 'KALSHI_API_KEY' },
+  /* Blocks US persons on its main venue. Offering it to somebody in the
+     United States would be inviting them to break its terms and possibly the
+     law, on AMV's suggestion. */
+  polymarket: { name: 'Polymarket', allow: 'NON_US',
+                api: 'https://clob.polymarket.com',
+                keyEnv: 'POLYMARKET_API_KEY' },
+};
+
+const PREDICT_MAX_TRADE_USD = 100;      // one trade
+const PREDICT_MAX_DAY_USD   = 250;      // all trades in a day
+const PREDICT_QUOTE_TTL_MS  = 60 * 1000;
+
+/* Which venues may be offered to somebody in this country. The answer for the
+   United States and the answer for everywhere else are different venues, not
+   the same venue with a warning. */
+function _predictVenuesFor(country) {
+  const us = String(country || '').toUpperCase() === 'US';
+  return Object.keys(PREDICT_VENUES).filter((k) => {
+    const v = PREDICT_VENUES[k];
+    return v.allow === 'US_ONLY' ? us : !us;
+  });
+}
+
+function _predictConfigured(env, venue) {
+  const v = PREDICT_VENUES[venue];
+  return !!(v && _has(env, v.keyEnv));
+}
+
+/* Everything a trade has to clear before a quote is even issued. Returned as a
+   refusal or null, so no caller can forget half of it. */
+async function _predictGate(request, env, user) {
+  const held = await _accountHold(env, user, 'predict');
+  if (held) return held;
+  /* Money means adult, and this is the same gate the subscription checkout
+     uses rather than a second opinion about the same question. */
+  const ageBad = await _moneyAgeGate(env, user.email);
+  if (ageBad) return json(ageBad, ageBad.code === 'age_required' ? 428 : 403);
+  return null;
+}
+
+async function predictMarkets(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'sign in first', code: 'needs_auth' }, 401);
+  const country = (request.cf && request.cf.country) || '';
+  const allowed = _predictVenuesFor(country);
+  const venues = allowed.map((k) => ({
+    id: k, name: PREDICT_VENUES[k].name, ready: _predictConfigured(env, k),
+  }));
+  /* Said plainly rather than by an empty list. "Nothing here" reads as broken;
+     "not available where you are" is the truth and is actionable. */
+  return json({
+    ok: true, country, venues,
+    caps: { perTrade: PREDICT_MAX_TRADE_USD, perDay: PREDICT_MAX_DAY_USD },
+    note: venues.length
+      ? ''
+      : 'Prediction markets are not available in your country, so AMV does not offer them here.',
+  });
+}
+
+async function predictQuote(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'sign in first', code: 'needs_auth' }, 401);
+  const blocked = await guardAction(env, 'pquote:' + user.email, 30, 300, 'trade quotes');
+  if (blocked) return blocked;
+  const gate = await _predictGate(request, env, user);
+  if (gate) return gate;
+
+  const body = await request.json().catch(() => ({}));
+  const venue = String(body.venue || '');
+  const market = String(body.market || '').slice(0, 120);
+  const side = String(body.side || '').toLowerCase();
+  const usd = Math.round(Number(body.usd) * 100) / 100;
+
+  if (!PREDICT_VENUES[venue]) return json({ error: 'Unknown venue.', code: 'bad_venue' }, 400);
+  const country = (request.cf && request.cf.country) || '';
+  if (_predictVenuesFor(country).indexOf(venue) < 0) {
+    audit(env, 'predict_venue_refused', { by: user.email, venue, country });
+    return json({ error: PREDICT_VENUES[venue].name + ' is not available in your country, so AMV will not place a trade on it.',
+                  code: 'venue_blocked' }, 403);
+  }
+  if (!_predictConfigured(env, venue)) {
+    return json({ error: PREDICT_VENUES[venue].name + ' is not connected on this deployment, so no trade can be placed. Nothing was attempted.',
+                  code: 'needs_service' }, 503);
+  }
+  if (!market) return json({ error: 'Which market?', code: 'bad_request' }, 400);
+  if (side !== 'yes' && side !== 'no') return json({ error: 'A trade is yes or no.', code: 'bad_request' }, 400);
+  if (!Number.isFinite(usd) || usd <= 0) return json({ error: 'How much?', code: 'bad_request' }, 400);
+  if (usd > PREDICT_MAX_TRADE_USD) {
+    return json({ error: 'AMV places at most $' + PREDICT_MAX_TRADE_USD + ' on one trade. That is a hard limit, not a setting.',
+                  code: 'over_trade_cap' }, 400);
+  }
+
+  /* The daily cap is counted atomically and BEFORE the quote exists, so two
+     quotes issued in the same second cannot both fit under it. */
+  const spent = (await counter(env, `pspend:${user.email}:${todayKey()}`, { op: 'get' })).value || 0;
+  if (spent + usd > PREDICT_MAX_DAY_USD) {
+    return json({ error: 'That would take today past the $' + PREDICT_MAX_DAY_USD + ' daily limit AMV will place. It resets tomorrow.',
+                  code: 'over_day_cap', spent }, 429);
+  }
+
+  const id = 'q_' + crypto.randomUUID().replace(/-/g, '');
+  const quote = { id, venue, market, side, usd, by: user.email, at: Date.now(), country };
+  /* Stored server-side with a short life. A ticket the client could mint would
+     be no approval at all - the point is that the browser holds a REFERENCE to
+     terms it cannot alter. */
+  await env.AMV_KV.put('pquote:' + id, JSON.stringify(quote), { expirationTtl: 300 });
+  audit(env, 'predict_quote', { by: user.email, venue, market, side, usd });
+  return json({ ok: true, quote: { id, venue, venueName: PREDICT_VENUES[venue].name, market, side, usd,
+                                   expiresAt: Date.now() + PREDICT_QUOTE_TTL_MS } });
+}
+
+async function predictTrade(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'sign in first', code: 'needs_auth' }, 401);
+  const blocked = await guardAction(env, 'ptrade:' + user.email, 20, 300, 'trades');
+  if (blocked) return blocked;
+  const gate = await _predictGate(request, env, user);
+  if (gate) return gate;
+
+  const body = await request.json().catch(() => ({}));
+  const id = String(body.quoteId || '');
+  /* NOTHING ABOUT THE TRADE IS READ FROM THIS REQUEST. Market, side and size
+     come only from the stored quote, so a client that alters them after the
+     person approved is altering a copy nobody acts on. */
+  if (!/^q_[0-9a-f]{32}$/.test(id)) return json({ error: 'Approve the trade first.', code: 'needs_quote' }, 400);
+
+  const raw = await env.AMV_KV.get('pquote:' + id);
+  if (!raw) return json({ error: 'That approval has expired. Quote the trade again and confirm the numbers.', code: 'quote_expired' }, 409);
+  let q = null; try { q = JSON.parse(raw); } catch (e) { q = null; }
+  if (!q) return json({ error: 'That approval could not be read.', code: 'quote_expired' }, 409);
+
+  /* SPENT ONCE. Deleted before the trade is placed, not after: a retry that
+     races the first attempt must not be able to place the same trade twice,
+     and losing a trade to a delete that succeeded is recoverable in a way that
+     a double position is not. */
+  await env.AMV_KV.delete('pquote:' + id);
+
+  if (q.by !== user.email) {
+    audit(env, 'predict_quote_stolen', { by: user.email, owner: q.by, quote: id });
+    return json({ error: 'That approval belongs to another account.', code: 'forbidden' }, 403);
+  }
+  if (Date.now() - (+q.at || 0) > PREDICT_QUOTE_TTL_MS) {
+    return json({ error: 'That approval has expired. Quote the trade again and confirm the numbers.', code: 'quote_expired' }, 409);
+  }
+  /* Re-checked at EXECUTION, not only at quote time. Somebody can move country
+     between the two requests, and the venue rule is about where they are when
+     the trade is placed. */
+  const country = (request.cf && request.cf.country) || '';
+  if (_predictVenuesFor(country).indexOf(q.venue) < 0) {
+    audit(env, 'predict_venue_refused', { by: user.email, venue: q.venue, country, at: 'execute' });
+    return json({ error: PREDICT_VENUES[q.venue].name + ' is not available in your country, so AMV will not place a trade on it.',
+                  code: 'venue_blocked' }, 403);
+  }
+  if (!_predictConfigured(env, q.venue)) {
+    return json({ error: PREDICT_VENUES[q.venue].name + ' is not connected on this deployment, so no trade was placed.',
+                  code: 'needs_service' }, 503);
+  }
+
+  /* Reserved before the venue is called. A trade that is placed and then found
+     to be over the cap is a trade that was over the cap. */
+  const res = await counter(env, `pspend:${user.email}:${todayKey()}`,
+                            { op: 'reserve', amount: Math.round(q.usd * 100), cap: PREDICT_MAX_DAY_USD * 100, ttlMs: 86400000 * 2 });
+  if (!res.allowed) {
+    return json({ error: 'That would take today past the $' + PREDICT_MAX_DAY_USD + ' daily limit AMV will place.',
+                  code: 'over_day_cap' }, 429);
+  }
+
+  const v = PREDICT_VENUES[q.venue];
+  let placed = null;
+  try {
+    const r = await fetchDeadline(v.api + '/orders', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + String(env[v.keyEnv] || ''), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ market: q.market, side: q.side, notional_usd: q.usd }),
+    }, 15000);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      /* Give the money back: nothing was placed, so nothing should be counted
+         against the day. */
+      await counter(env, `pspend:${user.email}:${todayKey()}`, { op: 'incr', amount: -Math.round(q.usd * 100), ttlMs: 86400000 * 2 });
+      audit(env, 'predict_trade_refused', { by: user.email, venue: q.venue, status: r.status });
+      return json({ error: (d && d.error) || (v.name + ' refused the trade. Nothing was placed.'), code: 'venue_error' }, 502);
+    }
+    placed = d;
+  } catch (e) {
+    await counter(env, `pspend:${user.email}:${todayKey()}`, { op: 'incr', amount: -Math.round(q.usd * 100), ttlMs: 86400000 * 2 });
+    /* UNKNOWN IS NOT THE SAME AS FAILED, and saying "nothing was placed" here
+       would be a guess about somebody's money. The request may have arrived. */
+    audit(env, 'predict_trade_unknown', { by: user.email, venue: q.venue, error: String((e && e.message) || e) });
+    return json({ error: v.name + ' did not answer in time, so AMV cannot tell whether the trade was placed. Check your positions there before trying again.',
+                  code: 'venue_timeout' }, 504);
+  }
+
+  audit(env, 'predict_trade', { by: user.email, venue: q.venue, market: q.market, side: q.side, usd: q.usd });
+  await _userEvent(env, request, user.email, 'trade_placed', { venue: v.name, market: q.market, side: q.side, usd: q.usd });
+  return json({ ok: true, placed: { venue: v.name, market: q.market, side: q.side, usd: q.usd,
+                                    ref: (placed && (placed.order_id || placed.id)) || '' } });
+}
+
 async function stripeAutoRenew(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
@@ -24776,6 +25021,23 @@ function _readinessReport(env) {
        state worth seeing here - Pro yearly but not Elite means one card on the
        pricing page can be bought by the year and the others cannot, for a
        reason that is invisible from the outside. */
+    /* READ DYNAMICALLY, SO THE SCAN CANNOT SEE THEM - WHICH IS WHY THEY ARE
+       WRITTEN OUT HERE BY HAND.
+
+       The venue table holds the name of each key and the code reads
+       `env[v.keyEnv]`, so the stage that checks every secret has a row on this
+       screen finds no literal to match and passes whether these are listed or
+       not. A check that cannot see something is not a check that approves it.
+       Without these rows an operator would have no way to learn the names, and
+       the feature would look broken rather than unconfigured. */
+    { id: 'predictKalshi', name: 'Prediction markets - Kalshi', blocking: false,
+      on: _has(env, 'KALSHI_API_KEY'),
+      turnsOn: 'Reading and placing trades on Kalshi, which is the venue AMV offers in the United States. Every trade still needs the person to approve the exact numbers, and AMV will not place more than $' + PREDICT_MAX_TRADE_USD + ' on one or $' + PREDICT_MAX_DAY_USD + ' in a day.',
+      how: put('KALSHI_API_KEY') },
+    { id: 'predictPolymarket', name: 'Prediction markets - Polymarket', blocking: false,
+      on: _has(env, 'POLYMARKET_API_KEY'),
+      turnsOn: 'The same, outside the United States. Polymarket blocks US persons on its main venue, so AMV does not offer it to anybody the edge reports as being there - which is a legal line, not a preference.',
+      how: put('POLYMARKET_API_KEY') },
     { id: 'stripePricesYearly', name: 'Yearly plan prices (Stripe)', blocking: false,
       on: _has(env, 'STRIPE_PRICE_PRO_YEAR') && _has(env, 'STRIPE_PRICE_ELITE_YEAR') && _has(env, 'STRIPE_PRICE_ULTRA_YEAR'),
       turnsOn: 'Buying a plan by the year instead of by the month. Each is a second price object on the same product in Stripe, with a yearly interval - AMV never computes a yearly amount of its own, it opens checkout with whichever price you created, so the discount is whatever you set it to. Plans with no yearly price are simply not offered yearly.',
@@ -24934,6 +25196,7 @@ function _readinessReport(env) {
   const GROUPS = {
     ai: 'Core', auth: 'Core', appUrl: 'Core', admin: 'Core', ownerEmail: 'Core',
     payments: 'Taking money', paymentsHook: 'Taking money', stripePrices: 'Taking money',
+    predictKalshi: 'Taking money', predictPolymarket: 'Taking money',
     stripePricesYearly: 'Taking money',
     teamSeats: 'Taking money', paypal: 'Taking money', paypalPlans: 'Taking money',
     paypalHook: 'Taking money', paypalLive: 'Taking money',

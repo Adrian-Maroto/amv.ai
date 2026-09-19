@@ -38,6 +38,11 @@ const ACT_LABEL = {
      reads where they are and who they are with, and an attacker adding one is
      surveillance that outlives the session. Removing one is not, so it is
      untoned - a row nobody needs to worry about should not look like one. */
+  /* Toned, and of everything on this list it is the one most worth seeing. A
+     trade spends real money and cannot be undone, so somebody scanning this
+     screen after a scare needs it to stand out - and the row says which way
+     and how much, below, because "a trade was placed" is half an answer. */
+  trade_placed:           ['A trade was placed', 'warn'],
   calendar_subscribed:    ['A calendar was connected', 'warn'],
   calendar_unsubscribed:  ['A calendar was disconnected', ''],
   finance_unlinked:       ['A bank account was disconnected', 'warn'],
@@ -62,6 +67,10 @@ function _actLabel(ev){
   const m = ACT_LABEL[ev.kind];
   let text = m ? m[0] : String(ev.kind || 'Activity').replace(/_/g, ' ');
   if(ev.kind === 'plan_changed' && ev.plan) text += ' to ' + ev.plan;
+  /* Which way and how much. Somebody checking whether a trade was theirs needs
+     the numbers, not the fact that something happened. */
+  if(ev.kind === 'trade_placed' && ev.usd)
+    text += ': ' + (ev.side ? ev.side + ' ' : '') + '$' + ev.usd + (ev.market ? ' on ' + ev.market : '');
   /* "Auto-renew changed" is half an answer to "was that me?". Which way it
      went is the other half, and it is the half that says whether a plan is
      about to end. */
