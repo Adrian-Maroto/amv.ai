@@ -56,6 +56,7 @@ async function openCalendarFeeds() {
     + '</label>'
     + '<button class="btn bp" id="cf-go">' + escH(T('Connect calendar')) + '</button>'
     + '<div class="fam-say" id="cf-say" role="status" aria-live="polite"></div>'
+    + '<div class="cf-week" id="cf-week"></div>'
     + '<div class="cf-help"><div class="cf-help-t">' + escH(T('Where to find your link')) + '</div>'
       + Object.keys(provs).map(k =>
           '<details class="cf-p"><summary>' + escH(provs[k].flag || '') + ' ' + escH(provs[k].name || k) + '</summary>'
@@ -63,6 +64,44 @@ async function openCalendarFeeds() {
     + '</div>';
 
   const say = (t, cls) => { const el = $('cf-say'); if (el) { el.textContent = t || ''; el.className = 'fam-say' + (cls ? ' ' + cls : ''); } };
+
+  /* WHAT AMV CAN NOW SEE, SHOWN IMMEDIATELY.
+
+     A calendar link is a long opaque string that somebody copied from another
+     screen, and the ways it can be wrong are all silent: the wrong calendar,
+     an expired secret, a link that needs a login, a feed with nothing in it.
+     Without this, none of that surfaces until some other feature quietly
+     returns an empty week - and an empty week reads as a free week.
+
+     So the week is read back and shown. It is the same call everything else
+     uses, so if this looks right the rest works, and if it looks wrong it is
+     wrong now rather than in a fortnight. */
+  const showWeek = async () => {
+    const z = $('cf-week'); if (!z) return;
+    z.innerHTML = '<p class="mu cf-wk-load">' + escH(T('Reading your week\u2026')) + '</p>';
+    const w = await calendarWeek(7);
+    if (!w.feeds) { z.innerHTML = ''; return; }
+    const fmt = (ms, allDay) => {
+      try {
+        const d = new Date(ms);
+        return allDay
+          ? d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })
+          : d.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short',
+                                          hour: 'numeric', minute: '2-digit' });
+      } catch (e) { return ''; }
+    };
+    const rows = (w.events || []).slice(0, 12).map(e =>
+      '<div class="cf-ev"><span class="cf-ev-w">' + escH(fmt(e.start, e.allDay)) + '</span>'
+      + '<span class="cf-ev-t">' + escH(e.title || '') + '</span>'
+      + (e.calendar ? '<span class="cf-ev-c">' + escH(e.calendar) + '</span>' : '') + '</div>').join('');
+    /* A calendar that failed is named. Folding it into "nothing this week"
+       would be the exact lie this whole screen exists to avoid. */
+    const bad = (w.failed || []).map(f =>
+      '<p class="cf-wk-bad">' + escH((f.label || 'A calendar') + ': ' + (f.why || 'could not be read')) + '</p>').join('');
+    z.innerHTML = '<div class="cf-wk-t">' + escH(T('What AMV can see')) + '</div>'
+      + (rows || '<p class="mu cf-wk-none">' + escH(T('Nothing scheduled in the next seven days. If that is a surprise, the link may point at the wrong calendar.')) + '</p>')
+      + bad;
+  };
 
   const wireRemoves = () => {
     document.querySelectorAll('[data-cf-rm]').forEach(btn => on(btn, 'click', async () => {
@@ -76,10 +115,12 @@ async function openCalendarFeeds() {
           : '<p class="mu cf-none">' + escH(T('No calendars connected yet.')) + '</p>';
         wireRemoves();
         say(T('Disconnected.'), 'ok');
+        showWeek();
       } catch (e) { btn.disabled = false; say((e && e.message) || T('Could not remove that calendar.'), 'err'); }
     }));
   };
   wireRemoves();
+  if ((d.feeds || []).length) showWeek();
 
   on($('cf-go'), 'click', async () => {
     const url = ($('cf-url') || {}).value || '';
@@ -99,6 +140,7 @@ async function openCalendarFeeds() {
       const u = $('cf-url'); if (u) u.value = '';
       const l = $('cf-label'); if (l) l.value = '';
       say(T('Connected. AMV can read this calendar from now on.'), 'ok');
+      showWeek();
     } catch (e) {
       say((e && e.message) || T('Could not add that calendar.'), 'err');
     } finally { if (go) { go.disabled = false; go.textContent = T('Connect calendar'); } }
