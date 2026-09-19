@@ -17600,8 +17600,25 @@ async function waitlistAdd(request, env) {
    ===================================================================== */
 
 // Map your plans to Stripe Price IDs (create these in the Stripe dashboard).
-function _stripePriceId(env, plan) {
-  const map = {
+/* MONTHLY OR YEARLY, AND STRIPE DECIDES THE AMOUNT EITHER WAY.
+
+   A yearly plan is not a discount this file applies - it is a second recurring
+   price in Stripe, and the only thing here that changes is WHICH price id the
+   checkout session is opened with. That matters: if AMV computed a yearly
+   figure of its own, the page and the charge would be two numbers maintained
+   in two places, which is the drift this repository keeps finding. The amount
+   somebody is charged is the amount on the price the operator created.
+
+   Yearly is optional. A deployment that has not created those prices sells
+   monthly exactly as before, and asking for yearly there is answered by
+   _planUnsellable naming the secret to set rather than by a failed checkout. */
+function _stripePriceId(env, plan, cycle) {
+  const map = String(cycle || '') === 'year' ? {
+    pro:   env.STRIPE_PRICE_PRO_YEAR,
+    elite: env.STRIPE_PRICE_ELITE_YEAR,
+    ultra: env.STRIPE_PRICE_ULTRA_YEAR,
+    team:  env.STRIPE_PRICE_TEAM_SEAT_YEAR,
+  } : {
     pro:   env.STRIPE_PRICE_PRO,
     elite: env.STRIPE_PRICE_ELITE,
     ultra: env.STRIPE_PRICE_ULTRA,
@@ -17636,8 +17653,17 @@ function _stripePriceId(env, plan) {
 const SELLABLE_PLANS = new Set(['pro', 'elite', 'ultra', 'team']);
 const PLAN_PRICE_ENV = { pro: 'STRIPE_PRICE_PRO', elite: 'STRIPE_PRICE_ELITE',
                          ultra: 'STRIPE_PRICE_ULTRA', team: 'STRIPE_PRICE_TEAM_SEAT' };
-function _planUnsellable(plan) {
+function _planUnsellable(plan, cycle) {
   const p = String(plan || '').toLowerCase();
+  /* Yearly is optional and monthly is not, so a missing yearly price is its own
+     answer: this deployment sells the plan, just not by the year. Saying
+     "unknown plan" there would send somebody looking for a mistake they did not
+     make - the same reasoning as the paragraph below, one field over. */
+  if (String(cycle || '') === 'year' && SELLABLE_PLANS.has(p)) {
+    const envName = p === 'team' ? 'STRIPE_PRICE_TEAM_SEAT_YEAR' : 'STRIPE_PRICE_' + p.toUpperCase() + '_YEAR';
+    return json({ error: 'Yearly billing is not switched on for this plan yet, so only monthly can be bought. Nothing has been charged.',
+                  code: 'not_configured', secret: envName, cycle: 'year' }, 503);
+  }
   if (!SELLABLE_PLANS.has(p)) return json({ error: 'unknown plan', code: 'unknown_plan' }, 400);
   if (p === 'team')
     return json({ error: 'Teams checkout is not switched on yet. Set STRIPE_PRICE_TEAM_SEAT to a per-seat recurring price and it starts working with no other change.',
@@ -17664,6 +17690,14 @@ const PLAN_FROM_PRICE = (env) => {
   add(env.STRIPE_PRICE_ELITE, 'elite');
   add(env.STRIPE_PRICE_ULTRA, 'ultra');
   add(env.STRIPE_PRICE_TEAM_SEAT, 'team');
+  /* THE YEARLY PRICES GRANT THE SAME PLAN, and forgetting this half is how a
+     yearly subscriber pays and gets nothing: the webhook is the only thing
+     that turns money into access, and it recognises a subscription by its
+     PRICE ID. A price it does not know is a plan it cannot grant. */
+  add(env.STRIPE_PRICE_PRO_YEAR, 'pro');
+  add(env.STRIPE_PRICE_ELITE_YEAR, 'elite');
+  add(env.STRIPE_PRICE_ULTRA_YEAR, 'ultra');
+  add(env.STRIPE_PRICE_TEAM_SEAT_YEAR, 'team');
   return out;
 };
 
@@ -18792,8 +18826,12 @@ async function stripeCheckout(request, env) {
 
   const body = await request.json().catch(() => ({}));
   const plan = body.plan;
-  const price = _stripePriceId(env, plan);
-  if (!price) return _planUnsellable(plan);
+  /* Anything that is not the word "year" is a month. A cycle arriving from a
+     browser decides only WHICH configured price is used, never an amount, so
+     the worst a bad value can do is sell the monthly plan. */
+  const cycle = String(body.cycle || '') === 'year' ? 'year' : 'month';
+  const price = _stripePriceId(env, plan, cycle);
+  if (!price) return _planUnsellable(plan, cycle);
   /* Seats are only meaningful for the per-seat plan, and the server decides the
      number - a client that asks for 1 seat at the 3-seat minimum gets 3, and one
      that asks for a million gets the cap. */
@@ -23320,6 +23358,19 @@ async function publicConfig(request, env) {
   if (blocked) return blocked;
 
   const out = { ok: true };
+  /* WHICH PLANS CAN BE BOUGHT BY THE YEAR, so the page can offer the choice
+     only where it will work. A toggle that leads to "not configured" is a
+     toggle that should not have been drawn.
+
+     The plan NAMES, never the price ids: the client needs to know the option
+     exists, not what it is called at Stripe. */
+  try{
+    const yearly = [];
+    for (const p of ['pro', 'elite', 'ultra', 'team']) {
+      if (_stripePriceId(env, p, 'year')) yearly.push(p);
+    }
+    if (yearly.length) out.yearlyPlans = yearly;
+  }catch(e){}
   for (const [field, secret] of PUBLIC_CONFIG_KEYS) {
     const v = String((env && env[secret]) || '').trim();
     if (v) out[field] = v;
@@ -23694,6 +23745,25 @@ function _readinessReport(env) {
         : 'Buying Pro, Elite and Ultra. Each is a price object created once in the Stripe dashboard; without its id that plan cannot be sold even though payments are on.',
       how: put('STRIPE_PRICE_PRO') + ', ' + put('STRIPE_PRICE_ELITE') + ' and ' + put('STRIPE_PRICE_ULTRA') },
 
+    /* YEARLY IS OPTIONAL, AND THE ROW SAYS SO RATHER THAN LOOKING BROKEN.
+
+       Monthly is what the product must be able to sell; yearly is a second
+       recurring price per plan and a deployment without them sells monthly
+       exactly as before. So this is never "REQUIRED NOW" - an amber row for a
+       thing nobody has to do is how an operator learns to ignore amber rows.
+
+       The page only offers the yearly choice for plans that HAVE a yearly
+       price, which is why this row matters at all: with none set, the toggle
+       is simply absent and nobody is walked into a refusal. Half-set is the
+       state worth seeing here - Pro yearly but not Elite means one card on the
+       pricing page can be bought by the year and the others cannot, for a
+       reason that is invisible from the outside. */
+    { id: 'stripePricesYearly', name: 'Yearly plan prices (Stripe)', blocking: false,
+      on: _has(env, 'STRIPE_PRICE_PRO_YEAR') && _has(env, 'STRIPE_PRICE_ELITE_YEAR') && _has(env, 'STRIPE_PRICE_ULTRA_YEAR'),
+      turnsOn: 'Buying a plan by the year instead of by the month. Each is a second price object on the same product in Stripe, with a yearly interval - AMV never computes a yearly amount of its own, it opens checkout with whichever price you created, so the discount is whatever you set it to. Plans with no yearly price are simply not offered yearly.',
+      how: put('STRIPE_PRICE_PRO_YEAR') + ', ' + put('STRIPE_PRICE_ELITE_YEAR') + ' and ' + put('STRIPE_PRICE_ULTRA_YEAR')
+           + ' (and ' + put('STRIPE_PRICE_TEAM_SEAT_YEAR') + ' for Teams)' },
+
     { id: 'paypal', name: 'PayPal', blocking: false,
       on: _has(env, 'PAYPAL_CLIENT_ID') && _has(env, 'PAYPAL_SECRET'),
       turnsOn: 'A second way to pay, for people who will not hand over a card. Needs an app in the PayPal developer dashboard; both halves, or the checkout says PayPal is not set up rather than opening a flow that fails.',
@@ -23846,6 +23916,7 @@ function _readinessReport(env) {
   const GROUPS = {
     ai: 'Core', auth: 'Core', appUrl: 'Core', admin: 'Core', ownerEmail: 'Core',
     payments: 'Taking money', paymentsHook: 'Taking money', stripePrices: 'Taking money',
+    stripePricesYearly: 'Taking money',
     teamSeats: 'Taking money', paypal: 'Taking money', paypalPlans: 'Taking money',
     paypalHook: 'Taking money', paypalLive: 'Taking money',
     email: 'Reaching people', emailSender: 'Reaching people', sms: 'Reaching people',
