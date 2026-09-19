@@ -933,6 +933,56 @@ async function scan(env, kind, limit, what) {
 }
 
 // Per-plan limits (TUNE THESE to protect margin). Tokens/day, tokens/month.
+/* ── THE ONE NUMBER THAT DECIDES WHETHER A LARGE CAP IS SAFE ──────────────
+   A cap beyond what a person can reach costs nothing while almost everybody
+   sends a few hundred messages a month. It costs everything if the heavy share
+   grows. The arithmetic is brutal and worth writing down: with a typical
+   account at four hundred messages, one percent of accounts running to the cap
+   still leaves a healthy margin, two percent leaves almost none, and five
+   percent loses money on every subscriber in the book.
+
+   So the business does not turn on the cap. It turns on the SHAPE of the
+   distribution, and nothing here was measuring that shape - which meant the
+   cap was safe by assumption rather than by observation.
+
+   Break-even is per plan, because it is the plan's own price that funds it,
+   and it is computed rather than typed so it moves when a price or a rate
+   does. The overhead share is everything that is not compute - payment fees,
+   tax, infrastructure, support, the people - because gross margin on tokens is
+   not margin, and a number that ignores the rest of the business is a number
+   that will be wrong in the direction that hurts.
+
+   COST PER MESSAGE IS AN ESTIMATE AND IS LABELLED ONE. The usage report
+   measures the real figure per account; this constant is what the alarm uses
+   until there is enough of that to replace it. It is here, named, so it can be
+   argued with and tuned rather than living in somebody's head. */
+const COHORT_OVERHEAD_SHARE = 0.30;
+const COHORT_COST_PER_MESSAGE_USD = 0.00407;
+const COHORT_HEAVY_SHARE_ALARM = 0.02;     // two percent is where the margin goes
+const COHORT_MIN_ACCOUNTS = 50;            // below this a share is noise, not a signal
+
+/* How many messages this account can send before it stops paying for itself.
+   Zero for a plan with no revenue behind it - a free account has nothing to
+   break even against, so it is never counted as heavy. */
+function _breakEvenMessages(user) {
+  /* NO GUARD HERE, AND THAT IS CHECKED RATHER THAN ASSUMED.
+
+     There was one, and it was dead twice over. A free plan prices at zero and
+     the arithmetic returns zero by itself; a corrupted custom config cannot
+     produce NaN either, because _planPriceUSD ends in `|| 0` and so is
+     incapable of returning anything but a finite, non-negative number. Two
+     separate attempts to justify the line failed against that, which is the
+     line's own argument for not being here.
+
+     The property it was reaching for is real and is worth keeping, so it is
+     asserted next door instead: this never returns NaN, and a plan with no
+     revenue behind it never counts as heavy. Both are true because of where
+     the price comes from, and a test says so - which is a better guarantee
+     than a branch that can never be taken. */
+  const price = _planPriceUSD(user.plan, user.customCfg);
+  return Math.floor((price * (1 - COHORT_OVERHEAD_SHARE)) / COHORT_COST_PER_MESSAGE_USD);
+}
+
 /* ── MESSAGES, WHICH IS THE UNIT ANYBODY ACTUALLY COMPARES ────────────────
    Nobody shopping for this counts tokens. They count messages, because that is
    what every product they might buy instead publishes, and a token figure is
@@ -10837,6 +10887,17 @@ export default {
         console.error('[cron] renewal sweep failed', e && e.message);
         try{ await _workerError(env, 'cron.renewals', e); }catch(_){}
       }
+      /* Its own try, for the same reason as everything else on this tick: two
+         counter reads that must not be able to take out the sweep that revokes
+         plans. Alarmed once a month internally, so running it every tick costs
+         two reads and nothing else. */
+      try{
+        const c = await runCohortCheck(env);
+        if(c && c.alarmed) console.log('[cron] heavy share', JSON.stringify(c));
+      }catch(e){
+        console.error('[cron] cohort check failed', e && e.message);
+        try{ await _workerError(env, 'cron.cohort', e); }catch(_){}
+      }
     })());
   },
 
@@ -14991,6 +15052,30 @@ async function aiProxy(request, env, ctx) {
     }
   }
 
+  /* THE SHAPE OF THE DISTRIBUTION, COUNTED AT THE TWO MOMENTS IT CHANGES.
+
+     Measuring "what share of accounts are heavy" by scanning every account
+     would be a read per account per sweep, which is the kind of cost that gets
+     a measurement deleted. It is two counters instead, each written at most
+     once per account per period: one when an account sends its first message,
+     one when it crosses its own break-even. Everything in between is free.
+
+     Best effort on purpose. This is instrumentation, and instrumentation that
+     can fail somebody's message is worse than no instrumentation. */
+  if (msgCap > 0 && msgRes.allowed) {
+    try {
+      const period = _periodKeyOf(user);
+      if (msgRes.value === 1) {
+        await counter(env, `cohort:active:${period}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 70 });
+      }
+      const breakEven = _breakEvenMessages(user);
+      if (breakEven > 0 && msgRes.value === breakEven) {
+        await counter(env, `cohort:heavy:${period}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 70 });
+        audit(env, 'cohort_heavy', { plan: user.plan, at: breakEven });
+      }
+    } catch (e) { /* never let a measurement refuse a message */ }
+  }
+
   // From here on, `reserve` tokens are already booked against this user. Any
   // early return below MUST refund them, or a failed call would silently eat
   // someone's quota.
@@ -19034,6 +19119,50 @@ const RENEWAL_MAX_AGE_MS = 40 * 24 * 60 * 60 * 1000;   // a month, plus retries,
 const SWEEP_SYSTEMIC_FRACTION = 0.25;                  // this much at once is not coincidence
 const SWEEP_SYSTEMIC_MIN = 3;                          // and below this there is no pattern to see
 const SWEEP_SCAN_LIMIT = 2000;
+
+/* ---- IS THE HEAVY SHARE STILL SMALL ENOUGH FOR THE CAP TO BE SAFE ----
+
+   The caps are set beyond what a person can reach, which is only safe while
+   the accounts that behave that way stay rare. This is the check that says
+   whether that is still true, and it is the difference between a cap that is
+   safe by observation and one that is safe by assumption.
+
+   Two counters, no scan. Nothing here reads an account, so the cost does not
+   grow with the number of customers - which is what keeps a measurement alive
+   long enough to be useful.
+
+   It reports rather than acts. Nothing is throttled, nothing is billed, no
+   account is touched: the answer is a number for the owner, because what to do
+   about a rising heavy share is a pricing decision and pricing is not
+   something a cron job should be making at four in the morning. */
+async function runCohortCheck(env, now = Date.now()) {
+  const period = new Date(now).toISOString().slice(0, 7);          // the calendar month
+  const active = (await counter(env, `cohort:active:${period}`, { op: 'get' })).value || 0;
+  const heavy  = (await counter(env, `cohort:heavy:${period}`,  { op: 'get' })).value || 0;
+
+  /* A share computed from a handful of accounts is noise. Three heavy out of
+     five is sixty percent and means nothing at all, and an alarm that fires on
+     a number that means nothing is an alarm somebody turns off. */
+  if (active < COHORT_MIN_ACCOUNTS) return { ran: true, active, heavy, share: null, reason: 'too few accounts to judge' };
+
+  const share = heavy / active;
+  if (share < COHORT_HEAVY_SHARE_ALARM) return { ran: true, active, heavy, share: +share.toFixed(4) };
+
+  /* Once per month, because this is a trend and not an incident - it will
+     still be true tomorrow, and paging somebody daily about a number that
+     moves slowly is how the next real page gets ignored. */
+  await alertOnce(env, 'cohort_heavy:' + period,
+    Math.round(share * 100) + '% of paying accounts are past the point where they pay for themselves ('
+    + heavy + ' of ' + active + ' this month). The message caps are set beyond what a person can reach, '
+    + 'which is safe while that share stays under ' + Math.round(COHORT_HEAVY_SHARE_ALARM * 100) + '%. '
+    + 'Past it the margin goes quickly: at 2% there is almost none left and at 5% every subscriber is '
+    + 'losing money. Nothing has been changed automatically - what to do about it is a pricing decision. '
+    + 'Check the usage report for the real cost per message before moving a price: if replies have got '
+    + 'longer, that is the cause rather than the customers.',
+    24 * 60);
+  audit(env, 'cohort_heavy_alarm', { period, active, heavy, share: +share.toFixed(4) });
+  return { ran: true, active, heavy, share: +share.toFixed(4), alarmed: true };
+}
 
 async function runRenewalSweep(env, now = Date.now()) {
   const day = todayKey();
