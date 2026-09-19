@@ -22002,6 +22002,7 @@ function renderCodeView(){
       <div id="ctx-dev"></div>
       <div class="dev-input dev-input-v2">
         <select id="dev-lang" class="lab-sel" style="display:none"><option value="js">JavaScript</option><option value="python">Python</option></select>
+        <div class="dvq" id="dev-queue" hidden></div>
         <textarea id="dev-msg" rows="1" placeholder="Describe what to build\u2026"></textarea>
         <div class="dvp" id="dev-paste-offer" hidden></div>
         ${_devComposerBarHTML()}
@@ -22032,6 +22033,7 @@ function renderCodeView(){
   vc.querySelectorAll('#dev-hero-chips [data-dq]').forEach(c=>on(c,'click',()=>{
     const t=$('dev-msg'); if(t){ t.value=c.dataset.dq; t.focus(); t.style.height='auto'; t.style.height=Math.min(t.scrollHeight,140)+'px'; }
   }));
+  _devRenderQueue();
   _devRenderLog();
   _devRenderProject();
   const ta=$('dev-msg');
@@ -23046,9 +23048,102 @@ async function _devAfterWrite(changed, stat){
 }
 try{ window._devAfterWrite=_devAfterWrite; }catch(e){}
 
+/* WHAT TO DO WITH WORDS TYPED WHILE AMV IS ALREADY WORKING.
+
+   `_devSend` opened with `if(_DEV.busy) return;`, so pressing Enter during a
+   turn did nothing at all - no send, no queue, no message, and the text left
+   sitting in the box looking like it had been sent. The one thing somebody
+   always wants to do while watching a build is say the next thing, and the
+   product's answer was silence.
+
+   A turn here can run for a minute and rewrite a project, so it is not
+   interrupted just because somebody typed. The message waits, visibly, and
+   goes the moment the turn ends. If they want it to land sooner there is a
+   button that says so - which stops the turn first, because sending a second
+   instruction into a build that is still writing files is how two turns end up
+   editing the same file with different ideas about what is in it.
+
+   A list rather than one slot: queueing a second thought must not silently
+   replace the first. */
+function _devQueue(){ if(!Array.isArray(_DEV.queue)) _DEV.queue=[]; return _DEV.queue; }
+
+function _devRenderQueue(){
+  const host=$('dev-queue'); if(!host) return;
+  const q=_devQueue();
+  if(!q.length){ host.hidden=true; host.innerHTML=''; return; }
+  host.hidden=false;
+  /* Send now is offered ONLY when there is something that can actually be
+     stopped. The agent turn checks a flag between steps, so asking it to stop
+     means something; an in-browser turn is a single model call with nothing to
+     interrupt, and a button that quietly did nothing there would be worse than
+     no button. Where it cannot be offered the line still says what will
+     happen, which is the honest half of the same sentence. */
+  let canStop=false;
+  try{ canStop = !!(typeof _AGENT!=='undefined' && _AGENT && _AGENT.running); }catch(e){}
+  host.innerHTML='<div class="dvq-head">'
+      + '<span class="dvq-n">'+q.length+' queued</span>'
+      + '<span class="dvq-w">'+escH(T('Sends when this turn finishes'))+'</span>'
+      + (canStop ? '<button class="dvq-now" id="dev-queue-now" type="button">'+escH(T('Stop and send now'))+'</button>' : '')
+    + '</div>'
+    + q.map((t,i)=>'<div class="dvq-item"><span class="dvq-t">'+escH(t)+'</span>'
+        + '<button class="dvq-x" data-dvq="'+i+'" type="button" aria-label="'+escH(T('Remove this queued message'))+'">\u2715</button></div>').join('');
+  on($('dev-queue-now'),'click',_devQueueNow);
+  host.querySelectorAll('[data-dvq]').forEach(b=>on(b,'click',()=>{
+    const i=+b.dataset.dvq; const list=_devQueue();
+    if(i>=0 && i<list.length){ list.splice(i,1); _devRenderQueue(); }
+  }));
+}
+try{ window._devRenderQueue=_devRenderQueue; }catch(e){}
+
+/* Stop what is running, then let the drain below send the first queued
+   message. Not "send alongside": a build mid-write and a new instruction are
+   two turns editing the same files. */
+function _devQueueNow(){
+  if(!_devQueue().length) return;
+  try{ if(typeof _agentStop==='function') _agentStop(); }catch(e){}
+  /* If nothing was actually running, stopping changes nothing and the drain
+     would never fire - so ask for it directly. */
+  if(!_DEV.busy) _devDrainQueue();
+}
+try{ window._devQueueNow=_devQueueNow; }catch(e){}
+
+/* ONE PLACE DECIDES A TURN IS OVER.
+
+   Five call sites set `_DEV.busy=false` and cleared the busy line. A queue
+   drained from four of them is a queue that hangs on the fifth, so they all
+   go through here. */
+function _devIdle(){
+  _DEV.busy=false;
+  try{ _devBusy(false); }catch(e){}
+  _devDrainQueue();
+}
+try{ window._devIdle=_devIdle; }catch(e){}
+
+function _devDrainQueue(){
+  const q=_devQueue();
+  if(!q.length || _DEV.busy) return;
+  const next=q.shift();
+  _devRenderQueue();
+  const ta=$('dev-msg');
+  if(ta){ ta.value=next; }
+  /* A tick later, so the log and the composer have finished the render that
+     ended the turn before the next one starts changing them. */
+  setTimeout(()=>{ try{ _devSend(); }catch(e){} }, 0);
+}
+try{ window._devDrainQueue=_devDrainQueue; }catch(e){}
+
 async function _devSend(){
-  if(_DEV.busy) return;
-  const ta=$('dev-msg'); const msg=ta?ta.value.trim():''; if(!msg) return;
+  const ta=$('dev-msg');
+  if(_DEV.busy){
+    /* Queued, not dropped. See _devQueue above. */
+    const q=ta?ta.value.trim():'';
+    if(!q) return;
+    _devQueue().push(q);
+    ta.value=''; ta.style.height='auto';
+    _devRenderQueue();
+    return;
+  }
+  const msg=ta?ta.value.trim():''; if(!msg) return;
   ta.value=''; ta.style.height='auto';
   /* Asking for something is leaving home, the same way opening a design is in
      Studio - otherwise the hero would stay up over the answer. */
@@ -23072,7 +23167,7 @@ async function _devSend(){
       try{ _agentSetRunning(false); }catch(e){}
     }
     if(stat) stat.textContent='';
-    _DEV.busy=false; try{ _devBusy(false); }catch(e){}
+    _devIdle();
     return;
   }
   const hasProject=_devProjectFiles().length>0;
@@ -23108,7 +23203,7 @@ async function _devSend(){
       _devRenderLog();
       if(stat) stat.textContent='';
     }
-    _DEV.busy=false; try{ _devBusy(false); }catch(e){}
+    _devIdle();
     return;
   }
   try{
@@ -23166,7 +23261,7 @@ async function _devSend(){
         entry.chgId=_devStageTurn(before, proposed, writes);
         _DEV.log.push(entry); _devRenderLog();
         if(stat) stat.textContent='waiting for you';
-        _DEV.busy=false; try{ _devBusy(false); }catch(e){}
+        _devIdle();
         return;
       }
       for(const w of writes) _devSetFile(w.path, w.body);
@@ -23180,7 +23275,7 @@ async function _devSend(){
          it would be a claim rather than a result. */
       entry.verify=_devVerify(rows2.map(r=>r.path), outcome);
       _devRenderLog();
-      _DEV.busy=false; try{ _devBusy(false); }catch(e){}
+      _devIdle();
       return;
     }
     // ---- SINGLE-FILE MODE (unchanged behavior) ----
@@ -23206,7 +23301,7 @@ async function _devSend(){
     } else { if(stat) stat.textContent=''; }
     _DEV.log.push(entry); _devRenderLog();
   }catch(err){ _DEV.log.push({role:'ai',text:'',_snag:_errText(err),_snagRoute:(typeof _refusalRoute==='function'?_refusalRoute(err&&err.code):'')}); _devRenderLog(); if(stat) stat.textContent=''; }
-  _DEV.busy=false; try{ _devBusy(false); }catch(e){}
+  _devIdle();
 }
 window.renderCodeView=renderCodeView;
 

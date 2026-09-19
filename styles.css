@@ -14224,3 +14224,54 @@ p.bill-leave-s{
     display:inline-flex!important; align-items:center;
   }
 }
+
+/* ============================================================
+   LAYER A226 - what you typed while AMV was still working
+   ------------------------------------------------------------
+   `_devSend` used to begin `if(_DEV.busy) return;`, so pressing Enter during a
+   build did nothing: no send, no queue, no message, and the words left sitting
+   in the box looking like they had gone. Saying the next thing while watching
+   a build is the most ordinary thing there is to do on this screen.
+
+   The queue sits ABOVE the composer rather than below it, because it is about
+   to become the conversation - it reads in the direction the messages flow.
+   Muted, bordered, quiet: it is a waiting room, not a result.
+   ============================================================ */
+.dvq{
+  display:flex; flex-direction:column; gap:var(--sp-2);
+  margin:0 0 var(--sp-2);
+  padding:var(--sp-3);
+  border:1px solid var(--bdl); border-radius:var(--r-md);
+  background:var(--s2);
+}
+.dvq-head{ display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
+.dvq-n{ font-size:var(--t-xs); font-weight:650; color:var(--tx); }
+.dvq-w{ font-size:var(--t-xs); color:var(--mu); flex:1 1 auto; min-width:0; }
+.dvq-now{
+  font-size:var(--t-xs); font-weight:600;
+  color:var(--accent-txt, var(--accent));
+  background:none; border:0; cursor:pointer; padding:var(--sp-1) var(--sp-2);
+  border-radius:var(--r-sm);
+}
+.dvq-now:hover{ background:var(--accent-soft); }
+.dvq-item{
+  display:flex; align-items:flex-start; gap:var(--sp-2);
+  font-size:var(--t-sm); color:var(--mu); line-height:1.45;
+}
+/* The words somebody typed, kept readable: wrapped, never clipped, and bounded
+   so a pasted essay cannot push the composer off the screen. */
+.dvq-t{
+  flex:1 1 auto; min-width:0;
+  white-space:pre-wrap; overflow-wrap:anywhere;
+  max-height:4.4em; overflow:auto;
+}
+.dvq-x{
+  flex:0 0 auto; background:none; border:0; cursor:pointer;
+  color:var(--dim); font-size:var(--t-sm); line-height:1;
+  padding:var(--sp-1); border-radius:var(--r-sm);
+}
+.dvq-x:hover{ color:var(--tx); background:var(--s3); }
+@media(hover:none){
+  .dvq-now, .dvq-x{ min-height:44px; min-width:44px;
+    display:inline-flex; align-items:center; justify-content:center; }
+}
