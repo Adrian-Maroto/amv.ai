@@ -14433,3 +14433,66 @@ p.bill-leave-s{
 .pay-or::before, .pay-or::after{
   content:""; flex:1 1 auto; height:1px; background:var(--bd);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYER A230 - what AMV can do, said as a ceiling and not a list
+   ───────────────────────────────────────────────────────────────────────────
+   The screen exists because two true things were invisible: the connector
+   directory, which is the real answer to "can it do X", and the fact that the
+   five-per-country catalogue is a menu of EXAMPLES rather than the edge of
+   what works. So the layout puts the ceiling at the top, in a panel that reads
+   as a statement, and the country list at the bottom, in body text that reads
+   as a footnote - which is the opposite weighting to where they sat before.
+
+   The rows are buttons because every one of them goes somewhere. A capability
+   list you cannot press is a brochure, and the difference between this screen
+   working and this screen being marketing is that pressing a line opens the
+   thing it names.
+
+   Deliberately quiet: no gradients, no glow, no card shadows. A page whose job
+   is to be believed should not look like it is selling.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.ab{ max-width:920px; margin:0 auto; padding:0 var(--sp-4) var(--sp-8); }
+.ab-head{ padding:var(--sp-7) 0 var(--sp-5); }
+.ab-t{ font-family:var(--fdisplay); font-size:var(--t-3xl); font-weight:660;
+       letter-spacing:-1px; line-height:1.1; margin:var(--sp-2) 0 var(--sp-3); }
+.ab-sub{ margin:0; max-width:62ch; font-size:var(--t-lg); line-height:1.55; color:var(--tx); }
+
+/* The ceiling. One panel, stated once, at the top. */
+.ab-ceiling{ margin:var(--sp-5) 0 var(--sp-7); padding:var(--sp-5);
+             background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-lg); }
+.ab-c-h{ font-size:var(--t-md); font-weight:650; color:var(--tx); }
+.ab-c-p{ margin:var(--sp-2) 0 var(--sp-3); max-width:60ch;
+         font-size:var(--t-sm); line-height:1.55; color:var(--mu); }
+.ab-load{ margin:0; font-size:var(--t-sm); color:var(--mu); }
+.ab-chips{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-bottom:var(--sp-3); }
+.ab-chip{ font-size:var(--t-xs); color:var(--tx); background:var(--s3);
+          border:1px solid var(--bd); border-radius:var(--r-pill);
+          padding:var(--sp-1) var(--sp-3); white-space:nowrap;
+          max-width:22ch; overflow:hidden; text-overflow:ellipsis; }
+.ab-more{ font-size:var(--t-sm); }
+
+.ab-g{ margin-bottom:var(--sp-7); }
+.ab-g-t{ font-size:var(--t-xs); font-weight:700; letter-spacing:.06em;
+         text-transform:uppercase; color:var(--mu); margin:0 0 var(--sp-3); }
+.ab-rows{ display:grid; gap:var(--sp-2); }
+/* A row is a button because it goes somewhere. Left-aligned and full width so
+   it reads as a line of text rather than a control asking to be admired. */
+.ab-row{
+  display:grid; gap:2px; width:100%; text-align:left;
+  padding:var(--sp-3) var(--sp-4);
+  background:none; border:1px solid var(--bd); border-radius:var(--r-md);
+  cursor:pointer; font:inherit;
+  transition:background var(--ease-soft, .16s ease), border-color var(--ease-soft, .16s ease);
+}
+.ab-row:hover{ background:var(--s2); border-color:var(--bdl); }
+.ab-row:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.ab-n{ font-size:var(--t-md); font-weight:600; color:var(--tx); }
+.ab-d{ font-size:var(--t-sm); line-height:1.5; color:var(--mu); }
+
+/* The country catalogue, weighted as the footnote it should always have been. */
+.ab-world{ border-top:1px solid var(--bd); padding-top:var(--sp-5); }
+.ab-w-p{ margin:0 0 var(--sp-3); max-width:62ch;
+         font-size:var(--t-sm); line-height:1.6; color:var(--mu); }
+@media(hover:none){ .ab-row{ min-height:44px; } .ab-more{ min-height:44px; } }
+@media(prefers-reduced-motion:reduce){ .ab-row{ transition:none; } }

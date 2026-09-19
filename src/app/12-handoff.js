@@ -589,6 +589,9 @@ function renderView(){
        you was invisible until you happened to be on the device that sent it. */
     case 'handoff': renderHandoffView(); _handoffSyncLive(); break;
     case 'market': renderMarketView(); break;
+    /* Its own section, because it was a row inside Integrations and that is
+       the reason nobody knew any of this existed. */
+    case 'abilities': renderAbilitiesView(); break;
     case 'admin': renderAdminView(); break;
     case 'notfound': render404View(); break;
     default: render404View();
