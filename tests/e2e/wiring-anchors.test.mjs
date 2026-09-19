@@ -138,6 +138,32 @@ section('Nothing in the bundle waits on an element that was removed');
   for (const m of src.matchAll(/_ovShell\(\s*\{[^}]*?\bid\s*:\s*['"]([a-zA-Z0-9_-]+)['"]/g)) {
     for (const suf of suffixes) minted.add(m[1] + suf);
   }
+  /* AND THROUGH THE WRAPPER, WHICH IS WHERE THE COVERAGE NEARLY WENT.
+
+     Two screens opened their dialog with the same four lines and were
+     collapsed into `_ovOpenLoading`, which calls `_ovShell` with the id it is
+     given. That is the better shape - the close handler can no longer be
+     forgotten by copying - but it moved the id one call further from the
+     shell, and this check could no longer see where `cf-body` came from.
+
+     The elements still exist at runtime, so the honest reading is not that the
+     code broke: it is that a refactor quietly took two screens OUT of a check
+     that catches typo'd lookups. That is a real loss and the wrong way to
+     answer it is to trust the wrapper. It is read the same way the direct
+     calls are, so the rule still holds: an id is only minted for a call that
+     actually names that prefix.
+
+     Anything that wraps _ovShell in future has to be added here, which the
+     assertion below makes loud rather than silent. */
+  const wrappers = ['_ovOpenLoading'];
+  for (const w of wrappers) {
+    const body = functionBody(src, w);
+    ok(body.length > 20 && /_ovShell\(/.test(body),
+       w + ' really does mint ids through the shell', body.length);
+    for (const m of src.matchAll(new RegExp(w + "\\(\\s*['\"]([a-zA-Z0-9_-]+)['\"]", 'g'))) {
+      for (const suf of suffixes) minted.add(m[1] + suf);
+    }
+  }
 
   const dead = [];
   for (const id of wanted) {
