@@ -40,6 +40,26 @@ const BACKEND = 'https://backend.example.workers.dev';
    answered and the real reader runs. Booting with no address means the boot
    attempt returned before any request, which is what leaves the loader free to
    run once here against a route that exists. */
+/* STRIPE.JS IS STOOD UP ONCE, BEFORE ANYTHING RUNS, AND NEVER FETCHED.
+
+   Not for speed. `_mountStripe` appends the real https://js.stripe.com/v3/
+   whenever `window.Stripe` is absent, and its `onerror` replaces the whole of
+   `#pay-body` with a "could not reach Stripe" message - which deletes
+   `#stripe-card-element`, the exact node the Elements cases below look for.
+
+   Behind an egress proxy that script never loads, so the handler fires and the
+   element vanishes at whatever moment the browser gives up. This suite passed
+   alone and failed inside the full gate for that reason and no other. A flaky
+   payment suite is worse than an absent one: it makes a real hole look covered
+   the next time somebody reads the run. A stub in place before the first case
+   cannot be raced, and no payment test should depend on reaching Stripe. */
+await page.evaluate(() => {
+  window.Stripe = () => ({
+    elements: () => ({ create: () => ({ mount(){}, on(){} }) }),
+    createPaymentMethod: async () => ({ paymentMethod: { id: 'pm_test' } }),
+  });
+});
+
 await page.route('**/v1/public-config', route => route.fulfill({
   status: 200, contentType: 'application/json',
   body: JSON.stringify({ ok: true, yearlyPlans: ['pro', 'elite'] }),

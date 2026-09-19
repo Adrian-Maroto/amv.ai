@@ -971,9 +971,35 @@ const PLAN_LIMITS = {
      plumbing and a fallback for records without it - machinery for a smaller
      gain than the one line below. */
   free:  { dayTokens: 20000,    monthTokens: 325000,    rpm: 8 },
-  pro:   { dayTokens: 325000,   monthTokens: 2340000,   rpm: 20 },
-  elite: { dayTokens: 1170000,  monthTokens: 9100000,   rpm: 40 },
-  ultra: { dayTokens: 2860000,  monthTokens: 23400000,  rpm: 80 },
+  /* THESE WERE NUMBERS NOBODY COULD REACH.
+
+     The note above calls the dollar backstop "an anti-abuse floor that normal
+     users never reach". It was not one. Pro advertised 2,340,000 tokens and
+     the backstop stopped the account at about 490,000 - twenty-one percent of
+     what was sold - and Elite and Ultra were no better. Nothing failed: the
+     customer simply ran out, four fifths early, with the pricing page still
+     showing the larger number.
+
+     That is the worst shape a defect can take here, because the two figures
+     are both ours and both published, and the gap is only visible to the
+     person paying. "We advertised 2.34M and cut them off at 490k" is not a
+     sentence to be reading out in a chargeback dispute.
+
+     So the allowance is now what the backstop actually funds, computed at the
+     engine each plan is SOLD on and at no cache hits - the figure that is true
+     whatever the traffic looks like. Rounded DOWN, for the same reason the
+     advertised multiplier used to be: a published allowance is a promise, and
+     a promise wants headroom rather than a number sitting exactly on the line.
+
+     The backstop is finally the thing it claims to be - the token cap binds
+     first now, and only genuine abuse reaches the dollar ceiling.
+
+     Every plan keeps the ratio of its daily cap to its monthly one, so the
+     property the free tier note below is about - a day at the cap must not
+     exhaust the month - holds exactly as it did. */
+  pro:   { dayTokens: 68000,    monthTokens: 490000,    rpm: 20 },
+  elite: { dayTokens: 318000,   monthTokens: 2470000,   rpm: 40 },
+  ultra: { dayTokens: 807000,   monthTokens: 6600000,   rpm: 80 },
 };
 /* The ratio above, named so it is a decision rather than a magic number. If the
    engine line changes again, re-measure with count_tokens rather than guessing. */

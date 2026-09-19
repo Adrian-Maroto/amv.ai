@@ -1196,7 +1196,7 @@ function renderBillingView(targetEl){
     const cfg=load('amv_custom_cfg')||{};
     const price=cfg.price||30;
     customSummary=_customPlanSummary(price);
-    P={name:'Custom',price:price,mult:'',blurb:'Your custom plan - '+customSummary.monthlyTokens.toLocaleString()+' tokens/mo of usage'};
+    P={name:'Custom',price:price,allowance:'',blurb:'Your custom plan - '+customSummary.monthlyTokens.toLocaleString()+' tokens/mo of usage'};
   }
   const since=loadStr('amv_plan_since');
   const sinceDate=since?new Date(parseInt(since,10)):null;
@@ -1289,7 +1289,7 @@ function renderBillingView(targetEl){
            for it, so it is not repeated here. */
         '<dl class="bill-facts">'+
           _bfact('Billing email', escH(email))+
-          (P.mult?_bfact('Usage', escH(P.mult)+' the free allowance'):'')+
+          (P.allowance?_bfact('Usage', escH(P.allowance)+' tokens a month'):'')+
           /* A ROW WHOSE VALUE IS AN APOLOGY IS NOT A ROW.
 
              These two printed "Not recorded on this device" and "Open Manage
@@ -1468,7 +1468,7 @@ function renderBillingView(targetEl){
             const P2 = PLANS[k];
             const jobs = (typeof AUTO_MAX_BY_PLAN !== 'undefined') ? AUTO_MAX_BY_PLAN[k] : null;
             const facts = [
-              P2.mult ? escH(P2.mult) + ' the free allowance' : '',
+              P2.allowance ? escH(P2.allowance) + ' tokens a month' : '',
               (jobs ? jobs + ' scheduled jobs' : '')
             ].filter(Boolean).join(' \u00b7 ');
             /* "Upgrade to Elite", not "Elite". A row naming a plan is a label;
@@ -1741,9 +1741,15 @@ function _bfact(k,v){ return '<div class="bill-fact"><dt>'+escH(k)+'</dt><dd>'+v
    would have allowed - a limit that exists nowhere but here. */
 const PLAN_TIERS={
   free:  { dailyTokenCap:20000,    rpmMax:8,  models:['fast','core'] },
-  pro:   { dailyTokenCap:325000,   rpmMax:20, models:['fast','core','coding'] },
-  elite: { dailyTokenCap:1170000,  rpmMax:40, models:['fast','core','coding','smart'] },
-  ultra: { dailyTokenCap:2860000,  rpmMax:80, models:['fast','core','coding','smart'] },
+  /* Moved with the server's, which is the only reason these numbers exist.
+     The allowances were reset to what the margin backstop actually funds, and
+     a browser guard left on the old figure is the failure the note above
+     names, in its other direction: it would let somebody spend past the point
+     the server stops them, so the stop arrives as a refusal rather than as the
+     limit they were shown. */
+  pro:   { dailyTokenCap:68000,    rpmMax:20, models:['fast','core','coding'] },
+  elite: { dailyTokenCap:318000,   rpmMax:40, models:['fast','core','coding','smart'] },
+  ultra: { dailyTokenCap:807000,   rpmMax:80, models:['fast','core','coding','smart'] },
   /* The server's fallback for a custom plan with no explicit dayTokens is
      Math.round(50000 * TOKENIZER_SCALE) = 65,000. This said 52,000, which is
      the failure the comment above names: a browser guard TIGHTER than the
@@ -2055,7 +2061,7 @@ function openPlanCompare(highlight){
   const isC=p=>p==='custom';
   const rows=[
     ['Price', p=>isC(p)?'From $10':(p==='free'?'$0':'$'+PLANS[p].price+'/mo')],
-    ['Usage', p=>isC(p)?'You choose':(PLANS[p].mult||'1\u00d7')+' the usage'],
+    ['Usage', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' tokens a month')],
     ['AMV Pulse (fast)', p=>'\u2713'],
     ['AMV Core (balanced)', p=>'\u2713'],
     ['AMV Forge (coding)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=1?'\u2713':'-')],

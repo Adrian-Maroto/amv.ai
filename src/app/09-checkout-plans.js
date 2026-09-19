@@ -8,16 +8,16 @@
      entry, so no sensitive data is ever typed into an unsafe field.
    ============================================================ */
 const PLANS={
-  free:{name:'Free',price:0,blurb:'A monthly allowance, enough to explore everything',get mult(){return _multLabel('free');}},
-  pro:{name:'Pro',price:15,blurb:'Every model, autonomous agents, and the app sandbox',get mult(){return _multLabel('pro');}},
-  elite:{name:'Elite',price:75,blurb:'Ship real apps to a live URL, on our most capable engine',get mult(){return _multLabel('elite');}},
-  ultra:{name:'Ultra',price:200,blurb:'Whole codebases, autonomous projects, and a team around them',get mult(){return _multLabel('ultra');}},
+  free:{name:'Free',price:0,blurb:'A monthly allowance, enough to explore everything',get allowance(){return _allowanceLabel('free');}},
+  pro:{name:'Pro',price:15,blurb:'Every model, autonomous agents, and the app sandbox',get allowance(){return _allowanceLabel('pro');}},
+  elite:{name:'Elite',price:75,blurb:'Ship real apps to a live URL, on our most capable engine',get allowance(){return _allowanceLabel('elite');}},
+  ultra:{name:'Ultra',price:200,blurb:'Whole codebases, autonomous projects, and a team around them',get allowance(){return _allowanceLabel('ultra');}},
   /* Priced PER SEAT, so `price` here is the price of one seat and the card that
      sells it multiplies. Every seat adds its own allowance to a shared pool
      rather than dividing a fixed one, which is why adding a teammate is worth
      paying for instead of something to ration. */
-  team:{name:'Teams',price:20,perSeat:true,blurb:'Apex and a full Pro allowance for every person, pooled and shared',mult:''},
-  custom:{name:'Custom',price:0,blurb:'A plan sized exactly to your usage',mult:''},
+  team:{name:'Teams',price:20,perSeat:true,blurb:'Apex and a full Pro allowance for every person, pooled and shared',allowance:''},
+  custom:{name:'Custom',price:0,blurb:'A plan sized exactly to your usage',allowance:''},
 };
 const TEAM_SEAT_MIN=3, TEAM_SEAT_MAX=500;
 const PLAN_RANK={free:0,pro:1,elite:2,ultra:3,custom:2,team:2};
@@ -65,30 +65,33 @@ const AUTO_MAX_BY_PLAN={free:0,pro:5,elite:25,ultra:100};
    lifts both and compares what they answer. */
 const PLAN_RPM={free:8,pro:20,elite:40,ultra:80};
 
-/* THE MULTIPLIER WAS UNDERSELLING BY FORTY PERCENT.
+/* THE MULTIPLE IS GONE, BECAUSE IT STOPPED BEING TRUE.
 
-   The page advertised 5x / 20x / 50x against Free. PLAN_LIMITS.monthTokens
-   delivers 7.2x / 28x / 72x. Every tier over-delivers, so there was never any
-   exposure - the page was simply quoting a number nobody had recomputed since
-   the allowances moved, at the moment somebody decides whether to pay.
+   This advertised "7x / 25x / 70x the free allowance", computed from the token
+   caps. That claim died with the engine change, and not because anything
+   broke: the paid floor now runs an engine costing five times per token what
+   the free one does, so the same money buys a far smaller multiple of tokens.
+   Funded honestly, Pro is about 1.5x Free - and "1x the free allowance" on the
+   card somebody reads before paying is worse than saying nothing.
 
-   Computed from the allowance now, and rounded DOWN to a round number. Down,
-   because an advertised multiplier is a promise: an exact figure would drop
-   visibly the next time the allowances are tuned, while a rounded-down one has
-   headroom built in. 7.2 becomes 7, 28 becomes 25, 72 becomes 70.
+   The multiple was always the weaker claim anyway. It compared token counts
+   across engines of completely different cost, which is a ratio of two things
+   that are not the same thing. What is actually better about a paid plan is
+   WHICH ENGINE it runs, and that is now what the cards say - with the
+   allowance as a real number beside it rather than a ratio to somewhere else.
 
-   Mirrored from the Worker with a test comparing both tables, like the
-   automation count and the throughput limit. */
-const PLAN_MONTH_TOKENS={free:325000,pro:2340000,elite:9100000,ultra:23400000};
-function _usageMultiplier(p){
-  const base=PLAN_MONTH_TOKENS.free, mine=PLAN_MONTH_TOKENS[p];
-  if(!base||!mine) return 0;
-  const raw=mine/base;
-  /* Round down to something a person can hold in their head: whole numbers
-     below ten, multiples of five above it. */
-  return raw<10 ? Math.floor(raw) : Math.floor(raw/5)*5;
+   Mirrored from the Worker, with a test comparing both tables, exactly as
+   before. */
+const PLAN_MONTH_TOKENS={free:325000,pro:490000,elite:2470000,ultra:6600000};
+/* Short enough to sit on a card, and never rounded UP - an advertised
+   allowance is a promise, so 2,470,000 shows as 2.4M rather than 2.5M. */
+function _allowanceLabel(p){
+  const n=PLAN_MONTH_TOKENS[p];
+  if(!n) return '';
+  if(n>=1e6){ const m=Math.floor(n/1e5)/10; return (m%1===0?m.toFixed(0):m.toFixed(1))+'M'; }
+  return Math.floor(n/1000)+'K';
 }
-function _multLabel(p){ const m=_usageMultiplier(p); return m>1 ? m+'\u00d7' : '1\u00d7'; }
+
 function _rpmForPlan(p){
   if(p==='team') return PLAN_RPM.elite;      // a seat carries Elite capability
   if(p==='custom') return PLAN_RPM.elite;    // the tier a Custom plan ranks at
@@ -334,7 +337,7 @@ function openCheckout(plan, customPrice, cycle){
   if(plan==='custom'){
     const cfg=load('amv_custom_cfg')||{}; const price=customPrice||cfg.price||30;
     store('amv_custom_cfg',{price, ts:Date.now()});
-    PLANS.custom.price=price; PLANS.custom.mult=''; PLANS.custom.blurb='Your custom plan - '+_customPlanSummary(price).monthlyTokens.toLocaleString()+' tokens/mo';
+    PLANS.custom.price=price; PLANS.custom.allowance=''; PLANS.custom.blurb='Your custom plan - '+_customPlanSummary(price).monthlyTokens.toLocaleString()+' tokens/mo';
     openPaymentSheet('custom');
     return;
   }
@@ -1310,10 +1313,10 @@ function renderUpgradeView(){
 
       + _upgInheritedHTML(key)
 
-      + ((P.mult || jobs)
+      + ((P.allowance || jobs)
           ? '<div class="upg-figs">'
-            + (P.mult ? '<div class="upg-fig"><b>' + escH(P.mult) + '</b><span>'
-                + escH(T('the free allowance')) + '</span></div>' : '')
+            + (P.allowance ? '<div class="upg-fig"><b>' + escH(P.allowance) + '</b><span>'
+                + escH(T('tokens a month')) + '</span></div>' : '')
             + (jobs ? '<div class="upg-fig"><b>' + jobs + '</b><span>'
                 + escH(T('scheduled jobs running for you')) + '</span></div>' : '')
           + '</div>' : '')

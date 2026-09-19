@@ -42,7 +42,7 @@ mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'enumeration.harness.mjs');
 writeFileSync(harness, src +
   '\nexport { authLogin, authSignup, authGoogle, authResetCode, _passwordTooLong,' +
-  ' _passwordLengthProblem, PASSWORD_MAX, PASSWORD_MIN, DB };\n');
+  ' _passwordProblem, PASSWORD_MAX, PASSWORD_MIN, DB };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const AUD = 'amv-client-id.apps.googleusercontent.com';
@@ -195,8 +195,8 @@ section('A password is a secret, not a workload');
      rule would otherwise be locked out by a rule change - the people least able
      to work out why. */
   ok(W._passwordTooLong('abc') === null, 'a short password is not refused for being short at sign-in');
-  ok(W._passwordLengthProblem('abc') !== null, 'while setting one that short still is');
-  ok(W._passwordLengthProblem('y'.repeat(W.PASSWORD_MAX + 1)) !== null, 'and so is setting one too long');
+  ok(W._passwordProblem('abc') !== null, 'while setting one that short still is');
+  ok(W._passwordProblem('y'.repeat(W.PASSWORD_MAX + 1)) !== null, 'and so is setting one too long');
 }
 
 section('The reset screen no longer says it in the other field');

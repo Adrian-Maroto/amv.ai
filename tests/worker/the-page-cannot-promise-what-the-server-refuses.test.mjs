@@ -166,16 +166,25 @@ section('Throughput is sold as the tier it actually is')
      'the row is computed from the enforced limit, not typed out', true);
 }
 
-section('The usage multiplier is computed, and conservative')
+section('The allowance on the card is the allowance the server funds')
 {
-  /* The page advertised 5x / 20x / 50x against Free while PLAN_LIMITS delivers
-     7.2x / 28x / 72x - conservative on every tier, so no exposure, just a
-     number nobody had recomputed since the allowances moved, quoted at the
-     moment somebody decides whether to pay.
+  /* THIS SECTION USED TO CHECK A MULTIPLE, AND THE MULTIPLE IS GONE.
 
-     Computed from the allowance now and rounded DOWN, because an advertised
-     multiplier is a promise: an exact figure drops visibly the next time the
-     allowances are tuned, a rounded-down one has headroom. */
+     The page advertised "7x / 25x / 70x the free allowance", computed from the
+     token caps and rounded down. That claim did not survive the paid floor
+     moving onto the top engine: it costs five times per token what the free
+     one does, so a Pro plan funded honestly is about 1.5x Free, and the card
+     would have read "1x the free allowance" at the moment somebody decides
+     whether to pay.
+
+     It was the weaker claim in any case - a ratio of token counts across
+     engines of completely different cost is a ratio of two things that are not
+     the same thing. What the cards say now is WHICH ENGINE the plan runs, with
+     the allowance as a real number beside it.
+
+     So what is checked is the number, and the thing that makes a published
+     number dangerous: that it must never be larger than what the server will
+     actually allow, and must never be rounded UP. */
   const code = codeOnly(client);
   const scode = codeOnly(server);
 
@@ -189,7 +198,9 @@ section('The usage multiplier is computed, and conservative')
   ok(JSON.stringify(srv) === JSON.stringify(cli),
      'and the page carries the same numbers', JSON.stringify(srv) + ' vs ' + JSON.stringify(cli));
 
-  /* Run the real function out of the bundle, against the SERVER's numbers. */
+  /* Run the real label function out of the bundle, against the SERVER's
+     numbers - not against the browser's copy, or a drift between the two would
+     be invisible to exactly the check meant to catch it. */
   const grab = (src, name) => {
     const i = src.indexOf('function ' + name + '(');
     let d = 0;
@@ -198,22 +209,27 @@ section('The usage multiplier is computed, and conservative')
     }
     return '';
   };
-  const mult = new Function(
-    (code.match(/const PLAN_MONTH_TOKENS\s*=\s*\{[^}]*\};/) || [''])[0] + '\n'
-    + grab(code, '_usageMultiplier') + '\nreturn _usageMultiplier;')();
+  const label = new Function(
+    'const PLAN_MONTH_TOKENS=' + JSON.stringify(srv) + ';\n'
+    + grab(code, '_allowanceLabel') + '\nreturn _allowanceLabel;')();
 
-  for (const p of ['pro', 'elite', 'ultra']) {
-    const real = srv[p] / srv.free;
-    const shown = mult(p);
-    ok(shown > 1, p + ' advertises a multiplier at all', shown);
-    ok(shown <= real, p + ' never claims more than the allowance delivers',
-       'claims ' + shown + 'x, delivers ' + real.toFixed(1) + 'x');
-    ok(real - shown < 6, 'and does not undersell it into meaninglessness',
-       'claims ' + shown + 'x, delivers ' + real.toFixed(1) + 'x');
+  const asNumber = (t) => /M$/.test(t) ? parseFloat(t) * 1e6 : parseFloat(t) * 1000;
+  for (const p of ['free', 'pro', 'elite', 'ultra']) {
+    const shown = label(p);
+    ok(/^[0-9.]+[KM]$/.test(shown), p + ' shows an allowance at all', shown);
+    /* NEVER UP. A published allowance is a promise, and 2,470,000 shown as
+       2.5M is a promise of thirty thousand tokens that do not exist. */
+    ok(asNumber(shown) <= srv[p],
+       p + ' never shows more than the server allows', shown + ' vs ' + srv[p]);
+    /* And not so conservative it stops describing the plan. */
+    ok(asNumber(shown) >= srv[p] * 0.9,
+       p + ' is not rounded down into a different plan', shown + ' vs ' + srv[p]);
   }
 
-  ok(!/mult:'[0-9]/.test(code),
-     'no plan carries a hand-typed multiplier any more', true);
+  ok(!/_usageMultiplier|_multLabel/.test(code),
+     'nothing computes a usage multiple any more', true);
+  ok(!/the free allowance/.test(code),
+     'and no card still compares itself to Free', true);
 }
 
 section('The browser guard is never tighter than the server')

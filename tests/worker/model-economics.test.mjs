@@ -22,18 +22,43 @@ const harness = join(__dir, '.build', 'econ.harness.mjs');
 writeFileSync(harness, src + '\nexport { ENGINES, RAW_TO_KEY, PLAN_RANK, _resolveEffort };\n');
 const W = await import(harness + '?t=' + Date.now());
 
-/* Published rates per million tokens, as of this change. */
+/* PUBLISHED RATES PER MILLION TOKENS - THE ORACLE, NOT A MIRROR.
+
+   This table is deliberately a SECOND copy, written from the published price
+   list rather than read from the worker, because a check that reads the number
+   it is checking proves nothing. It is what catches a typo in the engine
+   table, and it has now caught two real ones.
+
+   The balanced engine sat here at 3/15 for as long as the worker did. That is
+   the PREVIOUS generation's rate, and it was wrong in both places at once -
+   which is exactly the failure mode a second copy is supposed to prevent and
+   did not, because both were typed from the same memory rather than from the
+   price list. Corrected from the published rates.
+
+   Whoever changes an engine changes this too, from the price list and not from
+   the other file. */
 const RATE = {
   'claude-haiku-4-5-20251001': [1, 5],
-  'claude-sonnet-5':           [3, 15],
+  'claude-haiku-4-5':          [1, 5],
+  'claude-sonnet-5':           [2, 10],
+  'claude-sonnet-4-6':         [3, 15],
   'claude-opus-5':             [5, 25],
   'claude-fable-5':            [10, 50],
+  'claude-fable-5-1':          [10, 50],
 };
 
 section('Every engine is priced at its real rate');
 Object.entries(W.ENGINES).forEach(([key, eng]) => {
   const want = RATE[eng.model];
   ok(!!want, `${key} runs a model with a known published rate`, eng.model);
+  /* GUARDED, BECAUSE THIS SUITE THREW AND TOOK THE RUN WITH IT.
+
+     An engine whose model is not in the table above left `want` undefined and
+     the next line read `want[0]`, which is a TypeError, not a failed
+     assertion. The suite died there - so the engines after it were never
+     checked, and the gate reported a crash rather than the one missing rate.
+     A finding has to be a finding; only a crash can hide the next one. */
+  if (!want) return;
   ok(eng.inCost === want[0], `${key} input cost is right`, eng.inCost + ' vs ' + want[0]);
   ok(eng.outCost === want[1], `${key} output cost is right`, eng.outCost + ' vs ' + want[1]);
 });
@@ -46,11 +71,33 @@ section('The margin backstop now buys the usage the plan actually pays for');
   // A representative turn: 20k cached-miss input, 2k output.
   const perTurn = (20000 / 1e6) * forge.inCost + (2000 / 1e6) * forge.outCost;
   const turnsNow = Math.floor(pro / perTurn);
-  const perTurnOld = (20000 / 1e6) * 15 + (2000 / 1e6) * 75;
-  const turnsBefore = Math.floor(pro / perTurnOld);
-  ok(turnsNow > turnsBefore * 2,
-     'a Pro user gets more than twice the deep-engine turns for the same protected margin',
-     turnsBefore + ' -> ' + turnsNow + ' turns');
+  /* THIS COMPARED AGAINST A RATE THAT WAS NEVER REAL.
+
+     It measured today's turns against 15/75 - the overstatement that was
+     corrected long ago - and asserted the correction had more than doubled
+     them. That was a true statement about one historical change and a
+     meaningless baseline to hold forever: the moment the paid floor moved onto
+     a genuinely dearer engine, the assertion failed while nothing was wrong.
+
+     Worse, it never even ran. The suite threw a TypeError a few lines above on
+     an engine whose model was missing from the rate table, so this assertion
+     was dead and the real finding underneath it - that the advertised
+     allowance and the dollar backstop disagreed by a factor of five - stayed
+     hidden until the crash was fixed.
+
+     What is worth pinning is the thing that was actually broken: the plan's
+     own allowance has to be spendable inside the margin the plan protects. If
+     the backstop binds first, the customer is cut off before the number they
+     were sold, which is what was happening. */
+  const monthTokens = 490000;                     // Pro's published allowance
+  const blended = (10 / 11) * forge.inCost + (1 / 11) * forge.outCost;
+  const costOfFullAllowance = (monthTokens / 1e6) * blended;
+  ok(costOfFullAllowance <= pro,
+     'a Pro user can spend the whole allowance they were sold without the backstop stopping them',
+     '$' + costOfFullAllowance.toFixed(2) + ' of compute vs $' + pro.toFixed(2) + ' protected');
+  ok(turnsNow >= 20,
+     'and that allowance is a real number of deep-engine turns, not a token gesture',
+     turnsNow + ' turns of 20k in / 2k out');
   /* THE PROPERTY, NOT THE SPELLING. This matched the literal text of the
      arithmetic while it lived inline in the chat handler. Moving it into one
      shared helper - which is what made the same ceiling bind image, video, SMS
