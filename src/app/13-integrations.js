@@ -717,6 +717,11 @@ function _integrationsCatalogHTML(){
               desc:'Bills, renewals, fines, official letters and school dates - watched and dated for your country, not somebody else\u2019s.',
               auto:false,connected:false,use:'everyday',useLabel:'See yours',
               icon:'\uD83C\uDFE0',bg:'rgba(150,170,110,.14)'})+
+      /* Every calendar that is not Google or Outlook, which is most of them. */
+      intRow({id:'calfeeds',name:'Any other calendar',
+              desc:'iCloud, Fastmail, Nextcloud, Yandex, Zoho, a university timetable - anything that publishes a link. Read-only: AMV sees your week and can never change it.',
+              auto:false,connected:false,use:'calfeeds',useLabel:'Connect',
+              icon:'\uD83D\uDCC5',bg:'rgba(120,140,200,.14)'})+
       intRow({id:'coverage',name:'AMV around the world',
               desc:'Every country AMV works in, and what it can do there - mail, job boards, and where it can apply for you.',
               auto:false,connected:false,use:'coverage',useLabel:'See coverage',
@@ -870,6 +875,7 @@ function _wireIntegrationCatalog(root){
   }));
   root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intUse==='jobs' && typeof openJobBoards==='function') return openJobBoards();
+    if(btn.dataset.intUse==='calfeeds' && typeof openCalendarFeeds==='function') return openCalendarFeeds();
     if(btn.dataset.intUse==='coverage' && typeof openCoverage==='function') return openCoverage();
     if(btn.dataset.intUse==='everyday' && typeof openEveryday==='function') return openEveryday();
     setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));

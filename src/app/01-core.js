@@ -1115,6 +1115,13 @@ const AMV_API = {
      what the subscription IS afterwards - not with what was asked - so the
      screen can only ever show a state that was read back. */
   async autoRenew(on){ const r=await this._fetch('/v1/stripe/auto-renew',{method:'POST',body:JSON.stringify({on:!!on})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not change auto-renew.'),{code:d.code}); return d; },
+  /* Calendars that are not Google or Outlook - a subscription, not a login.
+     The link is never returned by the server after it is stored, so nothing
+     here ever holds one. */
+  async calFeeds(){ const r=await this._fetch('/v1/cal/feeds',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read your calendars.'),{code:d.code}); return d; },
+  async calFeedAdd(url,label){ const r=await this._fetch('/v1/cal/feeds/add',{method:'POST',body:JSON.stringify({url,label})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not add that calendar.'),{code:d.code}); return d; },
+  async calFeedRemove(id){ const r=await this._fetch('/v1/cal/feeds/remove',{method:'POST',body:JSON.stringify({id})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not remove that calendar.'),{code:d.code}); return d; },
+  async calEvents(days){ const r=await this._fetch('/v1/cal/events',{method:'POST',body:JSON.stringify({days:days||7})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read your week.'),{code:d.code}); return d; },
   async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };
 window.AMV_API = AMV_API;

@@ -9908,6 +9908,13 @@ const BACKUP_PREFIXES = [
    exist - which is also why erasing the creator takes them with it. */
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
+  /* A calendar subscription is a sealed URL, and whoever holds it can read the
+     calendar - so it is the same class of thing as the bank token above it and
+     goes the same way. There is a second reason too: it is sealed with the
+     DEPLOYMENT's key, so a restore anywhere else brings back entries nothing
+     can open, which is worse than bringing back nothing. Re-subscribing is
+     thirty seconds of clicking; a credential in a backup file is forever. */
+  'cal:',
   /* A cached page of the public connector directory. Nobody's data - it is the
      same answer for everyone and it rebuilds itself from the registry within
      six hours. Putting it in a backup would bulk up the file with a copy of
@@ -12525,6 +12532,12 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
   'ingest',
   'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',
+  /* The calendar subscriptions. Caught by the erasure roster on the run that
+     added them, which is exactly what that check is for - a new per-person
+     record is the kind of thing that gets written first and remembered second,
+     and this one is a live link to somebody's calendar. Left off, deleting an
+     account would keep a working view of their week. */
+  'cal',
   /* AMV-SP-02: the Google grant. It was erased - by a hand-written delete in
      authDeleteAccount, which also revokes the token at Google first - and it
      was never on this list, which is the shared inventory the export walks and

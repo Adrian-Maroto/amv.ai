@@ -34,6 +34,12 @@ const ACT_LABEL = {
      key to keep access after a password change, or attaches the account to a
      "family" they control. Each of those is marked. */
   finance_linked:         ['A bank account was linked', 'warn'],
+  /* Toned, because a subscription is a live link to somebody's calendar: it
+     reads where they are and who they are with, and an attacker adding one is
+     surveillance that outlives the session. Removing one is not, so it is
+     untoned - a row nobody needs to worry about should not look like one. */
+  calendar_subscribed:    ['A calendar was connected', 'warn'],
+  calendar_unsubscribed:  ['A calendar was disconnected', ''],
   finance_unlinked:       ['A bank account was disconnected', 'warn'],
   api_key_created:        ['An API key was created', 'warn'],
   api_key_revoked:        ['An API key was revoked', ''],

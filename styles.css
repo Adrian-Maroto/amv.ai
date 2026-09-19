@@ -14496,3 +14496,55 @@ p.bill-leave-s{
          font-size:var(--t-sm); line-height:1.6; color:var(--mu); }
 @media(hover:none){ .ab-row{ min-height:44px; } .ab-more{ min-height:44px; } }
 @media(prefers-reduced-motion:reduce){ .ab-row{ transition:none; } }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYER A231 - connecting a calendar that has no connect button
+   ───────────────────────────────────────────────────────────────────────────
+   Google and Outlook get a button because they have a flow to send somebody
+   through. Every other calendar publishes a link, and the only hard part is
+   FINDING it - so this screen is mostly instructions, and the layout says so:
+   the connected list and the one input sit at the top, and the where-to-click
+   help takes the rest of the room.
+
+   The provider entries are <details> rather than a grid of logos. Somebody
+   needs exactly one of them and the other seven are noise, so they stay shut
+   until asked - and a closed row costs nothing to scan past.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.cf-intro{ margin:0 0 var(--sp-4); max-width:60ch; font-size:var(--t-sm); line-height:1.55; }
+.cf-list{ display:grid; gap:var(--sp-2); margin-bottom:var(--sp-4); }
+.cf-none{ margin:0; font-size:var(--t-sm); }
+.cf-row{
+  display:flex; align-items:center; gap:var(--sp-3);
+  padding:var(--sp-3) var(--sp-4);
+  background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-md);
+}
+.cf-b{ flex:1 1 auto; min-width:0; }
+.cf-n{ font-size:var(--t-md); font-weight:600; color:var(--tx);
+       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* The host, not the link - the link is a secret and never comes back from the
+   server. This is only here so two calendars can be told apart. */
+.cf-h{ font-size:var(--t-xs); color:var(--mu); font-family:var(--mn);
+       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cf-x{
+  flex:0 0 auto; font:inherit; font-size:var(--t-sm);
+  color:var(--mu); background:none; border:1px solid var(--bd);
+  border-radius:var(--r-sm); padding:var(--sp-1) var(--sp-3); cursor:pointer;
+}
+.cf-x:hover{ color:var(--red); border-color:var(--red); }
+.cf-x:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.cf-add{ margin-top:var(--sp-2); }
+
+.cf-help{ margin-top:var(--sp-6); border-top:1px solid var(--bd); padding-top:var(--sp-4); }
+.cf-help-t{ font-size:var(--t-xs); font-weight:700; letter-spacing:.06em;
+            text-transform:uppercase; color:var(--mu); margin-bottom:var(--sp-2); }
+.cf-p{ border-bottom:1px solid var(--bd); }
+.cf-p > summary{
+  list-style:none; cursor:pointer; padding:var(--sp-3) 0;
+  font-size:var(--t-sm); font-weight:600; color:var(--tx);
+}
+.cf-p > summary::-webkit-details-marker{ display:none; }
+.cf-p > summary::after{ content:'+'; float:right; color:var(--mu); font-weight:400; }
+.cf-p[open] > summary::after{ content:'\2212'; }
+.cf-p > p{ margin:0 0 var(--sp-3); max-width:62ch;
+           font-size:var(--t-sm); line-height:1.6; color:var(--mu); }
+@media(hover:none){ .cf-x{ min-height:44px; } .cf-p > summary{ min-height:44px; } }
