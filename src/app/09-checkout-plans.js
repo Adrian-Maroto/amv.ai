@@ -306,8 +306,24 @@ try{ window._resumePendingUpgrade=_resumePendingUpgrade;
      window._needsAccountToPay=_needsAccountToPay;
      window._takePendingUpgrade=_takePendingUpgrade; }catch(e){}
 
-function openCheckout(plan, customPrice){
-  try{ track('upgrade_checkout_started', { plan }); }catch(e){}
+/* THE BILLING CYCLE TRAVELS WITH THE PURCHASE, NOT BESIDE IT.
+
+   The plan page offers Monthly or Yearly. Everything between that choice and
+   the charge - this function, the payment sheet, the method panel, the call
+   that asks the server for a checkout session - has to carry it, because the
+   only thing that decides what somebody is actually billed is the price id the
+   SERVER picks from `cycle`. A toggle whose value stops one function short of
+   that call is a control that changes nothing, which is worse than not
+   offering the choice at all.
+
+   Anything that is not the literal 'year' is monthly. The server does the same
+   normalisation, so a value mangled anywhere in between can only ever fall
+   back to the cheaper, expected charge. */
+function _payCycle(c){ return String(c || '') === 'year' ? 'year' : 'month'; }
+
+function openCheckout(plan, customPrice, cycle){
+  cycle = _payCycle(cycle);
+  try{ track('upgrade_checkout_started', { plan, cycle }); }catch(e){}
   if(_needsAccountToPay(plan)){
     _rememberUpgrade(plan);
     try{ openAuth('signup'); }catch(e){}
@@ -331,26 +347,41 @@ function openCheckout(plan, customPrice){
     return;
   }
   const p=PLANS[plan]; if(!p) return;
-  openPaymentSheet(plan);
+  openPaymentSheet(plan, cycle);
 }
 
-function openPaymentSheet(plan){
+function openPaymentSheet(plan, cycle){
+  cycle = _payCycle(cycle);
   const p=PLANS[plan]||PLANS.pro;
+  const yearly = cycle === 'year';
   const r=$('ovr'); if(!r) return;
   r.innerHTML='<div class="pay-ov" id="pay-bg"><div class="pay-modal">'+
     '<div class="pay-head"><div><div class="pay-title">Upgrade to '+p.name+'</div><div class="pay-sub">'+(p.blurb||'')+'</div></div><button class="dna-x" id="pay-x" aria-label="Close checkout">✕</button></div>'+
-    '<div class="pay-amount"><span class="pay-amt">$'+p.price+'</span><span class="pay-per">/month</span></div>'+
+    /* NO YEARLY FIGURE IS INVENTED HERE EITHER. The monthly price is AMV's to
+       show; the yearly one is a price object the operator created in Stripe,
+       and multiplying by twelve would state a number nobody agreed to and that
+       the checkout page would then contradict. So the sheet names the cycle
+       and lets the processor state the amount. */
+    '<div class="pay-amount">'+(yearly
+      ? '<span class="pay-amt">'+escH(T('Yearly'))+'</span><span class="pay-per">'+escH(T('total shown at checkout'))+'</span>'
+      : '<span class="pay-amt">$'+p.price+'</span><span class="pay-per">/month</span>')+'</div>'+
     '<div class="pay-methods-tabs" id="pay-tabs">'+
       '<button class="pay-tab on" data-pt="card">💳 Card</button>'+
       '<button class="pay-tab" data-pt="stripe">Stripe</button>'+
-      '<button class="pay-tab" data-pt="paypal">PayPal / Venmo</button>'+
+      /* PAYPAL IS NOT OFFERED FOR A YEARLY PURCHASE, BECAUSE IT CANNOT DO ONE.
+         A PayPal subscription is its own plan id on PayPal's side and AMV has
+         one of those per plan - the monthly one. Leaving the tab up would let
+         somebody who pressed Yearly set up a monthly billing agreement while
+         the sheet above it said Yearly. Better to offer one honest method than
+         two where one lies. */
+      (yearly ? '' : '<button class="pay-tab" data-pt="paypal">PayPal / Venmo</button>')+
     '</div>'+
     '<div class="pay-body" id="pay-body"></div>'+
     '<div class="pay-secure"><span class="pay-lock">🔒</span> Encrypted &amp; secure · PCI-DSS Level 1 processing</div>'+
     '</div></div>';
   onBackdrop($('pay-bg'),closePaySheet); on($('pay-x'),'click',closePaySheet);
-  $('pay-tabs').querySelectorAll('.pay-tab').forEach(t=>on(t,'click',()=>{ $('pay-tabs').querySelectorAll('.pay-tab').forEach(x=>x.classList.toggle('on',x===t)); _payRenderMethod(t.dataset.pt,plan); }));
-  _payRenderMethod('card',plan);
+  $('pay-tabs').querySelectorAll('.pay-tab').forEach(t=>on(t,'click',()=>{ $('pay-tabs').querySelectorAll('.pay-tab').forEach(x=>x.classList.toggle('on',x===t)); _payRenderMethod(t.dataset.pt,plan,cycle); }));
+  _payRenderMethod('card',plan,cycle);
 }
 function closePaySheet(){ const r=$('ovr'); if(r) r.innerHTML=''; }
 
@@ -403,13 +434,23 @@ function _payNotConnected(err, host){
   return true;
 }
 try{ window._paySetupHTML=_paySetupHTML; window._payNotConnected=_payNotConnected; }catch(e){}
-function _payRenderMethod(method,plan){
+function _payRenderMethod(method,plan,cycle){
+  cycle = _payCycle(cycle);
   const body=$('pay-body'); if(!body) return;
   const price=PLANS[plan].price;
 
   // ---- PAYPAL / VENMO - opens PayPal/Venmo externally ----
   if(method==='paypal'){
     const liveBackend=window.AMV_API&&AMV_API.live;
+    /* The tab is not drawn for a yearly purchase; this is the second lock, for
+       any caller that reaches the method by name. Nothing is offered rather
+       than a monthly agreement dressed as a yearly one. */
+    if(cycle === 'year'){
+      body.innerHTML = _paySetupHTML(
+        'Yearly billing goes through card checkout',
+        'PayPal and Venmo set up a monthly agreement on this deployment, so they cannot take a yearly payment. Choose Card or Stripe above, or switch back to Monthly.');
+      return;
+    }
     if(liveBackend){
       // Real recurring subscription - opens PayPal's approval page externally.
       body.innerHTML='<div class="pay-wallet">'+
@@ -444,7 +485,10 @@ function _payRenderMethod(method,plan){
 
   // ---- STRIPE - opens Stripe checkout externally (real subscription via backend) ----
   if(method==='stripe'){
-    const link=_stripeLink(plan);
+    /* A hosted Payment Link is ONE price object, and AMV only ever holds the
+       monthly one. So for a yearly purchase there is no link - only the
+       server-side session, which is told the cycle. */
+    const link=(cycle === 'year') ? '' : _stripeLink(plan);
     const liveBackend=window.AMV_API&&AMV_API.live;
     body.innerHTML='<div class="pay-stripe-cta">'+
       '<div class="pay-brandmark stripe">stripe</div>'+
@@ -457,7 +501,7 @@ function _payRenderMethod(method,plan){
       if(liveBackend){
         const pre=_preopenPay();
         if(sb){ sb.disabled=true; sb.textContent='Opening…'; }
-        try{ const u=await AMV_API.stripeCheckout(plan, (S.user&&S.user.email)||''); _openExternalPay(u,plan,'stripe',pre); }
+        try{ const u=await AMV_API.stripeCheckout(plan, (S.user&&S.user.email)||'', undefined, cycle); _openExternalPay(u,plan,'stripe',pre); }
         catch(e){ _closePay(pre); if(!_payNotConnected(e)) toast('Stripe could not start: '+(e.message||'try again'),'error',4500); }
         finally{ if(sb){ sb.disabled=false; sb.textContent='Pay with Stripe →'; } }
         return;
@@ -482,15 +526,20 @@ function _payRenderMethod(method,plan){
      all, and then said "You're now on Pro!". _payCard, forty lines down, has
      always refused to do exactly that: "No processor connected - do NOT
      pretend to charge." The rule is the same here. */
-  if(pk && liveBackend){
+  /* NOT FOR A YEARLY PURCHASE. Elements tokenises a card and hands it to
+     /v1/subscribe, which knows one price per plan - the monthly one. Sending a
+     yearly buyer down this path would charge them a month and tell them it was
+     a year. The hosted checkout below takes the cycle, so yearly falls through
+     to it. */
+  if(pk && liveBackend && cycle !== 'year'){
     body.innerHTML='<div id="stripe-card-element" class="pay-stripe-el"></div><div id="stripe-card-errors" class="pay-err"></div>'+
       '<button class="btn bp pay-submit" id="pay-submit">Pay $'+price+' / month</button>';
     _mountStripe(pk,plan);
     return;
   }
   // Next best: route card payment through the backend's Stripe Checkout (real, secure).
-  if(liveBackend || _stripeLink(plan)){
-    const link=_stripeLink(plan);
+  if(liveBackend || (cycle !== 'year' && _stripeLink(plan))){
+    const link=(cycle === 'year') ? '' : _stripeLink(plan);
     body.innerHTML='<div class="pay-stripe-cta">'+
       '<div class="pay-card-ic">💳</div>'+
       '<button class="btn bp pay-submit" id="pay-card-go">Pay by card →</button>'+
@@ -498,7 +547,7 @@ function _payRenderMethod(method,plan){
       '<p class="pay-note">Opens a secure card checkout. Your plan unlocks once payment is confirmed.</p></div>';
     on($('pay-card-go'),'click',async ()=>{
       const sb=$('pay-card-go');
-      if(liveBackend){ const pre=_preopenPay(); if(sb){sb.disabled=true;sb.textContent='Opening…';} try{ const u=await AMV_API.stripeCheckout(plan,(S.user&&S.user.email)||''); _openExternalPay(u,plan,'card',pre); }catch(e){ _closePay(pre); if(!_payNotConnected(e)) toast('Card payment could not start: '+(e.message||'try again'),'error',4500);} finally{ if(sb){sb.disabled=false;sb.textContent='Pay by card →';} } return; }
+      if(liveBackend){ const pre=_preopenPay(); if(sb){sb.disabled=true;sb.textContent='Opening…';} try{ const u=await AMV_API.stripeCheckout(plan,(S.user&&S.user.email)||'', undefined, cycle); _openExternalPay(u,plan,'card',pre); }catch(e){ _closePay(pre); if(!_payNotConnected(e)) toast('Card payment could not start: '+(e.message||'try again'),'error',4500);} finally{ if(sb){sb.disabled=false;sb.textContent='Pay by card →';} } return; }
       if(link){ _openExternalPay(link,plan,'card'); }
     });
     return;
@@ -512,7 +561,7 @@ function _payRenderMethod(method,plan){
     'Secure checkout is not connected yet',
     'Card details are always entered on the payment provider’s own secure page - AMV never handles or stores card numbers. Connect Stripe in Settings → Platform and checkout turns on immediately.',
     'pay-card', 'Open secure checkout');
-  on($('pay-card'),'click',()=>_payCard(plan));
+  on($('pay-card'),'click',()=>_payCard(plan,cycle));
 }
 
 /* ---------- Apple Pay via external secure checkout ----------
@@ -615,7 +664,8 @@ function _payPalNoServer(plan){
    the card is entered on THEIR page. AMV only ever learns that a payment
    succeeded - which is also what makes chargeback defence possible, because
    the processor holds the authentication record (3-D Secure). */
-async function _payCard(plan){
+async function _payCard(plan, cycle){
+  cycle = _payCycle(cycle);
   const sb=$('pay-card');
   const reset=()=>{ if(sb){sb.disabled=false;sb.textContent='Pay $'+PLANS[plan].price+' / month';} };
   if(sb){ sb.disabled=true; sb.textContent='Opening secure checkout…'; }
@@ -628,7 +678,7 @@ async function _payCard(plan){
   }
   try{
     const email=(S.user&&S.user.email)||'';
-    const url=safeUrl(await AMV_API.stripeCheckout(plan, email));
+    const url=safeUrl(await AMV_API.stripeCheckout(plan, email, undefined, cycle));
     if(!url) throw new Error('no checkout url');
     // The card is entered on the processor's page, never here.
     location.href=url;
@@ -1082,9 +1132,13 @@ let _upgradeFor = '';
    The origin is remembered and the back button is LABELLED with it, so the
    control says where it goes rather than guessing. */
 let _upgradeFrom = 'billing';
+/* Reset every time the page opens, below - a cycle left over from a plan
+   somebody looked at and did not buy must not decide the next purchase. */
+let _upgradeCycle = 'month';
 function openUpgrade(key, from){
   if(!PLANS[key] || key === 'free') return;
   _upgradeFor = key;
+  _upgradeCycle = 'month';
   /* The tab they are leaving, unless a caller names one. Never 'upgrade'
      itself: pressing a plan while already on a plan page would otherwise make
      back a loop with no way out. */
@@ -1171,6 +1225,25 @@ function renderUpgradeView(){
         + '<p class="upg-anchor">' + pitch.anchor + '</p>'
         + '<div class="upg-price"><span class="upg-cur">$</span>' + P.price
           + '<span class="upg-per">/' + escH(T('month')) + '</span></div>'
+        /* MONTHLY OR YEARLY, AND NO NUMBER INVENTED FOR THE SECOND ONE.
+
+           AMV does not compute a yearly amount: the yearly price is a second
+           price object the operator created in Stripe, and whatever discount it
+           carries is theirs. So this offers the CHOICE and lets checkout state
+           the figure - which is also the only way the page and the charge
+           cannot drift apart.
+
+           Drawn only where it works. `_yearlyAvailable` is answered by public
+           config listing the plans that have a yearly price, so a deployment
+           selling monthly only shows nothing here rather than a cheaper-looking
+           option that is refused at the till. */
+        + (_yearlyAvailable(key)
+            ? '<div class="upg-cycle" role="group" aria-label="' + escH(T('How often you are billed')) + '">'
+              + '<button type="button" class="upg-cyc on" data-cyc="month" aria-pressed="true">' + escH(T('Monthly')) + '</button>'
+              + '<button type="button" class="upg-cyc" data-cyc="year" aria-pressed="false">' + escH(T('Yearly')) + '</button>'
+              + '<span class="upg-cyc-n">' + escH(T('The yearly price is shown at checkout')) + '</span>'
+            + '</div>'
+            : '')
         + '<p class="upg-per-note">' + escH(T('Cancel anytime. Changes are prorated, so you only pay the difference.')) + '</p>'
       + '</div>'
 
@@ -1198,6 +1271,17 @@ function renderUpgradeView(){
     + '</div></div>';
 
   on($('upg-back'), 'click', closeUpgrade);
+  /* The chosen cycle lives on the page, not in storage: it is a decision about
+     the purchase being made right now, and carrying it into the next visit
+     would quietly change what somebody is buying. */
+  vc.querySelectorAll('[data-cyc]').forEach(b => on(b, 'click', () => {
+    _upgradeCycle = b.dataset.cyc === 'year' ? 'year' : 'month';
+    vc.querySelectorAll('[data-cyc]').forEach(x => {
+      const on_ = x.dataset.cyc === _upgradeCycle;
+      x.classList.toggle('on', on_);
+      x.setAttribute('aria-pressed', on_ ? 'true' : 'false');
+    });
+  }));
   /* The existing checkout, not a second one. Whatever the pricing page does to
      start a payment is what this button does - a parallel path to money is a
      parallel path to getting money wrong. */
@@ -1208,9 +1292,14 @@ function renderUpgradeView(){
        here rather than calling one of them unconditionally is the difference
        between this button working and this button working most of the time. */
     try{
-      const direct = (key === 'pro' && S.sp) || (key === 'elite' && S.se);
+      /* A configured payment link is ONE price object - the monthly one. It
+         cannot be told to bill by the year, so when somebody has asked for
+         yearly it is not the path, and the server-side checkout that reads the
+         cycle is. Taking the link anyway would charge a month against a button
+         that said Yearly. */
+      const direct = ((key === 'pro' && S.sp) || (key === 'elite' && S.se)) && _upgradeCycle !== 'year';
       if(direct && typeof _openPlanLink === 'function') return _openPlanLink(key);
-      if(typeof openCheckout === 'function') return openCheckout(key);
+      if(typeof openCheckout === 'function') return openCheckout(key, undefined, _upgradeCycle);
     }catch(e){}
     try{ setTab('plans'); }catch(e){}
   });

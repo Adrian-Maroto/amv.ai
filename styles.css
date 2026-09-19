@@ -14275,3 +14275,62 @@ p.bill-leave-s{
   .dvq-now, .dvq-x{ min-height:44px; min-width:44px;
     display:inline-flex; align-items:center; justify-content:center; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LAYER A227 - monthly or yearly, before the money moves
+   ───────────────────────────────────────────────────────────────────────────
+   Two buttons under the price on a plan's page. It is a SEGMENTED control and
+   not a pair of ordinary buttons, because the two are mutually exclusive and
+   one of them is always already chosen - a shape somebody reads in a glance
+   without having to work out whether pressing one turns the other off.
+
+   Deliberately quiet. It sits directly beneath a 56px price and above the
+   argument for the plan; the loudest thing in that column has to stay the
+   price. The selected side gets the raised surface and the full-contrast text,
+   the other keeps muted text on the track, which is the whole difference.
+
+   The note underneath is the honest part and is why the control does not shout
+   a discount: AMV does not know the yearly figure - the operator set it in
+   Stripe - so the page says where the number comes from instead of inventing
+   one. It sits on its own line inside the group so it is announced with the
+   choice rather than after it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.upg-cycle{
+  display:flex; flex-wrap:wrap; justify-content:center; align-items:center;
+  gap:var(--sp-1);
+  margin:var(--sp-4) auto 0;
+  padding:var(--sp-1);
+  width:fit-content; max-width:100%;
+  background:var(--s2); border:1px solid var(--bd);
+  border-radius:var(--r-pill);
+}
+.upg-cyc{
+  appearance:none; -webkit-appearance:none;
+  font:inherit; font-size:var(--t-sm); font-weight:600;
+  color:var(--mu); background:none; border:0; cursor:pointer;
+  padding:var(--sp-2) var(--sp-5);
+  border-radius:var(--r-pill);
+  transition:background var(--ease-soft, .18s ease), color var(--ease-soft, .18s ease);
+}
+.upg-cyc:hover{ color:var(--tx); }
+.upg-cyc.on{
+  color:var(--tx); background:var(--s4);
+  box-shadow:var(--sh-sm);
+}
+.upg-cyc:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+/* The note breaks to its own row rather than stretching the control: the two
+   choices stay side by side at every width, which is what makes the shape
+   legible. */
+.upg-cyc-n{
+  flex:1 0 100%;
+  text-align:center;
+  font-size:var(--t-xs); color:var(--mu);
+  padding:var(--sp-1) var(--sp-3) var(--sp-2);
+}
+/* A control on a page that takes money has to be hittable with a thumb. */
+@media(hover:none){
+  .upg-cyc{ min-height:44px; display:inline-flex; align-items:center; }
+}
+@media(prefers-reduced-motion:reduce){
+  .upg-cyc{ transition:none; }
+}

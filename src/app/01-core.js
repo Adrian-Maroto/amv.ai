@@ -379,6 +379,14 @@ const _PUBLIC_CONFIG_MAP = {
    Nothing recorded the difference, so the honest message could not be written
    even though everything needed to write it was known at the time. */
 let _publicConfigFail = '';
+/* Plans this deployment has a yearly price for. Empty until public config is
+   read, and empty forever on a deployment that sells monthly only - which is
+   the state every deployment starts in. */
+let _YEARLY_PLANS = [];
+function _yearlyAvailable(plan){
+  try{ return _YEARLY_PLANS.indexOf(String(plan)) >= 0; }catch(e){ return false; }
+}
+try{ window._yearlyAvailable=_yearlyAvailable; }catch(e){}
 function configUnreachable(){ return _publicConfigFail; }
 try{ window.configUnreachable=configUnreachable; }catch(e){}
 let _publicConfigDone=false, _publicConfigInFlight=false;
@@ -403,6 +411,15 @@ async function _loadPublicConfig(){
       let have=''; try{ have=loadStr(key)||''; }catch(e){}
       if(!have){ try{ saveStr(key, val); }catch(e){} }
     });
+    /* WHICH PLANS THIS DEPLOYMENT SELLS BY THE YEAR.
+
+       Not a secret and not stored: a list of plan NAMES, kept in memory for as
+       long as the page is open. It decides whether the monthly/yearly choice is
+       drawn at all - a toggle that leads to "yearly is not switched on" is a
+       toggle that should not have been there, and offering a cheaper-looking
+       option that cannot be bought is the worst version of that. */
+    try{ _YEARLY_PLANS = Array.isArray(d.yearlyPlans) ? d.yearlyPlans.slice(0,8).map(String) : []; }catch(e){}
+
     /* Google's library is initialised at load with whatever id existed then,
        which was nothing on a first visit. Re-run it now one has arrived. */
     try{ if(typeof initGAuth==='function') initGAuth(); }catch(e){}
@@ -989,9 +1006,12 @@ const AMV_API = {
     }
     return d;
   },
-  async stripeCheckout(plan,email,seats){
+  /* `cycle` is 'year' or nothing. It picks between prices the operator
+     configured and can never name an amount - the server treats anything that
+     is not exactly "year" as a month. */
+  async stripeCheckout(plan,email,seats,cycle){
     const d=await this._withAge(async()=>{
-      const r=await this._fetch('/v1/stripe/checkout',{method:'POST',body:JSON.stringify({plan,email,seats})});
+      const r=await this._fetch('/v1/stripe/checkout',{method:'POST',body:JSON.stringify({plan,email,seats,cycle})});
       const j=await r.json(); j._ok=r.ok; return j;
     });
     if(!d._ok||!d.url){ const e=new Error(d.error||'checkout failed'); e.code=d.code; throw e; }
