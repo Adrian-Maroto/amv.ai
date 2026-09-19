@@ -933,6 +933,30 @@ async function scan(env, kind, limit, what) {
 }
 
 // Per-plan limits (TUNE THESE to protect margin). Tokens/day, tokens/month.
+/* ── MESSAGES, WHICH IS THE UNIT ANYBODY ACTUALLY COMPARES ────────────────
+   Nobody shopping for this counts tokens. They count messages, because that is
+   what every product they might buy instead publishes, and a token figure is
+   not comparable to any of them.
+
+   THE CAPS ARE DELIBERATELY UNREACHABLE BY A PERSON, and that is what makes
+   them honest rather than a bluff. A hundred thousand messages in a month is
+   one every 8.6 seconds, eight hours a day, every day, without stopping. No
+   human does that, so no human meets this limit - which is the point. What
+   stops the business losing money is not a small number here; it is the
+   automation detection and the per-minute throughput limit that already exist,
+   plus the shape of the distribution: a typical account sends about four
+   hundred messages a month, and break-even on the cheapest paid plan is around
+   two and a half thousand.
+
+   So the cap is set where only a script can reach it, and a script reaching it
+   is an abuse question rather than a billing one.
+
+   Message count is therefore NOT what separates the tiers, because a number
+   nobody reaches cannot separate anything. What separates them is which engine
+   they run, how fast they may run it, and what they unlock. That is also the
+   honest story: the difference somebody is paying for is the quality of the
+   answer, not permission to ask more often.
+   ───────────────────────────────────────────────────────────────────────── */
 const PLAN_LIMITS = {
   // Token allowances per plan. These are sized to be GENEROUS for real usage
   // (a heavy day of chatting/coding is well under the daily cap) while keeping a
@@ -970,7 +994,7 @@ const PLAN_LIMITS = {
      is on the account record but not on the request path, so that needs new
      plumbing and a fallback for records without it - machinery for a smaller
      gain than the one line below. */
-  free:  { dayTokens: 20000,    monthTokens: 325000,    rpm: 8 },
+  free:  { dayTokens: 20000,    monthTokens: 325000,    rpm: 8,   monthMessages: 3000 },
   /* WHAT THESE ARE MEASURED AGAINST, WRITTEN DOWN THIS TIME.
 
      The note above calls the dollar backstop a floor "normal users never
@@ -998,9 +1022,9 @@ const PLAN_LIMITS = {
      running the top engine for every single turn - it is meant to. That is not
      a customer being short-changed; it is the anti-abuse floor doing the thing
      it exists for. */
-  pro:   { dayTokens: 325000,   monthTokens: 2340000,   rpm: 20 },
-  elite: { dayTokens: 1170000,  monthTokens: 9100000,   rpm: 40 },
-  ultra: { dayTokens: 2860000,  monthTokens: 23400000,  rpm: 80 },
+  pro:   { dayTokens: 325000,   monthTokens: 2340000,   rpm: 20,  monthMessages: 100000 },
+  elite: { dayTokens: 1170000,  monthTokens: 9100000,   rpm: 40,  monthMessages: 300000 },
+  ultra: { dayTokens: 2860000,  monthTokens: 23400000,  rpm: 80,  monthMessages: 1000000 },
 };
 /* The ratio above, named so it is a decision rather than a magic number. If the
    engine line changes again, re-measure with count_tokens rather than guessing. */
@@ -14446,6 +14470,11 @@ function _baseLimits(user) {
       dayTokens: c.dayTokens || Math.round(50000 * TOKENIZER_SCALE),
       monthTokens,                              // HARD CAP - the profit guarantee
       rpm: c.rpm || 16,
+      /* A custom plan sets its own budget, so its message cap follows that
+         budget rather than a tier's. Without a number here the message counter
+         would have no ceiling to check and the cap would simply not apply -
+         which is the quiet way a limit stops existing. */
+      monthMessages: c.monthMessages || PLAN_LIMITS.pro.monthMessages,
       allModels: true,
     };
   }
@@ -14931,6 +14960,37 @@ async function aiProxy(request, env, ctx) {
                 { 'Retry-After': _retryAfterUntil(resetAt) });
   }
 
+  /* AND THE MESSAGE, COUNTED WHERE THE TOKENS ARE COUNTED.
+
+     Messages are what the plan is sold in, so they are reserved the same way
+     and under the same refund discipline - booked before the model runs,
+     given back by refundReservation if the call never happens. Counting them
+     after a success instead would undercount every turn that failed halfway,
+     which is the direction that costs the operator rather than the customer.
+
+     Keyed on the billing SUBJECT and the billing PERIOD, exactly as the tokens
+     are: a team shares one plan so it shares one message allowance, and the
+     period is the one the customer is billed on rather than the calendar
+     month. A separate key from `usg:` so nothing already stored changes
+     meaning. */
+  const msgName = `msgs:${subject}:${_periodKeyOf(user)}`;
+  const msgCap = Number(limits.monthMessages) || 0;
+  let msgRes = { allowed: true };
+  if (msgCap > 0) {
+    msgRes = await counter(env, msgName, { op: 'reserve', amount: 1, cap: msgCap, ttlMs: 86400000 * 70 });
+    if (!msgRes.allowed) {
+      await counter(env, dName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 35 });
+      await counter(env, mName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 70 });
+      const resetAt = _periodResetAtOf(user);
+      /* Reaching this is not an ordinary customer running out. The caps are set
+         where only a script arrives, so the message says what is true rather
+         than inviting somebody to buy their way past it. */
+      return json({ error: 'This account has sent far more messages than a person can send in a month, so it has been paused. If that was not you, change your password; if it was, get in touch and we will sort it out.',
+                    code: 'quota_messages', resetAt }, 429,
+                  { 'Retry-After': _retryAfterUntil(resetAt) });
+    }
+  }
+
   // From here on, `reserve` tokens are already booked against this user. Any
   // early return below MUST refund them, or a failed call would silently eat
   // someone's quota.
@@ -14938,6 +14998,10 @@ async function aiProxy(request, env, ctx) {
     try {
       await counter(env, dName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 35 });
       await counter(env, mName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 70 });
+      /* The message goes back with the tokens. Left out, a run of failed calls
+         would eat an allowance nobody spent - and because the caps are large,
+         it would do it invisibly for a long time. */
+      if (msgCap > 0) await counter(env, msgName, { op: 'incr', amount: -1, ttlMs: 86400000 * 70 });
     } catch (e) { /* never throw out of a refund */ }
     /* AMV-004: and the dollars, which are booked before the model runs for the
        same reason the tokens are. Every refusal below already calls this, so
@@ -16426,9 +16490,26 @@ async function usageReport(request, env) {
   const dUsed = (await counter(env, `usg:${subject}:${todayKey()}`, { op: 'get' })).value || 0;
   const mUsed = (await counter(env, `usg:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
   const mCost = (await counter(env, `cost:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
+  /* Read from the SAME counter the proxy reserves against, so the number on
+     the screen is the number that would refuse the next message rather than a
+     second tally that agrees with it most of the time. */
+  const msgUsed = (await counter(env, `msgs:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
+  /* THE COST OF A MESSAGE, MEASURED RATHER THAN ASSUMED.
+
+     What a month of messages really costs decides whether a large cap is
+     generous or ruinous, and it turns almost entirely on how long the replies
+     are - long enough and the same count that earns a healthy margin loses
+     money instead. Nothing measured it, so every cap was set against somebody's
+     estimate. Two numbers already in hand divide into the answer. Null until
+     there is something to divide, because a made-up figure here would be worse
+     than none. */
+  const perMessageUSD = msgUsed > 0 ? +(mCost / msgUsed).toFixed(6) : null;
   return json({
     plan: user.plan,
     day: { used: dUsed, limit: limits.dayTokens },
+    /* The unit the plan is sold in, so the app can show what was bought rather
+       than translating tokens for somebody who never asked about tokens. */
+    messages: { used: msgUsed, limit: limits.monthMessages || 0, perMessageUSD },
     // `bonus` is the referral capacity folded into the monthly limit above, sent
     // separately so the app can say WHERE the extra allowance came from.
     month: { used: mUsed, limit: limits.monthTokens, costUSD: +mCost.toFixed(4), bonus: limits.bonusTokens || 0 },
