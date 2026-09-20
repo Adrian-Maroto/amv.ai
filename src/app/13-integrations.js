@@ -640,7 +640,27 @@ function _integrationsCatalogHTML(){
       '<div class="int-act">'+action+'</div>'+
     '</div>';
   };
-  const cat=(title,rows)=>'<div class="ss2"><h3>'+title+'</h3><div class="int-list">'+rows+'</div></div>';
+  /* EVERY SECTION ENDS WITH A DOOR TO THE REST OF ITS OWN KIND.
+
+     The rows above the door are AMV's own integrations - a real sign-in at
+     the provider, a scoped grant, a Connect button that does what it says.
+     There are a dozen or so of those and there will never be thousands,
+     because each one is work somebody did by hand.
+
+     The registry has thousands, for every one of these topics. Pressing the
+     door opens that topic's page of them. Which means the answer to "can AMV
+     connect to X" is on the screen for X rather than in one lump at the
+     bottom called "everything AMV can connect to" - the heading that was
+     asked for twice to be taken away, and which put nine thousand things
+     behind a word that describes none of them.
+
+     `q` is the query the door really sends. Passing it beside the title keeps
+     a heading from promising a search it does not run. */
+  const cat=(title,rows,q)=>'<div class="ss2"><h3>'+title+'</h3><div class="int-list">'+rows+'</div>'+
+    (q ? '<div class="int-seeall"><button class="cdir-more" data-dact="cdirAll" data-darg="'+escH(q)+'">'
+        + escH(T('See all')) + ' ' + escH(String(title).replace(/&amp;/g,'and').toLowerCase()) + ' '
+        + escH(T('connectors')) + ' \u2192</button></div>' : '')
+    +'</div>';
   /* SAY IT BEFORE THE PRESS, NOT AFTER IT.
 
      The click gate above is the correctness fix; on its own it still means a
@@ -734,7 +754,7 @@ function _integrationsCatalogHTML(){
               desc:'Every country AMV works in, and what it can do there - mail, job boards, and where it can apply for you.',
               auto:false,connected:false,use:'coverage',useLabel:'See coverage',
               icon:'\uD83C\uDF10',bg:'rgba(90,150,200,.14)'})
-    )+
+    , 'email')+
     cat('Messaging &amp; chat',
       intRow({id:'slack',name:'Slack',desc:'Answers, summaries and tasks inside any channel with /amv.',auto:true,connected:_rowConnected('slack'),icon:'\uD83D\uDCAC',bg:'rgba(74,21,75,.16)'})+
       intRow({id:'sms',name:'Text messages (SMS)',desc:'Run AMV from any phone by text - \u201ccheck Project X\u201d, \u201cdraft a reply\u201d.',auto:true,connected:!!smsPhone,icon:'\uD83D\uDCF1',bg:'rgba(63,185,80,.14)'})+
@@ -753,12 +773,12 @@ function _integrationsCatalogHTML(){
               auto:true,connected:!!_TG_STATUS&&!!_TG_STATUS.connected,
               icon:'\u2708\uFE0F',bg:'rgba(42,171,238,.16)'})+
       intRow({id:'discord',name:'Discord',desc:'Bring AMV into your servers for answers and automations.',auto:true,connected:_rowConnected('discord'),icon:'\uD83C\uDFAE',bg:'rgba(88,101,242,.16)'})
-    )+
+    , 'messaging')+
     cat('Developer',
       intRow({id:'github',name:'GitHub',desc:'Reviews PRs, opens issues, reads repos and ships fixes you approve.',auto:true,connected:_rowConnected('github'),icon:'\uD83D\uDC19',bg:'rgba(255,255,255,.08)'})+
       intRow({id:'vscode',name:'VS Code',desc:'Your AI pair-programmer inside the editor.',auto:true,connected:false/*the CLI, not a connection AMV can see*/,icon:'\uD83D\uDCBB',bg:'rgba(0,118,212,.14)'})+
       intRow({id:'linear',name:'Linear',desc:'Creates, triages and updates issues from chat.',auto:true,connected:_rowConnected('linear'),icon:'\uD83D\uDCD0',bg:'rgba(94,106,210,.16)'})
-    )+
+    , 'developer')+
     cat('Productivity',
       intRow({id:'notion',name:'Notion',desc:'Reads and writes pages, builds docs in your workspace.',auto:true,connected:_rowConnected('notion'),icon:'\uD83D\uDCDD',bg:'rgba(255,255,255,.08)'})+
       /* The description says what it does now. It used to promise "drafts
@@ -774,12 +794,12 @@ function _integrationsCatalogHTML(){
          connect flow began writing it. A read it cannot see is a key it
          reports as written into the void. */
       auto:true,connected:!!loadStr('amv_canvas'),run:'schoolOpen',runLabel:'Open my school work',icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
-    )+
+    , 'productivity')+
     cat('Office files',
       intRow({id:'excel',name:'Excel & CSV',desc:'Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',auto:false,connected:false,icon:'\uD83D\uDCCA',bg:'rgba(33,115,70,.14)'})+
       intRow({id:'pptx',name:'PowerPoint',desc:'Describe a deck and AMV builds the slides - export the .pptx.',auto:false,connected:false,icon:'\uD83D\uDCD1',bg:'rgba(198,67,30,.14)'})+
       intRow({id:'word',name:'Word',desc:'Reports, proposals and letters - written and exported, ready to edit.',auto:false,connected:false,icon:'\uD83D\uDCC4',bg:'rgba(0,120,212,.14)'})
-    );
+    , 'documents');
 }
 window._integrationsCatalogHTML=_integrationsCatalogHTML;
 

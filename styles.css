@@ -14945,3 +14945,23 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    one do not move the button they sit beneath. In em, so it survives somebody
    scaling the text up. */
 .plnreassure{ min-height:2.85em; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LAYER A241 - every topic ends with a door to the rest of its own kind
+
+   The hand-built rows in a section are AMV's own integrations: a real sign-in
+   at the provider and a Connect that does what it says. There will never be
+   thousands of those. The registry has thousands for each of these topics,
+   and they used to sit in one lump at the bottom under "everything AMV can
+   connect to" - a heading that describes none of them, a long way from the
+   section where somebody was already looking for exactly that.
+
+   So the door sits at the END of the section, after the last real row, and it
+   is styled as a quiet continuation rather than a call to action: it is not
+   competing with the Connect buttons above it.
+   ══════════════════════════════════════════════════════════════════════════ */
+.int-seeall{
+  margin-top:var(--sp-3);
+  padding-top:var(--sp-3);
+  border-top:1px solid var(--bdl);
+}

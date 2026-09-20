@@ -73,6 +73,19 @@ const CDIR_CATS = [
    tiles before you have decided anything, which is a directory that reads as a
    wall. Five is enough to show what a category MEANS; the rest are one click
    away and there are far more of them there than a scrolling row could hold. */
+/* TOPICS THE HAND-BUILT SECTIONS ABOVE ALREADY COVER.
+
+   The page listed "Developer" and then "Developer tools", and "Productivity"
+   twice - one heading from AMV's own integrations and one from the registry,
+   next to each other, asking somebody to work out the difference. There is
+   none worth explaining: the curated section already carries a door that runs
+   exactly this query.
+
+   So the registry row is dropped where a curated section owns the topic. It
+   is a list of QUERIES rather than titles, because the query is what would
+   actually be duplicated - two headings running the same search is the defect,
+   and two different headings that happen to read similarly is not. */
+const CDIR_COVERED = ['developer', 'productivity', 'messaging', 'email'];
 const CDIR_ROW_N = 5;
 /* Under the server's own per-request ceiling, so a page is one round trip.
    More arrive on the same page as you go. */
@@ -351,11 +364,12 @@ function _cdirRowHTML(cat){
   const more = (st.state === 'done' || st.state === 'loading') && st.servers.length
     ? '<div class="cdir-row-more">'
       + '<button class="cdir-more" data-dact="cdirAll" data-darg="' + escH(q) + '">'
-        + escH(T('See more in')) + ' ' + escH(title.toLowerCase()) + ' →</button>'
+        + escH(T('See all')) + ' ' + escH(String(title).replace(/&/g, 'and').toLowerCase()) + ' '
+        + escH(T('connectors')) + ' →</button>'
     + '</div>'
     : '';
-  return '<section class="cdir-row" data-cdir-row="' + escH(key) + '">'
-    + '<div class="cdir-row-h"><h3>' + escH(title) + '</h3></div>'
+  return '<section class="cdir-row ss2" data-cdir-row="' + escH(key) + '">'
+    + '<h3>' + escH(title) + '</h3>'
     + body
     + more
   + '</section>';
@@ -364,15 +378,26 @@ function _cdirRowHTML(cat){
 /* The overview: every row, ten each. */
 function connectorDirectoryHTML(){
   if(_cdirOpen) return _cdirFullHTML();
+  /* NO "EVERYTHING AMV CAN CONNECT TO" HEADING.
+
+     It was asked for twice. The objection is right and it is not about
+     wording: one lump at the bottom of the page called "everything" put nine
+     thousand things behind a word that describes none of them, and separated
+     them from the topic sections above where somebody is actually looking. A
+     person wanting a mail connector reads "Email and calendar" and stops
+     there.
+
+     So these rows are topic sections like the hand-built ones above them -
+     same shape, same heading weight, each with its own door - and the list
+     simply continues. What is left at the top is the search, because knowing
+     the name of the thing you want is the one case a topic cannot serve. */
   return '<section class="cdir">'
-    + '<div class="sec-head"><h3>' + escH(T('Everything AMV can connect to')) + '</h3>'
-      + '<span class="sec-sub">' + escH(T('Read live from the open connector registry and filtered to the ones AMV can actually start on your computer - so everything here runs. Five of each below; open a category for everything in it.')) + '</span></div>'
     + '<div class="cdir-find-wrap">'
       + '<input id="cdir-find" class="cw-find" type="search" autocomplete="off" value="' + escH(_cdirFind) + '"'
         + ' placeholder="' + escH(T('Search every connector - slack, postgres, stripe, figma…')) + '">'
       + '<button class="btn bs cdir-find-go" data-dact="cdirSearch">' + escH(T('Search')) + '</button>'
     + '</div>'
-    + CDIR_CATS.map(_cdirRowHTML).join('')
+    + CDIR_CATS.filter(c => CDIR_COVERED.indexOf(c[2]) < 0).map(_cdirRowHTML).join('')
   + '</section>';
 }
 
