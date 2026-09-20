@@ -15076,3 +15076,76 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 @media (max-width:640px){
   .upg-ladder{ grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LAYER A244 - Billing, made calm
+
+   Three complaints, and the upgrade block was the loud one: a full-width
+   filled accent panel carrying three lines of white text, with the next plan
+   under it as a plain bordered box. Two rows offering the same kind of thing
+   in two completely different visual languages, the first one shouting.
+
+   The reason it was filled is recorded beside the old rule and it is a real
+   one: a TINTED panel measured 3.03:1 for its own text, and a recommendation
+   nobody can read is not one. That argument is about a tint. A plain raised
+   surface with an accent BORDER has no such problem - the text sits on --s1
+   like every other row on the page and clears easily - so the recommendation
+   is carried by a border and a tag instead of by a wall of colour.
+
+   And the plan facts were a column of four sparse rows with a 132px label
+   gutter, which is a lot of screen for four short answers. Two columns.
+   ══════════════════════════════════════════════════════════════════════════ */
+#vc .vi-bill .bill-facts{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:var(--sp-3) var(--sp-6);
+  margin-top:var(--sp-4);
+  padding-top:var(--sp-4);
+  border-top:1px solid var(--bdl);
+}
+#vc .vi-bill .bill-facts > div{
+  display:flex; flex-direction:column; gap:1px; align-items:flex-start; min-width:0;
+}
+#vc .vi-bill .bill-facts dt{
+  flex:none;
+  font-size:var(--t-xs); font-weight:600; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--mu);
+}
+#vc .vi-bill .bill-facts dd{ font-size:var(--t-md); color:var(--tx); line-height:1.45; }
+
+/* The recommendation, without the wall of colour. */
+#vc .vi-bill .bill-plan-row.lead,
+.bill-plan-row.lead.btn.bp{
+  background:var(--s1)!important;
+  color:var(--tx)!important;
+  border:1.5px solid var(--accent)!important;
+  box-shadow:none!important;
+  font-weight:500!important;
+}
+#vc .vi-bill .bill-plan-row.lead:hover,
+.bill-plan-row.lead.btn.bp:hover{ background:var(--s2)!important; }
+/* Its own children stop being white-on-accent and go back to the page's
+   ordinary text colours, which is what they were written for. */
+#vc .vi-bill .bill-plan-row.lead .bill-plan-d,
+#vc .vi-bill .bill-plan-row.lead .bill-plan-f{ color:var(--mu)!important; }
+#vc .vi-bill .bill-plan-row.lead .bill-plan-n,
+#vc .vi-bill .bill-plan-row.lead .bill-plan-price{ color:var(--tx)!important; }
+/* The "/mo" after the price was set to #fff for the filled row it used to sit
+   on. On a raised surface that is white on near-white - 1.05:1 in the light
+   theme, which is not low contrast, it is invisible. It follows the page's
+   muted text now, like the "/mo" on every other row. */
+#vc .vi-bill .bill-plan-row.lead .bill-plan-price small,
+.bill-plan-row.lead .bill-plan-price small{ color:var(--mu)!important; }
+/* The tag is what says "recommended" now, so it is the one accent-coloured
+   thing in the row. */
+#vc .vi-bill .bill-plan-row.lead .bill-swap-tag{
+  background:var(--accent-soft)!important;
+  color:var(--accent-txt)!important;
+  border-radius:var(--r-pill);
+  padding:2px 9px;
+  font-size:var(--t-3xs); font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+}
+
+@media (max-width:720px){
+  #vc .vi-bill .bill-facts{ grid-template-columns:minmax(0,1fr); }
+}

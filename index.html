@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="5540c8865e0e5d3a">
+<meta name="amv-build" content="69a547b154b2aabd">
 <!-- ============================================================
      THE BACKEND THIS COPY OF THE APP TALKS TO.
 
@@ -9518,6 +9518,49 @@ color:var(--mu); margin-top:2px;
 .upg-cta{ min-width:min(320px,100%); margin-inline:auto; }
 @media (max-width:640px){
 .upg-ladder{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+#vc .vi-bill .bill-facts{
+display:grid;
+grid-template-columns:repeat(2,minmax(0,1fr));
+gap:var(--sp-3) var(--sp-6);
+margin-top:var(--sp-4);
+padding-top:var(--sp-4);
+border-top:1px solid var(--bdl);
+}
+#vc .vi-bill .bill-facts > div{
+display:flex; flex-direction:column; gap:1px; align-items:flex-start; min-width:0;
+}
+#vc .vi-bill .bill-facts dt{
+flex:none;
+font-size:var(--t-xs); font-weight:600; letter-spacing:.05em;
+text-transform:uppercase; color:var(--mu);
+}
+#vc .vi-bill .bill-facts dd{ font-size:var(--t-md); color:var(--tx); line-height:1.45; }
+#vc .vi-bill .bill-plan-row.lead,
+.bill-plan-row.lead.btn.bp{
+background:var(--s1)!important;
+color:var(--tx)!important;
+border:1.5px solid var(--accent)!important;
+box-shadow:none!important;
+font-weight:500!important;
+}
+#vc .vi-bill .bill-plan-row.lead:hover,
+.bill-plan-row.lead.btn.bp:hover{ background:var(--s2)!important; }
+#vc .vi-bill .bill-plan-row.lead .bill-plan-d,
+#vc .vi-bill .bill-plan-row.lead .bill-plan-f{ color:var(--mu)!important; }
+#vc .vi-bill .bill-plan-row.lead .bill-plan-n,
+#vc .vi-bill .bill-plan-row.lead .bill-plan-price{ color:var(--tx)!important; }
+#vc .vi-bill .bill-plan-row.lead .bill-plan-price small,
+.bill-plan-row.lead .bill-plan-price small{ color:var(--mu)!important; }
+#vc .vi-bill .bill-plan-row.lead .bill-swap-tag{
+background:var(--accent-soft)!important;
+color:var(--accent-txt)!important;
+border-radius:var(--r-pill);
+padding:2px 9px;
+font-size:var(--t-3xs); font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+}
+@media (max-width:720px){
+#vc .vi-bill .bill-facts{ grid-template-columns:minmax(0,1fr); }
 }
 </style>
 <!-- BUILD:CSS:END -->
