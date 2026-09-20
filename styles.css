@@ -15029,3 +15029,50 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   .wl-row{ flex-direction:column; align-items:stretch; gap:var(--sp-2); }
   .wl-a{ justify-content:space-between; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LAYER A243 - every plan on the screen where one is being chosen
+
+   This page opened straight into a single plan's detail, which is right for
+   somebody who has already decided and wrong for everybody else: "is the one
+   above this worth it" had no answer on the screen asking for the money.
+
+   The ladder is a row of four, the current plan marked, the one being
+   considered selected. Deliberately small and quiet - it is a chooser, not a
+   second pricing grid, and the detail below it is what the page is for.
+
+   The call to action is centred, because it is the only thing to do on the
+   page and a button hard against one edge of a wide column reads as a
+   secondary control.
+   ══════════════════════════════════════════════════════════════════════════ */
+.upg-ladder{
+  display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:var(--sp-2); margin:var(--sp-4) 0 var(--sp-6);
+}
+.upg-pick{
+  position:relative; min-width:0;
+  display:flex; flex-direction:column; align-items:flex-start; gap:2px;
+  padding:var(--sp-3) var(--sp-4);
+  background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-lg);
+  font-family:inherit; text-align:left; cursor:pointer;
+  transition:border-color .14s var(--ease), background .14s var(--ease);
+}
+.upg-pick:hover{ border-color:var(--bdl); background:var(--s2); }
+.upg-pick.on{ border-color:var(--accent); background:var(--accent-soft); }
+.upg-pick-n{ font-size:var(--t-md); font-weight:650; color:var(--tx); }
+.upg-pick-p{ font-family:var(--fdisplay); font-size:var(--t-lg); font-weight:640; color:var(--tx); }
+.upg-pick-p i{ font-family:var(--fn); font-style:normal; font-size:var(--t-sm); font-weight:500; color:var(--mu); }
+/* The plan somebody is already on, marked rather than hidden: it is the thing
+   every other price on this row is being compared against. */
+.upg-pick-tag{
+  font-size:var(--t-3xs); font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+  color:var(--mu); margin-top:2px;
+}
+.upg-pick.now .upg-pick-tag{ color:var(--accent-txt); }
+
+.upg-go{ text-align:center; }
+.upg-cta{ min-width:min(320px,100%); margin-inline:auto; }
+
+@media (max-width:640px){
+  .upg-ladder{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+}

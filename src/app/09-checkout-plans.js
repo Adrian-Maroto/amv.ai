@@ -1318,11 +1318,41 @@ function renderUpgradeView(){
   const now = (typeof S !== 'undefined' && S.plan) ? S.plan : (loadStr('amv_plan') || 'free');
   const nowName = (PLANS[now] && PLANS[now].name) || 'Free';
 
+  /* ALL THE PLANS, ON THE SCREEN WHERE ONE IS BEING CHOSEN.
+
+     This page opened straight into a single plan's detail, which is right for
+     somebody who has already decided and wrong for everybody else - the
+     question "is the one above this worth it" had no answer on the screen
+     asking for the money, and the only way to compare was to go back.
+
+     So the ladder is across the top: every plan, the current one marked, the
+     one being considered selected. Pressing another switches the detail below
+     without leaving the page. It renders from PLANS and `_planPitch`, the same
+     source the cards and the detail use, so a plan cannot appear here saying
+     one thing and below saying another. */
+  const ladder = ['free', 'pro', 'elite', 'ultra'].map((k) => {
+    const P2 = PLANS[k]; if (!P2) return '';
+    const isNow = k === now, isPick = k === key;
+    return '<button type="button" class="upg-pick' + (isPick ? ' on' : '') + (isNow ? ' now' : '') + '"'
+      + ' data-upg-pick="' + escH(k) + '" aria-pressed="' + (isPick ? 'true' : 'false') + '">'
+      + '<span class="upg-pick-n">' + escH(P2.name) + '</span>'
+      /* Not the plan's own name a second time. "Free / Free" is what the
+         first version rendered, because the price slot fell back to the
+         word - and a row reading its own title twice is the kind of thing
+         that makes a screen feel unfinished. */
+      + '<span class="upg-pick-p">' + (P2.price ? '$' + P2.price + '<i>/mo</i>'
+          : '<i>' + escH(T('No card')) + '</i>') + '</span>'
+      + (isNow ? '<span class="upg-pick-tag">' + escH(T('Your plan')) + '</span>' : '')
+    + '</button>';
+  }).join('');
+
   vc.innerHTML =
     '<div class="sv fi upg-sv"><div class="upg">'
       + '<button class="upg-back" id="upg-back">'
         + '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>'
         + escH(T(_upgBackLabel())) + '</button>'
+
+      + '<div class="upg-ladder" role="group" aria-label="' + escH(T('Choose a plan')) + '">' + ladder + '</div>'
 
       + '<div class="upg-head">'
         + '<span class="upg-eyebrow">' + escH(T('You are on')) + ' ' + escH(nowName) + '</span>'
@@ -1359,15 +1389,21 @@ function renderUpgradeView(){
 
       + ((P.allowance || jobs)
           ? '<div class="upg-figs">'
-            + (P.allowance ? '<div class="upg-fig"><b>' + escH(P.allowance) + '</b><span>'
-                + escH(T('tokens a month')) + '</span></div>' : '')
+            /* Messages, like Spending and Billing. This was the last screen
+               still quoting the plan in tokens, and it is the one somebody
+               reads immediately before paying. */
+            + '<div class="upg-fig"><b>' + escH(_msgMonthLabel(key)) + '</b><span>'
+                + escH(T('messages a month')) + '</span></div>'
+            + (_planMsgNum(PLAN_TOP_WEEK, key)
+                ? '<div class="upg-fig"><b>' + escH(_topWeekLabel(key)) + '</b><span>'
+                    + escH(T('top-engine messages a week')) + '</span></div>' : '')
             + (jobs ? '<div class="upg-fig"><b>' + jobs + '</b><span>'
                 + escH(T('scheduled jobs running for you')) + '</span></div>' : '')
           + '</div>' : '')
 
       + '<div class="upg-go">'
         + '<button class="btn bp upg-cta" id="upg-pay" data-darg="' + escH(key) + '">'
-          + escH(T('Proceed to payment')) + '</button>'
+          + escH(T('Proceed to checkout')) + '</button>'
         + '<p class="upg-reassure">'
           + (pitch.reassure ? pitch.reassure + ' &middot; ' : '')
           + escH(T('Card details go straight to our payment processor - AMV never sees them.'))
@@ -1376,6 +1412,17 @@ function renderUpgradeView(){
     + '</div></div>';
 
   on($('upg-back'), 'click', closeUpgrade);
+  /* Switching plan redraws this page rather than navigating: it is the same
+     decision, not a new one, and a round trip through the tab dispatcher would
+     lose which screen to go back to. Free is not a thing to buy, so it opens
+     the plan grid instead of a checkout for nothing. */
+  vc.querySelectorAll('[data-upg-pick]').forEach(b => on(b, 'click', () => {
+    const k = b.dataset.upgPick;
+    if (k === 'free') { try { setTab('spend'); } catch (e) {} return; }
+    if (!PLANS[k] || k === _upgradeFor) return;
+    _upgradeFor = k; _upgradeCycle = 'month';
+    renderUpgradeView();
+  }));
   /* The chosen cycle lives on the page, not in storage: it is a decision about
      the purchase being made right now, and carrying it into the next visit
      would quietly change what somebody is buying. */

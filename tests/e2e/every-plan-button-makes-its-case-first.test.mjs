@@ -85,7 +85,10 @@ section('The page it opens argues the whole case');
      heading saying what comes included with Elite would be nonsense: Elite has
      agents, and the row saying Free does not is about Free. */
   ok(r.crosses === 0, 'and nothing in it is a feature the plan lacks', r.crosses);
-  ok(/payment/i.test(r.cta || ''), 'one control goes on to pay', r.cta);
+  /* "Proceed to checkout" rather than "Proceed to payment" - the owner's own
+     words for it. Matched on either, because what this line is holding is that
+     ONE control on the page goes on to take money, not which noun it uses. */
+  ok(/payment|checkout/i.test(r.cta || ''), 'one control goes on to pay', r.cta);
 }
 
 section('Ultra expands both rungs beneath it');
