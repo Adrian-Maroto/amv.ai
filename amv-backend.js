@@ -16259,6 +16259,19 @@ async function connectorLogo(request, env) {
      key - that rule is the whole reason this endpoint is allowed to be a GET,
      and it reads the variable name to decide. */
   const CLOGO_CACHE_KEY = 'clogo:' + encodeURIComponent(id);
+  /* AND THE KEY'S OWN SHAPE IS CHECKED HERE, where it is used.
+
+     `id` came from the query string. It has already been bounded by
+     `_mcpRegText` and then refused outright by `_connectorLogoSource` unless
+     it is `io.github.<user>/...`, so nothing unexpected can reach this line -
+     which is exactly the argument a-key-is-not-whatever-somebody-sent
+     declines to accept, and is right to. Validation that lives in a helper
+     two calls up is validation the next person editing this function cannot
+     see, and the check reads the function body for that reason. One line, and
+     the shape is stated where the record is named. */
+  if (!/^clogo:[A-Za-z0-9._%~-]{1,220}$/.test(CLOGO_CACHE_KEY)) {
+    return new Response('no logo', { status: 404 });
+  }
   try {
     const hit = await env.AMV_KV.get(CLOGO_CACHE_KEY, 'arrayBuffer');
     if (hit) {
