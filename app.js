@@ -28841,13 +28841,28 @@ const savedTheme = loadStr('amv_theme');
 // Default to DARK. Only use light if the user explicitly chose it.
 if(savedTheme === 'light') document.body.classList.add('light');
 // Apply saved accent theme (default azure = no attribute).
+/* Sixteen. The dot is the colour the stylesheet actually applies in dark
+   mode, not a sample of it - a swatch that does not match what pressing it
+   does is the one thing a colour picker may never do. Indigo is #898bf4 and
+   not #6366f1 for the reason written beside the accent blocks: the primary
+   button puts near-black text on it, and #6366f1 could not carry it. */
 const ACCENT_THEMES=[
-  {id:'',       name:'Azure',   dot:'#5590ff'},
-  {id:'violet', name:'Violet',  dot:'#9d7bff'},
-  {id:'emerald',name:'Emerald', dot:'#34d399'},
-  {id:'amber',  name:'Amber',   dot:'#f5a623'},
-  {id:'rose',   name:'Rose',    dot:'#fb7185'},
-  {id:'cyan',   name:'Cyan',    dot:'#38bdf8'},
+  {id:'',        name:'Azure',   dot:'#5590ff'},
+  {id:'violet',  name:'Violet',  dot:'#9d7bff'},
+  {id:'indigo',  name:'Indigo',  dot:'#686bf1'},
+  {id:'magenta', name:'Magenta', dot:'#e879f9'},
+  {id:'rose',    name:'Rose',    dot:'#fb7185'},
+  {id:'crimson', name:'Crimson', dot:'#f04444'},
+  {id:'coral',   name:'Coral',   dot:'#ff8a65'},
+  {id:'orange',  name:'Orange',  dot:'#fb923c'},
+  {id:'amber',   name:'Amber',   dot:'#f5a623'},
+  {id:'gold',    name:'Gold',    dot:'#eab308'},
+  {id:'lime',    name:'Lime',    dot:'#a3e635'},
+  {id:'forest',  name:'Forest',  dot:'#22c55e'},
+  {id:'emerald', name:'Emerald', dot:'#34d399'},
+  {id:'teal',    name:'Teal',    dot:'#14b8a6'},
+  {id:'cyan',    name:'Cyan',    dot:'#38bdf8'},
+  {id:'slate',   name:'Slate',   dot:'#94a3b8'},
 ];
 function applyAccent(id){
   if(id) document.body.setAttribute('data-accent',id);

@@ -1,7 +1,24 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#1a1b1f;--s1:#212228;--s2:#292a31;--s3:#33343c;--s4:#3e3f48;
-  --bd:rgba(255,255,255,.09);--bdl:#333333;
+/* THE ONLY PLACE THE SURFACES ARE DEFINED, WHICH IT WAS NOT.
+
+     This block was declared three times: here, again at "RECOVERED DESIGN
+     SYSTEM", and a third time at "AMV IDENTITY" 2,700 lines down. Same token
+     names, different values, last one wins - so retuning the palette HERE,
+     which is the block CLAUDE.md points every contributor at, changed nothing
+     at all. The light theme somebody kept asking to have softened was
+     #fdfdfc, set in the third copy, and every edit to this line was dead on
+     arrival with nothing to show for it.
+
+     The duplicates below now carry only what is genuinely theirs. These are
+     the values in effect. */
+  --bg:#161719;--s1:#1c1d21;--s2:#232429;--s3:#2c2d34;--s4:#363740;
+  --bd:rgba(255,255,255,.07);--bdl:#2e2e2e;--hair:rgba(255,255,255,.07);
+  --ink:#131316;
+  /* --on-accent is NOT set here. It is per-theme and lives with the contrast
+     work near the end of this file, which is the copy that wins; a second
+     declaration up here would be dead the moment it disagreed, which is the
+     defect this block was just cleaned up for. Same for --dim. */
   --blue:#3f76f5;--blued:#3f76f5;--blued2:#d8d0c4;
   --tx:#f2f1ee;--mu:#a3a1a8;--dim:#6a6870;
   --grn:#4ade80;--red:#ff4d4d;--gold:#e0b341;--pur:#3f76f5;
@@ -15,7 +32,7 @@
   --sbw:252px;--nav-h:48px;
   --indigo:#3f76f5;--green:#4ade80;--amber:#e0b341;--t2:#8a8a8a;--t3:#565656;--r:10px;--g-brand:#3f76f5;
 --r-2xl:22px;--glass-soft:rgba(255,255,255,.025);--glass-soft2:rgba(255,255,255,.05);--panel:#111111;--accent:#3f76f5;--accent-d:#2f5fd8;--accent-soft:rgba(63, 118, 245,.16);--accent-grad:linear-gradient(135deg,#3f76f5 0%,#356be0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(63, 118, 245,.18) 0%,rgba(53, 107, 224,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(63, 118, 245,.18) 0%,rgba(53, 107, 224,.10) 40%,transparent 72%);--fdisplay:'Space Grotesk','Space Grotesk fallback','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;}
-body.light{--bg:#fbfbfa;--s1:#ffffff;--s2:#f0efec;--s3:#e6e4df;--s4:#d8d5ce;--bd:rgba(0,0,0,.1);--bdl:#c8c5bd;--tx:#161513;--mu:#6b6862;--dim:#9b978f;--glass-soft:rgba(0,0,0,.02);--glass-soft2:rgba(0,0,0,.04);--panel:#ffffff;--accent:#3366d4;--accent-d:#2f5bc0;--accent-soft:rgba(51,102,212,.14);--grn-txt:#267343;--gold-txt:#7b6224;--red-txt:#b83737;--accent-txt:#3060c7;--accent-fill:#3366d4;--accent-grad:linear-gradient(135deg,#3366d4 0%,#3f74e0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(51,102,212,.14) 0%,rgba(63,116,224,.14) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(51,102,212,.12) 0%,rgba(63,116,224,.07) 40%,transparent 72%)}
+body.light{--bg:#f0eeea;--s1:#faf9f6;--s2:#e7e5df;--s3:#dcd9d1;--s4:#ccc8be;--bd:rgba(24,23,21,.11);--bdl:#bbb7ad;--hair:rgba(24,23,21,.09);--ink:#181715;--tx:#181715;--mu:#5f5c56;--dim:#8e8a82;--glass-soft:rgba(0,0,0,.02);--glass-soft2:rgba(0,0,0,.04);--panel:#ffffff;--accent:#3366d4;--accent-d:#2f5bc0;--accent-soft:rgba(51,102,212,.14);--grn-txt:#267343;--gold-txt:#7b6224;--red-txt:#b83737;--accent-txt:#3060c7;--accent-fill:#3366d4;--accent-grad:linear-gradient(135deg,#3366d4 0%,#3f74e0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(51,102,212,.14) 0%,rgba(63,116,224,.14) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(51,102,212,.12) 0%,rgba(63,116,224,.07) 40%,transparent 72%)}
 html,body{height:100%;overflow:hidden}
 body{background:var(--bg);color:var(--tx);font-family:var(--fn);font-size:var(--t-md);line-height:1.6;-webkit-font-smoothing:antialiased;transition:background .2s,color .2s}
 ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--bd);border-radius:var(--r-2xs)}
@@ -297,12 +314,12 @@ kbd{background:var(--s3);border:1px solid var(--bdl);border-radius:var(--r-2xs);
 }
 
 
-/* ========== RECOVERED DESIGN SYSTEM (Layers 1-9) ========== */
+/* ========== RECOVERED DESIGN SYSTEM (Layers 1-9) ==========
+   The surfaces, text colours and borders that used to be repeated here are
+   gone: they are declared once at the top of this file. What is left is what
+   this block genuinely adds. */
 :root{
-  --bg:#1a1b1f;--s1:#212228;--s2:#292a31;--s3:#33343c;--s4:#3e3f48;
-  --bd:rgba(255,255,255,.09);--bdl:#333333;
   --blue:#3f76f5;--blued:#3f76f5;--blued2:#d8d0c4;
-  --tx:#f2f1ee;--mu:#a3a1a8;--dim:#6a6870;
   --grn:#4ade80;--red:#ff4d4d;--gold:#e0b341;--pur:#3f76f5;
   /* TEXT variants. --grn, --gold and --red are fine as FILLS, and this is not
      about fills. As TEXT on the light theme they measure 1.71:1, 1.93:1 and
@@ -2769,15 +2786,15 @@ body.light #amv-working{background:#fff}
    neutral system: deep ink backdrop, soft pearl surfaces, calm
    contrast. No single loud accent - appeal comes from restraint,
    depth, and polish.
+
+   This is the copy that was WINNING. Its surfaces, text, borders, --ink and
+   --on-accent have moved to the top of the file, where the retune belongs;
+   its accent is set by the accent blocks further down. Nothing is left for it
+   to declare, so it declares nothing.
    ============================================================ */
-:root{
-  --bg:#1a1b1f;--s1:#212228;--s2:#292a31;--s3:#33343c;--s4:#3e3f48;
-  --tx:#f2f1ee;--mu:#a3a1a8;--dim:#6a6870;
-  --bd:rgba(255,255,255,.07);--hair:rgba(255,255,255,.07);
-  --accent:#3f76f5;--accent-d:#2f5fd8;--accent-soft:rgba(63, 118, 245,.14);
-  --ink:#16161a;--on-accent:#ffffff;
-}
-body.light{--bg:#fdfdfc;--s1:#ffffff;--s2:#f1efeb;--s3:#e8e5df;--s4:#dcd8d0;--tx:#22212a;--mu:#6e6c74;--dim:#a5a2aa;--bd:rgba(30,28,35,.09);--hair:rgba(30,28,35,.08);--accent:#3366d4;--accent-d:#2f5bc0;--accent-soft:rgba(51,102,212,.12);--accent-grad:linear-gradient(135deg,#3366d4 0%,#3f74e0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(51,102,212,.14) 0%,rgba(63,116,224,.14) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(51,102,212,.12) 0%,rgba(63,116,224,.07) 40%,transparent 72%);--ink:#22212a;--on-accent:#ffffff}
+/* The third light palette, the one that made the page #fdfdfc. Its surfaces
+   are set once at the top of this file now. Only --ink and --on-accent were
+   ever unique to it, and those moved with them. */
 
 /* refined depth - soft layered shadows, never harsh */
 .card,.ss2,.wsc,.dc,.memc,.plnc,.mp-wrap,.onb-card{box-shadow:0 1px 2px rgba(0,0,0,.04),0 8px 24px -12px rgba(0,0,0,.22)!important}
@@ -3393,21 +3410,62 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
    Pick an accent color; works in both dark and light mode.
    Overrides just the accent family so the whole app recolors.
    ============================================================ */
-/* Violet */
-body[data-accent="violet"]{--accent:#9d7bff;--accent-d:#8a63f0;--accent-soft:rgba(157,123,255,.16);--accent-grad:linear-gradient(135deg,#9d7bff 0%,#7c5cf0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(157,123,255,.18) 0%,rgba(124,92,240,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(157,123,255,.18) 0%,rgba(124,92,240,.10) 40%,transparent 72%)}
-body.light[data-accent="violet"]{--accent:#7c4ddb;--accent-d:#6a3fc4;--accent-soft:rgba(124,77,219,.14);--accent-grad:linear-gradient(135deg,#7c4ddb 0%,#8a5ce0 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(124,77,219,.12) 0%,transparent 72%)}
-/* Emerald */
-body[data-accent="emerald"]{--accent:#34d399;--accent-d:#22b884;--accent-soft:rgba(52,211,153,.16);--accent-grad:linear-gradient(135deg,#34d399 0%,#22b884 100%);--accent-grad-soft:linear-gradient(135deg,rgba(52,211,153,.18) 0%,rgba(34,184,132,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(52,211,153,.18) 0%,rgba(34,184,132,.10) 40%,transparent 72%)}
-body.light[data-accent="emerald"]{--accent:#0d7a54;--accent-d:#0a6647;--accent-soft:rgba(13,122,84,.13);--accent-grad:linear-gradient(135deg,#0d7a54 0%,#0f9d6b 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(13,122,84,.12) 0%,transparent 72%)}
-/* Amber */
-body[data-accent="amber"]{--accent:#f5a623;--accent-d:#dd8f12;--accent-soft:rgba(245,166,35,.16);--accent-grad:linear-gradient(135deg,#f5a623 0%,#f08a2e 100%);--accent-grad-soft:linear-gradient(135deg,rgba(245,166,35,.18) 0%,rgba(240,138,46,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(245,166,35,.18) 0%,rgba(240,138,46,.10) 40%,transparent 72%)}
-body.light[data-accent="amber"]{--accent:#a86a10;--accent-d:#8f590c;--accent-soft:rgba(168,106,16,.13);--accent-grad:linear-gradient(135deg,#a86a10 0%,#c77f14 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(168,106,16,.12) 0%,transparent 72%)}
-/* Rose */
-body[data-accent="rose"]{--accent:#fb7185;--accent-d:#ef4d68;--accent-soft:rgba(251,113,133,.16);--accent-grad:linear-gradient(135deg,#fb7185 0%,#f43f6a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(251,113,133,.18) 0%,rgba(244,63,106,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(251,113,133,.18) 0%,rgba(244,63,106,.10) 40%,transparent 72%)}
-body.light[data-accent="rose"]{--accent:#c62847;--accent-d:#ad2140;--accent-soft:rgba(198,40,71,.13);--accent-grad:linear-gradient(135deg,#c62847 0%,#e0355a 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(198,40,71,.12) 0%,transparent 72%)}
-/* Cyan */
-body[data-accent="cyan"]{--accent:#38bdf8;--accent-d:#1ba3e0;--accent-soft:rgba(56,189,248,.16);--accent-grad:linear-gradient(135deg,#38bdf8 0%,#22a0e0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(56,189,248,.18) 0%,rgba(34,160,224,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(56,189,248,.18) 0%,rgba(34,160,224,.10) 40%,transparent 72%)}
-body.light[data-accent="cyan"]{--accent:#0e7490;--accent-d:#0c6178;--accent-soft:rgba(14,116,144,.13);--accent-grad:linear-gradient(135deg,#0e7490 0%,#0891b2 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(14,116,144,.12) 0%,transparent 72%)}
+/* SIXTEEN ACCENTS, AND EVERY SHADE IN HERE WAS SOLVED RATHER THAN PICKED.
+
+   Two things were wrong with the six that were here.
+
+   THE PICKER ONLY HALF WORKED. Not one of these blocks set `--accent-txt` or
+   `--accent-fill`, so every accent-coloured piece of TEXT in the product
+   stayed the default blue no matter which colour somebody chose. Buttons and
+   fills recoloured, sentences did not, and the two disagreed on the same
+   screen. Both are set now, per accent, per theme.
+
+   AND THE LIGHT SHADES WERE EYEBALLED. Each one has to clear 4.5:1 as text on
+   `--s3`, which is the worst surface it sits on, in both themes. Solved by
+   walking lightness until the ratio clears, with SATURATION CAPPED on the way
+   down - holding saturation while darkening walks every hue to a vivid
+   primary (#004fe4 for azure), a shade nobody puts on paper. Capped, each
+   lands as a deep version of itself.
+
+   `.bp` puts near-black text on `--accent` itself, so a base too dark to
+   carry it is an unreadable button. Indigo measured 4.43:1 and is lifted
+   until it clears - by the generator, so the next accent added cannot land
+   under the line either.
+
+   Generated. If the surfaces move, re-run the solver rather than nudging a
+   hex here; `an-accent-nobody-can-read` holds the numbers. */
+body:not([data-accent]){--accent:#5590ff;--accent-d:#226fff;--accent-txt:#5a93ff;--accent-fill:#226fff;--accent-soft:rgba(85, 144, 255,.16);--accent-grad:linear-gradient(135deg,#5590ff 0%,#226fff 100%);--accent-grad-soft:linear-gradient(135deg,rgba(85, 144, 255,.18) 0%,rgba(34, 111, 255,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(85, 144, 255,.18) 0%,rgba(34, 111, 255,.10) 40%,transparent 72%)}
+body.light:not([data-accent]){--accent:#2a5ab4;--accent-d:#244e9b;--accent-txt:#2a5ab4;--accent-fill:#2a5ab4;--accent-soft:rgba(42, 90, 180,.13);--accent-grad:linear-gradient(135deg,#2a5ab4 0%,#244e9b 100%);--accent-grad-soft:linear-gradient(135deg,rgba(42, 90, 180,.13) 0%,rgba(36, 78, 155,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(42, 90, 180,.12) 0%,transparent 72%)}
+body[data-accent="violet"]{--accent:#9d7bff;--accent-d:#7748ff;--accent-txt:#a180ff;--accent-fill:#7748ff;--accent-soft:rgba(157, 123, 255,.16);--accent-grad:linear-gradient(135deg,#9d7bff 0%,#7748ff 100%);--accent-grad-soft:linear-gradient(135deg,rgba(157, 123, 255,.18) 0%,rgba(119, 72, 255,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(157, 123, 255,.18) 0%,rgba(119, 72, 255,.10) 40%,transparent 72%)}
+body.light[data-accent="violet"]{--accent:#6741d3;--accent-d:#562ec7;--accent-txt:#6741d3;--accent-fill:#6741d3;--accent-soft:rgba(103, 65, 211,.13);--accent-grad:linear-gradient(135deg,#6741d3 0%,#562ec7 100%);--accent-grad-soft:linear-gradient(135deg,rgba(103, 65, 211,.13) 0%,rgba(86, 46, 199,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(103, 65, 211,.12) 0%,transparent 72%)}
+body[data-accent="emerald"]{--accent:#34d399;--accent-d:#26ae7c;--accent-txt:#34d399;--accent-fill:#26ae7c;--accent-soft:rgba(52, 211, 153,.16);--accent-grad:linear-gradient(135deg,#34d399 0%,#26ae7c 100%);--accent-grad-soft:linear-gradient(135deg,rgba(52, 211, 153,.18) 0%,rgba(38, 174, 124,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(52, 211, 153,.18) 0%,rgba(38, 174, 124,.10) 40%,transparent 72%)}
+body.light[data-accent="emerald"]{--accent:#196a4c;--accent-d:#13513a;--accent-txt:#196a4c;--accent-fill:#196a4c;--accent-soft:rgba(25, 106, 76,.13);--accent-grad:linear-gradient(135deg,#196a4c 0%,#13513a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(25, 106, 76,.13) 0%,rgba(19, 81, 58,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(25, 106, 76,.12) 0%,transparent 72%)}
+body[data-accent="amber"]{--accent:#f5a623;--accent-d:#db8c0a;--accent-txt:#f5a623;--accent-fill:#db8c0a;--accent-soft:rgba(245, 166, 35,.16);--accent-grad:linear-gradient(135deg,#f5a623 0%,#db8c0a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(245, 166, 35,.18) 0%,rgba(219, 140, 10,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(245, 166, 35,.18) 0%,rgba(219, 140, 10,.10) 40%,transparent 72%)}
+body.light[data-accent="amber"]{--accent:#7c581d;--accent-d:#634617;--accent-txt:#7c581d;--accent-fill:#7c581d;--accent-soft:rgba(124, 88, 29,.13);--accent-grad:linear-gradient(135deg,#7c581d 0%,#634617 100%);--accent-grad-soft:linear-gradient(135deg,rgba(124, 88, 29,.13) 0%,rgba(99, 70, 23,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(124, 88, 29,.12) 0%,transparent 72%)}
+body[data-accent="rose"]{--accent:#fb7185;--accent-d:#fa3f5a;--accent-txt:#fb7185;--accent-fill:#fa3f5a;--accent-soft:rgba(251, 113, 133,.16);--accent-grad:linear-gradient(135deg,#fb7185 0%,#fa3f5a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(251, 113, 133,.18) 0%,rgba(250, 63, 90,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(251, 113, 133,.18) 0%,rgba(250, 63, 90,.10) 40%,transparent 72%)}
+body.light[data-accent="rose"]{--accent:#af293c;--accent-d:#962333;--accent-txt:#af293c;--accent-fill:#af293c;--accent-soft:rgba(175, 41, 60,.13);--accent-grad:linear-gradient(135deg,#af293c 0%,#962333 100%);--accent-grad-soft:linear-gradient(135deg,rgba(175, 41, 60,.13) 0%,rgba(150, 35, 51,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(175, 41, 60,.12) 0%,transparent 72%)}
+body[data-accent="cyan"]{--accent:#38bdf8;--accent-d:#09acf4;--accent-txt:#38bdf8;--accent-fill:#09acf4;--accent-soft:rgba(56, 189, 248,.16);--accent-grad:linear-gradient(135deg,#38bdf8 0%,#09acf4 100%);--accent-grad-soft:linear-gradient(135deg,rgba(56, 189, 248,.18) 0%,rgba(9, 172, 244,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(56, 189, 248,.18) 0%,rgba(9, 172, 244,.10) 40%,transparent 72%)}
+body.light[data-accent="cyan"]{--accent:#1f6483;--accent-d:#19516a;--accent-txt:#1f6483;--accent-fill:#1f6483;--accent-soft:rgba(31, 100, 131,.13);--accent-grad:linear-gradient(135deg,#1f6483 0%,#19516a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(31, 100, 131,.13) 0%,rgba(25, 81, 106,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(31, 100, 131,.12) 0%,transparent 72%)}
+body[data-accent="indigo"]{--accent:#686bf1;--accent-d:#393ded;--accent-txt:#898bf4;--accent-fill:#393ded;--accent-soft:rgba(104, 107, 241,.16);--accent-grad:linear-gradient(135deg,#686bf1 0%,#393ded 100%);--accent-grad-soft:linear-gradient(135deg,rgba(104, 107, 241,.18) 0%,rgba(57, 61, 237,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(104, 107, 241,.18) 0%,rgba(57, 61, 237,.10) 40%,transparent 72%)}
+body.light[data-accent="indigo"]{--accent:#484bd4;--accent-d:#3034cd;--accent-txt:#484bd4;--accent-fill:#484bd4;--accent-soft:rgba(72, 75, 212,.13);--accent-grad:linear-gradient(135deg,#484bd4 0%,#3034cd 100%);--accent-grad-soft:linear-gradient(135deg,rgba(72, 75, 212,.13) 0%,rgba(48, 52, 205,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(72, 75, 212,.12) 0%,transparent 72%)}
+body[data-accent="teal"]{--accent:#14b8a6;--accent-d:#0f8a7d;--accent-txt:#14b8a6;--accent-fill:#0f8a7d;--accent-soft:rgba(20, 184, 166,.16);--accent-grad:linear-gradient(135deg,#14b8a6 0%,#0f8a7d 100%);--accent-grad-soft:linear-gradient(135deg,rgba(20, 184, 166,.18) 0%,rgba(15, 138, 125,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(20, 184, 166,.18) 0%,rgba(15, 138, 125,.10) 40%,transparent 72%)}
+body.light[data-accent="teal"]{--accent:#18675f;--accent-d:#124e48;--accent-txt:#18675f;--accent-fill:#18675f;--accent-soft:rgba(24, 103, 95,.13);--accent-grad:linear-gradient(135deg,#18675f 0%,#124e48 100%);--accent-grad-soft:linear-gradient(135deg,rgba(24, 103, 95,.13) 0%,rgba(18, 78, 72,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(24, 103, 95,.12) 0%,transparent 72%)}
+body[data-accent="lime"]{--accent:#a3e635;--accent-d:#8ace1a;--accent-txt:#a3e635;--accent-fill:#8ace1a;--accent-soft:rgba(163, 230, 53,.16);--accent-grad:linear-gradient(135deg,#a3e635 0%,#8ace1a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(163, 230, 53,.18) 0%,rgba(138, 206, 26,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(163, 230, 53,.18) 0%,rgba(138, 206, 26,.10) 40%,transparent 72%)}
+body.light[data-accent="lime"]{--accent:#486518;--accent-d:#364c12;--accent-txt:#486518;--accent-fill:#486518;--accent-soft:rgba(72, 101, 24,.13);--accent-grad:linear-gradient(135deg,#486518 0%,#364c12 100%);--accent-grad-soft:linear-gradient(135deg,rgba(72, 101, 24,.13) 0%,rgba(54, 76, 18,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(72, 101, 24,.12) 0%,transparent 72%)}
+body[data-accent="orange"]{--accent:#fb923c;--accent-d:#fa760a;--accent-txt:#fb923c;--accent-fill:#fa760a;--accent-soft:rgba(251, 146, 60,.16);--accent-grad:linear-gradient(135deg,#fb923c 0%,#fa760a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(251, 146, 60,.18) 0%,rgba(250, 118, 10,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(251, 146, 60,.18) 0%,rgba(250, 118, 10,.10) 40%,transparent 72%)}
+body.light[data-accent="orange"]{--accent:#884f20;--accent-d:#6f411a;--accent-txt:#884f20;--accent-fill:#884f20;--accent-soft:rgba(136, 79, 32,.13);--accent-grad:linear-gradient(135deg,#884f20 0%,#6f411a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(136, 79, 32,.13) 0%,rgba(111, 65, 26,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(136, 79, 32,.12) 0%,transparent 72%)}
+body[data-accent="crimson"]{--accent:#f04444;--accent-d:#ec1515;--accent-txt:#f36a6a;--accent-fill:#ec1515;--accent-soft:rgba(240, 68, 68,.16);--accent-grad:linear-gradient(135deg,#f04444 0%,#ec1515 100%);--accent-grad-soft:linear-gradient(135deg,rgba(240, 68, 68,.18) 0%,rgba(236, 21, 21,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(240, 68, 68,.18) 0%,rgba(236, 21, 21,.10) 40%,transparent 72%)}
+body.light[data-accent="crimson"]{--accent:#b32a2a;--accent-d:#9a2424;--accent-txt:#b32a2a;--accent-fill:#b32a2a;--accent-soft:rgba(179, 42, 42,.13);--accent-grad:linear-gradient(135deg,#b32a2a 0%,#9a2424 100%);--accent-grad-soft:linear-gradient(135deg,rgba(179, 42, 42,.13) 0%,rgba(154, 36, 36,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(179, 42, 42,.12) 0%,transparent 72%)}
+body[data-accent="magenta"]{--accent:#e879f9;--accent-d:#e048f7;--accent-txt:#e879f9;--accent-fill:#e048f7;--accent-soft:rgba(232, 121, 249,.16);--accent-grad:linear-gradient(135deg,#e879f9 0%,#e048f7 100%);--accent-grad-soft:linear-gradient(135deg,rgba(232, 121, 249,.18) 0%,rgba(224, 72, 247,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(232, 121, 249,.18) 0%,rgba(224, 72, 247,.10) 40%,transparent 72%)}
+body.light[data-accent="magenta"]{--accent:#9a28ac;--accent-d:#842293;--accent-txt:#9a28ac;--accent-fill:#9a28ac;--accent-soft:rgba(154, 40, 172,.13);--accent-grad:linear-gradient(135deg,#9a28ac 0%,#842293 100%);--accent-grad-soft:linear-gradient(135deg,rgba(154, 40, 172,.13) 0%,rgba(132, 34, 147,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(154, 40, 172,.12) 0%,transparent 72%)}
+body[data-accent="gold"]{--accent:#eab308;--accent-d:#b98d06;--accent-txt:#eab308;--accent-fill:#b98d06;--accent-soft:rgba(234, 179, 8,.16);--accent-grad:linear-gradient(135deg,#eab308 0%,#b98d06 100%);--accent-grad-soft:linear-gradient(135deg,rgba(234, 179, 8,.18) 0%,rgba(185, 141, 6,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(234, 179, 8,.18) 0%,rgba(185, 141, 6,.10) 40%,transparent 72%)}
+body.light[data-accent="gold"]{--accent:#715c1b;--accent-d:#584815;--accent-txt:#715c1b;--accent-fill:#715c1b;--accent-soft:rgba(113, 92, 27,.13);--accent-grad:linear-gradient(135deg,#715c1b 0%,#584815 100%);--accent-grad-soft:linear-gradient(135deg,rgba(113, 92, 27,.13) 0%,rgba(88, 72, 21,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(113, 92, 27,.12) 0%,transparent 72%)}
+body[data-accent="slate"]{--accent:#94a3b8;--accent-d:#7589a4;--accent-txt:#94a3b8;--accent-fill:#7589a4;--accent-soft:rgba(148, 163, 184,.16);--accent-grad:linear-gradient(135deg,#94a3b8 0%,#7589a4 100%);--accent-grad-soft:linear-gradient(135deg,rgba(148, 163, 184,.18) 0%,rgba(117, 137, 164,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(148, 163, 184,.18) 0%,rgba(117, 137, 164,.10) 40%,transparent 72%)}
+body.light[data-accent="slate"]{--accent:#506078;--accent-d:#445166;--accent-txt:#506078;--accent-fill:#506078;--accent-soft:rgba(80, 96, 120,.13);--accent-grad:linear-gradient(135deg,#506078 0%,#445166 100%);--accent-grad-soft:linear-gradient(135deg,rgba(80, 96, 120,.13) 0%,rgba(68, 81, 102,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(80, 96, 120,.12) 0%,transparent 72%)}
+body[data-accent="coral"]{--accent:#ff8a65;--accent-d:#ff6332;--accent-txt:#ff8a65;--accent-fill:#ff6332;--accent-soft:rgba(255, 138, 101,.16);--accent-grad:linear-gradient(135deg,#ff8a65 0%,#ff6332 100%);--accent-grad-soft:linear-gradient(135deg,rgba(255, 138, 101,.18) 0%,rgba(255, 99, 50,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(255, 138, 101,.18) 0%,rgba(255, 99, 50,.10) 40%,transparent 72%)}
+body.light[data-accent="coral"]{--accent:#9c4125;--accent-d:#83371f;--accent-txt:#9c4125;--accent-fill:#9c4125;--accent-soft:rgba(156, 65, 37,.13);--accent-grad:linear-gradient(135deg,#9c4125 0%,#83371f 100%);--accent-grad-soft:linear-gradient(135deg,rgba(156, 65, 37,.13) 0%,rgba(131, 55, 31,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(156, 65, 37,.12) 0%,transparent 72%)}
+body[data-accent="forest"]{--accent:#22c55e;--accent-d:#1a9a49;--accent-txt:#22c55e;--accent-fill:#1a9a49;--accent-soft:rgba(34, 197, 94,.16);--accent-grad:linear-gradient(135deg,#22c55e 0%,#1a9a49 100%);--accent-grad-soft:linear-gradient(135deg,rgba(34, 197, 94,.18) 0%,rgba(26, 154, 73,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(34, 197, 94,.18) 0%,rgba(26, 154, 73,.10) 40%,transparent 72%)}
+body.light[data-accent="forest"]{--accent:#196d38;--accent-d:#13542b;--accent-txt:#196d38;--accent-fill:#196d38;--accent-soft:rgba(25, 109, 56,.13);--accent-grad:linear-gradient(135deg,#196d38 0%,#13542b 100%);--accent-grad-soft:linear-gradient(135deg,rgba(25, 109, 56,.13) 0%,rgba(19, 84, 43,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(25, 109, 56,.12) 0%,transparent 72%)}
 
 /* Accent picker swatches (in Settings) */
 .accent-picker{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
