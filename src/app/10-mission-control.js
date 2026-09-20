@@ -923,13 +923,36 @@ try{ window._cwNeedsPlan = _cwNeedsPlan; }catch(e){}
    memory because two of the three routes out of here leave the page entirely -
    a provider sign-in is a full navigation - and coming back to the job is the
    whole point. */
+const CW_RESUME_TTL = 30 * 60000;
 function _cwResumeJob(v){
   try{
-    if(v === undefined) return loadStr('amv_cw_resume') || '';
-    saveStr('amv_cw_resume', v || '');
+    if(v === undefined){
+      const r = load('amv_cw_resume');
+      if(!r || !r.job) return '';
+      /* STALE INTENT IS NO INTENT, the same rule `_cwConnWant` already
+         follows. Somebody who pressed Connect, changed their mind and came
+         back to Crew an hour later is not asking to be shown that job again -
+         and a modal they did not ask for is worse than the trip they
+         abandoned. */
+      if(!r.at || Date.now() - r.at > CW_RESUME_TTL) return '';
+      return String(r.job);
+    }
+    store('amv_cw_resume', v ? { job:String(v), at:Date.now() } : null);
   }catch(e){}
   return '';
 }
+/* COMING BACK IS THE POINT OF THE TRIP.
+
+   Called when somebody arrives on Crew and again when a connection finishes -
+   between them those are every way back from the three routes out of the
+   requirements screen. The bank and app routes are tab changes, so returning
+   to Crew IS pressing go back; the grant route is a full navigation and lands
+   through the connection handler.
+
+   It fires once and clears the note, so the screen does not reappear every
+   time somebody visits Crew afterwards. Written because the first version of
+   this shipped the function and nothing that called it - which is the exact
+   shape `every-entry-point-has-a-door` exists to catch, and did. */
 function cwResumeIfAny(){
   const id = _cwResumeJob();
   if(!id) return false;
@@ -1103,7 +1126,26 @@ try{ window.cwConnectResume=cwConnectResume; }catch(e){}
    For a job whose only gap is a mailbox that screen is one tap longer than
    before; for every other job it is the difference between working and not. */
 function cwConnect(jobId){
-  if(jobId){ try{ cwNeeds(jobId); return; }catch(e){} }
+  if(jobId){
+    try{
+      /* ONE MISSING THING THAT A GRANT CAN SUPPLY GOES STRAIGHT THERE.
+
+         Sending every job through the requirements list would have added a tap
+         to the commonest case in the product - a job whose only gap is a
+         mailbox - and that one tap is the thing that was asked for by name:
+         turning a job on should take you to a screen that says connect X. It
+         still does.
+
+         The list is for the cases that one screen cannot answer: more than one
+         thing missing, or a single thing that is not an OAuth grant at all. A
+         bank is the second, and it is what sent people to a page with nothing
+         on it for them. */
+      const j = (_cwAllJobs() || []).find(x => x.id === jobId);
+      const missing = j ? _cwNeedsPlan(j).filter(p => !p.met) : [];
+      if(missing.length === 1 && missing[0].kind === 'oauth'){ openCrewConnect(jobId); return; }
+      cwNeeds(jobId); return;
+    }catch(e){}
+  }
   try{ S.tab='integrations'; setTab('integrations'); }catch(e){}
 }
 try{ window.cwConnect=cwConnect; }catch(e){}

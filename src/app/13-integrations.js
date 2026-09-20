@@ -1046,7 +1046,10 @@ async function _connectFinish(code, state){
      refresh lands answers no every time. It refuses a stale or unrelated
      intent itself, so a connection made from the Connectors page for its own
      sake switches nothing on. */
-  try{ setTimeout(()=>{ try{ if(typeof cwConnectResume==='function') cwConnectResume(); }catch(e){} }, 900); }catch(e){}
+  try{ setTimeout(()=>{ try{ if(typeof cwConnectResume==='function') cwConnectResume(); }catch(e){}
+                       /* And the requirements screen, for a job that sent somebody
+                          here with more than one thing still to connect. */
+                       try{ if(typeof cwResumeIfAny==='function') cwResumeIfAny(); }catch(e){} }, 900); }catch(e){}
 }
 try{ window._connectFinish=_connectFinish; }catch(e){}
 

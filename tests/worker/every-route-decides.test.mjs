@@ -105,6 +105,14 @@ const PUBLIC = {
      a search word, a cursor and a count, all bounded, and the number of upstream
      reads one request can cause is bounded too. */
   '/v1/connectors':      'a catalogue of what AMV connects to, read before anybody signs up',
+  /* The picture beside each entry in that catalogue, served from AMV rather
+     than from somebody else's origin so a visitor's browser never announces
+     itself to a third party for the sake of a 28-pixel square. It holds
+     nothing belonging to anybody, and the address it fetches is DERIVED from
+     the registry id rather than supplied - there is no parameter here that
+     names a host, which is what keeps it an allowlist of one shape instead of
+     a hole somebody has to keep guarding. */
+  '/v1/connector-logo':  'the logo beside a catalogue entry, read before anybody signs up',
   /* The catalogue itself, opened deliberately and with the owner's sign-off.
      The handler returns three constants and nothing else - the ten universal
      jobs, the five for the country asked about, and the country names for the

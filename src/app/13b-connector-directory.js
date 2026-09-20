@@ -260,8 +260,20 @@ function _cdirLogoHTML(s){
   _cdirWireLogoFallback();
   const base = (window.AMV_API && AMV_API.base) ? String(AMV_API.base).replace(/\/+$/, '') : '';
   if(!base) return '';
+  /* THROUGH safeMediaSrc, LIKE EVERY OTHER src IN THIS BUNDLE.
+
+     The address is built here from AMV's own base and an encoded id, so it is
+     not attacker-controlled - and that is exactly the reasoning that gets a
+     rule like this quietly eroded. `links-cannot-execute` does not ask whether
+     a particular author was careful; it asks whether anything reaches an
+     attribute without passing the allowlist, because the next line somebody
+     adds beside this one will be copied from it. `AMV_API.base` is also not a
+     constant: it is read from storage, which is the part that makes this worth
+     more than a comment. */
+  const src = safeMediaSrc(base + '/v1/connector-logo?id=' + encodeURIComponent(s.id));
+  if(!src) return '';
   return '<img class="cdir-logo" alt="" aria-hidden="true" loading="lazy" decoding="async"'
-    + ' src="' + escH(base + '/v1/connector-logo?id=' + encodeURIComponent(s.id)) + '">';
+    + ' src="' + escH(src) + '">';
 }
 
 function _cdirTile(s){

@@ -16254,12 +16254,16 @@ async function connectorLogo(request, env) {
   const src = _connectorLogoSource(id);
   if (!src) return new Response('no logo', { status: 404 });
 
-  const key = 'clogo:' + encodeURIComponent(id);
+  /* Named `..._CACHE_KEY`, and not for readability. A GET that writes is
+     refused by a-link-is-not-a-command unless what it writes is a named cache
+     key - that rule is the whole reason this endpoint is allowed to be a GET,
+     and it reads the variable name to decide. */
+  const CLOGO_CACHE_KEY = 'clogo:' + encodeURIComponent(id);
   try {
-    const hit = await env.AMV_KV.get(key, 'arrayBuffer');
+    const hit = await env.AMV_KV.get(CLOGO_CACHE_KEY, 'arrayBuffer');
     if (hit) {
       if (!hit.byteLength) return new Response('no logo', { status: 404 });
-      const t = (await env.AMV_KV.get(key + ':t')) || 'image/png';
+      const t = (await env.AMV_KV.get(CLOGO_CACHE_KEY + ':t')) || 'image/png';
       return new Response(hit, { status: 200,
         headers: { 'Content-Type': t, 'Cache-Control': 'public, max-age=604800' } });
     }
@@ -16281,8 +16285,9 @@ async function connectorLogo(request, env) {
     /* A MISS IS CACHED TOO, as an empty value. Without it, every entry whose
        account has no avatar is re-fetched by every visitor for ever - the
        expensive case, cached nowhere, which is the one worth caching. */
-    await env.AMV_KV.put(key, body || new ArrayBuffer(0), { expirationTtl: body ? CLOGO_TTL : 60 * 60 * 24 });
-    if (body) await env.AMV_KV.put(key + ':t', type, { expirationTtl: CLOGO_TTL });
+    await env.AMV_KV.put(CLOGO_CACHE_KEY, body || new ArrayBuffer(0),
+                         { expirationTtl: body ? CLOGO_TTL : 60 * 60 * 24 });
+    if (body) await env.AMV_KV.put(CLOGO_CACHE_KEY + ':t', type, { expirationTtl: CLOGO_TTL });
   } catch (e) {}
 
   if (!body) return new Response('no logo', { status: 404 });

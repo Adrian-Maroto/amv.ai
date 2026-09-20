@@ -597,7 +597,13 @@ function renderView(){
        network round trip to show something already on disk would be a slower
        product for a fresher one nobody was waiting for. */
     case 'extensions': renderCrewView(); _crewSyncLive(); break;
-    case 'crew': renderCrewView(); _crewSyncLive(); break;
+    case 'crew': renderCrewView(); _crewSyncLive();
+      /* A job may have sent somebody off to connect something. Arriving back
+         on Crew is what "go back" means for the two routes that are tab
+         changes, so the requirements screen reopens here - once, and only
+         for an intent that is still fresh. */
+      try{ setTimeout(() => { try{ if(typeof cwResumeIfAny === 'function') cwResumeIfAny(); }catch(e){} }, 400); }catch(e){}
+      break;
     /* One door for all three (AMV-D007 step 2). The renderers behind it are
        unchanged; this is only where they are reached from. */
     /* One entry in the sidebar, three sections inside it. The old tab names

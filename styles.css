@@ -5,7 +5,7 @@
      This block was declared three times: here, again at "RECOVERED DESIGN
      SYSTEM", and a third time at "AMV IDENTITY" 2,700 lines down. Same token
      names, different values, last one wins - so retuning the palette HERE,
-     which is the block CLAUDE.md points every contributor at, changed nothing
+     which is the block the project guide points every contributor at, changed nothing
      at all. The light theme somebody kept asking to have softened was
      #fdfdfc, set in the third copy, and every edit to this line was dead on
      arrival with nothing to show for it.
@@ -3434,38 +3434,38 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 
    Generated. If the surfaces move, re-run the solver rather than nudging a
    hex here; `an-accent-nobody-can-read` holds the numbers. */
-body:not([data-accent]){--accent:#5590ff;--accent-d:#226fff;--accent-txt:#5a93ff;--accent-fill:#226fff;--accent-soft:rgba(85, 144, 255,.16);--accent-grad:linear-gradient(135deg,#5590ff 0%,#226fff 100%);--accent-grad-soft:linear-gradient(135deg,rgba(85, 144, 255,.18) 0%,rgba(34, 111, 255,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(85, 144, 255,.18) 0%,rgba(34, 111, 255,.10) 40%,transparent 72%)}
-body.light:not([data-accent]){--accent:#2a5ab4;--accent-d:#244e9b;--accent-txt:#2a5ab4;--accent-fill:#2a5ab4;--accent-soft:rgba(42, 90, 180,.13);--accent-grad:linear-gradient(135deg,#2a5ab4 0%,#244e9b 100%);--accent-grad-soft:linear-gradient(135deg,rgba(42, 90, 180,.13) 0%,rgba(36, 78, 155,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(42, 90, 180,.12) 0%,transparent 72%)}
-body[data-accent="violet"]{--accent:#9d7bff;--accent-d:#7748ff;--accent-txt:#a180ff;--accent-fill:#7748ff;--accent-soft:rgba(157, 123, 255,.16);--accent-grad:linear-gradient(135deg,#9d7bff 0%,#7748ff 100%);--accent-grad-soft:linear-gradient(135deg,rgba(157, 123, 255,.18) 0%,rgba(119, 72, 255,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(157, 123, 255,.18) 0%,rgba(119, 72, 255,.10) 40%,transparent 72%)}
-body.light[data-accent="violet"]{--accent:#6741d3;--accent-d:#562ec7;--accent-txt:#6741d3;--accent-fill:#6741d3;--accent-soft:rgba(103, 65, 211,.13);--accent-grad:linear-gradient(135deg,#6741d3 0%,#562ec7 100%);--accent-grad-soft:linear-gradient(135deg,rgba(103, 65, 211,.13) 0%,rgba(86, 46, 199,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(103, 65, 211,.12) 0%,transparent 72%)}
-body[data-accent="emerald"]{--accent:#34d399;--accent-d:#26ae7c;--accent-txt:#34d399;--accent-fill:#26ae7c;--accent-soft:rgba(52, 211, 153,.16);--accent-grad:linear-gradient(135deg,#34d399 0%,#26ae7c 100%);--accent-grad-soft:linear-gradient(135deg,rgba(52, 211, 153,.18) 0%,rgba(38, 174, 124,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(52, 211, 153,.18) 0%,rgba(38, 174, 124,.10) 40%,transparent 72%)}
-body.light[data-accent="emerald"]{--accent:#196a4c;--accent-d:#13513a;--accent-txt:#196a4c;--accent-fill:#196a4c;--accent-soft:rgba(25, 106, 76,.13);--accent-grad:linear-gradient(135deg,#196a4c 0%,#13513a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(25, 106, 76,.13) 0%,rgba(19, 81, 58,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(25, 106, 76,.12) 0%,transparent 72%)}
-body[data-accent="amber"]{--accent:#f5a623;--accent-d:#db8c0a;--accent-txt:#f5a623;--accent-fill:#db8c0a;--accent-soft:rgba(245, 166, 35,.16);--accent-grad:linear-gradient(135deg,#f5a623 0%,#db8c0a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(245, 166, 35,.18) 0%,rgba(219, 140, 10,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(245, 166, 35,.18) 0%,rgba(219, 140, 10,.10) 40%,transparent 72%)}
-body.light[data-accent="amber"]{--accent:#7c581d;--accent-d:#634617;--accent-txt:#7c581d;--accent-fill:#7c581d;--accent-soft:rgba(124, 88, 29,.13);--accent-grad:linear-gradient(135deg,#7c581d 0%,#634617 100%);--accent-grad-soft:linear-gradient(135deg,rgba(124, 88, 29,.13) 0%,rgba(99, 70, 23,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(124, 88, 29,.12) 0%,transparent 72%)}
-body[data-accent="rose"]{--accent:#fb7185;--accent-d:#fa3f5a;--accent-txt:#fb7185;--accent-fill:#fa3f5a;--accent-soft:rgba(251, 113, 133,.16);--accent-grad:linear-gradient(135deg,#fb7185 0%,#fa3f5a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(251, 113, 133,.18) 0%,rgba(250, 63, 90,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(251, 113, 133,.18) 0%,rgba(250, 63, 90,.10) 40%,transparent 72%)}
-body.light[data-accent="rose"]{--accent:#af293c;--accent-d:#962333;--accent-txt:#af293c;--accent-fill:#af293c;--accent-soft:rgba(175, 41, 60,.13);--accent-grad:linear-gradient(135deg,#af293c 0%,#962333 100%);--accent-grad-soft:linear-gradient(135deg,rgba(175, 41, 60,.13) 0%,rgba(150, 35, 51,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(175, 41, 60,.12) 0%,transparent 72%)}
-body[data-accent="cyan"]{--accent:#38bdf8;--accent-d:#09acf4;--accent-txt:#38bdf8;--accent-fill:#09acf4;--accent-soft:rgba(56, 189, 248,.16);--accent-grad:linear-gradient(135deg,#38bdf8 0%,#09acf4 100%);--accent-grad-soft:linear-gradient(135deg,rgba(56, 189, 248,.18) 0%,rgba(9, 172, 244,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(56, 189, 248,.18) 0%,rgba(9, 172, 244,.10) 40%,transparent 72%)}
-body.light[data-accent="cyan"]{--accent:#1f6483;--accent-d:#19516a;--accent-txt:#1f6483;--accent-fill:#1f6483;--accent-soft:rgba(31, 100, 131,.13);--accent-grad:linear-gradient(135deg,#1f6483 0%,#19516a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(31, 100, 131,.13) 0%,rgba(25, 81, 106,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(31, 100, 131,.12) 0%,transparent 72%)}
-body[data-accent="indigo"]{--accent:#686bf1;--accent-d:#393ded;--accent-txt:#898bf4;--accent-fill:#393ded;--accent-soft:rgba(104, 107, 241,.16);--accent-grad:linear-gradient(135deg,#686bf1 0%,#393ded 100%);--accent-grad-soft:linear-gradient(135deg,rgba(104, 107, 241,.18) 0%,rgba(57, 61, 237,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(104, 107, 241,.18) 0%,rgba(57, 61, 237,.10) 40%,transparent 72%)}
-body.light[data-accent="indigo"]{--accent:#484bd4;--accent-d:#3034cd;--accent-txt:#484bd4;--accent-fill:#484bd4;--accent-soft:rgba(72, 75, 212,.13);--accent-grad:linear-gradient(135deg,#484bd4 0%,#3034cd 100%);--accent-grad-soft:linear-gradient(135deg,rgba(72, 75, 212,.13) 0%,rgba(48, 52, 205,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(72, 75, 212,.12) 0%,transparent 72%)}
-body[data-accent="teal"]{--accent:#14b8a6;--accent-d:#0f8a7d;--accent-txt:#14b8a6;--accent-fill:#0f8a7d;--accent-soft:rgba(20, 184, 166,.16);--accent-grad:linear-gradient(135deg,#14b8a6 0%,#0f8a7d 100%);--accent-grad-soft:linear-gradient(135deg,rgba(20, 184, 166,.18) 0%,rgba(15, 138, 125,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(20, 184, 166,.18) 0%,rgba(15, 138, 125,.10) 40%,transparent 72%)}
-body.light[data-accent="teal"]{--accent:#18675f;--accent-d:#124e48;--accent-txt:#18675f;--accent-fill:#18675f;--accent-soft:rgba(24, 103, 95,.13);--accent-grad:linear-gradient(135deg,#18675f 0%,#124e48 100%);--accent-grad-soft:linear-gradient(135deg,rgba(24, 103, 95,.13) 0%,rgba(18, 78, 72,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(24, 103, 95,.12) 0%,transparent 72%)}
-body[data-accent="lime"]{--accent:#a3e635;--accent-d:#8ace1a;--accent-txt:#a3e635;--accent-fill:#8ace1a;--accent-soft:rgba(163, 230, 53,.16);--accent-grad:linear-gradient(135deg,#a3e635 0%,#8ace1a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(163, 230, 53,.18) 0%,rgba(138, 206, 26,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(163, 230, 53,.18) 0%,rgba(138, 206, 26,.10) 40%,transparent 72%)}
-body.light[data-accent="lime"]{--accent:#486518;--accent-d:#364c12;--accent-txt:#486518;--accent-fill:#486518;--accent-soft:rgba(72, 101, 24,.13);--accent-grad:linear-gradient(135deg,#486518 0%,#364c12 100%);--accent-grad-soft:linear-gradient(135deg,rgba(72, 101, 24,.13) 0%,rgba(54, 76, 18,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(72, 101, 24,.12) 0%,transparent 72%)}
-body[data-accent="orange"]{--accent:#fb923c;--accent-d:#fa760a;--accent-txt:#fb923c;--accent-fill:#fa760a;--accent-soft:rgba(251, 146, 60,.16);--accent-grad:linear-gradient(135deg,#fb923c 0%,#fa760a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(251, 146, 60,.18) 0%,rgba(250, 118, 10,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(251, 146, 60,.18) 0%,rgba(250, 118, 10,.10) 40%,transparent 72%)}
-body.light[data-accent="orange"]{--accent:#884f20;--accent-d:#6f411a;--accent-txt:#884f20;--accent-fill:#884f20;--accent-soft:rgba(136, 79, 32,.13);--accent-grad:linear-gradient(135deg,#884f20 0%,#6f411a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(136, 79, 32,.13) 0%,rgba(111, 65, 26,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(136, 79, 32,.12) 0%,transparent 72%)}
-body[data-accent="crimson"]{--accent:#f04444;--accent-d:#ec1515;--accent-txt:#f36a6a;--accent-fill:#ec1515;--accent-soft:rgba(240, 68, 68,.16);--accent-grad:linear-gradient(135deg,#f04444 0%,#ec1515 100%);--accent-grad-soft:linear-gradient(135deg,rgba(240, 68, 68,.18) 0%,rgba(236, 21, 21,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(240, 68, 68,.18) 0%,rgba(236, 21, 21,.10) 40%,transparent 72%)}
-body.light[data-accent="crimson"]{--accent:#b32a2a;--accent-d:#9a2424;--accent-txt:#b32a2a;--accent-fill:#b32a2a;--accent-soft:rgba(179, 42, 42,.13);--accent-grad:linear-gradient(135deg,#b32a2a 0%,#9a2424 100%);--accent-grad-soft:linear-gradient(135deg,rgba(179, 42, 42,.13) 0%,rgba(154, 36, 36,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(179, 42, 42,.12) 0%,transparent 72%)}
-body[data-accent="magenta"]{--accent:#e879f9;--accent-d:#e048f7;--accent-txt:#e879f9;--accent-fill:#e048f7;--accent-soft:rgba(232, 121, 249,.16);--accent-grad:linear-gradient(135deg,#e879f9 0%,#e048f7 100%);--accent-grad-soft:linear-gradient(135deg,rgba(232, 121, 249,.18) 0%,rgba(224, 72, 247,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(232, 121, 249,.18) 0%,rgba(224, 72, 247,.10) 40%,transparent 72%)}
-body.light[data-accent="magenta"]{--accent:#9a28ac;--accent-d:#842293;--accent-txt:#9a28ac;--accent-fill:#9a28ac;--accent-soft:rgba(154, 40, 172,.13);--accent-grad:linear-gradient(135deg,#9a28ac 0%,#842293 100%);--accent-grad-soft:linear-gradient(135deg,rgba(154, 40, 172,.13) 0%,rgba(132, 34, 147,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(154, 40, 172,.12) 0%,transparent 72%)}
-body[data-accent="gold"]{--accent:#eab308;--accent-d:#b98d06;--accent-txt:#eab308;--accent-fill:#b98d06;--accent-soft:rgba(234, 179, 8,.16);--accent-grad:linear-gradient(135deg,#eab308 0%,#b98d06 100%);--accent-grad-soft:linear-gradient(135deg,rgba(234, 179, 8,.18) 0%,rgba(185, 141, 6,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(234, 179, 8,.18) 0%,rgba(185, 141, 6,.10) 40%,transparent 72%)}
-body.light[data-accent="gold"]{--accent:#715c1b;--accent-d:#584815;--accent-txt:#715c1b;--accent-fill:#715c1b;--accent-soft:rgba(113, 92, 27,.13);--accent-grad:linear-gradient(135deg,#715c1b 0%,#584815 100%);--accent-grad-soft:linear-gradient(135deg,rgba(113, 92, 27,.13) 0%,rgba(88, 72, 21,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(113, 92, 27,.12) 0%,transparent 72%)}
-body[data-accent="slate"]{--accent:#94a3b8;--accent-d:#7589a4;--accent-txt:#94a3b8;--accent-fill:#7589a4;--accent-soft:rgba(148, 163, 184,.16);--accent-grad:linear-gradient(135deg,#94a3b8 0%,#7589a4 100%);--accent-grad-soft:linear-gradient(135deg,rgba(148, 163, 184,.18) 0%,rgba(117, 137, 164,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(148, 163, 184,.18) 0%,rgba(117, 137, 164,.10) 40%,transparent 72%)}
-body.light[data-accent="slate"]{--accent:#506078;--accent-d:#445166;--accent-txt:#506078;--accent-fill:#506078;--accent-soft:rgba(80, 96, 120,.13);--accent-grad:linear-gradient(135deg,#506078 0%,#445166 100%);--accent-grad-soft:linear-gradient(135deg,rgba(80, 96, 120,.13) 0%,rgba(68, 81, 102,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(80, 96, 120,.12) 0%,transparent 72%)}
-body[data-accent="coral"]{--accent:#ff8a65;--accent-d:#ff6332;--accent-txt:#ff8a65;--accent-fill:#ff6332;--accent-soft:rgba(255, 138, 101,.16);--accent-grad:linear-gradient(135deg,#ff8a65 0%,#ff6332 100%);--accent-grad-soft:linear-gradient(135deg,rgba(255, 138, 101,.18) 0%,rgba(255, 99, 50,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(255, 138, 101,.18) 0%,rgba(255, 99, 50,.10) 40%,transparent 72%)}
-body.light[data-accent="coral"]{--accent:#9c4125;--accent-d:#83371f;--accent-txt:#9c4125;--accent-fill:#9c4125;--accent-soft:rgba(156, 65, 37,.13);--accent-grad:linear-gradient(135deg,#9c4125 0%,#83371f 100%);--accent-grad-soft:linear-gradient(135deg,rgba(156, 65, 37,.13) 0%,rgba(131, 55, 31,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(156, 65, 37,.12) 0%,transparent 72%)}
-body[data-accent="forest"]{--accent:#22c55e;--accent-d:#1a9a49;--accent-txt:#22c55e;--accent-fill:#1a9a49;--accent-soft:rgba(34, 197, 94,.16);--accent-grad:linear-gradient(135deg,#22c55e 0%,#1a9a49 100%);--accent-grad-soft:linear-gradient(135deg,rgba(34, 197, 94,.18) 0%,rgba(26, 154, 73,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(34, 197, 94,.18) 0%,rgba(26, 154, 73,.10) 40%,transparent 72%)}
-body.light[data-accent="forest"]{--accent:#196d38;--accent-d:#13542b;--accent-txt:#196d38;--accent-fill:#196d38;--accent-soft:rgba(25, 109, 56,.13);--accent-grad:linear-gradient(135deg,#196d38 0%,#13542b 100%);--accent-grad-soft:linear-gradient(135deg,rgba(25, 109, 56,.13) 0%,rgba(19, 84, 43,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(25, 109, 56,.12) 0%,transparent 72%)}
+body:not([data-accent]){--accent:#5590ff;--accent-d:#3170e6;--accent-txt:#6fa1ff;--accent-fill:#3170e6;--accent-soft:rgba(85, 144, 255,.16);--accent-grad:linear-gradient(135deg,#5590ff 0%,#3170e6 100%);--accent-grad-soft:linear-gradient(135deg,rgba(85, 144, 255,.18) 0%,rgba(49, 112, 230,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(85, 144, 255,.18) 0%,rgba(49, 112, 230,.10) 40%,transparent 72%)}
+body.light:not([data-accent]){--accent:#2550a0;--accent-d:#2550a0;--accent-txt:#2550a0;--accent-fill:#2550a0;--accent-soft:rgba(37, 80, 160,.13);--accent-grad:linear-gradient(135deg,#2550a0 0%,#2550a0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(37, 80, 160,.13) 0%,rgba(37, 80, 160,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(37, 80, 160,.12) 0%,transparent 72%)}
+body[data-accent="violet"]{--accent:#9d7bff;--accent-d:#815ceb;--accent-txt:#ac8fff;--accent-fill:#815ceb;--accent-soft:rgba(157, 123, 255,.16);--accent-grad:linear-gradient(135deg,#9d7bff 0%,#815ceb 100%);--accent-grad-soft:linear-gradient(135deg,rgba(157, 123, 255,.18) 0%,rgba(129, 92, 235,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(157, 123, 255,.18) 0%,rgba(129, 92, 235,.10) 40%,transparent 72%)}
+body.light[data-accent="violet"]{--accent:#5a31cf;--accent-d:#5a31cf;--accent-txt:#5a31cf;--accent-fill:#5a31cf;--accent-soft:rgba(90, 49, 207,.13);--accent-grad:linear-gradient(135deg,#5a31cf 0%,#5a31cf 100%);--accent-grad-soft:linear-gradient(135deg,rgba(90, 49, 207,.13) 0%,rgba(90, 49, 207,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(90, 49, 207,.12) 0%,transparent 72%)}
+body[data-accent="emerald"]{--accent:#34d399;--accent-d:#1d845f;--accent-txt:#34d399;--accent-fill:#1d845f;--accent-soft:rgba(52, 211, 153,.16);--accent-grad:linear-gradient(135deg,#34d399 0%,#1d845f 100%);--accent-grad-soft:linear-gradient(135deg,rgba(52, 211, 153,.18) 0%,rgba(29, 132, 95,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(52, 211, 153,.18) 0%,rgba(29, 132, 95,.10) 40%,transparent 72%)}
+body.light[data-accent="emerald"]{--accent:#165d43;--accent-d:#165d43;--accent-txt:#165d43;--accent-fill:#165d43;--accent-soft:rgba(22, 93, 67,.13);--accent-grad:linear-gradient(135deg,#165d43 0%,#165d43 100%);--accent-grad-soft:linear-gradient(135deg,rgba(22, 93, 67,.13) 0%,rgba(22, 93, 67,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(22, 93, 67,.12) 0%,transparent 72%)}
+body[data-accent="amber"]{--accent:#f5a623;--accent-d:#9e6a14;--accent-txt:#f5a623;--accent-fill:#9e6a14;--accent-soft:rgba(245, 166, 35,.16);--accent-grad:linear-gradient(135deg,#f5a623 0%,#9e6a14 100%);--accent-grad-soft:linear-gradient(135deg,rgba(245, 166, 35,.18) 0%,rgba(158, 106, 20,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(245, 166, 35,.18) 0%,rgba(158, 106, 20,.10) 40%,transparent 72%)}
+body.light[data-accent="amber"]{--accent:#6b4c19;--accent-d:#6b4c19;--accent-txt:#6b4c19;--accent-fill:#6b4c19;--accent-soft:rgba(107, 76, 25,.13);--accent-grad:linear-gradient(135deg,#6b4c19 0%,#6b4c19 100%);--accent-grad-soft:linear-gradient(135deg,rgba(107, 76, 25,.13) 0%,rgba(107, 76, 25,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(107, 76, 25,.12) 0%,transparent 72%)}
+body[data-accent="rose"]{--accent:#fb7185;--accent-d:#e4223e;--accent-txt:#fb7689;--accent-fill:#e4223e;--accent-soft:rgba(251, 113, 133,.16);--accent-grad:linear-gradient(135deg,#fb7185 0%,#e4223e 100%);--accent-grad-soft:linear-gradient(135deg,rgba(251, 113, 133,.18) 0%,rgba(228, 34, 62,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(251, 113, 133,.18) 0%,rgba(228, 34, 62,.10) 40%,transparent 72%)}
+body.light[data-accent="rose"]{--accent:#9a2435;--accent-d:#9a2435;--accent-txt:#9a2435;--accent-fill:#9a2435;--accent-soft:rgba(154, 36, 53,.13);--accent-grad:linear-gradient(135deg,#9a2435 0%,#9a2435 100%);--accent-grad-soft:linear-gradient(135deg,rgba(154, 36, 53,.13) 0%,rgba(154, 36, 53,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(154, 36, 53,.12) 0%,transparent 72%)}
+body[data-accent="cyan"]{--accent:#38bdf8;--accent-d:#157dab;--accent-txt:#38bdf8;--accent-fill:#157dab;--accent-soft:rgba(56, 189, 248,.16);--accent-grad:linear-gradient(135deg,#38bdf8 0%,#157dab 100%);--accent-grad-soft:linear-gradient(135deg,rgba(56, 189, 248,.18) 0%,rgba(21, 125, 171,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(56, 189, 248,.18) 0%,rgba(21, 125, 171,.10) 40%,transparent 72%)}
+body.light[data-accent="cyan"]{--accent:#1c5a76;--accent-d:#1c5a76;--accent-txt:#1c5a76;--accent-fill:#1c5a76;--accent-soft:rgba(28, 90, 118,.13);--accent-grad:linear-gradient(135deg,#1c5a76 0%,#1c5a76 100%);--accent-grad-soft:linear-gradient(135deg,rgba(28, 90, 118,.13) 0%,rgba(28, 90, 118,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(28, 90, 118,.12) 0%,transparent 72%)}
+body[data-accent="indigo"]{--accent:#686bf1;--accent-d:#6366ec;--accent-txt:#9799f5;--accent-fill:#6366ec;--accent-soft:rgba(104, 107, 241,.16);--accent-grad:linear-gradient(135deg,#686bf1 0%,#6366ec 100%);--accent-grad-soft:linear-gradient(135deg,rgba(104, 107, 241,.18) 0%,rgba(99, 102, 236,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(104, 107, 241,.18) 0%,rgba(99, 102, 236,.10) 40%,transparent 72%)}
+body.light[data-accent="indigo"]{--accent:#373bd0;--accent-d:#373bd0;--accent-txt:#373bd0;--accent-fill:#373bd0;--accent-soft:rgba(55, 59, 208,.13);--accent-grad:linear-gradient(135deg,#373bd0 0%,#373bd0 100%);--accent-grad-soft:linear-gradient(135deg,rgba(55, 59, 208,.13) 0%,rgba(55, 59, 208,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(55, 59, 208,.12) 0%,transparent 72%)}
+body[data-accent="teal"]{--accent:#14b8a6;--accent-d:#108477;--accent-txt:#14b8a6;--accent-fill:#108477;--accent-soft:rgba(20, 184, 166,.16);--accent-grad:linear-gradient(135deg,#14b8a6 0%,#108477 100%);--accent-grad-soft:linear-gradient(135deg,rgba(20, 184, 166,.18) 0%,rgba(16, 132, 119,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(20, 184, 166,.18) 0%,rgba(16, 132, 119,.10) 40%,transparent 72%)}
+body.light[data-accent="teal"]{--accent:#155b53;--accent-d:#155b53;--accent-txt:#155b53;--accent-fill:#155b53;--accent-soft:rgba(21, 91, 83,.13);--accent-grad:linear-gradient(135deg,#155b53 0%,#155b53 100%);--accent-grad-soft:linear-gradient(135deg,rgba(21, 91, 83,.13) 0%,rgba(21, 91, 83,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(21, 91, 83,.12) 0%,transparent 72%)}
+body[data-accent="lime"]{--accent:#a3e635;--accent-d:#568110;--accent-txt:#a3e635;--accent-fill:#568110;--accent-soft:rgba(163, 230, 53,.16);--accent-grad:linear-gradient(135deg,#a3e635 0%,#568110 100%);--accent-grad-soft:linear-gradient(135deg,rgba(163, 230, 53,.18) 0%,rgba(86, 129, 16,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(163, 230, 53,.18) 0%,rgba(86, 129, 16,.10) 40%,transparent 72%)}
+body.light[data-accent="lime"]{--accent:#3f5915;--accent-d:#3f5915;--accent-txt:#3f5915;--accent-fill:#3f5915;--accent-soft:rgba(63, 89, 21,.13);--accent-grad:linear-gradient(135deg,#3f5915 0%,#3f5915 100%);--accent-grad-soft:linear-gradient(135deg,rgba(63, 89, 21,.13) 0%,rgba(63, 89, 21,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(63, 89, 21,.12) 0%,transparent 72%)}
+body[data-accent="orange"]{--accent:#fb923c;--accent-d:#b55e16;--accent-txt:#fb923c;--accent-fill:#b55e16;--accent-soft:rgba(251, 146, 60,.16);--accent-grad:linear-gradient(135deg,#fb923c 0%,#b55e16 100%);--accent-grad-soft:linear-gradient(135deg,rgba(251, 146, 60,.18) 0%,rgba(181, 94, 22,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(251, 146, 60,.18) 0%,rgba(181, 94, 22,.10) 40%,transparent 72%)}
+body.light[data-accent="orange"]{--accent:#78451c;--accent-d:#78451c;--accent-txt:#78451c;--accent-fill:#78451c;--accent-soft:rgba(120, 69, 28,.13);--accent-grad:linear-gradient(135deg,#78451c 0%,#78451c 100%);--accent-grad-soft:linear-gradient(135deg,rgba(120, 69, 28,.13) 0%,rgba(120, 69, 28,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(120, 69, 28,.12) 0%,transparent 72%)}
+body[data-accent="crimson"]{--accent:#f04444;--accent-d:#e42727;--accent-txt:#f57d7d;--accent-fill:#e42727;--accent-soft:rgba(240, 68, 68,.16);--accent-grad:linear-gradient(135deg,#f04444 0%,#e42727 100%);--accent-grad-soft:linear-gradient(135deg,rgba(240, 68, 68,.18) 0%,rgba(228, 39, 39,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(240, 68, 68,.18) 0%,rgba(228, 39, 39,.10) 40%,transparent 72%)}
+body.light[data-accent="crimson"]{--accent:#9f2525;--accent-d:#9f2525;--accent-txt:#9f2525;--accent-fill:#9f2525;--accent-soft:rgba(159, 37, 37,.13);--accent-grad:linear-gradient(135deg,#9f2525 0%,#9f2525 100%);--accent-grad-soft:linear-gradient(135deg,rgba(159, 37, 37,.13) 0%,rgba(159, 37, 37,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(159, 37, 37,.12) 0%,transparent 72%)}
+body[data-accent="magenta"]{--accent:#e879f9;--accent-d:#c31bdc;--accent-txt:#e879f9;--accent-fill:#c31bdc;--accent-soft:rgba(232, 121, 249,.16);--accent-grad:linear-gradient(135deg,#e879f9 0%,#c31bdc 100%);--accent-grad-soft:linear-gradient(135deg,rgba(232, 121, 249,.18) 0%,rgba(195, 27, 220,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(232, 121, 249,.18) 0%,rgba(195, 27, 220,.10) 40%,transparent 72%)}
+body.light[data-accent="magenta"]{--accent:#882397;--accent-d:#882397;--accent-txt:#882397;--accent-fill:#882397;--accent-soft:rgba(136, 35, 151,.13);--accent-grad:linear-gradient(135deg,#882397 0%,#882397 100%);--accent-grad-soft:linear-gradient(135deg,rgba(136, 35, 151,.13) 0%,rgba(136, 35, 151,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(136, 35, 151,.12) 0%,transparent 72%)}
+body[data-accent="gold"]{--accent:#eab308;--accent-d:#8f7012;--accent-txt:#eab308;--accent-fill:#8f7012;--accent-soft:rgba(234, 179, 8,.16);--accent-grad:linear-gradient(135deg,#eab308 0%,#8f7012 100%);--accent-grad-soft:linear-gradient(135deg,rgba(234, 179, 8,.18) 0%,rgba(143, 112, 18,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(234, 179, 8,.18) 0%,rgba(143, 112, 18,.10) 40%,transparent 72%)}
+body.light[data-accent="gold"]{--accent:#655218;--accent-d:#655218;--accent-txt:#655218;--accent-fill:#655218;--accent-soft:rgba(101, 82, 24,.13);--accent-grad:linear-gradient(135deg,#655218 0%,#655218 100%);--accent-grad-soft:linear-gradient(135deg,rgba(101, 82, 24,.13) 0%,rgba(101, 82, 24,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(101, 82, 24,.12) 0%,transparent 72%)}
+body[data-accent="slate"]{--accent:#94a3b8;--accent-d:#627793;--accent-txt:#94a3b8;--accent-fill:#627793;--accent-soft:rgba(148, 163, 184,.16);--accent-grad:linear-gradient(135deg,#94a3b8 0%,#627793 100%);--accent-grad-soft:linear-gradient(135deg,rgba(148, 163, 184,.18) 0%,rgba(98, 119, 147,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(148, 163, 184,.18) 0%,rgba(98, 119, 147,.10) 40%,transparent 72%)}
+body.light[data-accent="slate"]{--accent:#455469;--accent-d:#455469;--accent-txt:#455469;--accent-fill:#455469;--accent-soft:rgba(69, 84, 105,.13);--accent-grad:linear-gradient(135deg,#455469 0%,#455469 100%);--accent-grad-soft:linear-gradient(135deg,rgba(69, 84, 105,.13) 0%,rgba(69, 84, 105,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(69, 84, 105,.12) 0%,transparent 72%)}
+body[data-accent="coral"]{--accent:#ff8a65;--accent-d:#d0451a;--accent-txt:#ff8a65;--accent-fill:#d0451a;--accent-soft:rgba(255, 138, 101,.16);--accent-grad:linear-gradient(135deg,#ff8a65 0%,#d0451a 100%);--accent-grad-soft:linear-gradient(135deg,rgba(255, 138, 101,.18) 0%,rgba(208, 69, 26,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(255, 138, 101,.18) 0%,rgba(208, 69, 26,.10) 40%,transparent 72%)}
+body.light[data-accent="coral"]{--accent:#8c3a21;--accent-d:#8c3a21;--accent-txt:#8c3a21;--accent-fill:#8c3a21;--accent-soft:rgba(140, 58, 33,.13);--accent-grad:linear-gradient(135deg,#8c3a21 0%,#8c3a21 100%);--accent-grad-soft:linear-gradient(135deg,rgba(140, 58, 33,.13) 0%,rgba(140, 58, 33,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(140, 58, 33,.12) 0%,transparent 72%)}
+body[data-accent="forest"]{--accent:#22c55e;--accent-d:#178841;--accent-txt:#22c55e;--accent-fill:#178841;--accent-soft:rgba(34, 197, 94,.16);--accent-grad:linear-gradient(135deg,#22c55e 0%,#178841 100%);--accent-grad-soft:linear-gradient(135deg,rgba(34, 197, 94,.18) 0%,rgba(23, 136, 65,.18) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(34, 197, 94,.18) 0%,rgba(23, 136, 65,.10) 40%,transparent 72%)}
+body.light[data-accent="forest"]{--accent:#176032;--accent-d:#176032;--accent-txt:#176032;--accent-fill:#176032;--accent-soft:rgba(23, 96, 50,.13);--accent-grad:linear-gradient(135deg,#176032 0%,#176032 100%);--accent-grad-soft:linear-gradient(135deg,rgba(23, 96, 50,.13) 0%,rgba(23, 96, 50,.13) 100%);--aura:radial-gradient(60% 60% at 50% 40%,rgba(23, 96, 50,.12) 0%,transparent 72%)}
 
 /* Accent picker swatches (in Settings) */
 .accent-picker{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
@@ -8499,12 +8499,19 @@ html.framed-out body.framed-stop{visibility:visible}
 /* 1. --dim was 3.14:1 on the dark background and 2.47:1 in light. It is the
       token for sidebar section labels, timestamps and helper text - small type,
       which is the type that needs contrast most, not least. */
-:root{ --dim:#929098; }
-body.light{ --dim:#706c64; }
+:root{ --dim:#99989f; }
+body.light{ --dim:#5f5b53; }
 
 /* 2. Accent text on a dark surface. The active sidebar item read 4.2:1. */
-:root{ --accent-tx:#578eff; }
-body.light{ --accent-tx:var(--accent); }
+/* --accent-tx FOLLOWS --accent-txt RATHER THAN CARRYING ITS OWN HEX.
+
+   These were two hardcoded blues, computed against surfaces that have since
+   moved - and they are the token the active sidebar item uses, so every
+   accent in the picker put a BLUE label on its own tint. --accent-txt is
+   already solved per accent, per theme, against the worst surface it sits on,
+   which is exactly what this needs. One number, one place. */
+:root{ --accent-tx:var(--accent-txt); }
+body.light{ --accent-tx:var(--accent-txt); }
 #sb .snb.on,#sb .snb.on span,.snb.on,.snb.on span{ color:var(--accent-tx)!important; }
 
 /* 3. White on the accent is 4.1:1, and --on-accent - the token that exists for
@@ -10901,8 +10908,12 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
 /* The tokens. Light only - the dark theme's values already clear the floor. */
 body.light{
   --mu:#5f5c56;          /* was #6e6c74 - 4.11:1 on a raised card */
-  --accent-txt:#2f5bc0;  /* was #3060c7 - 4.44:1 on the accent-tinted chip */
-  --accent-tx:#2f5bc0;   /* was var(--accent) - 4.39:1 behind the active nav */
+  /* --accent-txt and --accent-tx were #2f5bc0 here, computed against the light
+     surfaces as they were then. Both are gone: the accent blocks solve
+     --accent-txt per accent against the worst surface it sits on, and this
+     hardcoded pair both went marginal when the surfaces moved AND forced one
+     blue on sixteen different accents. A fixed hex for a themeable colour is
+     a value that can only ever be right for one of them. */
   --gold-txt:#6f5820;    /* was #7b6224 - 4.32:1 on a grey pill */
   --grn-txt:#216539;     /* was #267343 - 4.19:1 on a grey pill */
 }
@@ -14886,3 +14897,51 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   .cwn-a,.cwn-a .btn{ width:100%; }
   .cwn-acts .btn{ flex:1 1 auto; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LAYER A240 - four plan buttons on one line
+
+   The button is pushed to the bottom of its card with margin-top:auto, so
+   whatever sits BELOW it decides where it lands. The reassurance line does,
+   and it is one line under some tiers and two under others - so Ultra's
+   button sat fifteen pixels above the other three on a row of cards that are
+   otherwise identical in height.
+
+   Given room for two lines, every card puts its button in the same place and
+   the short ones simply have space under them. In em, so it still holds when
+   somebody scales the text up.
+   ══════════════════════════════════════════════════════════════════════════ */
+/* THE FEATURE LIST IS THE ELEMENT THAT STRETCHES, and that is the whole fix.
+
+   `margin-top:auto` was already on the button and computed to 0px, because
+   there was no free space for it to absorb: the card is a flex column whose
+   children are all their natural height, so the column has no slack and the
+   button simply lands wherever the list happens to end. Three tiers coincided
+   and Ultra came up fifteen pixels short.
+
+   Giving the list `flex:1` puts the slack somewhere deliberate. Every card
+   then ends its list at the same line and the button is pinned, whatever the
+   anchor wraps to. */
+/* THE BUTTON WAS THE THING THAT DIFFERED, and it took measuring every child
+   of every card to see it. "Go Ultra - $200/mo" wraps to two lines in its
+   column while the other three labels fit on one, so Ultra's button was 56px
+   and the rest were 41 - and because the button is anchored to the bottom of
+   the card, a taller button has a higher top. The fifteen pixels the layout
+   check reported were 56 minus 41, exactly.
+
+   Not fixed by shortening the label: `one-price-everywhere` asserts the price
+   is ON the button, deliberately, so that a price can never be advertised in
+   one place and charged in another. Fixed by giving every button room for two
+   lines, so a label that wraps and one that does not leave the row level.
+
+   In em and a calc rather than a measured pixel count, so it still holds when
+   somebody scales the text up. */
+.plnc .plnbtn{
+  min-height:calc(2.8em + 24px);
+  display:flex; align-items:center; justify-content:center;
+}
+.plnc .plnfl{ flex:1 1 auto; }
+/* And room for two lines under it, so a one-line reassurance and a two-line
+   one do not move the button they sit beneath. In em, so it survives somebody
+   scaling the text up. */
+.plnreassure{ min-height:2.85em; }

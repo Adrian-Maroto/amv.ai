@@ -17318,13 +17318,36 @@ try{ window._cwNeedsPlan = _cwNeedsPlan; }catch(e){}
    memory because two of the three routes out of here leave the page entirely -
    a provider sign-in is a full navigation - and coming back to the job is the
    whole point. */
+const CW_RESUME_TTL = 30 * 60000;
 function _cwResumeJob(v){
   try{
-    if(v === undefined) return loadStr('amv_cw_resume') || '';
-    saveStr('amv_cw_resume', v || '');
+    if(v === undefined){
+      const r = load('amv_cw_resume');
+      if(!r || !r.job) return '';
+      /* STALE INTENT IS NO INTENT, the same rule `_cwConnWant` already
+         follows. Somebody who pressed Connect, changed their mind and came
+         back to Crew an hour later is not asking to be shown that job again -
+         and a modal they did not ask for is worse than the trip they
+         abandoned. */
+      if(!r.at || Date.now() - r.at > CW_RESUME_TTL) return '';
+      return String(r.job);
+    }
+    store('amv_cw_resume', v ? { job:String(v), at:Date.now() } : null);
   }catch(e){}
   return '';
 }
+/* COMING BACK IS THE POINT OF THE TRIP.
+
+   Called when somebody arrives on Crew and again when a connection finishes -
+   between them those are every way back from the three routes out of the
+   requirements screen. The bank and app routes are tab changes, so returning
+   to Crew IS pressing go back; the grant route is a full navigation and lands
+   through the connection handler.
+
+   It fires once and clears the note, so the screen does not reappear every
+   time somebody visits Crew afterwards. Written because the first version of
+   this shipped the function and nothing that called it - which is the exact
+   shape `every-entry-point-has-a-door` exists to catch, and did. */
 function cwResumeIfAny(){
   const id = _cwResumeJob();
   if(!id) return false;
@@ -17498,7 +17521,26 @@ try{ window.cwConnectResume=cwConnectResume; }catch(e){}
    For a job whose only gap is a mailbox that screen is one tap longer than
    before; for every other job it is the difference between working and not. */
 function cwConnect(jobId){
-  if(jobId){ try{ cwNeeds(jobId); return; }catch(e){} }
+  if(jobId){
+    try{
+      /* ONE MISSING THING THAT A GRANT CAN SUPPLY GOES STRAIGHT THERE.
+
+         Sending every job through the requirements list would have added a tap
+         to the commonest case in the product - a job whose only gap is a
+         mailbox - and that one tap is the thing that was asked for by name:
+         turning a job on should take you to a screen that says connect X. It
+         still does.
+
+         The list is for the cases that one screen cannot answer: more than one
+         thing missing, or a single thing that is not an OAuth grant at all. A
+         bank is the second, and it is what sent people to a page with nothing
+         on it for them. */
+      const j = (_cwAllJobs() || []).find(x => x.id === jobId);
+      const missing = j ? _cwNeedsPlan(j).filter(p => !p.met) : [];
+      if(missing.length === 1 && missing[0].kind === 'oauth'){ openCrewConnect(jobId); return; }
+      cwNeeds(jobId); return;
+    }catch(e){}
+  }
   try{ S.tab='integrations'; setTab('integrations'); }catch(e){}
 }
 try{ window.cwConnect=cwConnect; }catch(e){}
@@ -25856,7 +25898,13 @@ function renderView(){
        network round trip to show something already on disk would be a slower
        product for a fresher one nobody was waiting for. */
     case 'extensions': renderCrewView(); _crewSyncLive(); break;
-    case 'crew': renderCrewView(); _crewSyncLive(); break;
+    case 'crew': renderCrewView(); _crewSyncLive();
+      /* A job may have sent somebody off to connect something. Arriving back
+         on Crew is what "go back" means for the two routes that are tab
+         changes, so the requirements screen reopens here - once, and only
+         for an intent that is still fresh. */
+      try{ setTimeout(() => { try{ if(typeof cwResumeIfAny === 'function') cwResumeIfAny(); }catch(e){} }, 400); }catch(e){}
+      break;
     /* One door for all three (AMV-D007 step 2). The renderers behind it are
        unchanged; this is only where they are reached from. */
     /* One entry in the sidebar, three sections inside it. The old tab names
@@ -30654,7 +30702,10 @@ async function _connectFinish(code, state){
      refresh lands answers no every time. It refuses a stale or unrelated
      intent itself, so a connection made from the Connectors page for its own
      sake switches nothing on. */
-  try{ setTimeout(()=>{ try{ if(typeof cwConnectResume==='function') cwConnectResume(); }catch(e){} }, 900); }catch(e){}
+  try{ setTimeout(()=>{ try{ if(typeof cwConnectResume==='function') cwConnectResume(); }catch(e){}
+                       /* And the requirements screen, for a job that sent somebody
+                          here with more than one thing still to connect. */
+                       try{ if(typeof cwResumeIfAny==='function') cwResumeIfAny(); }catch(e){} }, 900); }catch(e){}
 }
 try{ window._connectFinish=_connectFinish; }catch(e){}
 
@@ -31926,8 +31977,20 @@ function _cdirLogoHTML(s){
   _cdirWireLogoFallback();
   const base = (window.AMV_API && AMV_API.base) ? String(AMV_API.base).replace(/\/+$/, '') : '';
   if(!base) return '';
+  /* THROUGH safeMediaSrc, LIKE EVERY OTHER src IN THIS BUNDLE.
+
+     The address is built here from AMV's own base and an encoded id, so it is
+     not attacker-controlled - and that is exactly the reasoning that gets a
+     rule like this quietly eroded. `links-cannot-execute` does not ask whether
+     a particular author was careful; it asks whether anything reaches an
+     attribute without passing the allowlist, because the next line somebody
+     adds beside this one will be copied from it. `AMV_API.base` is also not a
+     constant: it is read from storage, which is the part that makes this worth
+     more than a comment. */
+  const src = safeMediaSrc(base + '/v1/connector-logo?id=' + encodeURIComponent(s.id));
+  if(!src) return '';
   return '<img class="cdir-logo" alt="" aria-hidden="true" loading="lazy" decoding="async"'
-    + ' src="' + escH(base + '/v1/connector-logo?id=' + encodeURIComponent(s.id)) + '">';
+    + ' src="' + escH(src) + '">';
 }
 
 function _cdirTile(s){

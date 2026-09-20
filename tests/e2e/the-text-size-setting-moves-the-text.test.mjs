@@ -111,8 +111,12 @@ section('Choosing a bigger size makes the text bigger');
      proxy - and it is the specific one that regressed. */
   const heads = await page.evaluate(async () => {
     const read = () => {
-      const head = document.querySelector('.plans-head h2');
-      const sub  = document.querySelector('.plans-head .vsub');
+      /* `.plans-head` was the Pricing page's header. Pricing is not a place of
+         its own any more - a plan's price and a plan's limits are the same
+         decision, so both live on Spending, which #/plans still resolves to.
+         Same page, same job for this check, different class names. */
+      const head = document.querySelector('.spv-head h2, .plans-head h2');
+      const sub  = document.querySelector('.spv-head .spv-sub, .plans-head .vsub');
       return head && sub
         ? { head: parseFloat(getComputedStyle(head).fontSize),
             sub:  parseFloat(getComputedStyle(sub).fontSize) }

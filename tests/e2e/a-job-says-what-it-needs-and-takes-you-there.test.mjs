@@ -151,13 +151,20 @@ section('The bank goes to Spending, which is where a bank is actually linked');
 section('And the job is remembered, so finishing comes back to it');
 {
   const r = await page.evaluate(async (jid) => {
-    const remembered = loadStr('amv_cw_resume');
+    /* Read as the object it is. It carries a timestamp beside the job,
+       because a note left an hour ago by somebody who changed their mind is
+       not permission to reopen anything - the same rule `_cwConnWant`
+       already follows. */
+    const before = load('amv_cw_resume');
     const came = cwResumeIfAny();
     await new Promise(res => setTimeout(res, 450));
-    return { remembered, came, onNeeds: !!document.getElementById('cwn-back'),
-             again: loadStr('amv_cw_resume'), want: jid };
+    const after = load('amv_cw_resume');
+    return { remembered: before && before.job, stamped: !!(before && before.at),
+             came, onNeeds: !!document.getElementById('cwn-back'),
+             again: after && after.job, want: jid };
   }, shapes.bank);
   ok(r.remembered === r.want, 'the job was written down before leaving', r);
+  ok(r.stamped, 'with a time on it, so a note left an hour ago is not still standing', r);
   ok(r.came && r.onNeeds, 'and coming back reopens what it needs', r);
   ok(!r.again, 'once - a stale note is not a standing instruction', r);
 }
