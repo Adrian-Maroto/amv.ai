@@ -190,9 +190,28 @@ section('A fetch that merely failed does NOT announce a missing captcha');
        never got to run". A control that reports the wrong cause is worse than
        one that stays quiet. */
     if (_publicConfigInFlight) return { stuck: true };
-    _publicConfigFail = ''; _publicConfigDone = false;
-    await window._loadPublicConfig();
-    const reason = configUnreachable();
+    /* THE 503 HAS TO ACTUALLY BE SERVED, AND UNDER LOAD IT SOMETIMES IS NOT.
+
+       This block's whole premise is that the request came back 503. On a
+       loaded runner it can instead fail at the transport - the browser is
+       starved of CPU long enough for the request to error before the route
+       handler fulfils it - and the reason recorded is then "the request could
+       not be sent". That is the product telling the truth about what actually
+       happened; it is the TEST's setup that did not happen.
+
+       Reported as itself rather than as the product recording the wrong
+       reason, which is what it looked like once in a full 401-suite run (it
+       passes alone and passed six concurrent runs). One retry, because a
+       second attempt meets the route that is by now certainly installed - and
+       the assertion below is unchanged, so a product that stopped recording
+       the status still fails exactly as before. */
+    let reason = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      _publicConfigFail = ''; _publicConfigDone = false;
+      await window._loadPublicConfig();
+      reason = configUnreachable();
+      if (/503/.test(reason)) break;
+    }
     _mountTurnstile();
     const b = document.getElementById('a-turnstile');
     return { reason, html: b.innerHTML || '', hidden: b.style.display === 'none' };

@@ -113,9 +113,15 @@ section('Nothing on the page sells a multiple of somewhere else any more');
 section('The engine claim is the one the ladder can keep');
 {
   const code = codeOnly(client);
-  /* The false version, in any of the shapes it was written in. */
-  const same = /same model as the most expensive/i.test(code);
-  ok(!same, 'the page does not claim the cheapest paid plan runs the same MODEL');
+  /* Written as one negated literal rather than a match stored in a variable,
+     and the difference is not style. `a-check-anchored-on-prose-is-not-a-check`
+     skips a negated pattern on purpose - stripping comments can only make an
+     absence MORE true - but it reads the source, so a negation split across two
+     statements looks to it like an ordinary positive match on a phrase that
+     now survives only in the comment below. It said so. One expression says
+     what this actually asserts. */
+  ok(!/same model as the most expensive/i.test(code),
+     'the page does not claim the cheapest paid plan runs the same MODEL');
 
   const paid = Object.values(ENGINES).filter(e => PLAN_RANK[e.minPlan] > 0)
     .sort((a, b) => PLAN_RANK[a.minPlan] - PLAN_RANK[b.minPlan]);
