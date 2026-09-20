@@ -52,7 +52,10 @@ const open = async (plan) => page.evaluate(async (p) => {
   return {
     tab: S.tab,
     heading: (document.querySelector('.spv-t') || {}).innerText || '',
-    facts: [...document.querySelectorAll('.spv-facts .spv-f')].map(e => e.innerText.replace(/\n/g, ' ')),
+    /* Scoped to the PLAN panel. There is a second row of facts now - balance,
+       ceiling, spent - and an unscoped count silently doubled, which would have
+       read as the plan figures having changed. */
+    facts: [...document.querySelectorAll('.spv-now .spv-f')].map(e => e.innerText.replace(/\n/g, ' ')),
     limitsText: t('spv-limits').slice(0, 200),
     bankText: t('spv-bank').slice(0, 200),
     /* Controls only the real editor has. Prose could be re-typed; a wired
@@ -165,7 +168,7 @@ section('Billing quotes the same plan in the same unit');
     for (const plan of ['pro', 'elite']) {
       saveStr('amv_plan', plan);
       setTab('spend'); await new Promise(r => setTimeout(r, 650));
-      const spend = [...document.querySelectorAll('.spv-facts .spv-f')]
+      const spend = [...document.querySelectorAll('.spv-now .spv-f')]
         .map(e => e.innerText.replace(/\s+/g, ' ').trim());
       setTab('billing'); await new Promise(r => setTimeout(r, 650));
       const bill = (document.querySelector('.bill-facts') || {}).innerText || '';

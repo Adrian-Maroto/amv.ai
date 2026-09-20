@@ -14965,3 +14965,67 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   padding-top:var(--sp-3);
   border-top:1px solid var(--bdl);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LAYER A242 - Spending, in the order somebody reads it
+
+   What it IS comes first, because "spending" means two different things here
+   - the subscription you pay AMV, and the money AMV may spend for you - and
+   until that is said every figure below it is ambiguous. Two panels, side by
+   side, so the distinction is structural rather than a sentence somebody has
+   to hold in their head.
+
+   Then the plan, then the money, then what it is watching for, then the
+   upgrade. The upgrade is last on purpose: somebody who came to check what
+   AMV spent is not here to be sold to, and a plan grid above their own
+   numbers makes the page read as being about the sale.
+   ══════════════════════════════════════════════════════════════════════════ */
+.spv-what{ margin:var(--sp-2) 0 var(--sp-6); }
+.spv-w-g{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-4); }
+.spv-w-i{
+  min-width:0; padding:var(--sp-4);
+  background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-lg);
+}
+.spv-w-t{ font-size:var(--t-md); font-weight:650; color:var(--tx); margin-bottom:var(--sp-2); }
+.spv-w-i p{ margin:0; font-size:var(--t-sm); color:var(--mu); line-height:1.6; }
+/* The money row is four facts like the plan row, so it uses the same grid and
+   only says what is different: these are dollars, not allowances. */
+.spv-facts-m{ border-top:none; padding-top:0; margin-top:var(--sp-2); }
+
+/* ── Watching for a price ────────────────────────────────────────────────── */
+.wl-list{ display:flex; flex-direction:column; gap:var(--sp-2); margin:var(--sp-2) 0 var(--sp-4); }
+.wl-row{
+  display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
+  padding:var(--sp-3) var(--sp-4);
+  background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-lg);
+}
+.wl-b{ min-width:0; }
+.wl-n{ font-size:var(--t-md); font-weight:600; color:var(--tx); }
+.wl-h{ font-size:var(--t-sm); color:var(--mu); margin-top:2px; }
+.wl-a{ flex:0 0 auto; display:flex; align-items:center; gap:var(--sp-3); }
+/* Watching on the server and watching only while this tab is open are
+   different promises, so they do not get the same badge. */
+.wl-live{ font-size:var(--t-xs); font-weight:600; color:var(--grn-txt); white-space:nowrap; }
+.wl-local{ font-size:var(--t-xs); font-weight:600; color:var(--gold-txt); white-space:nowrap; }
+.wl-x{
+  background:none; border:1px solid var(--bd); border-radius:var(--r-sm);
+  color:var(--mu); font-family:inherit; font-size:var(--t-sm);
+  padding:5px 12px; cursor:pointer; transition:border-color .13s,color .13s;
+}
+.wl-x:hover{ border-color:var(--red); color:var(--red-txt); }
+.wl-none{ font-size:var(--t-sm); color:var(--mu); margin:0; }
+.wl-add{
+  display:grid; grid-template-columns:2fr 2fr 1fr auto; gap:var(--sp-3);
+  align-items:end;
+  padding:var(--sp-4); background:var(--s1);
+  border:1px solid var(--bd); border-radius:var(--r-lg);
+}
+.wl-add .ml-f{ margin:0; min-width:0; }
+.wl-add .btn{ white-space:nowrap; }
+
+@media (max-width:860px){
+  .spv-w-g{ grid-template-columns:minmax(0,1fr); }
+  .wl-add{ grid-template-columns:minmax(0,1fr); }
+  .wl-row{ flex-direction:column; align-items:stretch; gap:var(--sp-2); }
+  .wl-a{ justify-content:space-between; }
+}
