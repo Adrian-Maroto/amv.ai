@@ -82,6 +82,7 @@ function _awayCardHTML(){
       '</button>'+
       (body ? '<div class="away-snip" data-no-i18n>'+escH(body)+(String(r.out||'').length > 150 ? '…' : '')+'</div>' : '')+
       '<div class="away-full" data-no-i18n hidden></div>'+
+      (body ? '<button class="away-share" type="button" data-away-share="'+escH(String(r.id||''))+'">Share what it found</button>' : '')+
     '</div>';
   }).join('');
 
@@ -102,6 +103,80 @@ function _awayCardHTML(){
     '</div>'+
   '</div>';
 }
+
+/* ── SHOWING SOMEBODY WHAT IT DID WHILE YOU SLEPT ───────────────────────────
+
+   Asked for: cool things people can post about, that make somebody want to
+   use the site.
+
+   The thing worth posting already happens. AMV finds four subscriptions
+   somebody forgot and puts a real number on them; it reads a night of mail and
+   says six of fifty-eight needed you; it watches a supplier page and catches a
+   lead time doubling before the quote goes out. What was missing is that all
+   of it was PRIVATE. There was no way to show anyone, so the best moment in
+   the product reached exactly one person, and the page that would have carried
+   "Try AMV free" to their friends was never created.
+
+   WHY THIS DOES NOT JUST CALL THE SHARE MODAL.
+
+   Because that modal creates the public page the instant it opens - reasonable
+   for a chat somebody is looking at, and wrong here. A background result can
+   contain the contents of their inbox, their bank, their calendar: the whole
+   point of Crew is that it went and read things. Publishing that before they
+   have seen what is in it is the single worst thing this feature could do, and
+   it would do it silently and irreversibly-ish, because a link can be revoked
+   but a copy cannot.
+
+   So nothing is created until they have read the actual text that would go
+   public, in full, and pressed a button that says so. The warning names the
+   real hazard rather than gesturing at privacy in general: this ran against
+   your accounts, so look before you publish.
+
+   After the confirmation it hands over to the ordinary share machinery, which
+   already gets the rest right - off search engines by default, revocable from
+   Settings, and the same copy, native-share and export buttons as anything
+   else. Two flows for one thing would have drifted. */
+function awayShare(id){
+  const rec = (Array.isArray(_AUTO_RESULTS) ? _AUTO_RESULTS : []).find(r => String(r.id) === String(id));
+  const out = (rec && rec.out) || '';
+  if(!out){ try{ toast('This run produced nothing to share.', 'info'); }catch(e){} return; }
+  const title = _awaySnippet(rec.detail, 70) || 'What AMV did on its own';
+  const ovr = document.getElementById('ovr'); if(!ovr) return;
+  ovr.innerHTML =
+    '<div class="share-modal away-share-modal">' +
+      '<div class="share-title">Share what AMV found</div>' +
+      '<p class="share-sub">This makes a public web page. Nothing is created until you press the button below.</p>' +
+      '<div class="away-share-warn">' +
+        '<b>Read it first.</b> This ran against your own accounts, so the text below may name people, ' +
+        'amounts, messages or dates you would not want in public. A link can be revoked later; a copy ' +
+        'somebody already took cannot.' +
+      '</div>' +
+      '<div class="away-share-prev" data-no-i18n>' +
+        '<div class="away-share-prev-t">' + escH(title) + '</div>' +
+        '<div class="away-share-prev-b">' + escH(out) + '</div>' +
+      '</div>' +
+      '<div class="share-actions">' +
+        '<button class="btn bp" id="away-share-go">Create the link</button>' +
+        '<button class="btn bs" id="away-share-no">Cancel</button>' +
+      '</div>' +
+    '</div>';
+  ovr.classList.add('on');
+  const no = document.getElementById('away-share-no');
+  if(no) no.addEventListener('click', () => { try{ closeOvr(); }catch(e){ ovr.innerHTML=''; } });
+  const go = document.getElementById('away-share-go');
+  if(go) go.addEventListener('click', () => {
+    go.disabled = true; go.textContent = 'Creating\u2026';
+    /* Shaped as a one-turn conversation because that is what the share page
+       renders, and what the hosted store holds. The instruction is the user
+       side so the page says what was ASKED as well as what came back - a
+       result with no question above it is half a story. */
+    _openShareModal({ title: title, msgs: [
+      { r:'u', c: String((rec && rec.detail) || title) },
+      { r:'a', c: out },
+    ] });
+  });
+}
+try{ window.awayShare = awayShare; }catch(e){}
 
 /* Wire a rendered card. Called with the container the card was rendered into,
    so it works from the empty home screen and from a conversation alike. */
@@ -131,6 +206,10 @@ function _wireAwayCard(root){
     full.hidden = false;
     if(snip) snip.hidden = true;
     btn.setAttribute('aria-expanded', 'true');
+  }));
+
+  el.querySelectorAll('[data-away-share]').forEach(b => b.addEventListener('click', () => {
+    awayShare(b.dataset.awayShare);
   }));
 
   el.querySelectorAll('[data-away-tasks]').forEach(b => b.addEventListener('click', () => {

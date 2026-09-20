@@ -15312,3 +15312,65 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   background:var(--s2); border:1px solid var(--bdl); border-radius:var(--r-sm);
 }
 #ovr .pay-cur b{ color:var(--tx); font-weight:600; }
+
+/* ===========================================================================
+   LAYER A248 - showing somebody what it did while you slept
+
+   The thing worth posting already happens: four forgotten subscriptions with
+   a real number on them, a night of mail reduced to the six that needed you,
+   a supplier's lead time doubling before the quote went out. All of it was
+   private, so the best moment in the product reached exactly one person.
+
+   The design problem is that this screen has to do two opposite things at
+   once. It has to make sharing feel good - it is the reward - AND it has to
+   make somebody actually read what they are about to publish, because a Crew
+   result can contain their inbox. So the preview is the biggest thing on the
+   screen and the confirm button is below it, which is the one arrangement
+   that cannot be pressed without scrolling past the text.
+
+   The warning is amber rather than red: this is a thing to check, not a thing
+   that has gone wrong, and a red box on a share screen reads as an error and
+   gets dismissed rather than read.
+   =========================================================================== */
+#ovr .away-share-modal{ max-width:min(640px, 92vw); }
+#ovr .away-share-warn{
+  margin:var(--sp-3) 0;
+  padding:var(--sp-3);
+  border:1px solid var(--gold);
+  border-left-width:3px;
+  border-radius:var(--r-sm);
+  background:var(--s2);
+  font-size:var(--t-sm); line-height:1.5; color:var(--mu);
+}
+#ovr .away-share-warn b{ color:var(--tx); font-weight:650; }
+#ovr .away-share-prev{
+  border:1px solid var(--bd); border-radius:var(--r-md);
+  background:var(--s1);
+  max-height:min(46vh, 380px); overflow:auto;
+}
+#ovr .away-share-prev-t{
+  position:sticky; top:0;
+  padding:var(--sp-3) var(--sp-3) var(--sp-2);
+  background:var(--s2); border-bottom:1px solid var(--bdl);
+  font-size:var(--t-sm); font-weight:650; color:var(--tx);
+}
+#ovr .away-share-prev-b{
+  padding:var(--sp-3);
+  font-family:var(--mn); font-size:var(--t-sm); line-height:1.6; color:var(--tx);
+  white-space:pre-wrap; word-break:break-word;
+}
+#ovr .away-share-modal .share-actions{ margin-top:var(--sp-3); }
+#ovr .away-share-modal .share-actions .btn{ min-height:44px; }
+/* The button on the card itself. Quiet until hovered - it sits under a result
+   somebody is reading, and it must not compete with the result. */
+.away-share{
+  margin-top:var(--sp-2);
+  padding:6px 10px; min-height:36px;
+  font-size:var(--t-sm); font-weight:600;
+  color:var(--accent); background:transparent;
+  border:1px solid var(--bdl); border-radius:var(--r-pill);
+  cursor:pointer;
+  transition:border-color .15s var(--ease), background-color .15s var(--ease);
+}
+.away-share:hover{ border-color:var(--accent); background:var(--accent-soft); }
+@media (hover:none){ .away-share{ min-height:44px; padding:10px 14px; } }
