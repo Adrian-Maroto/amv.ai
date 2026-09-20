@@ -14842,3 +14842,47 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    description needs to stay on two lines. */
 .cdir-grid{ grid-template-columns:repeat(auto-fill,minmax(min(236px,100%),1fr)); }
 .cdir-grid-full{ grid-template-columns:repeat(auto-fill,minmax(min(236px,100%),1fr)); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LAYER A239 - what a job needs, and how to get it
+
+   The requirement used to be a row in the job's definition list, between how
+   often it runs and what it asks you for. It is not a fact about the job in
+   the way those are - it is the thing standing between somebody and using it,
+   so it is a block with a button and it comes before the facts.
+
+   The requirements screen itself is a list of rows rather than cards. Each
+   row is one thing to connect, its state on the right, and nothing else
+   competing for the eye: the only decision on that screen is which one to
+   press.
+   ══════════════════════════════════════════════════════════════════════════ */
+.cwp-need{
+  margin:var(--sp-4) 0 var(--sp-2);
+  padding:var(--sp-4);
+  border:1px solid var(--gold);
+  border-radius:var(--r-lg);
+  background:color-mix(in srgb, var(--gold) 9%, transparent);
+}
+.cwp-need-t{ font-size:var(--t-md); font-weight:650; color:var(--tx); margin-bottom:var(--sp-2); }
+.cwp-need-p{ font-size:var(--t-sm); color:var(--tx); line-height:1.55; margin:0 0 var(--sp-3); opacity:.9; }
+
+.cwn-list{ display:flex; flex-direction:column; gap:var(--sp-2); margin:var(--sp-4) 0; text-align:left; }
+.cwn-row{
+  display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4);
+  padding:var(--sp-3) var(--sp-4);
+  border:1px solid var(--bd); border-radius:var(--r-lg);
+  background:var(--s1);
+}
+.cwn-row.met{ opacity:.72; }
+.cwn-b{ min-width:0; }
+.cwn-n{ font-size:var(--t-md); font-weight:600; color:var(--tx); }
+.cwn-h{ font-size:var(--t-sm); color:var(--mu); line-height:1.5; margin-top:2px; }
+.cwn-a{ flex:0 0 auto; }
+.cwn-ok{ font-size:var(--t-sm); font-weight:600; color:var(--grn-txt); white-space:nowrap; }
+.cwn-acts{ display:flex; gap:var(--sp-2); justify-content:flex-end; flex-wrap:wrap; }
+
+@media (max-width:560px){
+  .cwn-row{ flex-direction:column; align-items:stretch; gap:var(--sp-2); }
+  .cwn-a,.cwn-a .btn{ width:100%; }
+  .cwn-acts .btn{ flex:1 1 auto; }
+}

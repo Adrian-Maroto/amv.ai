@@ -17219,6 +17219,186 @@ function _cwConnWant(v){
        if(v===null) store('amv_cw_conn_want',null); else store('amv_cw_conn_want',v); }catch(e){}
   return null;
 }
+/* ══════════════════════════════════════════════════════════════════════════
+   WHAT A JOB NEEDS, ON ONE SCREEN, WITH A WAY TO GET EACH OF IT.
+
+   A job needs more than a mailbox. The money jobs need a bank or card; some
+   need a specific app. What the product did with that was tell you the name of
+   the thing that was missing and then, on Connect, drop you on the Connectors
+   tab - which for a bank has nothing to connect at all, because a bank link is
+   not an OAuth grant and lives in its own flow. So the most common case after
+   "connect Gmail" ended on a screen whose honest answer was "not here".
+
+   `_cwMissingNeeds` was right to exclude it. What was missing is this: a
+   screen that lists EVERY requirement, ticks the ones already met, and gives
+   each of the others a button that goes where that particular thing is
+   actually connected.
+
+   AND A WAY BACK. Every route out of here remembers the job, so finishing
+   returns to it rather than leaving somebody on Spending wondering what they
+   were doing. That was asked for in as many words.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Every need of a job, met or not, with the kind of thing each one IS - which
+   is what decides where its button goes. Kept beside CW_NEEDS_CHECK rather
+   than derived from labels, because a label is copy and this is routing. */
+const CW_NEED_KIND = {
+  'Email':           'oauth',
+  'Calendar':        'oauth',
+  'Drive':           'oauth',
+  'Classroom':       'oauth',
+  'Bank connection': 'bank',
+  'Web research':    'always',
+};
+function _cwNeedKind(n){
+  if(CW_NEED_KIND[n]) return CW_NEED_KIND[n];
+  /* `App: Notion` - a specific connector, started by the bridge. Anything this
+     table does not know is treated as one, because that is what an unknown
+     requirement in this product is. */
+  return 'app';
+}
+function _cwAppNameOf(n){ return String(n || '').replace(/^App:\s*/i, '').trim(); }
+function _cwNeedMet(n){
+  const kind = _cwNeedKind(n);
+  if(kind === 'always') return true;
+  const c = CW_NEEDS_CHECK[n];
+  if(c && typeof c.has === 'function'){ try{ return !!c.has(); }catch(e){ return false; } }
+  if(kind === 'app'){
+    /* A connector counts as met when the bridge is actually holding it, not
+       when it exists in the directory. "Installed somewhere" is not "running
+       here", and a job that starts on the first is a job that does nothing. */
+    try{
+      const want = _cwAppNameOf(n).toLowerCase();
+      const list = (typeof MCP !== 'undefined' && Array.isArray(MCP.servers)) ? MCP.servers : [];
+      return list.some(x => String((x && (x.name || x.id)) || '').toLowerCase().indexOf(want) >= 0);
+    }catch(e){ return false; }
+  }
+  return false;
+}
+/* TWO NAMES, BECAUSE THE LABEL WAS WRITTEN FOR THE MIDDLE OF A SENTENCE.
+
+   CW_NEEDS_CHECK calls a bank "a bank connection", which is right inside
+   "...until a bank connection is connected" and wrong as the heading of a
+   row, where it rendered as "a bank connection" in bold with a lower-case
+   article. A heading is a name. */
+const CW_NEED_TITLE = {
+  'Email':           'Email',
+  'Calendar':        'Calendar',
+  'Drive':           'Cloud files',
+  'Classroom':       'Classroom',
+  'Bank connection': 'Bank or card',
+  'Web research':    'Web research',
+};
+function _cwNeedTitle(n){
+  if(CW_NEED_TITLE[n]) return CW_NEED_TITLE[n];
+  if(_cwNeedKind(n) === 'app') return _cwAppNameOf(n);
+  return n;
+}
+function _cwNeedLabel(n){
+  const c = CW_NEEDS_CHECK[n];
+  if(c && c.label) return c.label;
+  if(_cwNeedKind(n) === 'app') return _cwAppNameOf(n);
+  return n;
+}
+function _cwNeedHow(n){
+  const kind = _cwNeedKind(n);
+  if(kind === 'always') return 'Built in - nothing to connect.';
+  if(kind === 'bank') return 'Linked on Spending, at your bank\u2019s own sign-in. AMV reads balances and transactions and can never move money.';
+  if(kind === 'app')  return 'A connector AMV starts on your computer through the bridge.';
+  return 'A sign-in at the provider. AMV never sees your password - only a permission slip you can take back.';
+}
+function _cwNeedsPlan(j){
+  return String((j && j.needs) || '').split(',').map(x => x.trim()).filter(Boolean)
+    .map(n => ({ need:n, kind:_cwNeedKind(n), label:_cwNeedLabel(n),
+                 title:_cwNeedTitle(n), how:_cwNeedHow(n), met:_cwNeedMet(n) }));
+}
+try{ window._cwNeedsPlan = _cwNeedsPlan; }catch(e){}
+
+/* The job somebody is in the middle of setting up. Stored rather than held in
+   memory because two of the three routes out of here leave the page entirely -
+   a provider sign-in is a full navigation - and coming back to the job is the
+   whole point. */
+function _cwResumeJob(v){
+  try{
+    if(v === undefined) return loadStr('amv_cw_resume') || '';
+    saveStr('amv_cw_resume', v || '');
+  }catch(e){}
+  return '';
+}
+function cwResumeIfAny(){
+  const id = _cwResumeJob();
+  if(!id) return false;
+  _cwResumeJob('');
+  try{ cwNeeds(id); return true; }catch(e){ return false; }
+}
+try{ window.cwResumeIfAny = cwResumeIfAny; }catch(e){}
+
+function cwNeeds(jobId){
+  const j = (_cwAllJobs() || []).find(x => x.id === jobId);
+  const r = $('ovr'); if(!j || !r) return;
+  try{ if(typeof _connLoad === 'function') _connLoad(false); }catch(e){}
+  const plan = _cwNeedsPlan(j);
+  const left = plan.filter(p => !p.met);
+
+  const row = (p) => {
+    const act = p.met
+      ? '<span class="cwn-ok" aria-label="Connected">\u2713 Connected</span>'
+      : '<button class="btn bp cwn-go" data-cwn-kind="' + escH(p.kind) + '"'
+        + ' data-cwn-need="' + escH(p.need) + '">Connect</button>';
+    return '<div class="cwn-row' + (p.met ? ' met' : '') + '">'
+      + '<div class="cwn-b"><div class="cwn-n">' + escH(p.title) + '</div>'
+        + '<div class="cwn-h">' + escH(p.how) + '</div></div>'
+      + '<div class="cwn-a">' + act + '</div>'
+    + '</div>';
+  };
+
+  r.innerHTML =
+    '<div class="ov cwc-ov" id="cwn-bg"><div class="cwc cwn" role="dialog" aria-modal="true" aria-labelledby="cwn-t">'
+    + '<button class="cwp-x" id="cwn-x" aria-label="Close">\u2715</button>'
+    + '<div class="cwc-inner">'
+      + '<h1 class="cwc-t" id="cwn-t">' + escH(j.title) + '</h1>'
+      + '<p class="cwc-lead">' + (left.length
+          ? escH('This needs ' + left.map(p => p.label).join(' and ') + ' before it can run. '
+                 + 'Connect ' + (left.length > 1 ? 'them' : 'it') + ' here and come straight back.')
+          : escH('Everything this job needs is connected. It is ready to turn on.')) + '</p>'
+      + '<div class="cwn-list">' + plan.map(row).join('') + '</div>'
+      + '<div class="cwc-acts cwn-acts">'
+        + '<button class="btn bs" id="cwn-back">\u2190 Back to the job</button>'
+        + (left.length ? '' : '<button class="btn bp" id="cwn-on">'
+            + (j.on ? 'Turn it off' : 'Turn it on') + '</button>')
+      + '</div>'
+    + '</div>'
+  + '</div></div>';
+  r.classList.add('on');
+
+  const back = () => { try{ cwPeek(j.id); }catch(e){ try{ closeOvr(); }catch(_e){} } };
+  onBackdrop($('cwn-bg'), () => { try{ closeOvr(); }catch(e){} });
+  on($('cwn-x'), 'click', () => { try{ closeOvr(); }catch(e){} });
+  on($('cwn-back'), 'click', back);
+  on($('cwn-on'), 'click', () => { try{ closeOvr(); cwToggle(j.id); }catch(e){} });
+
+  r.querySelectorAll('.cwn-go').forEach(b => on(b, 'click', () => {
+    const kind = b.dataset.cwnKind, need = b.dataset.cwnNeed;
+    /* Remembered BEFORE leaving, for every route - a provider sign-in is a
+       full navigation and the tab changes are not much kinder. */
+    _cwResumeJob(j.id);
+    if(kind === 'oauth'){ try{ openCrewConnect(j.id); }catch(e){} return; }
+    if(kind === 'bank'){
+      /* Spending, because that is where the account card lives and where the
+         link actually starts. Not Connectors, which is where this used to go
+         and which has nothing to offer for a bank. */
+      try{ closeOvr(); setTab('spend'); }catch(e){}
+      try{ toast('Link your account under "Investing" here, then come back to the job.', 'info', 7000); }catch(e){}
+      return;
+    }
+    /* An app: the directory, searched for the one it wants, so the thing they
+       came for is the first thing on the screen. */
+    try{ closeOvr(); setTab('integrations'); }catch(e){}
+    try{ if(typeof cdirAll === 'function') cdirAll(_cwAppNameOf(need).toLowerCase()); }catch(e){}
+  }));
+}
+try{ window.cwNeeds = cwNeeds; }catch(e){}
+
 function openCrewConnect(jobId){
   const j=(_cwAllJobs()||[]).find(x=>x.id===jobId);
   const r=$('ovr'); if(!j||!r) return;
@@ -17305,8 +17485,20 @@ try{ window.cwConnectResume=cwConnectResume; }catch(e){}
 /* The catalogue card's Connect button knows which job it is on, so it opens
    that job's connect screen. Called bare it still has to do something sensible,
    which is the Connectors page it always went to. */
+/* THE CARD'S CONNECT BUTTON, POINTED SOMEWHERE THAT CAN ANSWER.
+
+   It went straight to `openCrewConnect`, which handles exactly one kind of
+   requirement: an OAuth grant. A job needing a bank has no such grant, so
+   that function fell through to the Connectors tab - a screen with nothing on
+   it for a bank - and the money jobs, which are the ones most likely to be
+   missing something, were the ones it served worst.
+
+   It opens the requirements screen instead, which lists every requirement
+   this job has and sends each one where that particular thing is connected.
+   For a job whose only gap is a mailbox that screen is one tap longer than
+   before; for every other job it is the difference between working and not. */
 function cwConnect(jobId){
-  if(jobId){ try{ openCrewConnect(jobId); return; }catch(e){} }
+  if(jobId){ try{ cwNeeds(jobId); return; }catch(e){} }
   try{ S.tab='integrations'; setTab('integrations'); }catch(e){}
 }
 try{ window.cwConnect=cwConnect; }catch(e){}
@@ -19041,11 +19233,9 @@ function cwPeek(id){
         ? 'On AMV\u2019s servers, whether or not this window is open'
         : 'In this browser, while AMV is open \u2014 it needs something that lives here')
     + (j.needs ? fact('What it uses', escH(j.needs)) : '')
-    + (miss.length
-        ? fact('Not ready yet', escH(miss.join(', ')) + ' '
-            + (miss.length>1?'are':'is') + ' not connected, so it will not run until '
-            + (miss.length>1?'they are':'it is') + '. AMV will not pretend otherwise.', 'warn')
-        : '')
+    /* The requirement is not a FACT about the job, it is the thing standing
+       between somebody and using it - so it is not a row in a definition list
+       any more. It is a block with a button, below. */
     /* The wording is the wording it had. This row replaced a section of its
        own, and the sentence explaining WHY it asks went with the section on
        the first pass - which is the half that stops the question feeling like
@@ -19075,6 +19265,13 @@ function cwPeek(id){
         <div class="cwp-note">An example of the shape and the level of detail. Your version is built from your own information, so the specifics will be yours, not these.</div>
       </div>`:''}
 
+      ${miss.length ? `<div class="cwp-need">
+        <div class="cwp-need-t">Before this can run</div>
+        <p class="cwp-need-p">AMV needs ${escH(miss.join(' and '))} before this can do anything, and
+          it will not pretend otherwise. It takes a minute, and you come straight back here.</p>
+        <button class="btn bp" id="cwp-need-go">See what it needs \u2192</button>
+      </div>` : ''}
+
       <dl class="cwp-facts">${facts}</dl>
 
       ${j.prompt?`<details class="cwp-more">
@@ -19087,7 +19284,15 @@ function cwPeek(id){
     <div class="cwp-act">
       ${allowed
         ? `<button class="btn bs" id="cwp-cancel">Close</button>
-           <button class="btn bp" id="cwp-go">${j.on?'Turn it off':'Turn it on'}</button>`
+           ${miss.length && !j.on
+              /* A filled "Turn it on" over an unmet requirement promises
+                 something that cannot happen. The action that CAN happen is
+                 the one that gets the weight; turning it on anyway is still
+                 offered, because saving it now and connecting later is a
+                 reasonable thing to want. */
+              ? `<button class="btn bs" id="cwp-go">Turn on anyway</button>
+                 <button class="btn bp" id="cwp-need-go2">Connect what it needs \u2192</button>`
+              : `<button class="btn bp" id="cwp-go">${j.on?'Turn it off':'Turn it on'}</button>`}`
         : `<div class="cwp-buy">
              <div class="cwp-buy-t">Included with ${escH(P.name)} \u00b7 $${P.price}/month</div>
              <div class="cwp-buy-s">${escH(P.name)} runs ${CREW_JOBS_BY_PLAN.pro} jobs like this in the background at once.</div>
@@ -19106,7 +19311,10 @@ function cwPeek(id){
   onBackdrop($('cwp-bg'),closeOvr);
   on($('cwp-close'),'click',closeOvr);
   on($('cwp-cancel'),'click',closeOvr);
-  on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('plans'); });
+  on($('cwp-plans'),'click',()=>{ closeOvr(); setTab('spend'); });
+  const toNeeds = () => { try{ cwNeeds(j.id); }catch(e){} };
+  on($('cwp-need-go'),'click',toNeeds);
+  on($('cwp-need-go2'),'click',toNeeds);
   on($('cwp-go'),'click',()=>{ closeOvr(); try{ cwToggle(j.id); }catch(e){} });
 }
 try{ window.cwPeek = cwPeek; }catch(e){}
