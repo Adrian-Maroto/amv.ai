@@ -150,6 +150,50 @@ section('The address Pricing used to have still goes somewhere');
      'an older link to the plans lands on Spending, with the plans on it', r);
 }
 
+section('Billing quotes the same plan in the same unit');
+{
+  /* THE ONE THAT WAS LEFT BEHIND. Spending was rebuilt to sell messages and
+     Billing went on saying "2.3M tokens a month" - on the screen somebody
+     opens when they are actually paying. Two screens disagreeing about what a
+     plan gives you is the whole defect this work removed from Pricing, and it
+     survived one page over.
+
+     Compared rather than asserted against a literal: a number typed into this
+     file is a fourth place for the figure to live. */
+  const pair = await page.evaluate(async () => {
+    const out = {};
+    for (const plan of ['pro', 'elite']) {
+      saveStr('amv_plan', plan);
+      setTab('spend'); await new Promise(r => setTimeout(r, 650));
+      const spend = [...document.querySelectorAll('.spv-facts .spv-f')]
+        .map(e => e.innerText.replace(/\s+/g, ' ').trim());
+      setTab('billing'); await new Promise(r => setTimeout(r, 650));
+      const bill = (document.querySelector('.bill-facts') || {}).innerText || '';
+      out[plan] = { spend, bill: bill.replace(/\s+/g, ' ') };
+    }
+    saveStr('amv_plan', 'free');
+    return out;
+  });
+
+  for (const plan of ['pro', 'elite']) {
+    const monthly = (pair[plan].spend.find(f => /messages a month/i.test(f)) || '')
+      .replace(/[^\d,]/g, '');
+    ok(monthly.length > 0, `[${plan}] Spending states a monthly message figure`, pair[plan].spend);
+    ok(pair[plan].bill.indexOf(monthly) >= 0,
+       `[${plan}] and Billing quotes that same figure, not a different unit`,
+       { monthly, billing: pair[plan].bill.slice(0, 160) });
+    ok(/messages a month/i.test(pair[plan].bill),
+       `[${plan}] in messages, which is what the server counts`,
+       pair[plan].bill.slice(0, 160));
+  }
+  /* The token cap is still real and still printed - it is the secondary guard,
+     so removing it would be its own kind of dishonesty. It is just no longer
+     the headline. */
+  ok(/token allowance/i.test(pair.pro.bill),
+     'with the token cap kept beside it as the secondary guard',
+     pair.pro.bill.slice(0, 200));
+}
+
 ok(errors.length === 0, 'and nothing on the screen raised an error', errors);
 await app.close();
 process.exit(report() === 0 ? (done(), 0) : 1);

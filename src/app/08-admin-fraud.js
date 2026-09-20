@@ -1289,7 +1289,26 @@ function renderBillingView(targetEl){
            for it, so it is not repeated here. */
         '<dl class="bill-facts">'+
           _bfact('Billing email', escH(email))+
-          (P.allowance?_bfact('Usage', escH(P.allowance)+' tokens a month'):'')+
+          /* MESSAGES, BECAUSE THAT IS WHAT THE SERVER COUNTS.
+
+             This row said "2.3M tokens a month" while Spending - the screen
+             that now holds everything about money - sells the same plan in
+             messages. Two screens disagreeing about what a plan gives you is
+             the defect the pricing work was done to remove, left behind on the
+             screen somebody opens when they are actually paying.
+
+             The token allowance is still real and still the secondary cap, so
+             it stays; it is just no longer the headline, and it is no longer
+             the only thing here. */
+          (plan!=='custom'
+            ? _bfact('Usage', escH(_msgMonthLabel(plan)) + ' messages a month \u00b7 '
+                + escH(_msg5hLabel(plan)) + ' every ' + USAGE_WINDOW_HOURS + ' hours')
+              + (_planMsgNum(PLAN_TOP_WEEK, plan)
+                  ? _bfact('Top engines', escH(_topWeekLabel(plan))
+                      + ' Forge &amp; Apex messages a week')
+                  : '')
+              + (P.allowance ? _bfact('Token allowance', escH(P.allowance) + ' a month, the secondary cap') : '')
+            : (P.allowance?_bfact('Usage', escH(P.allowance)+' tokens a month'):''))+
           /* A ROW WHOSE VALUE IS AN APOLOGY IS NOT A ROW.
 
              These two printed "Not recorded on this device" and "Open Manage
@@ -1467,8 +1486,12 @@ function renderBillingView(targetEl){
                and it is the only kind AMV is allowed to print. */
             const P2 = PLANS[k];
             const jobs = (typeof AUTO_MAX_BY_PLAN !== 'undefined') ? AUTO_MAX_BY_PLAN[k] : null;
+            /* The same unit as the row above it and as Spending. A plan
+               compared in tokens on one line and sold in messages on the next
+               is a person doing arithmetic to work out whether an upgrade is
+               worth it. */
             const facts = [
-              P2.allowance ? escH(P2.allowance) + ' tokens a month' : '',
+              (typeof _msgMonthLabel === 'function' ? _msgMonthLabel(k) + ' messages a month' : ''),
               (jobs ? jobs + ' scheduled jobs' : '')
             ].filter(Boolean).join(' \u00b7 ');
             /* "Upgrade to Elite", not "Elite". A row naming a plan is a label;
