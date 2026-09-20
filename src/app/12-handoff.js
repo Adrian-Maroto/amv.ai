@@ -516,6 +516,23 @@ function _reRenderSoon(fn, tab){
   }, 120);
 }
 
+/* FORGETTING WHERE YOU WERE, ON PURPOSE.
+
+   `_vcScroll` exists so a repaint does not lose somebody's place, which is
+   right for a repaint and wrong for a NEW PAGE inside the same tab. The
+   connector directory is the case: See more replaces thirty rows with one
+   category, the tab has not changed, so the observer below restored the scroll
+   position of the page that is no longer there - and the category opened 622
+   pixels into itself. Setting scrollTop to 0 did not help, because the
+   observer runs after it and puts it back.
+
+   So the position is FORGOTTEN rather than fought with. Exported because the
+   screen that knows it has opened something new lives in another module, and
+   `_vcScroll` is a top-level binding in one bundle - a script binding, never a
+   property of window, which the gate has a whole stage about. */
+function _vcForgetScroll(){ _vcScroll = null; }
+try{ window._vcForgetScroll = _vcForgetScroll; }catch(e){}
+
 function _vcSettleObserve(){
   const vc = document.getElementById('vc');
   if(!vc || vc._vcObs) return;

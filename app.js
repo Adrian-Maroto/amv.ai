@@ -25567,6 +25567,23 @@ function _reRenderSoon(fn, tab){
   }, 120);
 }
 
+/* FORGETTING WHERE YOU WERE, ON PURPOSE.
+
+   `_vcScroll` exists so a repaint does not lose somebody's place, which is
+   right for a repaint and wrong for a NEW PAGE inside the same tab. The
+   connector directory is the case: See more replaces thirty rows with one
+   category, the tab has not changed, so the observer below restored the scroll
+   position of the page that is no longer there - and the category opened 622
+   pixels into itself. Setting scrollTop to 0 did not help, because the
+   observer runs after it and puts it back.
+
+   So the position is FORGOTTEN rather than fought with. Exported because the
+   screen that knows it has opened something new lives in another module, and
+   `_vcScroll` is a top-level binding in one bundle - a script binding, never a
+   property of window, which the gate has a whole stage about. */
+function _vcForgetScroll(){ _vcScroll = null; }
+try{ window._vcForgetScroll = _vcForgetScroll; }catch(e){}
+
 function _vcSettleObserve(){
   const vc = document.getElementById('vc');
   if(!vc || vc._vcObs) return;
@@ -31484,15 +31501,31 @@ const CDIR_CATS = [
   ['travel',   'Travel',                 'travel'],
   ['health',   'Health',                 'health'],
   ['security', 'Security',               'security'],
-  /* The last five take the list to twenty, which is what was asked for. Each
-     is a REAL query against the registry like the others - none of them is a
-     heading with a hand-written list behind it - so a row here can come back
-     short or empty, and that is the honest answer rather than a padded one. */
+  /* Each is a REAL query against the registry like the others - none of them
+     is a heading with a hand-written list behind it - so a row here can come
+     back short or empty, and that is the honest answer rather than a padded
+     one. */
   ['files',    'Files & storage',        'storage'],
   ['email',    'Email',                  'email'],
   ['calendar', 'Calendar & scheduling',  'calendar'],
   ['support',  'Customer support',       'support'],
   ['auto',     'Automation',             'automation'],
+  /* THE LAST TEN TAKE IT TO THIRTY, and the constraint on adding one is not
+     taste. A category here is a word sent to the registry, so a heading is
+     only allowed if that word finds things - "Project management" reads well
+     and returns almost nothing, while "monitoring" is an ugly heading and
+     returns plenty. Where the two disagreed the query won and the heading was
+     written around it. */
+  ['ai',       'AI & models',            'ai'],
+  ['monitor',  'Monitoring & logs',      'monitoring'],
+  ['media',    'Video & media',          'media'],
+  ['music',    'Music & audio',          'music'],
+  ['social',   'Social networks',        'social'],
+  ['news',     'News & feeds',           'news'],
+  ['legal',    'Legal & contracts',      'legal'],
+  ['hr',       'People & HR',            'hr'],
+  ['iot',      'Devices & IoT',          'iot'],
+  ['testing',  'Testing & QA',           'testing'],
 ];
 /* FIVE on the overview, not ten. Twenty categories at ten each is two hundred
    tiles before you have decided anything, which is a directory that reads as a
@@ -31541,6 +31574,43 @@ function _cdirGet(q){ return _cdir[_cdirKey(q)] || { state:'idle', servers:[], c
    asks for thirty-six, and that is a different question about the same word. */
 const _cdirTried = {};
 function _cdirCtx(){ return (window.AMV_API && AMV_API.live) ? '1' : '0'; }
+
+/* ── THIRTY ROWS ASKING AT ONCE IS HOW ROWS COME BACK BROKEN ────────────────
+
+   Two of them reported "This could not be loaded" on a screen where the rest
+   were fine, which reads as those categories being broken. They were not. The
+   route is rate limited per IP - deliberately, because it needs no account and
+   one request there causes up to six reads of somebody else's server - and
+   thirty simultaneous asks from one browser is exactly the shape that limit
+   exists to refuse. The product was tripping its own guard.
+
+   It got worse with every category added, which is why it appeared at twenty
+   and would have been unmissable at thirty.
+
+   Four at a time. The rest queue and go out as slots free, so the page fills
+   progressively instead of arriving all at once and being turned away. */
+const _cdirQ = [];
+let _cdirRunning = 0;
+const CDIR_PARALLEL = 4;
+function _cdirPump(){
+  while(_cdirRunning < CDIR_PARALLEL && _cdirQ.length){
+    const job = _cdirQ.shift();
+    _cdirRunning++;
+    job().catch(() => {}).then(() => { _cdirRunning--; _cdirPump(); });
+  }
+}
+
+/* A REFUSAL IS NOT A VERDICT ON THE CATEGORY.
+
+   `state:'error'` was final - nothing retried it, so a row refused once by the
+   rate limit stayed broken for the whole visit unless somebody found the Try
+   again link. A transient refusal and a category that genuinely has nothing
+   are different facts, and only one of them should be permanent.
+
+   One automatic retry, after a pause, and only once: a second failure is
+   reported rather than hidden behind a loop that never settles. */
+const _cdirRetried = {};
+
 async function _cdirLoad(q, want){
   const k = _cdirKey(q);
   const cur = _cdir[k] || { state:'idle', servers:[], cursor:'', err:'' };
@@ -31552,6 +31622,15 @@ async function _cdirLoad(q, want){
   const tk = k + '|' + (want || CDIR_ROW_N) + '|' + _cdirCtx();
   if(_cdirTried[tk]) return;
   _cdirTried[tk] = 1;
+  return new Promise((resolve) => {
+    _cdirQ.push(() => _cdirFetch(q, want, tk).then(resolve, resolve));
+    _cdirPump();
+  });
+}
+
+async function _cdirFetch(q, want, tk){
+  const k = _cdirKey(q);
+  const cur = _cdir[k] || { state:'idle', servers:[], cursor:'', err:'' };
   if(!(window.AMV_API && AMV_API.live && AMV_API.connectors)){
     _cdir[k] = { state:'off', servers:[], cursor:'', err:'' }; _cdirPaint(); return;
   }
@@ -31569,6 +31648,18 @@ async function _cdirLoad(q, want){
        product connects to nothing. */
     _cdir[k] = { state:'error', servers:cur.servers, cursor:cur.cursor,
                  err:String((e && e.message) || '').slice(0, 140) };
+    /* Once. A rate limit clears in seconds and a dead registry does not, so
+       one retry separates them without turning a real outage into a loop. */
+    if(!_cdirRetried[tk]){
+      _cdirRetried[tk] = 1;
+      setTimeout(() => {
+        const st = _cdir[k];
+        if(!st || st.state !== 'error') return;
+        _cdir[k] = { ...st, state:'idle' };
+        delete _cdirTried[tk];
+        _cdirLoad(q, want);
+      }, 1200);
+    }
   }
   _cdirPaint();
 }
@@ -31593,11 +31684,49 @@ function _cdirPaint(){
    the old screen was blocky, and the thing that makes a directory read as a
    directory rather than a stack of panels is that the entries are quiet and
    the page is the object. */
+/* THE LOGO, AND WHY THE FALLBACK IS ONE LISTENER ON THE DOCUMENT.
+
+   The mark is rendered first and the picture sits over it, so an entry with
+   no avatar shows the letter. The first version relied on a failed <img>
+   painting nothing, which is wrong: Chrome draws its broken-image glyph on
+   any img that has a size, so every non-GitHub entry got a torn-page icon
+   over its mark - worse than the mark alone, and it was visible in the very
+   first screenshot.
+
+   An `onerror=` attribute is refused by this page's CSP. A listener per tile
+   would have to be re-wired on every repaint, of which this screen has many.
+   So there is ONE listener, on the document, in the CAPTURE phase - error
+   events do not bubble but they do capture - and it hides whatever failed.
+   It is attached once and survives every repaint, because the thing it is
+   attached to is never re-rendered.
+
+   `loading="lazy"` because thirty rows is a hundred and fifty tiles and only
+   a few are on screen. `decoding="async"` so a slow decode never holds up the
+   row it is in. */
+let _cdirLogoWired = false;
+function _cdirWireLogoFallback(){
+  if(_cdirLogoWired) return;
+  _cdirLogoWired = true;
+  try{
+    document.addEventListener('error', (e) => {
+      const t = e && e.target;
+      if(t && t.classList && t.classList.contains('cdir-logo')) t.style.display = 'none';
+    }, true);
+  }catch(e){}
+}
+function _cdirLogoHTML(s){
+  _cdirWireLogoFallback();
+  const base = (window.AMV_API && AMV_API.base) ? String(AMV_API.base).replace(/\/+$/, '') : '';
+  if(!base) return '';
+  return '<img class="cdir-logo" alt="" aria-hidden="true" loading="lazy" decoding="async"'
+    + ' src="' + escH(base + '/v1/connector-logo?id=' + encodeURIComponent(s.id)) + '">';
+}
+
 function _cdirTile(s){
   const need = (s.env || []).filter(e => e && e.required);
   const mark = (s.name || '?').trim().charAt(0).toUpperCase() || '?';
   return '<button class="cdir-tile" data-dact="cdirOpen" data-darg="' + escH(s.id) + '">'
-    + '<span class="cdir-ic" aria-hidden="true">' + escH(mark) + '</span>'
+    + '<span class="cdir-ic" aria-hidden="true">' + escH(mark) + _cdirLogoHTML(s) + '</span>'
     + '<span class="cdir-body">'
       + '<span class="cdir-name">' + escH(s.name) + '</span>'
       + '<span class="cdir-desc">' + escH(s.desc || 'No description was published for this one.') + '</span>'
@@ -31712,7 +31841,7 @@ function cdirOpen(id){
     '<div class="ov" id="cdir-bg"><div class="cwp" role="dialog" aria-modal="true" aria-labelledby="cdir-t">'+
       '<button class="cwp-x" id="cdir-x" aria-label="Close">✕</button>'+
       '<div class="cwp-scroll">'+
-        '<div class="cwp-head"><span class="cwp-ic cdir-ic-lg" aria-hidden="true">'+escH((s.name||'?').charAt(0).toUpperCase())+'</span>'+
+        '<div class="cwp-head"><span class="cwp-ic cdir-ic-lg" aria-hidden="true">'+escH((s.name||'?').charAt(0).toUpperCase())+_cdirLogoHTML(s)+'</span>'+
           '<h2 class="cwp-t" id="cdir-t">'+escH(s.name)+'</h2></div>'+
         '<p class="cwp-desc">'+escH(s.desc || 'No description was published for this one.')+'</p>'+
         '<dl class="cwp-facts">'+
@@ -31769,15 +31898,42 @@ function cdirAll(q){
   const row = CDIR_CATS.find(c => c[2] === q);
   _cdirOpen = { q, title: row ? row[1] : ('Connectors matching “' + q + '”') };
   renderIntegrationsView();
-  try{ const sv = document.querySelector('#vc .sv'); if(sv) sv.scrollTop = 0; }catch(e){}
+  _cdirToTop();
 }
-function cdirBack(){ _cdirOpen = null; renderIntegrationsView(); }
+/* OPENING A PAGE PUTS YOU AT THE TOP OF IT, and coming back does too.
+
+   See more is pressed from the BOTTOM of a row, a long way down a screen with
+   thirty of them, and the page that replaced it inherited that scroll
+   position - so the thing somebody just asked to see opened somewhere in its
+   own middle. Going back had the same problem in reverse.
+
+   Both containers and the window, because which one scrolls depends on the
+   width: the view scrolls inside `.sv` on a desktop and the document itself
+   scrolls on a phone, and setting only one of them fixes only one of those. */
+function _cdirToTop(){
+  /* FIRST, forget where the previous page was. The view keeps a remembered
+     scroll position per tab and a mutation observer puts it back on every
+     repaint - which is right for a repaint and wrong here, because this is a
+     different page inside the same tab. Without this the two fight and the
+     observer wins, which is exactly what it looked like. */
+  try{ if(typeof _vcForgetScroll === 'function') _vcForgetScroll(); }catch(e){}
+  const top = () => {
+    try{ const sv = document.querySelector('#vc .sv'); if(sv) sv.scrollTop = 0; }catch(e){}
+    try{ const vc = $('vc'); if(vc) vc.scrollTop = 0; }catch(e){}
+    try{ window.scrollTo(0, 0); }catch(e){}
+  };
+  top();
+}
+function cdirBack(){ _cdirOpen = null; renderIntegrationsView(); _cdirToTop(); }
 function cdirRetry(q){
   const k = _cdirKey(q);
   _cdir[k] = { state:'idle', servers:[], cursor:'', err:'' };
   /* Try again has to mean try again: every record of having asked this is
      cleared, or the button would repaint a screen and ask nothing. */
   Object.keys(_cdirTried).forEach(t => { if(t.indexOf(k + '|') === 0) delete _cdirTried[t]; });
+  /* Including the record of having already auto-retried, or a row refused
+     twice could never be retried a third time by hand. */
+  Object.keys(_cdirRetried).forEach(t => { if(t.indexOf(k + '|') === 0) delete _cdirRetried[t]; });
   _cdirPaint();
 }
 function cdirMore(q){ _cdirLoad(q, CDIR_PAGE_N); _cdirPaint(); }

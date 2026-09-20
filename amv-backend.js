@@ -9950,6 +9950,10 @@ const BACKUP_PREFIXES = [
    exist - which is also why erasing the creator takes them with it. */
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
+  /* A cache of other people's avatars. Restoring it would restore
+     megabytes of pictures AMV does not own and that re-fetch themselves in a
+     fortnight anyway. */
+  'clogo:',
   /* A calendar subscription is a sealed URL, and whoever holds it can read the
      calendar - so it is the same class of thing as the bank token above it and
      goes the same way. There is a second reason too: it is sealed with the
@@ -11409,6 +11413,12 @@ async function _route(request, env, ctx) {
        registry, filters it to what AMV's bridge can actually start, and caches
        the answer. A GET so the edge can serve it. */
     '/v1/connectors',           // everything AMV can be connected to
+    /* The picture beside each of those, served from here rather than from
+       somebody else's origin so a visitor's browser never announces itself to
+       a third party for the sake of a 28-pixel square. It holds nothing
+       belonging to anybody and the address it fetches is derived, never
+       supplied. A GET so the edge and the browser can both cache it. */
+    '/v1/connector-logo',       // and the logo beside each of them
     /* A READ THAT WAS ANSWERING 405 TO ITS ONLY CALLER.
 
        AMV_API.crewPopular() calls this with no method, which is a GET, and
@@ -11642,6 +11652,7 @@ async function _route(request, env, ctx) {
     // --- WHAT PEOPLE ALREADY DO EVERY WEEK, WHERE THEY LIVE ---
     case '/v1/everyday':        return everydayJobs(request, env);
     case '/v1/connectors':      return connectorDirectory(request, env);
+    case '/v1/connector-logo': return connectorLogo(request, env);
     // --- TELEGRAM (official Bot API; the messenger most of the world uses) ---
     case '/v1/telegram/status':     return telegramStatus(request, env);
     case '/v1/telegram/connect':    return telegramConnect(request, env);
@@ -16183,6 +16194,102 @@ function _mcpRegMap(rec) {
   }
   return null;
 }
+/* ══════════════════════════════════════════════════════════════════════════
+   A CONNECTOR'S LOGO, FETCHED BY US AND NOT BY THE VISITOR'S BROWSER.
+
+   The directory showed a letter in a coloured square for every entry, which
+   is what a directory looks like before somebody finishes it. The registry
+   publishes no logo, so the only real source is where the code lives: an id
+   of the form `io.github.<user>/<repo>` names a GitHub account, and that
+   account has an avatar.
+
+   Pointing thirty `<img>` tags at github.com would have been four lines in
+   the page and wrong. Every visitor's browser would then announce itself to
+   a third party once per tile, on a screen somebody is only browsing - and
+   this product has three suites about not depending on third parties for the
+   sake of the people whose network is slow, censored, or simply blocking
+   them. So AMV fetches it, caches it, and serves it from its own origin.
+
+   THE THINGS THAT MAKE THIS SAFE TO EXPOSE WITHOUT A CREDENTIAL:
+
+     the URL is DERIVED, never accepted. Only `io.github.<user>` resolves,
+     only to `https://github.com/<user>.png`, and the user segment must match
+     GitHub's own account grammar. There is no parameter here that names a
+     host, which is what stops it being an SSRF hole rather than an allowlist
+     it would be somebody's job to keep;
+
+     it is rate limited per IP before anything else happens, like the
+     directory it serves;
+
+     the answer is capped, so a URL that turns out to serve a 40MB file is
+     refused rather than cached and re-served;
+
+     and a miss is a 404, not a placeholder, because the page already has a
+     mark to fall back to and a placeholder would mean every failure looked
+     identical to a logo nobody published.
+
+   Cached under a named key for the same reason the directory is: a GET that
+   writes is refused by a-link-is-not-a-command unless what it writes is a
+   cache. */
+const CLOGO_TTL = 60 * 60 * 24 * 14;      // a fortnight; avatars rarely move
+const CLOGO_MAX_BYTES = 256 * 1024;
+const CLOGO_TIMEOUT = 6000;
+const CLOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+
+/* The whole of the URL derivation, in one place with nothing configurable in
+   it. Returns null for anything it does not recognise, which is a 404. */
+function _connectorLogoSource(id) {
+  const m = String(id || '').match(/^io\.github\.([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)\//);
+  if (!m) return null;
+  return 'https://github.com/' + m[1] + '.png?size=128';
+}
+
+async function connectorLogo(request, env) {
+  const u = new URL(request.url);
+  const ip = _rlIp(request);
+  const gate = await guardAction(env, `clogo:${ip}`, 120, 3000, 'connector logos');
+  if (gate) return gate;
+
+  const id = _mcpRegText(u.searchParams.get('id'), 140);
+  const src = _connectorLogoSource(id);
+  if (!src) return new Response('no logo', { status: 404 });
+
+  const key = 'clogo:' + encodeURIComponent(id);
+  try {
+    const hit = await env.AMV_KV.get(key, 'arrayBuffer');
+    if (hit) {
+      if (!hit.byteLength) return new Response('no logo', { status: 404 });
+      const t = (await env.AMV_KV.get(key + ':t')) || 'image/png';
+      return new Response(hit, { status: 200,
+        headers: { 'Content-Type': t, 'Cache-Control': 'public, max-age=604800' } });
+    }
+  } catch (e) {}
+
+  let body = null, type = 'image/png';
+  try {
+    const r = await fetchDeadline(src, { headers: { 'Accept': 'image/*' } }, CLOGO_TIMEOUT);
+    if (r.ok) {
+      const ct = String(r.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      if (CLOGO_TYPES.indexOf(ct) >= 0) {
+        const buf = await r.arrayBuffer();
+        if (buf.byteLength && buf.byteLength <= CLOGO_MAX_BYTES) { body = buf; type = ct; }
+      }
+    }
+  } catch (e) { /* a miss is a 404 below, which the page already handles */ }
+
+  try {
+    /* A MISS IS CACHED TOO, as an empty value. Without it, every entry whose
+       account has no avatar is re-fetched by every visitor for ever - the
+       expensive case, cached nowhere, which is the one worth caching. */
+    await env.AMV_KV.put(key, body || new ArrayBuffer(0), { expirationTtl: body ? CLOGO_TTL : 60 * 60 * 24 });
+    if (body) await env.AMV_KV.put(key + ':t', type, { expirationTtl: CLOGO_TTL });
+  } catch (e) {}
+
+  if (!body) return new Response('no logo', { status: 404 });
+  return new Response(body, { status: 200,
+    headers: { 'Content-Type': type, 'Cache-Control': 'public, max-age=604800' } });
+}
+
 async function connectorDirectory(request, env) {
   const u = new URL(request.url);
   /* BOUNDED, BECAUSE ANYBODY CAN REACH IT WITHOUT A CREDENTIAL.

@@ -14816,3 +14816,29 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   .spv-now-h{ flex-direction:column; align-items:stretch; }
   .spv-manage{ width:100%; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LAYER A238 - the connector's own logo, over the letter it falls back to
+
+   The picture is absolutely positioned over the lettermark rather than
+   replacing it. A 404 - no avatar, not a GitHub entry, AMV could not reach it
+   - paints nothing and the letter behind is what shows, with no handler and
+   no second render. An `onerror=` attribute would be refused by the CSP, and
+   a listener per tile would have to be re-wired on every repaint of a screen
+   that repaints often.
+   ══════════════════════════════════════════════════════════════════════════ */
+.cdir-ic{ position:relative; overflow:hidden; }
+.cdir-logo{
+  position:absolute; inset:0;
+  width:100%; height:100%;
+  object-fit:cover;
+  border-radius:inherit;
+  background:transparent;
+}
+.cdir-ic-lg{ position:relative; overflow:hidden; }
+
+/* Denser, because thirty categories at two across is a very long page and
+   most of each tile was empty. The floor is what a name plus a line of
+   description needs to stay on two lines. */
+.cdir-grid{ grid-template-columns:repeat(auto-fill,minmax(min(236px,100%),1fr)); }
+.cdir-grid-full{ grid-template-columns:repeat(auto-fill,minmax(min(236px,100%),1fr)); }
