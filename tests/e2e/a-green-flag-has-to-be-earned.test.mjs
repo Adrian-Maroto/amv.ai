@@ -123,6 +123,45 @@ section('A plan bound to nothing real is not a plan');
   ok(r.empty === false, 'no steps is not the same claim');
 }
 
+section('...and the planner actually asks it');
+{
+  /* THE CHECK AND THE ROUTE THAT USES IT ARE TWO CLAIMS, and only the first
+     is proven above. A test that reads a verifier can tell you the verifier
+     works; it cannot tell you anything is wired to it, and the version of
+     this file that stopped at the section above proved exactly nothing about
+     what somebody sees. So this one goes through plan() itself. */
+  const r = await page.evaluate(async () => {
+    const realReady = window._aiBackendReady, realComplete = window.aiComplete;
+    window._aiBackendReady = () => true;
+    /* A confident plan naming tools that are not there - which is what a
+       planner asked for steps does when nothing can do the job. */
+    window.aiComplete = async () => JSON.stringify([
+      { title: 'Open the machine', tool: 'teleport.go', args: {}, needs_approval: false },
+      { title: 'Set the year', tool: 'timemachine.set', args: {}, needs_approval: false },
+    ]);
+    const fake = await AMVUniversal.plan('take me back to last tuesday');
+    /* And the control: a plan naming a connector that IS registered must come
+       back as an ordinary plan, or this check would refuse everything. */
+    window.aiComplete = async () => JSON.stringify([
+      { title: 'Look it up', tool: 'browser.do', args: { url: 'https://x.test', goal: 'read' }, needs_approval: false },
+    ]);
+    const real = await AMVUniversal.plan('find me the opening hours');
+    window._aiBackendReady = realReady; window.aiComplete = realComplete;
+    return {
+      fakeImpossible: !!fake.impossible, fakeEdge: fake.edge, fakeWhy: fake.why || '',
+      fakeInstead: (fake.instead || []).length,
+      realImpossible: !!real.impossible, realSteps: (real.steps || []).length,
+    };
+  });
+  ok(r.fakeImpossible, 'a plan naming nothing real comes back as cannot, not as three blocked steps');
+  ok(r.fakeEdge === 'no-tools', 'and says which of the three layers answered', String(r.fakeEdge));
+  ok(/nothing AMV can reach/.test(r.fakeWhy), 'in words somebody can read', r.fakeWhy.slice(0, 50));
+  ok(r.fakeInstead >= 2, 'with things it would do instead', String(r.fakeInstead));
+  ok(!r.realImpossible && r.realSteps === 1,
+     'while a plan bound to a real connector is left alone',
+     r.realImpossible + '/' + r.realSteps);
+}
+
 section('Nothing says running until the review says it can');
 {
   const r = await page.evaluate(async () => {
@@ -178,6 +217,55 @@ section('A review that could not run does not get a green flag');
   ok(!/Running/.test(r.unchecked), 'an unchecked job is not called running', r.unchecked.slice(0, 90));
   ok(/could not check/.test(r.unchecked), 'and it says why it cannot promise that');
   ok(/Running/.test(r.checked), 'a reviewed job with nothing missing is', r.checked.slice(0, 90));
+}
+
+section('And the way out of a dead end actually goes somewhere');
+{
+  /* The buttons under "What I can do instead" are the whole reason this is
+     not a refusal screen. Asserting that the MARKUP contains them says
+     nothing about whether pressing one does anything - they go through the
+     delegated data-dact dispatcher, which is exactly the mechanism that has
+     silently dropped buttons in this codebase before. So one is pressed. */
+  const r = await page.evaluate(async () => {
+    const box = document.getElementById('mc-cmd-result');
+    box.innerHTML = '';
+    _mcCannot(box, { why: 'it needs hands.', instead: ['book it with somebody who has hands'] }, 'drive me there');
+    const btn = box.querySelector('.mc-cannot-opts .btn');
+    if(!btn) return { noButton: true };
+    btn.click();
+    await new Promise(s => setTimeout(s, 250));
+    const input = document.getElementById('mc-cmd-input');
+    return { noButton: false, typed: input ? input.value : '', focused: document.activeElement === input };
+  });
+  ok(!r.noButton, 'there is an alternative to press');
+  ok(/book it with somebody/.test(r.typed),
+     'and pressing it puts that request in the box, ready to run', JSON.stringify(r.typed));
+}
+
+section('A card somebody can actually switch on shows its example too');
+{
+  /* Browsing on the free plan renders the LOCKED card, so every assertion
+     above this point measured that one. The card a paying customer sees is a
+     separate function with its own copy of the markup, which is precisely how
+     one of two near-identical branches ends up missing a change. */
+  const r = await page.evaluate(() => {
+    const job = { id: 'x1', title: 'Daily inbox digest', desc: 'Each evening, the few emails that need you.',
+                  needs: 'Email', icon: '\uD83D\uDCEC', on: false,
+                  sample: ['6 needed you today. 58 did not.', 'and four more lines'] };
+    const live = _cwJobCard(job);
+    const locked = _cwLockedCard(job);
+    const noSample = _cwJobCard({ id: 'x2', title: 'T', desc: 'D', needs: 'Web research', icon: '\u2600', on: false });
+    return {
+      liveHas: /cw-job-out/.test(live) && /6 needed you today/.test(live),
+      lockedHas: /cw-job-out/.test(locked) && /6 needed you today/.test(locked),
+      liveOneLine: (live.match(/and four more lines/g) || []).length === 0,
+      noSampleClean: !/cw-job-out/.test(noSample),
+    };
+  });
+  ok(r.liveHas, 'the switchable card carries the example');
+  ok(r.lockedHas, 'and so does the one shown while browsing');
+  ok(r.liveOneLine, 'only the first line of it, on both');
+  ok(r.noSampleClean, 'and a job with no example renders no empty box');
 }
 
 ok(errors.length === 0, 'no page errors', errors.join(' | '));

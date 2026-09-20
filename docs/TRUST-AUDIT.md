@@ -274,3 +274,75 @@ among them.
   than a stack of boxes, and the one action that matters being present.
 - **Thirteen mutations is not every assertion.** Sections 4 to 7 each have one
   or two claims proven able to fail, not all of them.
+
+## Round four: the work of this session, attacked as it was written
+
+Seven features went in across four commits - cross-device sync, the
+impossibility verdict, the green flag, retries, country-aware planning, the
+catalogue's examples and sharing a result. Each was mutated as it landed rather
+than afterwards, which is the only ordering that catches the suite that never
+could have failed.
+
+Fifteen mutations. All fifteen caught, but three of them only after fixing the
+suite first, and those three are the interesting entries.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 1 | `AMVSync.flush` unwired from pagehide/visibilitychange | 6 assertions, incl. the second device |
+| 2 | the sign-in push deleted | first sign-in puts it on the server |
+| 3 | the returning-visit sync door deleted | both directions of a reload |
+| 4 | the floor check dropped from the command bar | 3 assertions |
+| 5 | a refusal parsed as an empty plan | the reason survives the parse |
+| 6 | the review dropped from the green condition | an unchecked job is not called running |
+| 7 | the needs screen scheduling behind your back | 4 assertions |
+| 8 | every failure retried, not just the transient | attempted exactly once |
+| 9 | the tick budget ignored by the retry loop | 3 assertions |
+| 10 | one generic give-up paragraph for four causes | each cause gets its own answer |
+| 11 | the country dropped from the plan call | and so is where they are |
+| 12 | the example strip removed from both cards | 4 assertions |
+| 13 | a region-less browser assumed American | not assumed to be American |
+| 14 | share handed straight to the modal that publishes on open | no public page exists yet |
+| 15 | the fiction check left in place but never asked | 4 assertions |
+
+### The three that needed the suite fixed first
+
+**14 passed before it should have.** "No public page exists yet" was measured on
+a DISCONNECTED app, and the hosted share is only ever attempted when there is a
+live backend and a session - so that assertion was true whatever the code did,
+including a version that published the moment the screen opened. It connects
+first now. This is the same shape as `saved-is-not-sent` in the harness notes:
+an assertion that holds for a reason unrelated to the thing it names.
+
+**15 was not covered at all, and reading the code said otherwise.** The fiction
+check had three assertions on the pure function and none on the route, so
+`if(false)` in `plan()` changed nothing any suite noticed. A verifier and the
+route that uses it are two separate claims; only the first can be checked by
+reading, and the first is worthless alone.
+
+**12 was half-covered.** Browsing on the free plan renders the LOCKED card, so
+every assertion measured that branch while the card a paying customer sees -
+its own function, its own copy of the markup - was never rendered once. Removing
+the strip from the live card only would have shipped.
+
+### And one thing deleted rather than fixed
+
+`AMVFeasible.say()` was written "ready to render" and called by nothing, in
+source or in tests. Both surfaces that report an impossible verdict build their
+own markup around the reason and the alternatives, so the helper was a third
+phrasing waiting to drift from the two that ship. Removed.
+
+### Still unmeasured, this round
+
+- **The general impossibility layer needs a key.** The floor is a pure function
+  and is measured directly; the catalogue layer is the planner, which is stubbed
+  here. What is proven is the contract around it - that a refusal is parsed
+  rather than mistaken for an empty plan, rendered as cannot rather than as an
+  error, and that nothing is scheduled behind it. Whether the model judges any
+  particular request correctly is not a property a suite can hold.
+- **`keepalive` outliving the page is not demonstrated.** Showing it needs the
+  tab destroyed with the request in flight, which was not reliable to drive from
+  the harness. What is shown is the thing the fix adds: the request is SENT when
+  the tab is hidden instead of waiting for a timer that will not run.
+- **The retry loop is driven with a stubbed executor.** Which failures are worth
+  repeating and what is said when repeating stops are decisions this code makes
+  on its own, and those are measured. A real engine failing for real is not.

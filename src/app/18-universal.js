@@ -431,12 +431,11 @@ const AMVFeasible = {
   planIsFiction: _feasPlanIsFiction,
   parse: _feasParse,
   where: _feasWhere,
-
-  /* One sentence plus what AMV would do instead, ready to render. */
-  say(v){
-    if(!v) return '';
-    return 'I cannot do this: ' + v.why;
-  },
+  /* No `say` here. There was one - "one sentence, ready to render" - and
+     nothing ever called it, because both surfaces that report an impossible
+     verdict write their own markup around the reason and the alternatives.
+     A helper nobody uses is a third phrasing waiting to drift away from the
+     two that ship. */
 };
 try{ window.AMVFeasible = AMVFeasible; window._feasFloor = _feasFloor; window._feasParse = _feasParse; }catch(e){}
 
