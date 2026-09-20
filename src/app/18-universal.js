@@ -242,6 +242,168 @@ AMVConnectors.register({
   }
 });
 
+/* ---------- 3b. CAN AMV ACTUALLY DO THIS? ----------------------------------
+
+   Asked for, in the owner's words: "if it is genuinely not possible... say
+   something that shows you can't do it. Like for example send an email to mark
+   Zuckerberg everyday and log into random Facebook accounts... that is one out
+   of millions just in general have like scanning things which can tell if
+   possible or not."
+
+   The last sentence is the requirement, and it rules out the obvious
+   implementation. A list of impossible requests is a list of the ones somebody
+   thought of; the millionth request is the one that gets "Working on it..."
+   and a spinner that never resolves into anything.
+
+   So this is three layers, and only the middle one is general.
+
+   FLOOR. A handful of things no software running in a browser tab can ever do,
+   whatever connectors get added later: be somewhere in person, use an account
+   that belongs to somebody else, promise what another person will do, or carry
+   out an act that is legally bound to a human identity. These are not a list
+   of requests, they are a list of AMV's edges, and they are short because the
+   edges are few. The floor exists so the answer is honest with no engine
+   connected at all - it costs nothing and needs no key.
+
+   CATALOG. The general one. The planner is already handed the exact list of
+   every action every connector exposes, live or not. It is therefore the only
+   thing in this system that can answer "can any combination of what exists do
+   this" for a request nobody anticipated - so it is allowed to say no, with a
+   reason and with what it would do instead, rather than being forced to return
+   steps it knows are fiction.
+
+   EVIDENCE. After planning, the plan is checked against reality: if every step
+   it produced is bound to a tool that does not exist, the plan is fiction no
+   matter how confident it reads, and saying so beats running it.
+
+   What this must NOT do is refuse things that are merely unlikely to work.
+   Emailing a public figure every day is entirely possible - AMV can send mail.
+   What it cannot do is promise he reads it. So the verdict names the PART that
+   cannot be done and offers to do the rest, rather than rejecting the whole
+   request because one clause of it was ambitious. */
+const FEAS_EDGES = [
+  {
+    id: 'in-person',
+    /* Being somewhere, with hands. No connector will ever cover this. */
+    re: /\b(?:drive|walk|run over|go (?:to|down|round)|head (?:to|over)|pick (?:it |them |him |her )?up(?! a call)|drop (?:it|them|him|her|off)|deliver (?:it|them|this|the)|collect (?:it|them|the)|post (?:a |the |this )?(?:letter|parcel|package)|mail (?:a |the |this )?(?:letter|parcel|package)|print (?:it|this|these|out|off)|shred|photocopy|hand (?:it |them )?(?:in|over)|sign .{0,20}in person|show up|turn up|attend in person|be there|cook|clean (?:my|the) (?:house|room|flat|kitchen)|water (?:my|the) plants|walk (?:my|the) dog|feed (?:my|the) (?:cat|dog))\b/i,
+    why: 'that part needs somebody physically there, and AMV runs in a browser - it has no hands, no car and no printer.',
+    instead: ['book, order or arrange it with whoever does have hands',
+              'find who does it near you, with prices and opening times',
+              'prepare the document so it is ready to print or hand over'],
+  },
+  {
+    id: 'their-account',
+    /* Somebody else's credentials. Not a policy question about intent - it is
+       simply not a thing AMV has or can be given. */
+    /* Two ways in, because both are how people say it and only one has a verb.
+       "log into" is the one the first draft missed: `log ?in` then a word
+       boundary cannot match it, because "into" is one word. The possessive
+       branch carries no verb at all - "check my friend's inbox" names no
+       action this could have keyed on - and it deliberately leaves out
+       his/her/their, which usually mean a company's account, and calendars,
+       which are routinely shared and so are genuinely reachable. */
+    re: /\b(?:log(?:ging|ged)? ?in(?:to)?|sign(?:ing|ed)? ?in(?:to)?|get(?:ting)? into|log(?:ging|ged)? on(?:to)?|access(?:ing|ed)?|break(?:ing)? into|hack(?:ing)? into)\b[^.!?]{0,40}\b(?:random|other people'?s|someone ?else'?s|somebody ?else'?s|strangers?'?|his|her|their|my (?:friend|mate|mum|mom|dad|boss|teacher|colleague|wife|husband|partner|brother|sister)'?s?)\b[^.!?]{0,25}\b(?:accounts?|profiles?|inbox(?:es)?|emails?|messages?|dms?)\b|\b(?:random|other people'?s|someone ?else'?s|somebody ?else'?s|strangers?'?|my (?:friend|mate|mum|mom|dad|boss|teacher|colleague|wife|husband|partner|brother|sister)'?s?)\s+(?:accounts?|profiles?|inbox(?:es)?|mailbox(?:es)?|dms?|passwords?)\b|\b(?:accounts?|profiles?)\b[^.!?]{0,25}\bthat (?:are not|aren'?t|is not|isn'?t) (?:mine|yours|ours)\b/i,
+    why: 'that part needs an account that is not yours, and AMV only ever acts on accounts you have connected yourself.',
+    instead: ['do the same thing on your own connected accounts',
+              'draft what you would send and leave it for you to send',
+              'set it up so it runs the moment you connect the right account'],
+  },
+  {
+    id: 'other-people',
+    /* A promise about a third party's behaviour. AMV can do the work; it
+       cannot make anyone respond, hire, approve or follow. */
+    re: /\b(?:make|get|force|ensure|guarantee)\b[^.!?]{0,30}\b(?:him|her|them|he|she|they|everyone|people|my (?:boss|ex|crush|teacher|landlord))\b[^.!?]{0,30}\b(?:reply|respond|answer|agree|say yes|hire me|approve|accept|call me back|follow|like|love|forgive)\b|\bguarantee\b[^.!?]{0,40}\b(?:i (?:get|win|pass)|go(?:es|ing)? viral|\d[\d,]*\s*(?:followers|views|likes|subscribers))\b|\bmake (?:it|this|me|my (?:video|post|page|account))\b[^.!?]{0,15}\bgo(?:es|ing)? viral\b/i,
+    why: 'that part depends on what another person decides to do, and nobody can promise that - AMV will not pretend otherwise.',
+    instead: ['do the work that makes it more likely, and show you what it did',
+              'follow up on a schedule and tell you the moment there is a reply',
+              'track the result honestly, including when it does not land'],
+  },
+  {
+    id: 'is-you',
+    /* Acts legally bound to a human identity. AMV can prepare every one of
+       these; it cannot BE you at the moment of signing. */
+    re: /\b(?:sit|take|write) (?:my|the) (?:exam|test|sat|act|gcse|a[- ]?levels?|driving test)\b|\bvote (?:for me|on my behalf|in the election)\b|\b(?:sign|swear|notarise|notarize) (?:it|this|the (?:contract|lease|deed|affidavit)) (?:as|for) me\b|\b(?:open|close) (?:a |my )?bank account\b|\bbe me\b|\bpretend to be me (?:on (?:the )?(?:phone|call))\b/i,
+    why: 'that part has to be done by you in person - it is tied to your identity, and a signature or an ID check is the whole point of it.',
+    instead: ['get everything ready so all that is left is your signature',
+              'tell you exactly what the process is, what you need and what it costs',
+              'put the deadline in your calendar and remind you before it'],
+  },
+];
+
+/* THE FLOOR. Deterministic, instant, and correct with no engine connected.
+
+   It returns the FIRST edge the request runs into, and nothing else - naming
+   two problems at once reads as a wall of refusal for a request that may have
+   one small impossible clause in it. */
+function _feasFloor(text){
+  const t = String(text || '');
+  if(!t) return null;
+  for(const e of FEAS_EDGES){ if(e.re.test(t)) return { edge:e.id, why:e.why, instead:e.instead.slice() }; }
+  return null;
+}
+
+/* IS THE PLAN FICTION?
+
+   A planner asked for steps will produce steps. Handed a request nothing can
+   do, the honest answer is a refusal and the likely answer is three confident
+   lines naming tools that are not there. So the plan is checked against the
+   catalog afterwards: when NOTHING it named exists, there is no plan, and
+   showing "0 done - 3 blocked" instead of saying so is how an agent wastes
+   somebody's afternoon.
+
+   Only when EVERY step is unbound. One unknown tool among four real ones is an
+   ordinary blocked step, which the run already handles by parking it. */
+function _feasPlanIsFiction(steps){
+  const list = Array.isArray(steps) ? steps : [];
+  if(!list.length) return false;
+  return list.every(s => {
+    if(!s || !s.tool) return true;
+    const cid = String(s.tool).split('.')[0];
+    return !AMVConnectors.get(cid);
+  });
+}
+
+/* WHICH SHAPE DID THE PLANNER REPLY IN?
+
+   Two are allowed - an array of steps, or a refusal object - and guessing
+   wrong is expensive in one direction only. Reading a refusal as "no steps"
+   loses the reason and shows a fallback plan for something that cannot be
+   done, which is the failure this whole section exists to prevent.
+
+   So it is decided by which bracket comes FIRST in the reply, not by trying
+   one parse and falling back: a refusal object often contains an "instead"
+   array, so looking for a `[` finds one inside the object and parses the
+   wrong thing. Prose before the JSON is tolerated because models write it. */
+function _feasParse(raw){
+  try{
+    const t = String(raw || '');
+    const o = t.indexOf('{'), a = t.indexOf('[');
+    if(o < 0) return null;
+    if(a >= 0 && a < o) return null;               // an array came first: it is a plan
+    const v = JSON.parse(t.slice(o, t.lastIndexOf('}') + 1));
+    if(!v || !v.impossible) return null;
+    return {
+      impossible: true,
+      why: String(v.why || 'AMV has nothing that can do this.').trim(),
+      instead: Array.isArray(v.instead) ? v.instead.map(x => String(x)).filter(Boolean).slice(0, 4) : [],
+    };
+  }catch(e){ return null; }
+}
+
+const AMVFeasible = {
+  EDGES: FEAS_EDGES,
+  floor: _feasFloor,
+  planIsFiction: _feasPlanIsFiction,
+  parse: _feasParse,
+
+  /* One sentence plus what AMV would do instead, ready to render. */
+  say(v){
+    if(!v) return '';
+    return 'I cannot do this: ' + v.why;
+  },
+};
+try{ window.AMVFeasible = AMVFeasible; window._feasFloor = _feasFloor; window._feasParse = _feasParse; }catch(e){}
+
 /* ---------- 3. POLICY GATE ----------
    Universal does NOT mean lawless. These are refused outright, and the
    refusal is explicit rather than a silent failure. */
@@ -305,6 +467,13 @@ const AMVUniversal = {
   async plan(request){
     const gate = _policyCheck(request);
     if(!gate.ok) return { blocked:true, why:gate.why, steps:[] };
+    /* THE FLOOR, BEFORE ANYTHING SAYS "WORKING ON IT".
+
+       Deterministic and instant, so the answer is the same with no engine
+       connected - and first, so a request that runs into one of AMV's actual
+       edges is answered rather than planned around. */
+    const edge = _feasFloor(request);
+    if(edge) return { impossible:true, why:edge.why, instead:edge.instead, edge:edge.edge, steps:[] };
     let _planErr = '';
     const cat = AMVConnectors.catalog();
     if(typeof _aiBackendReady === 'function' && _aiBackendReady() && typeof aiComplete === 'function'){
@@ -313,11 +482,41 @@ const AMVUniversal = {
         + 'Break the request into the fewest concrete steps that finish it end to end. '
         + 'Each step MUST pick a tool id from the catalog, or use "browser.do" for any site with no API (give {url, goal}). '
         + 'Return ONLY JSON: [{"title":"short","tool":"connector.action","args":{...},"needs_approval":true|false}]. '
-        + 'Set needs_approval true for anything that sends, posts, publishes, buys, deletes or contacts someone.';
+        + 'Set needs_approval true for anything that sends, posts, publishes, buys, deletes or contacts someone. '
+        /* THE ONLY GENERAL ANSWER TO "CAN THIS BE DONE". A list of impossible
+           requests is a list of the ones somebody thought of; this is the one
+           thing in the system holding the whole catalog, so it is the only
+           thing that can answer for the request nobody anticipated. Allowed to
+           refuse so it is not forced to invent steps it knows are fiction. */
+        + 'If NOTHING in this catalog, in any combination, can finish the request - it needs a physical action, '
+        + 'an account that is not the user\'s, a service that is not listed, or an outcome nobody can promise - '
+        + 'return ONLY {"impossible":true,"why":"one plain sentence, no apology","instead":["what you would do instead","..."]} '
+        + 'instead of the array. Do NOT use this for something that merely needs connecting: that is a step, not an impossibility.';
       try{
         const raw = await aiComplete('TOOL CATALOG:\n' + tools + '\n\nREQUEST: ' + request, sys, { max_tokens: 1400 });
+        /* Either shape, and which one is decided by which bracket comes first
+           in the reply rather than by hoping for one of them. */
+        const v = _feasParse(raw);
+        if(v && v.impossible) return { impossible:true, why:v.why, instead:v.instead, edge:'catalog', steps:[] };
         const arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1));
-        if(Array.isArray(arr) && arr.length) return { steps: arr.slice(0, this.MAX_STEPS) };
+        if(Array.isArray(arr) && arr.length){
+          const steps = arr.slice(0, this.MAX_STEPS);
+          /* A PLAN THAT NAMES NOTHING REAL IS NOT A PLAN.
+
+             Asked for steps, a planner produces steps. Handed something
+             nothing can do, the likely answer is three confident lines naming
+             tools that are not there - and running that spends somebody's
+             afternoon on "0 done - 3 blocked". Only when EVERY step is
+             unbound: one unknown tool among four real ones is an ordinary
+             blocked step, which the run already parks. */
+          if(_feasPlanIsFiction(steps))
+            return { impossible:true, edge:'no-tools', steps:[],
+                     why:'nothing AMV can reach does this - the steps it came up with are not bound to anything real.',
+                     instead:['tell you what would have to be connected for this to work',
+                              'do the part of it that does map onto something AMV has',
+                              'find and hand you the place where it can be done by hand'] };
+          return { steps };
+        }
         _planErr = 'The planner did not return any steps.';
       }catch(e){
         /* Swallowing this used to be dishonest: with the engine connected but
@@ -512,6 +711,24 @@ async function uniRun(request, opts){
     paint('<div class="uni-plan blocked"><div class="uni-h">I will not do that</div><div class="uni-why">' + escH(p.why) + '</div></div>');
     if(typeof toast === 'function') toast('Blocked by policy', 'error', 4000);
     return { blocked: true, why: p.why };
+  }
+  /* CANNOT is not the same as WILL NOT, and saying the wrong one is its own
+     failure. A refusal implies AMV is choosing; this is the honest statement
+     that there is nothing to choose. It leads with what it CAN do, because
+     somebody who asked for a lift to the airport still wants the taxi booked
+     and the calendar entry - and that is the whole difference between a dead
+     end and an assistant. */
+  if(p.impossible){
+    paint('<div class="uni-plan cannot">' +
+      '<div class="uni-h">This part I genuinely cannot do</div>' +
+      '<div class="uni-why">' + escH(p.why) + '</div>' +
+      (p.instead && p.instead.length
+        ? '<div class="uni-instead"><b>What I can do instead</b><ul>' +
+          p.instead.map(x => '<li>' + escH(x) + '</li>').join('') + '</ul>' +
+          '<div class="uni-resume">Say which one and I will start on it.</div></div>'
+        : '') +
+      '</div>');
+    return { impossible: true, why: p.why, instead: p.instead || [], edge: p.edge || '' };
   }
   const resolved = AMVUniversal.resolve(p.steps, { autonomous: !!opts.autonomous });
   /* An agent that is doing real things on the user's behalf must be stoppable.

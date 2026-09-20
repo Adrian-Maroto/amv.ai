@@ -3195,20 +3195,124 @@ function _mcAskRecurring(box, instruction, when){
   on($('mc-ask-cancel'),'click',()=>{ box.innerHTML=''; });
   on($('mc-ask-schedule'),'click',async()=>{
     const mode=(document.querySelector('input[name="mcmode"]:checked')||{}).value||'require';
-    const item={id:'a'+Date.now(), goal:instruction, approval:mode, created:Date.now(), lastRun:null};
-    if(when.sched){ item.sched=when.sched; item.next=_schedNext(when.sched,Date.now()); }
-    else { item.freq=when.freq||'daily'; item.next=_freqNext(item.freq,Date.now()); }
-    const list=_loadSched(); list.push(item); _saveSched(list);
-    const btn=$('mc-ask-schedule'); if(btn){ btn.disabled=true; btn.textContent='Adding…'; }
-    const res = await _mcScheduleServer({ goal:instruction, sched:item.sched, freq:item.freq, approval:mode });
-    /* The server's id for this job, kept so a later edit can target it. Without
-       it an edit has nothing to name and can only report that it failed. */
-    if(res.id){ const l2=_loadSched(); const me=l2.find(x=>x.id===item.id); if(me){ me.autoId=res.id; _saveSched(l2); } }
-    toast('Added to Running jobs - '+when.label+(mode==='auto'?' · Autonomous':' · Ask first')+_mcWhereItRuns(res),
-          res.ok?'success':'info', res.ok?4200:7000);
-    renderCrewView();
+    const btn=$('mc-ask-schedule');
+    /* REVIEW IT BEFORE SAYING IT IS RUNNING.
+
+       Asked for: "make sure before it says added automatically it reviews it
+       and requests for any access it needs and then when it has everything it
+       needs say like running or the green flag to show it's actually running."
+
+       A standing job is the most expensive thing here to get wrong. It runs
+       every morning, it spends budget every morning, and if it was never able
+       to do the thing it reports a failure every morning - or worse, quietly
+       does nothing while the card says it is running. One planning call at the
+       moment somebody commits to it is cheap against that, and it answers both
+       questions at once: whether this can be done at all, and what it needs
+       before it can. */
+    if(btn){ btn.disabled=true; btn.textContent='Checking what this needs…'; }
+    const review = await _mcReview(instruction, mode);
+    if(review.impossible){ _mcCannot(box, review, instruction); return; }
+    if(review.needs.length){ _mcNeedsFirst(box, instruction, when, mode, review); return; }
+    _mcSchedule(box, instruction, when, mode, review);
   });
 }
+/* WHAT DOES THIS REQUEST ACTUALLY NEED, AND CAN IT BE DONE AT ALL.
+
+   One pass, because they are the same question asked of the same plan: the
+   planner binds each step to a real action, and resolve() says what is
+   stopping each one. A step with no blocker can run; a blocker names the
+   connection it is waiting for, in words somebody can act on.
+
+   `checked:false` is the honest answer when there is no engine to plan with.
+   It is NOT the same as "nothing needed", and conflating them is how a job
+   gets a green flag it did not earn: every step of a degraded plan is
+   unbound, so treating that as a requirement would block every job on a
+   deployment with no key, and treating it as satisfied would promise one that
+   cannot be kept. So it says it could not check. */
+async function _mcReview(instruction, mode){
+  const out = { impossible:false, why:'', instead:[], needs:[], checked:false, degraded:false };
+  try{
+    if(typeof AMVUniversal === 'undefined') return out;
+    const p = await AMVUniversal.plan(instruction);
+    if(p && p.impossible)
+      return Object.assign(out, { impossible:true, why:p.why, instead:p.instead||[], checked:true });
+    if(p && p.blocked)
+      return Object.assign(out, { impossible:true, why:p.why, instead:[], checked:true });
+    if(p && p.degraded){ out.degraded = true; return out; }
+    const resolved = AMVUniversal.resolve(p.steps || [], { autonomous: mode === 'auto' });
+    out.checked = true;
+    const seen = Object.create(null);
+    resolved.forEach(st => {
+      const b = st.blocker; if(!b) return;
+      const k = (b.code || '') + '|' + (b.need || '');
+      if(seen[k]) return; seen[k] = 1;
+      out.needs.push({ code:b.code||'', need:b.need||'', how:b.how||'', connector:st.connectorName||'' });
+    });
+  }catch(e){ try{ _logErr('crew.review', e); }catch(_e){} }
+  return out;
+}
+try{ window._mcReview=_mcReview; }catch(e){}
+
+/* THE ACCESS REQUEST, BEFORE THE JOB EXISTS.
+
+   Nothing is created here. The job is not in the list, the server has not been
+   told, and no card says running - because none of that is true yet. What is
+   offered is the connection each blocked step is waiting for, and a way to add
+   it anyway with the waiting stated rather than hidden. */
+function _mcNeedsFirst(box, instruction, when, mode, review){
+  if(!box) return;
+  box.innerHTML = '<div class="mc-cmd-msg needs">' +
+    '<div class="mc-needs-h">Before this can run, it needs ' + review.needs.length +
+      ' thing' + (review.needs.length === 1 ? '' : 's') + '</div>' +
+    '<div class="mc-needs-sub">Nothing has been added yet. Connect these and it starts for real.</div>' +
+    '<ul class="mc-needs-list">' + review.needs.map(n =>
+      '<li><b>' + escH(n.connector || n.need) + '</b><span>' + escH(n.how || n.need) + '</span></li>').join('') + '</ul>' +
+    '<div class="mc-cmd-actions">' +
+      '<button class="btn mc-mini bp" data-dact="_mcGoConnect">Connect ' +
+        escH(review.needs[0].connector || 'what it needs') + '</button>' +
+      '<button class="btn mc-mini ghost" id="mc-needs-anyway">Add it anyway - it waits</button>' +
+      '<button class="btn mc-mini ghost" id="mc-needs-cancel">Cancel</button>' +
+    '</div>' +
+  '</div>';
+  on($('mc-needs-cancel'),'click',()=>{ box.innerHTML=''; });
+  on($('mc-needs-anyway'),'click',()=>_mcSchedule(box, instruction, when, mode, review));
+}
+try{ window._mcNeedsFirst=_mcNeedsFirst; }catch(e){}
+
+/* Create the job, and say which of the two things just happened. */
+async function _mcSchedule(box, instruction, when, mode, review){
+  const item={id:'a'+Date.now(), goal:instruction, approval:mode, created:Date.now(), lastRun:null};
+  if(when.sched){ item.sched=when.sched; item.next=_schedNext(when.sched,Date.now()); }
+  else { item.freq=when.freq||'daily'; item.next=_freqNext(item.freq,Date.now()); }
+  const list=_loadSched(); list.push(item); _saveSched(list);
+  if(box) box.innerHTML='<div class="mc-cmd-msg run"><span class="rr-dot"></span> Registering it…</div>';
+  const res = await _mcScheduleServer({ goal:instruction, sched:item.sched, freq:item.freq, approval:mode });
+  /* The server's id for this job, kept so a later edit can target it. Without
+     it an edit has nothing to name and can only report that it failed. */
+  if(res.id){ const l2=_loadSched(); const me=l2.find(x=>x.id===item.id); if(me){ me.autoId=res.id; _saveSched(l2); } }
+  const waiting = review && review.needs && review.needs.length;
+  /* THE GREEN FLAG IS A CLAIM, so it is only made when all three things are
+     true: the server took the job, the review found nothing missing, and the
+     review actually ran. Any one of them false and the sentence says what is
+     still outstanding instead. */
+  const green = res.ok && review && review.checked && !waiting;
+  const head = green
+    ? 'Running - ' + when.label
+    : waiting
+      ? 'Added, waiting on ' + escH(review.needs.map(n => n.connector || n.need).slice(0, 2).join(' and '))
+      : 'Added - ' + when.label;
+  if(box) box.innerHTML = '<div class="mc-cmd-msg ' + (green ? 'done' : 'warn') + '">' +
+    '<div class="mc-cmd-done-h">' + (green ? '● ' : '') + escH(head) + '</div>' +
+    '<div>' + (mode === 'auto' ? 'Autonomous - it completes and sends each time.'
+                               : 'Ask first - each run waits for your approval.') +
+    (green ? '' : escH(_mcWhereItRuns(res))) +
+    (!green && review && !review.checked && !waiting
+      ? ' AMV could not check what this needs before adding it, so it may stop on its first run and tell you what is missing.' : '') +
+    '</div></div>';
+  toast(head, green ? 'success' : 'info', green ? 4200 : 7000);
+  renderCrewView();
+}
+try{ window._mcSchedule=_mcSchedule; }catch(e){}
 /* Show clarifying questions in the command bar and re-run once answered. */
 function _mcAskDetails(box, instruction, questions){
   box.innerHTML='<div class="mc-cmd-msg ask">'+
@@ -3222,6 +3326,29 @@ function _mcAskDetails(box, instruction, questions){
   on($('mc-ask-skip'),'click',()=>mcRunCommand(instruction,{clarified:true}));
   setTimeout(()=>{ try{ $('mc-ask-input').focus(); }catch(e){} },30);
 }
+/* SAYING NO WITHOUT BEING USELESS ABOUT IT.
+
+   Two things this must not be. It must not read as a refusal - AMV is not
+   declining, there is nothing there to decline with - and it must not end the
+   conversation, because somebody who asked for a lift to the airport still
+   wants the taxi booked and the calendar entry. So the sentence names the part
+   that cannot be done, and the list underneath is what AMV would actually do,
+   each one runnable from where they are standing. */
+function _mcCannot(box, v, instruction){
+  if(!box) return;
+  const opts = (v && Array.isArray(v.instead) ? v.instead : []).slice(0, 4);
+  box.innerHTML = '<div class="mc-cmd-msg cannot">' +
+    '<div class="mc-cannot-h">This part I genuinely cannot do</div>' +
+    '<div class="mc-cannot-why">' + escH(v && v.why ? v.why : 'AMV has nothing that can do this.') + '</div>' +
+    (opts.length
+      ? '<div class="mc-cannot-alt"><b>What I can do instead</b><div class="mc-cannot-opts">' +
+        opts.map(x => '<button class="btn mc-mini" data-dact="cwPromptSelf" data-darg="' + escH(x) + '">' + escH(x) + '</button>').join('') +
+        '</div></div>'
+      : '') +
+  '</div>';
+}
+try{ window._mcCannot=_mcCannot; }catch(e){}
+
 async function mcRunCommand(instruction, opts){
   opts=opts||{};
   const box=document.getElementById('mc-cmd-result'); if(!box) return;
@@ -3242,6 +3369,23 @@ async function mcRunCommand(instruction, opts){
       +'schedule, and there has to be somewhere to send the result. Everything on this page is yours to read '
       +'without one. <button class="mc-sec-link" data-auth="signup">Create a free account</button></div>';
     return;
+  }
+  /* CAN THIS BE DONE AT ALL - ASKED BEFORE ANYTHING PRETENDS TO START.
+
+     Before this, "log into random accounts every day" reached _parseWhen,
+     was recognised as recurring, and was offered as something to add to
+     Running jobs. It would have been added, and then reported every morning
+     that it could not do the thing nobody could ever have done. The worst
+     version of a bug: it looks like the product working.
+
+     The floor is instant and needs no engine, so it goes first and costs
+     nothing. The general version - can any combination of what exists finish
+     this - lives in the planner, which is the only thing holding the whole
+     catalog; it runs a moment later, inside uniRun, and before anything is
+     scheduled. */
+  if(typeof _feasFloor === 'function'){
+    const edge = _feasFloor(instruction);
+    if(edge){ _mcCannot(box, edge, instruction); return; }
   }
   // Recurring? Make it a running job and ask how it should run (autonomous vs
   // approval). This comes first: scheduling doesn't need the app connected yet -

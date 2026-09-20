@@ -19775,20 +19775,124 @@ function _mcAskRecurring(box, instruction, when){
   on($('mc-ask-cancel'),'click',()=>{ box.innerHTML=''; });
   on($('mc-ask-schedule'),'click',async()=>{
     const mode=(document.querySelector('input[name="mcmode"]:checked')||{}).value||'require';
-    const item={id:'a'+Date.now(), goal:instruction, approval:mode, created:Date.now(), lastRun:null};
-    if(when.sched){ item.sched=when.sched; item.next=_schedNext(when.sched,Date.now()); }
-    else { item.freq=when.freq||'daily'; item.next=_freqNext(item.freq,Date.now()); }
-    const list=_loadSched(); list.push(item); _saveSched(list);
-    const btn=$('mc-ask-schedule'); if(btn){ btn.disabled=true; btn.textContent='Adding…'; }
-    const res = await _mcScheduleServer({ goal:instruction, sched:item.sched, freq:item.freq, approval:mode });
-    /* The server's id for this job, kept so a later edit can target it. Without
-       it an edit has nothing to name and can only report that it failed. */
-    if(res.id){ const l2=_loadSched(); const me=l2.find(x=>x.id===item.id); if(me){ me.autoId=res.id; _saveSched(l2); } }
-    toast('Added to Running jobs - '+when.label+(mode==='auto'?' · Autonomous':' · Ask first')+_mcWhereItRuns(res),
-          res.ok?'success':'info', res.ok?4200:7000);
-    renderCrewView();
+    const btn=$('mc-ask-schedule');
+    /* REVIEW IT BEFORE SAYING IT IS RUNNING.
+
+       Asked for: "make sure before it says added automatically it reviews it
+       and requests for any access it needs and then when it has everything it
+       needs say like running or the green flag to show it's actually running."
+
+       A standing job is the most expensive thing here to get wrong. It runs
+       every morning, it spends budget every morning, and if it was never able
+       to do the thing it reports a failure every morning - or worse, quietly
+       does nothing while the card says it is running. One planning call at the
+       moment somebody commits to it is cheap against that, and it answers both
+       questions at once: whether this can be done at all, and what it needs
+       before it can. */
+    if(btn){ btn.disabled=true; btn.textContent='Checking what this needs…'; }
+    const review = await _mcReview(instruction, mode);
+    if(review.impossible){ _mcCannot(box, review, instruction); return; }
+    if(review.needs.length){ _mcNeedsFirst(box, instruction, when, mode, review); return; }
+    _mcSchedule(box, instruction, when, mode, review);
   });
 }
+/* WHAT DOES THIS REQUEST ACTUALLY NEED, AND CAN IT BE DONE AT ALL.
+
+   One pass, because they are the same question asked of the same plan: the
+   planner binds each step to a real action, and resolve() says what is
+   stopping each one. A step with no blocker can run; a blocker names the
+   connection it is waiting for, in words somebody can act on.
+
+   `checked:false` is the honest answer when there is no engine to plan with.
+   It is NOT the same as "nothing needed", and conflating them is how a job
+   gets a green flag it did not earn: every step of a degraded plan is
+   unbound, so treating that as a requirement would block every job on a
+   deployment with no key, and treating it as satisfied would promise one that
+   cannot be kept. So it says it could not check. */
+async function _mcReview(instruction, mode){
+  const out = { impossible:false, why:'', instead:[], needs:[], checked:false, degraded:false };
+  try{
+    if(typeof AMVUniversal === 'undefined') return out;
+    const p = await AMVUniversal.plan(instruction);
+    if(p && p.impossible)
+      return Object.assign(out, { impossible:true, why:p.why, instead:p.instead||[], checked:true });
+    if(p && p.blocked)
+      return Object.assign(out, { impossible:true, why:p.why, instead:[], checked:true });
+    if(p && p.degraded){ out.degraded = true; return out; }
+    const resolved = AMVUniversal.resolve(p.steps || [], { autonomous: mode === 'auto' });
+    out.checked = true;
+    const seen = Object.create(null);
+    resolved.forEach(st => {
+      const b = st.blocker; if(!b) return;
+      const k = (b.code || '') + '|' + (b.need || '');
+      if(seen[k]) return; seen[k] = 1;
+      out.needs.push({ code:b.code||'', need:b.need||'', how:b.how||'', connector:st.connectorName||'' });
+    });
+  }catch(e){ try{ _logErr('crew.review', e); }catch(_e){} }
+  return out;
+}
+try{ window._mcReview=_mcReview; }catch(e){}
+
+/* THE ACCESS REQUEST, BEFORE THE JOB EXISTS.
+
+   Nothing is created here. The job is not in the list, the server has not been
+   told, and no card says running - because none of that is true yet. What is
+   offered is the connection each blocked step is waiting for, and a way to add
+   it anyway with the waiting stated rather than hidden. */
+function _mcNeedsFirst(box, instruction, when, mode, review){
+  if(!box) return;
+  box.innerHTML = '<div class="mc-cmd-msg needs">' +
+    '<div class="mc-needs-h">Before this can run, it needs ' + review.needs.length +
+      ' thing' + (review.needs.length === 1 ? '' : 's') + '</div>' +
+    '<div class="mc-needs-sub">Nothing has been added yet. Connect these and it starts for real.</div>' +
+    '<ul class="mc-needs-list">' + review.needs.map(n =>
+      '<li><b>' + escH(n.connector || n.need) + '</b><span>' + escH(n.how || n.need) + '</span></li>').join('') + '</ul>' +
+    '<div class="mc-cmd-actions">' +
+      '<button class="btn mc-mini bp" data-dact="_mcGoConnect">Connect ' +
+        escH(review.needs[0].connector || 'what it needs') + '</button>' +
+      '<button class="btn mc-mini ghost" id="mc-needs-anyway">Add it anyway - it waits</button>' +
+      '<button class="btn mc-mini ghost" id="mc-needs-cancel">Cancel</button>' +
+    '</div>' +
+  '</div>';
+  on($('mc-needs-cancel'),'click',()=>{ box.innerHTML=''; });
+  on($('mc-needs-anyway'),'click',()=>_mcSchedule(box, instruction, when, mode, review));
+}
+try{ window._mcNeedsFirst=_mcNeedsFirst; }catch(e){}
+
+/* Create the job, and say which of the two things just happened. */
+async function _mcSchedule(box, instruction, when, mode, review){
+  const item={id:'a'+Date.now(), goal:instruction, approval:mode, created:Date.now(), lastRun:null};
+  if(when.sched){ item.sched=when.sched; item.next=_schedNext(when.sched,Date.now()); }
+  else { item.freq=when.freq||'daily'; item.next=_freqNext(item.freq,Date.now()); }
+  const list=_loadSched(); list.push(item); _saveSched(list);
+  if(box) box.innerHTML='<div class="mc-cmd-msg run"><span class="rr-dot"></span> Registering it…</div>';
+  const res = await _mcScheduleServer({ goal:instruction, sched:item.sched, freq:item.freq, approval:mode });
+  /* The server's id for this job, kept so a later edit can target it. Without
+     it an edit has nothing to name and can only report that it failed. */
+  if(res.id){ const l2=_loadSched(); const me=l2.find(x=>x.id===item.id); if(me){ me.autoId=res.id; _saveSched(l2); } }
+  const waiting = review && review.needs && review.needs.length;
+  /* THE GREEN FLAG IS A CLAIM, so it is only made when all three things are
+     true: the server took the job, the review found nothing missing, and the
+     review actually ran. Any one of them false and the sentence says what is
+     still outstanding instead. */
+  const green = res.ok && review && review.checked && !waiting;
+  const head = green
+    ? 'Running - ' + when.label
+    : waiting
+      ? 'Added, waiting on ' + escH(review.needs.map(n => n.connector || n.need).slice(0, 2).join(' and '))
+      : 'Added - ' + when.label;
+  if(box) box.innerHTML = '<div class="mc-cmd-msg ' + (green ? 'done' : 'warn') + '">' +
+    '<div class="mc-cmd-done-h">' + (green ? '● ' : '') + escH(head) + '</div>' +
+    '<div>' + (mode === 'auto' ? 'Autonomous - it completes and sends each time.'
+                               : 'Ask first - each run waits for your approval.') +
+    (green ? '' : escH(_mcWhereItRuns(res))) +
+    (!green && review && !review.checked && !waiting
+      ? ' AMV could not check what this needs before adding it, so it may stop on its first run and tell you what is missing.' : '') +
+    '</div></div>';
+  toast(head, green ? 'success' : 'info', green ? 4200 : 7000);
+  renderCrewView();
+}
+try{ window._mcSchedule=_mcSchedule; }catch(e){}
 /* Show clarifying questions in the command bar and re-run once answered. */
 function _mcAskDetails(box, instruction, questions){
   box.innerHTML='<div class="mc-cmd-msg ask">'+
@@ -19802,6 +19906,29 @@ function _mcAskDetails(box, instruction, questions){
   on($('mc-ask-skip'),'click',()=>mcRunCommand(instruction,{clarified:true}));
   setTimeout(()=>{ try{ $('mc-ask-input').focus(); }catch(e){} },30);
 }
+/* SAYING NO WITHOUT BEING USELESS ABOUT IT.
+
+   Two things this must not be. It must not read as a refusal - AMV is not
+   declining, there is nothing there to decline with - and it must not end the
+   conversation, because somebody who asked for a lift to the airport still
+   wants the taxi booked and the calendar entry. So the sentence names the part
+   that cannot be done, and the list underneath is what AMV would actually do,
+   each one runnable from where they are standing. */
+function _mcCannot(box, v, instruction){
+  if(!box) return;
+  const opts = (v && Array.isArray(v.instead) ? v.instead : []).slice(0, 4);
+  box.innerHTML = '<div class="mc-cmd-msg cannot">' +
+    '<div class="mc-cannot-h">This part I genuinely cannot do</div>' +
+    '<div class="mc-cannot-why">' + escH(v && v.why ? v.why : 'AMV has nothing that can do this.') + '</div>' +
+    (opts.length
+      ? '<div class="mc-cannot-alt"><b>What I can do instead</b><div class="mc-cannot-opts">' +
+        opts.map(x => '<button class="btn mc-mini" data-dact="cwPromptSelf" data-darg="' + escH(x) + '">' + escH(x) + '</button>').join('') +
+        '</div></div>'
+      : '') +
+  '</div>';
+}
+try{ window._mcCannot=_mcCannot; }catch(e){}
+
 async function mcRunCommand(instruction, opts){
   opts=opts||{};
   const box=document.getElementById('mc-cmd-result'); if(!box) return;
@@ -19822,6 +19949,23 @@ async function mcRunCommand(instruction, opts){
       +'schedule, and there has to be somewhere to send the result. Everything on this page is yours to read '
       +'without one. <button class="mc-sec-link" data-auth="signup">Create a free account</button></div>';
     return;
+  }
+  /* CAN THIS BE DONE AT ALL - ASKED BEFORE ANYTHING PRETENDS TO START.
+
+     Before this, "log into random accounts every day" reached _parseWhen,
+     was recognised as recurring, and was offered as something to add to
+     Running jobs. It would have been added, and then reported every morning
+     that it could not do the thing nobody could ever have done. The worst
+     version of a bug: it looks like the product working.
+
+     The floor is instant and needs no engine, so it goes first and costs
+     nothing. The general version - can any combination of what exists finish
+     this - lives in the planner, which is the only thing holding the whole
+     catalog; it runs a moment later, inside uniRun, and before anything is
+     scheduled. */
+  if(typeof _feasFloor === 'function'){
+    const edge = _feasFloor(instruction);
+    if(edge){ _mcCannot(box, edge, instruction); return; }
   }
   // Recurring? Make it a running job and ask how it should run (autonomous vs
   // approval). This comes first: scheduling doesn't need the app connected yet -
@@ -36318,6 +36462,168 @@ AMVConnectors.register({
   }
 });
 
+/* ---------- 3b. CAN AMV ACTUALLY DO THIS? ----------------------------------
+
+   Asked for, in the owner's words: "if it is genuinely not possible... say
+   something that shows you can't do it. Like for example send an email to mark
+   Zuckerberg everyday and log into random Facebook accounts... that is one out
+   of millions just in general have like scanning things which can tell if
+   possible or not."
+
+   The last sentence is the requirement, and it rules out the obvious
+   implementation. A list of impossible requests is a list of the ones somebody
+   thought of; the millionth request is the one that gets "Working on it..."
+   and a spinner that never resolves into anything.
+
+   So this is three layers, and only the middle one is general.
+
+   FLOOR. A handful of things no software running in a browser tab can ever do,
+   whatever connectors get added later: be somewhere in person, use an account
+   that belongs to somebody else, promise what another person will do, or carry
+   out an act that is legally bound to a human identity. These are not a list
+   of requests, they are a list of AMV's edges, and they are short because the
+   edges are few. The floor exists so the answer is honest with no engine
+   connected at all - it costs nothing and needs no key.
+
+   CATALOG. The general one. The planner is already handed the exact list of
+   every action every connector exposes, live or not. It is therefore the only
+   thing in this system that can answer "can any combination of what exists do
+   this" for a request nobody anticipated - so it is allowed to say no, with a
+   reason and with what it would do instead, rather than being forced to return
+   steps it knows are fiction.
+
+   EVIDENCE. After planning, the plan is checked against reality: if every step
+   it produced is bound to a tool that does not exist, the plan is fiction no
+   matter how confident it reads, and saying so beats running it.
+
+   What this must NOT do is refuse things that are merely unlikely to work.
+   Emailing a public figure every day is entirely possible - AMV can send mail.
+   What it cannot do is promise he reads it. So the verdict names the PART that
+   cannot be done and offers to do the rest, rather than rejecting the whole
+   request because one clause of it was ambitious. */
+const FEAS_EDGES = [
+  {
+    id: 'in-person',
+    /* Being somewhere, with hands. No connector will ever cover this. */
+    re: /\b(?:drive|walk|run over|go (?:to|down|round)|head (?:to|over)|pick (?:it |them |him |her )?up(?! a call)|drop (?:it|them|him|her|off)|deliver (?:it|them|this|the)|collect (?:it|them|the)|post (?:a |the |this )?(?:letter|parcel|package)|mail (?:a |the |this )?(?:letter|parcel|package)|print (?:it|this|these|out|off)|shred|photocopy|hand (?:it |them )?(?:in|over)|sign .{0,20}in person|show up|turn up|attend in person|be there|cook|clean (?:my|the) (?:house|room|flat|kitchen)|water (?:my|the) plants|walk (?:my|the) dog|feed (?:my|the) (?:cat|dog))\b/i,
+    why: 'that part needs somebody physically there, and AMV runs in a browser - it has no hands, no car and no printer.',
+    instead: ['book, order or arrange it with whoever does have hands',
+              'find who does it near you, with prices and opening times',
+              'prepare the document so it is ready to print or hand over'],
+  },
+  {
+    id: 'their-account',
+    /* Somebody else's credentials. Not a policy question about intent - it is
+       simply not a thing AMV has or can be given. */
+    /* Two ways in, because both are how people say it and only one has a verb.
+       "log into" is the one the first draft missed: `log ?in` then a word
+       boundary cannot match it, because "into" is one word. The possessive
+       branch carries no verb at all - "check my friend's inbox" names no
+       action this could have keyed on - and it deliberately leaves out
+       his/her/their, which usually mean a company's account, and calendars,
+       which are routinely shared and so are genuinely reachable. */
+    re: /\b(?:log(?:ging|ged)? ?in(?:to)?|sign(?:ing|ed)? ?in(?:to)?|get(?:ting)? into|log(?:ging|ged)? on(?:to)?|access(?:ing|ed)?|break(?:ing)? into|hack(?:ing)? into)\b[^.!?]{0,40}\b(?:random|other people'?s|someone ?else'?s|somebody ?else'?s|strangers?'?|his|her|their|my (?:friend|mate|mum|mom|dad|boss|teacher|colleague|wife|husband|partner|brother|sister)'?s?)\b[^.!?]{0,25}\b(?:accounts?|profiles?|inbox(?:es)?|emails?|messages?|dms?)\b|\b(?:random|other people'?s|someone ?else'?s|somebody ?else'?s|strangers?'?|my (?:friend|mate|mum|mom|dad|boss|teacher|colleague|wife|husband|partner|brother|sister)'?s?)\s+(?:accounts?|profiles?|inbox(?:es)?|mailbox(?:es)?|dms?|passwords?)\b|\b(?:accounts?|profiles?)\b[^.!?]{0,25}\bthat (?:are not|aren'?t|is not|isn'?t) (?:mine|yours|ours)\b/i,
+    why: 'that part needs an account that is not yours, and AMV only ever acts on accounts you have connected yourself.',
+    instead: ['do the same thing on your own connected accounts',
+              'draft what you would send and leave it for you to send',
+              'set it up so it runs the moment you connect the right account'],
+  },
+  {
+    id: 'other-people',
+    /* A promise about a third party's behaviour. AMV can do the work; it
+       cannot make anyone respond, hire, approve or follow. */
+    re: /\b(?:make|get|force|ensure|guarantee)\b[^.!?]{0,30}\b(?:him|her|them|he|she|they|everyone|people|my (?:boss|ex|crush|teacher|landlord))\b[^.!?]{0,30}\b(?:reply|respond|answer|agree|say yes|hire me|approve|accept|call me back|follow|like|love|forgive)\b|\bguarantee\b[^.!?]{0,40}\b(?:i (?:get|win|pass)|go(?:es|ing)? viral|\d[\d,]*\s*(?:followers|views|likes|subscribers))\b|\bmake (?:it|this|me|my (?:video|post|page|account))\b[^.!?]{0,15}\bgo(?:es|ing)? viral\b/i,
+    why: 'that part depends on what another person decides to do, and nobody can promise that - AMV will not pretend otherwise.',
+    instead: ['do the work that makes it more likely, and show you what it did',
+              'follow up on a schedule and tell you the moment there is a reply',
+              'track the result honestly, including when it does not land'],
+  },
+  {
+    id: 'is-you',
+    /* Acts legally bound to a human identity. AMV can prepare every one of
+       these; it cannot BE you at the moment of signing. */
+    re: /\b(?:sit|take|write) (?:my|the) (?:exam|test|sat|act|gcse|a[- ]?levels?|driving test)\b|\bvote (?:for me|on my behalf|in the election)\b|\b(?:sign|swear|notarise|notarize) (?:it|this|the (?:contract|lease|deed|affidavit)) (?:as|for) me\b|\b(?:open|close) (?:a |my )?bank account\b|\bbe me\b|\bpretend to be me (?:on (?:the )?(?:phone|call))\b/i,
+    why: 'that part has to be done by you in person - it is tied to your identity, and a signature or an ID check is the whole point of it.',
+    instead: ['get everything ready so all that is left is your signature',
+              'tell you exactly what the process is, what you need and what it costs',
+              'put the deadline in your calendar and remind you before it'],
+  },
+];
+
+/* THE FLOOR. Deterministic, instant, and correct with no engine connected.
+
+   It returns the FIRST edge the request runs into, and nothing else - naming
+   two problems at once reads as a wall of refusal for a request that may have
+   one small impossible clause in it. */
+function _feasFloor(text){
+  const t = String(text || '');
+  if(!t) return null;
+  for(const e of FEAS_EDGES){ if(e.re.test(t)) return { edge:e.id, why:e.why, instead:e.instead.slice() }; }
+  return null;
+}
+
+/* IS THE PLAN FICTION?
+
+   A planner asked for steps will produce steps. Handed a request nothing can
+   do, the honest answer is a refusal and the likely answer is three confident
+   lines naming tools that are not there. So the plan is checked against the
+   catalog afterwards: when NOTHING it named exists, there is no plan, and
+   showing "0 done - 3 blocked" instead of saying so is how an agent wastes
+   somebody's afternoon.
+
+   Only when EVERY step is unbound. One unknown tool among four real ones is an
+   ordinary blocked step, which the run already handles by parking it. */
+function _feasPlanIsFiction(steps){
+  const list = Array.isArray(steps) ? steps : [];
+  if(!list.length) return false;
+  return list.every(s => {
+    if(!s || !s.tool) return true;
+    const cid = String(s.tool).split('.')[0];
+    return !AMVConnectors.get(cid);
+  });
+}
+
+/* WHICH SHAPE DID THE PLANNER REPLY IN?
+
+   Two are allowed - an array of steps, or a refusal object - and guessing
+   wrong is expensive in one direction only. Reading a refusal as "no steps"
+   loses the reason and shows a fallback plan for something that cannot be
+   done, which is the failure this whole section exists to prevent.
+
+   So it is decided by which bracket comes FIRST in the reply, not by trying
+   one parse and falling back: a refusal object often contains an "instead"
+   array, so looking for a `[` finds one inside the object and parses the
+   wrong thing. Prose before the JSON is tolerated because models write it. */
+function _feasParse(raw){
+  try{
+    const t = String(raw || '');
+    const o = t.indexOf('{'), a = t.indexOf('[');
+    if(o < 0) return null;
+    if(a >= 0 && a < o) return null;               // an array came first: it is a plan
+    const v = JSON.parse(t.slice(o, t.lastIndexOf('}') + 1));
+    if(!v || !v.impossible) return null;
+    return {
+      impossible: true,
+      why: String(v.why || 'AMV has nothing that can do this.').trim(),
+      instead: Array.isArray(v.instead) ? v.instead.map(x => String(x)).filter(Boolean).slice(0, 4) : [],
+    };
+  }catch(e){ return null; }
+}
+
+const AMVFeasible = {
+  EDGES: FEAS_EDGES,
+  floor: _feasFloor,
+  planIsFiction: _feasPlanIsFiction,
+  parse: _feasParse,
+
+  /* One sentence plus what AMV would do instead, ready to render. */
+  say(v){
+    if(!v) return '';
+    return 'I cannot do this: ' + v.why;
+  },
+};
+try{ window.AMVFeasible = AMVFeasible; window._feasFloor = _feasFloor; window._feasParse = _feasParse; }catch(e){}
+
 /* ---------- 3. POLICY GATE ----------
    Universal does NOT mean lawless. These are refused outright, and the
    refusal is explicit rather than a silent failure. */
@@ -36381,6 +36687,13 @@ const AMVUniversal = {
   async plan(request){
     const gate = _policyCheck(request);
     if(!gate.ok) return { blocked:true, why:gate.why, steps:[] };
+    /* THE FLOOR, BEFORE ANYTHING SAYS "WORKING ON IT".
+
+       Deterministic and instant, so the answer is the same with no engine
+       connected - and first, so a request that runs into one of AMV's actual
+       edges is answered rather than planned around. */
+    const edge = _feasFloor(request);
+    if(edge) return { impossible:true, why:edge.why, instead:edge.instead, edge:edge.edge, steps:[] };
     let _planErr = '';
     const cat = AMVConnectors.catalog();
     if(typeof _aiBackendReady === 'function' && _aiBackendReady() && typeof aiComplete === 'function'){
@@ -36389,11 +36702,41 @@ const AMVUniversal = {
         + 'Break the request into the fewest concrete steps that finish it end to end. '
         + 'Each step MUST pick a tool id from the catalog, or use "browser.do" for any site with no API (give {url, goal}). '
         + 'Return ONLY JSON: [{"title":"short","tool":"connector.action","args":{...},"needs_approval":true|false}]. '
-        + 'Set needs_approval true for anything that sends, posts, publishes, buys, deletes or contacts someone.';
+        + 'Set needs_approval true for anything that sends, posts, publishes, buys, deletes or contacts someone. '
+        /* THE ONLY GENERAL ANSWER TO "CAN THIS BE DONE". A list of impossible
+           requests is a list of the ones somebody thought of; this is the one
+           thing in the system holding the whole catalog, so it is the only
+           thing that can answer for the request nobody anticipated. Allowed to
+           refuse so it is not forced to invent steps it knows are fiction. */
+        + 'If NOTHING in this catalog, in any combination, can finish the request - it needs a physical action, '
+        + 'an account that is not the user\'s, a service that is not listed, or an outcome nobody can promise - '
+        + 'return ONLY {"impossible":true,"why":"one plain sentence, no apology","instead":["what you would do instead","..."]} '
+        + 'instead of the array. Do NOT use this for something that merely needs connecting: that is a step, not an impossibility.';
       try{
         const raw = await aiComplete('TOOL CATALOG:\n' + tools + '\n\nREQUEST: ' + request, sys, { max_tokens: 1400 });
+        /* Either shape, and which one is decided by which bracket comes first
+           in the reply rather than by hoping for one of them. */
+        const v = _feasParse(raw);
+        if(v && v.impossible) return { impossible:true, why:v.why, instead:v.instead, edge:'catalog', steps:[] };
         const arr = JSON.parse(raw.slice(raw.indexOf('['), raw.lastIndexOf(']') + 1));
-        if(Array.isArray(arr) && arr.length) return { steps: arr.slice(0, this.MAX_STEPS) };
+        if(Array.isArray(arr) && arr.length){
+          const steps = arr.slice(0, this.MAX_STEPS);
+          /* A PLAN THAT NAMES NOTHING REAL IS NOT A PLAN.
+
+             Asked for steps, a planner produces steps. Handed something
+             nothing can do, the likely answer is three confident lines naming
+             tools that are not there - and running that spends somebody's
+             afternoon on "0 done - 3 blocked". Only when EVERY step is
+             unbound: one unknown tool among four real ones is an ordinary
+             blocked step, which the run already parks. */
+          if(_feasPlanIsFiction(steps))
+            return { impossible:true, edge:'no-tools', steps:[],
+                     why:'nothing AMV can reach does this - the steps it came up with are not bound to anything real.',
+                     instead:['tell you what would have to be connected for this to work',
+                              'do the part of it that does map onto something AMV has',
+                              'find and hand you the place where it can be done by hand'] };
+          return { steps };
+        }
         _planErr = 'The planner did not return any steps.';
       }catch(e){
         /* Swallowing this used to be dishonest: with the engine connected but
@@ -36588,6 +36931,24 @@ async function uniRun(request, opts){
     paint('<div class="uni-plan blocked"><div class="uni-h">I will not do that</div><div class="uni-why">' + escH(p.why) + '</div></div>');
     if(typeof toast === 'function') toast('Blocked by policy', 'error', 4000);
     return { blocked: true, why: p.why };
+  }
+  /* CANNOT is not the same as WILL NOT, and saying the wrong one is its own
+     failure. A refusal implies AMV is choosing; this is the honest statement
+     that there is nothing to choose. It leads with what it CAN do, because
+     somebody who asked for a lift to the airport still wants the taxi booked
+     and the calendar entry - and that is the whole difference between a dead
+     end and an assistant. */
+  if(p.impossible){
+    paint('<div class="uni-plan cannot">' +
+      '<div class="uni-h">This part I genuinely cannot do</div>' +
+      '<div class="uni-why">' + escH(p.why) + '</div>' +
+      (p.instead && p.instead.length
+        ? '<div class="uni-instead"><b>What I can do instead</b><ul>' +
+          p.instead.map(x => '<li>' + escH(x) + '</li>').join('') + '</ul>' +
+          '<div class="uni-resume">Say which one and I will start on it.</div></div>'
+        : '') +
+      '</div>');
+    return { impossible: true, why: p.why, instead: p.instead || [], edge: p.edge || '' };
   }
   const resolved = AMVUniversal.resolve(p.steps, { autonomous: !!opts.autonomous });
   /* An agent that is doing real things on the user's behalf must be stoppable.

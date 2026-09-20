@@ -15155,3 +15155,90 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 @media (max-width:720px){
   #vc .vi-bill .bill-facts{ grid-template-columns:minmax(0,1fr); }
 }
+
+/* ===========================================================================
+   LAYER A245 - "I cannot do that", said so it still helps
+
+   The visual problem is that this is not an error and not a refusal, and the
+   two obvious treatments say one or the other. Red reads as something broke;
+   the warning amber AMV uses for "connect an account first" reads as a step
+   the person can take, which is exactly what this is not.
+
+   So it is built on the ordinary surface with a neutral left rule, and the
+   only colour in it is on the things they CAN do - which is where the eye
+   should land, because the sentence above is a dead end and the buttons are
+   not. Nothing here is decorative.
+   =========================================================================== */
+#vc .mc-cmd-msg.cannot,
+#vc .uni-plan.cannot{
+  border-left:3px solid var(--bd);
+  background:var(--s2);
+  border-radius:var(--r-md);
+  padding:var(--sp-3) var(--sp-4);
+}
+#vc .mc-cannot-h,
+#vc .uni-plan.cannot .uni-h{
+  font-size:var(--t-md); font-weight:650; color:var(--tx);
+  margin:0 0 var(--sp-1);
+}
+#vc .mc-cannot-why,
+#vc .uni-plan.cannot .uni-why{
+  font-size:var(--t-base); color:var(--mu); line-height:1.5; margin:0;
+}
+#vc .mc-cannot-alt,
+#vc .uni-instead{ margin-top:var(--sp-3); }
+#vc .mc-cannot-alt > b,
+#vc .uni-instead > b{
+  display:block; font-size:var(--t-xs); font-weight:650;
+  letter-spacing:.04em; text-transform:uppercase;
+  color:var(--dim); margin-bottom:var(--sp-2);
+}
+#vc .mc-cannot-opts{ display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+/* Each one is a real request somebody can run, so it is a control, not a
+   bullet: same size rule as every other tappable thing here. */
+#vc .mc-cannot-opts .btn{
+  min-height:44px; text-align:left; white-space:normal;
+  border-color:var(--accent-soft); color:var(--accent);
+}
+#vc .uni-instead ul{ margin:0; padding-left:1.1em; }
+#vc .uni-instead li{
+  font-size:var(--t-base); color:var(--tx); line-height:1.6;
+}
+@media (max-width:720px){
+  #vc .mc-cannot-opts{ flex-direction:column; }
+  #vc .mc-cannot-opts .btn{ width:100%; }
+}
+
+/* ===========================================================================
+   LAYER A246 - "it needs these first", and the green flag it has to earn
+
+   Two states with one job between them: the requirements AMV found before
+   creating anything, and the confirmation afterwards. They are deliberately
+   NOT the same colour. The requirements list is neutral - it is a to-do, not
+   a fault - and only the running confirmation gets the green dot, because
+   that dot is a claim about the world and it has to be earned.
+   =========================================================================== */
+#vc .mc-cmd-msg.needs{
+  border-left:3px solid var(--accent);
+  background:var(--s2);
+  border-radius:var(--r-md);
+  padding:var(--sp-3) var(--sp-4);
+}
+#vc .mc-needs-h{ font-size:var(--t-md); font-weight:650; color:var(--tx); margin:0 0 2px; }
+#vc .mc-needs-sub{ font-size:var(--t-sm); color:var(--mu); margin:0 0 var(--sp-3); }
+#vc .mc-needs-list{ list-style:none; margin:0 0 var(--sp-3); padding:0; display:grid; gap:var(--sp-2); }
+#vc .mc-needs-list li{
+  display:grid; gap:2px;
+  padding:var(--sp-2) var(--sp-3);
+  background:var(--s1); border:1px solid var(--bdl); border-radius:var(--r-sm);
+}
+#vc .mc-needs-list li b{ font-size:var(--t-base); color:var(--tx); font-weight:600; }
+#vc .mc-needs-list li span{ font-size:var(--t-sm); color:var(--mu); line-height:1.45; }
+/* The dot is the whole point of the confirmation, so it is a real element with
+   a real colour rather than an emoji whose rendering nobody controls. */
+#vc .mc-cmd-msg.done .mc-cmd-done-h{ color:var(--grn); }
+#vc .mc-cmd-actions .btn{ min-height:44px; }
+@media (max-width:720px){
+  #vc .mc-cmd-msg.needs .mc-cmd-actions{ flex-direction:column; align-items:stretch; }
+  #vc .mc-cmd-msg.needs .mc-cmd-actions .btn{ width:100%; }
+}
