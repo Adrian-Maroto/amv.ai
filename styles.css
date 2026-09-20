@@ -15138,14 +15138,20 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 .bill-plan-row.lead .bill-plan-price small{ color:var(--mu)!important; }
 /* The tag is what says "recommended" now, so it is the one accent-coloured
    thing in the row. */
-#vc .vi-bill .bill-plan-row.lead .bill-swap-tag{
-  background:var(--accent-soft)!important;
-  color:var(--accent-txt)!important;
-  border-radius:var(--r-pill);
-  padding:2px 9px;
-  font-size:var(--t-3xs); font-weight:700; letter-spacing:.04em; text-transform:uppercase;
-}
+/* THE BADGE IS LEFT ENTIRELY ALONE, and that is the finding.
 
+   Two versions of this were wrong. A tinted pill reads well and paints
+   something behind the text. Accent-coloured text with no pill paints nothing
+   but is a different colour from the button it sits on.
+
+   `the-plan-chooser-recommends-one-thing` holds something stronger than "the
+   badge is legible": it holds that the badge reads EXACTLY as well as the
+   button it sits on - same colour, nothing behind it - so the recommendation
+   can never be the least readable thing in the row it is recommending. Both
+   of my versions broke that, at 5.96 and 7.3 against the button's 17.
+
+   It inherits. It is a tag by its case, its weight and the separator it
+   already carries, and it keeps the stronger promise. */
 @media (max-width:720px){
   #vc .vi-bill .bill-facts{ grid-template-columns:minmax(0,1fr); }
 }

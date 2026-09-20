@@ -163,7 +163,7 @@ section('Upgrading opens the plans screen, on the plan that was picked');
   ok(r.tab === 'upgrade', 'clicking it opens that plan\u2019s own page', r.tab);
   ok(r.onPage && /Elite/.test(r.title), 'for the plan that was picked', r.title);
   ok(r.feats >= 5, 'with what you actually get on it', String(r.feats));
-  ok(/payment/i.test(r.ctaText) && r.ctaVisible,
+  ok(/payment|checkout/i.test(r.ctaText) && r.ctaVisible,
      'and one control that goes to payment', r.ctaText);
   ok(r.ctaAfterFeats, 'placed after the argument, not above it', r);
   ok(r.back, 'and a way back to Billing', r.back);

@@ -57,7 +57,10 @@ section('Ten of each category, with a way to see the rest');
   const r = await page.evaluate(() => ({
     rows: document.querySelectorAll('.cdir-row').length,
     perRow: [...document.querySelectorAll('.cdir-row')].map(x => x.querySelectorAll('.cdir-tile').length),
-    seeAll: document.querySelectorAll('[data-dact="cdirAll"]').length,
+    /* Scoped to the registry rows. The hand-built sections above this list
+       carry doors too now, so an unscoped count is larger than the number of
+       rows and the comparison below stopped meaning anything. */
+    seeAll: document.querySelectorAll('.cdir-row [data-dact="cdirAll"]').length,
     queries: window.__asked.map(a => a.q),
   }));
   ok(r.rows >= 10, 'there are categories, not one long list', String(r.rows));

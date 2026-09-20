@@ -420,11 +420,11 @@ section('9. The round after that one');
      an assertion that only checks "enough" cannot notice the next time rows go
      missing - which is precisely how that fault arrived. It moves when the
      catalogue is deliberately grown, and that is the point. */
-  ok(dir.cats === 30, 'thirty categories, not fifteen', String(dir.cats));
+  ok(dir.cats === 26, 'twenty-six registry categories, not fifteen', String(dir.cats));
   /* Not `n === 0 || n <= 5`, which was the first version and passes when every
      row is EMPTY - it went green against a directory that had fetched nothing.
      Rows must actually be full, and full means five. */
-  ok(dir.perRow.length === 30 && dir.perRow.every(n => n === 5),
+  ok(dir.perRow.length === 26 && dir.perRow.every(n => n === 5),
      'five in a category, not ten', dir.perRow.join(','));
   ok(dir.moreLast === dir.cats, 'and the way to the rest is at the end of each one',
      dir.moreLast + ' of ' + dir.cats);

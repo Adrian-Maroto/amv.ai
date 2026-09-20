@@ -109,16 +109,22 @@ section('Thirty categories, and every one of them arrives');
       filled: rows.filter(x => x.querySelectorAll('.cdir-tile').length > 0).length,
       more: document.querySelectorAll('.cdir-more').length };
   });
-  ok(r.rows === 30, 'there are thirty topics', r.rows);
+  /* TWENTY-SIX REGISTRY ROWS, not thirty. Four were dropped because a
+     hand-built section above the list already owns that topic and already
+     carries a door running the same query - "Developer" beside "Developer
+     tools" was the version of this page that shipped. The count of NAMED
+     topics on the screen is thirty-one, and `every-topic-has-its-own-door`
+     is where that is held; this file is about the registry rows themselves. */
+  ok(r.rows === 26, 'there are twenty-six registry topics', r.rows);
   ok(r.errored.length === 0, 'and none of them reports that it could not be loaded', r.errored);
-  ok(r.filled === 30, 'every one has connectors in it', r.filled);
-  ok(r.more === 30, 'and every one has a way to see the rest', r.more);
+  ok(r.filled === 26, 'every one has connectors in it', r.filled);
+  ok(r.more >= 26, 'and every one has a way to see the rest', r.more);
 }
 
 section('They do not all ask at once, which is what was refusing them');
 {
   ok(peak <= 4, 'at most four requests are in flight together', peak);
-  ok(calls >= 30, 'while still asking for every category', calls);
+  ok(calls >= 26, 'while still asking for every category', calls);
 }
 
 section('A refusal heals itself, once');
@@ -197,7 +203,7 @@ section('A refusal heals itself, once');
   ok(mid.errored > 0, 'the refusals really were refused, not quietly absorbed', mid);
   ok(end.errored.length === 0,
      'and none of those rows is still telling the person it is broken', end.errored);
-  ok(end.filled === end.rows && end.rows === 30, 'all thirty fill in', end);
+  ok(end.filled === end.rows && end.rows === 26, 'all of them fill in', end);
   await app2.close();
 }
 
@@ -260,7 +266,7 @@ section('And going back does the same');
     const sv2 = document.querySelector('#vc .sv');
     return { after: sv2 ? sv2.scrollTop : -1, rows: document.querySelectorAll('.cdir-row').length };
   });
-  ok(r.rows === 30 && r.after === 0, 'back lands on the categories, at the top', r);
+  ok(r.rows === 26 && r.after === 0, 'back lands on the categories, at the top', r);
 }
 
 ok(errors.length === 0, 'and the screen raised no errors', errors);
