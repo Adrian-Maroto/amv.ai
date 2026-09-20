@@ -217,9 +217,43 @@ function _cdirPaint(){
   if(_cdirPaintT) return;
   _cdirPaintT = setTimeout(() => {
     _cdirPaintT = 0;
-    try{ if(S.tab === 'integrations' && typeof renderIntegrationsView === 'function') renderIntegrationsView(); }catch(e){}
+    try{
+      if(S.tab !== 'integrations') return;
+      /* ONLY THE DIRECTORY, NOT THE WHOLE PAGE.
+
+         This called renderIntegrationsView, which rebuilds everything on the
+         screen - the connected accounts, the machine panel, the whole native
+         catalogue - and it ran once per wave of category answers. Measured:
+         EIGHT full rebuilds of the page while the directory fills.
+
+         That is the lag, and it is also why Connected accounts appeared to
+         change its text every second: it was being torn down and written
+         again eight times, relative timestamps and all, for news that had
+         nothing to do with it.
+
+         The directory knows which part of the page is its own. Swapping that
+         one node leaves everything else alone - including anything somebody
+         was in the middle of reading or typing into. */
+      const cur = document.querySelector('.cdir');
+      if(cur && typeof connectorDirectoryHTML === 'function'){
+        const box = document.createElement('div');
+        box.innerHTML = connectorDirectoryHTML();
+        const next = box.firstElementChild;
+        if(next){ cur.replaceWith(next); _cdirWireFind(); return; }
+      }
+      if(typeof renderIntegrationsView === 'function') renderIntegrationsView();
+    }catch(e){}
   }, 60);
 }
+/* The one listener inside the directory that is not delegated - Enter in the
+   search box. Re-attached after a swap, because the node it was on is gone. */
+function _cdirWireFind(){
+  try{
+    const f = $('cdir-find');
+    if(f) on(f, 'keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); cdirSearch(); } });
+  }catch(e){}
+}
+try{ window._cdirWireFind = _cdirWireFind; }catch(e){}
 
 /* ── A CONNECTOR AS A TILE ──────────────────────────────────────────────────
    Deliberately not a card with a border and a button row. The owner's word for

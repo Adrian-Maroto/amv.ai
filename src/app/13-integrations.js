@@ -926,9 +926,34 @@ window._refreshIntegrationsUI=_refreshIntegrationsUI;
    rather than something they have to take on faith. */
 let _connState = { state:'idle', data:null, err:'' };
 
+/* WHAT HAS ALREADY BEEN ASKED, AND UNDER WHAT CONDITIONS.
+
+   Connected accounts flickered - "Checking what is connected..." replacing
+   the list and back again, about once a second, for as long as somebody had
+   the Connectors tab open.
+
+   Nothing was wrong with the fetch. `_connSectionHTML` asks for a load on
+   every render, and the guards above only stopped a SECOND attempt while one
+   was in flight or after one had SUCCEEDED. An error or an 'off' state fell
+   straight through them. Meanwhile the connector directory repaints the whole
+   view each time one of its thirty categories answers - so every answer was
+   another attempt, another 'loading' paint, another failure, and the section
+   underneath cycled between the two.
+
+   It is the same defect `_cdirTried` was written for one file over, and the
+   same shape: a render that asks, an answer that re-renders, and nothing
+   recording that the question was already put.
+
+   Keyed on the SITUATION rather than a flat "asked", because the one thing
+   that makes asking again sensible - a backend becoming reachable - is what
+   it records. `connReload()` clears it, so Try again still means try again. */
+let _connTried = '';
+function _connCtx(){ return (window.AMV_API && AMV_API.live) ? '1' : '0'; }
 async function _connLoad(force){
   if(_connState.state === 'loading') return;
   if(_connState.state === 'done' && !force) return;
+  if(!force && _connTried === _connCtx()) return;
+  _connTried = _connCtx();
   if(!(window.AMV_API && AMV_API.live && AMV_API.connectList)){
     _connState = { state:'off', data:null, err:'' }; _connPaint(); return;
   }
@@ -944,7 +969,9 @@ async function _connLoad(force){
 function _connPaint(){
   try{ const el=document.getElementById('conn-body'); if(el) el.innerHTML=_connBodyHTML(); }catch(e){}
 }
-function connReload(){ _connState={state:'idle',data:null,err:''}; _connLoad(true); }
+/* Try again has to mean try again: the record of having asked is cleared too,
+   or the button would repaint a screen and ask nothing. */
+function connReload(){ _connTried=''; _connState={state:'idle',data:null,err:''}; _connLoad(true); }
 try{ window.connReload=connReload; }catch(e){}
 
 function _connAgo(ts){
