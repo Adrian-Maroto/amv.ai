@@ -78,8 +78,13 @@ Companion docs (do not duplicate them here - read them):
   only when a visitor's browser actually requests it; `app.js` and `styles.css`
   are inlined into the page and deliberately stay out.
   `the-host-publishes-only-what-a-visitor-needs` fails on drift, on a leak, and
-  on a page asset that was never published. Pointing the host at it is the
-  owner's one field - the repository cannot see the answer.
+  on a page asset that was never published.
+  **SETTLED - DO NOT RAISE IT AGAIN.** The host's publish directory IS `public`.
+  The owner has confirmed it repeatedly and sees 404 on `/amv-backend.js`. This
+  line used to say the setting was the owner's one open field, so every session
+  read that, could not check it from inside the repository, and asked about it
+  one more time. Being unable to verify something is not a reason to keep
+  asking - the owner already answered, and the answer is the record.
 - Vanilla JS. There is NO React, Next.js, Vue, Tailwind, or bundler. Do not add
   one. Framework-specific tools and advice do not apply here.
 - Backend: a Cloudflare Worker (`amv-backend.js`) + KV + a Durable Object

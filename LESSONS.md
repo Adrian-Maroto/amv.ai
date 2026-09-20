@@ -12994,3 +12994,33 @@ Three things worth keeping:
    dangling case, so the row was true and the conclusion drawn from it - that
    confinement was measured - was not. Five mutations is five mutations, and a
    table of them is not a proof about the sixth.
+
+## 493. An answer you cannot verify is still an answer
+
+The static host's publish directory is set to `public`, and
+`amv.homes/amv-backend.js` returns 404. The owner has said so several times.
+
+I asked anyway, several times, in several sessions. Not out of doubt - out of
+the repository. `CLAUDE.md` called it "the owner's one field - the repository
+cannot see the answer" and `DEPLOY.md` described the leak in the present tense
+under the heading "The fix is one field". Both were written when it was true.
+Neither was updated when it stopped being true, because the person who could
+confirm it was not the person editing the file, and "I cannot check this from
+here" felt like a reason to leave the note standing.
+
+It is not. A note saying something is unresolved is a claim, and it goes stale
+exactly like a number or a comment does. Every session read it, could not check
+it, and did the only thing the note suggested: asked the owner one more time.
+The cost lands entirely on the one person who already knows the answer, and it
+reads as not listening, which is what it amounts to.
+
+Two rules out of it.
+
+An owner's answer to a question the repository cannot check is EVIDENCE, and it
+belongs in the file that asked the question, in the same edit as the answer. It
+is the only record there will be - there is no test that can hold it, which is
+precisely why it has to be written down rather than re-derived.
+
+And being unable to verify something is not licence to keep raising it. Where
+the work can be verified, verify it; where it cannot, the answer from the
+person who can see it is the record, and asking again is not diligence.

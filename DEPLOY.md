@@ -175,9 +175,15 @@ The site is a single `index.html` at the root of this repository, so the
 host's publish directory is very likely the repository itself - and a static
 host serves everything in its publish directory.
 
-That is not a hypothetical. Opening `https://<your domain>/amv-backend.js`
-returned the Worker source, and beside it sit `wrangler.toml`,
-`SECURITY-SCAMS.md`, `GO-LIVE.md`, `LESSONS.md`, `check.mjs` and `tests/`.
+**This is FIXED and has been for some time.** The publish directory is set to
+`public`, and `https://amv.homes/amv-backend.js` returns 404. The rest of this
+section is kept as the record of what the problem was and why `public/` exists
+- not as an outstanding task. Do not ask the owner to check it again.
+
+It was not a hypothetical when it was found: opening
+`https://<your domain>/amv-backend.js` returned the Worker source, and beside
+it sat `wrangler.toml`, `SECURITY-SCAMS.md`, `GO-LIVE.md`, `LESSONS.md`,
+`check.mjs` and `tests/`.
 
 **No credentials are exposed by this.** Every secret lives in the Worker's
 environment and none is written to a file here. What is exposed is
@@ -186,9 +192,9 @@ what is defended and by omission what is not in `SECURITY-SCAMS.md`, and the
 real KV namespace id in `wrangler.toml` the moment it stops being a
 placeholder.
 
-### The fix is one field
+### The fix was one field, and it is already set
 
-Set the host's **publish directory** to `public`.
+The host's **publish directory** is `public`. Nothing to do.
 
 `node build.mjs` writes that folder, and it holds exactly this:
 
