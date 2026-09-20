@@ -9193,21 +9193,11 @@ function pBtn(label, cls, plan, isLand){
       '<div class="plntier">Free</div>'+
       '<div class="plnprice"><sup>$</sup>0</div>'+
       '<div class="plnper">No card required</div>'+
-      '<div class="plnanchor">Everything you need to explore</div>'+
+      _planAnchorHTML('free')+
       '<div class="plndiv"></div>'+
-      '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span>A monthly allowance, yours to spend how you like</li>'+
-        /* Not "images": image generation is gone, and the free card was the
-           last place still selling it. 3D stays because it is real - AMV
-           writes the interactive model as code and runs it in the preview. */
-        '<li><span class="fck">\u2713</span>Chat, code &amp; interactive 3D models</li>'+
-        '<li><span class="fck">\u2713</span>File analysis - PDF, images, code</li>'+
-        '<li><span class="fck">\u2713</span>Essays, code, math &amp; research</li>'+
-        '<li><span class="fxx">\u2717</span>Autonomous agents &amp; Crew</li>'+
-        '<li><span class="fxx">\u2717</span>Connected accounts (Gmail, Calendar)</li>'+
-      '</ul>'+
+      _planFeatsHTML('free')+
       pBtn('Get started free','pbs','free',isLand)+
-      '<div class="plnreassure">&nbsp;</div>'+
+      _planReassureHTML('free')+
     '</div>',
     '<div class="plnc feat">'+
       '<div class="plnpop">Most Popular</div>'+
@@ -9215,19 +9205,11 @@ function pBtn(label, cls, plan, isLand){
       '<div class="plnprice"><sup>$</sup>'+PLANS.pro.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
       '<div class="plnlocal px-local" data-usd="'+PLANS.pro.price+'" data-per="mo"></div>'+
-      '<div class="plnanchor">Replaces $60+/mo of separate AI tools</div>'+
+      _planAnchorHTML('pro')+
       '<div class="plndiv"></div>'+
-      '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>5× the usage</b>, all models included</li>'+
-        '<li><span class="fck">\u2713</span>Autonomous agents &amp; Crew, run from <b>Mission Control</b></li>'+
-        '<li><span class="fck">\u2713</span><b>Preview &amp; approve</b> every action before it runs</li>'+
-        '<li><span class="fck">\u2713</span><b>Auto Approve</b> for trusted recurring tasks</li>'+
-        '<li><span class="fck">\u2713</span>Build &amp; ship real apps in Dev</li>'+
-        '<li><span class="fck">\u2713</span>Connect Gmail, Calendar &amp; files</li>'+
-        '<li><span class="fck">\u2713</span>Scheduled &amp; background automation</li>'+
-      '</ul>'+
+      _planFeatsHTML('pro')+
       pBtn('Start Pro - $'+PLANS.pro.price+'/mo','pbp','pro',isLand)+
-      '<div class="plnreassure">Everything below, one price, cancel anytime</div>'+
+      _planReassureHTML('pro')+
     '</div>',
     '<div class="plnc feat feat-elite">'+
       '<div class="plnpop plnpop-elite">Best Value</div>'+
@@ -9235,38 +9217,22 @@ function pBtn(label, cls, plan, isLand){
       '<div class="plnprice"><sup>$</sup>'+PLANS.elite.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
       '<div class="plnlocal px-local" data-usd="'+PLANS.elite.price+'" data-per="mo"></div>'+
-      '<div class="plnanchor">For founders, builders &amp; power users</div>'+
+      _planAnchorHTML('elite')+
       '<div class="plndiv"></div>'+
-      '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>Everything in Pro</b>, plus:</li>'+
-        '<li><span class="fck">\u2713</span><b>20× the usage</b> - work all day</li>'+
-        '<li><span class="fck">\u2713</span><b>AMV Apex first</b> - our most capable engine</li>'+
-        '<li><span class="fck">\u2713</span><b>Full-stack app builder</b> + one-click deploy</li>'+
-        '<li><span class="fck">\u2713</span>Run up to <b>5 agents in parallel</b></li>'+
-        '<li><span class="fck">\u2713</span>Multi-file projects, code review &amp; auto-debug</li>'+
-        '<li><span class="fck">\u2713</span>Priority speed &amp; 24/7 support</li>'+
-      '</ul>'+
+      _planFeatsHTML('elite')+
       pBtn('Go Elite - $'+PLANS.elite.price+'/mo','pbs','elite',isLand)+
-      '<div class="plnreassure">Full-power engines and agents, without a per-seat bill</div>'+
+      _planReassureHTML('elite')+
     '</div>',
     '<div class="plnc">'+
       '<div class="plntier">Ultra</div>'+
       '<div class="plnprice"><sup>$</sup>'+PLANS.ultra.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
       '<div class="plnlocal px-local" data-usd="'+PLANS.ultra.price+'" data-per="mo"></div>'+
-      '<div class="plnanchor">For serious operators</div>'+
+      _planAnchorHTML('ultra')+
       '<div class="plndiv"></div>'+
-      '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>Everything in Elite</b>, plus:</li>'+
-        '<li><span class="fck">\u2713</span><b>50× the usage</b> - effectively unlimited</li>'+
-        '<li><span class="fck">\u2713</span><b>Highest throughput</b> - '+_rpmLabel('ultra')+'</li>'+
-        '<li><span class="fck">\u2713</span><b>Longest context</b> - whole codebases at once</li>'+
-        '<li><span class="fck">\u2713</span>Hand off a goal, get a finished result</li>'+
-        '<li><span class="fck">\u2713</span>Deploy &amp; host multiple live apps</li>'+
-        '<li><span class="fck">\u2713</span>👥 Team workspaces, roles &amp; shared projects</li>'+
-      '</ul>'+
+      _planFeatsHTML('ultra')+
       pBtn('Go Ultra - $'+PLANS.ultra.price+'/mo','pbs','ultra',isLand)+
-      '<div class="plnreassure">The highest limits AMV offers</div>'+
+      _planReassureHTML('ultra')+
     '</div>',
   ].join('');
 }
@@ -9725,25 +9691,31 @@ function _planPitch(key){
   free: {
     anchor: 'Everything you need to explore',
     feats: [
-      [1,'A monthly allowance, yours to spend how you like'],
+      [1,'<b>'+_msgMonthLabel('free')+' messages a month</b>, no card'],
+      [1,'Up to <b>'+_msg5hLabel('free')+' every '+USAGE_WINDOW_HOURS+' hours</b>, so it comes back the same day'],
       [1,'Chat, code &amp; interactive 3D models'],
       [1,'File analysis - PDF, images, code'],
-      [1,'Essays, code, math &amp; research'],
+      [0,'AMV Forge and Apex, the top engines'],
       [0,'Autonomous agents &amp; Crew'],
       [0,'Connected accounts (Gmail, Calendar)'],
     ],
     reassure: '',
   },
   pro: {
-    anchor: 'Replaces $60+/mo of separate AI tools',
+    anchor: 'A frontier engine at the lowest price anyone charges for one',
     feats: [
-      [1,'<b>5&times; the usage</b>, all models included'],
+      /* THE HEADLINE IS THE ENGINE, NOT A MULTIPLE.
+
+         "5x the usage" compared token counts across engines of completely
+         different cost. What is actually better about paying is WHICH ENGINE
+         runs, and the cheapest paid plan is where it starts. */
+      [1,'<b>AMV Forge</b> - a frontier engine, on the cheapest paid plan'],
+      [1,'<b>'+_msgMonthLabel('pro')+' messages a month</b> - one every nine seconds, all day'],
+      [1,'<b>'+_msg5hLabel('pro')+' every '+USAGE_WINDOW_HOURS+' hours</b>, not one monthly cliff'],
+      [1,'<b>'+_topWeekLabel('pro')+' Forge &amp; Apex messages a week</b> on top'],
       [1,'Autonomous agents &amp; Crew, run from <b>Mission Control</b>'],
       [1,'<b>Preview &amp; approve</b> every action before it runs'],
-      [1,'<b>Auto Approve</b> for trusted recurring tasks'],
-      [1,'Build &amp; ship real apps in Dev'],
-      [1,'Connect Gmail, Calendar &amp; files'],
-      [1,'Scheduled &amp; background automation'],
+      [1,'Build &amp; ship real apps in Dev, connect Gmail, Calendar &amp; files'],
     ],
     reassure: 'Everything below, one price, cancel anytime',
   },
@@ -9751,12 +9723,12 @@ function _planPitch(key){
     anchor: 'For founders, builders &amp; power users',
     feats: [
       [1,'<b>Everything in Pro</b>, plus:'],
-      [1,'<b>20&times; the usage</b> - work all day'],
-      [1,'<b>AMV Apex first</b> - our most capable engine'],
+      [1,'<b>AMV Apex</b> - the flagship engine, first in the queue'],
+      [1,'<b>'+_msgMonthLabel('elite')+' messages a month</b>, '+_msg5hLabel('elite')+' every '+USAGE_WINDOW_HOURS+' hours'],
+      [1,'<b>'+_topWeekLabel('elite')+' Forge &amp; Apex messages a week</b>'],
       [1,'<b>Full-stack app builder</b> + one-click deploy'],
-      [1,'Run up to <b>5 agents in parallel</b>'],
       [1,'Multi-file projects, code review &amp; auto-debug'],
-      [1,'Priority speed &amp; 24/7 support'],
+      [1,'<b>'+_rpmLabel('elite')+'</b> and 24/7 support'],
     ],
     reassure: 'Full-power engines and agents, without a per-seat bill',
   },
@@ -9764,17 +9736,30 @@ function _planPitch(key){
     anchor: 'For serious operators',
     feats: [
       [1,'<b>Everything in Elite</b>, plus:'],
-      [1,'<b>50× the usage</b> - effectively unlimited'],
-      [1,'<b>Highest throughput</b> - '+_rpmLabel('ultra')+''],
+      [1,'<b>'+_msgMonthLabel('ultra')+' messages a month</b>, '+_msg5hLabel('ultra')+' every '+USAGE_WINDOW_HOURS+' hours'],
+      [1,'<b>'+_topWeekLabel('ultra')+' Forge &amp; Apex messages a week</b>'],
+      [1,'<b>Highest throughput</b> - '+_rpmLabel('ultra')],
       [1,'<b>Longest context</b> - whole codebases at once'],
       [1,'Hand off a goal, get a finished result'],
-      [1,'Deploy &amp; host multiple live apps'],
-      [1,'👥 Team workspaces, roles &amp; shared projects'],
+      [1,'\ud83d\udc65 Team workspaces, roles &amp; shared projects'],
     ],
     reassure: 'The highest limits AMV offers',
   },
   };
   return P[key] || null;
+}
+/* The anchor and the reassurance render from the same place the features do.
+   They used to be typed into the plan cards AND listed here, which is how the
+   comment above - "both surfaces render from here" - came to be describing
+   something that was only half true: the cards still held their own copy, word
+   for word, waiting to disagree with this one. */
+function _planAnchorHTML(key){
+  const p=_planPitch(key);
+  return p && p.anchor ? '<div class="plnanchor">'+p.anchor+'</div>' : '';
+}
+function _planReassureHTML(key){
+  const p=_planPitch(key);
+  return '<div class="plnreassure">'+(p && p.reassure ? p.reassure : '&nbsp;')+'</div>';
 }
 function _planFeatsHTML(key){
   const p = _planPitch(key);
@@ -14842,7 +14827,18 @@ function openPlanCompare(highlight){
   const isC=p=>p==='custom';
   const rows=[
     ['Price', p=>isC(p)?'From $10':(p==='free'?'$0':'$'+PLANS[p].price+'/mo')],
-    ['Usage', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' tokens a month')],
+    /* MESSAGES BEFORE TOKENS, AND THE WINDOWS BEFORE THE TOTAL.
+
+       "2.3M tokens a month" was the only usage row, and it is the figure
+       somebody is least able to act on. The three rows below are the ones that
+       decide what a day feels like, and all three are read from the tables the
+       Worker enforces rather than typed in here. Tokens stay, last, because
+       they are still the secondary guard and somebody comparing carefully will
+       want them. */
+    ['Messages a month', p=>isC(p)?'You choose':_msgMonthLabel(p)],
+    ['Messages every '+USAGE_WINDOW_HOURS+' hours (it resets)', p=>_msg5hLabel(isC(p)?'custom':p)],
+    ['Forge &amp; Apex messages a week', p=>{ const n=_planMsgNum(PLAN_TOP_WEEK,isC(p)?'custom':p); return n?n.toLocaleString():'-'; }],
+    ['Token allowance (the secondary cap)', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' a month')],
     ['AMV Pulse (fast)', p=>'\u2713'],
     ['AMV Core (balanced)', p=>'\u2713'],
     ['AMV Forge (coding)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=1?'\u2713':'-')],
@@ -14914,7 +14910,7 @@ function openCustomPlan(){
       '<div class="cp-incl"><div class="cp-incl-h">Everything included</div>'+
         '<div class="cp-incl-list" id="cp-incl-list">'+_cpInclFeatures(s.hasApex).map(f=>'<span>\u2713 '+f+'</span>').join('')+'</div></div>'+
       '<button class="btn bp cp-go" id="cp-buy">Get Custom - $'+price+'/mo</button>'+
-      '<p class="cp-fine">Usage is capped at your plan size and resets monthly. Unused usage doesn\u2019t roll over. Cancel or resize anytime.</p>'+
+      '<p class="cp-fine">Usage is capped at your plan size. The message window resets every '+USAGE_WINDOW_HOURS+' hours and the token allowance monthly; unused usage doesn\u2019t roll over. Cancel or resize anytime.</p>'+
     '</div></div>';
     const close=()=>{ r.innerHTML=''; };
     onBackdrop($('cp-bg'),close); on($('cp-x'),'click',close);
@@ -15078,6 +15074,50 @@ function _allowanceLabel(p){
   if(n>=1e6){ const m=Math.floor(n/1e5)/10; return (m%1===0?m.toFixed(0):m.toFixed(1))+'M'; }
   return Math.floor(n/1000)+'K';
 }
+
+/* WHAT A PLAN IS ACTUALLY SOLD ON NOW: MESSAGES, AND WHEN THEY COME BACK.
+
+   Tokens were never a unit anybody could hold. "2.3M tokens" answers no
+   question a person walking up to a pricing page is asking, and the ratio that
+   used to sit beside it - "5x the usage" - compared token counts across
+   engines of completely different cost, which is a ratio of two things that
+   are not the same thing.
+
+   So the cards lead with three numbers the server genuinely enforces:
+
+     how many messages a month,
+     how many in any five-hour window, and
+     how many of those may run the top engines in a week.
+
+   The third is the one holding the economics up, and it is stated rather than
+   buried: the dearest engine costs about two and a half cents a message, so a
+   hundred a week is roughly the entire compute budget a fifteen dollar plan
+   has after overhead. Printing it is what makes "the best engine at the
+   cheapest paid tier" a sentence that survives the invoice. Hiding it would
+   make the first refusal a surprise, which is the thing this repository has
+   been burned for twice.
+
+   MIRRORED FROM THE WORKER, NOT RESTATED. PLAN_LIMITS is what actually
+   refuses a request; these are its numbers copied for the page to print, and a
+   suite lifts both and compares them plan by plan - the same arrangement
+   AUTO_MAX_BY_PLAN and PLAN_RPM already have, for the same reason. A price
+   that disagrees with its enforcement is the defect, not the number. */
+const PLAN_MONTH_MESSAGES={free:3000,pro:100000,elite:300000,ultra:1000000};
+const PLAN_MESSAGES_5H={free:25,pro:1000,elite:3000,ultra:10000};
+const PLAN_TOP_WEEK={free:0,pro:100,elite:500,ultra:1300};
+/* Five hours, named once. It is the shape of the window, not a number to tune
+   on a page. */
+const USAGE_WINDOW_HOURS=5;
+
+function _planMsgNum(tbl,p){
+  if(p==='team'||p==='custom') return tbl.pro;   // the tier those rank at
+  return tbl[p]||tbl.free;
+}
+/* Written out in full on a card. "100K messages" reads as a rounding; 100,000
+   reads as a promise, and it is the promise that is true. */
+function _msgMonthLabel(p){ return _planMsgNum(PLAN_MONTH_MESSAGES,p).toLocaleString(); }
+function _msg5hLabel(p){ return _planMsgNum(PLAN_MESSAGES_5H,p).toLocaleString(); }
+function _topWeekLabel(p){ return _planMsgNum(PLAN_TOP_WEEK,p).toLocaleString(); }
 
 function _rpmForPlan(p){
   if(p==='team') return PLAN_RPM.elite;      // a seat carries Elite capability
@@ -25615,9 +25655,15 @@ function renderPlansView(){
   vc.innerHTML=
     '<div class="sv fi"><div class="vi vi-plans">'+
       '<div class="plans-head"><div class="eyebrow">Pricing</div>'+
-        '<h2>One subscription. Every AI tool you need.</h2>'+
-        '<p class="vsub">Chat, autonomous agents, an app builder and Mission Control - in one place. Start free, upgrade any time, cancel whenever.</p></div>'+
+        /* THE HEADLINE IS THE DECISION, NOT THE CATEGORY.
+           "One subscription. Every AI tool you need." is what every product in
+           this market says, and it gave somebody nothing to compare. What is
+           actually unusual here is that the cheapest paid plan runs a frontier
+           engine, so that is what the page opens with. */
+        '<h2>The best engine is on the cheapest paid plan.</h2>'+
+        '<p class="vsub">Paying more buys <b>more of it</b>, not a better one. Chat, autonomous agents, an app builder and Mission Control - one price, cancel whenever.</p></div>'+
       '<div class="pg pg-app pg-4">'+planCards(true)+'</div>'+
+      _usageShapeBand()+
       _teamPlanBanner(true)+
       _customPlanBanner(true)+
       '<p class="px-note" style="display:none">Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.</p>'+
@@ -25633,6 +25679,55 @@ function renderPlansView(){
   on($('plans-compare'),'click',()=>openPlanCompare(loadStr('amv_plan')||'pro'));
   try{ _localizePrices(document); }catch(e){}
 }
+/* HOW THE LIMIT BEHAVES, SAID BEFORE SOMEBODY MEETS IT.
+
+   Every number on the cards above is a ceiling, and a ceiling with no shape is
+   read as a cliff: people assume a monthly pot that runs out on the 22nd,
+   because that is how most of this market works and because nobody tells them
+   otherwise until the refusal.
+
+   Three shapes, and all three are enforced server-side on every request rather
+   than described here:
+
+     the five-hour window, which is the one somebody meets, and which comes
+     back the same day rather than next month;
+
+     the weekly window on the top engines, which is the number actually holding
+     the price up and is therefore the number most worth being honest about;
+
+     and the monthly total, which is sized so that a person cannot reach it -
+     Pro is one message every nine seconds, eight hours a day, every day.
+
+   Written as three plain statements with the real figures in them. A page that
+   explains its own limits sells the plan; a page that hides them sells one
+   month. */
+function _usageShapeBand(){
+  const plan=(typeof loadStr==='function' && loadStr('amv_plan')) || 'free';
+  const shown=(plan==='free')?'pro':plan;
+  const item=(t,d)=>'<div class="ushape-i"><div class="ushape-t">'+t+'</div>'+
+                    '<div class="ushape-d">'+d+'</div></div>';
+  return '<section class="ushape" aria-label="How your limit works">'+
+    '<div class="ushape-h">How the limit actually works</div>'+
+    '<div class="ushape-g">'+
+      item('It comes back every '+USAGE_WINDOW_HOURS+' hours',
+           'Not one monthly cliff. On '+escH(PLANS[shown]?PLANS[shown].name:'Pro')+' that is '+
+           escH(_msg5hLabel(shown))+' messages per window, and the window rolls - a hard afternoon '+
+           'does not cost you the evening.')+
+      item('The top engines have their own weekly number',
+           'Forge and Apex are the expensive ones, so they are counted separately: '+
+           escH(_topWeekLabel(shown))+' a week on '+escH(PLANS[shown]?PLANS[shown].name:'Pro')+
+           '. Everything else keeps running at full speed when that runs out, '+
+           'rather than the account stopping.')+
+      item('The monthly total is not meant to be reachable',
+           escH(_msgMonthLabel(shown))+' messages a month is one every nine seconds, eight hours a '+
+           'day, every day. It exists as an anti-abuse ceiling - not as the thing you ration.')+
+    '</div>'+
+    '<p class="ushape-f">Every one of these is checked on the server before a request runs, '+
+      'and your current position is on the Usage tab at all times.</p>'+
+  '</section>';
+}
+try{ window._usageShapeBand=_usageShapeBand; }catch(e){}
+
 function _trustBadge(svg,title,sub){
   const ic='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg>';
   return '<div class="trust-badge"><div class="trust-badge-ic">'+ic+'</div><div class="trust-badge-t">'+title+'</div><div class="trust-badge-s">'+sub+'</div></div>';
@@ -25657,7 +25752,13 @@ const FAQS=[
      nothing kept in step with the cards or with checkout, so changing a price
      left the Help Center stating the old one to the person who came here to
      ask what it costs. */
-  {c:'billing', q:'How do plans and limits work?', a:'Free gives you a monthly allowance on the balanced engine, enough to explore everything. Pro ($'+PLANS.pro.price+'/mo) runs AMV\u2019s best engine - the cheapest paid plan gets the same model as the most expensive one - and unlocks autonomous agents, Mission Control, the app builder and connected accounts, with '+PLANS.pro.allowance+' tokens a month. Elite ($'+PLANS.elite.price+'/mo) adds one-click deploy, double Pro\u2019s throughput and '+PLANS.elite.allowance+' tokens. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.allowance+' tokens with the highest throughput AMV offers and team workspaces. Custom lets you set your own hard-capped budget. Every allowance is the amount the plan actually funds, so it is a number you can spend rather than one you run out of early.'},
+  /* WAS: "the cheapest paid plan gets the same model as the most expensive
+     one". Not true, and it was the kind of not-true that reads as a rounding.
+     Forge and Apex are distinct engines; what is true - and what the engine
+     ladder is built to hold - is that they bill the SAME per token, so paying
+     more buys more of the best rather than access to a better one. Those are
+     different promises and only the second one survives somebody checking. */
+  {c:'billing', q:'How do plans and limits work?', a:'Free is '+_msgMonthLabel('free')+' messages a month on the balanced engine, up to '+_msg5hLabel('free')+' every '+USAGE_WINDOW_HOURS+' hours. Pro ($'+PLANS.pro.price+'/mo) runs AMV Forge, a frontier engine, on the cheapest paid plan there is - '+_msgMonthLabel('pro')+' messages a month, '+_msg5hLabel('pro')+' every '+USAGE_WINDOW_HOURS+' hours, and '+_topWeekLabel('pro')+' Forge or Apex messages a week on top - and unlocks autonomous agents, Mission Control, the app builder and connected accounts. Elite ($'+PLANS.elite.price+'/mo) adds Apex and one-click deploy, with '+_msgMonthLabel('elite')+' messages a month and '+_topWeekLabel('elite')+' top-engine messages a week. Ultra ($'+PLANS.ultra.price+'/mo) is '+_msgMonthLabel('ultra')+' a month, '+_topWeekLabel('ultra')+' top-engine a week, the highest throughput AMV offers and team workspaces. Custom lets you set your own hard-capped budget. The engines above Core bill the same per token as each other, so a higher plan buys MORE of the best engine rather than a better one.'},
   {c:'privacy', q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
   {c:'chat', q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
   {c:'chat', q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},

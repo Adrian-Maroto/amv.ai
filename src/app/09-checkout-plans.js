@@ -92,6 +92,50 @@ function _allowanceLabel(p){
   return Math.floor(n/1000)+'K';
 }
 
+/* WHAT A PLAN IS ACTUALLY SOLD ON NOW: MESSAGES, AND WHEN THEY COME BACK.
+
+   Tokens were never a unit anybody could hold. "2.3M tokens" answers no
+   question a person walking up to a pricing page is asking, and the ratio that
+   used to sit beside it - "5x the usage" - compared token counts across
+   engines of completely different cost, which is a ratio of two things that
+   are not the same thing.
+
+   So the cards lead with three numbers the server genuinely enforces:
+
+     how many messages a month,
+     how many in any five-hour window, and
+     how many of those may run the top engines in a week.
+
+   The third is the one holding the economics up, and it is stated rather than
+   buried: the dearest engine costs about two and a half cents a message, so a
+   hundred a week is roughly the entire compute budget a fifteen dollar plan
+   has after overhead. Printing it is what makes "the best engine at the
+   cheapest paid tier" a sentence that survives the invoice. Hiding it would
+   make the first refusal a surprise, which is the thing this repository has
+   been burned for twice.
+
+   MIRRORED FROM THE WORKER, NOT RESTATED. PLAN_LIMITS is what actually
+   refuses a request; these are its numbers copied for the page to print, and a
+   suite lifts both and compares them plan by plan - the same arrangement
+   AUTO_MAX_BY_PLAN and PLAN_RPM already have, for the same reason. A price
+   that disagrees with its enforcement is the defect, not the number. */
+const PLAN_MONTH_MESSAGES={free:3000,pro:100000,elite:300000,ultra:1000000};
+const PLAN_MESSAGES_5H={free:25,pro:1000,elite:3000,ultra:10000};
+const PLAN_TOP_WEEK={free:0,pro:100,elite:500,ultra:1300};
+/* Five hours, named once. It is the shape of the window, not a number to tune
+   on a page. */
+const USAGE_WINDOW_HOURS=5;
+
+function _planMsgNum(tbl,p){
+  if(p==='team'||p==='custom') return tbl.pro;   // the tier those rank at
+  return tbl[p]||tbl.free;
+}
+/* Written out in full on a card. "100K messages" reads as a rounding; 100,000
+   reads as a promise, and it is the promise that is true. */
+function _msgMonthLabel(p){ return _planMsgNum(PLAN_MONTH_MESSAGES,p).toLocaleString(); }
+function _msg5hLabel(p){ return _planMsgNum(PLAN_MESSAGES_5H,p).toLocaleString(); }
+function _topWeekLabel(p){ return _planMsgNum(PLAN_TOP_WEEK,p).toLocaleString(); }
+
 function _rpmForPlan(p){
   if(p==='team') return PLAN_RPM.elite;      // a seat carries Elite capability
   if(p==='custom') return PLAN_RPM.elite;    // the tier a Custom plan ranks at

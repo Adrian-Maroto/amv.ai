@@ -2061,7 +2061,18 @@ function openPlanCompare(highlight){
   const isC=p=>p==='custom';
   const rows=[
     ['Price', p=>isC(p)?'From $10':(p==='free'?'$0':'$'+PLANS[p].price+'/mo')],
-    ['Usage', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' tokens a month')],
+    /* MESSAGES BEFORE TOKENS, AND THE WINDOWS BEFORE THE TOTAL.
+
+       "2.3M tokens a month" was the only usage row, and it is the figure
+       somebody is least able to act on. The three rows below are the ones that
+       decide what a day feels like, and all three are read from the tables the
+       Worker enforces rather than typed in here. Tokens stay, last, because
+       they are still the secondary guard and somebody comparing carefully will
+       want them. */
+    ['Messages a month', p=>isC(p)?'You choose':_msgMonthLabel(p)],
+    ['Messages every '+USAGE_WINDOW_HOURS+' hours (it resets)', p=>_msg5hLabel(isC(p)?'custom':p)],
+    ['Forge &amp; Apex messages a week', p=>{ const n=_planMsgNum(PLAN_TOP_WEEK,isC(p)?'custom':p); return n?n.toLocaleString():'-'; }],
+    ['Token allowance (the secondary cap)', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' a month')],
     ['AMV Pulse (fast)', p=>'\u2713'],
     ['AMV Core (balanced)', p=>'\u2713'],
     ['AMV Forge (coding)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=1?'\u2713':'-')],
@@ -2133,7 +2144,7 @@ function openCustomPlan(){
       '<div class="cp-incl"><div class="cp-incl-h">Everything included</div>'+
         '<div class="cp-incl-list" id="cp-incl-list">'+_cpInclFeatures(s.hasApex).map(f=>'<span>\u2713 '+f+'</span>').join('')+'</div></div>'+
       '<button class="btn bp cp-go" id="cp-buy">Get Custom - $'+price+'/mo</button>'+
-      '<p class="cp-fine">Usage is capped at your plan size and resets monthly. Unused usage doesn\u2019t roll over. Cancel or resize anytime.</p>'+
+      '<p class="cp-fine">Usage is capped at your plan size. The message window resets every '+USAGE_WINDOW_HOURS+' hours and the token allowance monthly; unused usage doesn\u2019t roll over. Cancel or resize anytime.</p>'+
     '</div></div>';
     const close=()=>{ r.innerHTML=''; };
     onBackdrop($('cp-bg'),close); on($('cp-x'),'click',close);

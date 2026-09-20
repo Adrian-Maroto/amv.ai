@@ -2693,21 +2693,11 @@ function pBtn(label, cls, plan, isLand){
       '<div class="plntier">Free</div>'+
       '<div class="plnprice"><sup>$</sup>0</div>'+
       '<div class="plnper">No card required</div>'+
-      '<div class="plnanchor">Everything you need to explore</div>'+
+      _planAnchorHTML('free')+
       '<div class="plndiv"></div>'+
-      '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span>A monthly allowance, yours to spend how you like</li>'+
-        /* Not "images": image generation is gone, and the free card was the
-           last place still selling it. 3D stays because it is real - AMV
-           writes the interactive model as code and runs it in the preview. */
-        '<li><span class="fck">\u2713</span>Chat, code &amp; interactive 3D models</li>'+
-        '<li><span class="fck">\u2713</span>File analysis - PDF, images, code</li>'+
-        '<li><span class="fck">\u2713</span>Essays, code, math &amp; research</li>'+
-        '<li><span class="fxx">\u2717</span>Autonomous agents &amp; Crew</li>'+
-        '<li><span class="fxx">\u2717</span>Connected accounts (Gmail, Calendar)</li>'+
-      '</ul>'+
+      _planFeatsHTML('free')+
       pBtn('Get started free','pbs','free',isLand)+
-      '<div class="plnreassure">&nbsp;</div>'+
+      _planReassureHTML('free')+
     '</div>',
     '<div class="plnc feat">'+
       '<div class="plnpop">Most Popular</div>'+
@@ -2715,19 +2705,11 @@ function pBtn(label, cls, plan, isLand){
       '<div class="plnprice"><sup>$</sup>'+PLANS.pro.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
       '<div class="plnlocal px-local" data-usd="'+PLANS.pro.price+'" data-per="mo"></div>'+
-      '<div class="plnanchor">Replaces $60+/mo of separate AI tools</div>'+
+      _planAnchorHTML('pro')+
       '<div class="plndiv"></div>'+
-      '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>5× the usage</b>, all models included</li>'+
-        '<li><span class="fck">\u2713</span>Autonomous agents &amp; Crew, run from <b>Mission Control</b></li>'+
-        '<li><span class="fck">\u2713</span><b>Preview &amp; approve</b> every action before it runs</li>'+
-        '<li><span class="fck">\u2713</span><b>Auto Approve</b> for trusted recurring tasks</li>'+
-        '<li><span class="fck">\u2713</span>Build &amp; ship real apps in Dev</li>'+
-        '<li><span class="fck">\u2713</span>Connect Gmail, Calendar &amp; files</li>'+
-        '<li><span class="fck">\u2713</span>Scheduled &amp; background automation</li>'+
-      '</ul>'+
+      _planFeatsHTML('pro')+
       pBtn('Start Pro - $'+PLANS.pro.price+'/mo','pbp','pro',isLand)+
-      '<div class="plnreassure">Everything below, one price, cancel anytime</div>'+
+      _planReassureHTML('pro')+
     '</div>',
     '<div class="plnc feat feat-elite">'+
       '<div class="plnpop plnpop-elite">Best Value</div>'+
@@ -2735,38 +2717,22 @@ function pBtn(label, cls, plan, isLand){
       '<div class="plnprice"><sup>$</sup>'+PLANS.elite.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
       '<div class="plnlocal px-local" data-usd="'+PLANS.elite.price+'" data-per="mo"></div>'+
-      '<div class="plnanchor">For founders, builders &amp; power users</div>'+
+      _planAnchorHTML('elite')+
       '<div class="plndiv"></div>'+
-      '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>Everything in Pro</b>, plus:</li>'+
-        '<li><span class="fck">\u2713</span><b>20× the usage</b> - work all day</li>'+
-        '<li><span class="fck">\u2713</span><b>AMV Apex first</b> - our most capable engine</li>'+
-        '<li><span class="fck">\u2713</span><b>Full-stack app builder</b> + one-click deploy</li>'+
-        '<li><span class="fck">\u2713</span>Run up to <b>5 agents in parallel</b></li>'+
-        '<li><span class="fck">\u2713</span>Multi-file projects, code review &amp; auto-debug</li>'+
-        '<li><span class="fck">\u2713</span>Priority speed &amp; 24/7 support</li>'+
-      '</ul>'+
+      _planFeatsHTML('elite')+
       pBtn('Go Elite - $'+PLANS.elite.price+'/mo','pbs','elite',isLand)+
-      '<div class="plnreassure">Full-power engines and agents, without a per-seat bill</div>'+
+      _planReassureHTML('elite')+
     '</div>',
     '<div class="plnc">'+
       '<div class="plntier">Ultra</div>'+
       '<div class="plnprice"><sup>$</sup>'+PLANS.ultra.price+'</div>'+
       '<div class="plnper">per month &middot; cancel anytime</div>'+
       '<div class="plnlocal px-local" data-usd="'+PLANS.ultra.price+'" data-per="mo"></div>'+
-      '<div class="plnanchor">For serious operators</div>'+
+      _planAnchorHTML('ultra')+
       '<div class="plndiv"></div>'+
-      '<ul class="plnfl">'+
-        '<li><span class="fck">\u2713</span><b>Everything in Elite</b>, plus:</li>'+
-        '<li><span class="fck">\u2713</span><b>50× the usage</b> - effectively unlimited</li>'+
-        '<li><span class="fck">\u2713</span><b>Highest throughput</b> - '+_rpmLabel('ultra')+'</li>'+
-        '<li><span class="fck">\u2713</span><b>Longest context</b> - whole codebases at once</li>'+
-        '<li><span class="fck">\u2713</span>Hand off a goal, get a finished result</li>'+
-        '<li><span class="fck">\u2713</span>Deploy &amp; host multiple live apps</li>'+
-        '<li><span class="fck">\u2713</span>👥 Team workspaces, roles &amp; shared projects</li>'+
-      '</ul>'+
+      _planFeatsHTML('ultra')+
       pBtn('Go Ultra - $'+PLANS.ultra.price+'/mo','pbs','ultra',isLand)+
-      '<div class="plnreassure">The highest limits AMV offers</div>'+
+      _planReassureHTML('ultra')+
     '</div>',
   ].join('');
 }
@@ -3225,25 +3191,31 @@ function _planPitch(key){
   free: {
     anchor: 'Everything you need to explore',
     feats: [
-      [1,'A monthly allowance, yours to spend how you like'],
+      [1,'<b>'+_msgMonthLabel('free')+' messages a month</b>, no card'],
+      [1,'Up to <b>'+_msg5hLabel('free')+' every '+USAGE_WINDOW_HOURS+' hours</b>, so it comes back the same day'],
       [1,'Chat, code &amp; interactive 3D models'],
       [1,'File analysis - PDF, images, code'],
-      [1,'Essays, code, math &amp; research'],
+      [0,'AMV Forge and Apex, the top engines'],
       [0,'Autonomous agents &amp; Crew'],
       [0,'Connected accounts (Gmail, Calendar)'],
     ],
     reassure: '',
   },
   pro: {
-    anchor: 'Replaces $60+/mo of separate AI tools',
+    anchor: 'A frontier engine at the lowest price anyone charges for one',
     feats: [
-      [1,'<b>5&times; the usage</b>, all models included'],
+      /* THE HEADLINE IS THE ENGINE, NOT A MULTIPLE.
+
+         "5x the usage" compared token counts across engines of completely
+         different cost. What is actually better about paying is WHICH ENGINE
+         runs, and the cheapest paid plan is where it starts. */
+      [1,'<b>AMV Forge</b> - a frontier engine, on the cheapest paid plan'],
+      [1,'<b>'+_msgMonthLabel('pro')+' messages a month</b> - one every nine seconds, all day'],
+      [1,'<b>'+_msg5hLabel('pro')+' every '+USAGE_WINDOW_HOURS+' hours</b>, not one monthly cliff'],
+      [1,'<b>'+_topWeekLabel('pro')+' Forge &amp; Apex messages a week</b> on top'],
       [1,'Autonomous agents &amp; Crew, run from <b>Mission Control</b>'],
       [1,'<b>Preview &amp; approve</b> every action before it runs'],
-      [1,'<b>Auto Approve</b> for trusted recurring tasks'],
-      [1,'Build &amp; ship real apps in Dev'],
-      [1,'Connect Gmail, Calendar &amp; files'],
-      [1,'Scheduled &amp; background automation'],
+      [1,'Build &amp; ship real apps in Dev, connect Gmail, Calendar &amp; files'],
     ],
     reassure: 'Everything below, one price, cancel anytime',
   },
@@ -3251,12 +3223,12 @@ function _planPitch(key){
     anchor: 'For founders, builders &amp; power users',
     feats: [
       [1,'<b>Everything in Pro</b>, plus:'],
-      [1,'<b>20&times; the usage</b> - work all day'],
-      [1,'<b>AMV Apex first</b> - our most capable engine'],
+      [1,'<b>AMV Apex</b> - the flagship engine, first in the queue'],
+      [1,'<b>'+_msgMonthLabel('elite')+' messages a month</b>, '+_msg5hLabel('elite')+' every '+USAGE_WINDOW_HOURS+' hours'],
+      [1,'<b>'+_topWeekLabel('elite')+' Forge &amp; Apex messages a week</b>'],
       [1,'<b>Full-stack app builder</b> + one-click deploy'],
-      [1,'Run up to <b>5 agents in parallel</b>'],
       [1,'Multi-file projects, code review &amp; auto-debug'],
-      [1,'Priority speed &amp; 24/7 support'],
+      [1,'<b>'+_rpmLabel('elite')+'</b> and 24/7 support'],
     ],
     reassure: 'Full-power engines and agents, without a per-seat bill',
   },
@@ -3264,17 +3236,30 @@ function _planPitch(key){
     anchor: 'For serious operators',
     feats: [
       [1,'<b>Everything in Elite</b>, plus:'],
-      [1,'<b>50× the usage</b> - effectively unlimited'],
-      [1,'<b>Highest throughput</b> - '+_rpmLabel('ultra')+''],
+      [1,'<b>'+_msgMonthLabel('ultra')+' messages a month</b>, '+_msg5hLabel('ultra')+' every '+USAGE_WINDOW_HOURS+' hours'],
+      [1,'<b>'+_topWeekLabel('ultra')+' Forge &amp; Apex messages a week</b>'],
+      [1,'<b>Highest throughput</b> - '+_rpmLabel('ultra')],
       [1,'<b>Longest context</b> - whole codebases at once'],
       [1,'Hand off a goal, get a finished result'],
-      [1,'Deploy &amp; host multiple live apps'],
-      [1,'👥 Team workspaces, roles &amp; shared projects'],
+      [1,'\ud83d\udc65 Team workspaces, roles &amp; shared projects'],
     ],
     reassure: 'The highest limits AMV offers',
   },
   };
   return P[key] || null;
+}
+/* The anchor and the reassurance render from the same place the features do.
+   They used to be typed into the plan cards AND listed here, which is how the
+   comment above - "both surfaces render from here" - came to be describing
+   something that was only half true: the cards still held their own copy, word
+   for word, waiting to disagree with this one. */
+function _planAnchorHTML(key){
+  const p=_planPitch(key);
+  return p && p.anchor ? '<div class="plnanchor">'+p.anchor+'</div>' : '';
+}
+function _planReassureHTML(key){
+  const p=_planPitch(key);
+  return '<div class="plnreassure">'+(p && p.reassure ? p.reassure : '&nbsp;')+'</div>';
 }
 function _planFeatsHTML(key){
   const p = _planPitch(key);

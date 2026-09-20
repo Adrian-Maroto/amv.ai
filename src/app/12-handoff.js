@@ -604,9 +604,15 @@ function renderPlansView(){
   vc.innerHTML=
     '<div class="sv fi"><div class="vi vi-plans">'+
       '<div class="plans-head"><div class="eyebrow">Pricing</div>'+
-        '<h2>One subscription. Every AI tool you need.</h2>'+
-        '<p class="vsub">Chat, autonomous agents, an app builder and Mission Control - in one place. Start free, upgrade any time, cancel whenever.</p></div>'+
+        /* THE HEADLINE IS THE DECISION, NOT THE CATEGORY.
+           "One subscription. Every AI tool you need." is what every product in
+           this market says, and it gave somebody nothing to compare. What is
+           actually unusual here is that the cheapest paid plan runs a frontier
+           engine, so that is what the page opens with. */
+        '<h2>The best engine is on the cheapest paid plan.</h2>'+
+        '<p class="vsub">Paying more buys <b>more of it</b>, not a better one. Chat, autonomous agents, an app builder and Mission Control - one price, cancel whenever.</p></div>'+
       '<div class="pg pg-app pg-4">'+planCards(true)+'</div>'+
+      _usageShapeBand()+
       _teamPlanBanner(true)+
       _customPlanBanner(true)+
       '<p class="px-note" style="display:none">Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.</p>'+
@@ -622,6 +628,55 @@ function renderPlansView(){
   on($('plans-compare'),'click',()=>openPlanCompare(loadStr('amv_plan')||'pro'));
   try{ _localizePrices(document); }catch(e){}
 }
+/* HOW THE LIMIT BEHAVES, SAID BEFORE SOMEBODY MEETS IT.
+
+   Every number on the cards above is a ceiling, and a ceiling with no shape is
+   read as a cliff: people assume a monthly pot that runs out on the 22nd,
+   because that is how most of this market works and because nobody tells them
+   otherwise until the refusal.
+
+   Three shapes, and all three are enforced server-side on every request rather
+   than described here:
+
+     the five-hour window, which is the one somebody meets, and which comes
+     back the same day rather than next month;
+
+     the weekly window on the top engines, which is the number actually holding
+     the price up and is therefore the number most worth being honest about;
+
+     and the monthly total, which is sized so that a person cannot reach it -
+     Pro is one message every nine seconds, eight hours a day, every day.
+
+   Written as three plain statements with the real figures in them. A page that
+   explains its own limits sells the plan; a page that hides them sells one
+   month. */
+function _usageShapeBand(){
+  const plan=(typeof loadStr==='function' && loadStr('amv_plan')) || 'free';
+  const shown=(plan==='free')?'pro':plan;
+  const item=(t,d)=>'<div class="ushape-i"><div class="ushape-t">'+t+'</div>'+
+                    '<div class="ushape-d">'+d+'</div></div>';
+  return '<section class="ushape" aria-label="How your limit works">'+
+    '<div class="ushape-h">How the limit actually works</div>'+
+    '<div class="ushape-g">'+
+      item('It comes back every '+USAGE_WINDOW_HOURS+' hours',
+           'Not one monthly cliff. On '+escH(PLANS[shown]?PLANS[shown].name:'Pro')+' that is '+
+           escH(_msg5hLabel(shown))+' messages per window, and the window rolls - a hard afternoon '+
+           'does not cost you the evening.')+
+      item('The top engines have their own weekly number',
+           'Forge and Apex are the expensive ones, so they are counted separately: '+
+           escH(_topWeekLabel(shown))+' a week on '+escH(PLANS[shown]?PLANS[shown].name:'Pro')+
+           '. Everything else keeps running at full speed when that runs out, '+
+           'rather than the account stopping.')+
+      item('The monthly total is not meant to be reachable',
+           escH(_msgMonthLabel(shown))+' messages a month is one every nine seconds, eight hours a '+
+           'day, every day. It exists as an anti-abuse ceiling - not as the thing you ration.')+
+    '</div>'+
+    '<p class="ushape-f">Every one of these is checked on the server before a request runs, '+
+      'and your current position is on the Usage tab at all times.</p>'+
+  '</section>';
+}
+try{ window._usageShapeBand=_usageShapeBand; }catch(e){}
+
 function _trustBadge(svg,title,sub){
   const ic='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg>';
   return '<div class="trust-badge"><div class="trust-badge-ic">'+ic+'</div><div class="trust-badge-t">'+title+'</div><div class="trust-badge-s">'+sub+'</div></div>';
@@ -646,7 +701,13 @@ const FAQS=[
      nothing kept in step with the cards or with checkout, so changing a price
      left the Help Center stating the old one to the person who came here to
      ask what it costs. */
-  {c:'billing', q:'How do plans and limits work?', a:'Free gives you a monthly allowance on the balanced engine, enough to explore everything. Pro ($'+PLANS.pro.price+'/mo) runs AMV\u2019s best engine - the cheapest paid plan gets the same model as the most expensive one - and unlocks autonomous agents, Mission Control, the app builder and connected accounts, with '+PLANS.pro.allowance+' tokens a month. Elite ($'+PLANS.elite.price+'/mo) adds one-click deploy, double Pro\u2019s throughput and '+PLANS.elite.allowance+' tokens. Ultra ($'+PLANS.ultra.price+'/mo) is '+PLANS.ultra.allowance+' tokens with the highest throughput AMV offers and team workspaces. Custom lets you set your own hard-capped budget. Every allowance is the amount the plan actually funds, so it is a number you can spend rather than one you run out of early.'},
+  /* WAS: "the cheapest paid plan gets the same model as the most expensive
+     one". Not true, and it was the kind of not-true that reads as a rounding.
+     Forge and Apex are distinct engines; what is true - and what the engine
+     ladder is built to hold - is that they bill the SAME per token, so paying
+     more buys more of the best rather than access to a better one. Those are
+     different promises and only the second one survives somebody checking. */
+  {c:'billing', q:'How do plans and limits work?', a:'Free is '+_msgMonthLabel('free')+' messages a month on the balanced engine, up to '+_msg5hLabel('free')+' every '+USAGE_WINDOW_HOURS+' hours. Pro ($'+PLANS.pro.price+'/mo) runs AMV Forge, a frontier engine, on the cheapest paid plan there is - '+_msgMonthLabel('pro')+' messages a month, '+_msg5hLabel('pro')+' every '+USAGE_WINDOW_HOURS+' hours, and '+_topWeekLabel('pro')+' Forge or Apex messages a week on top - and unlocks autonomous agents, Mission Control, the app builder and connected accounts. Elite ($'+PLANS.elite.price+'/mo) adds Apex and one-click deploy, with '+_msgMonthLabel('elite')+' messages a month and '+_topWeekLabel('elite')+' top-engine messages a week. Ultra ($'+PLANS.ultra.price+'/mo) is '+_msgMonthLabel('ultra')+' a month, '+_topWeekLabel('ultra')+' top-engine a week, the highest throughput AMV offers and team workspaces. Custom lets you set your own hard-capped budget. The engines above Core bill the same per token as each other, so a higher plan buys MORE of the best engine rather than a better one.'},
   {c:'privacy', q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
   {c:'chat', q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
   {c:'chat', q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
