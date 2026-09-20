@@ -2777,10 +2777,59 @@ const AMVSync = {
   push(){ // debounced
     if(!this.enabled()) return;
     clearTimeout(this._timer);
-    this._timer=setTimeout(()=>{ Promise.resolve(AMV_API.syncPush(this.collect())).catch(e=>_logErr('AMVSync.push', e)); }, 1200);
+    this._pending = true;
+    this._timer=setTimeout(()=>{ this._pending=false;
+      Promise.resolve(AMV_API.syncPush(this.collect())).catch(e=>_logErr('AMVSync.push', e)); }, 1200);
+  },
+
+  /* ── THE PUSH THAT NEVER HAPPENED ────────────────────────────────────────
+
+     Every change schedules a push 1.2 seconds later. Close the tab, switch
+     apps, or lock the phone inside that window and the timer never runs: the
+     work is saved locally and the server never hears about it. Sign in on
+     another device and it is not there - which is exactly what "it doesn't
+     save no matter where I log in" looks like from the outside, and why it
+     looks intermittent rather than broken.
+
+     The local session store already knew this. `_sessFlushAll` runs on
+     `pagehide` and on `visibilitychange`, with a comment explaining that
+     beforeunload is unreliable on mobile and that backgrounding an app is the
+     commonest way a session ends on a phone. Everything it says is equally
+     true of the sync push, and the sync push was not wired to either.
+
+     `keepalive` is what makes a request outlive the page. It is capped at
+     64KB across all in-flight keepalive requests, so a large payload cannot
+     use it - for those the ordinary request is fired and may or may not
+     land, which is strictly better than a timer that certainly will not. The
+     next open pushes it either way. */
+  flush(){
+    if(!this.enabled()) return false;
+    if(!this._pending) return false;
+    clearTimeout(this._timer);
+    this._pending = false;
+    try{
+      const data = this.collect();
+      const body = JSON.stringify({ data, baseRev: AMV_API.syncRev });
+      /* Under the keepalive ceiling, with room to spare for anything else the
+         page is sending as it goes. */
+      if(body.length < 56 * 1024 && typeof AMV_API._fetch === 'function'){
+        AMV_API._fetch('/sync/push', { method:'POST', body, keepalive:true })
+          .catch(()=>{});
+        return true;
+      }
+      Promise.resolve(AMV_API.syncPush(data)).catch(()=>{});
+      return true;
+    }catch(e){ return false; }
   },
   start(){
     if(!this.enabled()) return;
+    /* Subscriptions are permanent - there is no unsubscribe and none is
+       wanted, because push() checks enabled() itself and does nothing when
+       there is no session. So a second call must not install a second set:
+       two doors lead here now, a fresh sign-in and a restored session, and
+       double subscriptions mean every change schedules two pushes. */
+    if(this._started) return;
+    this._started = true;
     // push whenever a synced key changes
     _SYNC_KEYS.forEach(k=>AMVState.subscribe(k, ()=>this.push()));
     // _SESSIONS isn't an AMVState key, so nothing would ever trigger a push for
@@ -3720,10 +3769,26 @@ function _sessFlushAll(){
   try{ for(const k of Object.keys(SESSION_KINDS)) _sessFlush(k); }catch(e){}
 }
 try{ window._sessFlushAll=_sessFlushAll; }catch(e){}
+/* THE SYNC PUSH GOES WITH IT, for exactly the reasons written above this.
+
+   `_sessFlushAll` saves to this device. That is half the job: the other half
+   is telling the server, and the server is told by a push debounced 1.2
+   seconds. Closing the tab or backgrounding the app inside that window meant
+   the work was saved here and nowhere else - and the next device to sign in
+   saw an account missing whatever was done in the last second and a bit,
+   every single time.
+
+   Ordered deliberately: the local save first, then the push, because the push
+   collects what the save has just written. */
+function _flushEverything(){
+  try{ _sessFlushAll(); }catch(e){}
+  try{ if(typeof AMVSync !== 'undefined' && AMVSync.flush) AMVSync.flush(); }catch(e){}
+}
+try{ window._flushEverything=_flushEverything; }catch(e){}
 try{
-  window.addEventListener('pagehide', _sessFlushAll);
+  window.addEventListener('pagehide', _flushEverything);
   document.addEventListener('visibilitychange', ()=>{
-    if(document.visibilityState==='hidden') _sessFlushAll();
+    if(document.visibilityState==='hidden') _flushEverything();
   });
 }catch(e){}
 // Reset a tool's live state to empty (after its work was saved to Recents).
@@ -3911,8 +3976,53 @@ function loginUser(acct) {
   // intrusive modal on sign-in. Mark onboarded so nothing re-triggers it.
   try{ saveStr('amv_onboarded','1'); }catch(e){}
   // if a backend session exists, pull the user's data from the server and keep it synced
-  try{ if(AMVSync.enabled()){ AMVSync.pull().then(pulled=>{ if(pulled){ try{ renderView&&renderView(); updateSbUser&&updateSbUser(); }catch(e){} } }); AMVSync.start(); } }catch(e){}
+  _syncBootstrap();
 }
+/* SYNC STARTED IN ONE PLACE, AND IT WAS THE WRONG ONE.
+
+   This lived at the end of loginUser, which runs when somebody types their
+   password or comes back from Google - and NOWHERE ELSE. A returning visit
+   does not go through it: the session is restored straight from storage while
+   the app is loading, exactly as the comment in 02-state says. So for every
+   ordinary visit after the first, `AMVSync.start()` was never called, nothing
+   subscribed to changes, and no pull ever ran.
+
+   That is the whole of "it doesn't save no matter where I log in". Not a
+   merge bug and not a server bug: on the visits people actually make, the
+   sync layer was never switched on. Work done on the laptop never left it,
+   and work done on the phone never arrived - and because it DID work in the
+   session where you signed in, it looks intermittent.
+
+   Two things happen here and the order matters.
+
+   PULL first, because it is what merges the two sides; what this device holds
+   and what the server holds become one list before either is written back.
+
+   PUSH after, because a push is only ever SCHEDULED by a change, through the
+   subscriptions start() installs below. Everything already on this device was
+   written before anything was listening, so without this nothing would ever
+   send it. On a new account, where the server has nothing, that is the whole
+   of somebody's history sitting on one device permanently.
+
+   Called from both doors - a fresh sign-in and a restored session - and it
+   runs once per session either way. The flag is cleared on sign-out so the
+   next account starts clean. start() is separately idempotent: its
+   subscriptions are permanent, and a second set would double every push. */
+let _syncBooted = false;
+function _syncBootstrap(){
+  try{
+    if(_syncBooted) return false;
+    if(typeof AMVSync === 'undefined' || !AMVSync.enabled()) return false;
+    _syncBooted = true;
+    AMVSync.pull().then(pulled=>{
+      if(pulled){ try{ renderView&&renderView(); updateSbUser&&updateSbUser(); }catch(e){} }
+      try{ AMVSync.push(); }catch(e){}
+    }).catch(e=>{ try{ _logErr('sync.bootstrap', e); }catch(_e){} });
+    AMVSync.start();
+    return true;
+  }catch(e){ try{ _logErr('sync.bootstrap', e); }catch(_e){} return false; }
+}
+try{ window._syncBootstrap=_syncBootstrap; }catch(e){}
 function newConvObj(title) {
   return { id:'c'+Date.now()+Math.random().toString(36).slice(2,6), title:title||'New Conversation', msgs:[], model:'auto', starred:false, created:Date.now() };
 }
@@ -4831,6 +4941,10 @@ async function _ensureBackendSession(){
         if(typeof updateSbUser === 'function') updateSbUser();
       }
     }catch(e){}
+    /* The returning visit's door into sync. After the refresh, not before: a
+       reload begins with no access token in hand, so asked any earlier this
+       reads "no session" and does nothing at all. */
+    try{ _syncBootstrap(); }catch(e){}
   }
 }
 function toggleSb(){
@@ -5359,6 +5473,7 @@ function signOut(){
      A connected Google account is the one that matters most: leaving its access
      token behind hands the next account somebody's mail. */
   try{ _SIGNOUT_CLEAR_GLOBAL.forEach(k => { try{ localStorage.removeItem(k); }catch(e){} }); }catch(e){}
+  _syncBooted = false;   // the next account gets its own pull
   S.user=null; localStorage.removeItem('amv_user');
   _wipeAccountState();                 // clear Recents, Dev project, Lab code, memory - nothing crosses accounts
   const m=$('sb-popup'); if(m)m.classList.remove('on');

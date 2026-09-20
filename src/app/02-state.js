@@ -389,10 +389,59 @@ const AMVSync = {
   push(){ // debounced
     if(!this.enabled()) return;
     clearTimeout(this._timer);
-    this._timer=setTimeout(()=>{ Promise.resolve(AMV_API.syncPush(this.collect())).catch(e=>_logErr('AMVSync.push', e)); }, 1200);
+    this._pending = true;
+    this._timer=setTimeout(()=>{ this._pending=false;
+      Promise.resolve(AMV_API.syncPush(this.collect())).catch(e=>_logErr('AMVSync.push', e)); }, 1200);
+  },
+
+  /* ── THE PUSH THAT NEVER HAPPENED ────────────────────────────────────────
+
+     Every change schedules a push 1.2 seconds later. Close the tab, switch
+     apps, or lock the phone inside that window and the timer never runs: the
+     work is saved locally and the server never hears about it. Sign in on
+     another device and it is not there - which is exactly what "it doesn't
+     save no matter where I log in" looks like from the outside, and why it
+     looks intermittent rather than broken.
+
+     The local session store already knew this. `_sessFlushAll` runs on
+     `pagehide` and on `visibilitychange`, with a comment explaining that
+     beforeunload is unreliable on mobile and that backgrounding an app is the
+     commonest way a session ends on a phone. Everything it says is equally
+     true of the sync push, and the sync push was not wired to either.
+
+     `keepalive` is what makes a request outlive the page. It is capped at
+     64KB across all in-flight keepalive requests, so a large payload cannot
+     use it - for those the ordinary request is fired and may or may not
+     land, which is strictly better than a timer that certainly will not. The
+     next open pushes it either way. */
+  flush(){
+    if(!this.enabled()) return false;
+    if(!this._pending) return false;
+    clearTimeout(this._timer);
+    this._pending = false;
+    try{
+      const data = this.collect();
+      const body = JSON.stringify({ data, baseRev: AMV_API.syncRev });
+      /* Under the keepalive ceiling, with room to spare for anything else the
+         page is sending as it goes. */
+      if(body.length < 56 * 1024 && typeof AMV_API._fetch === 'function'){
+        AMV_API._fetch('/sync/push', { method:'POST', body, keepalive:true })
+          .catch(()=>{});
+        return true;
+      }
+      Promise.resolve(AMV_API.syncPush(data)).catch(()=>{});
+      return true;
+    }catch(e){ return false; }
   },
   start(){
     if(!this.enabled()) return;
+    /* Subscriptions are permanent - there is no unsubscribe and none is
+       wanted, because push() checks enabled() itself and does nothing when
+       there is no session. So a second call must not install a second set:
+       two doors lead here now, a fresh sign-in and a restored session, and
+       double subscriptions mean every change schedules two pushes. */
+    if(this._started) return;
+    this._started = true;
     // push whenever a synced key changes
     _SYNC_KEYS.forEach(k=>AMVState.subscribe(k, ()=>this.push()));
     // _SESSIONS isn't an AMVState key, so nothing would ever trigger a push for
