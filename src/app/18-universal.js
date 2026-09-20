@@ -390,11 +390,47 @@ function _feasParse(raw){
   }catch(e){ return null; }
 }
 
+/* WHERE THE PERSON IS, HANDED TO THE PLANNER.
+
+   Asked for: "anything foreign country make sure it can actually recognize
+   what it's asking for even if it's niche."
+
+   Recognition is the planner's job and it is good at it - but a local term is
+   ambiguous without a country, and the ambiguity is not exotic. "Pay my
+   Bizum", "renew my NIE", "file my BIR 2316", "check my Aadhaar", "sort my
+   PAYE" each mean one specific thing where they are said and nothing anywhere
+   else. Crew already knows the country: somebody picked it in the filter, or
+   the browser was asked. It just was not being passed along, so every request
+   was planned as though it came from nowhere.
+
+   Appended to the DATA half of the turn, not to the system prompt, for the
+   same reason everything else read off the person's settings is - it is
+   information about them, not an instruction, and the two must not share a
+   channel. */
+function _feasWhere(){
+  try{
+    const code = (typeof _cwCountryGuess === 'function') ? _cwCountryGuess() : '';
+    if(!code) return '';
+    let name = code;
+    try{
+      const row = (typeof CW_WORLD_COUNTRIES !== 'undefined')
+        ? CW_WORLD_COUNTRIES.find(c => c[0] === code) : null;
+      if(row) name = row[1];
+    }catch(e){}
+    return '\n\nWHERE THEY ARE: ' + name + '. If the request names a local service, tax, form, '
+         + 'bank, payment method or authority, resolve it for that country rather than guessing at '
+         + 'a similar-sounding one elsewhere. Web research and writing work in every country, so an '
+         + 'unfamiliar local service is a thing to look up, not a reason to say it cannot be done.';
+  }catch(e){ return ''; }
+}
+try{ window._feasWhere = _feasWhere; }catch(e){}
+
 const AMVFeasible = {
   EDGES: FEAS_EDGES,
   floor: _feasFloor,
   planIsFiction: _feasPlanIsFiction,
   parse: _feasParse,
+  where: _feasWhere,
 
   /* One sentence plus what AMV would do instead, ready to render. */
   say(v){
@@ -493,7 +529,7 @@ const AMVUniversal = {
         + 'return ONLY {"impossible":true,"why":"one plain sentence, no apology","instead":["what you would do instead","..."]} '
         + 'instead of the array. Do NOT use this for something that merely needs connecting: that is a step, not an impossibility.';
       try{
-        const raw = await aiComplete('TOOL CATALOG:\n' + tools + '\n\nREQUEST: ' + request, sys, { max_tokens: 1400 });
+        const raw = await aiComplete('TOOL CATALOG:\n' + tools + _feasWhere() + '\n\nREQUEST: ' + request, sys, { max_tokens: 1400 });
         /* Either shape, and which one is decided by which bracket comes first
            in the reply rather than by hoping for one of them. */
         const v = _feasParse(raw);

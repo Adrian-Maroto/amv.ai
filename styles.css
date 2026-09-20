@@ -15242,3 +15242,73 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   #vc .mc-cmd-msg.needs .mc-cmd-actions{ flex-direction:column; align-items:stretch; }
   #vc .mc-cmd-msg.needs .mc-cmd-actions .btn{ width:100%; }
 }
+
+/* ===========================================================================
+   LAYER A247 - the catalogue shows results, not descriptions
+
+   Every good card here already carried the real output that job produces,
+   written line by line and specific down to the numbers. It sat behind a link
+   saying "See an example", which is a link somebody clicks once they are
+   already interested - so the page whose whole purpose is to MAKE them
+   interested was a hundred paragraphs of what a thing is.
+
+   The treatment has one job: read as OUTPUT rather than as more description.
+   That is why it is set apart with a rule and a quiet label rather than being
+   another paragraph in the same voice, and why the line itself gets the body
+   colour while everything around it is muted - it is the most interesting
+   sentence on the card and it should look like it.
+
+   One line, never more. A card that unfolds into five lines of output is a
+   card nobody can scan past, and the other four are one press away.
+   =========================================================================== */
+#vc .cw-job-out{
+  display:block;
+  margin:var(--sp-2) 0 0;
+  padding:var(--sp-2) var(--sp-3);
+  border-left:2px solid var(--accent-soft);
+  background:var(--s1);
+  border-radius:0 var(--r-sm) var(--r-sm) 0;
+}
+#vc .cw-job-out-k{
+  display:block;
+  font-size:var(--t-xs); font-weight:650;
+  letter-spacing:.05em; text-transform:uppercase;
+  color:var(--dim);
+  margin-bottom:2px;
+}
+#vc .cw-job-out-l{
+  font-size:var(--t-base); line-height:1.45; color:var(--tx);
+  /* Two lines at most, because the samples are written as headlines and a
+     long one must not push the card's own decision off the screen. */
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+  overflow:hidden;
+}
+
+/* The footers have to line up, and with this strip they stopped.
+
+   Two cards side by side, one with an example and one without, put their
+   "Uses:" line and their where-it-runs badge at different heights - and a row
+   of cards whose baselines disagree reads as broken before anybody works out
+   why. The body is a column and the last two rows are pushed to the bottom of
+   it, so the strip changes how much a card SAYS without changing where the
+   card's own facts sit. */
+#vc .cw-job{ align-items:stretch; }
+#vc .cw-job-body{
+  display:flex; flex-direction:column; align-items:flex-start;
+  flex:1 1 auto; min-width:0;
+}
+#vc .cw-job-body .cw-job-need{ margin-top:auto; padding-top:var(--sp-2); }
+/* Full width, or a one-line example is a narrow box beside a full-width one
+   and the column stops looking like a column. */
+#vc .cw-job-body .cw-job-out{ align-self:stretch; }
+
+/* The currency line on the checkout sheet. Quiet, because it is a fact rather
+   than a warning - somebody paying in euros needs to know the number is in
+   dollars, and does not need to be alarmed about it. */
+#ovr .pay-cur{
+  margin:calc(-1 * var(--sp-2)) 0 var(--sp-3);
+  padding:var(--sp-2) var(--sp-3);
+  font-size:var(--t-sm); line-height:1.5; color:var(--mu);
+  background:var(--s2); border:1px solid var(--bdl); border-radius:var(--r-sm);
+}
+#ovr .pay-cur b{ color:var(--tx); font-weight:600; }

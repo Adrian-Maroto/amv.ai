@@ -397,6 +397,41 @@ function openCheckout(plan, customPrice, cycle){
   openPaymentSheet(plan, cycle);
 }
 
+/* THE CHARGE IS IN DOLLARS AND NOBODY WAS TOLD.
+
+   Every price in AMV is a US dollar figure and nothing anywhere said so. A
+   visitor in Sao Paulo or Berlin reads "$20/month", agrees to it, and finds a
+   different number on their statement plus a foreign-transaction fee their
+   bank added. That is not a pricing problem, it is a surprise - and a surprise
+   on a card statement is how a subscription gets cancelled and disputed rather
+   than renewed.
+
+   No conversion is offered, deliberately. A converted figure needs a real
+   rate; a rate hardcoded here would be wrong within weeks, and a number AMV
+   made up on a checkout screen is worse than no number at all - the processor
+   would then contradict it on the very next page. The same rule the yearly
+   figure above follows, for the same reason.
+
+   What CAN be said truthfully is said: the currency, who does the converting,
+   and the one genuinely good piece of news - the checkout offers whatever
+   people actually pay with where they are, because both checkout paths ask
+   Stripe for exactly that.
+
+   Not shown to somebody in the United States, for whom it is noise on the one
+   screen where noise costs money. Shown when the region is unknown, because
+   unknown is not the same as American. */
+function _payCurrencyNote(){
+  let where = '';
+  try{ where = (typeof _everydayGuess === 'function') ? _everydayGuess() : ''; }catch(e){}
+  if(where === 'US') return '';
+  return '<div class="pay-cur">'
+       + '<b>Prices are in US dollars.</b> Your bank converts at its own rate, so the amount on '
+       + 'your statement will differ a little. '
+       + 'At checkout you can pay by card or with the methods normally used where you are.'
+       + '</div>';
+}
+try{ window._payCurrencyNote=_payCurrencyNote; }catch(e){}
+
 function openPaymentSheet(plan, cycle){
   cycle = _payCycle(cycle);
   const p=PLANS[plan]||PLANS.pro;
@@ -412,6 +447,7 @@ function openPaymentSheet(plan, cycle){
     '<div class="pay-amount">'+(yearly
       ? '<span class="pay-amt">'+escH(T('Yearly'))+'</span><span class="pay-per">'+escH(T('total shown at checkout'))+'</span>'
       : '<span class="pay-amt">$'+p.price+'</span><span class="pay-per">/month</span>')+'</div>'+
+    _payCurrencyNote()+
     '<div class="pay-methods-tabs" id="pay-tabs">'+
       '<button class="pay-tab on" data-pt="card">💳 Card</button>'+
       '<button class="pay-tab" data-pt="stripe">Stripe</button>'+

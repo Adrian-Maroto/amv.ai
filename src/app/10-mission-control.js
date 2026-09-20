@@ -2773,6 +2773,36 @@ try{
    render has returned. A second copy of a card is a second thing to keep in
    step with `cw-job`, `cwPeek` and `cwToggle`, and the copy is always the one
    that goes stale. */
+/* THE EXAMPLE WAS ALWAYS THERE AND NOBODY SAW IT.
+
+   Asked for: "add many more visual things to crew so people are intrigued by
+   the examples of what they can do."
+
+   Every good card in this catalogue already carries a `sample` - the real
+   output that job produces, written line by line, specific down to the
+   numbers. It was behind a link saying "See an example", which is a link
+   somebody clicks after they are already interested. So a page whose entire
+   job is to make you interested was a list of DESCRIPTIONS - a hundred
+   paragraphs of what a thing is - when it could have been a list of RESULTS.
+
+   "6 needed you today. 58 did not." does more work than any description of an
+   inbox digest, and it was one line away from the surface the whole time.
+
+   The first line only, and never more: it is a hook, and a card that unfolds
+   into five lines of output is a card nobody can scan past. The rest is still
+   one press away, where somebody who is now interested will actually read it. */
+function _cwSampleLine(j){
+  try{
+    const s = j && j.sample;
+    if(!Array.isArray(s) || !s.length) return '';
+    const first = String(s[0] || '').trim();
+    if(!first) return '';
+    return '<span class="cw-job-out"><span class="cw-job-out-k">It sends you</span>'
+         + '<span class="cw-job-out-l">' + escH(first) + '</span></span>';
+  }catch(e){ return ''; }
+}
+try{ window._cwSampleLine=_cwSampleLine; }catch(e){}
+
 function _cwJobCard(j){
   /* What this job declares it needs, against what is actually connected.
      Switching a job on used to flip a flag and nothing else, so a job needing
@@ -2788,14 +2818,14 @@ function _cwJobCard(j){
      did was to switch it on. */
   return `<div class="cw-job ${j.on?'on':''}${miss.length?' blocked':''}">
     <div class="cw-job-ic" aria-hidden="true">${_safeIcon(j.icon)}</div>
-    <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}"
-            aria-label="See what ${escH(j.title)} does">
+    <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}">
       <span class="cw-job-t">${escH(j.title)}</span>
       <span class="cw-job-d">${escH(j.desc)}</span>
+      ${_cwSampleLine(j)}
       <span class="cw-job-need">Uses: ${escH(j.needs)}
         <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
       </span>
-      <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See an example \u2192':'See what it does \u2192'}</span>
+      <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See the whole thing \u2192':'See what it does \u2192'}</span>
     </button>
     ${note}
     <button class="cw-toggle ${j.on?'on':''}" data-dact="cwToggle" data-darg="${j.id}" aria-label="Turn ${escH(j.title)} ${j.on?'off':'on'}"><span class="cw-knob"></span></button>
@@ -2807,14 +2837,14 @@ function _cwAnyCard(j){ return _planAllowsCrew() ? _cwJobCard(j) : _cwLockedCard
 function _cwLockedCard(j){
   return `<div class="cw-job locked">
     <div class="cw-job-ic" aria-hidden="true">${_safeIcon(j.icon)}</div>
-    <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}"
-            aria-label="See what ${escH(j.title)} does">
+    <button class="cw-job-body" data-dact="cwPeek" data-darg="${j.id}">
       <span class="cw-job-t">${escH(j.title)}</span>
       <span class="cw-job-d">${escH(j.desc)}</span>
+      ${_cwSampleLine(j)}
       <span class="cw-job-need">Uses: ${escH(j.needs)}
         <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
       </span>
-      <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See an example →':'See what it does →'}</span>
+      <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See the whole thing →':'See what it does →'}</span>
     </button>
   </div>`;
 }

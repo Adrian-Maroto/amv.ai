@@ -5861,6 +5861,138 @@ async function _autoEmailResult(env, email, item, out){
    a decision AMV makes rather than something that happens to it. */
 const AUTO_TICK_BUDGET_MS = 25 * 1000;
 
+/* ── TRYING PROPERLY BEFORE GIVING UP ────────────────────────────────────────
+
+   Asked for: "try to actually run the background task and if it can't even
+   after like or so 50 attempts then give suggestions on how to do and what amv
+   can do related to what they asked."
+
+   Fifty blind retries is the wrong shape and would make the product worse, so
+   this is not that, and saying which is part of the job. Fifty attempts at a
+   job that fails for a PERMANENT reason - there is no connector for it, the
+   account was revoked, the request was refused - is fifty identical failures,
+   fifty hits on somebody else's API, and a day's capacity spent on a foregone
+   conclusion. It would also be fifty attempts at a SEND, and a job whose
+   failure came after the mail left would send it fifty times.
+
+   What "try properly" has to mean instead:
+
+   - Retry only what retrying can fix. A rate limit, a 5xx, a dropped socket
+     and a timeout are all "not now"; a missing connection is "not ever, until
+     you do something", and it already has its own path that asks for it.
+   - Retry inside the run, because the alternative is losing a whole day to one
+     dropped packet.
+   - Keep count ACROSS runs. Three attempts a run over five runs is fifteen
+     real attempts before a job is switched off, and the message says the true
+     number rather than a comforting one.
+   - Cost nothing extra. A model call that errors produced no tokens, so a
+     retry of a failed call is not a second charge - which is exactly why this
+     is affordable and why retrying a SUCCESS never happens here.
+   - Never outlive the tick. The pass has a 25-second budget and other people's
+     jobs are behind this one in it, so a retry that would not fit is not
+     started. Somebody else's job not running is too high a price for one more
+     attempt at this one. */
+const AUTO_RETRY_PER_RUN = 3;
+const AUTO_RETRY_BACKOFF_MS = [1200, 4000];
+/* Enough left for the backoff plus a realistic attempt. Below this the honest
+   move is to stop and leave the time to the jobs still waiting. */
+const AUTO_RETRY_MIN_HEADROOM_MS = 8000;
+
+/* IS THIS WORTH TRYING AGAIN IN FOUR SECONDS?
+
+   Conservative on purpose, and the default is NO. An unrecognised failure is
+   not retried, because the cost of being wrong runs in one direction only: a
+   transient fault retried once more next run is a few minutes late, and a
+   permanent fault retried is spend, load on somebody else's service, and -
+   where the failure came after a send - a message delivered twice. */
+function _autoTransient(e){
+  const m = String((e && (e.message || e.code)) || e || '');
+  if(/model error\s+(408|409|425|429|500|502|503|504|520|521|522|523|524|529)\b/i.test(m)) return true;
+  if(/\b(fetch failed|network error|socket hang up|connection (?:reset|closed|refused)|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND)\b/i.test(m)) return true;
+  if(/\b(timed out|timeout|temporarily unavailable|try again|overloaded|rate limit)\b/i.test(m)) return true;
+  return false;
+}
+
+/* Run it, and try again where trying again is the answer. Resolves with the
+   attempt count so the record can state it; rejects carrying the same count on
+   the error, because a give-up message that cannot say how hard it tried is
+   the message this was written to replace. */
+async function _autoExecuteTried(env, item, budget, email, standing, never, deadline){
+  let attempts = 0, lastErr = null;
+  while(attempts < AUTO_RETRY_PER_RUN){
+    try{
+      const exec = await _autoExecute(env, item, budget, email, standing, never);
+      return { exec, attempts: attempts + 1 };
+    }catch(e){
+      attempts++;
+      lastErr = e;
+      if(attempts >= AUTO_RETRY_PER_RUN) break;
+      if(!_autoTransient(e)) break;
+      const wait = AUTO_RETRY_BACKOFF_MS[attempts - 1] || 4000;
+      if(deadline && Date.now() + wait + AUTO_RETRY_MIN_HEADROOM_MS > deadline) break;
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
+  const err = lastErr || new Error('the run produced nothing');
+  try{ err.attempts = attempts; }catch(_e){}
+  throw err;
+}
+
+/* ── WHAT TO SAY WHEN IT IS REALLY OVER ──────────────────────────────────────
+
+   "Fix the cause and turn it back on" is the sentence this replaces, and it is
+   useless to the person reading it: they do not know what the cause is, they
+   are reading this because AMV was supposed to be the one handling it, and it
+   arrives after five days of failures with nothing to show.
+
+   Derived from the failure rather than asked of a model. That is deliberate
+   twice over: a job that just failed five times is the wrong moment to spend
+   more on it, and a suggestion read off the actual error is one that can be
+   checked, which is the difference between advice and filler. The job's own
+   instruction is quoted back so the alternative is about what they asked for
+   rather than about failure in the abstract. */
+function _autoGiveUpAdvice(item, why, attempts){
+  const w = String(why || '');
+  const what = String((item && item.detail) || 'this job').trim().slice(0, 160);
+  let cause, steps;
+  if(/model error\s+(429|529)|rate limit|overloaded/i.test(w)){
+    cause = 'the engine was busy every time AMV tried';
+    steps = ['move this job to a quieter hour - the middle of the night where you are is usually clear',
+             'run it less often; a daily job that has to succeed beats an hourly one that does not',
+             'run it by hand from Crew right now, which does not wait for the schedule'];
+  } else if(/model error\s+(5\d\d)|fetch failed|network|socket|ECONN|timed out|timeout/i.test(w)){
+    cause = 'the connection to the engine failed every time AMV tried';
+    steps = ['leave it on - this kind of fault usually clears on its own, and AMV keeps trying',
+             'run it by hand from Crew to see whether it works right now',
+             'if it keeps failing, shorten the job: a smaller request finishes inside the time limit'];
+  } else if(/model error\s+(401|403)|not configured|no key|unauthor/i.test(w)){
+    cause = 'the engine is not configured for this account';
+    steps = ['check the engine is connected in Settings',
+             'until it is, AMV can still do this in chat while you have AMV open'];
+  } else if(/allowance|ceiling|cap|budget/i.test(w)){
+    cause = 'there was no budget left for it on the days it was due';
+    steps = ['raise the monthly limit in Spending, or lower how often this job runs',
+             'move it to the cheaper setting - it writes less and does not search the web',
+             'run it by hand when you actually need it'];
+  } else if(/model error\s+4\d\d|refus|blocked|policy/i.test(w)){
+    cause = 'the request was refused every time, so repeating it will not change the answer';
+    steps = ['reword what the job asks for - the refusal is about the instruction, not about you',
+             'split it: the part that was refused is usually one clause of a longer job',
+             'ask it in chat first, where you can see the answer and adjust it'];
+  } else {
+    cause = 'it failed the same way every time';
+    steps = ['run it by hand from Crew - the error there is usually more specific',
+             'shorten or split the instruction; long jobs fail for more reasons than short ones',
+             'ask the same thing in chat to see how far it gets'];
+  }
+  return 'AMV tried ' + attempts + ' time' + (attempts === 1 ? '' : 's') + ' and ' + cause + '.\n\n'
+       + 'What it was asked to do: ' + what + '\n\n'
+       + 'It is switched off now rather than spending on a run that keeps failing. '
+       + 'Here is what would make it work:\n'
+       + steps.map(x => '- ' + x).join('\n');
+}
+
+
 /* ---- The cron tick: find everything due, run it, store the result ---- */
 /* WHICH ACCOUNTS HAVE WORK DUE, WITHOUT READING ALL OF THEM.
 
@@ -5990,8 +6122,15 @@ async function _autoDueCandidates(env, now) {
    whatever the person changed meanwhile. `quietUnchanged` is deliberately NOT
    here - that one is the person's answer, set through /auto/update, and a tick
    must never carry a stale copy of it back over a fresher decision. */
-const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'lastError', 'lastLevel', 'lastNeeds', 'heldUntil',
-                         'lastDigest', 'sameRuns', 'quietSince'];
+/* `attempts` is here because the gate put it here. It is the count the
+   give-up message quotes - "AMV tried 15 times" - and the tick works on its
+   own copy, so a field the run sets and this list does not name never reaches
+   storage. It would have reset to zero every run, and the one number the
+   message exists to state would have been wrong every time, silently. Exactly
+   the shape `lastLevel` had, which is why that suite is computed rather than
+   written from a list somebody maintains. */
+const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'attempts', 'lastError', 'lastLevel', 'lastNeeds',
+                         'heldUntil', 'lastDigest', 'sameRuns', 'quietSince'];
 
 async function runDueAutomations(env, atMs){
   const now = +atMs || Date.now();
@@ -6387,7 +6526,14 @@ async function runDueAutomations(env, atMs){
       if(item.lastNeeds && item.lastNeeds.length) item.lastNeeds = [];
 
       try{
-        const exec = await _autoExecute(env, item, budget, email, rec.standing || '', _neverList(rec));
+        /* Tried properly rather than once: a transient fault costs this run
+           a few seconds, where before it cost the whole day. The deadline is
+           the tick's own, so a retry that would eat into somebody else's
+           overdue job is not started. */
+        const tried = await _autoExecuteTried(env, item, budget, email, rec.standing || '',
+                                              _neverList(rec), started + AUTO_TICK_BUDGET_MS);
+        const exec = tried.exec;
+        item.attempts = (Number(item.attempts) || 0) + tried.attempts;
         const out = await _autoAppendGame(env, email, item, (exec && exec.text) || '');
         /* DID THIS RUN SAY ANYTHING NEW.
 
@@ -6490,6 +6636,11 @@ async function runDueAutomations(env, atMs){
         const why = String(e.message||e).slice(0,200);
         item.lastError = why;
         item.errors = (item.errors||0) + 1;
+        /* Every attempt, not every run. A job that failed five mornings after
+           three tries each was told it had "failed five times", which reads as
+           a product that gave up early - and it is the number people judge the
+           give-up by. Counted honestly so the message can say fifteen. */
+        item.attempts = (Number(item.attempts) || 0) + (Number(e && e.attempts) || 1);
         // Give up on an automation that keeps failing, rather than burning quota forever.
         if(item.errors >= 5) item.active = false;
         failed++;
@@ -6505,8 +6656,16 @@ async function runDueAutomations(env, atMs){
           id: _resultId(),
           autoId: item.id, detail: item.detail, at: Date.now(), read: false,
           kind: 'failed', approval: level, outcome: 'failed', costUSD: 0,
-          out: 'This run did not complete: ' + why
-             + (item.errors >= 5 ? '\n\nIt has now failed five times, so AMV has switched it off rather than keep spending on it. Fix the cause and turn it back on.' : '')
+          /* A failing run says how many attempts are behind it, so "it is
+             still trying" is visible rather than assumed - and the last one
+             says what would actually make it work instead of handing back a
+             cause the person has no way to see. */
+          out: item.errors >= 5
+             ? _autoGiveUpAdvice(item, why, Number(item.attempts) || item.errors)
+             : ('This run did not complete: ' + why
+                + '\n\nAMV tried ' + (Number(e && e.attempts) || 1) + ' time'
+                + ((Number(e && e.attempts) || 1) === 1 ? '' : 's') + ' this run and will try again on the next one. '
+                + 'After five failed runs it switches itself off rather than keep spending.')
         }).slice(-AUTO_MAX_RESULTS);
       }
       item.next = now + (item.interval || AUTO_INTERVALS.daily);
