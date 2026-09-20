@@ -32,7 +32,7 @@
 import { bootApp } from '../lib/harness.mjs';
 import { ok, eq, section, report, done } from '../lib/assert.mjs';
 
-const ORDER = ['tasks', 'abilities', 'plans', 'memory', 'team', 'integrations', 'market'];
+const ORDER = ['tasks', 'spend', 'memory', 'team', 'integrations', 'market'];
 const MIN_TOUCH = 44;
 
 function railShape() {
@@ -129,7 +129,7 @@ function railShape() {
 
   section('On a phone it wraps instead of walking off the side');
   const shown = s.tools.filter(t => t.shown);
-  ok(shown.length === 7, 'all seven tools are present', shown.map(t => t.tab));
+  ok(shown.length === 6, 'all six tools are present', shown.map(t => t.tab));
   const out = shown.filter(t => t.pastRight > 0.5 || t.pastLeft > 0.5);
   ok(out.length === 0, 'and not one of them is laid out outside the rail', out);
 

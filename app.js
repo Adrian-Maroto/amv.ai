@@ -25605,7 +25605,13 @@ function renderView(){
        goes somewhere real, and nothing from the screen you came from is left
        around it competing for the decision. */
     case 'upgrade': renderUpgradeView(); break;
-    case 'plans': renderPlansView(); break;
+    /* Pricing is not a place of its own any more - a plan's price and a
+       plan's limits are the same decision, and splitting them is what let a
+       Pricing page disagree with the thing enforcing it. Both live on
+       Spending. The old address still resolves, so a bookmark or a link from
+       an older build lands somewhere sensible rather than on a 404. */
+    case 'spend':
+    case 'plans': renderSpendView(); break;
     case 'settings': renderSettingsView(); break;
     case 'help': renderHelpView(); break;
     case 'apps': renderAppsView(); break;
@@ -25642,7 +25648,6 @@ function renderView(){
     case 'market': renderMarketView(); break;
     /* Its own section, because it was a row inside Integrations and that is
        the reason nobody knew any of this existed. */
-    case 'abilities': renderAbilitiesView(); break;
     case 'admin': renderAdminView(); break;
     case 'notfound': render404View(); break;
     default: render404View();
@@ -36317,149 +36322,6 @@ try{
         } }
     } });
 })();
-/* ══════════════════════════════════════════════════════════════════════════
-   WHAT AMV CAN DO - ITS OWN SECTION, BECAUSE IT WAS HIDING.
-
-   Two true things about this product were invisible, and between them they
-   made it look far smaller than it is.
-
-   THE PER-COUNTRY LIST READS AS A CAP. `EVERYDAY_BY_COUNTRY` holds five jobs
-   for each of forty-five countries, and it exists to answer "does this do
-   anything where I live" for somebody who has not signed up yet. It is a
-   MENU OF EXAMPLES. But a screen that shows five things and nothing else is
-   read as five things being all there is - so the honest catalogue was doing
-   the work of a limit.
-
-   THE CONNECTORS WERE BURIED. The bridge can start any server in the public
-   registry that ships a package, which is thousands of them, and that is the
-   real answer to "can it do X" for almost any X. It lived behind a row in
-   Integrations.
-
-   So this says the ceiling first and the examples second, which is the
-   opposite order to how it was arranged before.
-
-   NO INVENTED HEADLINE NUMBER. There is a figure in the connector directory's
-   own comment for how many servers are startable, and it is not put on this
-   screen, because the endpoint returns a PAGE and has no total in it - so any
-   number here would be a claim nothing in the product could check. What is
-   shown instead is what genuinely comes back. A number nobody can verify is
-   the first thing a sceptical reader tests, and the only one they need to
-   catch out.
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/* Each row is a real capability with a real way in. `go` is what the button
-   does; a row with nowhere to go would be a boast. */
-const ABILITY_GROUPS = [
-  { k: 'build', t: 'Build things',
-    rows: [
-      ['Write and run code', 'Python and JavaScript run in the page, and AMV debugs its own output until it works.', 'build'],
-      ['Ship an app to a live URL', 'Describe it, watch it built, deploy it. The address is yours.', 'build'],
-      ['Work on your own computer', 'The bridge gives AMV a real filesystem and shell, with consent for every turn and an Undo that writes bytes back.', 'bridge'],
-      ['Make a game', 'Host one for friends over a link - no account needed to play.', 'games'],
-    ] },
-  { k: 'know', t: 'Find things out',
-    rows: [
-      ['Research with sources', 'Reads the live web and says where each claim came from.', 'chat'],
-      ['Read your documents', 'PDFs, spreadsheets, images, code. It reads what you upload; it does not invent one.', 'chat'],
-      ['Watch for what changes', 'Standing jobs that run on their own and tell you only when something moved.', 'tasks'],
-    ] },
-  { k: 'life', t: 'Handle the everyday',
-    rows: [
-      ['Your mail and calendar', 'Connected properly, so it can read the week and draft from your own address.', 'integrations'],
-      ['Money and spending', 'Balances, unusual charges and low-balance warnings, read-only by design.', 'spend'],
-      ['Find and apply for work', 'Job boards in your country. Where an address is published AMV sends it; elsewhere it fills the form and you tap.', 'jobs'],
-    ] },
-];
-
-/* The country catalogue, said as what it is. */
-function _abCountryLine(d) {
-  if (!d || !d.totals) return '';
-  const t = d.totals;
-  return escH(String(t.countries)) + ' countries, ' + escH(String(t.everydayJobs))
-       + ' everyday jobs and ' + escH(String(t.jobBoards)) + ' job boards';
-}
-
-async function renderAbilitiesView() {
-  const vc = $('vc'); if (!vc) return;
-  vc.innerHTML =
-    '<div class="sv fi"><div class="vi ab">'
-      + '<div class="ab-head">'
-        + '<span class="eyebrow">' + escH(T('What AMV can do')) + '</span>'
-        + '<h2 class="ab-t">' + escH(T('There is no list of five things')) + '</h2>'
-        /* THE SENTENCE THIS WHOLE SCREEN EXISTS FOR. */
-        + '<p class="ab-sub">' + escH(T('AMV connects to programs other people wrote, and runs them on your own computer. That is the ceiling - not a feature list somebody finished writing. What is below is what it does out of the box.')) + '</p>'
-      + '</div>'
-      + '<div class="ab-ceiling" id="ab-ceiling"></div>'
-      + ABILITY_GROUPS.map(g =>
-          '<div class="ab-g"><h3 class="ab-g-t">' + escH(T(g.t)) + '</h3><div class="ab-rows">'
-          + g.rows.map(([name, desc, go]) =>
-              '<button type="button" class="ab-row" data-ab-go="' + escH(go) + '">'
-                + '<span class="ab-n">' + escH(T(name)) + '</span>'
-                + '<span class="ab-d">' + escH(T(desc)) + '</span>'
-              + '</button>').join('')
-          + '</div></div>').join('')
-      + '<div class="ab-world" id="ab-world"></div>'
-    + '</div></div>';
-
-  vc.querySelectorAll('[data-ab-go]').forEach(b => on(b, 'click', () => {
-    const to = b.dataset.abGo;
-    /* NAMED FOR WHERE THEY ACTUALLY LIVE, NOT WHERE THEY SOUND LIKE THEY DO.
-
-       The first version sent the bridge row to `openBridgeCard()`, a function
-       this codebase does not have - the card is rendered inside Integrations,
-       not from a door of its own. The gate caught it, which is exactly what
-       that check is for: a guard on a name that exists nowhere can never pass,
-       so the row would have silently done nothing at all. */
-    const WHERE = { bridge: 'integrations', games: 'crew' };
-    try { setTab(WHERE[to] || to); }
-    catch (e) { try { setTab('chat'); } catch (e2) {} }
-  }));
-
-  /* THE CEILING, FROM THE REGISTRY ITSELF.
-
-     Asked live rather than stated, so the screen can only ever claim what
-     actually came back. A deployment that cannot reach the registry says so
-     instead of showing a number it did not fetch. */
-  const cz = $('ab-ceiling');
-  if (cz) {
-    cz.innerHTML = '<p class="ab-load">' + escH(T('Checking what AMV can connect to…')) + '</p>';
-    let names = [];
-    try {
-      const r = await AMV_API.connectors('', '', 8);
-      names = (r && Array.isArray(r.servers)) ? r.servers.slice(0, 8) : [];
-    } catch (e) { names = []; }
-    cz.innerHTML = names.length
-      ? '<div class="ab-c-h">' + escH(T('Connects to programs other people wrote')) + '</div>'
-        + '<p class="ab-c-p">' + escH(T('Anything in the public connector registry that AMV’s bridge can start. These came back just now:')) + '</p>'
-        + '<div class="ab-chips">'
-          + names.map(s => '<span class="ab-chip">' + escH(String((s && (s.name || s.id)) || '')) + '</span>').join('')
-        + '</div>'
-        + '<button type="button" class="btn bs ab-more" data-ab-go="integrations">' + escH(T('See the directory')) + '</button>'
-      /* Honest, and specific about which of the two it is: not connected is a
-         setup step, unreachable is a network. Telling somebody to check their
-         connection when the answer is a missing key wastes their afternoon. */
-      : '<div class="ab-c-h">' + escH(T('Connects to programs other people wrote')) + '</div>'
-        + '<p class="ab-c-p">' + escH(T('The connector directory could not be reached from here, so this cannot say what is in it right now. It needs the AMV backend connected.')) + '</p>';
-    cz.querySelectorAll('[data-ab-go]').forEach(b => on(b, 'click', () => { try { setTab('integrations'); } catch (e) {} }));
-  }
-
-  /* And the country catalogue LAST, named as examples. */
-  const wz = $('ab-world');
-  if (wz) {
-    let d = null;
-    try { d = await AMV_API.coverage(); } catch (e) { d = null; }
-    if (d && d.totals) {
-      wz.innerHTML =
-        '<h3 class="ab-g-t">' + escH(T('Where you live')) + '</h3>'
-        /* The correction, in one sentence, on the screen that caused it. */
-        + '<p class="ab-w-p">' + escH(T('AMV knows what people actually deal with in')) + ' ' + _abCountryLine(d) + '. '
-          + escH(T('Those are examples written for each country, not a limit - anything above works everywhere.')) + '</p>'
-        + '<button type="button" class="btn bs" id="ab-world-go">' + escH(T('See your country')) + '</button>';
-      on($('ab-world-go'), 'click', () => { try { openCoverage(); } catch (e) {} });
-    } else { wz.innerHTML = ''; }
-  }
-}
-try { window.renderAbilitiesView = renderAbilitiesView; } catch (e) {}
 /* ============================================================
    LINKED ACCOUNTS (Family / shared access)
 
@@ -37731,6 +37593,95 @@ async function openPredictionMarkets() {
   });
 }
 try { window.openPredictionMarkets = openPredictionMarkets; } catch (e) {}
+/* ══════════════════════════════════════════════════════════════════════════
+   SPENDING - EVERY WAY MONEY MOVES, ON ONE SCREEN.
+
+   It was in four places and none of them was the obvious one. What a plan
+   costs was on Pricing. What the plan buys you was on Plan & usage. What AMV
+   may spend on your behalf was a Settings pane three levels down. Whether a
+   bank was connected at all was a different Settings pane beside it. Money is
+   the thing people most want a single answer about, and AMV made them assemble
+   it from four screens that did not reference each other.
+
+   So this is the money section, and the rail entry that used to say Pricing
+   says Spending. Prices come with it rather than staying behind: a plan's
+   price and a plan's limits are the same decision, and splitting them is what
+   produced a Pricing page that could disagree with the thing enforcing it.
+
+   COMPOSED, NOT COPIED. The limits editor and the bank-link card are the exact
+   panes Settings renders, called here with a redraw of their own. Re-typing
+   either would have produced a second copy of the most consequential controls
+   in the product, and the two would have drifted - which is the defect this
+   screen was just built out of.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function _spvPlanNow() {
+  const plan = (typeof loadStr === 'function' && loadStr('amv_plan')) || 'free';
+  const P = (typeof PLANS !== 'undefined' && PLANS[plan]) || null;
+  const name = P ? P.name : 'Free';
+  const price = P ? P.price : 0;
+  const cell = (big, small) =>
+    '<div class="spv-f"><div class="spv-f-b">' + escH(big) + '</div>'
+    + '<div class="spv-f-s">' + escH(small) + '</div></div>';
+  return '<section class="spv-now">'
+    + '<div class="spv-now-h">'
+      + '<div><div class="spv-now-l">' + escH(T('Your plan')) + '</div>'
+        + '<div class="spv-now-p">' + escH(name)
+          + (price ? ' <span class="spv-now-x">$' + escH(String(price)) + '/mo</span>' : '')
+        + '</div></div>'
+      + '<button type="button" class="btn bs spv-manage" data-gs="billing">'
+        + escH(T('Manage billing')) + '</button>'
+    + '</div>'
+    /* The three numbers the server actually refuses on, for the plan somebody
+       is on right now - not for the plan the page would like to sell them. */
+    + '<div class="spv-facts">'
+      + cell(_msgMonthLabel(plan), T('messages a month'))
+      + cell(_msg5hLabel(plan), T('every') + ' ' + USAGE_WINDOW_HOURS + ' ' + T('hours'))
+      + cell(_topWeekLabel(plan), T('top-engine messages a week'))
+      + cell(_rpmForPlan(plan) + '', T('requests a minute'))
+    + '</div>'
+  + '</section>';
+}
+
+function renderSpendView() {
+  const vc = $('vc'); if (!vc) return;
+  vc.innerHTML =
+    '<div class="sv fi"><div class="vi spv">'
+      + '<div class="spv-head">'
+        + '<span class="eyebrow">' + escH(T('Spending')) + '</span>'
+        + '<h2 class="spv-t">' + escH(T('Everywhere your money goes')) + '</h2>'
+        + '<p class="spv-sub">' + escH(T('What you pay, what that buys, what AMV may spend for you, and the accounts it is allowed to see. Every limit here is checked on the server before anything happens.')) + '</p>'
+      + '</div>'
+      + _spvPlanNow()
+      /* How the limit behaves, before somebody meets it. Same band the plans
+         carry, for the same reason: a ceiling with no shape reads as a cliff. */
+      + (typeof _usageShapeBand === 'function' ? _usageShapeBand() : '')
+      + '<section class="spv-sec" id="spv-limits"></section>'
+      + '<section class="spv-sec" id="spv-bank"></section>'
+      + '<section class="spv-sec spv-plans">'
+        + '<h2 class="set-title">' + escH(T('Plans')) + '</h2>'
+        + '<div class="set-sub">' + escH(T('The same engine on every paid plan. A bigger plan buys more of it, not a better one.')) + '</div>'
+        + '<div class="pg pg-app pg-4">' + planCards(true) + '</div>'
+        + _teamPlanBanner(true)
+        + _customPlanBanner(true)
+        + '<p class="px-note" style="display:none">' + escH(T('Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.')) + '</p>'
+        + '<div class="plans-compare-row"><button class="btn bs" id="spv-compare">'
+          + escH(T('Compare all plans in detail')) + ' →</button></div>'
+      + '</section>'
+    + '</div></div>';
+
+  /* The real editors, not a second copy of them. Each is told how to redraw
+     itself HERE - the default redraw is Settings, which on this screen would
+     either navigate away or silently drop the server's answer. */
+  try { _renderSpendingPane($('spv-limits'), renderSpendView); } catch (e) {}
+  try { _renderInvestPane($('spv-bank')); } catch (e) {}
+
+  on($('spv-compare'), 'click', () => {
+    try { openPlanCompare(loadStr('amv_plan') || 'pro'); } catch (e) {}
+  });
+  try { _localizePrices(document); } catch (e) {}
+}
+try { window.renderSpendView = renderSpendView; } catch (e) {}
 /* ============================================================
    COMPLIANCE - the two things that actually decide whether you get
    sued or lose money, built as evidence rather than as promises.
@@ -37986,7 +37937,20 @@ function _mfSay(id, msg, kind){
    not on the result, because the reply re-renders this pane and a result-only
    guard re-issues the fetch every redraw. */
 let _SPEND_PULLED = false, _SPEND_BUSY = false;
-function _renderSpendingPane(pane){
+/* WHO REDRAWS THIS PANE IS NOT ALWAYS SETTINGS.
+
+   It called `renderSetPane()` in four places - after accepting terms, after
+   saving a birth year, and after the server's real limits come back. That is
+   correct while this only ever lives inside Settings, and wrong the moment it
+   is also the money section of the Spending tab: a pull finishing there would
+   have thrown the person into Settings, or redrawn a pane that is not on
+   screen and quietly dropped the server's numbers.
+
+   So the caller says how to redraw itself. Settings passes nothing and keeps
+   the behaviour it had. */
+function _renderSpendingPane(pane, redraw){
+  const _again = (typeof redraw === 'function') ? redraw
+               : function(){ try{ renderSetPane(); }catch(e){} };
   if(typeof AMVSpend === 'undefined'){ pane.innerHTML = '<h2 class="set-title">Spending</h2>'; return; }
   const c = AMVSpend.cfg();
   const spent = AMVSpend.spentThisMonth();
@@ -38098,14 +38062,14 @@ function _renderSpendingPane(pane){
     '<div class="ss2"><h3>Your responsibility</h3><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div>';
 
   on($('mf-accept-terms'),'click',function(){
-    try{ AMVCompliance.accept(); toast('Terms accepted','success',2500); renderSetPane(); }
+    try{ AMVCompliance.accept(); toast('Terms accepted','success',2500); _again(); }
     catch(e){ toast(e.message||'Could not save that','error'); }
   });
   on($('mf-save-birth'),'click',function(){
     const v = ($('mf-birth')||{}).value;
     try{
       AMVCompliance.setBirthYear(v);
-      toast('Thanks - that is saved','success',2500); renderSetPane();
+      toast('Thanks - that is saved','success',2500); _again();
     }catch(e){ _mfSay('mf-age-say', e.message || 'That year does not look right.', 'err'); $('mf-birth')?.focus(); }
   });
   on($('mf-enabled'),'change',async function(){
@@ -38160,7 +38124,7 @@ function _renderSpendingPane(pane){
     _SPEND_BUSY = true;
     AMVSpend.pull().then(function(){
       _SPEND_PULLED = true; _SPEND_BUSY = false;
-      try{ if(document.getElementById('mf-save-limits')) renderSetPane(); }catch(e){}
+      try{ if(document.getElementById('mf-save-limits')) _again(); }catch(e){}
     }).catch(function(){
       /* Not fatal - the local mirror still renders. Marked pulled so a failed
          read does not retry on every redraw. */

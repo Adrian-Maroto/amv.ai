@@ -554,7 +554,13 @@ function renderView(){
        goes somewhere real, and nothing from the screen you came from is left
        around it competing for the decision. */
     case 'upgrade': renderUpgradeView(); break;
-    case 'plans': renderPlansView(); break;
+    /* Pricing is not a place of its own any more - a plan's price and a
+       plan's limits are the same decision, and splitting them is what let a
+       Pricing page disagree with the thing enforcing it. Both live on
+       Spending. The old address still resolves, so a bookmark or a link from
+       an older build lands somewhere sensible rather than on a 404. */
+    case 'spend':
+    case 'plans': renderSpendView(); break;
     case 'settings': renderSettingsView(); break;
     case 'help': renderHelpView(); break;
     case 'apps': renderAppsView(); break;
@@ -591,7 +597,6 @@ function renderView(){
     case 'market': renderMarketView(); break;
     /* Its own section, because it was a row inside Integrations and that is
        the reason nobody knew any of this existed. */
-    case 'abilities': renderAbilitiesView(); break;
     case 'admin': renderAdminView(); break;
     case 'notfound': render404View(); break;
     default: render404View();

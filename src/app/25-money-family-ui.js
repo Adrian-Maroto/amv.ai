@@ -32,7 +32,20 @@ function _mfSay(id, msg, kind){
    not on the result, because the reply re-renders this pane and a result-only
    guard re-issues the fetch every redraw. */
 let _SPEND_PULLED = false, _SPEND_BUSY = false;
-function _renderSpendingPane(pane){
+/* WHO REDRAWS THIS PANE IS NOT ALWAYS SETTINGS.
+
+   It called `renderSetPane()` in four places - after accepting terms, after
+   saving a birth year, and after the server's real limits come back. That is
+   correct while this only ever lives inside Settings, and wrong the moment it
+   is also the money section of the Spending tab: a pull finishing there would
+   have thrown the person into Settings, or redrawn a pane that is not on
+   screen and quietly dropped the server's numbers.
+
+   So the caller says how to redraw itself. Settings passes nothing and keeps
+   the behaviour it had. */
+function _renderSpendingPane(pane, redraw){
+  const _again = (typeof redraw === 'function') ? redraw
+               : function(){ try{ renderSetPane(); }catch(e){} };
   if(typeof AMVSpend === 'undefined'){ pane.innerHTML = '<h2 class="set-title">Spending</h2>'; return; }
   const c = AMVSpend.cfg();
   const spent = AMVSpend.spentThisMonth();
@@ -144,14 +157,14 @@ function _renderSpendingPane(pane){
     '<div class="ss2"><h3>Your responsibility</h3><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div>';
 
   on($('mf-accept-terms'),'click',function(){
-    try{ AMVCompliance.accept(); toast('Terms accepted','success',2500); renderSetPane(); }
+    try{ AMVCompliance.accept(); toast('Terms accepted','success',2500); _again(); }
     catch(e){ toast(e.message||'Could not save that','error'); }
   });
   on($('mf-save-birth'),'click',function(){
     const v = ($('mf-birth')||{}).value;
     try{
       AMVCompliance.setBirthYear(v);
-      toast('Thanks - that is saved','success',2500); renderSetPane();
+      toast('Thanks - that is saved','success',2500); _again();
     }catch(e){ _mfSay('mf-age-say', e.message || 'That year does not look right.', 'err'); $('mf-birth')?.focus(); }
   });
   on($('mf-enabled'),'change',async function(){
@@ -206,7 +219,7 @@ function _renderSpendingPane(pane){
     _SPEND_BUSY = true;
     AMVSpend.pull().then(function(){
       _SPEND_PULLED = true; _SPEND_BUSY = false;
-      try{ if(document.getElementById('mf-save-limits')) renderSetPane(); }catch(e){}
+      try{ if(document.getElementById('mf-save-limits')) _again(); }catch(e){}
     }).catch(function(){
       /* Not fatal - the local mirror still renders. Marked pulled so a failed
          read does not retry on every redraw. */
