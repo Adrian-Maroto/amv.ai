@@ -21,9 +21,10 @@
    ───────────────────────────────────────────────────────────────────────── */
 import { gzipSync } from 'zlib';
 import { execSync } from 'child_process';
-import { readFileSync, existsSync, writeFileSync, writeSync, readdirSync, statSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, writeSync, readdirSync, statSync, unlinkSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { tmpdir } from 'os';
 import { codeOnly } from './tests/lib/source.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -35,12 +36,37 @@ const G = '\x1b[32m', RED = '\x1b[31m', Y = '\x1b[33m', DIM = '\x1b[2m', B = '\x
 // (which would include the self-test, causing runaway recursion).
 const FAST = process.argv.includes('--fast');
 
-/* Captured before any stage runs, so the pass marker can name the commit this
-   run is ABOUT rather than whatever HEAD is when it finishes. See the write
-   at the bottom of this file. */
-const HEAD_AT_START = (() => {
-  try { return execSync('git rev-parse HEAD', { cwd: ROOT, stdio: 'pipe' }).toString().trim(); }
-  catch (e) { return ''; }
+/* WHAT THE GATE ACTUALLY PROVES IS A TREE, SO A TREE IS WHAT IT RECORDS.
+
+   This captured HEAD, and the sync hook moved main only when the marker equalled
+   HEAD. Both were reasonable and together they made main unmovable under the
+   ordinary way of working: edit, run the gate, commit. The gate records the
+   commit that exists WHILE it runs - the one BEFORE the changes it is testing -
+   and committing then moves HEAD past it. The marker can never catch up.
+
+   Measured: main sat at one commit for a day and a half while six proven ones
+   piled up behind it, CI never saw a fix because it only runs on main, and the
+   deploy that follows CI was skipped every time. Nothing was broken and nothing
+   said anything; work simply stopped reaching the live Worker. A silent freeze
+   is the worst version of this, because the fix you believe you shipped is the
+   one that is not there - a sign-out fix, in the run that found it.
+
+   A tree hash fixes it because it is the thing being tested. Build it in a
+   THROWAWAY index so the real one is untouched: adding everything to a
+   temporary index and writing it out gives the hash of the working tree exactly
+   as it stands, ignored files excluded by the same rules as any other add.
+   Commit those files and HEAD's tree is that same hash, so the marker matches
+   whichever order somebody works in. Change a file afterwards and it does not,
+   which is the outcome that was wanted all along. */
+const TREE_AT_START = (() => {
+  try {
+    const idx = join(tmpdir(), 'amv-gate-index-' + process.pid);
+    const env = Object.assign({}, process.env, { GIT_INDEX_FILE: idx });
+    execSync('git add -A', { cwd: ROOT, stdio: 'pipe', env });
+    const t = execSync('git write-tree', { cwd: ROOT, stdio: 'pipe', env }).toString().trim();
+    try { unlinkSync(idx); } catch (e) {}
+    return t;
+  } catch (e) { return ''; }
 })();
 
 /* ONE GATE AT A TIME.
@@ -1294,20 +1320,27 @@ const secs = ((Date.now() - t0) / 1000).toFixed(1);
    one broken thing, but a red commit reaching main for the few minutes before
    the follow-up fixed it.
 
-   So a FULL pass records which commit it passed on. The hook pushes the branch
+   So a FULL pass records which TREE it passed on. The hook pushes the branch
    always - work is never stranded - and moves main only when this marker names
-   the exact commit it is about to push. A commit nobody has proven stays on the
-   branch, which is where an unproven commit belongs.
+   the exact tree it is about to push. Files nobody has proven stay on the
+   branch, which is where unproven work belongs.
+
+   A tree rather than a commit because a tree is what was tested, and because
+   naming the commit made main unmovable under the ordinary order of working:
+   edit, gate, commit. The commit that exists while the gate runs is the one
+   BEFORE the changes being tested, so the marker could never match HEAD
+   afterwards - and main stood still for a day and a half with six proven
+   commits behind it while nothing said a word.
 
    --fast never writes it: it skips the suites, so it has proven nothing about
    whether the product works. */
 if (!FAST) {
   try {
-    /* THE COMMIT THIS RUN WAS ABOUT, NOT THE ONE THAT HAPPENS TO BE HEAD NOW.
+    /* THE TREE THIS RUN WAS ABOUT, NOT WHATEVER IS ON DISK NOW.
 
        This read HEAD here, at the end, twenty minutes after the run began.
-       Commit anything while a gate is going - which is the normal way to work
-       during a twenty-minute wait - and the marker names a commit whose code
+       Change anything while a gate is going - which is the normal way to work
+       during a twenty-minute wait - and a marker read at the end names code
        this run never saw, and the hook that moves `main` believes it.
 
        It happened: a run started on one tree, two commits landed while it
@@ -1316,11 +1349,11 @@ if (!FAST) {
        defect this repository keeps finding, and the gate's own marker was an
        instance of it.
 
-       So HEAD is captured BEFORE the first stage and written afterwards. If
-       the tree moved meanwhile the marker names the commit that was actually
+       So the TREE is captured BEFORE the first stage and written afterwards. If
+       a file moved meanwhile the marker names the tree that was actually
        proven, the hook declines to move main, and somebody runs it again -
        which is the correct outcome and the one that was not available. */
-    if (HEAD_AT_START) writeFileSync(join(ROOT, '.gate-pass'), HEAD_AT_START + '\n');
+    if (TREE_AT_START) writeFileSync(join(ROOT, '.gate-pass'), TREE_AT_START + '\n');
   } catch (e) { /* not a git checkout, or git is unavailable - not a gate failure */ }
 }
 console.log('');

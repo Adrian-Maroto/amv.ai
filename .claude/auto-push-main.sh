@@ -35,10 +35,25 @@ if ! git push origin "$branch:$branch" --quiet 2>&1; then
   exit 0
 fi
 
-# Has the full gate passed on exactly this commit?
+# Has the full gate passed on exactly these FILES?
+#
+# This compared the marker to HEAD, and check.mjs wrote HEAD into it - both
+# reasonable, and together they made main unmovable under the ordinary way of
+# working. The gate records the commit that exists WHILE it runs, which is the
+# one BEFORE the changes it is testing; committing then moves HEAD past it and
+# the marker can never catch up. main sat still for a day and a half with six
+# proven commits behind it, CI never saw them because it only runs on main, and
+# the deploy that follows CI was skipped every time. Nothing was broken and
+# nothing said anything.
+#
+# The gate proves a TREE, so it records a tree, and this asks HEAD for its own.
+# Step 1 above already refused a dirty tree, so at this point HEAD's tree IS the
+# working tree - which makes the comparison exact rather than close enough, and
+# correct whether somebody gates before committing or after.
 gate=""
 [ -f .gate-pass ] && gate="$(tr -d '[:space:]' < .gate-pass)"
-if [ "$gate" != "$head" ]; then
+tree="$(git rev-parse 'HEAD^{tree}' 2>/dev/null || echo none)"
+if [ "$gate" != "$tree" ]; then
   printf '{"systemMessage":"Pushed %s to its branch. main NOT moved: npm run check has not passed on %s, and Render deploys main. Run the gate, then it syncs."}\n' \
     "$branch" "$(git rev-parse --short HEAD)"
   exit 0
