@@ -9866,7 +9866,7 @@ function _planPitch(key){
       [1,'File analysis - PDF, images, code'],
       [0,'AMV Forge and Apex, the top engines'],
       [0,'Autonomous agents &amp; Crew'],
-      [0,'Connected accounts (Gmail, Calendar)'],
+      [0,'Connected accounts (mail, calendar)'],
     ],
     reassure: '',
   },
@@ -9884,7 +9884,7 @@ function _planPitch(key){
       [1,'<b>'+_topWeekLabel('pro')+' Forge &amp; Apex messages a week</b> on top'],
       [1,'Autonomous agents &amp; Crew, run from <b>Mission Control</b>'],
       [1,'<b>Preview &amp; approve</b> every action before it runs'],
-      [1,'Build &amp; ship real apps in Dev, connect Gmail, Calendar &amp; files'],
+      [1,'Build &amp; ship real apps in Dev, connect mail, calendar &amp; files'],
     ],
     reassure: 'Everything below, one price, cancel anytime',
   },
@@ -16816,8 +16816,8 @@ function _cwDefaultJobs(){ return [
     prompt:'Watch incoming mail for genuinely urgent items: named VIP senders, offers, interview invitations, deadlines, legal or money matters, and anything explicitly marked urgent by a real person. Alert immediately with sender, subject and the one line that makes it urgent. Do NOT alert on newsletters, marketing or automated notifications.' },
 
   { id:'recurring_email', cat:'Inbox & calendar', icon:'\uD83D\uDCEE', title:'Recurring emails on a schedule', needs:'Email', on:false,
-    desc:'Send a real email on any schedule - weekly reports to your team, monthly invoices, a check-in every Friday. AMV writes it fresh each time from current information and sends it through your own Gmail.',
-    prompt:'At each scheduled run, compose the recurring email fresh from the latest information (do not resend a stale copy), then send it from the user Gmail account to the specified recipients. Confirm what was sent and to whom. If the recipient or content is unclear, ask instead of sending.' },
+    desc:'Send a real email on any schedule - weekly reports to your team, monthly invoices, a check-in every Friday. AMV writes it fresh each time from current information and sends it through your own connected mail account.',
+    prompt:'At each scheduled run, compose the recurring email fresh from the latest information (do not resend a stale copy), then send it from their own connected mail account to the specified recipients. Confirm what was sent and to whom. If the recipient or content is unclear, ask instead of sending.' },
 
   { id:'calendar_brief', cat:'Inbox & calendar', icon:'\uD83C\uDF05', title:'Morning calendar briefing', needs:'Calendar', on:false,
     desc:'Your day in one message before it starts: every meeting, travel time between them, what needs prep, where the free blocks are, and the one thing you should protect time for.',
@@ -17337,9 +17337,16 @@ function _cwDefaultJobs(){ return [
    server's own provider list, instead of a second table here that would drift
    from this one the first time a provider was added. */
 const CW_NEEDS_CHECK = {
-  'Email':           { label:'Gmail',            cap:'mail.read',     has:()=>_cwConnHas('mail.read') },
-  'Calendar':        { label:'Google Calendar',  cap:'calendar.read', has:()=>_cwConnHas('calendar.read') },
-  'Drive':           { label:'Google Drive',     cap:'drive.read',    has:()=>_cwConnHas('drive.read') },
+  /* NOT "GMAIL". The capability is a MAILBOX, and the server grants it from
+     Google or from Microsoft already - so naming one of them on the card was
+     wrong even before AMV left the United States. It is worse now: somebody in
+     Jakarta reading "connect Gmail" on a job that wants their Outlook work
+     account is being told to go and get an account they may not have and do not
+     need. `_cwNeedLabelFor` names the provider they have actually connected
+     when there is one, and the capability itself when there is not. */
+  'Email':           { label:'a mailbox',        cap:'mail.read',     has:()=>_cwConnHas('mail.read') },
+  'Calendar':        { label:'a calendar',       cap:'calendar.read', has:()=>_cwConnHas('calendar.read') },
+  'Drive':           { label:'your files',       cap:'drive.read',    has:()=>_cwConnHas('drive.read') },
   /* Read-only, and on the same Google connection - so a student who has linked
      Google for their mail already has this. A job needing it that runs with
      nothing connected would switch on and do nothing for ever, which is the
@@ -17349,7 +17356,7 @@ const CW_NEEDS_CHECK = {
      being used to answer this one: a student who had only ever pressed Sign in
      with Google was told Classroom was available, switched the job on, and it
      ran every morning with no permission to read anything. */
-  'Classroom':       { label:'Google Classroom', cap:'school.read',   has:()=>_cwConnHas('school.read') },
+  'Classroom':       { label:'your coursework',  cap:'school.read',   has:()=>_cwConnHas('school.read') },
   /* Through the one accessor, so "is an account linked" has a single definition
      that the server refresh keeps current. Reading the key directly here meant
      this screen and the investing pane could disagree. */
@@ -17428,14 +17435,101 @@ function _cwWhereLabel(j){
   return 'Runs with AMV closed - once ' + who + ' is connected';
 }
 try{ window._cwWhereState=_cwWhereState; window._cwWhereLabel=_cwWhereLabel; }catch(e){}
+/* A REQUIREMENT NOBODY RECOGNISES IS NOT A REQUIREMENT THAT IS MET.
+
+   This read `CW_NEEDS_CHECK[n]` and, when the name was not in the table,
+   skipped it - so a need the table had never heard of contributed nothing to
+   the missing list and the job reported itself ready. Five names were known:
+   Email, Calendar, Drive, Classroom and a bank link. Every other service on
+   earth was therefore "connected" by default.
+
+   That matters more the moment the catalogue stops being about Gmail. AMV is
+   used from Lagos and Jakarta and Sao Paulo, and the job somebody there wants
+   needs WhatsApp, M-Pesa, UPI, Line, Vinted or Mercado Libre - none of which
+   the table knew, all of which read as satisfied. The card would have said
+   ready, the run would have found nothing, and the person would have been told
+   afterwards that something they were never asked for was missing.
+
+   So an unknown name fails CLOSED: it is listed as missing, by its own name,
+   which is both the honest answer and the one that makes the catalogue safe to
+   extend. Adding a service to the data can now only ever ask for too much,
+   never too little. */
+/* THE NAME OF THE THING THEY ACTUALLY HAVE.
+
+   "A mailbox" is honest and a little cold. When somebody has already connected
+   Outlook, the card can say Outlook - and when they have connected nothing, a
+   capability is the only truthful thing to say, because AMV does not yet know
+   which provider they will choose and must not pick one for them.
+
+   Read off the server's own list of grants, so a deployment that registers a
+   provider nobody here has heard of names it correctly with no change to this
+   file. That is the property that makes the catalogue usable outside the
+   handful of countries whose services somebody happened to hardcode. */
+function _cwProviderNameFor(cap){
+  try{
+    const d = (typeof _connState !== 'undefined' && _connState) ? _connState.data : null;
+    if(!d || !Array.isArray(d.items)) return '';
+    const hit = d.items.find(it => it && it.unattended && !it.broken
+      && Array.isArray(it.scopes) && it.scopes.indexOf(cap) >= 0);
+    return (hit && (hit.providerName || hit.name || hit.provider)) ? String(hit.providerName || hit.name || hit.provider) : '';
+  }catch(e){ return ''; }
+}
+try{ window._cwProviderNameFor=_cwProviderNameFor; }catch(e){}
+
+/* WHAT THEY CONNECTED, NAMED BACK TO THEM.
+
+   "All connected" is true and anonymous. Somebody who linked an Outlook
+   account yesterday is better served by seeing the word Outlook, because that
+   is how they know AMV means the thing they did rather than something it
+   assumed. Where the server can name the provider, it is named; where it
+   cannot - a bank link, a service with no provider row - the capability stands
+   on its own, which is still the honest answer. */
+function _cwReadyLine(j){
+  const names = [];
+  try{
+    _cwNeedsList(j).forEach(n => {
+      if(n === 'Web research' || n === 'Web automation') return;
+      const c = CW_NEEDS_CHECK[n];
+      const who = (c && c.cap) ? _cwProviderNameFor(c.cap) : '';
+      const label = who || (c ? c.label : n);
+      if(names.indexOf(label) < 0) names.push(label);
+    });
+  }catch(e){}
+  if(!names.length) return 'All connected - ready to run';
+  const list = names.length === 1 ? names[0]
+    : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+  return list + ' connected - ready to run';
+}
+try{ window._cwReadyLine=_cwReadyLine; }catch(e){}
+
+function _cwNeedsList(j){
+  return String((j&&j.needs)||'').split(',').map(s=>s.trim())
+    .filter(Boolean).filter(n => n !== 'Nothing');
+}
 function _cwNeedsMissing(j){
   const out=[];
-  String((j&&j.needs)||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(n=>{
+  _cwNeedsList(j).forEach(n=>{
+    /* Web research needs no account and never did - it is a capability of the
+       runner, not something anybody connects. */
+    if(n === 'Web research' || n === 'Web automation') return;
     const c=CW_NEEDS_CHECK[n];
-    if(c && !c.has() && out.indexOf(c.label)<0) out.push(c.label);
+    const label = c ? c.label : n;
+    const met = c ? c.has() : false;
+    if(!met && out.indexOf(label)<0) out.push(label);
   });
   return out;
 }
+/* Does this job declare anything a person has to connect at all, and is every
+   one of them already there? Both halves matter: a job needing nothing is not
+   "ready because you connected things", it simply never needed you. */
+function _cwNeedsAnything(j){
+  return _cwNeedsList(j).some(n => n !== 'Web research' && n !== 'Web automation');
+}
+function _cwNeedsReady(j){
+  return _cwNeedsAnything(j) && _cwNeedsMissing(j).length === 0;
+}
+try{ window._cwNeedsList=_cwNeedsList; window._cwNeedsAnything=_cwNeedsAnything;
+     window._cwNeedsReady=_cwNeedsReady; }catch(e){}
 /* ── CONNECTING THE ONE ACCOUNT THIS JOB NEEDS ───────────────────────────────
 
    Asked for: turning a job on should take you to a screen that says "connect
@@ -19479,9 +19573,23 @@ function _cwJobCard(j){
      a bank or a mailbox that was never linked sat there looking active and
      quietly did nothing forever. The card says which it is. */
   const miss=_cwNeedsMissing(j);
+  /* EVERY ONE OF THEM, AND THE GOOD NEWS TOO.
+
+     Two changes and they are the same change: say the whole truth about what
+     this job is waiting for. Before, a job needing three things named whatever
+     the table recognised and said nothing about the rest, and a job needing
+     nothing more said nothing at all - so "I have already connected that" and
+     "this needs something you have not got" looked identical on the card,
+     which is a blank space either way.
+
+     A person who has done the work should be told they have done it. That is
+     the whole difference between a catalogue you browse nervously and one you
+     press. */
   const note=miss.length
-    ? `<div class="cw-job-miss">${j.on?'Cannot run yet':'Needs'}: ${escH(miss.join(', '))} not connected. <button class="cw-job-fix" data-dact="cwConnect" data-darg="${escH(j.id)}">Connect</button></div>`
-    : '';
+    ? `<div class="cw-job-miss">${j.on?'Cannot run yet':'Needs'} ${miss.length} thing${miss.length===1?'':'s'}: ${escH(miss.join(', '))}. <button class="cw-job-fix" data-dact="cwConnect" data-darg="${escH(j.id)}">Connect</button></div>`
+    : (_cwNeedsReady(j)
+        ? `<div class="cw-job-ready"><span class="cw-ready-dot"></span>${escH(_cwReadyLine(j))}</div>`
+        : '');
   /* The body is a real button, so the card opens with a keyboard and reads
      as something you can press. It was a div: the only interactive thing on
      a card was the toggle, which meant the only way to find out what a job
@@ -20732,7 +20840,7 @@ function renderCrewView(){
         <div class="sec-head"><h3>Run something now</h3><span class="sec-sub">AMV opens a workspace, asks what it needs, and actually does it.</span></div>
         <div class="cw-quick">
           ${[['\uD83D\uDDFA\uFE0F','Plan a trip','trip','openTripPlanner()'],
-             ['\uD83D\uDCE7','Check Gmail','gmail','crewRun(\'gmail\',\'Check Gmail\')'],
+             ['\uD83D\uDCE7','Check email','gmail','crewRun(\'gmail\',\'Check email\')'],
              ['\uD83D\uDCC5','Plan my week','week','crewRun(\'week\',\'Plan my week\')'],
              ['\u2728','Autonomous task','auto','openCowork()']]
             .map(q=>`<button class="cw-quick-card" data-dact="_cwQuick" data-darg="${escH(q[2])}"><span class="cw-quick-ic" aria-hidden="true">${q[0]}</span><span>${escH(q[1])}</span></button>`).join('')}
@@ -28943,7 +29051,7 @@ function setupLanding(){
     });
   }
   // Marquee
-  const items=['Autonomous agents','Runs in the background','Builds real apps','Designs live','Researches deeply','Drafts your email','Plans your week','Connects Gmail & Drive','Hands off to teammates','Scheduled work','Multi-step tasks','Approval before sending','Live code sandbox','Brand & landing pages','Market briefs','Inbox triage'];
+  const items=['Autonomous agents','Runs in the background','Builds real apps','Designs live','Researches deeply','Drafts your email','Plans your week','Connects your mail & files','Hands off to teammates','Scheduled work','Multi-step tasks','Approval before sending','Live code sandbox','Brand & landing pages','Market briefs','Inbox triage'];
   const track=$('mtrack');
   if(track) track.innerHTML=[...items,...items].map(t=>'<div class="mitem"><div class="mdot"></div>'+t+'</div>').join('');
 }

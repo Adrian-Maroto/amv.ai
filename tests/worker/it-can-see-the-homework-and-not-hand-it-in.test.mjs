@@ -163,7 +163,22 @@ section('Being signed in with Google is not having granted this');
      sprung by the anchor itself, and it is the same shape as LESSONS 483: a
      check written against the incidental arrangement of a line rather than
      against the thing the line means. */
-  const cAt2 = client.indexOf("label:'Google Classroom'");
+  /* SPRUNG A SECOND TIME, BY THE THING THE COMMENT ABOVE WARNS ABOUT.
+
+     The anchor moved to `label:'Google Classroom'` to escape a `cap:` field
+     appearing mid-line. Then the label itself changed - deliberately, because
+     "Google Classroom" named one vendor for a capability the card should
+     describe rather than advertise, and AMV is not a product for one country's
+     schools. The anchor broke again, and the fallback found some other part of
+     the bundle, so the assertion failed against a string that was never the
+     subject.
+
+     Anchored on the KEY of the row now - `'Classroom':` inside the needs
+     table - which is the one part that cannot be reworded without changing
+     what a job's `needs` string means. Copy is meant to change; the key is
+     the contract. */
+  const tbl = client.indexOf('CW_NEEDS_CHECK');
+  const cAt2 = tbl > 0 ? client.indexOf("'Classroom':", tbl) : -1;
   ok(cAt2 > 0, 'the availability row was found', cAt2);
   const check = client.slice(cAt2, cAt2 + 240);
   ok(/_cwConnHas\(['"]school\.read['"]\)/.test(check),

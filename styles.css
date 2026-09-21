@@ -15392,3 +15392,27 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 }
 .away-share:hover{ border-color:var(--accent); background:var(--accent-soft); }
 @media (hover:none){ .away-share{ min-height:44px; padding:10px 14px; } }
+
+/* ===========================================================================
+   LAYER A249 - the card says what it is waiting for, and when it is not
+
+   A blank space used to mean two opposite things: everything this job needs is
+   connected, and this job needs something the checker had never heard of. One
+   deserves a green light; the other deserves a list. Neither deserves silence.
+
+   The ready line is the only green on the card and it is small, because it is
+   reassurance rather than an achievement - and the dot is a real element with
+   a real token behind it rather than an emoji whose rendering nobody controls.
+   =========================================================================== */
+#vc .cw-job-ready{
+  display:flex; align-items:center; gap:6px;
+  margin-top:var(--sp-2);
+  font-size:var(--t-sm); font-weight:600; color:var(--grn);
+}
+#vc .cw-ready-dot{
+  width:7px; height:7px; border-radius:50%;
+  background:var(--grn); flex-shrink:0;
+}
+/* The missing list leads with a count, so three things read as three things
+   rather than as one long sentence somebody skims. */
+#vc .cw-job-miss{ line-height:1.5; }

@@ -151,18 +151,33 @@ section('A job that cannot run says so rather than looking active');
        version went stale the moment a job needed something new - it counted 53
        where the screen blocked 54 - and a check that has to be maintained in
        step with the thing it watches is not watching it. */
-    const known = Object.keys(CW_NEEDS_CHECK);
-    const needsAcct = _cwShowcase().filter(j =>
-      String(j.needs || '').split(',').map(x => x.trim()).some(n => known.includes(n)));
+    /* ASKED OF THE CHECKER, NOT OF A LIST OF NAMES IT HAPPENS TO KNOW.
+       This counted jobs whose needs appear in CW_NEEDS_CHECK, which was the
+       same five-name table the checker itself used - so a requirement neither
+       of them recognised was absent from both sides and the two agreed about
+       a job that was silently broken. The checker fails closed now, so the
+       honest count is simply "jobs with something missing", and it stays
+       correct as the catalogue grows past the services one table knew. */
+    const needsAcct = _cwShowcase().filter(j => _cwNeedsMissing(j).length > 0);
     return { needsAcct: needsAcct.length,
              blocked: document.querySelectorAll('.cw-cat-grid .cw-job.blocked').length,
-             text: document.body.textContent };
+             text: document.body.textContent,
+             cardText: [...document.querySelectorAll('.cw-job')].map(c => c.textContent).join(' ') };
   });
   ok(r.blocked === r.needsAcct,
      'every job needing an account nobody connected is marked', r.blocked + ' of ' + r.needsAcct);
   ok(/not connected/.test(r.text), 'in words on the card itself');
-  ok(/Gmail not connected/.test(r.text), 'naming the actual account, not "an integration"');
-  ok(/a bank connection not connected/.test(r.text), 'including the bank ones');
+  /* The card names the thing itself. "Gmail" was what it used to say and was
+     wrong twice over: the capability is a mailbox, which Microsoft grants too,
+     and a person who does not use Gmail was being sent after an account they
+     do not have. */
+  ok(/a mailbox/.test(r.text), 'naming what it needs, not "an integration"');
+  /* Asked of the CARDS, not of the whole page. The body carries plan copy and
+     a menu as well, and a check that reads all of it fails on a sentence that
+     has nothing to do with what a job asks for - which is how a real
+     assertion gets deleted for being noisy. */
+  ok(!/Gmail/.test(r.cardText), 'and not one vendor for a capability two of them grant', r.cardText.slice(0, 80));
+  ok(/a bank connection/.test(r.text), 'including the bank ones');
 }
 
 section('A job needing nothing but the server is not marked at all');

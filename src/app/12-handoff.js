@@ -3193,7 +3193,7 @@ function setupLanding(){
     });
   }
   // Marquee
-  const items=['Autonomous agents','Runs in the background','Builds real apps','Designs live','Researches deeply','Drafts your email','Plans your week','Connects Gmail & Drive','Hands off to teammates','Scheduled work','Multi-step tasks','Approval before sending','Live code sandbox','Brand & landing pages','Market briefs','Inbox triage'];
+  const items=['Autonomous agents','Runs in the background','Builds real apps','Designs live','Researches deeply','Drafts your email','Plans your week','Connects your mail & files','Hands off to teammates','Scheduled work','Multi-step tasks','Approval before sending','Live code sandbox','Brand & landing pages','Market briefs','Inbox triage'];
   const track=$('mtrack');
   if(track) track.innerHTML=[...items,...items].map(t=>'<div class="mitem"><div class="mdot"></div>'+t+'</div>').join('');
 }

@@ -78,7 +78,15 @@ section('Switching on a job that needs a mailbox asks for the mailbox');
     };
   });
   ok(r.shown, 'a screen opens rather than a toast');
-  ok(/^Connect Gmail to your AMV$/.test(r.title.trim()), 'naming the account it needs', r.title);
+  /* NOT "GMAIL", AND THIS ASSERTION USED TO REQUIRE IT.
+
+     The capability is a mailbox and the screen below offers google AND
+     microsoft - the next assertion says so - so the heading naming one of them
+     contradicted the buttons underneath it. It also sent somebody in a country
+     where Gmail is not the common mailbox after an account they may not have.
+     The heading names what the job needs; the buttons name who can grant it. */
+  ok(/^Connect a mailbox to your AMV$/.test(r.title.trim()), 'naming what it needs, not one vendor', r.title);
+  ok(!/gmail/i.test(r.title), 'and not a provider the person may not use', r.title);
   ok(/Daily inbox digest/.test(r.lead), 'and the job that asked for it', r.lead.slice(0, 90));
   ok(r.buttons.join(',') === 'google,microsoft',
      'offering the providers that really grant reading mail', r.buttons.join(','));
