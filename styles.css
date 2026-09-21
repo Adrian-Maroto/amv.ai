@@ -1710,7 +1710,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .pricing-foot .pf-item{font-size:var(--t-sm);color:var(--mu)}
 
 /* ---- Model picker: clean, dark, usage-aware ---- */
-.model-picker{position:fixed;z-index:9700;width:340px;max-width:calc(100vw - 24px);background:var(--s1);border:1px solid var(--hair-strong);border-radius:var(--r-xl);padding:6px;box-shadow:0 24px 60px -16px rgba(0,0,0,.72);animation:mpIn .14s ease}
+.model-picker{position:fixed;z-index:9700;width:400px;max-width:calc(100vw - 24px);background:var(--s1);border:1px solid var(--hair-strong);border-radius:var(--r-xl);padding:6px;box-shadow:0 24px 60px -16px rgba(0,0,0,.72);animation:mpIn .14s ease}
 @keyframes mpIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .mp-head{font-size:var(--t-xs);font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--mu);padding:9px 12px 7px}
 .mp-item{display:flex;align-items:flex-start;gap:11px;width:100%;text-align:left;background:none;border:none;border-radius:var(--r-md);padding:11px 12px;cursor:pointer;transition:background .13s;font-family:var(--fn)}
@@ -7663,11 +7663,30 @@ html,body{height:100%;height:100dvh}
    which is worse, because this is the row where somebody is comparing four
    things and deciding to pay.
 
-   Reserving two lines for that note equalises it without changing a word.
+   Reserving room for that note equalises it without changing a word.
+
+   AMENDED, because the number was the mistake. This reserved `31px`, which
+   was two line boxes of the font the machine that wrote it happened to draw
+   with - and the metric-matched fallback a real browser uses makes the text
+   about 7% wider, which runs the Elite note to THREE lines. So on every
+   machine that resolves that fallback the note is 46px, the reservation does
+   nothing, and the buttons drift by the same fifteen pixels this layer was
+   written to remove. CI had been red on exactly that assertion for days while
+   the local gate was green, because the fallback resolves there and not here.
+
+   `lh` is the unit that means what the sentence above means: line boxes of
+   this element's own text, whatever font is drawing it. The em value in front
+   is the fallback for anything that does not know `lh`.
+
+   And it carries `!important`, which is why every later attempt to fix this
+   from an append layer - including one made this morning - was dead on
+   arrival. A pixel count behind an `!important` is a decision that cannot be
+   revised except here. Three lines is the measured maximum rather than a law,
+   so a suite forces the wider font and fails if the notes stop matching.
    ========================================================================== */
 .plnc{display:flex;flex-direction:column}
 .plnc .plnfl{flex:1 1 auto}
-.pg-app .plnc .plnreassure{min-height:31px!important}
+.pg-app .plnc .plnreassure{min-height:4.3em!important;min-height:3lh!important}
 
 /* ==========================================================================
    LAYER A63 - the Lab toolbar wraps instead of running off the screen
@@ -14941,10 +14960,9 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   display:flex; align-items:center; justify-content:center;
 }
 .plnc .plnfl{ flex:1 1 auto; }
-/* And room for two lines under it, so a one-line reassurance and a two-line
-   one do not move the button they sit beneath. In em, so it survives somebody
-   scaling the text up. */
-.plnreassure{ min-height:2.85em; }
+/* The reassurance note's reservation lives in LAYER A62, which sets it with
+   `!important` - so a rule here could not win and would only be a second
+   number to keep in step with the first. Fixed where it is decided. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    LAYER A241 - every topic ends with a door to the rest of its own kind

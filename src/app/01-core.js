@@ -710,8 +710,28 @@ const AMV_API = {
   // Single-flight: if a refresh is already in progress, concurrent callers
   // await the same promise instead of each firing their own request (which
   // would race and, with refresh-token rotation, invalidate each other).
+  /* WHICH SESSION IS THIS TOKEN FOR.
+
+     A refresh takes a moment, and a person can press Sign out inside that
+     moment - on a slow connection, easily. When they did, signOut cleared
+     every token it could see and the refresh then landed and put a fresh one
+     back in memory. Measured, not theorised: the token was gone immediately
+     after signOut and present 300ms later, and the stack on the write named
+     _doRefresh called from _fetch's 401 path.
+
+     Nothing on disk, so it survived nothing - but `hasSession` reads memory,
+     so the app went on believing somebody was signed in, and the next request
+     would have carried a working bearer token for an account whose owner had
+     just asked to be signed out. That is the whole meaning of the button.
+
+     A counter is enough. Every sign-out moves it on; work that was started
+     under an older number is stale by definition and does not get to write.
+     Cheaper than cancelling the request and correct even if it is already
+     past the point of cancelling. */
+  _authGen: 0,
   async _doRefresh(){
     if(this._refreshInFlight) return this._refreshInFlight;
+    const _gen = this._authGen || 0;
     this._refreshInFlight = (async()=>{
       // Hard timeout so a hung/stalled network request can never leave the
       // single-flight lock stuck (which would block all future refreshes).
@@ -732,6 +752,9 @@ const AMV_API = {
         });
         if(!r.ok) return false;
         const d = await r.json().catch(()=>({}));
+        /* Signed out while this was in flight: the answer is real, and it is
+           for a session that no longer exists. Dropped rather than applied. */
+        if((this._authGen || 0) !== _gen) return false;
         if(d.token){ this._setTokens(d); return true; }
         return false;
       }catch(e){ return false; }

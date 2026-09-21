@@ -364,6 +364,82 @@ condition the share itself uses.
 | 16 | `_syncBooted` never cleared on sign-out | the second account pulls its own data |
 | 17 | the confirm assuming a hosted share always happens | 4 assertions |
 
+### Round six: the gate was green and CI was red, and both were honest
+
+CI on `main` had failed four runs running - 738 through 741 - and `deploy.yml`
+only runs after `tests` succeeds, so every deploy was SKIPPED and the Worker
+had not shipped for days. The local gate said SHIPPABLE on the same commits.
+Neither was lying.
+
+`styles.css` ships a metric-matched fallback whose sources are all LOCAL
+fonts: `local('Arial'), local('Helvetica Neue'), local('Roboto')`, with
+`size-adjust:107%`. On a runner - or any real computer - one resolves and text
+draws about 7% wider. In this container none exists, the declaration errors,
+and text is narrower. Same page, two line-break patterns, so any layout
+assertion that depends on where text wraps has two different answers.
+
+Two real bugs lived in that gap, both invisible locally and true on nearly
+every real machine:
+
+- the plan cards' reassurance note ran to THREE lines, not two, so LAYER A62's
+  `min-height:31px!important` reserved too little and the four buttons drifted
+  15px apart - on the row where somebody decides to pay. The `!important` is
+  why every later attempt to fix it from an append layer, including one made
+  the same morning, was dead on arrival.
+- an engine description wrapped in the 340px picker and the five-item menu
+  came out 2px taller than its room, so a roomy desktop grew a scrollbar.
+
+Fixed at the source in both cases, and by construction rather than by
+calibration: `lh` for the note, so the reservation is line boxes of the
+element's own text; and 400px for the picker, measured at 340/372/400 as the
+width where NOTHING wraps in either font, rather than the 372 that merely
+scraped past. `the-layout-holds-in-the-font-a-real-browser-draws` forces the
+fallback onto a font both machines have and asserts FIRST that the text really
+did get wider - without that control every check below it passes for the wrong
+reason.
+
+### And the one the gate found on the way
+
+`the-session-survives-a-reload-without-a-token-on-disk` failed three
+assertions under parallel load and passed alone - the shape of a flake, and
+the shape people learn to re-run. It reproduced in two consecutive full gates,
+so it was neither.
+
+Instrumenting it: a refresh was in flight, signOut cleared everything
+correctly, and 300ms later the token was back, written by `_setTokens` called
+from `_doRefresh` called from `_fetch`'s 401 path. Nothing reached disk, so
+nothing survived a reload - but `hasSession` reads memory, so the app went on
+believing somebody was signed in and the next request would have carried a
+working bearer token for the account that had just asked to leave. On a slow
+connection that is not an edge case; it is what Sign out looks like when the
+network is bad.
+
+Fixed with a session generation counter: sign-out moves it on and drops the
+in-flight promise, and work started under an older number does not get to
+write. Cheaper than cancelling and correct even when it is too late to cancel.
+
+TWO WRONG TURNS WORTH KEEPING. The mechanism was ruled out early because
+`/auth/` paths are excluded from the 401-refresh path - true, and irrelevant,
+since the refresh was provoked by an ordinary `/v1/usage` call. Then a probe
+"disproved" it by calling `_doRefresh()` with `_fetch` stubbed; `_doRefresh`
+is entered FROM INSIDE `_fetch` and never goes back out through it, so the
+stub never saw the refresh. A test that reaches code by a route the product
+never takes can pass while the product is broken. The regression suite stubs
+the network underneath and lets the app find its own way there.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 18 | the note's reservation back to a hardcoded 31px | 4 assertions, both widths |
+| 19 | the picker narrowed back to 340 | it fits, and no description wraps |
+| 20 | the generation guard removed from the refresh | 3 assertions |
+
+### Still open from this round
+
+- **Two suites hardcode the same port.** `every-surface-that-is-not-chat` and
+  `the-seller-actually-gets-it` both bind 9201. Not the cause of anything
+  above - it was checked and ruled out - but a collision waiting to happen,
+  and the kind that reads as a flake when it does.
+
 ### Still unmeasured, this round
 
 - **The general impossibility layer needs a key.** The floor is a pure function

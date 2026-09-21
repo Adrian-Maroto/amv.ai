@@ -710,8 +710,28 @@ const AMV_API = {
   // Single-flight: if a refresh is already in progress, concurrent callers
   // await the same promise instead of each firing their own request (which
   // would race and, with refresh-token rotation, invalidate each other).
+  /* WHICH SESSION IS THIS TOKEN FOR.
+
+     A refresh takes a moment, and a person can press Sign out inside that
+     moment - on a slow connection, easily. When they did, signOut cleared
+     every token it could see and the refresh then landed and put a fresh one
+     back in memory. Measured, not theorised: the token was gone immediately
+     after signOut and present 300ms later, and the stack on the write named
+     _doRefresh called from _fetch's 401 path.
+
+     Nothing on disk, so it survived nothing - but `hasSession` reads memory,
+     so the app went on believing somebody was signed in, and the next request
+     would have carried a working bearer token for an account whose owner had
+     just asked to be signed out. That is the whole meaning of the button.
+
+     A counter is enough. Every sign-out moves it on; work that was started
+     under an older number is stale by definition and does not get to write.
+     Cheaper than cancelling the request and correct even if it is already
+     past the point of cancelling. */
+  _authGen: 0,
   async _doRefresh(){
     if(this._refreshInFlight) return this._refreshInFlight;
+    const _gen = this._authGen || 0;
     this._refreshInFlight = (async()=>{
       // Hard timeout so a hung/stalled network request can never leave the
       // single-flight lock stuck (which would block all future refreshes).
@@ -732,6 +752,9 @@ const AMV_API = {
         });
         if(!r.ok) return false;
         const d = await r.json().catch(()=>({}));
+        /* Signed out while this was in flight: the answer is real, and it is
+           for a session that no longer exists. Dropped rather than applied. */
+        if((this._authGen || 0) !== _gen) return false;
         if(d.token){ this._setTokens(d); return true; }
         return false;
       }catch(e){ return false; }
@@ -5468,7 +5491,20 @@ function signOut(){
      storage while leaving a usable token in memory would be a sign-out that
      only looked like one - the next request would still succeed. */
   try{ localStorage.removeItem('amv_api_token'); localStorage.removeItem('amv_api_refresh'); localStorage.removeItem('amv_token_exp'); }catch(e){}
-  try{ if(window.AMV_API){ AMV_API._atMem=''; AMV_API._rtMem=''; AMV_API._restoring=false; } }catch(e){}
+  /* AND EVERYTHING ALREADY IN THE AIR.
+
+     Clearing what is here is not enough while a refresh is in flight: it
+     lands afterwards and writes a fresh token back into memory, so the app
+     goes on believing somebody is signed in and the next request carries a
+     working credential for the account that just asked to leave. Moving the
+     generation on makes that answer stale before it arrives, and dropping the
+     in-flight promise stops a later caller from awaiting a refresh that
+     belongs to the previous session. */
+  try{ if(window.AMV_API){
+    AMV_API._authGen = (AMV_API._authGen || 0) + 1;
+    AMV_API._refreshInFlight = null;
+    AMV_API._atMem=''; AMV_API._rtMem=''; AMV_API._restoring=false;
+  } }catch(e){}
   /* Everything unscoped that belongs to the person rather than the machine.
      A connected Google account is the one that matters most: leaving its access
      token behind hands the next account somebody's mail. */
@@ -8188,7 +8224,25 @@ function showModelPicker(){
 
      The width here mirrors the stylesheet's (340, capped at the viewport less
      its margins) so the arithmetic is about the box that will actually exist. */
-  const width=Math.min(340, Math.max(0, window.innerWidth - EDGE*2));
+  /* 400, NOT 340, AND THE STYLESHEET SAYS THE SAME - see the note above about
+     these two having to agree.
+
+     At 340 the engine descriptions wrapped to a second line, and which ones
+     wrapped depended on the font: on a machine where the metric-matched
+     fallback resolves, text is about 7% wider, a fourth item wrapped too, and
+     the menu came out 2px taller than the room it had - so a five-item menu
+     on a 1280x860 desktop grew a scrollbar for two pixels. CI had been failing
+     on exactly that while the local gate was green.
+
+     Measured at 340, 372 and 400: at 400 NOTHING wraps in either font, every
+     item is one line, and the menu has about 48px of headroom. That is a fix
+     by construction rather than by calibration - the goal is that a
+     description fits on its line, not that a total lands under a number - and
+     it is why 400 rather than the 372 that merely scraped past.
+
+     Phones are unaffected: the width is capped at the viewport less its
+     margins either way, so a 390px screen gets 366 here as it did before. */
+  const width=Math.min(400, Math.max(0, window.innerWidth - EDGE*2));
   let right=Math.max(EDGE, window.innerWidth - rect.right);
   right=Math.max(EDGE, Math.min(right, window.innerWidth - EDGE - width));
   menu.style.cssText=

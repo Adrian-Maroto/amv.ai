@@ -1838,7 +1838,20 @@ function signOut(){
      storage while leaving a usable token in memory would be a sign-out that
      only looked like one - the next request would still succeed. */
   try{ localStorage.removeItem('amv_api_token'); localStorage.removeItem('amv_api_refresh'); localStorage.removeItem('amv_token_exp'); }catch(e){}
-  try{ if(window.AMV_API){ AMV_API._atMem=''; AMV_API._rtMem=''; AMV_API._restoring=false; } }catch(e){}
+  /* AND EVERYTHING ALREADY IN THE AIR.
+
+     Clearing what is here is not enough while a refresh is in flight: it
+     lands afterwards and writes a fresh token back into memory, so the app
+     goes on believing somebody is signed in and the next request carries a
+     working credential for the account that just asked to leave. Moving the
+     generation on makes that answer stale before it arrives, and dropping the
+     in-flight promise stops a later caller from awaiting a refresh that
+     belongs to the previous session. */
+  try{ if(window.AMV_API){
+    AMV_API._authGen = (AMV_API._authGen || 0) + 1;
+    AMV_API._refreshInFlight = null;
+    AMV_API._atMem=''; AMV_API._rtMem=''; AMV_API._restoring=false;
+  } }catch(e){}
   /* Everything unscoped that belongs to the person rather than the machine.
      A connected Google account is the one that matters most: leaving its access
      token behind hands the next account somebody's mail. */

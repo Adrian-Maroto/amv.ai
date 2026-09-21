@@ -1573,7 +1573,25 @@ function showModelPicker(){
 
      The width here mirrors the stylesheet's (340, capped at the viewport less
      its margins) so the arithmetic is about the box that will actually exist. */
-  const width=Math.min(340, Math.max(0, window.innerWidth - EDGE*2));
+  /* 400, NOT 340, AND THE STYLESHEET SAYS THE SAME - see the note above about
+     these two having to agree.
+
+     At 340 the engine descriptions wrapped to a second line, and which ones
+     wrapped depended on the font: on a machine where the metric-matched
+     fallback resolves, text is about 7% wider, a fourth item wrapped too, and
+     the menu came out 2px taller than the room it had - so a five-item menu
+     on a 1280x860 desktop grew a scrollbar for two pixels. CI had been failing
+     on exactly that while the local gate was green.
+
+     Measured at 340, 372 and 400: at 400 NOTHING wraps in either font, every
+     item is one line, and the menu has about 48px of headroom. That is a fix
+     by construction rather than by calibration - the goal is that a
+     description fits on its line, not that a total lands under a number - and
+     it is why 400 rather than the 372 that merely scraped past.
+
+     Phones are unaffected: the width is capped at the viewport less its
+     margins either way, so a 390px screen gets 366 here as it did before. */
+  const width=Math.min(400, Math.max(0, window.innerWidth - EDGE*2));
   let right=Math.max(EDGE, window.innerWidth - rect.right);
   right=Math.max(EDGE, Math.min(right, window.innerWidth - EDGE - width));
   menu.style.cssText=
