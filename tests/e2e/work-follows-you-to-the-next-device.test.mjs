@@ -274,6 +274,52 @@ section('A returning visit - nobody signs in - syncs at all');
   await D.close();
 }
 
+section('Signing out and back in on the same tab pulls again');
+{
+  /* THE FLAG THAT SWITCHES SYNC ON HAS TO BE SWITCHED BACK OFF.
+
+     Both doors into sync now go through one bootstrap that runs once per
+     session, which is what stops a fresh sign-in and a restored session from
+     each installing their own set of subscriptions. "Once" is held by a flag,
+     and a flag that is never cleared is a feature that works exactly one time.
+
+     The case that makes it matter is not exotic: sign out, hand the laptop to
+     somebody else, they sign in. Same page load, so the flag is still set from
+     the first account - and the second account never pulls. They open AMV,
+     their own chats are not there, and the product looks broken on the first
+     screen they ever see of it.
+
+     signOut clears it. signOutAndErase reaches the same function rather than
+     repeating it, which is a call-graph fact and does not need measuring - but
+     the clear itself does, because nothing else in this file would notice it
+     being deleted. */
+  const E = await device('E');
+  await E.page.waitForTimeout(600);
+  const before = state.pulls;
+
+  await E.page.evaluate(() => { signOut(); });
+  await E.page.waitForTimeout(300);
+  const afterOut = await E.page.evaluate(() => ({
+    signedOut: !(S.user && S.user.email),
+    syncing: AMVSync.enabled(),
+  }));
+  ok(afterOut.signedOut, 'they are signed out');
+  ok(!afterOut.syncing, 'and sync is off, because there is no session to sync');
+
+  /* A DIFFERENT PERSON, on the same page load and the same tab. */
+  await E.page.evaluate(async () => {
+    await AMV_API.login('second@amv.dev', { password: 'correct horse battery staple' });
+    loginUser({ email: 'second@amv.dev', name: 'Somebody else' });
+  });
+  await E.page.waitForTimeout(1200);
+
+  ok(state.pulls > before,
+     'the second account pulls its own data instead of inheriting a flag',
+     before + ' -> ' + state.pulls);
+  ok(E.errors.length === 0, 'no page errors on the shared tab', E.errors.join(' | '));
+  await E.close();
+}
+
 ok(B.errors.length === 0, 'no page errors', B.errors.join(' | '));
 await B.close();
 api.close();

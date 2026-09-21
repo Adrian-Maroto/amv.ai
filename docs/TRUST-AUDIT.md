@@ -331,6 +331,39 @@ source or in tests. Both surfaces that report an impossible verdict build their
 own markup around the reason and the alternatives, so the helper was a third
 phrasing waiting to drift from the two that ship. Removed.
 
+### Round five: two more found by looking at this session's own work
+
+Both are in code written the same day, and neither would have been noticed by
+running the product.
+
+**The flag that switches sync on was never proved to switch off.** One
+bootstrap now serves both doors into sync and runs once per session, and
+"once" is held by a flag. A flag that is never cleared is a feature that works
+exactly one time. The case is not exotic: sign out, hand the laptop to
+somebody else, they sign in on the same page load - and the second account
+never pulls. They open AMV, their own chats are not there, and the product
+looks broken on the first screen they ever see of it. `signOut` clears it and
+always did; nothing measured that, so deleting the line changed no result.
+Now `6 -> 6` pulls fails the assertion by name. (`signOutAndErase` reaches the
+same function rather than repeating it, which is a call-graph fact and is
+proved by reading rather than measured.)
+
+**The share screen promised a page that would not exist.** The confirm said
+"This makes a public web page" unconditionally. With no backend the share falls
+back to packing the whole result into the URL fragment - nothing is stored on a
+server, which sounds like the safer of the two and is the more dangerous one to
+be careless with. There is nothing to revoke: the content IS the link, so
+anybody who has it keeps it and forwarding it forwards the text. The old
+sentence was false in the direction that matters, implying a page somebody
+could take down, and the warning under it offered "a link can be revoked later"
+as reassurance about a link that cannot be. Both switch now on the same
+condition the share itself uses.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 16 | `_syncBooted` never cleared on sign-out | the second account pulls its own data |
+| 17 | the confirm assuming a hosted share always happens | 4 assertions |
+
 ### Still unmeasured, this round
 
 - **The general impossibility layer needs a key.** The floor is a pure function

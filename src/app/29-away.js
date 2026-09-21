@@ -142,14 +142,37 @@ function awayShare(id){
   if(!out){ try{ toast('This run produced nothing to share.', 'info'); }catch(e){} return; }
   const title = _awaySnippet(rec.detail, 70) || 'What AMV did on its own';
   const ovr = document.getElementById('ovr'); if(!ovr) return;
+  /* WHICH OF THE TWO SHARES THIS WILL BE, decided here the same way the share
+     itself decides it, because the sentence describing it has to be true.
+
+     With a backend there is a hosted page: revocable from Settings, kept out
+     of search, and a link that stops working when somebody wants it to. With
+     no backend the fallback packs the whole result into the URL fragment -
+     nothing is stored on a server, which sounds like the safer of the two and
+     is the more dangerous one to be careless with. There is nothing to revoke.
+     The content IS the link, so anybody who has it keeps it, and forwarding it
+     forwards the text.
+
+     Saying "this makes a public web page" in that case is simply false, and it
+     is false in the direction that matters: it implies a page somebody could
+     take down. So the copy switches, and so does the warning - "a link can be
+     revoked later" is advice that does not apply and would be read as
+     reassurance. */
+  const hosted = !!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
   ovr.innerHTML =
     '<div class="share-modal away-share-modal">' +
       '<div class="share-title">Share what AMV found</div>' +
-      '<p class="share-sub">This makes a public web page. Nothing is created until you press the button below.</p>' +
+      '<p class="share-sub">' + (hosted
+        ? 'This makes a public web page. Nothing is created until you press the button below.'
+        : 'This makes a link with the whole result packed inside it - nothing is stored on a server. '
+          + 'Nothing is created until you press the button below.') + '</p>' +
       '<div class="away-share-warn">' +
         '<b>Read it first.</b> This ran against your own accounts, so the text below may name people, ' +
-        'amounts, messages or dates you would not want in public. A link can be revoked later; a copy ' +
-        'somebody already took cannot.' +
+        'amounts, messages or dates you would not want in public. ' +
+        (hosted
+          ? 'A link can be revoked later; a copy somebody already took cannot.'
+          : 'This kind of link carries the text itself, so there is nothing to revoke - '
+            + 'anyone you send it to keeps it, and so does anyone they send it to.') +
       '</div>' +
       '<div class="away-share-prev" data-no-i18n>' +
         '<div class="away-share-prev-t">' + escH(title) + '</div>' +

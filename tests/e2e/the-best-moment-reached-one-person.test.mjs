@@ -177,6 +177,40 @@ section('Confirming hands over to the share everything else uses');
   ok(r.listedOff === true, 'with search engines off by default, as everywhere else');
 }
 
+section('With no backend it says what it is really about to make');
+{
+  /* The fallback share packs the whole result into the URL fragment. Nothing
+     is stored on a server, which sounds like the safer of the two and is the
+     more dangerous one to be careless with: the content IS the link, so there
+     is nothing to revoke and forwarding it forwards the text.
+
+     "This makes a public web page" is false there, and false in the direction
+     that matters - it implies a page somebody could take down. So both the
+     description and the warning have to switch, and the warning especially:
+     "a link can be revoked later" is advice that does not apply, and would be
+     read as reassurance. */
+  const r = await page.evaluate(async () => {
+    /* Backend off - the state a visitor to an unconfigured deployment is in. */
+    AMV_API.base = ''; AMV_API.token = '';
+    awayShare('r1');
+    await new Promise(s => setTimeout(s, 250));
+    const ov = document.getElementById('ovr');
+    return {
+      sub: (ov.querySelector('.share-sub') || {}).textContent || '',
+      warn: (ov.querySelector('.away-share-warn') || {}).textContent || '',
+      stillPreviews: !!ov.querySelector('.away-share-prev-b'),
+    };
+  });
+  ok(!/public web page/.test(r.sub),
+     'it does not promise a page that would not exist', r.sub.slice(0, 70));
+  ok(/packed inside it/.test(r.sub), 'it says what the link actually is', r.sub.slice(0, 70));
+  ok(/nothing to revoke/.test(r.warn),
+     'and the warning says there is nothing to revoke, rather than reassuring about revoking',
+     r.warn.slice(-80));
+  ok(!/can be revoked later/.test(r.warn), 'the advice that does not apply is gone');
+  ok(r.stillPreviews, 'and it still shows the text first, which is the part that never changes');
+}
+
 ok(errors.length === 0, 'no page errors', errors.join(' | '));
 await app.close();
 report();
