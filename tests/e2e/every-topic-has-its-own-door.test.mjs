@@ -66,16 +66,38 @@ await page.evaluate((b) => {
 }, BASE);
 await page.waitForTimeout(4200);
 
-const shape = await page.evaluate(() => ({
-  lump: /everything amv can connect to/i.test(document.body.innerText),
-  headings: [...document.querySelectorAll('.ss2 > h3')].map(h => h.textContent.trim()),
-  doors: [...document.querySelectorAll('.cdir-more')].map(b => ({
-    label: b.textContent.trim(), q: b.dataset.darg })),
-  /* A section with a heading and no door is the thing being fixed. */
-  sectionsWithoutDoor: [...document.querySelectorAll('.ss2')]
-    .filter(s => s.querySelector('h3') && !s.querySelector('.cdir-more'))
-    .map(s => s.querySelector('h3').textContent.trim()),
-}));
+/* A TOPIC IS NAMED IN TWO SHAPES NOW, AND BOTH COUNT.
+
+   This read `.ss2 > h3` alone, which was every topic on the page when the
+   registry ones were sections of five tiles with a heading each. They are
+   doors now - a button carrying the name and the query, fetching nothing until
+   it is pressed - because those rows each fired a request as they painted,
+   which buried the page and repainted the node the search box lived in. The
+   owner asked for them to go: "remove the things below the search bar
+   entirely", "none of the thing that it says now".
+
+   Every claim in this file survives that change; only the selector had to.
+   What a topic IS - a name, and a way through to the rest of its own kind - is
+   the same for a hand-built section and for a registry door, so both are
+   collected here and the assertions below are unchanged. */
+const shape = await page.evaluate(() => {
+  const curated = [...document.querySelectorAll('.ss2 > h3')].map(h => h.textContent.trim());
+  const topics = [...document.querySelectorAll('.cdir-topic')];
+  return {
+    lump: /everything amv can connect to/i.test(document.body.innerText),
+    headings: curated.concat(topics.map(t => (t.querySelector('.cdir-topic-t') || {}).textContent.trim())),
+    doors: [...document.querySelectorAll('.cdir-more')].map(b => ({
+      label: b.textContent.trim(), q: b.dataset.darg }))
+      .concat(topics.map(t => ({ label: (t.querySelector('.cdir-topic-t') || {}).textContent.trim(),
+                                 q: t.dataset.darg }))),
+    /* A section with a heading and no door is the thing being fixed. A door
+       cannot be a dead end by construction - it IS the way through - so only
+       the hand-built sections can fail this. */
+    sectionsWithoutDoor: [...document.querySelectorAll('.ss2')]
+      .filter(s => s.querySelector('h3') && !s.querySelector('.cdir-more'))
+      .map(s => s.querySelector('h3').textContent.trim()),
+  };
+});
 
 section('The lump is gone and the topics carry it instead');
 {
