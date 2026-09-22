@@ -799,3 +799,57 @@ were printed by different commands with nothing tying them together.
 - **AMV-AUD-001 and AMV-AUD-005** remain decisions for the owner: an isolated
   execution origin, and sandboxed execution with a minimal environment
   allowlist. Both change what the product can do for people.
+
+## Round thirteen - a credential belongs to one backend
+
+AMV-AUD-008, and it is the last of the eight high findings that is a defect
+rather than a decision.
+
+`_fetch` has refused to attach the bearer token to an origin it was not issued
+for since AMV-013. `_doRefresh` had no such check: it posted `{refreshToken}`
+to `this.base + '/auth/refresh'` whatever `this.base` had become. So pointing
+AMV at a different backend withheld the credential that expires in minutes and
+then offered the one valid for weeks to the new destination on the very next
+401. That is the wrong way round - a copy of a refresh token is a copy of the
+account.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 51 | the setter keeps the bundle on an origin change | 4 assertions |
+| 52 | the refresh token is kept | "AND SO IS THE REFRESH TOKEN" |
+| 53 | the authentication generation is not moved | "work in flight lands as stale" |
+| 54 | `_doRefresh` unguarded again | 3 assertions, led by "never put on the wire" |
+
+**The fix is invalidation, not a second guard.** Guarding `_doRefresh` alone
+would leave a bundle in memory belonging to nobody: an access token for one
+origin, a refresh token that may not be used, and a cookie-auth flag set by a
+server nobody is talking to. Changing the backend drops all of it and moves the
+authentication generation, so a refresh already in flight lands as stale rather
+than writing a token back for the origin that was just left.
+
+The guard inside `_doRefresh` stays as defence in depth and is asserted
+separately - the setter is one way the base changes and a stored value edited
+elsewhere is another, and this is the expensive credential.
+
+**The thing this must not do is sign people out for pressing a button.**
+Settings writes the base on every test-connection press, so invalidation fires
+on a real ORIGIN CHANGE, not on a write. Asserted: saving the same URL twice,
+once with a trailing slash, leaves the bundle and the generation untouched.
+
+### The eight high findings, after this round
+
+Six are fixed and measured: 002 (sign-out teardown), 003 (disconnect revokes),
+004 (shutdown stops exec children), 006 (unoffered tool names), 007 (read
+failure is not absence, and Undo keeps your edits), 008 (credential binding).
+
+Two are NOT defects to fix quietly and remain open for the owner:
+
+- **AMV-AUD-001** - generated code runs in a worker on the application origin.
+  Moving it to a dedicated non-authenticated origin means a second host and a
+  change to production infrastructure.
+- **AMV-AUD-005** - `/exec` runs a real shell as the person, inheriting their
+  environment. Isolated execution with a minimal environment allowlist changes
+  what the bridge fundamentally is and what it can do for people.
+
+Both are recorded rather than acted on, because both change the product rather
+than repair it.

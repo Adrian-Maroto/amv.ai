@@ -440,7 +440,52 @@ const AMV_API = {
   /* A URL saved in Settings wins, so one device can be pointed at a staging
      Worker without rebuilding. Clearing it falls back to what shipped. */
   get base(){ try{ return loadStr('amv_api_base')||_defaultApiBase(); }catch(e){ return _defaultApiBase(); } },
-  set base(v){ try{ const val=(v||'').trim(); if(val && !_isSecureApiOrigin(_originOf(val))){ try{ toast('Backend URL must be a valid https:// address','error'); }catch(e){} return; } saveStr('amv_api_base', val); }catch(e){} },
+  /* ── CHANGING THE BACKEND INVALIDATES THE CREDENTIALS ─────────────────────
+
+     `_fetch` already refused to attach the bearer token when the request
+     origin did not match the one the token was issued for. `_doRefresh` did
+     not: it posted the refresh token to `this.base + '/auth/refresh'`
+     whatever `this.base` had become. So pointing AMV at a different backend
+     withheld the short-lived credential and then offered the long-lived one
+     to the new destination on the next 401 - which is the wrong way round,
+     because a refresh token is weeks valid and a copy of it is a copy of the
+     account.
+
+     Guarding `_doRefresh` alone would leave a bundle in memory that belongs to
+     nobody: an access token for one origin, a refresh token that may not be
+     used, a cookie-auth flag set by a server that is no longer being talked
+     to. So the whole bundle goes, and the authentication generation moves -
+     which is what makes any refresh already in flight land as stale rather
+     than writing a token back for the origin that has just been left.
+
+     Only on a real CHANGE. Re-saving the same URL, which Settings does on
+     every test-connection press, must not sign somebody out. */
+  set base(v){
+    try{
+      const val=(v||'').trim();
+      if(val && !_isSecureApiOrigin(_originOf(val))){ try{ toast('Backend URL must be a valid https:// address','error'); }catch(e){} return; }
+      const wasOrigin = _originOf(this.base);
+      saveStr('amv_api_base', val);
+      const nowOrigin = _originOf(this.base);
+      if(wasOrigin !== nowOrigin) this._dropCredentials();
+    }catch(e){}
+  },
+  /* Everything that authenticates, in one place, so a caller cannot drop half
+     of it. Used by the base setter; sign-out has its own path because it also
+     has a server call to make and state to wipe. */
+  _dropCredentials(){
+    try{
+      this.token = '';
+      this.refreshTok = '';
+      this.cookieAuth = false;
+      this._authGen = (this._authGen || 0) + 1;
+      /* A refresh already running answered for the previous origin. The
+         generation above makes it drop its result; this stops a later caller
+         awaiting a promise that belongs to a backend nobody is using. */
+      this._refreshInFlight = null;
+      saveStr('amv_api_token_origin', '');
+    }catch(e){}
+  },
   /* AMV-019 PART TWO: THE SHORT-LIVED HALF LEAVES STORAGE TOO.
 
      Part one put the REFRESH token in an HttpOnly cookie, which was the half
@@ -741,6 +786,18 @@ const AMV_API = {
         /* In cookie mode the browser carries the token and this side may have
            nothing - which is the point, and is not a reason to give up. */
         if(!this.refreshTok && !this.cookieAuth) return false;
+        /* THE SAME BINDING `_fetch` APPLIES, APPLIED HERE TOO.
+
+           `_fetch` refused to attach the bearer token to an origin it was not
+           issued for; this function sent the REFRESH token - weeks valid, a
+           copy of the account - to whatever `this.base` had become. The base
+           setter now drops the whole bundle on an origin change, so this
+           should be unreachable. It is checked anyway, because the setter is
+           one way the base changes and a stored value edited elsewhere is
+           another, and the credential this protects is the expensive one. */
+        const _refreshOrigin = _originOf(this.base);
+        const _bound = (loadStr('amv_api_token_origin') || '');
+        if(this.refreshTok && _bound && _bound !== _refreshOrigin) return false;
         const r = await fetch(this.base.replace(/\/$/,'')+'/auth/refresh', {
           method:'POST', headers:{'Content-Type':'application/json'},
           /* Sends the cookie. Only honoured cross-origin when the server
