@@ -16695,19 +16695,27 @@ function _everydayCache(list){
 }
 function _cwSaveJobs(j){ store('amv_cw_jobs', j); }
 function _cwDefaultJobs(){ return [
-  { id:'job_hunt', cat:'Work & career', icon:'\uD83D\uDCBC', title:'Job hunt - find and prepare applications', needs:'Email, Web research', on:false,
+  { id:'job_hunt', cat:'Work & career', icon:'\uD83D\uDCBC', title:'Job hunt - find and prepare applications', needs:'Job hunt profile, Web research', on:false,
     desc:'AMV finds roles matched to your resume and prepares a tailored application for each one, ready for you to review and send. If a posting asks something you have not specified, it asks you first. Submitting on its own is not switched on - nothing reaches an employer without you.',
     prompt:'Find current job openings matching the roles, locations and salary floor in my Job Hunt profile. For each one: the title, company, location, pay if stated, why it fits me, and the direct link. Then draft a tailored application for the strongest matches, using my resume and stated preferences. Do not submit anything - present each as a finished draft for me to review. If a posting asks for something my profile does not answer, list the question instead of inventing an answer.' },
-  { id:'morning_brief', cat:'Watching the world', icon:'\u2600\uFE0F', title:'Morning news & markets brief', needs:'Email, Web research', on:false,
+  { id:'morning_brief', cat:'Watching the world', icon:'\u2600\uFE0F', title:'Morning news & markets brief', needs:'Web research', on:false,
     desc:'Every morning, AMV researches what happened overnight and emails you a short brief on the moves that matter and why - facts and figures, never a recommendation.',
+    /* IT HAS TO BE TOLD WHAT TO FOLLOW, and it never was. This job claimed a
+       mailbox, which would not have answered the question either - reading
+       somebody's mail does not tell you which markets they care about. The
+       claim was hiding an underspecified job rather than supplying anything,
+       which the catalogue check found the moment the claim came off. */
+    asks:{ q:'What should I follow for you?', ph:'e.g. "AI chip makers, the FTSE 100, UK interest rates, and anything about my industry"' },
     sample:['OVERNIGHT: three things moved, one matters to what you follow.','Chip index down 2.1% after an earnings miss in Asia. The miss was guidance, not revenue.','Energy flat despite the headline - the market had already priced it.','ON YOUR LIST: the two names you watch closed 0.4% and 1.8% down, in line with the sector rather than company news.','Information, not financial advice.'],
     prompt:'Search the live web now and report what happened overnight in news and markets relevant to what the user follows. Give the specific moves with numbers and the reason attributed to each, distinguishing a real cause from a headline the market had already priced. Cover the user\u2019s named interests explicitly, and say when nothing relevant happened rather than padding. You must NOT give financial advice: never tell the user to buy, sell, hold or wait, and never predict a price. End by stating this is information, not financial advice.' },
   { id:'inbox_digest', cat:'Inbox & calendar', icon:'\uD83D\uDCEC', title:'Daily inbox digest', needs:'Email', on:false,
     desc:'Each evening, the few emails that actually need you - summarized, with a ready-to-send reply drafted for each. Nothing goes out without you pressing send.',
     sample:['6 needed you today. 58 did not.','Client asking to move Thursday to Friday - reply drafted, says yes and proposes 2pm.','Invoice query from accounts - reply drafted, needs the PO number you have not given me.','Recruiter, second follow-up - drafted a short no, since you have not replied twice.','Every draft is ready to send and has NOT been sent.'],
     prompt:'Summarize the user\u2019s recent mail into the messages that genuinely need them and the count of those that do not. For each that needs action: who, what they want, and what is at stake if it waits. Draft a ready-to-send reply for each, in the user\u2019s own register. Where a reply needs information only the user has, say exactly what is missing rather than inventing it. State plainly on every draft that it is ready and has NOT been sent. Never describe an email you cannot actually see.' },
-  { id:'competitor_watch', every:'weekly', cat:'Growing a business', icon:'\uD83D\uDD0D', title:'Competitor & industry watch', needs:'Email, Web research', on:false,
+  { id:'competitor_watch', every:'weekly', cat:'Growing a business', icon:'\uD83D\uDD0D', title:'Competitor & industry watch', needs:'Web research', on:false,
     desc:'Watches the companies you compete with and tells you what actually changed - pricing, launches, hiring, positioning - and what it means for you, not just that it happened.',
+    /* Same shape: "the competitors the user has named" needs them named. */
+    asks:{ q:'Which competitors, and what market?', ph:'e.g. "Notion, Coda and Obsidian - note-taking apps sold to teams"' },
     sample:['2 real changes this week out of 40 things published.','Competitor A cut their entry tier from 29 to 19 and removed the seat limit. That is the first price move in 14 months.','WHAT IT MEANS: your 25 tier is now the expensive middle option rather than the cheap one.','Competitor B is hiring 3 enterprise salespeople. They are moving upmarket, away from your customers.','Everything else was marketing.'],
     prompt:'Track the competitors and market the user has named. Report only genuine changes: pricing, product launches, positioning, funding, notable hiring patterns and public statements - with the date and source for each. For every change, say what it means for the user specifically, not just that it happened. Explicitly separate substance from marketing, and say how much you discarded so the summary is trusted as filtered. Never report a change you cannot evidence from a real source.' },
   { id:'weekly_report', every:'weekly', cat:'Inbox & calendar', icon:'\uD83D\uDCCA', title:'Weekly summary report', needs:'Email', on:false,
@@ -16726,7 +16734,7 @@ function _cwDefaultJobs(){ return [
      executes, and an honest `needs` so it never pretends to run without the
      access it requires. ---- */
 
-  { id:'opportunity_radar', cat:'Work & career', icon:'\uD83C\uDFAF', title:'Opportunity radar', needs:'Email, Web research', on:false,
+  { id:'opportunity_radar', cat:'Work & career', icon:'\uD83C\uDFAF', title:'Opportunity radar', needs:'Web research', on:false,
     desc:'Every morning AMV hunts for things you could actually get - scholarships, grants, internships, jobs, competitions, fellowships, discounts and rebates that match your profile - and emails you only the ones you qualify for, with the deadline and the direct link.',
     sample:['6 open now that you actually qualify for. 2 close inside a fortnight.','Regional innovation grant - up to 5,000, closes in 11 days, needs a one-page plan you already have most of.','Industry fellowship - paid, closes in 6 weeks, needs two references. Ask this week, not that week.','Discarded 23: wrong region, wrong stage, or already closed. No point showing you those.'],
     asks:{ q:'What should I match against?', ph:'Your age, where you live, what you study or do, and the kinds of things you want - e.g. "17, in the US, studying chemistry and math, want scholarships and summer research"' },
@@ -16783,7 +16791,7 @@ function _cwDefaultJobs(){ return [
   { id:'travel_guardian', cat:'Home & life', icon:'\u2708\uFE0F', title:'Travel guardian', needs:'Email, Calendar, Web research', on:false,
     desc:'From your booking confirmations it tracks flight delays, gate changes, weather at both ends, and check-in windows - and warns you early enough to actually do something.',
     sample:['Flight in 2 days. Two things need you.','Your outbound is now 40 minutes earlier. The airline emailed at 3am and it is easy to miss.','Check-in opens tomorrow at 07:00 and the seats you wanted are on a 6-hour leg.','Weather at the far end: heavy rain the day you land, clear after. Worth knowing before you pack.','Return leg unchanged.'],
-    prompt:'From the user booking confirmations, identify upcoming travel. Check flight status, gate and time changes, weather at origin and destination, and check-in windows. Report anything that needs action, with how much time remains to act. State clearly if a booking cannot be verified.' },
+    prompt:'From the booking confirmation emails in the user mail, identify upcoming travel. Check flight status, gate and time changes, weather at origin and destination, and check-in windows. Report anything that needs action, with how much time remains to act. State clearly if a booking cannot be verified.' },
 
   { id:'meeting_prep', cat:'Inbox & calendar', icon:'\uD83D\uDCCB', title:'Meeting prep & follow-up', needs:'Calendar, Email, Web research', on:false,
     desc:'Before each meeting you get a brief on who you are meeting, their company and recent news, and the history of your thread. Afterwards it drafts the follow-up and the action list.',
@@ -16799,7 +16807,7 @@ function _cwDefaultJobs(){ return [
     asks:{ q:'Which pages should I watch?', ph:'One URL per line, and what counts as a meaningful change on each' },
     prompt:'Check each watched page for meaningful change: new postings, opened applications, status changes, updated deadlines or policy edits. Ignore cosmetic changes. Report what changed and the direct link.' },
 
-  { id:'goal_tracker', cat:'Home & life', icon:'\uD83D\uDE80', title:'Goal tracker & weekly plan', needs:'Email', on:false,
+  { id:'goal_tracker', cat:'Home & life', icon:'\uD83D\uDE80', title:'Goal tracker & weekly plan', needs:'Nothing', on:false,
     desc:'Turns a real goal - save an amount, get fit, launch something, get into a school - into a weekly plan, checks your progress, and adapts when you fall behind instead of nagging.',
     prompt:'For each user goal: assess progress since last check, give the specific next actions for this week, and adapt the plan if they are behind. Be concrete and realistic. Encourage honestly - never claim progress that has not happened.' },
 
@@ -16809,7 +16817,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'life_admin', cat:'Home & life', icon:'\uD83D\uDDD3\uFE0F', title:'Life admin & expiry reminders', needs:'Email, Calendar', on:false,
     desc:'Passport, license, insurance, registration, medical checks, home and car maintenance - AMV tracks the dates and reminds you far enough ahead that renewing is easy.',
-    prompt:'Track expiries and recurring life admin: passport, license, insurance, vehicle registration and inspection, medical and dental checks, home and car maintenance. Report what is due in the next 90 days, how long renewal usually takes, and what to do first.' },
+    prompt:'From renewal notices and reminders in the user mail, track expiries and recurring life admin: passport, license, insurance, vehicle registration and inspection, medical and dental checks, home and car maintenance. Report what is due in the next 90 days, how long renewal usually takes, and what to do first.' },
 
   { id:'vip_alerts', cat:'Inbox & calendar', icon:'\uD83D\uDEA8', title:'Important email alerts', needs:'Email', on:false,
     desc:'Not a daily digest - AMV pings you the moment something genuinely urgent lands: your boss, a client, an offer, an interview invite, a deadline or anything money-related.',
@@ -16833,7 +16841,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'project_pulse', cat:'Work & career', icon:'\uD83D\uDCC8', title:'Morning project updates', needs:'Email, Web research', on:false,
     desc:'A single morning read on everything moving: what progressed, what stalled, what is blocked on someone else, and what needs you today.',
-    prompt:'Report the current state of each active project: what moved since the last update, what stalled, what is blocked and on whom, and what specifically needs the user today. Be concrete and short. Say plainly if a project had no activity.' },
+    prompt:'From the user mail and the live web, report the current state of each active project: what moved since the last update, what stalled, what is blocked and on whom, and what specifically needs the user today. Be concrete and short. Say plainly if a project had no activity.' },
 
   { id:'overdue_escalation', cat:'Work & career', icon:'\u23F0', title:'Overdue task escalation', needs:'Email, Calendar', on:false,
     desc:'When something slips past its date AMV escalates it properly - reminds you, drafts the chase message to whoever is holding it up, and keeps raising it until it is actually closed.',
@@ -16905,7 +16913,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'bill_negotiate', cat:'Money', icon:'📞', title:'Bill negotiation prep', needs:'Email, Web research', on:false,
     desc:'Finds the bills where you are paying above the going rate - broadband, mobile, insurance, streaming - looks up what new customers are offered right now, and writes the script that actually gets the discount.',
-    prompt:'Identify the user’s recurring bills and the amount paid for each. Research the current new-customer and retention pricing for the same service and comparable providers. For each bill where the user is paying materially above market: state what they pay, what is available now, the annual saving, and write the exact script to use with retentions, including the competing offer to cite. Only include bills you have real evidence of.' },
+    prompt:'From bills and receipts in the user mail, identify their recurring bills and the amount paid for each. Research the current new-customer and retention pricing for the same service and comparable providers. For each bill where the user is paying materially above market: state what they pay, what is available now, the annual saving, and write the exact script to use with retentions, including the competing offer to cite. Only include bills you have real evidence of.' },
 
   { id:'tax_catch', cat:'Money', icon:'🧾', title:'Deductible expense catcher', needs:'Email', on:false,
     desc:'Deductions get lost because nobody tags them in January. AMV watches receipts all year, files the ones that count, and hands you an organized list instead of a shoebox in April.',
@@ -16942,7 +16950,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'portfolio_fresh', cat:'Work & career', icon:'✒️', title:'Keep my CV and profile current', needs:'Email, Calendar', on:false,
     desc:'Your best work disappears because you update your CV once every three years. AMV notices what you actually shipped and drafts the line for it while you still remember the numbers.',
-    prompt:'From recent activity, identify accomplishments worth recording: projects completed, things shipped, measurable results, new responsibilities, tools learned, recognition received. For each, draft one strong CV or profile line in the user’s voice with the concrete result. Maintain the running list between runs. Only include achievements with real evidence.' },
+    prompt:'From recent mail and calendar activity, identify accomplishments worth recording: projects completed, things shipped, measurable results, new responsibilities, tools learned, recognition received. For each, draft one strong CV or profile line in the user’s voice with the concrete result. Maintain the running list between runs. Only include achievements with real evidence.' },
 
   { id:'churn_signals', cat:'Growing a business', icon:'📉', title:'Customer churn early warning', needs:'Email', on:false,
     desc:'Customers rarely announce they are leaving - they go quiet, complain twice, then cancel. AMV spots the pattern in your own mail while there is still time to save the account.',
@@ -17006,7 +17014,7 @@ function _cwDefaultJobs(){ return [
     desc:'Every due date pulled out of syllabi, portals and mail into one honest picture - what is due, how long each will really take, and what to start today to not be up at 3am.',
     prompt:'Collect every upcoming deadline from mail and calendar: assignments, exams, applications, submissions and their weightings where stated. Build a single ordered list with dates. Estimate realistic effort for each, identify what must start now to be finished on time, and flag any week where the load is genuinely not achievable. Only include deadlines you have evidence for.' },
 
-  { id:'study_drill', cat:'Learning', icon:'🧠', title:'Spaced revision on a schedule', needs:'Email', on:false,
+  { id:'study_drill', cat:'Learning', icon:'🧠', title:'Spaced revision on a schedule', needs:'Nothing', on:false,
     desc:'Sends you the right questions at the right interval on whatever you are learning, harder on the things you keep getting wrong - the method that actually makes things stick.',
     asks:{ q:'What are you studying?', ph:'Subject, level, and the topics you keep getting wrong' },
     prompt:'Maintain a spaced repetition schedule over the user’s stated study material. Each run, produce the set of questions due now, weighted toward material they have previously answered incorrectly or not seen recently. Include the answers separately so they can self-test first. Track which items are due next and adjust the interval based on reported performance.' },
@@ -17024,7 +17032,7 @@ function _cwDefaultJobs(){ return [
     asks:{ q:'What is the appointment?', ph:'What kind, when, and what you want out of it. Only what you are happy for AMV to hold.' },
     prompt:'Before an upcoming medical or professional appointment, assemble what the user has already recorded: the timeline of what they noted and when, previous correspondence, current medications or arrangements they have mentioned, and outstanding questions from last time. Produce a one page prep note and a list of questions to ask. Record only what the user has stated - never infer, diagnose, interpret results, or suggest treatment.' },
 
-  { id:'habit_pulse', cat:'Health', icon:'🏃', title:'Training plan that adapts', needs:'Email', on:false,
+  { id:'habit_pulse', cat:'Health', icon:'🏃', title:'Training plan that adapts', needs:'Nothing', on:false,
     desc:'Adjusts the plan to the week you actually had rather than the one you intended - so missing two sessions changes the plan instead of ending it.',
     prompt:'Review the user’s reported activity since the last run against their stated goal. Report what actually happened, adjust the coming week to fit their real availability and recent load, and progress or ease the plan accordingly. Be honest when a goal has drifted out of reach on the current trajectory and say what would bring it back. Never give medical advice or interpret pain or injury - direct those to a professional.' },
 
@@ -17034,7 +17042,7 @@ function _cwDefaultJobs(){ return [
 
   { id:'car_admin', cat:'Home & life', icon:'🚗', title:'Vehicle service, tax and inspection', needs:'Email, Calendar', on:false,
     desc:'Service intervals, inspection and tax dates, warranty expiry and open recalls for your actual vehicle - with enough warning to book rather than scramble.',
-    prompt:'Track vehicle admin: service intervals against mileage or date, inspection and tax renewal dates, insurance renewal, warranty expiry, and any open safety recalls for the specific make, model and year. Report what is due in the next 90 days and what needs booking now. Check recalls against official sources only.' },
+    prompt:'From reminders and renewal notices in the user mail, track vehicle admin: service intervals against mileage or date, inspection and tax renewal dates, insurance renewal, warranty expiry, and any open safety recalls for the specific make, model and year. Report what is due in the next 90 days and what needs booking now. Check recalls against official sources only.' },
 
   { id:'flight_watch', cat:'Home & life', icon:'✈️', title:'Flight price watch for a real trip', needs:'Web research', on:false,
     desc:'Watches your actual route and dates, learns what a normal fare looks like, and tells you when a price is genuinely good - including when to rebook a refundable fare cheaper.',
@@ -17056,7 +17064,7 @@ function _cwDefaultJobs(){ return [
   { id:'doc_expiry', cat:'Home & life', icon:'🛂', title:'Passport, visa and travel eligibility', needs:'Email, Calendar, Web research', on:false,
     desc:'Catches the trap that ruins trips: a passport too close to expiry for the country you booked, a visa or permit needing renewal, an entry rule that changed since you last flew.',
     sample:['You have a flight booked. Your passport is a problem.','It expires in 4 months. Spain requires 3 months\' validity beyond your return date - you clear it by 11 days.','That is too close. A delayed return or a date change breaks it.','A renewal takes about 3 weeks at the moment, so start before the 8th.','Entry rules checked against the government source today. These change without notice.'],
-    prompt:'Check the user’s travel documents against their planned travel: passport expiry versus each destination’s validity requirement, visa or permit status and renewal timing, and current entry requirements for those destinations. Report anything that would block travel, how long the fix takes, and the latest date to start it. Verify entry rules against official government sources and give the date checked, since these change without notice.' },
+    prompt:'Using the travel found in their mail and calendar, check the user’s travel documents against that planned travel: passport expiry versus each destination’s validity requirement, visa or permit status and renewal timing, and current entry requirements for those destinations. Report anything that would block travel, how long the fix takes, and the latest date to start it. Verify entry rules against official government sources and give the date checked, since these change without notice.' },
 
   /* ---- SCHOOL ------------------------------------------------------------
 
@@ -17302,7 +17310,7 @@ function _cwDefaultJobs(){ return [
      So the job does the watch and the analysis and stops before the
      recommendation, and says so on every send rather than leaving somebody to
      discover the boundary. */
-  { id:'account_watch', cat:'Watching the world', icon:'\uD83D\uDCE1', title:'Watch a public account and tell me what it means', needs:'Email, Web research', on:false,
+  { id:'account_watch', cat:'Watching the world', icon:'\uD83D\uDCE1', title:'Watch a public account and tell me what it means', needs:'Web research', on:false,
     desc:'Watches the public accounts you name. When one posts something that matters, AMV emails you what was said, which companies or sectors it touches, and how markets have reacted to that kind of post before - with its reasoning shown. It does not tell you what to buy.',
     asks:{ q:'Which accounts, and what are you watching them for?', ph:'e.g. @realDonaldTrump on Truth Social and X - I hold semiconductor and energy names and want to know when a post bears on them' },
     sample:['1 post in the last hour that touches what you hold.','POSTED 09:14 - announced a review of chip export rules, naming no company.',
@@ -17357,6 +17365,23 @@ const CW_NEEDS_CHECK = {
      with Google was told Classroom was available, switched the job on, and it
      ran every morning with no permission to read anything. */
   'Classroom':       { label:'your coursework',  cap:'school.read',   has:()=>_cwConnHas('school.read') },
+  /* A PROFILE THAT NEVER LEAVES THIS DEVICE IS A REQUIREMENT LIKE ANY OTHER.
+
+     Job hunt reads the roles, locations and salary floor from the Job Hunt
+     profile, which is stored under `amv_jobhunt` - and `_SYNC_KEYS` carries
+     convs, memory, workspaces, prompts and model, not that. So the server
+     runner cannot see it, and a job whose only other need is web research was
+     being classified as running with AMV closed while the data it works from
+     sits in one browser.
+
+     Declaring it makes three things true at once: the card asks for it when it
+     is empty, says ready when it is filled, and stops claiming the job runs
+     unattended - because not every need is web research any more. No `cap`,
+     for the same reason the bank link has none: there is no grant to request,
+     it is a screen the person fills in. */
+  'Job hunt profile': { label:'your job hunt profile',
+    has:()=>{ try{ return typeof AMVJobs !== 'undefined'
+      && !AMVJobs.missingInfo({}, AMVJobs.cfg()).length; }catch(e){ return false; } } },
   /* Through the one accessor, so "is an account linked" has a single definition
      that the server refresh keeps current. Reading the key directly here meant
      this screen and the investing pane could disagree. */
@@ -18078,13 +18103,13 @@ const CW_EVERYDAY_UNIVERSAL = [
     desc:'Every bill sitting in your mail with a date on it, in one list, before the date rather than after it.' },
   { id:'ev_renewals', icon:'🪪', needs:'Email',
     title:'Renewals and expiry dates',
-    desc:'Passport, licence, insurance, visa, registration, tenancy. The things that cost a great deal of trouble when they lapse and give no warning when they do.' },
+    desc:'Reads the renewal notices in your mail for passport, licence, insurance, visa, registration and tenancy - the things that cost a great deal of trouble when they lapse and give no warning when they do.' },
   { id:'ev_trials', icon:'⏳', needs:'Email',
     title:'Free trials about to charge',
-    desc:'A trial that is about to become a payment, while there is still time to decide.' },
+    desc:'Finds the trial-ending emails in your mail and tells you before one becomes a payment, while there is still time to decide.' },
   { id:'ev_deliveries', icon:'📦', needs:'Email',
     title:'Parcels: what is coming and what is late',
-    desc:'Everything in transit in one place, and specifically the ones that have stopped moving.' },
+    desc:'Reads your shipping confirmation emails so everything in transit is in one place - and specifically the ones that have stopped moving.' },
   { id:'ev_returns', icon:'↩️', needs:'Email',
     title:'Return and warranty windows closing',
     desc:'The last day you can send something back or claim on it, which is never mentioned again after the receipt.' },
@@ -18093,7 +18118,7 @@ const CW_EVERYDAY_UNIVERSAL = [
     desc:'Anything from a tax office, council, ministry, court, bank or school that asked for something and has not had a reply.' },
   { id:'ev_utility_spike', icon:'⚡', needs:'Email',
     title:'Is my bill higher than usual?',
-    desc:'Compares this month against the months before it, so a quiet price rise or a broken meter does not go unnoticed for a year.' },
+    desc:'Reads the utility bills in your mail and compares this month against the months before it, so a quiet price rise or a broken meter does not go unnoticed for a year.' },
   { id:'ev_trip', icon:'✈️', needs:'Email, Calendar',
     title:'My next trip, in one place',
     desc:'Flights, hotel, transfers, check-in windows and what expires before you go, assembled from the confirmations scattered across your mail.' },
@@ -18115,7 +18140,18 @@ function _cwEverydayJob(raw, countryName, local){
     cat: 'Home & life', icon: raw.icon || '\uD83D\uDCCB', on: false,
     title: String(raw.title || ''),
     desc: String(raw.desc || ''),
-    needs: String(raw.needs || 'Email'),
+    /* NO DEFAULT MAILBOX. This read `raw.needs || 'Email'`, so an everyday
+       job whose pack did not state its requirements demanded a mailbox -
+       hundreds of them, in every country, asking for the most alarming grant
+       AMV can ask for on the strength of a fallback nobody chose.
+
+       Declaring nothing is the honest answer when the pack is silent: the
+       instruction lives on the server and the runner derives what it needs
+       from that instruction itself, so the server asks for access when the
+       work actually opens something. A guess here could only ever be wrong in
+       one of two directions, and asking for a mailbox that is never opened is
+       the direction people notice and distrust. */
+    needs: String(raw.needs || ''),
     /* The instruction lives on the server with the job. Switching one on sends
        the id, and the runner uses the real prompt - which is why this does not
        invent one here and does not need to carry 525 of them in the page. */

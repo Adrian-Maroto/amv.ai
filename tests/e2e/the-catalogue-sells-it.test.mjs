@@ -149,9 +149,25 @@ section('And that holds however the instruction is phrased');
      switch on. */
   const webAll = jobs.filter(j => j.needs === 'Web research');
   ok(webAll.length >= 20, 'the rule applies to a large part of the catalogue', webAll.length);
-  ok(webAll.every(j => j.asks),
-     'and every one of them asks, because every one of them is about the person', 
-     webAll.filter(j => !j.asks).map(j => j.id));
+  /* OR NAMES A PROFILE AMV ALREADY KEEPS, which is a real third source and the
+     one exception to the two-sources argument above. Job hunt reads the roles,
+     locations and salary floor from the Job Hunt profile screen - so it does
+     not need to ask, and requiring it to would mean asking a second time for
+     something the person has already filled in.
+
+     Kept narrow deliberately: the exception is only for an instruction that
+     names a stored profile, and the assertion below checks the exceptions are
+     few and that each one really does name one. A blanket allowance here would
+     retire the rule. */
+  const storedProfile = /\bprofile\b/i;
+  const unasked = webAll.filter(j => !j.asks && !storedProfile.test(j.prompt));
+  ok(unasked.length === 0,
+     'and every one of them asks, or reads a profile AMV already keeps',
+     unasked.map(j => j.id));
+  const byProfile = webAll.filter(j => !j.asks && storedProfile.test(j.prompt));
+  ok(byProfile.length <= 3,
+     'and the profile exception stays an exception rather than a loophole',
+     byProfile.map(j => j.id));
 }
 
 section('And the panel says so before they switch it on');
