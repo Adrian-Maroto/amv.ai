@@ -50,29 +50,140 @@ const open = async () => {
   });
 };
 
-section('Ten of each category, with a way to see the rest');
+/* WHAT THIS SECTION USED TO HOLD, AND WHY IT CHANGED.
+
+   It asserted twenty-six rows of five tiles, each row having asked the
+   registry its own question on paint. That was the structure the owner asked
+   for and then asked to have taken away: "remove the things below the search
+   bar entirely", "none of the thing that it says now", "make it like chat
+   gpt", and - the reason - "the search bar is very laggy".
+
+   The lag and the rows were one defect. The search box was rendered inside the
+   node every registry answer replaced, so it was destroyed and rebuilt under
+   anybody typing into it, and its value came from a variable only written on
+   submit, so each rebuild dropped what had been typed. Twenty-six rows meant
+   that happened for several seconds on arrival.
+
+   The claims did not disappear, they moved. A topic still runs a real query,
+   still has a door, and its page still fills with tiles - measured below and
+   on the topic page rather than on a row. What is new and worth holding is
+   that the overview asks for NOTHING, because that is what makes the search
+   box usable and the page instant. */
+section('A topic is a door, and the page asks for nothing until one is opened');
 {
   await CONNECT('ok');
   await open();
   const r = await page.evaluate(() => ({
+    doors: document.querySelectorAll('.cdir-topic').length,
     rows: document.querySelectorAll('.cdir-row').length,
-    perRow: [...document.querySelectorAll('.cdir-row')].map(x => x.querySelectorAll('.cdir-tile').length),
-    /* Scoped to the registry rows. The hand-built sections above this list
-       carry doors too now, so an unscoped count is larger than the number of
-       rows and the comparison below stopped meaning anything. */
-    seeAll: document.querySelectorAll('.cdir-row [data-dact="cdirAll"]').length,
-    queries: window.__asked.map(a => a.q),
+    tiles: document.querySelectorAll('.cdir-tile').length,
+    /* Every door carries the query it really sends, so a heading cannot
+       promise a search it does not run. */
+    queries: [...document.querySelectorAll('.cdir-topic')].map(x => x.dataset.darg),
+    titles: [...document.querySelectorAll('.cdir-topic-t')].map(x => x.textContent.trim()),
+    asked: window.__asked.length,
+    find: !!document.getElementById('cdir-find'),
   }));
-  ok(r.rows >= 10, 'there are categories, not one long list', String(r.rows));
-  /* Five, not ten, and asked for in those terms: twenty categories at ten each
-     is two hundred tiles before anybody has decided anything. Five shows what a
-     category MEANS and the rest are behind the control at the end of the row. */
-  ok(r.perRow.every(n => n === 5), 'five in each of them', r.perRow.join(','));
-  ok(r.seeAll === r.rows, 'and every one has a way to see the rest', String(r.seeAll));
-  /* The row headings are not decoration: each one really asked the registry
-     its own question, which is what stops a row being a label over whatever
-     happened to come back first. */
-  ok(new Set(r.queries).size === r.rows, 'each row asked its own question', r.queries.join(','));
+  ok(r.doors >= 20, 'there are topics, not one long list', String(r.doors));
+  ok(r.rows === 0, 'and none of them is a row that loads on arrival', String(r.rows));
+  ok(r.tiles === 0, 'so nothing is drawn from the registry yet', String(r.tiles));
+  /* THE ASSERTION THE LAG WAS ABOUT. Twenty-six requests on paint, each answer
+     replacing the node the search box lived in, is the whole of what somebody
+     felt as a laggy search bar. Zero is the fix, and it is measurable. */
+  ok(r.asked === 0, 'the overview makes NO registry requests at all', String(r.asked));
+  ok(new Set(r.queries).size === r.doors, 'each door carries its own query', r.queries.join(','));
+  ok(r.queries.every(Boolean), 'and none of them is a heading with no search behind it', r.queries.join(','));
+  ok(r.titles.length === r.doors, 'each one is named', r.titles.slice(0, 4).join(','));
+  ok(r.find, 'and the search box is on the page', String(r.find));
+  /* EXACTLY ONE, and this assertion exists because of what happened when the
+     box was moved back inside `.cdir` to check that the survival test below
+     really bites. It did not bite - because the directory rendering one did
+     not REPLACE the view's, it added a second element with the same id, and
+     `getElementById` kept returning the one that survives. Two inputs sharing
+     an id is a defect on its own (a label points at one of them, and which one
+     is not defined), and it is the only way the test below can be fooled. */
+  const one = await page.evaluate(() => document.querySelectorAll('#cdir-find').length);
+  ok(one === 1, 'and there is exactly one of it, not one per section', String(one));
+}
+
+section('A registry answer does not reach into the box somebody is typing in');
+{
+  /* THE DEFECT, MEASURED AT ITS MECHANISM.
+
+     `_cdirPaint` is what every registry answer calls, and it replaces the
+     whole `.cdir` node. The input used to be inside that node, so each answer
+     destroyed the element being typed into and rebuilt it from `_cdirFind` -
+     a variable only written on submit - which put back the last SEARCHED term
+     and threw away the half-typed one, caret at the end. Twenty-six rows
+     answering on arrival meant that happened over and over for the first
+     several seconds of the page. That is what "the search bar is very laggy"
+     was.
+
+     Measured on a topic page, because that is where answers still land. The
+     first attempt at this provoked a NAVIGATION instead and failed honestly:
+     opening a different page rebuilds the page, which is correct and is not
+     the thing that was broken. */
+  await page.evaluate(async () => {
+    document.querySelector('[data-dact="cdirAll"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await new Promise(x => setTimeout(x, 900));
+  });
+  const r = await page.evaluate(async () => {
+    const f = document.getElementById('cdir-find');
+    if(!f) return { missing: true };
+    f.focus();
+    f.value = 'postgre';
+    f.dispatchEvent(new Event('input', { bubbles: true }));
+    f.setSelectionRange(4, 4);
+    const before = f;
+    const cdirBefore = document.querySelector('.cdir');
+    /* The exact call an arriving answer makes. */
+    _cdirPaint();
+    await new Promise(x => setTimeout(x, 400));
+    const after = document.getElementById('cdir-find');
+    return {
+      same: before === after,
+      swapped: cdirBefore !== document.querySelector('.cdir'),
+      value: after ? after.value : null,
+      caret: after ? after.selectionStart : -1,
+      focused: document.activeElement === after,
+    };
+  });
+  ok(!r.missing, 'the box is on a topic page too, so searching does not need going back first', JSON.stringify(r));
+  ok(r.swapped, 'the directory really did repaint, so this is not passing by doing nothing', String(r.swapped));
+  ok(r.same, 'and the very same input element survived it', String(r.same));
+  ok(r.value === 'postgre', 'holding what was typed', r.value);
+  ok(r.caret === 4, 'with the caret where it was left rather than thrown to the end', String(r.caret));
+  ok(r.focused, 'and it did not lose focus mid-word', String(r.focused));
+}
+
+section('A full re-render restores what was typed, not what was last submitted');
+{
+  /* The box is outside the directory now, which stops the repaints. This
+     screen is still rebuilt for other reasons - a connection added, the
+     bridge connecting, a language switch - and dropping a half-typed query to
+     any of those is the same defect in a different coat. `_cdirFind` tracks
+     every keystroke for this case. */
+  const r = await page.evaluate(async () => {
+    const f = document.getElementById('cdir-find');
+    f.value = 'figma';
+    f.dispatchEvent(new Event('input', { bubbles: true }));
+    renderIntegrationsView();
+    await new Promise(x => setTimeout(x, 300));
+    const after = document.getElementById('cdir-find');
+    return { rebuilt: after !== f, value: after ? after.value : null };
+  });
+  ok(r.rebuilt, 'the page really was rebuilt', String(r.rebuilt));
+  ok(r.value === 'figma', 'and the half-typed query came back with it', r.value);
+
+  /* Back to the overview with the box cleared, so the sections below start
+     where they expect to. */
+  await page.evaluate(async () => {
+    const f = document.getElementById('cdir-find');
+    if(f){ f.value = ''; f.dispatchEvent(new Event('input', { bubbles: true })); }
+    const b = document.querySelector('[data-dact="cdirBack"]');
+    if(b) b.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await new Promise(x => setTimeout(x, 500));
+  });
 }
 
 section('See all opens a page, not a longer scroll');
@@ -100,9 +211,9 @@ section('And the way back works');
   const r = await page.evaluate(async () => {
     document.querySelector('[data-dact="cdirBack"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await new Promise(x => setTimeout(x, 500));
-    return { rows: document.querySelectorAll('.cdir-row').length, full: !!document.querySelector('.cdir-full') };
+    return { doors: document.querySelectorAll('.cdir-topic').length, full: !!document.querySelector('.cdir-full') };
   });
-  ok(!r.full && r.rows >= 10, 'the categories are back', JSON.stringify(r));
+  ok(!r.full && r.doors >= 20, 'the topics are back', JSON.stringify(r));
 }
 
 section('A page somebody left is not where they are when they return');
@@ -123,6 +234,14 @@ section('A page somebody left is not where they are when they return');
 
 section('The panel names the command before anything is added');
 {
+  /* A TOPIC PAGE, BECAUSE THAT IS WHERE TILES LIVE NOW. The overview used to
+     carry five per row and this section reached for the first of them. It
+     draws nothing until a door is opened, which is the change, so the door is
+     opened. */
+  await page.evaluate(async () => {
+    document.querySelector('[data-dact="cdirAll"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await new Promise(x => setTimeout(x, 800));
+  });
   const r = await page.evaluate(async () => {
     document.querySelector('.cdir-tile').dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await new Promise(x => setTimeout(x, 400));
@@ -179,10 +298,23 @@ section('A directory that cannot be reached does not read as an empty one');
     for (const k in _cdirTried) delete _cdirTried[k];
   });
   await open();
+  /* ON A TOPIC PAGE, WHICH IS THE ONLY PLACE A REGISTRY FAILURE CAN SHOW.
+
+     This used to read the overview, where twenty-six rows each carried their
+     own error state. The overview asks for nothing now, so an unreachable
+     registry is invisible there - correctly, since nothing was attempted. The
+     claim itself is unchanged and still matters: when AMV DOES ask and cannot
+     get an answer, it must say so rather than showing an empty topic, because
+     those are different facts and one of them tells somebody this product
+     connects to nothing. */
+  await page.evaluate(async () => {
+    document.querySelector('[data-dact="cdirAll"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await new Promise(x => setTimeout(x, 2500));
+  });
   const r = await page.evaluate(() => {
     const t = document.querySelector('.cdir').textContent.replace(/\s+/g, ' ');
     return { tiles: document.querySelectorAll('.cdir-tile').length,
-             saysDown: /could not be loaded/i.test(t),
+             saysDown: /could not be reached|could not be loaded/i.test(t),
              saysEmpty: /Nothing in the directory matches/i.test(t),
              retry: document.querySelectorAll('[data-dact="cdirRetry"]').length };
   });
@@ -200,6 +332,12 @@ section('A deployment with no backend says that instead');
     for (const k in _cdirTried) delete _cdirTried[k];
   });
   await open();
+  /* Same reason as above: with no backend there is nothing to ask, so the
+     sentence belongs on the page that would have asked. */
+  await page.evaluate(async () => {
+    document.querySelector('[data-dact="cdirAll"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await new Promise(x => setTimeout(x, 700));
+  });
   const r = await page.evaluate(() => {
     const t = document.querySelector('.cdir').textContent.replace(/\s+/g, ' ');
     return { tiles: document.querySelectorAll('.cdir-tile').length,

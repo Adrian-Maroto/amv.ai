@@ -13085,3 +13085,63 @@ either joint - the caller, or the payload builder - now fails it.
 
 The test that would have caught this a year earlier is not a better unit test.
 It is a test placed at the seam instead of at the function.
+
+## 496. "The search bar is laggy" was the search bar being destroyed, not being slow
+
+The Connectors page had a search box, and typing into it felt broken. The
+obvious readings are all wrong: it was not a slow query, not a missing
+debounce, not a heavy re-render of the results.
+
+The box was rendered INSIDE the `.cdir` node, and `_cdirPaint` replaces that
+whole node every time a wave of registry answers lands. The page had twenty-six
+topic rows and every one of them fetched as it painted, so for the first
+several seconds of every visit the element being typed into was destroyed and
+rebuilt, over and over. Its `value` came from `_cdirFind`, which was written
+only when a search was SUBMITTED - so each rebuild restored the last searched
+term, dropped whatever had been typed since, and put the caret at the end.
+
+Nothing about that is latency. It is an input fighting the person using it, and
+every fix aimed at "slow" would have missed it entirely.
+
+THE SHAPE, and it is worth naming because it is not specific to search boxes: a
+component that re-renders its own subtree will destroy any uncontrolled state
+inside that subtree, and uncontrolled state includes the thing a person is
+halfway through typing, their selection, their scroll position and their focus.
+The question to ask of any live-updating region is not "is it fast" but "what
+does a person own inside it, and does a repaint take it away".
+
+Two changes, and only the first is the fix. The box moved OUT of the repainted
+node, which is also where the owner asked for it - first on the page. And
+`_cdirFind` now tracks every keystroke, so the re-renders this screen still has
+for other reasons (a connection added, the bridge connecting, a language
+switch) put back what was typed rather than what was last submitted.
+
+The test that holds it does not measure time. It types, calls `_cdirPaint`
+directly - the exact call an arriving answer makes - and asserts the SAME
+element object is still there, with the same value, the same caret and the
+focus. The first version of that test provoked a navigation instead and failed
+honestly: opening a different page rebuilds the page, which is correct and is
+not the thing that was broken.
+
+## 497. Deleting the eager loader exposed a branch that had never been reachable
+
+The topic page's states read: off, error, loading-and-empty, empty, filled.
+`idle` - the state before anything has been asked - fell through to `empty`,
+whose sentence is "Nothing in the directory matches that."
+
+It had never been seen, because the overview's rows fetched on paint, so by the
+time anybody pressed See more the query was already `done`. Removing the rows
+made the topic page the first thing that asks, `idle` became the state it opens
+in, and the first thing on the screen became AMV telling somebody the registry
+has nothing for Email a moment before filling with email connectors.
+
+An unasked question has no answer, and the default branch in a state machine
+must not be the one that makes a claim. The row renderer that was deleted had
+this right - it tested `idle || loading` - and the page it linked to never did.
+A correct branch in the component being removed is not a reason to assume the
+one being kept shares it.
+
+It was caught by a suite watching for that exact sentence from the first frame
+after a door opens, which is the only way to see it: on a fast connection the
+wrong claim is on screen for one blink, which is precisely the kind of defect
+somebody reports as "it flashed something weird" and nobody can reproduce.

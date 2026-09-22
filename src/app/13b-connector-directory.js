@@ -1,8 +1,21 @@
 /* ══════════════════════════════════════════════════════════════════════════
    THE CONNECTOR DIRECTORY.
 
-   Asked for: far more things AMV can connect to, from everywhere, ten of each
-   category on the screen and a full page of a thousand behind a See more.
+   Asked for, most recently: search bar, then the connectors AMV has built by
+   hand, then a door per topic with about a hundred behind each. Like a plugin
+   store, and nothing else in between.
+
+   WHAT THIS PAGE USED TO DO, because the change is a deletion and deletions
+   need their reason written down. Twenty-six topic rows, each firing its own
+   registry request as it painted, each answer replacing the whole section -
+   so arriving here meant a hundred and thirty skeletons filling in over
+   several seconds, the rate limit refusing some of the rows (which read as
+   those topics being broken), and the search box being destroyed and rebuilt
+   under anybody typing into it. The owner's words were "remove the things
+   below the search bar entirely" and "the search bar is very laggy".
+
+   The rows are gone. A topic is a heading and a way in, nothing is fetched
+   until somebody picks one, and the page paints once with no network at all.
 
    Nine thousand of them are real and none of them are written down here. The
    Worker reads the official MCP registry - twenty thousand registered servers,
@@ -20,8 +33,9 @@
 
    A CATEGORY IS A SEARCH, NOT A TAXONOMY. The registry publishes no
    categories, so inventing one per server would mean guessing nine thousand
-   times. Each row runs a real query and shows what genuinely comes back, which
-   is why a row can be short and why an empty one says so rather than hiding.
+   times. Each door runs a real query and its page shows what genuinely comes
+   back, which is why a topic can be short and why an empty one says so rather
+   than hiding.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* The rows, in reading order. The query is what the row really asks the
@@ -69,10 +83,6 @@ const CDIR_CATS = [
   ['iot',      'Devices & IoT',          'iot'],
   ['testing',  'Testing & QA',           'testing'],
 ];
-/* FIVE on the overview, not ten. Twenty categories at ten each is two hundred
-   tiles before you have decided anything, which is a directory that reads as a
-   wall. Five is enough to show what a category MEANS; the rest are one click
-   away and there are far more of them there than a scrolling row could hold. */
 /* TOPICS THE HAND-BUILT SECTIONS ABOVE ALREADY COVER.
 
    The page listed "Developer" and then "Developer tools", and "Productivity"
@@ -85,11 +95,27 @@ const CDIR_CATS = [
    is a list of QUERIES rather than titles, because the query is what would
    actually be duplicated - two headings running the same search is the defect,
    and two different headings that happen to read similarly is not. */
-const CDIR_COVERED = ['developer', 'productivity', 'messaging', 'email'];
+/* `finance` joins them: there is a hand-built Bank & money section now, with
+   AMV's own bank link in it and a door running exactly this query. */
+const CDIR_COVERED = ['developer', 'productivity', 'messaging', 'email', 'finance'];
+/* The default `want` for a load nobody sized. Nothing asks for a handful any
+   more - the rows that did are gone - so this is a floor rather than a
+   layout, and it is small because the only caller that would hit it is one
+   that forgot to say. */
 const CDIR_ROW_N = 5;
-/* Under the server's own per-request ceiling, so a page is one round trip.
-   More arrive on the same page as you go. */
-const CDIR_PAGE_N = 48;
+/* ABOUT A HUNDRED BEHIND EACH DOOR, IN TWO ROUND TRIPS RATHER THAN ONE BIG ONE.
+
+   "See all xyz connectors ... with like 100 each."
+
+   The server answers at most fifty (`MCPREG_MAX`), and that ceiling is not a
+   number to raise for a copy decision: one request there can cause six reads
+   of somebody else's registry and the route needs no account, which is the
+   combination worth hammering. So the page asks twice - fifty, then fifty
+   more as soon as the first lands - and `Load more` carries on from there.
+   Two requests from one person browsing is nothing; a fifty-to-a-hundred
+   change in what a stranger can pull per request is not. */
+const CDIR_PAGE_N = 50;
+const CDIR_PAGE_TARGET = 100;
 
 /* query -> { state, servers, cursor, err }. One entry per query rather than per
    row, so a row and the full page behind it share the fetch instead of asking
@@ -252,7 +278,13 @@ function _cdirPaint(){
         const box = document.createElement('div');
         box.innerHTML = connectorDirectoryHTML();
         const next = box.firstElementChild;
-        if(next){ cur.replaceWith(next); _cdirWireFind(); return; }
+        /* NO RE-WIRING HERE ANY MORE. The search box used to live inside this
+           node, so a swap destroyed its listeners and they had to be put back.
+           It lives outside now - which is the whole point - and calling
+           `_cdirWireFind` from here would attach a SECOND Enter handler to the
+           surviving input on every repaint, so one press would run the search
+           twice, then three times, then four. */
+        if(next){ cur.replaceWith(next); return; }
       }
       if(typeof renderIntegrationsView === 'function') renderIntegrationsView();
     }catch(e){}
@@ -263,7 +295,18 @@ function _cdirPaint(){
 function _cdirWireFind(){
   try{
     const f = $('cdir-find');
-    if(f) on(f, 'keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); cdirSearch(); } });
+    if(!f) return;
+    on(f, 'keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); cdirSearch(); } });
+    /* WHAT WAS TYPED, NOT WHAT WAS LAST SUBMITTED.
+
+       `_cdirFind` used to be written only by `cdirSearch`, and the input's
+       value is rendered from it - so any re-render put back the last SEARCHED
+       term and threw away whatever was half-typed. The box now lives outside
+       the node the directory repaints, which is the real fix, but this screen
+       is re-rendered for other reasons too (a connection added, the bridge
+       connecting, a language switch) and losing somebody's half-typed query
+       to any of them is the same defect wearing a different hat. */
+    on(f, 'input', () => { try{ _cdirFind = String(f.value || ''); }catch(_e){} });
   }catch(e){}
 }
 try{ window._cdirWireFind = _cdirWireFind; }catch(e){}
@@ -338,80 +381,122 @@ function _cdirTile(s){
   + '</button>';
 }
 
-function _cdirRowHTML(cat){
-  const [key, title, q] = cat;
-  const st = _cdirGet(q);
-  try{ setTimeout(() => _cdirLoad(q, CDIR_ROW_N), 0); }catch(e){}
-  let body;
-  if(st.state === 'off')
-    body = '<p class="cdir-note">' + escH(T('The directory is read from AMV’s servers, and this copy is not connected to one.')) + '</p>';
-  else if(st.state === 'error')
-    body = '<p class="cdir-note">' + escH(T('This could not be loaded')) + (st.err ? ' (' + escH(st.err) + ')' : '')
-         + '. <button class="mc-sec-link" data-dact="cdirRetry" data-darg="' + escH(q) + '">' + escH(T('Try again')) + '</button></p>';
-  else if(st.state === 'idle' || (st.state === 'loading' && !st.servers.length))
-    body = '<div class="cdir-grid" aria-busy="true">'
-         + new Array(4).fill('<span class="cdir-skel skl"></span>').join('') + '</div>';
-  else if(!st.servers.length)
-    body = '<p class="cdir-note">' + escH(T('Nothing in the directory matches this yet.')) + '</p>';
-  else
-    body = '<div class="cdir-grid">' + st.servers.slice(0, CDIR_ROW_N).map(_cdirTile).join('') + '</div>';
+/* ── THE SEARCH BOX, AND WHY IT IS NOT IN THIS SECTION ANY MORE ─────────────
 
-  /* The way out of a row sits at the END of it. It used to be in the heading,
-     which is where a designer puts it and not where a person looks for it: you
-     read the five, you want more of THOSE, and the control was back up at the
-     top past the thing you just read. Asked for in as many words - a see more
-     after the five, before the next category starts. */
-  const more = (st.state === 'done' || st.state === 'loading') && st.servers.length
-    ? '<div class="cdir-row-more">'
-      + '<button class="cdir-more" data-dact="cdirAll" data-darg="' + escH(q) + '">'
-        + escH(T('See all')) + ' ' + escH(String(title).replace(/&/g, 'and').toLowerCase()) + ' '
-        + escH(T('connectors')) + ' →</button>'
-    + '</div>'
-    : '';
-  return '<section class="cdir-row ss2" data-cdir-row="' + escH(key) + '">'
-    + '<h3>' + escH(title) + '</h3>'
-    + body
-    + more
-  + '</section>';
+   "The search bar is very laggy so make sure that works."
+
+   It was not lag. The input was rendered INSIDE `.cdir`, and `_cdirPaint`
+   replaces that whole node every time a wave of registry answers lands - so
+   the element somebody was typing into was destroyed and rebuilt underneath
+   them, repeatedly, for the first several seconds of the page. Its `value`
+   came from `_cdirFind`, which is only written when a search is SUBMITTED, so
+   each rebuild reset the box to the last searched term and dropped whatever
+   had been typed since. The caret went to the end of whatever was left.
+
+   That is not a slow search box, it is a search box fighting the person using
+   it, and no amount of debouncing would have touched it. Two changes, and the
+   first is the one that matters:
+
+     1. IT LIVES OUTSIDE `.cdir` NOW, at the top of the page, which is also
+        where it was asked to be. Nothing the directory repaints can reach it.
+     2. `_cdirFind` tracks every keystroke, so a repaint of the WHOLE page -
+        which other things can still cause - restores what was typed rather
+        than the last thing submitted.
+
+   Rendered by the view rather than by this function, because a node this one
+   does not own is a node it cannot accidentally replace. */
+function cdirSearchBarHTML(){
+  return '<div class="cdir-find-wrap">'
+    + '<input id="cdir-find" class="cw-find" type="search" autocomplete="off" value="' + escH(_cdirFind) + '"'
+      + ' placeholder="' + escH(T('Search every connector - slack, postgres, stripe, figma…')) + '">'
+    + '<button class="btn bs cdir-find-go" data-dact="cdirSearch">' + escH(T('Search')) + '</button>'
+  + '</div>';
 }
 
-/* The overview: every row, ten each. */
 function connectorDirectoryHTML(){
   if(_cdirOpen) return _cdirFullHTML();
-  /* NO "EVERYTHING AMV CAN CONNECT TO" HEADING.
+  /* ── A DOOR PER TOPIC, AND NOT TWENTY-SIX LIVE ROWS ───────────────────────
 
-     It was asked for twice. The objection is right and it is not about
-     wording: one lump at the bottom of the page called "everything" put nine
-     thousand things behind a word that describes none of them, and separated
-     them from the topic sections above where somebody is actually looking. A
-     person wanting a mail connector reads "Email and calendar" and stops
-     there.
+     "Remove the things below the search bar entirely. None of the thing that
+     it says now."
 
-     So these rows are topic sections like the hand-built ones above them -
-     same shape, same heading weight, each with its own door - and the list
-     simply continues. What is left at the top is the search, because knowing
-     the name of the thing you want is the one case a topic cannot serve. */
+     What was there: twenty-six sections, each firing its own registry request
+     on paint, each answer replacing the whole node, so the page arrived as
+     a hundred and thirty skeletons that filled in over several seconds while
+     the search box was destroyed and rebuilt under whoever was typing into
+     it. It also read as a wall - two hundred tiles before anybody had decided
+     anything - and the rate limit refused some of the rows outright, which
+     looked like those topics being broken.
+
+     What is there now: the topic, and the way in. Nothing is fetched until
+     somebody picks one, so the page paints once, immediately, with no network
+     at all - and the See all page behind each door holds far more than a
+     scrolling row ever did.
+
+     THE CURATED SECTIONS KEEP THEIR OWN DOORS. `CDIR_COVERED` still drops a
+     topic AMV has hand-built rows for, because those sections already end in
+     a See all running the same query - two doors to one search is the defect
+     this list exists to prevent. */
+  const doors = CDIR_CATS.filter(c => CDIR_COVERED.indexOf(c[2]) < 0);
   return '<section class="cdir">'
-    + '<div class="cdir-find-wrap">'
-      + '<input id="cdir-find" class="cw-find" type="search" autocomplete="off" value="' + escH(_cdirFind) + '"'
-        + ' placeholder="' + escH(T('Search every connector - slack, postgres, stripe, figma…')) + '">'
-      + '<button class="btn bs cdir-find-go" data-dact="cdirSearch">' + escH(T('Search')) + '</button>'
+    + '<div class="sec-head"><h3>' + escH(T('Everything else, by topic')) + '</h3>'
+      + '<span class="sec-sub">' + escH(T('Thousands more, read live from the open registry. Each one runs on the computer you connect, and AMV drives it.')) + '</span></div>'
+    + '<div class="cdir-topics">'
+      + doors.map(c => '<button class="cdir-topic" data-dact="cdirAll" data-darg="' + escH(c[2]) + '">'
+          + '<span class="cdir-topic-t">' + escH(c[1]) + '</span>'
+          + '<span class="cdir-topic-a" aria-hidden="true">' + escH(T('See all')) + ' →</span>'
+        + '</button>').join('')
     + '</div>'
-    + CDIR_CATS.filter(c => CDIR_COVERED.indexOf(c[2]) < 0).map(_cdirRowHTML).join('')
   + '</section>';
 }
 
 function _cdirFullHTML(){
   const q = _cdirOpen.q;
   const st = _cdirGet(q);
-  try{ setTimeout(() => _cdirLoad(q, CDIR_PAGE_N), 0); }catch(e){}
+  /* FIFTY, THEN FIFTY MORE. The second ask fires once the first has landed
+     and only while the registry still has a cursor to carry on from - so a
+     topic with thirty entries makes one request and says that is everything,
+     rather than asking again for a page it has already been told does not
+     exist. See CDIR_PAGE_TARGET for why this is two trips and not one. */
+  const _second = () => {
+    const s = _cdirGet(q);
+    if(s.state === 'done' && s.cursor && s.servers.length < CDIR_PAGE_TARGET)
+      _cdirLoad(q, CDIR_PAGE_TARGET);
+  };
+  try{
+    setTimeout(() => {
+      /* Chained, not called in the same tick: `_cdirLoad` queues behind a
+         parallelism gate, so reading the state straight after it would read
+         the state before the answer. It also returns early - already loading,
+         already enough, already asked - and in those cases the `then` runs
+         immediately and `_second` correctly does nothing, because the repaint
+         that follows the real answer brings us back through here. */
+      Promise.resolve(_cdirLoad(q, CDIR_PAGE_N)).then(_second, () => {});
+    }, 0);
+  }catch(e){}
   let body;
   if(st.state === 'off')
     body = '<p class="cdir-note">' + escH(T('The directory is read from AMV’s servers, and this copy is not connected to one.')) + '</p>';
   else if(st.state === 'error' && !st.servers.length)
     body = '<p class="cdir-note">' + escH(T('The directory could not be reached')) + (st.err ? ' (' + escH(st.err) + ')' : '')
          + '. <button class="mc-sec-link" data-dact="cdirRetry" data-darg="' + escH(q) + '">' + escH(T('Try again')) + '</button></p>';
-  else if(!st.servers.length && st.state === 'loading')
+  /* `idle` COUNTS AS LOADING, AND LEAVING IT OUT WAS A REAL DEFECT.
+
+     A question that has not been asked yet has no answer, and the branch below
+     says "nothing in the directory matches that" - so a topic page rendered
+     before its first request had gone out told somebody the registry has
+     nothing for Email, a moment before filling with email connectors.
+
+     It was unreachable while the overview carried rows: by the time anybody
+     pressed See more, the row had already fetched and the state was `done`.
+     Removing the rows made the topic page the first thing that asks, so
+     `idle` became the state it opens in, and the wrong sentence became the
+     first thing on the screen. The row renderer that was deleted had this
+     right - `st.state === 'idle' || (st.state === 'loading' && ...)` - and
+     the full page never did.
+
+     Found by a suite watching for that sentence while a topic page opened. */
+  else if(!st.servers.length && (st.state === 'loading' || st.state === 'idle'))
     body = '<div class="cdir-grid" aria-busy="true">'
          + new Array(9).fill('<span class="cdir-skel skl"></span>').join('') + '</div>';
   else if(!st.servers.length)
@@ -559,4 +644,5 @@ function cdirSearch(){
 }
 try{ window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdirOpen=cdirOpen; window.cdirAll=cdirAll; window.cdirBack=cdirBack;
      window.cdirRetry=cdirRetry; window.cdirMore=cdirMore; window.cdirSearch=cdirSearch;
-     window.connectorDirectoryHTML=connectorDirectoryHTML; window.CDIR_CATS=CDIR_CATS; }catch(e){}
+     window.connectorDirectoryHTML=connectorDirectoryHTML; window.cdirSearchBarHTML=cdirSearchBarHTML;
+     window.CDIR_CATS=CDIR_CATS; window.CDIR_COVERED=CDIR_COVERED; }catch(e){}

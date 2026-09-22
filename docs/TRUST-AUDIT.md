@@ -526,3 +526,65 @@ catalogue entry, so cutting either joint fails it.
   explicitly so a model holding rich bank data does not treat "credit" as
   covered by it, and the job's own prompt says to say so. The job remains one
   AMV cannot really do, and that is a product decision rather than a test gap.
+
+## Round eight - the Connectors page, rebuilt
+
+Not a security round. What is being attacked is whether the page tells the
+truth about what it has and has not done, and whether the claims that were
+removed with the topic rows were actually re-established somewhere rather than
+quietly dropped.
+
+Seven mutations, all seven caught.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 32 | the search box moved back inside the repainted node | 4 position assertions, plus element identity across a repaint |
+| 33 | the box rendered in BOTH places (two `#cdir-find`) | "there is exactly one of it, not one per section" |
+| 34 | `idle` falls through to "nothing matches" again | 2 assertions, one sampling from the first frame |
+| 35 | the second page fetch dropped | "holding about a hundred" and the round-trip count |
+| 36 | the overview starts fetching on paint again | "makes no registry request at all" |
+| 37 | the bank row reverts to a plain `use` shape | "no Connect or Disconnect this page could not carry out" |
+| 38 | the Bank & money door runs `ecommerce` instead of `finance` | "no query has both a hand-built door and a registry door" |
+
+Two of those were live defects rather than confirmations.
+
+**#33 is a note about how a mutation can lie.** The first attempt at putting the
+search box back inside `.cdir` did not fail anything - because it did not MOVE
+the element, it added a second one with the same id, and `getElementById` kept
+returning the surviving one. The mutation looked like it proved the test was
+worthless; it actually proved the test was measuring something the mutation had
+not changed. The fix was to assert there is exactly one, which is a real
+constraint on its own (two inputs sharing an id is undefined behaviour for any
+label pointing at it) and is the only way that mutation can be made faithful.
+
+**#34 was a real bug and removing the rows is what exposed it.** See LESSONS
+497. A branch that had never been reachable became the state the page opens in.
+
+### What was deliberately NOT done
+
+- **`MCPREG_MAX` stayed at 50.** "About a hundred each" is met with two round
+  trips rather than by raising the per-request ceiling. That ceiling is not a
+  layout number: the route needs no account and one request there can cause six
+  reads of somebody else's registry, so doubling what a stranger can pull per
+  request to satisfy a copy decision would be trading an abuse bound for a
+  round trip. Two requests from one person browsing is nothing.
+- **The bank link was not reimplemented on this page.** It is a hosted sign-in
+  with a pre-opened window, a user activation that must not be spent on an
+  await, and a returning step on a replaced node. The row navigates to the one
+  implementation instead. A second copy of a money flow is two things to keep
+  correct and one of them will rot.
+
+### Still unmeasured, this round
+
+- **The concurrency gate is no longer exercised by the product.** `CDIR_PARALLEL`
+  and the queue behind it were built because thirty rows asking at once tripped
+  the route's own rate limit. Nothing now issues more than two requests at a
+  time, so the gate is live code on a path that cannot saturate it. It is kept
+  because `Load more` and rapid topic switching still queue through it, and the
+  suite still asserts nothing exceeds four in flight - but that assertion can no
+  longer fail for the reason it was written.
+- **No real registry is called.** The provider is stubbed at the route, so what
+  is proven is what AMV sends, how many times, and what it does with the answer.
+  Whether a given topic word finds things in the live registry is not something
+  a suite here can hold, and the module's own rule - a heading is only allowed
+  if its query finds things - still rests on somebody having checked.

@@ -31016,7 +31016,21 @@ function _integrationsCatalogHTML(){
        its entry point was removed with an old toolbar and the function was left
        behind, reachable by nothing. Connecting it here means the run control
        lives next to the connection it depends on. */
-    const action=connected
+    /* A ROW WHOSE CONNECTING HAPPENS SOMEWHERE ELSE.
+
+       Every other row here either connects in place through the connected-
+       accounts framework (`auto`) or is a thing you hand files to (`use`). The
+       bank is neither: it is autonomous - the schedule really does read it -
+       and its link is a hosted sign-in that already exists, once, in the
+       investing pane. `goto` is how a row says "this is real, it is
+       autonomous, and the button takes you to where it is done", rather than
+       forcing a choice between the wrong badge and a second copy of a money
+       flow. It also means a CONNECTED bank offers Manage rather than a
+       Disconnect this page could not carry out. */
+    const action=o.goto
+      ? '<button class="btn '+(connected?'':'bp')+'" data-int-use="'+escH(o.goto)+'" style="font-size:var(--t-sm)">'
+          +escH(connected ? (o.manageLabel||'Manage') : (o.useLabel||'Set up'))+'</button>'
+      : connected
       ? ((o.run?'<button class="btn bp" data-int-run="'+o.run+'" style="font-size:var(--t-sm)">'+escH(o.runLabel||'Run')+'</button>':'')+
          '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:var(--t-sm)">Disconnect</button>')
       : (o.auto
@@ -31190,7 +31204,35 @@ function _integrationsCatalogHTML(){
       intRow({id:'excel',name:'Excel & CSV',desc:'Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',auto:false,connected:false,icon:'\uD83D\uDCCA',bg:'rgba(33,115,70,.14)'})+
       intRow({id:'pptx',name:'PowerPoint',desc:'Describe a deck and AMV builds the slides - export the .pptx.',auto:false,connected:false,icon:'\uD83D\uDCD1',bg:'rgba(198,67,30,.14)'})+
       intRow({id:'word',name:'Word',desc:'Reports, proposals and letters - written and exported, ready to edit.',auto:false,connected:false,icon:'\uD83D\uDCC4',bg:'rgba(0,120,212,.14)'})
-    , 'documents');
+    , 'documents')+
+    /* \u2500\u2500 BANK & MONEY, WHICH THIS PAGE HAS NEVER MENTIONED \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+       "So email, see all for email. Then bank account. See all for bank
+       account."
+
+       A bank account is one of the most consequential things AMV connects to
+       and there was no row for it anywhere on the Connectors page. It was
+       linked from Spending and nowhere else, so somebody looking through
+       "everything AMV can work inside" would not have found it - and five
+       Crew jobs plus the money leak detector now read from it.
+
+       CONNECT GOES TO SPENDING, IT DOES NOT LINK FROM HERE. The link is a
+       hosted sign-in at the institution with a pre-opened window, a user
+       activation that must not be spent on an await, and a returning "I have
+       finished linking" step on a replaced node. Writing a second copy of
+       that on this page would be two implementations of a money flow, and
+       whichever one somebody forgets to fix is the one that breaks. There is
+       one, it lives in the investing pane, and this row takes you to it. */
+    cat('Bank &amp; money',
+      intRow({id:'bank',name:'Bank account',
+        desc:'Real balances and real transactions, read-only. The sign-in happens on your bank\u2019s own page - AMV never sees your password and cannot move money. Morning money summary, unusual charges, low balance warnings and the money leak detector all read from this.',
+        auto:true,
+        /* Through the accessor, so this row and every other screen answer the
+           same question from the same record. */
+        connected:(function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })(),
+        goto:'bank', useLabel:'Link in Spending', manageLabel:'Manage in Spending',
+        icon:'\uD83C\uDFE6',bg:'rgba(45,120,90,.16)'})
+    , 'finance');
 }
 window._integrationsCatalogHTML=_integrationsCatalogHTML;
 
@@ -31298,6 +31340,16 @@ function _wireIntegrationCatalog(root){
     if(btn.dataset.intUse==='calfeeds' && typeof openCalendarFeeds==='function') return openCalendarFeeds();
     if(btn.dataset.intUse==='coverage' && typeof openCoverage==='function') return openCoverage();
     if(btn.dataset.intUse==='everyday' && typeof openEveryday==='function') return openEveryday();
+    /* The bank, and it needs its own line because the fall-through below
+       tells people to upload a file - which is the right sentence for Excel
+       and a baffling one for a bank account. Named rather than folded in,
+       because the whole point of sending them to Spending is that the link
+       happens there and they should know that before they arrive. */
+    if(btn.dataset.intUse==='bank'){
+      try{ setTab('spend'); }catch(e){}
+      try{ toast('Linking a bank happens here, on your bank\u2019s own sign-in page. AMV never sees your password.','info',6000); }catch(e){}
+      return;
+    }
     setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
 }
 window._wireIntegrationCatalog=_wireIntegrationCatalog;
@@ -31582,11 +31634,14 @@ function renderIntegrationsView(){
      with more of it somewhere below. What was asked for was a page, and a page
      is a screen with one thing on it and a way back. */
   if(typeof _cdirOpenNow === 'function' && _cdirOpenNow()){
-    vc.innerHTML = '<div class="sv fi"><div class="vi vi-conn">' + connectorDirectoryHTML() + '</div></div>';
-    try{
-      const f=$('cdir-find');
-      if(f) on(f,'keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cdirSearch(); } });
-    }catch(e){}
+    /* The search comes with you. A topic page with no way to search from it
+       meant going back to the overview first, which is two steps to do the one
+       thing this screen exists for - and it is also where somebody lands after
+       searching, so the box they just used would have vanished. */
+    vc.innerHTML = '<div class="sv fi"><div class="vi vi-conn">'
+      + ((typeof cdirSearchBarHTML === 'function') ? cdirSearchBarHTML() : '')
+      + connectorDirectoryHTML() + '</div></div>';
+    try{ _cdirWireFind&&_cdirWireFind(); }catch(e){}
     return;
   }
   vc.innerHTML=
@@ -31604,6 +31659,16 @@ function renderIntegrationsView(){
       '<span class="eyebrow">Connectors</span>'+
       '<h2>Everything AMV can work inside</h2>'+
       '<p class="vsub">Connect an account once and AMV can work inside it. A connection is a real sign-in at the provider - AMV never sees your password, only a grant limited to what you allow, and you can take it back at any time.</p>'+
+      /* THE SEARCH FIRST, AND OUTSIDE THE DIRECTORY.
+
+         Asked for in that order - "it has to be search bar, then the main
+         ones" - and it is also the fix for "the search bar is very laggy".
+         It used to be rendered by connectorDirectoryHTML, inside the `.cdir`
+         node that `_cdirPaint` replaces wholesale, so the element somebody was
+         typing into was destroyed and rebuilt under them while the topic rows
+         filled in. Up here it belongs to this view, and nothing the directory
+         repaints can reach it. See cdirSearchBarHTML. */
+      ((typeof cdirSearchBarHTML === 'function') ? cdirSearchBarHTML() : '')+
       _connSectionHTML()+
       /* THE SETUP, FOLDED AWAY UNTIL IT IS WANTED.
 
@@ -31638,11 +31703,10 @@ function renderIntegrationsView(){
     if(d) on(d,'toggle',()=>{ _connMachineOpen = !!d.open; });
   }catch(e){}
   /* Enter searches, because a search box that only responds to a button is a
-     search box somebody presses Enter on and thinks is broken. */
-  try{
-    const f=$('cdir-find');
-    if(f) on(f,'keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cdirSearch(); } });
-  }catch(e){}
+     search box somebody presses Enter on and thinks is broken. Through the
+     directory's own wiring, so the keystroke listener and the one that keeps
+     the typed value are attached in one place rather than two. */
+  try{ _cdirWireFind&&_cdirWireFind(); }catch(e){}
   try{ _killTokenAutofill&&_killTokenAutofill(); }catch(e){}
 }
 window.renderIntegrationsView=renderIntegrationsView;
@@ -32500,8 +32564,21 @@ window.openEveryday = openEveryday;
 /* ══════════════════════════════════════════════════════════════════════════
    THE CONNECTOR DIRECTORY.
 
-   Asked for: far more things AMV can connect to, from everywhere, ten of each
-   category on the screen and a full page of a thousand behind a See more.
+   Asked for, most recently: search bar, then the connectors AMV has built by
+   hand, then a door per topic with about a hundred behind each. Like a plugin
+   store, and nothing else in between.
+
+   WHAT THIS PAGE USED TO DO, because the change is a deletion and deletions
+   need their reason written down. Twenty-six topic rows, each firing its own
+   registry request as it painted, each answer replacing the whole section -
+   so arriving here meant a hundred and thirty skeletons filling in over
+   several seconds, the rate limit refusing some of the rows (which read as
+   those topics being broken), and the search box being destroyed and rebuilt
+   under anybody typing into it. The owner's words were "remove the things
+   below the search bar entirely" and "the search bar is very laggy".
+
+   The rows are gone. A topic is a heading and a way in, nothing is fetched
+   until somebody picks one, and the page paints once with no network at all.
 
    Nine thousand of them are real and none of them are written down here. The
    Worker reads the official MCP registry - twenty thousand registered servers,
@@ -32519,8 +32596,9 @@ window.openEveryday = openEveryday;
 
    A CATEGORY IS A SEARCH, NOT A TAXONOMY. The registry publishes no
    categories, so inventing one per server would mean guessing nine thousand
-   times. Each row runs a real query and shows what genuinely comes back, which
-   is why a row can be short and why an empty one says so rather than hiding.
+   times. Each door runs a real query and its page shows what genuinely comes
+   back, which is why a topic can be short and why an empty one says so rather
+   than hiding.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* The rows, in reading order. The query is what the row really asks the
@@ -32568,10 +32646,6 @@ const CDIR_CATS = [
   ['iot',      'Devices & IoT',          'iot'],
   ['testing',  'Testing & QA',           'testing'],
 ];
-/* FIVE on the overview, not ten. Twenty categories at ten each is two hundred
-   tiles before you have decided anything, which is a directory that reads as a
-   wall. Five is enough to show what a category MEANS; the rest are one click
-   away and there are far more of them there than a scrolling row could hold. */
 /* TOPICS THE HAND-BUILT SECTIONS ABOVE ALREADY COVER.
 
    The page listed "Developer" and then "Developer tools", and "Productivity"
@@ -32584,11 +32658,27 @@ const CDIR_CATS = [
    is a list of QUERIES rather than titles, because the query is what would
    actually be duplicated - two headings running the same search is the defect,
    and two different headings that happen to read similarly is not. */
-const CDIR_COVERED = ['developer', 'productivity', 'messaging', 'email'];
+/* `finance` joins them: there is a hand-built Bank & money section now, with
+   AMV's own bank link in it and a door running exactly this query. */
+const CDIR_COVERED = ['developer', 'productivity', 'messaging', 'email', 'finance'];
+/* The default `want` for a load nobody sized. Nothing asks for a handful any
+   more - the rows that did are gone - so this is a floor rather than a
+   layout, and it is small because the only caller that would hit it is one
+   that forgot to say. */
 const CDIR_ROW_N = 5;
-/* Under the server's own per-request ceiling, so a page is one round trip.
-   More arrive on the same page as you go. */
-const CDIR_PAGE_N = 48;
+/* ABOUT A HUNDRED BEHIND EACH DOOR, IN TWO ROUND TRIPS RATHER THAN ONE BIG ONE.
+
+   "See all xyz connectors ... with like 100 each."
+
+   The server answers at most fifty (`MCPREG_MAX`), and that ceiling is not a
+   number to raise for a copy decision: one request there can cause six reads
+   of somebody else's registry and the route needs no account, which is the
+   combination worth hammering. So the page asks twice - fifty, then fifty
+   more as soon as the first lands - and `Load more` carries on from there.
+   Two requests from one person browsing is nothing; a fifty-to-a-hundred
+   change in what a stranger can pull per request is not. */
+const CDIR_PAGE_N = 50;
+const CDIR_PAGE_TARGET = 100;
 
 /* query -> { state, servers, cursor, err }. One entry per query rather than per
    row, so a row and the full page behind it share the fetch instead of asking
@@ -32751,7 +32841,13 @@ function _cdirPaint(){
         const box = document.createElement('div');
         box.innerHTML = connectorDirectoryHTML();
         const next = box.firstElementChild;
-        if(next){ cur.replaceWith(next); _cdirWireFind(); return; }
+        /* NO RE-WIRING HERE ANY MORE. The search box used to live inside this
+           node, so a swap destroyed its listeners and they had to be put back.
+           It lives outside now - which is the whole point - and calling
+           `_cdirWireFind` from here would attach a SECOND Enter handler to the
+           surviving input on every repaint, so one press would run the search
+           twice, then three times, then four. */
+        if(next){ cur.replaceWith(next); return; }
       }
       if(typeof renderIntegrationsView === 'function') renderIntegrationsView();
     }catch(e){}
@@ -32762,7 +32858,18 @@ function _cdirPaint(){
 function _cdirWireFind(){
   try{
     const f = $('cdir-find');
-    if(f) on(f, 'keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); cdirSearch(); } });
+    if(!f) return;
+    on(f, 'keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); cdirSearch(); } });
+    /* WHAT WAS TYPED, NOT WHAT WAS LAST SUBMITTED.
+
+       `_cdirFind` used to be written only by `cdirSearch`, and the input's
+       value is rendered from it - so any re-render put back the last SEARCHED
+       term and threw away whatever was half-typed. The box now lives outside
+       the node the directory repaints, which is the real fix, but this screen
+       is re-rendered for other reasons too (a connection added, the bridge
+       connecting, a language switch) and losing somebody's half-typed query
+       to any of them is the same defect wearing a different hat. */
+    on(f, 'input', () => { try{ _cdirFind = String(f.value || ''); }catch(_e){} });
   }catch(e){}
 }
 try{ window._cdirWireFind = _cdirWireFind; }catch(e){}
@@ -32837,80 +32944,122 @@ function _cdirTile(s){
   + '</button>';
 }
 
-function _cdirRowHTML(cat){
-  const [key, title, q] = cat;
-  const st = _cdirGet(q);
-  try{ setTimeout(() => _cdirLoad(q, CDIR_ROW_N), 0); }catch(e){}
-  let body;
-  if(st.state === 'off')
-    body = '<p class="cdir-note">' + escH(T('The directory is read from AMV’s servers, and this copy is not connected to one.')) + '</p>';
-  else if(st.state === 'error')
-    body = '<p class="cdir-note">' + escH(T('This could not be loaded')) + (st.err ? ' (' + escH(st.err) + ')' : '')
-         + '. <button class="mc-sec-link" data-dact="cdirRetry" data-darg="' + escH(q) + '">' + escH(T('Try again')) + '</button></p>';
-  else if(st.state === 'idle' || (st.state === 'loading' && !st.servers.length))
-    body = '<div class="cdir-grid" aria-busy="true">'
-         + new Array(4).fill('<span class="cdir-skel skl"></span>').join('') + '</div>';
-  else if(!st.servers.length)
-    body = '<p class="cdir-note">' + escH(T('Nothing in the directory matches this yet.')) + '</p>';
-  else
-    body = '<div class="cdir-grid">' + st.servers.slice(0, CDIR_ROW_N).map(_cdirTile).join('') + '</div>';
+/* ── THE SEARCH BOX, AND WHY IT IS NOT IN THIS SECTION ANY MORE ─────────────
 
-  /* The way out of a row sits at the END of it. It used to be in the heading,
-     which is where a designer puts it and not where a person looks for it: you
-     read the five, you want more of THOSE, and the control was back up at the
-     top past the thing you just read. Asked for in as many words - a see more
-     after the five, before the next category starts. */
-  const more = (st.state === 'done' || st.state === 'loading') && st.servers.length
-    ? '<div class="cdir-row-more">'
-      + '<button class="cdir-more" data-dact="cdirAll" data-darg="' + escH(q) + '">'
-        + escH(T('See all')) + ' ' + escH(String(title).replace(/&/g, 'and').toLowerCase()) + ' '
-        + escH(T('connectors')) + ' →</button>'
-    + '</div>'
-    : '';
-  return '<section class="cdir-row ss2" data-cdir-row="' + escH(key) + '">'
-    + '<h3>' + escH(title) + '</h3>'
-    + body
-    + more
-  + '</section>';
+   "The search bar is very laggy so make sure that works."
+
+   It was not lag. The input was rendered INSIDE `.cdir`, and `_cdirPaint`
+   replaces that whole node every time a wave of registry answers lands - so
+   the element somebody was typing into was destroyed and rebuilt underneath
+   them, repeatedly, for the first several seconds of the page. Its `value`
+   came from `_cdirFind`, which is only written when a search is SUBMITTED, so
+   each rebuild reset the box to the last searched term and dropped whatever
+   had been typed since. The caret went to the end of whatever was left.
+
+   That is not a slow search box, it is a search box fighting the person using
+   it, and no amount of debouncing would have touched it. Two changes, and the
+   first is the one that matters:
+
+     1. IT LIVES OUTSIDE `.cdir` NOW, at the top of the page, which is also
+        where it was asked to be. Nothing the directory repaints can reach it.
+     2. `_cdirFind` tracks every keystroke, so a repaint of the WHOLE page -
+        which other things can still cause - restores what was typed rather
+        than the last thing submitted.
+
+   Rendered by the view rather than by this function, because a node this one
+   does not own is a node it cannot accidentally replace. */
+function cdirSearchBarHTML(){
+  return '<div class="cdir-find-wrap">'
+    + '<input id="cdir-find" class="cw-find" type="search" autocomplete="off" value="' + escH(_cdirFind) + '"'
+      + ' placeholder="' + escH(T('Search every connector - slack, postgres, stripe, figma…')) + '">'
+    + '<button class="btn bs cdir-find-go" data-dact="cdirSearch">' + escH(T('Search')) + '</button>'
+  + '</div>';
 }
 
-/* The overview: every row, ten each. */
 function connectorDirectoryHTML(){
   if(_cdirOpen) return _cdirFullHTML();
-  /* NO "EVERYTHING AMV CAN CONNECT TO" HEADING.
+  /* ── A DOOR PER TOPIC, AND NOT TWENTY-SIX LIVE ROWS ───────────────────────
 
-     It was asked for twice. The objection is right and it is not about
-     wording: one lump at the bottom of the page called "everything" put nine
-     thousand things behind a word that describes none of them, and separated
-     them from the topic sections above where somebody is actually looking. A
-     person wanting a mail connector reads "Email and calendar" and stops
-     there.
+     "Remove the things below the search bar entirely. None of the thing that
+     it says now."
 
-     So these rows are topic sections like the hand-built ones above them -
-     same shape, same heading weight, each with its own door - and the list
-     simply continues. What is left at the top is the search, because knowing
-     the name of the thing you want is the one case a topic cannot serve. */
+     What was there: twenty-six sections, each firing its own registry request
+     on paint, each answer replacing the whole node, so the page arrived as
+     a hundred and thirty skeletons that filled in over several seconds while
+     the search box was destroyed and rebuilt under whoever was typing into
+     it. It also read as a wall - two hundred tiles before anybody had decided
+     anything - and the rate limit refused some of the rows outright, which
+     looked like those topics being broken.
+
+     What is there now: the topic, and the way in. Nothing is fetched until
+     somebody picks one, so the page paints once, immediately, with no network
+     at all - and the See all page behind each door holds far more than a
+     scrolling row ever did.
+
+     THE CURATED SECTIONS KEEP THEIR OWN DOORS. `CDIR_COVERED` still drops a
+     topic AMV has hand-built rows for, because those sections already end in
+     a See all running the same query - two doors to one search is the defect
+     this list exists to prevent. */
+  const doors = CDIR_CATS.filter(c => CDIR_COVERED.indexOf(c[2]) < 0);
   return '<section class="cdir">'
-    + '<div class="cdir-find-wrap">'
-      + '<input id="cdir-find" class="cw-find" type="search" autocomplete="off" value="' + escH(_cdirFind) + '"'
-        + ' placeholder="' + escH(T('Search every connector - slack, postgres, stripe, figma…')) + '">'
-      + '<button class="btn bs cdir-find-go" data-dact="cdirSearch">' + escH(T('Search')) + '</button>'
+    + '<div class="sec-head"><h3>' + escH(T('Everything else, by topic')) + '</h3>'
+      + '<span class="sec-sub">' + escH(T('Thousands more, read live from the open registry. Each one runs on the computer you connect, and AMV drives it.')) + '</span></div>'
+    + '<div class="cdir-topics">'
+      + doors.map(c => '<button class="cdir-topic" data-dact="cdirAll" data-darg="' + escH(c[2]) + '">'
+          + '<span class="cdir-topic-t">' + escH(c[1]) + '</span>'
+          + '<span class="cdir-topic-a" aria-hidden="true">' + escH(T('See all')) + ' →</span>'
+        + '</button>').join('')
     + '</div>'
-    + CDIR_CATS.filter(c => CDIR_COVERED.indexOf(c[2]) < 0).map(_cdirRowHTML).join('')
   + '</section>';
 }
 
 function _cdirFullHTML(){
   const q = _cdirOpen.q;
   const st = _cdirGet(q);
-  try{ setTimeout(() => _cdirLoad(q, CDIR_PAGE_N), 0); }catch(e){}
+  /* FIFTY, THEN FIFTY MORE. The second ask fires once the first has landed
+     and only while the registry still has a cursor to carry on from - so a
+     topic with thirty entries makes one request and says that is everything,
+     rather than asking again for a page it has already been told does not
+     exist. See CDIR_PAGE_TARGET for why this is two trips and not one. */
+  const _second = () => {
+    const s = _cdirGet(q);
+    if(s.state === 'done' && s.cursor && s.servers.length < CDIR_PAGE_TARGET)
+      _cdirLoad(q, CDIR_PAGE_TARGET);
+  };
+  try{
+    setTimeout(() => {
+      /* Chained, not called in the same tick: `_cdirLoad` queues behind a
+         parallelism gate, so reading the state straight after it would read
+         the state before the answer. It also returns early - already loading,
+         already enough, already asked - and in those cases the `then` runs
+         immediately and `_second` correctly does nothing, because the repaint
+         that follows the real answer brings us back through here. */
+      Promise.resolve(_cdirLoad(q, CDIR_PAGE_N)).then(_second, () => {});
+    }, 0);
+  }catch(e){}
   let body;
   if(st.state === 'off')
     body = '<p class="cdir-note">' + escH(T('The directory is read from AMV’s servers, and this copy is not connected to one.')) + '</p>';
   else if(st.state === 'error' && !st.servers.length)
     body = '<p class="cdir-note">' + escH(T('The directory could not be reached')) + (st.err ? ' (' + escH(st.err) + ')' : '')
          + '. <button class="mc-sec-link" data-dact="cdirRetry" data-darg="' + escH(q) + '">' + escH(T('Try again')) + '</button></p>';
-  else if(!st.servers.length && st.state === 'loading')
+  /* `idle` COUNTS AS LOADING, AND LEAVING IT OUT WAS A REAL DEFECT.
+
+     A question that has not been asked yet has no answer, and the branch below
+     says "nothing in the directory matches that" - so a topic page rendered
+     before its first request had gone out told somebody the registry has
+     nothing for Email, a moment before filling with email connectors.
+
+     It was unreachable while the overview carried rows: by the time anybody
+     pressed See more, the row had already fetched and the state was `done`.
+     Removing the rows made the topic page the first thing that asks, so
+     `idle` became the state it opens in, and the wrong sentence became the
+     first thing on the screen. The row renderer that was deleted had this
+     right - `st.state === 'idle' || (st.state === 'loading' && ...)` - and
+     the full page never did.
+
+     Found by a suite watching for that sentence while a topic page opened. */
+  else if(!st.servers.length && (st.state === 'loading' || st.state === 'idle'))
     body = '<div class="cdir-grid" aria-busy="true">'
          + new Array(9).fill('<span class="cdir-skel skl"></span>').join('') + '</div>';
   else if(!st.servers.length)
@@ -33058,7 +33207,8 @@ function cdirSearch(){
 }
 try{ window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdirOpen=cdirOpen; window.cdirAll=cdirAll; window.cdirBack=cdirBack;
      window.cdirRetry=cdirRetry; window.cdirMore=cdirMore; window.cdirSearch=cdirSearch;
-     window.connectorDirectoryHTML=connectorDirectoryHTML; window.CDIR_CATS=CDIR_CATS; }catch(e){}
+     window.connectorDirectoryHTML=connectorDirectoryHTML; window.cdirSearchBarHTML=cdirSearchBarHTML;
+     window.CDIR_CATS=CDIR_CATS; window.CDIR_COVERED=CDIR_COVERED; }catch(e){}
 /* ============================================================
    AMV ENGINE - real working backbone for the dev/agent tools
    aiComplete(): single-shot AI text. runCode(): real execution.

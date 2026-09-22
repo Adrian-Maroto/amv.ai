@@ -625,7 +625,21 @@ function _integrationsCatalogHTML(){
        its entry point was removed with an old toolbar and the function was left
        behind, reachable by nothing. Connecting it here means the run control
        lives next to the connection it depends on. */
-    const action=connected
+    /* A ROW WHOSE CONNECTING HAPPENS SOMEWHERE ELSE.
+
+       Every other row here either connects in place through the connected-
+       accounts framework (`auto`) or is a thing you hand files to (`use`). The
+       bank is neither: it is autonomous - the schedule really does read it -
+       and its link is a hosted sign-in that already exists, once, in the
+       investing pane. `goto` is how a row says "this is real, it is
+       autonomous, and the button takes you to where it is done", rather than
+       forcing a choice between the wrong badge and a second copy of a money
+       flow. It also means a CONNECTED bank offers Manage rather than a
+       Disconnect this page could not carry out. */
+    const action=o.goto
+      ? '<button class="btn '+(connected?'':'bp')+'" data-int-use="'+escH(o.goto)+'" style="font-size:var(--t-sm)">'
+          +escH(connected ? (o.manageLabel||'Manage') : (o.useLabel||'Set up'))+'</button>'
+      : connected
       ? ((o.run?'<button class="btn bp" data-int-run="'+o.run+'" style="font-size:var(--t-sm)">'+escH(o.runLabel||'Run')+'</button>':'')+
          '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:var(--t-sm)">Disconnect</button>')
       : (o.auto
@@ -799,7 +813,35 @@ function _integrationsCatalogHTML(){
       intRow({id:'excel',name:'Excel & CSV',desc:'Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',auto:false,connected:false,icon:'\uD83D\uDCCA',bg:'rgba(33,115,70,.14)'})+
       intRow({id:'pptx',name:'PowerPoint',desc:'Describe a deck and AMV builds the slides - export the .pptx.',auto:false,connected:false,icon:'\uD83D\uDCD1',bg:'rgba(198,67,30,.14)'})+
       intRow({id:'word',name:'Word',desc:'Reports, proposals and letters - written and exported, ready to edit.',auto:false,connected:false,icon:'\uD83D\uDCC4',bg:'rgba(0,120,212,.14)'})
-    , 'documents');
+    , 'documents')+
+    /* \u2500\u2500 BANK & MONEY, WHICH THIS PAGE HAS NEVER MENTIONED \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+       "So email, see all for email. Then bank account. See all for bank
+       account."
+
+       A bank account is one of the most consequential things AMV connects to
+       and there was no row for it anywhere on the Connectors page. It was
+       linked from Spending and nowhere else, so somebody looking through
+       "everything AMV can work inside" would not have found it - and five
+       Crew jobs plus the money leak detector now read from it.
+
+       CONNECT GOES TO SPENDING, IT DOES NOT LINK FROM HERE. The link is a
+       hosted sign-in at the institution with a pre-opened window, a user
+       activation that must not be spent on an await, and a returning "I have
+       finished linking" step on a replaced node. Writing a second copy of
+       that on this page would be two implementations of a money flow, and
+       whichever one somebody forgets to fix is the one that breaks. There is
+       one, it lives in the investing pane, and this row takes you to it. */
+    cat('Bank &amp; money',
+      intRow({id:'bank',name:'Bank account',
+        desc:'Real balances and real transactions, read-only. The sign-in happens on your bank\u2019s own page - AMV never sees your password and cannot move money. Morning money summary, unusual charges, low balance warnings and the money leak detector all read from this.',
+        auto:true,
+        /* Through the accessor, so this row and every other screen answer the
+           same question from the same record. */
+        connected:(function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })(),
+        goto:'bank', useLabel:'Link in Spending', manageLabel:'Manage in Spending',
+        icon:'\uD83C\uDFE6',bg:'rgba(45,120,90,.16)'})
+    , 'finance');
 }
 window._integrationsCatalogHTML=_integrationsCatalogHTML;
 
@@ -907,6 +949,16 @@ function _wireIntegrationCatalog(root){
     if(btn.dataset.intUse==='calfeeds' && typeof openCalendarFeeds==='function') return openCalendarFeeds();
     if(btn.dataset.intUse==='coverage' && typeof openCoverage==='function') return openCoverage();
     if(btn.dataset.intUse==='everyday' && typeof openEveryday==='function') return openEveryday();
+    /* The bank, and it needs its own line because the fall-through below
+       tells people to upload a file - which is the right sentence for Excel
+       and a baffling one for a bank account. Named rather than folded in,
+       because the whole point of sending them to Spending is that the link
+       happens there and they should know that before they arrive. */
+    if(btn.dataset.intUse==='bank'){
+      try{ setTab('spend'); }catch(e){}
+      try{ toast('Linking a bank happens here, on your bank\u2019s own sign-in page. AMV never sees your password.','info',6000); }catch(e){}
+      return;
+    }
     setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
 }
 window._wireIntegrationCatalog=_wireIntegrationCatalog;
@@ -1191,11 +1243,14 @@ function renderIntegrationsView(){
      with more of it somewhere below. What was asked for was a page, and a page
      is a screen with one thing on it and a way back. */
   if(typeof _cdirOpenNow === 'function' && _cdirOpenNow()){
-    vc.innerHTML = '<div class="sv fi"><div class="vi vi-conn">' + connectorDirectoryHTML() + '</div></div>';
-    try{
-      const f=$('cdir-find');
-      if(f) on(f,'keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cdirSearch(); } });
-    }catch(e){}
+    /* The search comes with you. A topic page with no way to search from it
+       meant going back to the overview first, which is two steps to do the one
+       thing this screen exists for - and it is also where somebody lands after
+       searching, so the box they just used would have vanished. */
+    vc.innerHTML = '<div class="sv fi"><div class="vi vi-conn">'
+      + ((typeof cdirSearchBarHTML === 'function') ? cdirSearchBarHTML() : '')
+      + connectorDirectoryHTML() + '</div></div>';
+    try{ _cdirWireFind&&_cdirWireFind(); }catch(e){}
     return;
   }
   vc.innerHTML=
@@ -1213,6 +1268,16 @@ function renderIntegrationsView(){
       '<span class="eyebrow">Connectors</span>'+
       '<h2>Everything AMV can work inside</h2>'+
       '<p class="vsub">Connect an account once and AMV can work inside it. A connection is a real sign-in at the provider - AMV never sees your password, only a grant limited to what you allow, and you can take it back at any time.</p>'+
+      /* THE SEARCH FIRST, AND OUTSIDE THE DIRECTORY.
+
+         Asked for in that order - "it has to be search bar, then the main
+         ones" - and it is also the fix for "the search bar is very laggy".
+         It used to be rendered by connectorDirectoryHTML, inside the `.cdir`
+         node that `_cdirPaint` replaces wholesale, so the element somebody was
+         typing into was destroyed and rebuilt under them while the topic rows
+         filled in. Up here it belongs to this view, and nothing the directory
+         repaints can reach it. See cdirSearchBarHTML. */
+      ((typeof cdirSearchBarHTML === 'function') ? cdirSearchBarHTML() : '')+
       _connSectionHTML()+
       /* THE SETUP, FOLDED AWAY UNTIL IT IS WANTED.
 
@@ -1247,11 +1312,10 @@ function renderIntegrationsView(){
     if(d) on(d,'toggle',()=>{ _connMachineOpen = !!d.open; });
   }catch(e){}
   /* Enter searches, because a search box that only responds to a button is a
-     search box somebody presses Enter on and thinks is broken. */
-  try{
-    const f=$('cdir-find');
-    if(f) on(f,'keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); cdirSearch(); } });
-  }catch(e){}
+     search box somebody presses Enter on and thinks is broken. Through the
+     directory's own wiring, so the keystroke listener and the one that keeps
+     the typed value are attached in one place rather than two. */
+  try{ _cdirWireFind&&_cdirWireFind(); }catch(e){}
   try{ _killTokenAutofill&&_killTokenAutofill(); }catch(e){}
 }
 window.renderIntegrationsView=renderIntegrationsView;

@@ -13162,9 +13162,6 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .cdir{ margin-top:var(--sp-2); }
 .cdir-find-wrap{ display:flex; gap:var(--sp-3); align-items:center; flex-wrap:wrap; margin:var(--sp-4) 0 var(--sp-6); }
 .cdir-find-wrap .cw-find{ flex:1 1 320px; max-width:none; }
-.cdir-row{ margin-bottom:var(--sp-6); }
-.cdir-row-h{ display:flex; align-items:baseline; justify-content:space-between; gap:var(--sp-3); margin-bottom:var(--sp-3); }
-.cdir-row-h h3{ margin:0; font-size:var(--t-md); font-weight:640; color:var(--tx); letter-spacing:-.2px; }
 .cdir-more{
   border:none; background:none; padding:0; cursor:pointer; font-family:inherit;
   font-size:var(--t-sm); font-weight:600; color:var(--accent-txt); white-space:nowrap;
@@ -13480,48 +13477,18 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    LAYER A208 - the way out of a category, at the end of the category
    ====================================================================== */
 
-/* The control that opens the rest of a category used to live in its heading.
-   It moved to the end of the row, which is where somebody is when they have
-   read the five and want more of them, so it needs a shape down there: a full
-   width line rather than a small link floating under a grid, and a rule above
-   it so it reads as the close of this category and not the start of the next.
+/* THE ROWS THIS LAYER STYLED ARE GONE.
 
-   `--bdl` rather than `--bd` for the same reason A207 uses it: this line has a
-   job, which is to say one category ended. */
-.cdir-row-more{
-  margin-top:var(--sp-3);
-  padding-top:var(--sp-3);
-  border-top:1px solid var(--bd);
-  display:flex;
-  justify-content:flex-start;
-}
-.cdir-row-more .cdir-more{
-  display:inline-flex;
-  align-items:center;
-  gap:var(--sp-2);
-  padding:var(--sp-2) var(--sp-3);
-  border:1px solid var(--bd);
-  border-radius:var(--r-pill);
-  background:var(--s1);
-  color:var(--mu);
-  font-family:var(--fn);
-  font-size:var(--t-sm);
-  font-weight:540;
-  cursor:pointer;
-  transition:background .15s var(--ease), color .15s var(--ease), border-color .15s var(--ease);
-}
-.cdir-row-more .cdir-more:hover{
-  background:var(--s2);
-  color:var(--tx);
-  border-color:var(--bdl);
-}
-.cdir-row-more .cdir-more:focus-visible{
-  outline:2px solid var(--accent);
-  outline-offset:2px;
-}
-/* Rows are separated by their own closing line now, so the section below does
-   not need a second one stacked on top of it. */
-.cdir-row + .cdir-row{ border-top:none; }
+   A208 gave each category row a full-width closing line with the way into the
+   rest of that category sitting on it. The rows were removed when the page
+   became a search box, the hand-built connectors, and a door per topic - so
+   every selector here addressed markup nothing renders, which is a stylesheet
+   growing on every visitor's download to describe a screen that no longer
+   exists. The shape it argued for survives on `.int-seeall`, which is the same
+   idea on the sections that still have rows.
+
+   `.cdir-more` itself is NOT dead and is not touched: the curated sections'
+   doors still use it, and it is styled at its base rule further up. */
 
 /* ======================================================================
    LAYER A209 - billing, with the apologies and the sales pitch taken out
@@ -15434,4 +15401,69 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   /* Never on its own line on a phone by accident, and never glued to the
      label on a wide one. It wraps as part of the sentence it belongs to. */
   font-size:var(--t-sm);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LAYER A251 - a topic is a door, not a row that loads
+
+   What this replaces: twenty-six sections, each with a heading, five tiles
+   and a See-all under them, every one firing its own registry request as it
+   painted. The owner's words were "remove the things below the search bar
+   entirely" and "the search bar is very laggy", and those are one sentence:
+   the box being typed into was inside the node all that repainting replaced.
+
+   So the topics are now a grid of doors. Each is a button, wide enough to
+   read as a target and quiet enough that twenty-six of them do not read as a
+   wall - which is exactly what two hundred tiles did. Nothing here loads,
+   so there is no skeleton state, no error state and no row that can arrive
+   broken; the page paints once, immediately, with no network at all.
+
+   Two columns on a wide screen, one on a phone. Not auto-fill: a topic is a
+   sentence of two or three words and four narrow columns of them read as a
+   tag cloud rather than a list of places to go.
+   ═══════════════════════════════════════════════════════════════════════ */
+#vc .cdir-topics{
+  display:grid;
+  grid-template-columns:repeat(2, minmax(0, 1fr));
+  gap:var(--sp-2);
+  margin-top:var(--sp-4);
+}
+#vc .cdir-topic{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--sp-3);
+  /* Comfortably over the 44px this product measures every control against -
+     every-control-is-big-enough-to-hit reads the RENDERED size at 390x844,
+     so a door that fits on a desktop and not on a phone fails there. */
+  min-height:52px;
+  width:100%;
+  padding:var(--sp-3) var(--sp-4);
+  background:var(--s2);
+  border:1px solid var(--bd);
+  border-radius:var(--r-md);
+  color:var(--tx);
+  font:inherit;
+  font-size:var(--t-md);
+  text-align:left;
+  cursor:pointer;
+  transition:background .14s var(--ease), border-color .14s var(--ease);
+}
+#vc .cdir-topic:hover{ background:var(--s3); border-color:var(--bdl); }
+#vc .cdir-topic:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+#vc .cdir-topic-t{ font-weight:600; }
+/* The affordance, and it is muted on purpose. Twenty-six accent-coloured
+   "See all" labels is a screen with twenty-six things shouting on it. */
+#vc .cdir-topic-a{
+  color:var(--mu);
+  font-size:var(--t-sm);
+  white-space:nowrap;
+  flex-shrink:0;
+}
+#vc .cdir-topic:hover .cdir-topic-a{ color:var(--accent); }
+@media (max-width:640px){
+  #vc .cdir-topics{ grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion:reduce){
+  #vc .cdir-topic{ transition:none; }
 }

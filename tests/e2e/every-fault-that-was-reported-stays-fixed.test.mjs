@@ -386,9 +386,20 @@ section('9. The round after that one');
   ok(bill.fineIsBlock === 'block', 'the fine print sits under the button, not beside it',
      bill.fineIsBlock);
 
-  /* Integrations: five per category across twenty categories, and the way into
-     the rest of a category at the END of it, which is where somebody is when
-     they have read the five. */
+  /* Integrations: a door per topic, and nothing fetched until one is opened.
+
+     WHAT THIS BLOCK USED TO CHECK, since the requirement was replaced rather
+     than met: five tiles per topic across twenty-six topics, with the way into
+     the rest at the END of each row. That was asked for, built, and then asked
+     to be taken away - "remove the things below the search bar entirely",
+     "none of the thing that it says now" - because the rows each fired their
+     own registry request as they painted, which buried the page in skeletons,
+     tripped the route's own rate limit, and repainted the node the search box
+     lived in while somebody was typing into it.
+
+     The claim that survives is about the topic list: every topic is named,
+     carries the query it really runs, and is a way in. The claim about tiles
+     moved to the page behind the door, where the tiles now are. */
   const dir = await page.evaluate(async () => {
     AMV_API.connectors = async (o) => {
       await new Promise(r => setTimeout(r, 60));
@@ -409,25 +420,46 @@ section('9. The round after that one');
       Object.keys(_cdirTried).forEach(k => delete _cdirTried[k]);
     } catch (e) {}
     setTab('integrations'); await new Promise(r => setTimeout(r, 2600));
-    const rows = [...document.querySelectorAll('.cdir-row')];
-    return { cats: rows.length,
-             perRow: rows.map(r => r.querySelectorAll('.cdir-grid > *').length),
-             moreLast: rows.filter(r => r.lastElementChild
-                        && r.lastElementChild.classList.contains('cdir-row-more')).length };
+    const doors = [...document.querySelectorAll('.cdir-topic')];
+    const overview = { cats: doors.length,
+      queries: doors.map(d => d.dataset.darg),
+      named: doors.filter(d => (d.querySelector('.cdir-topic-t') || {}).textContent).length,
+      tiles: document.querySelectorAll('.cdir-tile').length,
+      rows: document.querySelectorAll('.cdir-row').length };
+    /* And then behind one of them, which is where the tiles went. */
+    doors[0].click();
+    await new Promise(r => setTimeout(r, 900));
+    return Object.assign(overview, {
+      full: !!document.querySelector('.cdir-full'),
+      behind: document.querySelectorAll('.cdir-full .cdir-tile').length });
   });
   /* Thirty now, and the number is worth keeping exact rather than loosening to
      a minimum. The reported fault was fifteen where twenty were asked for, and
      an assertion that only checks "enough" cannot notice the next time rows go
      missing - which is precisely how that fault arrived. It moves when the
      catalogue is deliberately grown, and that is the point. */
-  ok(dir.cats === 26, 'twenty-six registry categories, not fifteen', String(dir.cats));
-  /* Not `n === 0 || n <= 5`, which was the first version and passes when every
-     row is EMPTY - it went green against a directory that had fetched nothing.
-     Rows must actually be full, and full means five. */
-  ok(dir.perRow.length === 26 && dir.perRow.every(n => n === 5),
-     'five in a category, not ten', dir.perRow.join(','));
-  ok(dir.moreLast === dir.cats, 'and the way to the rest is at the end of each one',
-     dir.moreLast + ' of ' + dir.cats);
+  /* TWENTY-FIVE, and the number is worth keeping exact rather than loosening
+     to a minimum. The reported fault was fifteen where twenty were asked for,
+     and an assertion that only checks "enough" cannot notice the next time
+     topics go missing - which is precisely how that fault arrived. It moved
+     from twenty-six to twenty-five when `finance` gained a hand-built section
+     of its own, and it moves again when the catalogue is deliberately grown.
+     That is the point of pinning it. */
+  ok(dir.cats === 25, 'twenty-five registry topics, not fifteen', String(dir.cats));
+  ok(dir.named === dir.cats, 'every one of them is named', dir.named + ' of ' + dir.cats);
+  ok(dir.queries.every(Boolean) && new Set(dir.queries).size === dir.cats,
+     'and carries its own query, so no heading promises a search it does not run',
+     dir.queries.join(','));
+  /* THE LAG, AS AN ASSERTION. Nothing is drawn from the registry on the
+     overview, which means nothing was asked for, which is why the search box
+     is usable and the page is instant. */
+  ok(dir.tiles === 0 && dir.rows === 0, 'and nothing is fetched or drawn until a door is opened',
+     dir.tiles + ' tiles / ' + dir.rows + ' rows');
+  /* Not `>= 0`, which would pass against a page that fetched nothing - the
+     mistake the old version of this block records. The tiles have to really
+     be there, behind the door. */
+  ok(dir.full && dir.behind > 5,
+     'and behind one there are far more than the five a row used to show', String(dir.behind));
 
   /* The connector note. A paragraph of warning gets read as boilerplate and
      skipped; the facts it spelled out are on the panel as facts. What is left
