@@ -298,7 +298,24 @@ section('A capability asked for cannot conjure access that was not granted');
 section('What could not be read is said, not swallowed');
 {
   const ctx = fn('_autoAccountContext');
-  ok(/missing\.push/.test(ctx), 'a capability that failed is recorded');
+  /* ANCHORED ON THE CLAIM, NOT ON THE SPELLING.
+
+     This read `/missing\.push/` and broke the day the push became
+     `(optional ? soft : missing).push(...)` - the required list is still
+     recorded, by the same name, in the same function, and the assertion said
+     otherwise. That is the known limit of a test that reads source: it can
+     only say a line is PRESENT, so anchoring it on an exact expression makes
+     every honest refactor look like a removal.
+
+     The BEHAVIOUR behind this claim is measured directly in
+     a-receipt-is-what-they-said-a-debit-is-what-left, which drives the runner
+     with the provider refused and asserts `acct.missing` names the capability.
+     What is worth reading out of the source here is the weaker, structural
+     claim: the list is written to, and required and optional are two lists
+     rather than one. */
+  ok(/\bmissing\b[^\n]*\.push\(/.test(ctx), 'a capability that failed is recorded');
+  ok(/\bsoft\b[^\n]*\.push\(|optional \? soft : missing/.test(ctx),
+     'and an OPTIONAL source that failed is recorded separately, so a job that improves on it is not reported as broken');
   ok(/autonomy_paused|not_connected|refresh_failed/.test(ctx),
      'with the reason, because the fix differs for each');
   const exec = fn('_autoExecute');

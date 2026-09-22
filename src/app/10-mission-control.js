@@ -737,10 +737,17 @@ const CW_NEEDS_CHECK = {
      function down. `_cwConnHas` routes `bank.read` to this accessor now, so
      both questions land on the record that actually holds the token.
 
-     `cap` is declared so this row is shaped like the others: where a deployment
-     registers a provider that grants `bank.read`, `_cwReadyLine` names it
-     instead of saying "a bank connection". */
-  'Bank connection': { label:'a bank connection', cap:'bank.read',
+     AND STILL NO `cap` ON THIS ROW. One was added here for uniformity and it
+     broke the thing the comment above `_cwMissingNeeds` exists to protect:
+     that function keys on `cap` to mean "a connector could supply this", so
+     declaring one sent a bank job to `openCrewConnect`, a screen whose only
+     honest answer for a bank is "there is nothing to connect". A bank is
+     linked from the Spending pane through the aggregator's own hosted flow;
+     there is no OAuth provider to offer for it and no button that screen could
+     draw. `crew-jobs` caught it, which is the second half of the rule this
+     repository already has written down: a comment saying "this is safe
+     because X" is a test plan, so go and test X. */
+  'Bank connection': { label:'a bank connection',
     has:()=>{ try{ return _cwConnHas('bank.read'); }catch(e){ return false; } } },
 };
 /* _cwHasGoogle STOOD HERE AND ANSWERED THE WRONG QUESTION FOR A LONG TIME.

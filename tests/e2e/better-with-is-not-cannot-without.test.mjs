@@ -249,6 +249,37 @@ section('What leaves the browser carries the boost');
   ok(sent[0].srcId === 'money_leaks', 'against the catalogue entry it came from', sent[0].srcId);
 }
 
+section('A bank is not an OAuth grant, and must not be offered as one');
+{
+  /* A REGRESSION THIS WORK SHIPPED AND `crew-jobs` CAUGHT.
+
+     `cap` was added to the 'Bank connection' row so it would look like its
+     neighbours. `_cwMissingNeeds` keys on exactly that field to mean "a
+     connector could supply this", so the row acquiring one sent every bank job
+     to `openCrewConnect` - a screen that can offer a provider sign-in and has
+     no provider to offer for a bank, so its only honest answer was "there is
+     nothing to connect". The sentence it replaced was true and better.
+
+     The comment above `_cwMissingNeeds` said all of this already. Asserted
+     here rather than left as prose, because a comment explaining why something
+     is safe is a test plan somebody has to actually run. */
+  await grant([]);
+  await bank(false);
+  const r = await page.evaluate(() => {
+    const row = CW_NEEDS_CHECK['Bank connection'];
+    const j = (_cwAllJobs() || []).find(x => x.id === 'money_morning');
+    return { cap: row.cap, has: row.has(), offerable: _cwMissingNeeds(j).map(x => x.need),
+             missing: _cwNeedsMissing(j) };
+  });
+  ok(!r.cap, 'the row declares no capability a connector screen could act on', String(r.cap));
+  ok(r.has === false, 'while still answering "is one linked" correctly', String(r.has));
+  ok(r.offerable.length === 0,
+     'so a bank job is never routed to a connect screen with nothing on it', JSON.stringify(r.offerable));
+  ok(r.missing.length === 1 && /bank/i.test(r.missing[0]),
+     'and the requirement is still reported, by name, in the sentence that can actually say it',
+     JSON.stringify(r.missing));
+}
+
 section('The description no longer claims a statement it cannot read');
 {
   const r = await page.evaluate(() => {
