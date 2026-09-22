@@ -744,3 +744,58 @@ known action.
   legitimate construction, because the map parameter over `tools` is also named
   `t`. A pattern that cannot tell the right construction from the wrong one is
   not a check. It was replaced with a count of assignments, which can.
+
+## Round twelve - signing out gives up the keys too
+
+AMV-AUD-002. `_wipeAccountState` reset a lot of state - recents, the Dev
+project, Lab code, memory, the verified plan, the renewal date, the admin
+figures - and every one of those belongs to a SCREEN. What it did not touch was
+a different kind of thing: live authorities that never consult `S.user`, and so
+kept working after the user was gone.
+
+An administrator token that `isAdmin()` reads instead of the user. A bridge
+token and its stored pairing, which is shell access to a computer. Connector
+credentials in sessionStorage. A granted `FileSystemDirectoryHandle` - read-write
+access to a real folder - plus the files already read out of it.
+
+Alice signs out, Bob signs in on the same browser, and the tab holds Alice's
+administrator token, her machine, her connectors' credentials and her folder,
+while the screen says nobody is signed in. The shared machine is the ordinary
+case here, not an exotic one.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 47 | the administrator token is not cleared | 2 assertions |
+| 48 | the bridge is not disconnected | 2 assertions |
+| 49 | connector credentials are left in sessionStorage | 3 assertions |
+| 50 | the folder handle is kept | 3 assertions |
+
+Each holder is cleared in its own `try`, and the suite asserts that property
+directly: with the first clear made to throw, the bridge token, the connector
+credentials and the folder handle still go. A single `try` around all of them
+would clear whatever came before the throw and leave the rest, and the order
+that survives is arbitrary - which means the dangerous ones can be the
+survivors.
+
+The bridge is TOLD rather than forgotten, through the same `bridgeDisconnect`
+the Disconnect button uses, for the same reason: forgetting a token locally
+leaves the daemon accepting work from anything that still holds it. It is not
+awaited - sign-out must not become conditional on a program being reachable -
+and a suite asserts the browser gives up the token even when the daemon is gone.
+
+### A note on method
+
+Three mutations in this round were first run through a shell loop whose escaping
+mangled `&&` into `\&\&`. Two of them failed to BUILD, so the suite ran against
+the previous bundle and reported "21 passed" - a pass that measured nothing.
+They were rerun from a script. A mutation whose build failed is not a mutation
+that was survived, and the tell was that the build error and the test result
+were printed by different commands with nothing tying them together.
+
+### Still open
+
+- **AMV-AUD-008 (refresh tokens not bound to a backend origin)** is the last
+  high finding that is a defect rather than a decision.
+- **AMV-AUD-001 and AMV-AUD-005** remain decisions for the owner: an isolated
+  execution origin, and sandboxed execution with a minimal environment
+  allowlist. Both change what the product can do for people.

@@ -1675,6 +1675,60 @@ function _wipeAccountState(){
   }catch(e){}
   try{ _CREW_RESULTS.length=0; }catch(e){}
   try{ if(typeof _TASKS!=='undefined' && Array.isArray(_TASKS)) _TASKS.length=0; }catch(e){}
+
+  /* ── THE CAPABILITY HOLDERS, WHICH ARE NOT FIELDS ON `S` ──────────────────
+
+     Everything above resets state that belongs to a screen. These are
+     different: each one is a live authority that does not need `S.user` to
+     work, so clearing the user left them usable by whatever ran in the tab
+     next. An audit enumerated what survived a sign-out and found an
+     administrator token, a bridge token and its stored pairing, connector
+     credentials, and a granted folder handle - all still there, all still
+     good, with the screen saying nobody was signed in.
+
+     The account switch on a shared machine is the ordinary case, not the
+     exotic one: a family laptop, a library, a demo on somebody else's desk.
+
+     Each is wrapped on its own. A teardown where one failure skips the rest
+     would clear the harmless things and leave the dangerous ones, which is the
+     worst order to do this in. */
+
+  /* The administrator token. Synthetic, held in memory, and gated only by
+     itself - `isAdmin()` reads it, not the user. */
+  try{ if(typeof _clearAdminToken === 'function') _clearAdminToken(); }catch(e){}
+
+  /* The bridge: the token, the stored pairing, and the connectors that were
+     running on that machine. Told to end the session rather than just
+     forgotten - see `bridgeDisconnect`, which is the same reasoning as the
+     Disconnect button and the same reason forgetting alone is not enough.
+     Not awaited: sign-out must not wait on a daemon that may be gone, and the
+     local half of that call is synchronous. */
+  try{
+    if(typeof bridgeDisconnect === 'function') bridgeDisconnect().catch(()=>{});
+    else if(typeof _bridgeForget === 'function') _bridgeForget();
+  }catch(e){}
+
+  /* Connector credentials. They live in sessionStorage so they die with the
+     tab - which is right, and is not sign-out. Somebody switching accounts
+     keeps the tab. */
+  try{
+    for(let i = sessionStorage.length - 1; i >= 0; i--){
+      const k = sessionStorage.key(i);
+      if(k && k.indexOf('amv_mcp_env_') === 0) sessionStorage.removeItem(k);
+    }
+  }catch(e){}
+
+  /* The granted folder. A `FileSystemDirectoryHandle` is read-write access to
+     a real directory on this computer, granted by the previous account and
+     held in memory - so it is not a preference to keep, it is somebody else's
+     filesystem. The files read out of it go too: they are that folder's
+     contents, sitting in memory under a different account's session. */
+  try{
+    if(typeof AMVWorkspace !== 'undefined' && AMVWorkspace){
+      AMVWorkspace.dirHandle = null;
+      if(Array.isArray(AMVWorkspace.files)) AMVWorkspace.files.length = 0;
+    }
+  }catch(e){}
 }
 try{ window._wipeAccountState=_wipeAccountState; }catch(e){}
 
