@@ -695,3 +695,52 @@ not do it.
 - **AMV-AUD-005 and AMV-AUD-001 remain decisions, not defects.** Isolated
   execution and a minimal environment allowlist change what the bridge is and
   what it can do for people.
+
+## Round eleven - a tool that was never offered
+
+AMV-AUD-006. Both agent loops dispatched whatever name the model returned.
+`aiAgentLoop` ran `runTool(c.name, ...)`; the chat streaming turn ran
+`_amvRunTool(t.name, ...)`. Neither checked membership in the tool list the
+request had actually supplied - and the dispatchers behind them are not narrow:
+`_amvRunTool` reaches account actions, `_agentRunTool` writes files and runs
+commands on somebody's computer.
+
+This needs no adversarial model. Tool names are conventional and models
+generalise across them, so the ordinary case is a plausible name for something
+the surface does not have. It also matters because both lists are CONDITIONAL -
+the machine's tools only while a bridge is connected, connectors only while they
+are running - so "what exists" and "what this turn offered" are different sets,
+and a name remembered from a previous turn was still dispatchable.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 46 | the loop dispatches any name again | 4 assertions, led by "the dispatcher was not called at all" |
+
+The refusal is a tool RESULT rather than a throw: the model is told what it may
+use and the turn carries on with a correction instead of ending at the moment
+the work starts. One bad name in a batch does not stop the good ones, which is
+asserted - refusing the batch would turn a correctable mistake into a lost turn.
+
+In the chat loop the check sits BEFORE the consent prompt. Asking somebody to
+approve a tool that does not exist in this turn is a dialog about nothing, and a
+"yes" to it would be consent pointing at a dispatcher lookup rather than at a
+known action.
+
+### Honest about what this round does NOT measure
+
+- **The chat dispatch site is checked by reading source, not by driving it.**
+  Reaching that turn behaviourally needs a stub for the whole SSE path, its
+  tool-block assembly and its rendering - a large amount of fiction for one
+  claim. What the source check asserts is ORDER (membership before consent,
+  before dispatch) and that the offered set is assembled exactly once. A test
+  that reads source can only say a line is present; the behaviour there remains
+  unmeasured and is recorded as such rather than implied.
+- **Arguments are still not validated against the declared schema.** The finding
+  asks for that too. Only the NAME boundary is closed. A tool called with the
+  right name and wrong-shaped arguments is still passed through to its handler,
+  which is where the existing per-tool checks are.
+- **One assertion in this round was wrong and failed honestly.** A regex meant
+  to prove the offered set is "never rebuilt from the reply" matched the
+  legitimate construction, because the map parameter over `tools` is also named
+  `t`. A pattern that cannot tell the right construction from the wrong one is
+  not a check. It was replaced with a count of assignments, which can.

@@ -7587,6 +7587,18 @@ async function _callAI(msgs, _opts) {
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(BRIDGE.connected && typeof mcpTools === 'function') tools = tools.concat(mcpTools()); }catch(e){}
+    /* WHAT WAS OFFERED, CAPTURED BEFORE THE REQUEST GOES OUT.
+
+       The dispatch below ran `_amvRunTool(t.name, ...)` on whatever name came
+       back, with nothing checking it against this list. That matters because
+       this list is CONDITIONAL - the bridge's tools are here only while a
+       bridge is connected, connectors only while they are running - so a name
+       from a previous turn, or a plausible name the model generalised to, was
+       passed to a dispatcher that knows more tools than this turn offered.
+
+       Built from the array actually sent, and never from the reply. See the
+       same guard in `aiAgentLoop`, which is the other loop that dispatches. */
+    const _offeredTools = new Set(tools.map(t => String((t && t.name) || '')).filter(Boolean));
     if(!tools.length) tools = undefined;
 
     const _endpoint = _aiBase();        // backend-only; never the browser key
@@ -7935,7 +7947,20 @@ async function _callAI(msgs, _opts) {
         // user's explicit approval before it runs, so injected instructions can't
         // silently deploy sites or execute code.
         let out;
-        if(_toolNeedsConsent(t.name)){
+        /* A NAME THIS TURN DID NOT OFFER IS ANSWERED, NOT DISPATCHED.
+
+           Checked before consent, deliberately: asking somebody to approve a
+           tool that does not exist in this turn is a dialog about nothing, and
+           a "yes" to it would be consent pointing at a dispatcher lookup
+           rather than at a known action. */
+        if(!_offeredTools.has(String(t.name || ''))){
+          out = { text:'There is no tool called "' + String(t.name || '').slice(0, 60)
+                  + '" available in this conversation right now. Available: '
+                  + ([..._offeredTools].join(', ') || 'none')
+                  + '. Use one of those, or tell the user what you cannot do.', render:null };
+          try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_unoffered',{tool:t.name}); }catch(e){}
+        }
+        if(!out && _toolNeedsConsent(t.name)){
           const allowed = await _confirmModelTool(t.name, input);
           if(!allowed){
             out = { text:'The user DENIED permission to run "'+t.name+'". Do not attempt it again unless they explicitly ask for it. Continue helping without it.', render:null };
@@ -33509,6 +33534,25 @@ async function aiAgentLoop(opts){
   const stopped = opts.stopped || function(){ return false; };
   const resultMax = opts.resultMax || AGENT_RESULT_MAX;
 
+  /* ── WHAT WAS OFFERED IS WHAT MAY BE CALLED ───────────────────────────────
+
+     The loop dispatched whatever name came back: `runTool(c.name, ...)`, with
+     nothing checking that the name was one of the tools this request actually
+     supplied. So a turn offered one narrow tool and a reply naming a different,
+     broader one was passed straight to the dispatcher - and the dispatchers
+     here are not narrow. `_amvRunTool` reaches account actions;
+     `_agentRunTool` writes files and runs commands on somebody's computer.
+
+     A model does not need to be adversarial for this to matter. Tool names are
+     conventional and models generalise across them, so the ordinary failure is
+     a plausible name for a tool this surface does not have - and the honest
+     answer is to say so, not to look it up somewhere broader.
+
+     The set is built ONCE, from the request that was actually sent, and never
+     rebuilt from the reply. Resolving identity from anything the model
+     produced is the whole defect in miniature. */
+  const offered = new Set(tools.map(t => String((t && t.name) || '')).filter(Boolean));
+
   const messages = [{ role:'user', content: String(opts.prompt || '') }];
   const steps = [];
   let text = '', rounds = 0, why = 'done';
@@ -33592,11 +33636,26 @@ async function aiAgentLoop(opts){
       steps.push(step);
       onStep({ phase:'start', step });
       let r;
-      /* A failing command is INFORMATION, not an error. A missing package or a
-         red test is exactly what the model needs to read and act on, and
-         throwing here would end the turn at the moment the work starts. */
-      try{ r = await runTool(c.name, c.input || {}, step); }
-      catch(e){ r = { ok:false, text:'That did not work: ' + ((e && e.message) || e) }; }
+      /* REFUSED BEFORE THE DISPATCHER SEES IT, and answered rather than thrown.
+
+         A name that was not offered is not a crash - it is the model reaching
+         for something this surface does not have, which is ordinary. It is
+         told so, as a tool result, so the turn carries on with a correction
+         instead of ending; and the step is marked failed so the log shows what
+         happened rather than hiding it. What it must never be is looked up in
+         a dispatcher that knows more tools than this request offered. */
+      if(!offered.has(String(c.name || ''))){
+        r = { ok:false, text:'There is no tool called "' + String(c.name || '').slice(0, 60)
+             + '" in this turn. Available: ' + ([...offered].join(', ') || 'none')
+             + '. Use one of those, or say what you cannot do.' };
+        step.refused = true;
+      } else {
+        /* A failing command is INFORMATION, not an error. A missing package or
+           a red test is exactly what the model needs to read and act on, and
+           throwing here would end the turn at the moment the work starts. */
+        try{ r = await runTool(c.name, c.input || {}, step); }
+        catch(e){ r = { ok:false, text:'That did not work: ' + ((e && e.message) || e) }; }
+      }
       step.ok = !(r && r.ok === false);
       step.detail = String((r && r.text) || '');
       onStep({ phase:'end', step });

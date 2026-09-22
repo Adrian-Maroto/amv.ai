@@ -298,6 +298,25 @@ async function aiAgentLoop(opts){
   const stopped = opts.stopped || function(){ return false; };
   const resultMax = opts.resultMax || AGENT_RESULT_MAX;
 
+  /* ── WHAT WAS OFFERED IS WHAT MAY BE CALLED ───────────────────────────────
+
+     The loop dispatched whatever name came back: `runTool(c.name, ...)`, with
+     nothing checking that the name was one of the tools this request actually
+     supplied. So a turn offered one narrow tool and a reply naming a different,
+     broader one was passed straight to the dispatcher - and the dispatchers
+     here are not narrow. `_amvRunTool` reaches account actions;
+     `_agentRunTool` writes files and runs commands on somebody's computer.
+
+     A model does not need to be adversarial for this to matter. Tool names are
+     conventional and models generalise across them, so the ordinary failure is
+     a plausible name for a tool this surface does not have - and the honest
+     answer is to say so, not to look it up somewhere broader.
+
+     The set is built ONCE, from the request that was actually sent, and never
+     rebuilt from the reply. Resolving identity from anything the model
+     produced is the whole defect in miniature. */
+  const offered = new Set(tools.map(t => String((t && t.name) || '')).filter(Boolean));
+
   const messages = [{ role:'user', content: String(opts.prompt || '') }];
   const steps = [];
   let text = '', rounds = 0, why = 'done';
@@ -381,11 +400,26 @@ async function aiAgentLoop(opts){
       steps.push(step);
       onStep({ phase:'start', step });
       let r;
-      /* A failing command is INFORMATION, not an error. A missing package or a
-         red test is exactly what the model needs to read and act on, and
-         throwing here would end the turn at the moment the work starts. */
-      try{ r = await runTool(c.name, c.input || {}, step); }
-      catch(e){ r = { ok:false, text:'That did not work: ' + ((e && e.message) || e) }; }
+      /* REFUSED BEFORE THE DISPATCHER SEES IT, and answered rather than thrown.
+
+         A name that was not offered is not a crash - it is the model reaching
+         for something this surface does not have, which is ordinary. It is
+         told so, as a tool result, so the turn carries on with a correction
+         instead of ending; and the step is marked failed so the log shows what
+         happened rather than hiding it. What it must never be is looked up in
+         a dispatcher that knows more tools than this request offered. */
+      if(!offered.has(String(c.name || ''))){
+        r = { ok:false, text:'There is no tool called "' + String(c.name || '').slice(0, 60)
+             + '" in this turn. Available: ' + ([...offered].join(', ') || 'none')
+             + '. Use one of those, or say what you cannot do.' };
+        step.refused = true;
+      } else {
+        /* A failing command is INFORMATION, not an error. A missing package or
+           a red test is exactly what the model needs to read and act on, and
+           throwing here would end the turn at the moment the work starts. */
+        try{ r = await runTool(c.name, c.input || {}, step); }
+        catch(e){ r = { ok:false, text:'That did not work: ' + ((e && e.message) || e) }; }
+      }
       step.ok = !(r && r.ok === false);
       step.detail = String((r && r.text) || '');
       onStep({ phase:'end', step });

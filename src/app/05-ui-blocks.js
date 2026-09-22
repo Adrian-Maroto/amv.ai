@@ -936,6 +936,18 @@ async function _callAI(msgs, _opts) {
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(BRIDGE.connected && typeof mcpTools === 'function') tools = tools.concat(mcpTools()); }catch(e){}
+    /* WHAT WAS OFFERED, CAPTURED BEFORE THE REQUEST GOES OUT.
+
+       The dispatch below ran `_amvRunTool(t.name, ...)` on whatever name came
+       back, with nothing checking it against this list. That matters because
+       this list is CONDITIONAL - the bridge's tools are here only while a
+       bridge is connected, connectors only while they are running - so a name
+       from a previous turn, or a plausible name the model generalised to, was
+       passed to a dispatcher that knows more tools than this turn offered.
+
+       Built from the array actually sent, and never from the reply. See the
+       same guard in `aiAgentLoop`, which is the other loop that dispatches. */
+    const _offeredTools = new Set(tools.map(t => String((t && t.name) || '')).filter(Boolean));
     if(!tools.length) tools = undefined;
 
     const _endpoint = _aiBase();        // backend-only; never the browser key
@@ -1284,7 +1296,20 @@ async function _callAI(msgs, _opts) {
         // user's explicit approval before it runs, so injected instructions can't
         // silently deploy sites or execute code.
         let out;
-        if(_toolNeedsConsent(t.name)){
+        /* A NAME THIS TURN DID NOT OFFER IS ANSWERED, NOT DISPATCHED.
+
+           Checked before consent, deliberately: asking somebody to approve a
+           tool that does not exist in this turn is a dialog about nothing, and
+           a "yes" to it would be consent pointing at a dispatcher lookup
+           rather than at a known action. */
+        if(!_offeredTools.has(String(t.name || ''))){
+          out = { text:'There is no tool called "' + String(t.name || '').slice(0, 60)
+                  + '" available in this conversation right now. Available: '
+                  + ([..._offeredTools].join(', ') || 'none')
+                  + '. Use one of those, or tell the user what you cannot do.', render:null };
+          try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_unoffered',{tool:t.name}); }catch(e){}
+        }
+        if(!out && _toolNeedsConsent(t.name)){
           const allowed = await _confirmModelTool(t.name, input);
           if(!allowed){
             out = { text:'The user DENIED permission to run "'+t.name+'". Do not attempt it again unless they explicitly ask for it. Continue helping without it.', render:null };
