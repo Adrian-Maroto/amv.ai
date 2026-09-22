@@ -520,6 +520,41 @@ const server = createServer(async (req, res) => {
     catch (e) { return json(res, e.code === 'too_large' ? 413 : 400, { error: e.code || 'bad_body' }); }
   }
 
+  /* ── DISCONNECT HAS TO REACH THE MACHINE ──────────────────────────────────
+
+     Disconnect cleared the browser's copy of the token and made no request at
+     all. So the daemon kept the session valid, kept running connectors alive,
+     and kept accepting work from anything that still held that token from an
+     allowed origin - while the screen said disconnected. Re-pairing replaced
+     the token and stopping the daemon ended it; the button did neither.
+
+     That is the gap between "I disconnected" and "AMV is off my machine", and
+     it is the sentence the button is making.
+
+     Revoking is deliberately total: the session is cleared, running commands
+     are killed by process group, and connectors are stopped. There is no
+     partial disconnect here - a connector left running is a program somebody
+     else wrote, still on their computer, after they said stop.
+
+     It is authenticated by the token it is about to destroy, so only the
+     session that owns it can end it, and it is idempotent: a second call from
+     a token that is already gone is refused as not_paired, which is the
+     honest answer rather than an error. */
+  if (path === '/amv-bridge/revoke') {
+    const hadSession = !!sessionToken;
+    sessionToken = '';
+    pairedAt = 0;
+    const jobs = execJobs.size, servers = mcpServers.size;
+    execKillAll();
+    mcpKillAll();
+    console.log('  ✓ disconnected by AMV - session ended'
+      + (jobs || servers ? ' (' + jobs + ' command' + (jobs === 1 ? '' : 's')
+          + ' and ' + servers + ' connector' + (servers === 1 ? '' : 's') + ' stopped)' : ''));
+    /* Counted back, so the page can say what actually stopped rather than
+       claiming a clean disconnect it did not observe. */
+    return json(res, 200, { revoked: true, wasPaired: hadSession, stopped: { jobs, servers } });
+  }
+
   try {
     if (path === '/amv-bridge/list') {
       const dir = safePath(body.path || '.');

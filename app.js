@@ -43467,6 +43467,48 @@ function _bridgeForget(){
 }
 try{ window._bridgeForget=_bridgeForget; }catch(e){}
 
+/* ── DISCONNECTING, WHICH USED TO MEAN "THIS TAB FORGETS" ──────────────────
+
+   `_bridgeForget` clears the browser's copy and makes no request. On its own
+   that is not a disconnect: the daemon kept the session valid, kept running
+   connectors alive, and kept accepting work from anything that still held that
+   token from an allowed origin - while the screen said disconnected.
+
+   So the daemon is told first, and the browser state is cleared EITHER WAY.
+   Clearing only on success would leave somebody paired in a tab they had
+   already told to disconnect, which is worse than the thing being fixed.
+
+   What is returned is which of the two actually happened, because they are
+   different facts and only one of them is what the button promises. A caller
+   that cannot reach the daemon has disconnected locally and left a machine
+   with a live session on it, and saying so is the only honest option: the page
+   cannot revoke a token it can no longer talk to. */
+async function bridgeDisconnect(){
+  const base = BRIDGE.connected ? _bridgeBase() : '';
+  const token = BRIDGE.token;
+  let revoked = false, stopped = null, why = '';
+  if(base && token){
+    try{
+      const r = await fetchDeadline(base + '/amv-bridge/revoke', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-AMV-Bridge-Token': token },
+        body: '{}',
+      }, 6000);
+      const d = await r.json().catch(()=>({}));
+      /* A token the daemon has already forgotten is not a failure to revoke -
+         there is nothing left to revoke, which is the state being asked for. */
+      if(r.ok && d.revoked) { revoked = true; stopped = d.stopped || null; }
+      else if(r.status === 401) revoked = true;
+      else why = String(d.error || ('the bridge answered ' + r.status));
+    }catch(e){
+      why = 'the bridge could not be reached';
+    }
+  }
+  _bridgeForget();
+  return { revoked, stopped, why };
+}
+try{ window.bridgeDisconnect=bridgeDisconnect; }catch(e){}
+
 /* Is a bridge listening on this port, and what folder is it holding? The one
    call that works before pairing, so somebody can be told what they are about
    to connect to before they connect to it. */
@@ -43774,9 +43816,32 @@ function _bridgeWireCard(root){
     } finally { dl.disabled = false; }
   });
   const off = root.querySelector('#brg-off');
-  if(off) on(off, 'click', () => {
-    _bridgeForget();
-    try{ toast('Disconnected. AMV can no longer reach that folder.', 'info', 4000); }catch(e){}
+  if(off) on(off, 'click', async () => {
+    off.disabled = true;
+    let r = { revoked:false, why:'' };
+    try{ r = await bridgeDisconnect(); }
+    finally{ off.disabled = false; }
+    /* SAY WHICH OF THE TWO HAPPENED.
+
+       "Disconnected. AMV can no longer reach that folder." was the only
+       sentence, and it was said whether or not the daemon had been told
+       anything - which was the defect, in words. A machine that still holds a
+       live session is a different situation from one that has ended it, and
+       the person is the only one who can act on the difference (by closing the
+       bridge window themselves). */
+    try{
+      if(r.revoked){
+        const s = r.stopped || {};
+        const extra = (s.jobs || s.servers)
+          ? ' ' + (s.jobs || 0) + ' command' + (s.jobs === 1 ? '' : 's')
+            + ' and ' + (s.servers || 0) + ' connector' + (s.servers === 1 ? '' : 's') + ' stopped.'
+          : '';
+        toast('Disconnected. The bridge ended the session on your computer.' + extra, 'info', 5000);
+      } else {
+        toast('Disconnected here, but AMV could not reach the bridge to end the session on your computer'
+              + (r.why ? ' (' + r.why + ')' : '') + '. Close the bridge window to be sure.', 'warn', 9000);
+      }
+    }catch(e){}
     try{ _refreshIntegrationsUI(); }catch(e){}
   });
   const go = root.querySelector('#brg-go');

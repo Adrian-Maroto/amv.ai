@@ -128,6 +128,89 @@ section('A file that is there reads as itself');
   ok(d.content === 'the original bytes\n', 'content comes back verbatim', JSON.stringify(d.content));
 }
 
+/* ═════════════════════════════════════════════════════════════════════════
+   DISCONNECT HAS TO REACH THE MACHINE.  (AMV-AUD-003)
+
+   Disconnect cleared the browser's copy of the token and made no request at
+   all. The daemon kept the session valid, kept running connectors alive, and
+   kept accepting work from anything that still held that token from an allowed
+   origin - while the screen said disconnected. Re-pairing replaced the token
+   and stopping the daemon ended it; the button did neither.
+
+   The test that matters is not that the route answers 200. It is that the
+   token is DEAD afterwards, asked of the daemon itself.
+   ═════════════════════════════════════════════════════════════════════════ */
+section('Revoking ends the session on the machine, not just in the tab');
+{
+  /* Proof the token worked a moment earlier, so "it is refused now" means
+     something changed rather than that it never worked. */
+  const before = await call('list', { path: '.' }, TOKEN);
+  ok(before.status === 200, 'the token works before revoking', before.status);
+
+  const r = await call('revoke', {}, TOKEN);
+  const d = await jsonOf(r);
+  ok(r.status === 200 && d.revoked === true, 'revoke is accepted', r.status + ' ' + JSON.stringify(d));
+  ok(d.wasPaired === true, 'and says there really was a session to end', JSON.stringify(d));
+
+  const after = await call('list', { path: '.' }, TOKEN);
+  ok(after.status === 401,
+     'and the SAME token is refused afterwards - the session is gone from the machine, not just from the tab',
+     after.status);
+
+  /* Every route, not just the one that happened to be tried. A revoke that
+     left one door open would be the kind of partial stop this file exists to
+     refuse. */
+  for (const route of ['exec', 'read', 'write', 'list', 'delete']) {
+    const g = await call(route, { command: 'echo hi', path: 'existing.txt', content: 'x' }, TOKEN);
+    ok(g.status === 401, route + ' is refused too', g.status);
+  }
+}
+
+section('Revoking again is not an error, it is the same answer');
+{
+  /* A second Disconnect, or two tabs pressing it, must not look like a
+     failure - there is nothing left to revoke, which is the state asked for.
+     The browser treats 401 here as success for exactly this reason. */
+  const r = await call('revoke', {}, TOKEN);
+  ok(r.status === 401, 'a token the daemon has already forgotten is simply not paired', r.status);
+}
+
+/* Paired again, because the sections below need a working session. This is
+   also the audit's other point about re-pairing: the code stays usable, which
+   is deliberate - the trust model is that you can see the terminal. */
+const repaired = await jsonOf(await call('pair', { code: CODE }));
+const TOKEN2 = repaired.token || '';
+ok(!!TOKEN2 && TOKEN2 !== TOKEN, 'pairing again issues a NEW token, not the revoked one',
+   TOKEN2 ? (TOKEN2 === TOKEN ? 'same!' : 'different') : 'none');
+
+section('Revoking stops what is running, not only what comes next');
+{
+  /* The half that makes "disconnect" true about the machine. A connector left
+     running after somebody said stop is a program somebody else wrote, still
+     on their computer. Measured the same way as the shutdown case: a marker
+     the child writes only if it was still alive. */
+  const marker = join(proj, 'survived-revoke.txt');
+  const inflight = call('exec', { command: 'sleep 4; echo alive > ' + JSON.stringify(marker), timeout: 60000 },
+                        TOKEN2).catch(() => {});
+  await new Promise(r => setTimeout(r, 1200));
+
+  const d = await jsonOf(await call('revoke', {}, TOKEN2));
+  ok(d.revoked === true, 'revoke is accepted while a command is running', JSON.stringify(d));
+  ok(d.stopped && d.stopped.jobs >= 1,
+     'and it reports what it stopped, so the page can say so rather than assume', JSON.stringify(d.stopped));
+
+  await new Promise(r => setTimeout(r, 4200));
+  await inflight;
+  ok(!existsSync(marker),
+     'the running command was killed - disconnect is a stop control, not a forget button',
+     existsSync(marker) ? readFileSync(marker, 'utf8') : '(no marker, which is the pass)');
+}
+
+/* And again, for the shutdown section below. */
+const third = await jsonOf(await call('pair', { code: CODE }));
+const TOKEN3 = third.token || '';
+ok(!!TOKEN3, 'paired once more for the shutdown case', TOKEN3 ? 'yes' : 'no');
+
 section('A command that outlives its request does not outlive the bridge');
 {
   /* THE PROOF HAS TO BE ON DISK, because a process id says nothing once the
@@ -138,7 +221,7 @@ section('A command that outlives its request does not outlive the bridge');
   const cmd = 'sleep 4; echo still-running > ' + JSON.stringify(marker);
   /* Not awaited: the request will never come back, because the bridge is
      killed underneath it. That is the scenario. */
-  const inflight = call('exec', { command: cmd, timeout: 60000 }, TOKEN).catch(() => {});
+  const inflight = call('exec', { command: cmd, timeout: 60000 }, TOKEN3).catch(() => {});
 
   /* Long enough for the shell to be spawned and sleeping, short enough to be
      well inside the sleep. */

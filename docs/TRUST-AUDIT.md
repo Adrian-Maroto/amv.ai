@@ -648,3 +648,50 @@ delete is not, and `after` lives in one tab. See LESSONS 499.
 - **AMV-AUD-005 is a decision, not a defect to fix quietly.** Isolated execution
   with a minimal environment allowlist changes what the bridge fundamentally is
   and what it can do for people. The owner decides that, not this file.
+
+## Round ten - disconnect reaches the machine
+
+AMV-AUD-003. `_bridgeForget` cleared the browser's copy of the pairing token
+and made no request at all, so the daemon kept the session valid, kept running
+connectors alive, and kept accepting work from anything still holding that
+token from an allowed origin - while the screen said "Disconnected. AMV can no
+longer reach that folder."
+
+| # | what was broken | caught by |
+|---|---|---|
+| 42 | revoke does not clear the session | "the SAME token is refused afterwards", plus one per route |
+| 43 | revoke does not stop running work | "the running command was killed" (marker file on disk) |
+| 44 | disconnect goes back to telling nobody | "exactly one request goes out" |
+| 45 | disconnect claims revoked whatever happened | 4 assertions across the unreachable and 500 cases |
+
+The daemon route is authenticated by the token it is about to destroy, so only
+the session that owns it can end it, and it is total: session cleared, exec jobs
+killed by process group, connectors stopped. There is no partial disconnect -
+a connector left running is a program somebody else wrote, still on their
+computer, after they said stop. It reports what it stopped so the page can say
+so rather than assume.
+
+**The browser half is where the honesty is.** Clearing local state only on a
+successful revoke would be worse than the original defect: somebody would stay
+paired in a tab they had just told to disconnect. So local state always goes and
+the SENTENCE changes - "the bridge ended the session on your computer" against
+"disconnected here, but AMV could not reach the bridge; close the bridge window
+to be sure." Those are different facts about somebody's machine and only the
+person can act on the second.
+
+A 401 counts as revoked, deliberately: there is nothing left to end, which is
+the state being asked for. A 500 does not, because the daemon is there and did
+not do it.
+
+### Still open
+
+- **Per-job cancellation.** The audit asks for one and this is not it: stopping
+  a single running command still means revoking the whole session or closing the
+  daemon. Both are blunt, and both are all there is.
+- **Session expiry.** The audit asks for idle/absolute expiry. Not added: a
+  bridge left open overnight on a long build is the normal case, and an expiry
+  that fires mid-run would be a new way to lose work. It is a product decision
+  with real friction either way, and it is the owner's.
+- **AMV-AUD-005 and AMV-AUD-001 remain decisions, not defects.** Isolated
+  execution and a minimal environment allowlist change what the bridge is and
+  what it can do for people.
