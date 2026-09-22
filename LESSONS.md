@@ -13145,3 +13145,60 @@ It was caught by a suite watching for that exact sentence from the first frame
 after a door opens, which is the only way to see it: on a fast connection the
 wrong claim is on screen for one blink, which is precisely the kind of defect
 somebody reports as "it flashed something weird" and nobody can reproduce.
+
+## 498. An audit finding can be real and still blame the wrong layer
+
+AMV-AUD-007 described a genuine, serious defect: the build agent reads a file
+before editing it to decide whether it is creating or changing, collapsed EVERY
+read failure into "not there", wrote without keeping a backup, and recorded the
+path as created - which is what Undo deletes. One flaky read and somebody's file
+is gone, with the product reporting that it undid its own work.
+
+The finding located the cause in the daemon: "`statSync` throws into the
+catch-all, so every read failure comes back as one generic 500." Acting on that,
+a check was added inside the read route to turn ENOENT into a 404.
+
+Then the mutation written to prove that fix mattered did not fail. Reverting the
+route change left every assertion green, because the daemon had ALWAYS answered
+404 `not_found` for ENOENT - the handler at the bottom of the request function
+does it for every route at once. The information was on the wire the whole time.
+What lost it was `_bridgeCall` in the browser, which threw a plain `Error`
+carrying no code, so the caller could not act on the answer it was being given.
+
+Two rules.
+
+A finding tells you a symptom is real. It does not tell you where the cause is,
+and a report written from the outside will sometimes name the wrong layer
+because both layers are consistent with the symptom. Reproduce the mechanism
+before editing the file the report points at - not the outcome, the mechanism.
+
+And the mutation is what catches this. A fix whose removal changes nothing is
+not a fix, whatever the report said; it is a second implementation of something
+that already worked, which is how two places come to decide one thing and then
+disagree. The redundant route check was removed and the comment there now
+records that the daemon never had this problem, so the next person reading it
+is not told a false history by a well-meaning fix.
+
+## 499. Undo may put bytes back; it may not take a file away that stopped being ours
+
+`_agentToggleTurn` deleted every file the turn created, and that was defensible:
+a turn that leaves its files behind has been half undone, which this codebase
+has spent a lot of effort not being. It also re-read the disk first, so the
+person's own version went into `after` and Redo could restore it.
+
+The case that breaks it is not exotic. AMV writes `notes.md`, the person spends
+an hour in it, then undoes that turn for an unrelated reason. The file is
+deleted. The only copy of their hour is in `t.after`, in that tab. Close it and
+the work is gone from disk with no snapshot anywhere - silent, irreversible, and
+caused by pressing Undo.
+
+So the rule is asymmetric, and the asymmetry is the point. OVERWRITING a file
+the person edited is still allowed, because Redo genuinely returns it. DELETING
+one is withheld the moment its contents stop matching what the turn wrote,
+because a delete has no way home. The file is kept, and the toast names it
+rather than counting it, so somebody knows where to look.
+
+The general form: an undo may reverse its own effects; it may not destroy state
+it did not create, and "I created this file" stops being true about the CONTENT
+the moment somebody else writes to it. Recoverability, not authorship, decides
+what an undo is allowed to do.

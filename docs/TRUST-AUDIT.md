@@ -588,3 +588,63 @@ label pointing at it) and is the only way that mutation can be made faithful.
   Whether a given topic word finds things in the live registry is not something
   a suite here can hold, and the module's own rule - a heading is only allowed
   if its query finds things - still rests on somebody having checked.
+
+## Round nine - the first two high findings from the external audit
+
+An external audit reported 29 findings (8 high, 17 medium, 4 low) against the
+browser bundle and the bridge daemon. This round covers the two with the worst
+outcomes: silent loss of somebody's file, and a stop control that did not stop.
+
+Neither was taken on the report's word. Both were reproduced against a real
+daemon, and one of them turned out to be correct about the symptom and wrong
+about the cause.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 39 | exec children no longer killed on shutdown | "the command the bridge started is gone with it" (marker file on disk) |
+| 40 | `not_found` collapsed back into a generic failure | nothing - see below |
+| 41 | every read failure means absent again (client) | 4 assertions in the undo suite |
+
+**AMV-AUD-004, and it needed a real process to see.** The signal handler killed
+MCP servers, because those are the children something kept a list of. `/exec`
+spawns its child inside the route handler, so nothing outside that closure ever
+knew it existed - a build, a download or a long test run carried on after the
+daemon was gone. The request socket closed, so the person saw the command stop;
+the process did not. Exec jobs are tracked now, killed by process group on
+`exit`/`SIGINT`/`SIGTERM`, and nothing new is admitted once teardown starts.
+
+The suite proves it on DISK: the child sleeps past the daemon's death and then
+writes a marker. A process id says nothing once the parent is gone, and "the
+socket closed" is exactly the false comfort this defect hid behind. It also
+asserts the daemon really died, so the section cannot pass against a live bridge
+that happened to be tidy.
+
+**AMV-AUD-007 was real and the report blamed the wrong end.** See LESSONS 498.
+The daemon has always distinguished absence (ENOENT becomes 404 `not_found` in
+the handler at the bottom of the request function); `_bridgeCall` threw a plain
+Error carrying no code, so the browser could not act on it. Mutation 40 is
+recorded as caught by NOTHING on purpose: it is the mutation that proved a fix
+of mine was redundant, and removing it is the finding.
+
+The real fix is in three places - `_bridgeCall` carries `code`, `bridgeRead`
+returns null only for absence, and `_agentRunTool` refuses to write a file it
+could not read - and mutation 41 fails four assertions.
+
+**A rule was deliberately changed, not just repaired.** Undo no longer deletes a
+created file whose contents have stopped matching what the turn wrote. An
+existing assertion said the opposite and was rewritten rather than worked
+around, with the reasoning in place: overwriting is recoverable through Redo, a
+delete is not, and `after` lives in one tab. See LESSONS 499.
+
+### Still open from this round
+
+- **A per-job cancellation route.** The audit asks for one, and shutdown is not
+  it: stopping the whole daemon to stop one command is a blunt instrument, and
+  it is the only instrument today. Nothing can cancel a single running exec.
+- **AMV-AUD-003 is untouched.** Disconnect still clears browser state without
+  telling the daemon anything, so a previously copied token stays valid and
+  running connectors stay alive. It shares machinery with the cancellation route
+  above and is the next thing to do.
+- **AMV-AUD-005 is a decision, not a defect to fix quietly.** Isolated execution
+  with a minimal environment allowlist changes what the bridge fundamentally is
+  and what it can do for people. The owner decides that, not this file.

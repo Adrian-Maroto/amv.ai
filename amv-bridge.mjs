@@ -229,10 +229,42 @@ function mcpKillAll(){
   for (const [, srv] of mcpServers) { try { killTree(srv.child); } catch (e) {} }
   mcpServers.clear();
 }
+
+/* ── CLOSING THE BRIDGE HAS TO STOP WHAT THE BRIDGE STARTED ────────────────
+
+   The signal handler below killed MCP servers and nothing else, because those
+   are the children something kept a list of. `/exec` spawns its child inside
+   the route handler and lets the close event tidy up, so nothing outside that
+   closure ever knew it existed - and a `npm run build`, a download or a long
+   test run carried on after the daemon was gone. The request socket closed, so
+   the person saw the command stop; the process did not.
+
+   That makes closing the bridge an unreliable stop control, which is the one
+   control somebody reaches for when they want AMV off their machine. "I closed
+   it" has to mean it stopped.
+
+   Two halves, and both are needed. Running jobs are TRACKED so they can be
+   killed by tree - the same group kill the timeout already uses, so what the
+   command itself started goes too. And once shutdown begins nothing new is
+   ADMITTED, because a job accepted during teardown is an orphan created by the
+   thing meant to prevent them. */
+const execJobs = new Set();
+let shuttingDown = false;
+
+function execKillAll(){
+  for (const child of execJobs) { try { killTree(child); } catch (e) {} }
+  execJobs.clear();
+}
+
 /* Not only on a clean exit. A daemon killed with ^C is the ordinary way
    somebody stops this, and it is the case where an orphan is most likely. */
 for (const sig of ['exit', 'SIGINT', 'SIGTERM']) {
-  process.on(sig, () => { mcpKillAll(); if (sig !== 'exit') process.exit(0); });
+  process.on(sig, () => {
+    shuttingDown = true;
+    execKillAll();
+    mcpKillAll();
+    if (sig !== 'exit') process.exit(0);
+  });
 }
 
 function mcpStart(id, command, args, envExtra){
@@ -499,6 +531,20 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { path: relative(ROOT, dir) || '.', entries: out });
     }
 
+    /* ON "not_found", WHICH THIS ROUTE DOES NOT HAVE TO SPELL OUT.
+
+       A missing path throws ENOENT out of `statSync`, and the handler at the
+       bottom of this function already turns that into 404 `not_found` - so
+       absence has always been distinguishable from any other failure ON THE
+       WIRE. A version of this fix added a second ENOENT check right here
+       before anybody checked whether one was needed; it was redundant, and two
+       places deciding one thing is how they come to disagree.
+
+       Recorded because an audit reported the opposite and the report was
+       wrong, which is worth knowing the next time this route is read: the gap
+       was entirely in the BROWSER, where `_bridgeCall` threw a plain Error
+       carrying no code, so the caller could not act on the 404 it was already
+       being sent and collapsed every failure into "the file is not there". */
     if (path === '/amv-bridge/read') {
       const file = safePath(body.path);
       const st = statSync(file);
@@ -623,6 +669,9 @@ const server = createServer(async (req, res) => {
     }
 
     if (path === '/amv-bridge/exec') {
+      /* Refused rather than queued. A command admitted while the daemon is
+         tearing down is an orphan made by the teardown. */
+      if (shuttingDown) return json(res, 503, { error: 'shutting_down' });
       const cmd = String(body.command || '').trim();
       if (!cmd) return json(res, 400, { error: 'no_command' });
       const why = refuseReason(cmd);
@@ -652,6 +701,10 @@ const server = createServer(async (req, res) => {
            it did not happen. */
         detached: process.platform !== 'win32',
       });
+      /* Tracked BEFORE anything awaits it, so a shutdown landing between the
+         spawn and the first await still finds it. Registering after the await
+         would leave exactly the window this exists to close. */
+      execJobs.add(child);
 
       let out = '', err = '', truncated = false;
       const take = (buf, which) => {
@@ -670,9 +723,13 @@ const server = createServer(async (req, res) => {
           killTree(child);
           resolveDone({ code: null, timedOut: true });
         }, timeout);
-        child.on('close', (code) => { clearTimeout(timer); resolveDone({ code, timedOut: false }); });
-        child.on('error', (e) => { clearTimeout(timer); resolveDone({ code: -1, error: e.message }); });
+        child.on('close', (code) => { clearTimeout(timer); execJobs.delete(child); resolveDone({ code, timedOut: false }); });
+        child.on('error', (e) => { clearTimeout(timer); execJobs.delete(child); resolveDone({ code: -1, error: e.message }); });
       });
+      /* Belt and braces: a path that resolved without either event firing
+         would otherwise leave a dead child in the set for ever, and a set that
+         grows is a shutdown that gets slower every run. */
+      execJobs.delete(child);
 
       return json(res, 200, {
         command: cmd, cwd: relative(ROOT, cwd) || '.',

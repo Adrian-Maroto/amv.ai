@@ -125,11 +125,39 @@ async function _agentRunTool(name, input, step){
   if(typeof isMcpTool === 'function' && isMcpTool(name)) return await runMcpTool(name, input);
   if(name === 'write_file'){
     const path = String(input.path || '');
+    /* ONLY "NOT THERE" MAY MEAN "NEW FILE".
+
+       This read every failure as absence: `catch(e){ prev = null }`, and null
+       marked the path as CREATED. So a transient read error, an unreadable
+       file, or a file over the size limit turned an edit into a write with no
+       backup kept - and Undo deletes what it recorded as created. One flaky
+       read and somebody's file is gone, with the product reporting that it
+       undid its own work.
+
+       The bridge has always told the two apart - ENOENT comes back as 404
+       `not_found`. What was missing was on THIS side: `_bridgeCall` threw a
+       plain Error carrying no code, so the caller could not act on the answer
+       it was already being given. It carries `code` now, `bridgeRead` returns
+       null for absence and throws for everything else, and only absence
+       creates. Any other failure ABORTS the write rather than guessing.
+
+       Refusing to edit is a recoverable disappointment; deleting a file
+       somebody did not back up is not. */
     if(!_AGENT.seen[path]){
-      _AGENT.seen[path] = true;
       let prev = null;
-      try{ const r = await bridgeRead(path); prev = r && typeof r.content === 'string' ? r.content : null; }
-      catch(e){ prev = null; }          // not there, or not readable as text
+      try{
+        const r = await bridgeRead(path);
+        if(r === null) prev = null;                       // genuinely not there
+        else if(typeof r.content === 'string') prev = r.content;
+        else throw new Error('the bridge returned no readable content for that path');
+      }catch(e){
+        /* Not marked seen, so a later attempt in the same turn can try again
+           rather than inheriting this failure as a decision. */
+        return { ok:false, text:'AMV did not write ' + path + ' because it could not read what is there now ('
+                 + String((e && e.message) || 'the read failed') + '). '
+                 + 'It will not overwrite a file it cannot back up first.' };
+      }
+      _AGENT.seen[path] = true;
       if(prev === null) _AGENT.created[path] = true;
       else _AGENT.before[path] = prev;
     }
@@ -305,6 +333,21 @@ async function _agentToggleTurn(t, id){
      edited it, Redo puts back what they had rather than the turn's first draft.
      A read that fails leaves the old snapshot in place - a stale `after` is a
      worse Redo, while no `after` at all is no Redo. */
+  /* A FILE THEY MADE THEIR OWN IS NOT AMV'S TO DELETE.
+
+     Undo removes files the turn created, which is right: a turn that leaves
+     its files behind has been half undone. But "created by the turn" and
+     "theirs now" are not exclusive - AMV writes `notes.md`, the person spends
+     an hour in it, then undoes the turn for an unrelated reason. Deleting it
+     is not undoing AMV's work, it is destroying theirs, and the file is gone
+     from disk rather than from a snapshot they can get back.
+
+     So a created file whose contents no longer match what the turn wrote is
+     KEPT, and said so. Overwriting an edited file is different and is allowed:
+     that is what Undo means, and the re-read above puts their version into
+     `after` so Redo brings it back. A delete has no such way home, which is
+     the whole asymmetry. */
+  const keptTheirs = [];
   if(goingBack){
     const fresh = {};
     for(const path of Object.keys(Object.assign({}, t.after || {}, created))){
@@ -313,13 +356,24 @@ async function _agentToggleTurn(t, id){
         if(r && typeof r.content === 'string') fresh[path] = r.content;
       }catch(e){ /* gone or unreadable: fall through to what we had */ }
     }
+    /* Compared BEFORE `after` is overwritten with what is on disk, or every
+       file would compare equal to itself and nothing would ever be kept. */
+    for(const path of Object.keys(created)){
+      const now = fresh[path];
+      const wrote = (t.after || {})[path];
+      if(now !== undefined && wrote !== undefined && now !== wrote) keptTheirs.push(path);
+    }
     for(const path of Object.keys(fresh)) (t.after = t.after || {})[path] = fresh[path];
   }
+  const keepSet = new Set(keptTheirs);
 
   const target = goingBack ? t.before : t.after;
   for(const path of Object.keys(goingBack ? Object.assign({}, t.before, created) : t.after)){
     try{
-      if(goingBack && created[path]) await bridgeDelete(path);
+      if(goingBack && created[path]){
+        if(keepSet.has(path)) continue;          // theirs now - see above
+        await bridgeDelete(path);
+      }
       else if(target[path] != null) await bridgeWrite(path, target[path]);
     }catch(e){ failed++; }
   }
@@ -327,6 +381,14 @@ async function _agentToggleTurn(t, id){
   if(failed){
     try{ toast(failed + ' file' + (failed === 1 ? '' : 's') + ' could not be changed back. Your computer may have disconnected.', 'error', 6000); }catch(e){}
     return;
+  }
+  if(keptTheirs.length){
+    /* Named, not counted. "One file was kept" sends somebody looking; the
+       path tells them where to look. */
+    try{ toast('Kept ' + keptTheirs.slice(0, 3).join(', ')
+      + (keptTheirs.length > 3 ? ' and ' + (keptTheirs.length - 3) + ' more' : '')
+      + ' - you changed ' + (keptTheirs.length === 1 ? 'it' : 'them') + ' after AMV did, so '
+      + (keptTheirs.length === 1 ? 'it was' : 'they were') + ' not deleted.', 'info', 8000); }catch(e){}
   }
   t.undone = !t.undone;
   try{ _devRenderLog(); }catch(e){}

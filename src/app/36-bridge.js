@@ -128,7 +128,18 @@ async function _bridgeCall(route, body, timeoutMs){
   if(r.status === 403 && d.error === 'outside_root'){
     throw new Error('That path is outside the folder the bridge was started in, so it is not AMV’s to touch.');
   }
-  if(!r.ok) throw new Error(d.message || d.error || 'The bridge could not do that.');
+  if(!r.ok){
+    const err = new Error(d.message || d.error || 'The bridge could not do that.');
+    /* THE MACHINE-READABLE HALF, carried rather than left in the prose.
+
+       Callers need to tell one refusal from another - `bridgeRead` has to know
+       "not there" from "could not read it", and matching on a sentence is how
+       that breaks the first time the wording changes. Same reason the API
+       client carries `code` off the worker. */
+    if(d.error) err.code = String(d.error);
+    err.status = r.status;
+    throw err;
+  }
   return d;
 }
 
@@ -137,7 +148,19 @@ async function bridgeExec(command, opts){
   return await _bridgeCall('exec', { command, cwd: opts.cwd || '.', timeout: opts.timeout },
                            (opts.timeout || 120000) + 8000);
 }
-async function bridgeRead(path){ return await _bridgeCall('read', { path }, 20000); }
+/* A missing file answers `null` rather than throwing, and EVERY other failure
+   still throws. That distinction is load-bearing: the build agent decides
+   whether it is creating a file or editing one from this call, and a caller
+   that cannot tell "not there" from "could not read it" will treat a transient
+   failure as a new file - write without keeping a backup, record the path as
+   created, and let Undo delete it. See `_agentRunTool`. */
+async function bridgeRead(path){
+  try{ return await _bridgeCall('read', { path }, 20000); }
+  catch(e){
+    if(e && e.code === 'not_found') return null;
+    throw e;
+  }
+}
 async function bridgeWrite(path, content){ return await _bridgeCall('write', { path, content }, 20000); }
 async function bridgeList(path){ return await _bridgeCall('list', { path: path || '.' }, 15000); }
 /* Only Undo calls this, and only for a file the turn it is undoing created.
