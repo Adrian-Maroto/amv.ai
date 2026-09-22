@@ -13024,3 +13024,64 @@ precisely why it has to be written down rather than re-derived.
 And being unable to verify something is not licence to keep raising it. Where
 the work can be verified, verify it; where it cannot, the answer from the
 person who can see it is the record, and asking again is not diligence.
+
+## 494. A requirement declared in one layer and unfunded in another is a job that cannot work, and nothing says so
+
+Five entries in the Crew catalogue said `needs:'Bank connection'` - Morning
+money summary, Unusual transaction alerts, Low balance early warning, Credit
+watch, Budget pace. Every one of their instructions is written around real
+figures: "report the real balances from the linked accounts", "use real
+transactions only", "never state a balance you cannot read".
+
+The runner had no bank capability. `_CW_NEEDS_TO_USES` had rows for Email,
+Calendar and Classroom and none for a bank, so `_cwUsesFor` returned an empty
+list, `uses` never reached the server, and `_autoAccountContext` opened nothing.
+Those five jobs switched on, ran every morning, spent real money on an engine,
+and were handed their own instruction and no data at all.
+
+They did not lie about it. Each prompt's own honesty clause held, so the answers
+said a balance could not be read. That is exactly why it survived: the failure
+mode of an unfunded requirement is not a wrong answer, it is a useless one, and
+a useless answer that correctly explains itself reads like the product working
+at the edge of its abilities.
+
+THE SHAPE, because this is the fourth time this file has recorded it. A claim
+lives in one place and its enforcement or its data lives in another, and nothing
+joins them. `_autoConnected` asking `goauth:`, a store nothing wrote. The
+permission gate reading the detail while the runner read `uses`.
+`checkOAuthCallback` deleted with its caller left behind. And now a `needs`
+string with no capability behind it.
+
+What was added is the join, not the feature. `bank.read` is in
+`AUTO_USES_ALLOWED`, `_CW_NEEDS_TO_USES` maps the name to it,
+`AUTO_USE_TO_CAPABILITY` is the single bridge from a declared use to the gate's
+capability table so the screen that says "this will need a bank" and the runner
+that opens one read one field, and `_cwConnHas` routes `bank.read` to the same
+accessor `CW_NEEDS_CHECK` uses so "is a bank linked" has one answer everywhere.
+The suite drives all four and a mutation to any one of them fails it.
+
+## 495. A value computed is not a value sent, and a payload written out field by field is where it dies
+
+`_cwToggleReal` passed `boosts: _cwBoostsFor(j)` into `_scheduleTask`.
+`_cwBoostsFor` was correct. The card rendered "Better with a bank connection"
+correctly. `_scheduleTask` assembles its outbound body field by field - detail,
+repeat, kind, notify, firstRunAt, approval, srcId, uses, scope - and `boosts`
+was not one of them, so the value was dropped one function short of the wire.
+The server received no boost, the run never opened the bank, and the product
+said otherwise on the card.
+
+Nine assertions passed over that hole, because every one of them measured
+`_cwBoostsFor` and none measured the POST. It was found by deleting
+`boosts: _cwBoostsFor(j)` from the caller and watching the whole suite stay
+green - the mutation test, applied to a feature rather than to a guard.
+
+The rule is the one already written here about verifiers and routes, arriving
+from a new direction: A FIELD IS TWO CLAIMS. That it is computed, and that it
+travels. A payload builder that enumerates its fields silently discards
+everything its callers pass and it does not name, so the only assertion worth
+anything is one that reads what left the browser. The suite intercepts
+`/auto/create` and drives the real toggle on the real catalogue entry; cutting
+either joint - the caller, or the payload builder - now fails it.
+
+The test that would have caught this a year earlier is not a better unit test.
+It is a test placed at the seam instead of at the function.

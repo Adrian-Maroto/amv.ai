@@ -15416,3 +15416,22 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 /* The missing list leads with a count, so three things read as three things
    rather than as one long sentence somebody skims. */
 #vc .cw-job-miss{ line-height:1.5; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LAYER A250 - "better with", which is not "cannot without"
+
+   The job detail already has a row that means STOP: a missing requirement,
+   marked as a problem, with a Connect button under it. A bank connection on
+   the money leak detector is not that - the job runs on receipts and always
+   did - so this row has to read as information and not as an obstacle. Same
+   type as its neighbours, muted, no warning colour, no button. The only thing
+   it does differently is carry a trailing clause saying which way it is,
+   because "better with a bank connection" alone invites the reader to guess at
+   what changes.
+   ═══════════════════════════════════════════════════════════════════════ */
+#ovr .cwp-boostwhy{
+  color:var(--mu);
+  /* Never on its own line on a phone by accident, and never glued to the
+     label on a wide one. It wraps as part of the sentence it belongs to. */
+  font-size:var(--t-sm);
+}

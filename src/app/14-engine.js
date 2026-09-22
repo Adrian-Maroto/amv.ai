@@ -1865,6 +1865,19 @@ async function _scheduleTask(t){
       /* Which connected-account capabilities this job may draw on. Passed
          through rather than decided here - the server validates it. */
       uses: Array.isArray(t.uses) ? t.uses : [],
+      /* AND THE OPTIONAL ONES, WHICH THIS FUNCTION DROPPED ON THE FLOOR.
+
+         The payload here is written out field by field, so a caller passing
+         something this list does not name loses it silently. The Crew screen
+         was passing `boosts`, `_cwBoostsFor` was computing it correctly, the
+         card was showing "Better with a bank connection", and the server was
+         receiving nothing - so the run never opened the bank and the answer
+         stood on receipts while the product said otherwise.
+
+         Found by deleting `boosts` from the caller and watching every test
+         still pass: a value computed and a value SENT are two claims, and only
+         the first had one. The suite asserts this payload now. */
+      boosts: Array.isArray(t.boosts) ? t.boosts : [],
       scope: t.scope || null
     });
     if(typeof d.emailReady === 'boolean') _AUTO_EMAIL_READY = d.emailReady;

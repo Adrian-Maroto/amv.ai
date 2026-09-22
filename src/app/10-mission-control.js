@@ -76,10 +76,23 @@ function _cwDefaultJobs(){ return [
     asks:{ q:'What should I watch?', ph:'One per line: a page, a price, a competitor, a policy, a job board. Paste links where you have them.' },
     prompt:'Check each item on the user watch list against its previous state. Report ONLY genuine changes: what changed, the old value, the new value, and why it might matter. If nothing changed, say "nothing changed" rather than padding the report.' },
 
-  { id:'money_leaks', cat:'Money', icon:'\uD83D\uDCB8', title:'Money leak detector', needs:'Email', on:false,
-    desc:'AMV reads your receipts and statements for subscriptions you stopped using, duplicate charges, silent price rises, and avoidable fees - then tells you exactly what to cancel and how much you would save.',
-    sample:['Found 4 things. Together they cost you 631 a year.','Design tool - 34/month, no login recorded in 5 months. 408/year.','Two charges from the same streaming service on the 3rd and the 17th. One is a duplicate.','Cloud storage went from 8 to 12 in January without an email about it. 48/year, quietly.','Every one of these is from a receipt I can point at. Nothing here is a guess.'],
-    prompt:'Scan recent receipts, invoices and statement emails. Identify: recurring charges that look unused, duplicate charges, subscription price increases versus previous months, and avoidable fees. For each, give the merchant, the amount, how often, and the annual cost of keeping it. Total the potential saving. Never guess a charge you cannot see evidence for.' },
+  /* BETTER WITH A BANK, NOT BROKEN WITHOUT ONE.
+
+     The description said "receipts and statements" while the job could only
+     ever read receipts, and a receipt is what a merchant SAID it would charge.
+     A price rise announced in one email is invisible until the next receipt
+     arrives, which is exactly the leak this job is named after.
+
+     So it declares the bank as a `boost`: where one is linked the figures come
+     off the statement and are what actually left the account, and where one is
+     not it still runs on receipts and says so in the answer. It is not a
+     `needs`, because the aggregator behind it covers a short list of countries
+     and making the bank mandatory would break this job for most of the world
+     for no gain. */
+  { id:'money_leaks', cat:'Money', icon:'\uD83D\uDCB8', title:'Money leak detector', needs:'Email', boost:'Bank connection', on:false,
+    desc:'AMV finds subscriptions you stopped using, duplicate charges, silent price rises and avoidable fees - then tells you what to cancel and how much you would save. It reads your receipts, and where a bank is linked it reads the real charges instead.',
+    sample:['Found 4 things. Together they cost you 631 a year.','Design tool - 34/month, no login recorded in 5 months. 408/year.','Two charges from the same streaming service on the 3rd and the 17th. One is a duplicate.','Cloud storage went from 8 to 12 in January - your statement shows both. 48/year, quietly.','Every one of these points at a real charge or a real receipt. Nothing here is a guess.'],
+    prompt:'Identify money leaks from the evidence AMV supplies: recurring charges that look unused, duplicate charges, subscription price increases versus previous months, and avoidable fees. For each, give the merchant, the amount, how often, and the annual cost of keeping it. Total the potential saving. Say which figures came from a bank statement and which came from a receipt email, since a receipt is what the merchant said and a statement is what actually left the account. Never guess a charge you cannot see evidence for.' },
 
   { id:'forgot_check', cat:'Inbox & calendar', icon:'\uD83E\uDDE0', title:'What did I forget?', needs:'Email, Calendar', on:false,
     desc:'Each morning AMV re-reads your recent mail and calendar for things you said you would do, questions nobody answered, and commitments with no follow-up - so nothing quietly slips.',
@@ -715,8 +728,20 @@ const CW_NEEDS_CHECK = {
   /* Through the one accessor, so "is an account linked" has a single definition
      that the server refresh keeps current. Reading the key directly here meant
      this screen and the investing pane could disagree. */
-  'Bank connection': { label:'a bank connection',
-    has:()=>{ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } } },
+  /* ONE DEFINITION, and it is `_cwConnHas`.
+
+     This row used to ask `AMVFinance.linked()` itself while `_cwUnattendedReady`
+     asked `_cwConnHas('bank.read')` - which looks in the connector grants, where
+     a bank link has never lived, so it answered no for every account. The card
+     said ready and the same job was classified as browser-only in the next
+     function down. `_cwConnHas` routes `bank.read` to this accessor now, so
+     both questions land on the record that actually holds the token.
+
+     `cap` is declared so this row is shaped like the others: where a deployment
+     registers a provider that grants `bank.read`, `_cwReadyLine` names it
+     instead of saying "a bank connection". */
+  'Bank connection': { label:'a bank connection', cap:'bank.read',
+    has:()=>{ try{ return _cwConnHas('bank.read'); }catch(e){ return false; } } },
 };
 /* _cwHasGoogle STOOD HERE AND ANSWERED THE WRONG QUESTION FOR A LONG TIME.
 
@@ -883,6 +908,44 @@ function _cwNeedsAnything(j){
 function _cwNeedsReady(j){
   return _cwNeedsAnything(j) && _cwNeedsMissing(j).length === 0;
 }
+/* THE OPTIONAL HALF, AND IT IS NOT ALLOWED NEAR THE OTHER ONE.
+
+   `_cwBoostMissing` looks like `_cwNeedsMissing` and answers a different
+   question, so the two lists are never concatenated anywhere. A boost that
+   leaked into the missing list would make a working job read as blocked, refuse
+   to say "ready to run", and send somebody off to connect a bank they may not
+   be able to connect at all - the exact shape of the defect that made
+   `_cwNeedsMissing` fail closed in the first place, arriving from the other
+   direction. Named differently for that reason.
+
+   The LABEL, not the raw name: the same table, so a boost is named the way a
+   need is, and where the person has actually connected something the provider's
+   own name is used. */
+function _cwBoostList(j){
+  return String((j && j.boost) || '').split(',').map(s => s.trim())
+    .filter(Boolean).filter(n => n !== 'Nothing')
+    .map(n => {
+      const c = CW_NEEDS_CHECK[n];
+      const who = (c && c.cap) ? _cwProviderNameFor(c.cap) : '';
+      return who || (c ? c.label : n);
+    })
+    .filter((v, i, a) => a.indexOf(v) === i);
+}
+function _cwBoostMissing(j){
+  const out = [];
+  String((j && j.boost) || '').split(',').map(s => s.trim())
+    .filter(Boolean).filter(n => n !== 'Nothing')
+    .forEach(n => {
+      const c = CW_NEEDS_CHECK[n];
+      const label = c ? c.label : n;
+      /* Unknown fails closed here too, but harmlessly: an unrecognised boost
+         reads as absent, so the card says the job runs on what it can read,
+         which is the truthful answer when nothing knows how to check it. */
+      if(!(c ? c.has() : false) && out.indexOf(label) < 0) out.push(label);
+    });
+  return out;
+}
+try{ window._cwBoostList=_cwBoostList; window._cwBoostMissing=_cwBoostMissing; }catch(e){}
 try{ window._cwNeedsList=_cwNeedsList; window._cwNeedsAnything=_cwNeedsAnything;
      window._cwNeedsReady=_cwNeedsReady; }catch(e){}
 /* ── CONNECTING THE ONE ACCOUNT THIS JOB NEEDS ───────────────────────────────
@@ -3054,6 +3117,19 @@ function cwPeek(id){
         ? 'On AMV\u2019s servers, whether or not this window is open'
         : 'In this browser, while AMV is open \u2014 it needs something that lives here')
     + (j.needs ? fact('What it uses', escH(j.needs)) : '')
+    /* SAID BEFORE THEY SWITCH IT ON, not afterwards in the answer.
+
+       A boost is not a requirement and must not read like one, so it gets a
+       row of its own with no warning class and no Connect button - the job
+       runs either way. It says what changes, because "better with a bank
+       connection" on its own invites the reader to guess, and what actually
+       changes here is whether a figure is a receipt or a real debit. */
+    + (_cwBoostList(j).length
+        ? fact('Better with', escH(_cwBoostList(j).join(', '))
+            + (_cwBoostMissing(j).length
+                ? '<span class="cwp-boostwhy"> — not connected, so this runs on what it can read</span>'
+                : '<span class="cwp-boostwhy"> — connected, so the figures are real charges</span>'))
+        : '')
     /* The requirement is not a FACT about the job, it is the thing standing
        between somebody and using it - so it is not a row in a definition list
        any more. It is a block with a button, below. */
@@ -4435,9 +4511,43 @@ const _CW_NEEDS_TO_USES = {
      A `needs` string with no row here is not a smaller job, it is a job whose
      whole input is missing, and nothing said so at any layer. */
   'Classroom': 'school.read',
+  /* FIVE JOBS ASKED FOR THIS AND GOT NOTHING FOR YEARS.
+
+     Morning money summary, Unusual transaction alerts, Low balance warning,
+     Budget pace and Credit watch all say needs:'Bank connection', and their
+     instructions are written around real balances and real transactions. With
+     no row here `_cwUsesFor` returned an empty list, so `uses` never reached
+     the server, the runner never opened anything, and each of them ran on its
+     instruction alone. They did not lie about it - every one of those prompts
+     says never to state a balance it cannot read - but a job that says "use
+     real transactions only" and is handed none is a job that cannot work.
+
+     The comment above used to say a bank link was "a need AMV has no
+     capability for at all". That was true when it was written and stopped
+     being true the moment the runner got `bank.read`. */
+  'Bank connection': 'bank.read',
 };
 function _cwUsesFor(j){
   return String((j && j.needs) || '').split(',').map(x => x.trim())
+    .map(n => _CW_NEEDS_TO_USES[n]).filter(Boolean)
+    .filter((v, i, a) => a.indexOf(v) === i);
+}
+/* WHAT WOULD MAKE THE ANSWER BETTER, WHICH IS NOT WHAT MAKES IT POSSIBLE.
+
+   A job declares `boost` for a source that improves its answer and is not
+   required to produce one. There is exactly one today and it is the honest
+   description of the money leak detector: it works from receipts, which is
+   what it shipped on and the only thing available in most of the world, and it
+   is plainly better from a statement, because a receipt is what a merchant
+   said and a debit is what left the account.
+
+   Kept out of `needs` because everything in `needs` is reported as MISSING
+   when it is absent - so listing the bank there would have told everybody
+   outside the aggregator's countries that a working job was broken, and would
+   have stopped it running with AMV closed. Kept out of `_cwUsesFor` for the
+   same reason at the other end. */
+function _cwBoostsFor(j){
+  return String((j && j.boost) || '').split(',').map(x => x.trim())
     .map(n => _CW_NEEDS_TO_USES[n]).filter(Boolean)
     .filter((v, i, a) => a.indexOf(v) === i);
 }
@@ -4450,6 +4560,22 @@ function _cwUsesFor(j){
    on the next run, which is worse than not having it, because the card would
    promise background work that silently produces nothing. */
 function _cwConnHas(cap){
+  /* A BANK LINK IS NOT A SCOPED GRANT, AND ASKING THE GRANTS ABOUT IT ANSWERS
+     NO EVERY TIME.
+
+     `bank.read` lives in a `fin` record holding an aggregator token, not in the
+     connector list with a `scopes` array - so the loop below could only ever
+     return false for it. The first version of this work left that alone, and
+     the five bank jobs went ready, declared `uses:['bank.read']`, and were then
+     classified as running in the BROWSER, because "can the server do this"
+     answered no about the one capability the server holds outside the connector
+     table. Correct at both ends and not joined in the middle, again.
+
+     Routed to the same accessor `CW_NEEDS_CHECK['Bank connection']` uses, so
+     one question has one answer on every screen. */
+  if(cap === 'bank.read'){
+    try{ return typeof AMVFinance !== 'undefined' && !!AMVFinance.linked(); }catch(e){ return false; }
+  }
   try{
     const d = (typeof _connState !== 'undefined' && _connState) ? _connState.data : null;
     if(!d || !Array.isArray(d.items)) return false;
@@ -4470,8 +4596,11 @@ function _cwConnHas(cap){
    would never have opened the mailbox it can now open. Correct at both ends and
    not joined in the middle - the same failure, one level further down.
 
-   A need AMV has no capability for at all (a bank link) still runs foreground,
-   because nothing here can change that. */
+   A need with no row in `_CW_NEEDS_TO_USES` still runs foreground, because
+   nothing here can change that. A bank link used to be the example; it is one
+   no longer, since the runner holds `bank.read` now. `boost` is deliberately
+   not consulted: a source that only improves the answer must never decide
+   whether the job can run with AMV closed. */
 function _cwUnattendedReady(j){
   if(_cwRunsUnattended(j)) return true;
   const needs = String((j && j.needs) || '').split(',').map(x => x.trim()).filter(Boolean);
@@ -4544,6 +4673,12 @@ async function _cwToggleReal(jobs, j){
                                     this against its own allow-list and still
                                     checks the connection carries the scope. */
                                  uses: _cwUsesFor(j),
+                                 /* And what it would be better with. Refused
+                                    exactly like `uses` server-side; the only
+                                    difference is that a missing one is a note
+                                    about the evidence rather than a stopped
+                                    job. */
+                                 boosts: _cwBoostsFor(j),
                                  /* Which catalogue job this is, so the most-used
                                     list is built from what people actually turn
                                     on rather than from a guess. */

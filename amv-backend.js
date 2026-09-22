@@ -3583,6 +3583,15 @@ async function autoCreate(request, env){
      nobody granted. */
   const derived = _autoUsesFromText(detail);
   const uses = [...new Set(asked.concat(derived))].slice(0, 4);
+  /* WHAT WOULD MAKE THE ANSWER BETTER, kept apart from what it needs.
+
+     Same allow-list, same filter, and never derived from text - a boost that a
+     phrase could conjure would be a bank read nobody asked for. Anything
+     already required is dropped rather than carried twice. See the comment on
+     `boosts` in `_autoAccountContext` for why the two lists are not one. */
+  const boosts = (Array.isArray(body.boosts)
+    ? body.boosts.map(String).filter(u => AUTO_USES_ALLOWED.indexOf(u) >= 0 && uses.indexOf(u) < 0)
+    : []).slice(0, 4);
   if(!detail) return json({ error:'detail required' }, 400);
   if(detail.length > 2000) return json({ error:'detail too long' }, 400);
   /* NOTHING CREDENTIAL-SHAPED IS EVER WRITTEN TO KV.
@@ -3681,6 +3690,10 @@ async function autoCreate(request, env){
        Empty for the overwhelming majority of jobs, which are web research and
        need nobody's mailbox. */
     uses,
+    /* And which it would be BETTER with. Stored beside `uses` rather than
+       folded into it, because a missing one of these is a note about the
+       evidence and a missing `use` is a broken job. */
+    boosts,
     tier: budget.free ? 'free' : 'paid',
     created: Date.now(), runs: 0, lastError: null, active: true
   };
@@ -4350,7 +4363,24 @@ function _investText(r){
    in the prompt, in words, and instructed to say it. An inbox digest that
    quietly reports on nothing looks identical to an inbox with nothing in it,
    which is how somebody misses a fortnight of mail believing AMV was watching. */
-const AUTO_USES_ALLOWED = ['mail.read', 'calendar.read', 'school.read'];
+/* READ-ONLY, EVERY ONE OF THEM. There is no send, no write and no payment in
+   this list, and that is the whole reason an unattended run is allowed to hold
+   an account at all.
+
+   `bank.read` is here because five jobs in the catalogue already said they
+   needed a bank connection - Morning money summary, Unusual transaction
+   alerts, Low balance warning, Budget pace, Credit watch - and the runner
+   handed them nothing. Their prompts are written around real balances and real
+   transactions, and each one honestly says "never state a balance you cannot
+   read", so they did not lie; they simply could not work. A requirement stated
+   in one layer with no data behind it in another is the failure this codebase
+   keeps finding, and this was the largest remaining instance of it.
+
+   It reads through the same aggregator token the investing check-in has read
+   unattended since it was written, so no new class of access is created here -
+   balances were already readable on a schedule, and this adds the transaction
+   list beside them. */
+const AUTO_USES_ALLOWED = ['mail.read', 'calendar.read', 'school.read', 'bank.read'];
 
 /* WHAT A JOB PLAINLY NEEDS, READ OFF WHAT IT SAYS IT DOES.
 
@@ -4375,6 +4405,18 @@ const AUTO_USES_FROM_TEXT = [
   [/\b(gmail|my e-?mails?|e-?mails? (?:i|from)|inbox|unread|mailbox|read (?:my )?(?:e-?mail|mail)|reply to)\b/i, 'mail.read'],
   [/\b(calendar|meetings?|appointments?|my (?:day|week|schedule)|diary|what(?:['’]| i)?s on)\b/i, 'calendar.read'],
   [/\b(canvas|classroom|assignments?|homework|coursework|my class(?:es)?|due (?:today|tomorrow|this week)|deadlines?)\b/i, 'school.read'],
+  /* DELIBERATELY NO ROW FOR `bank.read`.
+
+     Every other entry here is a phrase that can only mean one thing.
+     "Spending", "my money" and "subscriptions" are not like that: they are the
+     words people use for a question they expect answered from receipts as often
+     as from a statement. A row here would mean a sentence typed into chat
+     starts an unattended job that reads somebody's bank account, which is not
+     a thing to infer from wording.
+
+     So a bank read is only ever requested by a job that DECLARES it - the
+     catalogue's `needs:'Bank connection'`, which the person saw on the card
+     before they switched it on. Narrower than the others on purpose. */
 ];
 function _autoUsesFromText(text){
   const s = String(text || '');
@@ -5017,6 +5059,132 @@ function _subTotals(rows){
 /* One pass over what the mailbox already handed us. Nothing is fetched, so
    this costs no request and no token; it is reading text that was read
    anyway. */
+/* ── THE SAME QUESTION, ASKED OF THE BANK ─────────────────────────────────
+
+   `_detectSubscriptions` reads receipt emails, and that is an inference: the
+   figure in a receipt is what a merchant SAID, in the month they said it, and
+   a price rise announced in one message is invisible until the next one
+   arrives. A bank transaction is what actually left the account. Where both
+   exist the bank is simply better evidence, and "AMV found four subscriptions
+   costing you 631 a year" stops being a reading of somebody's mail and becomes
+   a statement about their money.
+
+   IT STAYS DETERMINISTIC, for the reason written above `_SUB_RECUR_RE`: this
+   is money, a model handed a list of charges will produce a confident number,
+   and somebody then cancels the wrong thing. Nothing here asks a model
+   anything. Recurrence is decided by arithmetic on dates and amounts, and
+   every row can be pointed at the exact charges it came from.
+
+   THE FALSE POSITIVE IS STILL THE EXPENSIVE ONE, so the bar is deliberately
+   high: at least two charges to the same merchant, amounts within 5% of each
+   other, and spacing that matches a real cadence inside a tolerance. Two
+   unrelated purchases from the same shop are not a subscription, and a shop
+   somebody happens to visit monthly is not either unless the amount holds.
+
+   Currency is carried per row and never normalised - `_subTotals` already
+   totals by currency, because adding euros to yen produces a number that is
+   wrong in every currency. */
+const _TXN_CADENCE = [
+  { name:'weekly',  days:7,   tol:2 },
+  { name:'monthly', days:30,  tol:4 },
+  { name:'yearly',  days:365, tol:14 },
+];
+/* Same merchant, whatever the statement happened to append to it. Bank
+   descriptors carry store numbers, cities and reference codes that differ per
+   charge, so a raw string match would see one subscription as several. */
+function _txnMerchant(t){
+  const raw = String((t && (t.merchant_name || t.name)) || '').trim();
+  if(!raw) return '';
+  return raw
+    .replace(/\s+#?\d{3,}\b/g, ' ')            // store or reference numbers
+    .replace(/\b(?:pos|dbt|crd|ach|recur+ing|payment|purchase|visa|mastercard)\b/gi, ' ')
+    .replace(/[^\p{L}\p{N}&.' -]/gu, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+    .slice(0, 60);
+}
+function _txnDay(t){
+  const d = Date.parse(String((t && (t.authorized_date || t.date)) || '') + 'T00:00:00Z');
+  return Number.isFinite(d) ? Math.floor(d / 86400000) : null;
+}
+function _detectSubscriptionsFromTxns(txns){
+  const byMerchant = new Map();
+  for(const t of (Array.isArray(txns) ? txns : [])){
+    /* Money OUT only. Plaid reports a debit as a positive amount and a refund
+       or deposit as a negative one, so a credit is not a subscription and a
+       refund must not cancel one out of existence either. */
+    /* A pending charge and the posted one that replaces it are two rows for
+       one payment. Counting both inflates the charge count this row reports as
+       its evidence, and evidence that overstates itself is the thing the whole
+       deterministic path exists to avoid. */
+    if(t && t.pending) continue;
+    const amt = Number(t && t.amount);
+    if(!Number.isFinite(amt) || amt <= 0) continue;
+    const merchant = _txnMerchant(t);
+    if(!merchant) continue;
+    const day = _txnDay(t);
+    if(day === null) continue;
+    const cur = String((t && t.iso_currency_code) || (t && t.unofficial_currency_code) || 'USD');
+    const key = merchant.toLowerCase() + '|' + cur;
+    if(!byMerchant.has(key)) byMerchant.set(key, { merchant, currency: cur, rows: [] });
+    byMerchant.get(key).rows.push({ amount: amt, day });
+  }
+  const out = [];
+  for(const g of byMerchant.values()){
+    if(g.rows.length < 2) continue;
+    g.rows.sort((a, b) => a.day - b.day);
+    /* The amount has to hold. A merchant charged 4.99 then 71.00 is somebody
+       shopping, not a subscription renewing. */
+    const amounts = g.rows.map(r => r.amount);
+    const mid = amounts.slice().sort((a, b) => a - b)[Math.floor(amounts.length / 2)];
+    const steady = amounts.filter(a => Math.abs(a - mid) <= Math.max(0.01, mid * 0.05));
+    if(steady.length < 2) continue;
+    /* And the spacing has to match a cadence somebody would recognise. */
+    const gaps = [];
+    for(let i = 1; i < g.rows.length; i++) gaps.push(g.rows[i].day - g.rows[i - 1].day);
+    let cadence = null;
+    for(const c of _TXN_CADENCE){
+      if(gaps.some(gp => Math.abs(gp - c.days) <= c.tol)){ cadence = c.name; break; }
+    }
+    if(!cadence) continue;
+    const last = g.rows[g.rows.length - 1];
+    out.push({
+      merchant: g.merchant,
+      amount: Math.round(mid * 100) / 100,
+      currency: g.currency,
+      cadence,
+      /* Provenance, so the answer can say where the figure came from rather
+         than presenting an exact charge and an inferred one as equals. */
+      source: 'bank',
+      charges: g.rows.length,
+      evidence: g.rows.length + ' charges, last ' + new Date(last.day * 86400000).toISOString().slice(0, 10),
+      from: '', deliverable: false,
+    });
+  }
+  return out;
+}
+
+/* Bank rows win where a merchant appears in both. An exact debit is better
+   evidence than a receipt, and a receipt with no amount is worse than either -
+   but the mail row's cancellation address is kept, because that is the one
+   thing the bank cannot supply. */
+function _mergeSubscriptionSources(mailRows, bankRows){
+  const out = (Array.isArray(bankRows) ? bankRows.slice() : []);
+  const seen = new Set(out.map(r => String(r.merchant || '').toLowerCase()));
+  for(const m of (Array.isArray(mailRows) ? mailRows : [])){
+    const key = String(m.merchant || '').toLowerCase();
+    const hit = seen.has(key) ? out.find(r => String(r.merchant || '').toLowerCase() === key) : null;
+    if(hit){
+      if(!hit.from && m.from){ hit.from = m.from; hit.deliverable = !!m.deliverable; }
+      if(!hit.cadence && m.cadence) hit.cadence = m.cadence;
+      continue;
+    }
+    seen.add(key);
+    out.push(Object.assign({ source: 'mail' }, m));
+  }
+  return out;
+}
+
 function _detectSubscriptions(mail){
   const out = [];
   const seen = new Set();
@@ -5322,12 +5490,139 @@ function _fenceUntrusted(text, tag){
    job for a list that cannot have changed since the run started. Defaulted, so
    a caller that has no list is a caller with no refusals rather than an
    error. */
+/* ── THE BANK, OPENED FOR AN UNATTENDED RUN ───────────────────────────────
+
+   `connUse` is the door for OAuth grants and cannot answer for this one: a bank
+   link is not a `conn` row with scopes, it is a `fin` record holding an
+   aggregator access token. So this is a second door, and the thing that matters
+   is that it enforces the SAME stop.
+
+   "Pause all autonomous" is the control somebody reaches for when they want AMV
+   to stop touching their things. A pause that halted the mailbox and left the
+   bank readable would be the pause failing at the only moment anybody uses it -
+   and it would fail on the most sensitive account of the set. It is checked
+   here, off the same `auto` record `autoPause` writes, and an unreadable record
+   REFUSES: an unenforceable stop is not a stop, and the cost of being wrong
+   this way is a job that waits.
+
+   The token never leaves the server, is never returned, and is never put in an
+   audit line. The audit records that a bank read happened, for which job. */
+async function _bankUse(env, email, jobId, opts){
+  const o = opts || {};
+  if(!_finReady(env)) return { ok:false, code:'bank_not_configured' };
+  if(!o.attended){
+    try{
+      const rec = await DB.get(env, 'auto', _autoKey(email));
+      if(rec && rec.paused) return { ok:false, code:'autonomy_paused' };
+    }catch(_e){ return { ok:false, code:'autonomy_unknown' }; }
+  }
+  let rec;
+  try{ rec = await DB.get(env, 'fin', email); }
+  catch(_e){ return { ok:false, code:'unreadable' }; }
+  if(!rec || !rec.accessToken) return { ok:false, code:'not_connected', need:'bank.read' };
+  audit(env, 'bank_read', { by: String(email || ''), job: String(jobId || '') });
+  return { ok:true, token: rec.accessToken };
+}
+
+/* One shape for every aggregator call, so the secret is assembled in one place
+   and a provider error arrives as a thrown message rather than as an empty
+   result that reads like an empty account. An account with nothing in it and an
+   account that could not be read are different facts about somebody's money. */
+async function _bankPost(env, token, path, extra){
+  const base = String(env.FINANCE_API_URL || 'https://production.plaid.com').replace(/\/$/, '');
+  const r = await fetchDeadline(base + path, {
+    method:'POST', headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify(Object.assign({ client_id: env.FINANCE_CLIENT_ID,
+      secret: env.FINANCE_SECRET, access_token: token }, extra || {})) });
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok) throw new Error(String((d && d.error_message) || 'the bank data provider refused the request').slice(0, 90));
+  return d || {};
+}
+
+/* Long enough for a monthly charge to appear several times and for a price rise
+   to be visible as a change rather than as a single figure. A yearly
+   subscription will not show twice in this window and deliberately is not
+   claimed to: `_detectSubscriptionsFromTxns` needs two charges, so a yearly one
+   simply does not appear, which is better than a monthly one invented from it. */
+const AUTO_TXN_DAYS = 120;
+const AUTO_TXN_MAX = 250;      // rows asked of the provider
+const AUTO_TXN_LIST = 120;     // rows put in front of the model
+
+async function _fetchBankAccounts(env, token){
+  const d = await _bankPost(env, token, '/accounts/balance/get', {});
+  return (d.accounts || []).map(a => ({
+    id: a.account_id, name: a.name || a.official_name || '', mask: a.mask || '',
+    type: a.subtype || a.type || '',
+    balance: (a.balances && (a.balances.current != null ? a.balances.current : a.balances.available)),
+    available: (a.balances && a.balances.available),
+    currency: (a.balances && (a.balances.iso_currency_code || a.balances.unofficial_currency_code)) || 'USD',
+  }));
+}
+
+async function _fetchBankTxns(env, token, days){
+  const n = Math.min(365, Math.max(1, Number(days) || AUTO_TXN_DAYS));
+  const iso = ms => new Date(ms).toISOString().slice(0, 10);
+  const d = await _bankPost(env, token, '/transactions/get', {
+    start_date: iso(Date.now() - n * 86400000), end_date: iso(Date.now()),
+    options: { count: AUTO_TXN_MAX } });
+  return Array.isArray(d.transactions) ? d.transactions : [];
+}
+
+/* In and out over the window, per currency, worked out here rather than left to
+   the model - the same rule as `_subTotals`, for the same reason. Adding rupees
+   to euros produces a number that is wrong in both. */
+function _bankFlow(txns){
+  const by = new Map();
+  for(const t of (Array.isArray(txns) ? txns : [])){
+    if(t && t.pending) continue;
+    const amt = Number(t && t.amount);
+    if(!Number.isFinite(amt) || amt === 0) continue;
+    const cur = String((t && (t.iso_currency_code || t.unofficial_currency_code)) || 'USD');
+    const e = by.get(cur) || { currency: cur, out: 0, in: 0, count: 0 };
+    if(amt > 0) e.out += amt; else e.in += -amt;
+    e.count++;
+    by.set(cur, e);
+  }
+  return [...by.values()].map(e => ({ currency: e.currency, count: e.count,
+    out: Math.round(e.out * 100) / 100, in: Math.round(e.in * 100) / 100 }))
+    .sort((a, b) => b.out - a.out || a.currency.localeCompare(b.currency));
+}
+
 async function _autoAccountContext(env, item, email, never){
   const uses = Array.isArray(item && item.uses) ? item.uses : [];
-  if(!uses.length) return { text: '', missing: [] };
+  /* WHAT MAKES THE ANSWER BETTER, AS OPPOSED TO WHAT MAKES IT POSSIBLE.
+
+     The money leak detector genuinely works from receipts: that is what it
+     shipped on and it is the only thing that works in most of the world, since
+     the aggregator behind `bank.read` covers a short list of countries. It is
+     also plainly WORSE than a statement - a receipt is what a merchant said, in
+     the month they said it, and a silent price rise is invisible until the next
+     one arrives.
+
+     Both of those are true at once, and `uses` could not say so: every entry in
+     it is required, a missing one is reported at the top of the answer as
+     something AMV could not see, and a job that listed the bank there would
+     have told everybody outside those countries that it was broken.
+
+     So an optional one is declared separately. It is requested exactly like a
+     required one and refused exactly like one; the only difference is what
+     happens next. A missing `use` says the job could not do its work. A missing
+     `boost` says which evidence the answer is standing on, which is the thing
+     the person actually needs to know. */
+  const boosts = Array.isArray(item && item.boosts) ? item.boosts : [];
+  if(!uses.length && !boosts.length) return { text: '', missing: [], soft: [] };
   const jobId = String((item && item.id) || '').slice(0, 40);
   const parts = [];
   const missing = [];
+  const soft = [];
+  /* The raw rows, kept out of the loop. Subscriptions used to be worked out
+     inside the mail branch, which was correct while mail was the only evidence
+     there was. It cannot stay there now: a merchant that appears in both a
+     receipt and a statement must be ONE row, and the mail branch has no way to
+     know whether a bank branch ran after it. So each branch collects, and the
+     detection happens once, below, over whatever arrived. */
+  let mailRows = null;
+  let bankTxns = null;
   /* THE LETTERS THE PERSON CAN ACTUALLY SEND, carried out of the run as data
      rather than left inside the prompt.
 
@@ -5343,9 +5638,18 @@ async function _autoAccountContext(env, item, email, never){
      before producing anything leaves the next run seeing the same mail. */
   const commits = [];
 
-  for(const need of uses){
+  /* Required first, so a required failure is reported before an optional one is
+     even attempted. A name in both lists is required - asking for it twice would
+     open the account twice and write two audit lines for one run. */
+  const wanted = uses.map(n => ({ need: n, optional: false }))
+    .concat(boosts.filter(n => uses.indexOf(n) < 0).map(n => ({ need: n, optional: true })));
+  for(const { need, optional } of wanted){
     if(AUTO_USES_ALLOWED.indexOf(need) < 0) continue;
-    const got = await connUse(env, email, need, jobId, { attended: false });
+    /* A bank link is a `fin` record, not a scoped grant, so it has its own
+       door - one that enforces the same pause. See `_bankUse`. */
+    const got = need === 'bank.read'
+      ? await _bankUse(env, email, jobId, { attended: false })
+      : await connUse(env, email, need, jobId, { attended: false });
     if(!got.ok){
       /* Each reason gets its own sentence, because the fix is different for
          each: reconnect, unpause, or connect for the first time. */
@@ -5357,8 +5661,10 @@ async function _autoAccountContext(env, item, email, never){
           ? 'no account is connected for this'
         : got.code === 'connect_key_missing'
           ? 'connected accounts are not switched on for this deployment'
+        : got.code === 'bank_not_configured'
+          ? 'bank data is not switched on for this deployment'
         : 'it could not be opened (' + got.code + ')';
-      missing.push({ need, why });
+      (optional ? soft : missing).push({ need, why });
       continue;
     }
     try{
@@ -5437,6 +5743,7 @@ async function _autoAccountContext(env, item, email, never){
         }
 
         const all = fresh.concat(backfilled);
+        mailRows = all;
         const head = cursor > 0
           ? 'REAL INBOX - NEW SINCE AMV LAST LOOKED (' + all.length + ', headers and one-line previews only - you do not have the message bodies):'
           : 'REAL INBOX (' + all.length + ' most recent, headers and one-line previews only - you do not have the message bodies):';
@@ -5452,89 +5759,6 @@ async function _autoAccountContext(env, item, email, never){
 
         if(gap && Number(gap.to) > 0){
           block += '\n\nSTILL CATCHING UP: more mail arrived than AMV can read in one pass, so OLDER UNREPORTED MAIL EXISTS below the list above and AMV is still working back through it. Say this plainly and do not present the list as everything that came in.';
-        }
-
-        /* THE AMOUNTS ARE EXTRACTED, NOT INFERRED.
-
-           Handed the same subject lines, a model will produce a confident
-           figure for what somebody is paying - and sometimes it will be the
-           price from an advertisement, or last month's, or a rounding. This
-           states the ones that could be read by rule, with the line each came
-           from, and tells the model to use these and not to compute its own.
-           Where a merchant looks like a subscription but no amount could be
-           read, it says so rather than leaving a blank a model will fill. */
-        const subs = _detectSubscriptions(all);
-        if(subs.length){
-          block += '\n\nRECURRING CHARGES AMV READ OUT OF THOSE MESSAGES (extracted by rule, not estimated - use these figures and do not calculate your own from the subject lines):\n'
-            + subs.map(x => '- ' + x.merchant
-                + ' | ' + (x.amount === null ? 'AMOUNT NOT STATED IN THE MESSAGE' : (x.currency + ' ' + x.amount.toFixed(2)))
-                + ' | ' + (x.cadence || 'how often is not stated')
-                + ' | from: ' + x.evidence).join('\n')
-            + '\n\nAn amount marked NOT STATED was genuinely absent - say so rather than estimating one. A cadence that is not stated must not be assumed monthly. '
-            + 'These are the charges AMV could see in this window of mail; it is not necessarily every subscription the person has, and you must not present it as a complete list of what they pay for.';
-          /* The total, computed rather than left to the model. Adding a yearly
-             plan in as monthly, or adding pounds to dollars, are both easy
-             mistakes to make from a list and both produce a confident wrong
-             number about somebody's money. */
-          const tot = _subTotals(subs);
-          if(tot.byCurrency.length){
-            block += '\n\nWHAT THOSE COME TO PER MONTH (AMV worked this out, currencies kept separate because a mixed total is wrong in both - use these figures and do not add anything up yourself):\n'
-              + tot.byCurrency.map(c => '- ' + c.currency + ' ' + c.monthly.toFixed(2) + ' a month (' + c.yearly.toFixed(2) + ' a year) across ' + c.count + ' charge' + (c.count === 1 ? '' : 's')).join('\n');
-          }
-          if(tot.noAmount || tot.noCadence){
-            block += '\n\nNOT INCLUDED IN THOSE TOTALS: ' + tot.noAmount + ' with no amount stated and ' + tot.noCadence
-              + ' where how often it recurs was not stated. Say that the total leaves them out rather than quietly presenting it as everything.';
-          }
-
-          /* WHAT CAN ACTUALLY BE DONE ABOUT EACH ONE - option (a), on the
-             surface that already exists.
-
-             Knowing you pay for something is half an answer; the other half is
-             where the cancel button is, and for most of these the answer is
-             NOT "reply to this receipt". Most subscription mail comes from an
-             unattended mailbox, so a cancellation posted back to it is a letter
-             into a void - and a digest that offered to send one would be the
-             "says it did something and did not" failure, with the extra harm
-             that somebody stops looking for the real cancel button.
-
-             So each row carries a verdict computed by rule, and the model is
-             told to pass it on rather than to have an opinion about it. The
-             drafted letter is included ONLY for the ones that could genuinely
-             be sent, because showing somebody a letter that cannot be
-             delivered is offering them an action that does not exist. */
-          /* THE NEVER LIST, APPLIED WHERE A DESTINATION IS PROPOSED.
-
-             Not a send filter - there are no sends here to filter. This is the
-             one place AMV puts an address in front of somebody with a letter
-             already written and a button that opens their mail app, and the
-             address came out of MAIL, which is content an outsider wrote. So
-             "never write to my bank" has to mean the letter is not offered,
-             not that it is offered with a warning. */
-          const refuse = Array.isArray(never) ? never : [];
-          const acts = subs.map(x => {
-            const blocked = _neverBlocks(refuse, x.from);
-            return blocked
-              ? { sub: x, v: { can: false, code: 'never',
-                    say: 'You told AMV never to write to ' + blocked + ', so it has not written this one. '
-                       + 'Cancel it from ' + String(x.merchant || 'the provider') + '\u2019s own account page.' } }
-              : { sub: x, v: _cancelVerdict(x) };
-          });
-          block += '\n\nWHETHER EACH ONE CAN BE CANCELLED BY EMAIL (worked out by rule from the address the receipt came from - repeat these verdicts, do not form your own and do not guess a cancellation address):\n'
-            + acts.map(a => '- ' + a.sub.merchant + ': ' + a.v.say).join('\n');
-          const sendable = acts.filter(a => a.v.can);
-          for(const a of sendable){
-            const d = _cancelDraft(a.sub, email);
-            drafts.push({ merchant: d.merchant, to: d.to, subject: d.subject, body: d.body });
-          }
-          if(sendable.length){
-            block += '\n\nFOR THE ONES THAT CAN BE EMAILED, THIS IS THE EXACT TEXT AMV WOULD SEND IF THEY ASK. It has NOT been sent and you must not say or imply that it has. Offer it; do not act on it:\n'
-              + sendable.map(a => {
-                  const d = _cancelDraft(a.sub, email);
-                  return '- To ' + d.to + ' | subject: ' + d.subject + '\n' + d.body.split('\n').map(l => '  | ' + l).join('\n');
-                }).join('\n');
-          }
-          block += '\n\nNOTHING ON THIS ROUTE CANCELS ANYTHING BY ITSELF. AMV cannot send mail on a schedule at all, so no cancellation has gone out and none will without them asking. '
-            + 'Never tell them a subscription is cancelled - the most that is ever true here is that a request was sent, and even then AMV cannot see whether the provider acted on it.';
         }
         parts.push(block);
 
@@ -5581,13 +5805,172 @@ async function _autoAccountContext(env, item, email, never){
               ? '\n\nCOULD NOT READ: ' + sc.unread.join(', ') + '. Say so - these classes may have work due that is NOT in the list above. Do not describe this as the complete picture.'
               : ''));
       }
+
+      if(need === 'bank.read'){
+        const accounts = await _fetchBankAccounts(env, got.token);
+        bankTxns = await _fetchBankTxns(env, got.token, AUTO_TXN_DAYS);
+
+        /* An account list that came back EMPTY is not an account with no money
+           in it. Said in words for the same reason the empty inbox is: handed
+           an empty list a model writes whichever of the two reads better. */
+        let bank = 'REAL BANK DATA, READ FROM THE LINKED INSTITUTION JUST NOW (read-only - AMV cannot move money, pay anything or change any account):\n';
+        bank += accounts.length
+          ? accounts.map(a => '- ' + (a.name || 'account') + (a.mask ? ' (...' + a.mask + ')' : '')
+              + (a.type ? ' | ' + a.type : '')
+              + ' | balance ' + (a.balance == null ? 'NOT REPORTED BY THE INSTITUTION' : a.currency + ' ' + Number(a.balance).toFixed(2))
+              + (a.available != null && a.available !== a.balance ? ' | available ' + a.currency + ' ' + Number(a.available).toFixed(2) : '')
+            ).join('\n')
+          : '(the institution returned no accounts on this link - say that the accounts could not be listed rather than describing an empty or zero balance)';
+        bank += '\n\nUse these balances exactly as written and never state one that is not here. A balance marked NOT REPORTED was genuinely absent.';
+
+        const flow = _bankFlow(bankTxns);
+        bank += '\n\nTRANSACTIONS IN THE LAST ' + AUTO_TXN_DAYS + ' DAYS: ' + bankTxns.length + ' posted.';
+        if(flow.length){
+          /* AMV's arithmetic, not the model's, and kept per currency - a total
+             that mixes two is wrong in both. */
+          bank += '\n' + flow.map(f => '- ' + f.currency + ': ' + f.out.toFixed(2) + ' out, ' + f.in.toFixed(2) + ' in, across ' + f.count + ' transaction' + (f.count === 1 ? '' : 's')).join('\n')
+            + '\n(AMV added those up - use these figures and do not total the list yourself.)';
+        }
+        const rows = bankTxns.filter(t => t && !t.pending)
+          .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+          .slice(0, AUTO_TXN_LIST);
+        if(rows.length){
+          bank += '\n\nTHE MOST RECENT ' + rows.length + ' (a minus sign is money coming IN):\n'
+            + rows.map(t => '- ' + String(t.date || '') + ' | ' + (_txnMerchant(t) || String(t.name || 'unnamed'))
+                + ' | ' + String((t.iso_currency_code || t.unofficial_currency_code) || 'USD') + ' ' + Number(t.amount).toFixed(2)
+                + ((t.category && t.category[0]) ? ' | ' + t.category[0] : '')).join('\n');
+          if(bankTxns.length > rows.length){
+            bank += '\n(' + (bankTxns.length - rows.length) + ' older transactions in the window are NOT listed. The totals above cover all of them; the list does not. Do not present the list as everything.)';
+          }
+        }
+        /* WHAT THIS LINK DOES NOT CARRY, said plainly.
+
+           Credit watch asks for score and report changes, and a transactions
+           link cannot answer that at all. Its own prompt says to say so if the
+           score cannot be read - but a model holding a rich block of real bank
+           data is being invited to treat "credit" as covered by it. Naming the
+           absence is cheaper than hoping. */
+        bank += '\n\nTHIS LINK CARRIES BALANCES AND TRANSACTIONS AND NOTHING ELSE. There is no credit score, no credit report, no list of scheduled future payments and no overdraft limit here. '
+          + 'If the job asks for any of those, say plainly that AMV cannot read it, and never infer one from the transactions above.';
+        parts.push(bank);
+      }
     }catch(e){
-      missing.push({ need, why: 'the provider refused the request (' + String((e&&e.message)||'error').slice(0,40) + ')' });
+      (optional ? soft : missing).push({ need, why: 'the provider refused the request (' + String((e&&e.message)||'error').slice(0,90) + ')' });
+    }
+  }
+
+  /* ── WHAT IS RECURRING, OVER WHATEVER EVIDENCE ARRIVED ──────────────────
+
+     THE AMOUNTS ARE EXTRACTED, NOT INFERRED.
+
+     Handed the same subject lines, a model will produce a confident figure for
+     what somebody is paying - and sometimes it will be the price from an
+     advertisement, or last month's, or a rounding. This states the ones that
+     could be read by rule, with the line each came from, and tells the model to
+     use these and not to compute its own. Where a merchant looks like a
+     subscription but no amount could be read, it says so rather than leaving a
+     blank a model will fill.
+
+     It now runs over two kinds of evidence and they are not equals. A receipt
+     is what a merchant SAID. A debit is what LEFT THE ACCOUNT. Where the same
+     merchant appears in both, the bank figure wins and the receipt contributes
+     the one thing a statement has never carried: an address the cancellation
+     could be sent to. Every row says which it is, because "AMV found four
+     subscriptions" means something different depending on the answer. */
+  if(mailRows || bankTxns){
+    const mailSubs = mailRows ? _detectSubscriptions(mailRows) : [];
+    const bankSubs = bankTxns ? _detectSubscriptionsFromTxns(bankTxns) : [];
+    const subs = _mergeSubscriptionSources(mailSubs, bankSubs);
+    if(subs.length){
+      const src = x => x.source === 'bank' ? 'YOUR STATEMENT' : 'a receipt email';
+      let sb = 'RECURRING CHARGES AMV FOUND (extracted by rule, not estimated - use these figures and do not calculate your own):\n'
+        + subs.map(x => '- ' + x.merchant
+            + ' | ' + (x.amount === null ? 'AMOUNT NOT STATED IN THE MESSAGE' : (x.currency + ' ' + x.amount.toFixed(2)))
+            + ' | ' + (x.cadence || 'how often is not stated')
+            + ' | from ' + src(x) + ': ' + x.evidence).join('\n')
+        + '\n\nAn amount marked NOT STATED was genuinely absent - say so rather than estimating one. A cadence that is not stated must not be assumed monthly. '
+        + 'A row from YOUR STATEMENT is money that actually left the account, on the dates given. A row from a receipt email is what the merchant said it would charge, which can be out of date - if a price rose quietly, the receipt will not show it. '
+        + 'Say which kind each figure is when it matters, and never present a receipt figure as a confirmed debit. '
+        + (bankTxns
+            ? 'These are the charges AMV could see in the last ' + AUTO_TXN_DAYS + ' days of transactions'
+              + (mailRows ? ' and in this window of mail' : '') + '. A yearly subscription will not appear at all unless it was charged twice inside that window, so this is not necessarily every subscription the person has'
+            : 'These are the charges AMV could see in this window of mail; it is not necessarily every subscription the person has')
+        + ', and you must not present it as a complete list of what they pay for.';
+      /* The total, computed rather than left to the model. Adding a yearly
+         plan in as monthly, or adding pounds to dollars, are both easy
+         mistakes to make from a list and both produce a confident wrong
+         number about somebody's money. */
+      const tot = _subTotals(subs);
+      if(tot.byCurrency.length){
+        sb += '\n\nWHAT THOSE COME TO PER MONTH (AMV worked this out, currencies kept separate because a mixed total is wrong in both - use these figures and do not add anything up yourself):\n'
+          + tot.byCurrency.map(c => '- ' + c.currency + ' ' + c.monthly.toFixed(2) + ' a month (' + c.yearly.toFixed(2) + ' a year) across ' + c.count + ' charge' + (c.count === 1 ? '' : 's')).join('\n');
+      }
+      if(tot.noAmount || tot.noCadence){
+        sb += '\n\nNOT INCLUDED IN THOSE TOTALS: ' + tot.noAmount + ' with no amount stated and ' + tot.noCadence
+          + ' where how often it recurs was not stated. Say that the total leaves them out rather than quietly presenting it as everything.';
+      }
+
+      /* WHAT CAN ACTUALLY BE DONE ABOUT EACH ONE - option (a), on the
+         surface that already exists.
+
+         Knowing you pay for something is half an answer; the other half is
+         where the cancel button is, and for most of these the answer is
+         NOT "reply to this receipt". Most subscription mail comes from an
+         unattended mailbox, so a cancellation posted back to it is a letter
+         into a void - and a digest that offered to send one would be the
+         "says it did something and did not" failure, with the extra harm
+         that somebody stops looking for the real cancel button.
+
+         So each row carries a verdict computed by rule, and the model is
+         told to pass it on rather than to have an opinion about it. The
+         drafted letter is included ONLY for the ones that could genuinely
+         be sent, because showing somebody a letter that cannot be
+         delivered is offering them an action that does not exist. */
+      /* THE NEVER LIST, APPLIED WHERE A DESTINATION IS PROPOSED.
+
+         Not a send filter - there are no sends here to filter. This is the
+         one place AMV puts an address in front of somebody with a letter
+         already written and a button that opens their mail app, and the
+         address came out of MAIL, which is content an outsider wrote. So
+         "never write to my bank" has to mean the letter is not offered,
+         not that it is offered with a warning. */
+      const refuse = Array.isArray(never) ? never : [];
+      const acts = subs.map(x => {
+        const blocked = _neverBlocks(refuse, x.from);
+        if(blocked) return { sub: x, v: { can: false, code: 'never',
+          say: 'You told AMV never to write to ' + blocked + ', so it has not written this one. '
+             + 'Cancel it from ' + String(x.merchant || 'the provider') + '’s own account page.' } };
+        /* A STATEMENT HAS NO RETURN ADDRESS, and saying "AMV could not read a
+           return address off that receipt" about a row that came from a bank
+           debit describes a receipt that never existed. Small wording, but it
+           is the sentence somebody reads to decide where to go next. */
+        if(!x.from && x.source === 'bank') return { sub: x, v: { can: false, code: 'from_statement',
+          say: 'AMV found this on your statement rather than in a receipt, so there is no address to write to. '
+             + 'Cancel it from ' + String(x.merchant || 'the provider') + '’s own account page.' } };
+        return { sub: x, v: _cancelVerdict(x) };
+      });
+      sb += '\n\nWHETHER EACH ONE CAN BE CANCELLED BY EMAIL (worked out by rule from the address the receipt came from - repeat these verdicts, do not form your own and do not guess a cancellation address):\n'
+        + acts.map(a => '- ' + a.sub.merchant + ': ' + a.v.say).join('\n');
+      const sendable = acts.filter(a => a.v.can);
+      for(const a of sendable){
+        const d = _cancelDraft(a.sub, email);
+        drafts.push({ merchant: d.merchant, to: d.to, subject: d.subject, body: d.body });
+      }
+      if(sendable.length){
+        sb += '\n\nFOR THE ONES THAT CAN BE EMAILED, THIS IS THE EXACT TEXT AMV WOULD SEND IF THEY ASK. It has NOT been sent and you must not say or imply that it has. Offer it; do not act on it:\n'
+          + sendable.map(a => {
+              const d = _cancelDraft(a.sub, email);
+              return '- To ' + d.to + ' | subject: ' + d.subject + '\n' + d.body.split('\n').map(l => '  | ' + l).join('\n');
+            }).join('\n');
+      }
+      sb += '\n\nNOTHING ON THIS ROUTE CANCELS ANYTHING BY ITSELF. AMV cannot send mail on a schedule at all, so no cancellation has gone out and none will without them asking. '
+        + 'Never tell them a subscription is cancelled - the most that is ever true here is that a request was sent, and even then AMV cannot see whether the provider acted on it.';
+      parts.push(sb);
     }
   }
 
   return {
-    text: parts.join('\n\n'), missing, drafts,
+    text: parts.join('\n\n'), missing, soft, drafts,
     /* Run this only once the person can actually read the result. It is
        deliberately safe to never call: nothing is lost, the next run simply
        reports the same mail again. */
@@ -5682,6 +6065,19 @@ async function _autoExecute(env, item, budget, email, standing, never){
       + acct.missing.map(m => '- ' + m.need + ': ' + m.why).join('\n')
       + '\nSay this plainly at the TOP of your answer, before anything else, and do not '
       + 'present the rest as complete. Never imply you checked something you could not see.';
+  }
+  /* AN OPTIONAL SOURCE THAT WAS NOT THERE IS NOT A BROKEN JOB.
+
+     It changes what the answer is STANDING ON, which is a different sentence
+     and belongs in a different place. Told as "here is what your figures are"
+     rather than as "AMV could not do this", because a money leak detector
+     reading receipts is working exactly as designed and telling somebody it
+     failed would send them to reconnect something that is not missing. */
+  if(Array.isArray(acct.soft) && acct.soft.length){
+    userTurn += '\n\nWHERE THESE FIGURES COME FROM:\n'
+      + acct.soft.map(m => '- ' + m.need + ': ' + m.why).join('\n')
+      + '\nThe job still ran on what AMV could read. Do NOT describe this as a failure and do not put it at the top as though something went wrong - '
+      + 'but do say once, plainly, which evidence the numbers rest on, and never present a figure read out of an email as a confirmed payment.';
   }
 
   const body = {
@@ -27500,15 +27896,48 @@ const AUTO_CAPABILITIES = [
     where: 'Integrations, then Slack',
     match: /\b(slack|post to (?:the )?channel|#[a-z0-9_-]{2,})\b/i,
     has: () => false, browserOnly: true },
+
+  /* THE ONE CAPABILITY WITH NO TEXT MATCHER, and that is deliberate.
+
+     Every other row above fires on words in the instruction. That cannot work
+     here: "spending", "my money" and "what am I paying for" are things people
+     ask expecting an answer from receipts, so a matcher would gate jobs that
+     never needed a bank - and, worse, would be the signal that starts an
+     unattended bank read off a typed phrase. `AUTO_USES_FROM_TEXT` refuses to
+     derive `bank.read` for exactly that reason.
+
+     So the signal is the DECLARATION: a job that asked for `bank.read` gets
+     checked, and nothing else does. `_autoNeedsFor` seeds it from `item.uses`,
+     which is the same list `_autoAccountContext` walks - so the screen that
+     says "this will need X" and the runner that opens X are answering off one
+     field instead of two, which is the failure mode this file has hit before.
+
+     A regex that can never match, rather than no `match` key, because every
+     other row has one and the shape is what the coverage suite reads. */
+  { id: 'bank', label: 'read your real balances and transactions',
+    needs: 'a bank account linked to AMV - the sign-in happens on your bank’s own page and AMV never sees your password',
+    where: 'Spending, then Link an account',
+    match: /(?!)/,
+    has: (c) => !!c.bank },
 ];
+/* The one bridge between a declared `use` and the gate's capabilities.
+
+   Only `bank.read` is here, on purpose. Mapping the others would look tidier
+   and would break them: a calendar granted through Microsoft carries
+   `calendar.read` with no Google connection behind it, and the row that would
+   catch it asks for `c.google` - so the gate would tell somebody to connect an
+   account they do not need and do not have. The text matchers already answer
+   correctly for those. This exists for the one capability that has no text
+   matcher at all. */
+const AUTO_USE_TO_CAPABILITY = { 'bank.read': 'bank' };
 
 /* One pass over what this person has, so resolving a run's needs is a fixed
    handful of reads rather than one per capability - the tick runs this for
    every due job and the cost has to be flat. */
 async function _autoConnected(env, email) {
   const get = async (kind) => { try { return await DB.get(env, kind, email); } catch (e) { return null; } };
-  const [mail, school, conns] = await Promise.all([
-    get('mailcfg'), get('school'), get(CONN_KV)]);
+  const [mail, school, conns, fin] = await Promise.all([
+    get('mailcfg'), get('school'), get(CONN_KV), get('fin')]);
 
   /* WHAT THE PERSON HAS ACTUALLY CONNECTED, asked of the record that holds it.
 
@@ -27551,6 +27980,10 @@ async function _autoConnected(env, email) {
     google: byProvider.has('google'),
     mail:   scopes.has('mail.read')  || !!(mail && mail.secret),
     school: scopes.has('school.read') || !!(school && school.token),
+    /* Asked of the record that actually holds the aggregator token, which is
+       the same record `_bankUse` opens. One store, one answer - the gate and
+       the runner cannot disagree about whether a bank is linked. */
+    bank:   !!(fin && fin.accessToken),
     /* The exact grants, carried so a later, finer check can ask "does this
        connection cover Drive" rather than only "is Google connected" - the
        coarse answer is right for the remedy it prints ("connect your Google
@@ -27568,6 +28001,13 @@ async function _autoConnected(env, email) {
 function _autoNeedsFor(item, connected, extra) {
   const text = String((item && item.detail) || '');
   const asked = new Set((Array.isArray(extra) ? extra : []).map(String));
+  /* What the job DECLARED it opens, folded in through the one table. `boosts`
+     is deliberately not read: a source that only improves the answer is not a
+     reason to tell somebody their job cannot run. */
+  for(const u of (Array.isArray(item && item.uses) ? item.uses : [])){
+    const cap = AUTO_USE_TO_CAPABILITY[String(u)];
+    if(cap) asked.add(cap);
+  }
   const missing = [];
   for (const cap of AUTO_CAPABILITIES) {
     if (!(asked.has(cap.id) || cap.match.test(text))) continue;

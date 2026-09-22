@@ -455,3 +455,74 @@ the network underneath and lets the app find its own way there.
 - **The retry loop is driven with a stubbed executor.** Which failures are worth
   repeating and what is said when repeating stops are decisions this code makes
   on its own, and those are measured. A real engine failing for real is not.
+
+## Round seven - the bank becomes a real capability
+
+The thing being attacked here is new power. An unattended run can now open a
+bank connection and read balances and transactions, so the question is not
+whether the reader works - it is whether the controls that stop it are real.
+
+Worth saying plainly about scope: this is a READ. `AUTO_USES_ALLOWED` contains
+nothing but entries ending `.read`, `_bankPost` is reachable only from
+`/accounts/balance/get` and `/transactions/get`, and the aggregator's payment
+and transfer products are not configured. Balances were already readable
+unattended - the investing check-in has done it on cron since it was written -
+so what was added is the transaction list beside them, not a new class of
+access. There is still no route from the cron to moving money.
+
+Eleven mutations, all eleven caught, each attributed by the failing assertion
+and not by an exit code.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 21 | the pause check deleted from `_bankUse` | 5 assertions, including that the run behind it reached no provider |
+| 22 | an unreadable `auto` record fails open instead of refusing | "it REFUSES - the cost of being wrong this way is a job that waits" |
+| 23 | credits allowed to count as subscriptions | "money coming IN is never a subscription" |
+| 24 | the pending-charge skip removed | "counted twice and not three times" |
+| 25 | the receipt figure overwrites the debit in the merge | "at the figure that left the account" |
+| 26 | boosts pushed into `missing` instead of `soft` | 3 assertions |
+| 27 | `AUTO_USE_TO_CAPABILITY` seeding removed from `_autoNeedsFor` | "refused BEFORE the run, on the list screen" |
+| 28 | a text matcher added that derives `bank.read` from words | 4 assertions |
+| 29 | `'Bank connection'` row removed from `_CW_NEEDS_TO_USES` | 7 assertions across all five bank jobs |
+| 30 | `_cwConnHas` stops answering `bank.read` | 4 assertions |
+| 31 | the boost dropped in `_cwToggleReal`, then in `_scheduleTask` | "AND SO IS THE BOOST", once per joint |
+
+Two of those mutations found live defects rather than confirming a control.
+
+**#30 was a real bug, shipped in the first draft of this work.**
+`_cwUnattendedReady` asked `_cwConnHas('bank.read')`, which searches the
+connector grants for a `scopes` array - and a bank link has never lived there,
+it lives in a `fin` record holding an aggregator token. So it answered no for
+every account: the card said the job was ready and the same job was then
+classified as running in the browser. Correct at both ends, unjoined in the
+middle, which is the shape this file keeps recording.
+
+**#31 was a real bug and it is the more instructive one.** `_cwToggleReal`
+passed `boosts`, `_cwBoostsFor` computed it correctly, the card rendered it -
+and `_scheduleTask` writes its outbound payload out field by field and did not
+name `boosts`, so it was discarded one function short of the wire. Nine
+assertions passed over the hole because all nine measured the computation. It
+was found by deleting the caller's argument and watching the suite stay green.
+The suite now intercepts `/auto/create` and drives the real toggle on the real
+catalogue entry, so cutting either joint fails it.
+
+### Still unmeasured, this round
+
+- **No real aggregator is called.** The provider is stubbed at `fetch`, so what
+  is proven is the shape AMV sends, the two endpoints it is willing to call, and
+  what it does with the answer. Whether a particular institution returns
+  `merchant_name` populated, or dates in the field this reader prefers, is not
+  something a suite here can hold. The consequence of it being absent is
+  visible rather than silent: `_txnMerchant` falls back to `name`, and a row
+  with neither names nobody and is dropped.
+- **A yearly subscription is not detected and is not claimed to be.** Two
+  charges are required and the window is 120 days, so an annual plan simply
+  does not appear. That is the deliberate choice - inventing a monthly figure
+  from one annual charge is the expensive false positive - but it means the
+  list is genuinely incomplete and the prompt has to say so. That it says so is
+  asserted; that somebody reads it is not.
+- **Credit watch still cannot answer its own question.** A transactions link
+  carries no credit score and no report. The block names that absence
+  explicitly so a model holding rich bank data does not treat "credit" as
+  covered by it, and the job's own prompt says to say so. The job remains one
+  AMV cannot really do, and that is a product decision rather than a test gap.
