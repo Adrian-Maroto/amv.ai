@@ -13415,3 +13415,24 @@ And a harness lesson from the same round: a mutation run that counts "no failing
 assertion" as SURVIVED will report a crashed suite as a missing test. Two
 mutations "survived" because a cookie banner took the click and the suite threw
 before asserting anything. A verdict needs a completed run.
+
+## 510. Bounding each request is not bounding the work
+
+The bridge had a limit on every request - body, output, time - and none on how
+many requests there were. Twenty builds at once were twenty, each within its
+limits. The fix is a total: four commands at once, sixteen requests in flight to
+one connector, and work past that REFUSED before it spawns, not queued, because
+a queue on somebody's own computer is work they never saw start.
+
+Two smaller defects came with it, both from how a limit was expressed.
+`Number(x) || default` accepts every truthy number, including -5, and a negative
+timeout killed the command as it started. And an output ceiling counted in
+characters lets multi-byte text through at up to four times the bytes the
+ceiling was written to protect. A limit is a claim about a resource; express it
+in that resource's unit and validate that the input is the kind of number the
+limit means.
+
+The page's own sandbox had the same shape: every console line held until the end,
+then posted at once. A cap that is checked as lines are written, and counts the
+separators it will add, is the one that holds - the first version forgot the
+newlines and let short lines through 6% over.

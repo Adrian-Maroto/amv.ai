@@ -8,7 +8,7 @@
    server offers were silently missing.
 
    Driven against the real bridge and a real server switched into each case:
-   a listing error, a malformed handshake, a listing in four pages, a cursor
+   a listing error, a malformed handshake, a listing in five pages, a cursor
    handed back twice, a listing that never ends, and - so the fix does not
    swing too far - a valid server that genuinely has no tools. */
 import { spawn } from 'child_process';
@@ -83,9 +83,9 @@ section('Every page of the listing is followed');
 {
   const r = await start('paged', { MCP_PAGES: '1' });
   const names = (r.d.tools || []).map(t => t.name);
-  ok(r.status === 200 && names.length === 4,
-     'all four tools arrive across four pages, not the first one alone', names);
-  ok(['split_text', 'burst', 'huge', 'echo'].every(n => names.includes(n)), 'each of them by name', names);
+  ok(r.status === 200 && names.length === 5,
+     'all five tools arrive across five pages, not the first one alone', names);
+  ok(['split_text', 'burst', 'huge', 'echo', 'hang'].every(n => names.includes(n)), 'each of them by name', names);
 }
 
 section('A listing that never ends is stopped, and said to be');

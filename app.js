@@ -34215,15 +34215,25 @@ async function runCode(code, lang, onStatus){
    degrades to one that can freeze the tab is worse than one that says it is
    unavailable, because nobody finds out which one they got. */
 const JS_SANDBOX_MS = 15000;
+const JS_LOG_CAP = 200000;
 
 function _jsWorkerSource(code, id){
   const tag = JSON.stringify(id);
-  return 'self.window=self;var __logs=[];'+
+  /* Logs are capped as they are written, not after: a loop that prints for
+     fifteen seconds would otherwise hold every line in memory until the
+     timeout, and post all of it at once. (AMV-AUD-022) */
+  return 'self.window=self;var __logs=[],__n=0,__cut=false;'+
     'function __fmt(a){try{return (typeof a==="object"&&a!==null)?JSON.stringify(a):String(a)}catch(e){return String(a)}}'+
-    'var __p=function(){__logs.push(Array.prototype.slice.call(arguments).map(__fmt).join(" "))};'+
+    'var __p=function(){ if(__n>='+JS_LOG_CAP+'){ __cut=true; return; }'+
+      'var s=Array.prototype.slice.call(arguments).map(__fmt).join(" ");'+
+      'if(__n+s.length>'+JS_LOG_CAP+'){ s=s.slice(0,'+JS_LOG_CAP+'-__n); __cut=true; }'+
+      /* +1 for the newline the lines are joined with - counting only the
+         lines let 12,000 short ones through 6% over the cap. */
+      '__logs.push(s); __n+=s.length+1; };'+
     'self.console={log:__p,error:__p,warn:__p,info:__p,debug:__p,trace:__p};'+
     'var __sent=false;'+
     'function __done(ok,err,result){ if(__sent) return; __sent=true;'+
+      'if(__cut) __logs.push("[output cut off at '+JS_LOG_CAP+' characters]");'+
       'self.postMessage({__sbx:'+tag+',ok:ok,logs:__logs.slice(),error:err||"",'+
       'result:(result===undefined||result===null)?"":String(result)}); }'+
     /* An error thrown from a callback or a rejected promise nobody awaited
@@ -44069,6 +44079,11 @@ async function _bridgeCall(route, body, timeoutMs){
   const d = await r.json().catch(()=>({}));
   if(r.status === 403 && d.error === 'refused'){
     throw new Error('The bridge refused that command: it looks like ' + d.reason + '. That rule lives on your machine, not in AMV.');
+  }
+  if(r.status === 429 && d.error === 'busy'){
+    const e = new Error('Your computer is already running ' + (d.running || 'several') + ' commands, which is as many as the bridge runs at once. Wait for one to finish, then try again.');
+    e.code = 'busy'; e.status = 429;
+    throw e;
   }
   if(r.status === 403 && d.error === 'outside_root'){
     throw new Error('That path is outside the folder the bridge was started in, so it is not AMV’s to touch.');

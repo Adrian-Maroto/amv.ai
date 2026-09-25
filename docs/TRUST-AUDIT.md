@@ -1248,3 +1248,28 @@ as a crash.
 **Not changed:** the CSP's `img-src https:` stays. Narrowing it would break
 images people upload and pages they build; the channel is closed where the
 request originates instead.
+
+## Round twenty-six - the bridge bounds what runs at once (AMV-AUD-022)
+
+Per-request limits existed; aggregate ones did not. The bridge now refuses a
+fifth concurrent command with 429 `busy` before spawning it, caps a connector at
+16 requests in flight, validates `timeout` as a positive finite number (clamped
+1s-15min), counts the output ceiling in bytes, and reports running counts on a
+paired-only `status` route. The page says "busy" as a sentence, and the
+JavaScript sandbox caps its console output as it is written.
+
+`the-bridge-bounds-what-runs-at-once` proves the fifth command did not start by a
+file it would have written; `a-print-loop-cannot-fill-the-tab` runs a million
+console lines through the real sandbox.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 114 | no concurrency cap (the finding) | 2 assertions |
+| 115 | a negative timeout is obeyed | 1 assertion |
+| 116 | the output ceiling counts characters | 1 assertion |
+| 117 | no cap on requests in flight to a connector | 1 assertion |
+| 118 | the JavaScript sandbox holds every log line | 1 assertion |
+| 119 | "busy" reaches the person as a bare code | 1 assertion |
+
+Six for six. **Not built:** per-process memory and CPU limits. Those belong to the
+execution boundary AMV-AUD-001 describes, which is the owner's decision.

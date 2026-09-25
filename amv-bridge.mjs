@@ -120,6 +120,15 @@ const MAX_BODY = 8 * 1024 * 1024;
 const MAX_OUTPUT = 2 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 120000;
 const MAX_TIMEOUT_MS = 900000;
+const MIN_TIMEOUT_MS = 1000;
+/* HOW MUCH MAY RUN AT ONCE, IN TOTAL.  (AMV-AUD-022)
+   Every request was bounded - body, output, time - and nothing bounded how
+   many there were. A page, a stuck loop or a model asking for twenty builds at
+   once could start twenty, each within its own limits and together enough to
+   take the machine. Work past the cap is REFUSED before anything is spawned,
+   not queued: a queue on somebody's computer is work they did not see start. */
+const EXEC_MAX_CONCURRENT = 4;
+const MCP_MAX_PENDING = 16;      // requests in flight to one connector
 
 /* ── COMMANDS THIS WILL NOT RUN ───────────────────────────────────────────
    Refused in the daemon, not in a prompt. A rule a model is asked to follow
@@ -358,6 +367,11 @@ function mcpStart(id, command, args, envExtra){
 function mcpSend(srv, method, params){
   return new Promise((resolve) => {
     if (srv.exited) return resolve({ error: { message: 'the server is not running' } });
+    /* A connector that stops answering must not collect an unbounded pile of
+       requests, each holding a timer and a waiting page. (AMV-AUD-022) */
+    if (srv.pending.size >= MCP_MAX_PENDING) {
+      return resolve({ error: { message: 'the connector already has ' + MCP_MAX_PENDING + ' requests waiting; try again when it answers' } });
+    }
     const id = srv.nextId++;
     const timer = setTimeout(() => {
       srv.pending.delete(id);
@@ -611,6 +625,14 @@ const server = createServer(async (req, res) => {
   }
 
   try {
+    /* What is running, in numbers - so a page that is refused as busy can say
+       what it is waiting for, and a person can see it. */
+    if (path === '/amv-bridge/status') {
+      return json(res, 200, {
+        exec: { running: execJobs.size, max: EXEC_MAX_CONCURRENT },
+        mcp: [...mcpServers.values()].map(v => ({ id: v.id, running: !v.exited, pending: v.pending.size, maxPending: MCP_MAX_PENDING })),
+      });
+    }
     if (path === '/amv-bridge/list') {
       const dir = safePath(body.path || '.');
       const out = readdirSync(dir, { withFileTypes: true })
@@ -788,8 +810,16 @@ const server = createServer(async (req, res) => {
         console.log('  ✗ refused: ' + why + '  (' + cmd.slice(0, 70) + ')');
         return json(res, 403, { error: 'refused', reason: why });
       }
+      if (execJobs.size >= EXEC_MAX_CONCURRENT) {
+        return json(res, 429, { error: 'busy', running: execJobs.size, max: EXEC_MAX_CONCURRENT });
+      }
       const cwd = safePath(body.cwd || '.');
-      const timeout = Math.min(Number(body.timeout) || DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
+      /* A number, positive and finite, or the default. `Number(-5) || x` is
+         -5, and a negative timeout fired at once and killed the command the
+         moment it started. */
+      const asked = Number(body.timeout);
+      const timeout = (Number.isFinite(asked) && asked > 0)
+        ? Math.min(Math.max(asked, MIN_TIMEOUT_MS), MAX_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS;
       console.log('  $ ' + cmd);
 
       const started = Date.now();
@@ -821,8 +851,15 @@ const server = createServer(async (req, res) => {
          in output a person reads and a model edits code from. (AMV-AUD-017) */
       child.stdout.setEncoding('utf8');
       child.stderr.setEncoding('utf8');
+      /* Counted in BYTES, which is what the bound is for - memory held here
+         and bytes sent back - rather than in characters, which undercount any
+         text that is not ASCII by up to four times. */
+      let outBytes = 0;
       const take = (s, which) => {
-        if ((out.length + err.length) > MAX_OUTPUT) { truncated = true; return; }
+        if (truncated) return;
+        const n = Buffer.byteLength(s, 'utf8');
+        if (outBytes + n > MAX_OUTPUT) { truncated = true; return; }
+        outBytes += n;
         if (which === 'o') out += s; else err += s;
       };
       child.stdout.on('data', b => take(b, 'o'));

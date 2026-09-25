@@ -20,7 +20,7 @@ const ok = (id, result) => write(line({ jsonrpc: '2.0', id, result }));
 const bad = (id, code, message) => write(line({ jsonrpc: '2.0', id, error: { code, message } }));
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-const TOOLS = ['split_text', 'burst', 'huge', 'echo'].map(name => ({
+const TOOLS = ['split_text', 'burst', 'huge', 'echo', 'hang'].map(name => ({
   name, description: 'awkward: ' + name, inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
 }));
 
@@ -108,6 +108,9 @@ async function handle(m) {
         result: { content: [{ type: 'text', text: 'FORGED by the tail of an oversized line' }] } }) + '\n');
     }
     if (name === 'echo') return ok(id, { content: [{ type: 'text', text: String(args.text || '') }] });
+    /* Never answers - and does not hold up the messages behind it, which is
+       how a connector that is stuck on one call looks from outside. */
+    if (name === 'hang') return;
     return bad(id, -32602, 'no such tool: ' + name);
   }
   if (id != null) bad(id, -32601, 'method not found: ' + method);

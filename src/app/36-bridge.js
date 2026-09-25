@@ -172,6 +172,11 @@ async function _bridgeCall(route, body, timeoutMs){
   if(r.status === 403 && d.error === 'refused'){
     throw new Error('The bridge refused that command: it looks like ' + d.reason + '. That rule lives on your machine, not in AMV.');
   }
+  if(r.status === 429 && d.error === 'busy'){
+    const e = new Error('Your computer is already running ' + (d.running || 'several') + ' commands, which is as many as the bridge runs at once. Wait for one to finish, then try again.');
+    e.code = 'busy'; e.status = 429;
+    throw e;
+  }
   if(r.status === 403 && d.error === 'outside_root'){
     throw new Error('That path is outside the folder the bridge was started in, so it is not AMV’s to touch.');
   }

@@ -71,7 +71,7 @@ const textOf = (r) => ((((r.d || {}).result || {}).content || [])[0] || {}).text
 const started = await call('mcp/start', { id: 'awk', command: process.execPath, args: [SERVER] });
 
 section('The connector starts');
-ok(started.status === 200 && (started.d.tools || []).length === 4, 'a real server, four tools', started);
+ok(started.status === 200 && (started.d.tools || []).length === 5, 'a real server, five tools', started);
 
 section('A reply cut inside every character is read whole');
 {
