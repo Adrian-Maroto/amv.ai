@@ -372,6 +372,31 @@ function mcpSend(srv, method, params){
     }
   });
 }
+/* Every page of tools/list, or the reason there is not one. */
+const MCP_LIST_PAGES = 20;
+const MCP_LIST_TOOLS = 500;
+async function mcpListTools(srv){
+  const tools = [];
+  const seen = new Set();
+  let cursor;
+  for (let page = 0; page < MCP_LIST_PAGES; page++) {
+    const r = await mcpSend(srv, 'tools/list', cursor === undefined ? {} : { cursor });
+    if (r.error) return { error: 'listing its tools failed: ' + (r.error.message || 'the server returned an error') };
+    const res = r.result;
+    if (!res || typeof res !== 'object' || !Array.isArray(res.tools)) {
+      return { error: 'the server answered the tool listing with something that is not one' };
+    }
+    for (const t of res.tools) if (t && typeof t === 'object' && typeof t.name === 'string' && t.name) tools.push(t);
+    if (tools.length > MCP_LIST_TOOLS) return { error: 'the server lists more than ' + MCP_LIST_TOOLS + ' tools' };
+    const next = res.nextCursor;
+    if (next === undefined || next === null || next === '') return { tools };
+    const key = String(next);
+    if (seen.has(key)) return { error: 'the server handed back a page cursor it had already given, so its listing never ends' };
+    seen.add(key);
+    cursor = next;
+  }
+  return { error: 'the server lists its tools over more than ' + MCP_LIST_PAGES + ' pages' };
+}
 function mcpNotify(srv, method, params){
   try { srv.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method, params: params || {} }) + '\n'); }
   catch (e) {}
@@ -687,10 +712,15 @@ const server = createServer(async (req, res) => {
         capabilities: {},
         clientInfo: { name: 'AMV', version: VERSION },
       });
-      if (init.error) {
+      /* A result that is not an object is not a handshake, whatever it says.
+         Carrying on would advertise a server nobody knows the capabilities
+         of. (AMV-AUD-018) */
+      const initBad = init.error ? (init.error.message || 'the server refused the handshake')
+        : (!init.result || typeof init.result !== 'object' || Array.isArray(init.result))
+          ? 'the server answered the handshake with something that is not a handshake' : '';
+      if (initBad) {
         killTree(srv.child); mcpServers.delete(id);
-        return json(res, 502, { error: 'handshake_failed',
-                                message: init.error.message || 'the server refused the handshake',
+        return json(res, 502, { error: 'handshake_failed', message: initBad,
                                 stderr: srv.stderr.slice(-1200) });
       }
       /* The spec requires this after initialize, and a server that does not
@@ -698,8 +728,22 @@ const server = createServer(async (req, res) => {
       mcpNotify(srv, 'notifications/initialized', {});
       srv.info = (init.result && init.result.serverInfo) || null;
 
-      const listed = await mcpSend(srv, 'tools/list', {});
-      srv.tools = (listed.result && Array.isArray(listed.result.tools)) ? listed.result.tools : [];
+      /* DISCOVERY IS PART OF STARTING, SO ITS FAILURE IS A FAILED START.
+         (AMV-AUD-018)
+
+         An error from tools/list used to become a successful start with no
+         tools - indistinguishable, on the screen, from a server that really
+         offers nothing - and a listing that came in pages returned only the
+         first. Now every page is followed, bounded in pages and in tools, a
+         cursor handed back twice is refused rather than followed for ever,
+         and any of these ends the start with the reason. */
+      const found = await mcpListTools(srv);
+      if (found.error) {
+        killTree(srv.child); mcpServers.delete(id);
+        return json(res, 502, { error: 'discovery_failed', message: found.error,
+                                stderr: srv.stderr.slice(-1200) });
+      }
+      srv.tools = found.tools;
       return json(res, 200, { id, info: srv.info,
                               capabilities: (init.result && init.result.capabilities) || {},
                               tools: srv.tools });

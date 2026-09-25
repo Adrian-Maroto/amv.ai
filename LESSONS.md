@@ -13319,3 +13319,18 @@ spaces ending in `{"id": <next>, "result": ...}` parses from any cut point, and
 answers a request it has nothing to do with. When a limit truncates a framed
 message, discard through the END of that frame, and test with a tail that WOULD
 parse - a tail that cannot parse proves nothing about whether it was read.
+
+## 505. A failed step inside "start" makes "start" fail
+
+A connector start is a handshake, then a listing of its tools. The listing's
+error was turned into an empty list, and the start returned 200 - so a broken
+connector and a server that genuinely offers nothing looked identical, and the
+one that was broken was never retried or explained. A paged listing returned
+its first page and stopped, so tools went silently missing.
+
+The rule: when an operation has steps, an error in any step is the operation's
+error. "Empty" is a legitimate ANSWER and must only ever come from a step that
+answered. And a loop that follows somebody else's cursor needs two bounds - a
+cursor seen before (the listing is circular) and a page count (the listing is
+endless with fresh cursors) - because each bound alone lets the other case run
+for ever.

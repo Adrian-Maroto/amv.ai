@@ -10,6 +10,7 @@
      MCP_LIST_ERROR=1     tools/list answers with a JSON-RPC error
      MCP_PAGES=1          tools/list returns one tool per page, with nextCursor
      MCP_REPEAT_CURSOR=1  tools/list hands back the same cursor for ever
+     MCP_ENDLESS_PAGES=1  tools/list hands back a NEW cursor for ever
      MCP_BAD_INIT=1       initialize answers with a result that is not an object */
 const TEXT = 'Prix: 12€ · 東京タワー · naïve café · 😀🚀 · Ωμέγα';
 
@@ -68,6 +69,10 @@ async function handle(m) {
   if (method === 'tools/list') {
     if (process.env.MCP_LIST_ERROR) return bad(id, -32603, 'discovery exploded');
     if (process.env.MCP_REPEAT_CURSOR) return ok(id, { tools: [TOOLS[0]], nextCursor: 'again' });
+    if (process.env.MCP_ENDLESS_PAGES) {
+      const at = Number((params && params.cursor) || 0);
+      return ok(id, { tools: [], nextCursor: String(at + 1) });
+    }
     if (process.env.MCP_PAGES) {
       const at = Number((params && params.cursor) || 0);
       const next = at + 1 < TOOLS.length ? String(at + 1) : undefined;

@@ -1095,3 +1095,29 @@ parse, so reading on from the cut point did no visible harm. The fixture now
 ends that line with a well-formed reply to the NEXT request, preceded by
 whitespace JSON allows, and without the discard that forgery answers the
 following call. See LESSONS 504.
+
+## Round twenty-one - a connector that cannot list its tools did not start (AMV-AUD-018)
+
+A `tools/list` error became a 200 start with no tools, and a paginated listing
+returned its first page. Discovery is now part of the start: every page is
+followed, bounded at 20 pages and 500 tools; a repeated cursor is refused; any
+failure kills the half-started process, frees its name, and returns
+`discovery_failed` with the reason. A handshake whose result is not an object
+is `handshake_failed`.
+
+`a-connector-that-cannot-list-its-tools-did-not-start` drives each case through
+the real bridge with the awkward fixture, plus the echo server with no tools, so
+that "empty" is proven to still be a valid start.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 80 | a listing error becomes an empty success (the finding) | 3 assertions |
+| 81 | only the first page is read | 3 assertions |
+| 82 | a repeated cursor is followed | 1 assertion |
+| 83 | the page bound returns a partial list as complete | 1 assertion |
+| 84 | a non-object handshake result is accepted | 2 assertions |
+| 85 | a failed discovery leaves the process running | 2 assertions |
+
+Six for six. **Not built:** refreshing a server's tool list when it sends
+`notifications/tools/list_changed`. The list is read at each start; a server
+that changes its tools mid-session is seen at the next pairing.
