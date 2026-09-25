@@ -853,3 +853,60 @@ Two are NOT defects to fix quietly and remain open for the owner:
 
 Both are recorded rather than acted on, because both change the product rather
 than repair it.
+
+## Round fourteen - two gate suites were reading prose as code
+
+The full gate after round thirteen failed in two suites, and both failures were
+caused by comments written during the audit work. Chasing them found that the
+false alarms were the harmless half of a real weakness.
+
+**`the-app-asks-for-routes-that-exist` had a hole the size of the API.** It
+scrapes the worker's route table from `case '/v1/x':` lines and from
+`path.startsWith('/prefix/')` calls, and a prefix answers everything under it.
+It read the worker with comments in, and the worker contains a comment
+explaining why a prefix was REMOVED:
+
+    This was `path.startsWith('/v1/')`, which reads like "the API" and is not.
+
+That line was parsed as a live `/v1/` prefix, so `answered()` returned true for
+every path beginning `/v1/` - almost every route in the product. The suite's
+whole purpose is to catch the app asking for a route the worker does not serve,
+and for `/v1/` it could not.
+
+Measured, not reasoned about: a deliberate call to `/v1/not-a-real-route` was
+added to the client and the suite passed. With comments stripped from both
+sides it fails, naming the path.
+
+**`tool-consent-coverage` could be satisfied by a comment.** It passes a
+model-driven dispatch site when `_toolNeedsConsent(` and `_confirmModelTool(`
+appear in the 900 characters above it. A comment mentioning those names
+satisfied that exactly as well as code did - so a genuinely ungated dispatch
+under a paragraph ABOUT consent would have been reported as gated. The false
+alarm that surfaced it ran the other way: a comment of mine quoted
+`_amvRunTool(t.name, ...)` and was counted as a dispatch site.
+
+Both suites now read through `codeOnly`, the helper the gate's DEAD GUARDS stage
+already uses "so a comment explaining a removal is not mistaken for the removal
+not happening". The same reasoning had simply never been applied to these two.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 55 | the client asks for a `/v1/` route the worker does not serve | "nothing is asked for at a spelling the worker does not answer" (was: nothing) |
+| 56 | the chat consent gate deleted, a comment about consent left in its place | 4 assertions (was: nothing) |
+
+### What is still NOT caught, stated plainly
+
+- **`if(false && _toolNeedsConsent(t.name))` passes `tool-consent-coverage`.**
+  A test that reads source can only say a line is present, and that mutation
+  leaves every line present. The chat consent path is behaviourally unmeasured.
+  The `runAgentic` path could be measured - it goes through `aiAgentLoop`,
+  which now has a behavioural harness - and has not been yet.
+
+### The pattern, for the next person
+
+Four suites in this session had to be fixed for reading prose as code, and the
+gate already had the lesson written down in one stage. A check that scrapes
+source is a parser, and a parser that treats comments as syntax is wrong in both
+directions at once: it raises alarms about sentences and it accepts sentences as
+evidence. Every source-reading check should strip comments unless it is
+specifically about comments.

@@ -43654,12 +43654,17 @@ try{ window._bridgeForget=_bridgeForget; }catch(e){}
    with a live session on it, and saying so is the only honest option: the page
    cannot revoke a token it can no longer talk to. */
 async function bridgeDisconnect(){
-  const base = BRIDGE.connected ? _bridgeBase() : '';
+  /* NOT called `base`. The gate's route-coverage stage reads every
+     `base + '/path'` in this bundle as a path the WORKER must answer, and a
+     local named `base` here made `/amv-bridge/revoke` look like a Worker route
+     that does not exist. It is the daemon's, on a different server, so the
+     variable says which server it is. */
+  const daemon = BRIDGE.connected ? _bridgeBase() : '';
   const token = BRIDGE.token;
   let revoked = false, stopped = null, why = '';
-  if(base && token){
+  if(daemon && token){
     try{
-      const r = await fetchDeadline(base + '/amv-bridge/revoke', {
+      const r = await fetchDeadline(daemon + '/amv-bridge/revoke', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-AMV-Bridge-Token': token },
         body: '{}',

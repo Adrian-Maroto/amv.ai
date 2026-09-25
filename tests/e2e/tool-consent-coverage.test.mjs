@@ -17,13 +17,40 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { codeOnly } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+const bundleRaw = readFileSync(join(ROOT, 'app.js'), 'utf8');
+/* ── THE DISPATCH RULES READ CODE, NOT PROSE ───────────────────────────────
+
+   Every check below looks for a call shape and for a consent gate near it, and
+   it used to do that against the file with its comments in. Both directions of
+   that are wrong, and one of them is dangerous.
+
+   The harmless direction showed up first: a comment in `05-ui-blocks.js`
+   explaining this very dispatch contains the text `_amvRunTool(t.name, ...)`,
+   and the site regex matched it - so prose describing the call was reported as
+   an ungated call. A false alarm.
+
+   The direction that matters is the reverse. These rules pass a site when a
+   consent gate appears in the 900 characters before it, and a COMMENT
+   mentioning `_toolNeedsConsent(` or `_confirmModelTool(` satisfies that just
+   as well as code does. A genuinely ungated dispatch sitting under a paragraph
+   about consent would have been reported as fine.
+
+   The gate's own DEAD GUARDS stage already learned this and reads `app.js`
+   with comments and strings stripped, "so a comment explaining a removal is not
+   mistaken for the removal not happening". The same reasoning, and the same
+   helper, belong here.
+
+   `bundleRaw` is kept for the few checks that genuinely want the text as it
+   ships - the tool declarations and the consent map are data, not control
+   flow. */
+const bundle = codeOnly(bundleRaw);
 
 /* The declared tools, and the consent map, as they ship. */
-const toolNames = [...bundle.matchAll(/\n\s*name:'([a-z_]+)',\n\s*description:'/g)].map(m => m[1]);
-const consentAt = bundle.indexOf('const _TOOL_CONSENT');
+const toolNames = [...bundleRaw.matchAll(/\n\s*name:'([a-z_]+)',\n\s*description:'/g)].map(m => m[1]);
+const consentAt = bundleRaw.indexOf('const _TOOL_CONSENT');
 /* The WHOLE declaration, not its first line.
 
    This used to slice to the next newline, which worked only while the map fit
@@ -118,12 +145,30 @@ section('The gate is on the model-driven path, not inside the runner');
   ok(!/_confirmModelTool\(/.test(runner),
      'the runner itself does not prompt, so explicit user actions stay direct', true);
 
-  const dispatchAt = bundle.indexOf('if(_toolNeedsConsent(');
-  ok(dispatchAt > 0, 'and the model-driven dispatch does ask', dispatchAt > 0);
-  const dispatch = bundle.slice(dispatchAt, dispatchAt + 700);
-  ok(/_confirmModelTool\(t\.name, input\)/.test(dispatch), 'with the tool and its input', true);
-  /* A denial has to STOP it, not merely be recorded. */
-  ok(/if\(!allowed\)/.test(dispatch) && /DENIED/.test(dispatch),
+  /* ANCHORED ON THE DISPATCH, NOT ON HOW THE `if` HAPPENS TO BE SPELLED.
+
+     This found the gate with `indexOf('if(_toolNeedsConsent(')`. When a
+     membership check was added ahead of it the condition became
+     `if(!out && _toolNeedsConsent(`, so the search skipped past the chat loop
+     and landed on the OTHER dispatch site, whose call is
+     `_confirmModelTool(name, input || {})` - and the assertion failed on a
+     spelling while the gate it was protecting was intact and one line away.
+
+     What the claim is actually about is the CHAT dispatch: that the tool the
+     model named, and the input it named, are the ones put in front of the
+     person. So the chat dispatch is what is located, and the gate is required
+     to sit above it. */
+  const chatAt = bundle.indexOf('_amvRunTool(t.name');
+  ok(chatAt > 0, 'and the model-driven dispatch does ask', chatAt > 0);
+  const above = bundle.slice(Math.max(0, chatAt - 900), chatAt);
+  ok(/_toolNeedsConsent\(t\.name\)/.test(above),
+     'the gate names the tool the model chose', true);
+  ok(/_confirmModelTool\(t\.name, input\)/.test(above),
+     'with the tool and its input', true);
+  /* A denial has to STOP it, not merely be recorded. Read from the same window
+     above the dispatch as the two checks before it - `dispatch` was a slice
+     taken from the old anchor and went with it. */
+  ok(/if\(!allowed\)/.test(above) && /DENIED/.test(above),
      'and a denial stops the tool rather than only being logged', true);
 }
 

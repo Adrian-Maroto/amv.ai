@@ -23,10 +23,42 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { codeOnly } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
-const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+/* ── THE PATHS ARE READ FROM CODE, NOT FROM PROSE ─────────────────────────
+
+   Every pattern below scrapes a path out of the bundle - `_fetch('/v1/x')`,
+   `base + '/v1/x'` - and with comments left in, a comment DESCRIBING one of
+   those shapes is scraped as though the app asked for it. That is how this
+   file reported `/path` as a missing route: a comment explaining the
+   `base + '/path'` pattern itself.
+
+   A false alarm is the harmless direction and it is not the only one. These
+   patterns also decide which paths EXIST to be checked, so a route quietly
+   dropped from the code while a comment still mentions it would keep being
+   counted as asked-for and never noticed as missing.
+
+   The gate's DEAD GUARDS stage already reads `app.js` with comments and
+   strings stripped for exactly this reason. Same helper here. */
+const client = codeOnly(readFileSync(join(ROOT, 'app.js'), 'utf8'));
+/* AND THE WORKER SIDE TOO, WHICH WAS HIDING A HOLE THE SIZE OF THE API.
+
+   The route table is scraped from `case '/v1/x':` lines and from
+   `path.startsWith('/prefix/')` calls, and a prefix answers everything under
+   it. Read with comments in, the worker contains this line:
+
+     This was `path.startsWith('/v1/')`, which reads like "the API" and is not.
+
+   - a comment explaining why that prefix was REMOVED. It was parsed as though
+   the prefix were still there, so `/v1/` became a catch-all and `answered()`
+   returned true for every path beginning `/v1/`. That is almost every route in
+   the product, and this file's whole purpose is to catch one the worker does
+   not serve.
+
+   Measured, not reasoned about: a deliberate call to `/v1/not-a-real-route`
+   was added and this suite passed. With comments stripped it fails. */
+const worker = codeOnly(readFileSync(join(ROOT, 'amv-backend.js'), 'utf8'));
 
 /* Every path the worker will answer.
 
