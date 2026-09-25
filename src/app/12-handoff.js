@@ -2830,7 +2830,7 @@ function _renderSetPaneInner(only, into){
            address, so after clearing an override the built-in one reappears in
            it - true, and baffling without a word saying which it is. */
         '<p style="font-size:var(--t-xs);color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:var(--grn-txt)">configured</span>'
-          +(loadStr('amv_api_base')?' &middot; set on this device':' &middot; this deployment’s built-in backend')
+          +(apiBaseIsOverride()?' &middot; set on this device':' &middot; this deployment’s built-in backend')
           +(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode - no backend')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+

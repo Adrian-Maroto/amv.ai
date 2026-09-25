@@ -320,6 +320,18 @@ function apiBase(){
   catch(e){ return ''; }
 }
 try{ window.apiBase=apiBase; }catch(e){}
+/* WHETHER THAT ADDRESS IS THIS DEVICE'S OVERRIDE OR THE DEPLOYMENT'S OWN.
+
+   A different question from `apiBase()`, and Settings needs both: after an
+   override is cleared the built-in address reappears in the box, and without
+   saying which kind it is that looks like the clear did nothing. Answered HERE
+   rather than by reading the key in the pane, because every other module
+   reading `amv_api_base` directly is the defect this module exists to end - a
+   suite fails the moment one does. */
+function apiBaseIsOverride(){
+  try{ return !!String(loadStr('amv_api_base') || '').trim(); }catch(e){ return false; }
+}
+try{ window.apiBaseIsOverride=apiBaseIsOverride; }catch(e){}
 
 /* THE PUBLIC SETTINGS A VISITOR NEEDS, FROM THE BACKEND THAT HAS THEM.
 
@@ -29079,7 +29091,7 @@ function _renderSetPaneInner(only, into){
            address, so after clearing an override the built-in one reappears in
            it - true, and baffling without a word saying which it is. */
         '<p style="font-size:var(--t-xs);color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:var(--grn-txt)">configured</span>'
-          +(loadStr('amv_api_base')?' &middot; set on this device':' &middot; this deployment’s built-in backend')
+          +(apiBaseIsOverride()?' &middot; set on this device':' &middot; this deployment’s built-in backend')
           +(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode - no backend')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+

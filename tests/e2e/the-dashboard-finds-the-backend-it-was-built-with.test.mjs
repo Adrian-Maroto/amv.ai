@@ -40,9 +40,12 @@ section('Only the resolver reads the per-device override');
     const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     const uses = (code.match(/loadStr\('amv_api_base'\)/g) || []).length;
     if (!uses) continue;
-    /* 01-core owns the resolution: the AMV_API.base getter and apiBase(). */
+    /* 01-core owns the resolution: the AMV_API.base getter, apiBase(), and
+       apiBaseIsOverride() - the one question the Settings pane needs answered
+       (is this address this device's, or the deployment's?), which it used to
+       answer by reading the key itself. Three named readers, all in core. */
     if (f.startsWith('01-core')) {
-      ok(uses === 2, 'core resolves the address in exactly two places', { file: f, uses });
+      ok(uses === 3, 'core resolves the address in exactly three places', { file: f, uses });
       continue;
     }
     offenders.push({ file: f, uses });
