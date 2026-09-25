@@ -910,3 +910,33 @@ source is a parser, and a parser that treats comments as syntax is wrong in both
 directions at once: it raises alarms about sentences and it accepts sentences as
 evidence. Every source-reading check should strip comments unless it is
 specifically about comments.
+
+## Round fifteen - a fix that failed was reported as fixed
+
+AMV-AUD-010, and broader than reported. `autoDebug` returns `{success}`; both
+callers tested `res.ok !== false` on a result that has never had an `ok`, so
+EVERY failure path - budget, fixer error, identical fix, attempts exhausted -
+was announced as "Fixed and now passing". See LESSONS 501.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 57 | the chat tool back to `res.ok !== false` | 9 assertions |
+| 58 | the Lab back to `res.ok !== false` | 3 assertions |
+| 59 | the never-run patch no longer flagged | 2 assertions |
+
+Both callers now read one `_debugOutcome`, which passes only on `success ===
+true`, carries the real last error, and flags a patch that was never run. The
+suite drives both real callers with the runner and the fixer stubbed - the
+defect is in what the callers conclude, not in the model.
+
+One stub was wrong first and the product exposed it: a "new fix" string
+contained `Math.random()` as TEXT, so every fix was identical and the loop
+correctly stopped on "identical" rather than reaching the cap. The product
+reported that truthfully; the section meant to exhaust the attempts was fixed.
+
+### A gate run was discarded, deliberately
+
+The full gate for round fourteen was stopped part-way. Its build stage ran
+between two source edits for this round and built a tree that never existed as a
+commit, so its verdict could not have meant anything about either. See LESSONS
+500. Round fourteen and this round are gated together below.

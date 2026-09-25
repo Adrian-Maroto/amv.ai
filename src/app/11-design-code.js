@@ -3317,9 +3317,21 @@ async function _amvRunTool(name, input, onStatus){
         onStatus && onStatus((st && (st.note||st.msg)) || 'Debugging\u2026');
       }, _sectionModel('debug'));
       const fixed = res && res.code;
+      /* THIS TOLD THE MODEL "Fixed and now passing." AFTER EVERY RUN.
+
+         It tested `res.ok!==false`, and autoDebug has never returned an `ok`,
+         so a budget refusal, a model error or running out of attempts all read
+         as a pass - and the model then told the person their code worked. The
+         failure branch read `res.stderr`, which does not exist either, so it
+         could only ever have said "unknown". `_debugOutcome` reads the real
+         fields for both callers. */
+      const out = (typeof _debugOutcome === 'function') ? _debugOutcome(res) : { passed:false, why:'unknown' };
       return {
-        text:(res && res.ok!==false) ? 'Fixed and now passing.\n\nWorking code:\n'+String(fixed||'').slice(0,6000)
-                                     : 'Could not fully fix it. Last error: '+String((res&&res.stderr)||'unknown'),
+        text: out.passed
+          ? 'Fixed and verified: the corrected version was run and it ran cleanly.\n\nWorking code:\n'+String(fixed||'').slice(0,6000)
+          : 'Could NOT fix it - ' + out.why + '. Tell the user it is still failing; do not say it works.'
+            + (out.lastError ? '\n\nLast error:\n' + out.lastError.slice(0,2000) : '')
+            + (out.unverified ? '\n\nThe last attempted fix was never run, so it is a guess and must not be presented as working code.' : ''),
         render:null
       };
     }

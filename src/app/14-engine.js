@@ -730,8 +730,57 @@ async function autoDebug(code, lang, maxIters, onStep, modelStr){
     onStep&&onStep({phase:'patch', iter:i+1, code:fixed, rootCause});
     cur=fixed;
   }
-  return {success:false, code:cur, iters:maxIters, history};
+  /* THE LAST PATCH WAS PROPOSED AND NEVER RUN.
+
+     Leaving the loop on the iteration cap means `cur` was just replaced by a
+     fix that never went back through `runCode` - so it is a guess, not a
+     result. Every other exit returns code that DID run (and failed). Callers
+     put this code in front of people, so which kind it is has to travel with
+     it: `unverified` says so, and nobody may present it as working. */
+  const last = history.length ? history[history.length-1] : null;
+  return {success:false, code:cur, iters:maxIters, history,
+          unverified: !!(last && last.code !== cur)};
 }
+
+/* ── ONE CONTRACT FOR WHAT A DEBUG RUN MEANS ─────────────────────────────
+
+   `autoDebug` returns `{success, code, history, error?, unverified?}`. Both
+   callers read `res.ok !== false` - a field it has never set - so `undefined
+   !== false` made EVERY outcome a pass: a budget refusal, a model error, a
+   fix that came back identical, running out of attempts. Lab showed
+   "fixed & passing" and the chat tool said "Fixed and now passing." over code
+   that had just failed. They also read `res.stderr`, `res.stdout`,
+   `res.explanation` and `res.summary`, none of which exist, so even the
+   failure wording could only ever have said "unknown".
+
+   These read the fields that are really there, in one place, so the two
+   callers cannot drift apart again. `passed` is `success === true` and
+   nothing looser: an absent field must mean "not proven", never "fine". */
+function _debugOutcome(res){
+  const r = res || {};
+  const hist = Array.isArray(r.history) ? r.history : [];
+  const lastRun = hist.length ? (hist[hist.length-1].run || {}) : {};
+  const passed = r.success === true;
+  const firstLine = s => String(s || '').split('\n').find(l => l.trim()) || '';
+  let why = '';
+  if(!passed){
+    if(r.budget) why = 'it stopped because the usage budget ran out (' + (r.error || 'budget') + ')';
+    else if(r.error) why = 'the fixer failed: ' + r.error;
+    else if(r.note === 'identical') why = 'the fixer returned the same code again, so there was nothing new to try';
+    else if(lastRun.stderr) why = 'the last run failed with: ' + firstLine(lastRun.stderr);
+    else why = 'no attempt ran cleanly';
+  }
+  return {
+    passed,
+    /* Only a pass has output worth showing as "what it printed". */
+    stdout: passed ? String(lastRun.stdout || '') : '',
+    lastError: passed ? '' : String(lastRun.stderr || r.error || ''),
+    why,
+    unverified: !passed && !!r.unverified,
+    iters: r.iters || hist.length || 0,
+  };
+}
+try{ window._debugOutcome=_debugOutcome; }catch(e){}
 
 /* ===== MULTI-AGENT PIPELINE (Planner -> Coder -> Critic -> Tester) REAL ===== */
 async function runAgents(task, lang, onStep){
@@ -1268,19 +1317,30 @@ async function _labDebug(){
       _labOut('<div class="lab-running">'+escH((st&&(st.note||st.msg))||'Working\u2026')+
         '<div class="lab-prog"><div class="lab-prog-b" style="width:'+Math.min(100,((st&&st.iter)||1)*33)+'%"></div></div></div>');
     }, _sectionModel('debug'));
+    const out = _debugOutcome(res);
     if(res && res.code && res.code!==code){
       const el=$('lab-code');
       if(el){ el.value=res.code; _LAB.code=res.code; el.dispatchEvent(new Event('input',{bubbles:true})); }
     }
-    const passed = res && res.ok!==false;
+    /* Read through `_debugOutcome`, which is the whole fix: this used to test
+       `res.ok!==false` on a result that has no `ok`, so every run - including
+       ones that failed, ran out of budget, or never re-ran the last patch -
+       was announced as "fixed & passing". */
+    const passed = out.passed;
     _labStat(passed?'\u2713 fixed & passing':'\u2717 still failing', passed?'ok':'err');
-    const explain = (res && (res.explanation||res.summary)) ||
-      (passed ? 'The code runs cleanly now - the fixed version is in the editor.' : 'Some issues remain. See the details above.');
+    const explain = passed
+      ? 'It ran cleanly after the fix - the version in the editor is the one that passed.'
+      : 'Could not get it to run cleanly: ' + out.why + '.'
+        /* The editor now holds a patch nobody ran. Saying "see the details
+           above" over it would let somebody ship a guess believing it was the
+           tested version. */
+        + (out.unverified ? '\n\nThe code now in the editor is the LAST ATTEMPTED FIX, and it has NOT been run - treat it as a suggestion, not a result.' : '');
     _labOut('<div class="lab-sec'+(passed?'':' err')+'">'+
       '<div class="lab-sec-h">'+(passed?'Fixed':'Could not fully fix')+
         ' <span class="lab-sec-sub">'+lines.toLocaleString()+' lines</span></div>'+
       '<div class="lab-md">'+(typeof md==='function'?md(explain):escH(explain))+'</div>'+
-      ((res&&res.stdout)?'<div class="lab-sec-h" style="margin-top:12px">Output</div><pre class="lab-pre">'+_esc(res.stdout)+'</pre>':'')+
+      (out.stdout?'<div class="lab-sec-h" style="margin-top:12px">Output</div><pre class="lab-pre">'+_esc(out.stdout)+'</pre>':'')+
+      (out.lastError?'<div class="lab-sec-h" style="margin-top:12px">Last error</div><pre class="lab-pre">'+_esc(out.lastError.slice(0,4000))+'</pre>':'')+
     '</div>');
   }catch(e){
     _labStat('\u2717 '+e.message,'err');

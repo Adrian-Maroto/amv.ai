@@ -13202,3 +13202,56 @@ The general form: an undo may reverse its own effects; it may not destroy state
 it did not create, and "I created this file" stops being true about the CONTENT
 the moment somebody else writes to it. Recoverability, not authorship, decides
 what an undo is allowed to do.
+
+## 500. A gate that builds the tree cannot run while the tree is being edited
+
+After committing, a full gate was started and work began on the next finding
+while it ran. The gate's third stage rebuilds `app.js` from `src/app/*.js`. It
+ran at 19:42:11 - between two source edits made at 19:42:18 and 19:42:25 - and
+so it built a tree that had never existed as a commit: the first half of a
+change without the second.
+
+Whatever verdict that run produced would have been about nothing. Green would
+have "verified" a commit it never tested; red would have blamed a change it
+only half contained. The only right move was to stop it, and that took three
+attempts, because `pkill -f` with a pattern matched its own shell - the exact
+self-matching mistake recorded earlier in this same session.
+
+Rules. A running gate owns the working tree until it reports: read, research
+and write tests elsewhere, but do not touch `src/` - an edit that happens not to
+be built yet is still inside the window of the stage that builds it. When it is
+unclear what a run is testing, check the artifact's timestamp against the
+edits rather than trusting the order things were typed in. And stop a process
+by PID; a pattern broad enough to find it is broad enough to find the command
+doing the finding.
+
+## 501. Two callers read a field that has never existed, and every failure became a success
+
+`autoDebug` runs code, asks for a fix when it fails, and runs it again. It
+returns `{success, code, history, error?}`. Both of its callers - the Lab's
+Auto-debug button and the `fix_code` tool - tested `res.ok !== false`.
+
+It has never returned an `ok`. `undefined !== false` is true, so every outcome
+was a pass: the budget running out, the fixing model erroring, a fix returned
+identical, attempts exhausted. The Lab printed "fixed & passing" and "The code
+runs cleanly now". The tool handed the model "Fixed and now passing." and the
+model repeated it to the person. The failure branches read `stderr`, `stdout`,
+`explanation` and `summary`, none of which exist, so even a correctly routed
+failure could only have said "unknown".
+
+This is LESSONS 363-365 - a caller reading a field the producer does not send -
+but between two functions in the same bundle, which the RESPONSE SHAPES gate
+stage does not cover because it maps client methods to worker routes. The shape
+of the defect is the same and so is the tell: nothing throws, a missing property
+is `undefined`, and a loose comparison turns `undefined` into an answer.
+
+Two rules. Test for success with the positive, exact value - `=== true` - so an
+absent field means "not proven" rather than "fine". And when two callers
+interpret one result, put the interpretation in one function
+(`_debugOutcome`) so they cannot drift; these two had drifted in exactly the
+same wrong direction, which is what copying one interpretation looks like.
+
+And the case the audit only hinted at: leaving the loop on the iteration cap
+returns a patch that was proposed and never run. Every other exit returns code
+that ran. The Lab puts `code` in the editor either way, so the result now says
+`unverified`, and both callers say so in words.
