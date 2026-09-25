@@ -91,11 +91,16 @@ try {
   await ctx.setOffline(false);
 
   section('The rule it broke is still enforced where it belongs');
-  /* The exemption is for navigations only. A subresource fetched with
-     credentials is still none of the cache business. */
+  /* The exemption is for navigations only. It used to be enforced by
+     skipping subresources fetched with credentials:'include' - which missed
+     the browser's DEFAULT mode, 'same-origin', and so stored cookie-
+     authenticated answers (AMV-AUD-026). A subresource is now stored only if it
+     is on the list of files the build publishes; what that does to a real
+     request is `the-cache-holds-only-what-is-public`. */
   const swSrc = await (await fetch(url + '/sw.js')).text();
-  ok(/req\.mode !== 'navigate' && req\.credentials === 'include'/.test(swSrc),
-     'a credentialed non-navigation is still skipped', (swSrc.match(/.*credentials === 'include'.*/) || [''])[0].trim());
+  ok(/if \(!nav && !ASSETS\.has\(url\.pathname\)\) return;/.test(swSrc),
+     'a non-navigation that is not a published file is passed through untouched',
+     (swSrc.match(/.*ASSETS\.has.*/) || [''])[0].trim());
   ok(/if \(req\.headers\.get\('Authorization'\)\) return;/.test(swSrc),
      'and an Authorization header is still an outright skip, navigation or not');
   ok(/if \(url\.search\)/.test(swSrc),

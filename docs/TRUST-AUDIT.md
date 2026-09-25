@@ -1193,3 +1193,30 @@ person is now told so in words. The fix the audit recommends - allowing
 `wasm-unsafe-eval` only inside a separate execution origin - is AMV-AUD-001's
 isolated environment, which is the owner's decision. Adding it to the main
 page's policy was deliberately NOT done.
+
+## Round twenty-four - the cache holds only what is public (AMV-AUD-026, AMV-AUD-024)
+
+The service worker stored any same-origin GET that did not carry an
+Authorization header or `credentials:'include'`, missing the browser's default
+`same-origin` mode; and activation deleted every cache on the origin that was
+not the current build's. It now stores an allowlist - the page under one key,
+plus the published files, taken from the build's `PUBLISH` list - and only
+stores a navigation as the page when it is HTML. Activation retires only caches
+named `amv-*`; the current name is `amv-shell-<stamp>`.
+
+`the-cache-holds-only-what-is-public` runs the real generated worker in a real
+browser: cookie-bearing default-mode fetches to paths off the list, a navigation
+to another route, a navigation to the manifest, an offline visit to a route
+never seen, and a fresh profile seeded with another application's cache and an
+old AMV one before the worker first installs.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 106 | activation deletes every cache (AMV-AUD-024) | 1 assertion |
+| 107 | no allowlist - storage by inference (AMV-AUD-026) | 2 assertions |
+| 108 | a navigation stored under its own URL | 1 assertion |
+| 109 | a non-page navigation stored as the shell | 1 assertion - SURVIVED at first |
+
+**109 survived the first version**: the section went back to `/` before looking,
+which stored the real page again over the manifest. It now reads the cache from
+the manifest's own document.

@@ -139,10 +139,12 @@ section('Old caches are retired, so a stale app cannot outlive a deploy');
 {
   const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
   ok(/caches\.keys\(\)/.test(sw) && /caches\.delete/.test(sw),
-     'activate clears every cache that is not this build’s', true);
+     'activate clears AMV’s caches that are not this build’s', true);
   /* And the name has to CHANGE between builds, or clearing it clears nothing. */
   const name = (sw.match(/const CACHE = '([^']+)'/) || [])[1] || '';
-  ok(/^amv-[0-9a-z]+$/.test(name) && name !== 'amv-v1',
+  /* 'amv-shell-' since AMV-AUD-024: a prefix that is AMV's own, so retiring
+     old caches retires only AMV's. */
+  ok(/^amv-shell-[0-9a-z]+$/.test(name),
      'and the cache name is stamped from what was built', name);
 }
 

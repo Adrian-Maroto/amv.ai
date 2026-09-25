@@ -13376,3 +13376,23 @@ runtime is hidden by starting the next one as soon as a job ends.
 
 A queue alone was not the fix either, but it matters with one worker per job:
 without it, three jobs at once are three runtimes in memory on a phone.
+
+## 508. "Private" cannot be inferred from how a request was made; "public" can be listed
+
+The service worker stored any same-origin GET that did not look personal: no
+Authorization header, not `credentials:'include'`. The browser's DEFAULT mode is
+`same-origin`, which sends cookies without saying so - so a cookie-authenticated
+answer at any path nobody had excluded was stored and outlived signing out. Two
+earlier fixes in this file had each added one more exclusion (the API prefixes,
+query strings, navigations), which is the shape of a rule that cannot be
+finished: every new private path is a new omission.
+
+The rule: a cache in front of personal data stores an ALLOWLIST of what is
+public, and passes everything else through. Here that is the page, under one
+key, and the files the build already publishes - the same list the host uses,
+so they cannot drift. And a navigation is only stored as the page when it IS a
+page: opening the manifest directly is a navigation that answers JSON.
+
+The companion rule for anything that deletes shared state on activation - caches
+here, but equally localStorage keys or IndexedDB stores - is to own a prefix and
+delete only under it. "Everything that is not mine" is somebody else's data.
