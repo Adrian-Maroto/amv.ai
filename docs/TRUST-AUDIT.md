@@ -1045,3 +1045,26 @@ bridge call underneath is replaced, so the routed server and tool can be read.
 | 70 | the registry is rebuilt on each listing, so a reorder swaps two names | 1 assertion |
 
 Five for five.
+
+## Round nineteen - "ready" is what the bridge says (AMV-AUD-019)
+
+`mcpStartAll` reported any connector with a cached entry as ready, including
+entries that recorded a failure. A connector is now reused only when its entry
+holds no error, came from the current pairing, and the bridge's `mcp/list`
+reports its process running; anything else is stopped (freeing the name on the
+bridge, which still holds a dead process) and started again.
+
+`ready-is-what-the-bridge-says` runs a real bridge with five connectors: one
+seeded with an earlier failure, one whose process is SIGKILLed between pairings,
+one that is up with no tools, one that is up and ready, and one that can never
+start. Reuse is proven by the server's own pid file, not by the report.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 71 | any cached entry counts as ready (the finding) | 3+ assertions |
+| 72 | the error field is not checked | 2 assertions |
+| 73 | the process is not checked with the bridge | 2 assertions |
+| 74 | an entry from an earlier pairing is trusted | 1 assertion |
+| 75 | a dead process is restarted without being stopped first | 3 assertions |
+
+Five for five.

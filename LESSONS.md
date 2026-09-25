@@ -13278,3 +13278,22 @@ different order, which is the mutation that proved it.
 Removing `renderPlansView` paid for this change: the page was 32 bytes under its
 weight ceiling, and a function with no caller had been shipped to every visitor
 since Spending took the `plans` route.
+
+## 503. A table of outcomes that is read as a table of successes
+
+`mcpStartAll` skipped any connector with an entry in `MCP.live` and reported
+it ready. Three lines further down, the same function writes an entry for a
+connector that FAILED - with the error in it, so the card can show why. The
+table held both kinds of outcome, and the skip read it as if it held one. A
+connector that failed once was announced ready, with zero tools, and never
+tried again; one whose process had died was announced the same way.
+
+The rule: when a cache stores failures as well as successes, "has an entry" is
+not a question anybody should ask of it - ask what the entry says. And when the
+thing cached is a running process on somebody else's machine, the tab's memory
+is not evidence it is still running: ask the process's owner. The bridge
+already had `mcp/list`, reporting `running` per server; nothing had called it.
+
+"Empty" is not "failed". A server that starts and offers no tools is valid,
+and the suite keeps one to make sure the fix does not restart it on every
+pairing.

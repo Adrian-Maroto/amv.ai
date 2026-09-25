@@ -44854,7 +44854,10 @@ async function _mcpStart(id){
   const cfg = MCP.servers.find(s => s.id === id);
   if(!cfg) throw new Error('No server called "' + id + '".');
   const d = await _bridgeCall('mcp/start', { id, command: cfg.command, args: cfg.args, env: _mcpEnv(id) }, 70000);
-  MCP.live[id] = { tools: d.tools || [], info: d.info || null, error: '' };
+  /* `session` is the bridge pairing this came from. A token belongs to one run
+     of one bridge, so an entry from another pairing describes a process this
+     tab has no reason to think exists. */
+  MCP.live[id] = { tools: d.tools || [], info: d.info || null, error: '', session: BRIDGE.token };
   return MCP.live[id];
 }
 async function _mcpStop(id){
@@ -44868,17 +44871,39 @@ async function mcpCall(id, method, params){
 try{ window._mcpStart=_mcpStart; window._mcpStop=_mcpStop; window.mcpCall=mcpCall; }catch(e){}
 
 /* Start everything configured, and report what happened per server rather
-   than failing the lot because one is misconfigured. */
+   than failing the lot because one is misconfigured.
+
+   "READY" IS SOMETHING THE BRIDGE SAYS, NOT SOMETHING THIS TAB REMEMBERS.
+   (AMV-AUD-019)
+
+   This used to skip any server with an entry in MCP.live and report it ready -
+   and a failed start leaves an entry too, holding the error. So a connector
+   that had failed once was announced as ready, with zero tools, and nothing
+   ever tried it again; one whose process had since died was announced the same
+   way. Now an entry is reused only when it holds no error, came from THIS
+   pairing, and the bridge lists the process as running. Anything else is
+   stopped (freeing the name on the bridge, which still holds a dead process)
+   and started again, and the result is whatever that start says. */
 async function mcpStartAll(){
   if(!(typeof BRIDGE !== 'undefined' && BRIDGE.connected)) return [];
+  let running = null;
+  try{
+    const d = await _bridgeCall('mcp/list', {}, 15000);
+    running = new Set((d.servers || []).filter(x => x && x.running).map(x => String(x.id)));
+  }catch(e){ running = null; }   /* cannot confirm anything, so reuse nothing */
   const out = [];
   for(const s of MCP.servers.slice(0, MCP_MAX_SERVERS)){
-    if(MCP.live[s.id]) { out.push({ id:s.id, ok:true, tools:MCP.live[s.id].tools.length }); continue; }
+    const had = MCP.live[s.id];
+    if(had && !had.error && had.session === BRIDGE.token && running && running.has(s.id)){
+      out.push({ id:s.id, ok:true, tools:(had.tools || []).length, reused:true });
+      continue;
+    }
+    if(had || (running && running.has(s.id))) await _mcpStop(s.id);
     try{
       const live = await _mcpStart(s.id);
       out.push({ id:s.id, ok:true, tools:(live.tools || []).length });
     }catch(e){
-      MCP.live[s.id] = { tools: [], info: null, error: String(e.message || e) };
+      MCP.live[s.id] = { tools: [], info: null, error: String(e.message || e), session: BRIDGE.token };
       out.push({ id:s.id, ok:false, error: String(e.message || e) });
     }
   }

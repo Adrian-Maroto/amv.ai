@@ -51,7 +51,9 @@ function handle(m) {
                     serverInfo: { name: 'echo-server', version: '1.0.0' } });
   }
   if (method === 'notifications/initialized') return;          // a notification has no reply
-  if (method === 'tools/list') return ok(id, { tools: TOOLS });
+  /* MCP_NO_TOOLS: a server that is up, answers, and offers nothing - which is
+     valid, and must not be mistaken for one that failed. */
+  if (method === 'tools/list') return ok(id, { tools: process.env.MCP_NO_TOOLS ? [] : TOOLS });
   if (method === 'tools/call') {
     const name = params && params.name;
     const args = (params && params.arguments) || {};
