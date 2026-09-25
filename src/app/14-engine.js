@@ -531,48 +531,123 @@ function extractCode(text, lang){
    tab. If the sandbox can't start, Python degrades to an honest error; it NEVER
    falls back to executing on the main thread. */
 const _PY_CDN='https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
-let _pyWorker=null;
+/* ONE INTERPRETER PER JOB.  (AMV-AUD-016)
+
+   This kept one Pyodide alive for the life of the tab and ran every job in
+   it. So a job's variables, its imports and anything it patched - `json.dumps`
+   replaced, a module attribute changed - were still there for the next job,
+   and for the next ACCOUNT, since signing out did not touch it. The debugger
+   is where that bites first: a fix that only works because an earlier attempt
+   defined something is reported as passing, and fails the moment it runs
+   anywhere else.
+
+   Clearing a namespace would not have been enough, because modules are shared
+   across namespaces. So each job gets its own worker and its worker is
+   terminated when the job ends. The cost - starting the runtime again - is
+   paid in the background: as soon as one job ends, the next clean worker is
+   started and warmed, so the next job usually finds it ready.
+
+   Jobs run one at a time, in order: two at once would share stdout and a
+   timeout for one would kill the other. The timeout starts when the job
+   starts, not when it was queued. Signing out stops the running job and
+   anything queued behind it. Output is capped inside the worker, so a print
+   loop cannot fill the tab's memory before the timeout lands. */
+const _PY_OUT_CAP = 200000;
 function _pyWorkerSource(){
   return "let py=null,loading=null;"+
     "async function ensure(){ if(py) return py; if(!loading) loading=(async()=>{"+
       "importScripts('"+_PY_CDN+"pyodide.js');"+
       "py=await loadPyodide({indexURL:'"+_PY_CDN+"'}); return py; })(); return loading; }"+
-    "self.onmessage=async(e)=>{ const d=e.data||{}; let out='';"+
-      "try{ const p=await ensure();"+
-        "p.setStdout({batched:s=>{out+=s+'\\n';}});"+
-        "p.setStderr({batched:s=>{out+=s+'\\n';}});"+
-        "let result,err=null;"+
-        "try{ result=await p.runPythonAsync(d.code); }catch(x){ err=(x&&x.message)?x.message:String(x); }"+
-        "self.postMessage({id:d.id, ok:!err, stdout:out.trim(), stderr:err||'', result:(result!==undefined&&result!==null)?String(result):''});"+
-      "}catch(x){ self.postMessage({id:d.id, ok:false, stdout:'', stderr:'Runtime load error: '+((x&&x.message)||x), result:''}); } };";
+    "function why(x){ const m=(x&&x.message)?x.message:String(x);"+
+      "return /WebAssembly|wasm|unsafe-eval/i.test(m)"+
+        "? 'Python cannot start on this page: its security policy does not allow the Python runtime (WebAssembly) to load. JavaScript still runs.'"+
+        ": 'Runtime load error: '+m; }"+
+    "self.onmessage=async(e)=>{ const d=e.data||{};"+
+      "if(d.warm){ try{ await ensure(); self.postMessage({warm:true,ok:true}); }catch(x){ self.postMessage({warm:true,ok:false}); } return; }"+
+      "let out='',cut=false; const add=s=>{ if(out.length<"+_PY_OUT_CAP+") out+=s+'\\n'; else cut=true; };"+
+      "let p; try{ p=await ensure(); }catch(x){ self.postMessage({id:d.id, ok:false, stdout:'', stderr:why(x), result:'', loaded:false}); return; }"+
+      "p.setStdout({batched:add}); p.setStderr({batched:add});"+
+      "let result,err=null;"+
+      "try{ result=await p.runPythonAsync(d.code); }catch(x){ err=(x&&x.message)?x.message:String(x); }"+
+      "if(cut) out=out.slice(0,"+_PY_OUT_CAP+")+'\\n[output cut off at "+_PY_OUT_CAP+" characters]';"+
+      "self.postMessage({id:d.id, ok:!err, stdout:out.trim(), stderr:err||'', result:(result!==undefined&&result!==null)?String(result):'', loaded:true});"+
+    "};";
+}
+let _pyWorker = null;      // the clean, possibly warm, worker the next job will take
+let _pyUrl = '';           // one Blob URL for the source, made once - it never changes
+let _pyQueue = Promise.resolve();
+let _pyGen = 0;            // moved on by _pyReset; a job queued before that does not run
+let _pyRuntimeOk = false;  // warm the next worker only once the runtime has been seen to load
+let _pyRunning = null;     // { stop } for the job in progress
+function _pyNewWorker(){
+  if(!_pyUrl) _pyUrl = URL.createObjectURL(new Blob([_pyWorkerSource()], {type:'application/javascript'}));
+  return new Worker(_pyUrl);
 }
 function _ensurePyWorker(){
   if(_pyWorker) return _pyWorker;
-  const blob=new Blob([_pyWorkerSource()],{type:'application/javascript'});
-  _pyWorker=new Worker(URL.createObjectURL(blob));
+  _pyWorker = _pyNewWorker();
   return _pyWorker;
 }
-function _runPythonInWorker(code, onStatus){
-  return new Promise((resolve)=>{
+function _pyPrewarm(){
+  if(!_pyRuntimeOk) return;
+  try{ _ensurePyWorker().postMessage({ warm:true }); }catch(e){}
+}
+/* Nothing of one account's Python survives into the next: the job running is
+   stopped, the jobs queued are refused, and the warm worker goes too. */
+function _pyReset(){
+  _pyGen++;
+  try{ if(_pyRunning) _pyRunning.stop('Stopped - the account signed out before this finished.'); }catch(e){}
+  try{ if(_pyWorker) _pyWorker.terminate(); }catch(e){}
+  _pyWorker = null;
+}
+try{ window._pyReset = _pyReset; }catch(e){}
+function _pyRunOne(code, onStatus, timeoutMs){
+  return new Promise((resolve) => {
     let w;
-    try{ w=_ensurePyWorker(); }
+    /* The job TAKES the worker: nobody else is handed an interpreter this job
+       has touched. */
+    try{ w = _ensurePyWorker(); _pyWorker = null; }
     catch(e){ resolve({ok:false,stdout:'',stderr:'Python sandbox unavailable: '+((e&&e.message)||e),result:'',ms:0}); return; }
-    const id='py_'+Math.random().toString(36).slice(2);
-    const t0=performance.now();
-    let done=false;
-    const onMsg=(ev)=>{ if(!ev.data||ev.data.id!==id) return; const d=ev.data; finish({ok:d.ok,stdout:d.stdout,stderr:d.stderr,result:d.result,ms:Math.round(performance.now()-t0)}); };
-    const finish=(r)=>{ if(done) return; done=true; try{w.removeEventListener('message',onMsg);}catch(e){} resolve(r); };
-    w.addEventListener('message',onMsg);
-    onStatus&&onStatus('Running Python in a sandbox (first run loads the runtime)…');
-    w.postMessage({id, code});
-    setTimeout(()=>{
-      if(done) return;
+    const id = 'py_'+Math.random().toString(36).slice(2);
+    const t0 = performance.now();
+    let done = false, timer = null;
+    const finish = (r) => {
+      if(done) return; done = true;
+      clearTimeout(timer);
+      try{ w.removeEventListener('message', onMsg); }catch(e){}
       try{ w.terminate(); }catch(e){}
-      _pyWorker=null; // dead worker - rebuild next time
-      finish({ok:false,stdout:'',stderr:'Execution timed out (30s) - the sandbox was terminated.',result:'',ms:Math.round(performance.now()-t0)});
-    },30000);
+      _pyRunning = null;
+      if(r.loaded) _pyRuntimeOk = true;
+      delete r.loaded;
+      _pyPrewarm();
+      resolve(r);
+    };
+    const onMsg = (ev) => {
+      if(!ev.data || ev.data.id !== id) return;
+      const d = ev.data;
+      finish({ ok:d.ok, stdout:d.stdout, stderr:d.stderr, result:d.result, loaded:d.loaded, ms:Math.round(performance.now()-t0) });
+    };
+    _pyRunning = { stop: (why) => finish({ ok:false, stdout:'', stderr:why, result:'', ms:Math.round(performance.now()-t0) }) };
+    w.addEventListener('message', onMsg);
+    onStatus && onStatus(_pyRuntimeOk ? 'Running Python in a sandbox…' : 'Running Python in a sandbox (first run loads the runtime)…');
+    w.postMessage({ id, code });
+    const limit = timeoutMs || 30000;
+    timer = setTimeout(() => {
+      finish({ ok:false, stdout:'', stderr:'Execution timed out ('+Math.round(limit/1000)+'s) - the sandbox was terminated.', result:'', ms:Math.round(performance.now()-t0) });
+    }, limit);
   });
 }
+function _runPythonInWorker(code, onStatus, opts){
+  const gen = _pyGen;
+  const timeoutMs = opts && opts.timeoutMs;
+  const run = () => gen !== _pyGen
+    ? { ok:false, stdout:'', stderr:'Not run - the account signed out before this started.', result:'', ms:0 }
+    : _pyRunOne(code, onStatus, timeoutMs);
+  const job = _pyQueue.then(run, run);
+  _pyQueue = job.then(() => {}, () => {});
+  return job;
+}
+try{ window._runPythonInWorker = _runPythonInWorker; }catch(e){}
 
 // runCode(code, lang) -> {ok, stdout, stderr, result, ms}
 async function runCode(code, lang, onStatus){

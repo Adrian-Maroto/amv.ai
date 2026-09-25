@@ -1158,3 +1158,38 @@ looked identical to one aborted by the cancel. Timing assertions, a 3-second
 the browser reading and closes the connection; whether the Worker stops the
 upstream generation, and how the usage reservation settles for a cancelled
 stream, is not measured here.
+
+## Round twenty-three - one Python job cannot see the last (AMV-AUD-016)
+
+One Pyodide lived for the tab; now each job takes its own worker and the worker
+is terminated when the job ends, with the next one warmed in the background.
+Jobs are queued one at a time with the timeout starting when each starts;
+signing out stops the running job, refuses the queued ones and drops the warm
+worker; output is capped inside the worker; the worker source becomes a Blob
+URL once instead of once per restart.
+
+`one-python-job-cannot-see-the-last` serves a stand-in runtime at Pyodide's own
+address - a tiny interpreter whose state lives exactly as long as its worker -
+so everything around it is the real code.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 97 | one interpreter for every job (the finding) | 2 assertions |
+| 98 | the next runtime is not warmed | 1 assertion |
+| 99 | jobs run concurrently | 2 assertions |
+| 100 | sign-out does not reset the sandbox | 2 assertions |
+| 101 | reset leaves the running job going | 1 assertion |
+| 102 | reset lets queued jobs run | 1 assertion |
+| 103 | output is not capped | 1 assertion |
+| 104 | a Blob URL per worker | 1 assertion |
+| 105 | a raw compiler error instead of words | 1 assertion |
+
+Nine for nine.
+
+**AMV-AUD-015 confirmed in a real browser, and still open.** The last section
+serves a stand-in that compiles WebAssembly as the real runtime does first, and
+the page's shipped policy refuses it: Python cannot start on AMV today. The
+person is now told so in words. The fix the audit recommends - allowing
+`wasm-unsafe-eval` only inside a separate execution origin - is AMV-AUD-001's
+isolated environment, which is the owner's decision. Adding it to the main
+page's policy was deliberately NOT done.

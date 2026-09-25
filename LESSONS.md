@@ -13358,3 +13358,21 @@ mechanism replaced. And guards that back each other up (a cancellable wait, and
 a check after the wait) hide each other from mutation; find the input where
 only one of them stands - here, a cancel on the last attempt, where there is no
 wait left and an unrecognised cancel becomes "Network error".
+
+## 507. A sandbox that outlives the job is not isolating the job
+
+The Python sandbox was a Web Worker, which isolates the PAGE from the code - no
+document, no storage, terminable. It did not isolate one job from the next: a
+single Pyodide lived for the tab, so variables, imports and patched modules
+carried over, into the next account too. For a debugger that is a correctness
+defect before it is a privacy one: a fix that only works because an earlier
+attempt defined something is reported as passing.
+
+A fresh namespace per job was the tempting fix and would not have held, because
+modules are shared across namespaces - a job that replaces `json.dumps` changes
+it for every namespace in that interpreter. The unit of isolation has to be the
+unit that owns the state: the interpreter, so the worker. The cost of a fresh
+runtime is hidden by starting the next one as soon as a job ends.
+
+A queue alone was not the fix either, but it matters with one worker per job:
+without it, three jobs at once are three runtimes in memory on a phone.

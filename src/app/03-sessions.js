@@ -1637,6 +1637,10 @@ const _S_SIGNOUT_KEEP = [
 try{ window._S_SIGNOUT_KEEP=_S_SIGNOUT_KEEP; }catch(e){}
 function _wipeAccountState(){
   try{ _SESSIONS.length = 0; }catch(e){ try{ _SESSIONS=[]; }catch(e2){} }
+  /* The Python sandbox: the job running for the account that is leaving, the
+     ones queued behind it, and the interpreter warmed for its next one.
+     (AMV-AUD-016) */
+  try{ _pyReset(); }catch(e){ console.warn('[AMV] Python sandbox reset failed', e); }
   /* Signing out clears MORE than a new session does: the same defaults, plus the
      preferences a reset deliberately keeps. Nothing of one account's may still
      be sitting there when the next one signs in on this browser. */
