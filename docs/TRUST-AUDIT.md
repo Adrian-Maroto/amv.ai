@@ -984,3 +984,39 @@ evidence it accepts changed from the URL to the server's record.
 **Not a billing change.** Nothing here charges, refunds, grants, prices, or
 talks to a processor. It stops a display from asserting money it has no evidence
 of.
+
+## Round seventeen - "local mode" is only said when it is true
+
+AMV-AUD-013. The backend field in Settings is a per-device OVERRIDE. Clearing it
+stores an empty string and the getter falls back to the address the deployment
+was built with - which is the designed behaviour, written into the code as
+"clearing it falls back to what shipped". The toast said "Cleared - local mode".
+On every configured deployment that was false: requests kept going to the
+built-in backend, and somebody who cleared the field to stop talking to a server
+was told they had.
+
+The behaviour was right and the sentence was wrong, so the sentence changed. It
+is now decided by where requests actually go after clearing - the built-in host
+by name, or "local mode" only when no backend is left. The Settings pane also
+says whether the address in the box is this device's override or the
+deployment's own, because after clearing, the built-in address reappears in the
+box - true, and baffling without a word saying which it is.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 64 | the toast says local mode regardless | 2 assertions |
+| 65 | the pane stops saying which address it shows | 2 assertions |
+
+**Two wrong turns in the test, both about reaching the pane.** The Live /
+Backend pane is owner-only (`ADMIN_SET_SECTIONS`), so the first version read a
+screen with no pane on it; the second rendered it directly and the renderer's own
+admin gate - correctly - swapped in the Account pane. Both found "no Status
+line", which read identically to the defect. Admin is granted for the render and
+restored straight after: the gate is another suite's claim, the wording is this
+one's.
+
+**What was deliberately NOT built:** a true "local-only" switch that gates every
+request. The audit suggests an explicit mode enum. That would be a new product
+state touching every network path, and nothing asks for it except the toast that
+promised it - so the promise was withdrawn instead. If an offline mode is wanted,
+it is a product decision.

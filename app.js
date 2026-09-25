@@ -1260,7 +1260,26 @@ function _cspReachable(origin){
 function amvSaveBackend(){
   var v=(document.getElementById('be-url')||{}).value||'';
   AMV_API.base=v.trim();
-  if(!v.trim()){ toast('Cleared - local mode','info'); }
+  /* "CLEARED - LOCAL MODE" WAS SAID WHILE REQUESTS KEPT GOING OUT. (AMV-AUD-013)
+
+     Clearing removes this device's OVERRIDE, and the getter then falls back to
+     the address the deployment was built with - which is the intended meaning
+     ("clearing it falls back to what shipped"). So on any configured
+     deployment, "local mode" was false: the backend was still live and still
+     being talked to. Somebody who cleared it to stop talking to a server was
+     told they had.
+
+     So the sentence is decided by where requests actually go now. Local mode is
+     only claimed when there genuinely is no backend left. */
+  if(!v.trim()){
+    var eff=''; try{ eff=AMV_API.base||''; }catch(e){}
+    if(eff){
+      var host=''; try{ host=new URL(eff).host; }catch(e){ host=eff; }
+      toast('Cleared your override - AMV now uses this deployment’s own backend ('+host+').','info',7000);
+    } else {
+      toast('Cleared - there is no backend now, so AMV is in local mode.','info');
+    }
+  }
   else {
     var origin=''; try{ origin=new URL(v.trim()).origin; }catch(e){}
     var reach=origin?_cspReachable(origin):null;
@@ -29056,7 +29075,12 @@ function _renderSetPaneInner(only, into){
       '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+
       '<div class="ss2"><h3>Backend URL</h3>'+
         '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:var(--t-sm)"><button class="btn bp" style="font-size:var(--t-sm)" data-dact="amvSaveBackend">Save</button></div>'+
-        '<p style="font-size:var(--t-xs);color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:var(--grn-txt)">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
+        /* WHERE REQUESTS GO, AND WHY THAT ADDRESS. The box shows the resolved
+           address, so after clearing an override the built-in one reappears in
+           it - true, and baffling without a word saying which it is. */
+        '<p style="font-size:var(--t-xs);color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:var(--grn-txt)">configured</span>'
+          +(loadStr('amv_api_base')?' &middot; set on this device':' &middot; this deployment’s built-in backend')
+          +(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode - no backend')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+
         '<p style="font-size:var(--t-sm);color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen - it is verified server-side.</p>'+

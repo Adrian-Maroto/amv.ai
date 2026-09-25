@@ -1260,7 +1260,26 @@ function _cspReachable(origin){
 function amvSaveBackend(){
   var v=(document.getElementById('be-url')||{}).value||'';
   AMV_API.base=v.trim();
-  if(!v.trim()){ toast('Cleared - local mode','info'); }
+  /* "CLEARED - LOCAL MODE" WAS SAID WHILE REQUESTS KEPT GOING OUT. (AMV-AUD-013)
+
+     Clearing removes this device's OVERRIDE, and the getter then falls back to
+     the address the deployment was built with - which is the intended meaning
+     ("clearing it falls back to what shipped"). So on any configured
+     deployment, "local mode" was false: the backend was still live and still
+     being talked to. Somebody who cleared it to stop talking to a server was
+     told they had.
+
+     So the sentence is decided by where requests actually go now. Local mode is
+     only claimed when there genuinely is no backend left. */
+  if(!v.trim()){
+    var eff=''; try{ eff=AMV_API.base||''; }catch(e){}
+    if(eff){
+      var host=''; try{ host=new URL(eff).host; }catch(e){ host=eff; }
+      toast('Cleared your override - AMV now uses this deployment’s own backend ('+host+').','info',7000);
+    } else {
+      toast('Cleared - there is no backend now, so AMV is in local mode.','info');
+    }
+  }
   else {
     var origin=''; try{ origin=new URL(v.trim()).origin; }catch(e){}
     var reach=origin?_cspReachable(origin):null;

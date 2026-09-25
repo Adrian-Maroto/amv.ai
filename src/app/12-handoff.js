@@ -2826,7 +2826,12 @@ function _renderSetPaneInner(only, into){
       '<div class="set-sub">Connect AMV to your deployed backend so Crew jobs, approvals and Handoff work for real and across accounts. Leave blank to run in local demo mode.</div>'+
       '<div class="ss2"><h3>Backend URL</h3>'+
         '<div style="display:flex;gap:8px"><input type="url" id="be-url" value="'+escH(liveBase)+'" placeholder="https://amv-ai-backend.your.workers.dev" style="flex:1;font-size:var(--t-sm)"><button class="btn bp" style="font-size:var(--t-sm)" data-dact="amvSaveBackend">Save</button></div>'+
-        '<p style="font-size:var(--t-xs);color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:var(--grn-txt)">configured</span>'+(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode')+'</p>'+
+        /* WHERE REQUESTS GO, AND WHY THAT ADDRESS. The box shows the resolved
+           address, so after clearing an override the built-in one reappears in
+           it - true, and baffling without a word saying which it is. */
+        '<p style="font-size:var(--t-xs);color:var(--mu);margin-top:8px">'+(liveBase?('Status: <span style="color:var(--grn-txt)">configured</span>'
+          +(loadStr('amv_api_base')?' &middot; set on this device':' &middot; this deployment’s built-in backend')
+          +(tokenSet?' &middot; signed in':' &middot; not signed in')):'Status: local demo mode - no backend')+'</p>'+
       '</div>'+
       '<div class="ss2" style="margin-top:14px"><h3>Sign in to backend</h3>'+
         '<p style="font-size:var(--t-sm);color:var(--mu);margin:-4px 0 10px">Sign in with your AMV account email and password to sync this device. To use Google, sign in with Google on the main sign-in screen - it is verified server-side.</p>'+
