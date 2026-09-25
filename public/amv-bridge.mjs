@@ -60,7 +60,7 @@
 import { createServer } from 'http';
 import { spawn } from 'child_process';
 import { realpathSync, existsSync, statSync, lstatSync, readlinkSync, readFileSync, writeFileSync,
-         mkdirSync, readdirSync, unlinkSync } from 'fs';
+         mkdirSync, readdirSync, unlinkSync, renameSync, chmodSync } from 'fs';
 import { resolve, join, dirname, relative, sep } from 'path';
 import { randomBytes, timingSafeEqual } from 'crypto';
 
@@ -657,10 +657,32 @@ const server = createServer(async (req, res) => {
        was entirely in the BROWSER, where `_bridgeCall` threw a plain Error
        carrying no code, so the caller could not act on the 404 it was already
        being sent and collapsed every failure into "the file is not there". */
+    /* A HARD LINK IS ONE FILE WITH TWO NAMES, AND ONLY ONE NAME IS INSIDE.
+       (AMV-AUD-021)
+
+       Every check above is about NAMES - is this path inside the folder, does
+       a link along it point out. A hard link passes all of them: its name is
+       inside, it is not a symlink, and its contents are the same bytes as a
+       file somewhere else entirely. Reading it read that file; writing it
+       rewrote that file.
+
+       Reads of a file with more than one name are refused, since there is no
+       asking where the other name lives. Writes do not write INTO the file at
+       all: they write a new file beside it and rename it into place, so the
+       name inside the folder gets new contents and the other name keeps the
+       old ones - the shared bytes are never touched. That is also a write that
+       cannot be left half-done by a crash.
+
+       These are checks on paths, made and then acted on; a process racing the
+       daemon between the two is not something path checks can stop. The
+       boundary against that is the isolated project copy AMV-AUD-001
+       describes, which is the owner's decision. */
     if (path === '/amv-bridge/read') {
       const file = safePath(body.path);
       const st = statSync(file);
       if (!st.isFile()) return json(res, 400, { error: 'not_a_file' });
+      if (st.nlink > 1) return json(res, 403, { error: 'hard_linked',
+        message: 'That file is also reachable under another name, possibly outside the folder (a hard link), so the bridge will not read it.' });
       if (st.size > MAX_BODY) return json(res, 413, { error: 'too_large', size: st.size });
       return json(res, 200, { path: relative(ROOT, file), size: st.size,
                               content: readFileSync(file, 'utf8') });
@@ -670,7 +692,30 @@ const server = createServer(async (req, res) => {
       const file = safePath(body.path);
       mkdirSync(dirname(file), { recursive: true });
       const content = String(body.content == null ? '' : body.content);
-      writeFileSync(file, content, 'utf8');
+      /* A symlink that stays inside is written THROUGH, as before - to where
+         it points, which safePath has already checked is inside. Followed by
+         hand rather than with realpath, because realpath fails on a link whose
+         target does not exist yet, and writing one of those has always
+         created the file it points at. */
+      let target = file;
+      for (let hops = 0; hops < 12; hops++) {
+        let lst = null;
+        try { lst = lstatSync(target); } catch (e) { break; }
+        if (!lst.isSymbolicLink()) break;
+        target = resolve(dirname(target), readlinkSync(target));
+      }
+      if (target !== file) mkdirSync(dirname(target), { recursive: true });
+      let mode = null;
+      try { const was = statSync(target); if (was.isFile()) mode = was.mode & 0o7777; } catch (e) {}
+      const tmp = join(dirname(target), '.' + target.split(sep).pop() + '.amv-' + randomBytes(6).toString('hex'));
+      try {
+        writeFileSync(tmp, content, 'utf8');
+        if (mode !== null) chmodSync(tmp, mode);     // an executable script stays executable
+        renameSync(tmp, target);
+      } catch (e) {
+        try { unlinkSync(tmp); } catch (e2) {}
+        throw e;
+      }
       console.log('  · wrote ' + relative(ROOT, file) + ' (' + content.split('\n').length + ' lines)');
       return json(res, 200, { path: relative(ROOT, file), bytes: Buffer.byteLength(content) });
     }

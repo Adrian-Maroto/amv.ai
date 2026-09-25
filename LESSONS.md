@@ -13436,3 +13436,21 @@ The page's own sandbox had the same shape: every console line held until the end
 then posted at once. A cap that is checked as lines are written, and counts the
 separators it will add, is the one that holds - the first version forgot the
 newlines and let short lines through 6% over.
+
+## 511. Confinement by name does not confine a file with two names
+
+Every check the bridge makes is about paths: is it inside the folder, does a
+symlink along it point out. A hard link passes all of them - its name is inside,
+it is not a link in the symlink sense - and it IS the file somewhere else. The
+fix for writes was not a better check but a different operation: write a new
+file and rename it into place, so the name inside gets new bytes and the other
+name keeps its own. The shared bytes are never opened for writing, whatever the
+link count says, and a crash mid-write can no longer leave a torn file.
+
+Changing HOW a write happens changes everything that relied on the old way.
+Writing in place had quietly (1) kept an executable's mode, (2) written through a
+symlink rather than replacing it, and (3) created the missing target of a
+dangling link that points inside. The first draft lost the third: `realpath`
+fails on a target that does not exist, so the rename replaced the link. An
+existing suite caught it. When the mechanism changes, list what the old one did
+for free and test each.

@@ -1273,3 +1273,25 @@ console lines through the real sandbox.
 
 Six for six. **Not built:** per-process memory and CPU limits. Those belong to the
 execution boundary AMV-AUD-001 describes, which is the owner's decision.
+
+## Round twenty-seven - a hard link does not carry the bridge out (AMV-AUD-021)
+
+A hard link inside the folder shares its bytes with a file outside, and passes
+every path check. Reads of a file with `nlink > 1` are now refused
+(`hard_linked`); writes go to a temporary file beside the target and are renamed
+into place, so the outside name is never written. The write keeps the file's
+mode, still writes through a symlink that stays inside, and still creates the
+missing target of an inside dangling link.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 120 | a hard-linked file reads (the finding) | 2 assertions |
+| 121 | a write lands in the shared bytes (the finding) | 2 assertions |
+| 122 | the replaced file loses its mode | 1 assertion |
+| 123 | a symlink is replaced instead of written through | 1 assertion |
+
+Four for four, plus `the-bridge-only-reaches-one-folder` catching the dangling-
+link regression in the first draft (LESSONS 511).
+
+**Not closed:** a race between the check and the write, which path checks cannot
+stop. That boundary is the isolated project copy in AMV-AUD-001.
