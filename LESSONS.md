@@ -13297,3 +13297,25 @@ already had `mcp/list`, reporting `running` per server; nothing had called it.
 "Empty" is not "failed". A server that starts and offers no tools is valid,
 and the suite keeps one to make sure the fix does not restart it on every
 pairing.
+
+## 504. A pipe cuts where it likes, and a limit decides what the next message is
+
+The bridge decoded each chunk from a connector's stdout on its own. A chunk
+boundary can fall inside a character - `€` is three bytes - and a character cut
+in two became three replacement characters inside a reply that was otherwise
+valid JSON. `/exec` did the same to program output. Nothing failed; the text
+was just wrong.
+
+Framing in bytes and decoding whole lines is exact, because a newline byte never
+occurs inside a multi-byte UTF-8 sequence. Streams that are not framed get
+`setEncoding('utf8')`, which keeps one decoder across chunks.
+
+The second rule came from a mutation that survived. The size limit dropped an
+oversized line's accumulated bytes and then read on from wherever the pipe was -
+so the rest of that line became the start of the next "message". The first
+fixture's tail was `xxxx`, which never parses, and the missing discard went
+unnoticed. But JSON allows leading whitespace: a line of five megabytes of
+spaces ending in `{"id": <next>, "result": ...}` parses from any cut point, and
+answers a request it has nothing to do with. When a limit truncates a framed
+message, discard through the END of that frame, and test with a tail that WOULD
+parse - a tail that cannot parse proves nothing about whether it was read.

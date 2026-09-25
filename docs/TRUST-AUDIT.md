@@ -1068,3 +1068,30 @@ start. Reuse is proven by the server's own pid file, not by the report.
 | 75 | a dead process is restarted without being stopped first | 3 assertions |
 
 Five for five.
+
+## Round twenty - a character cut in two arrives whole (AMV-AUD-017)
+
+The bridge decoded each stdout chunk separately, for connectors and for `/exec`,
+so a multi-byte character split by the pipe was corrupted. Connector output is
+now split into lines on the newline byte and each whole line decoded; `/exec`
+and connector stderr keep one decoder per stream. An oversized line now fails
+its waiting callers straight away, and is discarded through its end.
+
+`a-character-cut-in-two-arrives-whole` uses a new fixture,
+`mcp-awkward-server.mjs`, which cuts its reply inside every multi-byte
+character (euro, CJK, accents, four-byte emoji, Greek) with a pause between
+pieces so the pipe delivers them apart. It also sends three messages in one
+write and a five-megabyte line.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 76 | connector replies decoded per chunk (the finding) | 2 assertions |
+| 77 | an oversized line leaves its caller waiting for the timeout | 2 assertions |
+| 78 | an oversized line is not discarded through its end | 2 assertions - SURVIVED at first |
+| 79 | `/exec` output decoded per chunk | 1 assertion |
+
+**78 survived the first version.** Its tail was `x` characters, which never
+parse, so reading on from the cut point did no visible harm. The fixture now
+ends that line with a well-formed reply to the NEXT request, preceded by
+whitespace JSON allows, and without the discard that forgery answers the
+following call. See LESSONS 504.

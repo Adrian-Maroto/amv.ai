@@ -280,40 +280,70 @@ function mcpStart(id, command, args, envExtra){
     detached: process.platform !== 'win32',
     shell,
   });
-  const srv = { id, child, command, buf: '', stderr: '', pending: new Map(), nextId: 1,
+  const srv = { id, child, command, stderr: '', pending: new Map(), nextId: 1,
                 tools: [], info: null, exited: false };
 
+  /* FRAMED IN BYTES, DECODED A WHOLE LINE AT A TIME.  (AMV-AUD-017)
+
+     A chunk is wherever the pipe happened to cut, and that can be in the
+     middle of a character: `€` is three bytes, and decoding each chunk on its
+     own turned one split across two into three replacement characters -
+     inside a tool result that was otherwise valid JSON, so nothing noticed.
+     A newline byte can never occur inside a multi-byte UTF-8 sequence, so
+     splitting the BYTES on it and decoding each complete line is exact.
+
+     The size bound is on the line that is still incomplete, and only that.
+     It used to be checked on the whole buffer before any line was taken out,
+     so one large chunk holding several complete, valid replies was thrown
+     away together. A line that really is over the bound is dropped up to its
+     end - not merely truncated, which would parse its tail as a message - and
+     whoever was waiting is told why, instead of waiting out the timeout. */
+  let pending = [], pendingBytes = 0, discarding = false;
+  const deliver = (line) => {
+    if (!line) return;
+    let msg; try { msg = JSON.parse(line); } catch (e) { return; }
+    /* A response carries the id we sent. Anything else is a notification -
+       progress, a log line, a tools-changed nudge - and is not what any
+       caller is waiting on. */
+    if (msg && msg.id != null && srv.pending.has(msg.id)) {
+      const p = srv.pending.get(msg.id);
+      srv.pending.delete(msg.id);
+      clearTimeout(p.timer);
+      p.resolve(msg);
+    }
+  };
   child.stdout.on('data', (chunk) => {
-    srv.buf += chunk.toString('utf8');
-    if (srv.buf.length > MCP_MAX_LINE) {
+    let from = 0, nl;
+    while ((nl = chunk.indexOf(0x0a, from)) >= 0) {
+      const piece = chunk.subarray(from, nl);
+      from = nl + 1;
+      if (discarding) { discarding = false; pending = []; pendingBytes = 0; continue; }
+      const whole = pendingBytes ? Buffer.concat(pending.concat([piece])) : piece;
+      pending = []; pendingBytes = 0;
+      deliver(whole.toString('utf8').trim());
+    }
+    if (from >= chunk.length || discarding) return;
+    const rest = chunk.subarray(from);
+    pending.push(rest); pendingBytes += rest.length;
+    if (pendingBytes > MCP_MAX_LINE) {
       /* A server producing an unbounded line is malfunctioning, and holding
          it in memory is how that becomes the machine's problem rather than
          its own. */
-      srv.buf = '';
-      return;
-    }
-    let nl;
-    while ((nl = srv.buf.indexOf('\n')) >= 0) {
-      const line = srv.buf.slice(0, nl).trim();
-      srv.buf = srv.buf.slice(nl + 1);
-      if (!line) continue;
-      let msg; try { msg = JSON.parse(line); } catch (e) { continue; }
-      /* A response carries the id we sent. Anything else is a notification -
-         progress, a log line, a tools-changed nudge - and is not what any
-         caller is waiting on. */
-      if (msg && msg.id != null && srv.pending.has(msg.id)) {
-        const p = srv.pending.get(msg.id);
-        srv.pending.delete(msg.id);
-        clearTimeout(p.timer);
-        p.resolve(msg);
-      }
+      pending = []; pendingBytes = 0; discarding = true;
+      const why = 'the server sent a message over ' + Math.round(MCP_MAX_LINE / 1048576) + 'MB, which the bridge does not accept';
+      srv.stderr = (srv.stderr + '\n[bridge] ' + why).slice(-MCP_STDERR_KEEP);
+      for (const [, p] of srv.pending) { clearTimeout(p.timer); p.resolve({ error: { message: why } }); }
+      srv.pending.clear();
     }
   });
   /* MCP servers log to stderr as a matter of course, so this is diagnostics
      rather than failure - kept short, and only the tail, because the useful
      part of a crash is always the end. */
+  /* setEncoding keeps a decoder across chunks, so a character cut in two by
+     the pipe arrives whole. */
+  child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk) => {
-    srv.stderr = (srv.stderr + chunk.toString('utf8')).slice(-MCP_STDERR_KEEP);
+    srv.stderr = (srv.stderr + chunk).slice(-MCP_STDERR_KEEP);
   });
   const done = (why) => {
     srv.exited = true;
@@ -742,8 +772,12 @@ const server = createServer(async (req, res) => {
       execJobs.add(child);
 
       let out = '', err = '', truncated = false;
-      const take = (buf, which) => {
-        const s = buf.toString('utf8');
+      /* One decoder per stream, kept across chunks: decoding each chunk alone
+         turns a character the pipe cut in two into replacement characters,
+         in output a person reads and a model edits code from. (AMV-AUD-017) */
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      const take = (s, which) => {
         if ((out.length + err.length) > MAX_OUTPUT) { truncated = true; return; }
         if (which === 'o') out += s; else err += s;
       };
