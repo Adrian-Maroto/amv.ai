@@ -11648,10 +11648,18 @@ function _recordTxn(t){ try{ const m=load('amv_txns')||{}; const arr=m[_txnKey()
    Nothing did this, so a purchase that COMPLETED still read "Pending" in the
    transaction list for ever - a screen about what somebody has been charged,
    permanently wrong about a charge that went through. */
-function _settleMarketTxn(status){
+/* SETTLES THE ORDER IT IS TOLD ABOUT, AND NO OTHER. (AMV-AUD-011)
+
+   This took "the first pending marketplace record it could find", so two
+   purchases in flight meant the wrong one could be marked paid. It now needs
+   the listing id, and callers only pass one after the SERVER has listed that
+   purchase - see _confirmMarketReturn. No id, no settlement. */
+function _settleMarketTxn(status, listingId){
   try{
+    const want=String(listingId||'');
+    if(!want) return false;
     const m=load('amv_txns')||{}; const arr=m[_txnKey()]||[];
-    const t=arr.find(x=>x && x.type==='marketplace' && x.status==='pending');
+    const t=arr.find(x=>x && x.type==='marketplace' && x.status==='pending' && String(x.listingId||'')===want);
     if(!t) return false;
     t.status=status||'paid'; t.settledAt=Date.now();
     m[_txnKey()]=arr; store('amv_txns',m);
@@ -11687,7 +11695,7 @@ async function _mktDoBuy(it, after){
   const pre=(typeof _preopenPay==='function')?_preopenPay():null;
   try{
     const d=await AMVMarket.buy(it.id);
-    if(d.url){ _recordTxn({type:'marketplace', title:it.title, amount:it.price||0, status:'pending'}); _openExternalPay(d.url,null,'market',pre); return; }
+    if(d.url){ _recordTxn({type:'marketplace', listingId:String(it.id||''), title:it.title, amount:it.price||0, status:'pending'}); _openExternalPay(d.url,null,'market',pre); return; }
     try{ if(typeof _closePay==='function') _closePay(pre); }catch(_){}
     if(d.owned){ toast('You already own this','info'); }
     else {
@@ -14859,13 +14867,20 @@ function _setPlan(plan){
   // record start date when the plan actually changes
   if(prev!==plan) saveStr('amv_plan_since',String(Date.now()));
   if(prev!==plan && plan!=='free' && prev==='free'){ try{ AEGIS.log('plan_upgrade',{plan}); }catch(e){} }
-  // Record the payment in the user's transaction history (upgrades only).
-  try{
-    if(prev!==plan && plan!=='free' && (PLAN_RANK[plan]||0)>(PLAN_RANK[prev]||0)){
-      const _pp=PLANS[plan]; const _amt=(plan==='custom')?((load('amv_custom_cfg')||{}).price||0):((_pp&&_pp.price)||0);
-      if(_amt>0) _recordTxn({type:'subscription', title:((_pp&&_pp.name)||plan)+' plan - monthly', amount:_amt, status:'paid'});
-    }
-  }catch(e){}
+  /* A PLAN IS ACCESS. A PAYMENT IS MONEY. THIS FUNCTION ONLY KNOWS ABOUT ONE.
+
+     It used to append a `paid` subscription at the plan's list price whenever
+     the plan went up - and the plan goes up for reasons that are not payments:
+     an entitlement sync from the server, an admin grant, a trial, a preview.
+     Every one of those wrote "Pro plan - monthly, $X, paid" into the billing
+     history, titled monthly even for a yearly plan, with no charge behind it.
+
+     Nothing is lost by removing it. Real subscription payments are the
+     processor's invoices, which the Billing screen reads from the server and
+     already calls the full record; with no backend, nothing is ever charged,
+     so there was never a real payment here to describe. A record written by a
+     function that cannot know whether money moved is a record that will
+     sometimes say it did when it did not. (AMV-AUD-012) */
   // resolve the effective tier (custom = the user's purchased config)
   let t=PLAN_TIERS[plan]||PLAN_TIERS.free;
   if(plan==='custom'){
@@ -16182,6 +16197,33 @@ try{ window.handlePaymentSuccess=handlePaymentSuccess; }catch(e){}
 
    The card itself lives at Stripe and the control for it is the billing portal
    this product already opens; nothing is lost by the calls going. */
+/* Asks the server whether this listing is now among the person's purchases,
+   a few times, because the processor's webhook can land a moment after the
+   browser comes back. Settles exactly that order when it appears, and says
+   plainly if it never does - "still confirming" is a true sentence, and
+   "complete" before the server knows is not. */
+async function _confirmMarketReturn(listingId){
+  const want = String(listingId || '');
+  if(!want) return false;
+  const waits = [0, 2500, 5000, 9000];
+  for(const ms of waits){
+    if(ms) await new Promise(r => setTimeout(r, ms));
+    try{
+      const d = await AMV_API._fetch('/v1/market/purchases', { method:'POST', body:'{}' });
+      const items = (d && Array.isArray(d.items)) ? d.items : [];
+      if(items.some(it => it && String(it.id || '') === want)){
+        try{ if(typeof _settleMarketTxn === 'function') _settleMarketTxn('paid', want); }catch(e){}
+        try{ toast('Purchase complete - it’s in your purchases, ready to use.', 'success', 5000); }catch(e){}
+        try{ if(S.tab === 'market' && S._mktTab === 'purchases') renderMarketView(); }catch(e){}
+        return true;
+      }
+    }catch(e){ /* try again; the final message below covers giving up */ }
+  }
+  try{ toast('AMV has not seen this purchase confirmed yet. If you were charged it will appear in Purchases shortly - nothing is lost.', 'warn', 9000); }catch(e){}
+  return false;
+}
+try{ window._confirmMarketReturn=_confirmMarketReturn; }catch(e){}
+
 function _checkPayReturn(){
   try{
     const q=new URLSearchParams(window.location.search);
@@ -16189,14 +16231,18 @@ function _checkPayReturn(){
     const bought=q.get('bought');
     if(bought){
       history.replaceState(null,'',window.location.pathname);
-      /* The purchase that was left "pending" when checkout opened has now
-         completed, so the transaction list is told. Without this a successful
-         marketplace purchase read as Pending for ever. */
-      try{ if(typeof _settleMarketTxn==='function') _settleMarketTxn('paid'); }catch(e){}
+      /* A RETURN URL IS A REQUEST TO CHECK, NOT A RECEIPT. (AMV-AUD-011)
+
+         This marked the first pending marketplace record paid and announced
+         "Purchase complete" on the strength of `?bought=` alone - a query
+         string anybody can type, and one that arrives before the processor's
+         webhook has necessarily landed. The server's record is
+         `/v1/market/purchases`, written when payment is confirmed, so that is
+         what is asked; only an order it lists is settled, and only the one
+         for this listing. Until then the screen says it is confirming. */
       S._mktTab='purchases'; setTab('market');
-      toast('Purchase complete - it\u2019s in your purchases, ready to use.','success',5000);
-      // entitlement is granted by the webhook; give it a moment then refresh
-      setTimeout(()=>{ if(S.tab==='market'&&S._mktTab==='purchases') renderMarketView(); }, 3000);
+      toast('Payment received by the processor - confirming your purchase\u2026','info',5000);
+      _confirmMarketReturn(String(bought));
       return;
     }
     const paid=q.get('paid');

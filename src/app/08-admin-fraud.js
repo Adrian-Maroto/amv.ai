@@ -1788,13 +1788,20 @@ function _setPlan(plan){
   // record start date when the plan actually changes
   if(prev!==plan) saveStr('amv_plan_since',String(Date.now()));
   if(prev!==plan && plan!=='free' && prev==='free'){ try{ AEGIS.log('plan_upgrade',{plan}); }catch(e){} }
-  // Record the payment in the user's transaction history (upgrades only).
-  try{
-    if(prev!==plan && plan!=='free' && (PLAN_RANK[plan]||0)>(PLAN_RANK[prev]||0)){
-      const _pp=PLANS[plan]; const _amt=(plan==='custom')?((load('amv_custom_cfg')||{}).price||0):((_pp&&_pp.price)||0);
-      if(_amt>0) _recordTxn({type:'subscription', title:((_pp&&_pp.name)||plan)+' plan - monthly', amount:_amt, status:'paid'});
-    }
-  }catch(e){}
+  /* A PLAN IS ACCESS. A PAYMENT IS MONEY. THIS FUNCTION ONLY KNOWS ABOUT ONE.
+
+     It used to append a `paid` subscription at the plan's list price whenever
+     the plan went up - and the plan goes up for reasons that are not payments:
+     an entitlement sync from the server, an admin grant, a trial, a preview.
+     Every one of those wrote "Pro plan - monthly, $X, paid" into the billing
+     history, titled monthly even for a yearly plan, with no charge behind it.
+
+     Nothing is lost by removing it. Real subscription payments are the
+     processor's invoices, which the Billing screen reads from the server and
+     already calls the full record; with no backend, nothing is ever charged,
+     so there was never a real payment here to describe. A record written by a
+     function that cannot know whether money moved is a record that will
+     sometimes say it did when it did not. (AMV-AUD-012) */
   // resolve the effective tier (custom = the user's purchased config)
   let t=PLAN_TIERS[plan]||PLAN_TIERS.free;
   if(plan==='custom'){

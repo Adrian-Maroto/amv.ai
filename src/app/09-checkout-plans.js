@@ -871,6 +871,33 @@ try{ window.handlePaymentSuccess=handlePaymentSuccess; }catch(e){}
 
    The card itself lives at Stripe and the control for it is the billing portal
    this product already opens; nothing is lost by the calls going. */
+/* Asks the server whether this listing is now among the person's purchases,
+   a few times, because the processor's webhook can land a moment after the
+   browser comes back. Settles exactly that order when it appears, and says
+   plainly if it never does - "still confirming" is a true sentence, and
+   "complete" before the server knows is not. */
+async function _confirmMarketReturn(listingId){
+  const want = String(listingId || '');
+  if(!want) return false;
+  const waits = [0, 2500, 5000, 9000];
+  for(const ms of waits){
+    if(ms) await new Promise(r => setTimeout(r, ms));
+    try{
+      const d = await AMV_API._fetch('/v1/market/purchases', { method:'POST', body:'{}' });
+      const items = (d && Array.isArray(d.items)) ? d.items : [];
+      if(items.some(it => it && String(it.id || '') === want)){
+        try{ if(typeof _settleMarketTxn === 'function') _settleMarketTxn('paid', want); }catch(e){}
+        try{ toast('Purchase complete - it’s in your purchases, ready to use.', 'success', 5000); }catch(e){}
+        try{ if(S.tab === 'market' && S._mktTab === 'purchases') renderMarketView(); }catch(e){}
+        return true;
+      }
+    }catch(e){ /* try again; the final message below covers giving up */ }
+  }
+  try{ toast('AMV has not seen this purchase confirmed yet. If you were charged it will appear in Purchases shortly - nothing is lost.', 'warn', 9000); }catch(e){}
+  return false;
+}
+try{ window._confirmMarketReturn=_confirmMarketReturn; }catch(e){}
+
 function _checkPayReturn(){
   try{
     const q=new URLSearchParams(window.location.search);
@@ -878,14 +905,18 @@ function _checkPayReturn(){
     const bought=q.get('bought');
     if(bought){
       history.replaceState(null,'',window.location.pathname);
-      /* The purchase that was left "pending" when checkout opened has now
-         completed, so the transaction list is told. Without this a successful
-         marketplace purchase read as Pending for ever. */
-      try{ if(typeof _settleMarketTxn==='function') _settleMarketTxn('paid'); }catch(e){}
+      /* A RETURN URL IS A REQUEST TO CHECK, NOT A RECEIPT. (AMV-AUD-011)
+
+         This marked the first pending marketplace record paid and announced
+         "Purchase complete" on the strength of `?bought=` alone - a query
+         string anybody can type, and one that arrives before the processor's
+         webhook has necessarily landed. The server's record is
+         `/v1/market/purchases`, written when payment is confirmed, so that is
+         what is asked; only an order it lists is settled, and only the one
+         for this listing. Until then the screen says it is confirming. */
       S._mktTab='purchases'; setTab('market');
-      toast('Purchase complete - it\u2019s in your purchases, ready to use.','success',5000);
-      // entitlement is granted by the webhook; give it a moment then refresh
-      setTimeout(()=>{ if(S.tab==='market'&&S._mktTab==='purchases') renderMarketView(); }, 3000);
+      toast('Payment received by the processor - confirming your purchase\u2026','info',5000);
+      _confirmMarketReturn(String(bought));
       return;
     }
     const paid=q.get('paid');

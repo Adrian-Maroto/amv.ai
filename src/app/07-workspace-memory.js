@@ -354,10 +354,18 @@ function _recordTxn(t){ try{ const m=load('amv_txns')||{}; const arr=m[_txnKey()
    Nothing did this, so a purchase that COMPLETED still read "Pending" in the
    transaction list for ever - a screen about what somebody has been charged,
    permanently wrong about a charge that went through. */
-function _settleMarketTxn(status){
+/* SETTLES THE ORDER IT IS TOLD ABOUT, AND NO OTHER. (AMV-AUD-011)
+
+   This took "the first pending marketplace record it could find", so two
+   purchases in flight meant the wrong one could be marked paid. It now needs
+   the listing id, and callers only pass one after the SERVER has listed that
+   purchase - see _confirmMarketReturn. No id, no settlement. */
+function _settleMarketTxn(status, listingId){
   try{
+    const want=String(listingId||'');
+    if(!want) return false;
     const m=load('amv_txns')||{}; const arr=m[_txnKey()]||[];
-    const t=arr.find(x=>x && x.type==='marketplace' && x.status==='pending');
+    const t=arr.find(x=>x && x.type==='marketplace' && x.status==='pending' && String(x.listingId||'')===want);
     if(!t) return false;
     t.status=status||'paid'; t.settledAt=Date.now();
     m[_txnKey()]=arr; store('amv_txns',m);
@@ -393,7 +401,7 @@ async function _mktDoBuy(it, after){
   const pre=(typeof _preopenPay==='function')?_preopenPay():null;
   try{
     const d=await AMVMarket.buy(it.id);
-    if(d.url){ _recordTxn({type:'marketplace', title:it.title, amount:it.price||0, status:'pending'}); _openExternalPay(d.url,null,'market',pre); return; }
+    if(d.url){ _recordTxn({type:'marketplace', listingId:String(it.id||''), title:it.title, amount:it.price||0, status:'pending'}); _openExternalPay(d.url,null,'market',pre); return; }
     try{ if(typeof _closePay==='function') _closePay(pre); }catch(_){}
     if(d.owned){ toast('You already own this','info'); }
     else {

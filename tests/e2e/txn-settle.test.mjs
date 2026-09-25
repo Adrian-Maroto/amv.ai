@@ -25,36 +25,76 @@ const seed = (rows) => page.evaluate((r) => {
   store('amv_txns', { [key]: r });
 }, rows);
 
-section('A completed purchase stops saying Pending');
+/* ═════════════════════════════════════════════════════════════════════════
+   WHAT SETTLES A PURCHASE CHANGED, DELIBERATELY.  (AMV-AUD-011)
+
+   These two sections used to hold that "the completed case is knowable - the
+   return says so". It is not. `?bought=` is a query string anybody can type,
+   it arrives before the processor's webhook has necessarily landed, and the
+   helper settled "the first pending marketplace record" rather than the one
+   for that listing. An external audit showed a return URL alone marking an
+   unpaid purchase paid.
+
+   The requirement this file was written for still stands: a purchase that
+   REALLY completed must stop saying Pending. What changed is the evidence.
+   The server's `/v1/market/purchases` is the record, so the return asks it,
+   and only an order it lists is settled - that one, by listing id.
+   ═════════════════════════════════════════════════════════════════════════ */
+section('Settling needs to know which order, and settles only that one');
 {
   const r = await page.evaluate(() => {
     const key = ((S.user && S.user.email) || 'you@amv.local').toLowerCase();
     store('amv_txns', { [key]: [
-      { id: 'tx1', type: 'marketplace', title: 'A thing', amount: 19, status: 'pending', ts: Date.now() },
+      { id: 'tx2', type: 'marketplace', listingId: 'L-2', title: 'Other', amount: 5, status: 'pending', ts: Date.now() },
+      { id: 'tx1', type: 'marketplace', listingId: 'L-1', title: 'A thing', amount: 19, status: 'pending', ts: Date.now() },
     ] });
-    const settled = _settleMarketTxn('paid');
-    const t = (load('amv_txns') || {})[key][0];
-    return { settled, status: t.status, hasWhen: !!t.settledAt };
+    const blind = _settleMarketTxn('paid');                // no listing named
+    const named = _settleMarketTxn('paid', 'L-1');
+    const rows = (load('amv_txns') || {})[key];
+    const one = rows.find(x => x.listingId === 'L-1');
+    const two = rows.find(x => x.listingId === 'L-2');
+    return { blind, named, one: one.status, two: two.status, hasWhen: !!one.settledAt };
   });
-  ok(r.settled === true, 'the waiting purchase is found', r.settled);
-  ok(r.status === 'paid', 'and recorded as paid once it really completed', r.status);
+  ok(r.blind === false, 'asked to settle without saying which, it settles nothing', r.blind);
+  ok(r.named === true && r.one === 'paid', 'the named order is recorded as paid', JSON.stringify(r));
   ok(r.hasWhen, 'with when it settled', r.hasWhen);
+  ok(r.two === 'pending',
+     'and the other order - which sat FIRST in the list - is untouched', r.two);
 }
 
-section('Coming back from checkout is what settles it');
+section('Coming back from checkout settles it once the server has it');
 {
-  /* The point of the fix is the wiring, not the helper - the helper existing
-     and never being called is the bug this replaces. */
-  const r = await page.evaluate(() => {
+  /* Still the wiring, as before - a helper nothing calls is the bug this file
+     was first written for. Now the wiring runs through the server. */
+  const r = await page.evaluate(async () => {
     const key = ((S.user && S.user.email) || 'you@amv.local').toLowerCase();
     store('amv_txns', { [key]: [
-      { id: 'tx1', type: 'marketplace', title: 'A thing', amount: 19, status: 'pending', ts: Date.now() },
+      { id: 'tx1', type: 'marketplace', listingId: 'L-1', title: 'A thing', amount: 19, status: 'pending', ts: Date.now() },
     ] });
-    history.replaceState({}, '', location.pathname + '?bought=1');
+    AMV_API.base = 'https://amv-stub.workers.dev'; AMV_API.token = 't';
+    AMV_API._fetch = async (p) => (/\/v1\/market\/purchases/.test(p) ? { ok: true, items: [{ id: 'L-1' }] } : { ok: true });
+    history.replaceState({}, '', location.pathname + '?bought=L-1');
     _checkPayReturn();
+    await new Promise(res => setTimeout(res, 600));
     return { status: (load('amv_txns') || {})[key][0].status };
   });
-  ok(r.status === 'paid', 'returning from a completed checkout settles the record', r.status);
+  ok(r.status === 'paid', 'a completed checkout the server lists stops saying Pending', r.status);
+}
+
+section('A return the server has not confirmed does not settle anything');
+{
+  const r = await page.evaluate(async () => {
+    const key = ((S.user && S.user.email) || 'you@amv.local').toLowerCase();
+    store('amv_txns', { [key]: [
+      { id: 'tx1', type: 'marketplace', listingId: 'L-1', title: 'A thing', amount: 19, status: 'pending', ts: Date.now() },
+    ] });
+    AMV_API._fetch = async (p) => (/\/v1\/market\/purchases/.test(p) ? { ok: true, items: [] } : { ok: true });
+    history.replaceState({}, '', location.pathname + '?bought=L-1');
+    _checkPayReturn();
+    await new Promise(res => setTimeout(res, 600));
+    return { status: (load('amv_txns') || {})[key][0].status };
+  });
+  ok(r.status === 'pending', 'a return URL on its own is not a receipt', r.status);
 }
 
 section('One that never came back is not left claiming to be in flight');

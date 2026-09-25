@@ -940,3 +940,47 @@ The full gate for round fourteen was stopped part-way. Its build stage ran
 between two source edits for this round and built a tree that never existed as a
 commit, so its verdict could not have meant anything about either. See LESSONS
 500. Round fourteen and this round are gated together below.
+
+## Round sixteen - the device ledger stops asserting payments it cannot see
+
+Billing has two lists. The processor's invoices, read from the server, are the
+record, and the page says so. "Payments recorded on this device" is kept in the
+browser and is explicitly secondary. Two paths wrote untrue things into it.
+
+**AMV-AUD-012 - a plan change was written down as a payment.** `_setPlan`
+appended a `paid` subscription at list price whenever the plan went up, and the
+plan goes up for reasons that are not payments: an entitlement sync, an admin
+grant, a trial. It was titled "monthly" even for yearly plans. Removed outright.
+Nothing real is lost - with no backend nothing is ever charged, and with one the
+real charges are the processor's invoices, which are untouched.
+
+**AMV-AUD-011 - a return URL was taken as a receipt.** `?bought=` marked "the
+first pending marketplace record" paid and announced "Purchase complete", on a
+query string anybody can type and that can arrive before the webhook. The return
+is now a request to check: `/v1/market/purchases` is asked a few times, and only
+an order it lists is settled - that one, by listing id. Until then the screen
+says it is confirming; if it never confirms, it says that.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 60 | a plan change writes a paid transaction again | a-return-url-is-not-a-receipt |
+| 61 | settle takes the first pending order again | both suites (2 + 3 assertions) |
+| 62 | the return URL settles without asking the server | both suites (3 + 1) |
+| 63 | the confirm accepts ANY listed purchase | a-return-url-is-not-a-receipt |
+
+**Two of these mutations survived the first version of the suite**, and both
+were the test's fault. "First pending" passed because `_recordTxn` PREPENDS, so
+the order recorded second - the right one - sat first, and the buggy lookup
+happened to pick correctly. And "accept any listed purchase" settled nothing in
+the made-up-id case only because no order matched, while still announcing
+"Purchase complete" for a listing never bought - which that section did not
+check. Both sections were tightened until the mutations failed.
+
+**A rule was changed on purpose.** `txn-settle` held that "the completed case is
+knowable - the return says so". Its requirement - a purchase that really
+completed must stop saying Pending - still stands and is still asserted; the
+evidence it accepts changed from the URL to the server's record.
+
+**Not a billing change.** Nothing here charges, refunds, grants, prices, or
+talks to a processor. It stops a display from asserting money it has no evidence
+of.
