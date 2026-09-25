@@ -64,9 +64,14 @@ const mdAttr = await page.evaluate(() => {
   const d = document.createElement('div');
   d.innerHTML = out;
   document.body.appendChild(d);
+  /* A remote image is a button until somebody asks for it (AMV-AUD-023), so
+     both forms are checked: the button as drawn, and the image it becomes. */
+  const ask = d.querySelector('button.md-img-ask');
+  const askHandler = ask ? [...ask.attributes].some(at => /^on/i.test(at.name)) : 'no-button';
+  if (ask) _mdShowImg(ask.id);
   const img = d.querySelector('img'), a = d.querySelector('a');
   const res = {
-    imgOnerror: img ? img.hasAttribute('onerror') : 'no-img',
+    imgOnerror: askHandler === true ? 'button-had-a-handler' : (img ? img.hasAttribute('onerror') : 'no-img'),
     aOnmouseover: a ? a.hasAttribute('onmouseover') : 'no-a',
     rendered: !!img && !!a,
     escaped: /&quot;/.test(out),

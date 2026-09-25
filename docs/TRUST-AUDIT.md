@@ -1220,3 +1220,31 @@ old AMV one before the worker first installs.
 **109 survived the first version**: the section went back to `/` before looking,
 which stored the real page again over the manifest. It now reads the cache from
 the manifest's own document.
+
+## Round twenty-five - an image in an answer is not fetched unasked (AMV-AUD-023)
+
+A remote image in rendered markdown was an `<img>`, fetched as soon as it was
+drawn: an outbound channel the model's input could steer. It is now a button
+naming the host; pressing it loads that exact address, remembered for the
+session so a repaint does not ask again. `data:` and `blob:` images are
+untouched - the rule only ever matched `http(s)`.
+
+`an-image-in-an-answer-is-not-fetched-unasked` records every request to the
+collector's host on the wire, and uses a caption written to break out of its
+attribute. `security.test.mjs`'s AMV-004 check now covers both the button and
+the image it becomes.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 110 | the image is drawn straight away (the finding) | 2 assertions |
+| 111 | a chosen image is asked about again on repaint | 1 assertion |
+| 112 | the caption is unescaped in the button | 1 assertion |
+| 113 | the caption is unescaped once remembered | 1 assertion |
+
+Four for four - after the first run reported two false survivors because the
+suite crashed on a covered click (LESSONS 509). The script now reports a crash
+as a crash.
+
+**Not changed:** the CSP's `img-src https:` stays. Narrowing it would break
+images people upload and pages they build; the channel is closed where the
+request originates instead.

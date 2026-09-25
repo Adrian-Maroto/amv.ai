@@ -13396,3 +13396,22 @@ page: opening the manifest directly is a navigation that answers JSON.
 The companion rule for anything that deletes shared state on activation - caches
 here, but equally localStorage keys or IndexedDB stores - is to own a prefix and
 delete only under it. "Everything that is not mine" is somebody else's data.
+
+## 509. Drawing something can be sending something
+
+Markdown `![x](https://...)` became an `<img>`, and a browser fetches an image
+the moment it is drawn. The address is written by the model, and the model can
+be steered by what it reads - so a page or an email could have it draw an image
+whose address carries something from the conversation, and simply displaying the
+answer delivered it. No tool was called and no consent was asked, because
+nothing looked like an action.
+
+The rule: any rendering of model output that causes a network request is an
+outbound action, and gets the same treatment as one - here, a button naming the
+site, fetched only when pressed. Links were already safe because a link needs a
+click; an image did not.
+
+And a harness lesson from the same round: a mutation run that counts "no failing
+assertion" as SURVIVED will report a crashed suite as a missing test. Two
+mutations "survived" because a cookie banner took the click and the suite threw
+before asserting anything. A verdict needs a completed run.
