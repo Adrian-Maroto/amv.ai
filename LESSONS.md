@@ -13454,3 +13454,21 @@ dangling link that points inside. The first draft lost the third: `realpath`
 fails on a target that does not exist, so the rename replaced the link. An
 existing suite caught it. When the mechanism changes, list what the old one did
 for free and test each.
+
+## 512. A fallback nobody has run is a fallback that does not work
+
+The app's launcher runs the bundle from a Blob URL and falls back to an inline
+script if that is refused. The page's policy allows the inline script by the
+hash of its exact text - and the build hashed the bundle while the launcher ran
+the data block's text, framed by a newline either side. So the fallback was
+refused by the page's own policy the one time it would have been needed. No
+suite had ever made the Blob path fail, so nothing had ever run the fallback.
+
+Two measuring lessons came in the same round. A CSS declaration containing
+`var()` is not validated when the stylesheet is parsed; an invalid one computes
+to the initial value instead. Reading the parsed rule showed an empty value for
+the valid and the invalid version alike, so only the COMPUTED style tells them
+apart. And Playwright's offline emulation let a service worker's own subresource
+request through with a 200, so an "offline" assertion about it passed with the
+fix removed. Where a test depends on a request failing, make it fail at the
+network (`route.abort`) and assert that it did.

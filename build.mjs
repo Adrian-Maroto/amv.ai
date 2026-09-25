@@ -249,7 +249,12 @@ async function rebuild() {
     "(function(){try{var f=document.getElementById('amv-fonts');" +
     "if(f&&f.media!=='all'){if(f.sheet){f.media='all';}else{f.addEventListener('load',function(){f.media='all';},{once:true});}}}catch(e){}})();" +
     "(function(){var c=document.getElementById('amv-app-code');if(!c)return;" +
-    "var code=c.textContent.split('<\\\\/scr_AMV_ipt').join('</script');" +
+    /* The block is written as "\n" + bundle + "\n", and the policy pins the
+       hash of the BUNDLE - so exactly that framing comes off before anything
+       runs it, or the inline fallback is refused by the page's own policy the
+       one time it is needed. (AMV-AUD-027) */
+    "var t=c.textContent;if(t.charAt(0)==='\\n')t=t.slice(1);if(t.slice(-1)==='\\n')t=t.slice(0,-1);" +
+    "var code=t.split('<\\\\/scr_AMV_ipt').join('</script');" +
     "function inlineRun(){var e=document.createElement('script');e.textContent=code;document.body.appendChild(e);}" +
     "try{var s=document.createElement('script');" +
     "s.src=URL.createObjectURL(new Blob([code],{type:'application/javascript'}));" +
@@ -634,8 +639,15 @@ self.addEventListener('fetch', e => {
            host routes to an API, say) is not a shell. */
         const html = /text\\/html/i.test(res.headers.get('Content-Type') || '');
         if (!nav || html) {
-          const c = await caches.open(CACHE);
-          c.put(nav ? SHELL : req, res.clone());
+          /* Tied to the event's lifetime and caught. Left floating, the worker
+             could be stopped with the write half done, and a failed write (a
+             full disk, a quota) was an unhandled rejection. The response is
+             returned either way - storing a copy is a convenience, and it must
+             never be the reason a page does not load. (AMV-AUD-029) */
+          const copy = res.clone();
+          e.waitUntil(caches.open(CACHE)
+            .then(c => c.put(nav ? SHELL : req, copy))
+            .catch(err => { try { console.warn('[AMV] offline copy not stored:', err && err.message); } catch (x) {} }));
         }
       }
       return res;

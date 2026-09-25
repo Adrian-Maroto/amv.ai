@@ -1295,3 +1295,35 @@ link regression in the first draft (LESSONS 511).
 
 **Not closed:** a race between the check and the write, which path checks cannot
 stop. That boundary is the isolated project copy in AMV-AUD-001.
+
+## Round twenty-eight - the four low findings (AMV-AUD-025, 027, 028, 029)
+
+**027 - the inline fallback was refused by the page's own policy.** The build
+hashed the bundle; the launcher ran the block's text with its framing newlines.
+The launcher now strips exactly that framing. `the-fallback-launcher-is-allowed-to-run`
+breaks Blob scripts before the page loads and failed on the old build with a
+`script-src-elem` violation and an app that never started - the fix was written
+after the reproduction, not before.
+
+**028 - `body::before` had an invalid background.** The stray stops are now a
+final `linear-gradient`. `the-ambient-wash-is-valid-css` reads the COMPUTED
+value, which is `none` on the old CSS; the parsed rule could not tell them apart
+(LESSONS 512).
+
+**025 - a failed non-page request with a query string got the page.** Fixed by
+round twenty-four's rewrite; now asserted, with the network refused by
+`route.abort` because offline emulation let the worker's request through.
+
+**029 - the cache write floated outside the event.** It is now inside
+`e.waitUntil`, with a catch, and the response is returned regardless.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 124 | the fallback's hash does not match what it runs (027) | 2 assertions, reproduced first |
+| 125 | the ambient wash computes to none (028) | 1 assertion, reproduced first |
+| 126 | a query-string subresource is answered with the page (025) | 2 assertions - SURVIVED at first |
+| 127 | the cache write is not tied to the event (029) | 1 source assertion |
+
+This closes the audit's list except **AMV-AUD-001, 005 and 015**, which wait on
+the owner: an isolated execution origin (001, and 015 inside it) and the
+environment policy for commands (005).

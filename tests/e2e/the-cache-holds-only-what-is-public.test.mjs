@@ -95,7 +95,35 @@ try {
   await page.goto(url + '/some/route', { waitUntil: 'load' }).catch(() => {});
   const alive = await page.evaluate(() => document.body.innerText.length).catch(() => 0);
   ok(alive > 100, 'a route never visited is answered from the stored page', alive);
+  /* AMV-AUD-025: a failed request with a query string used to be answered
+     with the page, whatever it was - so a script or stylesheet asked for as
+     `?v=2` came back as HTML and failed confusingly. Only a navigation gets
+     the page now; anything else fails as what it is. */
+  /* Refused at the network for real. Offline emulation let the worker's own
+     request for the manifest through with a 200, so the first version of this
+     check passed with the fix removed - it never saw a failed request at all. */
+  await ctx.route(/\?v=/, (route) => route.abort('internetdisconnected'));
+  const q = await page.evaluate(async () => {
+    const one = async (u) => {
+      try { const r = await fetch(u); return (r.headers.get('Content-Type') || '') + ' ' + r.status; }
+      catch (e) { return 'network-error'; }
+    };
+    return { asset: await one('/manifest.webmanifest?v=2'), other: await one('/runtime.js?v=synthetic') };
+  });
+  ok(!/text\/html/.test(q.asset) && !/text\/html/.test(q.other),
+     'offline, a non-page request with a query string is not handed the page', q);
+  ok(q.asset === 'network-error', 'it fails as the request it was - so the network really was refused', q.asset);
+  await ctx.unroute(/\?v=/);
   await ctx.setOffline(false);
+
+  section('A stored copy is written inside the event, and a failed write is caught');
+  /* AMV-AUD-029. Read from the source, because whether the browser stops a
+     worker mid-write is its scheduling, not something a test can arrange; the
+     BEHAVIOUR that depends on it - the page is stored and served offline - is
+     measured above. */
+  const swText = await (await fetch(url + '/sw.js')).text();
+  ok(/e\.waitUntil\(caches\.open\(CACHE\)[\s\S]{0,120}\.put\([\s\S]{0,80}\.catch\(/.test(swText),
+     'the cache write is handed to waitUntil, with a catch', (swText.match(/.*waitUntil\(caches.*/) || [''])[0].trim());
 
   section('Activating a build retires AMV’s old caches, and nobody else’s');
   /* A fresh profile whose caches exist BEFORE the worker first installs:
