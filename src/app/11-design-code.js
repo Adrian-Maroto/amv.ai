@@ -3199,9 +3199,12 @@ async function _confirmModelTool(name, input){
           /* Named as what it is: somebody else's connector, on somebody
              else's service. "Run the mcp__github__create_issue action" tells
              a person nothing they can consent to. */
-          const m = /^mcp__([a-z0-9_-]+)__(.+)$/.exec(name);
-          return m ? ('use your "' + m[1] + '" connector to run "' + m[2] + '"')
-                   : ('run the "' + name + '" connector action');
+          /* From the alias registry, not by splitting the name: `a__b` +
+             `c` and `a` + `b__c` are spelled alike, and a person consents to
+             the tool that will actually run. (AMV-AUD-020) */
+          const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
+          return who ? ('use your "' + who.id + '" connector to run "' + who.tool + '"')
+                     : ('run the "' + name + '" connector action');
         })()
       : ('run the "'+name+'" action'));
   let detail='';
@@ -3268,7 +3271,8 @@ async function _amvRunTool(name, input, onStatus){
        "the gmail connector on your machine sent the email" are different
        sentences and only the second is true. */
     if(typeof isMcpTool === 'function' && isMcpTool(name)){
-      onStatus && onStatus('Using ' + String(name).replace(/^mcp__/, '').replace('__', ' \u00b7 ') + '\u2026');
+      const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
+      onStatus && onStatus('Using ' + (who ? who.id + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '\u2026');
       const r = await runMcpTool(name, input);
       return { text: String((r && r.text) || ''), render:null };
     }

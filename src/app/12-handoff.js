@@ -626,36 +626,10 @@ function renderView(){
   }
 }
 
-/* === PLANS VIEW === */
-function renderPlansView(){
-  const vc=$('vc'); if(!vc) return;
-  vc.innerHTML=
-    '<div class="sv fi"><div class="vi vi-plans">'+
-      '<div class="plans-head"><div class="eyebrow">Pricing</div>'+
-        /* THE HEADLINE IS THE DECISION, NOT THE CATEGORY.
-           "One subscription. Every AI tool you need." is what every product in
-           this market says, and it gave somebody nothing to compare. What is
-           actually unusual here is that the cheapest paid plan runs a frontier
-           engine, so that is what the page opens with. */
-        '<h2>The best engine is on the cheapest paid plan.</h2>'+
-        '<p class="vsub">Paying more buys <b>more of it</b>, not a better one. Chat, autonomous agents, an app builder and Mission Control - one price, cancel whenever.</p></div>'+
-      '<div class="pg pg-app pg-4">'+planCards(true)+'</div>'+
-      _usageShapeBand()+
-      _teamPlanBanner(true)+
-      _customPlanBanner(true)+
-      '<p class="px-note" style="display:none">Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.</p>'+
-      '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:var(--t-sm)">Compare all plans in detail \u2192</button></div>'+
-      '<div class="trust-bar"><div class="trust-badges">'+
-        _trustBadge('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>','Bank-grade encryption','256-bit TLS on every request')+
-        _trustBadge('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>','Secure payments','Processed by Stripe - we never see your card')+
-        _trustBadge('<path d="M12 2 4 5v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V5z"/>','Your data, your control','Export or delete everything, any time')+
-        _trustBadge('<path d="M13 2 3 14h8l-1 8 10-12h-8z"/>','No lock-in','Cancel with one click, keep your data')+
-      '</div></div>'+
-      '<p class="plans-foot">Payments secured by Stripe &bull; Cancel any time &bull; 30-day money-back guarantee</p>'+
-    '</div></div>';
-  on($('plans-compare'),'click',()=>openPlanCompare(loadStr('amv_plan')||'pro'));
-  try{ _localizePrices(document); }catch(e){}
-}
+/* The Pricing page's renderer (renderPlansView) lived here. Pricing stopped
+   being a place when Spending took its route - `plans` renders Spending - and
+   the function sat with no caller, shipped to every visitor. Its parts below
+   are still used by Spending and the upgrade screen. */
 /* HOW THE LIMIT BEHAVES, SAID BEFORE SOMEBODY MEETS IT.
 
    Every number on the cards above is a ceiling, and a ceiling with no shape is
@@ -705,14 +679,9 @@ function _usageShapeBand(){
 }
 try{ window._usageShapeBand=_usageShapeBand; }catch(e){}
 
-function _trustBadge(svg,title,sub){
-  const ic='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg>';
-  return '<div class="trust-badge"><div class="trust-badge-ic">'+ic+'</div><div class="trust-badge-t">'+title+'</div><div class="trust-badge-s">'+sub+'</div></div>';
-}
-
 /* === HELP CENTER === */
 const FAQS=[
-  {c:'start', q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, an image, deep research. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
+  {c:'start', q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, deep research, or a question about a photo you upload. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
   {c:'start', q:'What can AMV actually do?', a:'One place for everything: chat and deep research, reading the files and images you upload, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve. AMV reads an image you give it; it does not generate one.'},
   {c:'auto', q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing - what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
   {c:'auto', q:'How do approvals work - Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},

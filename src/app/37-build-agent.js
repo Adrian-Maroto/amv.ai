@@ -201,13 +201,13 @@ const _AGENT_VERB = {
    fact that matters about it: this step left the folder. */
 function _agentVerbFor(name){
   if(_AGENT_VERB[name]) return _AGENT_VERB[name];
-  const m = /^mcp__([a-z0-9_-]+)__(.+)$/.exec(String(name || ''));
-  return m ? m[1] : name;
+  const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
+  return who ? who.id : name;
 }
 function _agentStepHTML(s, live){
   const verb = _agentVerbFor(s.name);
-  const mcp = /^mcp__[a-z0-9_-]+__(.+)$/.exec(String(s.name || ''));
-  const what = mcp ? mcp[1]
+  const mcp = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(s.name) : null;
+  const what = mcp ? mcp.tool
              : s.name === 'run_command' ? String(s.input.command || '')
              : String(s.input.path || '.');
   const bad = s.ok === false;

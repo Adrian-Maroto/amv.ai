@@ -13255,3 +13255,26 @@ And the case the audit only hinted at: leaving the loop on the iteration cap
 returns a patch that was proposed and never run. Every other exit returns code
 that ran. The Lab puts `code` in the editor either way, so the result now says
 `unverified`, and both callers say so in words.
+
+## 502. An identity recovered from a lossy name is a guess about which tool runs
+
+A connector's tool name has to fit `mcp__<server>__<tool>` in a bounded
+alphabet, so it is squeezed: punctuation becomes `_`, the tail is cut at sixty.
+That is one-way, and the lookup knew it - it said so in a comment - and then
+recovered identity anyway, by splitting the name and taking the FIRST tool whose
+squeezed spelling matched. `a.b` and `a b` became one name; a server `a__b` with
+a tool `c` was spelled exactly like a server `a` with a tool `b__c`. One of each
+pair could never be called, and a call meant for it ran the other - on
+somebody's real account, after they had approved a different action. The
+consent dialog split the name the same way, so it named the wrong one too.
+
+The rule: when an encoding is lossy, the decoded value is not an identity. Hand
+out a name, record what it stands for at that moment, and look it up - never
+reverse it. And a name, once handed out, must keep meaning the same thing for as
+long as anything could still be holding it: rebuilding the table from scratch on
+each listing reintroduces the defect the moment a server relists its tools in a
+different order, which is the mutation that proved it.
+
+Removing `renderPlansView` paid for this change: the page was 32 bytes under its
+weight ceiling, and a function with no caller had been shipped to every visitor
+since Spending took the `plans` route.

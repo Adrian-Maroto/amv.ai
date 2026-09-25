@@ -134,28 +134,79 @@ try{ window.mcpStartAll=mcpStartAll; }catch(e){}
    to be able to mean one of them. The separator is the one the server's
    pattern check knows about, so a name that survives here survives there. */
 const MCP_PREFIX = 'mcp__';
+const MCP_TOOL_PART_MAX = 60;   /* the server's shape check: [A-Za-z0-9_-]{1,60} */
 function mcpToolName(serverId, toolName){
-  return MCP_PREFIX + serverId + '__' + String(toolName).replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 60);
+  return MCP_PREFIX + serverId + '__' + (String(toolName).replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, MCP_TOOL_PART_MAX) || 'tool');
+}
+
+/* ONE NAME, ONE TOOL, FOR THE LIFE OF THE TAB.  (AMV-AUD-020)
+
+   The name above is lossy: `a.b` and `a b` both become `a_b`, two long names
+   that share their first sixty characters become one, and a server called
+   `a__b` with a tool `c` is spelled exactly like a server `a` with a tool
+   `b__c`. The old lookup recovered identity by splitting the name back apart
+   and taking the FIRST tool whose spelling matched - so a collision quietly
+   ran whichever tool happened to be listed first, which may have a different
+   effect on somebody's account than the one they approved.
+
+   So identity is never recovered from a name. Every tool that is offered is
+   registered here under an alias that is unique when it is handed out, and
+   the alias is bound to the exact server id and exact tool name for as long
+   as the tab lives: an alias is never reassigned, even after its server
+   stops, so a call the model makes from an older list can fail but can never
+   land on a different tool. A second tool whose spelling is taken gets a
+   numbered alias instead of the first one's. */
+const _MCP_ALIAS = new Map();     /* alias -> { id, tool } */
+const _MCP_ALIAS_OF = new Map();  /* id + NUL + tool -> alias */
+function _mcpAliasFor(id, toolName){
+  const key = id + '\u0000' + toolName;
+  const had = _MCP_ALIAS_OF.get(key);
+  if(had) return had;
+  let alias = mcpToolName(id, toolName);
+  for(let n = 2; _MCP_ALIAS.has(alias); n++){
+    const tail = '_' + n;
+    const part = (String(toolName).replace(/[^a-zA-Z0-9_-]+/g, '_') || 'tool').slice(0, MCP_TOOL_PART_MAX - tail.length);
+    alias = MCP_PREFIX + id + '__' + part + tail;
+  }
+  _MCP_ALIAS.set(alias, { id, tool: toolName });
+  _MCP_ALIAS_OF.set(key, alias);
+  return alias;
+}
+/* Who an alias really is, for a person to read - the consent dialog and the
+   step list. Null for a name this tab never offered. */
+function mcpToolIdentity(name){
+  const hit = _MCP_ALIAS.get(String(name || ''));
+  return hit ? { id: hit.id, tool: hit.tool } : null;
 }
 function _mcpSplitName(name){
-  const m = /^mcp__([a-z0-9_-]{1,40})__(.+)$/.exec(String(name || ''));
-  if(!m) return null;
-  const server = MCP.live[m[1]];
-  if(!server) return null;
-  /* Back to the tool's REAL name, which is what the server answers to - the
-     sanitising above is one-way, so the match is made on the sanitised form
-     rather than by trying to reverse it. */
-  const tool = (server.tools || []).find(t => mcpToolName(m[1], t.name) === name);
-  return tool ? { id: m[1], tool } : null;
+  name = String(name || '');
+  /* A name not registered yet may belong to a tool that is live but has not
+     been listed since it started; registering what is live is idempotent,
+     because an identity that already has an alias keeps it. */
+  if(!_MCP_ALIAS.has(name)) mcpTools();
+  const who = _MCP_ALIAS.get(name);
+  if(!who) return null;
+  const server = MCP.live[who.id];
+  if(!server || server.error) return null;
+  const tool = (server.tools || []).find(t => t && String(t.name) === who.tool);
+  return tool ? { id: who.id, tool } : null;
 }
 
 function mcpTools(){
   const out = [];
   for(const id of Object.keys(MCP.live)){
     const live = MCP.live[id];
+    /* A server listing the same name twice has one tool, as far as calling it
+       goes - `tools/call` names it and cannot tell the two apart - so it is
+       offered once. */
+    const seen = new Set();
     for(const t of (live.tools || [])){
+      if(!t || t.name == null) continue;
+      const real = String(t.name);
+      if(seen.has(real)) continue;
+      seen.add(real);
       out.push({
-        name: mcpToolName(id, t.name),
+        name: _mcpAliasFor(id, real),
         /* The server's own description, with its origin stated. The model
            should know a tool came from somewhere else, because that is the
            difference between "AMV can do this" and "this machine has a
@@ -168,7 +219,7 @@ function mcpTools(){
   }
   return out;
 }
-try{ window.mcpTools=mcpTools; window.mcpToolName=mcpToolName; }catch(e){}
+try{ window.mcpTools=mcpTools; window.mcpToolName=mcpToolName; window.mcpToolIdentity=mcpToolIdentity; window._mcpSplitName=_mcpSplitName; }catch(e){}
 
 function isMcpTool(name){ return String(name || '').startsWith(MCP_PREFIX); }
 try{ window.isMcpTool=isMcpTool; }catch(e){}

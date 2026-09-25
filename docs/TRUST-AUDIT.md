@@ -1020,3 +1020,28 @@ request. The audit suggests an explicit mode enum. That would be a new product
 state touching every network path, and nothing asks for it except the toast that
 promised it - so the promise was withdrawn instead. If an offline mode is wanted,
 it is a product decision.
+
+## Round eighteen - two connector tools never share a name (AMV-AUD-020)
+
+Connector tool names were squeezed into `mcp__<server>__<tool>` and identity was
+recovered by splitting that name and taking the first tool whose spelling
+matched. Colliding names made one tool unreachable and routed its calls to the
+other; the consent dialog split the name the same way. Every offered tool now
+gets an alias from a registry, bound to its exact server id and tool name for the
+life of the tab, and routing, consent and the step list all read the registry.
+
+`two-connector-tools-never-share-a-name` drives the real functions with
+punctuation, spaces, a `__` inside a tool name, the `a__b`/`b__c` spelling
+collision, two 65-character names sharing their first 64, two non-Latin names
+that squeeze to the same thing, and a server listing one name twice. Only the
+bridge call underneath is replaced, so the routed server and tool can be read.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 66 | lookup splits the name and takes the first match (the finding) | 3 assertions |
+| 67 | colliding names are not given distinct aliases | 3+ assertions |
+| 68 | the consent dialog splits the name instead of asking the registry | 1 assertion |
+| 69 | a server listing one name twice offers it twice | 2 assertions |
+| 70 | the registry is rebuilt on each listing, so a reorder swaps two names | 1 assertion |
+
+Five for five.

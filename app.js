@@ -25307,9 +25307,12 @@ async function _confirmModelTool(name, input){
           /* Named as what it is: somebody else's connector, on somebody
              else's service. "Run the mcp__github__create_issue action" tells
              a person nothing they can consent to. */
-          const m = /^mcp__([a-z0-9_-]+)__(.+)$/.exec(name);
-          return m ? ('use your "' + m[1] + '" connector to run "' + m[2] + '"')
-                   : ('run the "' + name + '" connector action');
+          /* From the alias registry, not by splitting the name: `a__b` +
+             `c` and `a` + `b__c` are spelled alike, and a person consents to
+             the tool that will actually run. (AMV-AUD-020) */
+          const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
+          return who ? ('use your "' + who.id + '" connector to run "' + who.tool + '"')
+                     : ('run the "' + name + '" connector action');
         })()
       : ('run the "'+name+'" action'));
   let detail='';
@@ -25376,7 +25379,8 @@ async function _amvRunTool(name, input, onStatus){
        "the gmail connector on your machine sent the email" are different
        sentences and only the second is true. */
     if(typeof isMcpTool === 'function' && isMcpTool(name)){
-      onStatus && onStatus('Using ' + String(name).replace(/^mcp__/, '').replace('__', ' \u00b7 ') + '\u2026');
+      const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
+      onStatus && onStatus('Using ' + (who ? who.id + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '\u2026');
       const r = await runMcpTool(name, input);
       return { text: String((r && r.text) || ''), render:null };
     }
@@ -26887,36 +26891,10 @@ function renderView(){
   }
 }
 
-/* === PLANS VIEW === */
-function renderPlansView(){
-  const vc=$('vc'); if(!vc) return;
-  vc.innerHTML=
-    '<div class="sv fi"><div class="vi vi-plans">'+
-      '<div class="plans-head"><div class="eyebrow">Pricing</div>'+
-        /* THE HEADLINE IS THE DECISION, NOT THE CATEGORY.
-           "One subscription. Every AI tool you need." is what every product in
-           this market says, and it gave somebody nothing to compare. What is
-           actually unusual here is that the cheapest paid plan runs a frontier
-           engine, so that is what the page opens with. */
-        '<h2>The best engine is on the cheapest paid plan.</h2>'+
-        '<p class="vsub">Paying more buys <b>more of it</b>, not a better one. Chat, autonomous agents, an app builder and Mission Control - one price, cancel whenever.</p></div>'+
-      '<div class="pg pg-app pg-4">'+planCards(true)+'</div>'+
-      _usageShapeBand()+
-      _teamPlanBanner(true)+
-      _customPlanBanner(true)+
-      '<p class="px-note" style="display:none">Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.</p>'+
-      '<div class="plans-compare-row"><button class="btn bs" id="plans-compare" style="font-size:var(--t-sm)">Compare all plans in detail \u2192</button></div>'+
-      '<div class="trust-bar"><div class="trust-badges">'+
-        _trustBadge('<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>','Bank-grade encryption','256-bit TLS on every request')+
-        _trustBadge('<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>','Secure payments','Processed by Stripe - we never see your card')+
-        _trustBadge('<path d="M12 2 4 5v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V5z"/>','Your data, your control','Export or delete everything, any time')+
-        _trustBadge('<path d="M13 2 3 14h8l-1 8 10-12h-8z"/>','No lock-in','Cancel with one click, keep your data')+
-      '</div></div>'+
-      '<p class="plans-foot">Payments secured by Stripe &bull; Cancel any time &bull; 30-day money-back guarantee</p>'+
-    '</div></div>';
-  on($('plans-compare'),'click',()=>openPlanCompare(loadStr('amv_plan')||'pro'));
-  try{ _localizePrices(document); }catch(e){}
-}
+/* The Pricing page's renderer (renderPlansView) lived here. Pricing stopped
+   being a place when Spending took its route - `plans` renders Spending - and
+   the function sat with no caller, shipped to every visitor. Its parts below
+   are still used by Spending and the upgrade screen. */
 /* HOW THE LIMIT BEHAVES, SAID BEFORE SOMEBODY MEETS IT.
 
    Every number on the cards above is a ceiling, and a ceiling with no shape is
@@ -26966,14 +26944,9 @@ function _usageShapeBand(){
 }
 try{ window._usageShapeBand=_usageShapeBand; }catch(e){}
 
-function _trustBadge(svg,title,sub){
-  const ic='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+svg+'</svg>';
-  return '<div class="trust-badge"><div class="trust-badge-ic">'+ic+'</div><div class="trust-badge-t">'+title+'</div><div class="trust-badge-s">'+sub+'</div></div>';
-}
-
 /* === HELP CENTER === */
 const FAQS=[
-  {c:'start', q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, an image, deep research. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
+  {c:'start', q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, deep research, or a question about a photo you upload. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
   {c:'start', q:'What can AMV actually do?', a:'One place for everything: chat and deep research, reading the files and images you upload, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve. AMV reads an image you give it; it does not generate one.'},
   {c:'auto', q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing - what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
   {c:'auto', q:'How do approvals work - Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},
@@ -44434,13 +44407,13 @@ const _AGENT_VERB = {
    fact that matters about it: this step left the folder. */
 function _agentVerbFor(name){
   if(_AGENT_VERB[name]) return _AGENT_VERB[name];
-  const m = /^mcp__([a-z0-9_-]+)__(.+)$/.exec(String(name || ''));
-  return m ? m[1] : name;
+  const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
+  return who ? who.id : name;
 }
 function _agentStepHTML(s, live){
   const verb = _agentVerbFor(s.name);
-  const mcp = /^mcp__[a-z0-9_-]+__(.+)$/.exec(String(s.name || ''));
-  const what = mcp ? mcp[1]
+  const mcp = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(s.name) : null;
+  const what = mcp ? mcp.tool
              : s.name === 'run_command' ? String(s.input.command || '')
              : String(s.input.path || '.');
   const bad = s.ok === false;
@@ -44918,28 +44891,79 @@ try{ window.mcpStartAll=mcpStartAll; }catch(e){}
    to be able to mean one of them. The separator is the one the server's
    pattern check knows about, so a name that survives here survives there. */
 const MCP_PREFIX = 'mcp__';
+const MCP_TOOL_PART_MAX = 60;   /* the server's shape check: [A-Za-z0-9_-]{1,60} */
 function mcpToolName(serverId, toolName){
-  return MCP_PREFIX + serverId + '__' + String(toolName).replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 60);
+  return MCP_PREFIX + serverId + '__' + (String(toolName).replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, MCP_TOOL_PART_MAX) || 'tool');
+}
+
+/* ONE NAME, ONE TOOL, FOR THE LIFE OF THE TAB.  (AMV-AUD-020)
+
+   The name above is lossy: `a.b` and `a b` both become `a_b`, two long names
+   that share their first sixty characters become one, and a server called
+   `a__b` with a tool `c` is spelled exactly like a server `a` with a tool
+   `b__c`. The old lookup recovered identity by splitting the name back apart
+   and taking the FIRST tool whose spelling matched - so a collision quietly
+   ran whichever tool happened to be listed first, which may have a different
+   effect on somebody's account than the one they approved.
+
+   So identity is never recovered from a name. Every tool that is offered is
+   registered here under an alias that is unique when it is handed out, and
+   the alias is bound to the exact server id and exact tool name for as long
+   as the tab lives: an alias is never reassigned, even after its server
+   stops, so a call the model makes from an older list can fail but can never
+   land on a different tool. A second tool whose spelling is taken gets a
+   numbered alias instead of the first one's. */
+const _MCP_ALIAS = new Map();     /* alias -> { id, tool } */
+const _MCP_ALIAS_OF = new Map();  /* id + NUL + tool -> alias */
+function _mcpAliasFor(id, toolName){
+  const key = id + '\u0000' + toolName;
+  const had = _MCP_ALIAS_OF.get(key);
+  if(had) return had;
+  let alias = mcpToolName(id, toolName);
+  for(let n = 2; _MCP_ALIAS.has(alias); n++){
+    const tail = '_' + n;
+    const part = (String(toolName).replace(/[^a-zA-Z0-9_-]+/g, '_') || 'tool').slice(0, MCP_TOOL_PART_MAX - tail.length);
+    alias = MCP_PREFIX + id + '__' + part + tail;
+  }
+  _MCP_ALIAS.set(alias, { id, tool: toolName });
+  _MCP_ALIAS_OF.set(key, alias);
+  return alias;
+}
+/* Who an alias really is, for a person to read - the consent dialog and the
+   step list. Null for a name this tab never offered. */
+function mcpToolIdentity(name){
+  const hit = _MCP_ALIAS.get(String(name || ''));
+  return hit ? { id: hit.id, tool: hit.tool } : null;
 }
 function _mcpSplitName(name){
-  const m = /^mcp__([a-z0-9_-]{1,40})__(.+)$/.exec(String(name || ''));
-  if(!m) return null;
-  const server = MCP.live[m[1]];
-  if(!server) return null;
-  /* Back to the tool's REAL name, which is what the server answers to - the
-     sanitising above is one-way, so the match is made on the sanitised form
-     rather than by trying to reverse it. */
-  const tool = (server.tools || []).find(t => mcpToolName(m[1], t.name) === name);
-  return tool ? { id: m[1], tool } : null;
+  name = String(name || '');
+  /* A name not registered yet may belong to a tool that is live but has not
+     been listed since it started; registering what is live is idempotent,
+     because an identity that already has an alias keeps it. */
+  if(!_MCP_ALIAS.has(name)) mcpTools();
+  const who = _MCP_ALIAS.get(name);
+  if(!who) return null;
+  const server = MCP.live[who.id];
+  if(!server || server.error) return null;
+  const tool = (server.tools || []).find(t => t && String(t.name) === who.tool);
+  return tool ? { id: who.id, tool } : null;
 }
 
 function mcpTools(){
   const out = [];
   for(const id of Object.keys(MCP.live)){
     const live = MCP.live[id];
+    /* A server listing the same name twice has one tool, as far as calling it
+       goes - `tools/call` names it and cannot tell the two apart - so it is
+       offered once. */
+    const seen = new Set();
     for(const t of (live.tools || [])){
+      if(!t || t.name == null) continue;
+      const real = String(t.name);
+      if(seen.has(real)) continue;
+      seen.add(real);
       out.push({
-        name: mcpToolName(id, t.name),
+        name: _mcpAliasFor(id, real),
         /* The server's own description, with its origin stated. The model
            should know a tool came from somewhere else, because that is the
            difference between "AMV can do this" and "this machine has a
@@ -44952,7 +44976,7 @@ function mcpTools(){
   }
   return out;
 }
-try{ window.mcpTools=mcpTools; window.mcpToolName=mcpToolName; }catch(e){}
+try{ window.mcpTools=mcpTools; window.mcpToolName=mcpToolName; window.mcpToolIdentity=mcpToolIdentity; window._mcpSplitName=_mcpSplitName; }catch(e){}
 
 function isMcpTool(name){ return String(name || '').startsWith(MCP_PREFIX); }
 try{ window.isMcpTool=isMcpTool; }catch(e){}
