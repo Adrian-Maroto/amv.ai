@@ -296,6 +296,11 @@ function _agentSetRunning(on){
 }
 function _agentStop(){
   _AGENT.stop = true;
+  /* And the model request in the air: without this, Stop waited for the round
+     already running - up to three minutes, generated and paid for - before it
+     took effect. A command already running on the computer still finishes,
+     which is what the busy line below says. (AMV-AUD-014) */
+  try{ if(_AGENT.ctrl) _AGENT.ctrl.abort(); }catch(e){}
   try{ _devBusy(true, 'Stopping after this step'); }catch(e){}
 }
 try{ window._agentStop=_agentStop; window._agentSetRunning=_agentSetRunning; }catch(e){}
@@ -448,6 +453,7 @@ async function _devSendAgent(msg, stat){
     return;
   }
   _AGENT.stop = false;
+  _AGENT.ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   _AGENT.before = {}; _AGENT.after = {}; _AGENT.created = {}; _AGENT.seen = {};
   _AGENT.steps = [];
   _agentSetRunning(true);
@@ -481,6 +487,7 @@ async function _devSendAgent(msg, stat){
       effort: _devEffort(),
       max_tokens: 8000,
       runTool: _agentRunTool,
+      signal: _AGENT.ctrl ? _AGENT.ctrl.signal : undefined,
       stopped: () => {
         if(_AGENT.stop) return true;
         if(!BRIDGE.connected){ lostMachine = true; return true; }

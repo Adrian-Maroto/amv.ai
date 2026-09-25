@@ -2232,7 +2232,6 @@ function _switchPlan(target){
   // downgrade to a lower paid plan → run checkout for that plan
   openCheckout(target);
 }
-function _secItem(ic,t,d){ return '<div class="sec-item"><div class="sec-ic">'+ic+'</div><div><div class="sec-t">'+t+'</div><div class="sec-d">'+d+'</div></div></div>'; }
 /* THE PAYMENT-METHOD CARD IS GONE, AND IT NEVER RENDERED ANYWAY.
 
    Three functions lived here: _savePM, _loadPM, removePM. Nothing ever called

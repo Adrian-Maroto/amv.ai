@@ -248,9 +248,51 @@ const saveStr = (k,v) => { try{ localStorage.setItem(_scopeKey(k),v); }catch(e){
    on it is stuck with a spinner that will never stop. `ms` bounds time to the
    first byte; the body then gets its own grace so a half-delivered response
    cannot hang either. Pass stream:true when the caller reads the body itself. */
+/* A CANCEL THAT IS PASSED IN IS A CANCEL THAT HAPPENS.  (AMV-AUD-014)
+
+   Both network wrappers below build their own AbortController for the
+   deadline and hand fetch ITS signal - which silently replaced any signal the
+   caller had passed. A request somebody cancelled carried on: the model kept
+   generating, the provider kept billing, and a retry could start the work
+   again after it had been cancelled. An already-cancelled signal was not even
+   looked at before the request went out.
+
+   So the caller's signal is linked INTO the deadline's controller: either one
+   aborts the request, and the body read that follows with it, since the same
+   signal governs the stream. The link is left in place after the headers
+   arrive on purpose - the body is read afterwards, and a cancel while it
+   streams has to reach it. A cancel is reported as a cancel (`AbortError`),
+   never as "the server did not respond", because the two lead to opposite
+   next steps: one is retried, the other must not be. */
+function _abortError(){
+  const e = new Error('Cancelled.');
+  e.name = 'AbortError'; e.code = 'cancelled';
+  return e;
+}
+function _isAbort(e){ return !!(e && (e.name === 'AbortError' || e.code === 'cancelled')); }
+function _linkSignal(from, ctrl){
+  if(!from || !ctrl) return;
+  if(from.aborted){ try{ ctrl.abort(); }catch(_){} return; }
+  try{ from.addEventListener('abort', () => { try{ ctrl.abort(); }catch(_){} }, { once:true }); }catch(_){}
+}
+/* A wait that a cancel ends early - for backoff between retries, which is
+   exactly where a cancelled request would otherwise be sent again. */
+function _abortableWait(ms, signal){
+  return new Promise((resolve, reject) => {
+    if(signal && signal.aborted) return reject(_abortError());
+    const t = setTimeout(resolve, ms);
+    const onAbort = () => { clearTimeout(t); reject(_abortError()); };
+    if(signal && signal.addEventListener) signal.addEventListener('abort', onAbort, { once:true });
+  });
+}
+try{ window._isAbort=_isAbort; window._abortableWait=_abortableWait; }catch(e){}
+
 async function fetchDeadline(url, init, ms){
   const o = init || {};
+  const caller = o.signal || null;
+  if(caller && caller.aborted) throw _abortError();
   const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  _linkSignal(caller, ctrl);
   let timedOut = false;
   const arm = t => setTimeout(() => { timedOut = true; try{ ctrl && ctrl.abort(); }catch(_){} }, t);
   const timer = ctrl ? arm(ms || 30000) : null;
@@ -263,6 +305,7 @@ async function fetchDeadline(url, init, ms){
     return r;
   }catch(e){
     clearTimeout(timer);
+    if(caller && caller.aborted) throw _abortError();
     if(typeof navigator !== 'undefined' && navigator.onLine === false){
       throw new Error('You appear to be offline. Check your connection and try again.');
     }
@@ -486,6 +529,8 @@ const AMV_API = {
      of it. Used by the base setter; sign-out has its own path because it also
      has a server call to make and state to wipe. */
   _dropCredentials(){
+    /* What was in the air was addressed to the backend being left. */
+    try{ this.abortAll(); }catch(e){}
     try{
       this.token = '';
       this.refreshTok = '';
@@ -678,8 +723,17 @@ const AMV_API = {
     const headerMs = ('timeout' in o) ? o.timeout : (/^\/v1\/messages/.test(path) ? 120000 : 20000);
     const bodyMs = ('bodyTimeout' in o) ? o.bodyTimeout : 20000;
     let attempt = 0, r, lastErr;
+    /* The caller's cancel, and the session's: signing out cancels what the
+       account that is leaving still had in the air, so a request it started
+       cannot land - or retry - after the next person is signed in. */
+    const caller = o.signal || null;
+    const session = this._inflight || (this._inflight = (typeof AbortController !== 'undefined') ? new AbortController() : null);
+    const cancelled = () => !!((caller && caller.aborted) || (session && session.signal.aborted));
     while (true) {
+      if (cancelled()) throw _abortError();
       const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      _linkSignal(caller, ctrl);
+      _linkSignal(session && session.signal, ctrl);
       let timedOut = false;
       const arm = ms => setTimeout(() => { timedOut = true; try{ ctrl && ctrl.abort(); }catch(_){} }, ms);
       let timer = (ctrl && headerMs > 0) ? arm(headerMs) : null;
@@ -692,13 +746,14 @@ const AMV_API = {
         if (ctrl && !o.stream && bodyMs > 0) arm(bodyMs);
       } catch (netErr) {
         clearTimeout(timer);
+        if (cancelled()) throw _abortError();
         lastErr = netErr;
         // Offline is not transient-in-the-next-400ms. Say so immediately rather
         // than making the user watch three silent retries first.
         if (typeof navigator !== 'undefined' && navigator.onLine === false) {
           throw new Error('You appear to be offline. Check your connection and try again.');
         }
-        if (attempt < MAX) { await this._backoff(attempt++); continue; }
+        if (attempt < MAX) { await this._backoff(attempt++, 0, caller, session); continue; }
         if (timedOut) throw new Error('The server did not respond in time. Please try again.');
         throw new Error('Network error - please check your connection and try again.');
       }
@@ -706,14 +761,14 @@ const AMV_API = {
       if ((r.status === 500 || r.status === 502 || r.status === 503 || r.status === 504 || r.status === 529 || r.status === 429) && attempt < MAX && !noRetry) {
         // honor Retry-After if present, else exponential backoff
         const ra = parseInt(r.headers.get('Retry-After')||'0', 10);
-        await this._backoff(attempt++, ra ? ra*1000 : 0);
+        await this._backoff(attempt++, ra ? ra*1000 : 0, caller, session);
         continue;
       }
       break;
     }
 
     // On 401 for an authenticated call, try a one-time silent refresh, then retry.
-    if(r.status===401 && !/^\/auth\//.test(path)){
+    if(r.status===401 && !/^\/auth\//.test(path) && !cancelled()){
       /* Cookie mode has no refresh token on this side to test for, and that
          is the whole point of it - the browser carries one. Without this the
          401 retry never fired for exactly the deployments the cookie is for. */
@@ -729,11 +784,20 @@ const AMV_API = {
     return r;
   },
   // exponential backoff with jitter; optional floor (e.g. from Retry-After)
-  _backoff(attempt, floorMs){
+  _backoff(attempt, floorMs, caller, session){
     const base = Math.min(8000, 400 * Math.pow(2, attempt));   // 400ms, 800ms, 1600ms...
     const jitter = Math.random() * 300;
     const wait = Math.max(floorMs||0, base + jitter);
-    return new Promise(res => setTimeout(res, wait));
+    /* Cancellable: the wait between attempts is where a cancelled request
+       would otherwise be sent again. */
+    return Promise.race([_abortableWait(wait, caller), _abortableWait(wait, session && session.signal)]);
+  },
+  /* Cancel every request this tab has in the air, and start a fresh scope for
+     the ones that follow. Called when an account signs out, BEFORE its logout
+     request is sent, so the logout itself is not among what is cancelled. */
+  abortAll(){
+    try{ if(this._inflight) this._inflight.abort(); }catch(e){}
+    this._inflight = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   },
 
   // sign in -> get a real server-issued access + refresh token pair

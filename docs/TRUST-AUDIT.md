@@ -1121,3 +1121,40 @@ that "empty" is proven to still be a valid start.
 Six for six. **Not built:** refreshing a server's tool list when it sends
 `notifications/tools/list_changed`. The list is read at each start; a server
 that changes its tools mid-session is seen at the next pairing.
+
+## Round twenty-two - a cancel that is passed in happens (AMV-AUD-014)
+
+`fetchDeadline` and `AMV_API._fetch` replaced the caller's signal with their
+deadline controller's. Both now link it in and refuse an already-aborted
+signal before dispatch; `_fetch` also links a per-session controller that
+`signOut` aborts before sending its logout (and `_dropCredentials` on a backend
+change), makes backoff cancellable, and never retries or refreshes after a
+cancel. `aiAgentLoop` takes `signal`, and the build agent's Stop aborts it.
+
+`a-cancel-that-is-passed-in-happens` replaces `fetch` with one that honours its
+signal the way the browser's does - before headers and mid-body - and records
+what went out.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 86 | fetchDeadline drops the caller's signal (the finding) | 1 assertion |
+| 87 | fetchDeadline sends with an already-aborted signal | 1 assertion |
+| 88 | `_fetch` drops the caller's signal | 1 assertion - SURVIVED at first |
+| 89 | `_fetch` drops the session signal | 1 assertion - SURVIVED at first |
+| 90 | `_fetch` sends with an already-aborted signal | 1 assertion |
+| 91 | `_fetch` treats a cancel as a network failure | 1 assertion - SURVIVED at first |
+| 92 | backoff cannot be cancelled | 1 assertion - SURVIVED at first |
+| 93 | sign-out aborts after sending its logout | 1 assertion |
+| 94 | the agent loop ignores its signal | 1 assertion |
+| 95 | Stop does not abort | 1 assertion |
+| 96 | the turn passes no signal | 2 assertions |
+
+**Four survived the first version** (LESSONS 506): the sections asserted the
+result and not its timing, and a request aborted by its own 20-second deadline
+looked identical to one aborted by the cancel. Timing assertions, a 3-second
+`Retry-After`, and a cancel on the final attempt fixed all four.
+
+**Not built:** cancelling on the SERVER. A request aborted mid-stream stops
+the browser reading and closes the connection; whether the Worker stops the
+upstream generation, and how the usage reservation settles for a cancelled
+stream, is not measured here.

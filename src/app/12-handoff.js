@@ -368,7 +368,6 @@ window.hoSend=hoSend;window.hoOpen=hoOpen;window.hoDone=hoDone;
    observer runs as a microtask, before the frame is painted, so the animation
    is never started rather than cut off halfway. */
 let _vcTab = '', _vcScroll = null;
-function _vcResetScroll(){ _vcScroll = null; }
 /* The scrolled element is remembered by its first class rather than by a list
    of the containers each view happens to use - `.sv` on most, `.lab-shell` on
    Lab, `.dev-chat-pane` on Build. A list of those is a list that goes stale the

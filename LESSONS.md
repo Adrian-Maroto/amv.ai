@@ -13334,3 +13334,27 @@ answered. And a loop that follows somebody else's cursor needs two bounds - a
 cursor seen before (the listing is circular) and a page count (the listing is
 endless with fresh cursors) - because each bound alone lets the other case run
 for ever.
+
+## 506. A cancel that is eventually true passes a test with no clock
+
+Both network wrappers replaced the caller's AbortSignal with their own
+deadline's, so a cancelled request carried on - generating, billing, and able
+to retry after it was cancelled. They now link the caller's signal (and, for
+`AMV_API._fetch`, a per-session one that sign-out aborts) into the deadline's
+controller, check before dispatch, and wait out backoff in a way a cancel ends.
+The build agent's Stop now aborts the model request in the air instead of
+waiting out the round.
+
+The first suite checked what the cancel produced - an `AbortError`, one call -
+and never checked WHEN. Four mutations survived it. Dropping the caller's signal
+entirely still passed: the request was aborted twenty seconds later by its own
+header deadline, and then the loop's "was this cancelled?" guard, seeing the
+caller's signal set, dutifully reported an AbortError. The outcome was right and
+the mechanism was absent.
+
+The rule: when a mechanism exists to make something happen SOONER, its test has
+to measure time, because a slower path to the same outcome is exactly what the
+mechanism replaced. And guards that back each other up (a cancellable wait, and
+a check after the wait) hide each other from mutation; find the input where
+only one of them stands - here, a cancel on the last attempt, where there is no
+wait left and an unrecognised cancel becomes "Network error".

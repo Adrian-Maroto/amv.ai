@@ -349,7 +349,15 @@ async function aiAgentLoop(opts){
        round, and the cost of retrying a settled one is silence. */
     let res, attempt = 0;
     for(;;){
-      res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body)}, 180000);
+      /* opts.signal: Stop cancels the request in the air, not only the next
+         round - a round is up to three minutes of a model generating, and
+         paying for, an answer nobody is going to read. (AMV-AUD-014) */
+      try{
+        res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body), signal: opts.signal}, 180000);
+      }catch(e){
+        if(_isAbort(e)){ why = 'stopped'; break; }
+        throw e;
+      }
       if(res.ok) break;
       const err = await _aiError(res);
       const code = String(err.code || '');
@@ -358,10 +366,14 @@ async function aiAgentLoop(opts){
       if(!transient || attempt >= 2 || stopped()) throw err;
       attempt++;
       onStep({ phase:'waiting', attempt, round: rounds });
-      await new Promise(r => setTimeout(r, Math.min(8000, 900 * Math.pow(2, attempt))));
+      try{ await _abortableWait(Math.min(8000, 900 * Math.pow(2, attempt)), opts.signal); }
+      catch(e){ why = 'stopped'; res = null; break; }
     }
+    if(why === 'stopped' || !res) break;
     try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
-    const data = await _aiReadStream(res);
+    let data;
+    try{ data = await _aiReadStream(res); }
+    catch(e){ if(_isAbort(e) || (opts.signal && opts.signal.aborted)){ why = 'stopped'; break; } throw e; }
     const blocks = data.content || [];
     const said = blocks.filter(b => b.type === 'text').map(b => b.text || '').join('');
     if(said.trim()) text += (text ? '\n\n' : '') + said.trim();

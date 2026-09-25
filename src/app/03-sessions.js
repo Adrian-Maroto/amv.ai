@@ -1886,6 +1886,11 @@ function signOut(){
      post to /auth/logout with no body, which revoked every token on the
      account - so signing out of a laptop silently signed out a phone. The
      button says this device; now it means it. */
+  /* Cancel what this account still has in the air FIRST - a sync push, a
+     retry waiting out its backoff - so none of it lands after the next person
+     signs in, and so the logout below is not itself among what is cancelled.
+     (AMV-AUD-014) */
+  try{ if(window.AMV_API && typeof AMV_API.abortAll === 'function') AMV_API.abortAll(); }catch(e){}
   try{ if(window.AMV_API && AMV_API.live && AMV_API.hasSession) AMV_API.logout(false); }catch(e){}
   /* Disk AND memory. The removeItem calls clear the non-cookie path; in cookie
      mode both halves are held in module variables, and a sign-out that emptied

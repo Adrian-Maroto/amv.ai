@@ -1218,7 +1218,16 @@ step('Page weight is under control', () => {
   const buf = readFileSync(R('index.html'));
   const wire = gzipSync(buf).length;
   const KB = (n) => Math.round(n / 1024) + 'KB';
-  const CEILING = 620 * 1024;   // gzipped, which is what actually crosses the network
+  /* 620 -> 628, 2026-09-25, deliberately. The build reached 620 with the
+     audit's security fixes (connector identity, readiness, discovery,
+     cancellation), each of which is real code a visitor's browser runs. Dead
+     code was removed first (renderPlansView, _trustBadge, _secItem,
+     _vcResetScroll) and that paid for two of them. What remains that visitors
+     download and never need is ~2.8KB gzipped of developer comments in the
+     page shell, which the build cannot strip because index.html is its own
+     source - moving those notes into docs is the next trim, not a bigger
+     ceiling. */
+  const CEILING = 628 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');
