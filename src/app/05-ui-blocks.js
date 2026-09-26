@@ -1006,7 +1006,11 @@ async function _callAI(msgs, _opts) {
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(BRIDGE.connected && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
-    try{ if(BRIDGE.connected && typeof mcpTools === 'function') tools = tools.concat(mcpTools()); }catch(e){}
+    /* And the apps somebody has signed in to - Notion, Canva, Stripe. These need
+       no computer, so they are offered whenever they are connected, and each
+       call is asked for with its arguments shown before it runs. */
+    try{ if(typeof remoteRefreshTools === 'function') await remoteRefreshTools(); }catch(e){}
+    try{ if(typeof mcpTools === 'function') tools = tools.concat(mcpTools({ bridge: !!BRIDGE.connected, remote: true })); }catch(e){}
     /* WHAT WAS OFFERED, CAPTURED BEFORE THE REQUEST GOES OUT.
 
        The dispatch below ran `_amvRunTool(t.name, ...)` on whatever name came

@@ -25,7 +25,37 @@ secrets. On a deployment without them, the page says so.
 
 ## The three routes for everything else
 
-### 1. A remote connector with its own sign-in (the biggest lever)
+### 1. A remote connector with its own sign-in (the biggest lever) - BUILT
+
+Built with the owner's approval. `REMOTE_APPS` in `amv-backend.js` lists
+eighteen apps:
+
+- Notion, Linear, Canva, Jira and Confluence
+- Sentry, Stripe, PayPal
+- Webflow, Wix, Monday.com, Figma, Zapier
+- Vercel, Airtable, GitLab, Supabase, Postman, Close
+
+Each was read from the official MCP registry under the app's own verified
+namespace (`com.notion`, `app.linear`...). Look-alike proxies run by third
+parties are excluded.
+
+**Storage:** sign-ins are sealed per person under `rmcp:`.
+**Setup:** it needs only `CONNECT_KEY` and `APP_URL` - no per-app key.
+**Use:** tools are offered in chat, and each call is asked for with its
+arguments shown.
+**Tests:** `tests/worker/an-app-you-sign-in-to-is-an-app-amv-can-use` and
+`tests/e2e/an-app-connects-by-signing-in`.
+
+**To add an app:** confirm its entry is published under its own domain in the
+registry, add a row to `REMOTE_APPS`, and change its row in
+`13c-app-catalog.js` from Notify me to `r:<slug>`.
+
+**Still Notify me, because they publish no official connector yet:** HubSpot,
+Asana, Intercom, Square, Box, Dropbox, Spotify, Slack, Discord. Re-check the
+registry for these - a new `com.<app>` entry is all it takes.
+
+The original plan follows.
+
 
 Many large apps now publish an official remote MCP server. It uses OAuth with
 dynamic client registration. The person signs in at the app, the app issues

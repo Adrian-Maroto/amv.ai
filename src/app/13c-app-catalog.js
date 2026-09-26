@@ -34,6 +34,8 @@
      cal      a calendar's shared link, read-only
      tg sms canvas bank predict jobs everyday coverage file vscode
               AMV's own flows, each already on this page before this rewrite
+     r:<slug> the app's own official connector, signed in to at the app
+              (REMOTE_APPS on the server lists them and how each was verified)
 
    The third field is the sentence under the name. Rows that connect say what
    AMV does there; rows that do not say what the app is, and nothing more. */
@@ -93,7 +95,7 @@ const AMV_APP_CATS = [
   { id:'money', t:'Bank &amp; money', q:'finance', apps:[
     'Bank account|bank|Real balances and real transactions, read-only. The sign-in happens on your bank’s own page - AMV never sees your password and cannot move money. Morning money summary, unusual charges, low balance warnings and the money leak detector all read from this.',
     'Prediction markets|predict|Kalshi or Polymarket, depending on where you are. AMV shows you the exact trade and places it only after you confirm those numbers - it can never place one on its own.',
-    'PayPal||Payments and transfers.', 'Stripe||Payments for businesses.', 'Wise||Money across currencies.',
+    'PayPal|r:paypal|Payments and transfers.', 'Stripe|r:stripe|Payments for businesses.', 'Wise||Money across currencies.',
     'Revolut||Banking and cards.', 'Venmo||Payments between friends.', 'Cash App||Send, spend and save.', 'Zelle||Bank transfers in the US.',
     'Coinbase||Buy and hold crypto.', 'Binance||Crypto exchange.', 'Kraken||Crypto exchange.', 'Robinhood||Stocks and crypto.',
     'Interactive Brokers||Investing worldwide.', 'eToro||Social investing.', 'Trading 212||Stocks and ETFs.',
@@ -107,9 +109,9 @@ const AMV_APP_CATS = [
   { id:'dev', t:'Developer tools', q:'developer', apps:[
     'GitHub|gh|Reviews PRs, opens issues, reads repos and ships fixes you approve.',
     'VS Code|vscode|No editor extension yet. AMV works in your project folder through your connected computer, with an Undo for every change.',
-    'GitLab||Code, CI and issues.', 'Bitbucket||Git hosting for teams.', 'Linear||Issue tracking.', 'Jira||Issues and projects.',
-    'Vercel||Deploy web apps.', 'Netlify||Deploy web sites.', 'Supabase||Postgres, auth and storage.', 'Firebase||Backend for apps.',
-    'Postman||Build and test APIs.', 'Stack Overflow||Questions and answers for developers.', 'Docker Hub||Container images.',
+    'GitLab|r:gitlab|Code, CI and issues.', 'Bitbucket||Git hosting for teams.', 'Linear|r:linear|Issue tracking.', 'Jira|r:atlassian|Issues and projects.',
+    'Vercel|r:vercel|Deploy web apps.', 'Netlify||Deploy web sites.', 'Supabase|r:supabase|Postgres, auth and storage.', 'Firebase||Backend for apps.',
+    'Postman|r:postman|Build and test APIs.', 'Stack Overflow||Questions and answers for developers.', 'Docker Hub||Container images.',
     'npm||JavaScript packages.', 'Replit||Code in the browser.', 'CodePen||Front-end playground.', 'Expo||Build React Native apps.',
     'JetBrains IDEs||IntelliJ, PyCharm, WebStorm and the rest.', 'Xcode Cloud||Builds for Apple platforms.',
   ]},
@@ -140,17 +142,17 @@ const AMV_APP_CATS = [
     'Arlo||Security cameras.', 'TP-Link Kasa||Smart plugs and lights.', 'iRobot||Robot vacuums.',
   ]},
   { id:'work', t:'Work &amp; projects', q:'productivity', apps:[
-    'Notion||Docs, wikis and projects.', 'Trello||Boards and cards.', 'Asana||Work management.', 'Monday.com||Work management.',
+    'Notion|r:notion|Docs, wikis and projects.', 'Trello||Boards and cards.', 'Asana||Work management.', 'Monday.com|r:monday|Work management.',
     'ClickUp||Tasks, docs and goals.', 'Todoist||To-do lists.', 'Microsoft To Do||Tasks and lists.', 'Google Tasks||Tasks with Gmail and Calendar.',
-    'Basecamp||Projects and team communication.', 'Miro||Online whiteboard.', 'Confluence||Team wiki.', 'Wrike||Project management.',
+    'Basecamp||Projects and team communication.', 'Miro||Online whiteboard.', 'Confluence|r:atlassian|Team wiki.', 'Wrike||Project management.',
     'Smartsheet||Work management in sheets.', 'TickTick||Tasks and habits.', 'Things||Tasks on Apple devices.', 'Microsoft Planner||Team tasks.',
     'Zoho Projects||Project management.', 'Loom||Video messages for work.', 'Craft||Documents and notes.',
   ]},
   { id:'design', t:'Design &amp; creativity', q:'design', apps:[
-    'Canva||Designs, social posts and presentations.', 'Figma||Interface design together.', 'Adobe Photoshop||Photo editing.',
+    'Canva|r:canva|Designs, social posts and presentations.', 'Figma|r:figma|Interface design together.', 'Adobe Photoshop||Photo editing.',
     'Adobe Illustrator||Vector graphics.', 'Adobe Express||Quick designs and social posts.', 'Adobe Lightroom||Photo editing and organising.',
-    'Procreate||Drawing on iPad.', 'Sketch||Design on the Mac.', 'Framer||Design and publish sites.', 'Webflow||Build websites visually.',
-    'Wix||Website builder.', 'Squarespace||Websites and online stores.', 'WordPress||Websites and blogs.', 'Behance||Creative portfolios.',
+    'Procreate||Drawing on iPad.', 'Sketch||Design on the Mac.', 'Framer||Design and publish sites.', 'Webflow|r:webflow|Build websites visually.',
+    'Wix|r:wix|Website builder.', 'Squarespace||Websites and online stores.', 'WordPress||Websites and blogs.', 'Behance||Creative portfolios.',
     'Dribbble||Design inspiration.', 'Unsplash||Free photos.', 'Picsart||Photo and video editing.', 'VSCO||Photo editing.',
     'Snapseed||Photo editing.', 'Affinity||Design, photo and publishing.', 'Blender||3D creation.', 'GIMP||Open-source image editing.',
   ]},
@@ -215,7 +217,7 @@ const AMV_APP_CATS = [
   ]},
   { id:'biz', t:'Business &amp; sales', q:'crm', apps:[
     'Salesforce||CRM.', 'HubSpot||CRM and marketing.', 'Pipedrive||Sales pipeline.', 'Zoho CRM||CRM.', 'Microsoft Dynamics 365||Business apps.',
-    'Close||Sales CRM.', 'Copper||CRM for Google Workspace.', 'Freshsales||CRM.', 'Odoo||Business apps.', 'SAP||Business software.',
+    'Close|r:close|Sales CRM.', 'Copper||CRM for Google Workspace.', 'Freshsales||CRM.', 'Odoo||Business apps.', 'SAP||Business software.',
     'NetSuite||Business management.', 'Typeform||Forms and surveys.', 'Google Forms||Forms and surveys.', 'SurveyMonkey||Surveys.',
     'Jotform||Online forms.', 'Tally||Simple forms.',
   ]},
@@ -231,12 +233,12 @@ const AMV_APP_CATS = [
     'Tidio||Live chat for stores.', 'Trustpilot||Customer reviews.', 'Kustomer||Customer service platform.',
   ]},
   { id:'auto', t:'Automation', q:'automation', apps:[
-    'Zapier||Connect apps with automations.', 'Make||Visual automations.', 'IFTTT||Simple automations.', 'n8n||Open-source automation.',
+    'Zapier|r:zapier|Connect apps with automations.', 'Make||Visual automations.', 'IFTTT||Simple automations.', 'n8n||Open-source automation.',
     'Power Automate||Automations for Microsoft 365.', 'Apple Shortcuts||Automations on Apple devices.', 'Tasker||Automation on Android.',
     'Pipedream||Automations for developers.', 'Airtable Automations||Automations inside Airtable.',
   ]},
   { id:'data', t:'Data &amp; analytics', q:'database', apps:[
-    'Airtable||Spreadsheet-database.', 'Tableau||Dashboards and analytics.', 'Power BI||Microsoft’s analytics.', 'Looker Studio||Google’s dashboards.',
+    'Airtable|r:airtable|Spreadsheet-database.', 'Tableau||Dashboards and analytics.', 'Power BI||Microsoft’s analytics.', 'Looker Studio||Google’s dashboards.',
     'Snowflake||Data warehouse.', 'BigQuery||Google’s data warehouse.', 'Databricks||Data and analytics platform.', 'MongoDB Atlas||Cloud database.',
     'PostgreSQL||Open-source database.', 'MySQL||Open-source database.', 'Metabase||Open-source dashboards.', 'Mixpanel||Product analytics.',
     'Amplitude||Product analytics.', 'Segment||Customer data.',
@@ -247,7 +249,7 @@ const AMV_APP_CATS = [
     'Linode||Cloud servers.', 'Hetzner||Servers in Europe.', 'Alibaba Cloud||Cloud computing.', 'Oracle Cloud||Cloud computing.',
   ]},
   { id:'monitor', t:'Monitoring &amp; logs', q:'monitoring', apps:[
-    'Sentry||Errors and performance.', 'Datadog||Monitoring and logs.', 'Grafana||Dashboards and alerts.', 'New Relic||Observability.',
+    'Sentry|r:sentry|Errors and performance.', 'Datadog||Monitoring and logs.', 'Grafana||Dashboards and alerts.', 'New Relic||Observability.',
     'PagerDuty||On-call and incidents.', 'Better Stack||Uptime and logs.', 'UptimeRobot||Uptime monitoring.', 'Splunk||Logs and security.',
     'Prometheus||Open-source monitoring.', 'Opsgenie||Alerts and on-call.',
   ]},

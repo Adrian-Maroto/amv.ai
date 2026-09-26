@@ -3241,6 +3241,7 @@ async function _confirmModelTool(name, input){
              `c` and `a` + `b__c` are spelled alike, and a person consents to
              the tool that will actually run. (AMV-AUD-020) */
           const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
+          if(who && who.remote) return 'use your ' + who.name + ' account to run "' + who.tool + '"';
           return who ? ('use your "' + who.id + '" connector to run "' + who.tool + '"')
                      : ('run the "' + name + '" connector action');
         })()
@@ -3310,7 +3311,7 @@ async function _amvRunTool(name, input, onStatus){
        sentences and only the second is true. */
     if(typeof isMcpTool === 'function' && isMcpTool(name)){
       const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
-      onStatus && onStatus('Using ' + (who ? who.id + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '\u2026');
+      onStatus && onStatus('Using ' + (who ? (who.name || who.id) + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '\u2026');
       const r = await runMcpTool(name, input);
       return { text: String((r && r.text) || ''), render:null };
     }

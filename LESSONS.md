@@ -13642,3 +13642,20 @@ a flow ends in a connection, Notify me only where the request reaches a list
 someone reads, and never an instruction to run something AMV does not own.
 The dashboard now shows that list, so "the most-asked-for are connected next"
 is something the owner can actually keep.
+
+## 523. A reload that is dropped is a "not connected" that is a lie
+
+The page asked the server which apps were connected, once per situation, and
+ignored any request while one was already in flight. So a sign-in that finished
+while an older list request was still out was never reflected: the row went on
+saying "not connected" about an app that was, and a stale no looks exactly like
+the product working. The suite found it because the harness's first request
+went to an address that never answered. A forced reload must always ask, and
+when two answers race, only the newest may write. The same shape as LESSONS 435:
+a wrong "no" from a status check is the hardest defect to notice, so it is the
+one worth a generation counter.
+
+And the rule that chose the apps: an official connector is one published under
+the app's own verified namespace in the registry. There are more proxies for
+Notion than there is Notion, and a connector somebody else runs in front of
+your account is a stranger holding your token.

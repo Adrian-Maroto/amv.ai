@@ -31,6 +31,10 @@ const MCP = {
   servers: [],
   /* id -> { tools:[...], info, error } for the ones actually running now. */
   live: {},
+  /* 'app-<slug>' -> { slug, name, tools:[...], at, error } - an app's own
+     connector, signed in to at the app and called through AMV's server. No
+     computer involved, and no token on this page. */
+  remote: {},
 };
 try{ window.MCP = MCP; }catch(e){}
 
@@ -70,6 +74,9 @@ function _mcpSafeId(s){
 function _mcpAdd(id, command, args, env){
   id = _mcpSafeId(id);
   if(!id) throw new Error('Give the server a short name, like "github".');
+  /* Reserved for apps connected by signing in, so a connector on the computer
+     can never be mistaken for one - or take one's tool names. */
+  if(/^app-/.test(id)) throw new Error('Names starting with "app-" are reserved for apps you connect by signing in. Pick another.');
   if(MCP.servers.some(s => s.id === id)) throw new Error('There is already a server called "' + id + '".');
   if(MCP.servers.length >= MCP_MAX_SERVERS) throw new Error('That is as many servers as AMV will run at once.');
   command = String(command || '').trim();
@@ -240,26 +247,38 @@ function _mcpAliasFor(id, toolName){
    step list. Null for a name this tab never offered. */
 function mcpToolIdentity(name){
   const hit = _MCP_ALIAS.get(String(name || ''));
-  return hit ? { id: hit.id, tool: hit.tool } : null;
+  if(!hit) return null;
+  /* An app connector is named by the app, because "your Notion" is something
+     a person can consent to and "app-notion" is not. */
+  const app = MCP.remote[hit.id];
+  return app ? { id: hit.id, tool: hit.tool, name: app.name, remote: true } : { id: hit.id, tool: hit.tool };
 }
+function _mcpServerOf(id){ return MCP.remote[id] || MCP.live[id] || null; }
 function _mcpSplitName(name){
   name = String(name || '');
   /* A name not registered yet may belong to a tool that is live but has not
      been listed since it started; registering what is live is idempotent,
      because an identity that already has an alias keeps it. */
-  if(!_MCP_ALIAS.has(name)) mcpTools();
+  if(!_MCP_ALIAS.has(name)) mcpTools({ remote: true });
   const who = _MCP_ALIAS.get(name);
   if(!who) return null;
-  const server = MCP.live[who.id];
+  const server = _mcpServerOf(who.id);
   if(!server || server.error) return null;
   const tool = (server.tools || []).find(t => t && String(t.name) === who.tool);
   return tool ? { id: who.id, tool } : null;
 }
 
-function mcpTools(){
+/* WHICH CONNECTORS TO OFFER. The computer's, by default and as before - that
+   is what Build's loop asks for, under its once-per-turn consent. Chat also
+   passes `remote`, because an app connector needs no computer and each of its
+   calls is asked for one at a time there. */
+function mcpTools(opts){
+  const o = Object.assign({ bridge: true, remote: false }, opts || {});
   const out = [];
-  for(const id of Object.keys(MCP.live)){
-    const live = MCP.live[id];
+  const ids = (o.bridge ? Object.keys(MCP.live) : []).concat(o.remote ? Object.keys(MCP.remote) : []);
+  for(const id of ids){
+    const live = _mcpServerOf(id);
+    if(!live || live.error) continue;
     /* A server listing the same name twice has one tool, as far as calling it
        goes - `tools/call` names it and cannot tell the two apart - so it is
        offered once. */
@@ -275,7 +294,7 @@ function mcpTools(){
            should know a tool came from somewhere else, because that is the
            difference between "AMV can do this" and "this machine has a
            connector that claims to". */
-        description: ('[' + id + '] ' + String(t.description || t.name || '')).slice(0, 1000),
+        description: ('[' + (live.name || id) + '] ' + String(t.description || t.name || '')).slice(0, 1000),
         input_schema: (t.inputSchema && typeof t.inputSchema === 'object')
           ? t.inputSchema : { type:'object', properties:{} },
       });
@@ -300,6 +319,19 @@ async function runMcpTool(name, args){
     const who = mcpToolIdentity(name), live = who && MCP.live[who.id];
     if(live && !live.error) return { ok:false, text:'The ' + who.id + ' connector no longer offers "' + who.tool + '". Use one of the tools it lists now.' };
     return { ok:false, text:'That connector is not running any more. Reconnect it in Integrations.' };
+  }
+  const app = MCP.remote[hit.id];
+  if(app){
+    /* Through AMV's server, which holds the sign-in. A refusal is a result the
+       model can read, like any other connector's. */
+    try{
+      const d = await AMV_API.remoteCall(app.slug, hit.tool.name, args || {});
+      const text = (d.content || []).map(c => c && c.type === 'text' ? c.text : ('[' + ((c && c.type) || 'content') + ']')).join('\n');
+      return { ok: !d.isError, text: text || '(no output)' };
+    }catch(e){
+      if(e && e.status === 401) _rmcpForgetTools(hit.id);
+      return { ok:false, text: app.name + ': ' + String((e && e.message) || 'that did not work') };
+    }
   }
   try{
     const r = await mcpCall(hit.id, 'tools/call', { name: hit.tool.name, arguments: args || {} });
@@ -453,3 +485,107 @@ function _mcpWireCard(root){
   });
 }
 try{ window._mcpWireCard=_mcpWireCard; }catch(e){}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   APPS CONNECTED BY SIGNING IN: Notion, Canva, Linear, Stripe and the rest.
+
+   The server holds the sign-in (REMOTE_APPS there says which apps and how
+   each was verified). This page starts one, finishes one, lists them, and
+   asks the server for an app's tools and to run one. Nothing here ever holds
+   a token for any of them.
+   ══════════════════════════════════════════════════════════════════════ */
+const _RMCP = { state: 'idle', tried: '', configured: false, apps: {}, gen: 0 };
+function _rmcpCtx(){ return (window.AMV_API && AMV_API.live ? '1' : '0') + '|' + ((S.user && S.user.email) || ''); }
+function _rmcpStateOf(slug){ return _RMCP.apps[slug] || null; }
+/* Asked once per situation (backend, account), like _connLoad, so a render
+   that asks and an answer that re-renders cannot loop. Resolves true when
+   what is known changed. */
+/* A FORCED RELOAD ALWAYS ASKS, AND THE NEWEST ANSWER WINS.
+
+   The first version dropped any load while another was in flight - so a
+   sign-in that finished while an older list request was still out was never
+   reflected, and the row went on saying "not connected" about an app that
+   was. A stale no looks exactly like the product working. Each load now takes
+   a generation number, and only the latest one may write what it heard. */
+async function _rmcpLoad(force){
+  if(!force && (_RMCP.state === 'loading' || _RMCP.tried === _rmcpCtx())) return false;
+  _RMCP.tried = _rmcpCtx();
+  if(!(window.AMV_API && AMV_API.live && S.user && S.user.email)){ _RMCP.state = 'off'; _RMCP.apps = {}; return false; }
+  const gen = ++_RMCP.gen;
+  _RMCP.state = 'loading';
+  try{
+    const d = await AMV_API.remoteList();
+    if(gen !== _RMCP.gen) return false;
+    const apps = {};
+    for(const a of (d.apps || [])) apps[a.slug] = a;
+    const changed = JSON.stringify(apps) !== JSON.stringify(_RMCP.apps);
+    Object.assign(_RMCP, { state: 'done', configured: !!d.configured, apps });
+    return changed;
+  }catch(e){ if(gen === _RMCP.gen) _RMCP.state = 'error'; return false; }
+}
+function rmcpReload(){ _RMCP.tried = ''; return _rmcpLoad(true); }
+
+async function rmcpConnect(slug){
+  if(!(window.AMV_API && AMV_API.live)){
+    toast('This copy of AMV is not connected to its server, so it cannot connect an app.', 'info', 6000);
+    return;
+  }
+  try{
+    const r = await AMV_API.remoteStart(slug, window.location.origin + window.location.pathname);
+    if(r && r.url){ saveStr('amv_conn_return', S.tab || 'integrations'); window.location.href = r.url; return; }
+    toast('That connection could not be started.', 'error', 6000);
+  }catch(e){
+    toast(String((e && e.message) || 'That connection could not be started.'), 'error', 8000);
+  }
+}
+async function _rmcpFinish(code, state){
+  try{
+    const r = await AMV_API.remoteFinish(code, state);
+    toast((r && r.name ? r.name : 'That app') + ' is connected. Ask for it in chat - AMV asks you before each action it takes there.', 'success', 7000);
+  }catch(e){
+    toast(String((e && e.message) || 'That connection did not complete.'), 'error', 8000);
+  }
+  try{ const back = loadStr('amv_conn_return') || 'integrations'; saveStr('amv_conn_return', ''); setTab(back); }catch(e){}
+  try{ await rmcpReload(); if(typeof _paintIntegrations === 'function') _paintIntegrations(); }catch(e){}
+}
+async function rmcpDisconnect(slug){
+  const st = _rmcpStateOf(slug), name = (st && st.name) || slug;
+  if(!await showConfirmAsync('Disconnect ' + name + '?\n\nAMV forgets the sign-in and asks ' + name + ' to revoke it. Chat can no longer use it until you connect it again.')) return;
+  try{
+    const r = await AMV_API.remoteRemove(slug);
+    toast((r && r.message) || 'Disconnected.', (r && r.revoked) ? 'success' : 'info', (r && r.revoked) ? 4000 : 9000);
+  }catch(e){
+    toast(String((e && e.message) || 'That could not be disconnected.'), 'error', 7000);
+  }
+  _rmcpForgetTools('app-' + slug);
+  try{ await rmcpReload(); if(typeof _paintIntegrations === 'function') _paintIntegrations(); }catch(e){}
+}
+function _rmcpForgetTools(id){ delete MCP.remote[id]; }
+
+/* THE TOOLS OF EVERY CONNECTED APP, FOR THIS TURN OF CHAT.
+
+   Listed at most every ten minutes per app, and never allowed to hold a turn
+   up: whatever has not answered within four seconds is offered from the next
+   turn instead. An app that fails is left out rather than offered broken. */
+const RMCP_TOOLS_TTL_MS = 10 * 60 * 1000;
+async function remoteRefreshTools(){
+  await _rmcpLoad(false);
+  const want = Object.keys(_RMCP.apps).filter(k => _RMCP.apps[k].connected && !_RMCP.apps[k].broken);
+  for(const id of Object.keys(MCP.remote)) if(want.indexOf(MCP.remote[id].slug) < 0) delete MCP.remote[id];
+  const due = want.filter(slug => { const e = MCP.remote['app-' + slug]; return !e || Date.now() - e.at > RMCP_TOOLS_TTL_MS; });
+  if(!due.length) return;
+  const one = async (slug) => {
+    try{
+      const d = await AMV_API.remoteTools(slug);
+      MCP.remote['app-' + slug] = { slug, name: d.name || slug, tools: d.tools || [], at: Date.now(), error: '' };
+    }catch(e){
+      MCP.remote['app-' + slug] = { slug, name: (_RMCP.apps[slug] || {}).name || slug, tools: [], at: Date.now(), error: String((e && e.message) || 'failed') };
+      if(e && e.status === 401) try{ _RMCP.apps[slug].broken = true; }catch(_e){}
+    }
+  };
+  await Promise.race([Promise.all(due.map(one)), new Promise(r => setTimeout(r, 4000))]);
+}
+try{ window.rmcpConnect=rmcpConnect; window.rmcpDisconnect=rmcpDisconnect; window._rmcpFinish=_rmcpFinish;
+     window._rmcpLoad=_rmcpLoad; window.rmcpReload=rmcpReload; window._rmcpStateOf=_rmcpStateOf;
+     window.remoteRefreshTools=remoteRefreshTools; window._RMCP=_RMCP; }catch(e){}

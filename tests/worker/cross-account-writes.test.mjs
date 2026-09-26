@@ -82,6 +82,7 @@ const CLASSIFIED = {
   familyRemove:      'requires the account to be in the caller\'s family, from either side',
   familyLeave:       'a child editing the parent record they are named in',
   linkAccept:        'both sides of a link the invitee was invited to, by emailed code',
+  remoteStart:       'the handshake row is keyed by its own random state with the account sealed inside and checked at the finish; the registration row describes AMV to an app, keyed by app and return address, and holds nobody\'s data',
   familyDecline:     'marks refused an invitation stored under the caller\'s own address, and drops it from the caller\'s own list',
   fraudRecord:       'a rate-limited self-report into a global index, stamped with who wrote it',
   handoffAct:        'a bounded status on the sender\'s copy of a handoff in the caller\'s own inbox',

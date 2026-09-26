@@ -616,7 +616,7 @@ function _integrationsCatalogHTML(opts){
   const smsPhone=loadStr('amv_sms_phone');
   const intRow=(o)=>{
     const connected=o.connected;
-    const badge=o.auto
+    const badge=(o.auto && !o.manual)
       ? '<span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span>'
       : '<span class="ax-badge ax-manual">Manual</span>';
     /* A connected integration that can DO something needs a way to run it. The
@@ -640,7 +640,7 @@ function _integrationsCatalogHTML(opts){
           +escH(connected ? (o.manageLabel||'Manage') : (o.useLabel||'Set up'))+'</button>'
       : connected
       ? ((o.run?'<button class="btn bp" data-int-run="'+o.run+'" style="font-size:var(--t-sm)">'+escH(o.runLabel||'Run')+'</button>':'')+
-         '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:var(--t-sm)">Disconnect</button>')
+         '<button class="btn int-disc" data-int-disc="'+o.id+'"'+(o.preset?' data-int-preset="'+escH(o.preset)+'"':'')+' style="font-size:var(--t-sm)">Disconnect</button>')
       : (o.auto
           ? '<button class="btn bp" data-int-conn="'+o.id+'"'+(o.preset?' data-int-preset="'+escH(o.preset)+'"':'')+' style="font-size:var(--t-sm)">Connect</button>'
           : '<button class="btn bs" data-int-use="'+(o.use||'chat')+'" style="font-size:var(--t-sm)">'+(o.useLabel||'Open in chat')+'</button>');
@@ -719,6 +719,18 @@ function _integrationsCatalogHTML(opts){
     else if(h==='coverage'){ o.id='coverage'; o.auto=false; o.use='coverage'; o.useLabel='See coverage'; o.connected=false; }
     else if(h==='file'){ o.id=a.slug; o.auto=false; o.use='chat'; o.connected=false; }
     else if(h==='vscode'){ o.id='vscode'; o.auto=false; o.use='vscode'; o.useLabel='Set up'; o.connected=false; }
+    /* THE APP'S OWN CONNECTOR. Signed in to at the app; AMV then uses it in
+       chat, and asks before each action - so it is Manual, not Autonomous.
+       A connection the app stopped accepting says so and offers Connect again. */
+    else if(kind==='r'){
+      const slug=h.slice(2), st=_rmcpStateOf(slug);
+      o.id='rmcp'; o.preset=slug; o.manual=true; o.dedupe='rmcp:'+slug;
+      o.connected=!!(st && st.connected && !st.broken);
+      o.desc=escH(a.desc)+' '+(st && st.broken
+        ? '<b>It needs signing in again.</b>'
+        : o.connected ? 'Connected - ask for it in chat, and AMV asks you before each action.'
+                      : 'Sign in at '+escH(a.name)+'; AMV asks you before each action.');
+    }
     else return null;
     return o;
   };
@@ -746,7 +758,7 @@ function _integrationsCatalogHTML(opts){
          Docs, Sheets, Slides and Classroom, and Settings listing seven rows
          with seven Disconnect buttons for one sign-in would read as seven
          things to undo. */
-      list=rows.filter(r=>r.rank===0 && !seen[r.o.id] && (seen[r.o.id]=1));
+      list=rows.filter(r=>{ const k=r.o && (r.o.dedupe||r.o.id); return r.rank===0 && !seen[k] && (seen[k]=1); });
       list.forEach(r=>{ const g=APP_GRANT_NAMES[r.o.id]; if(g) r.o.name=escH(g); });
       if(!list.length) return '';
     }
@@ -912,6 +924,7 @@ function _wireIntegrationCatalog(root){
        account to attach a mailbox to. */
     if(_intNeedsAccount(_intName(btn.dataset.intConn))) return;
     if(btn.dataset.intConn==='mail') return openMailConnect(btn.dataset.intPreset||'');
+    if(btn.dataset.intConn==='rmcp') return rmcpConnect(btn.dataset.intPreset||'');
     if(btn.dataset.intConn==='telegram') return openTelegramConnect();
     /* Providers the connected-accounts framework owns are STARTED there, not
        here. Google's row used to run a sign-in from this button; sending it to
@@ -929,6 +942,7 @@ function _wireIntegrationCatalog(root){
   root.querySelectorAll('[data-app-more]').forEach(btn=>on(btn,'click',()=>{ _appToggle(btn.dataset.appMore); }));
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intDisc==='mail') return disconnectMail();
+    if(btn.dataset.intDisc==='rmcp') return rmcpDisconnect(btn.dataset.intPreset||'');
     if(btn.dataset.intDisc==='telegram') return disconnectTelegram();
     disconnectIntegration(btn.dataset.intDisc);
   }));
@@ -1319,6 +1333,9 @@ function renderIntegrationsView(){
      the typed value are attached in one place rather than two. */
   try{ _cdirWireFind&&_cdirWireFind(); }catch(e){}
   try{ _killTokenAutofill&&_killTokenAutofill(); }catch(e){}
+  /* Which apps this account has signed in to. Asked once per situation; the
+     page repaints only if the answer changed what it shows. */
+  try{ if(typeof _rmcpLoad==='function') setTimeout(()=>{ _rmcpLoad(false).then(ch=>{ if(ch) _paintIntegrations(); }); }, 0); }catch(e){}
 }
 window.renderIntegrationsView=renderIntegrationsView;
 /* 6. EXTENSIONS VIEW - real file editors */

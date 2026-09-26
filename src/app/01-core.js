@@ -723,7 +723,7 @@ const AMV_API = {
          thread/read, approvals/edit, auto/update, team/(presence|tasks):
          they SET a value. The second write stores what the first one did.
        - the AI proxy is metered and carries its own idempotency. */
-    const REPEATABLE = /\/(v1\/(chat|messages|proxy)|sync\/(pull|push)|keys\/list|share\/(list|visibility)|link\/list|team\/(get|audit|presence|tasks)|market\/(threads|mylistings|purchases|earnings|status|thread\/read|unlist|rate)|family\/get|spend\/(set|limits)|widget\/config|approvals\/edit|auto\/update)(\/|$|\?)/;
+    const REPEATABLE = /\/(v1\/(chat|messages|proxy)|sync\/(pull|push)|keys\/list|share\/(list|visibility)|team\/(get|audit|presence|tasks)|market\/(threads|mylistings|purchases|earnings|status|thread\/read|unlist|rate)|family\/get|spend\/(set|limits)|widget\/config|approvals\/edit|auto\/update|remote\/(list|tools))(\/|$|\?)/;
 
     const noRetry = o.noRetry
       || /^\/auth\//.test(path)
@@ -1147,6 +1147,16 @@ const AMV_API = {
       'That connection could not be completed.');
   },
   async connectList(){ const r=await this._fetch('/v1/connect/list'); return await r.json(); },
+  /* APP CONNECTORS (Notion, Canva, Linear...). The same rule as Connected
+     accounts: the page starts a sign-in, finishes one, lists what exists, and
+     asks the server to list an app's tools or run one. No token ever comes
+     here - the server holds it and makes the call. */
+  async remoteList(){ return this._wrote('/v1/remote/list', {}, 'The list of connected apps could not be read.'); },
+  async remoteStart(app, redirect){ return this._wrote('/v1/remote/start', { app, redirect }, 'That connection could not be started.'); },
+  async remoteFinish(code, state){ return this._wrote('/v1/remote/finish', { code, state }, 'That connection could not be completed.'); },
+  async remoteRemove(app){ return this._wrote('/v1/remote/remove', { app }, 'That could not be disconnected.'); },
+  async remoteTools(app){ return this._wrote('/v1/remote/tools', { app }, 'That app\u2019s tools could not be listed.'); },
+  async remoteCall(app, tool, args){ return this._wrote('/v1/remote/call', { app, tool, args: args || {} }, 'That app did not complete the action.'); },
   async connectRemove(id){
     return this._wrote('/v1/connect/remove', { id }, 'That could not be disconnected.');
   },

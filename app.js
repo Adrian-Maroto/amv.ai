@@ -723,7 +723,7 @@ const AMV_API = {
          thread/read, approvals/edit, auto/update, team/(presence|tasks):
          they SET a value. The second write stores what the first one did.
        - the AI proxy is metered and carries its own idempotency. */
-    const REPEATABLE = /\/(v1\/(chat|messages|proxy)|sync\/(pull|push)|keys\/list|share\/(list|visibility)|link\/list|team\/(get|audit|presence|tasks)|market\/(threads|mylistings|purchases|earnings|status|thread\/read|unlist|rate)|family\/get|spend\/(set|limits)|widget\/config|approvals\/edit|auto\/update)(\/|$|\?)/;
+    const REPEATABLE = /\/(v1\/(chat|messages|proxy)|sync\/(pull|push)|keys\/list|share\/(list|visibility)|team\/(get|audit|presence|tasks)|market\/(threads|mylistings|purchases|earnings|status|thread\/read|unlist|rate)|family\/get|spend\/(set|limits)|widget\/config|approvals\/edit|auto\/update|remote\/(list|tools))(\/|$|\?)/;
 
     const noRetry = o.noRetry
       || /^\/auth\//.test(path)
@@ -1147,6 +1147,16 @@ const AMV_API = {
       'That connection could not be completed.');
   },
   async connectList(){ const r=await this._fetch('/v1/connect/list'); return await r.json(); },
+  /* APP CONNECTORS (Notion, Canva, Linear...). The same rule as Connected
+     accounts: the page starts a sign-in, finishes one, lists what exists, and
+     asks the server to list an app's tools or run one. No token ever comes
+     here - the server holds it and makes the call. */
+  async remoteList(){ return this._wrote('/v1/remote/list', {}, 'The list of connected apps could not be read.'); },
+  async remoteStart(app, redirect){ return this._wrote('/v1/remote/start', { app, redirect }, 'That connection could not be started.'); },
+  async remoteFinish(code, state){ return this._wrote('/v1/remote/finish', { code, state }, 'That connection could not be completed.'); },
+  async remoteRemove(app){ return this._wrote('/v1/remote/remove', { app }, 'That could not be disconnected.'); },
+  async remoteTools(app){ return this._wrote('/v1/remote/tools', { app }, 'That app\u2019s tools could not be listed.'); },
+  async remoteCall(app, tool, args){ return this._wrote('/v1/remote/call', { app, tool, args: args || {} }, 'That app did not complete the action.'); },
   async connectRemove(id){
     return this._wrote('/v1/connect/remove', { id }, 'That could not be disconnected.');
   },
@@ -7766,7 +7776,11 @@ async function _callAI(msgs, _opts) {
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(BRIDGE.connected && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
-    try{ if(BRIDGE.connected && typeof mcpTools === 'function') tools = tools.concat(mcpTools()); }catch(e){}
+    /* And the apps somebody has signed in to - Notion, Canva, Stripe. These need
+       no computer, so they are offered whenever they are connected, and each
+       call is asked for with its arguments shown before it runs. */
+    try{ if(typeof remoteRefreshTools === 'function') await remoteRefreshTools(); }catch(e){}
+    try{ if(typeof mcpTools === 'function') tools = tools.concat(mcpTools({ bridge: !!BRIDGE.connected, remote: true })); }catch(e){}
     /* WHAT WAS OFFERED, CAPTURED BEFORE THE REQUEST GOES OUT.
 
        The dispatch below ran `_amvRunTool(t.name, ...)` on whatever name came
@@ -25392,6 +25406,7 @@ async function _confirmModelTool(name, input){
              `c` and `a` + `b__c` are spelled alike, and a person consents to
              the tool that will actually run. (AMV-AUD-020) */
           const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
+          if(who && who.remote) return 'use your ' + who.name + ' account to run "' + who.tool + '"';
           return who ? ('use your "' + who.id + '" connector to run "' + who.tool + '"')
                      : ('run the "' + name + '" connector action');
         })()
@@ -25461,7 +25476,7 @@ async function _amvRunTool(name, input, onStatus){
        sentences and only the second is true. */
     if(typeof isMcpTool === 'function' && isMcpTool(name)){
       const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
-      onStatus && onStatus('Using ' + (who ? who.id + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '\u2026');
+      onStatus && onStatus('Using ' + (who ? (who.name || who.id) + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '\u2026');
       const r = await runMcpTool(name, input);
       return { text: String((r && r.text) || ''), render:null };
     }
@@ -29394,6 +29409,7 @@ function _renderSetPaneInner(only, into){
     }
     _wireIntegrationCatalog(pane);
     _killTokenAutofill();
+    try{ if(typeof _rmcpLoad==='function') setTimeout(()=>{ _rmcpLoad(false).then(ch=>{ if(ch) _paintIntegrations(); }); }, 0); }catch(e){}
     if(!only){ _setAppendSection(pane, 'skills', null, 'Skills'); _setAppendSection(pane, 'api', null, 'API keys'); }
   } else if(sp==='skills'){
     _renderSkillsPane(pane);
@@ -30613,7 +30629,10 @@ function checkOAuthCallback(){
   const state = q.get('state') || '';
   /* Not ours: leave the address bar exactly as it is. Stripping a return this
      handler does not own would destroy the only copy of somebody else's code. */
-  if(state.indexOf('c_') !== 0) return;
+  /* `c_` is Connected accounts, `r_` an app connector (Notion, Canva...).
+     Anything else is not ours to touch. */
+  const isApp = state.indexOf('r_') === 0;
+  if(state.indexOf('c_') !== 0 && !isApp) return;
 
   const clear = () => {
     try{ history.replaceState(null, '', window.location.pathname); }catch(e){}
@@ -30633,7 +30652,9 @@ function checkOAuthCallback(){
   const code = q.get('code');
   if(!code) return;
   clear();
-  if(typeof _connectFinish === 'function'){ _connectFinish(code, state); return; }
+  if(isApp){
+    if(typeof _rmcpFinish === 'function'){ _rmcpFinish(code, state); return; }
+  } else if(typeof _connectFinish === 'function'){ _connectFinish(code, state); return; }
   /* Said out loud rather than swallowed. Somebody has just approved real
      access at a provider; a silent return leaves them believing it worked. */
   toast('AMV could not finish connecting that account. Try again from Settings.', 'error', 8000);
@@ -31334,7 +31355,7 @@ function _integrationsCatalogHTML(opts){
   const smsPhone=loadStr('amv_sms_phone');
   const intRow=(o)=>{
     const connected=o.connected;
-    const badge=o.auto
+    const badge=(o.auto && !o.manual)
       ? '<span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span>'
       : '<span class="ax-badge ax-manual">Manual</span>';
     /* A connected integration that can DO something needs a way to run it. The
@@ -31358,7 +31379,7 @@ function _integrationsCatalogHTML(opts){
           +escH(connected ? (o.manageLabel||'Manage') : (o.useLabel||'Set up'))+'</button>'
       : connected
       ? ((o.run?'<button class="btn bp" data-int-run="'+o.run+'" style="font-size:var(--t-sm)">'+escH(o.runLabel||'Run')+'</button>':'')+
-         '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:var(--t-sm)">Disconnect</button>')
+         '<button class="btn int-disc" data-int-disc="'+o.id+'"'+(o.preset?' data-int-preset="'+escH(o.preset)+'"':'')+' style="font-size:var(--t-sm)">Disconnect</button>')
       : (o.auto
           ? '<button class="btn bp" data-int-conn="'+o.id+'"'+(o.preset?' data-int-preset="'+escH(o.preset)+'"':'')+' style="font-size:var(--t-sm)">Connect</button>'
           : '<button class="btn bs" data-int-use="'+(o.use||'chat')+'" style="font-size:var(--t-sm)">'+(o.useLabel||'Open in chat')+'</button>');
@@ -31437,6 +31458,18 @@ function _integrationsCatalogHTML(opts){
     else if(h==='coverage'){ o.id='coverage'; o.auto=false; o.use='coverage'; o.useLabel='See coverage'; o.connected=false; }
     else if(h==='file'){ o.id=a.slug; o.auto=false; o.use='chat'; o.connected=false; }
     else if(h==='vscode'){ o.id='vscode'; o.auto=false; o.use='vscode'; o.useLabel='Set up'; o.connected=false; }
+    /* THE APP'S OWN CONNECTOR. Signed in to at the app; AMV then uses it in
+       chat, and asks before each action - so it is Manual, not Autonomous.
+       A connection the app stopped accepting says so and offers Connect again. */
+    else if(kind==='r'){
+      const slug=h.slice(2), st=_rmcpStateOf(slug);
+      o.id='rmcp'; o.preset=slug; o.manual=true; o.dedupe='rmcp:'+slug;
+      o.connected=!!(st && st.connected && !st.broken);
+      o.desc=escH(a.desc)+' '+(st && st.broken
+        ? '<b>It needs signing in again.</b>'
+        : o.connected ? 'Connected - ask for it in chat, and AMV asks you before each action.'
+                      : 'Sign in at '+escH(a.name)+'; AMV asks you before each action.');
+    }
     else return null;
     return o;
   };
@@ -31464,7 +31497,7 @@ function _integrationsCatalogHTML(opts){
          Docs, Sheets, Slides and Classroom, and Settings listing seven rows
          with seven Disconnect buttons for one sign-in would read as seven
          things to undo. */
-      list=rows.filter(r=>r.rank===0 && !seen[r.o.id] && (seen[r.o.id]=1));
+      list=rows.filter(r=>{ const k=r.o && (r.o.dedupe||r.o.id); return r.rank===0 && !seen[k] && (seen[k]=1); });
       list.forEach(r=>{ const g=APP_GRANT_NAMES[r.o.id]; if(g) r.o.name=escH(g); });
       if(!list.length) return '';
     }
@@ -31630,6 +31663,7 @@ function _wireIntegrationCatalog(root){
        account to attach a mailbox to. */
     if(_intNeedsAccount(_intName(btn.dataset.intConn))) return;
     if(btn.dataset.intConn==='mail') return openMailConnect(btn.dataset.intPreset||'');
+    if(btn.dataset.intConn==='rmcp') return rmcpConnect(btn.dataset.intPreset||'');
     if(btn.dataset.intConn==='telegram') return openTelegramConnect();
     /* Providers the connected-accounts framework owns are STARTED there, not
        here. Google's row used to run a sign-in from this button; sending it to
@@ -31647,6 +31681,7 @@ function _wireIntegrationCatalog(root){
   root.querySelectorAll('[data-app-more]').forEach(btn=>on(btn,'click',()=>{ _appToggle(btn.dataset.appMore); }));
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intDisc==='mail') return disconnectMail();
+    if(btn.dataset.intDisc==='rmcp') return rmcpDisconnect(btn.dataset.intPreset||'');
     if(btn.dataset.intDisc==='telegram') return disconnectTelegram();
     disconnectIntegration(btn.dataset.intDisc);
   }));
@@ -32037,6 +32072,9 @@ function renderIntegrationsView(){
      the typed value are attached in one place rather than two. */
   try{ _cdirWireFind&&_cdirWireFind(); }catch(e){}
   try{ _killTokenAutofill&&_killTokenAutofill(); }catch(e){}
+  /* Which apps this account has signed in to. Asked once per situation; the
+     page repaints only if the answer changed what it shows. */
+  try{ if(typeof _rmcpLoad==='function') setTimeout(()=>{ _rmcpLoad(false).then(ch=>{ if(ch) _paintIntegrations(); }); }, 0); }catch(e){}
 }
 window.renderIntegrationsView=renderIntegrationsView;
 /* 6. EXTENSIONS VIEW - real file editors */
@@ -33543,6 +33581,8 @@ try{ window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdir
      cal      a calendar's shared link, read-only
      tg sms canvas bank predict jobs everyday coverage file vscode
               AMV's own flows, each already on this page before this rewrite
+     r:<slug> the app's own official connector, signed in to at the app
+              (REMOTE_APPS on the server lists them and how each was verified)
 
    The third field is the sentence under the name. Rows that connect say what
    AMV does there; rows that do not say what the app is, and nothing more. */
@@ -33602,7 +33642,7 @@ const AMV_APP_CATS = [
   { id:'money', t:'Bank &amp; money', q:'finance', apps:[
     'Bank account|bank|Real balances and real transactions, read-only. The sign-in happens on your bank’s own page - AMV never sees your password and cannot move money. Morning money summary, unusual charges, low balance warnings and the money leak detector all read from this.',
     'Prediction markets|predict|Kalshi or Polymarket, depending on where you are. AMV shows you the exact trade and places it only after you confirm those numbers - it can never place one on its own.',
-    'PayPal||Payments and transfers.', 'Stripe||Payments for businesses.', 'Wise||Money across currencies.',
+    'PayPal|r:paypal|Payments and transfers.', 'Stripe|r:stripe|Payments for businesses.', 'Wise||Money across currencies.',
     'Revolut||Banking and cards.', 'Venmo||Payments between friends.', 'Cash App||Send, spend and save.', 'Zelle||Bank transfers in the US.',
     'Coinbase||Buy and hold crypto.', 'Binance||Crypto exchange.', 'Kraken||Crypto exchange.', 'Robinhood||Stocks and crypto.',
     'Interactive Brokers||Investing worldwide.', 'eToro||Social investing.', 'Trading 212||Stocks and ETFs.',
@@ -33616,9 +33656,9 @@ const AMV_APP_CATS = [
   { id:'dev', t:'Developer tools', q:'developer', apps:[
     'GitHub|gh|Reviews PRs, opens issues, reads repos and ships fixes you approve.',
     'VS Code|vscode|No editor extension yet. AMV works in your project folder through your connected computer, with an Undo for every change.',
-    'GitLab||Code, CI and issues.', 'Bitbucket||Git hosting for teams.', 'Linear||Issue tracking.', 'Jira||Issues and projects.',
-    'Vercel||Deploy web apps.', 'Netlify||Deploy web sites.', 'Supabase||Postgres, auth and storage.', 'Firebase||Backend for apps.',
-    'Postman||Build and test APIs.', 'Stack Overflow||Questions and answers for developers.', 'Docker Hub||Container images.',
+    'GitLab|r:gitlab|Code, CI and issues.', 'Bitbucket||Git hosting for teams.', 'Linear|r:linear|Issue tracking.', 'Jira|r:atlassian|Issues and projects.',
+    'Vercel|r:vercel|Deploy web apps.', 'Netlify||Deploy web sites.', 'Supabase|r:supabase|Postgres, auth and storage.', 'Firebase||Backend for apps.',
+    'Postman|r:postman|Build and test APIs.', 'Stack Overflow||Questions and answers for developers.', 'Docker Hub||Container images.',
     'npm||JavaScript packages.', 'Replit||Code in the browser.', 'CodePen||Front-end playground.', 'Expo||Build React Native apps.',
     'JetBrains IDEs||IntelliJ, PyCharm, WebStorm and the rest.', 'Xcode Cloud||Builds for Apple platforms.',
   ]},
@@ -33649,17 +33689,17 @@ const AMV_APP_CATS = [
     'Arlo||Security cameras.', 'TP-Link Kasa||Smart plugs and lights.', 'iRobot||Robot vacuums.',
   ]},
   { id:'work', t:'Work &amp; projects', q:'productivity', apps:[
-    'Notion||Docs, wikis and projects.', 'Trello||Boards and cards.', 'Asana||Work management.', 'Monday.com||Work management.',
+    'Notion|r:notion|Docs, wikis and projects.', 'Trello||Boards and cards.', 'Asana||Work management.', 'Monday.com|r:monday|Work management.',
     'ClickUp||Tasks, docs and goals.', 'Todoist||To-do lists.', 'Microsoft To Do||Tasks and lists.', 'Google Tasks||Tasks with Gmail and Calendar.',
-    'Basecamp||Projects and team communication.', 'Miro||Online whiteboard.', 'Confluence||Team wiki.', 'Wrike||Project management.',
+    'Basecamp||Projects and team communication.', 'Miro||Online whiteboard.', 'Confluence|r:atlassian|Team wiki.', 'Wrike||Project management.',
     'Smartsheet||Work management in sheets.', 'TickTick||Tasks and habits.', 'Things||Tasks on Apple devices.', 'Microsoft Planner||Team tasks.',
     'Zoho Projects||Project management.', 'Loom||Video messages for work.', 'Craft||Documents and notes.',
   ]},
   { id:'design', t:'Design &amp; creativity', q:'design', apps:[
-    'Canva||Designs, social posts and presentations.', 'Figma||Interface design together.', 'Adobe Photoshop||Photo editing.',
+    'Canva|r:canva|Designs, social posts and presentations.', 'Figma|r:figma|Interface design together.', 'Adobe Photoshop||Photo editing.',
     'Adobe Illustrator||Vector graphics.', 'Adobe Express||Quick designs and social posts.', 'Adobe Lightroom||Photo editing and organising.',
-    'Procreate||Drawing on iPad.', 'Sketch||Design on the Mac.', 'Framer||Design and publish sites.', 'Webflow||Build websites visually.',
-    'Wix||Website builder.', 'Squarespace||Websites and online stores.', 'WordPress||Websites and blogs.', 'Behance||Creative portfolios.',
+    'Procreate||Drawing on iPad.', 'Sketch||Design on the Mac.', 'Framer||Design and publish sites.', 'Webflow|r:webflow|Build websites visually.',
+    'Wix|r:wix|Website builder.', 'Squarespace||Websites and online stores.', 'WordPress||Websites and blogs.', 'Behance||Creative portfolios.',
     'Dribbble||Design inspiration.', 'Unsplash||Free photos.', 'Picsart||Photo and video editing.', 'VSCO||Photo editing.',
     'Snapseed||Photo editing.', 'Affinity||Design, photo and publishing.', 'Blender||3D creation.', 'GIMP||Open-source image editing.',
   ]},
@@ -33724,7 +33764,7 @@ const AMV_APP_CATS = [
   ]},
   { id:'biz', t:'Business &amp; sales', q:'crm', apps:[
     'Salesforce||CRM.', 'HubSpot||CRM and marketing.', 'Pipedrive||Sales pipeline.', 'Zoho CRM||CRM.', 'Microsoft Dynamics 365||Business apps.',
-    'Close||Sales CRM.', 'Copper||CRM for Google Workspace.', 'Freshsales||CRM.', 'Odoo||Business apps.', 'SAP||Business software.',
+    'Close|r:close|Sales CRM.', 'Copper||CRM for Google Workspace.', 'Freshsales||CRM.', 'Odoo||Business apps.', 'SAP||Business software.',
     'NetSuite||Business management.', 'Typeform||Forms and surveys.', 'Google Forms||Forms and surveys.', 'SurveyMonkey||Surveys.',
     'Jotform||Online forms.', 'Tally||Simple forms.',
   ]},
@@ -33740,12 +33780,12 @@ const AMV_APP_CATS = [
     'Tidio||Live chat for stores.', 'Trustpilot||Customer reviews.', 'Kustomer||Customer service platform.',
   ]},
   { id:'auto', t:'Automation', q:'automation', apps:[
-    'Zapier||Connect apps with automations.', 'Make||Visual automations.', 'IFTTT||Simple automations.', 'n8n||Open-source automation.',
+    'Zapier|r:zapier|Connect apps with automations.', 'Make||Visual automations.', 'IFTTT||Simple automations.', 'n8n||Open-source automation.',
     'Power Automate||Automations for Microsoft 365.', 'Apple Shortcuts||Automations on Apple devices.', 'Tasker||Automation on Android.',
     'Pipedream||Automations for developers.', 'Airtable Automations||Automations inside Airtable.',
   ]},
   { id:'data', t:'Data &amp; analytics', q:'database', apps:[
-    'Airtable||Spreadsheet-database.', 'Tableau||Dashboards and analytics.', 'Power BI||Microsoft’s analytics.', 'Looker Studio||Google’s dashboards.',
+    'Airtable|r:airtable|Spreadsheet-database.', 'Tableau||Dashboards and analytics.', 'Power BI||Microsoft’s analytics.', 'Looker Studio||Google’s dashboards.',
     'Snowflake||Data warehouse.', 'BigQuery||Google’s data warehouse.', 'Databricks||Data and analytics platform.', 'MongoDB Atlas||Cloud database.',
     'PostgreSQL||Open-source database.', 'MySQL||Open-source database.', 'Metabase||Open-source dashboards.', 'Mixpanel||Product analytics.',
     'Amplitude||Product analytics.', 'Segment||Customer data.',
@@ -33756,7 +33796,7 @@ const AMV_APP_CATS = [
     'Linode||Cloud servers.', 'Hetzner||Servers in Europe.', 'Alibaba Cloud||Cloud computing.', 'Oracle Cloud||Cloud computing.',
   ]},
   { id:'monitor', t:'Monitoring &amp; logs', q:'monitoring', apps:[
-    'Sentry||Errors and performance.', 'Datadog||Monitoring and logs.', 'Grafana||Dashboards and alerts.', 'New Relic||Observability.',
+    'Sentry|r:sentry|Errors and performance.', 'Datadog||Monitoring and logs.', 'Grafana||Dashboards and alerts.', 'New Relic||Observability.',
     'PagerDuty||On-call and incidents.', 'Better Stack||Uptime and logs.', 'UptimeRobot||Uptime monitoring.', 'Splunk||Logs and security.',
     'Prometheus||Open-source monitoring.', 'Opsgenie||Alerts and on-call.',
   ]},
@@ -44987,6 +45027,10 @@ const MCP = {
   servers: [],
   /* id -> { tools:[...], info, error } for the ones actually running now. */
   live: {},
+  /* 'app-<slug>' -> { slug, name, tools:[...], at, error } - an app's own
+     connector, signed in to at the app and called through AMV's server. No
+     computer involved, and no token on this page. */
+  remote: {},
 };
 try{ window.MCP = MCP; }catch(e){}
 
@@ -45026,6 +45070,9 @@ function _mcpSafeId(s){
 function _mcpAdd(id, command, args, env){
   id = _mcpSafeId(id);
   if(!id) throw new Error('Give the server a short name, like "github".');
+  /* Reserved for apps connected by signing in, so a connector on the computer
+     can never be mistaken for one - or take one's tool names. */
+  if(/^app-/.test(id)) throw new Error('Names starting with "app-" are reserved for apps you connect by signing in. Pick another.');
   if(MCP.servers.some(s => s.id === id)) throw new Error('There is already a server called "' + id + '".');
   if(MCP.servers.length >= MCP_MAX_SERVERS) throw new Error('That is as many servers as AMV will run at once.');
   command = String(command || '').trim();
@@ -45196,26 +45243,38 @@ function _mcpAliasFor(id, toolName){
    step list. Null for a name this tab never offered. */
 function mcpToolIdentity(name){
   const hit = _MCP_ALIAS.get(String(name || ''));
-  return hit ? { id: hit.id, tool: hit.tool } : null;
+  if(!hit) return null;
+  /* An app connector is named by the app, because "your Notion" is something
+     a person can consent to and "app-notion" is not. */
+  const app = MCP.remote[hit.id];
+  return app ? { id: hit.id, tool: hit.tool, name: app.name, remote: true } : { id: hit.id, tool: hit.tool };
 }
+function _mcpServerOf(id){ return MCP.remote[id] || MCP.live[id] || null; }
 function _mcpSplitName(name){
   name = String(name || '');
   /* A name not registered yet may belong to a tool that is live but has not
      been listed since it started; registering what is live is idempotent,
      because an identity that already has an alias keeps it. */
-  if(!_MCP_ALIAS.has(name)) mcpTools();
+  if(!_MCP_ALIAS.has(name)) mcpTools({ remote: true });
   const who = _MCP_ALIAS.get(name);
   if(!who) return null;
-  const server = MCP.live[who.id];
+  const server = _mcpServerOf(who.id);
   if(!server || server.error) return null;
   const tool = (server.tools || []).find(t => t && String(t.name) === who.tool);
   return tool ? { id: who.id, tool } : null;
 }
 
-function mcpTools(){
+/* WHICH CONNECTORS TO OFFER. The computer's, by default and as before - that
+   is what Build's loop asks for, under its once-per-turn consent. Chat also
+   passes `remote`, because an app connector needs no computer and each of its
+   calls is asked for one at a time there. */
+function mcpTools(opts){
+  const o = Object.assign({ bridge: true, remote: false }, opts || {});
   const out = [];
-  for(const id of Object.keys(MCP.live)){
-    const live = MCP.live[id];
+  const ids = (o.bridge ? Object.keys(MCP.live) : []).concat(o.remote ? Object.keys(MCP.remote) : []);
+  for(const id of ids){
+    const live = _mcpServerOf(id);
+    if(!live || live.error) continue;
     /* A server listing the same name twice has one tool, as far as calling it
        goes - `tools/call` names it and cannot tell the two apart - so it is
        offered once. */
@@ -45231,7 +45290,7 @@ function mcpTools(){
            should know a tool came from somewhere else, because that is the
            difference between "AMV can do this" and "this machine has a
            connector that claims to". */
-        description: ('[' + id + '] ' + String(t.description || t.name || '')).slice(0, 1000),
+        description: ('[' + (live.name || id) + '] ' + String(t.description || t.name || '')).slice(0, 1000),
         input_schema: (t.inputSchema && typeof t.inputSchema === 'object')
           ? t.inputSchema : { type:'object', properties:{} },
       });
@@ -45256,6 +45315,19 @@ async function runMcpTool(name, args){
     const who = mcpToolIdentity(name), live = who && MCP.live[who.id];
     if(live && !live.error) return { ok:false, text:'The ' + who.id + ' connector no longer offers "' + who.tool + '". Use one of the tools it lists now.' };
     return { ok:false, text:'That connector is not running any more. Reconnect it in Integrations.' };
+  }
+  const app = MCP.remote[hit.id];
+  if(app){
+    /* Through AMV's server, which holds the sign-in. A refusal is a result the
+       model can read, like any other connector's. */
+    try{
+      const d = await AMV_API.remoteCall(app.slug, hit.tool.name, args || {});
+      const text = (d.content || []).map(c => c && c.type === 'text' ? c.text : ('[' + ((c && c.type) || 'content') + ']')).join('\n');
+      return { ok: !d.isError, text: text || '(no output)' };
+    }catch(e){
+      if(e && e.status === 401) _rmcpForgetTools(hit.id);
+      return { ok:false, text: app.name + ': ' + String((e && e.message) || 'that did not work') };
+    }
   }
   try{
     const r = await mcpCall(hit.id, 'tools/call', { name: hit.tool.name, arguments: args || {} });
@@ -45409,6 +45481,110 @@ function _mcpWireCard(root){
   });
 }
 try{ window._mcpWireCard=_mcpWireCard; }catch(e){}
+
+
+/* ══════════════════════════════════════════════════════════════════════
+   APPS CONNECTED BY SIGNING IN: Notion, Canva, Linear, Stripe and the rest.
+
+   The server holds the sign-in (REMOTE_APPS there says which apps and how
+   each was verified). This page starts one, finishes one, lists them, and
+   asks the server for an app's tools and to run one. Nothing here ever holds
+   a token for any of them.
+   ══════════════════════════════════════════════════════════════════════ */
+const _RMCP = { state: 'idle', tried: '', configured: false, apps: {}, gen: 0 };
+function _rmcpCtx(){ return (window.AMV_API && AMV_API.live ? '1' : '0') + '|' + ((S.user && S.user.email) || ''); }
+function _rmcpStateOf(slug){ return _RMCP.apps[slug] || null; }
+/* Asked once per situation (backend, account), like _connLoad, so a render
+   that asks and an answer that re-renders cannot loop. Resolves true when
+   what is known changed. */
+/* A FORCED RELOAD ALWAYS ASKS, AND THE NEWEST ANSWER WINS.
+
+   The first version dropped any load while another was in flight - so a
+   sign-in that finished while an older list request was still out was never
+   reflected, and the row went on saying "not connected" about an app that
+   was. A stale no looks exactly like the product working. Each load now takes
+   a generation number, and only the latest one may write what it heard. */
+async function _rmcpLoad(force){
+  if(!force && (_RMCP.state === 'loading' || _RMCP.tried === _rmcpCtx())) return false;
+  _RMCP.tried = _rmcpCtx();
+  if(!(window.AMV_API && AMV_API.live && S.user && S.user.email)){ _RMCP.state = 'off'; _RMCP.apps = {}; return false; }
+  const gen = ++_RMCP.gen;
+  _RMCP.state = 'loading';
+  try{
+    const d = await AMV_API.remoteList();
+    if(gen !== _RMCP.gen) return false;
+    const apps = {};
+    for(const a of (d.apps || [])) apps[a.slug] = a;
+    const changed = JSON.stringify(apps) !== JSON.stringify(_RMCP.apps);
+    Object.assign(_RMCP, { state: 'done', configured: !!d.configured, apps });
+    return changed;
+  }catch(e){ if(gen === _RMCP.gen) _RMCP.state = 'error'; return false; }
+}
+function rmcpReload(){ _RMCP.tried = ''; return _rmcpLoad(true); }
+
+async function rmcpConnect(slug){
+  if(!(window.AMV_API && AMV_API.live)){
+    toast('This copy of AMV is not connected to its server, so it cannot connect an app.', 'info', 6000);
+    return;
+  }
+  try{
+    const r = await AMV_API.remoteStart(slug, window.location.origin + window.location.pathname);
+    if(r && r.url){ saveStr('amv_conn_return', S.tab || 'integrations'); window.location.href = r.url; return; }
+    toast('That connection could not be started.', 'error', 6000);
+  }catch(e){
+    toast(String((e && e.message) || 'That connection could not be started.'), 'error', 8000);
+  }
+}
+async function _rmcpFinish(code, state){
+  try{
+    const r = await AMV_API.remoteFinish(code, state);
+    toast((r && r.name ? r.name : 'That app') + ' is connected. Ask for it in chat - AMV asks you before each action it takes there.', 'success', 7000);
+  }catch(e){
+    toast(String((e && e.message) || 'That connection did not complete.'), 'error', 8000);
+  }
+  try{ const back = loadStr('amv_conn_return') || 'integrations'; saveStr('amv_conn_return', ''); setTab(back); }catch(e){}
+  try{ await rmcpReload(); if(typeof _paintIntegrations === 'function') _paintIntegrations(); }catch(e){}
+}
+async function rmcpDisconnect(slug){
+  const st = _rmcpStateOf(slug), name = (st && st.name) || slug;
+  if(!await showConfirmAsync('Disconnect ' + name + '?\n\nAMV forgets the sign-in and asks ' + name + ' to revoke it. Chat can no longer use it until you connect it again.')) return;
+  try{
+    const r = await AMV_API.remoteRemove(slug);
+    toast((r && r.message) || 'Disconnected.', (r && r.revoked) ? 'success' : 'info', (r && r.revoked) ? 4000 : 9000);
+  }catch(e){
+    toast(String((e && e.message) || 'That could not be disconnected.'), 'error', 7000);
+  }
+  _rmcpForgetTools('app-' + slug);
+  try{ await rmcpReload(); if(typeof _paintIntegrations === 'function') _paintIntegrations(); }catch(e){}
+}
+function _rmcpForgetTools(id){ delete MCP.remote[id]; }
+
+/* THE TOOLS OF EVERY CONNECTED APP, FOR THIS TURN OF CHAT.
+
+   Listed at most every ten minutes per app, and never allowed to hold a turn
+   up: whatever has not answered within four seconds is offered from the next
+   turn instead. An app that fails is left out rather than offered broken. */
+const RMCP_TOOLS_TTL_MS = 10 * 60 * 1000;
+async function remoteRefreshTools(){
+  await _rmcpLoad(false);
+  const want = Object.keys(_RMCP.apps).filter(k => _RMCP.apps[k].connected && !_RMCP.apps[k].broken);
+  for(const id of Object.keys(MCP.remote)) if(want.indexOf(MCP.remote[id].slug) < 0) delete MCP.remote[id];
+  const due = want.filter(slug => { const e = MCP.remote['app-' + slug]; return !e || Date.now() - e.at > RMCP_TOOLS_TTL_MS; });
+  if(!due.length) return;
+  const one = async (slug) => {
+    try{
+      const d = await AMV_API.remoteTools(slug);
+      MCP.remote['app-' + slug] = { slug, name: d.name || slug, tools: d.tools || [], at: Date.now(), error: '' };
+    }catch(e){
+      MCP.remote['app-' + slug] = { slug, name: (_RMCP.apps[slug] || {}).name || slug, tools: [], at: Date.now(), error: String((e && e.message) || 'failed') };
+      if(e && e.status === 401) try{ _RMCP.apps[slug].broken = true; }catch(_e){}
+    }
+  };
+  await Promise.race([Promise.all(due.map(one)), new Promise(r => setTimeout(r, 4000))]);
+}
+try{ window.rmcpConnect=rmcpConnect; window.rmcpDisconnect=rmcpDisconnect; window._rmcpFinish=_rmcpFinish;
+     window._rmcpLoad=_rmcpLoad; window.rmcpReload=rmcpReload; window._rmcpStateOf=_rmcpStateOf;
+     window.remoteRefreshTools=remoteRefreshTools; window._RMCP=_RMCP; }catch(e){}
 /* CREW GAMES - the host's half.
 
    The Worker can make a game, hand out a link, collect answers from people with

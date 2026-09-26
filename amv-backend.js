@@ -2692,6 +2692,40 @@ async function _pkceChallenge(verifier){
   return _b64(d).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
 
+/* WHERE A PROVIDER SENDS SOMEBODY BACK, checked once for every sign-in flow -
+   Connected accounts and app connectors both. Returns { redirect } or
+   { error: <response> }. */
+function _connReturnAddress(env, body){
+  const appUrl = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/,'');
+  if(!appUrl) return { error: json({ error:'no_app_url',
+    message:'APP_URL is not set, so there is no address for the provider to send anybody back to.' }, 503) };
+  /* ONE DEFINITION OF "SAME ORIGIN", NOT TWO.
+
+     This used to parse and compare the origins inline, which was correct - and
+     was the second implementation of a comparison the Worker already had in
+     _sameOrigin. The other one belonged to the older Google exchange; when that
+     route was retired, _sameOrigin was left with no callers and this copy was
+     left as the only live one, which is the exact arrangement where a fix
+     applied to one of them silently misses the other.
+
+     _sameOrigin is the survivor because it is the stricter of the two and its
+     reasoning is written down: scheme, host and port are compared as parsed
+     fields so nothing in one can reach across into another, and a URL carrying
+     credentials (https://amv.homes@attacker.example) is refused outright rather
+     than compared. The query/fragment rejection below is kept on top of it,
+     because that is specific to a redirect target and not to origins in
+     general: this exact string goes to the provider as redirect_uri, and it has
+     to match what was registered byte for byte. */
+  const redirect = String(body.redirect || appUrl);
+  let clean = false;
+  try{ const u = new URL(redirect); clean = !u.search && !u.hash; }catch(_e){ clean = false; }
+  if(!clean || !_sameOrigin(redirect, appUrl))
+    return { error: json({ error:'bad_redirect',
+      message:'That return address is not this deployment.' }, 400) };
+  return { redirect };
+
+}
+
 /* Begin a connection. Returns the URL to send the person to, and nothing that
    could be replayed: the state handle is meaningless without the record here. */
 async function connStart(request, env){
@@ -2730,32 +2764,9 @@ async function connStart(request, env){
      trusting it: same origin as APP_URL, no query, no fragment. Without that
      check this parameter is an open redirect with an authorization code
      attached to it. */
-  const appUrl = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/,'');
-  if(!appUrl) return json({ error:'no_app_url',
-    message:'APP_URL is not set, so there is no address for the provider to send anybody back to.' }, 503);
-  /* ONE DEFINITION OF "SAME ORIGIN", NOT TWO.
-
-     This used to parse and compare the origins inline, which was correct - and
-     was the second implementation of a comparison the Worker already had in
-     _sameOrigin. The other one belonged to the older Google exchange; when that
-     route was retired, _sameOrigin was left with no callers and this copy was
-     left as the only live one, which is the exact arrangement where a fix
-     applied to one of them silently misses the other.
-
-     _sameOrigin is the survivor because it is the stricter of the two and its
-     reasoning is written down: scheme, host and port are compared as parsed
-     fields so nothing in one can reach across into another, and a URL carrying
-     credentials (https://amv.homes@attacker.example) is refused outright rather
-     than compared. The query/fragment rejection below is kept on top of it,
-     because that is specific to a redirect target and not to origins in
-     general: this exact string goes to the provider as redirect_uri, and it has
-     to match what was registered byte for byte. */
-  const redirect = String(body.redirect || appUrl);
-  let clean = false;
-  try{ const u = new URL(redirect); clean = !u.search && !u.hash; }catch(_e){ clean = false; }
-  if(!clean || !_sameOrigin(redirect, appUrl))
-    return json({ error:'bad_redirect',
-      message:'That return address is not this deployment.' }, 400);
+  const back = _connReturnAddress(env, body);
+  if(back.error) return back.error;
+  const redirect = back.redirect;
 
   /* SELF-IDENTIFYING, and it stays that way now that it is the only return.
 
@@ -3445,6 +3456,465 @@ async function connRemove(request, env){
       : (p.revoke
           ? 'AMV forgot this account, but ' + (p.name||c.provider) + ' did not confirm the grant was revoked' + (why?' ('+why+')':'') + '. Remove it in your ' + (p.name||c.provider) + ' account to be certain.'
           : 'AMV forgot this account and can no longer use it. ' + (p.revokeNote || (p.name||c.provider) + ' has no revoke endpoint, so end it there too if you want the grant gone.')) });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   APP CONNECTORS: SIGNING IN TO AN APP'S OWN CONNECTOR.
+
+   The owner asked for AMV to connect to the apps people use the way the best
+   assistants do - press Connect, sign in at the app, done. Many of the largest
+   apps now publish an official remote connector (MCP over HTTP) whose sign-in
+   is standard OAuth with DYNAMIC CLIENT REGISTRATION: AMV registers itself with
+   the app on first use, so there is no per-app key for anybody to paste. That
+   is what makes it scale - the alternative, a client id and secret registered
+   by hand with every provider, is how CONN_PROVIDERS works and why it has
+   three rows.
+
+   WHICH APPS, AND HOW THEY WERE CHOSEN. Each entry below was read from the
+   official MCP registry (registry.modelcontextprotocol.io), and each is
+   published under the app's own verified namespace - `com.notion`,
+   `app.linear`, `io.github.getsentry` - which the registry grants only to
+   whoever proves they own that domain or organisation. Look-alikes published
+   by third parties (there are many, and some proxy a real app through their
+   own servers) are not here. A connector somebody else runs in front of your
+   Notion is a stranger holding your Notion token.
+
+   WHAT AMV HOLDS. Per person, per app: the access and refresh token, sealed
+   with the same deployment key as Connected accounts (CONNECT_KEY), under
+   `rmcp:<email>`. The browser never receives either - it asks the server to
+   list an app's tools or run one, and gets the result.
+
+   WHAT EVERY OUTBOUND REQUEST GOES THROUGH. fetchGuarded: public https hosts
+   only, every redirect hop re-checked, and no Authorization header across an
+   origin boundary. The discovery documents an app serves are addresses chosen
+   by that app, so each endpoint they name is checked the same way before it is
+   used - an https host that is not internal, or nothing.
+
+   WHAT IT DOES NOT DO. Run anything on its own. Tools are offered to chat, and
+   each call is asked for, with its arguments shown, before it runs - the same
+   rule as a connector on somebody's computer, because AMV cannot judge the
+   risk of a tool somebody else wrote.
+   ══════════════════════════════════════════════════════════════════════════ */
+const REMOTE_APPS = {
+  notion:    { name: 'Notion',              reg: 'com.notion/mcp',                     url: 'https://mcp.notion.com/mcp' },
+  linear:    { name: 'Linear',              reg: 'app.linear/linear',                  url: 'https://mcp.linear.app/mcp' },
+  canva:     { name: 'Canva',               reg: 'com.canva.mcp/mcp',                  url: 'https://mcp.canva.com/mcp' },
+  atlassian: { name: 'Jira and Confluence', reg: 'com.atlassian/atlassian-mcp-server', url: 'https://mcp.atlassian.com/v1/mcp' },
+  sentry:    { name: 'Sentry',              reg: 'io.github.getsentry/sentry-mcp',     url: 'https://mcp.sentry.dev/mcp' },
+  stripe:    { name: 'Stripe',              reg: 'com.stripe/mcp',                     url: 'https://mcp.stripe.com' },
+  paypal:    { name: 'PayPal',              reg: 'com.paypal.mcp/mcp',                 url: 'https://mcp.paypal.com/mcp' },
+  webflow:   { name: 'Webflow',             reg: 'com.webflow/mcp',                    url: 'https://mcp.webflow.com/mcp' },
+  wix:       { name: 'Wix',                 reg: 'com.wix/mcp',                        url: 'https://mcp.wix.com/mcp' },
+  monday:    { name: 'Monday.com',          reg: 'com.monday/monday.com',              url: 'https://mcp.monday.com/mcp' },
+  figma:     { name: 'Figma',               reg: 'com.figma.mcp/mcp',                  url: 'https://mcp.figma.com/mcp' },
+  zapier:    { name: 'Zapier',              reg: 'com.zapier/mcp',                     url: 'https://mcp.zapier.com/api/v1/connect' },
+  vercel:    { name: 'Vercel',              reg: 'com.vercel/vercel-mcp',              url: 'https://mcp.vercel.com' },
+  airtable:  { name: 'Airtable',            reg: 'com.airtable/mcp',                   url: 'https://mcp.airtable.com/mcp' },
+  gitlab:    { name: 'GitLab',              reg: 'com.gitlab/mcp',                     url: 'https://gitlab.com/api/v4/mcp' },
+  supabase:  { name: 'Supabase',            reg: 'com.supabase/mcp',                   url: 'https://mcp.supabase.com/mcp' },
+  postman:   { name: 'Postman',             reg: 'com.postman/postman-mcp-server',     url: 'https://mcp.postman.com/mcp' },
+  close:     { name: 'Close',               reg: 'com.close/close-mcp',                url: 'https://mcp.close.com/mcp' },
+};
+const RMCP_KV = 'rmcp';                     // rmcp:<email> -> { [slug]: { sealed, at, lastUsed, broken } }
+const RMCP_STATE_TTL_MS = 5 * 60 * 1000;
+const RMCP_PROTOCOL = '2025-06-18';
+const RMCP_MAX_BYTES = 400000;              // one reply from an app, however chatty
+const RMCP_MAX_TOOLS = 100;
+const RMCP_MAX_OUT = 60000;                 // characters of a tool's result handed back
+
+/* An endpoint an app's own metadata named: https, a public host, no userinfo.
+   Anything else is refused rather than fetched. */
+function _rmcpSafeUrl(u){
+  try {
+    const x = new URL(String(u || ''));
+    if (x.protocol !== 'https:' || x.username || x.password) return '';
+    return _webHostAllowed(x.toString()).ok ? x.toString() : '';
+  } catch (e) { return ''; }
+}
+/* A bounded read. An app that streams forever gets RMCP_MAX_BYTES, not the
+   Worker's memory. */
+async function _rmcpText(res, cap){
+  const reader = res && res.body && res.body.getReader ? res.body.getReader() : null;
+  if (!reader) { try { return String(await res.text()).slice(0, cap); } catch (e) { return ''; } }
+  const dec = new TextDecoder(); let out = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    out += dec.decode(value, { stream: true });
+    if (out.length > cap) { try { reader.cancel(); } catch (e) {} break; }
+  }
+  return out.slice(0, cap);
+}
+async function _rmcpGetJSON(url){
+  const u = _rmcpSafeUrl(url); if (!u) return null;
+  try {
+    const g = await fetchGuarded(u, { headers: { Accept: 'application/json', 'MCP-Protocol-Version': RMCP_PROTOCOL } }, 10000);
+    if (g.blocked || !g.response.ok) return null;
+    return JSON.parse(await _rmcpText(g.response, 200000));
+  } catch (e) { return null; }
+}
+/* RFC 8414 and 9728 put the well-known segment between the host and the path;
+   older servers only answer at the root. Both, in that order. */
+function _rmcpWellKnown(base, name){
+  const u = new URL(base);
+  const path = u.pathname.replace(/\/+$/, '');
+  return path ? [u.origin + '/.well-known/' + name + path, u.origin + '/.well-known/' + name]
+              : [u.origin + '/.well-known/' + name];
+}
+
+/* HOW TO SIGN IN TO THIS APP, ASKED OF THE APP.
+
+   The resource says where its authorization server is (a 401 naming its
+   metadata, or the well-known document); the authorization server says where
+   to authorize, exchange and register. If an app publishes none of that, the
+   older spec's defaults at its origin are tried - and if those are not real,
+   registration fails and the person is told so, rather than sent to a page
+   that 404s. */
+async function _rmcpDiscover(app){
+  let prm = null;
+  try {
+    const g = await fetchGuarded(app.url, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': RMCP_PROTOCOL },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: RMCP_PROTOCOL, capabilities: {}, clientInfo: { name: 'AMV', version: '1.0' } } }) }, 10000);
+    if (!g.blocked) {
+      const h = g.response.headers.get('www-authenticate') || '';
+      const m = h.match(/resource_metadata="([^"]+)"/i);
+      try { g.response.body && g.response.body.cancel(); } catch (e) {}
+      if (m) prm = await _rmcpGetJSON(new URL(m[1], app.url).toString());
+    }
+  } catch (e) {}
+  if (!prm) for (const w of _rmcpWellKnown(app.url, 'oauth-protected-resource')) { prm = await _rmcpGetJSON(w); if (prm) break; }
+  const issuer = _rmcpSafeUrl(prm && Array.isArray(prm.authorization_servers) && prm.authorization_servers[0]) || new URL(app.url).origin;
+  let as = null;
+  for (const w of [..._rmcpWellKnown(issuer, 'oauth-authorization-server'), ..._rmcpWellKnown(issuer, 'openid-configuration')]) {
+    const d = await _rmcpGetJSON(w);
+    if (d && d.authorization_endpoint && d.token_endpoint) { as = d; break; }
+  }
+  if (!as) { const o = new URL(issuer).origin; as = { authorization_endpoint: o + '/authorize', token_endpoint: o + '/token', registration_endpoint: o + '/register' }; }
+  /* PKCE with S256 is required of every MCP sign-in. An app that says it
+     supports something else and not that is one AMV will not half-trust. */
+  if (Array.isArray(as.code_challenge_methods_supported) && as.code_challenge_methods_supported.length
+      && !as.code_challenge_methods_supported.includes('S256')) throw new Error('no_s256');
+  /* The resource named in the token request is the connector itself. The app's
+     own statement of it is used only when it is the same origin - a document
+     that names a different resource is asking AMV to mint a token for it. */
+  let resource = app.url;
+  const said = _rmcpSafeUrl(prm && prm.resource);
+  if (said) { try { if (new URL(said).origin === new URL(app.url).origin) resource = said; } catch (e) {} }
+  const meta = {
+    authorize: _rmcpSafeUrl(as.authorization_endpoint), token: _rmcpSafeUrl(as.token_endpoint),
+    register: _rmcpSafeUrl(as.registration_endpoint || ''), revoke: _rmcpSafeUrl(as.revocation_endpoint || ''),
+    resource,
+    scopes: (prm && Array.isArray(prm.scopes_supported)) ? prm.scopes_supported.map(String).filter(s => /^[\x21-\x7e]{1,80}$/.test(s)).slice(0, 20) : [],
+  };
+  if (!meta.authorize || !meta.token) throw new Error('no_auth_server');
+  return meta;
+}
+
+/* AMV, REGISTERED WITH THE APP, ONCE PER RETURN ADDRESS.
+
+   Kept per deployment rather than per person: the registration describes AMV,
+   not anybody's account, and registering again for every sign-in would leave
+   thousands of identical clients in each app's list. Sealed, because some apps
+   issue a client secret. */
+async function _rmcpClient(env, slug, meta, redirect){
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(redirect + '|' + meta.register));
+  const key = slug + '|' + [...new Uint8Array(d)].slice(0, 8).map(b => b.toString(16).padStart(2, '0')).join('');
+  const cached = await DB.get(env, 'rmcpcli', key);
+  if (cached && cached.sealed) { try { return await connOpen(env, cached.sealed); } catch (e) {} }
+  if (!meta.register) throw new Error('no_registration');
+  const g = await fetchGuarded(meta.register, { method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ client_name: 'AMV', redirect_uris: [redirect], grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'], token_endpoint_auth_method: 'none' }) }, 15000);
+  if (g.blocked) throw new Error('registration_blocked');
+  let r = {}; try { r = JSON.parse(await _rmcpText(g.response, 50000)); } catch (e) {}
+  if (!g.response.ok || !r.client_id) throw new Error('registration_refused');
+  const cli = { id: String(r.client_id).slice(0, 300), secret: r.client_secret ? String(r.client_secret).slice(0, 500) : '',
+                auth: String(r.token_endpoint_auth_method || (r.client_secret ? 'client_secret_post' : 'none')) };
+  await DB.put(env, 'rmcpcli', key, { sealed: await connSeal(env, cli), at: Date.now() });
+  return cli;
+}
+
+/* The token endpoint, for both the first exchange and every refresh. */
+async function _rmcpToken(meta, cli, params){
+  const body = new URLSearchParams(Object.assign({ client_id: cli.id }, params));
+  const headers = { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' };
+  if (cli.secret) {
+    if (cli.auth === 'client_secret_basic') headers.Authorization = 'Basic ' + btoa(encodeURIComponent(cli.id) + ':' + encodeURIComponent(cli.secret));
+    else body.set('client_secret', cli.secret);
+  }
+  let g;
+  try { g = await fetchGuarded(meta.token, { method: 'POST', headers, body: body.toString() }, 15000); }
+  catch (e) { return { ok: false, why: 'unreachable' }; }
+  if (g.blocked) return { ok: false, why: 'blocked' };
+  let d = {}; try { d = JSON.parse(await _rmcpText(g.response, 100000)); } catch (e) {}
+  if (!g.response.ok || !d.access_token) return { ok: false, why: String(d.error || ('http_' + g.response.status)).slice(0, 80) };
+  return { ok: true, access: String(d.access_token), refresh: d.refresh_token ? String(d.refresh_token) : '',
+           exp: Date.now() + (Number(d.expires_in) || 3600) * 1000 };
+}
+
+/* A usable token for this person and app, refreshed when it is about to lapse.
+   A refresh the app refuses marks the connection broken, so the page can say
+   "reconnect" instead of failing every call with no reason given. */
+async function _rmcpAccess(env, email, slug){
+  const all = (await DB.get(env, RMCP_KV, email)) || {};
+  const c = all[slug];
+  if (!c) return { error: 'not_connected' };
+  let tok; try { tok = await connOpen(env, c.sealed); } catch (e) { return { error: 'reconnect' }; }
+  if (tok.exp > Date.now() + 60000) return { tok };
+  const r = tok.refresh ? await _rmcpToken(tok.meta, tok.cli, { grant_type: 'refresh_token', refresh_token: tok.refresh, resource: tok.meta.resource }) : { ok: false };
+  if (!r.ok) { await _rmcpMarkBroken(env, email, slug); return { error: 'reconnect' }; }
+  tok = Object.assign({}, tok, { access: r.access, refresh: r.refresh || tok.refresh, exp: r.exp });
+  const sealed = await connSeal(env, tok);
+  await _withKind(env, RMCP_KV, email, (rec) => { if (rec && rec[slug]) { rec[slug].sealed = sealed; rec[slug].broken = false; } }, {});
+  return { tok };
+}
+async function _rmcpMarkBroken(env, email, slug){
+  try { await _withKind(env, RMCP_KV, email, (rec) => { if (rec && rec[slug]) rec[slug].broken = true; }, {}); } catch (e) {}
+}
+
+/* ONE JSON-RPC MESSAGE TO AN APP'S CONNECTOR, over streamable HTTP.
+
+   The reply may be plain JSON or an event stream; a stream is read only until
+   the reply with this id arrives, because a server may keep it open for other
+   messages and waiting for it to close would wait for the timeout. */
+async function _rmcpRpc(url, token, sid, msg){
+  const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
+                    'MCP-Protocol-Version': RMCP_PROTOCOL, Authorization: 'Bearer ' + token };
+  if (sid) headers['Mcp-Session-Id'] = sid;
+  const g = await fetchGuarded(url, { method: 'POST', headers, body: JSON.stringify(msg) }, 30000);
+  if (g.blocked) throw Object.assign(new Error('blocked'), { code: 'blocked' });
+  const res = g.response;
+  if (res.status === 401 || res.status === 403) { try { res.body && res.body.cancel(); } catch (e) {} throw Object.assign(new Error('unauthorized'), { code: 'unauthorized' }); }
+  const nsid = res.headers.get('mcp-session-id') || sid || '';
+  if (msg.id == null) { try { res.body && res.body.cancel(); } catch (e) {} return { sid: nsid, result: null }; }
+  if (!res.ok) { try { res.body && res.body.cancel(); } catch (e) {} throw Object.assign(new Error('http_' + res.status), { code: 'http' }); }
+  let reply = null;
+  if (/text\/event-stream/i.test(res.headers.get('content-type') || '') && res.body && res.body.getReader) {
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = '', seen = 0;
+    while (!reply) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = dec.decode(value, { stream: true });
+      seen += chunk.length; buf += chunk;
+      if (seen > RMCP_MAX_BYTES) break;
+      let cut;
+      while ((cut = buf.search(/\r?\n\r?\n/)) >= 0) {
+        const block = buf.slice(0, cut); buf = buf.slice(cut).replace(/^\r?\n\r?\n/, '');
+        const data = block.split(/\r?\n/).filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('\n');
+        if (!data) continue;
+        try { const m = JSON.parse(data); if (m && m.id === msg.id) { reply = m; break; } } catch (e) {}
+      }
+    }
+    try { reader.cancel(); } catch (e) {}
+  } else {
+    try { const m = JSON.parse(await _rmcpText(res, RMCP_MAX_BYTES)); reply = Array.isArray(m) ? m.find(x => x && x.id === msg.id) : m; } catch (e) {}
+  }
+  if (!reply) throw Object.assign(new Error('no_reply'), { code: 'no_reply' });
+  if (reply.error) throw Object.assign(new Error(String((reply.error && reply.error.message) || 'error').slice(0, 200)), { code: 'rpc' });
+  return { sid: nsid, result: reply.result };
+}
+async function _rmcpSession(url, token){
+  const init = await _rmcpRpc(url, token, '', { jsonrpc: '2.0', id: 1, method: 'initialize',
+    params: { protocolVersion: RMCP_PROTOCOL, capabilities: {}, clientInfo: { name: 'AMV', version: '1.0' } } });
+  try { await _rmcpRpc(url, token, init.sid, { jsonrpc: '2.0', method: 'notifications/initialized' }); } catch (e) {}
+  return init.sid;
+}
+
+/* What went wrong with an app, in words a person can act on. */
+function _rmcpFail(app, e){
+  const code = (e && e.code) || '';
+  if (code === 'unauthorized') return json({ error: 'reconnect', message: app.name + ' no longer accepts AMV’s sign-in. Reconnect it in Integrations.' }, 401);
+  return json({ error: 'app_error', message: app.name + '’s connector did not answer properly' + (e && e.message ? ' (' + String(e.message).slice(0, 80) + ')' : '') + '. Nothing was changed; try again in a moment.' }, 502);
+}
+
+async function remoteList(request, env){
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const all = (await DB.get(env, RMCP_KV, user.email)) || {};
+  return json({ ok: true, configured: connConfigured(env),
+    apps: Object.keys(REMOTE_APPS).map(slug => ({ slug, name: REMOTE_APPS[slug].name, connected: !!all[slug],
+      broken: !!(all[slug] && all[slug].broken), at: (all[slug] && all[slug].at) || 0, lastUsed: (all[slug] && all[slug].lastUsed) || 0 })) });
+}
+
+async function remoteStart(request, env){
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  if (!connConfigured(env))
+    return json({ error: 'not_configured', code: 'connect_key_missing',
+      message: 'Connecting apps is not set up on this deployment. The CONNECT_KEY secret has to exist first, because without it a sign-in would be stored unencrypted.' }, 503);
+  const blocked = await guardAction(env, 'rmcpstart:' + user.email, 10, 100, 'app connections');
+  if (blocked) return blocked;
+  const body = await request.json().catch(() => ({}));
+  const slug = String(body.app || '');
+  const app = Object.prototype.hasOwnProperty.call(REMOTE_APPS, slug) ? REMOTE_APPS[slug] : null;
+  if (!app) return json({ error: 'unknown_app' }, 400);
+  const back = _connReturnAddress(env, body);
+  if (back.error) return back.error;
+  const redirect = back.redirect;
+
+  let meta, cli;
+  try { meta = await _rmcpDiscover(app); }
+  catch (e) {
+    audit(env, 'rmcp_discover_failed', { by: user.email, app: slug, why: String((e && e.message) || '').slice(0, 40) });
+    return json({ error: 'app_unreachable', message: app.name + ' did not say how to sign in to its connector just now, so AMV could not start. Nothing was changed. Try again in a moment.' }, 502);
+  }
+  try { cli = await _rmcpClient(env, slug, meta, redirect); }
+  catch (e) {
+    audit(env, 'rmcp_register_failed', { by: user.email, app: slug, why: String((e && e.message) || '').slice(0, 40) });
+    return json({ error: 'app_refused', message: app.name + ' did not accept AMV as a connecting app. Some apps only allow ones they have approved in advance. Nothing was changed.' }, 502);
+  }
+  const state = 'r_' + _connRandom(24);
+  const verifier = _connRandom(48);
+  const challenge = await _pkceChallenge(verifier);
+  await DB.put(env, 'rmcpstate', state, {
+    sealed: await connSeal(env, { verifier, email: user.email, slug, redirect, meta, cli }),
+    exp: Date.now() + RMCP_STATE_TTL_MS,
+  });
+  const q = new URLSearchParams({ response_type: 'code', client_id: cli.id, redirect_uri: redirect, state,
+    code_challenge: challenge, code_challenge_method: 'S256', resource: meta.resource });
+  if (meta.scopes.length) q.set('scope', meta.scopes.join(' '));
+  audit(env, 'rmcp_start', { by: user.email, app: slug });
+  return json({ ok: true, url: meta.authorize + (meta.authorize.includes('?') ? '&' : '?') + q.toString(), app: slug, name: app.name });
+}
+
+async function remoteFinish(request, env){
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  if (!connConfigured(env)) return json({ error: 'not_configured' }, 503);
+  const blocked = await guardAction(env, 'rmcpfin:' + user.email, 10, 100, 'app connections');
+  if (blocked) return blocked;
+  const body = await request.json().catch(() => ({}));
+  const state = String(body.state || ''), code = String(body.code || '');
+  if (!state || !code) return json({ error: 'missing_code_or_state' }, 400);
+  const rec = await DB.get(env, 'rmcpstate', state);
+  /* Single use whatever happens next, like Connected accounts. */
+  await DB.del(env, 'rmcpstate', state);
+  if (!rec) return json({ error: 'unknown_state', message: 'That connection attempt is not one AMV started, or it has already been used.' }, 400);
+  if (!rec.exp || rec.exp < Date.now()) return json({ error: 'expired_state', message: 'That took too long. Start the connection again.' }, 400);
+  let st; try { st = await connOpen(env, rec.sealed); } catch (e) { return json({ error: 'state_unreadable' }, 400); }
+  if (st.email !== user.email) { audit(env, 'rmcp_state_mismatch', { by: user.email }); return json({ error: 'state_mismatch' }, 400); }
+  const app = REMOTE_APPS[st.slug];
+  if (!app) return json({ error: 'unknown_app' }, 400);
+  const t = await _rmcpToken(st.meta, st.cli, { grant_type: 'authorization_code', code, redirect_uri: st.redirect,
+    code_verifier: st.verifier, resource: st.meta.resource });
+  if (!t.ok) {
+    audit(env, 'rmcp_exchange_failed', { by: user.email, app: st.slug, why: t.why });
+    return json({ error: 'exchange_failed', app: st.slug, why: t.why,
+      message: app.name + ' did not complete the sign-in (' + t.why + '). Nothing was connected.' }, 400);
+  }
+  const sealed = await connSeal(env, { access: t.access, refresh: t.refresh, exp: t.exp, meta: st.meta, cli: st.cli });
+  await _withKind(env, RMCP_KV, user.email, (r) => { r[st.slug] = { sealed, at: Date.now(), lastUsed: 0, broken: false }; }, {});
+  audit(env, 'rmcp_added', { by: user.email, app: st.slug, refresh: !!t.refresh });
+  return json({ ok: true, app: st.slug, name: app.name });
+}
+
+async function remoteRemove(request, env){
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const blocked = await guardAction(env, 'rmcprm:' + user.email, 20, 200, 'disconnections');
+  if (blocked) return blocked;
+  const body = await request.json().catch(() => ({}));
+  const slug = String(body.app || '');
+  const all = (await DB.get(env, RMCP_KV, user.email)) || {};
+  const c = all[slug];
+  if (!c) return json({ error: 'not_found' }, 404);
+  const name = (REMOTE_APPS[slug] || {}).name || slug;
+  const revoked = await _rmcpRevoke(env, c);
+  /* Forgotten either way, for the reason connRemove gives: keeping a token AMV
+     could not revoke is holding a credential somebody asked it to let go of. */
+  await _withKind(env, RMCP_KV, user.email, (r) => { if (r) delete r[slug]; }, {});
+  audit(env, 'rmcp_removed', { by: user.email, app: slug, revoked });
+  return json({ ok: true, revoked, message: revoked
+    ? 'Disconnected, and ' + name + ' confirmed the sign-in was revoked.'
+    : 'AMV forgot this connection and can no longer use it. ' + name + ' did not confirm it was revoked - remove AMV from the connected apps in your ' + name + ' account to be certain.' });
+}
+async function _rmcpRevoke(env, c){
+  try {
+    const tok = await connOpen(env, c.sealed);
+    if (!tok.meta || !tok.meta.revoke) return false;
+    const body = new URLSearchParams({ token: tok.refresh || tok.access, client_id: tok.cli.id });
+    if (tok.cli.secret) body.set('client_secret', tok.cli.secret);
+    const g = await fetchGuarded(tok.meta.revoke, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() }, 15000);
+    return !g.blocked && g.response.ok;
+  } catch (e) { return false; }
+}
+
+async function remoteTools(request, env){
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const blocked = await guardAction(env, 'rmcptools:' + user.email, 30, 1000, 'app connector listings');
+  if (blocked) return blocked;
+  const body = await request.json().catch(() => ({}));
+  const slug = String(body.app || '');
+  const app = Object.prototype.hasOwnProperty.call(REMOTE_APPS, slug) ? REMOTE_APPS[slug] : null;
+  if (!app) return json({ error: 'unknown_app' }, 400);
+  const a = await _rmcpAccess(env, user.email, slug);
+  if (a.error === 'not_connected') return json({ error: 'not_connected' }, 404);
+  if (a.error) return json({ error: 'reconnect', message: app.name + ' needs signing in again. Reconnect it in Integrations.' }, 401);
+  const tools = [];
+  try {
+    const sid = await _rmcpSession(app.url, a.tok.access);
+    let cursor = '';
+    for (let page = 0; page < 5 && tools.length < RMCP_MAX_TOOLS; page++) {
+      const r = await _rmcpRpc(app.url, a.tok.access, sid, { jsonrpc: '2.0', id: 2 + page, method: 'tools/list', params: cursor ? { cursor } : {} });
+      for (const t of ((r.result && r.result.tools) || [])) if (t && t.name != null) tools.push(t);
+      cursor = (r.result && r.result.nextCursor) || '';
+      if (!cursor) break;
+    }
+  } catch (e) {
+    if (e && e.code === 'unauthorized') await _rmcpMarkBroken(env, user.email, slug);
+    return _rmcpFail(app, e);
+  }
+  /* Bounded like any other connector's list: a name, a description and a
+     schema, each capped, and a schema too large to be a schema dropped for an
+     empty one rather than passed on to the model. */
+  const out = tools.slice(0, RMCP_MAX_TOOLS).map(t => {
+    let schema = (t.inputSchema && typeof t.inputSchema === 'object') ? t.inputSchema : { type: 'object', properties: {} };
+    try { if (JSON.stringify(schema).length > 20000) schema = { type: 'object', properties: {} }; } catch (e) { schema = { type: 'object', properties: {} }; }
+    return { name: String(t.name).slice(0, 120), description: String(t.description || '').slice(0, 1000), inputSchema: schema };
+  });
+  return json({ ok: true, app: slug, name: app.name, tools: out });
+}
+
+async function remoteCall(request, env){
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const blocked = await guardAction(env, 'rmcpcall:' + user.email, 60, 2000, 'app connector actions');
+  if (blocked) return blocked;
+  const body = await request.json().catch(() => ({}));
+  const slug = String(body.app || '');
+  const app = Object.prototype.hasOwnProperty.call(REMOTE_APPS, slug) ? REMOTE_APPS[slug] : null;
+  if (!app) return json({ error: 'unknown_app' }, 400);
+  const tool = String(body.tool || '');
+  if (!tool || tool.length > 120) return json({ error: 'bad_tool' }, 400);
+  const args = (body.args && typeof body.args === 'object' && !Array.isArray(body.args)) ? body.args : {};
+  if (JSON.stringify(args).length > 50000) return json({ error: 'args_too_large' }, 413);
+  const a = await _rmcpAccess(env, user.email, slug);
+  if (a.error === 'not_connected') return json({ error: 'not_connected' }, 404);
+  if (a.error) return json({ error: 'reconnect', message: app.name + ' needs signing in again. Reconnect it in Integrations.' }, 401);
+  let r;
+  try {
+    const sid = await _rmcpSession(app.url, a.tok.access);
+    r = await _rmcpRpc(app.url, a.tok.access, sid, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: tool, arguments: args } });
+  } catch (e) {
+    if (e && e.code === 'unauthorized') await _rmcpMarkBroken(env, user.email, slug);
+    return _rmcpFail(app, e);
+  }
+  try { await _withKind(env, RMCP_KV, user.email, (rec) => { if (rec && rec[slug]) rec[slug].lastUsed = Date.now(); }, {}); } catch (e) {}
+  /* The app and the tool are recorded; the arguments are not - they are
+     somebody's documents and messages, and an audit log is not where those go. */
+  audit(env, 'rmcp_call', { by: user.email, app: slug, tool: tool.slice(0, 80) });
+  const res = r.result || {};
+  let left = RMCP_MAX_OUT;
+  const content = (Array.isArray(res.content) ? res.content : []).slice(0, 50).map(c => {
+    if (c && c.type === 'text') { const t = String(c.text || '').slice(0, Math.max(0, left)); left -= t.length; return { type: 'text', text: t }; }
+    return { type: String((c && c.type) || 'content').slice(0, 30) };
+  });
+  return json({ ok: true, isError: !!res.isError, content });
 }
 
 const CREW_POPULAR_MIN = 25;      // total jobs created before any ranking is shown
@@ -10611,6 +11081,12 @@ const BACKUP_NEVER = [
      handshake that was either already spent or long expired, which is at best
      meaningless and at worst a replay somebody has kept a copy of. */
   'connstate:',
+  /* App connectors (Notion, Canva and the rest): the per-person sealed
+     sign-in, the five-minute handshake, and AMV's registration with each app.
+     Excluded for the reasons Connected accounts are - a backup restored onto
+     another deployment must not bring live grants with it, and a registration
+     re-creates itself on the next sign-in. */
+  'rmcp:', 'rmcpstate:', 'rmcpcli:',
   /* A school access token, for the same reason as the bank link above it: a
      backup is a file somebody downloads, and one leaked export should not hand
      over a student's school account. A restore leaves Canvas unlinked, which is
@@ -12141,6 +12617,12 @@ async function _route(request, env, ctx) {
     case '/v1/connect/list':   return connList(request, env);
     case '/v1/connect/act':    return connAct(request, env);
     case '/v1/connect/remove': return connRemove(request, env);
+    case '/v1/remote/list':    return remoteList(request, env);
+    case '/v1/remote/start':   return remoteStart(request, env);
+    case '/v1/remote/finish':  return remoteFinish(request, env);
+    case '/v1/remote/remove':  return remoteRemove(request, env);
+    case '/v1/remote/tools':   return remoteTools(request, env);
+    case '/v1/remote/call':    return remoteCall(request, env);
     case '/auto/update':     return autoUpdate(request, env);
     case '/auto/read':       return autoClearResults(request, env);
     case '/auto/pause':      return autoPause(request, env);
@@ -13236,6 +13718,9 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
      unattended mailbox grant behind would be the most serious version of this
      mistake the product could make. */
   'conn',
+  /* App connector sign-ins, for the same reason as `conn` above them: tokens
+     AMV holds against somebody's Notion or Stripe must not outlive the account. */
+  'rmcp',
   /* Support tickets are keyed by the reporter's email precisely so they land
      here: a support inbox is one of the easiest places for somebody's words
      about their own account to outlive them. Erased with the account, and in
@@ -13266,7 +13751,8 @@ const EXPORT_REDACTED = { fin: 'bank connection credential', finlink: 'bank link
      the key leaks, and the useful disclosure - that these grants exist, to
      whom, with what permission - is what the connections screen already shows
      in words a person can act on. */
-  conn: 'connected account tokens (see Connected accounts to review or disconnect them)' };
+  conn: 'connected account tokens (see Connected accounts to review or disconnect them)',
+  rmcp: 'app connector sign-ins (see Integrations to review or disconnect them)' };
 
 /* GET /v1/account/export - everything the server holds about the caller.
 
@@ -13927,6 +14413,15 @@ async function authDeleteAccount(request, env) {
       }
     }
   } catch { _eraseFailed('connected accounts'); }
+  /* The same for app connectors: revoked at each app first where it offers a
+     way to, then the record goes with the rest of PER_USER_KINDS. */
+  try {
+    const apps = (await DB.get(env, RMCP_KV, email)) || {};
+    for (const slug of Object.keys(apps)) {
+      const ok = await _rmcpRevoke(env, apps[slug]);
+      audit(env, ok ? 'rmcp_revoked_on_erasure' : 'rmcp_unrevoked_on_erasure', { by: email, app: slug });
+    }
+  } catch { _eraseFailed('app connectors'); }
 
   /* Links this account is part of, in BOTH directions. A link lives under each
      side's own row, so deleting only this one would leave the other party

@@ -3048,6 +3048,7 @@ function _renderSetPaneInner(only, into){
     }
     _wireIntegrationCatalog(pane);
     _killTokenAutofill();
+    try{ if(typeof _rmcpLoad==='function') setTimeout(()=>{ _rmcpLoad(false).then(ch=>{ if(ch) _paintIntegrations(); }); }, 0); }catch(e){}
     if(!only){ _setAppendSection(pane, 'skills', null, 'Skills'); _setAppendSection(pane, 'api', null, 'API keys'); }
   } else if(sp==='skills'){
     _renderSkillsPane(pane);
@@ -4267,7 +4268,10 @@ function checkOAuthCallback(){
   const state = q.get('state') || '';
   /* Not ours: leave the address bar exactly as it is. Stripping a return this
      handler does not own would destroy the only copy of somebody else's code. */
-  if(state.indexOf('c_') !== 0) return;
+  /* `c_` is Connected accounts, `r_` an app connector (Notion, Canva...).
+     Anything else is not ours to touch. */
+  const isApp = state.indexOf('r_') === 0;
+  if(state.indexOf('c_') !== 0 && !isApp) return;
 
   const clear = () => {
     try{ history.replaceState(null, '', window.location.pathname); }catch(e){}
@@ -4287,7 +4291,9 @@ function checkOAuthCallback(){
   const code = q.get('code');
   if(!code) return;
   clear();
-  if(typeof _connectFinish === 'function'){ _connectFinish(code, state); return; }
+  if(isApp){
+    if(typeof _rmcpFinish === 'function'){ _rmcpFinish(code, state); return; }
+  } else if(typeof _connectFinish === 'function'){ _connectFinish(code, state); return; }
   /* Said out loud rather than swallowed. Somebody has just approved real
      access at a provider; a silent return leaves them believing it worked. */
   toast('AMV could not finish connecting that account. Try again from Settings.', 'error', 8000);
