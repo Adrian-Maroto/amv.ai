@@ -28,7 +28,11 @@ section('The page itself carries no translations');
 {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   const es = JSON.parse(readFileSync(join(ROOT, 'i18n', 'es.json'), 'utf8'));
-  const samples = ['Clear chats', 'Recurring work', 'Marketplace'].map(k => es[k]).filter(Boolean);
+  /* Phrases that can only be a translation. "Marketplace" was a sample until
+     the page listed Mercado Libre and Mercado Pago by name - "Mercado" is a
+     brand as well as the Spanish, and a brand in English copy is not a
+     dictionary shipped by mistake. */
+  const samples = ['Clear chats', 'Recurring work', 'Sign out'].map(k => es[k]).filter(Boolean);
   ok(samples.length === 3, 'the Spanish pack has the words this checks for', samples);
   ok(samples.every(w => !html.includes(w)), 'and none of them is in the page a visitor downloads', samples);
 }
