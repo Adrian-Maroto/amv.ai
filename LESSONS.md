@@ -13573,3 +13573,22 @@ always fails is how the suite proves the claim is checked. And a killed process
 inside the fence is a grandchild; in a container whose pid 1 never reaps, it
 lingers as a zombie, and `kill(pid, 0)` calls a zombie alive. Measure a process
 by its state, not by whether its number still answers.
+
+## 518. A fence with a side door, and the check that only asked whether it started
+
+Round thirty-six hid the key stores from commands and was measured doing it.
+The bridge's own file routes were not inside it - they run in the bridge's
+process - and they checked a path and then used the path again. One command
+flipping a link between the check and the use read `~/.ssh` through the route
+the fence did not cover. The finding had been on the books as "a race path
+checks cannot stop", filed as a theoretical nicety; measured, it was one read
+in nine. A boundary is only as strong as the unguarded way around it, so the
+question for any fence is not "does it hold" but "what else reaches the same
+place".
+
+The fix is the one the kernel offers: act on what you proved, not on the name
+again. On Linux a held descriptor has a name, `/proc/self/fd/N`, that nothing
+can swap. And the fence's own startup check had the same shape of mistake - it
+asked whether bubblewrap STARTED, and a bubblewrap that starts and hides nothing
+passed. It now proves a canary is hidden and a control is not. A check has to
+ask the question the claim is about.

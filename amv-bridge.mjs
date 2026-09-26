@@ -59,11 +59,13 @@
 
 import { createServer } from 'http';
 import { spawn, spawnSync } from 'child_process';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { realpathSync, existsSync, statSync, lstatSync, readlinkSync, readFileSync, writeFileSync,
-         mkdirSync, readdirSync, unlinkSync, renameSync, chmodSync } from 'fs';
+         mkdirSync, readdirSync, unlinkSync, renameSync, chmodSync, openSync, closeSync, fstatSync,
+         mkdtempSync, rmSync, constants as FS } from 'fs';
 import { resolve, join, dirname, relative, sep, basename } from 'path';
 import { randomBytes, timingSafeEqual } from 'crypto';
+import { fileURLToPath } from 'url';
 
 const VERSION = '1.0.0';
 
@@ -129,23 +131,50 @@ function childEnv(extra) {
    rustup) keep working - hiding all of home was the stronger-looking choice
    and would have broken most developers' first command.
 
-   It is CHECKED, not assumed: the bridge starts the fence once at startup and
-   uses it only if that worked. Otherwise - another system, no bubblewrap, or a
+   It is CHECKED, not assumed: at startup the bridge runs the fence over a
+   canary - a file it must hide - and a control it must not, and uses the fence
+   only if the canary came back hidden and the control came back whole. A
+   fence that starts and hides nothing is not a fence. Otherwise - another system, no bubblewrap, or a
    machine that refuses it - commands run unfenced and the banner, /hello and
    AMV's screen say so in those words. `--no-fence` lifts it on purpose, for
    the person who wants AMV to push with their key.
 
-   What it does NOT cover: connectors, which are programs the person chose and
-   configured (their credentials are handed over on purpose), and macOS or
-   Windows, where no fence exists that this can start and verify. The bridge's
-   own file routes refuse these paths on every system, which matters when the
-   folder it was started in is home itself. */
+   Connectors run inside it too. A connector is a program somebody else wrote,
+   so it gets the credentials typed in for it (its environment box) and not
+   the ones in the person's home. One boundary for everything the bridge
+   starts: a per-connector exception would be a switch a steered request could
+   ask somebody to flip.
+
+   macOS: the whole bridge runs inside the system sandbox (sandbox-exec) with a
+   profile that denies the same places. The bridge re-starts itself under it,
+   so its own file routes, every command and every connector are all inside -
+   and because the rules are by path, a login created after the bridge started
+   is covered too. Same canary rule: the bridge inside reads the canary, and
+   claims the fence only if it could not.
+
+   Windows: there is no fence a zero-dependency daemon can start and verify, so
+   none is claimed - the terminal and the card say commands can read every
+   file. The bridge's own file routes refuse these paths on every system, which
+   matters when the folder it was started in is home itself. */
+/* The system, overridable by the suites only, so the macOS path can be driven
+   on Linux with a stand-in sandbox-exec. Setting it anywhere else can only
+   select a fence that is then checked like any other. */
+const PLATFORM = process.env.AMV_BRIDGE_PLATFORM || process.platform;
+const INSIDE_FENCE = (ARGS.find(a => a.startsWith('--amv-inside-fence=')) || '').slice('--amv-inside-fence='.length);
 const NO_FENCE = ARGS.includes('--no-fence');
 const HOME_DIR = (() => { try { return realpathSync(homedir()); } catch (e) { return homedir(); } })();
 const SECRET_DIRS = ['.ssh', '.aws', '.azure', '.gnupg', '.kube', '.docker', '.password-store', '.terraform.d',
   '.config/gcloud', '.config/gh', '.config/hub', '.config/op', '.config/doctl', '.local/share/keyrings',
   '.mozilla', '.thunderbird', '.config/google-chrome', '.config/chromium', '.config/BraveSoftware',
-  '.config/microsoft-edge', '.config/Code/User/globalStorage'];
+  '.config/microsoft-edge', '.config/Code/User/globalStorage',
+  /* macOS */
+  'Library/Keychains', 'Library/Cookies', 'Library/Application Support/Google/Chrome',
+  'Library/Application Support/Firefox', 'Library/Application Support/BraveSoftware',
+  'Library/Application Support/Microsoft Edge', 'Library/Application Support/Arc',
+  /* Windows - only the file routes can refuse these; see above */
+  'AppData/Local/Google/Chrome/User Data', 'AppData/Local/Microsoft/Edge/User Data',
+  'AppData/Roaming/Mozilla/Firefox', 'AppData/Roaming/Microsoft/Credentials',
+  'AppData/Local/Microsoft/Credentials', 'AppData/Roaming/Microsoft/Protect'];
 const SECRET_FILES = ['.netrc', '.npmrc', '.yarnrc.yml', '.pypirc', '.git-credentials', '.vault-token', '.pgpass',
   '.my.cnf', '.bash_history', '.zsh_history', '.python_history', '.psql_history', '.mysql_history',
   '.node_repl_history', '.config/git/credentials', '.cargo/credentials', '.cargo/credentials.toml',
@@ -169,24 +198,96 @@ function fenceArgs(){
   }
   return a;
 }
-function _findBwrap(){
+function _findOnPath(name){
   for (const d of String(process.env.PATH || '').split(':')) {
     if (!d) continue;
-    const p = join(d, 'bwrap');
+    const p = join(d, name);
     try { if (statSync(p).isFile()) return p; } catch (e) {}
   }
   return '';
 }
-/* on: commands are fenced. Otherwise why: off | unsupported | missing | failed. */
-const FENCE = (() => {
+/* A canary the fence must hide and a control it must not, in a fresh folder. */
+function _probe(){
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'amv-fence-')));
+  mkdirSync(join(dir, 'hidden'));
+  writeFileSync(join(dir, 'hidden', 'c'), 'AMV-FENCE-CANARY');
+  writeFileSync(join(dir, 'seen'), 'AMV-FENCE-CONTROL');
+  return { dir, hidden: join(dir, 'hidden'), seen: join(dir, 'seen'),
+           drop: () => { try { rmSync(dir, { recursive: true, force: true }); } catch (e) {} } };
+}
+/* The macOS profile: everything allowed, except the credential stores. */
+const _sbq = (p) => '"' + String(p).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+function seatbeltProfile(extraDirs){
+  const rules = [];
+  for (const rel of SECRET_DIRS) { const p = join(HOME_DIR, rel); if (!_under(ROOT, p)) rules.push('(subpath ' + _sbq(p) + ')'); }
+  for (const rel of SECRET_FILES) { const p = join(HOME_DIR, rel); if (!_under(ROOT, p)) rules.push('(literal ' + _sbq(p) + ')'); }
+  for (const p of (extraDirs || [])) rules.push('(subpath ' + _sbq(p) + ')');
+  return '(version 1)\n(allow default)\n(deny file-read* file-write*\n  ' + rules.join('\n  ') + ')\n';
+}
+
+/* on: what the bridge starts is fenced, and `mode` says how - 'bwrap' wraps
+   each command and connector (Linux), 'process' means this whole process is
+   already inside (macOS). Otherwise why: off | unsupported | missing | failed. */
+async function decideFence(){
   if (NO_FENCE) return { on: false, why: 'off' };
-  if (process.platform !== 'linux') return { on: false, why: 'unsupported' };
-  const bin = _findBwrap();
-  if (!bin) return { on: false, why: 'missing' };
-  const r = spawnSync(bin, fenceArgs().concat(['--', '/bin/sh', '-c', 'exit 0']), { timeout: 5000, stdio: 'ignore' });
-  return r.status === 0 ? { on: true, why: '', bin } : { on: false, why: 'failed' };
-})();
+
+  if (PLATFORM === 'linux') {
+    const bin = _findOnPath('bwrap');
+    if (!bin) return { on: false, why: 'missing' };
+    const pr = _probe();
+    const r = spawnSync(bin, fenceArgs().concat(['--tmpfs', pr.hidden, '--', '/bin/sh', '-c',
+      'cat "$1/c" 2>/dev/null; echo "|"; cat "$2" 2>/dev/null', 'probe', pr.hidden, pr.seen]),
+      { timeout: 5000, encoding: 'utf8' });
+    pr.drop();
+    const out = String(r.stdout || '');
+    return (r.status === 0 && !out.includes('AMV-FENCE-CANARY') && out.includes('AMV-FENCE-CONTROL'))
+      ? { on: true, why: '', mode: 'bwrap', bin } : { on: false, why: 'failed' };
+  }
+
+  if (PLATFORM === 'darwin') {
+    /* Already inside: prove it from here. */
+    if (INSIDE_FENCE) {
+      let canary = true, control = false;
+      try { readFileSync(join(INSIDE_FENCE, 'hidden', 'c')); } catch (e) { canary = false; }
+      try { control = readFileSync(join(INSIDE_FENCE, 'seen'), 'utf8') === 'AMV-FENCE-CONTROL'; } catch (e) {}
+      return (!canary && control) ? { on: true, why: '', mode: 'process' } : { on: false, why: 'failed' };
+    }
+    const bin = _findOnPath('sandbox-exec');
+    if (!bin) return { on: false, why: 'unsupported' };
+    const pr = _probe();
+    const child = spawn(bin, ['-p', seatbeltProfile([pr.hidden]), process.execPath, fileURLToPath(import.meta.url)]
+      .concat(ARGS, ['--amv-inside-fence=' + pr.dir]), { stdio: ['inherit', 'pipe', 'inherit'], env: process.env });
+    /* Ready is the inside bridge printing its banner; exiting first is a
+       fence that would not start, and this process carries on unfenced. */
+    const started = await new Promise((resolveStart) => {
+      let seen = '', settled = false;
+      const settle = (v) => { if (!settled) { settled = true; clearTimeout(t); resolveStart(v); } };
+      const t = setTimeout(() => { try { child.kill('SIGKILL'); } catch (e) {} settle(false); }, 15000);
+      child.stdout.on('data', (b) => {
+        process.stdout.write(b);
+        if (!settled) { seen += b; if (/Close this window to stop/.test(seen)) settle(true); }
+      });
+      child.on('exit', () => settle(false));
+      child.on('error', () => settle(false));
+    });
+    if (!started) { pr.drop(); return { on: false, why: 'failed' }; }
+    /* This process is now only the door to the one inside: it passes on the
+       stop signals, and ends when that one ends. Nothing below runs here. */
+    for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { try { child.kill(sig); } catch (e) {} });
+    child.on('exit', (code) => { pr.drop(); process.exit(code == null ? 0 : code); });
+    await new Promise(() => {});
+  }
+
+  return { on: false, why: 'unsupported' };
+}
+const FENCE = await decideFence();
 const fenceState = () => FENCE.on ? 'on' : FENCE.why;
+/* A command or connector, started inside the fence when there is one that
+   wraps: [program, args]. */
+function fenced(program, args, cwd){
+  if (FENCE.on && FENCE.mode === 'bwrap') return [FENCE.bin, fenceArgs().concat(['--chdir', cwd, '--', program]).concat(args)];
+  return [program, args];
+}
 
 /* Origins allowed to talk to this bridge. A pairing code stops a random page
    using it; this stops a random page even trying, and keeps the browser's
@@ -396,7 +497,9 @@ for (const sig of ['exit', 'SIGINT', 'SIGTERM']) {
 
 function mcpStart(id, command, args, envExtra){
   const shell = false;
-  const child = spawn(command, Array.isArray(args) ? args : [], {
+  /* Inside the same fence as commands - see THE FENCE. */
+  const [prog, argv] = fenced(command, Array.isArray(args) ? args : [], ROOT);
+  const child = spawn(prog, argv, {
     cwd: ROOT,
     /* The allowed environment plus the credentials typed in for THIS
        connector, and never the bridge's own - see childEnv. */
@@ -645,12 +748,68 @@ function safePath(p){
   { let base = abs, tail = '';
     while (base !== dirname(base) && !existsSync(base)) { tail = join(basename(base), tail); base = dirname(base); }
     try { real = join(realpathSync(base), tail); } catch (e) {} }
+  if (_secretHit(real)) throw _secret();
+  return abs;
+}
+
+const _secret = () => Object.assign(new Error('a credential store'), { code: 'secret_path' });
+/* Is this REAL path one of the credential stores (or inside one)? */
+function _secretHit(real){
   for (const s of secretPaths()) {
     if (_under(ROOT, s.p)) continue;
     let sp = s.p; try { sp = realpathSync(s.p); } catch (e) {}
-    if (_under(real, sp)) throw Object.assign(new Error('a credential store'), { code: 'secret_path' });
+    if (_under(real, sp)) return true;
   }
-  return abs;
+  return false;
+}
+
+/* ── CHECKED, THEN USED: THE SAME THING, NOT THE SAME NAME ────────────────
+
+   Everything above checks a PATH and the routes then used the path again. A
+   process running between the two - one command AMV started, flipping a link
+   inside the folder between a directory inside it and one outside - makes the
+   check see one place and the use reach another. Measured, not supposed: of
+   3,000 reads through such a link, 344 returned the outside file, and 163 of
+   3,000 writes landed outside. And the routes run in THIS process, which the
+   fence does not cover, so a flipped link to ~/.ssh read the key that no
+   command could.
+
+   So a route opens first and then proves what it opened. On Linux a file or
+   directory held open is named by /proc/self/fd/N, which the kernel resolves
+   to that exact object: the check reads where the handle really is, and every
+   operation after it goes through the handle, so there is no second lookup to
+   race. That is the same guarantee as openat, which Node does not offer.
+
+   Elsewhere there is no such name. The path is resolved to its real form and
+   the opened object's identity (device and inode) compared with it, and the
+   operation uses the real form - which narrows the window to somebody
+   replacing a real directory with a link between two system calls, rather
+   than closing it. Said so in docs/TRUST-AUDIT.md rather than here claimed. */
+const PROC_FD = process.platform === 'linux' && existsSync('/proc/self/fd');
+function _mustBeOurs(real){
+  if (!_under(real, ROOT)) throw _outside();
+  if (_secretHit(real)) throw _secret();
+}
+/* A directory, held: `at(name)` names an entry in exactly the directory that
+   was proved to be ours. */
+function hold(dirAbs){
+  if (PROC_FD) {
+    const fd = openSync(dirAbs, FS.O_RDONLY | FS.O_DIRECTORY);
+    try { _mustBeOurs(readlinkSync('/proc/self/fd/' + fd)); }
+    catch (e) { try { closeSync(fd); } catch (e2) {} throw e; }
+    return { at: (n) => '/proc/self/fd/' + fd + '/' + n, close: () => { try { closeSync(fd); } catch (e) {} } };
+  }
+  const real = realpathSync(dirAbs);
+  _mustBeOurs(real);
+  return { at: (n) => join(real, n), close: () => {} };
+}
+/* A file already open: where is it, really? */
+function proveOpen(fd, pathUsed){
+  if (PROC_FD) return _mustBeOurs(readlinkSync('/proc/self/fd/' + fd));
+  const real = realpathSync(pathUsed);
+  const a = fstatSync(fd), b = statSync(real);
+  if (a.dev !== b.dev || a.ino !== b.ino) throw _outside();
+  _mustBeOurs(real);
 }
 
 const json = (res, status, body) => {
@@ -804,12 +963,16 @@ const server = createServer(async (req, res) => {
     }
     if (path === '/amv-bridge/list') {
       const dir = safePath(body.path || '.');
-      const out = readdirSync(dir, { withFileTypes: true })
-        .filter(d => d.name !== '.git' && d.name !== 'node_modules')
-        .slice(0, 2000)
-        .map(d => ({ name: d.name, dir: d.isDirectory(),
-                     size: d.isFile() ? statSync(join(dir, d.name)).size : 0 }));
-      return json(res, 200, { path: relative(ROOT, dir) || '.', entries: out });
+      /* Listed through the held directory, not the name - see hold(). */
+      const h = hold(dir);
+      try {
+        const out = readdirSync(h.at('.'), { withFileTypes: true })
+          .filter(d => d.name !== '.git' && d.name !== 'node_modules')
+          .slice(0, 2000)
+          .map(d => ({ name: d.name, dir: d.isDirectory(),
+                       size: d.isFile() ? statSync(h.at(d.name)).size : 0 }));
+        return json(res, 200, { path: relative(ROOT, dir) || '.', entries: out });
+      } finally { h.close(); }
     }
 
     /* ON "not_found", WHICH THIS ROUTE DOES NOT HAVE TO SPELL OUT.
@@ -842,19 +1005,25 @@ const server = createServer(async (req, res) => {
        old ones - the shared bytes are never touched. That is also a write that
        cannot be left half-done by a crash.
 
-       These are checks on paths, made and then acted on; a process racing the
-       daemon between the two is not something path checks can stop. The
-       boundary against that is the isolated project copy AMV-AUD-001
-       describes, which is the owner's decision. */
+       A process racing the daemon between a check and its use is handled by
+       hold() and proveOpen(): the routes act on what they proved, not on the
+       name again. */
     if (path === '/amv-bridge/read') {
       const file = safePath(body.path);
-      const st = statSync(file);
-      if (!st.isFile()) return json(res, 400, { error: 'not_a_file' });
-      if (st.nlink > 1) return json(res, 403, { error: 'hard_linked',
-        message: 'That file is also reachable under another name, possibly outside the folder (a hard link), so the bridge will not read it.' });
-      if (st.size > MAX_BODY) return json(res, 413, { error: 'too_large', size: st.size });
-      return json(res, 200, { path: relative(ROOT, file), size: st.size,
-                              content: readFileSync(file, 'utf8') });
+      if (!statSync(file).isFile()) return json(res, 400, { error: 'not_a_file' });
+      /* Opened, then proved, then read from the handle - see proveOpen. Non-
+         blocking, so a pipe planted under the name cannot hang the route. */
+      const fd = openSync(file, FS.O_RDONLY | (FS.O_NONBLOCK || 0));
+      try {
+        proveOpen(fd, file);
+        const st = fstatSync(fd);
+        if (!st.isFile()) return json(res, 400, { error: 'not_a_file' });
+        if (st.nlink > 1) return json(res, 403, { error: 'hard_linked',
+          message: 'That file is also reachable under another name, possibly outside the folder (a hard link), so the bridge will not read it.' });
+        if (st.size > MAX_BODY) return json(res, 413, { error: 'too_large', size: st.size });
+        return json(res, 200, { path: relative(ROOT, file), size: st.size,
+                                content: readFileSync(fd, 'utf8') });
+      } finally { try { closeSync(fd); } catch (e) {} }
     }
 
     if (path === '/amv-bridge/write') {
@@ -874,17 +1043,24 @@ const server = createServer(async (req, res) => {
         target = resolve(dirname(target), readlinkSync(target));
       }
       if (target !== file) mkdirSync(dirname(target), { recursive: true });
-      let mode = null;
-      try { const was = statSync(target); if (was.isFile()) mode = was.mode & 0o7777; } catch (e) {}
-      const tmp = join(dirname(target), '.' + target.split(sep).pop() + '.amv-' + randomBytes(6).toString('hex'));
+      /* Everything from here happens in the HELD directory - see hold(). The
+         temporary file is created exclusively (never through a link), and the
+         rename names both ends inside that one proved directory. */
+      const h = hold(dirname(target));
+      const leaf = basename(target);
       try {
-        writeFileSync(tmp, content, 'utf8');
-        if (mode !== null) chmodSync(tmp, mode);     // an executable script stays executable
-        renameSync(tmp, target);
-      } catch (e) {
-        try { unlinkSync(tmp); } catch (e2) {}
-        throw e;
-      }
+        let mode = null;
+        try { const was = statSync(h.at(leaf)); if (was.isFile()) mode = was.mode & 0o7777; } catch (e) {}
+        const tmp = '.' + leaf + '.amv-' + randomBytes(6).toString('hex');
+        try {
+          writeFileSync(h.at(tmp), content, { encoding: 'utf8', flag: 'wx' });
+          if (mode !== null) chmodSync(h.at(tmp), mode);     // an executable script stays executable
+          renameSync(h.at(tmp), h.at(leaf));
+        } catch (e) {
+          try { unlinkSync(h.at(tmp)); } catch (e2) {}
+          throw e;
+        }
+      } finally { h.close(); }
       console.log('  · wrote ' + relative(ROOT, file) + ' (' + content.split('\n').length + ' lines)');
       return json(res, 200, { path: relative(ROOT, file), bytes: Buffer.byteLength(content) });
     }
@@ -903,10 +1079,16 @@ const server = createServer(async (req, res) => {
        the state the caller wanted is the state it is in. */
     if (path === '/amv-bridge/delete') {
       const file = safePath(body.path);
-      let st = null;
-      try { st = statSync(file); } catch (e) { return json(res, 200, { path: relative(ROOT, file), removed: false }); }
-      if (!st.isFile()) return json(res, 400, { error: 'not_a_file' });
-      unlinkSync(file);
+      let h = null;
+      try { h = hold(dirname(file)); }
+      catch (e) { if (e.code === 'ENOENT') return json(res, 200, { path: relative(ROOT, file), removed: false }); throw e; }
+      try {
+        const leaf = basename(file);
+        let st = null;
+        try { st = statSync(h.at(leaf)); } catch (e) { return json(res, 200, { path: relative(ROOT, file), removed: false }); }
+        if (!st.isFile()) return json(res, 400, { error: 'not_a_file' });
+        unlinkSync(h.at(leaf));
+      } finally { h.close(); }
       console.log('  · removed ' + relative(ROOT, file));
       return json(res, 200, { path: relative(ROOT, file), removed: true });
     }
@@ -1049,9 +1231,9 @@ const server = createServer(async (req, res) => {
       const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
       const args = process.platform === 'win32' ? ['/c', cmd] : ['-c', cmd];
       /* Inside the fence when there is one - see THE FENCE. */
-      const fenced = FENCE.on;
-      const child = spawn(fenced ? FENCE.bin : shell,
-                          fenced ? fenceArgs().concat(['--chdir', cwd, '--', shell]).concat(args) : args, {
+      const isFenced = FENCE.on;
+      const [prog, argv] = fenced(shell, args, cwd);
+      const child = spawn(prog, argv, {
         cwd,
         /* The allowed environment only - see childEnv. */
         env: childEnv(null),
@@ -1108,14 +1290,14 @@ const server = createServer(async (req, res) => {
 
       /* A command that failed for want of a hidden key is told why, so neither
          the person nor the model goes looking for a broken setup. */
-      if (fenced && done.code !== 0 && /publickey|\.ssh|\.aws|\.npmrc|\.netrc|credential|gnupg|kubeconfig|\.kube/i.test(err)) {
+      if (isFenced && done.code !== 0 && /publickey|\.ssh|\.aws|\.npmrc|\.netrc|credential|gnupg|kubeconfig|\.kube/i.test(err)) {
         err += '\n[AMV bridge] Keys and credential files are hidden from commands AMV runs. '
              + 'If this needed one, run it yourself, or restart the bridge with --no-fence.';
       }
       return json(res, 200, {
         command: cmd, cwd: relative(ROOT, cwd) || '.',
         exitCode: done.code, timedOut: !!done.timedOut, error: done.error || '',
-        ms: Date.now() - started, truncated, fenced,
+        ms: Date.now() - started, truncated, fenced: isFenced,
         stdout: out.slice(0, MAX_OUTPUT), stderr: err.slice(0, MAX_OUTPUT),
       });
     }
@@ -1154,16 +1336,16 @@ server.listen(0, '127.0.0.1', () => {
   console.log('  below as it runs.');
   if (FENCE.on) {
     console.log('\n  Your SSH keys, cloud logins, token files, shell history and');
-    console.log('  browser profiles are hidden from commands. To lift that,');
-    console.log('  restart with --no-fence.');
+    console.log('  browser profiles are hidden from commands and connectors.');
+    console.log('  To lift that, restart with --no-fence.');
   } else if (FENCE.why === 'off') {
     console.log('\n  !! --no-fence is ON: commands can read every file you can,');
     console.log('     including keys and logins saved under your home folder.');
   } else {
-    console.log('\n  !! Commands can read every file you can, including keys and');
-    console.log('     logins saved under your home folder.');
+    console.log('\n  !! Commands and connectors can read every file you can,');
+    console.log('     including keys and logins saved under your home folder.');
     if (FENCE.why === 'missing') console.log('     Install bubblewrap (e.g. sudo apt install bubblewrap) and restart to hide them.');
-    if (FENCE.why === 'failed') console.log('     bubblewrap is installed but this system would not start it.');
+    if (FENCE.why === 'failed') console.log('     The fence that hides them would not start on this computer.');
   }
   if (SHARE_ENV) {
     console.log('\n  !! --share-environment is ON: every command and connector');

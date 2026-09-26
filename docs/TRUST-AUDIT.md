@@ -1293,8 +1293,8 @@ Four for four, plus `the-bridge-only-reaches-one-folder` catching the dangling-
 link regression in the first draft (LESSONS 511).
 
 **Not closed:** a race between the check and the write, which path checks cannot
-stop - only an isolated project copy does. Round thirty-six fences what commands
-can read; this race is in the bridge's own routes and is still open.
+stop - closed in round thirty-seven, by acting on what was proved rather than
+on the name again.
 
 ## Round twenty-eight - the four low findings (AMV-AUD-025, 027, 028, 029)
 
@@ -1561,13 +1561,98 @@ keys) and `the-computer-card-says-what-commands-can-see`.
 and the assertion only looked for that half; the assertion now reads the whole
 hint and a second one checks an ordinary failure is left alone.
 
-**Not covered, stated on purpose.** macOS and Windows: no fence exists there that
-the bridge can start and verify, so it does not claim one - the card says
-commands can read every file. Connectors: programs the person chose and
-configured, whose credentials are handed over on purpose. And a race between a
-file route's path check and its write, which only an isolated project copy
-closes.
+**Not covered at the time** - macOS, connectors, and the race between a file
+route's check and its use. All three closed in rounds thirty-seven and
+thirty-eight; Windows is the one left, stated there.
 
 **The gate needs bubblewrap.** Without it the suite fails and names the package,
 rather than passing on the fallback alone; `.claude/session-setup.sh` installs
 it in a fresh container.
+
+## Round thirty-seven - the file routes cannot be raced out of the folder
+
+Every file route checked a path and then used the path again. A process
+flipping a link inside the folder between a directory inside and one outside
+made the check and the use disagree. Measured before the fix: 344 of 3,000
+reads returned the outside file, 163 of 3,000 writes landed outside. The routes
+run in the bridge's own process, outside the fence, so a link flipped to
+`~/.ssh` read the key no command could - the fence of round thirty-six had a
+side door.
+
+Now the routes open first, prove what they opened, and act through the handle.
+On Linux a held file or directory is named by `/proc/self/fd/N`, which the
+kernel resolves to that exact object - the same guarantee as `openat`, which
+Node does not expose: `read` reads the proved handle, `write` creates its
+temporary file exclusively and renames it inside the held directory, `delete`
+and `list` act through the held directory. Elsewhere there is no such name; the
+routes resolve the real path and compare device and inode with what they
+opened, which narrows the window to somebody replacing a real directory with a
+link between two system calls rather than closing it. On macOS that remaining
+window cannot reach the credential stores, because the whole bridge runs inside
+the system sandbox (round thirty-eight); on Windows commands are unfenced
+anyway, so a route race gives nothing a command does not already have.
+
+`the-bridge-cannot-be-raced-out-of-its-folder` - a real bridge and a real
+flipper, every route, 1,500 attempts each, and a second flipper aimed at a fake
+`~/.ssh`. The old bridge fails six of its checks.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 180 | a read not proved after opening | 2 assertions |
+| 181 | a read proved, then read by name again | 2 assertions |
+| 182 | the held directory not proved | 3 assertions |
+| 183 | the held directory used by name | 3 assertions |
+| 184 | the temporary file written by name, then moved | 1 assertion |
+| 185 | delete by name | 1 assertion |
+| 186 | list by name | 1 assertion - SURVIVED at first |
+
+**186 survived the first version**: listing an outside directory of FILES sizes
+each one by name afterwards, and that second lookup failing turned a leaked
+listing into an error with nothing in it. The listing check now has its own
+flipping link whose two sides hold only directories.
+
+## Round thirty-eight - connectors fenced, the fence proved, and macOS (owner-approved)
+
+**Connectors** now start inside the same fence as commands on Linux: a program
+somebody else wrote gets the credentials typed in for it, not the person's home
+stores. One boundary for everything the bridge starts; a per-connector
+exception would be a switch a steered request could ask somebody to flip.
+
+**Proved, not assumed.** The startup check used to ask only whether bubblewrap
+started. It now runs the fence over a canary it must hide and a control it must
+not, and claims the fence only when the canary came back hidden and the control
+whole. A stand-in bwrap that ignores every instruction to hide anything starts
+fine - and is now reported as failed.
+
+**macOS.** The bridge re-starts itself under `sandbox-exec` with a profile that
+allows everything except the credential stores (by path, so a login created
+after the start is covered too). Its routes, commands and connectors are all
+inside. The bridge inside reads the canary and claims the fence only if it could
+not; a sandbox that will not start leaves the bridge running unfenced, saying
+so. Driven here on Linux through `tests/fixtures/fake-sandbox-exec.mjs`, which
+ENFORCES the profile it is handed (with bubblewrap) and refuses one that is not
+the promised shape - so the suite measures what the bridge asked for. What it
+cannot show is Seatbelt itself accepting the profile, and that is exactly what
+the canary checks on every real Mac at every start: a Mac where it fails is
+told so, not told it is protected.
+
+**Windows** is the one system left unfenced: there is no fence a zero-dependency
+daemon can start and verify there. The terminal and the card say commands and
+connectors can read every file; the file routes still refuse the stores.
+
+`a-command-cannot-read-your-keys` (connectors, the canary) and
+`a-mac-bridge-runs-inside-the-system-sandbox`.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 187 | the canary ignored - "started" taken as "fenced" | 1 assertion |
+| 188 | connectors started outside the fence (the gap) | 1 assertion |
+| 189 | macOS: the bridge inside claims the fence without the canary | 1 assertion |
+| 190 | macOS: a sandbox that will not start reported as on | 1 assertion |
+| 191 | macOS: stop signals not passed to the bridge inside | 1 assertion |
+| 192 | macOS: token FILES left out of the profile | 2 assertions |
+| 193 | macOS: only stores that exist now in the profile | 1 assertion |
+| 194 | macOS: the bridge never re-starts inside | 3 assertions |
+| 195 | the card does not say connectors are fenced | 1 assertion |
+
+Nine for nine.

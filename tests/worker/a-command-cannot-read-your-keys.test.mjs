@@ -174,8 +174,41 @@ if (hasBwrap) {
     let out = ''; child.stdout.on('data', x => { out += x; }); child.stderr.on('data', x => { out += x; });
     const until = Date.now() + 8000;
     while (Date.now() < until && !/Close this window/.test(out)) await new Promise(r => setTimeout(r, 60));
-    ok(/Commands can read every file you can/.test(out) && /Install bubblewrap/.test(out), 'the terminal says commands can read everything, and how to fix it', out);
+    ok(/Commands and connectors can read every file you can/.test(out) && /Install bubblewrap/.test(out), 'the terminal says commands can read everything, and how to fix it', out);
     child.kill('SIGKILL');
+  }
+
+  section('A fence that starts but hides nothing is not claimed');
+  {
+    /* The canary rule: a stand-in bwrap that runs the command and ignores
+       every instruction to hide anything. It starts fine, and a check that
+       only asked "did it start" called this fenced. */
+    const shim = mkdtempSync(join(tmpdir(), 'amv-leakybwrap-'));
+    writeFileSync(join(shim, 'bwrap'), '#!/bin/sh\nwhile [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n', { mode: 0o755 });
+    const child = spawn(process.execPath, [join(ROOT, 'bridge', 'amv-bridge.mjs'), join(home, 'proj')], {
+      stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { HOME: home, PATH: shim + ':' + process.env.PATH }) });
+    running.push(child);
+    let out = ''; child.stdout.on('data', x => { out += x; }); child.stderr.on('data', x => { out += x; });
+    const until = Date.now() + 8000;
+    while (Date.now() < until && !/Close this window/.test(out)) await new Promise(r => setTimeout(r, 60));
+    const port = (out.match(/Port\s+(\d+)/) || [])[1];
+    const hello = await (await fetch('http://127.0.0.1:' + port + '/amv-bridge/hello', { headers: { Origin: ORIGIN } })).json().catch(() => ({}));
+    ok(hello.fence === 'failed', 'reported as failed, not on', hello.fence);
+    child.kill('SIGKILL');
+  }
+
+  section('A connector cannot read the keys either');
+  {
+    const r = await b.call('mcp/start', { id: 'echo', command: process.execPath,
+      args: [join(ROOT, 'tests', 'fixtures', 'mcp-echo-server.mjs')] });
+    ok(r.status === 200, 'a connector starts inside the fence', r.status);
+    const key = await b.call('mcp/call', { id: 'echo', method: 'tools/call',
+      params: { name: 'count_lines', arguments: { path: join(home, '.ssh', 'id_ed25519') } } });
+    const note = await b.call('mcp/call', { id: 'echo', method: 'tools/call',
+      params: { name: 'count_lines', arguments: { path: join(home, 'notes.txt') } } });
+    ok(key.d.result && key.d.result.isError === true, 'it cannot open the key - this was the gap', key.d);
+    ok(note.d.result && !note.d.result.isError && note.d.result.content[0].text === '1', 'while an ordinary file in home still reads', note.d);
+    await b.call('mcp/stop', { id: 'echo' });
   }
 
   section('bubblewrap that will not start: unfenced, and said plainly');
@@ -193,7 +226,7 @@ if (hasBwrap) {
     while (Date.now() < until && !/Close this window/.test(out)) await new Promise(r => setTimeout(r, 60));
     const port = (out.match(/Port\s+(\d+)/) || [])[1];
     const hello = await (await fetch('http://127.0.0.1:' + port + '/amv-bridge/hello', { headers: { Origin: ORIGIN } })).json().catch(() => ({}));
-    ok(hello.fence === 'failed' && /would not start it/.test(out), 'it reports the fence as failed, to the page and in the terminal', { fence: hello.fence });
+    ok(hello.fence === 'failed' && /would not start on this computer/.test(out), 'it reports the fence as failed, to the page and in the terminal', { fence: hello.fence });
     child.kill('SIGKILL');
   }
 

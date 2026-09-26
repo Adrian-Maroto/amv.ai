@@ -39,11 +39,11 @@ section('A bridge sharing everything: said as a warning');
 section('Files: the fence on, said plainly; off, said as a warning, with the reason');
 {
   const on = await card(false, 'on');
-  ok(/keys, cloud logins/.test(on.text) && /hidden from commands/.test(on.text) && !on.warns.length, 'fenced: keys are hidden, no warning', on.text.slice(-260));
+  ok(/keys, cloud logins/.test(on.text) && /hidden from commands and connectors/.test(on.text) && !on.warns.length, 'fenced: keys are hidden, no warning', on.text.slice(-260));
   const why = { off: /--no-fence/, missing: /Install bubblewrap/, failed: /would not start the fence/, unsupported: /Only ask for work/ };
   for (const k of Object.keys(why)) {
     const r = await card(false, k);
-    ok(r.warns.some(w => /can read every file you can/.test(w)) && why[k].test(r.text), 'unfenced (' + k + '): a warning that says why', r.warns);
+    ok(r.warns.some(w => /Commands and connectors can read every file you can/.test(w)) && why[k].test(r.text), 'unfenced (' + k + '): a warning that says why', r.warns);
   }
 }
 

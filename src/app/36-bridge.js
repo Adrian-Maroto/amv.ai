@@ -332,8 +332,8 @@ function _bridgeCardHTML(){
          bridge when it starts, and this repeats what it found. */
       + (BRIDGE.fence === 'on'
           ? '<p class="brg-p">Your SSH keys, cloud logins, token files, shell history and browser '
-            + 'profiles are hidden from commands.</p>'
-          : '<p class="brg-p brg-warn"><b>Commands can read every file you can,</b> including keys and '
+            + 'profiles are hidden from commands and connectors.</p>'
+          : '<p class="brg-p brg-warn"><b>Commands and connectors can read every file you can,</b> including keys and '
             + 'logins saved in your home folder. '
             + (BRIDGE.fence === 'off' ? 'This bridge was started with <code>--no-fence</code>.'
               : BRIDGE.fence === 'missing' ? 'Install bubblewrap on this computer and restart the bridge to hide them.'
