@@ -1518,6 +1518,8 @@ function renderCodeView(){
      over, because a Stop with no acknowledgement gets pressed again. */
   on($('dev-stop'),'click',()=>{
     _DEV.stop=true;
+    /* And the round in the air: named to the server, then cut (_aiStopLink). */
+    try{ if(_DEV.ctrl) _DEV.ctrl.abort(); }catch(e){}
     try{ if(typeof _AGENT!=='undefined' && _AGENT && _AGENT.running) _agentStop(); }catch(e){}
     try{ _devBusy(true,'Stopping'); }catch(e){}
     try{ _devRenderQueue(); }catch(e){}
@@ -2627,6 +2629,7 @@ async function _devSend(){
   /* Cleared at the START of a turn, not the end: a Stop pressed during the
      previous one must not silently cancel this one. */
   _DEV.stop=false;
+  _DEV.ctrl=(typeof AbortController!=='undefined') ? new AbortController() : null;
   /* Asking for something is leaving home, the same way opening a design is in
      Studio - otherwise the hero would stay up over the answer. */
   _DEV.atHome=false;
@@ -2712,6 +2715,7 @@ async function _devSend(){
         /* Stop is real on this path too: a long completion is a run of
            continuations, so this is asked between them. See aiCompleteLong. */
         shouldStop:()=>_DEV.stop===true,
+        signal:_DEV.ctrl ? _DEV.ctrl.signal : undefined,
         onProgress:(p)=>_devProgress(p)});
       /* THE WRITES ARE PARSED ONCE, AND THE PATH IS SETTLED THERE.
 
@@ -2775,9 +2779,17 @@ async function _devSend(){
     const _isUI=/\b(html|css|ui|page|site|landing|component|button|form|card|layout|design|style|frontend|web ?app|dashboard)\b/i.test(msg)||/html/i.test(_DEV.curLang||'');
     const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI/visual output.\n\n':'')+
       (hasCurrent?('Current '+(_DEV.curLang||_DEV.lang)+' code:\n```\n'+_DEV.curCode+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated program.'):msg);
-    const resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
+    let resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
       effort:_devEffort(),
+      shouldStop:()=>_DEV.stop===true,
+      signal:_DEV.ctrl ? _DEV.ctrl.signal : undefined,
       onProgress:(p)=>_devProgress(p)});
+    /* Stopped part way: a program cut off mid-block is not a program, so it is
+       neither run nor shown as code - the log says it was stopped instead. */
+    if(_DEV.stop===true){
+      if(((resp.match(/```/g)||[]).length % 2) === 1) resp=resp.slice(0, resp.lastIndexOf('```')).trim();
+      resp=(resp ? resp+'\n\n' : '')+'Stopped before it finished.';
+    }
     const code=extractCode(resp,_DEV.lang)||extractCode(resp);
     const txt=resp.replace(/```[\s\S]*?```/g,'').trim();
     const entry={role:'ai',text:txt,code:code,lang:_DEV.lang};
@@ -3015,6 +3027,7 @@ async function runAgentic(surface, userPrompt, opts){
     max_tokens: opts.max_tokens || 8000,
     maxRounds: opts.maxRounds || 4,
     stopped: opts.stopped,
+    signal: opts.signal,
     onStep: (ev) => { if(ev.phase === 'start') onStatus('Working\u2026'); },
     runTool: async (name, input) => {
       /* AMV-007. Every name here was chosen by the MODEL, so the request can

@@ -7422,11 +7422,10 @@ let _activeStreamCtrl=null, _userStopped=false, _activeTurnId='';
    the worst case is the answer finishing in the background, which is what
    happened every time before this. */
 const _STOP_HEADSTART_MS = 1500;
-function stopGenerating(){
-  _userStopped=true;
-  const ctrl = _activeStreamCtrl, turn = _activeTurnId;
-  const cut = () => { try{ if(ctrl) ctrl.abort('user-stop'); }catch(e){} };
-  if(!ctrl) return;
+/* The one way any surface stops a model turn: name it to the server, then cut.
+   Chat, the Build agent and Dev's long completions all come through here, so
+   none of them can go back to cutting first (LESSONS 516). */
+function _stopTurnThenCut(turn, cut){
   if(!turn || !(window.AMV_API && AMV_API.live && AMV_API.hasSession)){ cut(); return; }
   let done = false;
   const once = () => { if(done) return; done = true; cut(); };
@@ -7435,6 +7434,12 @@ function stopGenerating(){
     AMV_API._fetch('/v1/stop', { method:'POST', body: JSON.stringify({ id: turn }), noRetry:true, timeout:_STOP_HEADSTART_MS })
       .then(once, once);
   }catch(e){ once(); }
+}
+function stopGenerating(){
+  _userStopped=true;
+  const ctrl = _activeStreamCtrl, turn = _activeTurnId;
+  if(!ctrl) return;
+  _stopTurnThenCut(turn, () => { try{ ctrl.abort('user-stop'); }catch(e){} });
 }
 try{ window.stopGenerating=stopGenerating; }catch(e){}
 
@@ -23572,6 +23577,8 @@ function renderCodeView(){
      over, because a Stop with no acknowledgement gets pressed again. */
   on($('dev-stop'),'click',()=>{
     _DEV.stop=true;
+    /* And the round in the air: named to the server, then cut (_aiStopLink). */
+    try{ if(_DEV.ctrl) _DEV.ctrl.abort(); }catch(e){}
     try{ if(typeof _AGENT!=='undefined' && _AGENT && _AGENT.running) _agentStop(); }catch(e){}
     try{ _devBusy(true,'Stopping'); }catch(e){}
     try{ _devRenderQueue(); }catch(e){}
@@ -24681,6 +24688,7 @@ async function _devSend(){
   /* Cleared at the START of a turn, not the end: a Stop pressed during the
      previous one must not silently cancel this one. */
   _DEV.stop=false;
+  _DEV.ctrl=(typeof AbortController!=='undefined') ? new AbortController() : null;
   /* Asking for something is leaving home, the same way opening a design is in
      Studio - otherwise the hero would stay up over the answer. */
   _DEV.atHome=false;
@@ -24766,6 +24774,7 @@ async function _devSend(){
         /* Stop is real on this path too: a long completion is a run of
            continuations, so this is asked between them. See aiCompleteLong. */
         shouldStop:()=>_DEV.stop===true,
+        signal:_DEV.ctrl ? _DEV.ctrl.signal : undefined,
         onProgress:(p)=>_devProgress(p)});
       /* THE WRITES ARE PARSED ONCE, AND THE PATH IS SETTLED THERE.
 
@@ -24829,9 +24838,17 @@ async function _devSend(){
     const _isUI=/\b(html|css|ui|page|site|landing|component|button|form|card|layout|design|style|frontend|web ?app|dashboard)\b/i.test(msg)||/html/i.test(_DEV.curLang||'');
     const prompt=(_isUI?dnaPromptBlock()+'\n\nApply the DESIGN DNA above to any UI/visual output.\n\n':'')+
       (hasCurrent?('Current '+(_DEV.curLang||_DEV.lang)+' code:\n```\n'+_DEV.curCode+'\n```\n\nChange request: '+msg+'\n\nReturn the full updated program.'):msg);
-    const resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
+    let resp=await aiCompleteLong(prompt, sys+_handoffContext('dev'), {max_tokens:16000, model:_sectionModel('code'),
       effort:_devEffort(),
+      shouldStop:()=>_DEV.stop===true,
+      signal:_DEV.ctrl ? _DEV.ctrl.signal : undefined,
       onProgress:(p)=>_devProgress(p)});
+    /* Stopped part way: a program cut off mid-block is not a program, so it is
+       neither run nor shown as code - the log says it was stopped instead. */
+    if(_DEV.stop===true){
+      if(((resp.match(/```/g)||[]).length % 2) === 1) resp=resp.slice(0, resp.lastIndexOf('```')).trim();
+      resp=(resp ? resp+'\n\n' : '')+'Stopped before it finished.';
+    }
     const code=extractCode(resp,_DEV.lang)||extractCode(resp);
     const txt=resp.replace(/```[\s\S]*?```/g,'').trim();
     const entry={role:'ai',text:txt,code:code,lang:_DEV.lang};
@@ -25069,6 +25086,7 @@ async function runAgentic(surface, userPrompt, opts){
     max_tokens: opts.max_tokens || 8000,
     maxRounds: opts.maxRounds || 4,
     stopped: opts.stopped,
+    signal: opts.signal,
     onStep: (ev) => { if(ev.phase === 'start') onStatus('Working\u2026'); },
     runTool: async (name, input) => {
       /* AMV-007. Every name here was chosen by the MODEL, so the request can
@@ -33380,6 +33398,34 @@ function _aiHeaders(){
 }
 window._aiBackendReady=_aiBackendReady;
 
+/* STOP, FOR EVERY SURFACE THAT IS NOT CHAT.
+
+   The Build agent and Dev cancelled their requests in the browser, and from
+   the server a cancelled request looks exactly like a phone losing signal - so
+   it finished the answer in the background and charged for all of it. Chat
+   learned to name its turn to /v1/stop first; this is the same thing for the
+   engine calls. Each request carries a turn id; when the caller's signal fires,
+   the turn in the air is named to the server and the connection is cut once
+   that lands, through the same _stopTurnThenCut chat uses.
+
+   Between requests there is no turn, and the cut is immediate. */
+function _aiTurnId(){ return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function _aiStopLink(outer){
+  const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  let turn = '';
+  if(outer && ctrl){
+    const onAbort = () => { const t = turn; _stopTurnThenCut(t, () => { try{ ctrl.abort(); }catch(e){} }); };
+    if(outer.aborted){ try{ ctrl.abort(); }catch(e){} }
+    else { try{ outer.addEventListener('abort', onAbort, { once:true }); }catch(e){} }
+  }
+  return {
+    signal: ctrl ? ctrl.signal : undefined,
+    begin(){ turn = _aiTurnId(); return turn; },
+    end(){ turn = ''; },
+  };
+}
+try{ window._aiStopLink = _aiStopLink; }catch(e){}
+
 /* Generate output of ANY length. The API caps a single response at max_tokens
    (~1-2k lines of code). This keeps the conversation going - feeding the model
    its own partial output and asking it to continue - until it finishes naturally.
@@ -33441,6 +33487,7 @@ try{ window._aiError = _aiError; }catch(e){}
    so nothing downstream had to learn about streams to be correct. A response
    that genuinely is JSON is still parsed as JSON, which keeps every stub
    honest and leaves room for a non-streaming path to exist later. */
+const AI_STREAM_IDLE_MS = 60000;
 async function _aiReadStream(res, onText){
   const ct = String((res.headers && res.headers.get('Content-Type')) || '');
   if(!/event-stream/i.test(ct)) return await res.json();
@@ -33451,8 +33498,28 @@ async function _aiReadStream(res, onText){
   let buffer = '', stopReason = null, model = '';
   const usage = { input_tokens:0, output_tokens:0 };
 
+  /* SILENCE ENDS A STREAM; LENGTH DOES NOT.
+
+     These requests used to go through fetchDeadline without `stream`, which
+     arms a 20-second limit on reading the WHOLE body. A model writing a file
+     for longer than that was cut off mid-answer while still sending - so a
+     Dev build or a Build-agent round over 20 seconds failed, or was reported
+     as "stopped" by nobody (LESSONS 516). The callers now pass `stream:true`
+     and the deadline lives here: nothing for AI_STREAM_IDLE_MS is a stalled
+     connection, anything still arriving is an answer being written. */
+  const idleMs = (typeof window !== 'undefined' && window.__amvStreamIdleMs) || AI_STREAM_IDLE_MS;
+  const readOnce = () => new Promise((resolve, reject) => {
+    const t = setTimeout(() => {
+      try{ reader.cancel(); }catch(e){}
+      const e = new Error('The connection stalled before AMV finished. Please try again.');
+      try{ e._saidPlainly = true; e.code = 'provider_error'; }catch(x){}
+      reject(e);
+    }, idleMs);
+    reader.read().then(v => { clearTimeout(t); resolve(v); }, e => { clearTimeout(t); reject(e); });
+  });
+
   for(;;){
-    const step = await reader.read();
+    const step = await readOnce();
     if(step.done) break;
     buffer += dec.decode(step.value, { stream:true });
     const lines = buffer.split('\n');
@@ -33546,6 +33613,7 @@ async function aiCompleteLong(prompt, system, opts){
   const messages = [{ role:'user', content: prompt }];
   let full = '';
   let round = 0;
+  const link = _aiStopLink(opts.signal);
 
   while(round < maxRounds){
     /* ASKED BEFORE EACH ROUND, WHICH IS WHAT MAKES STOP REAL HERE.
@@ -33560,6 +33628,7 @@ async function aiCompleteLong(prompt, system, opts){
        Whatever has been written so far is returned, not discarded: the point
        of stopping is usually that enough has happened already. */
     try{ if(round > 0 && opts.shouldStop && opts.shouldStop()) break; }catch(e){}
+    if(opts.signal && opts.signal.aborted) break;
     round++;
     const body = { model: modelStr, max_tokens: maxTok, messages: messages.slice() };
     if(system) body.system = system + (opts.noLang?'':_langInstruction());
@@ -33570,10 +33639,21 @@ async function aiCompleteLong(prompt, system, opts){
        wish is how a clamped control comes to look broken. */
     if(opts.effort) body.effort = opts.effort;
 
-    const res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body)}, 180000);
-    if(!res.ok) throw await _aiError(res);
-    try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
-    const data = await _aiReadStream(res);
+    /* opts.signal: Stop lands in the middle of a round, not only between them,
+       and what the round had written so far is kept like the rounds before. */
+    let res, data, partial = '';
+    try{
+      res = await fetchDeadline(url, {method:'POST', headers: Object.assign({}, headers, { 'X-AMV-Request-Id': link.begin() }),
+                                      body: JSON.stringify(body), signal: link.signal, stream:true}, 180000);
+      if(!res.ok) throw await _aiError(res);
+      try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
+      data = await _aiReadStream(res, t => { partial += t; });
+    }catch(e){
+      link.end();
+      if(_isAbort(e) || (opts.signal && opts.signal.aborted)){ full += partial; break; }
+      throw e;
+    }
+    link.end();
     const chunk = (data.content||[]).map(b=>b.text||'').join('');
     full += chunk;
 
@@ -33675,6 +33755,7 @@ async function aiAgentLoop(opts){
      rebuilt from the reply. Resolving identity from anything the model
      produced is the whole defect in miniature. */
   const offered = new Set(tools.map(t => String((t && t.name) || '')).filter(Boolean));
+  const link = _aiStopLink(opts.signal);
 
   const messages = [{ role:'user', content: String(opts.prompt || '') }];
   const steps = [];
@@ -33712,12 +33793,15 @@ async function aiAgentLoop(opts){
          round - a round is up to three minutes of a model generating, and
          paying for, an answer nobody is going to read. (AMV-AUD-014) */
       try{
-        res = await fetchDeadline(url, {method:'POST', headers, body: JSON.stringify(body), signal: opts.signal}, 180000);
+        res = await fetchDeadline(url, {method:'POST', headers: Object.assign({}, headers, { 'X-AMV-Request-Id': link.begin() }),
+                                        body: JSON.stringify(body), signal: link.signal, stream:true}, 180000);
       }catch(e){
+        link.end();
         if(_isAbort(e)){ why = 'stopped'; break; }
         throw e;
       }
       if(res.ok) break;
+      link.end();
       const err = await _aiError(res);
       const code = String(err.code || '');
       const transient = /^(provider_error|rate_limited|not_ready|acct_busy)$/.test(code)
@@ -33732,7 +33816,8 @@ async function aiAgentLoop(opts){
     try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
     let data;
     try{ data = await _aiReadStream(res); }
-    catch(e){ if(_isAbort(e) || (opts.signal && opts.signal.aborted)){ why = 'stopped'; break; } throw e; }
+    catch(e){ link.end(); if(_isAbort(e) || (opts.signal && opts.signal.aborted)){ why = 'stopped'; break; } throw e; }
+    link.end();
     const blocks = data.content || [];
     const said = blocks.filter(b => b.type === 'text').map(b => b.text || '').join('');
     if(said.trim()) text += (text ? '\n\n' : '') + said.trim();
@@ -33819,10 +33904,15 @@ async function aiComplete(prompt, system, opts){
   if(system) body.system = system + (opts.noLang?'':_langInstruction());
   else if(!opts.noLang) body.system = _langInstruction();
   if(opts.effort) body.effort = opts.effort;
-  const res = await fetchDeadline(url,{method:'POST',headers,body:JSON.stringify(body)}, 120000);
-  if(!res.ok) throw await _aiError(res);
-  try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
-  const data = await _aiReadStream(res);
+  const link = _aiStopLink(opts.signal);
+  let res, data;
+  try{
+    res = await fetchDeadline(url,{method:'POST',headers:Object.assign({}, headers, { 'X-AMV-Request-Id': link.begin() }),
+                                   body:JSON.stringify(body), signal: link.signal, stream:true}, 120000);
+    if(!res.ok) throw await _aiError(res);
+    try{ _AI_LAST.effort = res.headers.get('X-AMV-Effort') || ''; }catch(e){}
+    data = await _aiReadStream(res);
+  } finally { link.end(); }
   const text=_noDash((data.content||[]).map(b=>b.text||'').join('').trim());
   // record usage for EVERY call (Lab, Dev, Studio, Cowork, agents) - not just chat
   try{

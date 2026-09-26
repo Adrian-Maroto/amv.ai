@@ -1459,3 +1459,37 @@ and runs in the frame, and the page still refuses WebAssembly).
 **147 survived the first version**: its request used a relative address that is
 invalid inside a blob worker, so it failed under any policy. Now measured by
 arrival at an address that answers.
+
+## Round thirty-four - Stop from every surface, and a long answer is not cut (owner-approved)
+
+The Build agent and Dev cancelled in the browser only, which the server treats
+as a lost signal: it finished the round and charged for it. Every engine call
+now sends a turn id, and the caller's signal goes through `_aiStopLink`: the turn
+in the air is named to `/v1/stop`, and the connection is cut when that lands or
+after 1.5s - the path chat already used, now shared as `_stopTurnThenCut`.
+
+Found on the way: those calls used fetchDeadline without `stream`, so a 20s
+limit applied to reading the whole answer. Measured cut at 21s while still
+sending. Now `stream:true`, with a 60s SILENCE limit in `_aiReadStream`
+(LESSONS 516).
+
+`stop-reaches-the-server-from-every-surface`.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 149 | the agent round sent without a turn id | 2 assertions |
+| 150 | the link cuts before naming the turn | 3 assertions |
+| 151 | aiCompleteLong without `stream` - the 20s cut (the finding) | 1 assertion |
+| 152 | aiAgentLoop without `stream` - reported as "stopped" | 1 assertion |
+| 153 | aiComplete without `stream` | 1 assertion |
+| 154 | no silence limit on the reader | 2 assertions - HUNG at first |
+| 155 | Dev's Stop does not cancel the round in the air | 1 assertion |
+| 156 | a stopped long completion drops what it had written | 1 assertion |
+
+**154 hung the suite the first time** rather than failing it; the section now
+races its own 12s limit, so the same break fails with a sentence.
+
+**The 200-token charge for a Stop before any word stays, on purpose.** The
+provider has already read the whole question by then and bills for it; charging
+nothing would make "send a huge question, press Stop at once" free input
+processing, repeatable by anyone. The estimate is the honest charge.

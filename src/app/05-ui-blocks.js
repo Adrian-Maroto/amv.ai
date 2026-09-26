@@ -751,11 +751,10 @@ let _activeStreamCtrl=null, _userStopped=false, _activeTurnId='';
    the worst case is the answer finishing in the background, which is what
    happened every time before this. */
 const _STOP_HEADSTART_MS = 1500;
-function stopGenerating(){
-  _userStopped=true;
-  const ctrl = _activeStreamCtrl, turn = _activeTurnId;
-  const cut = () => { try{ if(ctrl) ctrl.abort('user-stop'); }catch(e){} };
-  if(!ctrl) return;
+/* The one way any surface stops a model turn: name it to the server, then cut.
+   Chat, the Build agent and Dev's long completions all come through here, so
+   none of them can go back to cutting first (LESSONS 516). */
+function _stopTurnThenCut(turn, cut){
   if(!turn || !(window.AMV_API && AMV_API.live && AMV_API.hasSession)){ cut(); return; }
   let done = false;
   const once = () => { if(done) return; done = true; cut(); };
@@ -764,6 +763,12 @@ function stopGenerating(){
     AMV_API._fetch('/v1/stop', { method:'POST', body: JSON.stringify({ id: turn }), noRetry:true, timeout:_STOP_HEADSTART_MS })
       .then(once, once);
   }catch(e){ once(); }
+}
+function stopGenerating(){
+  _userStopped=true;
+  const ctrl = _activeStreamCtrl, turn = _activeTurnId;
+  if(!ctrl) return;
+  _stopTurnThenCut(turn, () => { try{ ctrl.abort('user-stop'); }catch(e){} });
 }
 try{ window.stopGenerating=stopGenerating; }catch(e){}
 

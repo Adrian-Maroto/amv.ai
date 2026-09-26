@@ -13534,3 +13534,26 @@ network" fetched '/', which inside a worker made from a blob URL is not a valid
 address - so it failed whatever the policy said, and passed with the network
 wide open. Network denial is now measured by whether a request ARRIVED at an
 address that would have answered.
+
+## 516. A deadline on the whole body is a deadline on how long an answer may be
+
+`fetchDeadline` arms a 20-second limit on reading a response once its headers
+arrive - right for a JSON reply, which is either whole in 20 seconds or stuck.
+The engine calls every surface but chat uses (`aiComplete`, `aiCompleteLong`,
+`aiAgentLoop`) passed through it without `stream:true`, so the same limit was
+put on a model WRITING. Measured before fixing: a stream still sending a word a
+second was cut at 21 seconds. A Dev build or a Build-agent round longer than
+that failed - and the agent loop, seeing an AbortError, reported it as
+"stopped", a Stop nobody pressed.
+
+Nothing had caught it because every suite that drives these calls hands back a
+stream that finishes in milliseconds. For a stream the question is not "how
+long has this taken" but "how long since anything arrived": they now pass
+`stream:true`, and `_aiReadStream` ends a stream after 60 seconds of SILENCE.
+The suite that proves it waits 24 real seconds on purpose - a check that would
+have caught this cannot be one that finishes before the bug starts.
+
+Found while giving the Build agent and Dev the named Stop chat already had: a
+cancel in the browser alone looks to the server like a lost signal, so it
+finished the round in the background at the person's expense. All three now go
+through `_aiStopLink` and the same `_stopTurnThenCut` chat uses.
