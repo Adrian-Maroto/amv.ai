@@ -476,6 +476,9 @@ async function _devSendAgent(msg, stat){
      must not be reported as if it were. */
   let lostMachine = false;
   let out;
+  /* A connector whose tools changed since the last turn is offered as it is
+     now, not as it was (mcpRefreshTools). */
+  try{ if(typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
   try{
     out = await aiAgentLoop({
       system: _AGENT_SYS + _handoffContext('dev') + _userStyle(),

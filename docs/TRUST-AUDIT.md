@@ -1118,9 +1118,8 @@ that "empty" is proven to still be a valid start.
 | 84 | a non-object handshake result is accepted | 2 assertions |
 | 85 | a failed discovery leaves the process running | 2 assertions |
 
-Six for six. **Not built:** refreshing a server's tool list when it sends
-`notifications/tools/list_changed`. The list is read at each start; a server
-that changes its tools mid-session is seen at the next pairing.
+Six for six. **Not built at the time:** refreshing a server's tool list when it
+sends `notifications/tools/list_changed` - built in round thirty-five.
 
 ## Round twenty-two - a cancel that is passed in happens (AMV-AUD-014)
 
@@ -1493,3 +1492,32 @@ races its own 12s limit, so the same break fails with a sentence.
 provider has already read the whole question by then and bills for it; charging
 nothing would make "send a huge question, press Stop at once" free input
 processing, repeatable by anyone. The estimate is the honest charge.
+
+## Round thirty-five - a connector that changes its tools is followed
+
+The bridge read a connector's tools once, at start. It now re-lists a server
+when it announces `notifications/tools/list_changed` - same bounds as the first
+listing, one at a time with announcements folded together, and a failed listing
+keeps the old list - and counts the lists (`rev`). The page asks at the start of
+every chat and Build agent turn whether a count moved (`mcpRefreshTools`), takes
+`/mcp/tools` for the ones that did, only from this pairing. A tool the server
+took away is answered as taken away, not as a stopped connector.
+
+`a-connector-can-change-its-tools` (the real bridge and a server that grows,
+spams and breaks its listing) and `a-connector-that-changes-is-followed` (page).
+
+| # | what was broken | caught by |
+|---|---|---|
+| 157 | the announcement ignored (the gap) | 3 assertions |
+| 158 | announcements not folded - fifty listings | 2 assertions |
+| 159 | a failed listing empties the list | 1 assertion |
+| 160 | the list changes but the count does not | 3 assertions |
+| 161 | no route for the new list | 2 assertions |
+| 162 | the page follows another pairing's entries | 3 assertions |
+| 163 | the page fetches every list every turn | 2 assertions |
+| 164 | chat does not refresh before a turn | 1 assertion |
+| 165 | the Build agent does not refresh before a turn | 1 assertion |
+| 166 | a removed tool reported as a stopped connector | 1 assertion |
+
+Ten for ten. Within one turn the list is fixed, by design: the loop's offered set
+is built once from the request (`offered` in aiAgentLoop).

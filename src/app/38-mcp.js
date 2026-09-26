@@ -100,7 +100,8 @@ async function _mcpStart(id){
   /* `session` is the bridge pairing this came from. A token belongs to one run
      of one bridge, so an entry from another pairing describes a process this
      tab has no reason to think exists. */
-  MCP.live[id] = { tools: d.tools || [], info: d.info || null, error: '', session: BRIDGE.token };
+  MCP.live[id] = { tools: d.tools || [], info: d.info || null, error: '', session: BRIDGE.token,
+                   rev: Number(d.rev) || 0 };
   return MCP.live[id];
 }
 async function _mcpStop(id){
@@ -112,6 +113,44 @@ async function mcpCall(id, method, params){
   return d.result;
 }
 try{ window._mcpStart=_mcpStart; window._mcpStop=_mcpStop; window.mcpCall=mcpCall; }catch(e){}
+
+/* A CONNECTOR'S TOOLS CAN CHANGE WHILE IT RUNS, AND THIS TAB FOLLOWS.
+
+   The list was read once, when the connector started, so a server that added
+   a tool mid-session - one per open project, or once you sign in - was not
+   seen until the next pairing. The bridge now re-lists a server whenever it
+   announces a change and counts the lists it has had (`rev`). This asks, at
+   the start of every turn that offers connectors, whether any count moved,
+   and takes the new list for the ones that did. One small local request when
+   nothing changed; nothing at all when no connector is running.
+
+   Only entries from THIS pairing that started cleanly are followed - the same
+   rule mcpStartAll uses - and a bridge too old to count answers as never
+   changing, which is what it was. Within a turn the list is fixed: a tool
+   that appears mid-turn is offered from the next one. */
+async function mcpRefreshTools(){
+  if(!(typeof BRIDGE !== 'undefined' && BRIDGE.connected)) return false;
+  const mine = Object.keys(MCP.live).filter(id => {
+    const l = MCP.live[id];
+    return l && !l.error && l.session === BRIDGE.token;
+  });
+  if(!mine.length) return false;
+  let d;
+  try{ d = await _bridgeCall('mcp/list', {}, 5000); }catch(e){ return false; }
+  let changed = false;
+  for(const sv of (d && Array.isArray(d.servers) ? d.servers : [])){
+    const id = String((sv && sv.id) || '');
+    if(!mine.includes(id)) continue;
+    const live = MCP.live[id];
+    if((Number(sv.rev) || 0) === (Number(live.rev) || 0)) continue;
+    try{
+      const t = await _bridgeCall('mcp/tools', { id }, 5000);
+      if(t && Array.isArray(t.tools)){ live.tools = t.tools; live.rev = Number(t.rev) || 0; changed = true; }
+    }catch(e){}
+  }
+  return changed;
+}
+try{ window.mcpRefreshTools=mcpRefreshTools; }catch(e){}
 
 /* Start everything configured, and report what happened per server rather
    than failing the lot because one is misconfigured.
@@ -254,7 +293,14 @@ try{ window.isMcpTool=isMcpTool; }catch(e){}
    should read, not a reason to end the turn. */
 async function runMcpTool(name, args){
   const hit = _mcpSplitName(name);
-  if(!hit) return { ok:false, text:'That connector is not running any more. Reconnect it in Integrations.' };
+  if(!hit){
+    /* A server that is still running but no longer lists the tool has taken
+       it away; saying the connector stopped would send somebody to fix a
+       connector that is fine. */
+    const who = mcpToolIdentity(name), live = who && MCP.live[who.id];
+    if(live && !live.error) return { ok:false, text:'The ' + who.id + ' connector no longer offers "' + who.tool + '". Use one of the tools it lists now.' };
+    return { ok:false, text:'That connector is not running any more. Reconnect it in Integrations.' };
+  }
   try{
     const r = await mcpCall(hit.id, 'tools/call', { name: hit.tool.name, arguments: args || {} });
     const text = (r && Array.isArray(r.content))

@@ -1003,6 +1003,7 @@ async function _callAI(msgs, _opts) {
     try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(BRIDGE_TOOLS); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
+    try{ if(BRIDGE.connected && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
     try{ if(BRIDGE.connected && typeof mcpTools === 'function') tools = tools.concat(mcpTools()); }catch(e){}
     /* WHAT WAS OFFERED, CAPTURED BEFORE THE REQUEST GOES OUT.
 

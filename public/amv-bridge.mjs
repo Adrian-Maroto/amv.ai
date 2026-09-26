@@ -333,7 +333,9 @@ function mcpStart(id, command, args, envExtra){
     shell,
   });
   const srv = { id, child, command, stderr: '', pending: new Map(), nextId: 1,
-                tools: [], info: null, exited: false };
+                tools: [], info: null, exited: false,
+                /* rev counts the tool lists this server has had; see mcpToolsChanged. */
+                rev: 0, ready: false, refreshing: false, again: false };
 
   /* FRAMED IN BYTES, DECODED A WHOLE LINE AT A TIME.  (AMV-AUD-017)
 
@@ -362,6 +364,8 @@ function mcpStart(id, command, args, envExtra){
       srv.pending.delete(msg.id);
       clearTimeout(p.timer);
       p.resolve(msg);
+    } else if (msg && msg.id == null && msg.method === 'notifications/tools/list_changed') {
+      mcpToolsChanged(srv);
     }
   };
   child.stdout.on('data', (chunk) => {
@@ -453,6 +457,41 @@ async function mcpListTools(srv){
     cursor = next;
   }
   return { error: 'the server lists its tools over more than ' + MCP_LIST_PAGES + ' pages' };
+}
+/* A SERVER THAT SAYS ITS TOOLS CHANGED IS LISTED AGAIN.
+
+   The list used to be read once, at start, and a server that changed what it
+   offers mid-session - one tool per open project, tools unlocked by signing
+   in - was seen only at the next pairing. Now the announcement is followed by
+   a fresh listing, under the same bounds as the first (pages, tools, cursors),
+   and `rev` goes up so the page knows to take the new list.
+
+   One listing at a time: announcements that arrive while one is running are
+   folded into a single re-run, so a server announcing fifty times costs two
+   listings, not fifty. Before the start's own listing has finished, an
+   announcement only marks the list as due - the start is about to read it.
+
+   A listing that fails keeps the list it had and says so in the server's log:
+   the tools that were there may still work, and throwing them away would turn
+   a server's bad moment into every tool vanishing. */
+function mcpToolsChanged(srv){
+  if (srv.exited) return;
+  if (!srv.ready || srv.refreshing) { srv.again = true; return; }
+  srv.refreshing = true;
+  (async () => {
+    do {
+      srv.again = false;
+      const found = await mcpListTools(srv);
+      if (srv.exited) break;
+      if (found.error) {
+        srv.stderr = (srv.stderr + '\n[bridge] the server said its tools changed, and ' + found.error).slice(-MCP_STDERR_KEEP);
+      } else {
+        srv.tools = found.tools;
+        srv.rev++;
+      }
+    } while (srv.again && !srv.exited);
+    srv.refreshing = false;
+  })().catch(() => { srv.refreshing = false; });
 }
 function mcpNotify(srv, method, params){
   try { srv.child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method, params: params || {} }) + '\n'); }
@@ -856,7 +895,9 @@ const server = createServer(async (req, res) => {
                                 stderr: srv.stderr.slice(-1200) });
       }
       srv.tools = found.tools;
-      return json(res, 200, { id, info: srv.info,
+      srv.ready = true;
+      if (srv.again) mcpToolsChanged(srv);
+      return json(res, 200, { id, info: srv.info, rev: srv.rev,
                               capabilities: (init.result && init.result.capabilities) || {},
                               tools: srv.tools });
     }
@@ -885,8 +926,15 @@ const server = createServer(async (req, res) => {
 
     if (path === '/amv-bridge/mcp/list') {
       return json(res, 200, { servers: [...mcpServers.values()].map(s => ({
-        id: s.id, command: s.command, info: s.info, running: !s.exited,
+        id: s.id, command: s.command, info: s.info, running: !s.exited, rev: s.rev,
         tools: s.tools.map(t => t.name) })) });
+    }
+
+    /* The whole current list, for a page whose copy is behind (a lower rev). */
+    if (path === '/amv-bridge/mcp/tools') {
+      const srv = mcpServers.get(String(body.id || ''));
+      if (!srv) return json(res, 404, { error: 'no_such_server' });
+      return json(res, 200, { id: srv.id, rev: srv.rev, tools: srv.tools });
     }
 
     if (path === '/amv-bridge/exec') {
