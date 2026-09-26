@@ -1153,7 +1153,7 @@ async function _connectFinish(code, state){
   }catch(e){
     toast(String((e&&e.message)||'That connection did not complete.'),'error',8000);
   }
-  try{ const back=loadStr('amv_conn_return')||'integrations'; saveStr('amv_conn_return',''); setTab(back); }catch(e){}
+  _connGoBack();
   connReload();
   /* A job may have sent somebody here. Finishing it is the point of the trip,
      and it has to wait for the connection list to come back - `cwConnectResume`
@@ -1174,14 +1174,24 @@ async function connRemove(id){
   const okd = await showConfirmAsync('Disconnect '+(it.name||it.provider)+'?\n\n'+
     'AMV will revoke this with '+(it.name||it.provider)+' and forget it. Any job using it stops working until you connect it again.');
   if(!okd) return;
+  await _disconnectSaying(AMV_API.connectRemove(id));
+  connReload();
+}
+/* ONE WAY BACK AND ONE WAY TO REPORT A DISCONNECT, for Connected accounts and
+   app connectors both - the second sign-in flow calls these rather than
+   carrying copies that could drift apart. */
+function _connGoBack(){
+  try{ const back=loadStr('amv_conn_return')||'integrations'; saveStr('amv_conn_return',''); setTab(back); }catch(e){}
+}
+async function _disconnectSaying(pending){
   try{
-    const r = await AMV_API.connectRemove(id);
+    const r = await pending;
     toast((r && r.message) || 'Disconnected.', (r && r.revoked) ? 'success' : 'info', (r && r.revoked) ? 4000 : 9000);
   }catch(e){
     toast(String((e&&e.message)||'That could not be disconnected.'),'error',7000);
   }
-  connReload();
 }
+try{ window._connGoBack=_connGoBack; window._disconnectSaying=_disconnectSaying; }catch(e){}
 try{ window.connRemove=connRemove; }catch(e){}
 
 function _connSectionHTML(){

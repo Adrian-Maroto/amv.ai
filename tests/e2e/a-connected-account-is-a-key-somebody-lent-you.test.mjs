@@ -215,9 +215,15 @@ section('The handshake cannot be replayed or hijacked');
      where a fix applied to one copy silently misses the other. Anchored on the
      call now, plus the query/fragment rule that is specific to a redirect
      target and stayed here. */
-  ok(/_sameOrigin\(redirect, appUrl\)/.test(start),
+  /* And then out of connStart into _connReturnAddress, when app connectors
+     became the second sign-in flow: one check that both call, so the rule
+     cannot be fixed in one and missed in the other. */
+  const back = fn('_connReturnAddress');
+  ok(/_connReturnAddress\(env, body\)/.test(start) && /_connReturnAddress\(env, body\)/.test(fn('remoteStart')),
+     'both sign-in flows take their return address from the one shared check');
+  ok(/_sameOrigin\(redirect, appUrl\)/.test(back),
      'the return address is checked against this deployment, so it is not an open redirect');
-  ok(/!u\.search && !u\.hash/.test(start),
+  ok(/!u\.search && !u\.hash/.test(back),
      'and one carrying a query or fragment is refused, because the provider matches it exactly');
   ok(/if \(x\.username \|\| x\.password\) return false/.test(fn('_sameOrigin')),
      'and the comparison it calls refuses a credential URL outright, which a prefix check cannot');

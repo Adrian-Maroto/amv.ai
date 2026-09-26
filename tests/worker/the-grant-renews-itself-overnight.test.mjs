@@ -208,11 +208,25 @@ section('The renewal is in connUse, so nothing can reach a token around it');
     const decl = [...before.matchAll(/\n(?:async )?function ([A-Za-z0-9_]+)\s*\(/g)].pop();
     return decl ? decl[1] : '(top level)';
   });
-  ok(owners.length === 3, 'every place that opens a stored connection was found', owners);
-  ok(owners.filter(n => n === 'connUse').length === 1,
+  /* App connectors (rmcp) keep the same shape in their own store: one door
+     that hands a token on for work, _rmcpAccess, and one that opens a record
+     only to revoke it, _rmcpRevoke - called by the disconnect route and by
+     account erasure. Counted separately so neither store can grow a side door
+     hidden inside the other's allowance. */
+  const conn = owners.filter(n => !/^_rmcp/.test(n)), rmcp = owners.filter(n => /^_rmcp/.test(n));
+  ok(conn.length === 3, 'every place that opens a stored connection was found', owners);
+  ok(conn.filter(n => n === 'connUse').length === 1,
      'connUse is one of them, and only once', owners);
-  ok(owners.every(n => ['connUse', 'connRemove', 'authDeleteAccount'].indexOf(n) >= 0),
+  ok(conn.every(n => ['connUse', 'connRemove', 'authDeleteAccount'].indexOf(n) >= 0),
      'and the other two are the disconnect route and account erasure, which revoke rather than hand out', owners);
+  ok(rmcp.length === 2 && rmcp.includes('_rmcpAccess') && rmcp.includes('_rmcpRevoke'),
+     'app connectors: one door that hands a token on, one that only revokes', rmcp);
+  const users = [...codeOnly(src).matchAll(/(?<!function )_rmcpAccess\(env/g)].map(m => {
+    const decl = [...codeOnly(src).slice(0, m.index).matchAll(/\n(?:async )?function ([A-Za-z0-9_]+)\s*\(/g)].pop();
+    return decl ? decl[1] : '(top level)';
+  });
+  ok(users.length === 2 && users.includes('remoteTools') && users.includes('remoteCall'),
+     'and only listing an app\u2019s tools and running one go through that door', users);
 }
 
 if (report('the-grant-renews-itself-overnight') > 0) process.exitCode = 1;

@@ -546,18 +546,13 @@ async function _rmcpFinish(code, state){
   }catch(e){
     toast(String((e && e.message) || 'That connection did not complete.'), 'error', 8000);
   }
-  try{ const back = loadStr('amv_conn_return') || 'integrations'; saveStr('amv_conn_return', ''); setTab(back); }catch(e){}
+  _connGoBack();
   try{ await rmcpReload(); if(typeof _paintIntegrations === 'function') _paintIntegrations(); }catch(e){}
 }
 async function rmcpDisconnect(slug){
   const st = _rmcpStateOf(slug), name = (st && st.name) || slug;
   if(!await showConfirmAsync('Disconnect ' + name + '?\n\nAMV forgets the sign-in and asks ' + name + ' to revoke it. Chat can no longer use it until you connect it again.')) return;
-  try{
-    const r = await AMV_API.remoteRemove(slug);
-    toast((r && r.message) || 'Disconnected.', (r && r.revoked) ? 'success' : 'info', (r && r.revoked) ? 4000 : 9000);
-  }catch(e){
-    toast(String((e && e.message) || 'That could not be disconnected.'), 'error', 7000);
-  }
+  await _disconnectSaying(AMV_API.remoteRemove(slug));
   _rmcpForgetTools('app-' + slug);
   try{ await rmcpReload(); if(typeof _paintIntegrations === 'function') _paintIntegrations(); }catch(e){}
 }
@@ -569,8 +564,16 @@ function _rmcpForgetTools(id){ delete MCP.remote[id]; }
    up: whatever has not answered within four seconds is offered from the next
    turn instead. An app that fails is left out rather than offered broken. */
 const RMCP_TOOLS_TTL_MS = 10 * 60 * 1000;
+/* NEVER A WAIT ON THE WAY TO SENDING A MESSAGE.
+
+   The first version awaited the list of connected apps before every turn, with
+   no limit - so a server that was slow or silent held chat itself: Stop had
+   nothing to stop, and a message never went out. Which apps are connected is
+   now asked in the background and used from the next turn; only the tool
+   listing of apps already known to be connected is waited for, and that for
+   four seconds at most. */
 async function remoteRefreshTools(){
-  await _rmcpLoad(false);
+  if(_RMCP.state !== 'done'){ _rmcpLoad(false).catch(() => {}); return; }
   const want = Object.keys(_RMCP.apps).filter(k => _RMCP.apps[k].connected && !_RMCP.apps[k].broken);
   for(const id of Object.keys(MCP.remote)) if(want.indexOf(MCP.remote[id].slug) < 0) delete MCP.remote[id];
   const due = want.filter(slug => { const e = MCP.remote['app-' + slug]; return !e || Date.now() - e.at > RMCP_TOOLS_TTL_MS; });

@@ -45,7 +45,11 @@ await page.evaluate(() => {
   const realFetch = window.fetch;
   window.fetch = async (url, opts) => {
     const u = String(url);
-    if (opts && opts.method === 'POST' && u.includes('engine.test')) {
+    /* Model requests only. It counted every POST to this host, which is the
+       mistake the comment above describes happening once already - and it
+       happened again when chat began asking, once per page, which apps are
+       connected. Anything else goes to the real network and fails there. */
+    if (opts && opts.method === 'POST' && u.includes('engine.test') && u.includes('/v1/messages')) {
       window.__turns++;
       const sse =
         'data: {"type":"message_start","message":{"usage":{"input_tokens":1}}}\n\n' +
