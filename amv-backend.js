@@ -12053,6 +12053,7 @@ async function _route(request, env, ctx) {
     case '/auth/reset/verify':  return authResetVerify(request, env);
     case '/auth/admin-reset':   return authAdminReset(request, env);
     case '/v1/resume':       return resumeAnswer(request, env);
+    case '/v1/stop':         return aiStop(request, env);
     case '/v1/activity':     return accountActivity(request, env);
     case '/v1/keys/create':  return apiKeyCreate(request, env);
     case '/v1/keys/list':    return apiKeyList(request, env);
@@ -16077,15 +16078,16 @@ async function aiProxy(request, env, ctx) {
     return json({ error: e?.error?.message || 'AI error', status: upstream.status }, upstream.status);
   }
 
-  // 7) tee the stream: pass to client AND tally tokens/cost as it flows
-  const [toClient, toMeter] = upstream.body.tee();
+  // 7) pass the stream to the client AND tally tokens/cost as it flows
+  const flow = _stopAwareStream(upstream.body, env, user && user.email, _reqId, ctx);
+  const toClient = flow.toClient;
   /* The reservations are handed on so meterStream settles them instead of
      charging again. Passed by value AFTER every early return, so anything that
      refused above has already given them back and the numbers here are what is
      genuinely still booked. */
-  ctx.waitUntil(meterStream(toMeter, eng, { dName, mName, gName, costName, user, env, limits,
+  ctx.waitUntil(meterStream(flow.toMeter, eng, { dName, mName, gName, costName, user, env, limits,
     reqMessages: body.messages || [], reserved: reserve,
-    reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId }));
+    reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId, stopped: flow.stopped }));
 
   return new Response(toClient, {
     status: 200,
@@ -17244,7 +17246,86 @@ async function resumeAnswer(request, env) {
   return json({ ok: true, text: d.text || '', at: d.at || 0 });
 }
 
-async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat' }) {
+/* STOP MEANS STOP - AND A DROPPED CONNECTION STILL DOES NOT COST THE ANSWER.
+
+   The model's stream used to be tee()d: one branch to the browser, one to the
+   meter. A browser that went away cancelled only its own branch, and tee()
+   went on pulling the source for the meter - so the model always finished the
+   answer, the provider billed all of it, and the person who pressed Stop was
+   charged for every word they had refused.
+
+   That behaviour was half deliberate. On a phone moving between networks the
+   connection drops mid-answer, and finishing the answer and parking it
+   (_parkAnswer) is what lets the app collect it instead of paying twice. The
+   server cannot tell a Stop from a drop by looking at the connection - both
+   are a client that went away.
+
+   So a Stop says so. The app posts /v1/stop for the turn BEFORE it cuts the
+   connection, and that writes a short-lived flag scoped to the account. When
+   the browser's side of this stream is cancelled, the flag is read ONCE:
+     - present: the person stopped. The upstream request is cancelled, so the
+       model stops generating, and the meter settles on what was generated;
+     - absent: the connection dropped. Generation continues to the end and the
+       answer is parked for recovery, exactly as before.
+   A flag that is late or lost falls back to the second case - today's
+   behaviour, not something worse. Checked only on disconnect, never per chunk,
+   so an answer that runs to completion costs nothing extra. */
+const AI_STOP_TTL_S = 300;
+function _aiStopKey(email, reqId) { return 'aistop:' + String(email || '').toLowerCase() + ':' + reqId; }
+function _stopAwareStream(source, env, email, reqId, ctx) {
+  const reader = source.getReader();
+  const meter = new TransformStream();
+  const mw = meter.writable.getWriter();
+  const state = { stopped: false, clientGone: false };
+  let ctrl = null;
+  const toClient = new ReadableStream({
+    start(c) { ctrl = c; },
+    async cancel() {
+      state.clientGone = true;
+      if (!reqId || !email || !env || !env.AMV_KV) return;
+      let flag = null;
+      try { flag = await env.AMV_KV.get(_aiStopKey(email, reqId)); } catch (e) { flag = null; }
+      if (!flag) return;
+      state.stopped = true;
+      try { await reader.cancel('stopped by the person'); } catch (e) {}
+    },
+  });
+  const pump = (async () => {
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!state.clientGone) { try { ctrl.enqueue(value); } catch (e) { state.clientGone = true; } }
+        await mw.write(value);
+      }
+      if (!state.clientGone) { try { ctrl.close(); } catch (e) {} }
+    } catch (e) {
+      if (!state.clientGone) { try { ctrl.error(e); } catch (_) {} }
+    } finally {
+      try { await mw.close(); } catch (e) {}
+    }
+  })();
+  if (ctx && typeof ctx.waitUntil === 'function') ctx.waitUntil(pump);
+  return { toClient, toMeter: meter.readable, stopped: () => state.stopped };
+}
+async function aiStop(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Please sign in.' }, 401);
+  let body = {};
+  try { body = await request.json(); } catch (e) { body = {}; }
+  const id = String((body && body.id) || '');
+  if (!/^[A-Za-z0-9_-]{6,64}$/.test(id)) return json({ error: 'That is not an answer AMV knows about.', code: 'bad_id' }, 400);
+  const g = await guardAction(env, `aistop:${user.email}`, 60, 3000, 'stopping answers');
+  if (g) return g;
+  try {
+    await env.AMV_KV.put(_aiStopKey(user.email, id), '1', { expirationTtl: AI_STOP_TTL_S });
+  } catch (e) {
+    return json({ ok: false, error: 'AMV could not record the stop, so the answer may finish in the background.' }, 503);
+  }
+  return json({ ok: true });
+}
+
+async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', stopped = null }) {
   /* AMV-098: how long the user waited. Cost and quality are measured; speed is
      not, and it is the thing people feel most - a routing change that halves
      the bill and doubles the wait would have looked like a pure win on every
@@ -17260,6 +17341,8 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   let webSearches = 0;   // AMV-021: separately-billed web-search tool calls
   let sawUsage = false, sawAnyEvent = false;
   let answer = '';       // assembled so a client that dropped can get it back
+  let genChars = 0;      // everything the model generated: text, tool input, thinking
+  let finished = false;  // the provider's own end of message was seen
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -17273,6 +17356,13 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
         if (!payload || payload === '[DONE]') continue;
         let ev; try { ev = JSON.parse(payload); } catch { continue; }
         sawAnyEvent = true;
+        if (ev.type === 'content_block_delta' && ev.delta) {
+          const d = ev.delta;
+          genChars += (typeof d.text === 'string' ? d.text.length : 0)
+                    + (typeof d.partial_json === 'string' ? d.partial_json.length : 0)
+                    + (typeof d.thinking === 'string' ? d.thinking.length : 0);
+        }
+        if (ev.type === 'message_stop' || (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason)) finished = true;
         // Text as it streams. Free to collect - the bytes are already here.
         if (ev.type === 'content_block_delta' && ev.delta && typeof ev.delta.text === 'string') {
           if (!_firstByteAt) _firstByteAt = Date.now();
@@ -17308,6 +17398,21 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   /* Park whatever was produced. This runs whether the client is still there or
      not, which is the entire point: the answer the user lost is waiting. */
   if (reqId) await _parkAnswer(env, user && user.email, reqId, answer);
+
+  /* STOPPED BY THE PERSON: charged for what was generated, not for the whole
+     answer and not for nothing. The provider reports output tokens at the END
+     of an answer, so a stopped one has only message_start's placeholder; the
+     text that actually streamed is the measure of what was produced, at the
+     same four characters to a token the input estimate uses. Settled here, so
+     the "never saw usage" fallback below - half the cap, for a stream that
+     died - does not charge a Stop pressed before the first word as if half an
+     answer had been written. */
+  const _wasStopped = typeof stopped === 'function' && stopped();
+  if (_wasStopped && !finished) {
+    inTok = inTok || _estimateInputTokens(reqMessages);
+    outTok = Math.max(outTok, Math.ceil(genChars / 4));
+    sawUsage = true;
+  }
 
   // Fallback: if we never got usage (parse failure / hard interruption), estimate
   // conservatively from the request so a request is NEVER completely free.

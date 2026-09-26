@@ -1372,3 +1372,37 @@ Before building: confirm from current platform docs how a Worker observes a
 client disconnect (request signal / stream cancel) on this compatibility date,
 and add a worker suite that stops mid-stream and asserts both the upstream
 cancel and the settled amount.
+
+## Round thirty-one - Stop stops the model, and charges for what was written (owner-approved)
+
+Built as recommended in round thirty. The proxy no longer tee()s: a forwarder
+feeds the browser and the meter, and when the browser disconnects it reads a
+per-account `aistop:<email>:<turn>` flag (written by the new `/v1/stop`, TTL
+5 min) once. Flag: cancel upstream, meter settles on generated text (4 chars a
+token) when the provider's final count never came. No flag: finish and park for
+recovery, unchanged. The chat's Stop posts `/v1/stop` first and cuts the
+connection when it lands or after 1.5s; the words stop drawing at once.
+
+`stop-stops-the-model-and-the-meter` (Worker, a model that records its own
+cancellation) and `stop-tells-the-server-before-it-lets-go` (page).
+
+| # | what was broken | caught by |
+|---|---|---|
+| 128 | the stream is tee()d, so Stop never reaches the model (the finding) | 2 assertions |
+| 129 | every disconnect treated as a Stop - breaks answer recovery | 2 assertions |
+| 130 | the stop flag not scoped to the account | 1 assertion |
+| 131 | a stopped answer charged the placeholder output | 1 assertion - SURVIVED at first |
+| 132 | a Stop before any event falls to the half-cap fallback | 1 assertion - SURVIVED at first |
+| 133 | `/v1/stop` without an account | 1 assertion |
+| 134 | the chat loop cuts the connection before the stop is sent | 1 assertion |
+| 135 | Stop cuts immediately / never sends / forgets the turn | 1-2 assertions each |
+| 136 | the answer keeps drawing after Stop | 1 assertion |
+
+**131 and 132 survived the first version**: absolute thresholds that the unfixed
+meter also met (LESSONS 514). A Stop before the model has said anything is still
+charged the existing input-estimate floor (200 tokens) - there is nothing more
+precise to charge from at that point.
+
+**Not built:** Stop for the Build agent's model rounds and other non-chat paths
+(they cancel in the browser since round twenty-two, but do not name the turn to
+the server). Chat is where Stop is pressed.

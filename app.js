@@ -7406,10 +7406,35 @@ async function sendMsg(_opts) {
 
 /* Stop generating - lets the user halt a streaming response mid-way. Keeps
    whatever text arrived so far, cleanly, and never leaves the UI stuck busy. */
-let _activeStreamCtrl=null, _userStopped=false;
+let _activeStreamCtrl=null, _userStopped=false, _activeTurnId='';
+/* STOP TELLS THE SERVER FIRST, THEN LETS GO.
+
+   Cutting the connection alone looks, from the server, exactly like a phone
+   losing signal - and for that the server deliberately finishes the answer and
+   keeps it so it can be collected. Right for a dropped connection; wrong for
+   Stop, where it meant the model wrote the whole answer and the person paid for
+   all of it. So the turn is named to /v1/stop BEFORE the connection is cut, and
+   the server stops the model and charges for what was written.
+
+   The screen does not wait on it: the answer stops appearing at once. The stop
+   is given a short head start (it is one small request) and the connection is
+   cut when it lands or at the cap, whichever is first - if it is slow or fails,
+   the worst case is the answer finishing in the background, which is what
+   happened every time before this. */
+const _STOP_HEADSTART_MS = 1500;
 function stopGenerating(){
   _userStopped=true;
-  try{ if(_activeStreamCtrl) _activeStreamCtrl.abort('user-stop'); }catch(e){}
+  const ctrl = _activeStreamCtrl, turn = _activeTurnId;
+  const cut = () => { try{ if(ctrl) ctrl.abort('user-stop'); }catch(e){} };
+  if(!ctrl) return;
+  if(!turn || !(window.AMV_API && AMV_API.live && AMV_API.hasSession)){ cut(); return; }
+  let done = false;
+  const once = () => { if(done) return; done = true; cut(); };
+  setTimeout(once, _STOP_HEADSTART_MS);
+  try{
+    AMV_API._fetch('/v1/stop', { method:'POST', body: JSON.stringify({ id: turn }), noRetry:true, timeout:_STOP_HEADSTART_MS })
+      .then(once, once);
+  }catch(e){ once(); }
 }
 try{ window.stopGenerating=stopGenerating; }catch(e){}
 
@@ -7462,7 +7487,7 @@ async function _callAI(msgs, _opts) {
      sendMsg meant a turn that had spent its four rounds carried the spent
      counter into the next one, so regenerating it could not use tools at all. */
   if(!_opts._continueTools) _toolRound = 0;
-  _userStopped=false; _activeStreamCtrl=null;
+  _userStopped=false; _activeStreamCtrl=null; _activeTurnId='';
   try{
     if(!loadStr('amv_first_msg_sent')){ saveStr('amv_first_msg_sent','1'); AEGIS.log('first_message',{}); }
   }catch(e){}
@@ -7707,6 +7732,7 @@ async function _callAI(msgs, _opts) {
     while(true){
       const _ctrl=new AbortController();
       _activeStreamCtrl=_ctrl;               // expose so the user can Stop
+      _activeTurnId=_turnId;                  // and which turn Stop is about
       const _to=setTimeout(()=>_ctrl.abort('timeout'), 45000); // 45s timeout
       try{
         res=await fetch(_endpoint,{method:'POST',headers:_headers,body:_payload,signal:_ctrl.signal});
@@ -7877,7 +7903,12 @@ async function _callAI(msgs, _opts) {
     });
 
     while(true){
-      if(_userStopped){ try{ reader.cancel(); }catch(e){} break; }
+      /* Stop stops DRAWING here, at once - but it does not cut the connection.
+         Cancelling the reader closed it immediately, before the stop had reached
+         the server, which then saw a dropped connection and finished the answer
+         in the background at the person's expense. stopGenerating cuts it once
+         the server has been told. */
+      if(_userStopped){ break; }
       let _chunk;
       try{ _chunk=await _readOnce(); }
       catch(re){

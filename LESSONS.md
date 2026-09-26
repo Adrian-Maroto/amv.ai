@@ -13493,3 +13493,27 @@ while packs arrived perfectly well - intercept at the context. And "nothing was
 sent to be machine-translated" was true in the harness for the wrong reason: the
 fallback needs a backend and the harness has none. The page is told a backend
 is ready and the model call is recorded, so the assertion can fail.
+
+## 514. A server cannot tell "stop" from "lost signal" - so Stop has to say so
+
+The proxy tee()d the model's stream. A browser that went away cancelled only its
+own branch, and tee() kept pulling the source for the meter - so every Stop let
+the model finish, and the person was charged for the whole answer they refused.
+
+The obvious fix - cancel upstream whenever the client disconnects - would have
+broken something deliberate. For a phone losing signal the server finishes the
+answer and parks it, so the app collects it instead of paying twice. Both are
+"the client went away". So Stop names the turn to /v1/stop before the
+connection is cut, and the stream reads that flag once, at disconnect: flag
+means stop the model and charge for what was written; no flag means finish and
+park, as before. A late or lost flag degrades to today's behaviour, never to a
+worse one.
+
+Two page-side details decided whether it worked at all. The chat loop cancelled
+its reader on the next chunk after Stop - which would have closed the connection
+BEFORE the stop was sent, and made every Stop look like a drop. And the charge
+for a stopped answer cannot come from the provider's count, which arrives at the
+end; it is estimated from the text that streamed. Mutation testing made the
+threshold honest: the first assertion ("more than the question") passed with the
+estimate removed, because the right baseline is a Stop after the model started
+but before any word, not an absolute number.
