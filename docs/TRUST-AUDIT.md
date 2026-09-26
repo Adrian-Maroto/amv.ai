@@ -1718,3 +1718,45 @@ a short idle limit) and `stop-reaches-the-command-on-the-computer` (page).
 **202 survived the first version**: the check made a request while the command
 ran, and that request restarted the clock by itself. It is now measured with
 nothing asked during the run.
+
+## Round forty - no account can reach another; Family works end to end (owner-approved)
+
+**Removed:** one account asking for access to another - read their email, send
+as them, change their calendar, see their location, spend on their account.
+The owner removed it as a security risk: it was consent-gated, but the distance
+between a stranger and somebody's inbox was one emailed code. The server
+refuses every invitation that is not a family one and every acceptance of an
+older one (`link_removed`, 410 - before the rate limit, since a refusal sends
+nothing), and switches existing links off as it lists them. The page lost the
+form, the lists and the module (`AMVFamily`), chat and Crew lost the connector
+that could request access, and the local link copy is deleted on load.
+
+**Fixed while there - Family did not work.** The page had no way to send a
+family invitation at all (the server could; nothing called it), and a child
+could only accept in the browser that sent it, because the invitation was
+found through that browser's local store. Now: the parent's form sends it; the
+server keeps a per-account list of invitations waiting (`faminv`, on the
+erasure roster, never holding the code) served by `/v1/family/pending`; the
+child joins with the emailed code or declines (`/v1/family/decline`) on any
+device. Invitations last 24 hours instead of 15 minutes, and the email says
+where to enter the code.
+
+Two page defects found by the new suite, both real: replies that landed after
+Settings redrew painted a detached copy of the pane, so the child's invitation
+never appeared; and a redraw after Send wiped the typed address and the answer.
+The pane now marks itself and repaints whichever copy is on screen, and keeps
+what was typed and said outside the markup.
+
+`family` (Worker) and `account-access` (page).
+
+| # | what was broken | caught by |
+|---|---|---|
+| 207 | any permission accepted in an invitation (the removal) | 2 assertions |
+| 208 | an old email-access request can still be accepted | 1 assertion |
+| 209 | existing links not switched off | 1 assertion (the list filter alone is equivalent) |
+| 210 | the pending list carries the code | 1 assertion |
+| 211 | somebody else declines your invitation | 1 assertion |
+| 212 | the page asks for more than family | 1 assertion |
+| 213 | the answer is not kept across a redraw | 1 assertion |
+| 214 | replies paint the detached pane | 2 assertions |
+| 215 | the local link copy survives | 1 assertion |

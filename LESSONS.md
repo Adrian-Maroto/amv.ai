@@ -13601,3 +13601,13 @@ prove the pairing was still standing - and a request is use, so it restarted
 the clock itself, and the finish never had to. The observer was the cause of
 what it observed. When a check touches the state it measures, measure the
 claim again with the check's own hands off it.
+
+## 520. A feature can pass its tests and still be unusable by the two people it is for
+
+Family had a server suite that proved a child could join only with the code
+from their own inbox, and it was right. Nothing on the page sent a family
+invitation, and the only way to find one to accept was the local store of the
+browser that sent it - so a parent and a child, on two phones, could never
+complete it. Each half was tested; the journey between two people was not.
+When a feature involves two accounts, test it as two accounts on two devices,
+end to end, or it has not been tested at all.

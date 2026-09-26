@@ -8590,6 +8590,12 @@ async function linkAccept(request, env){
   const inv = await DB.get(env, 'link', key);
   if(!inv) return json({ error:'That invitation does not exist for this account.' }, 404);
   if(inv.status !== 'pending') return json({ error:'That invitation has already been used or blocked.' }, 400);
+  /* A request for access that was sent before access was removed cannot be
+     accepted into existence now. */
+  if(!(inv.scopes || []).includes('family') || (inv.scopes || []).length !== 1){
+    inv.status = 'refused'; await DB.put(env, 'link', key, inv);
+    return json({ error:'Access to someone else\u2019s account has been removed from AMV, so this request can no longer be accepted.', code:'link_removed' }, 410);
+  }
   if(Date.now() > inv.expiresAt){
     inv.status = 'expired'; await DB.put(env, 'link', key, inv);
     return json({ error:'That code has expired. Ask for a new one.' }, 400);
@@ -8607,6 +8613,7 @@ async function linkAccept(request, env){
 
   inv.status = 'accepted'; inv.acceptedAt = Date.now();
   await DB.put(env, 'link', key, inv);
+  await _famInvDrop(env, user.email, id);
   // the link itself, readable by BOTH sides
   const link = { id:'lnk_' + Date.now().toString(36), owner:user.email, grantee:inv.grantee,
     scopes:inv.scopes, active:true, createdAt:Date.now() };
@@ -8677,8 +8684,18 @@ async function linkAccept(request, env){
 async function linkList(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in first' }, 401);
-  const rec = (await DB.get(env, 'links', user.email)) || { items: [] };
-  const items = (rec.items || []).filter(l => l.active);
+  /* Links that were not a family are switched off as they are found - under
+     the lock, on this side; the other side's copy goes the next time that
+     account lists. Nothing anywhere acts on them, and nothing lists them. */
+  let rec = (await DB.get(env, 'links', user.email)) || { items: [] };
+  if((rec.items || []).some(l => l && l.active && !_isFamilyLink(l))){
+    await _withKind(env, 'links', user.email, (r) => {
+      if(!r) return;
+      (r.items || []).forEach(l => { if(l && l.active && !_isFamilyLink(l)){ l.active = false; l.revokedAt = Date.now(); l.revokedBy = 'removed'; } });
+    }, { items: [] });
+    rec = (await DB.get(env, 'links', user.email)) || { items: [] };
+  }
+  const items = (rec.items || []).filter(l => l.active && _isFamilyLink(l));
   return json({ ok:true,
     iCanAccess: items.filter(l => l.grantee === user.email).map(l => ({ id:l.id, account:l.owner, scopes:l.scopes })),
     canAccessMe: items.filter(l => l.owner === user.email).map(l => ({ id:l.id, account:l.grantee, scopes:l.scopes })) });
@@ -9252,13 +9269,52 @@ async function familyRemove(request, env){
   return json({ ok:true, members: fam.members });
 }
 
+const FAMILY_INVITE_TTL_MS = 24 * 3600 * 1000;
+const _isFamilyLink = (l) => Array.isArray(l && l.scopes) && l.scopes.length === 1 && l.scopes[0] === 'family';
+async function _famInvDrop(env, owner, id){
+  try{
+    await _withKind(env, 'faminv', owner, (r) => {
+      if(!r) return;
+      r.items = (r.items || []).filter(x => x && x.id !== id);
+    }, { items: [] });
+  }catch(e){}
+}
+/* The family invitations waiting for THIS account (/v1/family/pending): who
+   asked and when it expires - never the code, which only their inbox has. */
+async function familyPending(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const idx = (await DB.get(env, 'faminv', user.email)) || { items: [] };
+  const now = Date.now(), out = [];
+  for(const it of (idx.items || []).slice(0, 20)){
+    if(!it || !(it.expiresAt > now)) continue;
+    const inv = await DB.get(env, 'link', user.email + '|' + it.id);
+    if(inv && inv.status === 'pending' && inv.expiresAt > now && _isFamilyLink(inv))
+      out.push({ id: it.id, from: inv.grantee, expiresAt: inv.expiresAt });
+  }
+  return json({ ok:true, invitations: out });
+}
+/* Saying no (/v1/family/decline). Only the invited account can, and the code
+   stops working at once - "no" is not "not yet". */
+async function familyDecline(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const blocked = await guardAction(env, 'famdecl:' + user.email, 20, 60, 'family invitation replies');
+  if(blocked) return blocked;
+  const body = await request.json().catch(() => ({}));
+  const id = String(body.id || '').slice(0, 40);
+  const key = user.email + '|' + id;
+  const inv = id ? await DB.get(env, 'link', key) : null;
+  if(!inv) return json({ error:'That invitation does not exist for this account.' }, 404);
+  if(inv.status === 'pending'){ inv.status = 'refused'; inv.refusedAt = Date.now(); await DB.put(env, 'link', key, inv); }
+  await _famInvDrop(env, user.email, id);
+  audit(env, 'family_declined', { by: user.email, from: inv.grantee });
+  return json({ ok:true, declined:true });
+}
+
 async function linkInvite(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in first' }, 401);
-
-  // an invite is an email to someone else, so it is rate limited hard
-  const blocked = await guardAction(env, 'linkinv:' + user.email, 3, 20, 'account link invitations');
-  if(blocked) return blocked;
 
   const body = await request.json().catch(() => ({}));
   const owner = String(body.owner || '').trim().toLowerCase();
@@ -9266,12 +9322,42 @@ async function linkInvite(request, env){
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(owner)) return json({ error:'valid email required' }, 400);
   if(owner === user.email) return json({ error:'that is your own account' }, 400);
   if(!scopes.length) return json({ error:'at least one permission is required' }, 400);
+  /* FAMILY IS THE ONLY LINK THERE IS.
+
+     A link could also ask to read someone's email, send as them, change their
+     calendar or spend on their account. The owner removed that: one account
+     reaching into another is the account-takeover feature this whole flow was
+     built to make safe, and "safe" still meant a code in the right inbox away
+     from a stranger reading somebody's mail. Family stays - a parent sets
+     limits on a child's account and never sees what the child writes - and it
+     is the only thing an invitation can now be for. */
+  if(scopes.length !== 1 || scopes[0] !== 'family'){
+    return json({ error:'Access to someone else\u2019s account has been removed from AMV. Family is the one way to link accounts.',
+                  code:'link_removed' }, 410);
+  }
+
+  /* An invite is an email to someone else, so it is rate limited hard - after
+     the refusal above, which sends nothing and so has nothing to limit. */
+  const blocked = await guardAction(env, 'linkinv:' + user.email, 3, 20, 'account link invitations');
+  if(blocked) return blocked;
 
   // the code is generated HERE and stored server-side - the requester never sees it
   const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
-  const rec = { id:String(body.id||'').slice(0,40), grantee:user.email, owner, scopes,
-    code, createdAt:Date.now(), expiresAt:Date.now() + 15*60*1000, attempts:0, status:'pending' };
+  /* The id is made here. A caller-chosen one let two invitations share a key,
+     the second overwriting the first. */
+  const rec = { id:'fi_' + crypto.randomUUID().replace(/-/g,'').slice(0, 20), grantee:user.email, owner, scopes,
+    code, createdAt:Date.now(), expiresAt:Date.now() + FAMILY_INVITE_TTL_MS, attempts:0, status:'pending' };
   await DB.put(env, 'link', owner + '|' + rec.id, rec);
+  /* WHERE THE INVITED ACCOUNT FINDS IT. The invitation is keyed by the invited
+     account, and nothing listed those - so accepting only worked in the same
+     browser that sent it, which for a parent and a child is never. The code is
+     NOT in this list: it goes only to their inbox, which is the proof. */
+  await _withKind(env, 'faminv', owner, (r) => {
+    if(!r) return;
+    const now = Date.now();
+    r.items = [{ id: rec.id, from: user.email, expiresAt: rec.expiresAt },
+               ...(r.items || []).filter(x => x && x.expiresAt > now && x.from !== user.email)].slice(0, 20);
+  }, { items: [] });
 
   if(!env.EMAIL_API_KEY)
     return json({ ok:false, code:'needs_service',
@@ -9292,7 +9378,8 @@ async function linkInvite(request, env){
     + '  - whether you can withdraw money you earn\n\n'
     + 'They CANNOT read your conversations, see what you ask AMV, or see anything AMV writes for you.\n\n'
     + 'You can leave at any time from Settings, and everything goes back to normal.\n\n'
-    + 'Your approval code is ' + code + '. It expires in 15 minutes.\n\n'
+    + 'To accept, open AMV, go to Settings, then Family, and enter this code: ' + code + '\n'
+    + 'It expires in 24 hours.\n\n'
     + 'If you were not expecting this, ignore this email - nothing changes unless you enter the code yourself.';
   const sent = await fetchDeadline('https://api.resend.com/emails', {
     method:'POST', headers:{ 'Authorization':'Bearer ' + env.EMAIL_API_KEY, 'Content-Type':'application/json' },
@@ -12114,6 +12201,8 @@ async function _route(request, env, ctx) {
     case '/v1/family/limits':        return familySetLimits(request, env);
     case '/v1/family/remove':        return familyRemove(request, env);
     case '/v1/family/leave':         return familyLeave(request, env);
+    case '/v1/family/pending':       return familyPending(request, env);
+    case '/v1/family/decline':       return familyDecline(request, env);
     case '/v1/link/invite':          return linkInvite(request, env);
     case '/v1/link/accept':          return linkAccept(request, env);
     case '/v1/link/list':            return linkList(request, env);
@@ -13151,6 +13240,8 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
   'ingest',
   'purchases', 'stripecust', 'userteam', 'sites', 'spendlimits',
   'fin', 'finlink', 'invsnap', 'links', 'fam', 'apikeys', 'consent', 'widget_owner', 'shares', 'presence',
+  /* Family invitations waiting for this person: who asked, and until when. */
+  'faminv',
   /* The calendar subscriptions. Caught by the erasure roster on the run that
      added them, which is exactly what that check is for - a new per-person
      record is the kind of thing that gets written first and remembered second,

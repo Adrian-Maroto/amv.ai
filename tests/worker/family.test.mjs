@@ -26,7 +26,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'family.harness.mjs');
 writeFileSync(harness, src + `
-export { familyGet, familySetLimits, familyRemove, familyLeave, linkInvite, linkAccept,
+export { familyGet, familySetLimits, familyRemove, familyLeave, familyPending, familyDecline, linkInvite, linkAccept, linkList,
          marketBuy, marketWithdraw, requireUser, setEntitlement, issueTokens,
          _familyOf, _familyLimitsOf, _monthlyCeilingUSD, DB, FAMILY_DEFAULTS, FAMILY_MAX_CHILDREN };
 `);
@@ -67,6 +67,14 @@ const kidTok = await tok('kid@x.com');
 for(const who of ['kid@x.com','solo@x.com','parent@x.com']) await _adult(env, who);
 await W.setEntitlement(env, 'parent@x.com', 'elite');
 
+/* The invitation's id is made by the server now, and the invited account finds
+   it the way its own device will - through its list of pending invitations. */
+async function inviteId(owner, token){
+  const d = await jget(await W.familyPending(req({}, token), env));
+  const hit = (d.invitations || [])[0];
+  return hit ? hit.id : '';
+}
+
 section('A child joins only by confirming in their own inbox');
 {
   /* A parent cannot put somebody in their family by typing an address. The code
@@ -74,8 +82,12 @@ section('A child joins only by confirming in their own inbox');
      that account can redeem it. */
   const inv = await W.linkInvite(req({ owner: 'kid@x.com', id: 'i1', scopes: ['family'] }, parentTok), env);
   ok(inv.status === 200, 'the invitation is accepted for sending', inv.status);
+  const i1 = await inviteId('kid@x.com', kidTok);
+  ok(/^fi_/.test(i1), 'the child finds it in their own pending list, on any device', i1);
+  const pend = await jget(await W.familyPending(req({}, kidTok), env));
+  ok(pend.invitations[0].from === 'parent@x.com' && !('code' in pend.invitations[0]), 'naming who asked, and never the code', pend.invitations[0]);
 
-  const stored = await W.DB.get(env, 'link', 'kid@x.com|i1');
+  const stored = await W.DB.get(env, 'link', 'kid@x.com|' + i1);
   ok(!!stored && stored.code, 'a code exists server-side');
   ok(!JSON.stringify(await jget(inv)).includes(String(stored.code)),
      'and is never returned to whoever asked for it');
@@ -83,10 +95,10 @@ section('A child joins only by confirming in their own inbox');
   /* Somebody else holding the code cannot redeem it - the record is keyed by
      the account being added. */
   const otherTok = await tok('stranger@x.com');
-  const stolen = await W.linkAccept(req({ id: 'i1', code: stored.code }, otherTok), env);
+  const stolen = await W.linkAccept(req({ id: i1, code: stored.code }, otherTok), env);
   ok(stolen.status === 404, 'a third party cannot redeem it even with the code', stolen.status);
 
-  const okRes = await W.linkAccept(req({ id: 'i1', code: stored.code }, kidTok), env);
+  const okRes = await W.linkAccept(req({ id: i1, code: stored.code }, kidTok), env);
   const d = await jget(okRes);
   ok(okRes.status === 200 && d.family, 'the child themselves can', d);
   ok(d.family.parent === 'parent@x.com', 'and lands in that parent’s family', d.family.parent);
@@ -194,9 +206,10 @@ section('The account holder can always get out');
      a new account in a minute, so the lock was never holding anyone. All it did
      was make the abuse case unfixable. */
   const inv = await W.linkInvite(req({ owner: 'trapped@x.com', id: 'i9', scopes: ['family'] }, parentTok), env);
-  const rec = await W.DB.get(env, 'link', 'trapped@x.com|i9');
   const trappedTok = await tok('trapped@x.com');
-  await W.linkAccept(req({ id: 'i9', code: rec.code }, trappedTok), env);
+  const i9 = await inviteId('trapped@x.com', trappedTok);
+  const rec = await W.DB.get(env, 'link', 'trapped@x.com|' + i9);
+  await W.linkAccept(req({ id: i9, code: rec.code }, trappedTok), env);
   ok(!!(await W._familyOf(env, 'trapped@x.com')), 'they are in the family');
 
   const out = await W.familyLeave(req({}, trappedTok), env);
@@ -247,8 +260,10 @@ section('Removing a child lifts the limits with them');
 section('Only the parent of that family can change anything');
 {
   const inv2 = await W.linkInvite(req({ owner: 'kid2@x.com', id: 'i2', scopes: ['family'] }, parentTok), env);
-  const rec = await W.DB.get(env, 'link', 'kid2@x.com|i2');
-  await W.linkAccept(req({ id: 'i2', code: rec.code }, await tok('kid2@x.com')), env);
+  const kid2Tok = await tok('kid2@x.com');
+  const i2 = await inviteId('kid2@x.com', kid2Tok);
+  const rec = await W.DB.get(env, 'link', 'kid2@x.com|' + i2);
+  await W.linkAccept(req({ id: i2, code: rec.code }, kid2Tok), env);
 
   const outsider = await tok('outsider@x.com');
   const nope = await W.familySetLimits(req({ child: 'kid2@x.com', limits: { monthlyUSD: 500, marketplace: true, payouts: true } }, outsider), env);
@@ -318,6 +333,53 @@ section('A half-broken family record can still be repaired by its parent');
   const r = await W.familyRemove(req({ child:'kid@x.com' }, await tok('parent@x.com')), env);
   ok(r.status === 200, 'the parent the marker names can still remove them', r.status);
   ok(!(await W.DB.get(env, 'ent', 'kid@x.com')).familyOf, 'and the limit lifts', true);
+}
+
+section('Access to someone else\u2019s account is gone; Family is the one link');
+{
+  /* Reading someone's email, sending as them, changing their calendar, spending
+     on their account: removed. Asked for, it is refused and says why. */
+  for (const scopes of [['email_view'], ['spend'], ['calendar_edit'], ['family', 'email_send']]) {
+    const r = await W.linkInvite(req({ owner: 'victim@x.com', scopes }, parentTok), env);
+    const d = await jget(r);
+    ok(r.status === 410 && d.code === 'link_removed', 'a request for ' + scopes.join('+') + ' is refused', { status: r.status, d });
+  }
+  ok(!(await W.DB.get(env, 'faminv', 'victim@x.com')), 'and nothing is left waiting for the account it named', true);
+
+  /* A request made before the removal cannot be accepted into existence now. */
+  await W.DB.put(env, 'link', 'old@x.com|legacy1', { id: 'legacy1', grantee: 'parent@x.com', owner: 'old@x.com',
+    scopes: ['email_view'], code: '123456', createdAt: Date.now(), expiresAt: Date.now() + 60000, attempts: 0, status: 'pending' });
+  const oldTok = await tok('old@x.com');
+  const late = await W.linkAccept(req({ id: 'legacy1', code: '123456' }, oldTok), env);
+  ok(late.status === 410, 'an old request for email access cannot be accepted', late.status);
+
+  /* And a link that was already active is switched off the next time it is listed. */
+  const legacy = { id: 'lnk_old', owner: 'old@x.com', grantee: 'parent@x.com', scopes: ['email_view', 'spend'], active: true, createdAt: 1 };
+  await W.DB.put(env, 'links', 'old@x.com', { items: [legacy] });
+  const listed = await jget(await W.linkList(req({}, oldTok), env));
+  ok(listed.canAccessMe.length === 0 && listed.iCanAccess.length === 0, 'it is not listed as access', listed);
+  const after = await W.DB.get(env, 'links', 'old@x.com');
+  ok(after.items[0].active === false, 'and it is switched off in storage', after.items[0]);
+}
+
+section('The invited account can say no, and the code stops working');
+{
+  /* Its own inviter: invitations are rate limited per sender, and this one
+     should not be refused for the ones the sections above sent. */
+  await _adult(env, 'parent2@x.com');
+  await W.setEntitlement(env, 'parent2@x.com', 'elite');
+  await W.linkInvite(req({ owner: 'maybe@x.com', scopes: ['family'] }, await tok('parent2@x.com')), env);
+  const mTok = await tok('maybe@x.com');
+  const id = await inviteId('maybe@x.com', mTok);
+  const rec = await W.DB.get(env, 'link', 'maybe@x.com|' + id);
+  const no = await W.familyDecline(req({ id }, mTok), env);
+  ok(no.status === 200, 'declined', no.status);
+  const still = await jget(await W.familyPending(req({}, mTok), env));
+  ok(still.invitations.length === 0, 'it leaves their list', still);
+  const tryIt = await W.linkAccept(req({ id, code: rec.code }, mTok), env);
+  ok(tryIt.status === 400, 'and the code no longer works', tryIt.status);
+  const stranger = await W.familyDecline(req({ id }, await tok('someoneelse@x.com')), env);
+  ok(stranger.status === 404, 'nobody else can decline it for them', stranger.status);
 }
 
 if (report('family') > 0) process.exitCode = 1;

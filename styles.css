@@ -15557,3 +15557,15 @@ iframe.amv-sbx{
 .nav-back{ color:var(--tx); }
 .nav-back:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 @media (hover:none){ .nav-back{ min-width:44px; min-height:44px; } }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LAYER A257 - an invitation to join a family
+   One row per invitation waiting for this account: who asked, the code from
+   their email, Join or Decline. Separated like the family's own rows.
+   ══════════════════════════════════════════════════════════════════════ */
+.fam-inv{
+  padding:var(--sp-3) 0;
+  border-top:1px solid var(--bd);
+}
+.fam-inv:first-of-type{ border-top:0; padding-top:0; }
+.fam-inv .mf-codeline{ margin-top:var(--sp-2); }

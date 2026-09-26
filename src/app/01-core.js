@@ -1227,12 +1227,13 @@ const AMV_API = {
   async familyLimits(child,limits){ const r=await this._fetch('/v1/family/limits',{method:'POST',body:JSON.stringify({child,limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyLeave(){ const r=await this._fetch('/v1/family/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyRemove(child){ const r=await this._fetch('/v1/family/remove',{method:'POST',body:JSON.stringify({child})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
-  /* Who can reach this account, and taking it back. Both routes existed and
-     were careful - revoking deactivates the link on BOTH sides - and no client
-     code had ever called either, so access could be granted and never seen
-     again, let alone withdrawn. */
-  async linkList(){ const r=await this._fetch('/v1/link/list',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
-  async linkRevoke(id){ const r=await this._fetch('/v1/link/revoke',{method:'POST',body:JSON.stringify({id})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  /* Joining a family. The invitation is a code emailed to the person being
+     added; they find it on any device through familyPending and redeem it
+     with familyAccept. There is no other kind of link any more. */
+  async familyInvite(email){ const r=await this._fetch('/v1/link/invite',{method:'POST',body:JSON.stringify({owner:email,scopes:['family']})}); const d=await r.json().catch(()=>({})); if(d.error) throw new Error(d.error); return d; },
+  async familyPending(){ const r=await this._fetch('/v1/family/pending',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
+  async familyAccept(id,code){ const r=await this._fetch('/v1/link/accept',{method:'POST',body:JSON.stringify({id,code})}); const d=await r.json().catch(()=>({})); if(d.error) throw new Error(d.error); return d; },
+  async familyDecline(id){ const r=await this._fetch('/v1/family/decline',{method:'POST',body:JSON.stringify({id})}); const d=await r.json().catch(()=>({})); if(d.error) throw new Error(d.error); return d; },
 
   /* Spending limits live on the server, because the browser copy is the
      editable one. These are the only way the screen should read or write them. */

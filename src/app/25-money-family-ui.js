@@ -79,8 +79,8 @@ function _renderSpendingPane(pane, redraw){
   } else if(comp && !adult){
     gate = '<div class="mf-gate warn" role="note">'+
       '<h3>Money features are ' + comp.ADULT_AGE + '+</h3>'+
-      '<p>Everything else in AMV keeps working. An adult can set spending up on their own account, and link yours to it from '+
-      '<b>Family &amp; linked accounts</b> if they want to buy things for you.</p></div>';
+      '<p>Everything else in AMV keeps working. An adult can add you to their '+
+      '<b>Family</b> and set what AMV may spend for you.</p></div>';
   }
 
   const canConfigure = !gate;
@@ -230,7 +230,7 @@ function _renderSpendingPane(pane, redraw){
 }
 try{ window._renderSpendingPane = _renderSpendingPane; }catch(e){}
 
-/* ---------- FAMILY / LINKED ACCOUNTS ---------- */
+/* ---------- FAMILY ---------- */
 /* ============================================================
    AMV-102  THE PARENT'S PANEL.
 
@@ -250,14 +250,18 @@ try{ window._renderSpendingPane = _renderSpendingPane; }catch(e){}
        here is a suggestion.
    ============================================================ */
 let _FAM_STATE = null;
-/* The server's list of who can reach this account. null = not asked yet. */
-let _LINK_STATE = null;
-/* In flight, as distinct from not yet asked. This pane now makes TWO
-   independent requests, and each one's reply re-renders - so a guard that only
-   asks "is the state still null" re-issues the other request every time its
-   sibling lands, and the count grows with each redraw. Nothing loops forever,
-   which is exactly why it would have gone unnoticed. */
-let _FAM_BUSY = false, _LINK_BUSY = false;
+/* Family invitations waiting for THIS account, from the server. null = not asked yet. */
+let _FAM_PENDING = null;
+/* In flight, as distinct from not yet asked. This pane makes TWO independent
+   requests, and each one's reply re-renders - so a guard that only asks "is
+   the state still null" re-issues the other request every time its sibling
+   lands, and the count grows with each redraw. */
+let _FAM_BUSY = false, _FAM_PEND_BUSY = false;
+/* What was typed and what was last said, kept OUTSIDE the markup. The pane is
+   redrawn whenever one of its two requests lands, and on a slow connection that
+   can be after somebody pressed Send - which wiped the address and the answer,
+   so they never learned whether the invitation went out. */
+const _FAM_UI = { email: '', say: '' };
 
 function _famMoney(n){ return '$' + (Math.round((+n || 0) * 100) / 100).toFixed(2); }
 
@@ -294,8 +298,7 @@ function _famParentHTML(st){
       '<p class="fam-p">Add someone and you pay for their AMV, and you decide what it may spend on their '+
       'account, whether they can buy anything, and whether they can take money out. They keep their own '+
       'sign-in and their own conversations.</p>'+
-      '<p class="fam-p fam-quiet">Nobody is in your family yet. Use the invitation below - the confirmation '+
-      'code goes to <b>their</b> inbox, so naming an address is not enough.</p></div>';
+      '<p class="fam-p fam-quiet">Nobody is in your family yet.</p></div>';
   }
   const kids = p.members || [];
   return '<div class="ss2"><h3>Your family</h3>'+
@@ -395,230 +398,133 @@ function _wireFamilyParent(pane){
   }));
 }
 
+function _famRedraw(pane){
+  const live = (pane && pane.isConnected) ? pane : document.querySelector('[data-fam-pane]');
+  if(live) _renderFamilyPane(live);
+}
 function _renderFamilyPane(pane){
-  if(typeof AMVFamily === 'undefined'){ pane.innerHTML = '<h2 class="set-title">Family</h2>'; return; }
-  /* Fetch once, then redraw with the real thing. Guarded on not already having
-     it, because an unguarded redraw here is a fetch loop. */
+  /* FAMILY, AND NOTHING ELSE THAT REACHES INTO SOMEBODY'S ACCOUNT.
+
+     This pane also offered "ask for access to someone's account": read their
+     email, send as them, change their calendar, spend on their account. The
+     owner removed that as the security risk it is - one account reaching into
+     another is the account-takeover feature, however carefully it is gated -
+     and the server now refuses it (link_removed). What stays is Family: a
+     parent pays for a child's AMV and sets what it may spend, and never sees
+     what the child writes.
+
+     And Family now works end to end. The page had no way to send a family
+     invitation at all, and a child could only accept in the browser that sent
+     it - so for a parent and a child, never. The parent's form below sends it;
+     the child's list comes from the server, on any device. */
   const needState = _FAM_STATE === null;
-  const needLinks = _LINK_STATE === null;
-  const local = AMVFamily.mine();
-  /* The SERVER's answer about who can reach this account, with the local store
-     as a fallback only when there is no backend to ask.
-
-     This screen used to read the local store alone, which meant a second device
-     showed nobody at all - and, far worse, "Remove" wrote `active:false` into
-     localStorage and never told the server, while the server is the thing that
-     actually authorises a linked account. So the one control that exists to cut
-     somebody off reported "that access stopped immediately" and stopped
-     nothing. */
-  const m = _LINK_STATE
-    ? { iCanAccess:_LINK_STATE.iCanAccess||[], canAccessMe:_LINK_STATE.canAccessMe||[],
-        pendingForMe:local.pendingForMe, revoked:local.revoked }
-    : local;
-  const scopes = AMVFamily.SCOPES;
-  const high = AMVFamily.HIGH_RISK || [];
-
-  const linkRow = (l, dir) =>
-    '<li class="mf-link"><div><div class="mf-link-a">'+escH(l.account)+'</div>'+
-      '<div class="mf-link-s">'+(l.scopes||[]).map(s => escH(scopes[s]||s)).join(' · ')+'</div></div>'+
-      '<button class="btn bs mf-revoke" type="button" data-link="'+escH(l.id)+'" '+
-      'aria-label="Remove the link '+escH(dir==='out'?('to '+l.account):('that lets '+l.account+' access your account'))+'">Remove</button></li>';
+  const needPending = _FAM_PENDING === null;
+  const online = !!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
+  /* Marked, so an answer that lands after Settings has redrawn paints the pane
+     that is on screen, not the one it was asked from - which is detached, and
+     painting it shows the person nothing. */
+  try{ pane.setAttribute('data-fam-pane', '1'); }catch(e){}
+  const pend = (_FAM_PENDING && _FAM_PENDING.invitations) || [];
 
   pane.innerHTML =
     '<h2 class="set-title">Family</h2>'+
-    '<div class="set-sub">Carry someone else\u2019s AMV the way a phone plan does - you pay, and you set what it may spend on their account. They keep their own sign-in and their own conversations.</div>'+
-    /* The parent's panel first, because that is who this screen is for. The
-       generic account-linking below it is a different, rarer thing. */
+    '<div class="set-sub">Pay for someone’s AMV and set what it may spend. They keep their own sign-in and their own conversations.</div>'+
+    (pend.length ?
+      '<div class="ss2 fam-inbox"><h3>Invitations for you</h3>'+
+        pend.map(p =>
+          '<div class="fam-inv" data-fam-inv="'+escH(p.id)+'">'+
+            '<p class="fam-p"><b>'+escH(p.from)+'</b> wants to add you to their family. They would pay for your AMV and set what it may spend. They could not see your conversations.</p>'+
+            '<label class="lbl" for="fam-code-'+escH(p.id)+'">Code from the email we sent you</label>'+
+            '<div class="mf-codeline">'+
+              '<input class="inp" id="fam-code-'+escH(p.id)+'" type="text" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="123456">'+
+              '<button class="btn bp" type="button" data-fam-accept="'+escH(p.id)+'">Join</button>'+
+              '<button class="btn bs" type="button" data-fam-decline="'+escH(p.id)+'">Decline</button>'+
+            '</div>'+
+            '<div class="fam-say" data-fam-inv-say="'+escH(p.id)+'" role="status" aria-live="polite"></div>'+
+          '</div>').join('')+
+      '</div>' : '')+
     _famParentHTML(_FAM_STATE)+
     _famChildHTML(_FAM_STATE)+
-    '<div class="ss2"><h3>Linking accounts generally</h3>'+
-      '<p class="fam-p fam-quiet">Separately from a family, two accounts can grant each other named permissions - '+
-      'useful for an assistant or a colleague. Both sides have to agree and either side can cut it instantly.</p></div>'+
-
-    '<div class="ss2"><h3>How this stays safe</h3>'+
-      '<ul class="mf-terms">'+
-        '<li>A link needs a request from one account and an approval from the other.</li>'+
-        '<li>The approval code is sent to the inbox of the account being accessed, so naming an address is not enough - you have to control it.</li>'+
-        '<li>You choose exactly what the link covers. Sending email, buying things and editing a calendar are never granted quietly.</li>'+
-        '<li>Approving and revoking are both recorded, and either of you can revoke at any time.</li>'+
-      '</ul></div>'+
-
-    /* The truth about what a link does TODAY. It records an agreed permission
-       between two accounts - the invitation, the emailed code, the approval and
-       the revoke are all real - but nothing in AMV acts on somebody else's
-       account yet. Letting one account send email or buy things as another is
-       the most dangerous capability this product could have, and it is not
-       being switched on quietly as a side effect of a settings screen.
-
-       Saying so here is the difference between a permission ledger and a
-       promise nobody is keeping. Somebody who ticks "make purchases on their
-       account" must not walk away believing they can. */
-    '<div class="mf-gate warn" role="note"><h3>What a link does today</h3>'+
-      '<p>AMV <b>records</b> these permissions. It does not yet act on anyone else\u2019s account - '+
-      'nothing here lets AMV read their email, change their calendar or spend their money on your behalf. '+
-      'One account acting as another is the most dangerous thing this product could do, so it is not '+
-      'being switched on as a side effect of a settings screen.</p>'+
-      '<p>The invitation, the code sent to their inbox, the approval and the revoke are all real, and the '+
-      'permission you agree now is the one that will apply the moment AMV can act on it.</p></div>'+
-
-    '<div class="ss2"><h3>Ask for access to someone’s account</h3>'+
-      '<label class="lbl" for="mf-inv-email">Their email address</label>'+
-      '<input class="inp" id="mf-inv-email" type="email" autocomplete="email" placeholder="them@example.com" aria-describedby="mf-inv-say">'+
-      '<fieldset class="mf-scopes"><legend>What should this link allow?</legend>'+
-        Object.keys(scopes).map(k =>
-          '<label class="mf-scope"><input type="checkbox" name="mf-scope" value="'+escH(k)+'"> '+
-          '<span>'+escH(scopes[k])+(high.indexOf(k)>=0?' <em class="mf-hi">needs their explicit OK</em>':'')+'</span></label>').join('')+
-      '</fieldset>'+
-      '<label class="lbl" for="mf-inv-label">A name for this link (optional)</label>'+
-      '<input class="inp" id="mf-inv-label" type="text" maxlength="40" placeholder="Mum’s account">'+
-      '<div class="mf-say" id="mf-inv-say" role="status" aria-live="polite"></div>'+
-      '<button class="btn bp" id="mf-invite" type="button">Send the request</button>'+
-    '</div>'+
-
-    '<div class="ss2"><h3>Waiting for your approval</h3>'+
-      (m.pendingForMe.length ?
-        '<ul class="mf-list">'+ m.pendingForMe.map(p =>
-          '<li class="mf-pend"><div class="mf-link-a">'+escH(p.from)+' wants access to your account</div>'+
-          '<div class="mf-link-s">'+(p.scopes||[]).map(s => escH(scopes[s]||s)).join(' · ')+'</div>'+
-          '<label class="lbl" for="mf-code-'+escH(p.id)+'">Enter the 6-digit code we emailed you</label>'+
-          '<div class="mf-codeline">'+
-            '<input class="inp" id="mf-code-'+escH(p.id)+'" type="text" inputmode="numeric" maxlength="6" '+
-              'autocomplete="one-time-code" placeholder="123456" aria-describedby="mf-code-say-'+escH(p.id)+'">'+
-            '<button class="btn bp mf-approve" type="button" data-inv="'+escH(p.id)+'">Approve</button>'+
-            '<button class="btn bs mf-deny" type="button" data-inv="'+escH(p.id)+'">Refuse</button>'+
-          '</div>'+
-          '<div class="mf-say" id="mf-code-say-'+escH(p.id)+'" role="status" aria-live="polite"></div></li>').join('')+'</ul>'
-        : '<p class="mf-empty">Nobody is asking for access to your account.</p>')+
-    '</div>'+
-
-    '<div class="ss2"><h3>Accounts you can act on</h3>'+
-      (m.iCanAccess.length ? '<ul class="mf-list">'+ m.iCanAccess.map(l => linkRow(l,'out')).join('') +'</ul>'
-        : '<p class="mf-empty">None yet. Ask for access above.</p>')+
-    '</div>'+
-
-    '<div class="ss2"><h3>People who can act on yours</h3>'+
-      /* "Nobody can touch your account" is a strong claim. It is only made when
-         the server actually answered - if the list could not be loaded, saying
-         it would be reassurance based on a failed request. */
-      (m.canAccessMe.length ? '<ul class="mf-list">'+ m.canAccessMe.map(l => linkRow(l,'in')).join('') +'</ul>'
-        : (_LINK_STATE && _LINK_STATE._failed)
-          ? '<p class="mf-empty">Could not check who has access just now. This list is not complete - try again in a moment.</p>'
-          : '<p class="mf-empty">Nobody else can touch your account.</p>')+
-      '<div class="mf-say" id="mf-links-say" role="status" aria-live="polite"></div>'+
-    '</div>';
-
-  on($('mf-invite'),'click',function(){
-    const email = ($('mf-inv-email')||{}).value || '';
-    const want = [...pane.querySelectorAll('input[name="mf-scope"]:checked')].map(x => x.value);
-    const label = ($('mf-inv-label')||{}).value || '';
-    try{
-      const r = AMVFamily.invite(email, want, { label });
-      /* Honest about delivery: with no backend the code cannot be emailed, and
-         the link genuinely cannot be approved. `sent === null` means the answer
-         has not come back yet - the claim is corrected once it does, rather
-         than announced before it is known. */
-      _mfSay('mf-inv-say', r.delivery.how, r.delivery.sent === false ? 'warn' : 'info');
-      if(r.delivery.settled){
-        r.delivery.settled.then(d => {
-          _mfSay('mf-inv-say', d.how, d.sent ? 'ok' : 'err');
-        }).catch(()=>{});
-      }
-    }catch(e){
-      _mfSay('mf-inv-say', e.message || 'That did not work.', 'err');
-      $('mf-inv-email')?.focus();
-    }
-  });
-
-  pane.querySelectorAll('.mf-approve').forEach(b => b.addEventListener('click', async function(){
-    const id = this.dataset.inv;
-    const code = (document.getElementById('mf-code-'+id)||{}).value || '';
-    this.disabled = true; const was = this.textContent; this.textContent = 'Checking…';
-    try{
-      await AMVFamily.acceptRemote(id, code);
-      toast('Link approved','success',3000); renderSetPane();
-    }catch(e){
-      _mfSay('mf-code-say-'+id, e.message || 'That code could not be verified.', 'err');
-      this.disabled = false; this.textContent = was;
-      document.getElementById('mf-code-'+id)?.focus();
-    }
-  }));
-
-  pane.querySelectorAll('.mf-deny').forEach(b => b.addEventListener('click', function(){
-    const id = this.dataset.inv;
-    try{
-      AMVFamily.refuse(id);
-      _mfSay('mf-code-say-'+id, 'Refused. They were not given access, and the code no longer works.', 'ok');
-      this.closest('.mf-pend')?.classList.add('mf-gone');
-    }catch(e){ _mfSay('mf-code-say-'+id, e.message || 'Could not refuse that.', 'err'); }
-  }));
+    ((_FAM_STATE && _FAM_STATE.childOf) ? '' :
+      '<div class="ss2"><h3>Add someone to your family</h3>'+
+        '<label class="lbl" for="fam-inv-email">Their email address</label>'+
+        '<div class="mf-codeline">'+
+          '<input class="inp" id="fam-inv-email" type="email" autocomplete="email" placeholder="them@example.com" value="'+escH(_FAM_UI.email)+'">'+
+          '<button class="btn bp" type="button" id="fam-inv-send">Send invitation</button>'+
+        '</div>'+
+        '<p class="fam-p fam-quiet">They get a code by email and join from their own account, under Settings, Family. Naming an address is never enough.</p>'+
+        '<div class="fam-say" id="fam-inv-say" role="status" aria-live="polite">'+escH(_FAM_UI.say)+'</div>'+
+      '</div>')+
+    (online ? '' : '<p class="fam-p fam-quiet">Sign in to AMV to use Family - invitations and limits live on the server.</p>');
 
   _wireFamilyParent(pane);
   _wireFamilyChild(pane);
-  if(needState && !_FAM_BUSY && window.AMV_API && AMV_API.live && AMV_API.hasSession){
+
+  on($('fam-inv-email'),'input',function(){ _FAM_UI.email=this.value; });
+  /* Said into whichever copy of the pane is on screen, and remembered for the
+     next redraw. */
+  const famSay=(t)=>{ _FAM_UI.say=t; const el=document.getElementById('fam-inv-say'); if(el) el.textContent=t; };
+  on($('fam-inv-send'),'click',async()=>{
+    const btn=$('fam-inv-send');
+    const email=(($('fam-inv-email')||{}).value||'').trim();
+    _FAM_UI.email=email;
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ famSay('Enter their email address.'); return; }
+    if(!online){ famSay('Sign in to AMV first - the invitation is sent by the server.'); return; }
+    btn.disabled=true; famSay('Sending\u2026');
+    try{
+      const d=await AMV_API.familyInvite(email);
+      /* What the server says happened, not what was hoped: a code that could
+         not be emailed is an invitation nobody can accept. */
+      if(d.delivered){
+        _FAM_UI.email='';
+        const i=document.getElementById('fam-inv-email'); if(i) i.value='';
+        famSay('Sent. '+email+' has a code in their inbox, valid for 24 hours.');
+      } else famSay('The invitation was made but the email did not go out. Try again in a moment.');
+    }catch(e){
+      famSay(((e&&e.message)||'Could not send that.')+' Nothing was sent.');
+    }finally{ const b2=document.getElementById('fam-inv-send'); if(b2) b2.disabled=false; }
+  });
+
+  pane.querySelectorAll('[data-fam-accept]').forEach(b=>on(b,'click',async()=>{
+    const id=b.dataset.famAccept;
+    const say=pane.querySelector('[data-fam-inv-say="'+CSS.escape(id)+'"]');
+    const code=((document.getElementById('fam-code-'+id)||{}).value||'').trim();
+    if(!/^\d{6}$/.test(code)){ if(say) say.textContent='Enter the 6-digit code from the email.'; return; }
+    b.disabled=true; if(say) say.textContent='Checking…';
+    try{
+      await AMV_API.familyAccept(id, code);
+      _FAM_STATE=null; _FAM_PENDING=null; _renderFamilyPane(pane);
+    }catch(e){
+      b.disabled=false;
+      if(say) say.textContent=((e&&e.message)||'That code could not be checked.')+' You have not joined.';
+    }
+  }));
+  pane.querySelectorAll('[data-fam-decline]').forEach(b=>on(b,'click',async()=>{
+    const id=b.dataset.famDecline;
+    const say=pane.querySelector('[data-fam-inv-say="'+CSS.escape(id)+'"]');
+    b.disabled=true;
+    try{
+      await AMV_API.familyDecline(id);
+      _FAM_PENDING=null; _renderFamilyPane(pane);
+    }catch(e){
+      b.disabled=false;
+      if(say) say.textContent=((e&&e.message)||'Could not decline that.')+' It is still waiting.';
+    }
+  }));
+
+  /* Each asked once, and set on BOTH paths so a failure cannot re-ask on every
+     redraw. A failed list of invitations is said, not shown as "none". */
+  if(needState && !_FAM_BUSY && online){
     _FAM_BUSY = true;
     AMV_API.familyGet()
-      .then(d => { _FAM_BUSY = false; _FAM_STATE = d; _renderFamilyPane(pane); })
-      .catch(() => { _FAM_BUSY = false; _FAM_STATE = { parentOf:null, childOf:null }; });
+      .then(d => { _FAM_BUSY = false; _FAM_STATE = d; _famRedraw(pane); })
+      .catch(() => { _FAM_BUSY = false; _FAM_STATE = { parentOf:null, childOf:null }; _famRedraw(pane); });
   }
-  /* Same shape, same trap: set on BOTH paths so a failure cannot leave this
-     null and re-fetch on every redraw forever. */
-  if(needLinks && !_LINK_BUSY && window.AMV_API && AMV_API.live && AMV_API.hasSession){
-    _LINK_BUSY = true;
-    AMV_API.linkList()
-      .then(d => { _LINK_BUSY = false; _LINK_STATE = d; _renderFamilyPane(pane); })
-      /* Redrawn on failure too. Recording it without redrawing left the screen
-         showing the empty local fallback, which reads as "nobody has access" -
-         the one reassurance this pane must not give on a failed request. */
-      .catch(() => { _LINK_BUSY = false; _LINK_STATE = { iCanAccess:[], canAccessMe:[], _failed:true }; _renderFamilyPane(pane); });
+  if(needPending && !_FAM_PEND_BUSY && online){
+    _FAM_PEND_BUSY = true;
+    AMV_API.familyPending()
+      .then(d => { _FAM_PEND_BUSY = false; _FAM_PENDING = d; _famRedraw(pane); })
+      .catch(() => { _FAM_PEND_BUSY = false; _FAM_PENDING = { invitations:[] }; });
   }
-
-  pane.querySelectorAll('.mf-revoke').forEach(b => b.addEventListener('click', function(){
-    const id = this.dataset.link;
-    const go = async () => {
-      /* The SERVER decides whether that account can still act. Revoking used to
-         write active:false into localStorage and say "that access stopped
-         immediately" - which was false, because nothing had told the authority
-         that enforces it. So the server goes first, and nothing is claimed
-         unless it agreed. */
-      const online = !!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
-      if(online){
-        this.disabled = true;
-        try{
-          await AMV_API.linkRevoke(id);
-        }catch(e){
-          this.disabled = false;
-          _mfSay('mf-links-say', ((e&&e.message)||'Could not remove that link.')+
-                 ' That account can still act - nothing was changed.', 'err');
-          return;
-        }
-        /* Dropped from the cached list rather than re-fetched. Nulling it makes
-           the redraw below fire a fresh request, whose late reply redraws again
-           and wipes the confirmation off the screen - the same trap as writing
-           a message before a re-render. */
-        if(_LINK_STATE){
-          _LINK_STATE = {
-            iCanAccess:(_LINK_STATE.iCanAccess||[]).filter(l => l.id !== id),
-            canAccessMe:(_LINK_STATE.canAccessMe||[]).filter(l => l.id !== id),
-          };
-        }
-      }
-      // Keep the local mirror in step, then re-render FIRST and speak after:
-      // saying it before the redraw wiped the confirmation off the screen.
-      try{ AMVFamily.revoke(id); }catch(e){}
-      renderSetPane();
-      _mfSay('mf-links-say', online
-        ? 'Link removed. That access stopped immediately.'
-        : 'Removed on this device. Connect AMV and it will stop on the server too.', online?'ok':'err');
-    };
-    /* THE FALLBACK USED TO BE `else go()` - REVOKE SOMEBODY'S ACCESS WITH NO
-       CONFIRMATION AT ALL. That was harmless only while confirmModal did not
-       exist and the branch never ran, which is the worst reason for a line to
-       be safe. Now it can run: confirmModal answers false when there is no
-       overlay to draw into, and the honest fallback for a destructive action is
-       to ask in the browser's own dialog, not to skip asking. */
-    confirmDestructive('Remove this link?',
-      'Access stops straight away. You can always set it up again later.',
-      go, { confirm:'Remove link' });
-  }));
 }
 try{ window._renderFamilyPane = _renderFamilyPane; }catch(e){}

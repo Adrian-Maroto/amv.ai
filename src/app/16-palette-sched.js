@@ -45,7 +45,7 @@ function _paletteCommands(){
     setNav('set-spending','Settings: Spending','spending','spending limits money budget purchases cap allowance'),
     setNav('set-api','Settings: API keys','api','api key developer integration programmatic token'),
     setNav('set-invite','Settings: Invite','invite','invite referral refer friend share link bonus tokens'),
-    setNav('set-family','Settings: Family & linked accounts','family','family linked accounts parent child share access permissions'),
+    setNav('set-family','Settings: Family','family','family parent child kids spending limits invite'),
     setNav('set-appearance','Settings: Appearance','appearance','appearance theme accent font motion'),
     setNav('set-skills','Settings: Skills','skills','skills presets instructions'),
     setNav('set-connectors','Settings: Connectors','integrations','connectors integrations connect apps gmail drive github'),

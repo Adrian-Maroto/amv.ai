@@ -1,194 +1,181 @@
-/* WHO CAN REACH YOUR ACCOUNT, AND TAKING IT BACK.
+/* NOBODY CAN REACH ANOTHER PERSON'S ACCOUNT. FAMILY WORKS, END TO END.
 
-   `linkList` and `linkRevoke` were complete, careful server endpoints - revoke
-   deactivates the link on BOTH sides and checks that the caller is one of them -
-   and no client code had ever called either.
+   Two things, one screen.
 
-   The screen was worse than absent. It read the LOCAL store, so a second device
-   showed nobody at all; and "Remove" wrote active:false into localStorage and
-   told the server nothing, while the server is the thing that authorises a
-   linked account. So the one control that exists to cut somebody off said
-   "that access stopped immediately" and stopped nothing.
+   REMOVED: AMV used to let one account ask for access to another - read their
+   email, send as them, change their calendar, spend on their account - granted
+   by a code emailed to the account being reached, and exposed to chat and Crew
+   as a connector. The owner removed it as a security risk. Here: the page no
+   longer offers it anywhere, the module and the connector are gone, and a link
+   mirror left in the browser is deleted on load. (The server refuses it too:
+   `family` in the Worker suites.)
 
-   A security control that reports success and does nothing is worse than one
-   that is missing, because the missing one does not talk you out of checking. */
+   FIXED: Family - a parent pays for a child's AMV and sets what it may spend -
+   had no way to send an invitation from the page at all, and a child could
+   only accept in the browser that sent it, so for a parent and a child, never.
+   Now the parent's form sends it, and the child's list comes from the server.
+
+   The server is stood in for at AMV_API._fetch, with real Response-shaped
+   answers so the code under test takes the path each section names. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { overflowingElement } from '../lib/layout.mjs';
 
 const app = await bootApp({ tab: 'chat', user: { name: 'U', email: 'u@x.com', ini: 'U' } });
 const { page, errors } = app;
+await page.evaluate(() => document.getElementById('cookie-consent-banner')?.remove());
 
-const openPane = (serve) => page.evaluate(async (serveSrc) => {
+/* `serve(path, body)` decides every server answer for the pane. */
+const openPane = (serveSrc) => page.evaluate(async (src) => {
   window.__calls = [];
   saveStr('amv_api_base', 'https://x.test'); saveStr('amv_api_token', 't');
   window.AMV_API.live = true; window.AMV_API.token = 't';
   window.AMV_API._fetch = async (path, init) => {
-    window.__calls.push({ path, body: init && init.body });
-    const fn = eval('(' + serveSrc + ')');
-    /* A REAL Response reports its transport status. Returning only `json`
-       leaves r.ok undefined, so `if(!r.ok)` in the code under test takes the
-       failure branch on what this stub means as a success - the test then
-       passes by exercising the opposite path from the one it names. */
-    return { ok: true, status: 200, json: async () => fn(path) };
+    const body = init && init.body ? JSON.parse(init.body) : {};
+    window.__calls.push({ path, body });
+    const fn = eval('(' + src + ')');
+    const out = fn(path, body);
+    return { ok: !out.error, status: out.error ? 400 : 200, json: async () => out };
   };
-  _LINK_STATE = null; _FAM_STATE = null;
-  S.settingsPane = 'family'; S.tab = 'settings'; setTab('settings');
+  _FAM_STATE = null; _FAM_PENDING = null; _FAM_UI.email = ''; _FAM_UI.say = '';
+  S.settingsPane = 'family'; setTab('settings'); renderSetPane();
   await new Promise(r => setTimeout(r, 400));
-  return document.getElementById('vc').textContent;
-}, serve);
+  /* The Family pane itself, or nothing - reading whatever screen happens to be
+     up would let "it says nothing about X" pass on the wrong screen. */
+  const pane = document.getElementById('set-pane');
+  const title = pane && pane.querySelector('.set-title');
+  return (title && /Family/.test(title.textContent)) || (pane && /Family/.test(pane.textContent)) ? pane.textContent : 'NO FAMILY PANE';
+}, serveSrc);
 
-const SERVE_TWO = `function(path){
-  if(/link\\/list/.test(path)) return { ok:true,
-    iCanAccess:[{ id:'L1', account:'boss@x.com', scopes:['calendar'] }],
-    canAccessMe:[{ id:'L2', account:'helper@x.com', scopes:['email','calendar'] }] };
+const PLAIN = `function(path){
   if(/family\\/get/.test(path)) return { ok:true, parentOf:null, childOf:null };
+  if(/family\\/pending/.test(path)) return { ok:true, invitations:[] };
+  if(/link\\/invite/.test(path)) return { ok:true, delivered:true, to:'kid@x.com' };
   return { ok:true };
 }`;
 
-section('The list comes from the server, not from this browser');
+section('Access to someone else’s account is offered nowhere');
 {
-  const t = await openPane(SERVE_TWO);
-  const calls = await page.evaluate(() => window.__calls.map(c => c.path));
-  ok(calls.some(p => /\/v1\/link\/list/.test(p)), 'the server is asked who has access', calls);
-  ok(/helper@x\.com/.test(t), 'somebody who can act on your account is shown', /helper/.test(t));
-  ok(/boss@x\.com/.test(t), 'and an account you can act on', /boss/.test(t));
+  const txt = await openPane(PLAIN);
+  ok(txt !== 'NO FAMILY PANE' && /Add someone to your family/.test(txt), 'the Family pane is open', txt.slice(0, 120));
+  const r = await page.evaluate(() => ({
+    scopeBoxes: document.querySelectorAll('input[name="mf-scope"]').length,
+    module: typeof window.AMVFamily,
+    connector: !!(window.AMVConnectors && AMVConnectors.get('family')),
+  }));
+  ok(!/Ask for access|Accounts you can act on|People who can act on yours|Read their email|Send email as them/i.test(txt),
+     'the pane says nothing about reaching into another account', txt.slice(0, 200));
+  ok(r.scopeBoxes === 0, 'there is nothing to tick', r);
+  ok(r.module === 'undefined', 'the module that granted it is gone', r);
+  ok(!r.connector, 'and chat and Crew have no connector to request it with', r);
 }
 
-section('Removing access tells the server, and only then says so');
+section('A link copy left in this browser is deleted');
 {
+  await page.evaluate(() => localStorage.setItem('amv_links', JSON.stringify({ links: [{ id: 'L1', owner: 'a@x.com', grantee: 'u@x.com', scopes: ['email_view'], active: true }], invites: [] })));
+  await page.reload();
+  await page.waitForFunction(() => typeof window.setTab === 'function', null, { timeout: 15000 });
+  ok(await page.evaluate(() => localStorage.getItem('amv_links') === null), 'gone on the next load', true);
+}
+
+section('A parent can send a family invitation from the page');
+{
+  await openPane(PLAIN);
+  const bad = await page.evaluate(() => { document.getElementById('fam-inv-email').value = 'nope'; document.getElementById('fam-inv-send').click(); return { say: document.getElementById('fam-inv-say').textContent, calls: window.__calls.filter(c => /invite/.test(c.path)).length }; });
+  ok(/email/i.test(bad.say) && bad.calls === 0, 'a malformed address is refused before anything is sent', bad);
   const r = await page.evaluate(async () => {
-    window.confirmModal = (a, b, go) => go();
-    window.__calls = [];
-    window.AMV_API._fetch = async (path, init) => {
-      window.__calls.push({ path, body: init && init.body });
-      if (/link\/revoke/.test(path)) return { ok: true, status: 200, json: async () => ({ ok: true, revoked: true }) };
-      if (/link\/list/.test(path)) return { ok: true, status: 200, json: async () => ({ ok: true, iCanAccess: [], canAccessMe: [] }) };
-      return { ok: true, status: 200, json: async () => ({ ok: true, parentOf: null, childOf: null }) };
-    };
-    document.querySelector('.mf-revoke[data-link="L2"]').click();
-    await new Promise(r => setTimeout(r, 500));
-    return { calls: window.__calls, say: (document.getElementById('mf-links-say') || {}).textContent || '',
-             text: document.getElementById('vc').textContent };
+    document.getElementById('fam-inv-email').value = 'kid@x.com';
+    document.getElementById('fam-inv-send').click();
+    await new Promise(res => setTimeout(res, 300));
+    const c = window.__calls.find(x => /link\/invite/.test(x.path));
+    return { body: c && c.body, say: document.getElementById('fam-inv-say').textContent };
   });
-  const rev = r.calls.find(c => /\/v1\/link\/revoke/.test(c.path));
-  ok(!!rev, 'the server is told to revoke', r.calls.map(c => c.path));
-  ok(/"id":"L2"/.test(rev.body), 'naming the link that was actually clicked', rev.body);
-  ok(/stopped immediately/.test(r.say), 'and it says access stopped', r.say);
-  ok(!/helper@x\.com/.test(r.text), 'with the person gone from the list', /helper/.test(r.text));
+  ok(r.body && r.body.owner === 'kid@x.com' && JSON.stringify(r.body.scopes) === '["family"]', 'it asks the server for a family invitation, and only that', r.body);
+  ok(/Sent/.test(r.say) && /kid@x\.com/.test(r.say), 'and says it was sent once the server says so', r.say);
 }
 
-section('A revoke the server refuses does NOT claim access stopped');
+section('An invitation the server could not email is not called sent');
 {
-  /* The whole point. Telling somebody they are safe when they are not is the
-     one outcome this screen must never produce. */
+  await openPane(PLAIN.replace("delivered:true", "delivered:false"));
+  const say = await page.evaluate(async () => {
+    document.getElementById('fam-inv-email').value = 'kid@x.com';
+    document.getElementById('fam-inv-send').click();
+    await new Promise(res => setTimeout(res, 300));
+    return document.getElementById('fam-inv-say').textContent;
+  });
+  ok(/did not go out/.test(say) && !/^Sent/.test(say), 'it says the email did not go out', say);
+}
+
+section('The answer survives the pane redrawing after Send');
+{
+  /* On a slow connection the pane's own requests can land after Send was
+     pressed, and each one redraws it. The address and the answer must not be
+     wiped by that - forced here by redrawing on purpose. */
+  await openPane(PLAIN.replace("delivered:true", "delivered:false"));
   const r = await page.evaluate(async () => {
-    _LINK_STATE = null;
-    window.confirmModal = (a, b, go) => go();
-    window.AMV_API._fetch = async (path) => {
-      if (/link\/revoke/.test(path)) return { ok: false, status: 502, json: async () => ({ error: 'engine down' }) };
-      if (/link\/list/.test(path)) return { ok: true, status: 200, json: async () => ({ ok: true, iCanAccess: [],
-        canAccessMe: [{ id: 'L9', account: 'helper@x.com', scopes: ['email'] }] }) };
-      return { ok: true, status: 200, json: async () => ({ ok: true, parentOf: null, childOf: null }) };
-    };
-    _renderFamilyPane(document.getElementById('set-pane') || document.getElementById('vc'));
-    await new Promise(r => setTimeout(r, 400));
-    document.querySelector('.mf-revoke[data-link="L9"]').click();
-    await new Promise(r => setTimeout(r, 400));
-    return { say: (document.getElementById('mf-links-say') || {}).textContent || '',
-             text: document.getElementById('vc').textContent };
+    const i = document.getElementById('fam-inv-email'); i.value = 'kid@x.com'; i.dispatchEvent(new Event('input'));
+    document.getElementById('fam-inv-send').click();
+    await new Promise(res => setTimeout(res, 200));
+    _famRedraw(document.querySelector('[data-fam-pane]'));
+    return { say: document.getElementById('fam-inv-say').textContent, email: document.getElementById('fam-inv-email').value };
   });
-  ok(!/stopped immediately/.test(r.say), 'it does not say access stopped', r.say);
-  ok(/can still act/.test(r.say), 'it says the account can still act', r.say);
-  ok(/helper@x\.com/.test(r.text), 'and they are still listed, because they still have access', /helper/.test(r.text));
+  ok(/did not go out/.test(r.say), 'the answer is still there after a redraw', r);
+  ok(r.email === 'kid@x.com', 'and so is the address, so it can be sent again', r);
 }
 
-section('A list that could not load does not reassure you');
+section('A child sees the invitation on their own device, and can join or decline');
 {
-  /* "Nobody else can touch your account" off the back of a failed request is
-     the same lie as a half-loaded marketplace priced as though complete. */
-  const t = await page.evaluate(async () => {
-    _LINK_STATE = null; _FAM_STATE = null;
-    window.AMV_API._fetch = async (path) => {
-      if (/link\/list/.test(path)) return { ok: false, status: 503, json: async () => ({ error: 'offline' }) };
-      return { ok: true, status: 200, json: async () => ({ ok: true, parentOf: null, childOf: null }) };
-    };
-    _renderFamilyPane(document.getElementById('set-pane') || document.getElementById('vc'));
-    await new Promise(r => setTimeout(r, 400));
-    return document.getElementById('vc').textContent;
+  const PENDING = `function(path, body){
+    if(/family\\/get/.test(path)) return { ok:true, parentOf:null, childOf:null };
+    if(/family\\/pending/.test(path)) return { ok:true, invitations:[{ id:'fi_1', from:'mum@x.com', expiresAt: Date.now()+86400000 }] };
+    if(/link\\/accept/.test(path)) return body.code === '123456' ? { ok:true, family:{ parent:'mum@x.com' } } : { error:'That code is not right. 4 attempts left.' };
+    if(/family\\/decline/.test(path)) return { ok:true, declined:true };
+    return { ok:true };
+  }`;
+  const txt = await openPane(PENDING);
+  ok(/mum@x\.com wants to add you to their family/.test(txt), 'the invitation is shown, from the server, naming who asked', txt.slice(0, 240));
+  ok(/could not see your conversations/.test(txt), 'and what joining does and does not mean', true);
+  const wrong = await page.evaluate(async () => {
+    document.getElementById('fam-code-fi_1').value = '000000';
+    document.querySelector('[data-fam-accept="fi_1"]').click();
+    await new Promise(res => setTimeout(res, 300));
+    return document.querySelector('[data-fam-inv-say="fi_1"]').textContent;
   });
-  ok(!/Nobody else can touch your account/.test(t),
-     'it does not claim nobody has access', /Nobody else/.test(t));
-  ok(/not complete/.test(t), 'it says the list could not be checked', /not complete/.test(t));
+  ok(/not right/.test(wrong) && /have not joined/.test(wrong), 'a wrong code says so, and that nothing happened', wrong);
+  const right = await page.evaluate(async () => {
+    document.getElementById('fam-code-fi_1').value = '123456';
+    document.querySelector('[data-fam-accept="fi_1"]').click();
+    await new Promise(res => setTimeout(res, 300));
+    const c = window.__calls.filter(x => /link\/accept/.test(x.path)).pop();
+    return c && c.body;
+  });
+  ok(right && right.id === 'fi_1' && right.code === '123456', 'the right code is sent to the server with the invitation it belongs to', right);
+
+  await openPane(PENDING);
+  const dec = await page.evaluate(async () => {
+    document.querySelector('[data-fam-decline="fi_1"]').click();
+    await new Promise(res => setTimeout(res, 300));
+    const c = window.__calls.filter(x => /family\/decline/.test(x.path)).pop();
+    return c && c.body;
+  });
+  ok(dec && dec.id === 'fi_1', 'Decline tells the server which invitation', dec);
 }
 
-section('Asking again does not fetch forever');
+section('Someone already in a family is not offered to start one');
 {
-  /* Both fetches set their state on the failure path too. Without that, every
-     redraw refetches and each refetch redraws. */
-  const n = await page.evaluate(async () => {
-    let count = 0;
-    window.AMV_API._fetch = async (path) => {
-      if (/link\/list/.test(path)) { count++; return { ok: false, status: 503, json: async () => ({ error: 'offline' }) }; }
-      return { ok: true, status: 200, json: async () => ({ ok: true, parentOf: null, childOf: null }) };
-    };
-    _LINK_STATE = null;
-    _renderFamilyPane(document.getElementById('set-pane') || document.getElementById('vc'));
-    await new Promise(r => setTimeout(r, 300));
-    _renderFamilyPane(document.getElementById('set-pane') || document.getElementById('vc'));
-    await new Promise(r => setTimeout(r, 300));
-    return count;
-  });
-  ok(n === 1, 'the failed list is asked for once, not on every redraw', n);
-}
-
-section('An invite claims delivery only once the server confirms it');
-{
-  /* This used to fire the request with a swallowed catch and announce "a
-     confirmation code was sent" immediately. The server can answer that email
-     is not configured at all, so the person waited for a message that was never
-     coming and the link could never be approved. */
-  const r = await page.evaluate(async () => {
-    window.AMV_API.live = true; window.AMV_API.token = 't'; window.AMV_API.base = 'https://x.test';
-    window.fetch = async () => ({ ok: false, json: async () => ({ code: 'needs_service', error: 'no email' }) });
-    const res = AMVFamily.invite('them@x.com', ['calendar_view'], {});
-    const during = res.delivery;
-    const after = await res.delivery.settled;
-    return { during: { sent: during.sent, how: during.how }, after };
-  });
-  ok(r.during.sent === null, 'nothing is claimed while the request is in flight', r.during);
-  ok(/Sending/.test(r.during.how), 'it says it is sending, not that it sent', r.during.how);
-  ok(r.after.sent === false, 'and the answer is that it was not sent', r.after);
-  ok(/not switched on/.test(r.after.how), 'naming why, so the wait is not silent', r.after.how);
-}
-
-section('A delivered invite says so, once');
-{
-  const r = await page.evaluate(async () => {
-    window.fetch = async () => ({ ok: true, json: async () => ({ ok: true, delivered: true, message: 'A confirmation code was emailed to them@x.com.' }) });
-    const res = AMVFamily.invite('them2@x.com', ['calendar_view'], {});
-    return await res.delivery.settled;
-  });
-  ok(r.sent === true, 'a real delivery reports success', r);
-  ok(/emailed to/.test(r.how), 'in the server\'s own words', r.how);
-}
-
-section('A send that fails is not dressed up as a send');
-{
-  const r = await page.evaluate(async () => {
-    window.fetch = async () => ({ ok: true, json: async () => ({ ok: true, delivered: false, message: 'Could not deliver the code right now - try again shortly.' }) });
-    const res = AMVFamily.invite('them3@x.com', ['calendar_view'], {});
-    return await res.delivery.settled;
-  });
-  ok(r.sent === false, 'delivered:false is a failure', r);
-  ok(/Could not deliver/.test(r.how), 'and says so', r.how);
+  const txt = await openPane(`function(path){
+    if(/family\\/get/.test(path)) return { ok:true, parentOf:null, childOf:{ parent:'mum@x.com', limits:{ monthlyUSD:10 }, canSee:['x'], cannotSee:['y'] } };
+    if(/family\\/pending/.test(path)) return { ok:true, invitations:[] };
+    return { ok:true };
+  }`);
+  ok(/You are in mum@x\.com’s family/.test(txt), 'they see whose family they are in', txt.slice(0, 160));
+  ok(!(await page.evaluate(() => !!document.getElementById('fam-inv-send'))), 'and no invitation form', true);
 }
 
 section('It fits on a phone');
 {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.evaluate(() => _renderFamilyPane(document.getElementById('set-pane') || document.getElementById('vc')));
-  await page.waitForTimeout(200);
+  await openPane(PLAIN);
   const bad = await overflowingElement(page);
   ok(!bad, 'nothing pushes the page sideways at 390px', bad);
   await page.setViewportSize({ width: 1280, height: 900 });
