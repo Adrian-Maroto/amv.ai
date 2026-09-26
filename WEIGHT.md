@@ -1,5 +1,11 @@
 # What every visitor downloads, and where it goes
 
+> **2026-09-26 - the translations lever is pulled.** The dictionary no longer
+> ships in the page: the build writes one pack per language to `i18n/` and the
+> page fetches the chosen one. `index.html` went from 621KB to 577KB gzipped;
+> a pack averages 2.4KB gzipped. English visitors download no translation at
+> all. The numbers below are the history that led here.
+
 Measured on the built artifact, which is the only number that matters: a first
 visit fetches `index.html` and nothing else, because the CSS and the whole
 application are inlined into it.

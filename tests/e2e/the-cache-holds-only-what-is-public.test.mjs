@@ -65,11 +65,17 @@ try {
 
   section('What IS stored is the page, once, and the published files');
   await page.goto(url + '/settings/billing', { waitUntil: 'load' });
-  await page.evaluate(async () => { await fetch('/manifest.webmanifest').then(r => r.text()); });
+  await page.evaluate(async () => {
+    await fetch('/manifest.webmanifest').then(r => r.text());
+    /* A language pack somebody has used works offline too. */
+    await fetch('/i18n/es.json').then(r => r.text());
+  });
   await page.waitForTimeout(400);
   const now = await cached();
   const keys = [].concat(...Object.values(now));
   const allowed = new Set(['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/amv-bridge.mjs']);
+  keys.filter(k => /^\/i18n\/[a-z]{2,3}\.json$/.test(k)).forEach(k => allowed.add(k));
+  ok(keys.includes('/i18n/es.json'), 'a language pack that was used is stored for offline', now);
   ok(keys.includes('/'), 'the page is stored, under the shell key', now);
   ok(keys.includes('/manifest.webmanifest'), 'a published file is stored', now);
   ok(keys.every(k => allowed.has(k)),

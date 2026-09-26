@@ -270,6 +270,12 @@ function _langName(code){ const l=LANGS[code||_lang()]; return l?l.name:'English
    RTL languages (Arabic) flip layout direction.
    ============================================================ */
 const RTL_LANGS=['ar','ur'];
+/* BUILD:I18N-DATA:START
+   Everything from here to BUILD:I18N-DATA:END is translation DATA. It is edited
+   here, and it does not ship in the page: the build merges it (language by
+   language - see build.mjs, splitI18n) and writes one small file per language
+   to i18n/<code>.json, and the page carries an empty I18N that fills from the
+   pack for the language somebody actually chose. */
 const I18N = {
   'Ask anything - essays, 3D models, code, research…':{es:'Pregunta lo que sea: ensayos, modelos 3D, c\u00f3digo, investigaci\u00f3n\u2026',zh:'\u95ee\u4efb\u4f55\u95ee\u9898--\u6587\u7ae0\u30013D\u6a21\u578b\u3001\u4ee3\u7801\u3001\u7814\u7a76\u2026',hi:'\u0915\u0941\u091b \u092d\u0940 \u092a\u0942\u091b\u0947\u0902 - \u0928\u093f\u092c\u0902\u0927, 3D \u092e\u0949\u0921\u0932, \u0915\u094b\u0921, \u0936\u094b\u0927\u2026',ar:'\u0627\u0633\u0623\u0644 \u0623\u064a \u0634\u064a\u0621 - \u0645\u0642\u0627\u0644\u0627\u062a\u060c \u0646\u0645\u0627\u0630\u062c \u062b\u0644\u0627\u062b\u064a\u0629 \u0627\u0644\u0623\u0628\u0639\u0627\u062f\u060c \u0623\u0643\u0648\u0627\u062f\u060c \u0623\u0628\u062d\u0627\u062b\u2026',pt:'Pergunte qualquer coisa: ensaios, modelos 3D, c\u00f3digo, pesquisa\u2026',fr:'Demandez n\u2019importe quoi : essais, mod\u00e8les 3D, code, recherche\u2026',de:'Frag alles - Aufs\u00e4tze, 3D-Modelle, Code, Recherche\u2026',ja:'\u4f55\u3067\u3082\u8cea\u554f - \u30a8\u30c3\u30bb\u30a4\u30013D\u30e2\u30c7\u30eb\u3001\u30b3\u30fc\u30c9\u3001\u30ea\u30b5\u30fc\u30c1\u2026',ru:'\u0421\u043f\u0440\u043e\u0441\u0438\u0442\u0435 \u0447\u0442\u043e \u0443\u0433\u043e\u0434\u043d\u043e - \u044d\u0441\u0441\u0435, 3D-\u043c\u043e\u0434\u0435\u043b\u0438, \u043a\u043e\u0434, \u0438\u0441\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u043d\u0438\u044f\u2026',id:'Tanya apa saja - esai, model 3D, kode, riset\u2026',bn:'\u09af\u09be \u0996\u09c1\u09b6\u09bf \u099c\u09bf\u099c\u09cd\u099e\u09be\u09b8\u09be \u0995\u09b0\u09c1\u09a8 - \u09aa\u09cd\u09b0\u09ac\u09a8\u09cd\u09a7, \u09a5\u09cd\u09b0\u09bf\u09a1\u09bf \u09ae\u09a1\u09c7\u09b2, \u0995\u09cb\u09a1, \u0997\u09ac\u09c7\u09b7\u09a3\u09be\u2026',ur:'\u06a9\u0686\u06be \u0628\u06be\u06cc \u067e\u0648\u0686\u06be\u06cc\u06ba - \u0645\u0636\u0627\u0645\u06cc\u0646\u060c \u062a\u06be\u0631\u06cc \u0688\u06cc \u0645\u0627\u0688\u0644\u0632\u060c \u06a9\u0648\u0688\u060c \u062a\u062d\u0642\u06cc\u0642\u2026',tr:'Her \u015feyi sor - makaleler, 3D modeller, kod, ara\u015ft\u0131rma\u2026',vi:'H\u1ecfi b\u1ea5t c\u1ee9 \u0111i\u1ec1u g\u00ec - b\u00e0i lu\u1eadn, m\u00f4 h\u00ecnh 3D, m\u00e3, nghi\u00ean c\u1ee9u\u2026',it:'Chiedi qualsiasi cosa: saggi, modelli 3D, codice, ricerca\u2026',ko:'\ubb34\uc5c7\uc774\ub4e0 \ubb3c\uc5b4\ubcf4\uc138\uc694 - \uc5d0\uc138\uc774, 3D \ubaa8\ub378, \ucf54\ub4dc, \ub9ac\uc11c\uce58\u2026',ta:'\u0b8e\u0ba4\u0bc8\u0baf\u0bc1\u0bae\u0bcd \u0b95\u0bc7\u0bb3\u0bc1\u0b99\u0bcd\u0b95\u0bb3\u0bcd - \u0b95\u0b9f\u0bcd\u0b9f\u0bc1\u0bb0\u0bc8\u0b95\u0bb3\u0bcd, 3D \u0bae\u0bbe\u0ba4\u0bbf\u0bb0\u0bbf\u0b95\u0bb3\u0bcd, \u0b95\u0bc1\u0bb1\u0bbf\u0baf\u0bc0\u0b9f\u0bc1, \u0b86\u0bb0\u0bbe\u0baf\u0bcd\u0b9a\u0bcd\u0b9a\u0bbf\u2026'},
   'Data Management':{es:'Gesti\u00f3n de datos',zh:'\u6570\u636e\u7ba1\u7406',hi:'\u0921\u0947\u091f\u093e \u092a\u094d\u0930\u092c\u0902\u0927\u0928',ar:'\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0628\u064a\u0627\u0646\u0627\u062a',pt:'Gerenciamento de dados',fr:'Gestion des donn\u00e9es',de:'Datenverwaltung',ja:'\u30c7\u30fc\u30bf\u7ba1\u7406',ru:'\u0423\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0434\u0430\u043d\u043d\u044b\u043c\u0438',id:'Manajemen data',bn:'\u09a1\u09c7\u099f\u09be \u09ac\u09cd\u09af\u09ac\u09b8\u09cd\u09a5\u09be\u09aa\u09a8\u09be',ur:'\u0688\u06cc\u0679\u0627 \u0645\u06cc\u0646\u062c\u0645\u0646\u0679',tr:'Veri y\u00f6netimi',vi:'Qu\u1ea3n l\u00fd d\u1eef li\u1ec7u',it:'Gestione dati',ko:'\ub370\uc774\ud130 \uad00\ub9ac',ta:'\u0ba4\u0bb0\u0bb5\u0bc1 \u0bae\u0bc7\u0bb2\u0bbe\u0ba3\u0bcd\u0bae\u0bc8'},
@@ -546,6 +552,69 @@ const I18N = {
   if(typeof module!=='undefined' && module.exports){ module.exports = D; }
 })();
 try{ if(typeof window!=='undefined' && window.__AMV_I18N_DICT__){ for(const k in window.__AMV_I18N_DICT__){ if(!Object.prototype.hasOwnProperty.call(I18N,k)) I18N[k]=window.__AMV_I18N_DICT__[k]; } } }catch(e){}
+/* BUILD:I18N-DATA:END */
+
+/* LANGUAGES ARRIVE WHEN SOMEBODY CHOOSES ONE.
+
+   The page used to carry every translation of every label in all nineteen
+   languages - about a tenth of what every visitor downloads before a word
+   appears, for text a given person reads in one language. Now the built page
+   carries an EMPTY I18N, and the pack for the chosen language is fetched once,
+   from the same origin, and cached for offline use by the service worker.
+
+   In an unbuilt page (the source, a test that loads the modules directly) the
+   data above is still inline, I18N is full, and nothing is fetched - so the
+   test for "is a pack needed" is whether I18N has anything in it, not a flag
+   somebody has to remember to set.
+
+   Until the pack arrives the interface stays in ENGLISH, deliberately: the
+   whole-page pass below falls back to machine translation for strings the
+   dictionary lacks, and running it before the dictionary is here would send
+   every label on the screen to be translated one by one - slow, and paid for.
+   If the pack cannot be fetched the page stays English and says so once, and
+   tries again on the next pass after a pause. */
+const _I18N_PACKS = {};       // code -> true (merged) | Promise (loading) | number (failed at, ms)
+const _I18N_INLINE = Object.keys(I18N).length > 0;
+const _I18N_RETRY_MS = 30000;
+function _i18nPackHave(code){
+  return _I18N_INLINE || code === 'auto' || code === 'en' || _I18N_PACKS[code] === true;
+}
+function _i18nLoadPack(code){
+  const was = _I18N_PACKS[code];
+  if(was === true) return Promise.resolve(true);
+  if(was && typeof was.then === 'function') return was;
+  if(typeof was === 'number' && Date.now() - was < _I18N_RETRY_MS) return Promise.resolve(false);
+  if(!/^[a-z]{2,3}$/.test(String(code)) || !LANGS[code]) return Promise.resolve(false);
+  const p = fetch('/i18n/' + code + '.json', { credentials: 'omit' })
+    .then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(pack => {
+      for(const k in pack){
+        if(!Object.prototype.hasOwnProperty.call(pack, k)) continue;
+        const e = Object.prototype.hasOwnProperty.call(I18N, k) ? I18N[k] : (I18N[k] = {});
+        e[code] = String(pack[k]);
+      }
+      _I18N_PACKS[code] = true;
+      return true;
+    })
+    .catch(err => {
+      const first = !(code in _I18N_FAILED_ONCE);
+      _I18N_PACKS[code] = Date.now();
+      _I18N_FAILED_ONCE[code] = true;
+      console.warn('[AMV] translations for ' + code + ' could not be loaded:', err && err.message);
+      if(first) try{ toast((LANGS[code] ? LANGS[code].name : code) + ' could not be loaded, so AMV is showing English for now. It will try again.', 'info', 6000); }catch(e){}
+      return false;
+    });
+  _I18N_PACKS[code] = p;
+  return p;
+}
+const _I18N_FAILED_ONCE = {};
+try{ window._i18nLoadPack = _i18nLoadPack; window._i18nPackHave = _i18nPackHave; }catch(e){}
+/* Back online is the moment a pack that failed is most likely to arrive, so
+   the pause before retrying is dropped then rather than waited out. */
+try{ window.addEventListener('online', () => {
+  const c = _lang();
+  if(typeof _I18N_PACKS[c] === 'number'){ delete _I18N_PACKS[c]; try{ _translateUI(); }catch(e){} }
+}); }catch(e){}
 function T(s){ const code=_lang(); if(code==='auto'||code==='en') return s; let e=I18N[s]; if(e&&e[code]) return e[code];
   // case-insensitive fallback so 'Sign Out' matches 'Sign out', 'New Chat' matches 'New chat', etc.
   if(!e){ const lo=String(s).toLowerCase(); for(const k in I18N){ if(k.toLowerCase()===lo){ e=I18N[k]; break; } } }
@@ -617,6 +686,14 @@ function _collectI18nNodes(root){
 }
 try{ window._collectI18nNodes=_collectI18nNodes; }catch(e){}
 function _translateUI(){
+  /* The pack first. Nothing below runs for a language whose dictionary has
+     not arrived - see _i18nLoadPack - and this pass runs again when it does. */
+  { const want=_lang();
+    if(!_i18nPackHave(want)){
+      try{ _applyDir(); }catch(e){}
+      _i18nLoadPack(want).then(ok => { if(ok && _lang() === want) _translateUI(); });
+      return;
+    } }
   _i18nApplying=true;   // suppress the observer while we mutate, so we never self-loop
   try{
     _applyDir();

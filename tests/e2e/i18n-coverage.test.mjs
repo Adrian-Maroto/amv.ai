@@ -9,17 +9,21 @@ const app = await bootApp();
 const { page, errors } = app;
 
 section('Dictionary merge: adds orphaned coverage, never clobbers inline entries');
-const r = await page.evaluate(() => {
+/* The dictionary no longer ships inside the page: the build merges it and
+   writes one file per language, fetched when that language is chosen. So the
+   Spanish pack is loaded the way the page loads it before anything is read. */
+const r = await page.evaluate(async () => {
   saveStr('amv_lang', 'es');
+  const loaded = await _i18nLoadPack('es');
   return {
-    dictLoaded: !!window.__AMV_I18N_DICT__,
+    dictLoaded: loaded === true && _i18nPackHave('es'),
     clear: T('Clear chats'),      // dict-only key (was inert before the merge)
     recurring: T('Recurring work'),
     market: T('Marketplace'),
     settings: T('Settings')       // inline key that MUST win over the dict
   };
 });
-ok(r.dictLoaded, 'the inlined translation dictionary is present');
+ok(r.dictLoaded, 'the Spanish pack arrives and is merged in');
 ok(r.clear === 'Borrar chats', 'a dict-only key now translates (Clear chats -> Borrar chats)', r.clear);
 ok(r.recurring === 'Trabajo recurrente', 'Recurring work -> Trabajo recurrente', r.recurring);
 ok(r.market === 'Mercado', 'Marketplace -> Mercado', r.market);

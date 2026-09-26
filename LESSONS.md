@@ -13472,3 +13472,24 @@ apart. And Playwright's offline emulation let a service worker's own subresource
 request through with a 200, so an "offline" assertion about it passed with the
 fix removed. Where a test depends on a request failing, make it fail at the
 network (`route.abort`) and assert that it did.
+
+## 513. Data that ships with code is paid for by everyone, and merged by accident
+
+Every label in nineteen languages was inline in the page - 44KB gzipped of every
+visitor's download, for text each person reads in one language. The build now
+writes one pack per language and the page fetches the chosen one.
+
+Moving the data out exposed how it had been merged. It came from three places,
+combined at load by an object literal (a key written twice keeps only the
+second entry) and a "fill keys that are missing" loop (a key that exists gets
+nothing, even for languages it lacks). 72 translations across 9 labels never
+reached the screen - Bengali navigation among them. The build merges language
+by language instead. When data moves from being EXECUTED to being PROCESSED,
+check the old execution was doing what everyone assumed.
+
+Two test lessons came with it. A page-level Playwright route does not see a
+request the service worker makes, so the first suite counted zero pack requests
+while packs arrived perfectly well - intercept at the context. And "nothing was
+sent to be machine-translated" was true in the harness for the wrong reason: the
+fallback needs a backend and the harness has none. The page is told a backend
+is ready and the model call is recorded, so the assertion can fail.

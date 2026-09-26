@@ -35,14 +35,18 @@ const TABS = ['chat', 'crew', 'market', 'plans', 'settings', 'help', 'usage', 't
 section('Every label that CAN be translated, is');
 {
   const r = await page.evaluate(async (tabs) => {
-    const dict = {};
-    Object.keys(I18N).forEach(k => { const e = I18N[k]; if (e && e.es && e.es !== k) dict[k.toLowerCase()] = e.es; });
-
+    /* Switched the way the Language pane does it. The dictionary is not in the
+       page until this switch fetches the Spanish pack, so it is read AFTER -
+       reading it first, as this suite used to, now finds nothing, which is the
+       point of shipping it separately. */
     saveStr('amv_lang', 'es');
     try { _i18nRoots().forEach(r2 => _restoreI18nDOM(r2)); } catch (e) {}
     try { setTab(S.tab); } catch (e) {}
     try { _translateUI(); } catch (e) {}
+    for (let i = 0; i < 50 && !_i18nPackHave('es'); i++) await new Promise(s => setTimeout(s, 100));
     await new Promise(s => setTimeout(s, 1000));
+    const dict = {};
+    Object.keys(I18N).forEach(k => { const e = I18N[k]; if (e && e.es && e.es !== k) dict[k.toLowerCase()] = e.es; });
 
     const stuck = [];
     let translated = 0;

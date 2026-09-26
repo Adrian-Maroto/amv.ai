@@ -74,8 +74,26 @@ for (const f of PUBLISH) {
      `${DIR}/${f} is byte-identical to the built ${f}`);
 }
 
+section('The language packs are the build’s own, and match');
+/* The one directory inside public/: one file per language, fetched when
+   somebody chooses that language (build.mjs, splitI18n). It is held to the
+   same rules as everything else here - identical to what was built, and
+   nothing in it that is not a language pack. */
+const I18N_DIR = 'i18n';
+const packsBuilt = existsSync(R(I18N_DIR)) ? readdirSync(R(I18N_DIR)).sort() : [];
+const packsPub = existsSync(R(DIR, I18N_DIR)) ? readdirSync(R(DIR, I18N_DIR)).sort() : [];
+ok(packsBuilt.length >= 5 && packsBuilt.every(f => /^[a-z]{2,3}\.json$/.test(f)),
+   'the build wrote one pack per language and nothing else', packsBuilt);
+ok(JSON.stringify(packsPub) === JSON.stringify(packsBuilt),
+   `${DIR}/${I18N_DIR} holds exactly the packs that were built`, { built: packsBuilt, published: packsPub });
+for (const f of packsBuilt) {
+  if (!packsPub.includes(f)) continue;
+  ok(readFileSync(R(I18N_DIR, f)).equals(readFileSync(R(DIR, I18N_DIR, f))),
+     `${DIR}/${I18N_DIR}/${f} is byte-identical to the built pack`);
+}
+
 section('Nothing else is in it');
-const extra = present.filter(n => !PUBLISH.includes(n));
+const extra = present.filter(n => !PUBLISH.includes(n) && n !== I18N_DIR);
 ok(extra.length === 0,
    `${DIR}/ holds only what a visitor needs`, extra);
 
@@ -154,6 +172,12 @@ for (const f of PUBLISH) {
   const body = readFileSync(R(DIR, f), 'utf8');
   for (const [re, what] of SECRET) {
     if (re.test(body)) { ok(false, `${DIR}/${f} contains ${what}`); }
+  }
+}
+for (const f of packsPub) {
+  const body = readFileSync(R(DIR, I18N_DIR, f), 'utf8');
+  for (const [re, what] of SECRET) {
+    if (re.test(body)) { ok(false, `${DIR}/${I18N_DIR}/${f} contains ${what}`); }
   }
 }
 ok(true, 'no published file matches a credential shape');

@@ -18,6 +18,7 @@ import { deflateSync as zlibDeflate } from 'zlib';
 import { createHash } from 'crypto';
 import { execSync } from 'child_process';
 import { pathToFileURL } from 'url';
+import vm from 'vm';
 
 const args = process.argv.slice(2);
 const cmd = args.find(a => !a.startsWith('--')) || 'build';
@@ -66,10 +67,89 @@ function emitBridge() {
 function assembleJS() {
   const files = readdirSync(APP_SRC_DIR).filter(f => /\.js$/.test(f)).sort();
   if (!files.length) throw new Error(`no source modules found in ${APP_SRC_DIR}/`);
-  const src = files.map(f => readFileSync(`${APP_SRC_DIR}/${f}`, 'utf8')).join('');
+  const full = files.map(f => readFileSync(`${APP_SRC_DIR}/${f}`, 'utf8')).join('');
   emitBridge();
-  writeFileSync('app.js', src);   // regenerate the committed bundle from the modules
-  return src;
+  const { shipped, packs } = splitI18n(full);
+  writeI18nPacks(packs);
+  writeFileSync('app.js', shipped);   // regenerate the committed bundle - exactly what ships, unminified
+  return shipped;
+}
+
+/* THE TRANSLATIONS SHIP ONE LANGUAGE AT A TIME.
+
+   The dictionary is written in src/app/04-i18n.js, between BUILD:I18N-DATA
+   markers, and used to ship inline: every visitor downloaded every label in
+   nineteen languages - about a tenth of the page - to read it in one. Here it
+   is taken out of the bundle and written as one file per language, and the
+   page fetches the one it needs (see _i18nLoadPack).
+
+   MERGED LANGUAGE BY LANGUAGE, which it never was. The data comes from three
+   places: a hand-written object literal, and two generated dictionaries folded
+   in at load. In the page, a key written twice in the literal kept only the
+   SECOND entry - an object literal does not merge - and one generated
+   dictionary only filled keys the literal lacked entirely. So "Settings",
+   written once for Spanish/Chinese/Hindi and again for Bengali/Urdu/Korean,
+   had no Spanish at all. Here every source contributes every language it has,
+   and the precedence is the one the comments always claimed: hand-written
+   first, then the generated ones. */
+const I18N_START = '/* BUILD:I18N-DATA:START';
+const I18N_END = '/* BUILD:I18N-DATA:END */';
+function splitI18n(full) {
+  const a = full.indexOf(I18N_START), b = full.indexOf(I18N_END);
+  if (a < 0 || b < 0 || b < a) {
+    throw new Error('i18n data markers not found in src/app - refusing to build a page whose translations went nowhere');
+  }
+  const dict = mergeI18n(full.slice(a, b));
+  const packs = {};
+  for (const k of Object.keys(dict).sort()) {
+    for (const c of Object.keys(dict[k]).sort()) (packs[c] || (packs[c] = {}))[k] = dict[k][c];
+  }
+  if (Object.keys(packs).length < 5) throw new Error('i18n: only ' + Object.keys(packs).length + ' languages came out of the dictionary - the merge is broken, not the data');
+  const shipped = full.slice(0, a)
+    + '/* Translations are not inline: the build writes i18n/<code>.json (build.mjs, splitI18n). */\n'
+    + 'const I18N = {};\n'
+    + full.slice(b + I18N_END.length);
+  return { shipped, packs };
+}
+function mergeI18n(region) {
+  /* 1. The hand-written literal, one entry per line, so a key written twice
+        merges instead of the later entry erasing the earlier one. */
+  const OPEN = 'const I18N = {';
+  const li = region.indexOf(OPEN), le = region.indexOf('\n};', li);
+  if (li < 0 || le < 0) throw new Error('i18n: the hand-written dictionary literal was not found');
+  const hand = {};
+  for (const line of region.slice(li + OPEN.length, le).split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('//')) continue;
+    let obj;
+    try { obj = vm.runInNewContext('({' + t.replace(/,\s*$/, '') + '})'); }
+    catch (e) { throw new Error('i18n: a dictionary line could not be read - every entry must be on one line: ' + t.slice(0, 80)); }
+    for (const k in obj) hand[k] = Object.assign(hand[k] || {}, obj[k]);
+  }
+  /* 2. The two generated dictionaries, run exactly as they run in the page. */
+  const sandbox = { window: {} };
+  vm.runInNewContext('var I18N = {};' + region.slice(le + 3), sandbox);
+  const folded = sandbox.I18N || {}, gen = sandbox.window.__AMV_I18N_DICT__ || {};
+  /* 3. Language by language: generated, then folded, then hand-written, each
+        overriding the one before - so hand-written wins where it has a value. */
+  const out = {};
+  for (const k of new Set([...Object.keys(gen), ...Object.keys(folded), ...Object.keys(hand)])) {
+    const e = {};
+    for (const from of [gen[k], folded[k], hand[k]]) if (from) for (const c in from) if (from[c]) e[c] = String(from[c]);
+    if (Object.keys(e).length) out[k] = e;
+  }
+  return out;
+}
+const I18N_DIR = 'i18n';
+let I18N_FILES = [];
+function writeI18nPacks(packs) {
+  if (!existsSync(I18N_DIR)) mkdirSync(I18N_DIR, { recursive: true });
+  I18N_FILES = Object.keys(packs).sort().map(c => I18N_DIR + '/' + c + '.json');
+  for (const c of Object.keys(packs)) writeFileSync(I18N_DIR + '/' + c + '.json', JSON.stringify(packs[c]) + '\n');
+  /* A language that stopped existing must stop being served. */
+  for (const f of readdirSync(I18N_DIR)) {
+    if (!I18N_FILES.includes(I18N_DIR + '/' + f)) { unlinkSync(I18N_DIR + '/' + f); console.warn('  - removed ' + I18N_DIR + '/' + f); }
+  }
 }
 
 /* THE STYLESHEET WENT OUT WITH ITS COMMENTS ON.
@@ -549,7 +629,7 @@ function writePWA(html) {
      The files a visitor's browser asks for - the same list the host publishes,
      so the two cannot drift - minus the page itself (stored as the shell) and
      the worker (which the browser fetches around it). */
-  const ASSETS = PUBLISH.filter(f => f !== 'index.html' && f !== 'sw.js').map(f => '/' + f);
+  const ASSETS = PUBLISH.concat(I18N_FILES).filter(f => f !== 'index.html' && f !== 'sw.js').map(f => '/' + f);
 
   const sw = `/* AMV service worker - generated by build.mjs, do not edit. */
 const CACHE = '${CACHE}';
@@ -770,9 +850,17 @@ const PUBLISH = [
 function emitPublishDir() {
   if (!existsSync(PUBLISH_DIR)) mkdirSync(PUBLISH_DIR, { recursive: true });
 
-  for (const f of PUBLISH) {
+  for (const f of PUBLISH.concat(I18N_FILES)) {
     if (!existsSync(f)) throw new Error(`${f} is in PUBLISH but was not built`);
+    const dir = f.includes('/') ? `${PUBLISH_DIR}/${f.slice(0, f.lastIndexOf('/'))}` : '';
+    if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(`${PUBLISH_DIR}/${f}`, readFileSync(f));
+  }
+  /* The language packs: the one directory the build owns inside public/, kept
+     exactly in step with i18n/ - a pack that is no longer built leaves. */
+  const pubI18n = `${PUBLISH_DIR}/${I18N_DIR}`;
+  if (existsSync(pubI18n)) for (const f of readdirSync(pubI18n)) {
+    if (!I18N_FILES.includes(I18N_DIR + '/' + f)) { unlinkSync(`${pubI18n}/${f}`); console.warn(`  - removed ${pubI18n}/${f} (no longer published)`); }
   }
 
   /* A file that stopped being published has to LEAVE, or the host keeps
@@ -782,7 +870,7 @@ function emitPublishDir() {
      delete a tree is a build one typo away from deleting the wrong one. */
   const keep = new Set(PUBLISH);
   for (const name of readdirSync(PUBLISH_DIR)) {
-    if (keep.has(name)) continue;
+    if (keep.has(name) || name === I18N_DIR) continue;
     const path = `${PUBLISH_DIR}/${name}`;
     if (statSync(path).isDirectory()) {
       console.warn(`  ! ${path} is a directory this build did not create - leaving it alone`);
@@ -810,4 +898,4 @@ if (RUN_DIRECTLY) {
   }
 }
 
-export { allowApiOrigin };
+export { allowApiOrigin, splitI18n, mergeI18n };

@@ -4,8 +4,11 @@
 #
 #   staticPublishPath  the folder a visitor is allowed to see. `node build.mjs`
 #                      writes `public/` and it holds the app, the service
-#                      worker, the manifest, two icons and the bridge - not
+#                      worker, the manifest, two icons, the bridge and one
+#                      translation pack per language (public/i18n/) - not
 #                      amv-backend.js, not wrangler.toml, not this file.
+#                      Real files are served before the rewrite below, so
+#                      /i18n/es.json is the pack, not the page.
 #
 #   routes             serve index.html for a path there is no file for, so
 #                      /billing opens Billing instead of 404ing. Rewrite, not

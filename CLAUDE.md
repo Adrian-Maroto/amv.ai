@@ -70,8 +70,9 @@ Companion docs (do not duplicate them here - read them):
     `npm run check` has a gzipped ceiling on `index.html`, so it can only grow
     by somebody raising it on purpose.
 - **What the static host publishes is `public/`.** The build writes it: the
-  built `index.html`, `sw.js`, `manifest.webmanifest`, the two icons and
-  `amv-bridge.mjs`, byte-identical copies and nothing else. It exists because
+  built `index.html`, `sw.js`, `manifest.webmanifest`, the two icons,
+  `amv-bridge.mjs` and the language packs in `i18n/`, byte-identical copies and
+  nothing else. It exists because
   the site is one file at the ROOT of this repository, so a host pointed at the
   repository serves `amv-backend.js`, `wrangler.toml` and `SECURITY-SCAMS.md`
   too - which it was, confirmed live. Add a file to `PUBLISH` in `build.mjs`
@@ -131,8 +132,12 @@ Companion docs (do not duplicate them here - read them):
   `document` click handler. Buttons inside a modal that calls
   `event.stopPropagation()` are DEAD for this delegation - guard the backdrop
   with `if(e.target===e.currentTarget)` instead (see LESSONS.md #5).
-- i18n: `T()` + the `I18N` dictionary (instant, no key) with an AI-cache fallback
-  (needs a key). A MutationObserver translates content rendered after a language
+- i18n: `T()` + the `I18N` dictionary with an AI-cache fallback (needs a key).
+  The dictionary is EDITED in `src/app/04-i18n.js` between `BUILD:I18N-DATA`
+  markers and does NOT ship in the page: the build merges it language by
+  language and writes `i18n/<code>.json` (published under `public/i18n/`), and
+  the page fetches the chosen language's pack. `_translateUI` waits for the pack
+  - never machine-translate a screen whose dictionary has not arrived. A MutationObserver translates content rendered after a language
   switch across `#app`, `#ovr`, and body-appended menus. Chat content is marked
   `data-no-i18n`. Never mistranslate live model output.
 
