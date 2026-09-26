@@ -40,9 +40,30 @@ const on = (el, ev, fn) => {
    and only the backdrop can answer it. `e.target === e.currentTarget` answers
    it exactly, needs nothing on the panel, and lets the click keep bubbling to
    the delegated dispatcher where it belongs. */
+/* AND NOW THE DARK PART DOES NOT CLOSE IT AT ALL.
+
+   The owner's words: "when I'm signing in and I click out of the sign in tab
+   it closes it - make sure it only works when you click X." A click that lands
+   a few pixels outside a form is the commonest accident there is, and on a
+   sign-in, a payment or a half-written listing it throws away what was typed.
+   So a pop-up ends only on purpose: its X, its Cancel, or Escape. A click on
+   the backdrop answers with a small nudge of the panel instead, so it is plain
+   the click was seen and that the way out is the X.
+
+   Still one helper, still `e.target === e.currentTarget`, and `fn` is still
+   taken so the fifty call sites read as what they are - the thing that closes
+   this dialog - even though the backdrop no longer calls it. */
 const onBackdrop = (el, fn) => {
   if(!el || typeof fn!=='function') return;
-  el.addEventListener('click', (e) => { if(e.target === e.currentTarget) fn(e); });
+  el.addEventListener('click', (e) => {
+    if(e.target !== e.currentTarget) return;
+    const panel = el.firstElementChild;
+    if(!panel) return;
+    panel.classList.remove('ov-nudge');
+    void panel.offsetWidth;               // restart the animation on a second click
+    panel.classList.add('ov-nudge');
+    setTimeout(() => { try{ panel.classList.remove('ov-nudge'); }catch(_){} }, 400);
+  });
 };
 try{ window.onBackdrop = onBackdrop; }catch(e){}
 /* THE ONE DIRECTIVE A META TAG CANNOT DELIVER.

@@ -1303,10 +1303,8 @@ function renderSettingsView(){
   });
   // Mobile: the picker button opens the section list as a popup.
   on($('set-picker'),'click',_openSettingsPicker);
-  // Close settings: X button, Esc, or clicking the empty area outside the panels.
+  // Close settings: the X button or Esc - never a stray click beside the panels.
   on($('set-close'),'click',closeSettings);
-  const shell=vc.querySelector('.settings-shell');
-  if(shell) on(shell,'mousedown',(e)=>{ if(e.target===shell) closeSettings(); });
   const si=$('set-search');
   if(si){
     on(si,'input',()=>{ S._setSearch=si.value; const pos=si.selectionStart; renderSettingsView(); const s2=$('set-search'); if(s2){ s2.focus(); try{ s2.setSelectionRange(pos,pos); }catch(e){} } });

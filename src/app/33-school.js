@@ -66,7 +66,7 @@ async function schoolOpen(){
       '<div id="sch-body"><div class="sch-loading">' + T('Reading your assignments…') + '</div></div>'+
     '</div></div>';
   const bg = $('sch-bg');
-  if(bg) on(bg, 'click', (e) => { if(e.target === e.currentTarget) closeOvr(); });
+  if(bg) onBackdrop(bg, closeOvr);   // the backdrop nudges; the X closes
   await _schoolRender();
 }
 
@@ -289,7 +289,7 @@ async function schoolConnectOpen(){
       '<div id="schc-msg" class="sch-err" hidden></div>'+
     '</div></div>';
   const bg = $('schc-bg');
-  if(bg) on(bg, 'click', (e) => { if(e.target === e.currentTarget) closeOvr(); });
+  if(bg) onBackdrop(bg, closeOvr);   // the backdrop nudges; the X closes
 
   const say = (t) => { const m = $('schc-msg'); if(m){ m.hidden = false; m.textContent = t; } };
   const save = $('schc-save');

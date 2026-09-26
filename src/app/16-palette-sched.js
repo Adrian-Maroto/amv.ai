@@ -62,6 +62,7 @@ function openCommandPalette(){
         '<svg class="cmdk-search-ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>'+
         '<input id="cmdk-inp" class="cmdk-inp" placeholder="Search commands\u2026 (type a page or action)" autocomplete="off" spellcheck="false">'+
         '<kbd class="cmdk-esc">esc</kbd>'+
+        '<button class="cmdk-x" id="cmdk-x" type="button" aria-label="Close">\u2715</button>'+
       '</div>'+
       '<div class="cmdk-results" id="cmdk-results"></div>'+
     '</div></div>');
@@ -76,6 +77,7 @@ function openCommandPalette(){
     else if(e.key==='Escape'){ e.preventDefault(); closeCommandPalette(); }
   });
   onBackdrop($('cmdk-bg'),closeCommandPalette);
+  on($('cmdk-x'),'click',closeCommandPalette);
   setTimeout(()=>inp.focus(),30);
 }
 function closeCommandPalette(){ const el=$('cmdk-bg'); if(el) el.remove(); }

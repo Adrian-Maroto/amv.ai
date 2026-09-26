@@ -15522,3 +15522,28 @@ iframe.amv-sbx{
   visibility:hidden;
   pointer-events:none;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LAYER A255 - a pop-up closes on purpose, never by a stray click
+   Clicking the dark area no longer closes anything (see onBackdrop). The panel
+   answers with a short nudge so the click is plainly seen and the X is the
+   way out. Reduced motion gets a border flash instead of movement.
+   ══════════════════════════════════════════════════════════════════════ */
+@keyframes amv-ov-nudge{
+  0%,100%{ transform:scale(1); }
+  40%{ transform:scale(1.015); }
+}
+.ov-nudge{ animation:amv-ov-nudge .28s var(--ease); }
+@media (prefers-reduced-motion:reduce){
+  .ov-nudge{ animation:none; outline:2px solid var(--accent); outline-offset:2px; }
+}
+.cmdk-x{
+  flex-shrink:0;
+  min-width:36px; min-height:36px;
+  border:0; background:transparent;
+  color:var(--mu); font-size:var(--t-lg);
+  border-radius:var(--r-sm); cursor:pointer;
+}
+.cmdk-x:hover{ color:var(--tx); background:var(--s3); }
+.cmdk-x:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+@media (hover:none){ .cmdk-x{ min-width:44px; min-height:44px; } }

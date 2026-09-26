@@ -40,9 +40,30 @@ const on = (el, ev, fn) => {
    and only the backdrop can answer it. `e.target === e.currentTarget` answers
    it exactly, needs nothing on the panel, and lets the click keep bubbling to
    the delegated dispatcher where it belongs. */
+/* AND NOW THE DARK PART DOES NOT CLOSE IT AT ALL.
+
+   The owner's words: "when I'm signing in and I click out of the sign in tab
+   it closes it - make sure it only works when you click X." A click that lands
+   a few pixels outside a form is the commonest accident there is, and on a
+   sign-in, a payment or a half-written listing it throws away what was typed.
+   So a pop-up ends only on purpose: its X, its Cancel, or Escape. A click on
+   the backdrop answers with a small nudge of the panel instead, so it is plain
+   the click was seen and that the way out is the X.
+
+   Still one helper, still `e.target === e.currentTarget`, and `fn` is still
+   taken so the fifty call sites read as what they are - the thing that closes
+   this dialog - even though the backdrop no longer calls it. */
 const onBackdrop = (el, fn) => {
   if(!el || typeof fn!=='function') return;
-  el.addEventListener('click', (e) => { if(e.target === e.currentTarget) fn(e); });
+  el.addEventListener('click', (e) => {
+    if(e.target !== e.currentTarget) return;
+    const panel = el.firstElementChild;
+    if(!panel) return;
+    panel.classList.remove('ov-nudge');
+    void panel.offsetWidth;               // restart the animation on a second click
+    panel.classList.add('ov-nudge');
+    setTimeout(() => { try{ panel.classList.remove('ov-nudge'); }catch(_){} }, 400);
+  });
 };
 try{ window.onBackdrop = onBackdrop; }catch(e){}
 /* THE ONE DIRECTIVE A META TAG CANNOT DELIVER.
@@ -27536,10 +27557,8 @@ function renderSettingsView(){
   });
   // Mobile: the picker button opens the section list as a popup.
   on($('set-picker'),'click',_openSettingsPicker);
-  // Close settings: X button, Esc, or clicking the empty area outside the panels.
+  // Close settings: the X button or Esc - never a stray click beside the panels.
   on($('set-close'),'click',closeSettings);
-  const shell=vc.querySelector('.settings-shell');
-  if(shell) on(shell,'mousedown',(e)=>{ if(e.target===shell) closeSettings(); });
   const si=$('set-search');
   if(si){
     on(si,'input',()=>{ S._setSearch=si.value; const pos=si.selectionStart; renderSettingsView(); const s2=$('set-search'); if(s2){ s2.focus(); try{ s2.setSelectionRange(pos,pos); }catch(e){} } });
@@ -36004,6 +36023,7 @@ function openCommandPalette(){
         '<svg class="cmdk-search-ic" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>'+
         '<input id="cmdk-inp" class="cmdk-inp" placeholder="Search commands\u2026 (type a page or action)" autocomplete="off" spellcheck="false">'+
         '<kbd class="cmdk-esc">esc</kbd>'+
+        '<button class="cmdk-x" id="cmdk-x" type="button" aria-label="Close">\u2715</button>'+
       '</div>'+
       '<div class="cmdk-results" id="cmdk-results"></div>'+
     '</div></div>');
@@ -36018,6 +36038,7 @@ function openCommandPalette(){
     else if(e.key==='Escape'){ e.preventDefault(); closeCommandPalette(); }
   });
   onBackdrop($('cmdk-bg'),closeCommandPalette);
+  on($('cmdk-x'),'click',closeCommandPalette);
   setTimeout(()=>inp.focus(),30);
 }
 function closeCommandPalette(){ const el=$('cmdk-bg'); if(el) el.remove(); }
@@ -42343,7 +42364,7 @@ async function schoolOpen(){
       '<div id="sch-body"><div class="sch-loading">' + T('Reading your assignments…') + '</div></div>'+
     '</div></div>';
   const bg = $('sch-bg');
-  if(bg) on(bg, 'click', (e) => { if(e.target === e.currentTarget) closeOvr(); });
+  if(bg) onBackdrop(bg, closeOvr);   // the backdrop nudges; the X closes
   await _schoolRender();
 }
 
@@ -42566,7 +42587,7 @@ async function schoolConnectOpen(){
       '<div id="schc-msg" class="sch-err" hidden></div>'+
     '</div></div>';
   const bg = $('schc-bg');
-  if(bg) on(bg, 'click', (e) => { if(e.target === e.currentTarget) closeOvr(); });
+  if(bg) onBackdrop(bg, closeOvr);   // the backdrop nudges; the X closes
 
   const say = (t) => { const m = $('schc-msg'); if(m){ m.hidden = false; m.textContent = t; } };
   const save = $('schc-save');
