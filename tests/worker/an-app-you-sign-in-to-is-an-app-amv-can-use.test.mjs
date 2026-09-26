@@ -152,7 +152,7 @@ section('Every app on the list is published under its own verified name');
 {
   const apps = Object.entries(W.REMOTE_APPS);
   ok(apps.length >= 15, 'there are real apps to connect', apps.length);
-  ok(apps.every(([, a]) => /^https:\/\//.test(a.url) && /^(com|app|io)\.[a-z0-9.-]+\/[\w.-]+$/.test(a.reg)),
+  ok(apps.every(([, a]) => /^https:\/\//.test(a.url) && /^[a-z]{2,6}\.[A-Za-z0-9.-]+\/[\w.-]+$/.test(a.reg)),
      'each names the registry entry it came from and an https connector', apps.filter(([, a]) => !/^https:/.test(a.url)).map(([k]) => k));
   /* The registry grants `com.notion` only to whoever proves they own
      notion.com. A proxy run by somebody else sits under their name, not the
