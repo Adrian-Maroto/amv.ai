@@ -164,48 +164,54 @@ section('Nothing on a phone is too small to hit');
      'every control is at least ' + MIN + 'px in both directions', report);
 }
 
-section('The permission checkboxes, which the tab sweep never reaches');
+section('The Family controls, which the tab sweep never reaches');
 {
   /* THE HIGHEST-STAKES CONTROLS IN AMV, AND THE SWEEP ABOVE WALKS PAST THEM.
 
-     _renderFamilyPane draws a fieldset of scope checkboxes - "See their
-     calendar", "Read their email", "Send email as them", "Make purchases on
-     their account" - and the tab sweep does not land on the sub-pane that holds
-     it, so none of them were ever measured. They were 16x16 boxes inside 266x32
-     labels: the label is the real target, 32px is above WCAG's 24px floor, and
-     it is below the 44 everything else here is held to.
+     This section used to measure the scope checkboxes of "access to someone's
+     account" - "Read their email", "Make purchases on their account". The
+     owner removed that feature as a security risk, so they are gone. What
+     replaced them in the Family pane carries the same stakes: a parent's
+     "Can buy things" and "Can take money out" switches for a child, and the
+     Join / Decline on an invitation that hands somebody else your spending.
+     A mis-tap on an ordinary button costs a wrong screen; a mis-tap here moves
+     money or control of it.
 
-     A mis-tap on an ordinary button costs a wrong screen. A mis-tap here grants
-     somebody the right to read a mailbox or spend money, so if anything in this
-     product deserves the larger target it is this fieldset. Rendered directly
-     rather than navigated to, because the point is to measure it at all. */
+     The sweep does not land on a Family with a child in it, so the pane is
+     drawn directly with one child and one invitation - the point is to
+     measure these at all. The state is put back afterwards. */
   const r = await page.evaluate((min) => {
     const host = document.getElementById('vc') || document.getElementById('app');
     const probe = document.createElement('div');
     host.appendChild(probe);
-    try { _renderFamilyPane(probe); } catch (e) { return { error: String(e && e.message || e) }; }
-    const rows = [...probe.querySelectorAll('.mf-scope')];
-    const out = rows.map(l => {
-      const b = l.getBoundingClientRect();
-      const box = l.querySelector('input[type="checkbox"]');
-      return { label: Math.round(b.width) + 'x' + Math.round(b.height),
-               h: b.height, hasBox: !!box,
-               text: (l.textContent || '').trim().slice(0, 28) };
-    });
+    const was = { st: _FAM_STATE, pend: _FAM_PENDING };
+    _FAM_STATE = { parentOf: { max: 5, members: [{ email: 'kid@example.com', limits: { monthlyUSD: 10, marketplace: false, payouts: false } }] } };
+    _FAM_PENDING = { invitations: [{ id: 'fi_probe', from: 'parent@example.com' }] };
+    try { _renderFamilyPane(probe); } catch (e) { _FAM_STATE = was.st; _FAM_PENDING = was.pend; return { error: String(e && e.message || e) }; }
+    const size = el => { const b = el.getBoundingClientRect(); return { w: b.width, h: b.height, dim: Math.round(b.width) + 'x' + Math.round(b.height) }; };
+    const rows = [...probe.querySelectorAll('.fam-tog')].map(l => Object.assign(size(l), {
+      hasBox: !!l.querySelector('input[type="checkbox"]'),
+      text: (l.textContent || '').trim().slice(0, 32) }));
+    const btns = [...probe.querySelectorAll('[data-fam-accept],[data-fam-decline],[data-fam-remove],[data-fam-save]')]
+      .map(bt => Object.assign(size(bt), { text: (bt.textContent || '').trim() }));
     probe.remove();
-    return { rows: out, n: rows.length };
+    _FAM_STATE = was.st; _FAM_PENDING = was.pend;
+    return { rows, btns, n: rows.length };
   }, MIN);
 
   ok(!r.error, 'the family pane renders', r.error);
-  ok(r.n >= 4, 'and draws its permission rows', r.n);
-  ok(r.rows.every(x => x.hasBox), 'each row is a real checkbox, not a picture of one');
+  ok(r.n >= 2, 'and draws a child\u2019s switches', r.n);
+  ok(r.rows.every(x => x.hasBox), 'each switch is a real checkbox, not a picture of one');
   const under = r.rows.filter(x => x.h < MIN - EPS);
   ok(under.length === 0,
      'and each is at least ' + MIN + 'px tall, because the label is what a thumb hits',
-     under.map(x => x.text + ' ' + x.label));
-  ok(r.rows.some(x => /email|purchase|spend/i.test(x.text)),
+     under.map(x => x.text + ' ' + x.dim));
+  ok(r.rows.some(x => /buy/i.test(x.text)) && r.rows.some(x => /money out/i.test(x.text)),
      'the ones this is really about are among them',
-     r.rows.map(x => x.text).slice(0, 4));
+     r.rows.map(x => x.text));
+  ok(r.btns.length >= 4, 'Join, Decline, Remove and Save were all drawn', r.btns.map(x => x.text));
+  const smallB = r.btns.filter(x => x.h < MIN - EPS || x.w < MIN - EPS);
+  ok(smallB.length === 0, 'and each of those is at least ' + MIN + 'px', smallB.map(x => x.text + ' ' + x.dim));
 }
 
 section('And the floor does not stop at the edge of a dialog');

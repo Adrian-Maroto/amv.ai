@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="add0fa794a3a546d">
+<meta name="amv-build" content="ae0283410cc82167">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://api.amv.homes"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -9733,6 +9733,19 @@ font-size:var(--t-md); font-weight:600; color:var(--tx);
 .upg .upg-feats{ display:flex; justify-content:center; }
 .upg .upg-feats > *{ text-align:left; }
 .upg .upg-back{ margin-right:auto; }
+.crew-page .cw-cat{
+content-visibility:auto;
+contain-intrinsic-size:auto 1600px;
+}
+.crew-page > :nth-child(n+4):not(.crew-jobs-sec), .crew-jobs-sec > :not(:has(.cw-cat)){
+content-visibility:auto;
+contain-intrinsic-size:auto 300px;
+}
+@media (max-width:1024px){ .crew-page .cw-cat{ contain-intrinsic-size:auto 2600px; } }
+@media (max-width:560px){ .crew-page .cw-cat{ contain-intrinsic-size:auto 3600px; } }
+#cv.cv-home .chome-greet{
+animation:amvRise .6s cubic-bezier(.2,.9,.25,1) .1s both;
+}
 </style>
 <!-- BUILD:CSS:END -->
 <script>

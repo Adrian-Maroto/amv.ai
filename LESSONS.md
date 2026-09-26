@@ -13611,3 +13611,20 @@ browser that sent it - so a parent and a child, on two phones, could never
 complete it. Each half was tested; the journey between two people was not.
 When a feature involves two accounts, test it as two accounts on two devices,
 end to end, or it has not been tested at all.
+
+## 521. "Lag everywhere" was two things, and neither was where it looked
+
+The report was lag in every section, Crew worst, and chat on first load. The
+tempting fixes were the ones that sound like performance work - defer the
+initialisers, split the bundle, render the catalogue later - and measurement
+ruled each out: the boot's script work is ~50ms, the blob loader beat running
+the bundle inline (it compiles off the main thread), and deferring the
+catalogue would have emptied it for a frame on every redraw and thrown away the
+scroll position of anyone reading it. What was actually slow was layout of
+seventeen thousand pixels nobody could see on arrival, and a decorative sweep
+that animated a property the GPU cannot animate, repainting the greeting every
+frame while the page was still booting. Neither was JavaScript. Profile the
+frame, not the code you suspect, and ask what the browser is doing that the
+person cannot see. And when a check can ask the browser a fact - which
+elements it skipped, which properties an animation moves - ask for the fact
+instead of timing it: the fact is the same on every machine.
