@@ -5240,8 +5240,71 @@ try{ window._tabFromURL=_tabFromURL; window._URL_TABS=_URL_TABS;
      window._slugFromPath=_slugFromPath;
      window._pathRoutingOn=()=>_pathRouting; }catch(e){}
 
+/* ── WHERE YOU JUST WERE ──────────────────────────────────────────────────
+
+   "Make sure I can always return to where I just was without reclicking
+   Settings." AMV remembered exactly one step - the screen before Settings -
+   and wrote each new screen over the address with replaceState, so neither a
+   back arrow nor the browser's or phone's Back could step back through it:
+   Back left the site.
+
+   Now every screen change is remembered (the Settings section included, so
+   Back from Team lands on the Settings page you opened Team from), the top
+   bar shows a Back arrow whenever there is somewhere to go back to, and each
+   change is also a browser history entry, so the phone's Back button walks
+   the same path. Both go through `navBack`, which moves without recording -
+   otherwise Back would record where you left and Back again would bounce. */
+const _NAV = { stack: [], popping: false, MAX: 40 };
+function _navHere(){
+  try{ return { tab: S.tab, pane: S.tab === 'settings' ? (S.settingsPane || null) : null }; }
+  catch(e){ return null; }
+}
+const _navSame = (a, b) => !!(a && b && a.tab === b.tab && (a.pane || null) === (b.pane || null));
+function _navRecord(from, to){
+  if(_NAV.popping || !from || !from.tab || _navSame(from, to)) return;
+  if(_navSame(_NAV.stack[_NAV.stack.length - 1], from)) return;
+  _NAV.stack.push(from);
+  if(_NAV.stack.length > _NAV.MAX) _NAV.stack.shift();
+  try{ history.pushState({ amvNav: _NAV.stack.length }, '', location.href); }catch(e){}
+  _navPaint();
+}
+function _navGo(to){
+  _NAV.popping = true;
+  try{
+    if(to.tab === 'settings') S.settingsPane = to.pane || null;
+    setTab(to.tab);
+  } finally { _NAV.popping = false; }
+  _navPaint();
+}
+/* The arrow and the browser's Back are the same action. When AMV wrote the
+   browser entry, going back through the browser keeps the two in step; the
+   popstate handler below does the moving. */
+function navBack(){
+  if(!_NAV.stack.length) return false;
+  let viaBrowser = false;
+  try{ viaBrowser = !!(history.state && history.state.amvNav); }catch(e){}
+  if(viaBrowser){ try{ history.back(); return true; }catch(e){} }
+  _navGo(_NAV.stack.pop());
+  return true;
+}
+function _navPaint(){
+  const b = document.getElementById('nav-back');
+  if(b) b.hidden = !_NAV.stack.length;
+}
+try{
+  window.addEventListener('popstate', () => {
+    const to = _NAV.stack.pop();
+    if(to) _navGo(to);
+  });
+}catch(e){}
+try{ window.navBack = navBack; window._NAV = _NAV; window._navRecord = _navRecord; }catch(e){}
+
 function setTab(t){
   try{ if(t==='settings' && S.tab && S.tab!=='settings') S._preSettingsTab=S.tab; }catch(e){}
+  /* Remembered before anything changes, and only when the move is really
+     happening - the sign-in gate below can still refuse it, so the record is
+     made where S.tab is actually written. */
+  const _navFrom = _navHere();
   /* Counted here because this is the one place every surface is opened through,
      so the count cannot drift from what somebody actually did. The nudge itself
      is checked after the view has rendered, never before. */
@@ -5300,6 +5363,7 @@ function setTab(t){
   /* The connector directory's own page state. A screen somebody left is not
      where they are when they come back. */
   try{ if(t!=='integrations' && typeof _cdirReset==='function') _cdirReset(); }catch(e){}
+  try{ _navRecord(_navFrom, { tab: t, pane: t === 'settings' ? (S.settingsPane || null) : null }); }catch(e){}
   S.tab=t;
   /* THE ADDRESS BAR SAYS WHERE YOU ARE - AS A HASH, AND THAT IS DELIBERATE.
 
@@ -5479,6 +5543,8 @@ function _wipeAccountState(){
   try{
     S.memory=[]; S.convs=[]; S.cur=null; S.att=null;
     S._chatFiles=[]; S._labFiles=[]; S._chatHandoff=null; S._preSettingsTab=null;
+    /* The screens this account visited are not a path the next one can walk. */
+    try{ _NAV.stack.length=0; _navPaint(); }catch(e){}
     S.workspaces=getDefaultWorkspaces(); S.prompts=getDefaultPrompts(); S.mk='';
     /* FOUND BY ENUMERATING WHAT SURVIVED, NOT BY REMEMBERING TO ADD THEM.
 
@@ -27461,11 +27527,21 @@ function _founderDashHTML(d){
     '</div>';
 }
 
-// Leave settings and go back where you came from.
+// Leave settings and go back where you came from - the last screen that was
+// not Settings, however many Settings sections were opened on the way.
 function closeSettings(){
-  const back=(S._preSettingsTab && S._preSettingsTab!=='settings') ? S._preSettingsTab : 'chat';
+  let back=null;
+  try{
+    while(_NAV.stack.length){
+      const e=_NAV.stack.pop();
+      if(e && e.tab && e.tab!=='settings'){ back=e; break; }
+    }
+  }catch(e){}
   S.settingsPane=null;
-  setTab(back);
+  const tab=back ? back.tab : ((S._preSettingsTab && S._preSettingsTab!=='settings') ? S._preSettingsTab : 'chat');
+  _NAV.popping=true;
+  try{ setTab(tab); } finally { _NAV.popping=false; }
+  try{ _navPaint(); }catch(e){}
 }
 try{ window.closeSettings=closeSettings; }catch(e){}
 
@@ -27550,6 +27626,8 @@ function renderSettingsView(){
   vc.querySelectorAll('.sn-btn').forEach(btn=>{
     btn.addEventListener('click',()=>{
       const target=btn.dataset.sp;
+      /* A section is a place too: Back from it returns to the one before. */
+      try{ _navRecord(_navHere(), { tab:'settings', pane: target }); }catch(e){}
       S.settingsPane=target;
       vc.querySelectorAll('.sn-btn').forEach(b=>b.classList.toggle('on',b===btn));
       renderSetPane();
@@ -29428,6 +29506,8 @@ function setupApp(){
   // -- Icon Rail wiring --
   // Logo does nothing (avoids confusing "signout" feeling)
   on($('tsb'),'click',toggleSb); // tsb toggles hist-drawer
+  on($('nav-back'),'click',()=>{ navBack(); });
+  try{ _navPaint(); }catch(e){}
   on($('ncb'),'click',newChat);
   on($('theme-btn'),'click',function(){
     document.body.classList.toggle('light');

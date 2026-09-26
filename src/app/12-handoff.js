@@ -1207,11 +1207,21 @@ function _founderDashHTML(d){
     '</div>';
 }
 
-// Leave settings and go back where you came from.
+// Leave settings and go back where you came from - the last screen that was
+// not Settings, however many Settings sections were opened on the way.
 function closeSettings(){
-  const back=(S._preSettingsTab && S._preSettingsTab!=='settings') ? S._preSettingsTab : 'chat';
+  let back=null;
+  try{
+    while(_NAV.stack.length){
+      const e=_NAV.stack.pop();
+      if(e && e.tab && e.tab!=='settings'){ back=e; break; }
+    }
+  }catch(e){}
   S.settingsPane=null;
-  setTab(back);
+  const tab=back ? back.tab : ((S._preSettingsTab && S._preSettingsTab!=='settings') ? S._preSettingsTab : 'chat');
+  _NAV.popping=true;
+  try{ setTab(tab); } finally { _NAV.popping=false; }
+  try{ _navPaint(); }catch(e){}
 }
 try{ window.closeSettings=closeSettings; }catch(e){}
 
@@ -1296,6 +1306,8 @@ function renderSettingsView(){
   vc.querySelectorAll('.sn-btn').forEach(btn=>{
     btn.addEventListener('click',()=>{
       const target=btn.dataset.sp;
+      /* A section is a place too: Back from it returns to the one before. */
+      try{ _navRecord(_navHere(), { tab:'settings', pane: target }); }catch(e){}
       S.settingsPane=target;
       vc.querySelectorAll('.sn-btn').forEach(b=>b.classList.toggle('on',b===btn));
       renderSetPane();
@@ -3174,6 +3186,8 @@ function setupApp(){
   // -- Icon Rail wiring --
   // Logo does nothing (avoids confusing "signout" feeling)
   on($('tsb'),'click',toggleSb); // tsb toggles hist-drawer
+  on($('nav-back'),'click',()=>{ navBack(); });
+  try{ _navPaint(); }catch(e){}
   on($('ncb'),'click',newChat);
   on($('theme-btn'),'click',function(){
     document.body.classList.toggle('light');

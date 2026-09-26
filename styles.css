@@ -15547,3 +15547,13 @@ iframe.amv-sbx{
 .cmdk-x:hover{ color:var(--tx); background:var(--s3); }
 .cmdk-x:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 @media (hover:none){ .cmdk-x{ min-width:44px; min-height:44px; } }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LAYER A256 - Back, wherever there is somewhere to go back to
+   The top bar's arrow appears once a screen has been left (see _NAV) and does
+   what the browser's Back does. Same size and treatment as its neighbours.
+   ══════════════════════════════════════════════════════════════════════ */
+.nav-back[hidden]{ display:none!important; }
+.nav-back{ color:var(--tx); }
+.nav-back:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+@media (hover:none){ .nav-back{ min-width:44px; min-height:44px; } }
