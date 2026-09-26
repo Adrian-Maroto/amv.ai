@@ -7438,6 +7438,8 @@ function _stopTurnThenCut(turn, cut){
 }
 function stopGenerating(){
   _userStopped=true;
+  /* A command AMV started on the computer for this turn stops too. */
+  try{ if(typeof bridgeCancelRunning === 'function') bridgeCancelRunning(); }catch(e){}
   const ctrl = _activeStreamCtrl, turn = _activeTurnId;
   if(!ctrl) return;
   _stopTurnThenCut(turn, () => { try{ ctrl.abort('user-stop'); }catch(e){} });
@@ -43895,10 +43897,16 @@ async function _bridgeCall(route, body, timeoutMs){
     throw new Error('The bridge stopped answering. It may have been closed - start it again and reconnect.');
   }
   if(r.status === 401){
-    /* The bridge restarted, so its token changed. Saying "reconnect" is the
-       whole answer here and it is worth being exact about, because the
-       symptom looks identical to it not running. */
-    _bridgeForget(); BRIDGE.why = 'stale';
+    /* The bridge restarted, so its token changed - or the pairing sat unused
+       long enough that the bridge ended it. Saying which is the whole answer,
+       because both look exactly like it not running. */
+    const d401 = await r.json().catch(()=>({}));
+    _bridgeForget();
+    if(d401 && d401.error === 'expired'){
+      BRIDGE.why = 'expired';
+      throw new Error('This computer was not used by AMV for 12 hours, so the bridge ended the pairing. Connect it again with the code in its terminal.');
+    }
+    BRIDGE.why = 'stale';
     throw new Error('The bridge restarted, so this tab is no longer paired with it. Connect it again with the new code.');
   }
   const d = await r.json().catch(()=>({}));
@@ -43933,10 +43941,30 @@ async function _bridgeCall(route, body, timeoutMs){
   return d;
 }
 
+/* Every command is named, so Stop can end the ones still running rather than
+   waiting for them (see the bridge's exec/cancel). */
+const _BRIDGE_RUNNING = new Set();
 async function bridgeExec(command, opts){
   opts = opts || {};
-  return await _bridgeCall('exec', { command, cwd: opts.cwd || '.', timeout: opts.timeout },
-                           (opts.timeout || 120000) + 8000);
+  const job = 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  _BRIDGE_RUNNING.add(job);
+  try{
+    return await _bridgeCall('exec', { command, cwd: opts.cwd || '.', timeout: opts.timeout, job },
+                             (opts.timeout || 120000) + 8000);
+  } finally { _BRIDGE_RUNNING.delete(job); }
+}
+/* Stop: end every command this tab has running on the computer. Best effort
+   and quiet - a bridge that has gone has nothing left to stop - but each is
+   asked directly, so the answer to the command itself says it was stopped. */
+async function bridgeCancelRunning(){
+  if(!_BRIDGE_RUNNING.size || !(typeof BRIDGE !== 'undefined' && BRIDGE.connected)) return 0;
+  const jobs = [..._BRIDGE_RUNNING];
+  let n = 0;
+  await Promise.all(jobs.map(job => fetchDeadline(_bridgeBase() + '/amv-bridge/exec/cancel', {
+      method:'POST', headers:{ 'Content-Type':'application/json', 'X-AMV-Bridge-Token': BRIDGE.token },
+      body: JSON.stringify({ job }) }, 5000)
+    .then(r => r.json()).then(d => { if(d && d.cancelled) n++; }).catch(() => {})));
+  return n;
 }
 /* A missing file answers `null` rather than throwing, and EVERY other failure
    still throws. That distinction is load-bearing: the build agent decides
@@ -43957,7 +43985,7 @@ async function bridgeList(path){ return await _bridgeCall('list', { path: path |
    It is deliberately NOT offered to the model: nothing about building needs
    to delete somebody's file, and a tool that can is a tool that will. */
 async function bridgeDelete(path){ return await _bridgeCall('delete', { path }, 20000); }
-try{ window.bridgeExec=bridgeExec; window.bridgeRead=bridgeRead;
+try{ window.bridgeExec=bridgeExec; window.bridgeCancelRunning=bridgeCancelRunning; window.bridgeRead=bridgeRead;
      window.bridgeWrite=bridgeWrite; window.bridgeList=bridgeList;
      window.bridgeDelete=bridgeDelete; }catch(e){}
 
@@ -44015,8 +44043,8 @@ async function runBridgeTool(name, args){
   try{
     if(name === 'run_command'){
       const r = await bridgeExec(String(args.command||''), { cwd: args.cwd, timeout: args.timeout });
-      return { ok: r.exitCode === 0, exitCode: r.exitCode, timedOut: !!r.timedOut,
-               ms: r.ms, stdout: r.stdout || '', stderr: r.stderr || '',
+      return { ok: r.exitCode === 0 && !r.cancelled, exitCode: r.exitCode, timedOut: !!r.timedOut,
+               cancelled: !!r.cancelled, ms: r.ms, stdout: r.stdout || '', stderr: r.stderr || '',
                truncated: !!r.truncated };
     }
     if(name === 'read_file')  return await bridgeRead(String(args.path||''));
@@ -44438,11 +44466,13 @@ async function _agentRunTool(name, input, step){
   if(r && r.error) return { ok:false, text:'That did not work: ' + r.error };
 
   if(name === 'run_command'){
-    const head = 'exit ' + r.exitCode + (r.timedOut ? ' (timed out and was killed)' : '')
+    const head = r.cancelled ? ('stopped by the person after ' + r.ms + 'ms')
+               : 'exit ' + r.exitCode + (r.timedOut ? ' (timed out and was killed)' : '')
                + ' in ' + r.ms + 'ms' + (r.truncated ? ' - output truncated' : '');
     step.exitCode = r.exitCode;
     step.timedOut = !!r.timedOut;
-    return { ok: r.exitCode === 0,
+    step.cancelled = !!r.cancelled;
+    return { ok: r.exitCode === 0 && !r.cancelled,
              text: head + '\n\nstdout:\n' + (r.stdout || '(empty)')
                         + '\n\nstderr:\n' + (r.stderr || '(empty)') };
   }
@@ -44565,10 +44595,11 @@ function _agentStop(){
   _AGENT.stop = true;
   /* And the model request in the air: without this, Stop waited for the round
      already running - up to three minutes, generated and paid for - before it
-     took effect. A command already running on the computer still finishes,
-     which is what the busy line below says. (AMV-AUD-014) */
+     took effect. (AMV-AUD-014) And the command running on the computer, which
+     used to be left to finish on its own. */
   try{ if(_AGENT.ctrl) _AGENT.ctrl.abort(); }catch(e){}
-  try{ _devBusy(true, 'Stopping after this step'); }catch(e){}
+  try{ if(typeof bridgeCancelRunning === 'function') bridgeCancelRunning(); }catch(e){}
+  try{ _devBusy(true, 'Stopping'); }catch(e){}
 }
 try{ window._agentStop=_agentStop; window._agentSetRunning=_agentSetRunning; }catch(e){}
 

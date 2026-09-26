@@ -766,6 +766,8 @@ function _stopTurnThenCut(turn, cut){
 }
 function stopGenerating(){
   _userStopped=true;
+  /* A command AMV started on the computer for this turn stops too. */
+  try{ if(typeof bridgeCancelRunning === 'function') bridgeCancelRunning(); }catch(e){}
   const ctrl = _activeStreamCtrl, turn = _activeTurnId;
   if(!ctrl) return;
   _stopTurnThenCut(turn, () => { try{ ctrl.abort('user-stop'); }catch(e){} });

@@ -332,6 +332,19 @@ const PAIR_CODE = randomBytes(12).toString('hex').toUpperCase().match(/.{4}/g).j
    only place it would ever have shown. */
 let sessionToken = '';
 let pairedAt = 0;
+/* A PAIRING NOBODY HAS USED IN TWELVE HOURS ENDS - NEVER ONE THAT IS WORKING.
+
+   A token lives in a browser tab; a bridge left open in a terminal lives on.
+   A pairing from a tab closed yesterday, still able to run commands, is a
+   capability nobody is holding on purpose. So a session unused for
+   SESSION_IDLE_MS is ended at the next request that arrives with it - but
+   only when nothing is running: an overnight build is the ordinary case, and
+   an expiry that fired under it would be a new way to lose work. The clock
+   restarts whenever a request is made and whenever a command finishes.
+   AMV_BRIDGE_IDLE_MS shortens it for the suites; a person can only lengthen
+   their own risk with it. */
+const SESSION_IDLE_MS = Number(process.env.AMV_BRIDGE_IDLE_MS) > 0 ? Number(process.env.AMV_BRIDGE_IDLE_MS) : 12 * 3600 * 1000;
+let lastUsed = 0;
 const PAIR_MAX_FAILS = 5;
 let pairFails = 0;
 
@@ -477,6 +490,8 @@ function mcpKillAll(){
    ADMITTED, because a job accepted during teardown is an orphan created by the
    thing meant to prevent them. */
 const execJobs = new Set();
+/* The page's name for a running command, so Stop can end THAT one. */
+const execById = new Map();
 let shuttingDown = false;
 
 function execKillAll(){
@@ -902,6 +917,7 @@ const server = createServer(async (req, res) => {
     const replaced = !!sessionToken;
     sessionToken = randomBytes(32).toString('hex');
     pairedAt = Date.now();
+    lastUsed = pairedAt;
     console.log(replaced
       ? '  ✓ paired with AMV - the previous session was disconnected'
       : '  ✓ paired with AMV');
@@ -909,7 +925,18 @@ const server = createServer(async (req, res) => {
                             sharesEnvironment: SHARE_ENV, fence: fenceState() });
   }
 
+  if (sessionToken && execJobs.size === 0 && Date.now() - lastUsed > SESSION_IDLE_MS
+      && tokenOk(req.headers['x-amv-bridge-token'])) {
+    sessionToken = ''; pairedAt = 0;
+    const servers = mcpServers.size;
+    mcpKillAll();
+    console.log('  · the pairing was unused for ' + Math.round(SESSION_IDLE_MS / 3600000 * 10) / 10
+      + ' hours and has ended' + (servers ? ' (' + servers + ' connector' + (servers === 1 ? '' : 's') + ' stopped)' : '')
+      + ' - pair again to carry on');
+    return json(res, 401, { error: 'expired' });
+  }
   if (!tokenOk(req.headers['x-amv-bridge-token'])) return json(res, 401, { error: 'not_paired' });
+  lastUsed = Date.now();
 
   let body = {};
   if (req.method === 'POST') {
@@ -1204,6 +1231,24 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { id: srv.id, rev: srv.rev, tools: srv.tools });
     }
 
+    /* STOP ONE COMMAND, NOT THE WHOLE BRIDGE.
+
+       The only ways to end a running command were its timeout, revoking the
+       pairing, or closing the bridge - so Stop in AMV left an `npm install`
+       or a test run going until it finished on its own. The page names each
+       command it starts; this ends that one, by process group, the same kill
+       the timeout uses, and its answer says it was stopped. An id nothing is
+       running under is answered as nothing to stop. */
+    if (path === '/amv-bridge/exec/cancel') {
+      const job = execById.get(String(body.job || ''));
+      if (!job) return json(res, 200, { job: String(body.job || '').slice(0, 64), cancelled: false });
+      job.cancelled = true;
+      killTree(job.child);
+      try { if (job.settle) job.settle(); } catch (e) {}
+      console.log('  ✗ stopped by AMV: ' + job.cmd.slice(0, 70));
+      return json(res, 200, { job: job.id, cancelled: true });
+    }
+
     if (path === '/amv-bridge/exec') {
       /* Refused rather than queued. A command admitted while the daemon is
          tearing down is an orphan made by the teardown. */
@@ -1251,6 +1296,9 @@ const server = createServer(async (req, res) => {
          spawn and the first await still finds it. Registering after the await
          would leave exactly the window this exists to close. */
       execJobs.add(child);
+      const jobId = /^[A-Za-z0-9_-]{6,64}$/.test(String(body.job || '')) ? String(body.job) : '';
+      const job = { id: jobId, child, cmd, cancelled: false };
+      if (jobId) execById.set(jobId, job);
 
       let out = '', err = '', truncated = false;
       /* One decoder per stream, kept across chunks: decoding each chunk alone
@@ -1282,11 +1330,16 @@ const server = createServer(async (req, res) => {
         }, timeout);
         child.on('close', (code) => { clearTimeout(timer); execJobs.delete(child); resolveDone({ code, timedOut: false }); });
         child.on('error', (e) => { clearTimeout(timer); execJobs.delete(child); resolveDone({ code: -1, error: e.message }); });
+        /* A cancel kills the group, and 'close' can wait on a grandchild that
+           still holds the pipes - so the kill itself answers too. */
+        job.settle = () => { clearTimeout(timer); resolveDone({ code: null, timedOut: false }); };
       });
       /* Belt and braces: a path that resolved without either event firing
          would otherwise leave a dead child in the set for ever, and a set that
          grows is a shutdown that gets slower every run. */
       execJobs.delete(child);
+      if (jobId) execById.delete(jobId);
+      lastUsed = Date.now();
 
       /* A command that failed for want of a hidden key is told why, so neither
          the person nor the model goes looking for a broken setup. */
@@ -1297,7 +1350,7 @@ const server = createServer(async (req, res) => {
       return json(res, 200, {
         command: cmd, cwd: relative(ROOT, cwd) || '.',
         exitCode: done.code, timedOut: !!done.timedOut, error: done.error || '',
-        ms: Date.now() - started, truncated, fenced: isFenced,
+        ms: Date.now() - started, truncated, fenced: isFenced, cancelled: job.cancelled,
         stdout: out.slice(0, MAX_OUTPUT), stderr: err.slice(0, MAX_OUTPUT),
       });
     }

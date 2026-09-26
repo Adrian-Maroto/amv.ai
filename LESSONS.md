@@ -13592,3 +13592,12 @@ can swap. And the fence's own startup check had the same shape of mistake - it
 asked whether bubblewrap STARTED, and a bubblewrap that starts and hides nothing
 passed. It now proves a canary is hidden and a control is not. A check has to
 ask the question the claim is about.
+
+## 519. The check that watched the thing reset what it was watching
+
+The idle clock had to restart when a command FINISHED, and the check for it
+passed with that restart deleted. It made a request in the middle of the run to
+prove the pairing was still standing - and a request is use, so it restarted
+the clock itself, and the finish never had to. The observer was the cause of
+what it observed. When a check touches the state it measures, measure the
+claim again with the check's own hands off it.

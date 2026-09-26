@@ -900,7 +900,8 @@ not happening". The same reasoning had simply never been applied to these two.
   A test that reads source can only say a line is present, and that mutation
   leaves every line present. The chat consent path is behaviourally unmeasured.
   The `runAgentic` path could be measured - it goes through `aiAgentLoop`,
-  which now has a behavioural harness - and has not been yet.
+  which now has a behavioural harness - and has not been yet. (Measured in round
+  thirty-nine: two suites catch its gate being switched off.)
 
 ### The pattern, for the next person
 
@@ -1656,3 +1657,64 @@ connectors can read every file; the file routes still refuse the stores.
 | 195 | the card does not say connectors are fenced | 1 assertion |
 
 Nine for nine.
+
+## Round thirty-nine - the last open items in this file (owner-approved)
+
+Every "still open" and "not built" line above was re-read. Most were closed by
+later rounds and now say so. What was left, and what became of it:
+
+**Stop ends the command on the computer.** The only ways to end a running
+command were its timeout, revoking the whole pairing, or closing the bridge -
+the "per-job cancellation" rounds nine, ten and twelve left open - so Stop in
+Build or chat left an `npm install` running to the end. Each command now
+carries the page's id; `exec/cancel` ends that one by process group and its
+answer says `cancelled`; Stop in Build and in chat cancel whatever this tab has
+running, and the step reads "stopped by the person", not failed and not
+finished.
+
+**An idle pairing ends - never a working one.** Round ten left session expiry
+open because an expiry firing under an overnight build loses work. The shape
+that avoids that: a pairing unused for 12 hours ends at the next request that
+uses it, and never while a command is running; the clock restarts at every
+request and when a command finishes. The page says the pairing expired, not
+that the bridge restarted.
+
+**The non-chat consent gate, measured.** Round seventeen said the `runAgentic`
+approval path "could be measured and has not been". Switched off
+(`if(false && _toolNeedsConsent(name))`): `second-dispatch-path` and
+`a-connector-acts-on-your-real-accounts` both fail on it.
+
+**Two suites on one port** (round eight) - closed: `serveArtifact` falls back to
+a port the kernel picks whenever the requested one is taken.
+
+**Taken off the table: memory and CPU caps on commands** (round twenty-six).
+A cap on somebody's own machine breaks real builds - a bundler routinely wants
+gigabytes - and the bound that matters is already there: at most four commands
+at once, each with a time limit, each now stoppable. A cap would trade a
+failure nobody has reported for one every large project would hit.
+
+**Still unmeasurable from here, and stated rather than implied:** the live site
+(this environment cannot reach it), real bank and registry providers, and
+whether a model judges a particular request well. Windows remains unfenced and
+says so.
+
+`stop-ends-the-command-and-an-idle-pairing-ends` (a real bridge, real processes,
+a short idle limit) and `stop-reaches-the-command-on-the-computer` (page).
+
+| # | what was broken | caught by |
+|---|---|---|
+| 196 | the cancel flags the command but does not kill it | 1 assertion |
+| 197 | the answer does not say it was stopped | 2 assertions |
+| 198 | one cancel stops every command | 1 assertion |
+| 199 | no idle expiry | 3 assertions |
+| 200 | expiry fires under a running command | 2 assertions |
+| 201 | requests do not count as use | 1 assertion |
+| 202 | a command finishing does not restart the clock | 1 assertion - SURVIVED at first |
+| 203 | Stop in Build does not cancel the command | 3 assertions |
+| 204 | Stop in chat does not cancel the command | 3 assertions |
+| 205 | the page sends no id | 3 assertions |
+| 206 | an expired pairing explained as a restart | 2 assertions |
+
+**202 survived the first version**: the check made a request while the command
+ran, and that request restarted the clock by itself. It is now measured with
+nothing asked during the run.

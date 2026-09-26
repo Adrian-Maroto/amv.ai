@@ -171,11 +171,13 @@ async function _agentRunTool(name, input, step){
   if(r && r.error) return { ok:false, text:'That did not work: ' + r.error };
 
   if(name === 'run_command'){
-    const head = 'exit ' + r.exitCode + (r.timedOut ? ' (timed out and was killed)' : '')
+    const head = r.cancelled ? ('stopped by the person after ' + r.ms + 'ms')
+               : 'exit ' + r.exitCode + (r.timedOut ? ' (timed out and was killed)' : '')
                + ' in ' + r.ms + 'ms' + (r.truncated ? ' - output truncated' : '');
     step.exitCode = r.exitCode;
     step.timedOut = !!r.timedOut;
-    return { ok: r.exitCode === 0,
+    step.cancelled = !!r.cancelled;
+    return { ok: r.exitCode === 0 && !r.cancelled,
              text: head + '\n\nstdout:\n' + (r.stdout || '(empty)')
                         + '\n\nstderr:\n' + (r.stderr || '(empty)') };
   }
@@ -298,10 +300,11 @@ function _agentStop(){
   _AGENT.stop = true;
   /* And the model request in the air: without this, Stop waited for the round
      already running - up to three minutes, generated and paid for - before it
-     took effect. A command already running on the computer still finishes,
-     which is what the busy line below says. (AMV-AUD-014) */
+     took effect. (AMV-AUD-014) And the command running on the computer, which
+     used to be left to finish on its own. */
   try{ if(_AGENT.ctrl) _AGENT.ctrl.abort(); }catch(e){}
-  try{ _devBusy(true, 'Stopping after this step'); }catch(e){}
+  try{ if(typeof bridgeCancelRunning === 'function') bridgeCancelRunning(); }catch(e){}
+  try{ _devBusy(true, 'Stopping'); }catch(e){}
 }
 try{ window._agentStop=_agentStop; window._agentSetRunning=_agentSetRunning; }catch(e){}
 
