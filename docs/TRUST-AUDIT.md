@@ -1293,7 +1293,8 @@ Four for four, plus `the-bridge-only-reaches-one-folder` catching the dangling-
 link regression in the first draft (LESSONS 511).
 
 **Not closed:** a race between the check and the write, which path checks cannot
-stop. That boundary is the isolated project copy in AMV-AUD-001.
+stop - only an isolated project copy does. Round thirty-six fences what commands
+can read; this race is in the bridge's own routes and is still open.
 
 ## Round twenty-eight - the four low findings (AMV-AUD-025, 027, 028, 029)
 
@@ -1427,9 +1428,8 @@ reads back what a command and a connector were given.
 | 140 | the opt-in does nothing | 2 assertions |
 | 141 | the page is not told which mode is on | 2 assertions |
 
-Five for five. **Still open, stated on purpose:** a command can READ files a
-person can, including a key saved under home. That boundary is an isolated
-project copy; this round closes the variables.
+Five for five. **Still open at the time:** a command could READ files a person
+can, including a key saved under home - closed on Linux in round thirty-six.
 
 ## Round thirty-three - code runs where it cannot reach the account (AMV-AUD-001, AMV-AUD-015, owner-approved)
 
@@ -1521,3 +1521,53 @@ spams and breaks its listing) and `a-connector-that-changes-is-followed` (page).
 
 Ten for ten. Within one turn the list is fixed, by design: the loop's offered set
 is built once from the request (`offered` in aiAgentLoop).
+
+## Round thirty-six - a command cannot read your keys (AMV-AUD-001, the file half of AMV-AUD-005, owner-approved)
+
+A command runs as the person, so it could read the files credentials live in:
+`cat ~/.ssh/id_ed25519` in one command's output is a key gone. On Linux with
+bubblewrap, every command now runs with the credential stores under home
+covered - SSH, cloud logins (AWS, Azure, gcloud, kube, docker), registry and git
+tokens, keyrings, shell histories, browser profiles: directories empty, files
+empty. The rest of the machine is untouched, so toolchains under home (nvm,
+pyenv, rustup) keep working; hiding all of home was rejected for breaking most
+developers' first command. The fence is started once at startup and used only
+if that worked; otherwise the terminal, `/hello`, the pairing and the Computer
+card all say commands can read every file, and why (off, missing, failed,
+unsupported). `--no-fence` lifts it on purpose. A command that fails for want
+of a hidden key says so. The bridge's own file routes refuse the same places on
+every system (`secret_path`), which matters when the folder is home itself.
+
+`a-command-cannot-read-your-keys` (real bridges, a fake home seeded with fake
+keys) and `the-computer-card-says-what-commands-can-see`.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 167 | commands run unfenced (the finding) | 3 assertions |
+| 168 | the fence hides nothing | 3 assertions |
+| 169 | credential FILES not hidden (.npmrc, history) | 1 assertion |
+| 170 | file routes read a key when the folder is home | 3 assertions |
+| 171 | the route check not made on the real path - a link reaches the key | 1 assertion |
+| 172 | no hint when a command needed a hidden key | 1 assertion - SURVIVED at first |
+| 173 | the hint added to every failure | 1 assertion |
+| 174 | the page not told the fence state | 2 assertions |
+| 175 | `--no-fence` ignored | 2 assertions |
+| 176 | the terminal silent when bubblewrap is missing | 1 assertion |
+| 177 | the startup check skipped - "fenced" on a system that refuses it | 1 assertion |
+| 178 | the card always says hidden | 3 assertions |
+| 179 | the page trusts an unrecognised fence value | 2 assertions |
+
+**172 survived the first version** because the mutation left half the sentence
+and the assertion only looked for that half; the assertion now reads the whole
+hint and a second one checks an ordinary failure is left alone.
+
+**Not covered, stated on purpose.** macOS and Windows: no fence exists there that
+the bridge can start and verify, so it does not claim one - the card says
+commands can read every file. Connectors: programs the person chose and
+configured, whose credentials are handed over on purpose. And a race between a
+file route's path check and its write, which only an isolated project copy
+closes.
+
+**The gate needs bubblewrap.** Without it the suite fails and names the package,
+rather than passing on the fallback alone; `.claude/session-setup.sh` installs
+it in a fresh container.

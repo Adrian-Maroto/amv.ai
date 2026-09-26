@@ -110,6 +110,11 @@ Companion docs (do not duplicate them here - read them):
   is byte-identical to the file the bridge tests drive. It must therefore be in
   whatever directory the static host publishes. It is NOT embedded in the page:
   that was tried and the weight ceiling rightly refused it.
+  Commands get an allowed list of environment variables (`--share-environment`
+  lifts it) and, on Linux with bubblewrap, run with the credential stores under
+  home hidden (`--no-fence` lifts it); the bridge checks the fence at startup
+  and reports `fence` to the page, which says either way. The gate needs
+  bubblewrap - `.claude/session-setup.sh` installs it in a fresh container.
   `aiAgentLoop` (in `14-engine.js`) is the turn-taking on top of it: consent
   once per turn, a stop checked before every round and every command, and a
   changelist measured from the disk with an Undo that writes real bytes back.

@@ -13557,3 +13557,19 @@ Found while giving the Build agent and Dev the named Stop chat already had: a
 cancel in the browser alone looks to the server like a lost signal, so it
 finished the round in the background at the person's expense. All three now go
 through `_aiStopLink` and the same `_stopTurnThenCut` chat uses.
+
+## 517. The strongest-looking fence is the one that breaks the first command
+
+Keeping commands away from keys had an obvious strong answer: hide all of home.
+It would have broken node, python and rust for everyone who installs them with
+nvm, pyenv or rustup - most developers - on the first command, and a fence people
+switch off on day one protects nobody. The fence that ships hides the places
+credentials actually live and leaves everything else as it was.
+
+Two more rules came out of it. A fence found on disk is not a fence that works:
+Ubuntu can refuse the namespaces bubblewrap needs, so the bridge starts it once
+at startup and claims it only if that succeeded - and a stand-in bwrap that
+always fails is how the suite proves the claim is checked. And a killed process
+inside the fence is a grandchild; in a container whose pid 1 never reaps, it
+lingers as a zombie, and `kill(pid, 0)` calls a zombie alive. Measure a process
+by its state, not by whether its number still answers.

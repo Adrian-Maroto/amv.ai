@@ -58,10 +58,11 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 import { createServer } from 'http';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
+import { homedir } from 'os';
 import { realpathSync, existsSync, statSync, lstatSync, readlinkSync, readFileSync, writeFileSync,
          mkdirSync, readdirSync, unlinkSync, renameSync, chmodSync } from 'fs';
-import { resolve, join, dirname, relative, sep } from 'path';
+import { resolve, join, dirname, relative, sep, basename } from 'path';
 import { randomBytes, timingSafeEqual } from 'crypto';
 
 const VERSION = '1.0.0';
@@ -89,9 +90,7 @@ const ROOT = realpathSync(resolve(ARGS.find(a => !a.startsWith('--')) || process
    it does: start the bridge with --share-environment, and the banner and AMV's
    screen both say that everything in this window is visible to what AMV runs.
 
-   What this does NOT do: keep a command from READING files - a key saved in a
-   file under home is as reachable as before. That boundary is an isolated
-   project copy, which is a bigger change; this closes the variables. */
+   Files are the other half: see THE FENCE below. */
 const SHARE_ENV = ARGS.includes('--share-environment');
 const ENV_ALLOW = new Set([
   'PATH', 'PATHEXT', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'USER', 'USERNAME', 'LOGNAME',
@@ -114,6 +113,80 @@ function childEnv(extra) {
   for (const k of Object.keys(out)) if (/^AMV_BRIDGE_/i.test(k)) delete out[k];
   return out;
 }
+
+/* THE FENCE: WHAT A COMMAND CAN READ OF YOUR FILES.
+
+   A command runs as you, so it could read anything you can - including the
+   files where credentials live: SSH keys, cloud logins, package-registry
+   tokens, shell history, browser profiles. A command is chosen by a model that
+   may have read a page written to steer it, and one `cat ~/.ssh/id_ed25519`
+   in its output is a key gone.
+
+   On Linux, with bubblewrap installed, every command runs with those places
+   covered: each credential directory under home is an empty one, each
+   credential file reads as empty. The rest of the machine is exactly as it
+   was, so builds, package installs and toolchains under home (nvm, pyenv,
+   rustup) keep working - hiding all of home was the stronger-looking choice
+   and would have broken most developers' first command.
+
+   It is CHECKED, not assumed: the bridge starts the fence once at startup and
+   uses it only if that worked. Otherwise - another system, no bubblewrap, or a
+   machine that refuses it - commands run unfenced and the banner, /hello and
+   AMV's screen say so in those words. `--no-fence` lifts it on purpose, for
+   the person who wants AMV to push with their key.
+
+   What it does NOT cover: connectors, which are programs the person chose and
+   configured (their credentials are handed over on purpose), and macOS or
+   Windows, where no fence exists that this can start and verify. The bridge's
+   own file routes refuse these paths on every system, which matters when the
+   folder it was started in is home itself. */
+const NO_FENCE = ARGS.includes('--no-fence');
+const HOME_DIR = (() => { try { return realpathSync(homedir()); } catch (e) { return homedir(); } })();
+const SECRET_DIRS = ['.ssh', '.aws', '.azure', '.gnupg', '.kube', '.docker', '.password-store', '.terraform.d',
+  '.config/gcloud', '.config/gh', '.config/hub', '.config/op', '.config/doctl', '.local/share/keyrings',
+  '.mozilla', '.thunderbird', '.config/google-chrome', '.config/chromium', '.config/BraveSoftware',
+  '.config/microsoft-edge', '.config/Code/User/globalStorage'];
+const SECRET_FILES = ['.netrc', '.npmrc', '.yarnrc.yml', '.pypirc', '.git-credentials', '.vault-token', '.pgpass',
+  '.my.cnf', '.bash_history', '.zsh_history', '.python_history', '.psql_history', '.mysql_history',
+  '.node_repl_history', '.config/git/credentials', '.cargo/credentials', '.cargo/credentials.toml',
+  '.gem/credentials'];
+const _under = (p, dir) => p === dir || p.startsWith(dir + sep);
+/* The ones that exist now - asked on every command, because a login made after
+   the bridge started is still a login. */
+function secretPaths(){
+  const out = [];
+  for (const rel of SECRET_DIRS) { const p = join(HOME_DIR, rel); try { if (statSync(p).isDirectory()) out.push({ p, dir: true }); } catch (e) {} }
+  for (const rel of SECRET_FILES) { const p = join(HOME_DIR, rel); try { if (statSync(p).isFile()) out.push({ p, dir: false }); } catch (e) {} }
+  return out;
+}
+function fenceArgs(){
+  const a = ['--dev-bind', '/', '/', '--die-with-parent'];
+  for (const s of secretPaths()) {
+    /* A project that itself lives in one of these stays visible - hiding it
+       would hide the work. Rare, and the folder was chosen on purpose. */
+    if (_under(ROOT, s.p)) continue;
+    if (s.dir) a.push('--tmpfs', s.p); else a.push('--ro-bind', '/dev/null', s.p);
+  }
+  return a;
+}
+function _findBwrap(){
+  for (const d of String(process.env.PATH || '').split(':')) {
+    if (!d) continue;
+    const p = join(d, 'bwrap');
+    try { if (statSync(p).isFile()) return p; } catch (e) {}
+  }
+  return '';
+}
+/* on: commands are fenced. Otherwise why: off | unsupported | missing | failed. */
+const FENCE = (() => {
+  if (NO_FENCE) return { on: false, why: 'off' };
+  if (process.platform !== 'linux') return { on: false, why: 'unsupported' };
+  const bin = _findBwrap();
+  if (!bin) return { on: false, why: 'missing' };
+  const r = spawnSync(bin, fenceArgs().concat(['--', '/bin/sh', '-c', 'exit 0']), { timeout: 5000, stdio: 'ignore' });
+  return r.status === 0 ? { on: true, why: '', bin } : { on: false, why: 'failed' };
+})();
+const fenceState = () => FENCE.on ? 'on' : FENCE.why;
 
 /* Origins allowed to talk to this bridge. A pairing code stops a random page
    using it; this stops a random page even trying, and keeps the browser's
@@ -565,6 +638,18 @@ function safePath(p){
       if (!_insideRoot(at)) throw _outside();
     }
   }
+  /* A folder that CONTAINS a credential store - somebody started the bridge in
+     their home folder - does not make the store AMV's to read. On every
+     system, fence or not. Checked on the real path, so a link to it is the same. */
+  let real = abs;
+  { let base = abs, tail = '';
+    while (base !== dirname(base) && !existsSync(base)) { tail = join(basename(base), tail); base = dirname(base); }
+    try { real = join(realpathSync(base), tail); } catch (e) {} }
+  for (const s of secretPaths()) {
+    if (_under(ROOT, s.p)) continue;
+    let sp = s.p; try { sp = realpathSync(s.p); } catch (e) {}
+    if (_under(real, sp)) throw Object.assign(new Error('a credential store'), { code: 'secret_path' });
+  }
   return abs;
 }
 
@@ -630,7 +715,7 @@ const server = createServer(async (req, res) => {
   if (path === '/amv-bridge/hello' && req.method === 'GET') {
     return json(res, 200, { bridge: true, version: VERSION,
                             folder: ROOT.split(sep).pop(), paired: !!sessionToken,
-                            sharesEnvironment: SHARE_ENV });
+                            sharesEnvironment: SHARE_ENV, fence: fenceState() });
   }
 
   if (!allowed) return json(res, 403, { error: 'origin_not_allowed' });
@@ -662,7 +747,7 @@ const server = createServer(async (req, res) => {
       ? '  ✓ paired with AMV - the previous session was disconnected'
       : '  ✓ paired with AMV');
     return json(res, 200, { token: sessionToken, folder: ROOT.split(sep).pop(), root: ROOT, replaced,
-                            sharesEnvironment: SHARE_ENV });
+                            sharesEnvironment: SHARE_ENV, fence: fenceState() });
   }
 
   if (!tokenOk(req.headers['x-amv-bridge-token'])) return json(res, 401, { error: 'not_paired' });
@@ -963,7 +1048,10 @@ const server = createServer(async (req, res) => {
       const started = Date.now();
       const shell = process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
       const args = process.platform === 'win32' ? ['/c', cmd] : ['-c', cmd];
-      const child = spawn(shell, args, {
+      /* Inside the fence when there is one - see THE FENCE. */
+      const fenced = FENCE.on;
+      const child = spawn(fenced ? FENCE.bin : shell,
+                          fenced ? fenceArgs().concat(['--chdir', cwd, '--', shell]).concat(args) : args, {
         cwd,
         /* The allowed environment only - see childEnv. */
         env: childEnv(null),
@@ -1018,10 +1106,16 @@ const server = createServer(async (req, res) => {
          grows is a shutdown that gets slower every run. */
       execJobs.delete(child);
 
+      /* A command that failed for want of a hidden key is told why, so neither
+         the person nor the model goes looking for a broken setup. */
+      if (fenced && done.code !== 0 && /publickey|\.ssh|\.aws|\.npmrc|\.netrc|credential|gnupg|kubeconfig|\.kube/i.test(err)) {
+        err += '\n[AMV bridge] Keys and credential files are hidden from commands AMV runs. '
+             + 'If this needed one, run it yourself, or restart the bridge with --no-fence.';
+      }
       return json(res, 200, {
         command: cmd, cwd: relative(ROOT, cwd) || '.',
         exitCode: done.code, timedOut: !!done.timedOut, error: done.error || '',
-        ms: Date.now() - started, truncated,
+        ms: Date.now() - started, truncated, fenced,
         stdout: out.slice(0, MAX_OUTPUT), stderr: err.slice(0, MAX_OUTPUT),
       });
     }
@@ -1029,6 +1123,7 @@ const server = createServer(async (req, res) => {
     return json(res, 404, { error: 'unknown_route' });
   } catch (e) {
     if (e.code === 'outside_root') return json(res, 403, { error: 'outside_root' });
+    if (e.code === 'secret_path') return json(res, 403, { error: 'secret_path' });
     if (e.code === 'ENOENT') return json(res, 404, { error: 'not_found' });
     return json(res, 500, { error: 'failed', message: String(e.message || e).slice(0, 200) });
   }
@@ -1055,8 +1150,21 @@ server.listen(0, '127.0.0.1', () => {
      content while /read refused the same path. The sentence somebody reads
      while deciding whether to grant this has to be the weaker true one. */
   console.log('  AMV reads and writes files inside that folder and nowhere');
-  console.log('  else. Commands run there as you, so a command can reach');
-  console.log('  anything you can - every one is printed below as it runs.');
+  console.log('  else. Commands run there as you - every one is printed');
+  console.log('  below as it runs.');
+  if (FENCE.on) {
+    console.log('\n  Your SSH keys, cloud logins, token files, shell history and');
+    console.log('  browser profiles are hidden from commands. To lift that,');
+    console.log('  restart with --no-fence.');
+  } else if (FENCE.why === 'off') {
+    console.log('\n  !! --no-fence is ON: commands can read every file you can,');
+    console.log('     including keys and logins saved under your home folder.');
+  } else {
+    console.log('\n  !! Commands can read every file you can, including keys and');
+    console.log('     logins saved under your home folder.');
+    if (FENCE.why === 'missing') console.log('     Install bubblewrap (e.g. sudo apt install bubblewrap) and restart to hide them.');
+    if (FENCE.why === 'failed') console.log('     bubblewrap is installed but this system would not start it.');
+  }
   if (SHARE_ENV) {
     console.log('\n  !! --share-environment is ON: every command and connector');
     console.log('     can read ALL of this window\'s environment variables,');

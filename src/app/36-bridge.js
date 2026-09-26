@@ -49,11 +49,11 @@ function _bridgeRemember(){
   try{
     sessionStorage.setItem('amv_bridge', JSON.stringify({
       port: BRIDGE.port, token: BRIDGE.token, folder: BRIDGE.folder, root: BRIDGE.root,
-      sharesEnv: !!BRIDGE.sharesEnv }));
+      sharesEnv: !!BRIDGE.sharesEnv, fence: BRIDGE.fence || '' }));
   }catch(e){}
 }
 function _bridgeForget(){
-  BRIDGE.port = 0; BRIDGE.token = ''; BRIDGE.folder = ''; BRIDGE.root = ''; BRIDGE.sharesEnv = false;
+  BRIDGE.port = 0; BRIDGE.token = ''; BRIDGE.folder = ''; BRIDGE.root = ''; BRIDGE.sharesEnv = false; BRIDGE.fence = '';
   BRIDGE.connected = false;
   try{ sessionStorage.removeItem('amv_bridge'); }catch(e){}
   /* The connectors ran on that machine, so they are gone with it. Leaving
@@ -140,6 +140,9 @@ async function _bridgePair(port, code){
   BRIDGE.port = Number(port); BRIDGE.token = d.token;
   BRIDGE.folder = d.folder || ''; BRIDGE.root = d.root || '';
   BRIDGE.sharesEnv = d.sharesEnvironment === true;
+  /* 'on', or why not: off | unsupported | missing | failed. A bridge too old
+     to say is treated as unfenced, which is what it is. */
+  BRIDGE.fence = /^(on|off|unsupported|missing|failed)$/.test(String(d.fence || '')) ? String(d.fence) : 'unsupported';
   BRIDGE.connected = true; BRIDGE.why = '';
   _bridgeRemember();
   return BRIDGE;
@@ -181,6 +184,11 @@ async function _bridgeCall(route, body, timeoutMs){
   }
   if(r.status === 403 && d.error === 'outside_root'){
     throw new Error('That path is outside the folder the bridge was started in, so it is not AMV’s to touch.');
+  }
+  if(r.status === 403 && d.error === 'secret_path'){
+    const e = new Error('That is where keys or logins are kept, so the bridge will not read or change it, even inside the folder.');
+    e.code = 'secret_path'; e.status = 403;
+    throw e;
   }
   if(!r.ok){
     const err = new Error(d.message || d.error || 'The bridge could not do that.');
@@ -317,10 +325,21 @@ function _bridgeCardHTML(){
          nothing, because somebody reads it and stops watching. */
       + '<p class="brg-p">AMV reads and writes files in '
         + '<code>' + escH(BRIDGE.folder || 'your project folder') + '</code> '
-        + 'and nowhere else. Commands run there as you, so a command can reach '
-        + 'anything you can - the bridge prints every one in its terminal. In '
-        + 'chat AMV asks before each one. In Build it asks once for the whole '
-        + 'request, and you can stop it at any point.</p>'
+        + 'and nowhere else. Commands run there as you - the bridge prints every '
+        + 'one in its terminal. In chat AMV asks before each one. In Build it asks '
+        + 'once for the whole request, and you can stop it at any point.</p>'
+      /* What commands can READ, said either way - the fence is checked by the
+         bridge when it starts, and this repeats what it found. */
+      + (BRIDGE.fence === 'on'
+          ? '<p class="brg-p">Your SSH keys, cloud logins, token files, shell history and browser '
+            + 'profiles are hidden from commands.</p>'
+          : '<p class="brg-p brg-warn"><b>Commands can read every file you can,</b> including keys and '
+            + 'logins saved in your home folder. '
+            + (BRIDGE.fence === 'off' ? 'This bridge was started with <code>--no-fence</code>.'
+              : BRIDGE.fence === 'missing' ? 'Install bubblewrap on this computer and restart the bridge to hide them.'
+              : BRIDGE.fence === 'failed' ? 'This computer would not start the fence that hides them.'
+              : 'Only ask for work you would run yourself.')
+            + '</p>')
       /* What commands can see of this computer's settings, said either way:
          the default is a short allowed list with no keys or tokens, and the
          full environment is a flag somebody chose when starting the bridge. */
