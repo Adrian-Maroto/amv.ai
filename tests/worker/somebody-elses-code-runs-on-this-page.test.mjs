@@ -156,11 +156,16 @@ section('The CSP is what makes the list enforceable, so it stays strict');
 
 section('The Python runtime is pinned to a version, not to "latest"');
 {
-  const m = /cdn\.jsdelivr\.net\/pyodide\/(v[0-9.]+)\/full\//.exec(appSrc);
+  /* Programs run in the code sandbox now (src/sandbox/sandbox.js, published as
+     sandbox.js - AMV-AUD-001), so that is where the runtime is loaded from. The
+     app bundle must not load it at all. */
+  const sbxSrc = readFileSync(join(ROOT, 'sandbox.js'), 'utf8');
+  const m = /cdn\.jsdelivr\.net\/pyodide\/(v[0-9.]+)\/full\//.exec(sbxSrc);
   ok(!!m, 'the runtime URL names a version', m && m[1]);
-  ok(!/pyodide\/(latest|v?\d+\/)/.test(appSrc.replace(m ? m[0] : '', '')),
+  ok(!/pyodide\/(latest|v?\d+\/)/.test(sbxSrc.replace(m ? m[0] : '', '')),
      'and nothing asks for a moving one', true);
-  ok(/importScripts/.test(appSrc), 'it is loaded inside a Worker', true);
+  ok(/importScripts/.test(sbxSrc), 'it is loaded inside a Worker', true);
+  ok(!/pyodide/i.test(appSrc.replace(/\/\*[\s\S]*?\*\//g, '')), 'and never by the app page itself', true);
 }
 
 section('And a script AMV tells the model to emit runs somewhere it cannot reach anything');
