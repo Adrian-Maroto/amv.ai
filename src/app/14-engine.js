@@ -524,125 +524,126 @@ function extractCode(text, lang){
 }
 
 // --- REAL multi-language code execution sandbox ---
-/* AMV-006: run untrusted Python inside a Web Worker sandbox. A Worker has NO
-   document and NO localStorage, so Pyodide's `js` bridge there cannot read page
-   tokens or touch the DOM - closing the same-origin code-execution hole. The
-   worker is TERMINATED on timeout so malicious/synchronous code can't hang the
-   tab. If the sandbox can't start, Python degrades to an honest error; it NEVER
-   falls back to executing on the main thread. */
-const _PY_CDN='https://cdn.jsdelivr.net/pyodide/v0.26.2/full/';
-/* ONE INTERPRETER PER JOB.  (AMV-AUD-016)
+/* PROGRAMS RUN IN A FRAME WITH NO IDENTITY.  (AMV-AUD-001, AMV-AUD-015)
 
-   This kept one Pyodide alive for the life of the tab and ran every job in
-   it. So a job's variables, its imports and anything it patched - `json.dumps`
-   replaced, a module attribute changed - were still there for the next job,
-   and for the next ACCOUNT, since signing out did not touch it. The debugger
-   is where that bites first: a fix that only works because an earlier attempt
-   defined something is reported as passing, and fails the moment it runs
-   anywhere else.
+   Programs used to run in Web Workers made by this page. A worker has no
+   document and no localStorage - but it shares this page's ORIGIN, so it
+   could open AMV's IndexedDB and fetch AMV's own backend with the person's
+   cookies attached. Code the model wrote, possibly steered by a page it read,
+   was one step from the account. And this page's security policy refuses
+   WebAssembly, so Python could not start at all.
 
-   Clearing a namespace would not have been enough, because modules are shared
-   across namespaces. So each job gets its own worker and its worker is
-   terminated when the job ends. The cost - starting the runtime again - is
-   paid in the background: as soon as one job ends, the next clean worker is
-   started and warmed, so the next job usually finds it ready.
+   Now every program runs in src/sandbox/sandbox.js, loaded here as
+   <iframe sandbox="allow-scripts"> with NO allow-same-origin. The frame's
+   origin is opaque ("null"): measured in a real browser, localStorage,
+   cookies, IndexedDB and this page all throw a SecurityError from inside it,
+   and its own policy allows no network except the host the Python runtime
+   comes from. That policy is the only one in AMV that allows WebAssembly -
+   this page's still does not. Inside the frame, every program runs in a
+   Worker of its own, so a runaway loop never holds this page's thread.
 
-   Jobs run one at a time, in order: two at once would share stdout and a
-   timeout for one would kill the other. The timeout starts when the job
-   starts, not when it was queued. Signing out stops the running job and
-   anything queued behind it. Output is capped inside the worker, so a print
-   loop cannot fill the tab's memory before the timeout lands. */
-const _PY_OUT_CAP = 200000;
-function _pyWorkerSource(){
-  return "let py=null,loading=null;"+
-    "async function ensure(){ if(py) return py; if(!loading) loading=(async()=>{"+
-      "importScripts('"+_PY_CDN+"pyodide.js');"+
-      "py=await loadPyodide({indexURL:'"+_PY_CDN+"'}); return py; })(); return loading; }"+
-    "function why(x){ const m=(x&&x.message)?x.message:String(x);"+
-      "return /WebAssembly|wasm|unsafe-eval/i.test(m)"+
-        "? 'Python cannot start on this page: its security policy does not allow the Python runtime (WebAssembly) to load. JavaScript still runs.'"+
-        ": 'Runtime load error: '+m; }"+
-    "self.onmessage=async(e)=>{ const d=e.data||{};"+
-      "if(d.warm){ try{ await ensure(); self.postMessage({warm:true,ok:true}); }catch(x){ self.postMessage({warm:true,ok:false}); } return; }"+
-      "let out='',cut=false; const add=s=>{ if(out.length<"+_PY_OUT_CAP+") out+=s+'\\n'; else cut=true; };"+
-      "let p; try{ p=await ensure(); }catch(x){ self.postMessage({id:d.id, ok:false, stdout:'', stderr:why(x), result:'', loaded:false}); return; }"+
-      "p.setStdout({batched:add}); p.setStderr({batched:add});"+
-      "let result,err=null;"+
-      "try{ result=await p.runPythonAsync(d.code); }catch(x){ err=(x&&x.message)?x.message:String(x); }"+
-      "if(cut) out=out.slice(0,"+_PY_OUT_CAP+")+'\\n[output cut off at "+_PY_OUT_CAP+" characters]';"+
-      "self.postMessage({id:d.id, ok:!err, stdout:out.trim(), stderr:err||'', result:(result!==undefined&&result!==null)?String(result):'', loaded:true});"+
-    "};";
+   This side keeps the functions the rest of AMV already calls - runCode,
+   _runPythonInWorker, _pyReset - and only moves work to the frame and waits.
+   It trusts nothing that does not come from that frame, and if the frame
+   cannot start or stops answering, the run fails with a sentence saying so:
+   there is deliberately NO fallback to running code on this page. */
+const JS_SANDBOX_MS = 15000;
+const _SBX_START_MS = 10000;
+const _SBX = { frame: null, ready: null, onReady: null, pending: new Map(), seq: 0 };
+function _sbxStart(){
+  if(_SBX.ready) return _SBX.ready;
+  _SBX.ready = new Promise((resolve, reject) => {
+    const f = document.createElement('iframe');
+    f.setAttribute('sandbox', 'allow-scripts');       // NOT allow-same-origin: that is the whole point
+    f.setAttribute('aria-hidden', 'true');
+    f.setAttribute('tabindex', '-1');
+    f.title = 'AMV code sandbox';
+    f.className = 'amv-sbx';
+    f.src = '/sandbox.html';
+    const timer = setTimeout(() => {
+      _sbxDestroy('The code sandbox did not start.');
+      reject(new Error('The code sandbox could not start in this browser, so nothing was run.'));
+    }, _SBX_START_MS);
+    _SBX.onReady = () => { clearTimeout(timer); _SBX.onReady = null; resolve(f); };
+    _SBX.frame = f;
+    (document.body || document.documentElement).appendChild(f);
+  });
+  _SBX.ready.catch(() => {});
+  return _SBX.ready;
 }
-let _pyWorker = null;      // the clean, possibly warm, worker the next job will take
-let _pyUrl = '';           // one Blob URL for the source, made once - it never changes
-let _pyQueue = Promise.resolve();
-let _pyGen = 0;            // moved on by _pyReset; a job queued before that does not run
-let _pyRuntimeOk = false;  // warm the next worker only once the runtime has been seen to load
-let _pyRunning = null;     // { stop } for the job in progress
-function _pyNewWorker(){
-  if(!_pyUrl) _pyUrl = URL.createObjectURL(new Blob([_pyWorkerSource()], {type:'application/javascript'}));
-  return new Worker(_pyUrl);
+/* Everything that was running is answered, and the frame - with every worker
+   and interpreter in it - is gone. The next run starts a fresh one. */
+function _sbxDestroy(why){
+  const f = _SBX.frame;
+  _SBX.frame = null; _SBX.ready = null; _SBX.onReady = null;
+  try{ if(f) f.remove(); }catch(e){}
+  for(const [, job] of _SBX.pending){
+    clearTimeout(job.backstop);
+    job.resolve({ ok:false, stdout:'', stderr:String(why || 'The code sandbox was stopped.'), result:'', ms:0 });
+  }
+  _SBX.pending.clear();
 }
-function _ensurePyWorker(){
-  if(_pyWorker) return _pyWorker;
-  _pyWorker = _pyNewWorker();
-  return _pyWorker;
-}
-function _pyPrewarm(){
-  if(!_pyRuntimeOk) return;
-  try{ _ensurePyWorker().postMessage({ warm:true }); }catch(e){}
-}
-/* Nothing of one account's Python survives into the next: the job running is
-   stopped, the jobs queued are refused, and the warm worker goes too. */
-function _pyReset(){
-  _pyGen++;
-  try{ if(_pyRunning) _pyRunning.stop('Stopped - the account signed out before this finished.'); }catch(e){}
-  try{ if(_pyWorker) _pyWorker.terminate(); }catch(e){}
-  _pyWorker = null;
-}
-try{ window._pyReset = _pyReset; }catch(e){}
-function _pyRunOne(code, onStatus, timeoutMs){
+try{ window.addEventListener('message', (ev) => {
+  const f = _SBX.frame;
+  if(!f || ev.source !== f.contentWindow) return;       // only the sandbox frame, nothing else
+  const d = ev.data;
+  if(!d || typeof d !== 'object') return;
+  if(d.t === 'ready'){ if(_SBX.onReady) _SBX.onReady(); return; }
+  const job = _SBX.pending.get(d.id);
+  if(!job) return;
+  if(d.t === 'status'){ try{ job.onStatus && job.onStatus(String(d.msg || '')); }catch(e){} return; }
+  if(d.t === 'result'){
+    _SBX.pending.delete(d.id);
+    clearTimeout(job.backstop);
+    job.resolve({ ok: !!d.ok, stdout: String(d.stdout || ''), stderr: String(d.stderr || ''),
+                  result: String(d.result || ''), ms: Number(d.ms) || 0 });
+  }
+}); }catch(e){}
+async function _sbxRun(lang, code, timeoutMs, onStatus){
+  let f;
+  try{ f = await _sbxStart(); }
+  catch(e){ return { ok:false, stdout:'', stderr:(e && e.message) || 'The code sandbox could not start.', result:'', ms:0 }; }
+  const id = 'j' + (++_SBX.seq) + '_' + Math.random().toString(36).slice(2, 8);
   return new Promise((resolve) => {
-    let w;
-    /* The job TAKES the worker: nobody else is handed an interpreter this job
-       has touched. */
-    try{ w = _ensurePyWorker(); _pyWorker = null; }
-    catch(e){ resolve({ok:false,stdout:'',stderr:'Python sandbox unavailable: '+((e&&e.message)||e),result:'',ms:0}); return; }
-    const id = 'py_'+Math.random().toString(36).slice(2);
-    const t0 = performance.now();
-    let done = false, timer = null;
-    const finish = (r) => {
-      if(done) return; done = true;
-      clearTimeout(timer);
-      try{ w.removeEventListener('message', onMsg); }catch(e){}
-      try{ w.terminate(); }catch(e){}
-      _pyRunning = null;
-      if(r.loaded) _pyRuntimeOk = true;
-      delete r.loaded;
-      _pyPrewarm();
-      resolve(r);
-    };
-    const onMsg = (ev) => {
-      if(!ev.data || ev.data.id !== id) return;
-      const d = ev.data;
-      finish({ ok:d.ok, stdout:d.stdout, stderr:d.stderr, result:d.result, loaded:d.loaded, ms:Math.round(performance.now()-t0) });
-    };
-    _pyRunning = { stop: (why) => finish({ ok:false, stdout:'', stderr:why, result:'', ms:Math.round(performance.now()-t0) }) };
-    w.addEventListener('message', onMsg);
-    onStatus && onStatus(_pyRuntimeOk ? 'Running Python in a sandbox…' : 'Running Python in a sandbox (first run loads the runtime)…');
-    w.postMessage({ id, code });
-    const limit = timeoutMs || 30000;
-    timer = setTimeout(() => {
-      finish({ ok:false, stdout:'', stderr:'Execution timed out ('+Math.round(limit/1000)+'s) - the sandbox was terminated.', result:'', ms:Math.round(performance.now()-t0) });
-    }, limit);
+    const job = { resolve, onStatus, backstop: null };
+    /* The frame enforces the time limit itself. This is the backstop for a
+       frame that stopped answering altogether: it is replaced, not waited on. */
+    job.backstop = setTimeout(() => {
+      if(_SBX.pending.has(id)) _sbxDestroy('The code sandbox stopped answering and was restarted. Nothing on this page was affected.');
+    }, timeoutMs + 8000);
+    _SBX.pending.set(id, job);
+    try{ f.contentWindow.postMessage({ t:'run', id, lang, code:String(code), timeoutMs }, '*'); }
+    catch(e){
+      _SBX.pending.delete(id); clearTimeout(job.backstop);
+      resolve({ ok:false, stdout:'', stderr:'The code sandbox could not be reached, so nothing was run.', result:'', ms:0 });
+    }
   });
 }
+try{ window._sbxDestroy = _sbxDestroy; }catch(e){}
+
+function _runJS(code, t0){
+  return _sbxRun('js', code, JS_SANDBOX_MS, null);
+}
+
+/* Python jobs go to the frame ONE AT A TIME, in order (each takes a fresh
+   interpreter there, and two at once would be two runtimes in memory on a
+   phone). The timeout starts when a job starts, not when it was queued. */
+let _pyQueue = Promise.resolve();
+let _pyGen = 0;            // moved on by _pyReset; a job queued before that does not run
+/* Nothing of one account's code survives into the next: the frame is removed,
+   which stops the job running and every interpreter in it, and the jobs
+   queued behind it are refused. (AMV-AUD-016) */
+function _pyReset(){
+  _pyGen++;
+  if(_SBX.frame || _SBX.pending.size) _sbxDestroy('Stopped - the account signed out before this finished.');
+}
+try{ window._pyReset = _pyReset; }catch(e){}
 function _runPythonInWorker(code, onStatus, opts){
   const gen = _pyGen;
-  const timeoutMs = opts && opts.timeoutMs;
+  const timeoutMs = (opts && opts.timeoutMs) || 30000;
   const run = () => gen !== _pyGen
     ? { ok:false, stdout:'', stderr:'Not run - the account signed out before this started.', result:'', ms:0 }
-    : _pyRunOne(code, onStatus, timeoutMs);
+    : _sbxRun('py', code, timeoutMs, onStatus);
   const job = _pyQueue.then(run, run);
   _pyQueue = job.then(() => {}, () => {});
   return job;
@@ -662,115 +663,6 @@ async function runCode(code, lang, onStatus){
   }
   return {ok:false, stdout:'', stderr:'Unsupported language: '+lang, result:'', ms:0};
 }
-
-/* AMV-049: THE TIMEOUT COULD NOT STOP THE ONE THING IT WAS FOR.
-
-   JS ran in a hidden iframe, and an iframe runs on the SAME THREAD as the page.
-   So `while(true){}` in somebody's program did not time out after fifteen
-   seconds - it froze the whole tab, permanently. The setTimeout that was
-   supposed to stop it was queued on the thread the loop was holding, and could
-   not fire until the loop ended, which was never. Removing the iframe cannot
-   help either: a script that never yields is never interrupted by the DOM.
-
-   The message it eventually would have shown said "the sandbox was terminated",
-   which was prose describing something the code could not do. An infinite loop
-   is the single most common mistake in a program somebody is asking a computer
-   to run for them, and the one case the timeout existed for was the one case it
-   could not handle. The Lab exists to run code that is wrong.
-
-   A Worker has its own thread and can really be killed. `terminate()` stops a
-   synchronous loop dead, because the main thread was never blocked and its
-   timer fires on schedule - which is exactly why the Python path has always
-   used one. This is the same, and the code goes into the worker's own source
-   rather than through eval, so it needs no 'unsafe-eval' anywhere.
-
-   A Worker also has no document, no localStorage and no cookies, so untrusted
-   code there cannot reach the page's tokens at all - the iframe's unique origin
-   was the only thing standing between them before.
-
-   There is deliberately NO fallback to the old path. A sandbox that silently
-   degrades to one that can freeze the tab is worse than one that says it is
-   unavailable, because nobody finds out which one they got. */
-const JS_SANDBOX_MS = 15000;
-const JS_LOG_CAP = 200000;
-
-function _jsWorkerSource(code, id){
-  const tag = JSON.stringify(id);
-  /* Logs are capped as they are written, not after: a loop that prints for
-     fifteen seconds would otherwise hold every line in memory until the
-     timeout, and post all of it at once. (AMV-AUD-022) */
-  return 'self.window=self;var __logs=[],__n=0,__cut=false;'+
-    'function __fmt(a){try{return (typeof a==="object"&&a!==null)?JSON.stringify(a):String(a)}catch(e){return String(a)}}'+
-    'var __p=function(){ if(__n>='+JS_LOG_CAP+'){ __cut=true; return; }'+
-      'var s=Array.prototype.slice.call(arguments).map(__fmt).join(" ");'+
-      'if(__n+s.length>'+JS_LOG_CAP+'){ s=s.slice(0,'+JS_LOG_CAP+'-__n); __cut=true; }'+
-      /* +1 for the newline the lines are joined with - counting only the
-         lines let 12,000 short ones through 6% over the cap. */
-      '__logs.push(s); __n+=s.length+1; };'+
-    'self.console={log:__p,error:__p,warn:__p,info:__p,debug:__p,trace:__p};'+
-    'var __sent=false;'+
-    'function __done(ok,err,result){ if(__sent) return; __sent=true;'+
-      'if(__cut) __logs.push("[output cut off at '+JS_LOG_CAP+' characters]");'+
-      'self.postMessage({__sbx:'+tag+',ok:ok,logs:__logs.slice(),error:err||"",'+
-      'result:(result===undefined||result===null)?"":String(result)}); }'+
-    /* An error thrown from a callback or a rejected promise nobody awaited
-       still has to end the run, or the person waits fifteen seconds for a
-       timeout instead of seeing their mistake. */
-    'self.onerror=function(m,s,l,c,e){ __done(false,(e&&e.stack)?e.stack:String(m)); return true; };'+
-    'self.onunhandledrejection=function(ev){ var r=ev&&ev.reason; __done(false,(r&&r.stack)?r.stack:String(r)); };'+
-    '(async function(){ var __r;'+
-      'try{ __r = await (async function(){\n'+code+'\n})(); }'+
-      'catch(e){ __done(false,(e&&e.stack)?e.stack:String(e)); return; }'+
-      '__done(true,"",__r);'+
-    '})();';
-}
-
-function _runJS(code, t0){
-  return new Promise(resolve=>{
-    const id='sbx_'+Math.random().toString(36).slice(2);
-    let done=false, worker=null, url='';
-    const finish=(res)=>{
-      if(done) return; done=true;
-      /* Killed on EVERY exit, not only on the timeout: a program that has
-         already posted its answer can still be spinning in a callback, and a
-         worker nobody stopped keeps a thread and its memory for the life of
-         the tab. */
-      try{ if(worker) worker.terminate(); }catch(e){}
-      try{ if(url) URL.revokeObjectURL(url); }catch(e){}
-      resolve(res);
-    };
-    const ms=()=>Math.round(performance.now()-t0);
-
-    try{
-      if(typeof Worker!=='function' || typeof Blob!=='function' || !(URL&&URL.createObjectURL))
-        throw new Error('Workers are not available in this browser');
-      url=URL.createObjectURL(new Blob([_jsWorkerSource(code, id)],{type:'application/javascript'}));
-      worker=new Worker(url);
-    }catch(e){
-      finish({ok:false,stdout:'',stderr:'The JavaScript sandbox could not start, so nothing was run: '+((e&&e.message)||e),result:'',ms:ms()});
-      return;
-    }
-
-    worker.onmessage=(ev)=>{
-      const d=ev&&ev.data;
-      if(!d||d.__sbx!==id) return;
-      finish({ok:!!d.ok, stdout:(d.logs||[]).join('\n'), stderr:d.error||'', result:d.result||'', ms:ms()});
-    };
-    /* A program that does not PARSE never runs, so the worker fails to load and
-       there is no message to wait for. Reported as the syntax error it is
-       rather than as a fifteen-second timeout. */
-    worker.onerror=(ev)=>{
-      try{ if(ev&&ev.preventDefault) ev.preventDefault(); }catch(e){}
-      const where=(ev&&ev.lineno)?(' (line '+Math.max(1,(ev.lineno|0)-1)+')'):'';
-      finish({ok:false,stdout:'',stderr:((ev&&ev.message)||'The program could not be started.')+where,result:'',ms:ms()});
-    };
-
-    setTimeout(()=>finish({ok:false,stdout:'',
-      stderr:'Execution timed out after '+Math.round(JS_SANDBOX_MS/1000)+'s and the sandbox was stopped. Check for an infinite loop or heavy computation.',
-      result:'',ms:JS_SANDBOX_MS}), JS_SANDBOX_MS);
-  });
-}
-
 
 /* ===== AUTONOMOUS DEBUG LOOP (analyze -> fix -> re-run -> repeat), REAL =====
    Apex-grade quality: each iteration first does a root-cause analysis, then a

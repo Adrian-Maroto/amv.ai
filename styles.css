@@ -15509,3 +15509,16 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   color:var(--tx);
 }
 .brg .brg-warn b{ color:var(--gold); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LAYER A254 - the code sandbox frame is not part of the page
+   It exists only to run programs in an origin of its own; it has nothing to
+   show, takes no space, and is out of the tab order and the accessibility tree.
+   ══════════════════════════════════════════════════════════════════════ */
+iframe.amv-sbx{
+  position:absolute;
+  width:0; height:0;
+  border:0;
+  visibility:hidden;
+  pointer-events:none;
+}

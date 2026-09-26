@@ -62,6 +62,15 @@ const BRIDGE_SRC = 'bridge/amv-bridge.mjs';
 const BRIDGE_OUT = 'amv-bridge.mjs';
 function emitBridge() {
   writeFileSync(BRIDGE_OUT, readFileSync(BRIDGE_SRC));
+  emitSandbox();
+}
+/* THE CODE SANDBOX is its own page (src/sandbox/): the app frames it with
+   sandbox="allow-scripts", which gives it an opaque origin and its own policy.
+   Emitted beside index.html like the bridge and the worker, byte-identical, and
+   published - the app's browser asks for both files. */
+function emitSandbox() {
+  writeFileSync('sandbox.html', readFileSync('src/sandbox/sandbox.html'));
+  writeFileSync('sandbox.js', readFileSync('src/sandbox/sandbox.js'));
 }
 
 function assembleJS() {
@@ -725,14 +734,18 @@ self.addEventListener('fetch', e => {
              returned either way - storing a copy is a convenience, and it must
              never be the reason a page does not load. (AMV-AUD-029) */
           const copy = res.clone();
+          /* A published page that is not the app - the code sandbox, loaded
+             into a frame - is stored as itself. Stored as the shell, loading
+             the sandbox would replace the app every offline visit gets. */
+          const asShell = nav && !ASSETS.has(url.pathname);
           e.waitUntil(caches.open(CACHE)
-            .then(c => c.put(nav ? SHELL : req, copy))
+            .then(c => c.put(asShell ? SHELL : req, copy))
             .catch(err => { try { console.warn('[AMV] offline copy not stored:', err && err.message); } catch (x) {} }));
         }
       }
       return res;
     } catch (err) {
-      if (nav) {
+      if (nav && !ASSETS.has(url.pathname)) {
         const shell = await caches.match(SHELL);
         if (shell) return shell;
       } else {
@@ -846,6 +859,8 @@ const PUBLISH = [
   'icon-192.png',          // linked from the head and the manifest
   'icon-512.png',          // the manifest's large and maskable icon
   'amv-bridge.mjs',        // fetched by the connect card's Download button
+  'sandbox.html',          // the frame programs run in (opaque origin, its own policy)
+  'sandbox.js',            // what that frame runs
 ];
 function emitPublishDir() {
   if (!existsSync(PUBLISH_DIR)) mkdirSync(PUBLISH_DIR, { recursive: true });

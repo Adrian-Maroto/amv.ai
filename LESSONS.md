@@ -13517,3 +13517,20 @@ end; it is estimated from the text that streamed. Mutation testing made the
 threshold honest: the first assertion ("more than the question") passed with the
 estimate removed, because the right baseline is a Stop after the model started
 but before any word, not an absolute number.
+
+## 515. The strongest sandbox was the one already in the browser
+
+AMV-AUD-001 asked for a separate execution origin, and the first answer was a
+second domain: registration, hosting, cost, and the owner's time. A frame loaded
+with `sandbox="allow-scripts"` and no `allow-same-origin` gets an OPAQUE origin
+from the browser - no cookies, no storage, no reach into the page - and can carry
+its own policy, which is the one place WebAssembly is now allowed. Measured in a
+real browser before building. Isolation stronger than a second domain, from AMV's
+own host, at no cost. Ask what the platform already enforces before buying
+infrastructure to enforce it.
+
+The mutation run found one test that proved nothing: "a program cannot reach the
+network" fetched '/', which inside a worker made from a blob URL is not a valid
+address - so it failed whatever the policy said, and passed with the network
+wide open. Network denial is now measured by whether a request ARRIVED at an
+address that would have answered.

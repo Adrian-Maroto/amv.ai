@@ -1431,3 +1431,31 @@ reads back what a command and a connector were given.
 Five for five. **Still open, stated on purpose:** a command can READ files a
 person can, including a key saved under home. That boundary is an isolated
 project copy; this round closes the variables.
+
+## Round thirty-three - code runs where it cannot reach the account (AMV-AUD-001, AMV-AUD-015, owner-approved)
+
+Programs ran in Workers made by the app: no document, but the app's ORIGIN - its
+IndexedDB, and its backend with the person's cookies. And the app's CSP refuses
+WebAssembly, so Python never started. Programs now run in
+`src/sandbox/sandbox.js`, framed as `<iframe sandbox="allow-scripts">` (opaque
+origin), each in its own Worker inside it. `sandbox.html`'s own policy allows
+WebAssembly and no network but the Python runtime's host; the app's policy is
+unchanged and still refuses WebAssembly. No new domain was needed (LESSONS 515).
+
+`code-runs-where-it-cannot-reach-the-account` (the channel), `security.test` (what
+a program can reach), `one-python-job-cannot-see-the-last` (Python now compiles
+and runs in the frame, and the page still refuses WebAssembly).
+
+| # | what was broken | caught by |
+|---|---|---|
+| 142 | the frame given allow-same-origin | 1 assertion |
+| 143 | the page accepts a result from any window | 1 assertion |
+| 144 | the sandbox takes work from any window | 1 assertion |
+| 145 | sign-out leaves the frame running | 2 assertions |
+| 146 | WebAssembly refused in the sandbox (AMV-AUD-015) | 1 assertion |
+| 147 | the sandbox's network opened | 2 assertions - SURVIVED at first |
+| 148 | no limit on the sandbox starting | the run hangs |
+
+**147 survived the first version**: its request used a relative address that is
+invalid inside a blob worker, so it failed under any policy. Now measured by
+arrival at an address that answers.

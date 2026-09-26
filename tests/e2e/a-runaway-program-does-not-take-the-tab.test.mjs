@@ -36,6 +36,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { codeOnly } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const app = await bootApp();
@@ -164,15 +165,23 @@ section('The worker is stopped on every exit, not only on the timeout');
      EVERY way out, not just when the clock runs down. A program that has
      already returned its answer can still be spinning in a callback, and a
      worker nobody stopped keeps its thread for the life of the tab. */
-  const built = readFileSync(join(ROOT, 'app.js'), 'utf8');
-  const at = built.indexOf('function _runJS(');
-  ok(at > -1, 'the sandbox is in the shipped bundle', at);
-  const body = built.slice(at, built.indexOf('\nfunction ', at + 10));
+  /* Programs now run in the sandbox frame (src/sandbox/sandbox.js, published
+     as sandbox.js) - an opaque origin of its own (AMV-AUD-001) - and inside it,
+     still in a Worker per program. So the runner is read there. */
+  const built = readFileSync(join(ROOT, 'sandbox.js'), 'utf8');
+  const at = built.indexOf('function runJS(');
+  ok(at > -1, 'the runner is in the published sandbox', at);
+  const body = built.slice(at, built.indexOf('\n  function ', at + 10));
   ok(/new Worker\(/.test(body), 'it runs the program in a worker', true);
   ok(!/createElement\('iframe'\)/.test(body) && !/srcdoc/.test(body),
-     'and not in a frame on the page thread', true);
+     'and not in a frame of its own, on any page thread', true);
+  /* Code only: the comment beside that line says "NOT allow-same-origin",
+     and a check that reads prose as code reports the explanation as the bug. */
+  const page = codeOnly(readFileSync(join(ROOT, 'app.js'), 'utf8'));
+  ok(/setAttribute\('sandbox', 'allow-scripts'\)/.test(page) && !/allow-same-origin/.test(page.slice(page.indexOf('function _sbxStart('), page.indexOf('function _sbxDestroy('))),
+     'and the frame it runs in is sandboxed WITHOUT allow-same-origin', true);
 
-  const iFinish = body.indexOf('const finish=');
+  const iFinish = body.indexOf('const finish =');
   const iTerm = body.indexOf('worker.terminate()');
   const iTimeout = body.lastIndexOf('setTimeout(');
   ok(iTerm > iFinish && iTerm < iTimeout,

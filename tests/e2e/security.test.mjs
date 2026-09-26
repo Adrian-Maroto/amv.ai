@@ -114,34 +114,47 @@ ok(consent.denied === false, 'denying the approval blocks the tool');
 ok(consent.allowed === true, 'approving the tool lets it proceed');
 ok(consent.wired, 'the agentic dispatch actually consults the consent gate');
 
-/* ── AMV-006: Python runs in an isolated Worker (no DOM / no localStorage) ──
-   Pyodide's js bridge exposes the host globalThis. On the main thread that is
-   the page (document, localStorage, tokens). In a Worker it is the worker scope,
-   which has neither - so untrusted Python cannot read tokens or touch the DOM. */
-section('AMV-006: Python executes in a Worker sandbox, not the page');
+/* ── AMV-006 / AMV-AUD-001: programs run where they cannot reach the account ──
+   Programs used to run in Workers this page made: no document, but the page's
+   ORIGIN - its IndexedDB, and its backend with the person's cookies. They now
+   run in a frame sandboxed WITHOUT allow-same-origin (an opaque origin), in a
+   Worker of their own inside it. Checked by what a program can actually do. */
+section('AMV-006 / AMV-AUD-001: code runs in an opaque-origin sandbox, not the page');
 const pyiso = await page.evaluate(async () => {
-  const src = (typeof _pyWorkerSource === 'function') ? _pyWorkerSource() : '';
-  const out = {
+  localStorage.setItem('amv_probe_secret', 'the-accounts-secret');
+  const probe = await runCode(`
+    const out = { doc: typeof document, origin: self.origin };
+    try { const r = indexedDB.open('amv'); await new Promise((res, rej) => { r.onsuccess = res; r.onerror = () => rej(r.error); }); out.idb = 'OPENED'; } catch (e) { out.idb = 'refused'; }
+    try { await fetch('https://example.com/'); out.net = 'REACHED'; } catch (e) { out.net = 'refused'; }
+    return JSON.stringify(out);`, 'js');
+  const f = document.querySelector('iframe.amv-sbx');
+  return {
     routesToWorker: /_runPythonInWorker/.test(runCode.toString()),
     noMainThread: (typeof _ensurePyodide === 'undefined'),
-    srcDomFree: !/document|localStorage/.test(src),
-    srcLoadsPy: /importScripts|loadPyodide/.test(src),
+    probe: (() => { try { return JSON.parse(probe.result); } catch (e) { return { raw: probe }; } })(),
+    frameSandbox: f ? f.getAttribute('sandbox') : null,
   };
-  const RealWorker = window.Worker;
-  let posted = null;
-  window.Worker = class { addEventListener(t, f) { if (t === 'message') this._h = f; } removeEventListener() {} postMessage(m) { posted = m; setTimeout(() => this._h && this._h({ data: { id: m.id, ok: true, stdout: '42', stderr: '', result: '42' } }), 0); } terminate() {} };
-  const r = await runCode('print(6*7)', 'python');
-  window.Worker = RealWorker;
-  out.ranInWorker = !!posted && posted.code === 'print(6*7)';
-  out.output = r && r.stdout;
-  return out;
 });
-ok(pyiso.routesToWorker, 'runCode routes Python through the Worker sandbox');
+ok(pyiso.routesToWorker, 'runCode routes Python through the sandbox queue');
 ok(pyiso.noMainThread, 'the main-thread Pyodide execution path is gone');
-ok(pyiso.srcDomFree, 'the Worker sandbox has no document/localStorage access');
-ok(pyiso.srcLoadsPy, 'the Worker sandbox loads the Python runtime');
-ok(pyiso.ranInWorker, 'Python is executed inside the Worker, not on the page');
-ok(pyiso.output === '42', 'Python output is returned from the Worker');
+ok(pyiso.frameSandbox === 'allow-scripts', 'the frame programs run in is sandboxed, without allow-same-origin', pyiso.frameSandbox);
+ok(pyiso.probe.doc === 'undefined', 'a program has no document to reach', pyiso.probe);
+ok(pyiso.probe.origin === 'null', 'its origin is opaque - not AMV’s', pyiso.probe);
+ok(pyiso.probe.idb === 'refused', 'it cannot open storage', pyiso.probe);
+ok(pyiso.probe.net === 'refused', 'it cannot reach the network', pyiso.probe);
+{
+  const sbx = page.frames().find(f => /\/sandbox\.html$/.test(f.url()));
+  const inside = sbx ? await sbx.evaluate(() => {
+    const o = { origin: self.origin };
+    try { o.ls = localStorage.getItem('amv_probe_secret'); } catch (e) { o.ls = 'refused'; }
+    try { o.parentLs = parent.localStorage.getItem('amv_probe_secret'); } catch (e) { o.parentLs = 'refused'; }
+    try { o.cookie = document.cookie; } catch (e) { o.cookie = 'refused'; }
+    return o;
+  }) : null;
+  ok(inside && inside.ls === 'refused' && inside.parentLs === 'refused' && inside.cookie === 'refused',
+     'and the frame itself cannot read AMV’s storage, the page, or cookies', inside);
+}
+await page.evaluate(() => localStorage.removeItem('amv_probe_secret'));
 
 /* ── AMV-013: the bearer token is bound to the origin that issued it ────────
    Swapping the API base to an attacker origin must NOT leak the token. */

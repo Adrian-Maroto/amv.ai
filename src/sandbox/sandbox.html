@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- AMV's code sandbox. Loaded only as <iframe sandbox="allow-scripts"> by the
+     app, which gives it an OPAQUE origin: no cookies, no storage, no access to
+     the app's page. This policy is its own and is the only one in AMV that
+     allows WebAssembly (the Python runtime needs it); network is limited to
+     the one host the runtime is fetched from. See src/sandbox/sandbox.js. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' blob: 'wasm-unsafe-eval' https://cdn.jsdelivr.net; worker-src blob:; connect-src https://cdn.jsdelivr.net; base-uri 'none'; form-action 'none'">
+<meta name="robots" content="noindex">
+<title>AMV sandbox</title>
+<script src="/sandbox.js"></script>
+</head>
+<body></body>
+</html>

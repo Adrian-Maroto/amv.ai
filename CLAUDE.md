@@ -71,8 +71,8 @@ Companion docs (do not duplicate them here - read them):
     by somebody raising it on purpose.
 - **What the static host publishes is `public/`.** The build writes it: the
   built `index.html`, `sw.js`, `manifest.webmanifest`, the two icons,
-  `amv-bridge.mjs` and the language packs in `i18n/`, byte-identical copies and
-  nothing else. It exists because
+  `amv-bridge.mjs`, the code sandbox (`sandbox.html` + `sandbox.js`) and the
+  language packs in `i18n/`, byte-identical copies and nothing else. It exists because
   the site is one file at the ROOT of this repository, so a host pointed at the
   repository serves `amv-backend.js`, `wrangler.toml` and `SECURITY-SCAMS.md`
   too - which it was, confirmed live. Add a file to `PUBLISH` in `build.mjs`
@@ -113,6 +113,16 @@ Companion docs (do not duplicate them here - read them):
   `aiAgentLoop` (in `14-engine.js`) is the turn-taking on top of it: consent
   once per turn, a stop checked before every round and every command, and a
   changelist measured from the disk with an Undo that writes real bytes back.
+- **Programs run in the code sandbox, never on the page.** `runCode`,
+  `_runPythonInWorker` and friends (`14-engine.js`) post jobs to
+  `src/sandbox/sandbox.js`, framed as `<iframe sandbox="allow-scripts">` with NO
+  `allow-same-origin` - an opaque origin with no cookies, storage or reach into
+  the app - where each program runs in a Worker of its own. `sandbox.html` has
+  its own CSP: the ONLY policy in AMV that allows WebAssembly (Python needs it),
+  and no network except the Python runtime's host. Never add
+  `allow-same-origin`, never run code on the page as a fallback, and never add
+  `wasm-unsafe-eval` to the app's own CSP. The page accepts messages only from
+  that frame; the frame only from its parent.
 - **Connectors are MCP** (`38-mcp.js`). A connector is a program somebody else
   wrote, so the bridge runs it and the page drives it over JSON-RPC: no machine,
   no connectors. Tools arrive namespaced `mcp__<server>__<tool>`, which no

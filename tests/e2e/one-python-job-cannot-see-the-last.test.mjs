@@ -11,9 +11,10 @@
    it is the real code: the worker source, the queue, the timeout, sign-out.
 
    The last section serves a stand-in that does what the real runtime does
-   first - compile WebAssembly - and lets the page's REAL security policy
-   decide. That is AMV-AUD-015: today the policy refuses, and what matters here
-   is that the person is told so in words, not handed a compiler error. */
+   first - compile WebAssembly - under the REAL policies. That is AMV-AUD-015:
+   the app's page refuses WebAssembly, so Python could never start; programs
+   now run in the sandbox frame, whose own policy allows it, and the stand-in
+   has to compile there and run. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
@@ -50,7 +51,9 @@ self.loadPyodide = async () => {
 const WASM = `
 self.loadPyodide = async () => {
   await WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
-  throw new Error('the stand-in compiled WebAssembly, so the policy allowed it');
+  let out = () => {};
+  return { setStdout(o) { out = o.batched; }, setStderr() {},
+           async runPythonAsync(code) { out('compiled and ran: ' + code); return 'ok'; } };
 };`;
 
 let serve = FAKE, loads = 0;
@@ -60,11 +63,6 @@ await page.context().route('https://cdn.jsdelivr.net/pyodide/**', (route) => {
                   headers: { 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' } });
 });
 
-await page.evaluate(() => {
-  window.__blobUrls = 0;
-  const real = URL.createObjectURL.bind(URL);
-  URL.createObjectURL = (b) => { if (b && b.type === 'application/javascript') window.__blobUrls++; return real(b); };
-});
 
 section('The runtime stand-in is really what the sandbox loads');
 {
@@ -141,19 +139,37 @@ section('A print loop cannot fill the tab');
 
 section('One source URL, however many interpreters');
 {
-  const n = await page.evaluate(() => window.__blobUrls);
-  ok(n <= 1, 'the worker source is turned into a URL once, not once per job', n);
+  /* Counted INSIDE the sandbox frame, where the interpreters are made now. The
+     page-side count this used to read is always zero since the move, which
+     would pass for the wrong reason. */
+  const sbx = page.frames().find(f => /\/sandbox\.html$/.test(f.url()));
+  ok(!!sbx, 'the sandbox frame is there to count in', page.frames().map(f => f.url()));
+  if (sbx) {
+    await sbx.evaluate(() => {
+      self.__jsBlobs = 0;
+      const real = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = (b) => { if (b && b.type === 'application/javascript') self.__jsBlobs++; return real(b); };
+    });
+    for (let i = 0; i < 3; i++) await page.evaluate(() => _runPythonInWorker('print again'));
+    const made = await sbx.evaluate(() => self.__jsBlobs);
+    ok(made === 0, 'three more interpreters, and no new source URL - it was made once', made);
+  }
 }
 
-section('Under the page’s real security policy, the runtime is refused - and said to be');
+section('WebAssembly is allowed where programs run, and only there');
 {
   serve = WASM;
   const r = await page.evaluate(async () => {
-    _pyReset();                      // drop the warm stand-in so the next job loads the new one
+    _pyReset();                      // drop the frame, so the next job loads the new stand-in
     return await _runPythonInWorker('print hi');
   });
-  ok(r.ok === false && /security policy/.test(r.stderr) && !/CompileError|Refused to compile/.test(r.stderr),
-     'the person is told the page does not allow the Python runtime, in words', r.stderr);
+  ok(r.ok === true && /compiled and ran: print hi/.test(r.stdout),
+     'the runtime compiles WebAssembly in the sandbox and runs the program - this was AMV-AUD-015', r);
+  const page_ = await page.evaluate(async () => {
+    try { await WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])); return 'compiled'; }
+    catch (e) { return 'refused'; }
+  });
+  ok(page_ === 'refused', 'while the app’s own page still refuses it', page_);
   serve = FAKE;
 }
 
