@@ -1718,19 +1718,44 @@ function renderCodeView(){
   else if(_DEV.curCode) _devShowResult(_DEV.curCode,_DEV.curLang,_DEV.curRun);
 }
 let _LAB_HANDOFF='';
+/* THERE IS NO AMV EXTENSION FOR VS CODE, AND THIS USED TO SAY THERE WAS.
+
+   It told people to run `npm install -g @amv/cli` and then `amv code .`.
+   No such package exists - not in this repository, not published by AMV - so
+   the best case was an error, and the worst case is the one that matters: a
+   name nobody owns is a name anybody can register, and AMV was sending its
+   own users to install whatever that turned out to be, globally, with their
+   permissions. An instruction to run a command is a trust decision made on the
+   reader's behalf.
+
+   What does work today is the bridge: AMV reads, edits and runs the project on
+   the person's own computer, every change measured from the disk with an Undo.
+   So this says that, sends them to it, and offers Notify me for a real
+   extension - through the same recorded waitlist as every other app. */
 function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px">'+
-    '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
-    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">Use AMV in VS Code</h2>'+
-    '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
-    '<div class="vsc-cmd"><code>npm install -g @amv/cli</code><button class="vsc-copy" data-c="npm install -g @amv/cli">Copy</button></div>'+
-    '<div class="vsc-cmd" style="margin-top:8px"><code>amv code .</code><button class="vsc-copy" data-c="amv code .">Copy</button></div>'+
-    '<p style="font-size:var(--t-xs);color:var(--dim);margin:16px 0 0;line-height:1.5">Your code stays on your machine - the CLI just links this account to your editor.</p>'+
+  const asked=(typeof _appNotifiedSet==='function') && _appNotifiedSet().has('vs-code-extension');
+  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" role="dialog" aria-modal="true" aria-labelledby="vsc-t" style="max-width:480px">'+
+    '<button class="dna-x" id="vsc-x" aria-label="Close" style="position:absolute;top:14px;right:14px">\u2715</button>'+
+    '<h2 id="vsc-t" style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">AMV in your code</h2>'+
+    '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 12px">There is no AMV extension for VS Code yet. AMV can already work in your project, though: connect your computer and it reads, edits and runs the code in the folder you choose, with an Undo for every change it makes.</p>'+
+    '<p style="font-size:var(--t-sm);color:var(--dim);line-height:1.5;margin:0 0 18px">Your code stays on your computer. Keep it open in VS Code while AMV works - you see each change as it lands.</p>'+
+    '<div style="display:flex;gap:var(--sp-2);flex-wrap:wrap">'+
+      '<button class="btn bp" id="vsc-go">Connect your computer</button>'+
+      (asked ? '<span class="int-onlist">\u2713 On the list for the extension</span>'
+             : '<button class="btn bs" id="vsc-notify" data-app-notify="vs-code-extension" data-app-name="the VS Code extension">Notify me about the extension</button>')+
+    '</div>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
   onBackdrop($('vsc-bg'),close); on($('vsc-x'),'click',close);
-  r.querySelectorAll('.vsc-copy').forEach(btn=>on(btn,'click',()=>{ try{ navigator.clipboard.writeText(btn.dataset.c); btn.textContent='Copied'; setTimeout(()=>btn.textContent='Copy',1200); }catch(e){} }));
+  on($('vsc-go'),'click',()=>{
+    close();
+    try{ _connMachineOpen=true; }catch(e){}
+    try{ setTab('integrations'); }catch(e){}
+    try{ const d=document.querySelector('details.conn-machine'); if(d){ d.open=true; d.scrollIntoView({block:'start'}); } }catch(e){}
+  });
+  const n=$('vsc-notify');
+  if(n) on(n,'click',async()=>{ if(typeof _appNotify==='function'){ await _appNotify(n); if(_appNotifiedSet().has('vs-code-extension')) close(); } });
 }
 const _DEV={ log:[], lang:'js', busy:false, curCode:'', curLang:'', curRun:null,
   // multi-file project: files keyed by path. activePath = file shown in Code pane.

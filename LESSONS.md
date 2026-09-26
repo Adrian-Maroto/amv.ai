@@ -13628,3 +13628,17 @@ frame, not the code you suspect, and ask what the browser is doing that the
 person cannot see. And when a check can ask the browser a fact - which
 elements it skipped, which properties an animation moves - ask for the fact
 instead of timing it: the fact is the same on every machine.
+
+## 522. A button is a promise, and a promise has an owner
+
+The Integrations page carried Connect on Slack, Notion, Linear and Discord,
+and the only thing Connect did was say the sign-in was unfinished. It told
+people to install `@amv/cli` - a package that does not exist and that anybody
+could register, so the instruction was a way to hand strangers' code to AMV's
+own users. And its notify-me said "you're on the list" whether or not anything
+was recorded. None of these threw an error; each looked like the product
+working. A control is only as honest as the path behind it: Connect only where
+a flow ends in a connection, Notify me only where the request reaches a list
+someone reads, and never an instruction to run something AMV does not own.
+The dashboard now shows that list, so "the most-asked-for are connected next"
+is something the owner can actually keep.

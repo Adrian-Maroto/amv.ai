@@ -58,7 +58,6 @@ section('The search box is the first control on the page');
       accounts: before('#conn-sec'),
       machine: before('details.conn-machine'),
       catalogue: before('#int-catalog'),
-      registry: before('.cdir'),
       /* And it is not buried inside any of them. */
       insideCdir: !!find.closest('.cdir'),
       insideCatalog: !!find.closest('#int-catalog'),
@@ -68,7 +67,6 @@ section('The search box is the first control on the page');
   ok(r.accounts, 'before connected accounts', String(r.accounts));
   ok(r.machine, 'before the computer panel', String(r.machine));
   ok(r.catalogue, 'before the hand-built connectors', String(r.catalogue));
-  ok(r.registry, 'and before the topics', String(r.registry));
   ok(!r.insideCdir && !r.insideCatalog,
      'and it belongs to the page rather than to a section that gets repainted',
      JSON.stringify(r));
@@ -103,23 +101,19 @@ section('Then the main ones, each with a door to more of its own kind');
   ok(r.titles.some(t => /bank|money/i.test(t)), 'and so is the bank', r.titles.join(' | '));
 }
 
-section('A topic a hand-built section owns is not offered twice');
+section('There is no "everything else" at the bottom, only topics in one format');
 {
-  /* "Developer" beside "Developer tools", both running the same search, was
-     the version of this page that shipped once. A door is allowed to appear in
-     one place or the other, never both. */
-  const r = await page.evaluate(() => {
-    const curated = [...document.querySelectorAll('#int-catalog .int-seeall [data-dact="cdirAll"]')]
-      .map(d => d.dataset.darg);
-    const topics = [...document.querySelectorAll('.cdir-topic')].map(d => d.dataset.darg);
-    return { curated, topics, overlap: curated.filter(q => topics.includes(q)) };
-  });
-  ok(r.overlap.length === 0,
-     'no query has both a hand-built door and a registry door', r.overlap.join(','));
-  ok(r.curated.includes('finance'),
-     'finance is owned by the hand-built Bank & money section', r.curated.join(','));
-  ok(!r.topics.includes('finance'),
-     'so it is not listed again below as a registry topic', r.topics.join(','));
+  /* "No part should say everything else by topic, it should stay consistent."
+     The registry's doors used to sit in a block of their own under the
+     hand-built rows; now every topic is a section of the Email shape and ends
+     in its own door, so the block has nothing left to hold. */
+  const r = await page.evaluate(() => ({
+    lump: /Everything else/i.test((document.querySelector('.vi-conn') || {}).textContent || ''),
+    block: !!document.querySelector('.vi-conn .cdir'),
+    oldDoors: document.querySelectorAll('.cdir-topic').length,
+  }));
+  ok(!r.lump, 'no heading says "everything else"', JSON.stringify(r));
+  ok(!r.block && r.oldDoors === 0, 'and there is no separate block of registry doors', JSON.stringify(r));
 }
 
 section('The bank account is on the page, and says what it really is');

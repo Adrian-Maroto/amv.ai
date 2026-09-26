@@ -88,7 +88,9 @@ section('Pressing Connect leads to sign-up, not to an operator instruction');
     window.__opened = null;
     const realOpen = window.openAuth;
     window.openAuth = (m) => { window.__opened = m; };
-    const b = document.querySelector('[data-int-conn="slack"]');
+    /* A row that really connects. Slack used to be the example, and it is
+       Notify me now - its Connect only ever said the sign-in was unfinished. */
+    const b = document.querySelector('[data-int-conn="github"]');
     b.click();
     await new Promise(r => setTimeout(r, 400));
     const toast = [...document.querySelectorAll('.toast, #toast, [class*="toast"]')]
@@ -99,7 +101,7 @@ section('Pressing Connect leads to sign-up, not to an operator instruction');
   ok(r.opened === 'signup', 'the sign-up sheet is what opens', r.opened);
   ok(/Create a free account to connect/i.test(r.toast),
      'and the message names the thing they were trying to connect', r.toast.slice(0, 90));
-  ok(/Slack/.test(r.toast), 'by the name on the row', r.toast.slice(0, 90));
+  ok(/GitHub/.test(r.toast), 'by the name on the row', r.toast.slice(0, 90));
   ok(!/operator/i.test(r.toast),
      'rather than telling them about an API key they cannot set', r.toast.slice(0, 120));
 }

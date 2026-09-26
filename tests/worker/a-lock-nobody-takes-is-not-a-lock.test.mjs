@@ -309,8 +309,10 @@ section('The six that were bypassing it now take it, by name');
      'marking results read cannot overwrite what the cron just produced', true);
   ok(takesLock('shareRevoke', 'shares'),
      'revoking a share cannot lose to a share being created', true);
-  ok(takesLock('linkRevoke', 'links'),
-     'and revoking access cannot lose to anything, in either direction', true);
+  /* linkRevoke is gone with access to other accounts; the family link that
+     accepting writes to both sides is the one left, and it takes the lock. */
+  ok(takesLock('linkAccept', 'links'),
+     'and a family link is written to both sides under the lock', true);
   ok(takesLock('marketPublish', 'seller'),
      'a policy strike is counted from what is stored, so two at once are two', true);
 }

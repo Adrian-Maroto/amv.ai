@@ -26,7 +26,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'family.harness.mjs');
 writeFileSync(harness, src + `
-export { familyGet, familySetLimits, familyRemove, familyLeave, familyPending, familyDecline, linkInvite, linkAccept, linkList,
+export { familyGet, familySetLimits, familyRemove, familyLeave, familyPending, familyDecline, linkInvite, linkAccept,
          marketBuy, marketWithdraw, requireUser, setEntitlement, issueTokens,
          _familyOf, _familyLimitsOf, _monthlyCeilingUSD, DB, FAMILY_DEFAULTS, FAMILY_MAX_CHILDREN };
 `);
@@ -353,13 +353,10 @@ section('Access to someone else\u2019s account is gone; Family is the one link')
   const late = await W.linkAccept(req({ id: 'legacy1', code: '123456' }, oldTok), env);
   ok(late.status === 410, 'an old request for email access cannot be accepted', late.status);
 
-  /* And a link that was already active is switched off the next time it is listed. */
-  const legacy = { id: 'lnk_old', owner: 'old@x.com', grantee: 'parent@x.com', scopes: ['email_view', 'spend'], active: true, createdAt: 1 };
-  await W.DB.put(env, 'links', 'old@x.com', { items: [legacy] });
-  const listed = await jget(await W.linkList(req({}, oldTok), env));
-  ok(listed.canAccessMe.length === 0 && listed.iCanAccess.length === 0, 'it is not listed as access', listed);
-  const after = await W.DB.get(env, 'links', 'old@x.com');
-  ok(after.items[0].active === false, 'and it is switched off in storage', after.items[0]);
+  /* A link that was already active before the removal grants nothing: no
+     route ever consulted one to permit an action, and the routes that listed
+     and revoked them are gone (letting-somebody-into-your-account checks 404,
+     link-scopes-honest checks nothing starts acting on one). */
 }
 
 section('The invited account can say no, and the code stops working');

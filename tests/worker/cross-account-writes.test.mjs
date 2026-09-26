@@ -82,7 +82,7 @@ const CLASSIFIED = {
   familyRemove:      'requires the account to be in the caller\'s family, from either side',
   familyLeave:       'a child editing the parent record they are named in',
   linkAccept:        'both sides of a link the invitee was invited to, by emailed code',
-  linkRevoke:        'both sides of a link the caller is one end of',
+  familyDecline:     'marks refused an invitation stored under the caller\'s own address, and drops it from the caller\'s own list',
   fraudRecord:       'a rate-limited self-report into a global index, stamped with who wrote it',
   handoffAct:        'a bounded status on the sender\'s copy of a handoff in the caller\'s own inbox',
   teamCreate:        'the team is keyed by an id generated here',

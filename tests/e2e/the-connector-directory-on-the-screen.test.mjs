@@ -74,13 +74,13 @@ section('A topic is a door, and the page asks for nothing until one is opened');
   await CONNECT('ok');
   await open();
   const r = await page.evaluate(() => ({
-    doors: document.querySelectorAll('.cdir-topic').length,
+    doors: document.querySelectorAll('.int-seeall [data-dact="cdirAll"]').length,
     rows: document.querySelectorAll('.cdir-row').length,
     tiles: document.querySelectorAll('.cdir-tile').length,
     /* Every door carries the query it really sends, so a heading cannot
        promise a search it does not run. */
-    queries: [...document.querySelectorAll('.cdir-topic')].map(x => x.dataset.darg),
-    titles: [...document.querySelectorAll('.cdir-topic-t')].map(x => x.textContent.trim()),
+    queries: [...document.querySelectorAll('.int-seeall [data-dact="cdirAll"]')].map(x => x.dataset.darg),
+    titles: [...document.querySelectorAll('#int-catalog .ss2 > h3')].map(x => x.textContent.trim()),
     asked: window.__asked.length,
     find: !!document.getElementById('cdir-find'),
   }));
@@ -211,7 +211,7 @@ section('And the way back works');
   const r = await page.evaluate(async () => {
     document.querySelector('[data-dact="cdirBack"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await new Promise(x => setTimeout(x, 500));
-    return { doors: document.querySelectorAll('.cdir-topic').length, full: !!document.querySelector('.cdir-full') };
+    return { doors: document.querySelectorAll('.int-seeall [data-dact="cdirAll"]').length, full: !!document.querySelector('.cdir-full') };
   });
   ok(!r.full && r.doors >= 20, 'the topics are back', JSON.stringify(r));
 }

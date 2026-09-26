@@ -142,7 +142,7 @@ section('A connection is what marks it connected, not a sign-in');
     const host = document.getElementById('int-catalog');
     if (host) host.innerHTML = _integrationsCatalogHTML();
     const row = [...document.querySelectorAll('.int-card')]
-      .find(c => /Google \(Gmail/.test(c.textContent || ''));
+      .find(c => /^Gmail\b/.test((c.querySelector('.int-name') || {}).textContent || ''));
     return { signedIn: !!(S.user && S.user.provider === 'google'),
              tick: !!(row && row.querySelector('.int-ok')), found: !!row };
   });
@@ -156,7 +156,7 @@ section('A connection is what marks it connected, not a sign-in');
     const host = document.getElementById('int-catalog');
     if (host) host.innerHTML = _integrationsCatalogHTML();
     const row = [...document.querySelectorAll('.int-card')]
-      .find(c => /Google \(Gmail/.test(c.textContent || ''));
+      .find(c => /^Gmail\b/.test((c.querySelector('.int-name') || {}).textContent || ''));
     return !!(row && row.querySelector('.int-ok'));
   });
   ok(withGrant === true, 'while a real grant does show as connected', withGrant);

@@ -168,6 +168,11 @@ function renderPlansView() {
       + '<p class="px-note" style="display:none">' + escH(T('Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.')) + '</p>'
       + '<div class="plans-compare-row"><button class="btn bs" id="pln-compare">'
         + escH(T('Compare all plans in detail')) + ' →</button></div>'
+      /* How the limits work, with the real numbers, before anybody pays. It
+         lived under the plan on the Spending screen, and went when Spending
+         stopped carrying plans - a page that explains its own limits sells
+         the plan, and one that hides them sells one month. */
+      + (typeof _usageShapeBand === 'function' ? _usageShapeBand() : '')
     + '</div></div>';
   on($('pln-compare'), 'click', () => {
     try { openPlanCompare(loadStr('amv_plan') || 'pro'); } catch (e) {}

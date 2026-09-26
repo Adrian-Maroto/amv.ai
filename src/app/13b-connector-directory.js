@@ -83,21 +83,6 @@ const CDIR_CATS = [
   ['iot',      'Devices & IoT',          'iot'],
   ['testing',  'Testing & QA',           'testing'],
 ];
-/* TOPICS THE HAND-BUILT SECTIONS ABOVE ALREADY COVER.
-
-   The page listed "Developer" and then "Developer tools", and "Productivity"
-   twice - one heading from AMV's own integrations and one from the registry,
-   next to each other, asking somebody to work out the difference. There is
-   none worth explaining: the curated section already carries a door that runs
-   exactly this query.
-
-   So the registry row is dropped where a curated section owns the topic. It
-   is a list of QUERIES rather than titles, because the query is what would
-   actually be duplicated - two headings running the same search is the defect,
-   and two different headings that happen to read similarly is not. */
-/* `finance` joins them: there is a hand-built Bank & money section now, with
-   AMV's own bank link in it and a door running exactly this query. */
-const CDIR_COVERED = ['developer', 'productivity', 'messaging', 'email', 'finance'];
 /* The default `want` for a load nobody sized. Nothing asks for a handful any
    more - the rows that did are gone - so this is a floor rather than a
    layout, and it is small because the only caller that would hit it is one
@@ -415,39 +400,15 @@ function cdirSearchBarHTML(){
 
 function connectorDirectoryHTML(){
   if(_cdirOpen) return _cdirFullHTML();
-  /* ── A DOOR PER TOPIC, AND NOT TWENTY-SIX LIVE ROWS ───────────────────────
+  /* THE OVERVIEW HAS NO SECTION OF ITS OWN ANY MORE.
 
-     "Remove the things below the search bar entirely. None of the thing that
-     it says now."
-
-     What was there: twenty-six sections, each firing its own registry request
-     on paint, each answer replacing the whole node, so the page arrived as
-     a hundred and thirty skeletons that filled in over several seconds while
-     the search box was destroyed and rebuilt under whoever was typing into
-     it. It also read as a wall - two hundred tiles before anybody had decided
-     anything - and the rate limit refused some of the rows outright, which
-     looked like those topics being broken.
-
-     What is there now: the topic, and the way in. Nothing is fetched until
-     somebody picks one, so the page paints once, immediately, with no network
-     at all - and the See all page behind each door holds far more than a
-     scrolling row ever did.
-
-     THE CURATED SECTIONS KEEP THEIR OWN DOORS. `CDIR_COVERED` still drops a
-     topic AMV has hand-built rows for, because those sections already end in
-     a See all running the same query - two doors to one search is the defect
-     this list exists to prevent. */
-  const doors = CDIR_CATS.filter(c => CDIR_COVERED.indexOf(c[2]) < 0);
-  return '<section class="cdir">'
-    + '<div class="sec-head"><h3>' + escH(T('Everything else, by topic')) + '</h3>'
-      + '<span class="sec-sub">' + escH(T('Thousands more, read live from the open registry. Each one runs on the computer you connect, and AMV drives it.')) + '</span></div>'
-    + '<div class="cdir-topics">'
-      + doors.map(c => '<button class="cdir-topic" data-dact="cdirAll" data-darg="' + escH(c[2]) + '">'
-          + '<span class="cdir-topic-t">' + escH(c[1]) + '</span>'
-          + '<span class="cdir-topic-a" aria-hidden="true">' + escH(T('See all')) + ' →</span>'
-        + '</button>').join('')
-    + '</div>'
-  + '</section>';
+     It drew "Everything else, by topic": a block of doors into the registry
+     under the hand-built rows. The owner asked for one format everywhere and no
+     part called "everything else", and the doors did not need a section to
+     live in - every topic on the page now ends in its own, running the same
+     query this block ran. So the overview is the topics themselves (13c), and
+     this only draws the page behind a door. */
+  return '';
 }
 
 function _cdirFullHTML(){
@@ -593,8 +554,12 @@ function cdirOpen(id){
   });
 }
 function cdirAll(q){
+  /* Named after the topic whose door was pressed - the app topics first,
+     because those are the doors on the page, then the registry's own words. */
+  const app = (typeof AMV_APP_CATS !== 'undefined') ? AMV_APP_CATS.find(c => c.q === q) : null;
   const row = CDIR_CATS.find(c => c[2] === q);
-  _cdirOpen = { q, title: row ? row[1] : ('Connectors matching “' + q + '”') };
+  _cdirOpen = { q, title: app ? String(app.t).replace(/&amp;/g, '&')
+                        : row ? row[1] : ('Connectors matching “' + q + '”') };
   renderIntegrationsView();
   _cdirToTop();
 }
@@ -645,4 +610,4 @@ function cdirSearch(){
 try{ window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdirOpen=cdirOpen; window.cdirAll=cdirAll; window.cdirBack=cdirBack;
      window.cdirRetry=cdirRetry; window.cdirMore=cdirMore; window.cdirSearch=cdirSearch;
      window.connectorDirectoryHTML=connectorDirectoryHTML; window.cdirSearchBarHTML=cdirSearchBarHTML;
-     window.CDIR_CATS=CDIR_CATS; window.CDIR_COVERED=CDIR_COVERED; }catch(e){}
+     window.CDIR_CATS=CDIR_CATS; }catch(e){}

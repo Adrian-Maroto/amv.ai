@@ -1190,7 +1190,17 @@ function _founderDashHTML(d){
     // top spenders (abuse / margin watch)
     '<div class="ss2"><h3>Top spenders this month <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(margin &amp; abuse watch)</span></h3>'+
       '<div class="fd-table"><div class="fd-row fd-head"><span>User</span><span>Plan</span><span>AI cost</span></div>'+rows+'</div>'+
-    '</div>';
+    '</div>'+
+    /* What to connect next: the apps people pressed Notify me on. */
+    (function(){
+      const ar=d.appRequests||{}, top=ar.top||[];
+      return '<div class="ss2"><h3>Apps people asked for <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(Notify me - connect these next)</span></h3>'+
+        '<div class="fd-table"><div class="fd-row fd-head"><span>App</span><span></span><span>People</span></div>'+
+        (top.length ? top.slice(0,20).map(a=>'<div class="fd-row"><span class="fd-row-email">'+_esc(a.app)+'</span><span></span><span class="fd-row-cost">'+fmt(a.people)+'</span></div>').join('')
+                    : '<div class="fd-row"><span style="color:var(--mu)">'+(ar.error?_esc(ar.error):'Nobody has asked yet.')+'</span></div>')+
+        '</div>'+(ar.complete===false&&!ar.error?'<p class="fd-sub">A sample: there are more requests than one read covers.</p>':'')+
+      '</div>';
+    })();
 }
 
 // Leave settings and go back where you came from - the last screen that was
@@ -1680,7 +1690,7 @@ async function connectIntegration(id){
   // (which can blank the page if the handler isn't installed).
   if(id==='vscode'){
     if(typeof _devConnectVSCode==='function'){ _devConnectVSCode(); return; }
-    toast('To use AMV in VS Code, install the AMV CLI (npm i -g @amv/cli) and run "amv code ." in your project.','info',6000);
+    toast('There is no AMV extension for VS Code yet. Connect your computer under Integrations and AMV works in your project folder there.','info',7000);
     return;
   }
   // Generic OAuth providers: open the provider's approval window if configured
@@ -3020,16 +3030,16 @@ function _renderSetPaneInner(only, into){
        is drawn and everything not connected is taken out, keeping each
        connected row's own Disconnect and Run exactly as they are, and the
        page for adding more is one button away. */
+    /* Signed out, nothing can be connected - and this was, and stays, the one
+       place a visitor can read what each connector does before making an
+       account. Signed in, only what is connected, one row per sign-in. */
+    const _guest=!(S.user && S.user.email);
     pane.innerHTML =
       '<h2 class="set-title">Connectors</h2>'+
       '<div class="set-sub">What AMV is connected to. Add more from Integrations.</div>'+
-      '<div class="set-conn">'+_integrationsCatalogHTML()+'</div>'+
+      '<div class="set-conn">'+_integrationsCatalogHTML({ connectedOnly: !_guest })+'</div>'+
       '<div class="set-conn-go"><button class="btn bp" data-stab="integrations">'+escH(T('Browse integrations'))+' \u2192</button></div>';
     const _cl=pane.querySelector('.set-conn');
-    /* Signed out, nothing can be connected - and this was, and stays, the one
-       place a visitor can read what each connector does before making an
-       account. So the whole catalogue is kept for them, under its panel. */
-    const _guest=!(S.user && S.user.email);
     if(_cl && !_guest){
       _cl.querySelectorAll('.ax-legend, .int-seeall, .int-guest').forEach(x=>x.remove());
       _cl.querySelectorAll('.int-card').forEach(c=>{ if(!c.querySelector('.int-ok')) c.remove(); });

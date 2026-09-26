@@ -23869,19 +23869,44 @@ function renderCodeView(){
   else if(_DEV.curCode) _devShowResult(_DEV.curCode,_DEV.curLang,_DEV.curRun);
 }
 let _LAB_HANDOFF='';
+/* THERE IS NO AMV EXTENSION FOR VS CODE, AND THIS USED TO SAY THERE WAS.
+
+   It told people to run `npm install -g @amv/cli` and then `amv code .`.
+   No such package exists - not in this repository, not published by AMV - so
+   the best case was an error, and the worst case is the one that matters: a
+   name nobody owns is a name anybody can register, and AMV was sending its
+   own users to install whatever that turned out to be, globally, with their
+   permissions. An instruction to run a command is a trust decision made on the
+   reader's behalf.
+
+   What does work today is the bridge: AMV reads, edits and runs the project on
+   the person's own computer, every change measured from the disk with an Undo.
+   So this says that, sends them to it, and offers Notify me for a real
+   extension - through the same recorded waitlist as every other app. */
 function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" style="max-width:480px">'+
-    '<button class="dna-x" id="vsc-x" style="position:absolute;top:14px;right:14px">\u2715</button>'+
-    '<h2 style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">Use AMV in VS Code</h2>'+
-    '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 18px">Run these two commands in your project folder. That\u2019s it - AMV opens in your editor and can read, write, and run your code.</p>'+
-    '<div class="vsc-cmd"><code>npm install -g @amv/cli</code><button class="vsc-copy" data-c="npm install -g @amv/cli">Copy</button></div>'+
-    '<div class="vsc-cmd" style="margin-top:8px"><code>amv code .</code><button class="vsc-copy" data-c="amv code .">Copy</button></div>'+
-    '<p style="font-size:var(--t-xs);color:var(--dim);margin:16px 0 0;line-height:1.5">Your code stays on your machine - the CLI just links this account to your editor.</p>'+
+  const asked=(typeof _appNotifiedSet==='function') && _appNotifiedSet().has('vs-code-extension');
+  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" role="dialog" aria-modal="true" aria-labelledby="vsc-t" style="max-width:480px">'+
+    '<button class="dna-x" id="vsc-x" aria-label="Close" style="position:absolute;top:14px;right:14px">\u2715</button>'+
+    '<h2 id="vsc-t" style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">AMV in your code</h2>'+
+    '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 12px">There is no AMV extension for VS Code yet. AMV can already work in your project, though: connect your computer and it reads, edits and runs the code in the folder you choose, with an Undo for every change it makes.</p>'+
+    '<p style="font-size:var(--t-sm);color:var(--dim);line-height:1.5;margin:0 0 18px">Your code stays on your computer. Keep it open in VS Code while AMV works - you see each change as it lands.</p>'+
+    '<div style="display:flex;gap:var(--sp-2);flex-wrap:wrap">'+
+      '<button class="btn bp" id="vsc-go">Connect your computer</button>'+
+      (asked ? '<span class="int-onlist">\u2713 On the list for the extension</span>'
+             : '<button class="btn bs" id="vsc-notify" data-app-notify="vs-code-extension" data-app-name="the VS Code extension">Notify me about the extension</button>')+
+    '</div>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
   onBackdrop($('vsc-bg'),close); on($('vsc-x'),'click',close);
-  r.querySelectorAll('.vsc-copy').forEach(btn=>on(btn,'click',()=>{ try{ navigator.clipboard.writeText(btn.dataset.c); btn.textContent='Copied'; setTimeout(()=>btn.textContent='Copy',1200); }catch(e){} }));
+  on($('vsc-go'),'click',()=>{
+    close();
+    try{ _connMachineOpen=true; }catch(e){}
+    try{ setTab('integrations'); }catch(e){}
+    try{ const d=document.querySelector('details.conn-machine'); if(d){ d.open=true; d.scrollIntoView({block:'start'}); } }catch(e){}
+  });
+  const n=$('vsc-notify');
+  if(n) on(n,'click',async()=>{ if(typeof _appNotify==='function'){ await _appNotify(n); if(_appNotifiedSet().has('vs-code-extension')) close(); } });
 }
 const _DEV={ log:[], lang:'js', busy:false, curCode:'', curLang:'', curRun:null,
   // multi-file project: files keyed by path. activePath = file shown in Code pane.
@@ -27511,7 +27536,17 @@ function _founderDashHTML(d){
     // top spenders (abuse / margin watch)
     '<div class="ss2"><h3>Top spenders this month <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(margin &amp; abuse watch)</span></h3>'+
       '<div class="fd-table"><div class="fd-row fd-head"><span>User</span><span>Plan</span><span>AI cost</span></div>'+rows+'</div>'+
-    '</div>';
+    '</div>'+
+    /* What to connect next: the apps people pressed Notify me on. */
+    (function(){
+      const ar=d.appRequests||{}, top=ar.top||[];
+      return '<div class="ss2"><h3>Apps people asked for <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(Notify me - connect these next)</span></h3>'+
+        '<div class="fd-table"><div class="fd-row fd-head"><span>App</span><span></span><span>People</span></div>'+
+        (top.length ? top.slice(0,20).map(a=>'<div class="fd-row"><span class="fd-row-email">'+_esc(a.app)+'</span><span></span><span class="fd-row-cost">'+fmt(a.people)+'</span></div>').join('')
+                    : '<div class="fd-row"><span style="color:var(--mu)">'+(ar.error?_esc(ar.error):'Nobody has asked yet.')+'</span></div>')+
+        '</div>'+(ar.complete===false&&!ar.error?'<p class="fd-sub">A sample: there are more requests than one read covers.</p>':'')+
+      '</div>';
+    })();
 }
 
 // Leave settings and go back where you came from - the last screen that was
@@ -28001,7 +28036,7 @@ async function connectIntegration(id){
   // (which can blank the page if the handler isn't installed).
   if(id==='vscode'){
     if(typeof _devConnectVSCode==='function'){ _devConnectVSCode(); return; }
-    toast('To use AMV in VS Code, install the AMV CLI (npm i -g @amv/cli) and run "amv code ." in your project.','info',6000);
+    toast('There is no AMV extension for VS Code yet. Connect your computer under Integrations and AMV works in your project folder there.','info',7000);
     return;
   }
   // Generic OAuth providers: open the provider's approval window if configured
@@ -29341,16 +29376,16 @@ function _renderSetPaneInner(only, into){
        is drawn and everything not connected is taken out, keeping each
        connected row's own Disconnect and Run exactly as they are, and the
        page for adding more is one button away. */
+    /* Signed out, nothing can be connected - and this was, and stays, the one
+       place a visitor can read what each connector does before making an
+       account. Signed in, only what is connected, one row per sign-in. */
+    const _guest=!(S.user && S.user.email);
     pane.innerHTML =
       '<h2 class="set-title">Connectors</h2>'+
       '<div class="set-sub">What AMV is connected to. Add more from Integrations.</div>'+
-      '<div class="set-conn">'+_integrationsCatalogHTML()+'</div>'+
+      '<div class="set-conn">'+_integrationsCatalogHTML({ connectedOnly: !_guest })+'</div>'+
       '<div class="set-conn-go"><button class="btn bp" data-stab="integrations">'+escH(T('Browse integrations'))+' \u2192</button></div>';
     const _cl=pane.querySelector('.set-conn');
-    /* Signed out, nothing can be connected - and this was, and stays, the one
-       place a visitor can read what each connector does before making an
-       account. So the whole catalogue is kept for them, under its panel. */
-    const _guest=!(S.user && S.user.email);
     if(_cl && !_guest){
       _cl.querySelectorAll('.ax-legend, .int-seeall, .int-guest').forEach(x=>x.remove());
       _cl.querySelectorAll('.int-card').forEach(c=>{ if(!c.querySelector('.int-ok')) c.remove(); });
@@ -31295,9 +31330,8 @@ function _connHasProvider(id){
 }
 try{ window._connHasProvider=_connHasProvider; }catch(e){}
 
-function _integrationsCatalogHTML(){
+function _integrationsCatalogHTML(opts){
   const smsPhone=loadStr('amv_sms_phone');
-  const isConn=(k)=>!!loadStr(k);
   const intRow=(o)=>{
     const connected=o.connected;
     const badge=o.auto
@@ -31326,7 +31360,7 @@ function _integrationsCatalogHTML(){
       ? ((o.run?'<button class="btn bp" data-int-run="'+o.run+'" style="font-size:var(--t-sm)">'+escH(o.runLabel||'Run')+'</button>':'')+
          '<button class="btn int-disc" data-int-disc="'+o.id+'" style="font-size:var(--t-sm)">Disconnect</button>')
       : (o.auto
-          ? '<button class="btn bp" data-int-conn="'+o.id+'" style="font-size:var(--t-sm)">Connect</button>'
+          ? '<button class="btn bp" data-int-conn="'+o.id+'"'+(o.preset?' data-int-preset="'+escH(o.preset)+'"':'')+' style="font-size:var(--t-sm)">Connect</button>'
           : '<button class="btn bs" data-int-use="'+(o.use||'chat')+'" style="font-size:var(--t-sm)">'+(o.useLabel||'Open in chat')+'</button>');
     return '<div class="int-card">'+
       '<div class="int-ic" style="background:'+(o.bg||'var(--s3)')+'">'+o.icon+'</div>'+
@@ -31339,24 +31373,16 @@ function _integrationsCatalogHTML(){
   };
   /* EVERY SECTION ENDS WITH A DOOR TO THE REST OF ITS OWN KIND.
 
-     The rows above the door are AMV's own integrations - a real sign-in at
-     the provider, a scoped grant, a Connect button that does what it says.
-     There are a dozen or so of those and there will never be thousands,
-     because each one is work somebody did by hand.
-
-     The registry has thousands, for every one of these topics. Pressing the
-     door opens that topic's page of them. Which means the answer to "can AMV
-     connect to X" is on the screen for X rather than in one lump at the
-     bottom called "everything AMV can connect to" - the heading that was
-     asked for twice to be taken away, and which put nine thousand things
-     behind a word that describes none of them.
-
-     `q` is the query the door really sends. Passing it beside the title keeps
-     a heading from promising a search it does not run. */
-  const cat=(title,rows,q)=>'<div class="ss2"><h3>'+title+'</h3><div class="int-list">'+rows+'</div>'+
+     The rows are the apps people actually use (AMV_APP_CATS, 13c). The door
+     under them opens that topic's page of the open registry - thousands more,
+     each one a program the bridge can start - so the answer to "can AMV
+     connect to X" is on the screen for X, and there is no heading anywhere
+     called "everything else". `q` is the query the door really sends. */
+  const cat=(title,rows,q,more)=>'<div class="ss2"><h3>'+title+'</h3><div class="int-list">'+rows+'</div>'+
+    (more||'')+
     (q ? '<div class="int-seeall"><button class="cdir-more" data-dact="cdirAll" data-darg="'+escH(q)+'">'
         + escH(T('See all')) + ' ' + escH(String(title).replace(/&amp;/g,'and').toLowerCase()) + ' '
-        + escH(T('connectors')) + ' \u2192</button></div>' : '')
+        + escH(T('connectors')) + ' →</button></div>' : '')
     +'</div>';
   /* SAY IT BEFORE THE PRESS, NOT AFTER IT.
 
@@ -31370,162 +31396,168 @@ function _integrationsCatalogHTML(){
      what these integrations DO is a fair question to ask before signing up,
      which is why the catalogue stays browsable at all. */
   const guest = !(typeof S!=='undefined' && S && S.user && S.user.email);
+  const mailAcc=_mailConnectedAccount();
+  const DEF={
+    mail:'Read, summarized and answered. Connects with an app password.',
+    cal:'Read-only, through the calendar’s shared link. AMV sees your week and can never change it.',
+  };
+  /* What Connect does for a row that has one, in the options intRow already
+     reads. Every branch is a flow that exists on this page and ends in a real
+     connection - see the header of 13c for the list and why it is short. */
+  const native=(a)=>{
+    const h=a.how, kind=h.split(':')[0];
+    const o={ id:'', name:escH(a.name), desc:escH(a.desc||DEF[kind]||''), auto:true,
+              icon:_appMarkHTML(a.name), key:kind };
+    if(h==='g'){ o.id='google'; o.connected=_rowConnected('google'); }
+    else if(h==='ms'){ o.id='outlook'; o.connected=_rowConnected('outlook'); }
+    else if(h==='gh'){ o.id='github'; o.connected=_rowConnected('github'); }
+    else if(kind==='mail'){
+      o.id='mail'; o.preset=h.slice(5);
+      /* A Yahoo row is connected when the mailbox is Yahoo, not when any
+         mailbox is - the picker row is the one that answers "any". */
+      o.connected=!!mailAcc && (!o.preset || mailAcc.provider===o.preset);
+      o.run='openMailInbox'; o.runLabel='Open inbox';
+      if(!o.preset && mailAcc) o.desc='Connected to '+escH(mailAcc.address)+'. AMV reads it, summarizes it and drafts replies.';
+    }
+    else if(h==='tg'){ o.id='telegram'; o.connected=!!_TG_STATUS&&!!_TG_STATUS.connected;
+      if(_telegramConnectedBot()) o.desc='Connected as @'+escH(_telegramConnectedBot())+'. AMV sends your background work here.'; }
+    else if(h==='sms'){ o.id='sms'; o.connected=!!smsPhone; }
+    /* Read with the key written out, because the check that pairs every
+       storage key with its reader can only see a literal. */
+    else if(h==='canvas'){ o.id='canvas'; o.connected=!!loadStr('amv_canvas'); o.run='schoolOpen'; o.runLabel='Open my school work'; }
+    /* CONNECT GOES TO SPENDING. The link is a hosted sign-in at the bank with
+       a pre-opened window and a returning step; a second copy of that money
+       flow on this page is the one somebody forgets to fix. */
+    else if(h==='bank'){ o.id='bank'; o.goto='bank'; o.useLabel='Link in Spending'; o.manageLabel='Manage in Spending';
+      o.connected=(function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })(); }
+    else if(h==='cal'){ o.id='calfeeds'; o.auto=false; o.use='calfeeds'; o.useLabel='Connect'; o.connected=false; }
+    else if(h==='predict'){ o.id='predict'; o.auto=false; o.use='predict'; o.useLabel='Open'; o.connected=false; }
+    else if(h==='jobs'){ o.id='jobboards'; o.auto=false; o.use='jobs'; o.useLabel='Browse boards'; o.connected=false; }
+    else if(h==='everyday'){ o.id='everyday'; o.auto=false; o.use='everyday'; o.useLabel='See yours'; o.connected=false; }
+    else if(h==='coverage'){ o.id='coverage'; o.auto=false; o.use='coverage'; o.useLabel='See coverage'; o.connected=false; }
+    else if(h==='file'){ o.id=a.slug; o.auto=false; o.use='chat'; o.connected=false; }
+    else if(h==='vscode'){ o.id='vscode'; o.auto=false; o.use='vscode'; o.useLabel='Set up'; o.connected=false; }
+    else return null;
+    return o;
+  };
+  /* A row AMV cannot connect yet. It says what the app is and offers the one
+     honest action: tell me when. */
+  const notified=_appNotifiedSet();
+  const notifyRow=(a)=>'<div class="int-card int-notify">'+
+      '<div class="int-ic">'+_appMarkHTML(a.name)+'</div>'+
+      '<div class="int-body"><div class="int-top"><span class="int-name">'+escH(a.name)+'</span></div>'+
+        '<div class="int-desc">'+escH(a.desc)+'</div></div>'+
+      '<div class="int-act">'+(notified.has(a.slug)
+        ? '<span class="int-onlist">✓ '+escH(T('On the list'))+'</span>'
+        : '<button class="btn bs" data-app-notify="'+escH(a.slug)+'" data-app-name="'+escH(a.name)+'" style="font-size:var(--t-sm)">'+escH(T('Notify me'))+'</button>')+
+      '</div></div>';
+  const only=!!(opts && opts.connectedOnly), seen={};
+  const sections=_appCats().map(c=>{
+    /* Connected, then connectable, then the rest - so a connection somebody
+       has is never hidden behind Show all, and Settings (which keeps only the
+       connected rows of the first screenful) always finds it. */
+    const rows=c.apps.map((a,i)=>{ const o=a.how?native(a):null; return { a, o, rank:(o&&o.connected)?0:o?1:2, i }; })
+      .sort((x,y)=>x.rank-y.rank||x.i-y.i);
+    let list=rows;
+    if(only){
+      /* One row per grant. A Google connection lights Gmail, Calendar, Drive,
+         Docs, Sheets, Slides and Classroom, and Settings listing seven rows
+         with seven Disconnect buttons for one sign-in would read as seven
+         things to undo. */
+      list=rows.filter(r=>r.rank===0 && !seen[r.o.id] && (seen[r.o.id]=1));
+      list.forEach(r=>{ const g=APP_GRANT_NAMES[r.o.id]; if(g) r.o.name=escH(g); });
+      if(!list.length) return '';
+    }
+    const open=only || _appOpen.has(c.id);
+    const shown=open ? list : list.slice(0, APP_ROWS_SHOWN);
+    const html=shown.map(r=>r.o ? intRow(r.o) : notifyRow(r.a)).join('');
+    const more=(!only && list.length>APP_ROWS_SHOWN)
+      ? '<div class="int-more"><button class="btn bs" data-app-more="'+escH(c.id)+'" aria-expanded="'+(open?'true':'false')+'">'
+          +escH(open ? T('Show fewer') : (T('Show all')+' '+list.length))+'</button></div>' : '';
+    return cat(c.t, html, only?'':c.q, more);
+  }).join('');
   return ''+
-    (guest
+    (guest && !only
       ? '<div class="int-guest">'+
           '<div class="int-guest-t">Create a free account to connect these</div>'+
           '<div class="int-guest-s">Browse what each one does. Connecting keeps a token against your account, '+
             'so it needs an account first - it is free and takes a moment.</div>'+
           /* `data-auth` is the delegation that already exists for this - the
-             dispatcher calls openAuth with its value. Inventing a new
-             `data-dact` name would have meant a second way to do one thing,
-             and a global function to hang off it. */
+             dispatcher calls openAuth with its value. */
           '<button class="btn bp" data-auth="signup">Create a free account</button>'+
         '</div>'
       : '')+
+    (only ? '' :
     '<div class="ax-legend">'+
       '<div class="ax-legend-item"><span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span><span>Runs on its own in the background after you connect.</span></div>'+
       '<div class="ax-legend-item"><span class="ax-badge ax-manual">Manual</span><span>You trigger it or upload files each time.</span></div>'+
-    '</div>'+
-    cat('Email &amp; calendar',
-      /* CONNECT MEANT SIGN IN, AND THE ROW SAID GMAIL.
-
-         This row is labelled Autonomous - "runs on its own in the background
-         after you connect" - and describes reading and drafting email. Its
-         Connect button called connectIntegration('google'), which calls
-         triggerGoogle: Google SIGN-IN, the one-tap that proves who you are and
-         grants no Gmail, Drive or Calendar scope at all. Somebody who wanted
-         AMV to read their mail could press Connect, complete a real Google
-         flow, come back, and have granted nothing - and `connected` was read
-         from the sign-in token, so the row would then show a tick.
-
-         The flow that does what this row describes is Connected accounts,
-         directly above: the server holds the grant, the scopes are chosen, and
-         it survives the tab closing. So the row points there. Nothing is
-         removed - the capability moves to the entry that actually delivers it,
-         which is the difference between a catalogue and a promise. */
-      /* THE MACHINE USED TO BE FIRST IN THIS LIST, and it was in the wrong
-         list: "Email & calendar" opened with a download button and a command
-         line for a daemon that has nothing to do with either. Both cards moved
-         up the page into "Your computer", where they are together, closed, and
-         findable by the person who wants them. They are unchanged; only their
-         home is. */
-      intRow({id:'google',name:'Google (Gmail, Drive, Calendar)',desc:'Reads & drafts email, organizes Drive, manages your calendar - automatically. Set up under Connected accounts above, where you choose what AMV may do.',auto:true,connected:_rowConnected('google'),icon:'\uD83D\uDCE7',bg:'rgba(66,133,244,.14)'})+
-      intRow({id:'outlook',name:'Microsoft 365 (Outlook, OneDrive)',desc:'Email, calendar and files across your Microsoft account.',auto:true,connected:_rowConnected('outlook'),icon:'\uD83D\uDCEB',bg:'rgba(0,120,212,.14)'})+
-      /* The rest of the world. Google and Microsoft cover a lot of people and
-         not most of them: QQ and 163 in China, Naver in Korea, Yandex and
-         Mail.ru in Russia, GMX in Germany, WP.pl in Poland, UOL in Brazil.
-         All of them speak IMAP, so one connector reaches all of them. */
-      intRow({id:'mail',name:'Mail worldwide (QQ, 163, Naver, Yandex, GMX, WP.pl, UOL\u2026)',
-              desc:_mailConnectedAccount()
-                ? ('Connected to '+escH(_mailConnectedAccount().address)+'. AMV reads it, summarizes it and drafts replies.')
-                : 'Your own provider, in 22 countries. Reads, summarizes and drafts replies - automatically.',
-              auto:true,connected:!!_mailConnectedAccount(),
-              run:'openMailInbox',runLabel:'Open inbox',
-              icon:'\uD83C\uDF0D',bg:'rgba(120,180,120,.14)'})+
-      /* The boards somebody's country actually uses. Reachable from here
-         because this is where a person goes looking for what AMV connects
-         to, and a catalogue nothing links to is a catalogue nobody reads. */
-      intRow({id:'jobboards',name:'Job boards worldwide (Europe, Asia and beyond)',
-              desc:'StepStone, Reed, Pracuj, Naukri, Saramin, 51job, Rikunabi and more - AMV applies where a posting takes email, and prepares the rest.',
-              auto:false,connected:false,use:'jobs',useLabel:'Browse boards',
-              icon:'\uD83D\uDCBC',bg:'rgba(200,160,90,.14)'})+
-      /* The answer to "does any of this work where I live", which is the first
-         thing somebody outside the United States wants to know. */
-      /* The half of "what works where I live" that is not a directory: the
-         things somebody there does every week. */
-      intRow({id:'everyday',name:'Everyday life where you live',
-              desc:'Bills, renewals, fines, official letters and school dates - watched and dated for your country, not somebody else\u2019s.',
-              auto:false,connected:false,use:'everyday',useLabel:'See yours',
-              icon:'\uD83C\uDFE0',bg:'rgba(150,170,110,.14)'})+
-      /* Every calendar that is not Google or Outlook, which is most of them. */
-      intRow({id:'predict',name:'Prediction markets',
-              desc:'Kalshi or Polymarket, depending on where you are. AMV shows you the exact trade and places it only after you confirm those numbers - it can never place one on its own.',
-              auto:false,connected:false,use:'predict',useLabel:'Open',
-              icon:'\uD83D\uDCC8',bg:'rgba(200,150,90,.14)'})+
-      intRow({id:'calfeeds',name:'Any other calendar',
-              desc:'iCloud, Fastmail, Nextcloud, Yandex, Zoho, a university timetable - anything that publishes a link. Read-only: AMV sees your week and can never change it.',
-              auto:false,connected:false,use:'calfeeds',useLabel:'Connect',
-              icon:'\uD83D\uDCC5',bg:'rgba(120,140,200,.14)'})+
-      intRow({id:'coverage',name:'AMV around the world',
-              desc:'Every country AMV works in, and what it can do there - mail, job boards, and where it can apply for you.',
-              auto:false,connected:false,use:'coverage',useLabel:'See coverage',
-              icon:'\uD83C\uDF10',bg:'rgba(90,150,200,.14)'})
-    , 'email')+
-    cat('Messaging &amp; chat',
-      intRow({id:'slack',name:'Slack',desc:'Answers, summaries and tasks inside any channel with /amv.',auto:true,connected:_rowConnected('slack'),icon:'\uD83D\uDCAC',bg:'rgba(74,21,75,.16)'})+
-      intRow({id:'sms',name:'Text messages (SMS)',desc:'Run AMV from any phone by text - \u201ccheck Project X\u201d, \u201cdraft a reply\u201d.',auto:true,connected:!!smsPhone,icon:'\uD83D\uDCF1',bg:'rgba(63,185,80,.14)'})+
-      /* The messenger most of the world actually uses. Free official API, no
-         business verification, and it is the default across Russia, Ukraine,
-         Iran, much of Central Asia, and huge in Brazil, India and Nigeria -
-         where SMS costs money per message and Slack is a work tool. */
-      /* Asked of the server, like the mailbox, NOT of a local flag. The token
-         lives on the server, so a browser key is a guess - and a wrong guess
-         here shows Connect to somebody already connected, who then connects a
-         second time. */
-      intRow({id:'telegram',name:'Telegram',
-              desc:_telegramConnectedBot()
-                ? ('Connected as @'+escH(_telegramConnectedBot())+'. AMV sends your background work here.')
-                : 'Run AMV from Telegram and get your background work there - through a bot you own and can revoke.',
-              auto:true,connected:!!_TG_STATUS&&!!_TG_STATUS.connected,
-              icon:'\u2708\uFE0F',bg:'rgba(42,171,238,.16)'})+
-      intRow({id:'discord',name:'Discord',desc:'Bring AMV into your servers for answers and automations.',auto:true,connected:_rowConnected('discord'),icon:'\uD83C\uDFAE',bg:'rgba(88,101,242,.16)'})
-    , 'messaging')+
-    cat('Developer',
-      intRow({id:'github',name:'GitHub',desc:'Reviews PRs, opens issues, reads repos and ships fixes you approve.',auto:true,connected:_rowConnected('github'),icon:'\uD83D\uDC19',bg:'rgba(255,255,255,.08)'})+
-      intRow({id:'vscode',name:'VS Code',desc:'Your AI pair-programmer inside the editor.',auto:true,connected:false/*the CLI, not a connection AMV can see*/,icon:'\uD83D\uDCBB',bg:'rgba(0,118,212,.14)'})+
-      intRow({id:'linear',name:'Linear',desc:'Creates, triages and updates issues from chat.',auto:true,connected:_rowConnected('linear'),icon:'\uD83D\uDCD0',bg:'rgba(94,106,210,.16)'})
-    , 'developer')+
-    cat('Productivity',
-      intRow({id:'notion',name:'Notion',desc:'Reads and writes pages, builds docs in your workspace.',auto:true,connected:_rowConnected('notion'),icon:'\uD83D\uDCDD',bg:'rgba(255,255,255,.08)'})+
-      /* The description says what it does now. It used to promise "drafts
-         answers from your notes, works overnight", which described an
-         automation that was removed - and which had never run anyway, because
-         it called the school from the browser and the page's policy refused
-         every request. What is left is real: read what is due, take your own
-         copy of the document the assignment points at, share it with the
-         teacher when you say to. Handing in stays the student's own act. */
-      intRow({id:'canvas',name:'Canvas LMS',desc:'Reads what is due, makes your own copy of the doc an assignment points at, and shares it with your teacher when you say to.',/* Read with the key written out, not through isConn's variable, because
-         the check that pairs every storage key with its reader can only see a
-         literal - and this key stopped being operator-set the moment the
-         connect flow began writing it. A read it cannot see is a key it
-         reports as written into the void. */
-      auto:true,connected:!!loadStr('amv_canvas'),run:'schoolOpen',runLabel:'Open my school work',icon:'\uD83C\uDF93',bg:'rgba(230,70,70,.14)'})
-    , 'productivity')+
-    cat('Office files',
-      intRow({id:'excel',name:'Excel & CSV',desc:'Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',auto:false,connected:false,icon:'\uD83D\uDCCA',bg:'rgba(33,115,70,.14)'})+
-      intRow({id:'pptx',name:'PowerPoint',desc:'Describe a deck and AMV builds the slides - export the .pptx.',auto:false,connected:false,icon:'\uD83D\uDCD1',bg:'rgba(198,67,30,.14)'})+
-      intRow({id:'word',name:'Word',desc:'Reports, proposals and letters - written and exported, ready to edit.',auto:false,connected:false,icon:'\uD83D\uDCC4',bg:'rgba(0,120,212,.14)'})
-    , 'documents')+
-    /* \u2500\u2500 BANK & MONEY, WHICH THIS PAGE HAS NEVER MENTIONED \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
-
-       "So email, see all for email. Then bank account. See all for bank
-       account."
-
-       A bank account is one of the most consequential things AMV connects to
-       and there was no row for it anywhere on the Connectors page. It was
-       linked from Spending and nowhere else, so somebody looking through
-       "everything AMV can work inside" would not have found it - and five
-       Crew jobs plus the money leak detector now read from it.
-
-       CONNECT GOES TO SPENDING, IT DOES NOT LINK FROM HERE. The link is a
-       hosted sign-in at the institution with a pre-opened window, a user
-       activation that must not be spent on an await, and a returning "I have
-       finished linking" step on a replaced node. Writing a second copy of
-       that on this page would be two implementations of a money flow, and
-       whichever one somebody forgets to fix is the one that breaks. There is
-       one, it lives in the investing pane, and this row takes you to it. */
-    cat('Bank &amp; money',
-      intRow({id:'bank',name:'Bank account',
-        desc:'Real balances and real transactions, read-only. The sign-in happens on your bank\u2019s own page - AMV never sees your password and cannot move money. Morning money summary, unusual charges, low balance warnings and the money leak detector all read from this.',
-        auto:true,
-        /* Through the accessor, so this row and every other screen answer the
-           same question from the same record. */
-        connected:(function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })(),
-        goto:'bank', useLabel:'Link in Spending', manageLabel:'Manage in Spending',
-        icon:'\uD83C\uDFE6',bg:'rgba(45,120,90,.16)'})
-    , 'finance');
+      '<div class="ax-legend-item"><span class="int-legend-n">'+escH(T('Notify me'))+'</span><span>Not connectable yet. Ask, and you hear the moment it is - the most-asked-for are built first.</span></div>'+
+    '</div>')+
+    sections;
 }
+/* The name a connection is known by when one grant covers several rows. */
+const APP_GRANT_NAMES = { google:'Google - Gmail, Calendar, Drive and Classroom', outlook:'Microsoft - Outlook mail and calendar' };
+/* Six is a screenful on a phone and enough to see what a topic holds. */
+const APP_ROWS_SHOWN = 6;
+/* Which topics somebody opened with Show all. Kept across repaints, because a
+   list that snaps shut when a mailbox finishes connecting is a list you lose
+   your place in. */
+const _appOpen = new Set();
+function _appToggle(id){
+  if(_appOpen.has(id)) _appOpen.delete(id); else _appOpen.add(id);
+  _paintIntegrations();
+}
+/* A letter, rather than anybody's logo: a directory of five hundred brand
+   marks is five hundred trademarks, and none of them would say anything the
+   name beside it does not. */
+function _appMarkHTML(name){ return '<span class="int-mono" aria-hidden="true">'+escH(String(name||'?').trim().charAt(0).toUpperCase())+'</span>'; }
+/* Which apps this account asked to hear about. Written only after the server
+   said it recorded the request, so "On the list" is never a guess. */
+function _appNotifiedSet(){ const v=load('amv_app_notified'); return new Set(Array.isArray(v)?v:[]); }
+function _appMarkNotified(slug){ const s=_appNotifiedSet(); s.add(slug); store('amv_app_notified',[...s].slice(-500)); }
+/* NOTIFY ME, WHICH SAYS WHAT HAPPENED.
+
+   The older notify-me on this page said "You're on the list!" whether the
+   server stored it or not - including when there was no server at all. A
+   request that was never recorded is a promise nobody will keep, told to the
+   person most likely to be waiting for it. So this reports the outcome: it
+   was recorded, or it was not and here is why. It goes on the waitlist the
+   server already keeps (erased with the account like every other entry), one
+   product per app, and that list is what decides which app is connected next. */
+async function _appNotify(btn){
+  const slug=btn.dataset.appNotify, name=btn.dataset.appName||'this app';
+  if(!slug || _appNotifiedSet().has(slug)) return;
+  let email=(S.user&&S.user.email)||'';
+  if(!email){
+    email=await showTextPromptAsync('We’ll email you when AMV can connect to '+name+'. Your email address:');
+    if(!email) return;
+    email=String(email).trim();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)){ showError('That does not look like an email address.'); return; }
+  }
+  if(!(window.AMV_API && AMV_API.live)){
+    toast('This copy of AMV is not connected to its server, so the request could not be recorded.','error',6000);
+    return;
+  }
+  const was=btn.textContent;
+  btn.disabled=true; btn.textContent=T('Saving…');
+  let r=null, err='';
+  try{ r=await AMV_API._fetch('/waitlist',{method:'POST',body:JSON.stringify({product:'app-'+slug,email:email.toLowerCase()})}); }
+  catch(e){ err=String((e&&e.message)||''); }
+  if(r && r.ok){
+    _appMarkNotified(slug);
+    toast('You’re on the list. We’ll email you when AMV can connect to '+name+'.','success',5000);
+    _paintIntegrations();
+    return;
+  }
+  btn.disabled=false; btn.textContent=was;
+  let msg=err||'That could not be saved. Try again in a moment.';
+  if(r){
+    const d=await r.json().catch(()=>({}));
+    msg = r.status===429 ? 'Too many requests from this network just now. Try again in a minute.' : String((d&&d.error)||msg);
+  }
+  toast(msg,'error',6000);
+}
+try{ window._appNotify=_appNotify; window._appToggle=_appToggle; }catch(e){}
 window._integrationsCatalogHTML=_integrationsCatalogHTML;
 
 /* Which providers the connected-accounts framework handles. Read from what the
@@ -31597,7 +31629,7 @@ function _wireIntegrationCatalog(root){
        Telegram rows would open their own connect sheets to somebody with no
        account to attach a mailbox to. */
     if(_intNeedsAccount(_intName(btn.dataset.intConn))) return;
-    if(btn.dataset.intConn==='mail') return openMailConnect();
+    if(btn.dataset.intConn==='mail') return openMailConnect(btn.dataset.intPreset||'');
     if(btn.dataset.intConn==='telegram') return openTelegramConnect();
     /* Providers the connected-accounts framework owns are STARTED there, not
        here. Google's row used to run a sign-in from this button; sending it to
@@ -31611,6 +31643,8 @@ function _wireIntegrationCatalog(root){
      pass as everything else, because a control that is drawn by one function
      and wired by another is how a button comes to do nothing. */
   try{ _bridgeWireCard(root); _mcpWireCard(root); }catch(e){}
+  root.querySelectorAll('[data-app-notify]').forEach(btn=>on(btn,'click',()=>{ _appNotify(btn); }));
+  root.querySelectorAll('[data-app-more]').forEach(btn=>on(btn,'click',()=>{ _appToggle(btn.dataset.appMore); }));
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intDisc==='mail') return disconnectMail();
     if(btn.dataset.intDisc==='telegram') return disconnectTelegram();
@@ -31632,6 +31666,9 @@ function _wireIntegrationCatalog(root){
     if(btn.dataset.intUse==='calfeeds' && typeof openCalendarFeeds==='function') return openCalendarFeeds();
     if(btn.dataset.intUse==='coverage' && typeof openCoverage==='function') return openCoverage();
     if(btn.dataset.intUse==='everyday' && typeof openEveryday==='function') return openEveryday();
+    /* No editor extension exists, and the dialog says so and offers the
+       connection that does work in a project folder. */
+    if(btn.dataset.intUse==='vscode' && typeof _devConnectVSCode==='function') return _devConnectVSCode();
     /* The bank, and it needs its own line because the fall-through below
        tells people to upload a file - which is the right sentence for Excel
        and a baffling one for a bank account. Named rather than folded in,
@@ -31950,7 +31987,8 @@ function renderIntegrationsView(){
          held by the server rather than this browser, and revocable. */
       '<span class="eyebrow">Connectors</span>'+
       '<h2>Everything AMV can work inside</h2>'+
-      '<p class="vsub">Connect an account once and AMV can work inside it. A connection is a real sign-in at the provider - AMV never sees your password, only a grant limited to what you allow, and you can take it back at any time.</p>'+
+      /* Counted, not claimed: the number is the length of the list below. */
+      '<p class="vsub">'+escH(String(_appCount()))+' of the apps people use most, by topic. The ones AMV connects to today come first in each - a real sign-in at the provider, a grant limited to what you allow, and you can take it back at any time. For the rest, press Notify me: the most-asked-for are connected next.</p>'+
       /* THE SEARCH FIRST, AND OUTSIDE THE DIRECTORY.
 
          Asked for in that order - "it has to be search bar, then the main
@@ -31982,12 +32020,11 @@ function renderIntegrationsView(){
         '<div class="conn-machine-b">'+_bridgeCardHTML()+_mcpCardHTML()+'</div>'+
       '</details>'+
       '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
-      /* Last, and the biggest thing on the page: nine thousand connectors read
-         live from the open registry. It goes after what AMV does natively
-         because those are the ones most people want and the ones that need no
-         computer connected - and a directory of nine thousand in front of them
-         would bury the four that matter. */
-      connectorDirectoryHTML()+
+      /* NOTHING AFTER THE TOPICS. There used to be a last section called
+         "Everything else, by topic" - a wall of doors into the open registry.
+         Asked for: "no part should say everything else by topic, it should
+         stay consistent". Every topic above now ends in its own door to the
+         same registry, and the search box at the top reaches all of it. */
     '</div></div>';
   _wireIntegrationCatalog(vc);
   try{
@@ -32508,7 +32545,7 @@ function _mailConnectedAccount(){
 
 /* The picker. Grouped by country so somebody scans for their flag rather than
    reading forty names, and every provider carries its own setup sentence. */
-async function openMailConnect(){
+async function openMailConnect(preset){
   const cat = await _mailLoadProviders();
   const r=$('ovr'); if(!r) return;
   if(!cat || !cat.providers){
@@ -32555,6 +32592,10 @@ async function openMailConnect(){
     const el=$('ml-setup'); if(el&&p) el.textContent=p.setup||'';
     const cu=$('ml-custom'); if(cu) cu.style.display=(p&&p.custom)?'':'none';
   };
+  /* Opened from a named row - Yahoo Mail, Naver Mail - it starts on that
+     provider, so the setup sentence under it is the one for the mailbox they
+     pressed. An id the list does not have leaves the first choice selected. */
+  if(preset && cat.providers.some(x=>x.id===preset)) sel.value=preset;
   on(sel,'change',showSetup); showSetup();
 
   /* Guarded so a click INSIDE the dialog does not close it, without using
@@ -32938,21 +32979,6 @@ const CDIR_CATS = [
   ['iot',      'Devices & IoT',          'iot'],
   ['testing',  'Testing & QA',           'testing'],
 ];
-/* TOPICS THE HAND-BUILT SECTIONS ABOVE ALREADY COVER.
-
-   The page listed "Developer" and then "Developer tools", and "Productivity"
-   twice - one heading from AMV's own integrations and one from the registry,
-   next to each other, asking somebody to work out the difference. There is
-   none worth explaining: the curated section already carries a door that runs
-   exactly this query.
-
-   So the registry row is dropped where a curated section owns the topic. It
-   is a list of QUERIES rather than titles, because the query is what would
-   actually be duplicated - two headings running the same search is the defect,
-   and two different headings that happen to read similarly is not. */
-/* `finance` joins them: there is a hand-built Bank & money section now, with
-   AMV's own bank link in it and a door running exactly this query. */
-const CDIR_COVERED = ['developer', 'productivity', 'messaging', 'email', 'finance'];
 /* The default `want` for a load nobody sized. Nothing asks for a handful any
    more - the rows that did are gone - so this is a floor rather than a
    layout, and it is small because the only caller that would hit it is one
@@ -33270,39 +33296,15 @@ function cdirSearchBarHTML(){
 
 function connectorDirectoryHTML(){
   if(_cdirOpen) return _cdirFullHTML();
-  /* ── A DOOR PER TOPIC, AND NOT TWENTY-SIX LIVE ROWS ───────────────────────
+  /* THE OVERVIEW HAS NO SECTION OF ITS OWN ANY MORE.
 
-     "Remove the things below the search bar entirely. None of the thing that
-     it says now."
-
-     What was there: twenty-six sections, each firing its own registry request
-     on paint, each answer replacing the whole node, so the page arrived as
-     a hundred and thirty skeletons that filled in over several seconds while
-     the search box was destroyed and rebuilt under whoever was typing into
-     it. It also read as a wall - two hundred tiles before anybody had decided
-     anything - and the rate limit refused some of the rows outright, which
-     looked like those topics being broken.
-
-     What is there now: the topic, and the way in. Nothing is fetched until
-     somebody picks one, so the page paints once, immediately, with no network
-     at all - and the See all page behind each door holds far more than a
-     scrolling row ever did.
-
-     THE CURATED SECTIONS KEEP THEIR OWN DOORS. `CDIR_COVERED` still drops a
-     topic AMV has hand-built rows for, because those sections already end in
-     a See all running the same query - two doors to one search is the defect
-     this list exists to prevent. */
-  const doors = CDIR_CATS.filter(c => CDIR_COVERED.indexOf(c[2]) < 0);
-  return '<section class="cdir">'
-    + '<div class="sec-head"><h3>' + escH(T('Everything else, by topic')) + '</h3>'
-      + '<span class="sec-sub">' + escH(T('Thousands more, read live from the open registry. Each one runs on the computer you connect, and AMV drives it.')) + '</span></div>'
-    + '<div class="cdir-topics">'
-      + doors.map(c => '<button class="cdir-topic" data-dact="cdirAll" data-darg="' + escH(c[2]) + '">'
-          + '<span class="cdir-topic-t">' + escH(c[1]) + '</span>'
-          + '<span class="cdir-topic-a" aria-hidden="true">' + escH(T('See all')) + ' →</span>'
-        + '</button>').join('')
-    + '</div>'
-  + '</section>';
+     It drew "Everything else, by topic": a block of doors into the registry
+     under the hand-built rows. The owner asked for one format everywhere and no
+     part called "everything else", and the doors did not need a section to
+     live in - every topic on the page now ends in its own, running the same
+     query this block ran. So the overview is the topics themselves (13c), and
+     this only draws the page behind a door. */
+  return '';
 }
 
 function _cdirFullHTML(){
@@ -33448,8 +33450,12 @@ function cdirOpen(id){
   });
 }
 function cdirAll(q){
+  /* Named after the topic whose door was pressed - the app topics first,
+     because those are the doors on the page, then the registry's own words. */
+  const app = (typeof AMV_APP_CATS !== 'undefined') ? AMV_APP_CATS.find(c => c.q === q) : null;
   const row = CDIR_CATS.find(c => c[2] === q);
-  _cdirOpen = { q, title: row ? row[1] : ('Connectors matching “' + q + '”') };
+  _cdirOpen = { q, title: app ? String(app.t).replace(/&amp;/g, '&')
+                        : row ? row[1] : ('Connectors matching “' + q + '”') };
   renderIntegrationsView();
   _cdirToTop();
 }
@@ -33500,7 +33506,299 @@ function cdirSearch(){
 try{ window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdirOpen=cdirOpen; window.cdirAll=cdirAll; window.cdirBack=cdirBack;
      window.cdirRetry=cdirRetry; window.cdirMore=cdirMore; window.cdirSearch=cdirSearch;
      window.connectorDirectoryHTML=connectorDirectoryHTML; window.cdirSearchBarHTML=cdirSearchBarHTML;
-     window.CDIR_CATS=CDIR_CATS; window.CDIR_COVERED=CDIR_COVERED; }catch(e){}
+     window.CDIR_CATS=CDIR_CATS; }catch(e){}
+/* ══════════════════════════════════════════════════════════════════════════
+   THE APPS PEOPLE ACTUALLY USE, IN THE ORDER AMV CAN CONNECT THEM.
+
+   Asked for: "the top apps in the world, not random ones - CapCut, Canva",
+   every topic in the same format as Email, no "Everything else, by topic",
+   the ones AMV can really connect to first, and Notify me on the rest - with
+   a way found to connect those later.
+
+   WHAT A ROW PROMISES. A row with Connect opens a flow that exists in this
+   product and ends in a working connection: AMV's own sign-in with the
+   provider (Google, Microsoft, GitHub), a mailbox over IMAP (sixty providers
+   in the server's list), a calendar's shared link, Telegram, a text number,
+   Canvas, a bank link. Nothing else gets that button. A row whose app AMV
+   cannot reach yet says so and offers Notify me, which records the request on
+   the server's existing waitlist - and that list is what decides which one is
+   built next. Slack, Notion, Linear and Discord used to sit up here labelled
+   Autonomous, with a Connect button whose only effect was a message saying
+   the sign-in was not finished. They are Notify me now, because that is what
+   they are.
+
+   WHAT IS LEFT OUT ON PURPOSE.
+     · Other AI products. AMV does not send people to them.
+     · Password managers. An agent that can read the vault can read every
+       account in it; there is no scope narrow enough to make that a good
+       trade, however many people would press the button.
+     · Anything whose only use would be generating images or video.
+
+   `how` is what Connect does. Empty means Notify me. The codes:
+     g        Google, through Connected accounts (Gmail, Calendar, Drive, Classroom)
+     ms       Microsoft, through Connected accounts (Outlook mail and calendar)
+     gh       GitHub, through Connected accounts
+     mail     the mailbox picker; mail:<id> opens it on that provider (ids are the
+              server's MAIL_PROVIDERS keys - a wrong id just opens the picker)
+     cal      a calendar's shared link, read-only
+     tg sms canvas bank predict jobs everyday coverage file vscode
+              AMV's own flows, each already on this page before this rewrite
+
+   The third field is the sentence under the name. Rows that connect say what
+   AMV does there; rows that do not say what the app is, and nothing more. */
+
+const AMV_APP_CATS = [
+  { id:'email', t:'Email', q:'email', apps:[
+    'Gmail|g|Reads, sorts and drafts your email. You choose what AMV may do.',
+    'Outlook and Hotmail|ms|Mail across your Microsoft account, read and drafted.',
+    'Mail worldwide|mail|Any provider that speaks IMAP, in 22 countries. Pick yours from the list.',
+    'Yahoo Mail|mail:yahoo|', 'iCloud Mail|mail:icloud|', 'AOL Mail|mail:aol|', 'Zoho Mail|mail:zoho|',
+    'Fastmail|mail:fastmail|', 'GMX|mail:gmx|', 'WEB.DE|mail:webde|', 'mail.com|mail:mailcom|',
+    'Yandex Mail|mail:yandex|', 'Mail.ru|mail:mailru|', 'QQ Mail|mail:qq|', 'NetEase 163 Mail|mail:netease163|',
+    'Naver Mail|mail:naver|', 'Daum Mail|mail:daum|', 'Yahoo! Japan Mail|mail:yahoojp|', 'Rediffmail|mail:rediff|',
+    'UOL Mail|mail:uol|', 'Seznam.cz|mail:seznam|', 'WP.pl Poczta|mail:wppl|', 'Libero Mail|mail:libero|',
+    'Orange Mail|mail:orange|', 'T-Online|mail:tonline|', 'BT Mail|mail:bt|', 'Xfinity Mail|mail:comcast|',
+    'Proton Mail||Encrypted email from Switzerland.', 'Tuta||Encrypted email and calendar.',
+    'HEY||Email with a screener for new senders.', 'Superhuman||A fast email app for Gmail and Outlook.',
+    'Spark Mail||Email for individuals and teams.', 'Front||Shared inboxes for teams.',
+  ]},
+  { id:'calendar', t:'Calendar &amp; scheduling', q:'calendar', apps:[
+    'Google Calendar|g|Your week, read and arranged. Events are added only when you allow it.',
+    'Outlook Calendar|ms|Your Microsoft calendar, read and arranged.',
+    'Apple iCloud Calendar|cal|Read-only, through the calendar’s shared link.',
+    'Any other calendar|cal|iCloud, Fastmail, Nextcloud, Yandex, Zoho, a university timetable - anything that publishes a link. Read-only: AMV sees your week and can never change it.',
+    'Fastmail Calendar|cal|', 'Proton Calendar|cal|', 'Zoho Calendar|cal|', 'Nextcloud Calendar|cal|', 'Yandex Calendar|cal|',
+    'Calendly||Booking links for meetings.', 'Cal.com||Open scheduling for meetings.',
+    'Microsoft Bookings||Appointments for Microsoft 365.', 'Doodle||Find a time that suits everyone.',
+    'Fantastical||A calendar app for Apple devices.', 'Notion Calendar||A calendar that works with Notion.',
+    'TimeTree||Shared calendars for families and groups.', 'Acuity Scheduling||Client booking and payments.',
+    'Setmore||Appointment booking for small businesses.', 'SimplyBook.me||Online booking for services.',
+  ]},
+  { id:'messaging', t:'Chat &amp; messaging', q:'messaging', apps:[
+    'Telegram|tg|Run AMV from Telegram and get your background work there - through a bot you own and can revoke.',
+    'Text messages (SMS)|sms|Run AMV from any phone by text - “check Project X”, “draft a reply”.',
+    'WhatsApp||Messages and calls.', 'Slack||Team channels and direct messages.', 'Microsoft Teams||Chat and meetings for work.',
+    'Discord||Servers, voice and chat.', 'Messenger||Chat from Facebook.', 'Zoom||Video meetings and chat.',
+    'Google Chat||Chat for Google Workspace.', 'Google Meet||Video meetings.', 'Signal||Private messaging.',
+    'WeChat||Messaging, payments and mini-programs.', 'LINE||Messaging across Japan, Taiwan and Thailand.',
+    'KakaoTalk||Korea’s messenger.', 'Viber||Messages and calls.', 'Zalo||Vietnam’s messenger.',
+    'Webex||Meetings and calling.', 'Snapchat||Photos and chat.', 'iMessage||Apple’s messaging.',
+    'Mattermost||Open-source team chat.', 'Rocket.Chat||Self-hosted team chat.', 'Element||Chat on the Matrix network.',
+  ]},
+  { id:'files', t:'Files &amp; documents', q:'storage', apps:[
+    'Google Drive|g|Finds and reads your files. Writes only to copies AMV makes.',
+    'Google Docs|g|Read through your Google connection.', 'Google Sheets|g|Read through your Google connection.',
+    'Google Slides|g|Read through your Google connection.',
+    'Excel and CSV|file|Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',
+    'Word|file|Reports, proposals and letters - written and exported, ready to edit.',
+    'PowerPoint|file|Describe a deck and AMV builds the slides - export the .pptx.',
+    'Dropbox||Cloud storage and sharing.', 'OneDrive||Microsoft’s cloud storage.', 'Box||Cloud content for business.',
+    'iCloud Drive||Apple’s cloud storage.', 'Evernote||Notes and web clips.', 'OneNote||Microsoft’s notebook.',
+    'Adobe Acrobat||PDFs: read, sign and edit.', 'Google Keep||Quick notes and lists.', 'Apple Notes||Notes on Apple devices.',
+    'Obsidian||Notes in plain files on your own computer.', 'Coda||Docs that work like apps.', 'Mega||Encrypted cloud storage.',
+    'pCloud||Cloud storage from Switzerland.', 'WPS Office||Documents, sheets and slides.', 'iLovePDF||PDF tools in the browser.',
+    'Smallpdf||PDF tools in the browser.', 'Scribd||Books, documents and audiobooks.',
+  ]},
+  { id:'money', t:'Bank &amp; money', q:'finance', apps:[
+    'Bank account|bank|Real balances and real transactions, read-only. The sign-in happens on your bank’s own page - AMV never sees your password and cannot move money. Morning money summary, unusual charges, low balance warnings and the money leak detector all read from this.',
+    'Prediction markets|predict|Kalshi or Polymarket, depending on where you are. AMV shows you the exact trade and places it only after you confirm those numbers - it can never place one on its own.',
+    'PayPal||Payments and transfers.', 'Stripe||Payments for businesses.', 'Wise||Money across currencies.',
+    'Revolut||Banking and cards.', 'Venmo||Payments between friends.', 'Cash App||Send, spend and save.', 'Zelle||Bank transfers in the US.',
+    'Coinbase||Buy and hold crypto.', 'Binance||Crypto exchange.', 'Kraken||Crypto exchange.', 'Robinhood||Stocks and crypto.',
+    'Interactive Brokers||Investing worldwide.', 'eToro||Social investing.', 'Trading 212||Stocks and ETFs.',
+    'Monzo||Banking in the UK.', 'N26||Mobile banking in Europe.', 'Nubank||Banking in Latin America.', 'Chime||Mobile banking in the US.',
+    'Klarna||Pay later.', 'Alipay||Payments across China.', 'WeChat Pay||Payments inside WeChat.', 'Paytm||Payments in India.',
+    'PhonePe||UPI payments in India.', 'Google Pay||Payments and passes.', 'M-Pesa||Mobile money in Africa.',
+    'Mercado Pago||Payments in Latin America.', 'GCash||Mobile wallet in the Philippines.',
+    'QuickBooks||Accounting for small businesses.', 'Xero||Online accounting.', 'FreshBooks||Invoicing and accounting.',
+    'Square||Payments and point of sale.', 'YNAB||Budgeting.', 'Splitwise||Share bills with friends.', 'Expensify||Receipts and expenses.',
+  ]},
+  { id:'dev', t:'Developer tools', q:'developer', apps:[
+    'GitHub|gh|Reviews PRs, opens issues, reads repos and ships fixes you approve.',
+    'VS Code|vscode|No editor extension yet. AMV works in your project folder through your connected computer, with an Undo for every change.',
+    'GitLab||Code, CI and issues.', 'Bitbucket||Git hosting for teams.', 'Linear||Issue tracking.', 'Jira||Issues and projects.',
+    'Vercel||Deploy web apps.', 'Netlify||Deploy web sites.', 'Supabase||Postgres, auth and storage.', 'Firebase||Backend for apps.',
+    'Postman||Build and test APIs.', 'Stack Overflow||Questions and answers for developers.', 'Docker Hub||Container images.',
+    'npm||JavaScript packages.', 'Replit||Code in the browser.', 'CodePen||Front-end playground.', 'Expo||Build React Native apps.',
+    'JetBrains IDEs||IntelliJ, PyCharm, WebStorm and the rest.', 'Xcode Cloud||Builds for Apple platforms.',
+  ]},
+  { id:'school', t:'School &amp; learning', q:'research', apps:[
+    'Canvas LMS|canvas|Reads what is due, makes your own copy of the doc an assignment points at, and shares it with your teacher when you say to.',
+    'Google Classroom|g|What is due, read-only. AMV cannot hand anything in.',
+    'Moodle||Courses and assignments.', 'Blackboard||Courses and assignments.', 'Schoology||Classes and coursework.',
+    'Brightspace||Courses from D2L.', 'PowerSchool||Grades and attendance.', 'Seesaw||Student portfolios.', 'ClassDojo||Class updates for families.',
+    'Remind||School messages.', 'Duolingo||Learn a language.', 'Khan Academy||Free lessons and practice.', 'Coursera||Online courses.',
+    'Udemy||Online courses.', 'edX||University courses online.', 'Quizlet||Flashcards and study sets.', 'Anki||Spaced-repetition flashcards.',
+    'Zotero||Research references.', 'Mendeley||Papers and references.', 'Google Scholar||Search academic papers.',
+    'Notability||Notes and annotation.', 'GoodNotes||Handwritten notes.', 'Photomath||Step-by-step maths.', 'Brainly||Homework help.',
+  ]},
+  { id:'jobs', t:'Jobs &amp; careers', q:'jobs', apps:[
+    'Job boards worldwide|jobs|StepStone, Reed, Pracuj, Naukri, Saramin, 51job, Rikunabi and more - AMV applies where a posting takes email, and prepares the rest.',
+    'LinkedIn||Profiles, jobs and your network.', 'Indeed||Job search.', 'Glassdoor||Jobs, salaries and reviews.',
+    'ZipRecruiter||Job search in the US.', 'Upwork||Freelance work.', 'Fiverr||Freelance services.', 'Monster||Job search.',
+    'Handshake||Jobs for students.', 'Wellfound||Jobs at startups.', 'Freelancer||Freelance projects.', 'Seek||Jobs in Australia and New Zealand.',
+    'Dice||Tech jobs.', 'Toptal||Freelance talent.', 'CareerBuilder||Job search.',
+  ]},
+  { id:'home', t:'Home &amp; everyday life', q:'iot', apps:[
+    'Everyday life where you live|everyday|Bills, renewals, fines, official letters and school dates - watched and dated for your country, not somebody else’s.',
+    'AMV around the world|coverage|Every country AMV works in, and what it can do there - mail, job boards, and where it can apply for you.',
+    'Google Home||Smart home from Google.', 'Amazon Alexa||Voice and smart home.', 'Apple Home||Smart home on Apple devices.',
+    'SmartThings||Samsung’s smart home.', 'Philips Hue||Smart lighting.', 'Google Nest||Thermostats, cameras and doorbells.',
+    'Ring||Doorbells and cameras.', 'Tesla||Your car, from your phone.', 'Home Assistant||Open-source home automation.',
+    'Sonos||Speakers around the house.', 'ecobee||Smart thermostats.', 'Tuya Smart||Smart devices.', 'Xiaomi Home||Xiaomi’s smart devices.',
+    'Arlo||Security cameras.', 'TP-Link Kasa||Smart plugs and lights.', 'iRobot||Robot vacuums.',
+  ]},
+  { id:'work', t:'Work &amp; projects', q:'productivity', apps:[
+    'Notion||Docs, wikis and projects.', 'Trello||Boards and cards.', 'Asana||Work management.', 'Monday.com||Work management.',
+    'ClickUp||Tasks, docs and goals.', 'Todoist||To-do lists.', 'Microsoft To Do||Tasks and lists.', 'Google Tasks||Tasks with Gmail and Calendar.',
+    'Basecamp||Projects and team communication.', 'Miro||Online whiteboard.', 'Confluence||Team wiki.', 'Wrike||Project management.',
+    'Smartsheet||Work management in sheets.', 'TickTick||Tasks and habits.', 'Things||Tasks on Apple devices.', 'Microsoft Planner||Team tasks.',
+    'Zoho Projects||Project management.', 'Loom||Video messages for work.', 'Craft||Documents and notes.',
+  ]},
+  { id:'design', t:'Design &amp; creativity', q:'design', apps:[
+    'Canva||Designs, social posts and presentations.', 'Figma||Interface design together.', 'Adobe Photoshop||Photo editing.',
+    'Adobe Illustrator||Vector graphics.', 'Adobe Express||Quick designs and social posts.', 'Adobe Lightroom||Photo editing and organising.',
+    'Procreate||Drawing on iPad.', 'Sketch||Design on the Mac.', 'Framer||Design and publish sites.', 'Webflow||Build websites visually.',
+    'Wix||Website builder.', 'Squarespace||Websites and online stores.', 'WordPress||Websites and blogs.', 'Behance||Creative portfolios.',
+    'Dribbble||Design inspiration.', 'Unsplash||Free photos.', 'Picsart||Photo and video editing.', 'VSCO||Photo editing.',
+    'Snapseed||Photo editing.', 'Affinity||Design, photo and publishing.', 'Blender||3D creation.', 'GIMP||Open-source image editing.',
+  ]},
+  { id:'video', t:'Video &amp; streaming', q:'media', apps:[
+    'CapCut||Video editing.', 'YouTube||Videos and channels.', 'TikTok||Short videos.', 'Netflix||Films and series.',
+    'Twitch||Live streams.', 'Vimeo||Video hosting.', 'Adobe Premiere Pro||Video editing.', 'DaVinci Resolve||Editing and colour.',
+    'Final Cut Pro||Video editing on the Mac.', 'iMovie||Video editing on Apple devices.', 'InShot||Video editing on phones.',
+    'Disney+||Films and series.', 'Prime Video||Films and series.', 'Max||Films and series.', 'Hulu||Films and series.',
+    'Crunchyroll||Anime.', 'Plex||Your media library.', 'OBS Studio||Recording and streaming.', 'Bilibili||Videos from China.',
+    'Riverside||Record podcasts and video.', 'StreamYard||Live streaming.',
+  ]},
+  { id:'music', t:'Music &amp; audio', q:'music', apps:[
+    'Spotify||Music and podcasts.', 'Apple Music||Music streaming.', 'YouTube Music||Music streaming.', 'SoundCloud||Music from creators.',
+    'Amazon Music||Music streaming.', 'Deezer||Music streaming.', 'Tidal||Music streaming.', 'Pandora||Radio and music.',
+    'Shazam||Name that song.', 'Audible||Audiobooks.', 'Apple Podcasts||Podcasts.', 'Pocket Casts||Podcasts.',
+    'JioSaavn||Music in India.', 'Anghami||Music in the Middle East.', 'Boomplay||Music in Africa.', 'NetEase Cloud Music||Music in China.',
+    'QQ Music||Music in China.', 'GarageBand||Make music on Apple devices.', 'Bandcamp||Music from artists.', 'Last.fm||Your listening history.',
+  ]},
+  { id:'social', t:'Social networks', q:'social', apps:[
+    'Instagram||Photos, reels and messages.', 'Facebook||Friends, groups and pages.', 'X||Posts and news.', 'Threads||Text posts from Instagram.',
+    'Reddit||Communities and discussion.', 'Pinterest||Ideas and boards.', 'Bluesky||An open social network.', 'Mastodon||Decentralised social network.',
+    'Tumblr||Blogs and communities.', 'Quora||Questions and answers.', 'VK||Russia’s social network.', 'Weibo||China’s microblog.',
+    'Xiaohongshu||Lifestyle posts from China.', 'Douyin||Short videos in China.', 'Nextdoor||Your neighbourhood.', 'BeReal||One photo a day.',
+  ]},
+  { id:'shop', t:'Shopping', q:'ecommerce', apps:[
+    'Amazon||Shopping.', 'eBay||Buy and sell.', 'AliExpress||Shopping from China.', 'Temu||Shopping.', 'Shein||Fashion.',
+    'Walmart||Shopping.', 'Etsy||Handmade and vintage.', 'Shopify||Run an online store.', 'Mercado Libre||Shopping in Latin America.',
+    'Flipkart||Shopping in India.', 'Rakuten||Shopping in Japan.', 'Taobao||Shopping in China.', 'JD.com||Shopping in China.',
+    'Shopee||Shopping in Southeast Asia.', 'Lazada||Shopping in Southeast Asia.', 'Coupang||Shopping in Korea.', 'Target||Shopping.',
+    'Costco||Warehouse shopping.', 'IKEA||Furniture and home.', 'Zalando||Fashion in Europe.', 'Best Buy||Electronics.',
+    'Instacart||Grocery delivery.', 'Vinted||Second-hand fashion.', 'Wayfair||Home goods.',
+  ]},
+  { id:'travel', t:'Travel', q:'travel', apps:[
+    'Airbnb||Stays and experiences.', 'Booking.com||Hotels and stays.', 'Expedia||Flights, hotels and cars.', 'Tripadvisor||Reviews and bookings.',
+    'Skyscanner||Compare flights.', 'Google Flights||Search flights.', 'Kayak||Compare travel.', 'Trip.com||Flights and hotels.',
+    'Agoda||Hotels in Asia.', 'Hotels.com||Hotels.', 'Hopper||Flight and hotel deals.', 'TripIt||Your itineraries in one place.',
+    'Trainline||Trains and buses in Europe.', 'Rome2Rio||Get anywhere, any way.', 'Hostelworld||Hostels.',
+  ]},
+  { id:'maps', t:'Maps &amp; rides', q:'maps', apps:[
+    'Google Maps||Maps and directions.', 'Apple Maps||Maps on Apple devices.', 'Waze||Driving directions.', 'Uber||Rides.', 'Lyft||Rides in North America.',
+    'Bolt||Rides in Europe and Africa.', 'Grab||Rides and food in Southeast Asia.', 'DiDi||Rides in China and Latin America.',
+    'Ola||Rides in India.', 'Gojek||Rides and payments in Indonesia.', 'Yandex Go||Rides and delivery.', 'Citymapper||Public transport.',
+    'Moovit||Public transport.', 'Lime||Scooters and bikes.', 'BlaBlaCar||Shared rides.',
+  ]},
+  { id:'food', t:'Food &amp; delivery', q:'food', apps:[
+    'Uber Eats||Food delivery.', 'DoorDash||Food delivery.', 'Deliveroo||Food delivery.', 'Just Eat||Food delivery.',
+    'Swiggy||Food delivery in India.', 'Zomato||Food delivery in India.', 'Meituan||Food delivery in China.', 'Rappi||Delivery in Latin America.',
+    'Glovo||Delivery in Europe and Africa.', 'Grubhub||Food delivery.', 'iFood||Delivery in Brazil.', 'foodpanda||Delivery in Asia.',
+    'Talabat||Delivery in the Middle East.', 'OpenTable||Restaurant bookings.', 'Yelp||Local reviews.',
+  ]},
+  { id:'health', t:'Health &amp; fitness', q:'health', apps:[
+    'Apple Health||Health data on iPhone.', 'Health Connect||Health data on Android.', 'Strava||Running and cycling.', 'Fitbit||Activity and sleep.',
+    'Garmin Connect||Training and activity.', 'Oura||Sleep and readiness.', 'WHOOP||Strain and recovery.', 'MyFitnessPal||Food and calories.',
+    'Samsung Health||Health on Galaxy devices.', 'Withings||Scales and health devices.', 'Peloton||Workouts.', 'Nike Run Club||Running.',
+    'Headspace||Meditation.', 'Calm||Sleep and meditation.', 'Flo||Cycle tracking.', 'Clue||Cycle tracking.', 'Zwift||Indoor cycling.',
+  ]},
+  { id:'news', t:'News &amp; reading', q:'news', apps:[
+    'Kindle||Books.', 'Goodreads||Books you read.', 'Medium||Articles and writers.', 'Substack||Newsletters.', 'Feedly||News feeds.',
+    'Flipboard||News magazine.', 'Apple News||News on Apple devices.', 'Google News||Top stories.', 'The New York Times||News.',
+    'BBC News||News.', 'Instapaper||Save articles for later.', 'Readwise||Highlights from what you read.', 'Wattpad||Stories.',
+    'Webtoon||Comics.', 'Inoreader||News feeds.',
+  ]},
+  { id:'biz', t:'Business &amp; sales', q:'crm', apps:[
+    'Salesforce||CRM.', 'HubSpot||CRM and marketing.', 'Pipedrive||Sales pipeline.', 'Zoho CRM||CRM.', 'Microsoft Dynamics 365||Business apps.',
+    'Close||Sales CRM.', 'Copper||CRM for Google Workspace.', 'Freshsales||CRM.', 'Odoo||Business apps.', 'SAP||Business software.',
+    'NetSuite||Business management.', 'Typeform||Forms and surveys.', 'Google Forms||Forms and surveys.', 'SurveyMonkey||Surveys.',
+    'Jotform||Online forms.', 'Tally||Simple forms.',
+  ]},
+  { id:'marketing', t:'Marketing', q:'marketing', apps:[
+    'Mailchimp||Email marketing.', 'Klaviyo||Email and SMS marketing.', 'Google Ads||Advertising.', 'Meta Ads Manager||Facebook and Instagram ads.',
+    'Google Analytics||Website analytics.', 'Semrush||SEO and marketing.', 'Ahrefs||SEO tools.', 'Hootsuite||Social media management.',
+    'Buffer||Schedule social posts.', 'Later||Plan social posts.', 'Brevo||Email and SMS campaigns.', 'Constant Contact||Email marketing.',
+    'LinkedIn Ads||Advertising on LinkedIn.', 'TikTok Ads||Advertising on TikTok.', 'Sprout Social||Social media management.',
+  ]},
+  { id:'support', t:'Customer support', q:'support', apps:[
+    'Zendesk||Support tickets.', 'Intercom||Customer messaging.', 'Freshdesk||Support tickets.', 'Help Scout||Shared inbox for support.',
+    'Gorgias||Support for online stores.', 'Zoho Desk||Support tickets.', 'Crisp||Live chat.', 'LiveChat||Live chat.',
+    'Tidio||Live chat for stores.', 'Trustpilot||Customer reviews.', 'Kustomer||Customer service platform.',
+  ]},
+  { id:'auto', t:'Automation', q:'automation', apps:[
+    'Zapier||Connect apps with automations.', 'Make||Visual automations.', 'IFTTT||Simple automations.', 'n8n||Open-source automation.',
+    'Power Automate||Automations for Microsoft 365.', 'Apple Shortcuts||Automations on Apple devices.', 'Tasker||Automation on Android.',
+    'Pipedream||Automations for developers.', 'Airtable Automations||Automations inside Airtable.',
+  ]},
+  { id:'data', t:'Data &amp; analytics', q:'database', apps:[
+    'Airtable||Spreadsheet-database.', 'Tableau||Dashboards and analytics.', 'Power BI||Microsoft’s analytics.', 'Looker Studio||Google’s dashboards.',
+    'Snowflake||Data warehouse.', 'BigQuery||Google’s data warehouse.', 'Databricks||Data and analytics platform.', 'MongoDB Atlas||Cloud database.',
+    'PostgreSQL||Open-source database.', 'MySQL||Open-source database.', 'Metabase||Open-source dashboards.', 'Mixpanel||Product analytics.',
+    'Amplitude||Product analytics.', 'Segment||Customer data.',
+  ]},
+  { id:'cloud', t:'Cloud &amp; hosting', q:'cloud', apps:[
+    'Amazon Web Services||Cloud computing.', 'Google Cloud||Cloud computing.', 'Microsoft Azure||Cloud computing.', 'Cloudflare||Network, security and hosting.',
+    'DigitalOcean||Cloud servers.', 'Heroku||Run apps in the cloud.', 'Render||Hosting for apps and sites.', 'Fly.io||Run apps near users.',
+    'Linode||Cloud servers.', 'Hetzner||Servers in Europe.', 'Alibaba Cloud||Cloud computing.', 'Oracle Cloud||Cloud computing.',
+  ]},
+  { id:'monitor', t:'Monitoring &amp; logs', q:'monitoring', apps:[
+    'Sentry||Errors and performance.', 'Datadog||Monitoring and logs.', 'Grafana||Dashboards and alerts.', 'New Relic||Observability.',
+    'PagerDuty||On-call and incidents.', 'Better Stack||Uptime and logs.', 'UptimeRobot||Uptime monitoring.', 'Splunk||Logs and security.',
+    'Prometheus||Open-source monitoring.', 'Opsgenie||Alerts and on-call.',
+  ]},
+  { id:'security', t:'Security', q:'security', apps:[
+    'Have I Been Pwned||Check if your email was in a breach.', 'VirusTotal||Scan files and links.', 'Okta||Sign-in for organisations.',
+    'Cloudflare Zero Trust||Secure access for teams.', 'Snyk||Find vulnerabilities in code.', 'CrowdStrike||Endpoint security.',
+    'Malwarebytes||Malware protection.', 'Norton||Device security.', 'Proton VPN||Private browsing.', 'NordVPN||VPN.',
+  ]},
+  { id:'legal', t:'Legal &amp; contracts', q:'legal', apps:[
+    'DocuSign||Sign documents.', 'Adobe Acrobat Sign||Sign documents.', 'Dropbox Sign||Sign documents.', 'PandaDoc||Proposals and contracts.',
+    'Ironclad||Contract management.', 'Clio||Practice management for lawyers.', 'LegalZoom||Legal services online.', 'Juro||Contracts for teams.',
+  ]},
+  { id:'hr', t:'People &amp; HR', q:'hr', apps:[
+    'Workday||HR and finance.', 'BambooHR||HR for small businesses.', 'Gusto||Payroll and benefits.', 'Rippling||HR, IT and payroll.',
+    'Deel||Hire and pay worldwide.', 'ADP||Payroll.', 'Personio||HR in Europe.', 'HiBob||HR platform.', 'Remote||Hire worldwide.',
+    'Greenhouse||Hiring.', 'Lever||Hiring.', 'Workable||Hiring.', 'Lattice||Performance and engagement.',
+  ]},
+  { id:'testing', t:'Testing &amp; QA', q:'testing', apps:[
+    'BrowserStack||Test on real browsers and devices.', 'Sauce Labs||Automated testing.', 'LambdaTest||Cross-browser testing.',
+    'Cypress Cloud||End-to-end test runs.', 'TestRail||Test case management.', 'Checkly||Monitoring with tests.', 'Percy||Visual testing.',
+  ]},
+  { id:'games', t:'Games', q:'games', apps:[
+    'Steam||PC games.', 'Xbox||Games and friends.', 'PlayStation||Games and friends.', 'Nintendo||Switch games and friends.',
+    'Roblox||Games and worlds.', 'Epic Games||Games and Fortnite.', 'Minecraft||Build and explore.', 'Chess.com||Play chess.',
+    'Lichess||Free chess.', 'Battle.net||Blizzard games.', 'EA app||EA games.', 'Riot Games||League of Legends and Valorant.',
+  ]},
+];
+
+/* Parsed once. A row is { name, how, desc, slug }. */
+let _APP_ROWS = null;
+function _appCats(){
+  if(_APP_ROWS) return _APP_ROWS;
+  _APP_ROWS = AMV_APP_CATS.map(c => ({ id:c.id, t:c.t, q:c.q, apps:c.apps.map(s => {
+    const [name, how, desc] = String(s).split('|');
+    return { name, how:how||'', desc:desc||'',
+             slug:String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) };
+  }) }));
+  return _APP_ROWS;
+}
+/* How many apps are listed, counted rather than claimed. */
+function _appCount(){ return _appCats().reduce((n, c) => n + c.apps.length, 0); }
+try{ window.AMV_APP_CATS = AMV_APP_CATS; window._appCats = _appCats; window._appCount = _appCount; }catch(e){}
 /* ============================================================
    AMV ENGINE - real working backbone for the dev/agent tools
    aiComplete(): single-shot AI text. runCode(): real execution.
@@ -39655,6 +39953,11 @@ function renderPlansView() {
       + '<p class="px-note" style="display:none">' + escH(T('Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.')) + '</p>'
       + '<div class="plans-compare-row"><button class="btn bs" id="pln-compare">'
         + escH(T('Compare all plans in detail')) + ' →</button></div>'
+      /* How the limits work, with the real numbers, before anybody pays. It
+         lived under the plan on the Spending screen, and went when Spending
+         stopped carrying plans - a page that explains its own limits sells
+         the plan, and one that hides them sells one month. */
+      + (typeof _usageShapeBand === 'function' ? _usageShapeBand() : '')
     + '</div></div>';
   on($('pln-compare'), 'click', () => {
     try { openPlanCompare(loadStr('amv_plan') || 'pro'); } catch (e) {}

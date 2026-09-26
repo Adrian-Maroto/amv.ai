@@ -1,4 +1,17 @@
-/* GIVING SOMEBODY ACCESS TO YOUR ACCOUNT, AND TAKING IT BACK.
+/* JOINING SOMEBODY'S FAMILY, AND NOTHING WIDER.
+
+   WHAT CHANGED. This suite used to test links of any kind - "read", "spend",
+   "send email as them". The owner removed access to someone else's account as
+   the security risk it is, and the server now refuses every invitation that is
+   not a family one (link_removed, 410). What is left of the link flow is the
+   family invitation, and every guarantee below still matters for it: only the
+   invited account can accept, a wrong code grants nothing, it expires, it is
+   used once. Revoking a link has no route any more - a family is ended with
+   /v1/family/remove and /v1/family/leave, which the family suite covers.
+
+   The original notes follow, because the reasoning is unchanged.
+
+   GIVING SOMEBODY ACCESS TO YOUR ACCOUNT, AND TAKING IT BACK.
 
    A link is one person reading another person's account - a parent and a
    teenager, somebody managing a relative's affairs. It is the only feature that
@@ -69,7 +82,7 @@ const signup = async (env, email) =>
 
 /* An invitation waiting for the OWNER to approve, exactly as the invite route
    leaves one. */
-async function invitation(env, { code = '123456', expiresAt = Date.now() + 15 * 60000, scopes = ['read'] } = {}) {
+async function invitation(env, { code = '123456', expiresAt = Date.now() + 15 * 60000, scopes = ['family'] } = {}) {
   const inv = { id: 'inv1', owner: OWNER, grantee: GRANTEE, scopes, code,
                 createdAt: Date.now(), expiresAt, attempts: 0, status: 'pending' };
   await W.DB.put(env, 'link', OWNER + '|inv1', inv);
@@ -164,98 +177,31 @@ section('And it can only be used once');
   ok((await linksOf(env, OWNER)).length === 1, 'and there is still exactly one link', (await linksOf(env, OWNER)).length);
 }
 
-section('Revoking ends it on BOTH sides');
+section('An invitation for anything but a family is refused, even one already waiting');
 {
-  /* A link marked inactive for the owner and still active for the grantee is
-     still a link. Whichever record the access check happens to read is the one
-     that decides, so both have to say the same thing. */
+  /* Sent before access to other accounts was removed, correct code, not
+     expired - and still refused, because what it would grant no longer
+     exists. It is marked refused, so it cannot be tried again later. */
   const env = mkEnv();
   const owner = await signup(env, OWNER);
-  const grantee = await signup(env, GRANTEE);
-  await invitation(env);
-  await req(env, '/v1/link/accept', { id: 'inv1', code: '123456' }, owner);
-
-  const id = (await linksOf(env, OWNER))[0].id;
-  const d = await jsonOf(await req(env, '/v1/link/revoke', { id }, owner));
-  ok(!d.error, 'the owner revokes it', d.error || 'ok');
-  ok((await activeLink(env, OWNER)).length === 0, 'it is inactive for the owner', 0);
-  ok((await activeLink(env, GRANTEE)).length === 0, 'AND inactive for the person who had access', 0);
+  await signup(env, GRANTEE);
+  await invitation(env, { scopes: ['read', 'spend'] });
+  const r = await req(env, '/v1/link/accept', { id: 'inv1', code: '123456' }, owner);
+  const d = await jsonOf(r);
+  ok(r.status === 410 && d.code === 'link_removed', 'it is refused as removed', r.status + ' ' + d.code);
+  ok((await linksOf(env, OWNER)).length === 0 && (await linksOf(env, GRANTEE)).length === 0, 'and neither side holds a link', 0);
+  const inv = await W.DB.get(env, 'link', OWNER + '|inv1');
+  ok(inv && inv.status === 'refused', 'and it cannot be tried again', inv && inv.status);
 }
 
-section('Either side can end it, and nobody else can');
+section('There is no route that lists or revokes other-account links any more');
 {
   const env = mkEnv();
   const owner = await signup(env, OWNER);
-  const grantee = await signup(env, GRANTEE);
-  const stranger = await signup(env, STRANGER);
-  await invitation(env);
-  await req(env, '/v1/link/accept', { id: 'inv1', code: '123456' }, owner);
-  const id = (await linksOf(env, OWNER))[0].id;
-
-  /* THE REFUSAL HAS TO BE THE RIGHT REFUSAL.
-
-     This asserted only that a stranger got AN error, and it passed for a
-     reason nobody intended: `linkRevoke` loads the links record belonging to
-     the CALLER, so a stranger's record does not contain this link at all and
-     the route answers 404 "no such link" long before the ownership check. The
-     403 branch below it - `link.owner !== user.email && link.grantee !==
-     user.email` - was never once reached by a test, and deleting it broke
-     nothing in the repository.
-
-     Both refusals are wanted, and they are different guarantees: one says the
-     link is not in your record, the other says it is but it is not yours. The
-     second is the one that matters if a record ever carries an item it should
-     not - a restore, a sync merge, a half-finished write - and it is the only
-     thing standing between that and somebody cancelling a stranger's access.
-     So the status is pinned here, and the ownership branch is driven directly
-     below. */
-  const nosyRes = await req(env, '/v1/link/revoke', { id }, stranger);
-  const nosy = await jsonOf(nosyRes);
-  ok(!!nosy.error, 'a stranger cannot revoke somebody else’s link', nosy.error);
-  ok(nosyRes.status === 404, 'refused because it is not in their record at all', nosyRes.status);
-  ok((await activeLink(env, OWNER)).length === 1, 'and it is still live', 1);
-
-  const byGrantee = await jsonOf(await req(env, '/v1/link/revoke', { id }, grantee));
-  ok(!byGrantee.error, 'the person who was given access can hand it back', byGrantee.error || 'ok');
-  ok((await activeLink(env, OWNER)).length === 0, 'and that ends it', 0);
-}
-
-section('A link sitting in your record that names other people is still not yours');
-{
-  /* The ownership branch of linkRevoke, driven for the first time.
-
-     It is defence in depth rather than a live hole: the record is fetched by
-     the caller's own key, so in ordinary operation an item naming two other
-     accounts cannot be there. Records do get written by more than one path
-     though - accepting an invitation, revoking from either side, a restore,
-     a sync merge - and this is the guard that decides what happens when one of
-     them puts something where it does not belong.
-
-     A guard whose whole job is to hold when an invariant has already failed
-     cannot be tested by relying on the invariant, so the item is planted
-     directly. Without this, the branch reads as dead code to anybody tidying
-     up - which is exactly how it would be removed. */
-  const env = mkEnv();
-  const owner = await signup(env, OWNER);
-  const grantee = await signup(env, GRANTEE);
-  const stranger = await signup(env, STRANGER);
-  await invitation(env);
-  await req(env, '/v1/link/accept', { id: 'inv1', code: '123456' }, owner);
-  const id = (await linksOf(env, OWNER))[0].id;
-
-  /* Put the owner's link into the STRANGER's own record, so the lookup finds
-     it and only the ownership check can refuse. */
-  const planted = { id, owner: OWNER, grantee: GRANTEE, scopes: ['read'], active: true };
-  await W.DB.put(env, 'links', STRANGER, { items: [planted] });
-
-  const res = await req(env, '/v1/link/revoke', { id }, stranger);
-  const body = await jsonOf(res);
-  ok(res.status === 403, 'the third party is refused with 403, not found-but-allowed', res.status);
-  ok(/not yours/i.test(body.error || ''), 'and told it is not theirs', body.error);
-  ok((await activeLink(env, OWNER)).length === 1,
-     'the owner still has access, so the refusal actually refused', 1);
-  ok((await activeLink(env, GRANTEE)).length === 1,
-     'and so does the person it was granted to', 1);
+  for (const path of ['/v1/link/list', '/v1/link/revoke']) {
+    const r = await req(env, path, { id: 'x' }, owner);
+    ok(r.status === 404, path + ' is gone', r.status);
+  }
 }
 
 section('Taking a page down really stops serving it');
@@ -346,7 +292,7 @@ section('None of it works signed out');
   const env = mkEnv();
   await signup(env, OWNER);
   await invitation(env);
-  for (const path of ['/v1/link/accept', '/v1/link/revoke', '/deploy/delete', '/api/handoff/act']) {
+  for (const path of ['/v1/link/accept', '/deploy/delete', '/api/handoff/act']) {
     const r = await req(env, path, { id: 'inv1', code: '123456', slug: 'mypage' });
     ok(r.status === 401, path + ' needs an account', r.status);
   }

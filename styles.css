@@ -15661,3 +15661,19 @@ iframe.amv-sbx{
 #cv.cv-home .chome-greet{
   animation:amvRise .6s cubic-bezier(.2,.9,.25,1) .1s both;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LAYER A262 - Integrations: one format for every topic
+   Every topic is the Email section's shape - heading, rows, See all - and a
+   row is either one AMV connects to (Connect) or one it cannot yet (Notify
+   me). The letter tile stands in for a logo; Show all opens the rest of a
+   topic in place. Topics below the screen are skipped until near it, the
+   same measure that took the lag out of Crew.
+   ══════════════════════════════════════════════════════════════════════ */
+.int-mono{ font-family:var(--fdisplay); font-weight:600; font-size:var(--t-md); color:var(--tx); line-height:1; }
+.int-notify .int-name{ color:var(--tx); }
+.int-onlist{ display:inline-flex; align-items:center; min-height:44px; font-size:var(--t-sm); font-weight:600; color:var(--grn-txt); white-space:nowrap; }
+.int-more{ display:flex; justify-content:center; margin-top:var(--sp-3); }
+.int-more .btn{ min-height:44px; }
+.int-legend-n{ display:inline-flex; align-items:center; padding:2px var(--sp-2); border:1px solid var(--bd); border-radius:var(--r-pill); font-size:var(--t-xs); font-weight:600; color:var(--mu); white-space:nowrap; }
+.vi-conn #int-catalog > .ss2{ content-visibility:auto; contain-intrinsic-size:auto 640px; }

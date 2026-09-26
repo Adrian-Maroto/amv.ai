@@ -420,10 +420,12 @@ section('9. The round after that one');
       Object.keys(_cdirTried).forEach(k => delete _cdirTried[k]);
     } catch (e) {}
     setTab('integrations'); await new Promise(r => setTimeout(r, 2600));
-    const doors = [...document.querySelectorAll('.cdir-topic')];
+    /* Every topic is now a section of the Email shape ending in its own door,
+       so a door is named by the heading of the section it closes. */
+    const doors = [...document.querySelectorAll('#int-catalog .int-seeall [data-dact="cdirAll"]')];
     const overview = { cats: doors.length,
       queries: doors.map(d => d.dataset.darg),
-      named: doors.filter(d => (d.querySelector('.cdir-topic-t') || {}).textContent).length,
+      named: doors.filter(d => ((d.closest('.ss2') || {}).querySelector || (() => null)).call(d.closest('.ss2'), 'h3')).length,
       tiles: document.querySelectorAll('.cdir-tile').length,
       rows: document.querySelectorAll('.cdir-row').length };
     /* And then behind one of them, which is where the tiles went. */
@@ -433,19 +435,14 @@ section('9. The round after that one');
       full: !!document.querySelector('.cdir-full'),
       behind: document.querySelectorAll('.cdir-full .cdir-tile').length });
   });
-  /* Thirty now, and the number is worth keeping exact rather than loosening to
-     a minimum. The reported fault was fifteen where twenty were asked for, and
-     an assertion that only checks "enough" cannot notice the next time rows go
-     missing - which is precisely how that fault arrived. It moves when the
-     catalogue is deliberately grown, and that is the point. */
-  /* TWENTY-FIVE, and the number is worth keeping exact rather than loosening
+  /* THIRTY-TWO, and the number is worth keeping exact rather than loosening
      to a minimum. The reported fault was fifteen where twenty were asked for,
      and an assertion that only checks "enough" cannot notice the next time
      topics go missing - which is precisely how that fault arrived. It moved
-     from twenty-six to twenty-five when `finance` gained a hand-built section
-     of its own, and it moves again when the catalogue is deliberately grown.
-     That is the point of pinning it. */
-  ok(dir.cats === 25, 'twenty-five registry topics, not fifteen', String(dir.cats));
+     to thirty-two when the page became one list of app topics, each ending in
+     its own door, and it moves again only when that list is deliberately
+     grown. That is the point of pinning it. */
+  ok(dir.cats === 32, 'thirty-two topics, not fifteen', String(dir.cats));
   ok(dir.named === dir.cats, 'every one of them is named', dir.named + ' of ' + dir.cats);
   ok(dir.queries.every(Boolean) && new Set(dir.queries).size === dir.cats,
      'and carries its own query, so no heading promises a search it does not run',

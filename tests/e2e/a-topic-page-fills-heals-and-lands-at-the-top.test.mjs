@@ -118,7 +118,7 @@ section('The overview asks for nothing, which is what the rows used to do wrong'
      'arriving at Connectors makes no registry request at all - thirty at once was the defect this file was named for',
      String(calls));
   const r = await page.evaluate(() => ({
-    doors: document.querySelectorAll('.cdir-topic').length,
+    doors: document.querySelectorAll('.int-seeall [data-dact="cdirAll"]').length,
     tiles: document.querySelectorAll('.cdir-tile').length,
   }));
   ok(r.doors >= 20, 'and there is still a topic for everything', String(r.doors));
@@ -144,7 +144,7 @@ section('An unasked question is not answered "nothing found"');
      screen until the answer lands - which on a fast connection is the blink
      somebody sees and cannot describe afterwards. */
   let sawNothingMatches = false;
-  await page.evaluate(() => { document.querySelector('.cdir-topic').click(); });
+  await page.evaluate(() => { document.querySelector('.int-seeall [data-dact="cdirAll"]').click(); });
   for (let i = 0; i < 20; i++) {
     const t = await page.evaluate(() => (document.querySelector('.cdir') || {}).textContent || '');
     if (/Nothing in the directory matches/i.test(t)) sawNothingMatches = true;
@@ -178,7 +178,7 @@ section('A door opens a page that fills to about a hundred, in two trips');
      Which door, read off the door itself, so the assertions compare against
      the topic that was actually pressed rather than a name written here. */
   const opened = await page.evaluate(() => {
-    const d = [...document.querySelectorAll('.cdir-topic')][1];
+    const d = [...document.querySelectorAll('.int-seeall [data-dact="cdirAll"]')][1];
     d.click();
     return d.dataset.darg;
   });
@@ -261,7 +261,7 @@ section('A door pressed from the bottom of the page lands at the top of the next
     const sv = document.querySelector('#vc .sv');
     if (sv) sv.scrollTop = 1400;
     const before = sv ? sv.scrollTop : -1;
-    const doors = [...document.querySelectorAll('.cdir-topic')];
+    const doors = [...document.querySelectorAll('.int-seeall [data-dact="cdirAll"]')];
     doors[doors.length - 1].click();
     await new Promise(res => setTimeout(res, 1400));
     const sv2 = document.querySelector('#vc .sv');
@@ -282,7 +282,7 @@ section('And going back does the same');
     await new Promise(res => setTimeout(res, 900));
     const sv2 = document.querySelector('#vc .sv');
     return { after: sv2 ? sv2.scrollTop : -1,
-             doors: document.querySelectorAll('.cdir-topic').length };
+             doors: document.querySelectorAll('.int-seeall [data-dact="cdirAll"]').length };
   });
   ok(r.doors >= 20 && r.after === 0, 'back lands on the topics, at the top', JSON.stringify(r));
 }
@@ -324,7 +324,7 @@ section('A refusal that outlasts every retry is reported, not hidden');
      measured from boot had already closed before anything asked for anything,
      and the section passed by failing nothing. */
   failUntil = Date.now() + 2600;
-  await p2.evaluate(() => { document.querySelector('.cdir-topic').click(); });
+  await p2.evaluate(() => { document.querySelector('.int-seeall [data-dact="cdirAll"]').click(); });
 
   /* Sampled repeatedly rather than at one moment: the failure lands, the retry
      fires 1.2s later, and a single snapshot can miss the window between them -

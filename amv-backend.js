@@ -8681,49 +8681,14 @@ async function linkAccept(request, env){
 
 /* List / revoke links (/v1/link/list, /v1/link/revoke). Either side can end a
    link with no negotiation, and it dies for both immediately. */
-async function linkList(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'sign in first' }, 401);
-  /* Links that were not a family are switched off as they are found - under
-     the lock, on this side; the other side's copy goes the next time that
-     account lists. Nothing anywhere acts on them, and nothing lists them. */
-  let rec = (await DB.get(env, 'links', user.email)) || { items: [] };
-  if((rec.items || []).some(l => l && l.active && !_isFamilyLink(l))){
-    await _withKind(env, 'links', user.email, (r) => {
-      if(!r) return;
-      (r.items || []).forEach(l => { if(l && l.active && !_isFamilyLink(l)){ l.active = false; l.revokedAt = Date.now(); l.revokedBy = 'removed'; } });
-    }, { items: [] });
-    rec = (await DB.get(env, 'links', user.email)) || { items: [] };
-  }
-  const items = (rec.items || []).filter(l => l.active && _isFamilyLink(l));
-  return json({ ok:true,
-    iCanAccess: items.filter(l => l.grantee === user.email).map(l => ({ id:l.id, account:l.owner, scopes:l.scopes })),
-    canAccessMe: items.filter(l => l.owner === user.email).map(l => ({ id:l.id, account:l.grantee, scopes:l.scopes })) });
-}
-async function linkRevoke(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'sign in first' }, 401);
-  const body = await request.json().catch(() => ({}));
-  const id = String(body.id || '');
-  const rec = (await DB.get(env, 'links', user.email)) || { items: [] };
-  const link = (rec.items || []).find(l => l.id === id);
-  if(!link) return json({ error:'no such link' }, 404);
-  if(link.owner !== user.email && link.grantee !== user.email)
-    return json({ error:'that link is not yours' }, 403);
-  // deactivate on BOTH sides so access really stops
-  /* Both sides, each under the lock. These records are written by accepting
-     an invitation as well as by revoking one, and a revocation that loses the
-     race leaves access switched ON for somebody who has been told it is off -
-     which is the one direction this must never fail in. */
-  for(const who of [link.owner, link.grantee]){
-    await _withKind(env, 'links', who, (r) => {
-      if(!r) return;
-      (r.items || []).forEach(l => { if(l.id === id){ l.active = false; l.revokedAt = Date.now(); l.revokedBy = user.email; } });
-    }, { items: [] });
-  }
-  audit(env, 'link_revoked', { by:user.email, link:id });
-  return json({ ok:true, revoked:true });
-}
+/* NO LIST AND NO REVOKE FOR LINKS ANY MORE.
+
+   Both served the "access to someone else's account" screen, which the owner
+   removed as a security risk. Nothing in the product calls either, and a route
+   nothing asks for is a door somebody else finds first. A link record that is
+   left over grants nothing - no route ever consulted one to permit an action -
+   and is erased with the account like everything else. A family is ended with
+   /v1/family/remove or /v1/family/leave. */
 
 const ADULT_AGE = 18;
 
@@ -10592,6 +10557,12 @@ const BACKUP_PREFIXES = [
    exist - which is also why erasing the creator takes them with it. */
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
+  /* Which family invitations are waiting for somebody - ids only, gone in a
+     day. The invitations themselves ('link:') carry the decision; this is the
+     index a child's device reads to find them. Restored, it would point at
+     invitations that expired long ago; not restored, the next invitation
+     simply writes a fresh one. */
+  'faminv:',
   /* A cache of other people's avatars. Restoring it would restore
      megabytes of pictures AMV does not own and that re-fetch themselves in a
      fortnight anyway. */
@@ -12205,8 +12176,6 @@ async function _route(request, env, ctx) {
     case '/v1/family/decline':       return familyDecline(request, env);
     case '/v1/link/invite':          return linkInvite(request, env);
     case '/v1/link/accept':          return linkAccept(request, env);
-    case '/v1/link/list':            return linkList(request, env);
-    case '/v1/link/revoke':          return linkRevoke(request, env);
     case '/v1/consent':              return consentRecord(request, env);
     case '/v1/subscribe':            return stripeSubscribe(request, env);
     case '/v1/fraud/record':         return fraudRecord(request, env);
@@ -24992,6 +24961,30 @@ async function _growthSeries(env, kind, days){
   return out;
 }
 
+/* NOTIFY ME, COUNTED. Each press is a waitlist entry keyed
+   waitlist:app-<slug>:<email>, so a request is one per person per app and the
+   count is people, not presses. Read in pages and bounded: past the ceiling
+   the counts are a sample, and `complete` says so rather than letting a
+   partial tally pass for the whole one. */
+async function _appRequestCounts(env) {
+  const counts = {};
+  let cursor, pages = 0, complete = true;
+  try {
+    do {
+      const page = await env.AMV_KV.list({ prefix: 'waitlist:app-', cursor, limit: 1000 });
+      for (const k of page.keys) {
+        const slug = String(k.name).slice('waitlist:app-'.length).split(':')[0];
+        if (slug) counts[slug] = (counts[slug] || 0) + 1;
+      }
+      cursor = page.list_complete ? null : page.cursor;
+      pages++;
+      if (cursor && pages >= 10) { complete = false; break; }
+    } while (cursor);
+  } catch (e) { return { top: [], complete: false, error: 'could not read the waitlist' }; }
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 40).map(([app, people]) => ({ app, people }));
+  return { top, complete };
+}
+
 async function adminStats(request, env) {
   /* AMV-052: through the SAME gate as every other admin route. This was a bare
      token comparison with no rate limit, so three of the sixteen admin routes
@@ -25165,10 +25158,15 @@ async function adminStats(request, env) {
   const conversionBasis = popAccounts > 0 ? 'accounts' : 'entitlements';
   const conversionPct = countedAccounts > 0 ? +((paying / countedAccounts) * 100).toFixed(1) : 0;
   const arpu = paying > 0 ? +(mrr / paying).toFixed(2) : 0;
+  const appRequests = await _appRequestCounts(env);
 
   return json({
     ok: true,
     generatedAt: Date.now(),
+    /* Which apps people pressed Notify me on, most asked-for first. The
+       Integrations page promises the most-asked-for are connected next; this
+       is the list that promise is kept from. */
+    appRequests,
     spend: { today: +gSpend.toFixed(2), cap: gCap, pctOfCap: +(gSpend / gCap * 100).toFixed(1), killed },
     users: { total: truncated ? popTotal : users.length, paying, byPlan: plans,
              conversionPct, conversionBasis, accounts: countedAccounts, activeToday },
