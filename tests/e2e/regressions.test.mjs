@@ -542,8 +542,23 @@ await page.setViewportSize({ width: 1280, height: 800 });
    (no text stuck in the previous language - the exact bug reported repeatedly). */
 section('Language: switching translates nav and restores cleanly');
 
+/* An earlier section replaces window.fetch with a stub that answers every
+   request with the same small object, and never puts it back. The Arabic pack
+   is a real request now, so the real fetch is restored first - through a
+   fresh frame's, which the stub never touched. */
+await page.evaluate(() => {
+  window.__stubbedFetch = window.fetch;
+  const f = document.createElement('iframe'); f.style.display = 'none'; document.body.appendChild(f);
+  window.fetch = f.contentWindow.fetch.bind(window); f.remove();
+});
 await page.evaluate(() => { saveStr('amv_lang','ar'); if(typeof _translateUI==='function') _translateUI(); });
-await new Promise(r => setTimeout(r, 200));
+/* The Arabic pack is fetched when Arabic is chosen (it no longer ships inside
+   the page), so this waits for it to arrive - bounded, so a pack that never
+   comes fails the check below rather than hanging it. */
+await page.waitForFunction(() => typeof _i18nPackHave !== 'function' || _i18nPackHave('ar'), null, { timeout: 8000 }).catch(() => {});
+await new Promise(r => setTimeout(r, 300));
+/* And the stub goes back: the sections after this one were written against it. */
+await page.evaluate(() => { if (window.__stubbedFetch) window.fetch = window.__stubbedFetch; });
 const ar = await page.evaluate(() => {
   const dir = document.documentElement.dir;
   const navArabic = [...document.querySelectorAll('.snb[data-tab]')].filter(b => /[\u0600-\u06FF]/.test(b.textContent)).length;

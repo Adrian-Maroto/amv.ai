@@ -38,13 +38,14 @@ const { page, errors } = app;
 await page.evaluate(() => document.getElementById('cookie-consent-banner')?.remove());
 
 const packs = [];
-let failPacks = false;
+let failPacks = false, htmlForPacks = false;
 /* On the CONTEXT, not the page: the service worker makes this request, and a
    page-level route never sees it - the first run of this suite counted zero
    requests while the pack arrived perfectly well. */
 await page.context().route('**/i18n/*.json', (route) => {
   packs.push(new URL(route.request().url()).pathname);
   if (failPacks) return route.fulfill({ status: 503, body: 'down' });
+  if (htmlForPacks) return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"sites":[]}' });
   return route.continue();
 });
 /* The machine-translation fallback only runs with a backend, and this harness
@@ -131,6 +132,22 @@ section('A pack that cannot be fetched leaves English, says so once, and recover
   });
   ok(back.have === true && back.settings !== 'Settings', 'when the connection returns, French arrives', back);
   await page.evaluate(() => { saveStr('amv_lang', 'en'); _translateUI(); });
+}
+
+section('A 200 that is not a dictionary is not a pack');
+{
+  /* Valid JSON, status 200, and not a translation pack - a proxy, a captive
+     portal, or a stub answering every request alike (one suite here did
+     exactly that, and the language was marked "loaded" with nothing in it,
+     which stops it ever being fetched again). HTML would already fail to
+     parse; this is the case only the shape check catches. */
+  htmlForPacks = true;
+  const r = await page.evaluate(async () => {
+    const ok = await _i18nLoadPack('de');
+    return { ok, have: _i18nPackHave('de') };
+  });
+  htmlForPacks = false;
+  ok(r.ok === false && r.have === false, 'it is treated as a failure, so it will be fetched again', r);
 }
 
 section('Nothing threw');

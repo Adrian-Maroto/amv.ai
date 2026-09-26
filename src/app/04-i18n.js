@@ -585,9 +585,17 @@ function _i18nLoadPack(code){
   if(was && typeof was.then === 'function') return was;
   if(typeof was === 'number' && Date.now() - was < _I18N_RETRY_MS) return Promise.resolve(false);
   if(!/^[a-z]{2,3}$/.test(String(code)) || !LANGS[code]) return Promise.resolve(false);
-  const p = fetch('/i18n/' + code + '.json', { credentials: 'omit' })
+  /* With a deadline, like every other request here: a stalled pack must not
+     leave the promise pending for ever and the interface waiting on it. */
+  const p = fetchDeadline('/i18n/' + code + '.json', { credentials: 'omit' }, 15000)
     .then(r => { if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(pack => {
+      /* Only a dictionary is a dictionary. A host that answers a missing file
+         with the page, or anything else that returns 200 with the wrong body,
+         must not be merged and marked done - that would leave the language
+         "loaded" with nothing in it and never try again. */
+      const vals = (pack && typeof pack === 'object' && !Array.isArray(pack)) ? Object.values(pack) : [];
+      if(vals.length < 10 || !vals.every(v => typeof v === 'string')) throw new Error('not a translation pack');
       for(const k in pack){
         if(!Object.prototype.hasOwnProperty.call(pack, k)) continue;
         const e = Object.prototype.hasOwnProperty.call(I18N, k) ? I18N[k] : (I18N[k] = {});
