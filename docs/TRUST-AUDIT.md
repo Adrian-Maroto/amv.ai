@@ -1327,3 +1327,15 @@ round twenty-four's rewrite; now asserted, with the network refused by
 This closes the audit's list except **AMV-AUD-001, 005 and 015**, which wait on
 the owner: an isolated execution origin (001, and 015 inside it) and the
 environment policy for commands (005).
+
+## Round twenty-nine - the chat consent gate, measured instead of assumed
+
+Listed earlier as unmeasured: whether anything notices if the approval step in
+the chat tool loop is switched off (`if(false && ... _toolNeedsConsent(...))`),
+since `tool-consent-coverage` only reads the source.
+
+Measured: `say-it-in-chat-and-it-happens` catches it four times - "they were
+asked first", "told how often it will run", "shown exactly what it will do",
+"they were asked" - because it drives a real streamed tool call through the real
+Worker and the real dialog. `tool-consent-coverage` passes with the gate off, as
+a source reading must. The gap was already closed; the list was wrong.

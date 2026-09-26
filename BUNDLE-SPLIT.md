@@ -119,3 +119,37 @@ Not the 17%. It would be worth doing if any of these became true:
 prerequisite refactor is the actual work - it touches the boot path of a
 shipping product to save bytes nobody is currently waiting on. Revisit when one
 of the three conditions above is true.
+
+## 2026-09-26 - the owner said do it; measured again first, and it is still no
+
+The owner approved splitting the bundle. Before touching the boot path I measured
+what a per-screen split could actually move, with a parser rather than a
+reference count:
+
+- every top-level function each screen's entry point (`renderCrewView`,
+  `renderAdminView`, ...) can reach, parsed with acorn across all modules;
+- then pruned of anything referenced from ANY other code - another module, load
+  time code, the HTML shell, or any string (which covers `window.x`,
+  `data-dact="x"` and names built into markup), iterated to a fixed point.
+
+```
+crew 55KB   admin 43KB   team 36KB   billing 35KB   market 31KB   tasks 19KB
+help 11KB   upgrade 9KB  plans 7KB   apps 6KB   integrations 5KB   handoff 5KB
+settings 4KB   memory 4KB   prompts 3KB   build 1KB          (raw source, comments included)
+total ~279KB raw of 2,806KB source  ->  roughly 35KB gzipped, ~6% of the page
+```
+
+Settings defers 4KB because its panes are reached from a dozen places; Build 1KB
+for the same reason. The screens are not separable at their current seams, and
+making them separable is the refactor this document already described as the real
+work.
+
+**What was done instead:** the translations (`04-i18n.js`, the largest single
+module on the wire) now ship one language at a time - 44KB gzipped off every
+page, with no screen able to fail to load because of it. `index.html` is 577KB
+gzipped, from 621KB.
+
+**Still the recommendation: do not defer screens.** ~35KB is not worth a failure
+mode where a screen's code does not arrive. Revisit if the modules are
+disentangled for their own sake, and re-run the measurement then - the script is
+recorded in the 2026-09-26 session notes and takes seconds.
