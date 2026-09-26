@@ -4003,7 +4003,8 @@ const _TOOL_DEFAULTS = {
      or the other - and it caught this one within the hour of it being added,
      which is the entire point of that check. */
   /* `queue` is what somebody typed while a build was running and `stop` is the
-     flag that ends the current one. Both belong to the turn in progress and to
+     flag that ends the current one (`ctrl` cancels its request in the air). All
+     three belong to the turn in progress and to
      nothing else: a queued message carried into a new session would be sent at
      work it was never about, and a `stop` left true would end the next build
      the moment it started, looking exactly like a product that does not work.
@@ -4012,7 +4013,7 @@ const _TOOL_DEFAULTS = {
   dev: { log:[], project:{}, activePath:'', curCode:'', curLang:'', curRun:null,
          deploySlug:'', deployedOnce:false, lastHTML:'', name:'', files:[],
          handoff:null, dirHandle:null, usingWorkspace:false, busy:false,
-         compact:null, atHome:false, queue:[], stop:false },
+         compact:null, atHome:false, queue:[], stop:false, ctrl:null },
   /* `atHome` is the same view intent Dev declares above and Studio below, and
      Lab is the one of the three that did not have it until the sidebar's Build
      entry needed a way home that does not delete somebody's code. A new session
