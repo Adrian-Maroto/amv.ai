@@ -86,19 +86,21 @@ section('Family pane');
 await page.evaluate(() => { S.settingsPane = 'family'; renderSetPane(); });
 const fam = await audit('.set-pane');
 ok(fam.unnamed.length === 0, 'every button has an accessible name', fam.unnamed);
-ok(fam.unlabelled.length === 0, 'every field has a label, including the permission checkboxes', fam.unlabelled);
+ok(fam.unlabelled.length === 0, 'every field has a label', fam.unlabelled);
 ok(fam.danglingDesc.length === 0, 'no dangling aria references', fam.danglingDesc);
 ok(fam.unfocusable.length === 0, 'everything is keyboard reachable', fam.unfocusable);
 ok(fam.tiny.length === 0, 'no tap target is under 22px', fam.tiny);
 
+/* The permission checkboxes this used to check belonged to asking for access
+   to someone else's account, which the owner removed. What is left on the
+   Family screen is the invitation - one field with a label - and its answer. */
 const famGroup = await page.evaluate(() => {
-  const fs = document.querySelector('.mf-scopes');
-  return { fieldset: fs && fs.tagName === 'FIELDSET', legend: !!(fs && fs.querySelector('legend')),
-           live: [...document.querySelectorAll('.set-pane [aria-live]')].length };
+  const inp = document.getElementById('fam-inv-email');
+  const lab = inp && document.querySelector('label[for="fam-inv-email"]');
+  return { labelled: !!(inp && lab), live: [...document.querySelectorAll('.set-pane [aria-live]')].length };
 });
-ok(famGroup.fieldset && famGroup.legend,
-   'the permission choices are a grouped fieldset with a legend, so they are read as one question');
-ok(famGroup.live > 0, 'the result of sending a request is announced');
+ok(famGroup.labelled, 'the family invitation field has a label', famGroup);
+ok(famGroup.live > 0, 'the result of sending an invitation is announced');
 
 section('Job Hunt setup form');
 const jobs = await page.evaluate(() => { closeOvr && closeOvr(); openJobHunt(); return true; });

@@ -313,7 +313,9 @@ function _renderInvestPane(pane){
   pane.innerHTML=
     '<h2 class="set-title">Investing</h2>'+
     '<div class="set-sub">Link an investment account and AMV tells you how it is doing, as often as you like.</div>'+
-    '<div class="ss2 set-what"><h3>What this is</h3>'+
+    /* Folded: the four promises are there for whoever wants them, not stacked
+       above the one button somebody came here to press. */
+    '<details class="set-fold set-what"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary><div class="set-merged">'+
       '<p>A check-in, not a dashboard. Each one records where your investments stand and tells you what '+
       'changed since the last one - the amount and the percentage, broken down by account.</p>'+
       '<ul class="mf-what-l">'+
@@ -326,7 +328,7 @@ function _renderInvestPane(pane){
         '<li><b>No number is ever guessed.</b> If your institution cannot be reached, this says so instead '+
           'of showing you the last figure it happened to have.</li>'+
       '</ul>'+
-    '</div>'+
+    '</div></details>'+
     (!backend
       ? '<div class="ss2"><h3>Not connected yet</h3><p class="fam-p fam-quiet">Bank data is read through your '+
         'AMV backend so your tokens never reach the browser. Connect it and this starts working.</p></div>'

@@ -12,66 +12,20 @@ const { page, errors } = app;
 
 const openPane = pane => page.evaluate(p => { S.settingsPane = p; renderSetPane(); }, pane);
 
-section('Both panes are reachable from Settings');
-/* ONE IS A ROW AGAIN, AND THAT IS A REVERSAL, NOT A REGRESSION.
-
-   This block used to assert that NEITHER was a nav row. Settings had gone from
-   thirteen panes to eight because thirteen was "too much very overwhelming",
-   and both moved inside a host pane: Spending into Plan & usage, Family into
-   Account.
-
-   The owner has since asked for Spending back as its own section, by name, and
-   they are right about it. Measured where it was, its heading began 1798px down
-   a 3698px pane - so the screen that decides how much money AMV may spend on
-   somebody's behalf sat halfway down a page they opened to look at their plan,
-   and it is the screen people go looking for on purpose when they are worried.
-   The server's own refusal even reads "Turn it on in Settings, under Spending".
-
-   The simplification is not abandoned: Spending did not go back to being a
-   ninth item under an existing heading. Money is its own heading now and holds
-   the two directions of one subject - what you pay AMV, and what AMV may spend
-   for you - so no group holds more than three, which is the rule that made the
-   screen usable and is still enforced next door in
-   settings-has-groups-that-do-work.
-
-   Family is unchanged: still a section of Account, still not a row. The
-   assertions below are inverted for Spending only, deliberately, rather than
-   deleted - a check that stops distinguishing the two arrangements is a check
-   that would not notice either of them breaking. */
+section('Family is a Settings section of its own; Spending has its own tab');
+/* The six-section Settings the owner chose: Family is one of the six, and
+   Spending - what AMV may spend for you - has its own tab rather than a row
+   here, so its limits live in exactly one place. */
 const nav = await page.evaluate(async () => {
-  const labels = [...document.querySelectorAll('.sn-btn')].map(b => b.dataset.sp);
-  const inside = async (host, id) => {
-    S.settingsPane = host; renderSetPane();
-    await new Promise(r => setTimeout(r, 350));
-    return !!document.getElementById('set-sec-' + id);
-  };
-  const ownPane = async (id) => {
-    S.settingsPane = id; renderSettingsView();
-    await new Promise(r => setTimeout(r, 350));
-    const t = document.querySelector('#set-pane .set-title');
-    return { pane: S.settingsPane, title: t ? t.textContent : null };
-  };
-  return {
-    spendingRow: labels.includes('spending'), familyRow: labels.includes('family'),
-    spendingHost: labels.includes('billing'), familyHost: labels.includes('account'),
-    /* Not inside Plan & usage any more - the same three limit fields on two
-       screens is how somebody edits the wrong one and cannot find it again. */
-    spendingStillMerged: await inside('billing', 'spending'),
-    family:   await inside('account', 'family'),
-    spendingOwn: await ownPane('spending'),
-  };
+  const rows = [...document.querySelectorAll('.sn-btn')].map(b => b.dataset.sp);
+  S.settingsPane = 'family'; renderSettingsView();
+  await new Promise(r => setTimeout(r, 350));
+  const t = document.querySelector('#set-pane .set-title');
+  return { rows, familyTitle: t ? t.textContent : null };
 });
-ok(nav.spendingRow,
-   'Spending is a row of its own again, which is what the owner asked for', nav);
-ok(!nav.familyRow,
-   'Family is still a section rather than a row, so the simplification holds', nav);
-ok(nav.spendingHost && nav.familyHost, 'the panes they moved into are', nav);
-ok(!nav.spendingStillMerged,
-   'and Spending is no longer ALSO a section of Plan & usage, so its limits live in one place',
-   nav.spendingStillMerged);
-ok(nav.spendingOwn.pane === 'spending' && nav.spendingOwn.title === 'Spending',
-   'opening it lands on the real Spending screen', nav.spendingOwn);
-ok(nav.family, 'and Family as a section of Account', nav.family);
+ok(nav.rows.includes('family'), 'Family is a row', nav.rows);
+ok(!nav.rows.includes('spending'), 'Spending is not a row - it has its own tab', nav.rows);
+ok(nav.familyTitle === 'Family', 'and Family opens on its own screen', nav.familyTitle);
 
 section('The consent dead end has an exit');
 await page.evaluate(() => { AMVCompliance.reset ? AMVCompliance.reset() : localStorage.removeItem(_scopeKey('amv_consent')); });

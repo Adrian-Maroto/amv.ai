@@ -3337,7 +3337,7 @@ function _planPitch(key){
       [1,'<b>Preview &amp; approve</b> every action before it runs'],
       [1,'Build &amp; ship real apps in Dev, connect mail, calendar &amp; files'],
     ],
-    reassure: 'Everything below, one price, cancel anytime',
+    reassure: 'One price, cancel anytime',
   },
   elite: {
     anchor: 'For founders, builders &amp; power users',

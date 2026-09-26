@@ -54,7 +54,7 @@ section('The screen is reachable, and searchable');
   });
   ok(/invite/i.test(r.content), 'the Invite screen still renders from its own address', r.content.slice(0, 60));
   ok(r.anchored, 'and the page scrolls to it rather than dumping you at the top', r.anchored);
-  ok(/Team/.test(r.nav), 'with the navigation showing where it now lives', r.nav);
+  ok(/Account/.test(r.nav), 'with the navigation showing where it now lives - part of Account, with Team', r.nav);
   ok(!r.rows.includes('invite'),
      'and it is no longer a row of its own, which is the point of the merge', r.rows.join(','));
 

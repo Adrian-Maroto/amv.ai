@@ -1,4 +1,14 @@
-/* MONEY WAS IN FOUR PLACES AND NONE OF THEM WAS THE OBVIOUS ONE.
+/* MONEY: SPENDING IS THE MONEY AMV MAY SPEND; UPGRADE IS THE PLANS.
+
+   The owner, most recently: "Remove this from upgrade plan" - Upgrade opened
+   the Spending page with the plans at the bottom, two screens in one. So the
+   plans are Upgrade's own screen, the plan's figures are on Plan & billing,
+   and Spending keeps the money AMV may spend for you. What this suite held
+   before still holds where it applies: the editors are the real ones, a redraw
+   stays on the tab, the figures follow the plan, the old address resolves, and
+   every screen quotes a plan in the same unit.
+
+   Originally - MONEY WAS IN FOUR PLACES AND NONE OF THEM WAS THE OBVIOUS ONE.
 
    What a plan costs was on Pricing. What the plan buys you was on Plan &
    usage. What AMV may spend on your behalf was a Settings pane three levels
@@ -68,14 +78,17 @@ const open = async (plan) => page.evaluate(async (p) => {
   };
 }, plan);
 
-section('One screen carries all of it');
+section('Spending is the money; the plans are on Upgrade');
 {
   const s = await open('free');
   ok(s.tab === 'spend', 'the Spending tab opens', s.tab);
-  ok(/money/i.test(s.heading), 'and says what it is about', s.heading);
-  ok(s.planCards === 4, 'the plans and their prices are on it', s.planCards);
-  ok(s.hasBand, 'so is how the limit behaves, before somebody meets it');
-  ok(s.hasCompare, 'and the full comparison is one press away');
+  ok(/Spending/.test(s.heading), 'and says what it is', s.heading);
+  ok(s.planCards === 0 && !s.hasBand && !s.hasCompare, 'with no plans, no limit band and no comparison on it', s);
+  const u = await page.evaluate(async () => {
+    setTab('plans'); await new Promise(r => setTimeout(r, 600));
+    return { cards: document.querySelectorAll('.pln-v .plnc').length, compare: !!document.getElementById('pln-compare') };
+  });
+  ok(u.cards === 4 && u.compare, 'while Upgrade has the four plans and the full comparison', u);
 }
 
 section('The editors are the real ones, not a second copy');
@@ -125,17 +138,18 @@ section('A redraw stays on this screen instead of jumping to Settings');
 
 section('The numbers are for the plan you are on');
 {
-  const free = await open('free');
-  const ultra = await open('ultra');
-  ok(free.facts.length === 4 && ultra.facts.length === 4,
-     'four figures either way', { free: free.facts.length, ultra: ultra.facts.length });
-  ok(JSON.stringify(free.facts) !== JSON.stringify(ultra.facts),
-     'and they change with the plan rather than being decoration',
-     { free: free.facts, ultra: ultra.facts });
-  ok(/1,000,000/.test(ultra.facts.join(' ')),
-     'Ultra shows its real monthly figure', ultra.facts);
-  ok(/3,000/.test(free.facts.join(' ')),
-     'and Free shows its own', free.facts);
+  /* On Plan & billing now, where a plan's figures belong. */
+  const bill = async (p) => page.evaluate(async (plan) => {
+    saveStr('amv_plan', plan); setTab('billing'); await new Promise(r => setTimeout(r, 650));
+    /* The figures block on a paid plan; on Free the plan's own list ("What
+       your plan does") is where the figure is. */
+    const el = document.querySelector('.bill-facts') || document.getElementById('vc');
+    return ((el || {}).innerText || '').replace(/\s+/g, ' ').split(/UPGRADE YOUR PLAN/i)[0];
+  }, p);
+  const free = await bill('free'), ultra = await bill('ultra');
+  ok(free && ultra && free !== ultra, 'they change with the plan rather than being decoration', { free: free.slice(0, 80), ultra: ultra.slice(0, 80) });
+  ok(/1,000,000/.test(ultra), 'Ultra shows its real monthly figure', ultra.slice(0, 120));
+  ok(/3,000/.test(free), 'and Free shows its own', free.slice(0, 120));
   await page.evaluate(() => saveStr('amv_plan', 'free'));
 }
 
@@ -146,11 +160,11 @@ section('The address Pricing used to have still goes somewhere');
     await new Promise(res => setTimeout(res, 200));
     setTab('plans');
     await new Promise(res => setTimeout(res, 700));
-    return { tab: S.tab, onSpend: !!document.querySelector('.spv-t'),
-             cards: document.querySelectorAll('.spv-plans .plnc').length };
+    return { tab: S.tab, onPlans: !!document.querySelector('.pln-v'),
+             cards: document.querySelectorAll('.pln-v .plnc').length };
   });
-  ok(r.onSpend && r.cards === 4,
-     'an older link to the plans lands on Spending, with the plans on it', r);
+  ok(r.onPlans && r.cards === 4,
+     'an older link to the plans lands on the plans', r);
 }
 
 section('Billing quotes the same plan in the same unit');
@@ -167,9 +181,11 @@ section('Billing quotes the same plan in the same unit');
     const out = {};
     for (const plan of ['pro', 'elite']) {
       saveStr('amv_plan', plan);
-      setTab('spend'); await new Promise(r => setTimeout(r, 650));
-      const spend = [...document.querySelectorAll('.spv-now .spv-f')]
-        .map(e => e.innerText.replace(/\s+/g, ' ').trim());
+      setTab('plans'); await new Promise(r => setTimeout(r, 650));
+      /* The card for this plan on Upgrade, line by line. */
+      /* In ladder order - free, pro, elite, ultra - which is how planCards draws them. */
+      const card = [...document.querySelectorAll('.pln-v .plnc')][['free', 'pro', 'elite', 'ultra'].indexOf(plan)];
+      const spend = card ? card.innerText.split('\n').map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean) : [];
       setTab('billing'); await new Promise(r => setTimeout(r, 650));
       const bill = (document.querySelector('.bill-facts') || {}).innerText || '';
       out[plan] = { spend, bill: bill.replace(/\s+/g, ' ') };
@@ -179,9 +195,9 @@ section('Billing quotes the same plan in the same unit');
   });
 
   for (const plan of ['pro', 'elite']) {
-    const monthly = (pair[plan].spend.find(f => /messages a month/i.test(f)) || '')
-      .replace(/[^\d,]/g, '');
-    ok(monthly.length > 0, `[${plan}] Spending states a monthly message figure`, pair[plan].spend);
+    const line = pair[plan].spend.find(f => /messages a month/i.test(f)) || '';
+    const monthly = ((line.match(/([\d,]+)\s+messages a month/i) || [])[1] || '').replace(/,$/, '');
+    ok(monthly.length > 0, `[${plan}] Upgrade states a monthly message figure`, pair[plan].spend);
     ok(pair[plan].bill.indexOf(monthly) >= 0,
        `[${plan}] and Billing quotes that same figure, not a different unit`,
        { monthly, billing: pair[plan].bill.slice(0, 160) });

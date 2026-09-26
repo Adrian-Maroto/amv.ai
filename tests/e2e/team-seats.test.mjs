@@ -217,7 +217,9 @@ section('Settings answers "what is spending", before asking for numbers');
   /* And it is ABOVE the terms gate. Somebody deciding whether to accept is
      exactly the person who needs the explanation, and it used to render only
      after they had already accepted. */
-  ok(/What this is/.test(r), 'the pane says what it is before what it is set to');
+  /* One tap away now ("How this works"), still ABOVE the terms gate. */
+  ok(/How this works/.test(r) && r.indexOf('How this works') < Math.max(0, r.indexOf('Before AMV can spend')),
+     'the pane says what it is before what it is set to', r.slice(0, 120));
   ok(r.indexOf('What this is') < r.indexOf('Before AMV can spend anything'),
      'and says it before asking them to accept anything');
   ok(/off until you turn it on/i.test(r), 'that it is off by default');

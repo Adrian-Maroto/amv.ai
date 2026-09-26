@@ -115,8 +115,8 @@ section('Choosing a bigger size makes the text bigger');
          its own any more - a plan's price and a plan's limits are the same
          decision, so both live on Spending, which #/plans still resolves to.
          Same page, same job for this check, different class names. */
-      const head = document.querySelector('.spv-head h2, .plans-head h2');
-      const sub  = document.querySelector('.spv-head .spv-sub, .plans-head .vsub');
+      const head = document.querySelector('.pln-head .pln-t, .spv-head h2, .plans-head h2');
+      const sub  = document.querySelector('.pln-head .pln-sub, .spv-head .spv-sub, .plans-head .vsub');
       return head && sub
         ? { head: parseFloat(getComputedStyle(head).fontSize),
             sub:  parseFloat(getComputedStyle(sub).fontSize) }

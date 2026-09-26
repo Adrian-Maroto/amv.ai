@@ -1,4 +1,11 @@
-/* EIGHTEEN PANES, AND A GROUP CALLED "THE REST" (AMV-D009).
+/* SETTINGS: SIX SHORT SECTIONS, AND EVERY OLD ADDRESS STILL WORKS.
+
+   History: eighteen panes with a group called "the rest" (AMV-D009), then
+   thirteen, then nine under four headings - and then the owner: "Fix
+   settings. WAY TOO MUCH." They chose six sections. What follows is kept for
+   the rules it still holds.
+
+   Originally - EIGHTEEN PANES, AND A GROUP CALLED "THE REST".
 
    Measured before anything moved. The groups already existed and did no work:
    General held TWELVE of the eighteen user panes, Workspace held one. A group
@@ -22,89 +29,83 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 const app = await bootApp({ tab: 'settings', user: { name: 'A', email: 'a@x.com', ini: 'A' } });
 const { page, errors } = app;
 
-section('No group is a dumping ground any more');
+section('Six short sections, in the order the owner chose');
 {
-  const g = await page.evaluate(() => {
-    const out = {}; let cur = null;
-    USER_SET_SECTIONS.forEach(s => {
-      if (s.group !== undefined) { cur = s.group || '(divider)'; out[cur] = out[cur] || 0; return; }
-      if (cur) out[cur]++;
-    });
-    return { groups: out, panes: USER_SET_SECTIONS.filter(s => s.id).length };
-  });
-  const counts = Object.entries(g.groups);
-  /* THE TARGET MOVED, TWICE, AND THE REASON HAS NOT.
-
-     Eighteen panes became thirteen when this was written; thirteen became
-     eight when the owner said it was still "too much very overwhelming". So
-     the number here is a ceiling on how much a person is asked to hold at
-     once, not a record of one particular tidy-up, and it comes down when the
-     screen does. */
-  ok(g.panes <= 9, 'thirteen user panes became nine or fewer', g.panes);
-  ok(counts.every(([, n]) => n <= 3),
-     'and no group holds more than three', JSON.stringify(g.groups));
-  ok(!Object.keys(g.groups).includes('General'),
-     'the group that meant "the rest" is gone', Object.keys(g.groups).join(', '));
-  /* Was five groups, for thirteen panes. Eight panes across five headings
-     averages 1.6 each, and a heading over a single item is a label saying the
-     same word twice - which is the noise this pass removed. Three groups of
-     three, three and two: still real categories, still nothing to scroll
-     past, and the ceiling of three per group above is unchanged because THAT
-     is the rule that stops a group becoming a drawer. */
-  ok(counts.filter(([, n]) => n > 0).length >= 3,
-     'the panes are spread across real groups', JSON.stringify(g.groups));
+  /* "Fix settings. WAY TOO MUCH." Nine sections under four headings became the
+     six the owner picked. Six need no headings - a heading over two items is a
+     label read twice - so none are drawn for a person; the operator group is
+     still there, and only for the owner. */
+  const g = await page.evaluate(() => ({
+    ids: USER_SET_SECTIONS.filter(s => s.id).map(s => s.id),
+    labels: USER_SET_SECTIONS.filter(s => s.id).map(s => s.label),
+    groups: USER_SET_SECTIONS.filter(s => s.group !== undefined).length,
+    navGroups: (renderSettingsView(), document.querySelectorAll('.sn-group').length),
+  }));
+  ok(JSON.stringify(g.ids) === JSON.stringify(['account','billing','family','integrations','privacy','appearance']),
+     'Account, Plan & billing, Family, Connectors, Privacy, Appearance', g.ids);
+  ok(JSON.stringify(g.labels) === JSON.stringify(['Account','Plan & billing','Family','Connectors','Privacy','Appearance']),
+     'named as a person would look for them', g.labels);
+  ok(g.groups === 0 && g.navGroups === 0, 'and no headings over them', g);
 }
 
-section('Every retired address still goes somewhere');
+section('Every old address still goes where its content now lives');
 {
-  /* The regression that would be invisible until a customer hit it: a deep
-     link set from elsewhere in the product silently landing on Account. */
-  const r = await page.evaluate(async () => {
+  /* `S.settingsPane` is set BY NAME from many places in the product - Mission
+     Control's connect link, the marketplace, the team invite flow, the profile
+     menu. A retired id that stopped resolving is a dead link somewhere nobody
+     would think to look. Each one lands on the section that now holds it, with
+     that row lit, and opens the folded part it asked for. */
+  const want = { security:'Privacy', usage:'Plan & billing', skills:'Connectors', language:'Appearance',
+                 invite:'Account', teamset:'Account', about:'Account', capabilities:'Privacy',
+                 api:'Connectors', projects:'Account' };
+  const r = await page.evaluate(async (want) => {
     const out = [];
-    for (const id of ['security', 'usage', 'skills', 'language', 'invite']) {
+    for (const id of Object.keys(want)) {
       S.settingsPane = id; renderSettingsView();
-      await new Promise(s => setTimeout(s, 300));
-      const pane = document.getElementById('set-pane');
-      const on = [...document.querySelectorAll('.sn-btn.on')].map(b => b.textContent.trim());
-      out.push({ id,
-        chars: (pane ? pane.textContent : '').replace(/\s+/g, ' ').trim().length,
-        nav: on.join('|'),
-        anchored: !!document.getElementById('set-sec-' + id),
-        onAccount: on.join('|') === 'Account' });
+      await new Promise(s => setTimeout(s, 350));
+      const on = [...document.querySelectorAll('.sn-btn.on')].map(b => b.textContent.trim()).join('|');
+      const anchor = document.getElementById('set-sec-' + id);
+      const fold = anchor && anchor.closest('details');
+      out.push({ id, on, anchored: !!anchor, openIfFolded: !fold || fold.open,
+                 visible: !!(anchor && anchor.getClientRects().length) });
     }
     return out;
-  });
+  }, want);
   for (const x of r) {
-    ok(!x.onAccount, x.id + ' does not silently fall back to Account', x.nav);
-    ok(x.chars > 400, 'and renders a real pane rather than an empty one', x.id + ' ' + x.chars);
-    ok(!!x.nav, 'with a row highlighted in the nav', x.id + ' -> ' + x.nav);
-    ok(x.anchored, 'and an anchor to the half it asked for', x.id);
+    ok(x.on === want[x.id], x.id + ' lights ' + want[x.id], x.on);
+    ok(x.anchored && x.visible, 'and its part is on screen', x);
+    ok(x.openIfFolded, 'opened, if it was folded', x);
   }
 }
 
-section('A merge is two sections, not one of them absorbed');
+section('Each section fits: the secondary parts are one tap away');
 {
   const r = await page.evaluate(async () => {
-    const want = { privacy: 'Security', billing: 'Usage', capabilities: 'Skills',
-                   appearance: 'Language', teamset: 'Invite' };
-    const out = [];
-    for (const host of Object.keys(want)) {
-      S.settingsPane = host; renderSettingsView();
-      await new Promise(s => setTimeout(s, 320));
-      const m = document.querySelector('#set-pane .set-merged');
-      const cs = m ? getComputedStyle(m) : null;
-      out.push({ host, expect: want[host], merged: !!m,
-        title: ((m && m.querySelector('.set-title')) || {}).textContent || '',
-        seam: cs ? parseFloat(cs.borderTopWidth) : 0 });
+    const out = {};
+    for (const id of ['account','billing','family','integrations','privacy','appearance']) {
+      S.settingsPane = id; renderSettingsView();
+      await new Promise(s => setTimeout(s, 350));
+      const p = document.getElementById('set-pane');
+      out[id] = { chars: p.innerText.length, folds: p.querySelectorAll('details.set-fold').length };
     }
     return out;
   });
-  for (const x of r) {
-    ok(x.merged, x.host + ' carries its merged section', x.merged);
-    ok(x.title.trim() === x.expect,
-       'which keeps the heading it always had', x.host + ' -> "' + x.title.trim() + '"');
-    ok(x.seam >= 1, 'and is separated, so it does not read as the page continuing', x.seam);
-  }
+  /* Measured before: Account 3,111 characters, Connectors 5,234 (the whole
+     integrations catalogue a second time), Privacy 2,075. A ceiling set well
+     above what they are now, so it trips on a regression and not on a word. */
+  ok(r.account.chars < 1500 && r.account.folds >= 3, 'Account is short, with Team, projects and About folded', r.account);
+  ok(r.integrations.chars < 1500, 'Connectors lists what is connected, not the catalogue again', r.integrations);
+  ok(r.privacy.chars < 2000 && r.privacy.folds >= 1, 'Privacy folds the password and security detail', r.privacy);
+  const fold = await page.evaluate(async () => {
+    S.settingsPane = 'account'; renderSettingsView();
+    await new Promise(s => setTimeout(s, 350));
+    const d = document.querySelector('#set-pane details.set-fold');
+    const closedH = d.getBoundingClientRect().height;
+    d.querySelector('summary').click();
+    await new Promise(s => setTimeout(s, 100));
+    return { closedH, open: d.open, openH: d.getBoundingClientRect().height };
+  });
+  ok(fold.open && fold.openH > fold.closedH + 40, 'and a folded part opens in place when tapped', fold);
 }
 
 section('It still works on a phone');
@@ -120,9 +121,9 @@ section('It still works on a phone');
              overflow: Math.round(right - pane.getBoundingClientRect().right),
              chars: (pane.textContent || '').trim().length };
   });
-  ok(/Privacy/.test(r.picker), 'the phone picker names the merged pane', r.picker);
+  ok(/Privacy/.test(r.picker), 'the phone picker names the section it lives in', r.picker);
   ok(r.overflow <= 1, 'and nothing spills off the screen', r.overflow);
-  ok(r.chars > 400, 'with the pane actually rendered', r.chars);
+  ok(r.chars > 300, 'with the pane actually rendered', r.chars);
   await page.setViewportSize({ width: 1440, height: 900 });
 }
 
@@ -144,7 +145,7 @@ section('Every pane behaves on a phone')
   /* A floor on the SAMPLE, not on the product: this sweep visits every pane
      and would pass vacuously if there were almost none to visit. Eight is
      still a real sweep. */
-  ok(panes.length >= 7, 'there are panes to sweep', panes.length);
+  ok(panes.length >= 6, 'there are sections to sweep', panes.length);
 
   const bad = [];
   const small = [];

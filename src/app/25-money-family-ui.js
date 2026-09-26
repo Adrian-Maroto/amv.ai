@@ -86,8 +86,8 @@ function _renderSpendingPane(pane, redraw){
   const canConfigure = !gate;
 
   pane.innerHTML =
-    '<h2 class="set-title">Spending</h2>'+
-    '<div class="set-sub">What AMV is allowed to spend for you, and what it has actually spent. Nothing is bought outside these limits.</div>'+
+    '<h2 class="set-title">What AMV may spend for you</h2>'+
+    '<div class="set-sub">Off until you turn it on. Nothing is bought outside these limits.</div>'+
     /* What this IS, before what it is set to.
 
        The pane opened straight into three number fields. Somebody who has never
@@ -95,7 +95,9 @@ function _renderSpendingPane(pane, redraw){
        under" with no idea what would be bought, by what, or why they would want
        it - which is the worst possible first impression for the one screen
        about money. */
-    '<div class="ss2 mf-what"><h3>What this is</h3>'+
+    /* Folded behind one line. The consent gate below is NOT - agreeing to it
+       is the decision, and a decision is never hidden behind a tap. */
+    '<details class="set-fold mf-what"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary><div class="set-merged">'+
       '<p>When AMV is doing a job for you and that job needs something bought - a domain for a site '+
       'it is deploying, an API key, a stock photo, a paid data source - this is what decides whether '+
       'it may buy it, and how much it may spend without stopping to ask you.</p>'+
@@ -112,7 +114,7 @@ function _renderSpendingPane(pane, redraw){
         '<li><b>Everything is written down</b> - every purchase appears below with what it was, where, '+
           'and how much, and it is only visible to you.</li>'+
       '</ul>'+
-    '</div>'+
+    '</div></details>'+
     gate +
     (canConfigure ?
     '<div class="ss2"><h3>Limits</h3>'+
@@ -154,7 +156,7 @@ function _renderSpendingPane(pane, redraw){
         '</tbody></table>'
         : '<p class="mf-empty">AMV has not bought anything for you. When it does, every purchase is listed here with the rule that allowed it.</p>')+
     '</div>'+
-    '<div class="ss2"><h3>Your responsibility</h3><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div>';
+    '<details class="set-fold"><summary class="set-fold-s">'+escH(T('Your responsibility'))+'</summary><div class="set-merged"><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div></details>';
 
   on($('mf-accept-terms'),'click',function(){
     try{ AMVCompliance.accept(); toast('Terms accepted','success',2500); _again(); }

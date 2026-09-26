@@ -575,8 +575,11 @@ function renderView(){
        Pricing page disagree with the thing enforcing it. Both live on
        Spending. The old address still resolves, so a bookmark or a link from
        an older build lands somewhere sensible rather than on a 404. */
-    case 'spend':
-    case 'plans': renderSpendView(); break;
+    /* Two screens again, on purpose: Upgrade (every "See plans" and "Upgrade"
+       button, `plans`) is the plans and nothing else; the Spending rail entry
+       (`spend`) is the money AMV may spend for you. */
+    case 'spend': renderSpendView(); break;
+    case 'plans': renderPlansView(); break;
     case 'settings': renderSettingsView(); break;
     case 'help': renderHelpView(); break;
     case 'apps': renderAppsView(); break;
@@ -876,10 +879,14 @@ function renderHelpView(){
 const SET_MERGED_INTO = {
   security: 'privacy',
   usage: 'billing',
-  skills: 'capabilities',
+  skills: 'integrations',
   language: 'appearance',
-  invite: 'teamset',
-  family: 'account',
+  invite: 'account',
+  /* The six-section Settings (see USER_SET_SECTIONS). Family is a section of
+     its own again, so it is not here. */
+  teamset: 'account',
+  about: 'account',
+  capabilities: 'privacy',
   /* `spending` is NOT here any more. It is its own section, so a request for
      it has to render it rather than being redirected to Billing and scrolled
      to an anchor that no longer exists - which is exactly what happened when
@@ -888,7 +895,7 @@ const SET_MERGED_INTO = {
      edits, and this is the second one. */
   investing: 'capabilities',
   api: 'integrations',
-  projects: 'teamset',
+  projects: 'account',
 };
 /* The pane that actually renders for a requested id. */
 function _setPaneFor(id){ return SET_MERGED_INTO[id] || id; }
@@ -898,46 +905,25 @@ try{ window._setPaneFor=_setPaneFor; window._setSectionFor=_setSectionFor;
      window.SET_MERGED_INTO=SET_MERGED_INTO; }catch(e){}
 
 const USER_SET_SECTIONS=[
-  /* THREE HEADINGS, NONE HOLDING MORE THAN THREE.
+  /* SIX, AND NO HEADINGS OVER THEM.
 
-     Thirteen panes became eight by letting the groups be the panes. The
-     grouping then has to earn its own keep: a heading over one item says
-     nothing twice, and a heading over five is a drawer. Three of three, three
-     and two - each one a question somebody actually arrives with. Who am I and
-     what am I paying. What can AMV do and who else is in here. How it looks. */
-  {group:'You'},
+     "Fix settings. WAY TOO MUCH." It was nine sections under four headings,
+     several with other screens merged into their bottoms - and the owner chose
+     six short ones: who you are, what you pay, your family, what AMV connects
+     to, what it may keep, how it looks. Six items need no headings; a heading
+     over two is a label read twice.
+
+     Nothing a person could do was removed. Team, invites and About are part of
+     Account; usage is part of Plan & billing; skills and API keys are part of
+     Connectors; security and the web-search, memory and answer-block switches
+     are part of Privacy; language is part of Appearance. Spending has its own
+     tab. Every old id still opens where its content now lives (SET_MERGED_INTO). */
   {id:'account',label:'Account',icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
-  {id:'privacy',label:'Privacy & security',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
-  /* MONEY IS ITS OWN HEADING, AND IT HOLDS THE TWO DIRECTIONS OF IT.
-
-     Spending used to be appended to the bottom of Plan & usage. Measured
-     there: its heading began 1798px down a 3698px pane, so the screen that
-     decides how much money AMV may spend on somebody's behalf sat halfway
-     down a page they opened to look at their plan. Something people go
-     looking for on purpose - and they go looking for this one when they are
-     worried - needs a name in the list.
-
-     Two questions were sharing one pane, and they are opposite directions of
-     the same subject. Plan & usage is what YOU pay AMV. Spending is what AMV
-     may spend FOR you. Under one heading they read as a pair; the first
-     attempt put Spending under "You" as a fourth item, and
-     settings-has-groups-that-do-work rightly failed it - that suite holds the
-     ceiling at three per group, which is the rule the whole Settings tidy-up
-     was for, and stretching it to fit one new pane is how a rule that made a
-     screen usable gets spent one item at a time.
-
-     Nothing about Plan & usage changes except that it now sits under a
-     heading. Same id, same label, same place in the order. */
-  {group:'Money'},
-  {id:'billing',label:'Plan & usage',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
-  {id:'spending',label:'Spending',icon:'<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>'},
-  {group:'What AMV can do'},
-  {id:'capabilities',label:'Capabilities & skills',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
+  {id:'billing',label:'Plan & billing',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
+  {id:'family',label:'Family',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
   {id:'integrations',label:'Connectors',icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
-  {id:'teamset',label:'Team',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>'},
-  {group:'Preferences'},
-  {id:'appearance',label:'Appearance & language',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
-  {id:'about',label:'About',icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'},
+  {id:'privacy',label:'Privacy',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
+  {id:'appearance',label:'Appearance',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
 ];
 /* OWNER-ONLY - platform controls. Hidden from end users entirely. */
 const ADMIN_SET_SECTIONS=[
@@ -1275,6 +1261,14 @@ window._openSettingsPicker=_openSettingsPicker;
 
 function renderSettingsView(){
   const vc=$('vc'); if(!vc) return;
+  /* Spending and investing have their own tab now, not a Settings section. An
+     address that still asks for them - a link, an error message, an older
+     build - opens that tab rather than landing on Account. */
+  if(S.settingsPane==='spending' || S.settingsPane==='investing'){
+    S.settingsPane=null;
+    setTab('spend');
+    return;
+  }
   const adminExtra=isAdmin()?[{group:'Operator'},...ADMIN_SET_SECTIONS]:[];
   const visibleSections=[...USER_SET_SECTIONS,...adminExtra];
   const q=(S._setSearch||'').toLowerCase().trim();
@@ -2294,7 +2288,7 @@ try{ window._renderSkillsPane=_renderSkillsPane; }catch(e){}
    Each renderer writes its own title, so the section keeps the heading it
    always had - the merge changes where you find it, not what it says. The
    anchor id is what a retired deep link scrolls to. */
-function _setAppendSection(pane, id, host){
+function _setAppendSection(pane, id, host, fold){
   if(!pane) return;
   const wrap=document.createElement('div');
   wrap.className='set-merged';
@@ -2303,7 +2297,20 @@ function _setAppendSection(pane, id, host){
      answer was "at the end", which on Billing put usage and spending below the
      payment-security block. Falls back to the pane, so every existing caller
      keeps the behaviour it had. */
-  ((host && host.appendChild) ? host : pane).appendChild(wrap);
+  /* `fold` - a label - folds the section behind one line that opens it. "WAY
+     TOO MUCH": a Settings section should fit on a screen, and its secondary
+     parts (Team, About, Skills, API keys, Security) are there for the person
+     who goes looking, one tap away, rather than stacked under everybody. A
+     link straight to one of them opens it (see _wantSection). */
+  let target = wrap;
+  if(fold){
+    const d=document.createElement('details');
+    d.className='set-fold';
+    d.innerHTML='<summary class="set-fold-s">'+escH(T(fold))+'</summary>';
+    d.appendChild(wrap);
+    target = d;
+  }
+  ((host && host.appendChild) ? host : pane).appendChild(target);
   try{ _renderSetPaneInner(id, wrap); }catch(e){}
 }
 try{ window._setAppendSection=_setAppendSection; }catch(e){}
@@ -2346,6 +2353,7 @@ function _renderSetPaneInner(only, into){
   if(_wantSection){
     setTimeout(()=>{ try{
       const t=document.getElementById('set-sec-'+_wantSection);
+      if(t){ const d=t.closest('details'); if(d) d.open=true; }
       if(t) t.scrollIntoView({ block:'start', behavior:'auto' });
     }catch(e){} }, 60);
   }
@@ -2468,7 +2476,14 @@ function _renderSetPaneInner(only, into){
         sm('Changes saved!',true);
       }
     });
-    if(!only) _setAppendSection(pane, 'family');
+    /* Projects is added here, not by Team: a merged section renders with
+       `only` set, so Team's own "if(!only) add Projects" never runs once Team
+       is itself a part of Account - and the shared projects vanished. */
+    if(!only){
+      _setAppendSection(pane, 'teamset', null, 'Team');
+      _setAppendSection(pane, 'projects', null, 'Shared projects');
+      _setAppendSection(pane, 'about', null, 'About AMV');
+    }
 
   } else if(sp==='security'){
     pane.innerHTML=
@@ -2598,7 +2613,7 @@ function _renderSetPaneInner(only, into){
       _confirmDeleteAccount();
     });
 
-    if(!only) _setAppendSection(pane, 'security');
+    if(!only){ _setAppendSection(pane, 'capabilities'); _setAppendSection(pane, 'security', null, 'Password & security'); }
   } else if(sp==='appearance'){
     const isDark=!document.body.classList.contains('light');
     const curFs=parseInt(loadStr('amv_fs')||'14',10);
@@ -2703,14 +2718,14 @@ function _renderSetPaneInner(only, into){
           ).join('')+
         '</div>'+
       '</div>'+
-      '<div class="ss2"><h3>How it works</h3>'+
-        '<div class="lang-info">'+
+      '<details class="set-fold"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary>'+
+        '<div class="lang-info set-merged">'+
           '<p>\u2022 <b>Auto-detect</b> replies in whatever language you write in.</p>'+
           '<p>\u2022 Pick a language and every reply, comes back in it.</p>'+
           '<p>\u2022 Override anytime - e.g. \u201cmake me a poster, but in Chinese\u201d - and AMV follows that request just for that task.</p>'+
           '<p>\u2022 Not listed? AMV speaks 95+ languages - just write to it in yours and it responds in kind.</p>'+
         '</div>'+
-      '</div>';
+      '</details>';
     pane.querySelectorAll('[data-lang]').forEach(btn=>on(btn,'click',()=>{
       saveStr('amv_lang',btn.dataset.lang);
       // re-render the whole app UI, then translate - so nav, top bar, new-chat,
@@ -2997,43 +3012,50 @@ function _renderSetPaneInner(only, into){
        let the delegation correct it - two renders and the wrong one first. */
 
   } else if(sp==='integrations'){
+    /* WHAT IS CONNECTED, NOT THE WHOLE CATALOGUE A SECOND TIME.
+
+       This pane drew the full integrations catalogue - five thousand
+       characters - which the Integrations page already is. Settings answers
+       "what is AMV connected to, and how do I stop it": so the same catalogue
+       is drawn and everything not connected is taken out, keeping each
+       connected row's own Disconnect and Run exactly as they are, and the
+       page for adding more is one button away. */
     pane.innerHTML =
       '<h2 class="set-title">Connectors</h2>'+
-      '<div class="set-sub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> ones work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect - you approve in a popup, no keys to paste.</div>'+
-      _integrationsCatalogHTML();
+      '<div class="set-sub">What AMV is connected to. Add more from Integrations.</div>'+
+      '<div class="set-conn">'+_integrationsCatalogHTML()+'</div>'+
+      '<div class="set-conn-go"><button class="btn bp" data-stab="integrations">'+escH(T('Browse integrations'))+' \u2192</button></div>';
+    const _cl=pane.querySelector('.set-conn');
+    /* Signed out, nothing can be connected - and this was, and stays, the one
+       place a visitor can read what each connector does before making an
+       account. So the whole catalogue is kept for them, under its panel. */
+    const _guest=!(S.user && S.user.email);
+    if(_cl && !_guest){
+      _cl.querySelectorAll('.ax-legend, .int-seeall, .int-guest').forEach(x=>x.remove());
+      _cl.querySelectorAll('.int-card').forEach(c=>{ if(!c.querySelector('.int-ok')) c.remove(); });
+      _cl.querySelectorAll('.ss2').forEach(g=>{ if(!g.querySelector('.int-card')) g.remove(); });
+      if(!_cl.querySelector('.int-card')) _cl.innerHTML='<p class="set-empty">'+escH(T('Nothing is connected yet.'))+'</p>';
+    }
     _wireIntegrationCatalog(pane);
     _killTokenAutofill();
-    if(!only) _setAppendSection(pane, 'api');
+    if(!only){ _setAppendSection(pane, 'skills', null, 'Skills'); _setAppendSection(pane, 'api', null, 'API keys'); }
   } else if(sp==='skills'){
     _renderSkillsPane(pane);
   } else if(sp==='capabilities'){
-    const cap=(icon,title,desc)=>'<div class="cap-item"><span class="cap-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span><div><div class="cap-t">'+escH(title)+'</div><div class="cap-d">'+escH(desc)+'</div></div></div>';
+    /* The three switches, under Privacy now - each one is about what AMV may
+       use or keep. The grid of "everything AMV can do" that sat above them was
+       a brochure inside Settings; it is gone, and nothing it described is. */
     const capToggle=(id,title,desc,on)=>'<div class="prv-pref"><div><div class="prv-pref-t">'+escH(title)+'</div><div class="prv-pref-s">'+escH(desc)+'</div></div><label class="sw"><input type="checkbox" id="'+id+'" '+(on?'checked':'')+'><span class="sw-sl"></span></label></div>';
     pane.innerHTML=
-      '<h2 class="set-title">Capabilities</h2>'+
-      '<div class="set-sub">Everything AMV can do for you - and the switches you control.</div>'+
-      '<div class="ss2"><h3>What AMV can do</h3>'+
-        '<div class="cap-grid">'+
-          cap('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>','Chat & reasoning','Ask anything, think through problems, get clear answers with sources.')+
-          cap('<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>','Build & run code','Full-stack apps, scripts and APIs - written, run, and previewed live in Dev.')+
-          cap('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>','Read any file','PDFs, images, spreadsheets and code - uploaded, read and worked from.')+
-          cap('<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>','Web search','Pull live information from the web and cite it in answers.')+
-          cap('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>','Agents & Crew','Delegate multi-step jobs that run in the background and report back.')+
-          cap('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>','Automations','Schedule recurring work - daily briefs, monitoring, reports - hands-free.')+
-          cap('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6"/>','Design & docs','Slides, spreadsheets, documents and designs on a live canvas.')+
-          cap('<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/>','Connectors','Link Gmail, Drive, Calendar, GitHub and more to work with your tools.')+
-        '</div>'+
-      '</div>'+
-      '<div class="ss2"><h3>Controls</h3>'+
-        capToggle('cap-websearch','Web search','Let AMV look things up online when it helps answer your question.', loadStr('amv_cap_websearch')!=='0')+
-        capToggle('cap-memory','Memory','Let AMV remember useful facts about you across chats.', loadStr('amv_cap_memory')!=='0')+
-        capToggle('cap-suggestions','Interactive answer blocks','Let AMV add tappable choices, stat cards, and step lists inside answers.', loadStr('amv_cap_suggestions')!=='0')+
+      '<h2 class="set-title">What AMV may use</h2>'+
+      '<div class="ss2">'+
+        capToggle('cap-websearch','Web search','Look things up online when it helps.', loadStr('amv_cap_websearch')!=='0')+
+        capToggle('cap-memory','Memory','Remember useful facts about you across chats.', loadStr('amv_cap_memory')!=='0')+
+        capToggle('cap-suggestions','Answer blocks','Tappable choices, cards and step lists inside answers.', loadStr('amv_cap_suggestions')!=='0')+
       '</div>';
     on($('cap-websearch'),'change',function(){ saveStr('amv_cap_websearch',this.checked?'1':'0'); toast(this.checked?'Web search on':'Web search off','info',2000); });
     on($('cap-memory'),'change',function(){ saveStr('amv_cap_memory',this.checked?'1':'0'); toast(this.checked?'Memory on':'Memory off','info',2000); });
-    on($('cap-suggestions'),'change',function(){ saveStr('amv_cap_suggestions',this.checked?'1':'0'); toast(this.checked?'Suggestions on':'Suggestions off','info',2000); });
-    if(!only) _setAppendSection(pane, 'skills');
-    if(!only) _setAppendSection(pane, 'investing');
+    on($('cap-suggestions'),'change',function(){ saveStr('amv_cap_suggestions',this.checked?'1':'0'); toast(this.checked?'Answer blocks on':'Answer blocks off','info',2000); });
   } else if(sp==='spending'){
     /* Rendered from 25-money-family-ui.js - see there for why these two panes
        exist at all (the logic shipped with no way for anyone to reach it). */

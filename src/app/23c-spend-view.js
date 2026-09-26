@@ -115,62 +115,64 @@ async function _spvFillBalance() {
 }
 
 function renderSpendView() {
+  /* SPENDING, AND ONLY SPENDING.
+
+     "Remove this from upgrade plan": Upgrade opened this page, and this page
+     opened on what Spending is, then the plan and its limits, then the money,
+     then the watchlist, then - at the bottom - the plans. Two screens in one,
+     and neither was the one somebody pressing Upgrade wanted. Now Upgrade has
+     its own screen (renderPlansView), the plan and its limits live in Plan &
+     billing, and this is the money AMV may spend for you: the balance and the
+     ceiling, the limits, the account it can see, what it is watching for. */
   const vc = $('vc'); if (!vc) return;
   vc.innerHTML =
     '<div class="sv fi"><div class="vi spv">'
       + '<div class="spv-head">'
-        + '<span class="eyebrow">' + escH(T('Spending')) + '</span>'
-        + '<h2 class="spv-t">' + escH(T('Everywhere your money goes')) + '</h2>'
-        + '<p class="spv-sub">' + escH(T('Two kinds of money live here, and they are not the same thing. Every limit on this page is checked on the server before anything happens.')) + '</p>'
+        + '<h2 class="spv-t">' + escH(T('Spending')) + '</h2>'
+        + '<p class="spv-sub">' + escH(T('What AMV may spend for you, and what it has spent. Every limit is checked on the server first.')) + '</p>'
       + '</div>'
-      /* 1. WHAT IT IS. */
-      + _spvWhat()
-      /* 2. THE PLAN AND ITS LIMITS. */
-      + '<section class="spv-sec">'
-        + '<h2 class="set-title">' + escH(T('Your plan, and what it gives you')) + '</h2>'
-        + _spvPlanNow()
-        + (typeof _usageShapeBand === 'function' ? _usageShapeBand() : '')
-      + '</section>'
-      /* 3. THE MONEY AMV MAY SPEND: what is there, what the ceiling is. */
-      + '<section class="spv-sec">'
-        + '<h2 class="set-title">' + escH(T('Money AMV can spend for you')) + '</h2>'
-        + '<div class="set-sub">' + escH(T('What is in the account it can see, and the most it may ever spend from it.')) + '</div>'
-        + _spvMoneyFacts()
-      + '</section>'
-      /* The limits editor and the account card, which are the Settings panes
-         themselves rather than a second copy of them. */
+      + _spvMoneyFacts()
+      /* The limits editor and the account card are the same panes Settings
+         used to render - one copy of the most consequential controls. */
       + '<section class="spv-sec" id="spv-limits"></section>'
       + '<section class="spv-sec" id="spv-bank"></section>'
-      /* 4. WHAT IT IS WATCHING FOR. */
       + (typeof watchlistHTML === 'function' ? watchlistHTML() : '')
-      /* 5. AND ONLY THEN, THE UPGRADE.
-
-         Last on purpose. Somebody who came here to check what AMV spent is
-         not here to be sold to, and a plan grid above their own numbers reads
-         as the page being about the sale. */
-      + '<section class="spv-sec spv-plans">'
-        + '<h2 class="set-title">' + escH(T('Upgrade your plan')) + '</h2>'
-        + '<div class="set-sub">' + escH(T('The same engine on every paid plan. A bigger plan buys more of it, not a better one.')) + '</div>'
-        + '<div class="pg pg-app pg-4">' + planCards(true) + '</div>'
-        + _teamPlanBanner(true)
-        + _customPlanBanner(true)
-        + '<p class="px-note" style="display:none">' + escH(T('Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.')) + '</p>'
-        + '<div class="plans-compare-row"><button class="btn bs" id="spv-compare">'
-          + escH(T('Compare all plans in detail')) + ' \u2192</button></div>'
-      + '</section>'
     + '</div></div>';
 
-  /* The real editors, not a second copy of them. Each is told how to redraw
-     itself HERE - the default redraw is Settings, which on this screen would
-     either navigate away or silently drop the server's answer. */
   try { _renderSpendingPane($('spv-limits'), renderSpendView); } catch (e) {}
   try { _renderInvestPane($('spv-bank')); } catch (e) {}
   try { wireWatchlist(renderSpendView); } catch (e) {}
   try { _spvFillBalance(); } catch (e) {}
+}
 
-  on($('spv-compare'), 'click', () => {
+/* THE PLANS, AND NOTHING ELSE.
+
+   What Upgrade opens. Every plan, the one you are on marked, one tap to the
+   plan's own detail and checkout - and the comparison for whoever wants it.
+   Centred, because it is the one screen in AMV that is a choice between a few
+   equal things laid side by side. */
+function renderPlansView() {
+  const vc = $('vc'); if (!vc) return;
+  const now = (typeof S !== 'undefined' && S.plan) ? S.plan : ((typeof loadStr === 'function' && loadStr('amv_plan')) || 'free');
+  const nowName = (typeof PLANS !== 'undefined' && PLANS[now] && PLANS[now].name) || 'Free';
+  vc.innerHTML =
+    '<div class="sv fi"><div class="vi pln-v">'
+      + '<div class="pln-head">'
+        + '<span class="eyebrow">' + escH(T('You are on')) + ' ' + escH(nowName) + '</span>'
+        + '<h2 class="pln-t">' + escH(T('Choose a plan')) + '</h2>'
+        + '<p class="pln-sub">' + escH(T('The same engine on every paid plan. A bigger plan buys more of it, not a better one.')) + '</p>'
+      + '</div>'
+      + '<div class="pg pg-app pg-4">' + planCards(true) + '</div>'
+      + _teamPlanBanner(true)
+      + _customPlanBanner(true)
+      + '<p class="px-note" style="display:none">' + escH(T('Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.')) + '</p>'
+      + '<div class="plans-compare-row"><button class="btn bs" id="pln-compare">'
+        + escH(T('Compare all plans in detail')) + ' →</button></div>'
+    + '</div></div>';
+  on($('pln-compare'), 'click', () => {
     try { openPlanCompare(loadStr('amv_plan') || 'pro'); } catch (e) {}
   });
   try { _localizePrices(document); } catch (e) {}
 }
+try { window.renderPlansView = renderPlansView; } catch (e) {}
 try { window.renderSpendView = renderSpendView; } catch (e) {}

@@ -15569,3 +15569,52 @@ iframe.amv-sbx{
 }
 .fam-inv:first-of-type{ border-top:0; padding-top:0; }
 .fam-inv .mf-codeline{ margin-top:var(--sp-2); }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LAYER A258 - Settings: six short sections, the rest one tap away
+   A folded part of a section is one line with a chevron; it opens in place.
+   Connectors lists only what is connected, with the way to add more under it.
+   ══════════════════════════════════════════════════════════════════════ */
+.set-fold{
+  margin-top:var(--sp-4);
+  border:1px solid var(--bd);
+  border-radius:var(--r-md);
+  background:var(--s1);
+}
+.set-fold-s{
+  list-style:none;
+  cursor:pointer;
+  padding:var(--sp-3) var(--sp-4);
+  min-height:44px;
+  display:flex; align-items:center; justify-content:space-between;
+  font-size:var(--t-md); font-weight:600; color:var(--tx);
+}
+.set-fold-s::-webkit-details-marker{ display:none; }
+.set-fold-s::after{ content:'\203A'; color:var(--mu); font-size:var(--t-lg); transition:transform .2s var(--ease); }
+.set-fold[open] > .set-fold-s::after{ transform:rotate(90deg); }
+.set-fold-s:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--r-md); }
+.set-fold > .set-merged{ padding:0 var(--sp-4) var(--sp-4); }
+@media (prefers-reduced-motion:reduce){ .set-fold-s::after{ transition:none; } }
+.set-conn .ss2{ margin-top:var(--sp-3); }
+.set-conn-go{ margin-top:var(--sp-4); }
+.set-empty{ color:var(--mu); font-size:var(--t-base); margin:var(--sp-3) 0; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LAYER A259 - Upgrade is the plans, centred; every plan's detail centred
+   The plans screen is a choice between a few equal things, so it sits on the
+   centre line: heading, cards, the comparison. The plan detail (Upgrade ->
+   a plan) is centred the same way for every plan, including the ladder, the
+   price, the features and the call to action.
+   ══════════════════════════════════════════════════════════════════════ */
+.pln-v{ max-width:1100px; margin:0 auto; text-align:center; }
+.pln-head{ margin:var(--sp-6) auto var(--sp-5); max-width:640px; }
+.pln-t{ font-family:var(--fdisplay); font-size:var(--t-2xl); margin:var(--sp-2) 0; color:var(--tx); }
+.pln-sub{ color:var(--mu); font-size:var(--t-md); margin:0; }
+.pln-v .pg{ justify-content:center; margin-left:auto; margin-right:auto; text-align:left; }
+.pln-v .plans-compare-row{ display:flex; justify-content:center; margin-top:var(--sp-5); }
+.upg{ margin-left:auto!important; margin-right:auto!important; text-align:center; }
+.upg .upg-head, .upg .upg-go, .upg .upg-figs, .upg .upg-cycle, .upg .upg-ladder{ justify-content:center; margin-left:auto; margin-right:auto; }
+.upg .upg-price{ justify-content:center; }
+.upg .upg-feats{ display:flex; justify-content:center; }
+.upg .upg-feats > *{ text-align:left; }
+.upg .upg-back{ margin-right:auto; }

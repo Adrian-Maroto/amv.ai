@@ -5401,7 +5401,7 @@ function setTab(t){
   try{ _renderBottomNav(); }catch(e){}
   document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
   /* (old 'More' section removed - tools now live in the bottom-left row) */
-  const _titles={dashboard:'Dashboard',chat:'',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',upgrade:'Upgrade',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
+  const _titles={dashboard:'Dashboard',chat:'',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',upgrade:'Upgrade',spend:'Spending',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
   const _nt=document.getElementById('nav-title');
   if(_nt){ const lbl=_titles[t]!==undefined?_titles[t]:''; _nt.textContent=lbl; _nt.style.opacity=lbl?'1':'0'; }
   // On mobile, close the overlay sidebar after picking a destination
@@ -10097,7 +10097,7 @@ function _planPitch(key){
       [1,'<b>Preview &amp; approve</b> every action before it runs'],
       [1,'Build &amp; ship real apps in Dev, connect mail, calendar &amp; files'],
     ],
-    reassure: 'Everything below, one price, cancel anytime',
+    reassure: 'One price, cancel anytime',
   },
   elite: {
     anchor: 'For founders, builders &amp; power users',
@@ -26896,8 +26896,11 @@ function renderView(){
        Pricing page disagree with the thing enforcing it. Both live on
        Spending. The old address still resolves, so a bookmark or a link from
        an older build lands somewhere sensible rather than on a 404. */
-    case 'spend':
-    case 'plans': renderSpendView(); break;
+    /* Two screens again, on purpose: Upgrade (every "See plans" and "Upgrade"
+       button, `plans`) is the plans and nothing else; the Spending rail entry
+       (`spend`) is the money AMV may spend for you. */
+    case 'spend': renderSpendView(); break;
+    case 'plans': renderPlansView(); break;
     case 'settings': renderSettingsView(); break;
     case 'help': renderHelpView(); break;
     case 'apps': renderAppsView(); break;
@@ -27197,10 +27200,14 @@ function renderHelpView(){
 const SET_MERGED_INTO = {
   security: 'privacy',
   usage: 'billing',
-  skills: 'capabilities',
+  skills: 'integrations',
   language: 'appearance',
-  invite: 'teamset',
-  family: 'account',
+  invite: 'account',
+  /* The six-section Settings (see USER_SET_SECTIONS). Family is a section of
+     its own again, so it is not here. */
+  teamset: 'account',
+  about: 'account',
+  capabilities: 'privacy',
   /* `spending` is NOT here any more. It is its own section, so a request for
      it has to render it rather than being redirected to Billing and scrolled
      to an anchor that no longer exists - which is exactly what happened when
@@ -27209,7 +27216,7 @@ const SET_MERGED_INTO = {
      edits, and this is the second one. */
   investing: 'capabilities',
   api: 'integrations',
-  projects: 'teamset',
+  projects: 'account',
 };
 /* The pane that actually renders for a requested id. */
 function _setPaneFor(id){ return SET_MERGED_INTO[id] || id; }
@@ -27219,46 +27226,25 @@ try{ window._setPaneFor=_setPaneFor; window._setSectionFor=_setSectionFor;
      window.SET_MERGED_INTO=SET_MERGED_INTO; }catch(e){}
 
 const USER_SET_SECTIONS=[
-  /* THREE HEADINGS, NONE HOLDING MORE THAN THREE.
+  /* SIX, AND NO HEADINGS OVER THEM.
 
-     Thirteen panes became eight by letting the groups be the panes. The
-     grouping then has to earn its own keep: a heading over one item says
-     nothing twice, and a heading over five is a drawer. Three of three, three
-     and two - each one a question somebody actually arrives with. Who am I and
-     what am I paying. What can AMV do and who else is in here. How it looks. */
-  {group:'You'},
+     "Fix settings. WAY TOO MUCH." It was nine sections under four headings,
+     several with other screens merged into their bottoms - and the owner chose
+     six short ones: who you are, what you pay, your family, what AMV connects
+     to, what it may keep, how it looks. Six items need no headings; a heading
+     over two is a label read twice.
+
+     Nothing a person could do was removed. Team, invites and About are part of
+     Account; usage is part of Plan & billing; skills and API keys are part of
+     Connectors; security and the web-search, memory and answer-block switches
+     are part of Privacy; language is part of Appearance. Spending has its own
+     tab. Every old id still opens where its content now lives (SET_MERGED_INTO). */
   {id:'account',label:'Account',icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
-  {id:'privacy',label:'Privacy & security',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
-  /* MONEY IS ITS OWN HEADING, AND IT HOLDS THE TWO DIRECTIONS OF IT.
-
-     Spending used to be appended to the bottom of Plan & usage. Measured
-     there: its heading began 1798px down a 3698px pane, so the screen that
-     decides how much money AMV may spend on somebody's behalf sat halfway
-     down a page they opened to look at their plan. Something people go
-     looking for on purpose - and they go looking for this one when they are
-     worried - needs a name in the list.
-
-     Two questions were sharing one pane, and they are opposite directions of
-     the same subject. Plan & usage is what YOU pay AMV. Spending is what AMV
-     may spend FOR you. Under one heading they read as a pair; the first
-     attempt put Spending under "You" as a fourth item, and
-     settings-has-groups-that-do-work rightly failed it - that suite holds the
-     ceiling at three per group, which is the rule the whole Settings tidy-up
-     was for, and stretching it to fit one new pane is how a rule that made a
-     screen usable gets spent one item at a time.
-
-     Nothing about Plan & usage changes except that it now sits under a
-     heading. Same id, same label, same place in the order. */
-  {group:'Money'},
-  {id:'billing',label:'Plan & usage',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
-  {id:'spending',label:'Spending',icon:'<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>'},
-  {group:'What AMV can do'},
-  {id:'capabilities',label:'Capabilities & skills',icon:'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>'},
+  {id:'billing',label:'Plan & billing',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
+  {id:'family',label:'Family',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
   {id:'integrations',label:'Connectors',icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
-  {id:'teamset',label:'Team',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/>'},
-  {group:'Preferences'},
-  {id:'appearance',label:'Appearance & language',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
-  {id:'about',label:'About',icon:'<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'},
+  {id:'privacy',label:'Privacy',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
+  {id:'appearance',label:'Appearance',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
 ];
 /* OWNER-ONLY - platform controls. Hidden from end users entirely. */
 const ADMIN_SET_SECTIONS=[
@@ -27596,6 +27582,14 @@ window._openSettingsPicker=_openSettingsPicker;
 
 function renderSettingsView(){
   const vc=$('vc'); if(!vc) return;
+  /* Spending and investing have their own tab now, not a Settings section. An
+     address that still asks for them - a link, an error message, an older
+     build - opens that tab rather than landing on Account. */
+  if(S.settingsPane==='spending' || S.settingsPane==='investing'){
+    S.settingsPane=null;
+    setTab('spend');
+    return;
+  }
   const adminExtra=isAdmin()?[{group:'Operator'},...ADMIN_SET_SECTIONS]:[];
   const visibleSections=[...USER_SET_SECTIONS,...adminExtra];
   const q=(S._setSearch||'').toLowerCase().trim();
@@ -28615,7 +28609,7 @@ try{ window._renderSkillsPane=_renderSkillsPane; }catch(e){}
    Each renderer writes its own title, so the section keeps the heading it
    always had - the merge changes where you find it, not what it says. The
    anchor id is what a retired deep link scrolls to. */
-function _setAppendSection(pane, id, host){
+function _setAppendSection(pane, id, host, fold){
   if(!pane) return;
   const wrap=document.createElement('div');
   wrap.className='set-merged';
@@ -28624,7 +28618,20 @@ function _setAppendSection(pane, id, host){
      answer was "at the end", which on Billing put usage and spending below the
      payment-security block. Falls back to the pane, so every existing caller
      keeps the behaviour it had. */
-  ((host && host.appendChild) ? host : pane).appendChild(wrap);
+  /* `fold` - a label - folds the section behind one line that opens it. "WAY
+     TOO MUCH": a Settings section should fit on a screen, and its secondary
+     parts (Team, About, Skills, API keys, Security) are there for the person
+     who goes looking, one tap away, rather than stacked under everybody. A
+     link straight to one of them opens it (see _wantSection). */
+  let target = wrap;
+  if(fold){
+    const d=document.createElement('details');
+    d.className='set-fold';
+    d.innerHTML='<summary class="set-fold-s">'+escH(T(fold))+'</summary>';
+    d.appendChild(wrap);
+    target = d;
+  }
+  ((host && host.appendChild) ? host : pane).appendChild(target);
   try{ _renderSetPaneInner(id, wrap); }catch(e){}
 }
 try{ window._setAppendSection=_setAppendSection; }catch(e){}
@@ -28667,6 +28674,7 @@ function _renderSetPaneInner(only, into){
   if(_wantSection){
     setTimeout(()=>{ try{
       const t=document.getElementById('set-sec-'+_wantSection);
+      if(t){ const d=t.closest('details'); if(d) d.open=true; }
       if(t) t.scrollIntoView({ block:'start', behavior:'auto' });
     }catch(e){} }, 60);
   }
@@ -28789,7 +28797,14 @@ function _renderSetPaneInner(only, into){
         sm('Changes saved!',true);
       }
     });
-    if(!only) _setAppendSection(pane, 'family');
+    /* Projects is added here, not by Team: a merged section renders with
+       `only` set, so Team's own "if(!only) add Projects" never runs once Team
+       is itself a part of Account - and the shared projects vanished. */
+    if(!only){
+      _setAppendSection(pane, 'teamset', null, 'Team');
+      _setAppendSection(pane, 'projects', null, 'Shared projects');
+      _setAppendSection(pane, 'about', null, 'About AMV');
+    }
 
   } else if(sp==='security'){
     pane.innerHTML=
@@ -28919,7 +28934,7 @@ function _renderSetPaneInner(only, into){
       _confirmDeleteAccount();
     });
 
-    if(!only) _setAppendSection(pane, 'security');
+    if(!only){ _setAppendSection(pane, 'capabilities'); _setAppendSection(pane, 'security', null, 'Password & security'); }
   } else if(sp==='appearance'){
     const isDark=!document.body.classList.contains('light');
     const curFs=parseInt(loadStr('amv_fs')||'14',10);
@@ -29024,14 +29039,14 @@ function _renderSetPaneInner(only, into){
           ).join('')+
         '</div>'+
       '</div>'+
-      '<div class="ss2"><h3>How it works</h3>'+
-        '<div class="lang-info">'+
+      '<details class="set-fold"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary>'+
+        '<div class="lang-info set-merged">'+
           '<p>\u2022 <b>Auto-detect</b> replies in whatever language you write in.</p>'+
           '<p>\u2022 Pick a language and every reply, comes back in it.</p>'+
           '<p>\u2022 Override anytime - e.g. \u201cmake me a poster, but in Chinese\u201d - and AMV follows that request just for that task.</p>'+
           '<p>\u2022 Not listed? AMV speaks 95+ languages - just write to it in yours and it responds in kind.</p>'+
         '</div>'+
-      '</div>';
+      '</details>';
     pane.querySelectorAll('[data-lang]').forEach(btn=>on(btn,'click',()=>{
       saveStr('amv_lang',btn.dataset.lang);
       // re-render the whole app UI, then translate - so nav, top bar, new-chat,
@@ -29318,43 +29333,50 @@ function _renderSetPaneInner(only, into){
        let the delegation correct it - two renders and the wrong one first. */
 
   } else if(sp==='integrations'){
+    /* WHAT IS CONNECTED, NOT THE WHOLE CATALOGUE A SECOND TIME.
+
+       This pane drew the full integrations catalogue - five thousand
+       characters - which the Integrations page already is. Settings answers
+       "what is AMV connected to, and how do I stop it": so the same catalogue
+       is drawn and everything not connected is taken out, keeping each
+       connected row's own Disconnect and Run exactly as they are, and the
+       page for adding more is one button away. */
     pane.innerHTML =
       '<h2 class="set-title">Connectors</h2>'+
-      '<div class="set-sub">Connect AMV to your tools. <b style="color:var(--tx)">Autonomous</b> ones work in the background once connected; <b style="color:var(--tx)">manual</b> ones you trigger or upload to. Click Connect - you approve in a popup, no keys to paste.</div>'+
-      _integrationsCatalogHTML();
+      '<div class="set-sub">What AMV is connected to. Add more from Integrations.</div>'+
+      '<div class="set-conn">'+_integrationsCatalogHTML()+'</div>'+
+      '<div class="set-conn-go"><button class="btn bp" data-stab="integrations">'+escH(T('Browse integrations'))+' \u2192</button></div>';
+    const _cl=pane.querySelector('.set-conn');
+    /* Signed out, nothing can be connected - and this was, and stays, the one
+       place a visitor can read what each connector does before making an
+       account. So the whole catalogue is kept for them, under its panel. */
+    const _guest=!(S.user && S.user.email);
+    if(_cl && !_guest){
+      _cl.querySelectorAll('.ax-legend, .int-seeall, .int-guest').forEach(x=>x.remove());
+      _cl.querySelectorAll('.int-card').forEach(c=>{ if(!c.querySelector('.int-ok')) c.remove(); });
+      _cl.querySelectorAll('.ss2').forEach(g=>{ if(!g.querySelector('.int-card')) g.remove(); });
+      if(!_cl.querySelector('.int-card')) _cl.innerHTML='<p class="set-empty">'+escH(T('Nothing is connected yet.'))+'</p>';
+    }
     _wireIntegrationCatalog(pane);
     _killTokenAutofill();
-    if(!only) _setAppendSection(pane, 'api');
+    if(!only){ _setAppendSection(pane, 'skills', null, 'Skills'); _setAppendSection(pane, 'api', null, 'API keys'); }
   } else if(sp==='skills'){
     _renderSkillsPane(pane);
   } else if(sp==='capabilities'){
-    const cap=(icon,title,desc)=>'<div class="cap-item"><span class="cap-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+icon+'</svg></span><div><div class="cap-t">'+escH(title)+'</div><div class="cap-d">'+escH(desc)+'</div></div></div>';
+    /* The three switches, under Privacy now - each one is about what AMV may
+       use or keep. The grid of "everything AMV can do" that sat above them was
+       a brochure inside Settings; it is gone, and nothing it described is. */
     const capToggle=(id,title,desc,on)=>'<div class="prv-pref"><div><div class="prv-pref-t">'+escH(title)+'</div><div class="prv-pref-s">'+escH(desc)+'</div></div><label class="sw"><input type="checkbox" id="'+id+'" '+(on?'checked':'')+'><span class="sw-sl"></span></label></div>';
     pane.innerHTML=
-      '<h2 class="set-title">Capabilities</h2>'+
-      '<div class="set-sub">Everything AMV can do for you - and the switches you control.</div>'+
-      '<div class="ss2"><h3>What AMV can do</h3>'+
-        '<div class="cap-grid">'+
-          cap('<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>','Chat & reasoning','Ask anything, think through problems, get clear answers with sources.')+
-          cap('<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>','Build & run code','Full-stack apps, scripts and APIs - written, run, and previewed live in Dev.')+
-          cap('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>','Read any file','PDFs, images, spreadsheets and code - uploaded, read and worked from.')+
-          cap('<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>','Web search','Pull live information from the web and cite it in answers.')+
-          cap('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>','Agents & Crew','Delegate multi-step jobs that run in the background and report back.')+
-          cap('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>','Automations','Schedule recurring work - daily briefs, monitoring, reports - hands-free.')+
-          cap('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 9h6"/>','Design & docs','Slides, spreadsheets, documents and designs on a live canvas.')+
-          cap('<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/>','Connectors','Link Gmail, Drive, Calendar, GitHub and more to work with your tools.')+
-        '</div>'+
-      '</div>'+
-      '<div class="ss2"><h3>Controls</h3>'+
-        capToggle('cap-websearch','Web search','Let AMV look things up online when it helps answer your question.', loadStr('amv_cap_websearch')!=='0')+
-        capToggle('cap-memory','Memory','Let AMV remember useful facts about you across chats.', loadStr('amv_cap_memory')!=='0')+
-        capToggle('cap-suggestions','Interactive answer blocks','Let AMV add tappable choices, stat cards, and step lists inside answers.', loadStr('amv_cap_suggestions')!=='0')+
+      '<h2 class="set-title">What AMV may use</h2>'+
+      '<div class="ss2">'+
+        capToggle('cap-websearch','Web search','Look things up online when it helps.', loadStr('amv_cap_websearch')!=='0')+
+        capToggle('cap-memory','Memory','Remember useful facts about you across chats.', loadStr('amv_cap_memory')!=='0')+
+        capToggle('cap-suggestions','Answer blocks','Tappable choices, cards and step lists inside answers.', loadStr('amv_cap_suggestions')!=='0')+
       '</div>';
     on($('cap-websearch'),'change',function(){ saveStr('amv_cap_websearch',this.checked?'1':'0'); toast(this.checked?'Web search on':'Web search off','info',2000); });
     on($('cap-memory'),'change',function(){ saveStr('amv_cap_memory',this.checked?'1':'0'); toast(this.checked?'Memory on':'Memory off','info',2000); });
-    on($('cap-suggestions'),'change',function(){ saveStr('amv_cap_suggestions',this.checked?'1':'0'); toast(this.checked?'Suggestions on':'Suggestions off','info',2000); });
-    if(!only) _setAppendSection(pane, 'skills');
-    if(!only) _setAppendSection(pane, 'investing');
+    on($('cap-suggestions'),'change',function(){ saveStr('amv_cap_suggestions',this.checked?'1':'0'); toast(this.checked?'Answer blocks on':'Answer blocks off','info',2000); });
   } else if(sp==='spending'){
     /* Rendered from 25-money-family-ui.js - see there for why these two panes
        exist at all (the logic shipped with no way for anyone to reach it). */
@@ -38774,7 +38796,9 @@ function _renderInvestPane(pane){
   pane.innerHTML=
     '<h2 class="set-title">Investing</h2>'+
     '<div class="set-sub">Link an investment account and AMV tells you how it is doing, as often as you like.</div>'+
-    '<div class="ss2 set-what"><h3>What this is</h3>'+
+    /* Folded: the four promises are there for whoever wants them, not stacked
+       above the one button somebody came here to press. */
+    '<details class="set-fold set-what"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary><div class="set-merged">'+
       '<p>A check-in, not a dashboard. Each one records where your investments stand and tells you what '+
       'changed since the last one - the amount and the percentage, broken down by account.</p>'+
       '<ul class="mf-what-l">'+
@@ -38787,7 +38811,7 @@ function _renderInvestPane(pane){
         '<li><b>No number is ever guessed.</b> If your institution cannot be reached, this says so instead '+
           'of showing you the last figure it happened to have.</li>'+
       '</ul>'+
-    '</div>'+
+    '</div></details>'+
     (!backend
       ? '<div class="ss2"><h3>Not connected yet</h3><p class="fam-p fam-quiet">Bank data is read through your '+
         'AMV backend so your tokens never reach the browser. Connect it and this starts working.</p></div>'
@@ -39578,64 +39602,66 @@ async function _spvFillBalance() {
 }
 
 function renderSpendView() {
+  /* SPENDING, AND ONLY SPENDING.
+
+     "Remove this from upgrade plan": Upgrade opened this page, and this page
+     opened on what Spending is, then the plan and its limits, then the money,
+     then the watchlist, then - at the bottom - the plans. Two screens in one,
+     and neither was the one somebody pressing Upgrade wanted. Now Upgrade has
+     its own screen (renderPlansView), the plan and its limits live in Plan &
+     billing, and this is the money AMV may spend for you: the balance and the
+     ceiling, the limits, the account it can see, what it is watching for. */
   const vc = $('vc'); if (!vc) return;
   vc.innerHTML =
     '<div class="sv fi"><div class="vi spv">'
       + '<div class="spv-head">'
-        + '<span class="eyebrow">' + escH(T('Spending')) + '</span>'
-        + '<h2 class="spv-t">' + escH(T('Everywhere your money goes')) + '</h2>'
-        + '<p class="spv-sub">' + escH(T('Two kinds of money live here, and they are not the same thing. Every limit on this page is checked on the server before anything happens.')) + '</p>'
+        + '<h2 class="spv-t">' + escH(T('Spending')) + '</h2>'
+        + '<p class="spv-sub">' + escH(T('What AMV may spend for you, and what it has spent. Every limit is checked on the server first.')) + '</p>'
       + '</div>'
-      /* 1. WHAT IT IS. */
-      + _spvWhat()
-      /* 2. THE PLAN AND ITS LIMITS. */
-      + '<section class="spv-sec">'
-        + '<h2 class="set-title">' + escH(T('Your plan, and what it gives you')) + '</h2>'
-        + _spvPlanNow()
-        + (typeof _usageShapeBand === 'function' ? _usageShapeBand() : '')
-      + '</section>'
-      /* 3. THE MONEY AMV MAY SPEND: what is there, what the ceiling is. */
-      + '<section class="spv-sec">'
-        + '<h2 class="set-title">' + escH(T('Money AMV can spend for you')) + '</h2>'
-        + '<div class="set-sub">' + escH(T('What is in the account it can see, and the most it may ever spend from it.')) + '</div>'
-        + _spvMoneyFacts()
-      + '</section>'
-      /* The limits editor and the account card, which are the Settings panes
-         themselves rather than a second copy of them. */
+      + _spvMoneyFacts()
+      /* The limits editor and the account card are the same panes Settings
+         used to render - one copy of the most consequential controls. */
       + '<section class="spv-sec" id="spv-limits"></section>'
       + '<section class="spv-sec" id="spv-bank"></section>'
-      /* 4. WHAT IT IS WATCHING FOR. */
       + (typeof watchlistHTML === 'function' ? watchlistHTML() : '')
-      /* 5. AND ONLY THEN, THE UPGRADE.
-
-         Last on purpose. Somebody who came here to check what AMV spent is
-         not here to be sold to, and a plan grid above their own numbers reads
-         as the page being about the sale. */
-      + '<section class="spv-sec spv-plans">'
-        + '<h2 class="set-title">' + escH(T('Upgrade your plan')) + '</h2>'
-        + '<div class="set-sub">' + escH(T('The same engine on every paid plan. A bigger plan buys more of it, not a better one.')) + '</div>'
-        + '<div class="pg pg-app pg-4">' + planCards(true) + '</div>'
-        + _teamPlanBanner(true)
-        + _customPlanBanner(true)
-        + '<p class="px-note" style="display:none">' + escH(T('Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.')) + '</p>'
-        + '<div class="plans-compare-row"><button class="btn bs" id="spv-compare">'
-          + escH(T('Compare all plans in detail')) + ' \u2192</button></div>'
-      + '</section>'
     + '</div></div>';
 
-  /* The real editors, not a second copy of them. Each is told how to redraw
-     itself HERE - the default redraw is Settings, which on this screen would
-     either navigate away or silently drop the server's answer. */
   try { _renderSpendingPane($('spv-limits'), renderSpendView); } catch (e) {}
   try { _renderInvestPane($('spv-bank')); } catch (e) {}
   try { wireWatchlist(renderSpendView); } catch (e) {}
   try { _spvFillBalance(); } catch (e) {}
+}
 
-  on($('spv-compare'), 'click', () => {
+/* THE PLANS, AND NOTHING ELSE.
+
+   What Upgrade opens. Every plan, the one you are on marked, one tap to the
+   plan's own detail and checkout - and the comparison for whoever wants it.
+   Centred, because it is the one screen in AMV that is a choice between a few
+   equal things laid side by side. */
+function renderPlansView() {
+  const vc = $('vc'); if (!vc) return;
+  const now = (typeof S !== 'undefined' && S.plan) ? S.plan : ((typeof loadStr === 'function' && loadStr('amv_plan')) || 'free');
+  const nowName = (typeof PLANS !== 'undefined' && PLANS[now] && PLANS[now].name) || 'Free';
+  vc.innerHTML =
+    '<div class="sv fi"><div class="vi pln-v">'
+      + '<div class="pln-head">'
+        + '<span class="eyebrow">' + escH(T('You are on')) + ' ' + escH(nowName) + '</span>'
+        + '<h2 class="pln-t">' + escH(T('Choose a plan')) + '</h2>'
+        + '<p class="pln-sub">' + escH(T('The same engine on every paid plan. A bigger plan buys more of it, not a better one.')) + '</p>'
+      + '</div>'
+      + '<div class="pg pg-app pg-4">' + planCards(true) + '</div>'
+      + _teamPlanBanner(true)
+      + _customPlanBanner(true)
+      + '<p class="px-note" style="display:none">' + escH(T('Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.')) + '</p>'
+      + '<div class="plans-compare-row"><button class="btn bs" id="pln-compare">'
+        + escH(T('Compare all plans in detail')) + ' →</button></div>'
+    + '</div></div>';
+  on($('pln-compare'), 'click', () => {
     try { openPlanCompare(loadStr('amv_plan') || 'pro'); } catch (e) {}
   });
   try { _localizePrices(document); } catch (e) {}
 }
+try { window.renderPlansView = renderPlansView; } catch (e) {}
 try { window.renderSpendView = renderSpendView; } catch (e) {}
 /* ══════════════════════════════════════════════════════════════════════════
    THINGS AMV IS WATCHING FOR A PRICE.
@@ -40093,8 +40119,8 @@ function _renderSpendingPane(pane, redraw){
   const canConfigure = !gate;
 
   pane.innerHTML =
-    '<h2 class="set-title">Spending</h2>'+
-    '<div class="set-sub">What AMV is allowed to spend for you, and what it has actually spent. Nothing is bought outside these limits.</div>'+
+    '<h2 class="set-title">What AMV may spend for you</h2>'+
+    '<div class="set-sub">Off until you turn it on. Nothing is bought outside these limits.</div>'+
     /* What this IS, before what it is set to.
 
        The pane opened straight into three number fields. Somebody who has never
@@ -40102,7 +40128,9 @@ function _renderSpendingPane(pane, redraw){
        under" with no idea what would be bought, by what, or why they would want
        it - which is the worst possible first impression for the one screen
        about money. */
-    '<div class="ss2 mf-what"><h3>What this is</h3>'+
+    /* Folded behind one line. The consent gate below is NOT - agreeing to it
+       is the decision, and a decision is never hidden behind a tap. */
+    '<details class="set-fold mf-what"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary><div class="set-merged">'+
       '<p>When AMV is doing a job for you and that job needs something bought - a domain for a site '+
       'it is deploying, an API key, a stock photo, a paid data source - this is what decides whether '+
       'it may buy it, and how much it may spend without stopping to ask you.</p>'+
@@ -40119,7 +40147,7 @@ function _renderSpendingPane(pane, redraw){
         '<li><b>Everything is written down</b> - every purchase appears below with what it was, where, '+
           'and how much, and it is only visible to you.</li>'+
       '</ul>'+
-    '</div>'+
+    '</div></details>'+
     gate +
     (canConfigure ?
     '<div class="ss2"><h3>Limits</h3>'+
@@ -40161,7 +40189,7 @@ function _renderSpendingPane(pane, redraw){
         '</tbody></table>'
         : '<p class="mf-empty">AMV has not bought anything for you. When it does, every purchase is listed here with the rule that allowed it.</p>')+
     '</div>'+
-    '<div class="ss2"><h3>Your responsibility</h3><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div>';
+    '<details class="set-fold"><summary class="set-fold-s">'+escH(T('Your responsibility'))+'</summary><div class="set-merged"><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div></details>';
 
   on($('mf-accept-terms'),'click',function(){
     try{ AMVCompliance.accept(); toast('Terms accepted','success',2500); _again(); }
