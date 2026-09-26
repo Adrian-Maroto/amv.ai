@@ -48,11 +48,12 @@ function _bridgeRestore(){
 function _bridgeRemember(){
   try{
     sessionStorage.setItem('amv_bridge', JSON.stringify({
-      port: BRIDGE.port, token: BRIDGE.token, folder: BRIDGE.folder, root: BRIDGE.root }));
+      port: BRIDGE.port, token: BRIDGE.token, folder: BRIDGE.folder, root: BRIDGE.root,
+      sharesEnv: !!BRIDGE.sharesEnv }));
   }catch(e){}
 }
 function _bridgeForget(){
-  BRIDGE.port = 0; BRIDGE.token = ''; BRIDGE.folder = ''; BRIDGE.root = '';
+  BRIDGE.port = 0; BRIDGE.token = ''; BRIDGE.folder = ''; BRIDGE.root = ''; BRIDGE.sharesEnv = false;
   BRIDGE.connected = false;
   try{ sessionStorage.removeItem('amv_bridge'); }catch(e){}
   /* The connectors ran on that machine, so they are gone with it. Leaving
@@ -138,6 +139,7 @@ async function _bridgePair(port, code){
   const d = await r.json();
   BRIDGE.port = Number(port); BRIDGE.token = d.token;
   BRIDGE.folder = d.folder || ''; BRIDGE.root = d.root || '';
+  BRIDGE.sharesEnv = d.sharesEnvironment === true;
   BRIDGE.connected = true; BRIDGE.why = '';
   _bridgeRemember();
   return BRIDGE;
@@ -319,6 +321,15 @@ function _bridgeCardHTML(){
         + 'anything you can - the bridge prints every one in its terminal. In '
         + 'chat AMV asks before each one. In Build it asks once for the whole '
         + 'request, and you can stop it at any point.</p>'
+      /* What commands can see of this computer's settings, said either way:
+         the default is a short allowed list with no keys or tokens, and the
+         full environment is a flag somebody chose when starting the bridge. */
+      + (BRIDGE.sharesEnv
+          ? '<p class="brg-p brg-warn"><b>Sharing everything.</b> This bridge was started with '
+            + '<code>--share-environment</code>, so every command and connector can read all of '
+            + 'that terminal\u2019s settings, including any keys or tokens in it.</p>'
+          : '<p class="brg-p">Commands get your program path and basic settings - none of the keys '
+            + 'or tokens set in that terminal. A connector gets only the credentials you give it.</p>')
       + '<div class="brg-acts">'
         + '<button class="btn bs" id="brg-off" type="button">Disconnect</button>'
       + '</div></div>';

@@ -68,7 +68,52 @@ const VERSION = '1.0.0';
 
 /* The folder AMV may touch. Resolved through symlinks once, at startup, so a
    link planted inside it later cannot widen the boundary. */
-const ROOT = realpathSync(resolve(process.argv[2] || process.cwd()));
+const ARGS = process.argv.slice(2);
+const ROOT = realpathSync(resolve(ARGS.find(a => !a.startsWith('--')) || process.cwd()));
+
+/* WHAT A COMMAND SEES OF THIS COMPUTER'S ENVIRONMENT.  (AMV-AUD-005)
+
+   Every command and every connector used to inherit the whole environment of
+   the window the bridge was started in - which, on a developer's machine, is
+   where the cloud keys, the API tokens, the npm auth token and the SSH agent
+   live. A command AMV runs is chosen by a model, and a connector is a program
+   somebody else wrote; neither should be handed those by default.
+
+   So by default a child gets a short list of settings a build needs and no
+   credential ever lives in: where programs are (PATH), where home and temp
+   are, language, terminal, and the toolchain roots. A connector also gets the
+   credentials typed into ITS OWN environment box - those were given to it on
+   purpose. Anything else a command needs can be passed explicitly.
+
+   The old behaviour is still there for somebody who wants it, named for what
+   it does: start the bridge with --share-environment, and the banner and AMV's
+   screen both say that everything in this window is visible to what AMV runs.
+
+   What this does NOT do: keep a command from READING files - a key saved in a
+   file under home is as reachable as before. That boundary is an isolated
+   project copy, which is a bigger change; this closes the variables. */
+const SHARE_ENV = ARGS.includes('--share-environment');
+const ENV_ALLOW = new Set([
+  'PATH', 'PATHEXT', 'HOME', 'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'USER', 'USERNAME', 'LOGNAME',
+  'SHELL', 'COMSPEC', 'SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'OS', 'PROCESSOR_ARCHITECTURE',
+  'NUMBER_OF_PROCESSORS', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMDATA', 'PROGRAMFILES',
+  'PROGRAMFILES(X86)', 'COMMONPROGRAMFILES', 'TEMP', 'TMP', 'TMPDIR', 'LANG', 'LANGUAGE',
+  'TERM', 'COLORTERM', 'TZ', 'PWD', 'NODE_ENV', 'NVM_DIR', 'NVM_BIN', 'PYENV_ROOT', 'VIRTUAL_ENV',
+  'CONDA_PREFIX', 'JAVA_HOME', 'GOPATH', 'GOROOT', 'CARGO_HOME', 'RUSTUP_HOME', 'DOTNET_ROOT',
+  'ANDROID_HOME',
+]);
+const ENV_ALLOW_PREFIX = ['LC_', 'XDG_'];
+function childEnv(extra) {
+  const out = {};
+  for (const [k, v] of Object.entries(process.env)) {
+    const K = k.toUpperCase();                    // Windows names are case-insensitive
+    if (SHARE_ENV || ENV_ALLOW.has(K) || ENV_ALLOW_PREFIX.some(p => K.startsWith(p))) out[k] = v;
+  }
+  if (extra && typeof extra === 'object') for (const k of Object.keys(extra)) out[k] = String(extra[k]);
+  /* Never the bridge's own, whatever else is shared. */
+  for (const k of Object.keys(out)) if (/^AMV_BRIDGE_/i.test(k)) delete out[k];
+  return out;
+}
 
 /* Origins allowed to talk to this bridge. A pairing code stops a random page
    using it; this stops a random page even trying, and keeps the browser's
@@ -280,11 +325,9 @@ function mcpStart(id, command, args, envExtra){
   const shell = false;
   const child = spawn(command, Array.isArray(args) ? args : [], {
     cwd: ROOT,
-    /* The parent's environment plus whatever the server needs, minus the
-       bridge's own secrets - a connector has no business reading the pairing
-       token, and this is the route most likely to run somebody else's code. */
-    env: Object.assign({}, process.env, envExtra || {},
-                       { AMV_BRIDGE_TOKEN: '', AMV_BRIDGE_DEV: '' }),
+    /* The allowed environment plus the credentials typed in for THIS
+       connector, and never the bridge's own - see childEnv. */
+    env: childEnv(envExtra),
     stdio: ['pipe', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
     shell,
@@ -547,7 +590,8 @@ const server = createServer(async (req, res) => {
      often their real name. */
   if (path === '/amv-bridge/hello' && req.method === 'GET') {
     return json(res, 200, { bridge: true, version: VERSION,
-                            folder: ROOT.split(sep).pop(), paired: !!sessionToken });
+                            folder: ROOT.split(sep).pop(), paired: !!sessionToken,
+                            sharesEnvironment: SHARE_ENV });
   }
 
   if (!allowed) return json(res, 403, { error: 'origin_not_allowed' });
@@ -578,7 +622,8 @@ const server = createServer(async (req, res) => {
     console.log(replaced
       ? '  ✓ paired with AMV - the previous session was disconnected'
       : '  ✓ paired with AMV');
-    return json(res, 200, { token: sessionToken, folder: ROOT.split(sep).pop(), root: ROOT, replaced });
+    return json(res, 200, { token: sessionToken, folder: ROOT.split(sep).pop(), root: ROOT, replaced,
+                            sharesEnvironment: SHARE_ENV });
   }
 
   if (!tokenOk(req.headers['x-amv-bridge-token'])) return json(res, 401, { error: 'not_paired' });
@@ -872,9 +917,8 @@ const server = createServer(async (req, res) => {
       const args = process.platform === 'win32' ? ['/c', cmd] : ['-c', cmd];
       const child = spawn(shell, args, {
         cwd,
-        /* The parent's environment, minus the bridge's own secrets. A command
-           has no business reading the pairing token. */
-        env: Object.assign({}, process.env, { AMV_BRIDGE_TOKEN: '', AMV_BRIDGE_DEV: '' }),
+        /* The allowed environment only - see childEnv. */
+        env: childEnv(null),
         /* ITS OWN PROCESS GROUP, so the timeout can kill the whole tree.
 
            Without this, kill reaches the shell and not what the shell
@@ -965,6 +1009,15 @@ server.listen(0, '127.0.0.1', () => {
   console.log('  AMV reads and writes files inside that folder and nowhere');
   console.log('  else. Commands run there as you, so a command can reach');
   console.log('  anything you can - every one is printed below as it runs.');
+  if (SHARE_ENV) {
+    console.log('\n  !! --share-environment is ON: every command and connector');
+    console.log('     can read ALL of this window\'s environment variables,');
+    console.log('     including any keys or tokens set in it.');
+  } else {
+    console.log('\n  Commands get your PATH and basic settings, none of this');
+    console.log('  window\'s keys or tokens. To share everything, restart with');
+    console.log('  --share-environment.');
+  }
   console.log('  Close this window to stop.');
   console.log(line + '\n');
 });

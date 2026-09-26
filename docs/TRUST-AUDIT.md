@@ -1406,3 +1406,28 @@ precise to charge from at that point.
 **Not built:** Stop for the Build agent's model rounds and other non-chat paths
 (they cancel in the browser since round twenty-two, but do not name the turn to
 the server). Chat is where Stop is pressed.
+
+## Round thirty-two - a command does not inherit your keys (AMV-AUD-005, owner-approved)
+
+Commands and connectors inherited the bridge terminal's whole environment. They
+now get an allowed list (PATH, home, temp, language, terminal, toolchain roots,
+`LC_*`/`XDG_*`), a connector also gets the credentials typed in for it, and
+nothing named `AMV_BRIDGE_*` ever passes. `--share-environment` restores the old
+behaviour on purpose; the terminal banner, the pairing response, `/hello` and
+the computer card all say which mode is on.
+
+`a-command-does-not-inherit-your-keys` starts real bridges from an environment
+seeded with fake cloud, model, npm, GitHub, SSH-agent and database secrets, and
+reads back what a command and a connector were given.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 137 | the whole environment passed (the finding) | 2 assertions |
+| 138 | a connector loses the credentials given to it | 1 assertion |
+| 139 | the bridge's own variables pass through | 1 assertion |
+| 140 | the opt-in does nothing | 2 assertions |
+| 141 | the page is not told which mode is on | 2 assertions |
+
+Five for five. **Still open, stated on purpose:** a command can READ files a
+person can, including a key saved under home. That boundary is an isolated
+project copy; this round closes the variables.
