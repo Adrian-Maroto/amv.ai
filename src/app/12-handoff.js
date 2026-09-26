@@ -676,7 +676,7 @@ function _usageShapeBand(){
            'day, every day. It exists as an anti-abuse ceiling - not as the thing you ration.')+
     '</div>'+
     '<p class="ushape-f">Every one of these is checked on the server before a request runs, '+
-      'and your current position is on the Usage tab at all times.</p>'+
+      'and where you stand is always under Settings, Plan &amp; billing.</p>'+
   '</section>';
 }
 try{ window._usageShapeBand=_usageShapeBand; }catch(e){}
