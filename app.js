@@ -1151,6 +1151,12 @@ const AMV_API = {
      accounts: the page starts a sign-in, finishes one, lists what exists, and
      asks the server to list an app's tools or run one. No token ever comes
      here - the server holds it and makes the call. */
+  /* One call to a connected app's API (Slack, Spotify, Dropbox...), made by the
+     server with the token it holds. The page never sees the token. */
+  async connectApi(provider, method, path, query, body){
+    return this._wrote('/v1/connect/api', { provider, method, path, query: query || undefined, body: body === undefined ? undefined : body },
+      'That app did not complete the request.');
+  },
   async remoteList(){ return this._wrote('/v1/remote/list', {}, 'The list of connected apps could not be read.'); },
   async remoteStart(app, redirect){ return this._wrote('/v1/remote/start', { app, redirect }, 'That connection could not be started.'); },
   async remoteFinish(code, state){ return this._wrote('/v1/remote/finish', { code, state }, 'That connection could not be completed.'); },
@@ -31461,6 +31467,16 @@ function _integrationsCatalogHTML(opts){
     /* THE APP'S OWN CONNECTOR. Signed in to at the app; AMV then uses it in
        chat, and asks before each action - so it is Manual, not Autonomous.
        A connection the app stopped accepting says so and offers Connect again. */
+    /* THE APP'S OWN STANDARD SIGN-IN, and its API from chat. Live once the app
+       is registered with the provider on this deployment; until then Connect
+       says so rather than opening a flow that fails. */
+    else if(kind==='p'){
+      const pid=h.slice(2);
+      o.id='prov'; o.preset=pid; o.manual=true; o.dedupe='prov:'+pid;
+      o.connected=_rowConnected(pid);
+      o.desc=escH(a.desc)+' '+(o.connected ? 'Connected - ask for it in chat, and AMV asks you before each action.'
+                                           : 'Sign in at '+escH(a.name)+'; AMV asks you before each action.');
+    }
     else if(kind==='r'){
       const slug=h.slice(2), st=_rmcpStateOf(slug);
       o.id='rmcp'; o.preset=slug; o.manual=true; o.dedupe='rmcp:'+slug;
@@ -31664,6 +31680,7 @@ function _wireIntegrationCatalog(root){
     if(_intNeedsAccount(_intName(btn.dataset.intConn))) return;
     if(btn.dataset.intConn==='mail') return openMailConnect(btn.dataset.intPreset||'');
     if(btn.dataset.intConn==='rmcp') return rmcpConnect(btn.dataset.intPreset||'');
+    if(btn.dataset.intConn==='prov') return connAddWhenReady(btn.dataset.intPreset||'');
     if(btn.dataset.intConn==='telegram') return openTelegramConnect();
     /* Providers the connected-accounts framework owns are STARTED there, not
        here. Google's row used to run a sign-in from this button; sending it to
@@ -31682,6 +31699,10 @@ function _wireIntegrationCatalog(root){
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intDisc==='mail') return disconnectMail();
     if(btn.dataset.intDisc==='rmcp') return rmcpDisconnect(btn.dataset.intPreset||'');
+    if(btn.dataset.intDisc==='prov'){
+      const it=((_connState.data||{}).items||[]).find(x=>x.provider===btn.dataset.intPreset);
+      if(it) return connRemove(it.id);
+    }
     if(btn.dataset.intDisc==='telegram') return disconnectTelegram();
     disconnectIntegration(btn.dataset.intDisc);
   }));
@@ -31776,19 +31797,27 @@ let _connState = { state:'idle', data:null, err:'' };
    it records. `connReload()` clears it, so Try again still means try again. */
 let _connTried = '';
 function _connCtx(){ return (window.AMV_API && AMV_API.live) ? '1' : '0'; }
+/* THE NEWEST ANSWER WINS (LESSONS 523). A reload forced while an older
+   request was still out used to be dropped - and when it was allowed, the
+   older one could land afterwards and overwrite the fresh answer with its
+   error. Each load takes a number; only the latest may write. */
+let _connGen = 0;
 async function _connLoad(force){
-  if(_connState.state === 'loading') return;
+  if(!force && _connState.state === 'loading') return;
   if(_connState.state === 'done' && !force) return;
   if(!force && _connTried === _connCtx()) return;
   _connTried = _connCtx();
   if(!(window.AMV_API && AMV_API.live && AMV_API.connectList)){
     _connState = { state:'off', data:null, err:'' }; _connPaint(); return;
   }
+  const gen = ++_connGen;
   _connState.state = 'loading'; _connPaint();
   try{
     const d = await AMV_API.connectList();
+    if(gen !== _connGen) return;
     _connState = { state:'done', data:d || null, err:'' };
   }catch(e){
+    if(gen !== _connGen) return;
     _connState = { state:'error', data:null, err:String((e&&e.message)||'').slice(0,120) };
   }
   _connPaint();
@@ -31819,6 +31848,18 @@ const _CONN_SCOPE_WORDS = {
   /* Said as what it can SEE and what it cannot DO, in one line, because this is
      the one on the list a parent will read twice. */
   'school.read':'see what you have been set at school and when it is due - it cannot turn work in',
+  'files.read':'read your OneDrive files', 'youtube.read':'see your YouTube channel and playlists',
+  'tasks.write':'read and change your Google Tasks',
+  'slack.read':'read your channels, messages and people, and search Slack', 'slack.write':'post messages as you',
+  'discord.read':'see your profile and the servers you are in',
+  'spotify.read':'see what you play, your playlists and your library', 'spotify.write':'control playback and change your playlists',
+  'dropbox.read':'read your files', 'dropbox.write':'add and change files',
+  'hubspot.read':'read contacts, companies and deals', 'hubspot.write':'add and change contacts and deals',
+  'asana.all':'everything your Asana account can do', 'zoom.all':'your meetings, as allowed in AMV\u2019s Zoom app',
+  'box.all':'everything your Box account can do', 'strava.read':'read your activities and profile', 'strava.write':'add activities',
+  'reddit.read':'read Reddit as you, with your subscriptions and history', 'reddit.write':'post, edit and vote as you',
+  'pinterest.read':'read your boards and pins', 'pinterest.write':'create boards and pins',
+  'calendly.all':'your event types, bookings and availability',
 };
 function _connScopeWords(list){
   return (Array.isArray(list)?list:[]).map(k => _CONN_SCOPE_WORDS[k] || k);
@@ -31847,6 +31888,19 @@ async function connAdd(provider){
   }
 }
 try{ window.connAdd=connAdd; }catch(e){}
+/* Connect, from a row, without depending on the list having loaded first.
+   connAdd returns quietly when it does not know the provider - which, from a
+   row that says Connect, is a button that does nothing. So the list is asked
+   for if it is not here, and a failure is said. */
+async function connAddWhenReady(provider){
+  if(!(_connState.data && (_connState.data.providers||[]).length)) await _connLoad(true);
+  const d=_connState.data;
+  if(!d){ toast('Connected accounts could not be loaded, so AMV cannot start a sign-in just now. Try again in a moment.','error',7000); return; }
+  if(!d.configured){ toast('Connecting apps is not switched on for this deployment yet.','info',7000); return; }
+  if(!(d.providers||[]).some(x=>x.id===provider)){ toast('That app cannot be connected on this deployment.','info',6000); return; }
+  return _connGoTo(provider);
+}
+try{ window.connAddWhenReady=connAddWhenReady; }catch(e){}
 
 /* A real choice, with the consequence of each line written out. */
 function _connScopePick(p){
@@ -31979,15 +32033,19 @@ function _connBodyHTML(){
     '</div>';
   }).join('');
 
-  const add=(d.providers||[]).map(p =>
-    '<button class="conn-add'+(p.ready?'':' dark')+'" data-dact="connAdd" data-darg="'+escH(p.id)+'"'+
-      (p.ready?'':' aria-disabled="true"')+'>'+
+  /* Only what can be connected here. A row of fifteen greyed-out buttons told
+     somebody fifteen times what they could not do; the number of apps waiting
+     to be set up is one line, and the operator's readiness screen names them. */
+  const ready=(d.providers||[]).filter(p=>p.ready), dark=(d.providers||[]).length-ready.length;
+  const add=ready.map(p =>
+    '<button class="conn-add" data-dact="connAdd" data-darg="'+escH(p.id)+'">'+
       '<span class="conn-add-n">'+escH(p.name)+'</span>'+
-      '<span class="conn-add-s">'+escH(p.ready?T('Connect'):T('Not set up on this deployment'))+'</span>'+
+      '<span class="conn-add-s">'+escH(T('Connect'))+'</span>'+
     '</button>').join('');
 
   return (items || '<div class="conn-note">'+escH(T('Nothing is connected. Jobs that need an account say so on the Crew screen, and send you here.'))+'</div>')+
-    '<div class="conn-add-row">'+add+'</div>';
+    (add ? '<div class="conn-add-row">'+add+'</div>' : '')+
+    (dark ? '<div class="conn-note-sm">'+escH(dark+' '+T('more become available as they are set up on this deployment.'))+'</div>' : '');
 }
 
 /* WHETHER THE SETUP PANEL IS OPEN, REMEMBERED.
@@ -33593,6 +33651,8 @@ try{ window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdir
               AMV's own flows, each already on this page before this rewrite
      r:<slug> the app's own official connector, signed in to at the app
               (REMOTE_APPS on the server lists them and how each was verified)
+     p:<id>   the app's own standard sign-in, with its API used from chat
+              (CONN_PROVIDERS on the server; live once the app is registered)
 
    The third field is the sentence under the name. Rows that connect say what
    AMV does there; rows that do not say what the app is, and nothing more. */
@@ -33618,7 +33678,7 @@ const AMV_APP_CATS = [
     'Apple iCloud Calendar|cal|Read-only, through the calendar’s shared link.',
     'Any other calendar|cal|iCloud, Fastmail, Nextcloud, Yandex, Zoho, a university timetable - anything that publishes a link. Read-only: AMV sees your week and can never change it.',
     'Fastmail Calendar|cal|', 'Proton Calendar|cal|', 'Zoho Calendar|cal|', 'Nextcloud Calendar|cal|', 'Yandex Calendar|cal|',
-    'Calendly||Booking links for meetings.', 'Cal.com||Open scheduling for meetings.',
+    'Calendly|p:calendly|Booking links for meetings.', 'Cal.com||Open scheduling for meetings.',
     'Microsoft Bookings||Appointments for Microsoft 365.', 'Doodle||Find a time that suits everyone.',
     'Fantastical||A calendar app for Apple devices.', 'Notion Calendar||A calendar that works with Notion.',
     'TimeTree||Shared calendars for families and groups.', 'Acuity Scheduling||Client booking and payments.',
@@ -33627,8 +33687,8 @@ const AMV_APP_CATS = [
   { id:'messaging', t:'Chat &amp; messaging', q:'messaging', apps:[
     'Telegram|tg|Run AMV from Telegram and get your background work there - through a bot you own and can revoke.',
     'Text messages (SMS)|sms|Run AMV from any phone by text - “check Project X”, “draft a reply”.',
-    'WhatsApp||Messages and calls.', 'Slack||Team channels and direct messages.', 'Microsoft Teams||Chat and meetings for work.',
-    'Discord||Servers, voice and chat.', 'Messenger||Chat from Facebook.', 'Zoom||Video meetings and chat.',
+    'WhatsApp||Messages and calls.', 'Slack|p:slack|Team channels and direct messages.', 'Microsoft Teams||Chat and meetings for work.',
+    'Discord|p:discord|Servers, voice and chat.', 'Messenger||Chat from Facebook.', 'Zoom|p:zoom|Video meetings and chat.',
     'Google Chat||Chat for Google Workspace.', 'Google Meet||Video meetings.', 'Signal||Private messaging.',
     'WeChat||Messaging, payments and mini-programs.', 'LINE||Messaging across Japan, Taiwan and Thailand.',
     'KakaoTalk||Korea’s messenger.', 'Viber||Messages and calls.', 'Zalo||Vietnam’s messenger.',
@@ -33642,7 +33702,7 @@ const AMV_APP_CATS = [
     'Excel and CSV|file|Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',
     'Word|file|Reports, proposals and letters - written and exported, ready to edit.',
     'PowerPoint|file|Describe a deck and AMV builds the slides - export the .pptx.',
-    'Dropbox||Cloud storage and sharing.', 'OneDrive||Microsoft’s cloud storage.', 'Box||Cloud content for business.',
+    'Dropbox|p:dropbox|Cloud storage and sharing.', 'OneDrive|ms|Microsoft’s cloud storage.', 'Box|p:box|Cloud content for business.',
     'iCloud Drive||Apple’s cloud storage.', 'Evernote||Notes and web clips.', 'OneNote||Microsoft’s notebook.',
     'Adobe Acrobat||PDFs: read, sign and edit.', 'Google Keep||Quick notes and lists.', 'Apple Notes||Notes on Apple devices.',
     'Obsidian||Notes in plain files on your own computer.', 'Coda||Docs that work like apps.', 'Mega||Encrypted cloud storage.',
@@ -33699,11 +33759,11 @@ const AMV_APP_CATS = [
     'Arlo||Security cameras.', 'TP-Link Kasa||Smart plugs and lights.', 'iRobot||Robot vacuums.',
   ]},
   { id:'work', t:'Work &amp; projects', q:'productivity', apps:[
-    'Notion|r:notion|Docs, wikis and projects.', 'Trello||Boards and cards.', 'Asana||Work management.', 'Monday.com|r:monday|Work management.',
-    'ClickUp||Tasks, docs and goals.', 'Todoist||To-do lists.', 'Microsoft To Do||Tasks and lists.', 'Google Tasks||Tasks with Gmail and Calendar.',
-    'Basecamp||Projects and team communication.', 'Miro||Online whiteboard.', 'Confluence|r:atlassian|Team wiki.', 'Wrike||Project management.',
+    'Notion|r:notion|Docs, wikis and projects.', 'Trello||Boards and cards.', 'Asana|p:asana|Work management.', 'Monday.com|r:monday|Work management.',
+    'ClickUp||Tasks, docs and goals.', 'Todoist|r:todoist|To-do lists.', 'Microsoft To Do||Tasks and lists.', 'Google Tasks|g|Tasks with Gmail and Calendar.',
+    'Basecamp||Projects and team communication.', 'Miro|r:miro|Online whiteboard.', 'Confluence|r:atlassian|Team wiki.', 'Wrike||Project management.',
     'Smartsheet||Work management in sheets.', 'TickTick||Tasks and habits.', 'Things||Tasks on Apple devices.', 'Microsoft Planner||Team tasks.',
-    'Zoho Projects||Project management.', 'Loom||Video messages for work.', 'Craft||Documents and notes.',
+    'Zoho Projects||Project management.', 'Loom||Video messages for work.', 'Craft|r:craft|Documents and notes.',
   ]},
   { id:'design', t:'Design &amp; creativity', q:'design', apps:[
     'Canva|r:canva|Designs, social posts and presentations.', 'Figma|r:figma|Interface design together.', 'Adobe Photoshop||Photo editing.',
@@ -33714,7 +33774,7 @@ const AMV_APP_CATS = [
     'Snapseed||Photo editing.', 'Affinity||Design, photo and publishing.', 'Blender||3D creation.', 'GIMP||Open-source image editing.',
   ]},
   { id:'video', t:'Video &amp; streaming', q:'media', apps:[
-    'CapCut||Video editing.', 'YouTube||Videos and channels.', 'TikTok||Short videos.', 'Netflix||Films and series.',
+    'CapCut||Video editing.', 'YouTube|g|Videos and channels.', 'TikTok||Short videos.', 'Netflix||Films and series.',
     'Twitch||Live streams.', 'Vimeo||Video hosting.', 'Adobe Premiere Pro||Video editing.', 'DaVinci Resolve||Editing and colour.',
     'Final Cut Pro||Video editing on the Mac.', 'iMovie||Video editing on Apple devices.', 'InShot||Video editing on phones.',
     'Disney+||Films and series.', 'Prime Video||Films and series.', 'Max||Films and series.', 'Hulu||Films and series.',
@@ -33722,7 +33782,7 @@ const AMV_APP_CATS = [
     'Riverside||Record podcasts and video.', 'StreamYard||Live streaming.',
   ]},
   { id:'music', t:'Music &amp; audio', q:'music', apps:[
-    'Spotify||Music and podcasts.', 'Apple Music||Music streaming.', 'YouTube Music||Music streaming.', 'SoundCloud||Music from creators.',
+    'Spotify|p:spotify|Music and podcasts.', 'Apple Music||Music streaming.', 'YouTube Music||Music streaming.', 'SoundCloud||Music from creators.',
     'Amazon Music||Music streaming.', 'Deezer||Music streaming.', 'Tidal||Music streaming.', 'Pandora||Radio and music.',
     'Shazam||Name that song.', 'Audible||Audiobooks.', 'Apple Podcasts||Podcasts.', 'Pocket Casts||Podcasts.',
     'JioSaavn||Music in India.', 'Anghami||Music in the Middle East.', 'Boomplay||Music in Africa.', 'NetEase Cloud Music||Music in China.',
@@ -33730,7 +33790,7 @@ const AMV_APP_CATS = [
   ]},
   { id:'social', t:'Social networks', q:'social', apps:[
     'Instagram||Photos, reels and messages.', 'Facebook||Friends, groups and pages.', 'X||Posts and news.', 'Threads||Text posts from Instagram.',
-    'Reddit||Communities and discussion.', 'Pinterest||Ideas and boards.', 'Bluesky||An open social network.', 'Mastodon||Decentralised social network.',
+    'Reddit|p:reddit|Communities and discussion.', 'Pinterest|p:pinterest|Ideas and boards.', 'Bluesky||An open social network.', 'Mastodon||Decentralised social network.',
     'Tumblr||Blogs and communities.', 'Quora||Questions and answers.', 'VK||Russia’s social network.', 'Weibo||China’s microblog.',
     'Xiaohongshu||Lifestyle posts from China.', 'Douyin||Short videos in China.', 'Nextdoor||Your neighbourhood.', 'BeReal||One photo a day.',
   ]},
@@ -33756,12 +33816,12 @@ const AMV_APP_CATS = [
   ]},
   { id:'food', t:'Food &amp; delivery', q:'food', apps:[
     'Uber Eats||Food delivery.', 'DoorDash||Food delivery.', 'Deliveroo||Food delivery.', 'Just Eat||Food delivery.',
-    'Swiggy||Food delivery in India.', 'Zomato||Food delivery in India.', 'Meituan||Food delivery in China.', 'Rappi||Delivery in Latin America.',
+    'Swiggy||Food delivery in India.', 'Zomato|r:zomato|Food delivery in India.', 'Meituan||Food delivery in China.', 'Rappi||Delivery in Latin America.',
     'Glovo||Delivery in Europe and Africa.', 'Grubhub||Food delivery.', 'iFood||Delivery in Brazil.', 'foodpanda||Delivery in Asia.',
     'Talabat||Delivery in the Middle East.', 'OpenTable||Restaurant bookings.', 'Yelp||Local reviews.',
   ]},
   { id:'health', t:'Health &amp; fitness', q:'health', apps:[
-    'Apple Health||Health data on iPhone.', 'Health Connect||Health data on Android.', 'Strava||Running and cycling.', 'Fitbit||Activity and sleep.',
+    'Apple Health||Health data on iPhone.', 'Health Connect||Health data on Android.', 'Strava|p:strava|Running and cycling.', 'Fitbit||Activity and sleep.',
     'Garmin Connect||Training and activity.', 'Oura||Sleep and readiness.', 'WHOOP||Strain and recovery.', 'MyFitnessPal||Food and calories.',
     'Samsung Health||Health on Galaxy devices.', 'Withings||Scales and health devices.', 'Peloton||Workouts.', 'Nike Run Club||Running.',
     'Headspace||Meditation.', 'Calm||Sleep and meditation.', 'Flo||Cycle tracking.', 'Clue||Cycle tracking.', 'Zwift||Indoor cycling.',
@@ -33773,10 +33833,10 @@ const AMV_APP_CATS = [
     'Webtoon||Comics.', 'Inoreader||News feeds.',
   ]},
   { id:'biz', t:'Business &amp; sales', q:'crm', apps:[
-    'Salesforce||CRM.', 'HubSpot||CRM and marketing.', 'Pipedrive||Sales pipeline.', 'Zoho CRM||CRM.', 'Microsoft Dynamics 365||Business apps.',
+    'Salesforce||CRM.', 'HubSpot|p:hubspot|CRM and marketing.', 'Pipedrive||Sales pipeline.', 'Zoho CRM||CRM.', 'Microsoft Dynamics 365||Business apps.',
     'Close|r:close|Sales CRM.', 'Copper||CRM for Google Workspace.', 'Freshsales||CRM.', 'Odoo||Business apps.', 'SAP||Business software.',
-    'NetSuite||Business management.', 'Typeform||Forms and surveys.', 'Google Forms||Forms and surveys.', 'SurveyMonkey||Surveys.',
-    'Jotform||Online forms.', 'Tally||Simple forms.',
+    'NetSuite||Business management.', 'Typeform|r:typeform|Forms and surveys.', 'Google Forms||Forms and surveys.', 'SurveyMonkey||Surveys.',
+    'Jotform|r:jotform|Online forms.', 'Tally||Simple forms.',
   ]},
   { id:'marketing', t:'Marketing', q:'marketing', apps:[
     'Mailchimp||Email marketing.', 'Klaviyo||Email and SMS marketing.', 'Google Ads||Advertising.', 'Meta Ads Manager||Facebook and Instagram ads.',
@@ -33790,33 +33850,33 @@ const AMV_APP_CATS = [
     'Tidio||Live chat for stores.', 'Trustpilot||Customer reviews.', 'Kustomer||Customer service platform.',
   ]},
   { id:'auto', t:'Automation', q:'automation', apps:[
-    'Zapier|r:zapier|Connect apps with automations.', 'Make||Visual automations.', 'IFTTT||Simple automations.', 'n8n||Open-source automation.',
+    'Zapier|r:zapier|Connect apps with automations.', 'Make|r:make|Visual automations.', 'IFTTT|r:ifttt|Simple automations.', 'n8n||Open-source automation.',
     'Power Automate||Automations for Microsoft 365.', 'Apple Shortcuts||Automations on Apple devices.', 'Tasker||Automation on Android.',
-    'Pipedream||Automations for developers.', 'Airtable Automations||Automations inside Airtable.',
+    'Pipedream||Automations for developers.', 'Airtable Automations|r:airtable|Automations inside Airtable.',
   ]},
   { id:'data', t:'Data &amp; analytics', q:'database', apps:[
     'Airtable|r:airtable|Spreadsheet-database.', 'Tableau||Dashboards and analytics.', 'Power BI||Microsoft’s analytics.', 'Looker Studio||Google’s dashboards.',
     'Snowflake||Data warehouse.', 'BigQuery||Google’s data warehouse.', 'Databricks||Data and analytics platform.', 'MongoDB Atlas||Cloud database.',
     'PostgreSQL||Open-source database.', 'MySQL||Open-source database.', 'Metabase||Open-source dashboards.', 'Mixpanel||Product analytics.',
-    'Amplitude||Product analytics.', 'Segment||Customer data.',
+    'Amplitude|r:amplitude|Product analytics.', 'Segment||Customer data.',
   ]},
   { id:'cloud', t:'Cloud &amp; hosting', q:'cloud', apps:[
-    'Amazon Web Services||Cloud computing.', 'Google Cloud||Cloud computing.', 'Microsoft Azure||Cloud computing.', 'Cloudflare||Network, security and hosting.',
+    'Amazon Web Services||Cloud computing.', 'Google Cloud||Cloud computing.', 'Microsoft Azure||Cloud computing.', 'Cloudflare|r:cloudflare|Network, security and hosting.',
     'DigitalOcean||Cloud servers.', 'Heroku||Run apps in the cloud.', 'Render||Hosting for apps and sites.', 'Fly.io||Run apps near users.',
     'Linode||Cloud servers.', 'Hetzner||Servers in Europe.', 'Alibaba Cloud||Cloud computing.', 'Oracle Cloud||Cloud computing.',
   ]},
   { id:'monitor', t:'Monitoring &amp; logs', q:'monitoring', apps:[
-    'Sentry|r:sentry|Errors and performance.', 'Datadog||Monitoring and logs.', 'Grafana||Dashboards and alerts.', 'New Relic||Observability.',
-    'PagerDuty||On-call and incidents.', 'Better Stack||Uptime and logs.', 'UptimeRobot||Uptime monitoring.', 'Splunk||Logs and security.',
+    'Sentry|r:sentry|Errors and performance.', 'Datadog||Monitoring and logs.', 'Grafana|r:grafana|Dashboards and alerts.', 'New Relic|r:newrelic|Observability.',
+    'PagerDuty||On-call and incidents.', 'Better Stack||Uptime and logs.', 'UptimeRobot|r:uptimerobot|Uptime monitoring.', 'Splunk||Logs and security.',
     'Prometheus||Open-source monitoring.', 'Opsgenie||Alerts and on-call.',
   ]},
   { id:'security', t:'Security', q:'security', apps:[
-    'Have I Been Pwned||Check if your email was in a breach.', 'VirusTotal||Scan files and links.', 'Okta||Sign-in for organisations.',
+    'Have I Been Pwned||Check if your email was in a breach.', 'VirusTotal|r:virustotal|Scan files and links.', 'Okta||Sign-in for organisations.',
     'Cloudflare Zero Trust||Secure access for teams.', 'Snyk||Find vulnerabilities in code.', 'CrowdStrike||Endpoint security.',
     'Malwarebytes||Malware protection.', 'Norton||Device security.', 'Proton VPN||Private browsing.', 'NordVPN||VPN.',
   ]},
   { id:'legal', t:'Legal &amp; contracts', q:'legal', apps:[
-    'DocuSign||Sign documents.', 'Adobe Acrobat Sign||Sign documents.', 'Dropbox Sign||Sign documents.', 'PandaDoc||Proposals and contracts.',
+    'DocuSign||Sign documents.', 'Adobe Acrobat Sign||Sign documents.', 'Dropbox Sign||Sign documents.', 'PandaDoc|r:pandadoc|Proposals and contracts.',
     'Ironclad||Contract management.', 'Clio||Practice management for lawyers.', 'LegalZoom||Legal services online.', 'Juro||Contracts for teams.',
   ]},
   { id:'hr', t:'People &amp; HR', q:'hr', apps:[
@@ -33825,8 +33885,8 @@ const AMV_APP_CATS = [
     'Greenhouse||Hiring.', 'Lever||Hiring.', 'Workable||Hiring.', 'Lattice||Performance and engagement.',
   ]},
   { id:'testing', t:'Testing &amp; QA', q:'testing', apps:[
-    'BrowserStack||Test on real browsers and devices.', 'Sauce Labs||Automated testing.', 'LambdaTest||Cross-browser testing.',
-    'Cypress Cloud||End-to-end test runs.', 'TestRail||Test case management.', 'Checkly||Monitoring with tests.', 'Percy||Visual testing.',
+    'BrowserStack||Test on real browsers and devices.', 'Sauce Labs||Automated testing.', 'LambdaTest|r:lambdatest|Cross-browser testing.',
+    'Cypress Cloud|r:cypress|End-to-end test runs.', 'TestRail||Test case management.', 'Checkly||Monitoring with tests.', 'Percy||Visual testing.',
   ]},
   { id:'games', t:'Games', q:'games', apps:[
     'Steam||PC games.', 'Xbox||Games and friends.', 'PlayStation||Games and friends.', 'Nintendo||Switch games and friends.',
@@ -45082,7 +45142,7 @@ function _mcpAdd(id, command, args, env){
   if(!id) throw new Error('Give the server a short name, like "github".');
   /* Reserved for apps connected by signing in, so a connector on the computer
      can never be mistaken for one - or take one's tool names. */
-  if(/^app-/.test(id)) throw new Error('Names starting with "app-" are reserved for apps you connect by signing in. Pick another.');
+  if(/^(app|api)-/.test(id)) throw new Error('Names starting with "app-" or "api-" are reserved for apps you connect by signing in. Pick another.');
   if(MCP.servers.some(s => s.id === id)) throw new Error('There is already a server called "' + id + '".');
   if(MCP.servers.length >= MCP_MAX_SERVERS) throw new Error('That is as many servers as AMV will run at once.');
   command = String(command || '').trim();
@@ -45327,6 +45387,16 @@ async function runMcpTool(name, args){
     return { ok:false, text:'That connector is not running any more. Reconnect it in Integrations.' };
   }
   const app = MCP.remote[hit.id];
+  if(app && app.kind === 'api'){
+    /* A connected app's API, called by the server with the token it holds. */
+    const a = args || {};
+    try{
+      const d = await AMV_API.connectApi(app.slug, a.method || 'GET', a.path || '', a.query, a.body);
+      return { ok: d.status < 400, text: 'HTTP ' + d.status + '\n' + String(d.body || '') };
+    }catch(e){
+      return { ok:false, text: app.name + ': ' + String((e && e.message) || 'that did not work') };
+    }
+  }
   if(app){
     /* Through AMV's server, which holds the sign-in. A refusal is a result the
        model can read, like any other connector's. */
@@ -45578,10 +45648,50 @@ const RMCP_TOOLS_TTL_MS = 10 * 60 * 1000;
    now asked in the background and used from the next turn; only the tool
    listing of apps already known to be connected is waited for, and that for
    four seconds at most. */
+/* WHAT A CONNECTED APP'S API TOOL SAYS. One tool per app, whose description
+   gives the base address and one real example - the model knows these public
+   APIs, and the example anchors which one. */
+const API_TOOL_EXAMPLE = {
+  slack: 'GET conversations.list, or POST chat.postMessage with body {"channel":"C123","text":"hi"}',
+  discord: 'GET users/@me/guilds', spotify: 'GET me/player/currently-playing',
+  dropbox: 'POST files/list_folder with body {"path":""}', hubspot: 'GET crm/v3/objects/contacts',
+  asana: 'GET users/me', zoom: 'GET users/me/meetings', box: 'GET folders/0/items', strava: 'GET athlete/activities',
+  reddit: 'GET api/v1/me', pinterest: 'GET boards', calendly: 'GET users/me',
+  github: 'GET user/repos', microsoft: 'GET me/drive/root/children', google: 'GET youtube/v3/playlists with query {"mine":true,"part":"snippet"}',
+};
+function _apiToolsFor(pid, name, base){
+  return [{ name: 'request',
+    description: 'Call the ' + name + ' API (' + base + ') as the person who connected it. Give method, a path relative to that address, '
+               + 'an optional query object and, for writes, a JSON body. For example: ' + (API_TOOL_EXAMPLE[pid] || 'GET a documented endpoint') + '.',
+    inputSchema: { type: 'object', required: ['method', 'path'], properties: {
+      method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+      path: { type: 'string', description: 'Relative to ' + base },
+      query: { type: 'object' }, body: {} } } }];
+}
+/* The connected apps with an API, from the Connected accounts list - asked in
+   the background like the app connectors, never waited for. */
+function _apiRefreshTools(){
+  try{
+    if(typeof _connState === 'undefined') return;
+    if(_connState.state !== 'done'){ if(typeof _connLoad === 'function') _connLoad(false); return; }
+    const d = _connState.data || {};
+    const apiOf = {}; for(const p of (d.providers || [])) if(p.api) apiOf[p.id] = { name: p.name, base: p.api };
+    const live = new Set();
+    for(const it of (d.items || [])){
+      const a = apiOf[it.provider]; if(!a || it.broken) continue;
+      const id = 'api-' + it.provider; live.add(id);
+      if(!MCP.remote[id]) MCP.remote[id] = { slug: it.provider, name: a.name, kind: 'api', tools: _apiToolsFor(it.provider, a.name, a.base), at: Date.now(), error: '' };
+    }
+    for(const id of Object.keys(MCP.remote)) if(id.indexOf('api-') === 0 && !live.has(id)) delete MCP.remote[id];
+  }catch(e){}
+}
 async function remoteRefreshTools(){
+  _apiRefreshTools();
   if(_RMCP.state !== 'done'){ _rmcpLoad(false).catch(() => {}); return; }
   const want = Object.keys(_RMCP.apps).filter(k => _RMCP.apps[k].connected && !_RMCP.apps[k].broken);
-  for(const id of Object.keys(MCP.remote)) if(want.indexOf(MCP.remote[id].slug) < 0) delete MCP.remote[id];
+  /* Only app connectors are pruned here; API apps (api-*) are kept in step by
+     _apiRefreshTools from the Connected accounts list. */
+  for(const id of Object.keys(MCP.remote)) if(id.indexOf('app-') === 0 && want.indexOf(MCP.remote[id].slug) < 0) delete MCP.remote[id];
   const due = want.filter(slug => { const e = MCP.remote['app-' + slug]; return !e || Date.now() - e.at > RMCP_TOOLS_TTL_MS; });
   if(!due.length) return;
   const one = async (slug) => {

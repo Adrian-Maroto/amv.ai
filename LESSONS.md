@@ -13659,3 +13659,19 @@ And the rule that chose the apps: an official connector is one published under
 the app's own verified namespace in the registry. There are more proxies for
 Notion than there is Notion, and a connector somebody else runs in front of
 your account is a stranger holding your token.
+
+## 524. Two capability names alike is two tokens one step from swapping
+
+Connected accounts found a connection by the capability it held - `mail.read` -
+and Google and Microsoft both hold `mail.read`. That was harmless while each
+provider had its own hand-written action. The day a general "call this app's API"
+route was added, the first matching record could be Google's, and a call meant
+for Microsoft Graph would have carried a Google token to Microsoft. The suite
+caught it by connecting both and asking for one. A credential lookup keyed by
+what it can do has to be pinned to whose it is, and asserted after, because the
+lookup was written for a world with one provider per capability.
+
+And a default that sounds safe - "no expiry given, call it an hour" - turned
+every GitHub connection into "expired, nothing to refresh" sixty minutes after
+it was made. A value the provider did not send is a fact ("it does not expire
+on a clock"), not a gap to fill with a guess.

@@ -146,9 +146,12 @@ section('A grant is only good for what it was granted for');
 section('Disconnecting revokes, rather than forgetting');
 {
   const rm = fn('connRemove');
-  ok(/p\.revoke/.test(rm) && /fetchDeadline\(p\.revoke/.test(rm),
+  /* Through _connRevokeRequest now - one revocation for disconnecting and for
+     erasure, carrying each provider's quirks - which is where the endpoint is
+     actually called. */
+  ok(/p\.revoke/.test(rm) && /_connRevokeRequest\(env, p, tok\)/.test(rm) && /fetchDeadline\(p\.revoke/.test(fn('_connRevokeRequest')),
      'it calls the provider revoke endpoint');
-  const revokeAt = rm.indexOf('fetchDeadline(p.revoke');
+  const revokeAt = rm.indexOf('_connRevokeRequest(env, p, tok)');
   const deleteAt = rm.indexOf('delete all[id]');
   ok(revokeAt > 0 && deleteAt > revokeAt,
      'and does it BEFORE dropping the only copy of the token', revokeAt + ' then ' + deleteAt);
@@ -200,7 +203,10 @@ section('The handshake cannot be replayed or hijacked');
 {
   const finish = fn('connFinish');
   const delAt = finish.indexOf("DB.del(env, 'connstate'");
-  const exAt = finish.indexOf('fetchDeadline(p.token');
+  /* The exchange goes through _connTokenRequest, which is what calls the
+     provider's token endpoint. */
+  const exAt = finish.indexOf('_connTokenRequest(env, p,');
+  ok(/fetchDeadline\(p\.token/.test(fn('_connTokenRequest')), 'and that is what reaches the token endpoint');
   ok(delAt > 0 && delAt < exAt, 'the state is spent before the exchange, so a replay finds nothing');
   ok(/st\.email !== user\.email/.test(finish),
      'a state can only be finished by the account that started it');
@@ -260,9 +266,12 @@ section('The screen says what it may do and when it was last used');
   ok(/Daily inbox digest/.test(t), 'and which job used it last');
   ok(/last used\s+(just now|\d+\s*(min|h)\s*ago|yesterday|\d+ days ago)/i.test(t),
      'and when', (t.match(/last used[^·]*/) || [''])[0].slice(0, 40));
-  const dark = await page.evaluate(() =>
-    !!document.querySelector('.conn-add.dark[data-darg="microsoft"]'));
-  ok(dark, 'a provider with no credentials reads as unavailable rather than a button that fails');
+  /* No longer a greyed-out button each: a provider with no credentials is not
+     offered at all, and the rest are counted in one line. */
+  const dark = await page.evaluate(() => ({
+    button: !!document.querySelector('.conn-add[data-darg="microsoft"]'),
+    line: /more become available as they are set up/.test((document.getElementById('conn-body') || {}).textContent || '') }));
+  ok(!dark.button && dark.line, 'a provider with no credentials is not offered as a button that fails, and is counted instead', dark);
 }
 
 section('The vault is actually drawn on, which it twice was not');

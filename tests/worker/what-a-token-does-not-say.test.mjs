@@ -196,14 +196,19 @@ section('A redirect target is compared as an origin, not as a prefix');
      'the prefix comparison is gone from the source, not merely wrapped', true);
   const start = codeOnly(functionBody(src, 'connStart') || '');
   ok(start.length > 400, 'the handshake start was found, not an empty slice', start.length);
-  ok(/_sameOrigin\(redirect, appUrl\)/.test(start),
+  /* The check itself now lives in _connReturnAddress, which connStart and the
+     app-connector start (remoteStart) both call - one copy for two flows. */
+  const back = codeOnly(functionBody(src, '_connReturnAddress') || '');
+  ok(/_connReturnAddress\(env, body\)/.test(start) && /_connReturnAddress\(env, body\)/.test(codeOnly(functionBody(src, 'remoteStart') || '')),
+     'both sign-in flows take the return address from the one shared check', true);
+  ok(/_sameOrigin\(redirect, appUrl\)/.test(back),
      'and the origin comparison is what the redirect check uses', true);
   ok(!/rOrigin !== appOrigin/.test(code),
      'with no second copy of it left inline', true);
   /* The extra condition that is NOT about origins, kept beside it: this exact
      string is registered with the provider, so a query or fragment on it is a
      mismatch even when the origin is right. */
-  ok(/!u\.search && !u\.hash/.test(start),
+  ok(/!u\.search && !u\.hash/.test(back),
      'and a return address carrying a query or fragment is still refused', true);
 }
 

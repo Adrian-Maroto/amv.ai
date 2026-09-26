@@ -36,6 +36,8 @@
               AMV's own flows, each already on this page before this rewrite
      r:<slug> the app's own official connector, signed in to at the app
               (REMOTE_APPS on the server lists them and how each was verified)
+     p:<id>   the app's own standard sign-in, with its API used from chat
+              (CONN_PROVIDERS on the server; live once the app is registered)
 
    The third field is the sentence under the name. Rows that connect say what
    AMV does there; rows that do not say what the app is, and nothing more. */
@@ -61,7 +63,7 @@ const AMV_APP_CATS = [
     'Apple iCloud Calendar|cal|Read-only, through the calendar’s shared link.',
     'Any other calendar|cal|iCloud, Fastmail, Nextcloud, Yandex, Zoho, a university timetable - anything that publishes a link. Read-only: AMV sees your week and can never change it.',
     'Fastmail Calendar|cal|', 'Proton Calendar|cal|', 'Zoho Calendar|cal|', 'Nextcloud Calendar|cal|', 'Yandex Calendar|cal|',
-    'Calendly||Booking links for meetings.', 'Cal.com||Open scheduling for meetings.',
+    'Calendly|p:calendly|Booking links for meetings.', 'Cal.com||Open scheduling for meetings.',
     'Microsoft Bookings||Appointments for Microsoft 365.', 'Doodle||Find a time that suits everyone.',
     'Fantastical||A calendar app for Apple devices.', 'Notion Calendar||A calendar that works with Notion.',
     'TimeTree||Shared calendars for families and groups.', 'Acuity Scheduling||Client booking and payments.',
@@ -70,8 +72,8 @@ const AMV_APP_CATS = [
   { id:'messaging', t:'Chat &amp; messaging', q:'messaging', apps:[
     'Telegram|tg|Run AMV from Telegram and get your background work there - through a bot you own and can revoke.',
     'Text messages (SMS)|sms|Run AMV from any phone by text - “check Project X”, “draft a reply”.',
-    'WhatsApp||Messages and calls.', 'Slack||Team channels and direct messages.', 'Microsoft Teams||Chat and meetings for work.',
-    'Discord||Servers, voice and chat.', 'Messenger||Chat from Facebook.', 'Zoom||Video meetings and chat.',
+    'WhatsApp||Messages and calls.', 'Slack|p:slack|Team channels and direct messages.', 'Microsoft Teams||Chat and meetings for work.',
+    'Discord|p:discord|Servers, voice and chat.', 'Messenger||Chat from Facebook.', 'Zoom|p:zoom|Video meetings and chat.',
     'Google Chat||Chat for Google Workspace.', 'Google Meet||Video meetings.', 'Signal||Private messaging.',
     'WeChat||Messaging, payments and mini-programs.', 'LINE||Messaging across Japan, Taiwan and Thailand.',
     'KakaoTalk||Korea’s messenger.', 'Viber||Messages and calls.', 'Zalo||Vietnam’s messenger.',
@@ -85,7 +87,7 @@ const AMV_APP_CATS = [
     'Excel and CSV|file|Upload a sheet - AMV runs formulas, builds pivots and charts, then you download.',
     'Word|file|Reports, proposals and letters - written and exported, ready to edit.',
     'PowerPoint|file|Describe a deck and AMV builds the slides - export the .pptx.',
-    'Dropbox||Cloud storage and sharing.', 'OneDrive||Microsoft’s cloud storage.', 'Box||Cloud content for business.',
+    'Dropbox|p:dropbox|Cloud storage and sharing.', 'OneDrive|ms|Microsoft’s cloud storage.', 'Box|p:box|Cloud content for business.',
     'iCloud Drive||Apple’s cloud storage.', 'Evernote||Notes and web clips.', 'OneNote||Microsoft’s notebook.',
     'Adobe Acrobat||PDFs: read, sign and edit.', 'Google Keep||Quick notes and lists.', 'Apple Notes||Notes on Apple devices.',
     'Obsidian||Notes in plain files on your own computer.', 'Coda||Docs that work like apps.', 'Mega||Encrypted cloud storage.',
@@ -142,11 +144,11 @@ const AMV_APP_CATS = [
     'Arlo||Security cameras.', 'TP-Link Kasa||Smart plugs and lights.', 'iRobot||Robot vacuums.',
   ]},
   { id:'work', t:'Work &amp; projects', q:'productivity', apps:[
-    'Notion|r:notion|Docs, wikis and projects.', 'Trello||Boards and cards.', 'Asana||Work management.', 'Monday.com|r:monday|Work management.',
-    'ClickUp||Tasks, docs and goals.', 'Todoist||To-do lists.', 'Microsoft To Do||Tasks and lists.', 'Google Tasks||Tasks with Gmail and Calendar.',
-    'Basecamp||Projects and team communication.', 'Miro||Online whiteboard.', 'Confluence|r:atlassian|Team wiki.', 'Wrike||Project management.',
+    'Notion|r:notion|Docs, wikis and projects.', 'Trello||Boards and cards.', 'Asana|p:asana|Work management.', 'Monday.com|r:monday|Work management.',
+    'ClickUp||Tasks, docs and goals.', 'Todoist|r:todoist|To-do lists.', 'Microsoft To Do||Tasks and lists.', 'Google Tasks|g|Tasks with Gmail and Calendar.',
+    'Basecamp||Projects and team communication.', 'Miro|r:miro|Online whiteboard.', 'Confluence|r:atlassian|Team wiki.', 'Wrike||Project management.',
     'Smartsheet||Work management in sheets.', 'TickTick||Tasks and habits.', 'Things||Tasks on Apple devices.', 'Microsoft Planner||Team tasks.',
-    'Zoho Projects||Project management.', 'Loom||Video messages for work.', 'Craft||Documents and notes.',
+    'Zoho Projects||Project management.', 'Loom||Video messages for work.', 'Craft|r:craft|Documents and notes.',
   ]},
   { id:'design', t:'Design &amp; creativity', q:'design', apps:[
     'Canva|r:canva|Designs, social posts and presentations.', 'Figma|r:figma|Interface design together.', 'Adobe Photoshop||Photo editing.',
@@ -157,7 +159,7 @@ const AMV_APP_CATS = [
     'Snapseed||Photo editing.', 'Affinity||Design, photo and publishing.', 'Blender||3D creation.', 'GIMP||Open-source image editing.',
   ]},
   { id:'video', t:'Video &amp; streaming', q:'media', apps:[
-    'CapCut||Video editing.', 'YouTube||Videos and channels.', 'TikTok||Short videos.', 'Netflix||Films and series.',
+    'CapCut||Video editing.', 'YouTube|g|Videos and channels.', 'TikTok||Short videos.', 'Netflix||Films and series.',
     'Twitch||Live streams.', 'Vimeo||Video hosting.', 'Adobe Premiere Pro||Video editing.', 'DaVinci Resolve||Editing and colour.',
     'Final Cut Pro||Video editing on the Mac.', 'iMovie||Video editing on Apple devices.', 'InShot||Video editing on phones.',
     'Disney+||Films and series.', 'Prime Video||Films and series.', 'Max||Films and series.', 'Hulu||Films and series.',
@@ -165,7 +167,7 @@ const AMV_APP_CATS = [
     'Riverside||Record podcasts and video.', 'StreamYard||Live streaming.',
   ]},
   { id:'music', t:'Music &amp; audio', q:'music', apps:[
-    'Spotify||Music and podcasts.', 'Apple Music||Music streaming.', 'YouTube Music||Music streaming.', 'SoundCloud||Music from creators.',
+    'Spotify|p:spotify|Music and podcasts.', 'Apple Music||Music streaming.', 'YouTube Music||Music streaming.', 'SoundCloud||Music from creators.',
     'Amazon Music||Music streaming.', 'Deezer||Music streaming.', 'Tidal||Music streaming.', 'Pandora||Radio and music.',
     'Shazam||Name that song.', 'Audible||Audiobooks.', 'Apple Podcasts||Podcasts.', 'Pocket Casts||Podcasts.',
     'JioSaavn||Music in India.', 'Anghami||Music in the Middle East.', 'Boomplay||Music in Africa.', 'NetEase Cloud Music||Music in China.',
@@ -173,7 +175,7 @@ const AMV_APP_CATS = [
   ]},
   { id:'social', t:'Social networks', q:'social', apps:[
     'Instagram||Photos, reels and messages.', 'Facebook||Friends, groups and pages.', 'X||Posts and news.', 'Threads||Text posts from Instagram.',
-    'Reddit||Communities and discussion.', 'Pinterest||Ideas and boards.', 'Bluesky||An open social network.', 'Mastodon||Decentralised social network.',
+    'Reddit|p:reddit|Communities and discussion.', 'Pinterest|p:pinterest|Ideas and boards.', 'Bluesky||An open social network.', 'Mastodon||Decentralised social network.',
     'Tumblr||Blogs and communities.', 'Quora||Questions and answers.', 'VK||Russia’s social network.', 'Weibo||China’s microblog.',
     'Xiaohongshu||Lifestyle posts from China.', 'Douyin||Short videos in China.', 'Nextdoor||Your neighbourhood.', 'BeReal||One photo a day.',
   ]},
@@ -199,12 +201,12 @@ const AMV_APP_CATS = [
   ]},
   { id:'food', t:'Food &amp; delivery', q:'food', apps:[
     'Uber Eats||Food delivery.', 'DoorDash||Food delivery.', 'Deliveroo||Food delivery.', 'Just Eat||Food delivery.',
-    'Swiggy||Food delivery in India.', 'Zomato||Food delivery in India.', 'Meituan||Food delivery in China.', 'Rappi||Delivery in Latin America.',
+    'Swiggy||Food delivery in India.', 'Zomato|r:zomato|Food delivery in India.', 'Meituan||Food delivery in China.', 'Rappi||Delivery in Latin America.',
     'Glovo||Delivery in Europe and Africa.', 'Grubhub||Food delivery.', 'iFood||Delivery in Brazil.', 'foodpanda||Delivery in Asia.',
     'Talabat||Delivery in the Middle East.', 'OpenTable||Restaurant bookings.', 'Yelp||Local reviews.',
   ]},
   { id:'health', t:'Health &amp; fitness', q:'health', apps:[
-    'Apple Health||Health data on iPhone.', 'Health Connect||Health data on Android.', 'Strava||Running and cycling.', 'Fitbit||Activity and sleep.',
+    'Apple Health||Health data on iPhone.', 'Health Connect||Health data on Android.', 'Strava|p:strava|Running and cycling.', 'Fitbit||Activity and sleep.',
     'Garmin Connect||Training and activity.', 'Oura||Sleep and readiness.', 'WHOOP||Strain and recovery.', 'MyFitnessPal||Food and calories.',
     'Samsung Health||Health on Galaxy devices.', 'Withings||Scales and health devices.', 'Peloton||Workouts.', 'Nike Run Club||Running.',
     'Headspace||Meditation.', 'Calm||Sleep and meditation.', 'Flo||Cycle tracking.', 'Clue||Cycle tracking.', 'Zwift||Indoor cycling.',
@@ -216,10 +218,10 @@ const AMV_APP_CATS = [
     'Webtoon||Comics.', 'Inoreader||News feeds.',
   ]},
   { id:'biz', t:'Business &amp; sales', q:'crm', apps:[
-    'Salesforce||CRM.', 'HubSpot||CRM and marketing.', 'Pipedrive||Sales pipeline.', 'Zoho CRM||CRM.', 'Microsoft Dynamics 365||Business apps.',
+    'Salesforce||CRM.', 'HubSpot|p:hubspot|CRM and marketing.', 'Pipedrive||Sales pipeline.', 'Zoho CRM||CRM.', 'Microsoft Dynamics 365||Business apps.',
     'Close|r:close|Sales CRM.', 'Copper||CRM for Google Workspace.', 'Freshsales||CRM.', 'Odoo||Business apps.', 'SAP||Business software.',
-    'NetSuite||Business management.', 'Typeform||Forms and surveys.', 'Google Forms||Forms and surveys.', 'SurveyMonkey||Surveys.',
-    'Jotform||Online forms.', 'Tally||Simple forms.',
+    'NetSuite||Business management.', 'Typeform|r:typeform|Forms and surveys.', 'Google Forms||Forms and surveys.', 'SurveyMonkey||Surveys.',
+    'Jotform|r:jotform|Online forms.', 'Tally||Simple forms.',
   ]},
   { id:'marketing', t:'Marketing', q:'marketing', apps:[
     'Mailchimp||Email marketing.', 'Klaviyo||Email and SMS marketing.', 'Google Ads||Advertising.', 'Meta Ads Manager||Facebook and Instagram ads.',
@@ -233,33 +235,33 @@ const AMV_APP_CATS = [
     'Tidio||Live chat for stores.', 'Trustpilot||Customer reviews.', 'Kustomer||Customer service platform.',
   ]},
   { id:'auto', t:'Automation', q:'automation', apps:[
-    'Zapier|r:zapier|Connect apps with automations.', 'Make||Visual automations.', 'IFTTT||Simple automations.', 'n8n||Open-source automation.',
+    'Zapier|r:zapier|Connect apps with automations.', 'Make|r:make|Visual automations.', 'IFTTT|r:ifttt|Simple automations.', 'n8n||Open-source automation.',
     'Power Automate||Automations for Microsoft 365.', 'Apple Shortcuts||Automations on Apple devices.', 'Tasker||Automation on Android.',
-    'Pipedream||Automations for developers.', 'Airtable Automations||Automations inside Airtable.',
+    'Pipedream||Automations for developers.', 'Airtable Automations|r:airtable|Automations inside Airtable.',
   ]},
   { id:'data', t:'Data &amp; analytics', q:'database', apps:[
     'Airtable|r:airtable|Spreadsheet-database.', 'Tableau||Dashboards and analytics.', 'Power BI||Microsoft’s analytics.', 'Looker Studio||Google’s dashboards.',
     'Snowflake||Data warehouse.', 'BigQuery||Google’s data warehouse.', 'Databricks||Data and analytics platform.', 'MongoDB Atlas||Cloud database.',
     'PostgreSQL||Open-source database.', 'MySQL||Open-source database.', 'Metabase||Open-source dashboards.', 'Mixpanel||Product analytics.',
-    'Amplitude||Product analytics.', 'Segment||Customer data.',
+    'Amplitude|r:amplitude|Product analytics.', 'Segment||Customer data.',
   ]},
   { id:'cloud', t:'Cloud &amp; hosting', q:'cloud', apps:[
-    'Amazon Web Services||Cloud computing.', 'Google Cloud||Cloud computing.', 'Microsoft Azure||Cloud computing.', 'Cloudflare||Network, security and hosting.',
+    'Amazon Web Services||Cloud computing.', 'Google Cloud||Cloud computing.', 'Microsoft Azure||Cloud computing.', 'Cloudflare|r:cloudflare|Network, security and hosting.',
     'DigitalOcean||Cloud servers.', 'Heroku||Run apps in the cloud.', 'Render||Hosting for apps and sites.', 'Fly.io||Run apps near users.',
     'Linode||Cloud servers.', 'Hetzner||Servers in Europe.', 'Alibaba Cloud||Cloud computing.', 'Oracle Cloud||Cloud computing.',
   ]},
   { id:'monitor', t:'Monitoring &amp; logs', q:'monitoring', apps:[
-    'Sentry|r:sentry|Errors and performance.', 'Datadog||Monitoring and logs.', 'Grafana||Dashboards and alerts.', 'New Relic||Observability.',
-    'PagerDuty||On-call and incidents.', 'Better Stack||Uptime and logs.', 'UptimeRobot||Uptime monitoring.', 'Splunk||Logs and security.',
+    'Sentry|r:sentry|Errors and performance.', 'Datadog||Monitoring and logs.', 'Grafana|r:grafana|Dashboards and alerts.', 'New Relic|r:newrelic|Observability.',
+    'PagerDuty||On-call and incidents.', 'Better Stack||Uptime and logs.', 'UptimeRobot|r:uptimerobot|Uptime monitoring.', 'Splunk||Logs and security.',
     'Prometheus||Open-source monitoring.', 'Opsgenie||Alerts and on-call.',
   ]},
   { id:'security', t:'Security', q:'security', apps:[
-    'Have I Been Pwned||Check if your email was in a breach.', 'VirusTotal||Scan files and links.', 'Okta||Sign-in for organisations.',
+    'Have I Been Pwned||Check if your email was in a breach.', 'VirusTotal|r:virustotal|Scan files and links.', 'Okta||Sign-in for organisations.',
     'Cloudflare Zero Trust||Secure access for teams.', 'Snyk||Find vulnerabilities in code.', 'CrowdStrike||Endpoint security.',
     'Malwarebytes||Malware protection.', 'Norton||Device security.', 'Proton VPN||Private browsing.', 'NordVPN||VPN.',
   ]},
   { id:'legal', t:'Legal &amp; contracts', q:'legal', apps:[
-    'DocuSign||Sign documents.', 'Adobe Acrobat Sign||Sign documents.', 'Dropbox Sign||Sign documents.', 'PandaDoc||Proposals and contracts.',
+    'DocuSign||Sign documents.', 'Adobe Acrobat Sign||Sign documents.', 'Dropbox Sign||Sign documents.', 'PandaDoc|r:pandadoc|Proposals and contracts.',
     'Ironclad||Contract management.', 'Clio||Practice management for lawyers.', 'LegalZoom||Legal services online.', 'Juro||Contracts for teams.',
   ]},
   { id:'hr', t:'People &amp; HR', q:'hr', apps:[
@@ -268,8 +270,8 @@ const AMV_APP_CATS = [
     'Greenhouse||Hiring.', 'Lever||Hiring.', 'Workable||Hiring.', 'Lattice||Performance and engagement.',
   ]},
   { id:'testing', t:'Testing &amp; QA', q:'testing', apps:[
-    'BrowserStack||Test on real browsers and devices.', 'Sauce Labs||Automated testing.', 'LambdaTest||Cross-browser testing.',
-    'Cypress Cloud||End-to-end test runs.', 'TestRail||Test case management.', 'Checkly||Monitoring with tests.', 'Percy||Visual testing.',
+    'BrowserStack||Test on real browsers and devices.', 'Sauce Labs||Automated testing.', 'LambdaTest|r:lambdatest|Cross-browser testing.',
+    'Cypress Cloud|r:cypress|End-to-end test runs.', 'TestRail||Test case management.', 'Checkly||Monitoring with tests.', 'Percy||Visual testing.',
   ]},
   { id:'games', t:'Games', q:'games', apps:[
     'Steam||PC games.', 'Xbox||Games and friends.', 'PlayStation||Games and friends.', 'Nintendo||Switch games and friends.',

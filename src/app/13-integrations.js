@@ -722,6 +722,16 @@ function _integrationsCatalogHTML(opts){
     /* THE APP'S OWN CONNECTOR. Signed in to at the app; AMV then uses it in
        chat, and asks before each action - so it is Manual, not Autonomous.
        A connection the app stopped accepting says so and offers Connect again. */
+    /* THE APP'S OWN STANDARD SIGN-IN, and its API from chat. Live once the app
+       is registered with the provider on this deployment; until then Connect
+       says so rather than opening a flow that fails. */
+    else if(kind==='p'){
+      const pid=h.slice(2);
+      o.id='prov'; o.preset=pid; o.manual=true; o.dedupe='prov:'+pid;
+      o.connected=_rowConnected(pid);
+      o.desc=escH(a.desc)+' '+(o.connected ? 'Connected - ask for it in chat, and AMV asks you before each action.'
+                                           : 'Sign in at '+escH(a.name)+'; AMV asks you before each action.');
+    }
     else if(kind==='r'){
       const slug=h.slice(2), st=_rmcpStateOf(slug);
       o.id='rmcp'; o.preset=slug; o.manual=true; o.dedupe='rmcp:'+slug;
@@ -925,6 +935,7 @@ function _wireIntegrationCatalog(root){
     if(_intNeedsAccount(_intName(btn.dataset.intConn))) return;
     if(btn.dataset.intConn==='mail') return openMailConnect(btn.dataset.intPreset||'');
     if(btn.dataset.intConn==='rmcp') return rmcpConnect(btn.dataset.intPreset||'');
+    if(btn.dataset.intConn==='prov') return connAddWhenReady(btn.dataset.intPreset||'');
     if(btn.dataset.intConn==='telegram') return openTelegramConnect();
     /* Providers the connected-accounts framework owns are STARTED there, not
        here. Google's row used to run a sign-in from this button; sending it to
@@ -943,6 +954,10 @@ function _wireIntegrationCatalog(root){
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
     if(btn.dataset.intDisc==='mail') return disconnectMail();
     if(btn.dataset.intDisc==='rmcp') return rmcpDisconnect(btn.dataset.intPreset||'');
+    if(btn.dataset.intDisc==='prov'){
+      const it=((_connState.data||{}).items||[]).find(x=>x.provider===btn.dataset.intPreset);
+      if(it) return connRemove(it.id);
+    }
     if(btn.dataset.intDisc==='telegram') return disconnectTelegram();
     disconnectIntegration(btn.dataset.intDisc);
   }));
@@ -1037,19 +1052,27 @@ let _connState = { state:'idle', data:null, err:'' };
    it records. `connReload()` clears it, so Try again still means try again. */
 let _connTried = '';
 function _connCtx(){ return (window.AMV_API && AMV_API.live) ? '1' : '0'; }
+/* THE NEWEST ANSWER WINS (LESSONS 523). A reload forced while an older
+   request was still out used to be dropped - and when it was allowed, the
+   older one could land afterwards and overwrite the fresh answer with its
+   error. Each load takes a number; only the latest may write. */
+let _connGen = 0;
 async function _connLoad(force){
-  if(_connState.state === 'loading') return;
+  if(!force && _connState.state === 'loading') return;
   if(_connState.state === 'done' && !force) return;
   if(!force && _connTried === _connCtx()) return;
   _connTried = _connCtx();
   if(!(window.AMV_API && AMV_API.live && AMV_API.connectList)){
     _connState = { state:'off', data:null, err:'' }; _connPaint(); return;
   }
+  const gen = ++_connGen;
   _connState.state = 'loading'; _connPaint();
   try{
     const d = await AMV_API.connectList();
+    if(gen !== _connGen) return;
     _connState = { state:'done', data:d || null, err:'' };
   }catch(e){
+    if(gen !== _connGen) return;
     _connState = { state:'error', data:null, err:String((e&&e.message)||'').slice(0,120) };
   }
   _connPaint();
@@ -1080,6 +1103,18 @@ const _CONN_SCOPE_WORDS = {
   /* Said as what it can SEE and what it cannot DO, in one line, because this is
      the one on the list a parent will read twice. */
   'school.read':'see what you have been set at school and when it is due - it cannot turn work in',
+  'files.read':'read your OneDrive files', 'youtube.read':'see your YouTube channel and playlists',
+  'tasks.write':'read and change your Google Tasks',
+  'slack.read':'read your channels, messages and people, and search Slack', 'slack.write':'post messages as you',
+  'discord.read':'see your profile and the servers you are in',
+  'spotify.read':'see what you play, your playlists and your library', 'spotify.write':'control playback and change your playlists',
+  'dropbox.read':'read your files', 'dropbox.write':'add and change files',
+  'hubspot.read':'read contacts, companies and deals', 'hubspot.write':'add and change contacts and deals',
+  'asana.all':'everything your Asana account can do', 'zoom.all':'your meetings, as allowed in AMV\u2019s Zoom app',
+  'box.all':'everything your Box account can do', 'strava.read':'read your activities and profile', 'strava.write':'add activities',
+  'reddit.read':'read Reddit as you, with your subscriptions and history', 'reddit.write':'post, edit and vote as you',
+  'pinterest.read':'read your boards and pins', 'pinterest.write':'create boards and pins',
+  'calendly.all':'your event types, bookings and availability',
 };
 function _connScopeWords(list){
   return (Array.isArray(list)?list:[]).map(k => _CONN_SCOPE_WORDS[k] || k);
@@ -1108,6 +1143,19 @@ async function connAdd(provider){
   }
 }
 try{ window.connAdd=connAdd; }catch(e){}
+/* Connect, from a row, without depending on the list having loaded first.
+   connAdd returns quietly when it does not know the provider - which, from a
+   row that says Connect, is a button that does nothing. So the list is asked
+   for if it is not here, and a failure is said. */
+async function connAddWhenReady(provider){
+  if(!(_connState.data && (_connState.data.providers||[]).length)) await _connLoad(true);
+  const d=_connState.data;
+  if(!d){ toast('Connected accounts could not be loaded, so AMV cannot start a sign-in just now. Try again in a moment.','error',7000); return; }
+  if(!d.configured){ toast('Connecting apps is not switched on for this deployment yet.','info',7000); return; }
+  if(!(d.providers||[]).some(x=>x.id===provider)){ toast('That app cannot be connected on this deployment.','info',6000); return; }
+  return _connGoTo(provider);
+}
+try{ window.connAddWhenReady=connAddWhenReady; }catch(e){}
 
 /* A real choice, with the consequence of each line written out. */
 function _connScopePick(p){
@@ -1240,15 +1288,19 @@ function _connBodyHTML(){
     '</div>';
   }).join('');
 
-  const add=(d.providers||[]).map(p =>
-    '<button class="conn-add'+(p.ready?'':' dark')+'" data-dact="connAdd" data-darg="'+escH(p.id)+'"'+
-      (p.ready?'':' aria-disabled="true"')+'>'+
+  /* Only what can be connected here. A row of fifteen greyed-out buttons told
+     somebody fifteen times what they could not do; the number of apps waiting
+     to be set up is one line, and the operator's readiness screen names them. */
+  const ready=(d.providers||[]).filter(p=>p.ready), dark=(d.providers||[]).length-ready.length;
+  const add=ready.map(p =>
+    '<button class="conn-add" data-dact="connAdd" data-darg="'+escH(p.id)+'">'+
       '<span class="conn-add-n">'+escH(p.name)+'</span>'+
-      '<span class="conn-add-s">'+escH(p.ready?T('Connect'):T('Not set up on this deployment'))+'</span>'+
+      '<span class="conn-add-s">'+escH(T('Connect'))+'</span>'+
     '</button>').join('');
 
   return (items || '<div class="conn-note">'+escH(T('Nothing is connected. Jobs that need an account say so on the Crew screen, and send you here.'))+'</div>')+
-    '<div class="conn-add-row">'+add+'</div>';
+    (add ? '<div class="conn-add-row">'+add+'</div>' : '')+
+    (dark ? '<div class="conn-note-sm">'+escH(dark+' '+T('more become available as they are set up on this deployment.'))+'</div>' : '');
 }
 
 /* WHETHER THE SETUP PANEL IS OPEN, REMEMBERED.

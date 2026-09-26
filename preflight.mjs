@@ -243,6 +243,19 @@ if (backend && toml) {
        checklist, which is the AMV-060 note above happening a second time. */
     'MS_CLIENT_ID', 'MS_CLIENT_SECRET',   // Microsoft connected accounts (Outlook mail/calendar, OneDrive)
     'GH_CLIENT_ID', 'GH_CLIENT_SECRET',   // GitHub connected accounts
+    // Connected apps with a public API (free to register with each):
+    'SLACK_CLIENT_ID', 'SLACK_CLIENT_SECRET',
+    'DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET',
+    'SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET',
+    'DROPBOX_CLIENT_ID', 'DROPBOX_CLIENT_SECRET',
+    'HUBSPOT_CLIENT_ID', 'HUBSPOT_CLIENT_SECRET',
+    'ASANA_CLIENT_ID', 'ASANA_CLIENT_SECRET',
+    'ZOOM_CLIENT_ID', 'ZOOM_CLIENT_SECRET',
+    'BOX_CLIENT_ID', 'BOX_CLIENT_SECRET',
+    'STRAVA_CLIENT_ID', 'STRAVA_CLIENT_SECRET',
+    'REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET',
+    'PINTEREST_CLIENT_ID', 'PINTEREST_CLIENT_SECRET',
+    'CALENDLY_CLIENT_ID', 'CALENDLY_CLIENT_SECRET',
     'CONNECT_KEY',          // seals connected-account credentials; without it connecting is refused
     'CONNECT_KEY_PREV',     // one retired key kept readable so a rotation drains itself
     'NONESSENTIAL_WRITE_CAP'];  // daily write budget for telemetry and the waitlist
@@ -254,6 +267,18 @@ if (backend && toml) {
   const PAIRED = [['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET'],
                   ['MS_CLIENT_ID', 'MS_CLIENT_SECRET'],
                   ['GH_CLIENT_ID', 'GH_CLIENT_SECRET'],
+                  ['SLACK_CLIENT_ID', 'SLACK_CLIENT_SECRET'],
+                  ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET'],
+                  ['SPOTIFY_CLIENT_ID', 'SPOTIFY_CLIENT_SECRET'],
+                  ['DROPBOX_CLIENT_ID', 'DROPBOX_CLIENT_SECRET'],
+                  ['HUBSPOT_CLIENT_ID', 'HUBSPOT_CLIENT_SECRET'],
+                  ['ASANA_CLIENT_ID', 'ASANA_CLIENT_SECRET'],
+                  ['ZOOM_CLIENT_ID', 'ZOOM_CLIENT_SECRET'],
+                  ['BOX_CLIENT_ID', 'BOX_CLIENT_SECRET'],
+                  ['STRAVA_CLIENT_ID', 'STRAVA_CLIENT_SECRET'],
+                  ['REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET'],
+                  ['PINTEREST_CLIENT_ID', 'PINTEREST_CLIENT_SECRET'],
+                  ['CALENDLY_CLIENT_ID', 'CALENDLY_CLIENT_SECRET'],
                   ['FINANCE_CLIENT_ID', 'FINANCE_SECRET'],
                   ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET']];
   for (const [a, b] of PAIRED) {

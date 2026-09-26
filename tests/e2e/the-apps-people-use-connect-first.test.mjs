@@ -22,7 +22,7 @@ const { page, errors } = app;
 await page.evaluate(() => { document.getElementById('cookie-consent-banner')?.remove(); setTab('integrations'); });
 await page.waitForTimeout(500);
 
-const CONNECTS = ['google', 'outlook', 'github', 'mail', 'telegram', 'sms', 'canvas', 'rmcp'];
+const CONNECTS = ['google', 'outlook', 'github', 'mail', 'telegram', 'sms', 'canvas', 'rmcp', 'prov'];
 const USES = ['bank', 'calfeeds', 'predict', 'jobs', 'everyday', 'coverage', 'chat', 'vscode'];
 
 section('Every topic is the same shape, and there is no "everything else"');
@@ -68,7 +68,8 @@ section('Connect only where AMV really connects, and those come first');
       return { t: s.querySelector('h3').textContent, ok: !/n+c/.test(kinds) };
     });
     return { conn, use, order,
-      slack: notifyOf('Slack'), discord: notifyOf('Discord'), spotify: notifyOf('Spotify'),
+      temu: notifyOf('Temu'), netflix: notifyOf('Netflix'), capcut: notifyOf('CapCut'),
+      slackConn: !!(byName('Slack') && byName('Slack').querySelector('[data-int-conn="prov"]')),
       canva: (byName('Canva') || {}).querySelector && byName('Canva').querySelector('[data-int-conn="rmcp"]') ? true : false,
       notion: (byName('Notion') || {}).querySelector && byName('Notion').querySelector('[data-int-conn="rmcp"]') ? true : false,
       firstTopic: document.querySelector('#int-catalog > .ss2 h3').textContent };
@@ -78,7 +79,11 @@ section('Connect only where AMV really connects, and those come first');
   /* Slack and Discord publish no official connector, so they are Notify me -
      their old Connect only ever said the sign-in was unfinished. Notion and
      Canva do publish one, verified in the registry, so theirs really connects. */
-  ok(r.slack && r.discord && r.spotify, 'Slack, Discord and Spotify are Notify me, not a Connect that goes nowhere', r);
+  /* Apps with no public API anybody may use - CapCut, Netflix, Snapchat - are
+     Notify me: there is nothing to connect to, and a Connect would be a lie.
+     Slack has a public API, so it connects through its own sign-in. */
+  ok(r.temu && r.netflix && r.capcut, 'CapCut, Netflix and Temu are Notify me, not a Connect that goes nowhere', r);
+  ok(r.slackConn, 'Slack connects through its own sign-in', r.slackConn);
   ok(r.notion && r.canva, 'Notion and Canva connect through their own official connectors', r);
   ok(r.order.every(o => o.ok), 'in every topic the ones that connect come before the ones that do not', r.order.filter(o => !o.ok));
   ok(r.firstTopic === 'Email', 'and the page opens on the topic with the most that connect', r.firstTopic);
@@ -122,16 +127,16 @@ section('Notify me says what happened');
     store('amv_app_notified', []);
     /* No server: nothing recorded, and it says so. */
     AMV_API.base = '';
-    const off = await click('spotify');
+    const off = await click('capcut');
     /* The server refuses: not marked, and the reason is given. */
     AMV_API.base = 'https://api.example.workers.dev';
     AMV_API._fetch = async (path, o) => { sent.push({ path, body: JSON.parse(o.body) }); return new Response('{"error":"slow down"}', { status: 429 }); };
-    const busy = await click('spotify');
+    const busy = await click('capcut');
     /* The server records it. */
     AMV_API._fetch = async (path, o) => { sent.push({ path, body: JSON.parse(o.body) }); return new Response('{"ok":true}', { status: 200 }); };
-    const good = await click('spotify');
+    const good = await click('capcut');
     await new Promise(r => setTimeout(r, 200));
-    const row = [...document.querySelectorAll('#int-catalog .int-card')].find(c => (c.querySelector('.int-name') || {}).textContent === 'Spotify');
+    const row = [...document.querySelectorAll('#int-catalog .int-card')].find(c => (c.querySelector('.int-name') || {}).textContent === 'CapCut');
     AMV_API.base = realBase; AMV_API._fetch = realFetch;
     return { off, busy, good, sent, onList: !!(row && row.querySelector('.int-onlist')), stillButton: !!(row && row.querySelector('[data-app-notify]')) };
   });
@@ -139,7 +144,7 @@ section('Notify me says what happened');
   ok(!r.busy.marked && /try again/i.test(r.busy.toast), 'refused, it is not marked and says why', r.busy);
   ok(r.good.marked, 'recorded, it is marked', r.good);
   const last = r.sent.filter(x => x.path === '/waitlist').pop() || {};
-  ok(last.path === '/waitlist' && last.body.product === 'app-spotify' && last.body.email === 'alex@x.com',
+  ok(last.path === '/waitlist' && last.body.product === 'app-capcut' && last.body.email === 'alex@x.com',
      'on the server’s waitlist, one product per app, under the account’s own address', last);
   ok(r.onList && !r.stillButton, 'and the row now says On the list', r);
 }

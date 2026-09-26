@@ -44,6 +44,8 @@ section('An app with an official connector says Connect, and Connect goes to its
   ok(r && r.conn && r.conn.intConn === 'rmcp' && r.conn.intPreset === 'notion' && !r.notify, 'Notion has Connect, not Notify me', r);
   const canva = await row('Canva');
   ok(canva && canva.conn && canva.conn.intPreset === 'canva', 'and so does Canva', canva);
+  /* Work & projects has more apps that connect than fit before Show all. */
+  await page.evaluate(() => { _appOpen.add('work'); _appOpen.add('dev'); });
   const jira = await row('Jira'), conf = await row('Confluence');
   ok(jira && conf && jira.conn.intPreset === 'atlassian' && conf.conn.intPreset === 'atlassian', 'Jira and Confluence share their one Atlassian sign-in', [jira && jira.conn, conf && conf.conn]);
   const went = await page.evaluate(async () => {
@@ -142,10 +144,54 @@ section('Disconnecting asks first, and then the row is Connect again');
   ok(n && !n.ok && n.conn, 'the row offers Connect again', n);
 }
 
+section('An app with a public API: Connect loads what it needs, and chat calls its API through the server');
+{
+  const r = await page.evaluate(async () => {
+    const seen = { api: [] };
+    const list = (connected) => ({ ok: true, configured: true,
+      items: connected ? [{ id: 'slack:1', provider: 'slack', name: 'Slack', scopes: ['slack.read'], at: Date.now(), unattended: true }] : [],
+      providers: [{ id: 'slack', name: 'Slack', ready: true, scopes: ['slack.read', 'slack.write'], api: 'https://slack.com/api/' },
+                  { id: 'spotify', name: 'Spotify', ready: false, scopes: ['spotify.read'], api: 'https://api.spotify.com/v1/' }] });
+    AMV_API.connectList = async () => list(window.__slackOn);
+    AMV_API.connectApi = async (provider, method, path, query, body) => { seen.api.push({ provider, method, path, query, body }); return { ok: true, status: 200, body: '{"ok":true,"channels":[]}' }; };
+    window.__slackOn = false;
+    connReload(); await new Promise(r => setTimeout(r, 300));
+    _appOpen.add('messaging');
+    _paintIntegrations(); await new Promise(r => setTimeout(r, 100));
+    const row = (n) => [...document.querySelectorAll('#int-catalog .int-card')].find(x => (x.querySelector('.int-name') || {}).textContent === n);
+    const slack = row('Slack'), btn = slack && slack.querySelector('[data-int-conn]');
+    const out = { conn: btn && btn.dataset.intConn, preset: btn && btn.dataset.intPreset };
+    out.addRow = [...document.querySelectorAll('#conn-body .conn-add')].map(b => b.textContent);
+    out.darkLine = (document.querySelector('#conn-body') || {}).textContent || '';
+    /* Connect with the list NOT loaded: it loads it, then opens the sign-in choice. */
+    _connState.state = 'idle'; _connState.data = null;
+    connAddWhenReady('slack');   /* not awaited: it resolves when somebody picks */
+    await new Promise(r => setTimeout(r, 600));
+    out.picker = !!document.getElementById('conn-go');
+    document.getElementById('ovr').innerHTML = '';
+    window.__slackOn = true; connReload(); await new Promise(r => setTimeout(r, 300));
+    await remoteRefreshTools();
+    const t = mcpTools({ bridge: false, remote: true }).find(x => /api-slack/.test(x.name));
+    out.tool = t && t.name; out.desc = t && t.description; out.build = mcpTools().some(x => /api-slack/.test(x.name));
+    out.who = t && mcpToolIdentity(t.name);
+    out.res = t ? await runMcpTool(t.name, { method: 'GET', path: 'conversations.list', query: { limit: 5 } }) : null;
+    out.api = seen.api;
+    return out;
+  });
+  ok(r.conn === 'prov' && r.preset === 'slack', 'Slack has Connect, through its own sign-in', r);
+  ok(r.addRow.length === 1 && /Slack/.test(r.addRow[0]) && /1 more become available/.test(r.darkLine), 'the add row shows only what is set up here, and counts the rest', [r.addRow, r.darkLine.slice(-80)]);
+  ok(r.picker, 'Connect loads the list first and opens the sign-in choice, rather than doing nothing', r.picker);
+  ok(r.tool === 'mcp__api-slack__request' && /https:\/\/slack\.com\/api\//.test(r.desc || ''), 'chat is offered Slack\u2019s API, with its address', r.tool);
+  ok(!r.build, 'and Build\u2019s loop is not', r.build);
+  ok(r.who && r.who.name === 'Slack' && r.who.remote, 'named Slack for the consent dialog', r.who);
+  ok(r.api.length === 1 && r.api[0].provider === 'slack' && r.api[0].method === 'GET' && r.api[0].path === 'conversations.list' && r.api[0].query.limit === 5, 'the call goes to the server, for Slack, as asked', r.api);
+  ok(r.res && r.res.ok && /^HTTP 200/.test(r.res.text), 'and its answer comes back to chat', r.res);
+}
+
 section('A computer connector cannot take an app’s name');
 {
-  const r = await page.evaluate(() => { try { _mcpAdd('app-notion', 'npx', ['x']); return 'added'; } catch (e) { return e.message; } });
-  ok(/reserved/i.test(r), 'names starting with app- are refused', r);
+  const r = await page.evaluate(() => ['app-notion', 'api-slack'].map(n => { try { _mcpAdd(n, 'npx', ['x']); return 'added'; } catch (e) { return e.message; } }));
+  ok(r.every(m => /reserved/i.test(m)), 'names starting with app- or api- are refused', r);
 }
 
 section('Nothing threw');

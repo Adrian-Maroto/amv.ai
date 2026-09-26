@@ -50,9 +50,47 @@ arguments shown.
 registry, add a row to `REMOTE_APPS`, and change its row in
 `13c-app-catalog.js` from Notify me to `r:<slug>`.
 
-**Still Notify me, because they publish no official connector yet:** HubSpot,
-Asana, Intercom, Square, Box, Dropbox, Spotify, Slack, Discord. Re-check the
-registry for these - a new `com.<app>` entry is all it takes.
+**Added after a sweep of all 473 Notify me apps:** Todoist, Miro, Craft,
+Zomato, Typeform, Jotform, Make, IFTTT, Amplitude, Cloudflare, Grafana,
+UptimeRobot, VirusTotal, PandaDoc, Cypress Cloud, LambdaTest and New Relic.
+That brings the total to 35 official connectors.
+
+### 2. A provider row in `CONN_PROVIDERS` - BUILT
+
+These twelve publish no official connector:
+
+- Slack, Discord, Spotify, Dropbox
+- HubSpot, Asana, Zoom, Box
+- Strava, Reddit, Pinterest, Calendly
+
+Each now connects through its own standard sign-in, and chat uses its API
+through `/v1/connect/api`, one call at a time with the method, path and body
+shown for consent.
+
+OneDrive, YouTube and Google Tasks join through the Microsoft and Google
+rows.
+
+**What each needs:** an app registered with that provider (free) and its two
+secrets. `GO-LIVE.md` lists them, and the readiness screen shows which are
+set.
+
+**Until then:** the row says it is not set up rather than opening a flow that
+fails.
+
+**Tests:** `tests/worker/an-app-with-a-public-api-connects-and-stays-in-its-lane`.
+
+### 3. Still Notify me, and why
+
+About 400 apps remain Notify me. They have no public API that can do what
+somebody would connect them for:
+
+- CapCut, Netflix, TikTok, Snapchat, iMessage, Apple Notes
+- most games, shopping and delivery apps
+- banks, which go through the bank link instead
+
+A Connect button for any of these would be a lie. The waitlist counts on the
+owner dashboard show which ones people want most. When one publishes an API or
+an official connector, it moves to route 1 or 2.
 
 The original plan follows.
 

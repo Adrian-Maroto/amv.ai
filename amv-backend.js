@@ -2624,7 +2624,11 @@ const CONN_PROVIDERS = {
          then touch. A permission AMV does not need is a permission it will one
          day be asked to justify. */
       'drive.write':   'https://www.googleapis.com/auth/drive.file',
+      /* YouTube and Google Tasks, asked for only by somebody who picks them. */
+      'youtube.read':  'https://www.googleapis.com/auth/youtube.readonly',
+      'tasks.write':   'https://www.googleapis.com/auth/tasks',
     },
+    api: { base: 'https://www.googleapis.com/' },
   },
   microsoft: {
     name: 'Microsoft',
@@ -2643,7 +2647,10 @@ const CONN_PROVIDERS = {
       'mail.send':     'Mail.Send offline_access',
       'calendar.read': 'Calendars.Read offline_access',
       'calendar.write':'Calendars.ReadWrite offline_access',
+      /* OneDrive, read-only - the files a person picks the chat to look at. */
+      'files.read':    'Files.Read offline_access',
     },
+    api: { base: 'https://graph.microsoft.com/v1.0/' },
   },
   github: {
     name: 'GitHub',
@@ -2660,8 +2667,184 @@ const CONN_PROVIDERS = {
        holds would technically allow one. The narrowing AMV can enforce is
        the narrowing AMV should offer. */
     scopes: { 'repo.read': 'repo', 'issues.write': 'repo', 'code.write': 'repo' },
+    api: { base: 'https://api.github.com/', headers: { Accept: 'application/vnd.github+json' } },
+  },
+
+  /* ── APPS WITH A PUBLIC API AND NO OFFICIAL CONNECTOR ──────────────────────
+
+     The owner asked for every app on the Integrations page to connect. The
+     ones below publish no official connector (see REMOTE_APPS for those that
+     do), so the real route is the app's own standard sign-in - the same shape
+     as Google above: an app registered with the provider, its client id and
+     secret as Worker secrets, and until then the row says it is not set up on
+     this deployment rather than opening a flow that fails. Registering is free
+     for every one of them.
+
+     `api` is what makes a connection usable: chat is offered one tool per
+     connected app that calls that app's API at `base` with the person's token,
+     and every call is asked for with its method, path and body shown before it
+     runs. The token's own scopes - chosen by the person at connect time - are
+     the limit on what any call can do.
+
+     The provider quirks are data, not code paths:
+       tokenAuth    'basic' sends the client secret in an Authorization header,
+                    which Spotify, Zoom, Reddit and Pinterest require
+       scopeSep     how the provider joins scopes (Slack, Strava, Pinterest: ',')
+       scopeParam   the parameter scopes go in (Slack's user token: user_scope)
+       tokenPath    where the token sits in the reply (Slack: authed_user)
+       noScope      scopes are fixed in the app's settings, not asked for
+       revokeStyle  'bearer' posts to the revoke endpoint with the token as the
+                    credential; 'access_token' names it that way (Strava);
+                    default is a form field called `token`
+       revokeClient the revoke request carries the client id and secret too  */
+  slack: {
+    name: 'Slack',
+    auth: 'https://slack.com/oauth/v2/authorize', token: 'https://slack.com/api/oauth.v2.access',
+    revoke: 'https://slack.com/api/auth.revoke', revokeStyle: 'bearer',
+    idEnv: 'SLACK_CLIENT_ID', secretEnv: 'SLACK_CLIENT_SECRET',
+    scopeSep: ',', scopeParam: 'user_scope', tokenPath: 'authed_user',
+    scopes: { 'slack.read': 'channels:read,channels:history,groups:read,groups:history,im:read,im:history,users:read,search:read',
+              'slack.write': 'chat:write' },
+    api: { base: 'https://slack.com/api/' },
+  },
+  discord: {
+    name: 'Discord',
+    auth: 'https://discord.com/oauth2/authorize', token: 'https://discord.com/api/oauth2/token',
+    revoke: 'https://discord.com/api/oauth2/token/revoke', revokeClient: true,
+    idEnv: 'DISCORD_CLIENT_ID', secretEnv: 'DISCORD_CLIENT_SECRET',
+    scopes: { 'discord.read': 'identify guilds' },
+    api: { base: 'https://discord.com/api/v10/' },
+  },
+  spotify: {
+    name: 'Spotify',
+    auth: 'https://accounts.spotify.com/authorize', token: 'https://accounts.spotify.com/api/token',
+    revoke: null, revokeNote: 'Spotify ends this from the Apps page of your Spotify account.',
+    idEnv: 'SPOTIFY_CLIENT_ID', secretEnv: 'SPOTIFY_CLIENT_SECRET', tokenAuth: 'basic',
+    scopes: { 'spotify.read': 'user-read-playback-state user-read-currently-playing user-read-recently-played playlist-read-private user-library-read user-top-read',
+              'spotify.write': 'user-modify-playback-state playlist-modify-private playlist-modify-public' },
+    api: { base: 'https://api.spotify.com/v1/' },
+  },
+  dropbox: {
+    name: 'Dropbox',
+    auth: 'https://www.dropbox.com/oauth2/authorize', token: 'https://api.dropboxapi.com/oauth2/token',
+    revoke: 'https://api.dropboxapi.com/2/auth/token/revoke', revokeStyle: 'bearer',
+    idEnv: 'DROPBOX_CLIENT_ID', secretEnv: 'DROPBOX_CLIENT_SECRET',
+    extra: { token_access_type: 'offline' },
+    scopes: { 'dropbox.read': 'account_info.read files.metadata.read files.content.read',
+              'dropbox.write': 'files.content.write' },
+    api: { base: 'https://api.dropboxapi.com/2/' },
+  },
+  hubspot: {
+    name: 'HubSpot',
+    auth: 'https://app.hubspot.com/oauth/authorize', token: 'https://api.hubapi.com/oauth/v1/token',
+    revoke: null, revokeNote: 'HubSpot ends this from Connected Apps in your HubSpot account settings.',
+    idEnv: 'HUBSPOT_CLIENT_ID', secretEnv: 'HUBSPOT_CLIENT_SECRET',
+    scopes: { 'hubspot.read': 'crm.objects.contacts.read crm.objects.companies.read crm.objects.deals.read',
+              'hubspot.write': 'crm.objects.contacts.write crm.objects.deals.write' },
+    api: { base: 'https://api.hubapi.com/' },
+  },
+  asana: {
+    name: 'Asana',
+    auth: 'https://app.asana.com/-/oauth_authorize', token: 'https://app.asana.com/-/oauth_token',
+    revoke: 'https://app.asana.com/-/oauth_revoke', revokeClient: true,
+    idEnv: 'ASANA_CLIENT_ID', secretEnv: 'ASANA_CLIENT_SECRET',
+    scopes: { 'asana.all': 'default' },
+    api: { base: 'https://app.asana.com/api/1.0/' },
+  },
+  zoom: {
+    name: 'Zoom',
+    auth: 'https://zoom.us/oauth/authorize', token: 'https://zoom.us/oauth/token',
+    revoke: 'https://zoom.us/oauth/revoke', tokenAuth: 'basic',
+    idEnv: 'ZOOM_CLIENT_ID', secretEnv: 'ZOOM_CLIENT_SECRET', noScope: true,
+    scopes: { 'zoom.all': '' },
+    api: { base: 'https://api.zoom.us/v2/' },
+  },
+  box: {
+    name: 'Box',
+    auth: 'https://account.box.com/api/oauth2/authorize', token: 'https://api.box.com/oauth2/token',
+    revoke: 'https://api.box.com/oauth2/revoke', revokeClient: true,
+    idEnv: 'BOX_CLIENT_ID', secretEnv: 'BOX_CLIENT_SECRET', noScope: true,
+    scopes: { 'box.all': '' },
+    api: { base: 'https://api.box.com/2.0/' },
+  },
+  strava: {
+    name: 'Strava',
+    auth: 'https://www.strava.com/oauth/authorize', token: 'https://www.strava.com/oauth/token',
+    revoke: 'https://www.strava.com/oauth/deauthorize', revokeStyle: 'access_token',
+    idEnv: 'STRAVA_CLIENT_ID', secretEnv: 'STRAVA_CLIENT_SECRET', scopeSep: ',',
+    scopes: { 'strava.read': 'read,activity:read_all,profile:read_all', 'strava.write': 'activity:write' },
+    api: { base: 'https://www.strava.com/api/v3/' },
+  },
+  reddit: {
+    name: 'Reddit',
+    auth: 'https://www.reddit.com/api/v1/authorize', token: 'https://www.reddit.com/api/v1/access_token',
+    revoke: 'https://www.reddit.com/api/v1/revoke_token', tokenAuth: 'basic',
+    idEnv: 'REDDIT_CLIENT_ID', secretEnv: 'REDDIT_CLIENT_SECRET',
+    extra: { duration: 'permanent' },
+    scopes: { 'reddit.read': 'identity read mysubreddits history', 'reddit.write': 'submit edit vote' },
+    /* Reddit refuses API calls without a descriptive User-Agent. */
+    api: { base: 'https://oauth.reddit.com/', headers: { 'User-Agent': 'web:amv:1.0 (by AMV)' } },
+  },
+  pinterest: {
+    name: 'Pinterest',
+    auth: 'https://www.pinterest.com/oauth/', token: 'https://api.pinterest.com/v5/oauth/token',
+    revoke: null, revokeNote: 'Pinterest ends this from Apps in your Pinterest security settings.',
+    idEnv: 'PINTEREST_CLIENT_ID', secretEnv: 'PINTEREST_CLIENT_SECRET', tokenAuth: 'basic', scopeSep: ',',
+    scopes: { 'pinterest.read': 'boards:read,pins:read,user_accounts:read', 'pinterest.write': 'boards:write,pins:write' },
+    api: { base: 'https://api.pinterest.com/v5/' },
+  },
+  calendly: {
+    name: 'Calendly',
+    auth: 'https://auth.calendly.com/oauth/authorize', token: 'https://auth.calendly.com/oauth/token',
+    revoke: 'https://auth.calendly.com/oauth/revoke', revokeClient: true,
+    idEnv: 'CALENDLY_CLIENT_ID', secretEnv: 'CALENDLY_CLIENT_SECRET', noScope: true,
+    scopes: { 'calendly.all': '' },
+    api: { base: 'https://api.calendly.com/' },
   },
 };
+/* ONE TOKEN REQUEST FOR EVERY PROVIDER, first exchange and refresh alike, so
+   a provider's quirks are handled in one place: where the client secret goes,
+   and where the token sits in the reply. Returns the provider's reply with the
+   token lifted to the top, or { error }. */
+async function _connTokenRequest(env, p, params){
+  const body = new URLSearchParams(Object.assign({ client_id: env[p.idEnv] }, params));
+  const headers = { 'Content-Type':'application/x-www-form-urlencoded', 'Accept':'application/json' };
+  if(p.tokenAuth === 'basic') headers.Authorization = 'Basic ' + btoa(env[p.idEnv] + ':' + env[p.secretEnv]);
+  else body.set('client_secret', env[p.secretEnv]);
+  const res = await fetchDeadline(p.token, { method:'POST', headers, body: body.toString() }, 20000).catch(()=>null);
+  const raw = res ? await res.json().catch(()=>({})) : {};
+  const d = (p.tokenPath && raw && raw[p.tokenPath] && raw[p.tokenPath].access_token) ? raw[p.tokenPath] : raw;
+  if(!res || !res.ok || !d || !d.access_token)
+    return { error: String((raw && raw.error) || (res ? 'http_' + res.status : 'unreachable')).slice(0, 120) };
+  return d;
+}
+/* A token with no stated lifetime does not expire on a clock (GitHub, Slack
+   without rotation). Treating it as an hour, which this used to, made every
+   such connection report expired after sixty minutes with nothing to refresh. */
+function _connExpiry(d){ const n = Number(d && d.expires_in); return n > 0 ? Date.now() + n * 1000 : 0; }
+/* And one revocation, for disconnecting and for account erasure. */
+async function _connRevokeRequest(env, p, tok){
+  if(!p || !p.revoke) return { tried:false, ok:false };
+  const token = tok.refresh || tok.access;
+  const headers = { 'Content-Type':'application/x-www-form-urlencoded' };
+  let body;
+  if(p.revokeStyle === 'bearer'){ headers.Authorization = 'Bearer ' + tok.access; body = ''; }
+  else if(p.revokeStyle === 'access_token'){ body = new URLSearchParams({ access_token: tok.access }).toString(); }
+  else {
+    const f = new URLSearchParams({ token });
+    if(p.tokenAuth === 'basic') headers.Authorization = 'Basic ' + btoa(env[p.idEnv] + ':' + env[p.secretEnv]);
+    else if(p.revokeClient){ f.set('client_id', env[p.idEnv]); f.set('client_secret', env[p.secretEnv]); }
+    body = f.toString();
+  }
+  const r = await fetchDeadline(p.revoke, { method:'POST', headers, body }, 15000).catch(()=>null);
+  return { tried:true, ok: !!(r && r.ok), status: r ? r.status : 0 };
+}
+
+/* What registering one of the API apps switches on, said once for all of them. */
+function _apiAppTurnsOn(n){
+  return n + ' as a connected app: chat can use its API, asking before each call. Needs an app registered with ' + n
+    + ' (free) and both halves pasted here; until then ' + n + ' shows as not set up rather than opening a flow that fails.';
+}
 function connProviderReady(env, id){
   const p = CONN_PROVIDERS[id];
   return !!(p && env && env[p.idEnv] && env[p.secretEnv]);
@@ -2793,11 +2976,13 @@ async function connStart(request, env){
     exp: Date.now() + CONN_STATE_TTL_MS,
   });
 
-  const scopeStr = [...new Set(granted.map(k => p.scopes[k]).join(' ').split(/\s+/))].join(' ');
+  const sep = p.scopeSep || ' ';
+  const scopeStr = [...new Set(granted.map(k => p.scopes[k]).join(sep).split(sep === ' ' ? /\s+/ : sep))].filter(Boolean).join(sep);
   const q = new URLSearchParams(Object.assign({
     client_id: env[p.idEnv], redirect_uri: redirect, response_type: 'code',
-    scope: scopeStr, state, code_challenge: challenge, code_challenge_method: 'S256',
+    state, code_challenge: challenge, code_challenge_method: 'S256',
   }, p.extra || {}));
+  if(!p.noScope && scopeStr) q.set(p.scopeParam || 'scope', scopeStr);
   audit(env, 'conn_start', { by:user.email, provider:pid, scopes:granted });
   return json({ ok:true, url: p.auth + '?' + q.toString(), provider:pid, scopes:granted });
 }
@@ -2839,22 +3024,14 @@ async function connFinish(request, env){
   const p = CONN_PROVIDERS[st.provider];
   if(!p || !connProviderReady(env, st.provider)) return json({ error:'provider_not_configured' }, 503);
 
-  const res = await fetchDeadline(p.token, {
-    method:'POST',
-    headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'Accept':'application/json' },
-    body: new URLSearchParams({
-      client_id: env[p.idEnv], client_secret: env[p.secretEnv],
-      code, redirect_uri: st.redirect, grant_type:'authorization_code',
-      code_verifier: st.verifier,
-    }).toString(),
-  }, 20000);
-  const d = await res.json().catch(()=>({}));
-  if(!res.ok || !d.access_token){
+  const d = await _connTokenRequest(env, p, { code, redirect_uri: st.redirect, grant_type:'authorization_code',
+    code_verifier: st.verifier });
+  if(d.error){
     /* The provider's own words, not a generic failure - "redirect_uri_mismatch"
        is the difference between a five minute fix and an afternoon. The token
        is not in this object; the error field is safe to pass on. */
-    audit(env, 'conn_exchange_failed', { by:user.email, provider:st.provider, why:String(d.error||res.status).slice(0,60) });
-    return json({ error:'exchange_failed', provider:st.provider, why:String(d.error||('http_'+res.status)).slice(0,120) }, 400);
+    audit(env, 'conn_exchange_failed', { by:user.email, provider:st.provider, why:String(d.error).slice(0,60) });
+    return json({ error:'exchange_failed', provider:st.provider, why:String(d.error).slice(0,120) }, 400);
   }
 
   /* A provider that returned no refresh token cannot do the thing this whole
@@ -2864,19 +3041,20 @@ async function connFinish(request, env){
   const all = (await DB.get(env, CONN_KV, user.email)) || {};
   all[connId] = {
     provider: st.provider, scopes: st.scopes, at: Date.now(),
-    unattended: !!d.refresh_token,
+    unattended: !!d.refresh_token || !_connExpiry(d),
     sealed: await connSeal(env, {
       access: d.access_token, refresh: d.refresh_token || '',
-      exp: Date.now() + ((Number(d.expires_in)||3600) * 1000),
+      exp: _connExpiry(d),
     }),
     lastUsed: 0, lastJob: '',
   };
   await DB.put(env, CONN_KV, user.email, all);
-  audit(env, 'conn_added', { by:user.email, provider:st.provider, scopes:st.scopes, unattended:!!d.refresh_token });
+  const lasting = !!d.refresh_token || !_connExpiry(d);
+  audit(env, 'conn_added', { by:user.email, provider:st.provider, scopes:st.scopes, unattended:lasting });
 
   return json({ ok:true, id:connId, provider:st.provider, name:p.name, scopes:st.scopes,
-    unattended: !!d.refresh_token,
-    note: d.refresh_token ? null
+    unattended: lasting,
+    note: lasting ? null
       : p.name+' did not return a long-lived token, so this connection only works while AMV is open. Disconnect and reconnect to try again.' });
 }
 
@@ -2933,7 +3111,12 @@ async function connUse(env, email, need, jobId, opts){
   const id = Object.keys(all).find(k => {
     const c = all[k];
     return c && Array.isArray(c.scopes) && needs.every(n => c.scopes.indexOf(n) >= 0)
-        && (o.attended || c.unattended);
+        && (o.attended || c.unattended)
+        /* Pinned to one provider when the caller names it. Capability names are
+           shared - Google and Microsoft both have mail.read - so without this a
+           call meant for one provider's API could be handed the other's token,
+           and send it there. */
+        && (!o.provider || c.provider === o.provider);
   });
   if(!id) return { ok:false, code:'not_connected', need: needs.join(' + ') };
 
@@ -2970,14 +3153,8 @@ async function connUse(env, email, need, jobId, opts){
      check and the request it is about to be used for. */
   if(tok.exp && tok.exp - 60000 < Date.now()){
     if(!tok.refresh) return { ok:false, code:'expired_no_refresh', id };
-    const r = await fetchDeadline(p.token, {
-      method:'POST',
-      headers:{ 'Content-Type':'application/x-www-form-urlencoded', 'Accept':'application/json' },
-      body: new URLSearchParams({ client_id: env[p.idEnv], client_secret: env[p.secretEnv],
-        refresh_token: tok.refresh, grant_type:'refresh_token' }).toString(),
-    }, 20000).catch(()=>null);
-    const d = r ? await r.json().catch(()=>({})) : {};
-    if(!r || !r.ok || !d.access_token){
+    const d = await _connTokenRequest(env, p, { refresh_token: tok.refresh, grant_type:'refresh_token' });
+    if(d.error){
       /* A refresh that fails usually means the person revoked it at the
          provider. Marked so the interface can say "reconnect this" instead of
          a job failing silently every morning for a fortnight. */
@@ -2988,7 +3165,7 @@ async function connUse(env, email, need, jobId, opts){
     }
     tok.access = d.access_token;
     if(d.refresh_token) tok.refresh = d.refresh_token;   // providers that rotate
-    tok.exp = Date.now() + ((Number(d.expires_in)||3600) * 1000);
+    tok.exp = _connExpiry(d);
     c.sealed = await connSeal(env, tok);
     delete c.broken;
   }
@@ -3028,8 +3205,84 @@ async function connList(request, env){
     id, name: CONN_PROVIDERS[id].name,
     ready: connProviderReady(env, id),
     scopes: Object.keys(CONN_PROVIDERS[id].scopes),
+    api: CONN_PROVIDERS[id].api ? CONN_PROVIDERS[id].api.base : null,
   }));
   return json({ ok:true, configured: connConfigured(env), items, providers });
+}
+
+/* ── CALLING A CONNECTED APP'S API, FROM CHAT ───────────────────────────────
+
+   The one tool chat is offered for each connected app with an `api` in the
+   provider table. The person asked for this call - chat shows the method, the
+   path and the body and waits for Allow once - and this is where it runs.
+
+   What bounds it, on the server where it cannot be talked out of it:
+     · the token comes from connUse and nowhere else, so the pause, the
+       refresh, the broken marking and the audit line all apply;
+     · the address is the provider's own API and nothing else - a path that
+       names a scheme, a host, `..` or a backslash is refused, and the built
+       URL must still start with the base after parsing;
+     · the token's scopes, chosen by the person at connect time, are the limit
+       on what any call can do;
+     · the reply is bounded, and the arguments are never written to the audit
+       log - they are somebody's messages and files. */
+const CONN_API_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+const CONN_API_MAX_OUT = 60000;
+function _connApiUrl(base, path, query){
+  const raw = String(path || '');
+  if(!raw || raw.length > 500 || /[\u0000-\u001f\\]/.test(raw) || /^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('//')) return '';
+  const rel = raw.replace(/^\/+/, '');
+  if(rel.split(/[/?#]/)[0] === '..' || /(^|\/)\.\.(\/|$|\?)/.test(rel) || /%2e%2e|%2f/i.test(rel)) return '';
+  let u;
+  try { u = new URL(rel, base); } catch (e) { return ''; }
+  const b = new URL(base);
+  if(u.origin !== b.origin || !u.pathname.startsWith(b.pathname)) return '';
+  if(query && typeof query === 'object' && !Array.isArray(query)){
+    for(const [k, v] of Object.entries(query).slice(0, 40)){
+      if(v === undefined || v === null) continue;
+      u.searchParams.set(String(k).slice(0, 100), typeof v === 'object' ? JSON.stringify(v) : String(v).slice(0, 2000));
+    }
+  }
+  return u.toString();
+}
+async function connApi(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const blocked = await guardAction(env, 'connapi:' + user.email, 60, 2000, 'connected app actions');
+  if(blocked) return blocked;
+  const body = await request.json().catch(()=>({}));
+  const pid = String(body.provider || '');
+  const p = Object.prototype.hasOwnProperty.call(CONN_PROVIDERS, pid) ? CONN_PROVIDERS[pid] : null;
+  if(!p || !p.api) return json({ error:'unknown_provider' }, 400);
+  const method = String(body.method || 'GET').toUpperCase();
+  if(CONN_API_METHODS.indexOf(method) < 0) return json({ error:'bad_method' }, 400);
+  const url = _connApiUrl(p.api.base, body.path, body.query);
+  if(!url) return json({ error:'bad_path', message:'That address is not part of ' + p.name + '\u2019s API.' }, 400);
+  let payload;
+  if(body.body !== undefined && body.body !== null && method !== 'GET'){
+    payload = typeof body.body === 'string' ? body.body : JSON.stringify(body.body);
+    if(payload.length > 50000) return json({ error:'body_too_large' }, 413);
+  }
+  const all = (await DB.get(env, CONN_KV, user.email)) || {};
+  const rec = Object.values(all).find(c => c && c.provider === pid);
+  if(!rec) return json({ error:'not_connected', message: p.name + ' is not connected. Connect it in Integrations.' }, 404);
+  const u = await connUse(env, user.email, rec.scopes || [], 'chat', { attended: true, provider: pid });
+  if(!u.ok){
+    const again = ['refresh_failed', 'expired_no_refresh', 'unreadable'].indexOf(u.code) >= 0;
+    return json({ error: u.code, message: again ? p.name + ' needs connecting again. Reconnect it in Integrations.'
+                                                 : p.name + ' could not be used just now (' + u.code + ').' }, again ? 401 : 503);
+  }
+  /* Asserted as well as asked for: a token goes only to its own provider. */
+  if(u.provider !== pid) return json({ error:'wrong_provider' }, 500);
+  const headers = Object.assign({ Authorization: 'Bearer ' + u.token, Accept: 'application/json' }, p.api.headers || {});
+  if(payload !== undefined) headers['Content-Type'] = /^\s*[\[{]/.test(payload) ? 'application/json; charset=utf-8' : 'application/x-www-form-urlencoded';
+  let g;
+  try { g = await fetchGuarded(url, { method, headers, body: payload }, 30000); }
+  catch (e) { return json({ error:'app_unreachable', message: p.name + ' did not answer. Nothing was changed.' }, 502); }
+  if(g.blocked) return json({ error:'blocked', message: g.why }, 400);
+  const text = await _rmcpText(g.response, CONN_API_MAX_OUT);
+  audit(env, 'conn_api', { by:user.email, provider:pid, method, path: new URL(url).pathname.slice(0, 120), status: g.response.status });
+  return json({ ok:true, status: g.response.status, body: text });
 }
 
 /* Disconnect. Revokes at the provider FIRST, and only then forgets it.
@@ -3434,12 +3687,9 @@ async function connRemove(request, env){
   if(p.revoke){
     try{
       const tok = await connOpen(env, c.sealed);
-      const r = await fetchDeadline(p.revoke, {
-        method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ token: tok.refresh || tok.access }).toString(),
-      }, 15000);
-      revoked = !!(r && r.ok);
-      if(!revoked) why = 'http_' + (r ? r.status : 'no_response');
+      const r = await _connRevokeRequest(env, p, tok);
+      revoked = r.ok;
+      if(!revoked) why = 'http_' + (r.status || 'no_response');
     }catch(e){ why = String((e && e.message) || 'failed').slice(0, 60); }
   }
 
@@ -3514,6 +3764,25 @@ const REMOTE_APPS = {
   supabase:  { name: 'Supabase',            reg: 'com.supabase/mcp',                   url: 'https://mcp.supabase.com/mcp' },
   postman:   { name: 'Postman',             reg: 'com.postman/postman-mcp-server',     url: 'https://mcp.postman.com/mcp' },
   close:     { name: 'Close',               reg: 'com.close/close-mcp',                url: 'https://mcp.close.com/mcp' },
+  /* The second sweep, across every app still on Notify me - the same rule:
+     the registry entry sits under the app's own verified namespace. */
+  todoist:   { name: 'Todoist',             reg: 'net.todoist/mcp',                    url: 'https://ai.todoist.net/mcp' },
+  miro:      { name: 'Miro',                reg: 'io.github.miroapp/mcp-server',       url: 'https://mcp.miro.com/' },
+  craft:     { name: 'Craft',               reg: 'do.craft.mcp/server',                url: 'https://mcp.craft.do/my/mcp' },
+  zomato:    { name: 'Zomato',              reg: 'com.zomato/mcp',                     url: 'https://mcp-server.zomato.com/mcp' },
+  typeform:  { name: 'Typeform',            reg: 'com.typeform/typeform',              url: 'https://api.typeform.com/mcp' },
+  jotform:   { name: 'Jotform',             reg: 'com.jotform/mcp',                    url: 'https://mcp.jotform.com/' },
+  make:      { name: 'Make',                reg: 'com.make/mcp-server',                url: 'https://mcp.make.com' },
+  ifttt:     { name: 'IFTTT',               reg: 'com.ifttt/mcp',                      url: 'https://ifttt.com/mcp' },
+  amplitude: { name: 'Amplitude',           reg: 'com.amplitude/mcp-server',           url: 'https://mcp.amplitude.com/mcp' },
+  cloudflare:{ name: 'Cloudflare',          reg: 'com.cloudflare.mcp/mcp',             url: 'https://bindings.mcp.cloudflare.com/mcp' },
+  grafana:   { name: 'Grafana',             reg: 'io.github.grafana/mcp-grafana',      url: 'https://mcp.grafana.com/mcp' },
+  uptimerobot:{ name: 'UptimeRobot',        reg: 'com.uptimerobot/uptimerobot',        url: 'https://mcp.uptimerobot.com/mcp' },
+  virustotal:{ name: 'VirusTotal',          reg: 'io.github.VirusTotal/virustotal-mcp', url: 'https://ai.virustotal.com/mcp' },
+  pandadoc:  { name: 'PandaDoc',            reg: 'com.pandadoc.mcp/mcp',               url: 'https://mcp.pandadoc.com/v1/mcp' },
+  cypress:   { name: 'Cypress Cloud',       reg: 'io.cypress.mcp/cypress-cloud',       url: 'https://mcp.cypress.io/mcp' },
+  lambdatest:{ name: 'LambdaTest',          reg: 'io.github.LambdaTest/mcp',           url: 'https://mcp.lambdatest.com/mcp' },
+  newrelic:  { name: 'New Relic',           reg: 'com.newrelic/mcp-server',            url: 'https://mcp.newrelic.com/mcp' },
 };
 const RMCP_KV = 'rmcp';                     // rmcp:<email> -> { [slug]: { sealed, at, lastUsed, broken } }
 const RMCP_STATE_TTL_MS = 5 * 60 * 1000;
@@ -12617,6 +12886,7 @@ async function _route(request, env, ctx) {
     case '/v1/connect/list':   return connList(request, env);
     case '/v1/connect/act':    return connAct(request, env);
     case '/v1/connect/remove': return connRemove(request, env);
+    case '/v1/connect/api':    return connApi(request, env);
     case '/v1/remote/list':    return remoteList(request, env);
     case '/v1/remote/start':   return remoteStart(request, env);
     case '/v1/remote/finish':  return remoteFinish(request, env);
@@ -14402,11 +14672,8 @@ async function authDeleteAccount(request, env) {
       if (!p || !p.revoke) { audit(env, 'conn_unrevocable_on_erasure', { by: email, provider: (c&&c.provider)||'' }); continue; }
       try {
         const tok = await connOpen(env, c.sealed);
-        const r = await fetchDeadline(p.revoke, {
-          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({ token: tok.refresh || tok.access }).toString(),
-        }, 15000);
-        audit(env, 'conn_revoked_on_erasure', { by: email, provider: c.provider, ok: !!(r && r.ok) });
+        const r = await _connRevokeRequest(env, p, tok);
+        audit(env, 'conn_revoked_on_erasure', { by: email, provider: c.provider, ok: r.ok });
       } catch (e) {
         audit(env, 'conn_revoke_failed_on_erasure', { by: email, provider: c.provider,
           why: String((e && e.message) || 'failed').slice(0, 60) });
@@ -26460,6 +26727,48 @@ function _readinessReport(env) {
       turnsOn: 'High-signal audit events pushed somewhere off this deployment as they happen - so the record of who did what survives losing the deployment itself. Separate from operator alerts, which page you about breakage.',
       how: put('AUDIT_WEBHOOK') },
 
+    /* The apps with a public API and no official connector - one row each,
+       because each is switched on separately: registering AMV with Slack does
+       nothing for Spotify. Each goes live with an app registered with that
+       provider (free) and both halves pasted here; until then its row on the
+       Integrations page says it is not set up rather than opening a flow that
+       fails. */
+    { id: 'connect_slack', name: 'Connect Slack', blocking: false,
+      on: _has(env, 'SLACK_CLIENT_ID') && _has(env, 'SLACK_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('Slack'), how: put('SLACK_CLIENT_ID') + ' and ' + put('SLACK_CLIENT_SECRET') },
+    { id: 'connect_discord', name: 'Connect Discord', blocking: false,
+      on: _has(env, 'DISCORD_CLIENT_ID') && _has(env, 'DISCORD_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('Discord'), how: put('DISCORD_CLIENT_ID') + ' and ' + put('DISCORD_CLIENT_SECRET') },
+    { id: 'connect_spotify', name: 'Connect Spotify', blocking: false,
+      on: _has(env, 'SPOTIFY_CLIENT_ID') && _has(env, 'SPOTIFY_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('Spotify'), how: put('SPOTIFY_CLIENT_ID') + ' and ' + put('SPOTIFY_CLIENT_SECRET') },
+    { id: 'connect_dropbox', name: 'Connect Dropbox', blocking: false,
+      on: _has(env, 'DROPBOX_CLIENT_ID') && _has(env, 'DROPBOX_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('Dropbox'), how: put('DROPBOX_CLIENT_ID') + ' and ' + put('DROPBOX_CLIENT_SECRET') },
+    { id: 'connect_hubspot', name: 'Connect HubSpot', blocking: false,
+      on: _has(env, 'HUBSPOT_CLIENT_ID') && _has(env, 'HUBSPOT_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('HubSpot'), how: put('HUBSPOT_CLIENT_ID') + ' and ' + put('HUBSPOT_CLIENT_SECRET') },
+    { id: 'connect_asana', name: 'Connect Asana', blocking: false,
+      on: _has(env, 'ASANA_CLIENT_ID') && _has(env, 'ASANA_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('Asana'), how: put('ASANA_CLIENT_ID') + ' and ' + put('ASANA_CLIENT_SECRET') },
+    { id: 'connect_zoom', name: 'Connect Zoom', blocking: false,
+      on: _has(env, 'ZOOM_CLIENT_ID') && _has(env, 'ZOOM_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('Zoom'), how: put('ZOOM_CLIENT_ID') + ' and ' + put('ZOOM_CLIENT_SECRET') },
+    { id: 'connect_box', name: 'Connect Box', blocking: false,
+      on: _has(env, 'BOX_CLIENT_ID') && _has(env, 'BOX_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('Box'), how: put('BOX_CLIENT_ID') + ' and ' + put('BOX_CLIENT_SECRET') },
+    { id: 'connect_strava', name: 'Connect Strava', blocking: false,
+      on: _has(env, 'STRAVA_CLIENT_ID') && _has(env, 'STRAVA_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('Strava'), how: put('STRAVA_CLIENT_ID') + ' and ' + put('STRAVA_CLIENT_SECRET') },
+    { id: 'connect_reddit', name: 'Connect Reddit', blocking: false,
+      on: _has(env, 'REDDIT_CLIENT_ID') && _has(env, 'REDDIT_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('Reddit'), how: put('REDDIT_CLIENT_ID') + ' and ' + put('REDDIT_CLIENT_SECRET') },
+    { id: 'connect_pinterest', name: 'Connect Pinterest', blocking: false,
+      on: _has(env, 'PINTEREST_CLIENT_ID') && _has(env, 'PINTEREST_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('Pinterest'), how: put('PINTEREST_CLIENT_ID') + ' and ' + put('PINTEREST_CLIENT_SECRET') },
+    { id: 'connect_calendly', name: 'Connect Calendly', blocking: false,
+      on: _has(env, 'CALENDLY_CLIENT_ID') && _has(env, 'CALENDLY_CLIENT_SECRET'),
+      turnsOn: _apiAppTurnsOn('Calendly'), how: put('CALENDLY_CLIENT_ID') + ' and ' + put('CALENDLY_CLIENT_SECRET') },
     { id: 'connectGithub', name: 'Connect GitHub', blocking: false,
       on: _has(env, 'GH_CLIENT_ID') && _has(env, 'GH_CLIENT_SECRET'),
       turnsOn: 'Repositories as a connected account, so a build can read and write real code. Needs an OAuth app registered with GitHub and both halves pasted here.',
@@ -26575,6 +26884,7 @@ function _readinessReport(env) {
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
     connectGoogle: 'Connected accounts', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
+    connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',
     modelFallback: 'Watching it run', errors: 'Watching it run', product: 'Watching it run',
   };

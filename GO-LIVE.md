@@ -190,6 +190,18 @@ one except the two in the first table.
 | Google sign-in and Gmail / Calendar / Drive | `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` | Free to register. Google review is required before you can ask the public for sensitive scopes. |
 | Microsoft: Outlook mail and calendar | `MS_CLIENT_ID` + `MS_CLIENT_SECRET` | Free to register. |
 | GitHub: real repositories in a build | `GH_CLIENT_ID` + `GH_CLIENT_SECRET` | Free to register. |
+| Slack: connect it and chat uses its API, asking before each call | `SLACK_CLIENT_ID` + `SLACK_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
+| Discord: connect it and chat uses its API, asking before each call | `DISCORD_CLIENT_ID` + `DISCORD_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
+| Spotify: connect it and chat uses its API, asking before each call | `SPOTIFY_CLIENT_ID` + `SPOTIFY_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
+| Dropbox: connect it and chat uses its API, asking before each call | `DROPBOX_CLIENT_ID` + `DROPBOX_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
+| HubSpot: connect it and chat uses its API, asking before each call | `HUBSPOT_CLIENT_ID` + `HUBSPOT_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
+| Asana: connect it and chat uses its API, asking before each call | `ASANA_CLIENT_ID` + `ASANA_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
+| Zoom: connect it and chat uses its API, asking before each call | `ZOOM_CLIENT_ID` + `ZOOM_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
+| Box: connect it and chat uses its API, asking before each call | `BOX_CLIENT_ID` + `BOX_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
+| Strava: connect it and chat uses its API, asking before each call | `STRAVA_CLIENT_ID` + `STRAVA_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
+| Reddit: connect it and chat uses its API, asking before each call | `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
+| Pinterest: connect it and chat uses its API, asking before each call | `PINTEREST_CLIENT_ID` + `PINTEREST_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
+| Calendly: connect it and chat uses its API, asking before each call | `CALENDLY_CLIENT_ID` + `CALENDLY_CLIENT_SECRET` | Free to register. Redirect URL: your `APP_URL`, exactly. |
 | Bank balances and transactions | `FINANCE_CLIENT_ID` + `FINANCE_SECRET` | **Paid and application-reviewed.** A bank-data provider (Plaid or similar) is not a key you can self-serve in an afternoon. Leave it off until you want this. |
 | Server-side PDFs and screenshots | Bind `BROWSER` | Cloudflare Browser Rendering, paid plan. Those two surfaces refuse honestly without it. |
 | Being paged when something breaks | `ALERT_WEBHOOK` | Free - a Slack or Discord incoming webhook. **Set this one even if you set nothing else here.** |

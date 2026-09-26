@@ -1151,6 +1151,12 @@ const AMV_API = {
      accounts: the page starts a sign-in, finishes one, lists what exists, and
      asks the server to list an app's tools or run one. No token ever comes
      here - the server holds it and makes the call. */
+  /* One call to a connected app's API (Slack, Spotify, Dropbox...), made by the
+     server with the token it holds. The page never sees the token. */
+  async connectApi(provider, method, path, query, body){
+    return this._wrote('/v1/connect/api', { provider, method, path, query: query || undefined, body: body === undefined ? undefined : body },
+      'That app did not complete the request.');
+  },
   async remoteList(){ return this._wrote('/v1/remote/list', {}, 'The list of connected apps could not be read.'); },
   async remoteStart(app, redirect){ return this._wrote('/v1/remote/start', { app, redirect }, 'That connection could not be started.'); },
   async remoteFinish(code, state){ return this._wrote('/v1/remote/finish', { code, state }, 'That connection could not be completed.'); },

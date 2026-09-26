@@ -76,7 +76,7 @@ function _mcpAdd(id, command, args, env){
   if(!id) throw new Error('Give the server a short name, like "github".');
   /* Reserved for apps connected by signing in, so a connector on the computer
      can never be mistaken for one - or take one's tool names. */
-  if(/^app-/.test(id)) throw new Error('Names starting with "app-" are reserved for apps you connect by signing in. Pick another.');
+  if(/^(app|api)-/.test(id)) throw new Error('Names starting with "app-" or "api-" are reserved for apps you connect by signing in. Pick another.');
   if(MCP.servers.some(s => s.id === id)) throw new Error('There is already a server called "' + id + '".');
   if(MCP.servers.length >= MCP_MAX_SERVERS) throw new Error('That is as many servers as AMV will run at once.');
   command = String(command || '').trim();
@@ -321,6 +321,16 @@ async function runMcpTool(name, args){
     return { ok:false, text:'That connector is not running any more. Reconnect it in Integrations.' };
   }
   const app = MCP.remote[hit.id];
+  if(app && app.kind === 'api'){
+    /* A connected app's API, called by the server with the token it holds. */
+    const a = args || {};
+    try{
+      const d = await AMV_API.connectApi(app.slug, a.method || 'GET', a.path || '', a.query, a.body);
+      return { ok: d.status < 400, text: 'HTTP ' + d.status + '\n' + String(d.body || '') };
+    }catch(e){
+      return { ok:false, text: app.name + ': ' + String((e && e.message) || 'that did not work') };
+    }
+  }
   if(app){
     /* Through AMV's server, which holds the sign-in. A refusal is a result the
        model can read, like any other connector's. */
@@ -572,10 +582,50 @@ const RMCP_TOOLS_TTL_MS = 10 * 60 * 1000;
    now asked in the background and used from the next turn; only the tool
    listing of apps already known to be connected is waited for, and that for
    four seconds at most. */
+/* WHAT A CONNECTED APP'S API TOOL SAYS. One tool per app, whose description
+   gives the base address and one real example - the model knows these public
+   APIs, and the example anchors which one. */
+const API_TOOL_EXAMPLE = {
+  slack: 'GET conversations.list, or POST chat.postMessage with body {"channel":"C123","text":"hi"}',
+  discord: 'GET users/@me/guilds', spotify: 'GET me/player/currently-playing',
+  dropbox: 'POST files/list_folder with body {"path":""}', hubspot: 'GET crm/v3/objects/contacts',
+  asana: 'GET users/me', zoom: 'GET users/me/meetings', box: 'GET folders/0/items', strava: 'GET athlete/activities',
+  reddit: 'GET api/v1/me', pinterest: 'GET boards', calendly: 'GET users/me',
+  github: 'GET user/repos', microsoft: 'GET me/drive/root/children', google: 'GET youtube/v3/playlists with query {"mine":true,"part":"snippet"}',
+};
+function _apiToolsFor(pid, name, base){
+  return [{ name: 'request',
+    description: 'Call the ' + name + ' API (' + base + ') as the person who connected it. Give method, a path relative to that address, '
+               + 'an optional query object and, for writes, a JSON body. For example: ' + (API_TOOL_EXAMPLE[pid] || 'GET a documented endpoint') + '.',
+    inputSchema: { type: 'object', required: ['method', 'path'], properties: {
+      method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+      path: { type: 'string', description: 'Relative to ' + base },
+      query: { type: 'object' }, body: {} } } }];
+}
+/* The connected apps with an API, from the Connected accounts list - asked in
+   the background like the app connectors, never waited for. */
+function _apiRefreshTools(){
+  try{
+    if(typeof _connState === 'undefined') return;
+    if(_connState.state !== 'done'){ if(typeof _connLoad === 'function') _connLoad(false); return; }
+    const d = _connState.data || {};
+    const apiOf = {}; for(const p of (d.providers || [])) if(p.api) apiOf[p.id] = { name: p.name, base: p.api };
+    const live = new Set();
+    for(const it of (d.items || [])){
+      const a = apiOf[it.provider]; if(!a || it.broken) continue;
+      const id = 'api-' + it.provider; live.add(id);
+      if(!MCP.remote[id]) MCP.remote[id] = { slug: it.provider, name: a.name, kind: 'api', tools: _apiToolsFor(it.provider, a.name, a.base), at: Date.now(), error: '' };
+    }
+    for(const id of Object.keys(MCP.remote)) if(id.indexOf('api-') === 0 && !live.has(id)) delete MCP.remote[id];
+  }catch(e){}
+}
 async function remoteRefreshTools(){
+  _apiRefreshTools();
   if(_RMCP.state !== 'done'){ _rmcpLoad(false).catch(() => {}); return; }
   const want = Object.keys(_RMCP.apps).filter(k => _RMCP.apps[k].connected && !_RMCP.apps[k].broken);
-  for(const id of Object.keys(MCP.remote)) if(want.indexOf(MCP.remote[id].slug) < 0) delete MCP.remote[id];
+  /* Only app connectors are pruned here; API apps (api-*) are kept in step by
+     _apiRefreshTools from the Connected accounts list. */
+  for(const id of Object.keys(MCP.remote)) if(id.indexOf('app-') === 0 && want.indexOf(MCP.remote[id].slug) < 0) delete MCP.remote[id];
   const due = want.filter(slug => { const e = MCP.remote['app-' + slug]; return !e || Date.now() - e.at > RMCP_TOOLS_TTL_MS; });
   if(!due.length) return;
   const one = async (slug) => {
