@@ -1339,3 +1339,36 @@ asked first", "told how often it will run", "shown exactly what it will do",
 "they were asked" - because it drives a real streamed tool call through the real
 Worker and the real dialog. `tool-consent-coverage` passes with the gate off, as
 a source reading must. The gap was already closed; the list was wrong.
+
+## Round thirty - what Stop costs, measured on the server (not changed: billing)
+
+AMV-AUD-014 made Stop cancel the request in the browser. This round read what the
+Worker does when that happens, in `aiProxy` and `meterStream`:
+
+- The upstream stream is `tee()`d: one branch to the browser, one to
+  `meterStream` inside `ctx.waitUntil`. When the browser disconnects, only its
+  branch is cancelled. `tee()` keeps pulling the source for the other branch, so
+  **the model generates the whole answer anyway**.
+- `meterStream` settles on the usage in `message_delta`, which arrives at the
+  END of generation. So **the person is charged for the full answer they
+  stopped**, and the provider bills AMV for it too.
+- `meterStream` already handles an interrupted stream ("we still bill whatever
+  usage we saw", with an estimate when none was seen).
+
+**Recommendation, awaiting the owner because it changes what people are charged:**
+when the client disconnects, cancel the upstream generation, and charge for what
+was generated up to that point - from the provider's count when it arrived, else
+estimated from the text actually streamed.
+
+- OFF the table: leaving it. Stop is pressed constantly; at scale that is paying
+  for, and charging for, a great many answers nobody read.
+- OFF the table: refunding everything on Stop. Start an expensive answer, read
+  most of it, stop, pay nothing - an abuse path with a tutorial.
+- The trap in the middle: cancel upstream and keep today's meter. Output usage
+  only arrives at the end, so a stopped answer would be metered as ~1 output
+  token - AMV pays the provider for what was generated and charges nobody.
+
+Before building: confirm from current platform docs how a Worker observes a
+client disconnect (request signal / stream cancel) on this compatibility date,
+and add a worker suite that stops mid-stream and asserts both the upstream
+cancel and the settled amount.
