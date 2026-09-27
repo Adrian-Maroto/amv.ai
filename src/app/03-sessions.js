@@ -1376,9 +1376,17 @@ function buildHome(){
 }
 try{ window.buildHome=buildHome; }catch(e){}
 /* The tabs that have an address of their own. Billing was asked for by name;
-   the rest are here because a link to them is a thing somebody would send. */
+   the rest are here because a link to them is a thing somebody would send -
+   and because a reload keeps you only where the address says you are.
+   Integrations was missing, so pressing F5 there dropped the owner on chat,
+   in the middle of connecting apps. Tasks, Spending, Memory and Team were
+   missing for the same reason. Build is left out on purpose: it has modes and
+   a project inside it, and an address that named only the tab would reopen
+   the wrong one. */
 const _URL_TABS={ billing:'billing', plans:'plans', upgrade:'upgrade',
-                  settings:'settings', help:'help', crew:'crew', market:'market' };
+                  settings:'settings', help:'help', crew:'crew', market:'market',
+                  integrations:'integrations', tasks:'tasks', spend:'spending',
+                  memory:'memory', team:'team' };
 const _tabForSlug=(slug)=>Object.keys(_URL_TABS).find(k=>_URL_TABS[k]===slug)||'';
 
 /* DOES THIS HOST SERVE THE APP AT A BARE PATH? ASK THE ADDRESS BAR.
