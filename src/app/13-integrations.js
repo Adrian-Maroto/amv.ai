@@ -1171,8 +1171,7 @@ async function connAdd(provider){
   const pick = await _connScopePick(p);
   if(!pick || !pick.length) return;
   try{
-    const redirect = window.location.origin + window.location.pathname;
-    const r = await AMV_API.connectStart(provider, pick, redirect);
+    const r = await AMV_API.connectStart(provider, pick, _connReturnTo());
     if(r && r.url){ saveStr('amv_conn_return', S.tab||'integrations'); window.location.href = r.url; return; }
     toast('That connection could not be started.','error',5000);
   }catch(e){
@@ -1265,6 +1264,17 @@ async function connRemove(id){
 /* ONE WAY BACK AND ONE WAY TO REPORT A DISCONNECT, for Connected accounts and
    app connectors both - the second sign-in flow calls these rather than
    carrying copies that could drift apart. */
+/* THE ADDRESS A PROVIDER SENDS SOMEBODY BACK TO IS ALWAYS THE SITE ROOT.
+
+   It was the page's own address, origin + pathname. Where the host serves
+   bare paths, AMV shows /settings or /crew in the address bar - so Connect
+   pressed there sent https://amv.homes/settings as the return address, and
+   Google, Microsoft and Discord, which match it byte for byte against the one
+   registered (https://amv.homes/), refused the sign-in before it began. Where
+   to go afterwards is already remembered separately (amv_conn_return), so the
+   return address never needs to say it. */
+function _connReturnTo(){ return window.location.origin + '/'; }
+try{ window._connReturnTo=_connReturnTo; }catch(e){}
 function _connGoBack(){
   try{ const back=loadStr('amv_conn_return')||'integrations'; saveStr('amv_conn_return',''); setTab(back); }catch(e){}
 }

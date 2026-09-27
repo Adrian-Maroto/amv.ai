@@ -203,6 +203,10 @@ if (backend && toml) {
     'ALERT_WEBHOOK',
     'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_FROM_NUMBER',
     'STRIPE_PRICE_PRO', 'STRIPE_PRICE_ELITE', 'STRIPE_PRICE_ULTRA',
+    // yearly prices (optional: a plan without one is sold monthly only), and
+    // the two prediction-market keys, which are the operator's own accounts
+    'STRIPE_PRICE_PRO_YEAR', 'STRIPE_PRICE_ELITE_YEAR', 'STRIPE_PRICE_ULTRA_YEAR', 'STRIPE_PRICE_TEAM_SEAT_YEAR',
+    'KALSHI_API_KEY', 'POLYMARKET_API_KEY',
     'PAYPAL_CLIENT_ID', 'PAYPAL_SECRET', 'PAYPAL_MODE', 'PAYPAL_WEBHOOK_ID',
     'PAYPAL_PLAN_PRO', 'PAYPAL_PLAN_ELITE', 'PAYPAL_PLAN_ULTRA', 'TURNSTILE_SECRET',
     /* These were read by the Worker and missing from this list, so the deploy

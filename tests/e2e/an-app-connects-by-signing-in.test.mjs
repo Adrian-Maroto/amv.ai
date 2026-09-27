@@ -57,6 +57,37 @@ section('An app with an official connector says Connect, and Connect goes to its
   ok(went.hash === '#signed-in-at-notion', 'and the page goes to the address it handed back', went.hash);
 }
 
+section('The return address is the site root, whatever page Connect was pressed on');
+{
+  /* Where the host serves bare paths, the address bar reads /settings or
+     /crew. The return address used to be the page's own, so Connect pressed
+     there sent https://amv.homes/settings - and a provider that matches the
+     registered address exactly (https://amv.homes/) refused the sign-in. */
+  const r = await page.evaluate(async () => {
+    const before = location.href;
+    history.replaceState(null, '', '/settings' + location.search);
+    const out = {};
+    window.__rm.started.length = 0;
+    const realStart = AMV_API.remoteStart, realConn = AMV_API.connectStart, realPick = window._connScopePick;
+    AMV_API.remoteStart = async (a, redirect) => { out.app = redirect; return { ok: false }; };
+    AMV_API.connectStart = async (p, scopes, redirect) => { out.account = redirect; return { ok: false }; };
+    try {
+      await rmcpConnect('canva');
+      _connState.state = 'done';
+      _connState.data = { configured: true, items: [], providers: [{ id: 'slack', name: 'Slack', ready: true, scopes: ['slack.read'] }] };
+      window._connScopePick = async () => ['slack.read'];
+      await connAdd('slack');
+    } finally {
+      AMV_API.remoteStart = realStart; AMV_API.connectStart = realConn; window._connScopePick = realPick;
+      history.replaceState(null, '', before);
+    }
+    out.root = location.origin + '/';
+    return out;
+  });
+  ok(r.app === r.root, 'an app connector returns to the site root, not /settings', r);
+  ok(r.account === r.root, 'and so does a sign-in app', r);
+}
+
 section('Coming back finishes the app sign-in, and a Connected account return is not taken');
 {
   const r = await page.evaluate(async () => {
