@@ -58,7 +58,11 @@ section('Every direct caller that answers a person handles the outage first');
     if (!speaks) return;
     const firstRefusal = win.search(new RegExp('if \\(!' + v + '\\.ok'));
     const handled = win.slice(0, firstRefusal + 200).match(new RegExp(v + '\\.unavailable'));
-    const deliberate = /counter that cannot be reached is a fault here, not a verdict|If the counter store itself is unreachable/.test(win);
+    /* Two let a request through when the counter is down, on purpose: Google
+       sign-in (refusing would lock everybody out) and the operator's own
+       console. Named by their limiter keys - code, not the comments that
+       explain them. */
+    const deliberate = /limitAction\(env, 'googlesig:'|limitAction\(env, `admin:/.test(l);
     if (!handled && !deliberate) offenders.push((i + 1) + ': ' + l.trim().slice(0, 90));
   });
   ok(offenders.length === 0, 'each says what it does when the counter is down', offenders);
