@@ -13742,8 +13742,13 @@ so, because the deploy's "skipped" looks like a quiet success.
 Rules:
 - A dependency a suite needs is installed by the workflow that runs it, not
   only by the session that wrote it.
-- A timing check compares the product with its own defect on the same machine,
-  in the same minute. A fixed number is right on at most one machine.
+- A fixed timing number is right on at most one machine - and comparing the
+  product with its own defect reproduced on the same machine was tried next
+  and was no better: under four-way load the defect measured 177ms one run and
+  548 the next, and the two sides crossed. Timing on a shared machine cannot
+  rank two things 30% apart. Prove a performance fix with a property that does
+  not read the clock (here: fewer than a tenth of the cards are drawn), and
+  keep time only as a ceiling for something gross.
 - "Done" includes the deploy that happened, not the gate that passed. After
   advancing `main`, look at the Worker deploy's outcome - "skipped" is a
   failure to ship.

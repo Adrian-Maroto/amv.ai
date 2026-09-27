@@ -18,8 +18,8 @@
    The first is checked by WHAT IS LAID OUT, not how long it took: the browser
    says which elements content-visibility is skipping, and that is exact on any
    machine. The second is checked by listing every running animation and the
-   properties it moves. The freeze is measured against the defect reproduced
-   on the same machine, not against a fixed number - the section says why. */
+   properties it moves. The freeze time itself is only a loose tripwire; the
+   section that measures it says why. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
@@ -75,31 +75,28 @@ section('The blocks below the first screen of Crew wait too');
 
 section('Opening Crew for the first time, at a phone’s CPU, does not freeze the page');
 {
-  /* MEASURED AGAINST ITSELF, NOT AGAINST A CLOCK.
+  /* A TRIPWIRE, NOT THE TEST.
 
      This was an absolute budget, 420ms at 4x CPU throttle, measured ~150ms
      here - and on GitHub's runner, slower and running four suites at once, the
      same build measured 427 and CI went red. Red CI skips the Worker deploy, so
      for a day the live backend stopped moving while the page kept deploying.
-     A fixed number cannot be right on both machines: loose enough for the slow
-     one, it cannot see the defect on the fast one.
 
-     So the fix is measured against its own absence, on the same machine in the
-     same minute: Crew opened as shipped, and Crew opened with content-visibility
-     forced off - which is the defect (the whole catalogue laid out at once,
-     482ms here when it shipped). Best of two each, because one stray GC is not
-     the page. The shipped open must cost under three quarters of the defeated
-     one; measured here it is about a third. A generous absolute ceiling stays
-     as a tripwire for anything gross. */
-  const openCrew = async (defeat) => {
+     Measuring the fix against its own defect on the same machine was tried
+     next and is no better: under four-way load the defect reproduced at 177ms
+     one run and 548 the next, and the two sides crossed. Timing on a shared
+     machine cannot rank two things 30% apart.
+
+     So the fix is proved by the sections above, which do not depend on the
+     clock: every category is content-visibility:auto, and on arrival fewer
+     than a tenth of the job cards are drawn - removing the fix fails both. This
+     keeps only a ceiling for something gross, which no busy machine reaches. */
+  const openCrew = async () => {
     const fresh = await bootApp({ tab: 'chat', viewport: { width: 390, height: 844 }, hasTouch: true,
                                   user: { name: 'Alex', email: 'alex@x.com', ini: 'A' } });
     const p = fresh.page;
     const cdp = await p.context().newCDPSession(p);
-    await p.evaluate((defeat) => {
-      document.getElementById('cookie-consent-banner')?.remove(); _setPlan('pro');
-      if (defeat) { const st = document.createElement('style'); st.textContent = '.crew-page, .crew-page * { content-visibility: visible !important; }'; document.head.appendChild(st); }
-    }, defeat);
+    await p.evaluate(() => { document.getElementById('cookie-consent-banner')?.remove(); _setPlan('pro'); });
     await p.waitForTimeout(500);
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
     const longest = await p.evaluate(async () => {
@@ -116,13 +113,9 @@ section('Opening Crew for the first time, at a phone’s CPU, does not freeze th
     await fresh.close();
     return { longest, errors };
   };
-  const shipped = [await openCrew(false), await openCrew(false)];
-  const defeated = [await openCrew(true), await openCrew(true)];
-  const r = { shipped: Math.min(...shipped.map(x => x.longest)), defeated: Math.min(...defeated.map(x => x.longest)) };
-  ok(r.defeated > 0, 'the defect, reproduced, really does freeze the page - the comparison means something', r);
-  ok(r.shipped < r.defeated * 0.75, 'Crew as shipped freezes for well under the time the defect did, on this machine', r);
-  ok(r.shipped < FREEZE_MAX, 'and under ' + FREEZE_MAX + 'ms even on a slow, busy machine - a tripwire for anything gross', r);
-  ok(shipped.every(x => x.errors.length === 0), 'and nothing threw', shipped.map(x => x.errors));
+  const shipped = await openCrew(false);
+  ok(shipped.longest < FREEZE_MAX, 'the longest freeze is under ' + FREEZE_MAX + 'ms even on a slow, busy machine - a tripwire for anything gross', shipped);
+  ok(shipped.errors.length === 0, 'and nothing threw', shipped.errors);
 }
 
 section('No screen keeps the page repainting on its own');
