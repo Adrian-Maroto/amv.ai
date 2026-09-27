@@ -152,7 +152,7 @@ section('Disconnecting revokes, rather than forgetting');
   ok(/p\.revoke/.test(rm) && /_connRevokeRequest\(env, p, tok\)/.test(rm) && /fetchDeadline\(p\.revoke/.test(fn('_connRevokeRequest')),
      'it calls the provider revoke endpoint');
   const revokeAt = rm.indexOf('_connRevokeRequest(env, p, tok)');
-  const deleteAt = rm.indexOf('delete all[id]');
+  const deleteAt = rm.indexOf('delete rec[id]');
   ok(revokeAt > 0 && deleteAt > revokeAt,
      'and does it BEFORE dropping the only copy of the token', revokeAt + ' then ' + deleteAt);
   ok(/did not confirm the grant was revoked/.test(rm),
