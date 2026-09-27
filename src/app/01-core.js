@@ -1146,7 +1146,19 @@ const AMV_API = {
     return this._wrote('/v1/connect/finish', { code, state },
       'That connection could not be completed.');
   },
-  async connectList(){ const r=await this._fetch('/v1/connect/list'); return await r.json(); },
+  /* Status checked, not assumed. A refused or failed request used to become
+     "data": a 401's {error:'unauthorized'} read as "connecting is not switched
+     on", and an HTML error page threw a parse error nobody could read. Each
+     now arrives as a reason the screen can say. */
+  async connectList(){
+    let r;
+    try{ r=await this._fetch('/v1/connect/list'); }
+    catch(e){ throw new Error('AMV\u2019s server could not be reached'+(e&&e.message?' ('+String(e.message).slice(0,80)+')':'')); }
+    const d=await r.json().catch(()=>null);
+    if(r.status===401) throw Object.assign(new Error('your sign-in has expired - sign out and back in'), { code:'unauthorized' });
+    if(!r.ok || !d || d.error) throw new Error((d&&(d.message||d.error)) || ('the server answered '+r.status));
+    return d;
+  },
   /* APP CONNECTORS (Notion, Canva, Linear...). The same rule as Connected
      accounts: the page starts a sign-in, finishes one, lists what exists, and
      asks the server to list an app's tools or run one. No token ever comes

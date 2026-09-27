@@ -1186,7 +1186,11 @@ try{ window.connAdd=connAdd; }catch(e){}
 async function connAddWhenReady(provider){
   if(!(_connState.data && (_connState.data.providers||[]).length)) await _connLoad(true);
   const d=_connState.data;
-  if(!d){ toast('Connected accounts could not be loaded, so AMV cannot start a sign-in just now. Try again in a moment.','error',7000); return; }
+  if(!d){
+    const why=(_connState && _connState.err) ? ' ('+_connState.err+')' : '';
+    toast('Connected accounts could not be loaded, so AMV cannot start a sign-in just now'+why+'. Try again in a moment.','error',9000);
+    return;
+  }
   if(!d.configured){ toast('Connecting apps is not switched on for this deployment yet.','info',7000); return; }
   if(!(d.providers||[]).some(x=>x.id===provider)){ toast('That app cannot be connected on this deployment.','info',6000); return; }
   return _connGoTo(provider);

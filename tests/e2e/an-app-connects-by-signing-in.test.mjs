@@ -88,6 +88,31 @@ section('The return address is the site root, whatever page Connect was pressed 
   ok(r.account === r.root, 'and so does a sign-in app', r);
 }
 
+section('When the list cannot load, Connect says why');
+{
+  /* The owner pressed Connect and read "could not be loaded" with no reason.
+     A 401 used to be read as data - "connecting is not switched on" - and an
+     unreadable reply as nothing at all. */
+  const r = await page.evaluate(async () => {
+    const realFetch = AMV_API._fetch, realToast = window.toast, said = [];
+    window.toast = (m) => { said.push(String(m)); };
+    const run = async (resp) => {
+      AMV_API._fetch = async () => resp;
+      _connState = { state: 'idle', data: null, err: '' };
+      await connAddWhenReady('slack');
+      return said[said.length - 1] || '';
+    };
+    const out = {};
+    try {
+      out.expired = await run({ ok: false, status: 401, json: async () => ({ error: 'unauthorized' }) });
+      out.html = await run({ ok: false, status: 502, json: async () => { throw new Error('Unexpected token <'); } });
+    } finally { AMV_API._fetch = realFetch; window.toast = realToast; }
+    return out;
+  });
+  ok(/could not be loaded/.test(r.expired) && /sign-in has expired/.test(r.expired), 'an expired sign-in is named, not read as "switched off"', r.expired);
+  ok(/502/.test(r.html), 'and a broken reply names the status the server gave', r.html);
+}
+
 section('Coming back finishes the app sign-in, and a Connected account return is not taken');
 {
   const r = await page.evaluate(async () => {

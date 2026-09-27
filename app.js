@@ -1146,7 +1146,19 @@ const AMV_API = {
     return this._wrote('/v1/connect/finish', { code, state },
       'That connection could not be completed.');
   },
-  async connectList(){ const r=await this._fetch('/v1/connect/list'); return await r.json(); },
+  /* Status checked, not assumed. A refused or failed request used to become
+     "data": a 401's {error:'unauthorized'} read as "connecting is not switched
+     on", and an HTML error page threw a parse error nobody could read. Each
+     now arrives as a reason the screen can say. */
+  async connectList(){
+    let r;
+    try{ r=await this._fetch('/v1/connect/list'); }
+    catch(e){ throw new Error('AMV\u2019s server could not be reached'+(e&&e.message?' ('+String(e.message).slice(0,80)+')':'')); }
+    const d=await r.json().catch(()=>null);
+    if(r.status===401) throw Object.assign(new Error('your sign-in has expired - sign out and back in'), { code:'unauthorized' });
+    if(!r.ok || !d || d.error) throw new Error((d&&(d.message||d.error)) || ('the server answered '+r.status));
+    return d;
+  },
   /* APP CONNECTORS (Notion, Canva, Linear...). The same rule as Connected
      accounts: the page starts a sign-in, finishes one, lists what exists, and
      asks the server to list an app's tools or run one. No token ever comes
@@ -31977,7 +31989,11 @@ try{ window.connAdd=connAdd; }catch(e){}
 async function connAddWhenReady(provider){
   if(!(_connState.data && (_connState.data.providers||[]).length)) await _connLoad(true);
   const d=_connState.data;
-  if(!d){ toast('Connected accounts could not be loaded, so AMV cannot start a sign-in just now. Try again in a moment.','error',7000); return; }
+  if(!d){
+    const why=(_connState && _connState.err) ? ' ('+_connState.err+')' : '';
+    toast('Connected accounts could not be loaded, so AMV cannot start a sign-in just now'+why+'. Try again in a moment.','error',9000);
+    return;
+  }
   if(!d.configured){ toast('Connecting apps is not switched on for this deployment yet.','info',7000); return; }
   if(!(d.providers||[]).some(x=>x.id===provider)){ toast('That app cannot be connected on this deployment.','info',6000); return; }
   return _connGoTo(provider);
