@@ -142,7 +142,6 @@ section('Every key is both written and read, or is named here with the reason');
        the id; nothing told the browser. /v1/public-config does now, so the key
        is written by the app like any other and is checked like any other. */
     amv_github:             'a GitHub token pasted by the person connecting it',
-    amv_slack:              'a Slack webhook, likewise',
     amv_currency:           'a currency override; the geo lookup fills it otherwise',
     /* amv_mute_chime was excused here as "set from the settings UI through a
        computed key". That was not true of anything: no screen wrote it, so

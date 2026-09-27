@@ -145,8 +145,12 @@ try{
          permission granted. */
       connect: { name: 'Connected accounts', auth: 'server',
                  isLive: () => { try{ return typeof _connHasAny === 'function' && _connHasAny(); }catch(e){ return false; } } },
-      github: { name: 'GitHub', auth: 'bearer', tokenKey: 'amv_github' },
-      slack:  { name: 'Slack', auth: 'bearer', tokenKey: 'amv_slack' }
+      /* Server-held, like 'connect'. These were tokenKey 'amv_github' and
+         'amv_slack' - keys nothing writes - so both read as never live. */
+      github: { name: 'GitHub', auth: 'server',
+                isLive: () => { try{ return typeof _connHasProvider === 'function' && _connHasProvider('github'); }catch(e){ return false; } } },
+      slack:  { name: 'Slack', auth: 'server',
+                isLive: () => { try{ return typeof _connHasProvider === 'function' && _connHasProvider('slack'); }catch(e){ return false; } } }
     };
     Object.keys(byNeed).forEach(need => {
       const m = meta[need] || { name: need, auth: 'none' };

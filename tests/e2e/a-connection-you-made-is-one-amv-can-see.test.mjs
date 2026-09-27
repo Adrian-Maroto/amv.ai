@@ -135,35 +135,96 @@ section('Nothing answers a connection question from a key with no writer');
     }
     return out;
   });
-  /* ONE EXCEPTION, NAMED, WITH ITS READER - not a key excused outright.
+  /* NO EXCEPTIONS LEFT.
 
-     amv_slack is still read by the Slack capability's isConnected, and nothing
-     writes it. It is left because the answer it gives is TRUE: there is no
-     Slack provider in the Worker's CONN_PROVIDERS, no slack_post on the
-     server, and no flow anywhere that could produce the token - so "not
-     connected" is the honest answer rather than a wrong one, which is what
-     separates this from the GitHub case above it.
-
-     What it is NOT is settled. Slack sits in TASK_CAPABILITIES, which is the
-     list of things AMV says it can do once connected, next to a Connect button
-     that cannot lead anywhere. Whether that entry belongs in
-     PLANNED_CAPABILITIES instead is a product call about what AMV advertises,
-     and it is the owner's, so it is recorded here rather than decided quietly.
-     The exception is deliberately per READER: if a SECOND thing starts asking
-     amv_slack whether Slack is connected, this fails. */
-  const EXPECTED_DEAD_READERS = { amv_slack: 1 };
+     amv_slack used to be the one, excused per reader because "not connected"
+     was then the true answer: there was no Slack sign-in anywhere. That stopped
+     being true when Slack became a server-held sign-in, and the excuse became
+     the defect - Slack connected, and the capability still said no. It asks the
+     server's list now, like GitHub. */
   ok(dead !== null, 'the built bundle was readable to check', dead);
   if (dead) {
     for (const [k, v] of Object.entries(dead)) {
-      const allowed = EXPECTED_DEAD_READERS[k] || 0;
-      ok(!(v.writes === 0 && v.asksConnected > allowed),
+      ok(!(v.writes === 0 && v.asksConnected > 0),
          k + ' is not used to answer "is it connected" while nothing writes it',
-         { k, ...v, allowed });
+         { k, ...v });
     }
-    ok(dead.amv_slack.asksConnected === EXPECTED_DEAD_READERS.amv_slack,
-       'the one recorded exception still has exactly its one reader',
-       dead.amv_slack);
   }
+}
+
+section('A server-held Slack or GitHub sign-in is one the runner can use');
+{
+  const r = await page.evaluate(() => {
+    const saved = _connState.data;
+    const wasLive = AMV_API.live;
+    const cap = TASK_CAPABILITIES.find(c => c.id === 'slack');
+    const out = {};
+    _connState.data = { items: [] };
+    out.none = { slack: cap.isConnected(), gh: AMVConnectors.live('github'), sl: AMVConnectors.live('slack') };
+    _connState.data = { items: [{ id: 'c1', provider: 'slack', scopes: ['slack.read'] }] };
+    out.readOnly = cap.isConnected();
+    _connState.data = { items: [{ id: 'c1', provider: 'slack', scopes: ['slack.read', 'slack.write'] },
+                                { id: 'c2', provider: 'github', scopes: ['repo.read'] }] };
+    out.both = { slack: cap.isConnected(), gh: AMVConnectors.live('github'), sl: AMVConnectors.live('slack') };
+    _connState.data = { items: [{ id: 'c1', provider: 'slack', scopes: ['slack.write'], broken: 'revoked' }] };
+    out.broken = cap.isConnected();
+    _connState.data = saved;
+    return out;
+  });
+  ok(!r.none.slack && !r.none.gh && !r.none.sl, 'nothing connected, nothing live', r.none);
+  ok(r.readOnly === false, 'a Slack sign-in without the post permission cannot post', r.readOnly);
+  ok(r.both.slack && r.both.gh && r.both.sl, 'a real sign-in is seen by the capability and the registry', r.both);
+  ok(r.broken === false, 'a broken sign-in is not connected', r.broken);
+}
+{
+  /* The runner's own list of tools - what the model is told it may use. It
+     asked loadStr('amv_'+needs) too, so the GitHub and Slack tools were never
+     offered to anybody. */
+  const r = await page.evaluate(async () => {
+    const saved = _connState.data, realAi = window.aiComplete;
+    const realLive = Object.getOwnPropertyDescriptor(AMV_API, 'live');
+    Object.defineProperty(AMV_API, 'live', { configurable: true, get: () => true });
+    let sys = '';
+    window.aiComplete = async (i, s) => { sys = s; return '[]'; };
+    const out = {};
+    try {
+      _connState.data = { items: [{ id: 'c1', provider: 'slack', scopes: ['slack.write'] },
+                                  { id: 'c2', provider: 'github', scopes: ['repo.read'] }] };
+      await runAgentTask('post the release notes');
+      out.connected = { slack: /slack_post/.test(sys), gh: /github_list_issues/.test(sys) };
+      _connState.data = { items: [{ id: 'c2', provider: 'github', scopes: ['repo.read'] }] };
+      sys = '';
+      await runAgentTask('post the release notes');
+      out.githubOnly = { slack: /slack_post/.test(sys), gh: /github_list_issues/.test(sys) };
+    } finally {
+      _connState.data = saved; window.aiComplete = realAi;
+      Object.defineProperty(AMV_API, 'live', realLive);
+    }
+    return out;
+  });
+  ok(r.connected && r.connected.slack && r.connected.gh,
+     'with Slack and GitHub connected, the runner offers their tools', r.connected);
+  ok(r.githubOnly && !r.githubOnly.slack && r.githubOnly.gh,
+     'and it offers only what is connected', r.githubOnly);
+}
+
+section('An app that connects is not called unavailable');
+{
+  /* Notion, Linear, Microsoft, Discord, Canvas and Stripe were listed as "not
+     currently available in AMV" after every one of them could be connected.
+     The runner still cannot drive them, so it says where they do work. */
+  const r = await page.evaluate(() => {
+    const notion = analyzeTaskIntent('add these notes to my notion page');
+    const tweet = analyzeTaskIntent('tweet the launch');
+    const algebra = analyzeTaskIntent('explain linear algebra');
+    return { notion, notionMsg: taskRequirementMessage(notion), tweetMsg: taskRequirementMessage(tweet), algebra };
+  });
+  ok(r.notion.matched && !r.notion.ready && r.notion.unsupported.length === 0 && r.notion.inChat.length === 1,
+     'Notion is recognised as working in chat, not as missing', r.notion);
+  ok(!/not currently available/i.test(r.notionMsg) && /works in chat/i.test(r.notionMsg),
+     'and the message says where to ask', r.notionMsg);
+  ok(/not currently available/i.test(r.tweetMsg), 'while an app with no route still says so', r.tweetMsg);
+  ok(!r.algebra.matched, 'and "linear" in a maths question is not the Linear app', r.algebra);
 }
 
 section('No JavaScript errors');

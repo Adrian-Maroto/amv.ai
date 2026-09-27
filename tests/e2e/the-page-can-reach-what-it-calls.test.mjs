@@ -115,8 +115,14 @@ section('Every host the app FETCHES is one it is allowed to reach');
      is exactly why the Canvas call hid for so long - and why the rule below
      about school hosts exists separately. */
   const connect = directive('connect-src');
-  const fetched = hostsIn(/fetch(?:Deadline)?\(\s*['"`](https:\/\/[a-z0-9.-]+)/gi);
-  ok(fetched.length > 0, 'the app really does call out to named hosts', fetched.length);
+  const FETCH_RE = /fetch(?:Deadline)?\(\s*['"`](https:\/\/[a-z0-9.-]+)/gi;
+  const fetched = hostsIn(FETCH_RE);
+  /* This used to assert the list was non-empty, as proof the pattern works.
+     The last named host was slack.com, and it went when Slack moved to the
+     server - so an empty list is now the right answer, and the pattern is
+     proved on a sample instead. */
+  const sample = [..."x=fetchDeadline('https://slack.com/api/a'); y=fetch(`https://api.example/x`)".matchAll(FETCH_RE)].map(m => m[1]);
+  ok(sample.length === 2, 'the pattern finds a named fetch when there is one', sample);
   const blocked = fetched.filter(h => !allows(connect, h));
   ok(blocked.length === 0,
      'none of them is refused by the page’s own policy', blocked);

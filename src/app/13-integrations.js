@@ -111,28 +111,29 @@ const INTEGRATION_ACTIONS = {
     desc:'Open a GitHub issue. Args: {repo:"owner/name", title, body}.', needs:'github',
     async run(args){ return await _connActRun('github.issue.create', args); }
   },
-  slack_post: { risk:'high', riskLabel:'post a Slack message',
-    desc:'Post a message to Slack. Args: {channel, text}.', needs:'slack',
-    async run(args){
-      const t=loadStr('amv_slack'); if(!t) throw new Error('Slack not connected');
-      if(/^https?:\/\//.test(t)){
-        /* The webhook branch used to discard the answer and return
-           {posted:true} regardless. A revoked or deleted webhook answers 404
-           `no_service`, an unpaid workspace 403 - and the agent reported the
-           message as posted either way, to a person who then believed their
-           team had been told. The token branch below already checked; this one
-           did not, which is the whole difference between the two.
+  /* Through the server, like GitHub above. This used to post from the
+     browser with a token or webhook read from `amv_slack` - a key no connect
+     flow writes - so it could only ever say "Slack not connected". Slack is a
+     sign-in on the server now, and the token never comes here.
 
-           A webhook answers with the literal body "ok". */
-        const wr=await fetchDeadline(t,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:args.text})});
-        const wt=(await wr.text().catch(()=>'')).trim();
-        if(!wr.ok || (wt && wt.toLowerCase()!=='ok'))
-          throw new Error('Slack refused the message'+(wt?' ('+wt.slice(0,80)+')':' (HTTP '+wr.status+')')+'. Nothing was posted.');
-        return {posted:true, via:'webhook'};
-      }
-      const r=await fetchDeadline('https://slack.com/api/chat.postMessage',{method:'POST',headers:{'Authorization':'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({channel:args.channel||'#general',text:args.text})});
-      const d=await r.json(); if(!d.ok) throw new Error(d.error||'Slack post failed');
-      return {posted:true, ts:d.ts};
+     No default channel. It used to fall back to #general, which is a message
+     to the whole company that nobody named. */
+  slack_post: { risk:'high', riskLabel:'post a Slack message',
+    desc:'Post a message to a Slack channel. Args: {channel, text}. Name the channel; there is no default.', needs:'slack',
+    async run(args){
+      if(!(window.AMV_API && AMV_API.live))
+        throw new Error('AMV is not connected to its engine, so it cannot reach Slack.');
+      const channel=String((args&&args.channel)||'').trim();
+      const text=String((args&&(args.text||args.message))||'');
+      if(!channel) throw new Error('Say which Slack channel to post in. Nothing was posted.');
+      if(!text.trim()) throw new Error('There was no message to post. Nothing was posted.');
+      const d=await AMV_API.connectApi('slack','POST','chat.postMessage',undefined,{channel, text});
+      /* Slack answers a refusal with HTTP 200 and {ok:false} - a channel that
+         does not exist, a token that lost its scope. Only ok:true is posted. */
+      let b=null; try{ b=JSON.parse((d&&d.body)||''); }catch(e){}
+      if(!b || b.ok!==true)
+        throw new Error('Slack refused the message ('+String((b&&b.error)||('HTTP '+((d&&d.status)||'?'))).slice(0,80)+'). Nothing was posted.');
+      return {posted:true, ts:b.ts, channel:b.channel};
     }
   },
 };
@@ -179,33 +180,39 @@ const TASK_CAPABILITIES = [
     isConnected:()=>_cwConnHas('repo.read'),
     keywords:['github','issue','repo','repository','pull request','pr ','commit','open an issue','bug ticket'] },
   { id:'slack', integration:'Slack', label:'post messages to Slack',
-    api:'Slack Web API (or Incoming Webhook)', auth:'Slack bot token or webhook URL',
+    api:'Slack Web API', auth:'Slack sign-in',
     connectId:'slack', tools:['slack_post'],
-    isConnected:()=>!!loadStr('amv_slack'),
+    isConnected:()=>_connHasProvider('slack','slack.write'),
     keywords:['slack','post to channel','message the team','#general','dm on slack','notify the channel'] },
 ];
 
-/* Integrations AMV advertises but that have no executable backend yet.
-   If a user asks for one of these, we name exactly what is missing. */
-const PLANNED_CAPABILITIES = [
-  { integration:'Microsoft 365 / Outlook', api:'Microsoft Graph API', auth:'Microsoft account (OAuth)',
+/* APPS THAT CONNECT, BUT THAT THIS RUNNER DOES NOT DRIVE.
+
+   These were listed below as "not currently available in AMV". Every one of
+   them connects today - Microsoft and Discord by sign-in, Notion, Linear and
+   Stripe as app connectors, Canvas through the school screen - and chat uses
+   them, one consented call at a time. What cannot use them is this runner,
+   whose tools are the fixed list above. So the honest answer is where to ask,
+   not that AMV cannot. */
+const CHAT_CAPABILITIES = [
+  { integration:'Microsoft 365 / Outlook',
     keywords:['outlook','microsoft 365','office 365','onedrive','ms teams','microsoft teams','exchange'] },
-  { integration:'Notion', api:'Notion API', auth:'Notion integration token',
-    keywords:['notion','notion page','notion database','my notion'] },
-  { integration:'Linear', api:'Linear API', auth:'Linear API key',
-    keywords:['linear','linear issue','linear ticket'] },
-  { integration:'Discord', api:'Discord Bot API', auth:'Discord bot token',
-    keywords:['discord','discord server','discord channel'] },
-  { integration:'Canvas LMS', api:'Canvas LMS API', auth:'Canvas access token + school URL',
-    keywords:['canvas','assignment due','my course','lms','homework on canvas'] },
+  { integration:'Notion', keywords:['notion','notion page','notion database','my notion'] },
+  { integration:'Linear', keywords:['linear issue','linear ticket','linear project','linear.app'] },
+  { integration:'Discord', keywords:['discord','discord server','discord channel'] },
+  { integration:'Canvas LMS', keywords:['canvas','assignment due','my course','lms','homework on canvas'] },
+  { integration:'Stripe (your account)', keywords:['stripe charge','refund a customer','create an invoice in stripe'] },
+];
+
+/* Integrations with no way in at all yet. If a user asks for one of these,
+   we name exactly what is missing. */
+const PLANNED_CAPABILITIES = [
   { integration:'SMS / Text messaging', api:'Twilio API', auth:'Twilio number + credentials (set up by operator)',
     keywords:['text me','send a text',' sms','text message'] },
   { integration:'X / Twitter', api:'X API', auth:'X developer credentials',
     keywords:['tweet','twitter','post to x','x.com'] },
   { integration:'WhatsApp', api:'WhatsApp Business API', auth:'WhatsApp Business credentials',
     keywords:['whatsapp','whats app'] },
-  { integration:'Stripe (your account)', api:'Stripe API', auth:'Stripe secret key (operator)',
-    keywords:['stripe charge','refund a customer','create an invoice in stripe'] },
 ];
 
 /* Analyse an instruction and decide what's required + whether it's ready.
@@ -227,11 +234,18 @@ function analyzeTaskIntent(instruction){
       unsupported.push({ integration:cap.integration, api:cap.api, auth:cap.auth });
     }
   }
+  const inChat=[];
+  for(const cap of CHAT_CAPABILITIES){
+    if(cap.keywords.some(k=>text.includes(k))){
+      if(seen.has(cap.integration)) continue; seen.add(cap.integration);
+      inChat.push({ integration:cap.integration });
+    }
+  }
   const missing=requires.filter(r=>!r.connected);
   return {
-    matched: requires.length>0 || unsupported.length>0,
-    requires, unsupported, missing,
-    ready: requires.length>0 && missing.length===0 && unsupported.length===0
+    matched: requires.length>0 || unsupported.length>0 || inChat.length>0,
+    requires, unsupported, missing, inChat,
+    ready: requires.length>0 && missing.length===0 && unsupported.length===0 && inChat.length===0
   };
 }
 window.analyzeTaskIntent=analyzeTaskIntent;
@@ -246,6 +260,10 @@ function taskRequirementMessage(analysis){
            'It needs '+u.auth+'. I can\u2019t run it until that integration is supported.\n\n';
     });
   }
+  (analysis.inChat||[]).forEach(c=>{
+    out+='\uD83D\uDCAC **'+c.integration+'** works in chat rather than here. Connect it in Integrations if you have not, '+
+         'then ask in chat - AMV shows each action and asks before it runs.\n\n';
+  });
   if(analysis.missing.length){
     analysis.missing.forEach(m=>{
       out+='\uD83D\uDD0C This task needs the **'+m.api+'** to '+m.label+', which isn\u2019t connected yet. '+
@@ -265,7 +283,7 @@ async function runAgentTask(instruction, opts){
        question when the token stopped coming here - and would have answered
        "no tools available" on an account with every permission granted. */
     if(a.needs==='connect') return !!(window.AMV_API && AMV_API.live) && _connHasAny();
-    if(a.needs) return !!loadStr('amv_'+a.needs);
+    if(a.needs) return !!(window.AMV_API && AMV_API.live) && _connHasProvider(a.needs);
     return true;
   });
   if(!available.length) throw new Error('No integrations connected yet. Connect an account in Settings, Integrations first.');
@@ -361,7 +379,7 @@ async function runAutonomousTask(instruction){
     let out=taskRequirementMessage(analysis);
     // If part of the task IS ready, say so honestly.
     const ready=analysis.requires.filter(r=>r.connected);
-    if(ready.length){
+    if(ready.length && (analysis.missing.length || analysis.unsupported.length)){
       out+='\n\n\u2705 The **'+ready.map(r=>r.integration).join('** and **')+'** part is connected and ready - '+
            'once the above is connected too, I can run the whole task.';
     }
@@ -603,11 +621,18 @@ let _taskCat=null;
 /* Is there a REAL connection to this provider - a grant the server holds - as
    opposed to a sign-in token that proves identity and permits nothing? The
    catalogue used getGToken() for Google, which answers the second question and
-   was being read as the first. */
-function _connHasProvider(id){
+   was being read as the first.
+
+   With a scope, it also asks whether that permission was granted - a Slack
+   sign-in that may read cannot post. The runner and the capability list used
+   to ask loadStr('amv_'+provider) instead, a key nothing has written since the
+   server took the handshake over, so GitHub and Slack read as not connected
+   to everybody who had connected them. */
+function _connHasProvider(id, scope){
   try{
     const items=((_connState&&_connState.data)||{}).items||[];
-    return items.some(x=>x && x.provider===id && !x.broken);
+    return items.some(x=>x && x.provider===id && !x.broken
+      && (!scope || (Array.isArray(x.scopes) && x.scopes.indexOf(scope)>=0)));
   }catch(e){ return false; }
 }
 try{ window._connHasProvider=_connHasProvider; }catch(e){}

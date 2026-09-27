@@ -130,25 +130,36 @@ section('The three outcomes are told apart on screen');
   ok(r[0] !== r[1] && r[1] !== r[2], 'three outcomes, three messages', r.map(s => s.slice(0, 40)));
 }
 
-section('A Slack webhook that refuses the message is not "posted"');
+section('A Slack post that Slack refuses is not "posted"');
 {
+  /* Slack answers most refusals with HTTP 200 and {ok:false}. The post goes
+     through the server now, and the server passes Slack's body back - so the
+     page must read ok out of that body rather than trust the status. */
   const r = await page.evaluate(async () => {
-    const realFetch = window.fetchDeadline;
-    saveStr('amv_slack', 'https://hooks.slack.test/services/AAA/BBB');
-    const out = {};
-    window.fetchDeadline = async () => ({ ok: false, status: 404, text: async () => 'no_service', json: async () => ({}) });
-    try { out.refused = await INTEGRATION_ACTIONS.slack_post.run({ text: 'hello' }); }
+    const real = AMV_API.connectApi;
+    const realLive = Object.getOwnPropertyDescriptor(AMV_API, 'live');
+    const out = { calls: [] };
+    Object.defineProperty(AMV_API, 'live', { configurable: true, get: () => true });
+    AMV_API.connectApi = async (...a) => { out.calls.push(a); return { ok: true, status: 200, body: '{"ok":false,"error":"channel_not_found"}' }; };
+    try { out.refused = await INTEGRATION_ACTIONS.slack_post.run({ channel: '#nope', text: 'hello' }); }
     catch (e) { out.refusedErr = e.message; }
-    window.fetchDeadline = async () => ({ ok: true, status: 200, text: async () => 'ok', json: async () => ({}) });
-    try { out.sent = await INTEGRATION_ACTIONS.slack_post.run({ text: 'hello' }); }
+    try { out.noChannel = await INTEGRATION_ACTIONS.slack_post.run({ text: 'hello' }); }
+    catch (e) { out.noChannelErr = e.message; }
+    AMV_API.connectApi = async (...a) => { out.calls.push(a); return { ok: true, status: 200, body: '{"ok":true,"ts":"1.2","channel":"C1"}' }; };
+    try { out.sent = await INTEGRATION_ACTIONS.slack_post.run({ channel: '#team', text: 'hello' }); }
     catch (e) { out.sentErr = e.message; }
-    window.fetchDeadline = realFetch;
+    AMV_API.connectApi = real; Object.defineProperty(AMV_API, 'live', realLive);
     return out;
   });
-  ok(!r.refused, 'a revoked webhook does not come back as posted', r.refused);
-  ok(/refused|nothing was posted/i.test(r.refusedErr || ''),
-     'it throws with what happened', r.refusedErr);
-  ok(r.sent && r.sent.posted === true, 'while a real post still reports posted', r.sent);
+  ok(!r.refused, 'a refused post does not come back as posted', r.refused);
+  ok(/channel_not_found/.test(r.refusedErr || '') && /nothing was posted/i.test(r.refusedErr || ''),
+     'it throws with what Slack said', r.refusedErr);
+  ok(!r.noChannel && /which Slack channel/i.test(r.noChannelErr || ''),
+     'no channel named, nothing posted - there is no #general default', r.noChannelErr);
+  ok(r.calls.length === 2, 'the unnamed-channel post never reached the server', r.calls.length);
+  ok(r.calls[0] && r.calls[0][0] === 'slack' && r.calls[0][1] === 'POST' && r.calls[0][2] === 'chat.postMessage',
+     'it goes through the server as a Slack API call', r.calls[0]);
+  ok(r.sent && r.sent.posted === true && r.sent.ts === '1.2', 'while a real post still reports posted', r.sent);
 }
 
 section('The widget says that 0 means no limit');
