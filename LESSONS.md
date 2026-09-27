@@ -13705,3 +13705,23 @@ The page head was the third: description, keywords and structured data still
 sold video and image generation, the canonical pointed at a domain nothing else
 uses, and the share image was a file that has never existed. No screen renders
 the head, so no check ever looked. `the-page-head-tells-the-truth` looks now.
+
+## 526. The loser of a race should not get the last word
+
+Two requests renewing one sign-in at once is not an edge case for anybody with
+a morning brief, a watch and a chat open together. With a provider that rotates
+refresh tokens, one of them must be refused - and the refused one decided the
+account had been revoked, and saved that verdict by writing back the whole
+record it had read before the race began, over the token the winner had just
+renewed. So the defect manufactured the very state it reported. The same early
+read was written back on every ordinary use as well, which resurrected a
+connection somebody removed while a job was using it.
+
+Rule: a failure that may be somebody else's success looks again before it
+speaks, and a write puts one field into the record as it is now - never a copy
+of the whole record from before the wait.
+
+And, again, the guess LESSONS 524 named: the app-connector code gave a token
+with no stated expiry an hour, a week after the same guess was taken out of the
+code beside it. A fix to one of two twins is a fix to half the bug; search for
+the twin in the same commit.

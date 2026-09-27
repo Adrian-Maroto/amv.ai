@@ -104,6 +104,7 @@ globalThis.fetch = async (url, init) => {
     if (msg.method === 'notifications/initialized') return new Response('', { status: 202 });
     if (sid !== 'sess-42') return J(400, { jsonrpc: '2.0', id: msg.id, error: { code: -32000, message: 'no session' } });
     if (msg.method === 'tools/list') return openStream({ jsonrpc: '2.0', id: msg.id, result: { tools: app.tools } }, 'sess-42');
+    if (msg.method === 'tools/call' && app.forbidCall) return new Response('', { status: 403 });
     if (msg.method === 'tools/call') {
       const text = app.bigResult ? 'x'.repeat(200000) : 'found: ' + JSON.stringify(msg.params.arguments);
       return openStream({ jsonrpc: '2.0', id: msg.id, result: { content: [{ type: 'text', text }], isError: false } }, 'sess-42');
@@ -127,6 +128,9 @@ globalThis.fetch = async (url, init) => {
     if (p.grant_type === 'refresh_token') {
       if (app.refuseRefresh || p.refresh_token !== app.refresh) return J(400, { error: 'invalid_grant' });
       app.access = 'at-2'; app.refresh = 'rt-2';
+      /* A little later than the request, the way a real token endpoint
+         answers - so two refreshes at once really do overlap. */
+      await new Promise(res => setTimeout(res, 30));
       return J(200, { access_token: app.access, refresh_token: app.refresh, expires_in: 3600 });
     }
   }
@@ -291,6 +295,60 @@ section('An expiring sign-in renews itself; one the app refuses says reconnect')
   app.rejectToken = true;
   const r3 = await call(env3, '/v1/remote/call', { app: 'notion', tool: 'search', args: {} }, t3);
   ok(r3.status === 401 && r3.d.error === 'reconnect', 'an app that stops accepting the token: reconnect, in words', r3.d);
+}
+
+section('A sign-in that was fine is not disconnected');
+{
+  /* Three ways the first version marked a working connection broken. */
+  const broken = async (env, t) => ((await call(env, '/v1/remote/list', {}, t)).d.apps || []).find(a => a.slug === 'notion').broken;
+
+  /* 1. No expires_in and no refresh token: it does not lapse on a clock. It
+        used to be given an hour, then marked broken. */
+  resetApp({ expiresIn: undefined, refresh: '' });
+  const env = mkEnv(); const t = await tok(env, ME);
+  await signIn(env, t);
+  const realNow = Date.now;
+  Date.now = () => realNow() + 3 * 3600 * 1000;
+  let r;
+  /* AMV's own session is issued inside the moved clock; only the app's token
+     is three hours old. */
+  try { r = await limited(call(env, '/v1/remote/tools', { app: 'notion' }, await tok(env, ME))); }
+  finally { Date.now = realNow; }
+  ok(r.status === 200 && r.d.tools, 'three hours on, a token with no stated expiry still works', r.status + ' ' + JSON.stringify(r.d).slice(0, 120));
+  ok(!app.tokenCalls.some(p => p.grant_type === 'refresh_token'), 'and nothing tried to renew it', app.tokenCalls.map(p => p.grant_type));
+  ok(!(await broken(env, t)), 'and it is not marked broken');
+
+  /* 2. The app turns the token away early, and a refresh token is in hand. */
+  resetApp();
+  const env2 = mkEnv(); const t2 = await tok(env2, ME);
+  await signIn(env2, t2);
+  app.access = 'at-revoked-early';
+  const r2 = await limited(call(env2, '/v1/remote/call', { app: 'notion', tool: 'search', args: { q: 'x' } }, t2));
+  ok(r2.status === 200 && /found/.test((r2.d.content || [{}])[0].text || ''), 'a 401 is answered with one refresh, and the call goes through', r2);
+  ok(app.tokenCalls.filter(p => p.grant_type === 'refresh_token').length === 1, 'exactly one refresh', app.tokenCalls.map(p => p.grant_type));
+  ok(app.rpc.filter(x => x.method === 'tools/call').length === 1, 'and the action ran once - the refused try never reached it', app.rpc.map(x => x.method));
+  ok(!(await broken(env2, t2)), 'and the connection is not marked broken');
+
+  /* 3. One action the app will not allow is not a lost sign-in. */
+  resetApp({ forbidCall: true });
+  const env3 = mkEnv(); const t3 = await tok(env3, ME);
+  await signIn(env3, t3);
+  const r3 = await limited(call(env3, '/v1/remote/call', { app: 'notion', tool: 'search', args: {} }, t3));
+  ok(r3.status === 403 && r3.d.error === 'forbidden' && /did not allow/.test(r3.d.message || ''), 'a 403 says that action was not allowed', r3);
+  ok(!(await broken(env3, t3)), 'and the connection stays connected');
+
+  /* 4. Two requests renewing at once, with a refresh token that rotates: the
+        second presents the one the first just spent. */
+  resetApp({ expiresIn: 1 });
+  const env4 = mkEnv(); const t4 = await tok(env4, ME);
+  await signIn(env4, t4);
+  const [a, b] = await Promise.all([
+    limited(call(env4, '/v1/remote/tools', { app: 'notion' }, t4)),
+    limited(call(env4, '/v1/remote/tools', { app: 'notion' }, t4)),
+  ]);
+  ok(app.tokenCalls.filter(p => p.grant_type === 'refresh_token').length === 2, 'both tried to renew (the race is real in this run)', app.tokenCalls.map(p => p.grant_type));
+  ok(a.status === 200 && b.status === 200, 'and both still answered, on the token the winner saved', [a.status, b.status]);
+  ok(!(await broken(env4, t4)), 'with the connection left connected');
 }
 
 section('Disconnecting revokes at the app and forgets it');

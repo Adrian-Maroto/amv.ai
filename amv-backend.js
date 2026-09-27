@@ -3146,7 +3146,7 @@ async function connUse(env, email, need, jobId, opts){
      under the primary here, at no extra write. A rotation therefore drains
      itself as connections get used, rather than needing a migration job that
      would have to hold every token in memory to run. */
-  let reseal = false;
+  let reseal = false, refreshed = false;
   try{ reseal = !(await connIsPrimary(env, c.sealed)); }catch(_e){}
 
   /* Refreshed with a minute to spare, so a token does not expire between this
@@ -3155,32 +3155,73 @@ async function connUse(env, email, need, jobId, opts){
     if(!tok.refresh) return { ok:false, code:'expired_no_refresh', id };
     const d = await _connTokenRequest(env, p, { refresh_token: tok.refresh, grant_type:'refresh_token' });
     if(d.error){
-      /* A refresh that fails usually means the person revoked it at the
-         provider. Marked so the interface can say "reconnect this" instead of
-         a job failing silently every morning for a fortnight. */
-      c.broken = String(d.error||'refresh_failed').slice(0,60);
-      all[id] = c; await DB.put(env, CONN_KV, email, all);
-      audit(env, 'conn_refresh_failed', { by:email, id, why:c.broken });
-      return { ok:false, code:'refresh_failed', id, why:c.broken };
+      /* TWO AT ONCE IS NOT A REVOCATION.
+
+         Zoom, Box and others rotate the refresh token on every use. Two
+         requests renewing together: the first is answered and saves a new
+         pair, the second presents the token the first just spent and is
+         refused. This used to mark the connection broken - and it did so by
+         writing back the map it read at the start, over the pair the first
+         had just saved, so the connection really was dead afterwards. So a
+         refused refresh looks for a newer token first, for about a second
+         and a half, because the winner is still writing. */
+      let won = null;
+      for(const wait of [0, 400, 1200]){
+        if(wait) await new Promise(res => setTimeout(res, wait));
+        try{
+          const cur = ((await DB.get(env, CONN_KV, email)) || {})[id];
+          if(cur && cur.sealed !== c.sealed){
+            const t2 = await connOpen(env, cur.sealed);
+            if(t2.access !== tok.access && (!t2.exp || t2.exp - 60000 > Date.now())){ won = { cur, t2 }; break; }
+          }
+        }catch(_w){}
+      }
+      if(!won){
+        /* A refresh that fails usually means the person revoked it at the
+           provider. Marked so the interface can say "reconnect this" instead of
+           a job failing silently every morning for a fortnight - and marked on
+           the record as it is now, only if it is still the one that failed. */
+        const why = String(d.error||'refresh_failed').slice(0,60);
+        try{ await _withKind(env, CONN_KV, email, (rec) => { if(rec && rec[id] && rec[id].sealed === c.sealed) rec[id].broken = why; }, {}); }catch(_m){}
+        audit(env, 'conn_refresh_failed', { by:email, id, why });
+        return { ok:false, code:'refresh_failed', id, why };
+      }
+      tok = won.t2; c.sealed = won.cur.sealed; reseal = false;
+    } else {
+      tok.access = d.access_token;
+      if(d.refresh_token) tok.refresh = d.refresh_token;   // providers that rotate
+      tok.exp = _connExpiry(d);
+      c.sealed = await connSeal(env, tok);
+      refreshed = true;
     }
-    tok.access = d.access_token;
-    if(d.refresh_token) tok.refresh = d.refresh_token;   // providers that rotate
-    tok.exp = _connExpiry(d);
-    c.sealed = await connSeal(env, tok);
-    delete c.broken;
   }
 
   /* WHAT USED WHAT, AND WHEN. Never the token, and never what it read - the
      point is an account holder can see that a job opened their mailbox on
      Tuesday, not a copy of their mail in an audit log. */
-  c.lastUsed = Date.now();
-  c.lastJob = String(jobId||'').slice(0, 60);
+  const lastJob = String(jobId||'').slice(0, 60);
   if(reseal){
     c.sealed = await connSeal(env, tok);
     audit(env, 'conn_resealed', { by:email, id });
   }
-  all[id] = c;
-  await DB.put(env, CONN_KV, email, all);
+  /* Written into the record as it is NOW, not the map read at the top. That
+     map is as old as this request, and saving it whole put back anything
+     another request had changed meanwhile - a token it had just renewed, a
+     connection it had just removed. */
+  const write = refreshed || reseal;
+  const stamp = (rec) => {
+    const r = rec && rec[id];
+    if(!r) return;
+    r.lastUsed = Date.now(); r.lastJob = lastJob;
+    if(write){ r.sealed = c.sealed; delete r.broken; }
+  };
+  try{ await _withKind(env, CONN_KV, email, stamp, {}); }
+  catch(_l){
+    /* The lock was busy. A missed "last used" is nothing; a renewed token that
+       is not saved is a spent refresh token and a dead connection - so that
+       one is written anyway, still into the current record. */
+    if(write){ const cur = (await DB.get(env, CONN_KV, email)) || {}; stamp(cur); await DB.put(env, CONN_KV, email, cur); }
+  }
   audit(env, 'conn_used', { by:email, id, provider:c.provider, need, job:c.lastJob, attended:!!o.attended });
 
   return { ok:true, id, provider:c.provider, token: tok.access };
@@ -3925,24 +3966,67 @@ async function _rmcpToken(meta, cli, params){
   let d = {}; try { d = JSON.parse(await _rmcpText(g.response, 100000)); } catch (e) {}
   if (!g.response.ok || !d.access_token) return { ok: false, why: String(d.error || ('http_' + g.response.status)).slice(0, 80) };
   return { ok: true, access: String(d.access_token), refresh: d.refresh_token ? String(d.refresh_token) : '',
-           exp: Date.now() + (Number(d.expires_in) || 3600) * 1000 };
+           exp: _connExpiry(d) };
 }
 
 /* A usable token for this person and app, refreshed when it is about to lapse.
    A refresh the app refuses marks the connection broken, so the page can say
    "reconnect" instead of failing every call with no reason given. */
-async function _rmcpAccess(env, email, slug){
+/* THREE WAYS THIS USED TO DISCONNECT A SIGN-IN THAT WAS FINE.
+
+   A token with no expires_in was given an hour - the same guess LESSONS 524
+   records for GitHub - and an hour later a connector with no refresh token was
+   marked broken while its token still worked. No expiry stated is 0: it does
+   not lapse on a clock, and the app says so with a 401 if that ever changes.
+
+   A 401 from the app was final even when a refresh token was in hand. Tokens
+   end early for ordinary reasons; `force` refreshes once before giving up.
+
+   Two requests refreshing at once with a rotating refresh token: the second
+   presents a token the first just spent, is refused, and used to mark the
+   connection broken - after the first had renewed it. A refused refresh now
+   looks again, and a newer token saved in the meantime is used. */
+async function _rmcpAccess(env, email, slug, opts){
+  const force = !!(opts && opts.force);
   const all = (await DB.get(env, RMCP_KV, email)) || {};
   const c = all[slug];
   if (!c) return { error: 'not_connected' };
   let tok; try { tok = await connOpen(env, c.sealed); } catch (e) { return { error: 'reconnect' }; }
-  if (tok.exp > Date.now() + 60000) return { tok };
+  if (!force && (!tok.exp || tok.exp > Date.now() + 60000)) return { tok };
   const r = tok.refresh ? await _rmcpToken(tok.meta, tok.cli, { grant_type: 'refresh_token', refresh_token: tok.refresh, resource: tok.meta.resource }) : { ok: false };
-  if (!r.ok) { await _rmcpMarkBroken(env, email, slug); return { error: 'reconnect' }; }
+  if (!r.ok) {
+    /* The request that won is still writing when this one is refused, so it
+       is looked for a few times over about a second and a half - only on this
+       path, which is otherwise the end of the connection. */
+    for (const wait of [0, 400, 1200]) {
+      if (wait) await new Promise(res => setTimeout(res, wait));
+      try {
+        const now = (await DB.get(env, RMCP_KV, email)) || {};
+        if (now[slug] && now[slug].sealed !== c.sealed) {
+          const fresh = await connOpen(env, now[slug].sealed);
+          if (fresh.access !== tok.access && (!fresh.exp || fresh.exp > Date.now() + 60000)) return { tok: fresh };
+        }
+      } catch (e) {}
+    }
+    await _rmcpMarkBroken(env, email, slug); return { error: 'reconnect' };
+  }
   tok = Object.assign({}, tok, { access: r.access, refresh: r.refresh || tok.refresh, exp: r.exp });
   const sealed = await connSeal(env, tok);
   await _withKind(env, RMCP_KV, email, (rec) => { if (rec && rec[slug]) { rec[slug].sealed = sealed; rec[slug].broken = false; } }, {});
   return { tok };
+}
+/* Run fn with the token; if the app answers 401, refresh once and run it
+   again. Marked broken only when the refresh is refused too, or the renewed
+   token is also turned away. */
+async function _rmcpOnce(env, email, slug, tok, fn){
+  try { return await fn(tok.access); }
+  catch (e) {
+    if (!e || e.code !== 'unauthorized') throw e;
+    const again = tok.refresh ? await _rmcpAccess(env, email, slug, { force: true }) : { error: 'reconnect' };
+    if (again.error) { await _rmcpMarkBroken(env, email, slug); throw e; }
+    try { return await fn(again.tok.access); }
+    catch (e2) { if (e2 && e2.code === 'unauthorized') await _rmcpMarkBroken(env, email, slug); throw e2; }
+  }
 }
 async function _rmcpMarkBroken(env, email, slug){
   try { await _withKind(env, RMCP_KV, email, (rec) => { if (rec && rec[slug]) rec[slug].broken = true; }, {}); } catch (e) {}
@@ -3960,7 +4044,11 @@ async function _rmcpRpc(url, token, sid, msg){
   const g = await fetchGuarded(url, { method: 'POST', headers, body: JSON.stringify(msg) }, 30000);
   if (g.blocked) throw Object.assign(new Error('blocked'), { code: 'blocked' });
   const res = g.response;
-  if (res.status === 401 || res.status === 403) { try { res.body && res.body.cancel(); } catch (e) {} throw Object.assign(new Error('unauthorized'), { code: 'unauthorized' }); }
+  /* 401 is "who are you" - the sign-in. 403 is "not this" - one action the app
+     will not allow, and the sign-in is fine. Treating both as the first
+     disconnected an app because of one refused call. */
+  if (res.status === 401) { try { res.body && res.body.cancel(); } catch (e) {} throw Object.assign(new Error('unauthorized'), { code: 'unauthorized' }); }
+  if (res.status === 403) { try { res.body && res.body.cancel(); } catch (e) {} throw Object.assign(new Error('forbidden'), { code: 'forbidden' }); }
   const nsid = res.headers.get('mcp-session-id') || sid || '';
   if (msg.id == null) { try { res.body && res.body.cancel(); } catch (e) {} return { sid: nsid, result: null }; }
   if (!res.ok) { try { res.body && res.body.cancel(); } catch (e) {} throw Object.assign(new Error('http_' + res.status), { code: 'http' }); }
@@ -4001,6 +4089,7 @@ async function _rmcpSession(url, token){
 function _rmcpFail(app, e){
   const code = (e && e.code) || '';
   if (code === 'unauthorized') return json({ error: 'reconnect', message: app.name + ' no longer accepts AMV’s sign-in. Reconnect it in Integrations.' }, 401);
+  if (code === 'forbidden') return json({ error: 'forbidden', message: app.name + ' did not allow that with the access it gave AMV. Nothing was changed.' }, 403);
   return json({ error: 'app_error', message: app.name + '’s connector did not answer properly' + (e && e.message ? ' (' + String(e.message).slice(0, 80) + ')' : '') + '. Nothing was changed; try again in a moment.' }, 502);
 }
 
@@ -4148,18 +4237,20 @@ async function remoteTools(request, env){
   const a = await _rmcpAccess(env, user.email, slug);
   if (a.error === 'not_connected') return json({ error: 'not_connected' }, 404);
   if (a.error) return json({ error: 'reconnect', message: app.name + ' needs signing in again. Reconnect it in Integrations.' }, 401);
-  const tools = [];
+  let tools = [];
   try {
-    const sid = await _rmcpSession(app.url, a.tok.access);
-    let cursor = '';
-    for (let page = 0; page < 5 && tools.length < RMCP_MAX_TOOLS; page++) {
-      const r = await _rmcpRpc(app.url, a.tok.access, sid, { jsonrpc: '2.0', id: 2 + page, method: 'tools/list', params: cursor ? { cursor } : {} });
-      for (const t of ((r.result && r.result.tools) || [])) if (t && t.name != null) tools.push(t);
-      cursor = (r.result && r.result.nextCursor) || '';
-      if (!cursor) break;
-    }
+    await _rmcpOnce(env, user.email, slug, a.tok, async (access) => {
+      tools = [];
+      const sid = await _rmcpSession(app.url, access);
+      let cursor = '';
+      for (let page = 0; page < 5 && tools.length < RMCP_MAX_TOOLS; page++) {
+        const r = await _rmcpRpc(app.url, access, sid, { jsonrpc: '2.0', id: 2 + page, method: 'tools/list', params: cursor ? { cursor } : {} });
+        for (const t of ((r.result && r.result.tools) || [])) if (t && t.name != null) tools.push(t);
+        cursor = (r.result && r.result.nextCursor) || '';
+        if (!cursor) break;
+      }
+    });
   } catch (e) {
-    if (e && e.code === 'unauthorized') await _rmcpMarkBroken(env, user.email, slug);
     return _rmcpFail(app, e);
   }
   /* Bounded like any other connector's list: a name, a description and a
@@ -4192,10 +4283,14 @@ async function remoteCall(request, env){
   if (a.error) return json({ error: 'reconnect', message: app.name + ' needs signing in again. Reconnect it in Integrations.' }, 401);
   let r;
   try {
-    const sid = await _rmcpSession(app.url, a.tok.access);
-    r = await _rmcpRpc(app.url, a.tok.access, sid, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: tool, arguments: args } });
+    /* Retried only when the app said 401 before doing anything - a refused
+       sign-in is refused at the door, so the action has not happened and
+       asking again cannot do it twice. */
+    r = await _rmcpOnce(env, user.email, slug, a.tok, async (access) => {
+      const sid = await _rmcpSession(app.url, access);
+      return await _rmcpRpc(app.url, access, sid, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: tool, arguments: args } });
+    });
   } catch (e) {
-    if (e && e.code === 'unauthorized') await _rmcpMarkBroken(env, user.email, slug);
     return _rmcpFail(app, e);
   }
   try { await _withKind(env, RMCP_KV, user.email, (rec) => { if (rec && rec[slug]) rec[slug].lastUsed = Date.now(); }, {}); } catch (e) {}

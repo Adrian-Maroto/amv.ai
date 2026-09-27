@@ -178,6 +178,54 @@ section('And a renewal clears the mark, so a reconnect is not sticky');
   ok(!('broken' in after.c1), 'a grant that works again is no longer flagged', after.c1.broken);
 }
 
+section('Two renewals at once do not disconnect a working account');
+{
+  /* Zoom, Box and others rotate the refresh token on every use. Two jobs
+     renewing together: the first is answered and saves a new pair, the second
+     presents the token the first just spent and is refused. This used to mark
+     the account broken - by writing back the map it read at the start, over
+     the pair the first had just saved - so the account really was dead. */
+  const email = 'together@example.com';
+  await seed(email, { access: 'STALE', refresh: 'r-1', exp: Date.now() - 1000 });
+  let live = 'r-1';
+  reply = null;
+  globalThis.fetch = async (url, init) => {
+    const p = Object.fromEntries(new URLSearchParams(String((init && init.body) || '')));
+    sent.push(p);
+    await new Promise(r => setTimeout(r, 30));
+    if (p.refresh_token !== live) return jsonReply(400, { error: 'invalid_grant' })();
+    live = 'r-2';
+    return jsonReply(200, { access_token: 'FRESH-A', refresh_token: 'r-2', expires_in: 3600 })();
+  };
+  const [a, b] = await Promise.all([
+    W.connUse(env, email, 'mail.read', 'job-a', {}),
+    W.connUse(env, email, 'mail.read', 'job-b', {}),
+  ]);
+  ok(sent.length === 2, 'both tried to renew - the race really happened', sent.length);
+  ok(a.ok && b.ok && a.token === 'FRESH-A' && b.token === 'FRESH-A',
+     'and both jobs ran, on the token the first one saved', [a.code || a.token, b.code || b.token]);
+  const after = (await W.DB.get(env, W.CONN_KV, email)) || {};
+  ok(!after.c1.broken, 'the account is not marked broken', after.c1.broken);
+  const reopened = await W.connOpen(env, after.c1.sealed);
+  ok(reopened.refresh === 'r-2', 'and the renewed refresh token is what is stored', reopened.refresh);
+}
+
+section('Using a connection does not bring back one removed meanwhile');
+{
+  const email = 'removed@example.com';
+  await seed(email, { access: 'STALE', refresh: 'r-9', exp: Date.now() - 1000 });
+  globalThis.fetch = async () => {
+    await new Promise(r => setTimeout(r, 40));
+    return jsonReply(200, { access_token: 'FRESH-9', expires_in: 3600 })();
+  };
+  const run = W.connUse(env, email, 'mail.read', 'job', {});
+  await new Promise(r => setTimeout(r, 10));
+  await W.DB.put(env, W.CONN_KV, email, {});      // disconnected while the job was renewing
+  await run;
+  const after = (await W.DB.get(env, W.CONN_KV, email)) || {};
+  ok(!after.c1, 'the job finishing does not write the connection back', Object.keys(after));
+}
+
 section('The renewal is in connUse, so nothing can reach a token around it');
 {
   /* Stated as a source rule too. The behaviour above proves connUse renews; the
@@ -186,7 +234,10 @@ section('The renewal is in connUse, so nothing can reach a token around it');
   const fn = codeOnly(functionBody(src, 'connUse'));
   ok(/tok\.exp - 60000 < Date\.now\(\)/.test(fn), 'the margin is a minute, not zero', true);
   ok(/expired_no_refresh/.test(fn), 'a grant with no refresh token is named', true);
-  ok(/c\.broken = String\(d\.error/.test(fn), 'and a refusal is recorded on the record', true);
+  ok(/const why = String\(d\.error/.test(fn) && /rec\[id\]\.broken = why/.test(fn),
+     'and a refusal is recorded on the record', true);
+  ok(/rec\[id\]\.sealed === c\.sealed/.test(fn),
+     'only on the record that failed - not over a token another request just renewed', true);
 
   /* THE FIRST VERSION OF THIS ASSERTED THAT connUse WAS THE ONLY PLACE THAT
      OPENS A STORED CONNECTION, AND IT FOUND THREE. It was wrong to fail: the
@@ -225,8 +276,16 @@ section('The renewal is in connUse, so nothing can reach a token around it');
     const decl = [...codeOnly(src).slice(0, m.index).matchAll(/\n(?:async )?function ([A-Za-z0-9_]+)\s*\(/g)].pop();
     return decl ? decl[1] : '(top level)';
   });
-  ok(users.length === 2 && users.includes('remoteTools') && users.includes('remoteCall'),
+  /* _rmcpOnce is the refresh-and-retry after a 401; it is only a way through
+     the same door, and is itself used by nothing but the two routes. */
+  ok(users.length === 3 && ['remoteTools', 'remoteCall', '_rmcpOnce'].every(n => users.includes(n)),
      'and only listing an app\u2019s tools and running one go through that door', users);
+  const once = [...codeOnly(src).matchAll(/(?<!function )_rmcpOnce\(env/g)].map(m => {
+    const decl = [...codeOnly(src).slice(0, m.index).matchAll(/\n(?:async )?function ([A-Za-z0-9_]+)\s*\(/g)].pop();
+    return decl ? decl[1] : '(top level)';
+  });
+  ok(once.length === 2 && once.includes('remoteTools') && once.includes('remoteCall'),
+     'and the retry is reached from those two routes only', once);
 }
 
 if (report('the-grant-renews-itself-overnight') > 0) process.exitCode = 1;

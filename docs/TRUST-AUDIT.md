@@ -1830,3 +1830,56 @@ For both, every call from chat is asked for, with its arguments shown.
 real sign-in with each provider is the test that remains, and some apps
 (Figma may be one) admit only pre-approved clients. There, Connect says the app
 did not accept AMV, and nothing changes.
+
+## Round forty-two - a connection that works is not disconnected; stale "not connected" answers
+
+Found by a bug sweep of this session's own work. Each defect was put back and
+had to be named by a failing assertion.
+
+What it found:
+
+- Slack and GitHub were asked whether they were connected through keys that
+  nothing writes, so they always answered no - in the runner, the capability
+  list and the connector registry.
+- Chat was given Crew's answer (may this run with AMV closed) and told the model
+  a grant that works while the tab is open was not connected.
+- App connectors: a token with no stated expiry was given an hour and then
+  marked broken; a 401 marked the connection broken without trying the refresh
+  token; a 403 on one action disconnected the app; two renewals at once with a
+  rotating refresh token disconnected it.
+- Regular sign-ins (`connUse`): the same race, worse - the loser wrote back the
+  map it read at the start, over the winner's renewed token; and every use
+  saved that whole early map, so a connection removed meanwhile came back.
+- The page head sold removed features and pointed at a missing image and
+  another domain.
+
+`a-connection-you-made-is-one-amv-can-see`, `nothing-claims-what-it-did-not-do`,
+`no-provider-token-reaches-the-browser`, `the-page-head-tells-the-truth` (page);
+`an-app-you-sign-in-to-is-an-app-amv-can-use`,
+`the-grant-renews-itself-overnight` (Worker).
+
+| # | what was broken | caught by |
+|---|---|---|
+| 228 | Slack capability back on `loadStr('amv_slack')` | 2 assertions |
+| 229 | the runner's tool filter back on `loadStr('amv_'+needs)` | 2 assertions |
+| 230 | Slack's post permission not checked | 1 assertion |
+| 231 | the registry's GitHub entry back on `amv_github` | 1 assertion |
+| 232 | a Slack `{ok:false}` read as posted | 2 assertions |
+| 233 | the #general default restored | 2 assertions |
+| 234 | an image-generation host back in connect-src | 2 assertions |
+| 235 | the share image pointed at a file that does not exist | 1 assertion |
+| 236 | chat asked the unattended question | 3 assertions |
+| 237 | the one-hour default for app connector tokens restored | 2 assertions |
+| 238 | a token with no expiry treated as lapsed | 2 assertions |
+| 239 | a 401 marks broken with no refresh tried | 3 assertions |
+| 240 | 403 treated as a lost sign-in | 2 assertions |
+| 241 | a refused app-connector refresh does not look for the winner's token | 1 assertion |
+| 242 | a refused `connUse` refresh does not look for the winner's token | 1 assertion |
+| 243 | `connUse` saves the map read at the start | 2 assertions |
+| 244 | `connUse` writes back a connection removed meanwhile | 1 assertion |
+
+**Not measured:** the race is proved against a store that answers at once.
+Workers KV takes up to a minute to show a write at another edge, so two
+requests landing at different edges can still miss each other; the
+look-again covers the same edge, which is where two requests from one person
+usually land.
