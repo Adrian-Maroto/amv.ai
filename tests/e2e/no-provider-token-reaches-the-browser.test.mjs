@@ -144,6 +144,26 @@ section('What a connection can do is the server’s answer, per capability');
      'so the screen shows Gmail on, calendar and Drive off - which is the truth', JSON.stringify(r.caps));
 }
 
+section('A grant that ends with the tab is still connected while the tab is open');
+{
+  /* Chat and the runner are used by somebody who is here. The capability list
+     answered them with the Crew question - may this run with AMV closed - so a
+     grant with no refresh token told the chat model Gmail was not connected to
+     the person using it. Crew still asks its own, stricter question. */
+  const r = await page.evaluate(() => {
+    const saved = _connState.data;
+    _connState.data = { configured: true, providers: [{ id: 'google', name: 'Google', ready: true }],
+      items: [{ id: 'c1', provider: 'google', unattended: false, scopes: ['mail.read'] }] };
+    const out = { chat: TASK_CAPABILITIES.find(c => c.id === 'gmail').isConnected(), crew: _cwConnHas('mail.read'),
+                  prompt: _integrationStatusPrompt() };
+    _connState.data = saved;
+    return out;
+  });
+  ok(r.chat === true, 'chat is told Gmail is connected', r.chat);
+  ok(r.crew === false, 'while Crew still will not plan on it overnight', r.crew);
+  ok(/CONNECTED and usable: Google \(Gmail API\)/.test(r.prompt), 'and the model reads it that way', r.prompt.slice(0, 200));
+}
+
 section('A revoked grant is not a working one');
 {
   /* Worse than absent: the card would promise background work that silently

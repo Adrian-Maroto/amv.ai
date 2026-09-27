@@ -14,6 +14,18 @@ function _connHasAny(){
   }catch(e){ return false; }
 }
 try{ window._connHasAny=_connHasAny; }catch(e){}
+/* Was this permission granted, on a connection that works? Asked for a person
+   who is here - the runner and chat. _cwConnHas answers the Crew question,
+   which also needs the grant to work with AMV closed; asked here, it told the
+   chat model that Gmail was not connected to somebody using it right now,
+   whose grant simply ends when the tab does. */
+function _connHasScope(scope){
+  try{
+    const items=((_connState&&_connState.data)||{}).items||[];
+    return items.some(x=>x && !x.broken && Array.isArray(x.scopes) && x.scopes.indexOf(scope)>=0);
+  }catch(e){ return false; }
+}
+try{ window._connHasScope=_connHasScope; }catch(e){}
 
 /* One door to the server for every connected-account action.
 
@@ -156,17 +168,17 @@ const TASK_CAPABILITIES = [
        in with Google" was standing in for "AMV may read this mailbox", and they
        are different questions - which is how a screen came to report Gmail as
        connected to an account that had granted no mail scope at all. */
-    isConnected:()=>_cwConnHas('mail.read'),
+    isConnected:()=>_connHasScope('mail.read'),
     keywords:['email','emails','gmail','inbox','e-mail','reply to','send a mail','unread','draft a reply','respond to','mailbox'] },
   { id:'calendar', integration:'Google Calendar', label:'view or create calendar events',
     api:'Google Calendar API', auth:'Google account (OAuth)',
     connectId:'google', tools:['calendar_list','calendar_create'],
-    isConnected:()=>_cwConnHas('calendar.read'),
+    isConnected:()=>_connHasScope('calendar.read'),
     keywords:['calendar','schedule','meeting','event','appointment','book time','block time','remind me to meet','agenda','availability'] },
   { id:'drive', integration:'Google Drive', label:'read or list your files',
     api:'Google Drive API', auth:'Google account (OAuth)',
     connectId:'google', tools:['drive_list'],
-    isConnected:()=>_cwConnHas('drive.read'),
+    isConnected:()=>_connHasScope('drive.read'),
     keywords:['drive','google drive','my files','documents','spreadsheet in drive','file named'] },
   { id:'github', integration:'GitHub', label:'manage issues and repositories',
     api:'GitHub REST API', auth:'GitHub personal access token or OAuth',
@@ -177,7 +189,7 @@ const TASK_CAPABILITIES = [
        connected" said to somebody whose account WAS connected. The tools were
        moved and this question was not, so the screen that decides whether AMV
        can be asked to touch GitHub went on reading a key retired with them. */
-    isConnected:()=>_cwConnHas('repo.read'),
+    isConnected:()=>_connHasScope('repo.read'),
     keywords:['github','issue','repo','repository','pull request','pr ','commit','open an issue','bug ticket'] },
   { id:'slack', integration:'Slack', label:'post messages to Slack',
     api:'Slack Web API', auth:'Slack sign-in',

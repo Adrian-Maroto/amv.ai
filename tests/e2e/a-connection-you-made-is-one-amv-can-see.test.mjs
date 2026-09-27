@@ -93,8 +93,16 @@ section('A broken or attended grant is not a connection AMV can act on');
      'a broken grant does not show as connected', broken.rows);
   const attended = await serve([
     { provider: 'github', unattended: false, broken: false, scopes: ['repo.read'] }]);
-  ok(attended.caps.github === false,
-     'and one that cannot run unattended cannot be asked to', attended.caps);
+  /* This used to assert the opposite: a grant that ends with the tab "cannot
+     be asked to". The server's action route calls connUse with attended:true,
+     so it DOES act on that grant while somebody is here - and the capability
+     list is asked only by chat and the runner, both of which have somebody
+     here. The no was wrong; Crew's own check (_cwConnHas) keeps the stricter
+     question for work that runs with AMV closed. */
+  ok(attended.caps.github === true,
+     'and one that ends with the tab can be asked to while the tab is open', attended.caps);
+  ok((await page.evaluate(() => _cwConnHas('repo.read'))) === false,
+     'while Crew still will not plan on it overnight');
 }
 
 section('The row id is translated to the provider the server knows');
