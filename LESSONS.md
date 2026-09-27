@@ -13675,3 +13675,33 @@ And a default that sounds safe - "no expiry given, call it an hour" - turned
 every GitHub connection into "expired, nothing to refresh" sixty minutes after
 it was made. A value the provider did not send is a fact ("it does not expire
 on a clock"), not a gap to fill with a guess.
+
+## 525. An exception recorded as "the owner's call" goes stale the day the owner calls it
+
+A suite excused exactly one reader of a key nothing writes: Slack's
+`isConnected` asked `loadStr('amv_slack')`, and the excuse said "not connected"
+was the TRUE answer because there was no Slack sign-in anywhere - and whether
+to keep advertising Slack was the owner's decision. The owner then approved
+Slack as a server-held sign-in, the sign-in was built, and nobody went back to
+the excuse. From that moment the recorded exception was the defect: a Slack
+account connected, and the runner, the chat model and the connector registry
+all said it was not. The same dead key sat under GitHub in two more places
+(`loadStr('amv_'+needs)` in the runner, `tokenKey:'amv_github'` in the
+registry), so neither app's tools had ever been offered to anybody.
+
+Rule: when a decision recorded as pending is made, search for every place that
+cited it as the reason for something, and re-ask that thing. An exception whose
+justification is "until X" is a bug scheduled for the day of X.
+
+And its sibling: a check written for one question gets borrowed for a nearby
+one. The capability list asked Crew's question - may this grant run with AMV
+closed - on behalf of chat, which only needs to know whether it works while the
+person is here. The server's action route had always answered the second
+question correctly; the page told the model the first. A suite even asserted
+the wrong no, because it was written against the helper rather than against
+what the server does.
+
+The page head was the third: description, keywords and structured data still
+sold video and image generation, the canonical pointed at a domain nothing else
+uses, and the share image was a file that has never existed. No screen renders
+the head, so no check ever looked. `the-page-head-tells-the-truth` looks now.

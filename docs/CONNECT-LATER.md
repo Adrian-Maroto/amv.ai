@@ -11,7 +11,9 @@ order. It is the promise the page makes, so this file is how it gets kept.
 
 - **Google, through Connected accounts:** Gmail, Calendar, Drive, Docs,
   Sheets, Slides, Classroom.
-- **Microsoft:** Outlook mail and calendar.
+- **Microsoft:** Outlook mail and calendar, and OneDrive files.
+- **Slack:** chat posts through the server with the sign-in's own permission,
+  one consented call at a time.
 - **GitHub.**
 - **About 60 mailboxes over IMAP:** Yahoo, iCloud, AOL, Zoho, Fastmail, GMX,
   Yandex, Naver, QQ and others.
@@ -138,9 +140,10 @@ says nothing more.
 
 ## What only the owner can decide
 
-- **Storage.** Route 1 needs a new stored record: a sealed remote-connector
-  token per person per server. That is a storage schema change, which waits
-  for the owner's approval.
+- **Storage.** Route 1 needed a new stored record: a sealed remote-connector
+  token per person per server (`rmcp:`). The owner approved it and it is
+  built; it is excluded from backups, redacted in exports and revoked on
+  erasure.
 - **Accounts with each provider.** Route 2 means registering AMV with each
   provider, accepting their terms, and holding the secrets.
 - **Order.** Which apps come first is set by the waitlist counts on the
