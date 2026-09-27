@@ -100,7 +100,7 @@ section('A plan gate points at billing, not at the network');
 section('An expired session says to sign in again');
 {
   const msg = await askWith({ status: 401, body: JSON.stringify({ error: { message: 'authentication failed' } }) });
-  ok(/sign out and back in|session/i.test(msg), 'it names the session', msg.slice(0, 110));
+  ok(/sign in again|session/i.test(msg), 'it names the session', msg.slice(0, 110));
   ok(!/ad-?block/i.test(msg), 'and not the browser', msg.slice(0, 90));
 }
 

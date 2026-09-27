@@ -825,12 +825,15 @@ const AMV_API = {
       /* Cookie mode has no refresh token on this side to test for, and that
          is the whole point of it - the browser carries one. Without this the
          401 retry never fired for exactly the deployments the cookie is for. */
-      if(!_retried && (this.refreshTok || this.cookieAuth)){
+      if(!_retried && (this.refreshTok || this.cookieAuth || _authCreds() === 'include')){
         const refreshed = await this._doRefresh();
         if(refreshed){
           // re-run through _fetch so the token is re-attached under the origin guard
           return this._fetch(path, opts||{}, true);
         }
+        /* Nothing left on this device to renew with: ask for the sign-in here,
+           once, rather than leaving every screen to fail with a message. */
+        if(this._refreshDenied){ try{ if(typeof _askToSignInAgain === 'function') _askToSignInAgain(); }catch(e){} }
       }
       throw new Error('Session expired - sign in again');
     }
@@ -919,7 +922,8 @@ const AMV_API = {
       try{
         /* In cookie mode the browser carries the token and this side may have
            nothing - which is the point, and is not a reason to give up. */
-        if(!this.refreshTok && !this.cookieAuth) return false;
+        this._refreshDenied = false;
+        if(!this.refreshTok && !this.cookieAuth && _authCreds() !== 'include') return false;
         /* THE SAME BINDING `_fetch` APPLIES, APPLIED HERE TOO.
 
            `_fetch` refused to attach the bearer token to an origin it was not
@@ -941,7 +945,12 @@ const AMV_API = {
           body: JSON.stringify(this.refreshTok ? { refreshToken: this.refreshTok } : {}),
           signal: ctrl ? ctrl.signal : undefined
         });
-        if(!r.ok) return false;
+        /* THE SERVER SAID THERE IS NO SESSION - which is a different fact from
+           "the server could not be reached", and the screen answers it
+           differently: it asks for a sign-in on the spot instead of saying
+           "sign out and back in". A network failure never sets this, so an
+           outage cannot put a sign-in sheet in front of anybody. */
+        if(!r.ok){ this._refreshDenied = (r.status === 400 || r.status === 401 || r.status === 403); return false; }
         const d = await r.json().catch(()=>({}));
         /* Signed out while this was in flight: the answer is real, and it is
            for a session that no longer exists. Dropped rather than applied. */
@@ -1195,11 +1204,11 @@ const AMV_API = {
     try{ r=await this._fetch('/v1/connect/list'); }
     catch(e){
       const m=String((e&&e.message)||'');
-      if(/session expired|sign in again/i.test(m)) throw Object.assign(new Error('your sign-in has expired - sign out and back in'), { code:'unauthorized' });
+      if(/session expired|sign in again/i.test(m)) throw Object.assign(new Error('your sign-in on this device has ended - sign in to continue'), { code:'unauthorized' });
       throw new Error('AMV\u2019s server could not be reached'+(m?' ('+m.slice(0,80)+')':''));
     }
     const d=await r.json().catch(()=>null);
-    if(r.status===401) throw Object.assign(new Error('your sign-in has expired - sign out and back in'), { code:'unauthorized' });
+    if(r.status===401) throw Object.assign(new Error('your sign-in on this device has ended - sign in to continue'), { code:'unauthorized' });
     if(!r.ok || !d || d.error) throw new Error((d&&(d.message||d.error)) || ('the server answered '+r.status));
     return d;
   },
@@ -3719,7 +3728,7 @@ function aegisErrorMessage(status, raw){
      facts and only one of them is true at a time. */
   if(r.includes('at capacity')) return raw || 'AMV is at capacity right now. Please try again shortly.';
   if(status===401||r.includes('authentication')||r.includes('invalid x-api-key')||r.includes('sign in again'))
-    return 'Your session needs a refresh - sign out and back in. (If self-hosting, re-check your API key in Settings.)';
+    return 'Your sign-in on this device has ended - sign in again to continue. (If self-hosting, re-check your API key in Settings.)';
   if(status===403) return 'Access forbidden (403). This key lacks permission for this model or endpoint.';
   if(status===429||r.includes('rate')) return 'Too many requests right now (429). Give it a few seconds and try again.';
   if(status===400||r.includes('invalid_request')) return 'The request was malformed (400). '+(raw||'').slice(0,140);
@@ -3739,7 +3748,7 @@ function _aiFriendly(msg){
   if(/out of usage|usage limit|daily|window/.test(m)) return msg;   // already friendly + actionable
   if(/rate|429|too many/.test(m)) return 'Too many requests right now. Give it a few seconds and try again.';
   if(/network|failed to fetch|offline|timed out|timeout/.test(m)) return 'AMV couldn’t reach the network. Check your connection and try again.';
-  if(/401|auth|sign in|session/.test(m)) return 'Your session needs a refresh - sign out and back in.';
+  if(/401|auth|sign in|session/.test(m)) return 'Your sign-in on this device has ended - sign in again to continue.';
   if(/413|too long|too large|context/.test(m)) return 'This is a bit too long to process at once. Try trimming it and running again.';
   if(/5\d\d|529|temporary|capacity/.test(m)) return 'AMV had a brief hiccup. Please try again in a moment.';
   return 'AMV hit a snag. Please try again.';
@@ -4274,6 +4283,10 @@ function loginUser(acct) {
   try{ saveStr('amv_onboarded','1'); }catch(e){}
   // if a backend session exists, pull the user's data from the server and keep it synced
   _syncBootstrap();
+  /* A sign-in asked for mid-task: reload what the old session could not
+     fetch, and finish the thing that was interrupted. */
+  try{ if(typeof connReload==='function' && window.AMV_API && AMV_API.live) connReload(); }catch(e){}
+  try{ _afterSignInAgain(acct.email); }catch(e){}
 }
 /* SYNC STARTED IN ONE PLACE, AND IT WAS THE WRONG ONE.
 
@@ -5219,7 +5232,7 @@ async function _ensureBackendSession(){
          reload would have restored nothing: no token, no refresh attempted,
          and a person signed out by the act of pressing F5 with a valid session
          sitting in a cookie. */
-      if(AMV_API.refreshTok || AMV_API.cookieAuth){
+      if(AMV_API.refreshTok || AMV_API.cookieAuth || _authCreds() === 'include'){
         try{ await AMV_API._doRefresh(); }catch(e){ /* fall through */ }
       }
       // If refresh failed (or there was none), we keep whatever token we have;
@@ -5238,6 +5251,13 @@ async function _ensureBackendSession(){
         if(typeof setTab === 'function' && S && S.tab) setTab(S.tab);
         if(typeof updateSbUser === 'function') updateSbUser();
       }
+    }catch(e){}
+    /* The server says this device has no session and nothing here can renew
+       one: ask for the sign-in now, on this screen, rather than let every
+       screen fail one after another with "session expired". */
+    try{
+      if(window.AMV_API && AMV_API.live && AMV_API._refreshDenied && S.user && S.user.email
+         && !(AMV_API.token && AMV_API.tokenValid())) _askToSignInAgain();
     }catch(e){}
     /* The returning visit's door into sync. After the refresh, not before: a
        reload begins with no access token in hand, so asked any earlier this
@@ -29533,6 +29553,11 @@ function _renderSetPaneInner(only, into){
     }
     _wireIntegrationCatalog(pane);
     _killTokenAutofill();
+    /* Asked for here too. This pane only filtered what was already loaded, so
+       on a device that had not opened Integrations first it said "Nothing is
+       connected yet" about an account with apps connected. The load repaints
+       this pane when the answer arrives (_connLoad). */
+    try{ if(!_guest && typeof _connLoad==='function') setTimeout(()=>_connLoad(false), 0); }catch(e){}
     try{ if(typeof _rmcpLoad==='function') setTimeout(()=>{ _rmcpLoad(false).then(ch=>{ if(ch) _paintIntegrations(); }); }, 0); }catch(e){}
     if(!only){ _setAppendSection(pane, 'skills', null, 'Skills'); _setAppendSection(pane, 'api', null, 'API keys'); }
   } else if(sp==='skills'){
@@ -30103,6 +30128,46 @@ function openAuth(mode){
   document.getElementById('a-pass')?.addEventListener('keydown',e=>{if(e.key==='Enter')isL?doLoginForm():doSignupForm();});
   document.getElementById('a-email')?.addEventListener('keydown',e=>{if(e.key==='Enter')isL?doLoginForm():doSignupForm();});
 }
+
+/* SIGN IN WHERE YOU ARE, NOT "SIGN OUT AND BACK IN".
+
+   A device can look signed in - the name in the corner, the chats on screen -
+   while the server has no session for it: the renewal ran out after thirty
+   days unused, or it was made by a build whose sign-in lost the cookie. Every
+   screen then failed and told the owner to sign out and back in, which is two
+   steps, the first of them pointless, and loses where they were.
+
+   Now the page asks for the sign-in itself, with the email already filled in,
+   the moment the server says there is no session (never on a network failure).
+   Signing in keeps the tab they were on, keeps everything stored for the
+   account, and runs what they were doing - a Connect carries straight on.
+
+   Asked on its own at most once per page load, so dismissing it is respected;
+   a press of something that needs the session (`explicit`) asks again. */
+function _askToSignInAgain(then, explicit){
+  try{
+    if(!(S.user && S.user.email)) return;
+    const me = _askToSignInAgain;
+    if(typeof then === 'function') me.then = { fn: then, email: S.user.email };
+    if(document.getElementById('auth-bg')) return;
+    if(me.asked && !explicit) return;
+    me.asked = true;
+    openAuth('login');
+    const h = document.querySelector('#auth-bg h2'); if(h) h.textContent = T('Sign in to continue');
+    const sub = document.querySelector('#auth-bg .ob-sub');
+    if(sub) sub.textContent = T('Your sign-in on this device has ended. Sign in and AMV carries on where you were - your chats and connected apps are kept.');
+    const ef = document.getElementById('a-email'); if(ef) ef.value = S.user.email;
+    const pf = document.getElementById('a-pass'); if(pf) setTimeout(()=>{ try{ pf.focus(); }catch(e){} }, 50);
+  }catch(e){ try{ console.error('AMV: could not ask for a sign-in', e); }catch(_){} }
+}
+/* Run what the sign-in interrupted - only for the account that was asked for. */
+function _afterSignInAgain(email){
+  try{
+    const me = _askToSignInAgain, t = me.then; me.then = null; me.asked = false;
+    if(t && t.email === email) setTimeout(()=>{ try{ t.fn(); }catch(e){ console.error('AMV: could not resume after sign-in', e); } }, 250);
+  }catch(e){}
+}
+try{ window._askToSignInAgain=_askToSignInAgain; window._afterSignInAgain=_afterSignInAgain; }catch(e){}
 
 /* THE FIVE-STEP TOUR NOBODY EVER SAW.
 
@@ -30829,7 +30894,7 @@ async function _finishPendingConnect(){
        to finish with - hold the approval and ask for a sign-in, which finishes
        it (_setTokens calls back here). */
     const A = window.AMV_API;
-    const renewable = !!(A && (A.refreshTok || A.cookieAuth));
+    const renewable = !!(A && (A.refreshTok || A.cookieAuth || _authCreds() === 'include'));
     if(A && !A.token && renewable){
       try{ await A._doRefresh(); }catch(e){}
       if(!A.token){
@@ -30838,6 +30903,7 @@ async function _finishPendingConnect(){
           try{ sessionStorage.setItem(_pendingConnectKey(), JSON.stringify(p)); }catch(e){}
           toast('Sign in to finish connecting - AMV is holding your approval for a few minutes.', 'info', 10000);
         }
+        try{ if(A._refreshDenied) _askToSignInAgain(null, true); }catch(e){}
         return;
       }
     }
@@ -32029,16 +32095,37 @@ async function _connLoad(force){
     _connState = { state:'off', data:null, err:'' }; _connPaint(); return;
   }
   const gen = ++_connGen;
+  const before = _connSig(_connState.data);
   _connState.state = 'loading'; _connPaint();
   try{
     const d = await AMV_API.connectList();
     if(gen !== _connGen) return;
     _connState = { state:'done', data:d || null, err:'' };
+    /* THE ROWS, NOT ONLY THE LIST. _connPaint redraws the Connected accounts
+       block; the app rows below it ("✓ Connected", Disconnect) and the whole
+       Settings → Connectors pane are drawn from this same answer, and were
+       left as they were drawn - so after signing in on a new device, or
+       again on this one, Slack was connected on the server and said Connect
+       on the screen until something else happened to redraw it. Redrawn only
+       when what is connected changed, and not under somebody typing. */
+    if(_connSig(d) !== before){
+      const a = document.activeElement;
+      const typing = a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.closest && a.closest('#vc, #set-pane, .set-conn');
+      if(!typing && (S.tab==='integrations' || (S.tab==='settings' && S.settingsPane==='integrations'))){
+        try{ _paintIntegrations(); }catch(e){}
+        return;
+      }
+    }
   }catch(e){
     if(gen !== _connGen) return;
-    _connState = { state:'error', data:null, err:String((e&&e.message)||'').slice(0,120) };
+    _connState = { state:'error', data:null, err:String((e&&e.message)||'').slice(0,120), code:(e&&e.code)||'' };
   }
   _connPaint();
+}
+/* What is connected, as one comparable string. */
+function _connSig(d){
+  try{ return ((d && d.items) || []).map(i => i.provider+':'+(i.scopes||[]).join(',')+(i.broken?'!':'')).sort().join('|'); }
+  catch(e){ return ''; }
 }
 function _connPaint(){
   try{ const el=document.getElementById('conn-body'); if(el) el.innerHTML=_connBodyHTML(); }catch(e){}
@@ -32113,6 +32200,12 @@ async function connAddWhenReady(provider){
   if(!(_connState.data && (_connState.data.providers||[]).length)) await _connLoad(true);
   const d=_connState.data;
   if(!d){
+    /* Not signed in on this device any more: ask for the sign-in right here and
+       carry on with this Connect once it is done - never "sign out and back in". */
+    if(_connState && _connState.code==='unauthorized' && typeof _askToSignInAgain==='function'){
+      _askToSignInAgain(()=>connAddWhenReady(provider), true);
+      return;
+    }
     const why=(_connState && _connState.err) ? ' ('+_connState.err+')' : '';
     toast('Connected accounts could not be loaded, so AMV cannot start a sign-in just now'+why+'. Try again in a moment.','error',9000);
     return;

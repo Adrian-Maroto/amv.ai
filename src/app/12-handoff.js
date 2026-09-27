@@ -3067,6 +3067,11 @@ function _renderSetPaneInner(only, into){
     }
     _wireIntegrationCatalog(pane);
     _killTokenAutofill();
+    /* Asked for here too. This pane only filtered what was already loaded, so
+       on a device that had not opened Integrations first it said "Nothing is
+       connected yet" about an account with apps connected. The load repaints
+       this pane when the answer arrives (_connLoad). */
+    try{ if(!_guest && typeof _connLoad==='function') setTimeout(()=>_connLoad(false), 0); }catch(e){}
     try{ if(typeof _rmcpLoad==='function') setTimeout(()=>{ _rmcpLoad(false).then(ch=>{ if(ch) _paintIntegrations(); }); }, 0); }catch(e){}
     if(!only){ _setAppendSection(pane, 'skills', null, 'Skills'); _setAppendSection(pane, 'api', null, 'API keys'); }
   } else if(sp==='skills'){
@@ -3637,6 +3642,46 @@ function openAuth(mode){
   document.getElementById('a-pass')?.addEventListener('keydown',e=>{if(e.key==='Enter')isL?doLoginForm():doSignupForm();});
   document.getElementById('a-email')?.addEventListener('keydown',e=>{if(e.key==='Enter')isL?doLoginForm():doSignupForm();});
 }
+
+/* SIGN IN WHERE YOU ARE, NOT "SIGN OUT AND BACK IN".
+
+   A device can look signed in - the name in the corner, the chats on screen -
+   while the server has no session for it: the renewal ran out after thirty
+   days unused, or it was made by a build whose sign-in lost the cookie. Every
+   screen then failed and told the owner to sign out and back in, which is two
+   steps, the first of them pointless, and loses where they were.
+
+   Now the page asks for the sign-in itself, with the email already filled in,
+   the moment the server says there is no session (never on a network failure).
+   Signing in keeps the tab they were on, keeps everything stored for the
+   account, and runs what they were doing - a Connect carries straight on.
+
+   Asked on its own at most once per page load, so dismissing it is respected;
+   a press of something that needs the session (`explicit`) asks again. */
+function _askToSignInAgain(then, explicit){
+  try{
+    if(!(S.user && S.user.email)) return;
+    const me = _askToSignInAgain;
+    if(typeof then === 'function') me.then = { fn: then, email: S.user.email };
+    if(document.getElementById('auth-bg')) return;
+    if(me.asked && !explicit) return;
+    me.asked = true;
+    openAuth('login');
+    const h = document.querySelector('#auth-bg h2'); if(h) h.textContent = T('Sign in to continue');
+    const sub = document.querySelector('#auth-bg .ob-sub');
+    if(sub) sub.textContent = T('Your sign-in on this device has ended. Sign in and AMV carries on where you were - your chats and connected apps are kept.');
+    const ef = document.getElementById('a-email'); if(ef) ef.value = S.user.email;
+    const pf = document.getElementById('a-pass'); if(pf) setTimeout(()=>{ try{ pf.focus(); }catch(e){} }, 50);
+  }catch(e){ try{ console.error('AMV: could not ask for a sign-in', e); }catch(_){} }
+}
+/* Run what the sign-in interrupted - only for the account that was asked for. */
+function _afterSignInAgain(email){
+  try{
+    const me = _askToSignInAgain, t = me.then; me.then = null; me.asked = false;
+    if(t && t.email === email) setTimeout(()=>{ try{ t.fn(); }catch(e){ console.error('AMV: could not resume after sign-in', e); } }, 250);
+  }catch(e){}
+}
+try{ window._askToSignInAgain=_askToSignInAgain; window._afterSignInAgain=_afterSignInAgain; }catch(e){}
 
 /* THE FIVE-STEP TOUR NOBODY EVER SAW.
 
@@ -4363,7 +4408,7 @@ async function _finishPendingConnect(){
        to finish with - hold the approval and ask for a sign-in, which finishes
        it (_setTokens calls back here). */
     const A = window.AMV_API;
-    const renewable = !!(A && (A.refreshTok || A.cookieAuth));
+    const renewable = !!(A && (A.refreshTok || A.cookieAuth || _authCreds() === 'include'));
     if(A && !A.token && renewable){
       try{ await A._doRefresh(); }catch(e){}
       if(!A.token){
@@ -4372,6 +4417,7 @@ async function _finishPendingConnect(){
           try{ sessionStorage.setItem(_pendingConnectKey(), JSON.stringify(p)); }catch(e){}
           toast('Sign in to finish connecting - AMV is holding your approval for a few minutes.', 'info', 10000);
         }
+        try{ if(A._refreshDenied) _askToSignInAgain(null, true); }catch(e){}
         return;
       }
     }

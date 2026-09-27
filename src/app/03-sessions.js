@@ -348,6 +348,10 @@ function loginUser(acct) {
   try{ saveStr('amv_onboarded','1'); }catch(e){}
   // if a backend session exists, pull the user's data from the server and keep it synced
   _syncBootstrap();
+  /* A sign-in asked for mid-task: reload what the old session could not
+     fetch, and finish the thing that was interrupted. */
+  try{ if(typeof connReload==='function' && window.AMV_API && AMV_API.live) connReload(); }catch(e){}
+  try{ _afterSignInAgain(acct.email); }catch(e){}
 }
 /* SYNC STARTED IN ONE PLACE, AND IT WAS THE WRONG ONE.
 
@@ -1293,7 +1297,7 @@ async function _ensureBackendSession(){
          reload would have restored nothing: no token, no refresh attempted,
          and a person signed out by the act of pressing F5 with a valid session
          sitting in a cookie. */
-      if(AMV_API.refreshTok || AMV_API.cookieAuth){
+      if(AMV_API.refreshTok || AMV_API.cookieAuth || _authCreds() === 'include'){
         try{ await AMV_API._doRefresh(); }catch(e){ /* fall through */ }
       }
       // If refresh failed (or there was none), we keep whatever token we have;
@@ -1312,6 +1316,13 @@ async function _ensureBackendSession(){
         if(typeof setTab === 'function' && S && S.tab) setTab(S.tab);
         if(typeof updateSbUser === 'function') updateSbUser();
       }
+    }catch(e){}
+    /* The server says this device has no session and nothing here can renew
+       one: ask for the sign-in now, on this screen, rather than let every
+       screen fail one after another with "session expired". */
+    try{
+      if(window.AMV_API && AMV_API.live && AMV_API._refreshDenied && S.user && S.user.email
+         && !(AMV_API.token && AMV_API.tokenValid())) _askToSignInAgain();
     }catch(e){}
     /* The returning visit's door into sync. After the refresh, not before: a
        reload begins with no access token in hand, so asked any earlier this

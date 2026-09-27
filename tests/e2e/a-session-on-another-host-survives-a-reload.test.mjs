@@ -207,6 +207,88 @@ section('And after one more reload it is still connected, still signed in');
   ok(!r.err && r.items.includes('slack'), 'the connection and the session both survive', r);
 }
 
+/* ANOTHER DEVICE. A second browser with nothing in common with the first -
+   no storage, no cookies - is a phone or a laptop that has never seen AMV. */
+const device2 = await browser.newContext({ viewport: { width: 390, height: 844 } });
+const page2 = await device2.newPage();
+page2.on('pageerror', e => errors.push('device 2: ' + e.message));
+const signInOn = async (pg) => {
+  await until('the sign-in form', () => pg.evaluate(() => !!document.querySelector('#auth-submit')));
+  await pg.evaluate(() => {
+    const type = (sel, v) => { const el = document.querySelector(sel); if (el.value !== v) { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); } };
+    type('#a-email', 'kim@example.com'); type('#a-pass', 'A-real-Passw0rd!');
+    document.getElementById('auth-submit').click();
+  });
+  await until('the session', () => pg.evaluate(() => !!(S.user && AMV_API.token && !document.getElementById('auth-bg'))));
+};
+const slackShown = (pg, scope) => pg.evaluate((sc) =>
+  [...document.querySelectorAll(sc + ' .int-card')].some(c => /Slack/.test(c.textContent) && c.querySelector('.int-ok')), scope);
+
+section('Signed in on another device, the connection is already there');
+{
+  await page2.goto(SITE, { waitUntil: 'load' });
+  await page2.waitForTimeout(600);
+  await page2.evaluate(() => { try { localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true })); } catch (e) {} openAuth('login'); });
+  await signInOn(page2);
+  await page2.evaluate(() => setTab('integrations'));
+  const onIntegrations = await until('Slack on Integrations', () => slackShown(page2, '#app'), 15000).catch(() => false);
+  ok(onIntegrations, 'Integrations on the second device says Slack is connected - it was never connected there', true);
+  await page2.evaluate(() => { S.settingsPane = 'integrations'; setTab('settings'); });
+  const inSettings = await until('Slack in Settings', () => slackShown(page2, '.set-conn'), 15000).catch(() => false);
+  ok(inSettings, 'and so does Settings → Connectors', true);
+}
+
+section('A device whose sign-in has ended asks for it on the spot - no signing out');
+{
+  /* The owner's device: it still shows the account, but the server has no
+     session for it (made before the cookie fix, or thirty days unused). */
+  await page2.evaluate(() => setTab('integrations'));
+  await device2.clearCookies();
+  await page2.reload({ waitUntil: 'load' });
+  const asked = await until('the sign-in sheet', () => page2.evaluate(() => !!document.getElementById('auth-bg')), 15000).catch(() => false);
+  const sheet = await page2.evaluate(() => ({
+    title: (document.querySelector('#auth-bg h2') || {}).textContent || '',
+    email: (document.getElementById('a-email') || {}).value || '',
+    stillNamed: !!(S.user && S.user.email),
+  }));
+  ok(asked, 'the page asks for the sign-in by itself', sheet);
+  ok(/sign in to continue/i.test(sheet.title) && sheet.email === 'kim@example.com', 'as "Sign in to continue", with the email already filled in', sheet);
+  ok(sheet.stillNamed, 'and nobody had to sign out first', sheet);
+  await signInOn(page2);
+  const r = await page2.evaluate(() => ({ tab: S.tab }));
+  ok(r.tab === 'integrations', 'signing in keeps the page where it was', r);
+  const shown = await until('Slack after signing in', () => slackShown(page2, '#app'), 15000).catch(() => false);
+  ok(shown, 'and Slack shows as connected straight away', true);
+}
+
+section('Connect pressed with an ended sign-in asks, then carries on with the Connect');
+{
+  /* The sheet was offered on arrival and closed; then Connect is pressed. */
+  await device2.clearCookies();
+  await page2.reload({ waitUntil: 'load' });
+  await until('the sign-in sheet', () => page2.evaluate(() => !!document.getElementById('auth-bg')), 15000);
+  await page2.evaluate(() => document.getElementById('auth-x').click());
+  await until('the sheet to close', () => page2.evaluate(() => !document.getElementById('auth-bg')));
+  await page2.evaluate(() => { connAddWhenReady('slack'); });
+  const asked = await until('the sign-in sheet', () => page2.evaluate(() => !!document.getElementById('auth-bg')), 15000).catch(() => false);
+  ok(asked, 'Connect asks for the sign-in again instead of failing', true);
+  const toasts = await page2.evaluate(() => [...document.querySelectorAll('.toast')].map(t => t.textContent).join(' | '));
+  ok(!/sign out/i.test(toasts), 'and nothing says "sign out and back in"', toasts);
+  await signInOn(page2);
+  const picker = await until('the Connect choice', () => page2.evaluate(() => !!document.getElementById('conn-go')), 15000).catch(() => false);
+  ok(picker, 'after signing in, the Connect it interrupted opens by itself', true);
+  await page2.evaluate(() => { const c = document.getElementById('conn-cancel'); if (c) c.click(); });
+}
+
+section('Settings → Connectors opened first, before Integrations, still shows it');
+{
+  /* As on a device that goes straight to Settings: nothing loaded yet. */
+  await page2.evaluate(() => { setTab('chat'); _connTried = ''; _connState = { state: 'idle', data: null, err: '' }; S.settingsPane = 'integrations'; setTab('settings'); });
+  const shown = await until('Slack in Settings', () => slackShown(page2, '.set-conn'), 15000).catch(() => false);
+  const text = await page2.evaluate(() => ((document.querySelector('.set-conn') || {}).textContent || '').slice(0, 120));
+  ok(shown, 'Settings asks the server itself and lists Slack - not "Nothing is connected yet"', text);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

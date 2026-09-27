@@ -105,11 +105,16 @@ section('When the list cannot load, Connect says why');
     const out = {};
     try {
       out.expired = await run({ ok: false, status: 401, json: async () => ({ error: 'unauthorized' }) });
+      out.sheet = ((document.querySelector('#auth-bg h2') || {}).textContent) || '';
+      try { closeOvr(); } catch (e) {}
       out.html = await run({ ok: false, status: 502, json: async () => { throw new Error('Unexpected token <'); } });
     } finally { AMV_API._fetch = realFetch; window.toast = realToast; }
     return out;
   });
-  ok(/could not be loaded/.test(r.expired) && /sign-in has expired/.test(r.expired), 'an expired sign-in is named, not read as "switched off"', r.expired);
+  /* An ended sign-in is not a failure to report but a sign-in to ask for: the
+     sheet opens, on this screen, and the Connect carries on after it. */
+  ok(/sign in to continue/i.test(r.sheet) && !/switched on|could not be loaded/.test(r.expired),
+     'an expired sign-in asks for the sign-in, not read as "switched off"', r);
   ok(/502/.test(r.html), 'and a broken reply names the status the server gave', r.html);
 }
 

@@ -1035,7 +1035,7 @@ function aegisErrorMessage(status, raw){
      facts and only one of them is true at a time. */
   if(r.includes('at capacity')) return raw || 'AMV is at capacity right now. Please try again shortly.';
   if(status===401||r.includes('authentication')||r.includes('invalid x-api-key')||r.includes('sign in again'))
-    return 'Your session needs a refresh - sign out and back in. (If self-hosting, re-check your API key in Settings.)';
+    return 'Your sign-in on this device has ended - sign in again to continue. (If self-hosting, re-check your API key in Settings.)';
   if(status===403) return 'Access forbidden (403). This key lacks permission for this model or endpoint.';
   if(status===429||r.includes('rate')) return 'Too many requests right now (429). Give it a few seconds and try again.';
   if(status===400||r.includes('invalid_request')) return 'The request was malformed (400). '+(raw||'').slice(0,140);
@@ -1055,7 +1055,7 @@ function _aiFriendly(msg){
   if(/out of usage|usage limit|daily|window/.test(m)) return msg;   // already friendly + actionable
   if(/rate|429|too many/.test(m)) return 'Too many requests right now. Give it a few seconds and try again.';
   if(/network|failed to fetch|offline|timed out|timeout/.test(m)) return 'AMV couldn’t reach the network. Check your connection and try again.';
-  if(/401|auth|sign in|session/.test(m)) return 'Your session needs a refresh - sign out and back in.';
+  if(/401|auth|sign in|session/.test(m)) return 'Your sign-in on this device has ended - sign in again to continue.';
   if(/413|too long|too large|context/.test(m)) return 'This is a bit too long to process at once. Try trimming it and running again.';
   if(/5\d\d|529|temporary|capacity/.test(m)) return 'AMV had a brief hiccup. Please try again in a moment.';
   return 'AMV hit a snag. Please try again.';

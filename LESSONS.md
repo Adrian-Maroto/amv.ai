@@ -13779,3 +13779,22 @@ Rules:
 - The page learns the session mode from the server (`cookieSession` in the
   public config) before it signs anyone in, so the first sign-in is already
   credentialed rather than the second.
+
+## 529. "Sign out and back in" is a symptom, not an instruction
+
+Every screen that met an ended session told the owner to sign out and back in.
+That is two steps where one will do, the first of them pointless, and it throws
+away where they were. It also hid a second defect: the app rows and the
+Settings → Connectors pane were drawn from the connections list once and never
+redrawn when it arrived, so on a fresh sign-in Slack was connected on the
+server and said Connect on the screen - and Settings, opened first, said
+"Nothing is connected yet" because it never asked.
+
+Rules:
+- When the server says a device has no session (not when it cannot be
+  reached), ask for the sign-in on the spot, email filled in, and resume what
+  was interrupted. Signing in again keeps the tab and everything stored.
+- A screen drawn from data that loads later is redrawn when that data changes,
+  or it is a screenshot of the moment before the answer came.
+- "Shows on every device" is tested with a second browser that shares nothing
+  with the first, not assumed from the data living on the server.

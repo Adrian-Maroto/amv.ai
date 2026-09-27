@@ -825,12 +825,15 @@ const AMV_API = {
       /* Cookie mode has no refresh token on this side to test for, and that
          is the whole point of it - the browser carries one. Without this the
          401 retry never fired for exactly the deployments the cookie is for. */
-      if(!_retried && (this.refreshTok || this.cookieAuth)){
+      if(!_retried && (this.refreshTok || this.cookieAuth || _authCreds() === 'include')){
         const refreshed = await this._doRefresh();
         if(refreshed){
           // re-run through _fetch so the token is re-attached under the origin guard
           return this._fetch(path, opts||{}, true);
         }
+        /* Nothing left on this device to renew with: ask for the sign-in here,
+           once, rather than leaving every screen to fail with a message. */
+        if(this._refreshDenied){ try{ if(typeof _askToSignInAgain === 'function') _askToSignInAgain(); }catch(e){} }
       }
       throw new Error('Session expired - sign in again');
     }
@@ -919,7 +922,8 @@ const AMV_API = {
       try{
         /* In cookie mode the browser carries the token and this side may have
            nothing - which is the point, and is not a reason to give up. */
-        if(!this.refreshTok && !this.cookieAuth) return false;
+        this._refreshDenied = false;
+        if(!this.refreshTok && !this.cookieAuth && _authCreds() !== 'include') return false;
         /* THE SAME BINDING `_fetch` APPLIES, APPLIED HERE TOO.
 
            `_fetch` refused to attach the bearer token to an origin it was not
@@ -941,7 +945,12 @@ const AMV_API = {
           body: JSON.stringify(this.refreshTok ? { refreshToken: this.refreshTok } : {}),
           signal: ctrl ? ctrl.signal : undefined
         });
-        if(!r.ok) return false;
+        /* THE SERVER SAID THERE IS NO SESSION - which is a different fact from
+           "the server could not be reached", and the screen answers it
+           differently: it asks for a sign-in on the spot instead of saying
+           "sign out and back in". A network failure never sets this, so an
+           outage cannot put a sign-in sheet in front of anybody. */
+        if(!r.ok){ this._refreshDenied = (r.status === 400 || r.status === 401 || r.status === 403); return false; }
         const d = await r.json().catch(()=>({}));
         /* Signed out while this was in flight: the answer is real, and it is
            for a session that no longer exists. Dropped rather than applied. */
@@ -1195,11 +1204,11 @@ const AMV_API = {
     try{ r=await this._fetch('/v1/connect/list'); }
     catch(e){
       const m=String((e&&e.message)||'');
-      if(/session expired|sign in again/i.test(m)) throw Object.assign(new Error('your sign-in has expired - sign out and back in'), { code:'unauthorized' });
+      if(/session expired|sign in again/i.test(m)) throw Object.assign(new Error('your sign-in on this device has ended - sign in to continue'), { code:'unauthorized' });
       throw new Error('AMV\u2019s server could not be reached'+(m?' ('+m.slice(0,80)+')':''));
     }
     const d=await r.json().catch(()=>null);
-    if(r.status===401) throw Object.assign(new Error('your sign-in has expired - sign out and back in'), { code:'unauthorized' });
+    if(r.status===401) throw Object.assign(new Error('your sign-in on this device has ended - sign in to continue'), { code:'unauthorized' });
     if(!r.ok || !d || d.error) throw new Error((d&&(d.message||d.error)) || ('the server answered '+r.status));
     return d;
   },

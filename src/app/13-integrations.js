@@ -1103,16 +1103,37 @@ async function _connLoad(force){
     _connState = { state:'off', data:null, err:'' }; _connPaint(); return;
   }
   const gen = ++_connGen;
+  const before = _connSig(_connState.data);
   _connState.state = 'loading'; _connPaint();
   try{
     const d = await AMV_API.connectList();
     if(gen !== _connGen) return;
     _connState = { state:'done', data:d || null, err:'' };
+    /* THE ROWS, NOT ONLY THE LIST. _connPaint redraws the Connected accounts
+       block; the app rows below it ("✓ Connected", Disconnect) and the whole
+       Settings → Connectors pane are drawn from this same answer, and were
+       left as they were drawn - so after signing in on a new device, or
+       again on this one, Slack was connected on the server and said Connect
+       on the screen until something else happened to redraw it. Redrawn only
+       when what is connected changed, and not under somebody typing. */
+    if(_connSig(d) !== before){
+      const a = document.activeElement;
+      const typing = a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.closest && a.closest('#vc, #set-pane, .set-conn');
+      if(!typing && (S.tab==='integrations' || (S.tab==='settings' && S.settingsPane==='integrations'))){
+        try{ _paintIntegrations(); }catch(e){}
+        return;
+      }
+    }
   }catch(e){
     if(gen !== _connGen) return;
-    _connState = { state:'error', data:null, err:String((e&&e.message)||'').slice(0,120) };
+    _connState = { state:'error', data:null, err:String((e&&e.message)||'').slice(0,120), code:(e&&e.code)||'' };
   }
   _connPaint();
+}
+/* What is connected, as one comparable string. */
+function _connSig(d){
+  try{ return ((d && d.items) || []).map(i => i.provider+':'+(i.scopes||[]).join(',')+(i.broken?'!':'')).sort().join('|'); }
+  catch(e){ return ''; }
 }
 function _connPaint(){
   try{ const el=document.getElementById('conn-body'); if(el) el.innerHTML=_connBodyHTML(); }catch(e){}
@@ -1187,6 +1208,12 @@ async function connAddWhenReady(provider){
   if(!(_connState.data && (_connState.data.providers||[]).length)) await _connLoad(true);
   const d=_connState.data;
   if(!d){
+    /* Not signed in on this device any more: ask for the sign-in right here and
+       carry on with this Connect once it is done - never "sign out and back in". */
+    if(_connState && _connState.code==='unauthorized' && typeof _askToSignInAgain==='function'){
+      _askToSignInAgain(()=>connAddWhenReady(provider), true);
+      return;
+    }
     const why=(_connState && _connState.err) ? ' ('+_connState.err+')' : '';
     toast('Connected accounts could not be loaded, so AMV cannot start a sign-in just now'+why+'. Try again in a moment.','error',9000);
     return;
