@@ -220,5 +220,59 @@ section('Each revoke reaches its endpoint the way that provider wants');
   ok(none.tried === false, 'Spotify has no revoke endpoint, and none is invented', none);
 }
 
+section('Removing one app while another renews does not undo the renewal');
+{
+  /* Disconnecting waits on the provider's revoke endpoint - seconds, on a bad
+     day - and used to save the whole record it read BEFORE the wait. Anything
+     another request changed in between was undone: here, Dropbox renewing its
+     rotating token while Slack is being removed. The saved record then held
+     the Dropbox refresh token Dropbox had just retired. */
+  const env = mkEnv(), t = await tok(env);
+  await connect(env, t, 'slack', ['slack.read'], () => ({ ok: true, authed_user: { access_token: 'xoxp', token_type: 'user' } }));
+  await connect(env, t, 'dropbox', ['dropbox.read'], () => ({ access_token: 'DB-1', refresh_token: 'DB-R1', expires_in: 1 }));
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const u = String(url && url.url ? url.url : url);
+    if (u === W.CONN_PROVIDERS.slack.revoke) { await new Promise(r => setTimeout(r, 120)); return new Response('{"ok":true}', { status: 200 }); }
+    if (u === W.CONN_PROVIDERS.dropbox.token) return new Response(JSON.stringify({ access_token: 'DB-2', refresh_token: 'DB-R2', expires_in: 14400 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return real(url, init);
+  };
+  let rm, used;
+  try {
+    const slackId = Object.keys(await W.DB.get(env, W.CONN_KV, ME)).find(k => k.startsWith('slack'));
+    [rm, used] = await Promise.all([
+      call(env, '/v1/connect/remove', { id: slackId }, t),
+      (async () => { await new Promise(r => setTimeout(r, 20));
+                     return call(env, '/v1/connect/api', { provider: 'dropbox', method: 'POST', path: 'users/get_current_account' }, t); })(),
+    ]);
+  } finally { globalThis.fetch = real; }
+  ok(rm.status === 200 && used.status === 200, 'both finished', [rm.status, used.status]);
+  const all = await W.DB.get(env, W.CONN_KV, ME);
+  ok(!Object.keys(all).some(k => k.startsWith('slack')), 'Slack is gone', Object.keys(all));
+  const dbx = Object.values(all).find(c => c.provider === 'dropbox');
+  const opened = dbx && await W.connOpen(env, dbx.sealed);
+  ok(opened && opened.access === 'DB-2' && opened.refresh === 'DB-R2',
+     'and Dropbox keeps the token it renewed during the removal', opened && { access: opened.access, refresh: opened.refresh });
+}
+
+section('Two sign-ins finishing at once are both kept');
+{
+  /* Two tabs, or a sign-in finishing while a job stamps "last used": each used
+     to save the record it read before sealing the token, and the later save
+     dropped the other's new connection. */
+  const env = mkEnv(), t = await tok(env);
+  const starts = {};
+  for (const pid of ['spotify', 'dropbox']) {
+    const st = await call(env, '/v1/connect/start', { provider: pid, scopes: [pid + '.read'], redirect: 'https://amv.test/' }, t);
+    starts[pid] = new URL(st.d.url).searchParams.get('state');
+  }
+  const [a, b] = await Promise.all(['spotify', 'dropbox'].map(pid =>
+    call(env, '/v1/connect/finish', { code: 'code-' + pid, state: starts[pid] }, t)));
+  ok(a.status === 200 && b.status === 200, 'both sign-ins completed', [a.status, b.status]);
+  const all = await W.DB.get(env, W.CONN_KV, ME);
+  const kept = Object.values(all).map(c => c.provider).sort();
+  ok(kept.join() === 'dropbox,spotify', 'and both are in the record', kept);
+}
+
 if (report('an-app-with-a-public-api-connects-and-stays-in-its-lane') > 0) process.exitCode = 1;
 done();

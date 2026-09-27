@@ -193,7 +193,7 @@ section('The path that uses a token is the path that migrates it');
   /* The write is a merge into the current record now (a whole-map save put
      back whatever another request had changed), but it is still the one write
      the re-seal rides on. */
-  ok(fn.indexOf('connIsPrimary') >= 0 && fn.indexOf('connIsPrimary') < fn.indexOf('_withKind(env, CONN_KV, email, stamp'),
+  ok(fn.indexOf('connIsPrimary') >= 0 && fn.indexOf('connIsPrimary') < fn.indexOf('_connMerge(env, email, stamp)'),
      'before the write it rides on, or it would need a second one', true);
   ok(/connect_key_retired/.test(fn),
      'and a record it cannot read at all is reported as a retired key, not as corruption', true);

@@ -1883,3 +1883,10 @@ Workers KV takes up to a minute to show a write at another edge, so two
 requests landing at different edges can still miss each other; the
 look-again covers the same edge, which is where two requests from one person
 usually land.
+
+Continued, same round - every write to somebody's connections is a merge:
+
+| # | what was broken | caught by |
+|---|---|---|
+| 245 | removing a connection saves the record read before the revoke call | 1 assertion |
+| 246 | finishing a sign-in saves the record read before sealing the token (the exact original code, not only an exaggerated delay) | 1 assertion |

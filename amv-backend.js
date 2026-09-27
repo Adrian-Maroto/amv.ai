@@ -2822,6 +2822,23 @@ async function _connTokenRequest(env, p, params){
    without rotation). Treating it as an hour, which this used to, made every
    such connection report expired after sixty minutes with nothing to refresh. */
 function _connExpiry(d){ const n = Number(d && d.expires_in); return n > 0 ? Date.now() + n * 1000 : 0; }
+/* EVERY WRITE TO SOMEBODY'S CONNECTIONS IS A CHANGE TO THE RECORD AS IT IS NOW.
+
+   Adding, removing and using a connection each used to read the whole map,
+   wait - on a provider's token or revoke endpoint, for seconds - and save the
+   whole map back. Whatever another request changed during the wait was undone:
+   a token renewed, a connection added, one removed. So each is a mutation
+   applied under the record lock; if the lock is busy it is applied to a fresh
+   read, which is still the record as it is now rather than as it was. */
+async function _connMerge(env, email, mutate){
+  try{ return await _withKind(env, CONN_KV, email, mutate, {}); }
+  catch(_l){
+    const cur = (await DB.get(env, CONN_KV, email)) || {};
+    const out = await mutate(cur);
+    await DB.put(env, CONN_KV, email, cur);
+    return out;
+  }
+}
 /* And one revocation, for disconnecting and for account erasure. */
 async function _connRevokeRequest(env, p, tok){
   if(!p || !p.revoke) return { tried:false, ok:false };
@@ -3038,8 +3055,7 @@ async function connFinish(request, env){
      feature exists for, and saying so now beats a job that quietly stops
      working in an hour. */
   const connId = st.provider + ':' + _connRandom(8);
-  const all = (await DB.get(env, CONN_KV, user.email)) || {};
-  all[connId] = {
+  const entry = {
     provider: st.provider, scopes: st.scopes, at: Date.now(),
     unattended: !!d.refresh_token || !_connExpiry(d),
     sealed: await connSeal(env, {
@@ -3048,7 +3064,7 @@ async function connFinish(request, env){
     }),
     lastUsed: 0, lastJob: '',
   };
-  await DB.put(env, CONN_KV, user.email, all);
+  await _connMerge(env, user.email, (rec) => { rec[connId] = entry; });
   const lasting = !!d.refresh_token || !_connExpiry(d);
   audit(env, 'conn_added', { by:user.email, provider:st.provider, scopes:st.scopes, unattended:lasting });
 
@@ -3182,7 +3198,7 @@ async function connUse(env, email, need, jobId, opts){
            a job failing silently every morning for a fortnight - and marked on
            the record as it is now, only if it is still the one that failed. */
         const why = String(d.error||'refresh_failed').slice(0,60);
-        try{ await _withKind(env, CONN_KV, email, (rec) => { if(rec && rec[id] && rec[id].sealed === c.sealed) rec[id].broken = why; }, {}); }catch(_m){}
+        try{ await _connMerge(env, email, (rec) => { if(rec[id] && rec[id].sealed === c.sealed) rec[id].broken = why; }); }catch(_m){}
         audit(env, 'conn_refresh_failed', { by:email, id, why });
         return { ok:false, code:'refresh_failed', id, why };
       }
@@ -3215,13 +3231,9 @@ async function connUse(env, email, need, jobId, opts){
     r.lastUsed = Date.now(); r.lastJob = lastJob;
     if(write){ r.sealed = c.sealed; delete r.broken; }
   };
-  try{ await _withKind(env, CONN_KV, email, stamp, {}); }
-  catch(_l){
-    /* The lock was busy. A missed "last used" is nothing; a renewed token that
-       is not saved is a spent refresh token and a dead connection - so that
-       one is written anyway, still into the current record. */
-    if(write){ const cur = (await DB.get(env, CONN_KV, email)) || {}; stamp(cur); await DB.put(env, CONN_KV, email, cur); }
-  }
+  /* A renewed token that is not saved is a spent refresh token and a dead
+     connection, so this write is not skipped when the lock is busy. */
+  await _connMerge(env, email, stamp);
   audit(env, 'conn_used', { by:email, id, provider:c.provider, need, job:c.lastJob, attended:!!o.attended });
 
   return { ok:true, id, provider:c.provider, token: tok.access };
@@ -3741,8 +3753,7 @@ async function connRemove(request, env){
   /* Forgotten either way. Keeping a token AMV could not revoke would be holding
      a credential the person has asked it to stop holding - the honest failure
      is to drop it here and tell them to finish the job at the provider. */
-  delete all[id];
-  await DB.put(env, CONN_KV, user.email, all);
+  await _connMerge(env, user.email, (rec) => { delete rec[id]; });
   audit(env, 'conn_removed', { by:user.email, provider:c.provider, revoked, why });
 
   return json({ ok:true, revoked,
