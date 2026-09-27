@@ -877,6 +877,8 @@ const AMV_API = {
     { const e=new Error(d.error || 'Login failed'); if(d.code) e.code=d.code; throw e; }
   },
   _setTokens(d){
+    /* A session is in hand: whatever the server said about the last one is over. */
+    this._refreshDenied = false;
     /* Set BEFORE the token is stored: the setter below reads it to decide
        whether the refresh token may touch storage at all. */
     if(d && d.refreshInCookie) this.cookieAuth = true;

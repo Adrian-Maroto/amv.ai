@@ -877,6 +877,8 @@ const AMV_API = {
     { const e=new Error(d.error || 'Login failed'); if(d.code) e.code=d.code; throw e; }
   },
   _setTokens(d){
+    /* A session is in hand: whatever the server said about the last one is over. */
+    this._refreshDenied = false;
     /* Set BEFORE the token is stored: the setter below reads it to decide
        whether the refresh token may touch storage at all. */
     if(d && d.refreshInCookie) this.cookieAuth = true;
@@ -4286,6 +4288,11 @@ function loginUser(acct) {
   /* A sign-in asked for mid-task: reload what the old session could not
      fetch, and finish the thing that was interrupted. */
   try{ if(typeof connReload==='function' && window.AMV_API && AMV_API.live) connReload(); }catch(e){}
+  /* And the apps signed in to by name (Notion, Canva...). That list is asked
+     once per account, so a failed ask made before this sign-in - same account,
+     same answer to "have I asked?" - was never repeated, and those apps read
+     as not connected until the page was reloaded. */
+  try{ if(typeof rmcpReload==='function' && window.AMV_API && AMV_API.live) rmcpReload().then(ch=>{ if(ch && typeof _paintIntegrations==='function') _paintIntegrations(); }).catch(()=>{}); }catch(e){}
   try{ _afterSignInAgain(acct.email); }catch(e){}
 }
 /* SYNC STARTED IN ONE PLACE, AND IT WAS THE WRONG ONE.

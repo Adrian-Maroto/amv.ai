@@ -351,6 +351,11 @@ function loginUser(acct) {
   /* A sign-in asked for mid-task: reload what the old session could not
      fetch, and finish the thing that was interrupted. */
   try{ if(typeof connReload==='function' && window.AMV_API && AMV_API.live) connReload(); }catch(e){}
+  /* And the apps signed in to by name (Notion, Canva...). That list is asked
+     once per account, so a failed ask made before this sign-in - same account,
+     same answer to "have I asked?" - was never repeated, and those apps read
+     as not connected until the page was reloaded. */
+  try{ if(typeof rmcpReload==='function' && window.AMV_API && AMV_API.live) rmcpReload().then(ch=>{ if(ch && typeof _paintIntegrations==='function') _paintIntegrations(); }).catch(()=>{}); }catch(e){}
   try{ _afterSignInAgain(acct.email); }catch(e){}
 }
 /* SYNC STARTED IN ONE PLACE, AND IT WAS THE WRONG ONE.

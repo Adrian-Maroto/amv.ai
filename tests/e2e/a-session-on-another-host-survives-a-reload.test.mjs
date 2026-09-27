@@ -259,6 +259,10 @@ section('A device whose sign-in has ended asks for it on the spot - no signing o
   ok(r.tab === 'integrations', 'signing in keeps the page where it was', r);
   const shown = await until('Slack after signing in', () => slackShown(page2, '#app'), 15000).catch(() => false);
   ok(shown, 'and Slack shows as connected straight away', true);
+  /* The other list - apps signed in to by name - failed with the session and
+     has to be asked again too, or those apps read as not connected. */
+  const rm = await until('the app list', () => page2.evaluate(() => _RMCP.state === 'done'), 10000).catch(() => false);
+  ok(rm, 'and the list of apps signed in to by name is asked again, not left failed', await page2.evaluate(() => _RMCP.state));
 }
 
 section('Connect pressed with an ended sign-in asks, then carries on with the Connect');
