@@ -269,6 +269,25 @@ section('A refusal or an outage says so, rather than showing a stale all-clear')
   await openPlatform();
   await page.waitForFunction(() => /rejected/.test(document.getElementById('golive-body').textContent), { timeout: 15000 });
   ok(/rejected/.test(await golive()), 'a bad token is reported as a bad token');
+  /* ...and forgotten, with the box to paste another back on screen. It used to
+     keep the rejected token, so after ADMIN_TOKEN was rotated the screen could
+     only ever say "rejected" until the tab was reloaded - seen by the owner. */
+  const after = await page.evaluate(async () => {
+    const out = { kept: _adminToken(), box: !!document.getElementById('gl-tok'), sent: [] };
+    if (!out.box) return out;   // named as a failure below, rather than thrown
+    window.fetchDeadline = async (url, init) => {
+      window.__calls.push({ url: String(url), auth: (init && init.headers && init.headers.Authorization) || '' });
+      return { ok: true, status: 200, json: async () => ({ ok: true, items: [], storage: [], tuning: [], groupOrder: [], summary: { on: 0, total: 0, blockingMissing: 0, verdict: 'Everything is configured.' } }) };
+    };
+    window.__calls.length = 0;
+    document.getElementById('gl-tok').value = 'the-new-token';
+    document.getElementById('gl-tok-go').click();
+    await new Promise(r => setTimeout(r, 300));
+    out.sent = window.__calls.map(c => c.auth);
+    return out;
+  });
+  ok(after.kept === '' && after.box, 'the rejected token is dropped and the box to paste another is back', after);
+  ok(after.sent.length === 1 && after.sent[0] === 'Bearer the-new-token', 'and the next check sends the new one', after.sent);
 
   await wire({ throws: true });
   await openPlatform();

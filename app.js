@@ -27352,7 +27352,8 @@ async function _loadPayouts(){
   try{
     const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/payouts',{headers:{'Authorization':'Bearer '+tok}},15000);
     const d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.ok){ host.innerHTML='<h3>Payouts owed</h3><div class="fd-empty">'+(r.status===403?'That admin token was rejected.':'Could not load payouts.')+'</div>'; return; }
+    if(r.status===403) _forgetRejectedAdminToken();
+    if(!r.ok||!d.ok){ host.innerHTML='<h3>Payouts owed</h3><div class="fd-empty">'+(r.status===403?'That admin token was rejected. Enter the current one to try again.':'Could not load payouts.')+'</div>'; return; }
     _payoutsPaint(host, d);
   }catch(e){ host.innerHTML='<h3>Payouts owed</h3><div class="fd-empty">Could not reach the backend, so this would be out of date.</div>'; }
 }
@@ -27450,7 +27451,8 @@ async function _loadReports(){
   try{
     const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/reports',{headers:{'Authorization':'Bearer '+tok}},15000);
     const d=await r.json().catch(()=>({}));
-    if(!r.ok||!d.ok){ host.innerHTML='<h3>Reported listings</h3><div class="fd-empty">'+(r.status===403?'That admin token was rejected.':'Could not load reports.')+'</div>'; return; }
+    if(r.status===403) _forgetRejectedAdminToken();
+    if(!r.ok||!d.ok){ host.innerHTML='<h3>Reported listings</h3><div class="fd-empty">'+(r.status===403?'That admin token was rejected. Enter the current one to try again.':'Could not load reports.')+'</div>'; return; }
     _reportsPaint(host, d);
   }catch(e){ host.innerHTML='<h3>Reported listings</h3><div class="fd-empty">Could not reach the backend, so this would be out of date.</div>'; }
 }
@@ -27874,7 +27876,19 @@ function _paintWidgetForm(body, cfg, base){
 
 /* Ask the server what is configured. Needs the admin token, because the shape
    of a deployment is operator information. */
-async function _loadReadiness(){
+/* A REJECTED TOKEN IS DROPPED, EVERYWHERE IT IS KEPT.
+
+   Platform stats already did this. Go-live status, payouts and reports did
+   not: they showed "rejected" and kept the token - in memory and in the
+   dashboard's token field - so the next attempt sent the same one, and the
+   box to paste another never came back. After rotating ADMIN_TOKEN that is a
+   screen that can only ever say "rejected" until the tab is reloaded. */
+function _forgetRejectedAdminToken(){
+  try{ if(typeof _clearAdminToken==='function') _clearAdminToken(); }catch(e){}
+  try{ const f=$('fd-token'); if(f) f.value=''; }catch(e){}
+}
+try{ window._forgetRejectedAdminToken=_forgetRejectedAdminToken; }catch(e){}
+async function _loadReadiness(note){
   const host = $('golive-body'); if(!host) return;
   const base = apiBase()||'';
   const tok = ($('fd-token') && $('fd-token').value || '').trim()
@@ -27884,6 +27898,7 @@ async function _loadReadiness(){
     /* Ask right here rather than sending the operator to another screen. This
        is the page they are on at the exact moment they are pasting secrets. */
     host.innerHTML =
+      (note ? '<div class="gl-note" role="alert">'+escH(note)+'</div>' : '')+
       '<div class="gl-note">Your admin token reads this from the Worker. It is kept in memory for this tab only.</div>'+
       '<div class="adm-tokrow" style="margin-top:10px">'+
         '<label class="sr-only" for="gl-tok">Admin token</label>'+
@@ -27903,7 +27918,11 @@ async function _loadReadiness(){
   try{
     const r = await fetchDeadline(base.replace(/\/$/,'')+'/admin/readiness', { headers:{ 'Authorization':'Bearer '+tok } }, 15000);
     const d = await r.json().catch(()=>({}));
-    if(!r.ok || !d.ok){ host.innerHTML = '<div class="gl-note">'+(r.status===403?'That admin token was rejected.':escH(d.error||'Could not read your configuration.'))+'</div>'; return; }
+    if(r.status===403){
+      _forgetRejectedAdminToken();
+      return _loadReadiness('That admin token was rejected. Paste the current value of ADMIN_TOKEN from Cloudflare - exactly, with no quotes or spaces.');
+    }
+    if(!r.ok || !d.ok){ host.innerHTML = '<div class="gl-note">'+escH(d.error||'Could not read your configuration.')+'</div>'; return; }
     host.innerHTML = _readinessHTML(d);
   }catch(e){
     host.innerHTML = '<div class="gl-note">Could not reach your Worker, so this would be out of date. It will load when you are back online.</div>';
