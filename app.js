@@ -45433,7 +45433,13 @@ async function runMcpTool(name, args){
     const a = args || {};
     try{
       const d = await AMV_API.connectApi(app.slug, a.method || 'GET', a.path || '', a.query, a.body);
-      return { ok: d.status < 400, text: 'HTTP ' + d.status + '\n' + String(d.body || '') };
+      /* Slack answers a refusal with HTTP 200 and {"ok":false} - a channel
+         that does not exist, a missing permission. Read by status alone that
+         was a success, and the screen said done for a message nobody got. A
+         body that says ok:false is a failure whatever the status. */
+      let said = null; try{ said = JSON.parse(String(d.body || '')); }catch(e){}
+      const refused = !!(said && typeof said === 'object' && said.ok === false);
+      return { ok: d.status < 400 && !refused, text: 'HTTP ' + d.status + '\n' + String(d.body || '') };
     }catch(e){
       return { ok:false, text: app.name + ': ' + String((e && e.message) || 'that did not work') };
     }

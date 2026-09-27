@@ -175,7 +175,12 @@ section('An app with a public API: Connect loads what it needs, and chat calls i
     out.tool = t && t.name; out.desc = t && t.description; out.build = mcpTools().some(x => /api-slack/.test(x.name));
     out.who = t && mcpToolIdentity(t.name);
     out.res = t ? await runMcpTool(t.name, { method: 'GET', path: 'conversations.list', query: { limit: 5 } }) : null;
-    out.api = seen.api;
+    out.api = seen.api.slice();
+    /* Slack refuses with HTTP 200 and {"ok":false}. */
+    const realApi = AMV_API.connectApi;
+    AMV_API.connectApi = async () => ({ ok: true, status: 200, body: '{"ok":false,"error":"channel_not_found"}' });
+    out.refused = t ? await runMcpTool(t.name, { method: 'POST', path: 'chat.postMessage', body: { channel: '#nope', text: 'hi' } }) : null;
+    AMV_API.connectApi = realApi;
     return out;
   });
   ok(r.conn === 'prov' && r.preset === 'slack', 'Slack has Connect, through its own sign-in', r);
@@ -186,6 +191,8 @@ section('An app with a public API: Connect loads what it needs, and chat calls i
   ok(r.who && r.who.name === 'Slack' && r.who.remote, 'named Slack for the consent dialog', r.who);
   ok(r.api.length === 1 && r.api[0].provider === 'slack' && r.api[0].method === 'GET' && r.api[0].path === 'conversations.list' && r.api[0].query.limit === 5, 'the call goes to the server, for Slack, as asked', r.api);
   ok(r.res && r.res.ok && /^HTTP 200/.test(r.res.text), 'and its answer comes back to chat', r.res);
+  ok(r.refused && r.refused.ok === false && /channel_not_found/.test(r.refused.text),
+     'a refusal Slack sends as HTTP 200 is a failure, with Slack\u2019s reason', r.refused);
 }
 
 section('A computer connector cannot take an app’s name');
