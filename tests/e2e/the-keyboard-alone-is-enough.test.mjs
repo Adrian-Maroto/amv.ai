@@ -131,6 +131,38 @@ section('A dialog takes focus, keeps it, and gives it back');
   ok(noRestore.length === 0, 'and focus goes back where it came from', noRestore);
 }
 
+section('A dialog says it is a dialog, and what it is about');
+{
+  /* Focus went in and Tab stayed inside, but most dialogs had no role, so a
+     screen reader announced a button called "Close" and nothing else. Among
+     them was the one that asks before AMV acts on a connected account. Two
+     kinds are checked: the shared one that prompt uses, and one built by hand
+     with no markup of its own. */
+  const r = await page.evaluate(async () => {
+    const read = () => {
+      const d = document.querySelector('#ovr [role=dialog], #ovr [role=alertdialog]');
+      const lab = d && d.getAttribute('aria-labelledby');
+      return { role: d && d.getAttribute('role'), modal: d && d.getAttribute('aria-modal'),
+               label: lab ? ((document.getElementById(lab) || {}).textContent || '').trim() : '' };
+    };
+    _confirmModelTool('mcp__api-slack__request', { method: 'POST', path: 'chat.postMessage', body: { channel: '#team', text: 'hi' } });
+    await new Promise(res => setTimeout(res, 150));
+    const consent = read(); closeOvr();
+    document.getElementById('ovr').innerHTML = '<div class="ov"><div class="ob"><h2>Rename project</h2><input><button>Save</button></div></div>';
+    await new Promise(res => setTimeout(res, 50));
+    const plain = read(); closeOvr();
+    confirmModal('Delete this?', 'It cannot be undone.', 'Delete');
+    await new Promise(res => setTimeout(res, 100));
+    const destructive = read(); closeOvr();
+    return { consent, plain, destructive };
+  });
+  ok(r.consent.role === 'dialog' && r.consent.modal === 'true' && r.consent.label.length > 0,
+     'the prompt before acting on a connected account is a named, modal dialog', r.consent);
+  ok(r.plain.role === 'dialog' && r.plain.label === 'Rename project',
+     'and so is a dialog nobody marked up, named after its heading', r.plain);
+  ok(r.destructive.role === 'alertdialog', 'while one that already says what it is keeps its own role', r.destructive);
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 

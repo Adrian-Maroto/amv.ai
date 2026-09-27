@@ -1617,11 +1617,38 @@ function _ovrFocusables(root){
    Handled centrally rather than in each of the dozens of functions that write
    into #ovr, because the one that gets forgotten is the one that matters. */
 let _ovrReturnFocus = null;
+/* A DIALOG A SCREEN READER CAN TELL IS A DIALOG.
+
+   Focus moved in, and Tab was kept inside - but most of what opens here was
+   plain markup with no role, so a screen reader announced a button called
+   "Close" and nothing to say a dialog had opened or what it was about. That
+   included the one that asks before AMV acts on somebody's connected account.
+   Given here, centrally, for the same reason focus is: the one that gets
+   forgotten is the one that matters. A dialog that already says what it is
+   (an alertdialog for a destructive confirm) is left alone. */
+let _ovrDlgSeq = 0;
+function _ovrDialogRole(ovr){
+  try{
+    if(ovr.querySelector('[role=dialog],[role=alertdialog]')) return;
+    const top = ovr.firstElementChild; if(!top) return;
+    const box = top.querySelector('.ob, .modal, [class*="-box"], [class*="sheet"]') || top.firstElementChild || top;
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    /* A real heading first; only failing that, something styled as a title.
+       One selector list would take whichever came first on the page. */
+    const h = box.querySelector('h1, h2, h3') || box.querySelector('[class*="title"], [class$="-t"]');
+    if(h && (h.textContent || '').trim()){
+      if(!h.id) h.id = 'ovr-dlg-t' + (++_ovrDlgSeq);
+      box.setAttribute('aria-labelledby', h.id);
+    }
+  }catch(e){}
+}
 function _initOverlayFocus(){
   try{
     const ovr=$('ovr'); if(!ovr || typeof MutationObserver==='undefined') return;
     new MutationObserver(()=>{
       if(!ovr.children.length) return;
+      _ovrDialogRole(ovr);
       if(ovr.contains(document.activeElement)) return;   // it already has focus
       const cur=document.activeElement;
       if(!_ovrReturnFocus && cur && cur!==document.body) _ovrReturnFocus=cur;
