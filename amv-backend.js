@@ -26424,6 +26424,16 @@ async function publicConfig(request, env) {
     const v = String((env && env[secret]) || '').trim();
     if (v) out[field] = v;
   }
+  /* WHETHER THE SESSION TRAVELS IN A COOKIE, said before anybody signs in.
+
+     The refresh token is set as a cookie on the API's own host, and a browser
+     keeps a cookie from a cross-origin response only if the request asked it
+     to (credentials: 'include'). The page cannot ask for that on a deployment
+     without the cookie - there the API answers `*`, and a credentialed request
+     to `*` is refused outright - so it has to know which kind this is BEFORE
+     the sign-in request, not from the sign-in response. Not a secret: it is
+     the same fact the CORS headers already state. */
+  if (_cookieAuthOn(env)) out.cookieSession = true;
   /* Built directly rather than through json(), which takes only a body and a
      status - a third argument would have been silently ignored and the cache
      header would never have been sent. Five minutes is long enough to spare

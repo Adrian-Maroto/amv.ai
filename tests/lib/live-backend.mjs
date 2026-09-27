@@ -133,7 +133,7 @@ export function makeOutbound() {
 /* Serve the built artifact with a chosen backend address in the meta tag, so a
    case can be a first-time visitor with nothing in storage - which is the only
    session that resembles a customer's. */
-async function serveArtifact(port, apiBase) {
+export async function serveArtifact(port, apiBase) {
   const server = createServer((req, res) => {
     const rel = decodeURIComponent((req.url || '/').split('?')[0]);
     const file = rel === '/' ? 'index.html' : rel.replace(/^\/+/, '');

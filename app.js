@@ -135,7 +135,7 @@ function _renderFramedRefusal(){
    it cannot live in the requester's private bucket. It is safe because every
    read filters by the signed-in identity (AMVFamily.check/mine), and because
    the server is authoritative for links once the backend is connected. */
-const _GLOBAL_KEYS = new Set(['amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_credits','amv_credits_autoreload','amv_reduce_motion','amv_mute_chime','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_refresh_cookie','amv_owner','amv_lang','amv_support_email','amv_dev_split','amv_turnstile_site',
+const _GLOBAL_KEYS = new Set(['amv_cookie_session','amv_links','amv_user','amv_theme','amv_accent','amv_sb_rail','amv_session_started','amv_credits','amv_credits_autoreload','amv_reduce_motion','amv_mute_chime','amv_oauth_return','amv_oauth_state','amv_gtoken','amv_gtoken_exp','amv_gauth','amv_api_base','amv_api_token','amv_api_refresh','amv_token_exp','amv_refresh_cookie','amv_owner','amv_lang','amv_support_email','amv_dev_split','amv_turnstile_site',
   'amv_market_local','amv_market_purchases','amv_market_wallet','amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
   'amv_cookie_consent','amv_analytics_id',
   /* An invite code is captured before anyone is signed in, and belongs to the
@@ -465,8 +465,36 @@ function _yearlyAvailable(plan){
 try{ window._yearlyAvailable=_yearlyAvailable; }catch(e){}
 function configUnreachable(){ return _publicConfigFail; }
 try{ window.configUnreachable=configUnreachable; }catch(e){}
-let _publicConfigDone=false, _publicConfigInFlight=false;
-async function _loadPublicConfig(){
+/* THE SIGN-IN REQUESTS MUST LET THE BROWSER KEEP THE SESSION COOKIE.
+
+   The server sets the refresh token as an HttpOnly cookie on its own host, and
+   AMV's page lives on another one (amv.homes and api.amv.homes). A browser
+   keeps a cookie from a cross-origin response only when the request was sent
+   with credentials: 'include'. Sign-in was not, so the cookie was dropped on
+   arrival - and because the reply also said "the refresh token is in a
+   cookie", the page stopped keeping its own copy. Result, seen by the owner:
+   signed in, fine until the first reload or the first expired access token,
+   then "Session expired" on every request, and Connect failed every time.
+
+   'include' only where the server says it uses the cookie. Elsewhere the API
+   answers `*`, and a credentialed request to `*` is refused by the browser. */
+function _authCreds(){
+  try{
+    if(window.AMV_API && AMV_API.cookieAuth) return 'include';
+    return loadStr('amv_cookie_session') === '1' ? 'include' : 'same-origin';
+  }catch(e){ return 'same-origin'; }
+}
+try{ window._authCreds=_authCreds; }catch(e){}
+let _publicConfigDone=false, _publicConfigInFlight=false, _publicConfigP=null;
+/* Callers that need the answer can wait for it; the ones that only want it
+   loaded eventually still just call and move on. */
+function _loadPublicConfig(){
+  if(_publicConfigDone) return Promise.resolve();
+  if(_publicConfigInFlight && _publicConfigP) return _publicConfigP;
+  _publicConfigP = _loadPublicConfigOnce();
+  return _publicConfigP;
+}
+async function _loadPublicConfigOnce(){
   if(_publicConfigDone || _publicConfigInFlight) return;
   const base=(AMV_API && AMV_API.base) || '';
   if(!base) return;
@@ -478,6 +506,9 @@ async function _loadPublicConfig(){
     if(!d || !d.ok){ _publicConfigFail = _publicConfigFail || 'the server sent something unreadable'; return; }
     _publicConfigDone=true;
     _publicConfigFail='';
+    /* Recorded every time, both ways: a deployment can switch the cookie on
+       or off, and a stale "yes" would send credentials to a `*` API. */
+    try{ saveStr('amv_cookie_session', d.cookieSession ? '1' : ''); }catch(e){}
     Object.keys(_PUBLIC_CONFIG_MAP).forEach(k=>{
       const key=_PUBLIC_CONFIG_MAP[k];
       const val=String(d[k]||'').trim();
@@ -679,6 +710,7 @@ const AMV_API = {
 
   async _fetch(path, opts, _retried){
     const o = opts||{};
+    if(!o.credentials && /^\/auth\//.test(path)) o.credentials = _authCreds();
     o.headers = Object.assign({'Content-Type':'application/json'}, o.headers||{});
     // AMV-013: attach the bearer token ONLY to the secure origin it was issued for.
     const _reqOrigin = _originOf(this.base.replace(/\/$/,'') + path);
@@ -828,6 +860,9 @@ const AMV_API = {
     const body = { email, name:o.name||'', password:o.password||'', provider:o.provider||'email' };
     if(o.company!=null) body.company = o.company;
     if(o.captchaToken) body.captchaToken = o.captchaToken;
+    /* Whether to ask the browser to keep the session cookie is in the public
+       config; a sign-in sent before it arrives would lose the cookie. */
+    try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
     const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
@@ -902,7 +937,7 @@ const AMV_API = {
           /* Sends the cookie. Only honoured cross-origin when the server
              answers with a concrete Allow-Origin and Allow-Credentials, which
              is exactly the deployment that sets the cookie in the first place. */
-          credentials: this.cookieAuth ? 'include' : 'same-origin',
+          credentials: _authCreds(),
           body: JSON.stringify(this.refreshTok ? { refreshToken: this.refreshTok } : {}),
           signal: ctrl ? ctrl.signal : undefined
         });
@@ -1014,6 +1049,9 @@ const AMV_API = {
   async signup(email, name, password, extra){
     if(!this.live) return null;
     const body = {email,name,password, ...(extra||{})};
+    /* Whether to ask the browser to keep the session cookie is in the public
+       config; a sign-in sent before it arrives would lose the cookie. */
+    try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
     const r = await this._fetch('/auth/signup', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
@@ -1068,7 +1106,7 @@ const AMV_API = {
          session on every device. Sending the cookie is what keeps an ordinary
          sign-out about this device. */
       const r = await this._fetch('/auth/logout', {method:'POST',
-        credentials: this.cookieAuth ? 'include' : 'same-origin',
+        credentials: _authCreds(),
         body: JSON.stringify(everywhere ? {everywhere:true} : (this.refreshTok ? {refreshToken: this.refreshTok} : {}))});
       /* Whatever the answer, this device is signed out here. */
       this._rtMem = '';
@@ -1155,7 +1193,11 @@ const AMV_API = {
   async connectList(){
     let r;
     try{ r=await this._fetch('/v1/connect/list'); }
-    catch(e){ throw new Error('AMV\u2019s server could not be reached'+(e&&e.message?' ('+String(e.message).slice(0,80)+')':'')); }
+    catch(e){
+      const m=String((e&&e.message)||'');
+      if(/session expired|sign in again/i.test(m)) throw Object.assign(new Error('your sign-in has expired - sign out and back in'), { code:'unauthorized' });
+      throw new Error('AMV\u2019s server could not be reached'+(m?' ('+m.slice(0,80)+')':''));
+    }
     const d=await r.json().catch(()=>null);
     if(r.status===401) throw Object.assign(new Error('your sign-in has expired - sign out and back in'), { code:'unauthorized' });
     if(!r.ok || !d || d.error) throw new Error((d&&(d.message||d.error)) || ('the server answered '+r.status));
@@ -4677,7 +4719,7 @@ function _resetApi(path, body){
   if(!(window.AMV_API && AMV_API.live))
     return Promise.reject(new Error('not-connected'));
   return fetchDeadline(AMV_API.base.replace(/\/$/,'')+path, {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json'}, credentials:_authCreds(),
     body: JSON.stringify(body||{})
   }, 20000).then(async r=>{
     const d = await r.json().catch(()=>({}));
@@ -4907,8 +4949,9 @@ async function handleGoogleCred(resp) {
 
   if(window.AMV_API && AMV_API.live && AMV_API.base){
     try{
+      try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
       const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/auth/google', {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method:'POST', headers:{'Content-Type':'application/json'}, credentials:_authCreds(),
         // The invite code, if they arrived through one, so a Google sign-up is
         // attributed the same way an email one is. The server verifies the
         // credential itself with Google.

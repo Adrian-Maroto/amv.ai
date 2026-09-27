@@ -793,7 +793,7 @@ function _resetApi(path, body){
   if(!(window.AMV_API && AMV_API.live))
     return Promise.reject(new Error('not-connected'));
   return fetchDeadline(AMV_API.base.replace(/\/$/,'')+path, {
-    method:'POST', headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json'}, credentials:_authCreds(),
     body: JSON.stringify(body||{})
   }, 20000).then(async r=>{
     const d = await r.json().catch(()=>({}));
@@ -1023,8 +1023,9 @@ async function handleGoogleCred(resp) {
 
   if(window.AMV_API && AMV_API.live && AMV_API.base){
     try{
+      try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
       const r=await fetchDeadline(AMV_API.base.replace(/\/$/,'')+'/auth/google', {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method:'POST', headers:{'Content-Type':'application/json'}, credentials:_authCreds(),
         // The invite code, if they arrived through one, so a Google sign-up is
         // attributed the same way an email one is. The server verifies the
         // credential itself with Google.

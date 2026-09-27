@@ -13752,3 +13752,30 @@ Rules:
 - "Done" includes the deploy that happened, not the gate that passed. After
   advancing `main`, look at the Worker deploy's outcome - "skipped" is a
   failure to ship.
+
+## 528. A browser rule a faked response never triggers is a rule no test ever ran
+
+The owner could connect an app only straight after signing in; after a reload
+or an hour, Connect said "Session expired" and nothing but signing out and in
+again fixed it. Production is two hosts - the page on one, the API on another -
+and the long half of a session is an HttpOnly cookie the API sets on its own
+host. A browser keeps a cookie from a cross-origin response only when the
+request asked it to (`credentials: 'include'`). Sign-in did not ask, so the
+cookie was dropped on arrival, while the page - told the refresh token lives in
+a cookie - stopped keeping its own copy. Every session was a memory-only
+session that died with the tab.
+
+Every suite missed it because every suite serves the API through Playwright's
+request interception, and a fulfilled response has its cookies stored whatever
+the request's credentials mode. The one browser rule that broke production was
+the one rule no test could exercise.
+
+Rules:
+- Where the product depends on how a browser treats a real response - cookies,
+  CORS, redirects - at least one suite serves a real response from a real
+  second origin. `a-session-on-another-host-survives-a-reload` does, and walks
+  the whole Connect trip: sign up, reload, go to the provider, come back cold,
+  and see it connected in Integrations and in Settings.
+- The page learns the session mode from the server (`cookieSession` in the
+  public config) before it signs anyone in, so the first sign-in is already
+  credentialed rather than the second.
