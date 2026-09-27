@@ -19886,11 +19886,24 @@ function twiml(message) {
 async function waitlistAdd(request, env) {
   // AMV-060: rate-limit per IP so the public waitlist can't be used to spam
   // third-party addresses or inflate signups.
-  const wip = _rlIp(request);
-  const wl = await limitAction(env, `waitlist:${wip}`, 5, 50);
+  /* PER PERSON WHEN WE KNOW THE PERSON.
+
+     Five a minute and fifty a day per IP was written for the anonymous form,
+     where the risk is somebody signing strangers up. A signed-in person tapping
+     "Notify me" down the Integrations list hit it on the sixth app - and a
+     school or an office shares one address, so fifty a day was the whole
+     building's allowance, on the counts that decide which apps get built.
+     Signed in, the limit is per account and the address is the account's own,
+     so it cannot be used to put anybody else on a list. */
+  const user = await requireUser(request, env).catch(() => null);
+  const wl = user
+    ? await limitAction(env, `waitlist:u:${user.email}`, 30, 600)
+    : await limitAction(env, `waitlist:${_rlIp(request)}`, 5, 50);
+  if (!wl.ok && wl.unavailable)
+    return json({ error: 'We could not add you to the list just now. Please try again in a moment.', code: 'limit_unavailable' }, 503);
   if (!wl.ok) return json({ error: 'Too many requests. Please try again later.' }, 429);
   const body = await request.json().catch(() => ({}));
-  const email = String(body.email || '').toLowerCase().trim();
+  const email = user ? String(user.email).toLowerCase() : String(body.email || '').toLowerCase().trim();
   const product = String(body.product || 'general').replace(/[^a-z0-9_-]/gi, '').slice(0, 40);
   if (!email || !/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(email))
     return json({ error: 'That does not look like an email address. Check it and try again.' }, 400);

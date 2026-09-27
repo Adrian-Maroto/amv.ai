@@ -17,7 +17,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'notifycount.harness.mjs');
 writeFileSync(harness, src + `
-export { waitlistAdd, _appRequestCounts };
+export { waitlistAdd, _appRequestCounts, issueTokens };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -72,6 +72,29 @@ section('A store that cannot be read is an error, not "nobody asked"');
   env.AMV_KV.list = async () => { throw new Error('down'); };
   const r = await W._appRequestCounts(env);
   ok(r.top.length === 0 && r.complete === false && /could not read/.test(r.error || ''), 'it says it could not read the waitlist', r);
+}
+
+section('A signed-in person can go down the list; a stranger still cannot sign others up');
+{
+  /* Five a minute per IP was the only limit, so the sixth Notify me tapped in
+     a minute was refused - and a school or office shares one address, so fifty
+     a day was the whole building's. Signed in, the limit is the account's and
+     the address recorded is the account's own. */
+  const env = mkEnv();
+  const t = (await W.issueTokens(env, 'kid@school.org', 'kid')).token;
+  const one = (app, body, headers) => W.waitlistAdd(new Request('https://api.amv.test/waitlist', {
+    method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.9' }, headers || {}),
+    body: JSON.stringify(Object.assign({ product: 'app-' + app }, body)) }), env);
+  const codes = [];
+  for (let i = 0; i < 10; i++) codes.push((await one('app' + i, { email: 'kid@school.org' }, { Authorization: 'Bearer ' + t })).status);
+  ok(codes.every(c => c === 200), 'ten apps in a minute, signed in: all recorded', codes);
+  await one('canva', { email: 'someone-else@example.com' }, { Authorization: 'Bearer ' + t });
+  ok(env.store.has('waitlist:app-canva:kid@school.org') && !env.store.has('waitlist:app-canva:someone-else@example.com'),
+     'and the address recorded is the account\u2019s own, whatever the body says', [...env.store.keys()].filter(k => k.includes('canva')));
+  const guest = [];
+  for (let i = 0; i < 7; i++) guest.push((await one('g' + i, { email: 'g' + i + '@x.com' })).status);
+  ok(guest.slice(0, 5).every(c => c === 200) && guest.slice(5).every(c => c === 429),
+     'while a guest on the same network keeps the per-address limit', guest);
 }
 
 if (report('notify-me-is-counted') > 0) process.exitCode = 1;

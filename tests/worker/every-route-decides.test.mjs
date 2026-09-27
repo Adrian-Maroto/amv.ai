@@ -216,8 +216,17 @@ section('And the public list has not gone stale');
 
   /* And nothing on it has quietly GAINED auth - if it did, it is no longer an
      exception and should not be excused as one. */
+  /* A public route may still RECOGNISE somebody signed in - /waitlist limits a
+     signed-in person per account and records their own address, and serves a
+     guest per IP. That is named here, per route, and accepted only in the form
+     that cannot refuse a guest: requireUser(...).catch(() => null). */
+  const OPTIONAL_AUTH = { '/waitlist': 'signed in: limited per account, and the address is the account\u2019s own; a guest: per IP' };
+  const optionalForm = /requireUser\(request, env\)\.catch\(\(\) => null\)/;
   const nowChecked = Object.keys(PUBLIC)
-    .filter(p => { const r = routes.find(x => x.path === p); return r && AUTH.test(bodyOf(r.fn)); });
+    .filter(p => { const r = routes.find(x => x.path === p); if (!r) return false;
+                   const b = bodyOf(r.fn);
+                   if (p in OPTIONAL_AUTH && optionalForm.test(b) && !/return json\(\{ error: ?'unauthorized'/.test(b)) return false;
+                   return AUTH.test(b); });
   ok(nowChecked.length === 0,
      'and nothing excused as public is actually authenticated now', nowChecked);
 }
