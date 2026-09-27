@@ -847,6 +847,8 @@ const AMV_API = {
     // AMV-013: bind these tokens to the origin that issued them.
     try{ saveStr('amv_api_token_origin', _originOf(this.base)); }catch(e){}
     this._storeTokenMeta(d.token);
+    /* Signing in again finishes a connection held while there was no session. */
+    try{ setTimeout(()=>{ try{ if(typeof _finishPendingConnect === 'function') _finishPendingConnect(); }catch(e){ try{ console.error('AMV: a pending connection could not be finished', e); }catch(_){} } }, 0); }catch(e){}
   },
   // exchange refresh token for a fresh pair; returns true on success.
   // Single-flight: if a refresh is already in progress, concurrent callers
@@ -5198,6 +5200,9 @@ async function _ensureBackendSession(){
        reload begins with no access token in hand, so asked any earlier this
        reads "no session" and does nothing at all. */
     try{ _syncBootstrap(); }catch(e){}
+    /* A connection approved at a provider just before this load finishes now
+       that there is a session to finish it with - or asks for one. */
+    try{ if(typeof _finishPendingConnect === 'function') _finishPendingConnect(); }catch(e){ try{ console.error('AMV: a pending connection could not be finished', e); }catch(_){} }
   }
 }
 function toggleSb(){
@@ -30716,14 +30721,77 @@ function checkOAuthCallback(){
   const code = q.get('code');
   if(!code) return;
   clear();
-  if(isApp){
-    if(typeof _rmcpFinish === 'function'){ _rmcpFinish(code, state); return; }
-  } else if(typeof _connectFinish === 'function'){ _connectFinish(code, state); return; }
-  /* Said out loud rather than swallowed. Somebody has just approved real
-     access at a provider; a silent return leaves them believing it worked. */
-  toast('AMV could not finish connecting that account. Try again from Settings.', 'error', 8000);
+  if(!(isApp ? typeof _rmcpFinish === 'function' : typeof _connectFinish === 'function')){
+    /* Said out loud rather than swallowed. Somebody has just approved real
+       access at a provider; a silent return leaves them believing it worked. */
+    toast('AMV could not finish connecting that account. Try again from Settings.', 'error', 8000);
+    return;
+  }
+  _stashConnectReturn(code, state, isApp);
+  _finishPendingConnect();
 }
 try{ window.checkOAuthCallback = checkOAuthCallback; }catch(e){}
+
+/* COMING BACK FROM A PROVIDER IS A PAGE LOAD, AND A PAGE LOAD STARTS SIGNED OUT.
+
+   The session lives in an HttpOnly cookie (cookie mode), so every load begins
+   with no token in hand until the restore mints one. The return from Discord
+   or Google called finish at boot, inside that window - and when the restore
+   then failed, the approval the person had just given was spent on a request
+   that could never succeed, and they were back where they started, "not
+   connected", with nothing to say why. Seen by the owner.
+
+   So the return is held for this tab only (sessionStorage - never disk that
+   outlives the tab) for ten minutes, and finished once there is a session:
+   when the restore completes, or right after the person signs in again. The
+   code is single use and bound on the server to the account that started it,
+   so holding it briefly changes nothing about who can use it. */
+/* Functions, not constants: checkOAuthCallback runs at boot from higher up
+   this file, before these lines are reached. A const there is in its temporal
+   dead zone (it threw on every provider return), and a var is undefined until
+   its line runs. A function declaration is whole from the start. */
+function _pendingConnectKey(){ return 'amv_pending_connect'; }
+function _pendingConnectMaxMs(){ return 10 * 60 * 1000; }
+function _stashConnectReturn(code, state, isApp){
+  try{ sessionStorage.setItem(_pendingConnectKey(), JSON.stringify({ code, state, isApp: !!isApp, at: Date.now() })); }catch(e){}
+}
+async function _finishPendingConnect(){
+  if(_finishPendingConnect.busy) return;
+  let p = null;
+  try{ p = JSON.parse(sessionStorage.getItem(_pendingConnectKey()) || 'null'); }catch(e){ p = null; }
+  if(!p || !p.code) return;
+  if(Date.now() - (p.at || 0) > _pendingConnectMaxMs()){
+    try{ sessionStorage.removeItem(_pendingConnectKey()); }catch(e){}
+    toast('That connection was approved too long ago to finish. Press Connect again.', 'info', 8000);
+    return;
+  }
+  /* The restore is still running; it calls this again when it ends. */
+  if(window.AMV_API && AMV_API._restoring) return;
+  _finishPendingConnect.busy = true;
+  try{
+    /* No token in hand but a way to renew one: renew first, so the finish is
+       not spent on a request that 401s. If renewing fails there is no session
+       to finish with - hold the approval and ask for a sign-in, which finishes
+       it (_setTokens calls back here). */
+    const A = window.AMV_API;
+    const renewable = !!(A && (A.refreshTok || A.cookieAuth));
+    if(A && !A.token && renewable){
+      try{ await A._doRefresh(); }catch(e){}
+      if(!A.token){
+        if(!p.told){
+          p.told = 1;
+          try{ sessionStorage.setItem(_pendingConnectKey(), JSON.stringify(p)); }catch(e){}
+          toast('Sign in to finish connecting - AMV is holding your approval for a few minutes.', 'info', 10000);
+        }
+        return;
+      }
+    }
+    try{ sessionStorage.removeItem(_pendingConnectKey()); }catch(e){}
+    if(p.isApp) await _rmcpFinish(p.code, p.state);
+    else await _connectFinish(p.code, p.state);
+  }finally{ _finishPendingConnect.busy = false; }
+}
+try{ window._finishPendingConnect = _finishPendingConnect; window._stashConnectReturn = _stashConnectReturn; }catch(e){}
 
 /* CONNECTGOOGLE IS GONE NOW, AND THE REASON IT SURVIVED THE LAST ATTEMPT IS
    worth keeping.

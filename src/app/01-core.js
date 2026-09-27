@@ -847,6 +847,8 @@ const AMV_API = {
     // AMV-013: bind these tokens to the origin that issued them.
     try{ saveStr('amv_api_token_origin', _originOf(this.base)); }catch(e){}
     this._storeTokenMeta(d.token);
+    /* Signing in again finishes a connection held while there was no session. */
+    try{ setTimeout(()=>{ try{ if(typeof _finishPendingConnect === 'function') _finishPendingConnect(); }catch(e){ try{ console.error('AMV: a pending connection could not be finished', e); }catch(_){} } }, 0); }catch(e){}
   },
   // exchange refresh token for a fresh pair; returns true on success.
   // Single-flight: if a refresh is already in progress, concurrent callers

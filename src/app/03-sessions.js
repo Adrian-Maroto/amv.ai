@@ -1316,6 +1316,9 @@ async function _ensureBackendSession(){
        reload begins with no access token in hand, so asked any earlier this
        reads "no session" and does nothing at all. */
     try{ _syncBootstrap(); }catch(e){}
+    /* A connection approved at a provider just before this load finishes now
+       that there is a session to finish it with - or asks for one. */
+    try{ if(typeof _finishPendingConnect === 'function') _finishPendingConnect(); }catch(e){ try{ console.error('AMV: a pending connection could not be finished', e); }catch(_){} }
   }
 }
 function toggleSb(){

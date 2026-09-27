@@ -100,6 +100,55 @@ section('And the code actually reaches the server');
   ok(/connected/i.test(posted.toast), 'and the person is told it worked', posted.toast.slice(0, 80));
 }
 
+section('A return with no session yet is held until there is one, not thrown away');
+{
+  /* Seen by the owner: approve at Discord, land back on AMV, and the session
+     (in an HttpOnly cookie) could not be restored on that load - so the finish
+     401'd, the approval was spent, and Settings said "not connected". The
+     return is held for this tab and finished once somebody is signed in. */
+  const r = await page.evaluate(async (args) => {
+    const calls = [];
+    const realFetch = window.fetch;
+    window.fetch = async (u, o) => {
+      const url = String(u);
+      if (url.includes('/auth/refresh')) return new Response('{}', { status: 401 });
+      if (url.includes('/v1/connect/finish')) {
+        calls.push(JSON.parse(String((o && o.body) || '{}')));
+        return new Response(JSON.stringify({ ok: true, id: 'c2', provider: 'discord', name: 'Discord', scopes: ['discord.read'], unattended: true }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      if (url.includes('/v1/connect/list')) return new Response(JSON.stringify({ ok: true, configured: true, items: [], providers: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return realFetch(u, o);
+    };
+    const was = { cookie: AMV_API.cookieAuth, token: AMV_API.token, base: AMV_API.base };
+    const out = {};
+    try {
+      if (!AMV_API.base) AMV_API.base = location.origin;
+      AMV_API.cookieAuth = true; AMV_API.token = '';           // a session that must be restored, and cannot be
+      document.querySelectorAll('.toast, #toast, [class*="toast"]').forEach(e => e.remove());
+      history.replaceState(null, '', location.pathname + '?code=' + encodeURIComponent(args.code) + '&state=' + args.state);
+      checkOAuthCallback();
+      await new Promise(r => setTimeout(r, 400));
+      out.before = calls.length;
+      out.held = !!sessionStorage.getItem('amv_pending_connect');
+      out.toast = (document.querySelector('.toast, #toast, [class*="toast"]') || {}).textContent || '';
+      AMV_API._setTokens({ token: 'fresh-after-sign-in' });   // the person signs in again
+      await new Promise(r => setTimeout(r, 400));
+      out.after = calls.map(c => c.code);
+      out.cleared = !sessionStorage.getItem('amv_pending_connect');
+    } finally {
+      window.fetch = realFetch;
+      AMV_API.cookieAuth = was.cookie; AMV_API.token = was.token;
+      try { sessionStorage.removeItem('amv_pending_connect'); } catch (e) {}
+    }
+    return out;
+  }, { code: 'discord-code-1', state: 'c_DiscordStateFromTheServer' });
+  ok(r.before === 0, 'nothing is spent on a request that could only be refused', r.before);
+  ok(r.held && /Sign in to finish/.test(r.toast), 'the approval is held and the person is told to sign in', r);
+  ok(r.after.length === 1 && r.after[0] === 'discord-code-1', 'signing in finishes it, with the same code', r.after);
+  ok(r.cleared, 'and the held approval is gone once used', r.cleared);
+}
+
 section('A return that is not ours is left completely alone');
 {
   /* THE OTHER HALF, AND THE MORE DANGEROUS ONE. Stripping a query string this
