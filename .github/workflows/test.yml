@@ -70,6 +70,18 @@ jobs:
       # Reproducible install straight from the committed lockfile.
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      # The bridge's fence is bubblewrap, and two suites measure it rather than
+      # trusting it - so the runner needs it, as .claude/session-setup.sh does
+      # for a session. Ubuntu 24.04 also restricts unprivileged user namespaces
+      # through AppArmor, which is the thing bubblewrap is built on; lifted for
+      # this throwaway runner only. Without this step those suites fail, CI is
+      # red, and the Worker deploy (which waits for green) is skipped.
+      - name: Install bubblewrap for the fence suites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          bwrap --ro-bind / / --unshare-user true && echo "bubblewrap works"
       # THE SAME GATE THAT RUNS LOCALLY.
       #
       # This used to build and then run the suite directly, which is a subset:

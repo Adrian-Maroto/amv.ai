@@ -13725,3 +13725,25 @@ And, again, the guess LESSONS 524 named: the app-connector code gave a token
 with no stated expiry an hour, a week after the same guess was taken out of the
 code beside it. A fix to one of two twins is a fix to half the bug; search for
 the twin in the same commit.
+
+## 527. The gate here was green and the backend had not moved for a day
+
+Every change this session passed `npm run check` in the session and went to
+`main`. On GitHub, the same check failed on every one of them: the bridge-fence
+suites need bubblewrap, which the session installs for itself
+(`.claude/session-setup.sh`) and the CI runner never did; one timing budget was
+absolute and GitHub's slower, busier runner measured 427ms against 420; one
+test's setup lost a race under that load. Red CI does not stop the page -
+Render deploys `main` - but it does stop the Worker, whose deploy waits for
+green. So for ten pushes the page moved and the backend stayed where it was,
+and the page was calling routes the live backend did not have. Nothing said
+so, because the deploy's "skipped" looks like a quiet success.
+
+Rules:
+- A dependency a suite needs is installed by the workflow that runs it, not
+  only by the session that wrote it.
+- A timing check compares the product with its own defect on the same machine,
+  in the same minute. A fixed number is right on at most one machine.
+- "Done" includes the deploy that happened, not the gate that passed. After
+  advancing `main`, look at the Worker deploy's outcome - "skipped" is a
+  failure to ship.

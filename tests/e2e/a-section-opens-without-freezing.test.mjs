@@ -18,13 +18,12 @@
    The first is checked by WHAT IS LAID OUT, not how long it took: the browser
    says which elements content-visibility is skipping, and that is exact on any
    machine. The second is checked by listing every running animation and the
-   properties it moves. One timing tripwire is kept, set far above the measured
-   ~150ms and below the 482ms the defect produced, so a return of the defect
-   fails it and a busy machine does not. */
+   properties it moves. The freeze is measured against the defect reproduced
+   on the same machine, not against a fixed number - the section says why. */
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
-const FREEZE_MAX = 420;
+const FREEZE_MAX = 1500;   /* a tripwire, not the test - see the section that uses it */
 
 const app = await bootApp({ tab: 'chat', viewport: { width: 390, height: 844 }, hasTouch: true,
                             user: { name: 'Alex', email: 'alex@x.com', ini: 'A' } });
@@ -76,26 +75,54 @@ section('The blocks below the first screen of Crew wait too');
 
 section('Opening Crew for the first time, at a phone’s CPU, does not freeze the page');
 {
-  const fresh = await bootApp({ tab: 'chat', viewport: { width: 390, height: 844 }, hasTouch: true,
-                                user: { name: 'Alex', email: 'alex@x.com', ini: 'A' } });
-  const p = fresh.page;
-  const cdp = await p.context().newCDPSession(p);
-  await p.evaluate(() => { document.getElementById('cookie-consent-banner')?.remove(); _setPlan('pro'); });
-  await p.waitForTimeout(500);
-  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
-  const r = await p.evaluate(async () => {
-    const lt = [];
-    const po = new PerformanceObserver(l => { for (const e of l.getEntries()) lt.push(e.duration); });
-    po.observe({ entryTypes: ['longtask'] });
-    setTab('crew');
-    await new Promise(r => setTimeout(r, 1500));
-    po.disconnect();
-    return { longest: Math.round(Math.max(0, ...lt)) };
-  });
-  await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
-  ok(r.longest < FREEZE_MAX, 'the longest freeze is under ' + FREEZE_MAX + 'ms (measured ~150ms; the defect was 482ms)', r);
-  ok(fresh.errors.length === 0, 'and nothing threw', fresh.errors.slice(0, 3));
-  await fresh.close();
+  /* MEASURED AGAINST ITSELF, NOT AGAINST A CLOCK.
+
+     This was an absolute budget, 420ms at 4x CPU throttle, measured ~150ms
+     here - and on GitHub's runner, slower and running four suites at once, the
+     same build measured 427 and CI went red. Red CI skips the Worker deploy, so
+     for a day the live backend stopped moving while the page kept deploying.
+     A fixed number cannot be right on both machines: loose enough for the slow
+     one, it cannot see the defect on the fast one.
+
+     So the fix is measured against its own absence, on the same machine in the
+     same minute: Crew opened as shipped, and Crew opened with content-visibility
+     forced off - which is the defect (the whole catalogue laid out at once,
+     482ms here when it shipped). Best of two each, because one stray GC is not
+     the page. The shipped open must cost under three quarters of the defeated
+     one; measured here it is about a third. A generous absolute ceiling stays
+     as a tripwire for anything gross. */
+  const openCrew = async (defeat) => {
+    const fresh = await bootApp({ tab: 'chat', viewport: { width: 390, height: 844 }, hasTouch: true,
+                                  user: { name: 'Alex', email: 'alex@x.com', ini: 'A' } });
+    const p = fresh.page;
+    const cdp = await p.context().newCDPSession(p);
+    await p.evaluate((defeat) => {
+      document.getElementById('cookie-consent-banner')?.remove(); _setPlan('pro');
+      if (defeat) { const st = document.createElement('style'); st.textContent = '.crew-page, .crew-page * { content-visibility: visible !important; }'; document.head.appendChild(st); }
+    }, defeat);
+    await p.waitForTimeout(500);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    const longest = await p.evaluate(async () => {
+      const lt = [];
+      const po = new PerformanceObserver(l => { for (const e of l.getEntries()) lt.push(e.duration); });
+      po.observe({ entryTypes: ['longtask'] });
+      setTab('crew');
+      await new Promise(r => setTimeout(r, 1500));
+      po.disconnect();
+      return Math.round(Math.max(0, ...lt));
+    });
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    const errors = fresh.errors.slice(0, 3);
+    await fresh.close();
+    return { longest, errors };
+  };
+  const shipped = [await openCrew(false), await openCrew(false)];
+  const defeated = [await openCrew(true), await openCrew(true)];
+  const r = { shipped: Math.min(...shipped.map(x => x.longest)), defeated: Math.min(...defeated.map(x => x.longest)) };
+  ok(r.defeated > 0, 'the defect, reproduced, really does freeze the page - the comparison means something', r);
+  ok(r.shipped < r.defeated * 0.75, 'Crew as shipped freezes for well under the time the defect did, on this machine', r);
+  ok(r.shipped < FREEZE_MAX, 'and under ' + FREEZE_MAX + 'ms even on a slow, busy machine - a tripwire for anything gross', r);
+  ok(shipped.every(x => x.errors.length === 0), 'and nothing threw', shipped.map(x => x.errors));
 }
 
 section('No screen keeps the page repainting on its own');

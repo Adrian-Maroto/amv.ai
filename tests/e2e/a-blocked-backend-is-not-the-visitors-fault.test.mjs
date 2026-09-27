@@ -205,8 +205,13 @@ section('A fetch that merely failed does NOT announce a missing captcha');
        second attempt meets the route that is by now certainly installed - and
        the assertion below is unchanged, so a product that stopped recording
        the status still fails exactly as before. */
+    /* Four tries, a beat apart: one was enough here and not on GitHub's
+       runner, which is slower and busier, and where this setup failed to be
+       served on both tries and turned CI red. Still only the SETUP is retried;
+       the assertion is the same one. */
     let reason = '';
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt) await new Promise(r => setTimeout(r, 250));
       _publicConfigFail = ''; _publicConfigDone = false;
       await window._loadPublicConfig();
       reason = configUnreachable();
