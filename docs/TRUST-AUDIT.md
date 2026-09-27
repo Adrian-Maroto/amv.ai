@@ -1760,3 +1760,73 @@ what was typed and said outside the markup.
 | 213 | the answer is not kept across a redraw | 1 assertion |
 | 214 | replies paint the detached pane | 2 assertions |
 | 215 | the local link copy survives | 1 assertion |
+
+## Round forty-one - apps you sign in to, and apps with a public API (owner-approved)
+
+**Built:** two ways for an app to really connect.
+
+- **App connectors.** 35 apps publish an official remote connector: Notion,
+  Canva, Linear, Jira and Confluence, Stripe, PayPal, Figma, Zapier, Todoist,
+  Miro and more. Each was read from the MCP registry under the vendor's own
+  verified namespace. The person signs in at the app, AMV registers itself
+  automatically, and the sign-in is sealed per person under `rmcp:`.
+- **API apps.** 12 apps have a public API but no connector: Slack, Discord,
+  Spotify, Dropbox, HubSpot, Asana, Zoom, Box, Strava, Reddit, Pinterest and
+  Calendly. They use the Connected accounts framework, and chat calls their API
+  through `/v1/connect/api`.
+
+For both, every call from chat is asked for, with its arguments shown.
+
+**Attacked:**
+
+- the sign-in's return address, PKCE, state ownership and single use;
+- an app's metadata naming an internal token, registration or authorization
+  address;
+- a metadata document naming another origin as the resource;
+- a reply stream that never closes;
+- refresh, and a refused refresh;
+- an API path escaping the provider's base;
+- a call for one provider being handed another provider's token (Google and
+  Microsoft share `mail.read`);
+- Basic-auth providers;
+- a token with no stated lifetime;
+- each revoke style;
+- a developer API key driving any of it;
+- Build receiving app tools;
+- an `r_` return taken by Connected accounts;
+- the page's list races.
+
+**Found and fixed by these suites before shipping:**
+
+- chat awaited the app list with no limit, so a silent server held every
+  message;
+- one provider's token could reach another's API;
+- GitHub connections read as expired after an hour;
+- two list loaders let an older answer overwrite a newer one, or dropped a
+  forced reload;
+- an API key could act on connected apps, and read mail through
+  `/v1/connect/act`, with no person at a screen to ask.
+
+`an-app-you-sign-in-to-is-an-app-amv-can-use`,
+`an-app-with-a-public-api-connects-and-stays-in-its-lane` (Worker),
+`an-app-connects-by-signing-in` (page).
+
+| # | what was broken | caught by |
+|---|---|---|
+| 216 | an internal token endpoint accepted from an app's metadata | 1 assertion |
+| 217 | a state finished by a different account | 2 assertions |
+| 218 | a reply stream read to its end | 2 assertions |
+| 219 | no refresh before an expired token is used | 2 assertions |
+| 220 | a metadata document's foreign resource believed | 1 assertion |
+| 221 | Build given app tools | 1 assertion |
+| 222 | an `r_` return routed to Connected accounts | 3 assertions |
+| 223 | provider pinning removed (both guards) | 2 assertions |
+| 224 | the client secret moved out of the Basic header | 2 assertions |
+| 225 | the one-hour default expiry restored | 3 assertions |
+| 226 | the `..` rule in the API path check dropped | 1 assertion (the base check still holds the plain forms) |
+| 227 | API keys admitted to app routes | 6 assertions |
+
+**Not measured, and said so:** none of this has touched a real app. The first
+real sign-in with each provider is the test that remains, and some apps
+(Figma may be one) admit only pre-approved clients. There, Connect says the app
+did not accept AMV, and nothing changes.

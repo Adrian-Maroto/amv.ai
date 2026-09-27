@@ -3248,6 +3248,7 @@ function _connApiUrl(base, path, query){
 async function connApi(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
+  { const k = _refuseApiKey(user, 'use a connected app'); if (k) return k; }
   const blocked = await guardAction(env, 'connapi:' + user.email, 60, 2000, 'connected app actions');
   if(blocked) return blocked;
   const body = await request.json().catch(()=>({}));
@@ -3618,6 +3619,9 @@ const CONN_ACTIONS = {
 async function connAct(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
+  /* The same rule as the app-connector routes: this reads and sends somebody's
+     mail and changes their calendar, and a key has nobody at a screen to ask. */
+  { const k = _refuseApiKey(user, 'act on a connected account'); if (k) return k; }
   if(!connConfigured(env)) return json({ error:'not_configured' }, 503);
 
   const body = await request.json().catch(()=>({}));
@@ -4000,6 +4004,22 @@ function _rmcpFail(app, e){
   return json({ error: 'app_error', message: app.name + '’s connector did not answer properly' + (e && e.message ? ' (' + String(e.message).slice(0, 80) + ')' : '') + '. Nothing was changed; try again in a moment.' }, 502);
 }
 
+/* NOT WITH AN API KEY.
+
+   These routes act on somebody's Notion, Slack or Stripe, and the promise that
+   makes them safe is that each action is asked for in chat, with its arguments
+   shown, by the person at the screen. An API key is automation - there is no
+   screen and nobody to ask - so a key that could call these would turn every
+   leaked key into a key to every app its owner connected. Refused here, on the
+   server, the way deleting an account already is. Listing what is connected
+   stays open: it is metadata, and a key can already see its own account. */
+function _refuseApiKey(user, what){
+  if(user && user.via === 'apikey')
+    return json({ error: 'api_key_refused', code: 'session_required',
+      message: 'An API key cannot ' + what + '. Sign in to AMV and do it from chat, where each action is asked for first.' }, 403);
+  return null;
+}
+
 async function remoteList(request, env){
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
@@ -4012,6 +4032,7 @@ async function remoteList(request, env){
 async function remoteStart(request, env){
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  { const k = _refuseApiKey(user, 'connect an app'); if (k) return k; }
   if (!connConfigured(env))
     return json({ error: 'not_configured', code: 'connect_key_missing',
       message: 'Connecting apps is not set up on this deployment. The CONNECT_KEY secret has to exist first, because without it a sign-in would be stored unencrypted.' }, 503);
@@ -4053,6 +4074,7 @@ async function remoteStart(request, env){
 async function remoteFinish(request, env){
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  { const k = _refuseApiKey(user, 'connect an app'); if (k) return k; }
   if (!connConfigured(env)) return json({ error: 'not_configured' }, 503);
   const blocked = await guardAction(env, 'rmcpfin:' + user.email, 10, 100, 'app connections');
   if (blocked) return blocked;
@@ -4084,6 +4106,7 @@ async function remoteFinish(request, env){
 async function remoteRemove(request, env){
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  { const k = _refuseApiKey(user, 'disconnect an app'); if (k) return k; }
   const blocked = await guardAction(env, 'rmcprm:' + user.email, 20, 200, 'disconnections');
   if (blocked) return blocked;
   const body = await request.json().catch(() => ({}));
@@ -4115,6 +4138,7 @@ async function _rmcpRevoke(env, c){
 async function remoteTools(request, env){
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  { const k = _refuseApiKey(user, 'use a connected app'); if (k) return k; }
   const blocked = await guardAction(env, 'rmcptools:' + user.email, 30, 1000, 'app connector listings');
   if (blocked) return blocked;
   const body = await request.json().catch(() => ({}));
@@ -4152,6 +4176,7 @@ async function remoteTools(request, env){
 async function remoteCall(request, env){
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
+  { const k = _refuseApiKey(user, 'use a connected app'); if (k) return k; }
   const blocked = await guardAction(env, 'rmcpcall:' + user.email, 60, 2000, 'app connector actions');
   if (blocked) return blocked;
   const body = await request.json().catch(() => ({}));

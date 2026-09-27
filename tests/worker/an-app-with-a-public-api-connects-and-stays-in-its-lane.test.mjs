@@ -29,7 +29,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'apiapps.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, issueTokens, connSeal, connOpen, CONN_PROVIDERS, CONN_KV, _connRevokeRequest, _connApiUrl };\n');
+writeFileSync(harness, src + '\nexport { DB, issueTokens, connSeal, connOpen, CONN_PROVIDERS, CONN_KV, _connRevokeRequest, _connApiUrl, setEntitlement };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const ME = 'alex@example.com';
@@ -167,6 +167,37 @@ section('A call goes to its own app with its own token - never another’s');
   ok(anon.status === 401, 'and nobody signed out can call anything', anon.status);
   const m = await call(env, '/v1/connect/api', { provider: 'microsoft', method: 'TRACE', path: 'me' }, t);
   ok(m.status === 400 && m.d.error === 'bad_method', 'an odd method is refused', m);
+}
+
+section('An API key cannot act on a connected app - only a person in chat can');
+{
+  /* The routes that act on somebody's Slack, Notion or Stripe rely on each
+     action being asked for at the screen. A key is automation with no screen;
+     if it could call these, a leaked key would reach every app its owner had
+     connected. Made through the product's own key route, and refused before
+     anything is fetched. */
+  const env = mkEnv(), t = await tok(env);
+  await W.setEntitlement(env, ME, 'pro');
+  /* A key only resolves for an account that exists, so this one does. */
+  await W.DB.put(env, 'acct', ME, { email: ME, name: 'alex', createdAt: Date.now() });
+  await connect(env, t, 'slack', ['slack.read']);
+  const made = await call(env, '/v1/keys/create', { name: 'automation' }, t);
+  ok(made.status === 200 && /^amv_sk_/.test(made.d.key || ''), 'a key was issued', made.status);
+  const key = made.d.key;
+  sent = [];
+  const routes = [['/v1/connect/api', { provider: 'slack', method: 'GET', path: 'conversations.list' }],
+                  ['/v1/remote/call', { app: 'notion', tool: 'search', args: {} }],
+                  ['/v1/remote/tools', { app: 'notion' }],
+                  ['/v1/remote/start', { app: 'notion', redirect: 'https://amv.test/' }],
+                  ['/v1/remote/remove', { app: 'notion' }],
+                  ['/v1/connect/act', { action: 'mail.list', args: {} }]];
+  for (const [path, body] of routes) {
+    const r = await call(env, path, body, key);
+    ok(r.status === 403 && r.d.code === 'session_required', path + ' refuses a key', r);
+  }
+  ok(sent.length === 0, 'and nothing reached any app', sent.map(x => x.url));
+  const withSession = await call(env, '/v1/connect/api', { provider: 'slack', method: 'GET', path: 'conversations.list' }, t);
+  ok(withSession.status === 200, 'while the same account signed in still can', withSession.status);
 }
 
 section('Each revoke reaches its endpoint the way that provider wants');
