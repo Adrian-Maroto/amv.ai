@@ -26977,6 +26977,23 @@ function _readinessReport(env) {
       how: put('ALLOWED_ORIGIN', 'your site\u2019s origin, exactly - e.g. https://amv.homes, no trailing slash') },
   ];
 
+  /* A PROVIDER'S OWN KEYS ARE HALF OF IT.
+
+     Every Connect row asked only whether that provider's id and secret were
+     set - and reported Google, Slack and the rest as "live" on a deployment
+     with no CONNECT_KEY, where connStart refuses every one of them because it
+     will not store a token unencrypted. The operator read "live", tried it,
+     and got "not switched on". Each such row now names the missing key as its
+     reason, and is not counted as on until it is set. */
+  if (!connConfigured(env)) {
+    for (const it of items) {
+      if (!/^connect(Google|Microsoft|Github|_)/.test(it.id) || !it.on) continue;
+      it.on = false;
+      it.blockedBy = 'CONNECT_KEY';
+      it.how = 'Its own keys are set - it is waiting for CONNECT_KEY (Connected accounts, encryption), which every connection needs. ' + put('CONNECT_KEY');
+    }
+  }
+
   /* Storage is bound, not pasted, so it is reported separately - and what each
      binding buys is a correctness property, not a feature. */
   const storage = [

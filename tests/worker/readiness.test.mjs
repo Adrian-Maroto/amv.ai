@@ -287,6 +287,24 @@ section('With a verified sender, it goes green');
   ok(sender && sender.on === true, 'a verified sender satisfies it', sender && sender.on);
 }
 
+section('A provider with its own keys but no CONNECT_KEY is not live');
+{
+  /* Seen on the real screen: Google, Slack, Discord and six more read "live"
+     on a deployment with no CONNECT_KEY - where every one of them refuses to
+     connect, because a token is never stored unencrypted. */
+  const keys = { GOOGLE_CLIENT_ID: 'g', GOOGLE_CLIENT_SECRET: 'gs', SLACK_CLIENT_ID: 's', SLACK_CLIENT_SECRET: 'ss', GH_CLIENT_ID: 'h', GH_CLIENT_SECRET: 'hs' };
+  const without = await get(Object.assign(bare(), keys));
+  const rows = ['connectGoogle', 'connect_slack', 'connectGithub'].map(id => find(without, id));
+  ok(rows.every(r => r && r.on === false), 'without CONNECT_KEY, none of them reads as live', rows.map(r => r && [r.id, r.on]));
+  ok(rows.every(r => r && /CONNECT_KEY/.test(r.how || '') && r.blockedBy === 'CONNECT_KEY'),
+     'and each names the missing key as its reason', rows.map(r => r && r.how));
+  const withKey = await get(Object.assign(bare(), keys, { CONNECT_KEY: 'k'.repeat(40) }));
+  ok(['connectGoogle', 'connect_slack', 'connectGithub'].every(id => find(withKey, id).on === true),
+     'with it, they do', ['connectGoogle', 'connect_slack', 'connectGithub'].map(id => find(withKey, id).on));
+  ok(find(without, 'connect_zoom').on === false && !find(without, 'connect_zoom').blockedBy,
+     'and a provider with nothing set still just says it is not set up', find(without, 'connect_zoom'));
+}
+
 section('Payments green with no price is the trap this screen exists to catch');
 {
   /* STRIPE_SECRET_KEY alone turns the Payments row green. Checkout then
