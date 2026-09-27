@@ -18745,6 +18745,11 @@ async function widgetChat(request, env, ctx) {
   // bound the total; this bounds any one caller.
   const vip = _rlIp(request);
   const vRl = await limitAction(env, `widgetip:${key}:${vip}`, 15, 300);
+  /* Our fault, not the visitor's: said as a pause, not "slow down" to
+     somebody who sent one message (the same rule as guardAction). */
+  if (!vRl.ok && vRl.unavailable) {
+    return new Response(JSON.stringify({ error: 'The assistant is briefly unavailable. Please try again in a moment.', code: 'limit_unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json', ...wcors } });
+  }
   if (!vRl.ok) {
     audit(env, 'widget_visitor_throttle', { key });
     return new Response(JSON.stringify({ error: 'Too many messages - please slow down and try again in a moment.' }), { status: 429, headers: { 'Content-Type': 'application/json', ...wcors } });
@@ -19522,6 +19527,7 @@ async function smsRegister(request, env) {
     if (!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_FROM_NUMBER))
       return json({ error: 'SMS is not configured on this workspace yet.', code: 'sms_unconfigured' }, 503);
     const rl = await limitAction(env, `smsverify:${phone}`, 3, 10);
+    if (!rl.ok && rl.unavailable) return json({ error: 'Codes cannot be sent just now. Please try again in a moment.', code: 'limit_unavailable' }, 503);
     if (!rl.ok) return json({ error: 'Too many codes requested. Please wait a few minutes.' }, 429);
     /* AMV-025: NOT Math.random.
 
