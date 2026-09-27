@@ -130,13 +130,11 @@ section('A short-lived pass that runs out mid-visit is renewed, not reported');
    provider's page is the one thing not real: it approves at once and sends the
    browser back with a code, as Slack does. Leaving the page drops everything
    held in memory, so the return is a cold boot that has only the cookie. */
-let state = '';
 await context.route('https://slack.com/**', (route) => {
   const u = new URL(route.request().url());
-  state = u.searchParams.get('state') || '';
   const back = new URL(u.searchParams.get('redirect_uri') || (SITE + '/'));
   back.searchParams.set('code', 'slack-code');
-  back.searchParams.set('state', state);
+  back.searchParams.set('state', u.searchParams.get('state') || '');
   return route.fulfill({ status: 302, headers: { location: back.toString() } });
 });
 
@@ -150,12 +148,18 @@ section('Connect, from the Integrations page, goes to the provider');
     card.querySelector('[data-int-conn]').click();
   });
   await until('the choice of what Slack may do', () => page.evaluate(() => !!document.getElementById('conn-go')));
-  const [nav] = await Promise.all([
-    page.waitForURL(u => u.searchParams.has('code') || u.origin === SITE && !u.search, { timeout: 20000 }).then(() => true).catch(() => false),
-    page.click('#conn-go'),
-  ]);
-  ok(/^c_/.test(state), 'the browser went to Slack carrying the state the server issued', state);
-  ok(nav, 'and came back to AMV', page.url());
+  /* Waited for in order - the request to Slack, then the page back on AMV,
+     booted. Waiting on "an AMV address" alone is already true before the
+     press, which on a loaded machine let the checks below run on a page that
+     was halfway out of the door. */
+  const toSlack = page.waitForRequest(r => r.url().startsWith('https://slack.com/'), { timeout: 30000 });
+  await page.click('#conn-go');
+  const req = await toSlack.catch(() => null);
+  const sent = req ? (new URL(req.url()).searchParams.get('state') || '') : '';
+  ok(/^c_/.test(sent), 'the browser went to Slack carrying the state the server issued', sent);
+  const back = await page.waitForURL(u => u.origin === SITE, { timeout: 30000, waitUntil: 'load' }).then(() => true).catch(() => false);
+  await until('AMV to boot again', () => page.evaluate(() => typeof S !== 'undefined' && !!window.AMV_API).catch(() => false), 30000).catch(() => {});
+  ok(back, 'and came back to AMV', page.url());
 }
 
 section('Back from the provider: connected, with no second sign-in');

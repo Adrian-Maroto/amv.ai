@@ -1952,6 +1952,10 @@ const _DEVICE_GLOBAL_KEYS = [
      the person, so it survives a sign-out - the next person to sign in on this
      machine meets the same server. */
   'amv_refresh_cookie',
+  /* The same fact, learned from the server's public config BEFORE anybody
+     signs in, so the first sign-in is already sent with credentials and its
+     cookie is kept rather than dropped. */
+  'amv_cookie_session',
   /* How wide the preview should be. A fact about the screen in front of you,
      not about who is signed in - the same person on a laptop and a phone wants
      different answers - so it survives a sign-out with the theme and the rail. */

@@ -222,10 +222,15 @@ section('The client stops keeping its own copy when the server holds it');
      'clearing any copy an earlier build left behind', true);
 
   /* And the requests that need the cookie send it. */
-  ok(/credentials: this\.cookieAuth \? 'include' : 'same-origin'/.test(core),
-     'refresh and sign-out send the cookie in cookie mode', true);
-  const n = (core.match(/credentials: this\.cookieAuth/g) || []).length;
+  /* One helper decides, so sign-in, refresh and sign-out cannot disagree -
+     sign-in was the one that did not send it, and the cookie never arrived. */
+  const helper = core.slice(core.indexOf('function _authCreds()'), core.indexOf('window._authCreds='));
+  ok(/AMV_API\.cookieAuth\) return 'include'/.test(helper) && /'same-origin'/.test(helper),
+     'refresh and sign-out send the cookie in cookie mode', helper.slice(0, 160));
+  const n = (core.match(/credentials: _authCreds\(\)/g) || []).length;
   ok(n >= 2, 'both of them, not just the one that was noticed', n);
+  ok(/\/\^\\\/auth\\\/\/\.test\(path\)\) o\.credentials = _authCreds\(\)/.test(core),
+     'and every other /auth request - sign-in, sign-up, reset - asks the same helper', true);
 }
 
 section('The cache does not keep a credential');
