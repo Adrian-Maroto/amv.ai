@@ -1437,6 +1437,154 @@ function _connSecShown(){
    snapped shut the moment they pressed Add, taking the form they were using
    with it. Held here instead, and restored on every paint. */
 let _connMachineOpen = false;
+/* ── POPULAR WHERE YOU ARE ─────────────────────────────────────────────────
+
+   Asked for: what people in each country actually use, on this page, so they
+   can connect it. One card near the top that is always there - so nothing
+   arrives late and pushes the page down - and a dialog that lists, for the
+   country, three honest kinds of thing:
+
+     · what AMV really connects there (that country's own mailboxes; the bank
+       where bank sign-in exists), with Connect;
+     · what AMV already uses there WITHOUT a sign-in (its job sites, shops,
+       trains, official pages), with the Crew jobs that use them;
+     · what cannot be connected yet (a bank outside the US), with Notify me.
+
+   A bank in Spain gets Notify me and a sentence saying why, never a Connect
+   that goes nowhere: a button that looks like it links your money and does not
+   is the most expensive kind of wrong on this page. */
+function _intLocalBannerHTML(){
+  let cc = '', row = null, pending = false;
+  try{ pending = _cwHerePending(); cc = pending ? '' : _cwCountryGuess(); row = _cwCountryRow(cc); }catch(e){}
+  try{ setTimeout(() => { Promise.resolve(_cwAskWhere()).then(_intLocalFill, _intLocalFill); }, 0); }catch(e){}
+  return '<button class="int-local" id="int-local" data-dact="openLocalConnect">'+
+    '<span class="int-local-flag" id="int-local-flag" aria-hidden="true">'+(row ? row[2] : '\uD83C\uDF0D')+'</span>'+
+    '<span class="int-local-b"><span class="int-local-t" id="int-local-t">'+
+      escH(row ? T('Popular in')+' '+row[1] : T('Popular where you are'))+'</span>'+
+      '<span class="int-local-s">'+escH(T('The mail, banks, job sites and shops people there use - and what AMV does with each.'))+'</span></span>'+
+    '<span class="int-local-go">'+escH(T('See them'))+
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>'+
+  '</button>';
+}
+/* The card's words change in place when the country is known; its size does
+   not, so the page under it never moves. */
+function _intLocalFill(){
+  try{
+    const t = $('int-local-t'), f = $('int-local-flag'); if(!t) return;
+    const row = _cwCountryRow(_cwCountryGuess());
+    const words = row ? T('Popular in')+' '+row[1] : T('Popular where you are');
+    if(t.textContent !== words) t.textContent = words;
+    if(f && row && f.textContent !== row[2]) f.textContent = row[2];
+  }catch(e){}
+}
+/* Which Crew search each fact leads to - words that really occur in the jobs
+   that use it, so "See the jobs" never lands on "no matches". */
+const INT_LOCAL_USES = [
+  { keys:['jobs'], t:'Job sites', d:'AMV searches these for roles that fit you and prepares each application. Nothing to sign in to.', find:'job' },
+  { keys:['shop','groc'], t:'Shops and supermarkets', d:'AMV watches their public prices for your deals, price drops and weekly shop.', find:'price' },
+  { keys:['food'], t:'Food delivery', d:'AMV compares what is open and what it costs. You place the order.', find:'table' },
+  { keys:['rail'], t:'Trains', d:'AMV checks live times and disruption before your trips.', find:'trip' },
+  { keys:['prop'], t:'Property', d:'AMV watches new listings and rents where you want to live.', find:'property' },
+  { keys:['post'], t:'Post and parcels', d:'AMV tracks what is coming and what is late.', find:'parcel' },
+  { keys:['telco'], t:'Mobile networks', d:'AMV compares plans when your contract is up and flags a bill that jumped.', find:'bill' },
+  { keys:['tax','gov','id','car'], t:'Government and official', d:'AMV reads the official pages for deadlines, fees and rules and reminds you in time. It never signs in, pays or files anything for you.', find:'renew' },
+  { keys:['health'], t:'Health', d:'Appointments, prescriptions and check-ups, tracked so nobody misses one.', find:'appointment' },
+  { keys:['exams','uni'], t:'School and university', d:'Exam dates and application deadlines, tracked for you.', find:'school' },
+  { keys:['news','weather'], t:'News and weather', d:'What your morning briefing reads.', find:'brief' },
+];
+function _intLocalRow(o){
+  return '<div class="int-card'+(o.notify?' int-notify':'')+'">'+
+    '<div class="int-ic">'+_appMarkHTML(o.mark||o.name)+'</div>'+
+    '<div class="int-body"><div class="int-top"><span class="int-name">'+escH(o.name)+'</span>'+
+      (o.connected?'<span class="int-ok">\u2713 '+escH(T('Connected'))+'</span>':'')+'</div>'+
+      (o.names?'<div class="int-local-names">'+escH(o.names)+'</div>':'')+
+      '<div class="int-desc">'+escH(o.desc)+'</div></div>'+
+    '<div class="int-act">'+o.act+'</div></div>';
+}
+function _intLocalBody(cc, d){
+  const row = _cwCountryRow(cc), name = row ? row[1] : (d && d.name) || cc;
+  const f = (d && d.facts && typeof d.facts === 'object') ? d.facts : {};
+  const mail = Array.isArray(d && d.mail) ? d.mail : [];
+  const acc = _mailConnectedAccount(), notified = _appNotifiedSet();
+  const btn = (attrs, label, cls) => '<button class="btn '+(cls||'bp')+'" '+attrs+' style="font-size:var(--t-sm)">'+escH(label)+'</button>';
+  /* CONNECT: only what really connects. */
+  const connect = mail.map(m => {
+    const on = !!acc && acc.provider === m.id;
+    return _intLocalRow({ name:m.name, connected:on,
+      desc: on ? T('Connected. AMV reads it, summarizes it and drafts replies.') : T('Read, summarized and answered. Connects with an app password.'),
+      act: on ? btn('data-lc-inbox="1"', T('Open inbox'), 'bs') : btn('data-lc-mail="'+escH(m.id)+'"', T('Connect')) });
+  });
+  if(cc === 'US'){
+    const linked = (function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })();
+    connect.push(_intLocalRow({ name:T('Your bank'), names:f.banks||'', connected:linked,
+      desc:T('Balances and transactions for your money jobs, through your bank’s own sign-in. AMV never sees your password and cannot move money.'),
+      act: btn('data-lc-bank="1"', linked ? T('Manage in Spending') : T('Link in Spending'), linked ? 'bs' : 'bp') }));
+  }
+  /* WORKS NOW, NO SIGN-IN. */
+  const uses = INT_LOCAL_USES.map(u => {
+    const names = u.keys.map(k => String(f[k] || '')).filter(Boolean).join(' · ');
+    if(!names) return '';
+    return _intLocalRow({ name:T(u.t), names, desc:T(u.d), act: btn('data-lc-find="'+escH(u.find)+'"', T('See the jobs'), 'bs') });
+  }).filter(Boolean);
+  /* NOT YET: said, with the one honest action. */
+  const later = [];
+  if(cc !== 'US' && (f.banks || f.pay)){
+    const slug = 'bank-' + cc.toLowerCase(), label = T('Bank sign-in in')+' '+name;
+    later.push(_intLocalRow({ name:label, mark:'B', names:[f.banks, f.pay].filter(Boolean).join(' · '), notify:true,
+      desc:T('Not available in')+' '+name+' '+T('yet, so nothing here pretends to link it. Money jobs work from the statements and receipts you share.'),
+      act: notified.has(slug) ? '<span class="int-onlist">\u2713 '+escH(T('On the list'))+'</span>'
+                              : btn('data-app-notify="'+escH(slug)+'" data-app-name="'+escH(label)+'"', T('Notify me'), 'bs') }));
+  }
+  const sec = (h, rows) => rows.length ? '<div class="ss2"><h3>'+escH(h)+'</h3><div class="int-list">'+rows.join('')+'</div></div>' : '';
+  const opts = CW_WORLD_COUNTRIES.slice().sort((a, b) => a[1].localeCompare(b[1]))
+    .map(c => '<option value="'+escH(c[0])+'"'+(c[0]===cc?' selected':'')+'>'+escH(c[1])+'</option>').join('');
+  return '<label class="ml-f cv-find"><span>'+escH(T('Country'))+'</span><select id="lc-c">'+opts+'</select></label>'+
+    sec(T('Connect in')+' '+name, connect)+
+    sec(T('Already works in')+' '+name+' - '+T('no sign-in'), uses)+
+    sec(T('Not yet'), later)+
+    (connect.length || uses.length ? '' : '<p class="mu">'+escH(T('Nothing is written down for')+' '+name+' '+T('yet. Every job still runs there.'))+'</p>')+
+    '<p class="cw-anything">'+escH(T('Every Crew job answers for')+' '+name+' '+T('- its sites, prices and rules. None of this is the limit: type anything in the Crew box and AMV works out what it needs.'))+'</p>';
+}
+async function openLocalConnect(code){
+  const r = $('ovr'); if(!r) return;
+  let cc = String(code || '').toUpperCase();
+  if(!_cwCountryRow(cc)) cc = _cwCountryGuess() || 'US';
+  const row = _cwCountryRow(cc);
+  r.innerHTML = _ovShell({ id:'lc', wide:true, eyebrow:T('Where you are'),
+                           title:T('Popular in')+' '+(row ? row[1] : cc),
+                           body:'<p class="mu">'+escH(T('Loading\u2026'))+'</p>' });
+  _ovWire('lc');
+  let d = null;
+  if(window.AMV_API && AMV_API.live){ try{ d = await AMV_API.everyday(cc); }catch(e){ d = null; } }
+  const b = $('lc-body'); if(!b) return;
+  if(!d || typeof d !== 'object'){
+    b.innerHTML = '<div class="ml-err">'+escH(T('AMV’s servers cannot be reached right now, so the list for')+' '+(row ? row[1] : cc)+' '+T('cannot be shown. Try again in a moment.'))+'</div>';
+    return;
+  }
+  try{ if(d.facts && typeof d.facts === 'object') _cwFacts[cc] = d.facts; }catch(e){}
+  b.innerHTML = _intLocalBody(cc, d);
+  const h = $('lc-h'); if(h && row) h.textContent = T('Popular in')+' '+row[1];
+  on($('lc-c'), 'change', e => { openLocalConnect(e.target.value); });
+  b.querySelectorAll('[data-lc-mail]').forEach(x => on(x, 'click', () => {
+    if(_intNeedsAccount(_intName('mail'))) return;
+    r.innerHTML = ''; openMailConnect(x.dataset.lcMail);
+  }));
+  b.querySelectorAll('[data-lc-inbox]').forEach(x => on(x, 'click', () => { r.innerHTML = ''; openMailInbox(); }));
+  b.querySelectorAll('[data-lc-bank]').forEach(x => on(x, 'click', () => {
+    r.innerHTML = '';
+    try{ setTab('spend'); }catch(e){}
+    try{ toast('Linking a bank happens here, on your bank\u2019s own sign-in page. AMV never sees your password.','info',6000); }catch(e){}
+  }));
+  b.querySelectorAll('[data-lc-find]').forEach(x => on(x, 'click', () => {
+    r.innerHTML = '';
+    /* Set before the tab opens, so Crew draws once, already searched. */
+    try{ _cwFind = String(x.dataset.lcFind || ''); }catch(e){}
+    setTab('crew');
+  }));
+  b.querySelectorAll('[data-app-notify]').forEach(x => on(x, 'click', () => { _appNotify(x); }));
+}
+try{ window.openLocalConnect = openLocalConnect; window._intLocalBody = _intLocalBody; }catch(e){}
+
 function renderIntegrationsView(){
   const vc=$('vc'); if(!vc) return;
   /* SEE ALL OPENS A PAGE, NOT A LONGER SCROLL.
@@ -1483,6 +1631,7 @@ function renderIntegrationsView(){
          filled in. Up here it belongs to this view, and nothing the directory
          repaints can reach it. See cdirSearchBarHTML. */
       ((typeof cdirSearchBarHTML === 'function') ? cdirSearchBarHTML() : '')+
+      _intLocalBannerHTML()+
       _connSectionHTML()+
       /* THE SETUP, FOLDED AWAY UNTIL IT IS WANTED.
 

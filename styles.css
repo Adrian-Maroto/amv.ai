@@ -15895,3 +15895,40 @@ html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display
   #cw-foryou .sec-head h3{ min-height:calc(2 * 1.35em); line-height:1.35; align-content:flex-start; }
   #cw-foryou .sec-sub .cw-link{ display:flex; margin-left:0; }
 }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   LAYER A267 - Every job for the country it runs in; popular where you are
+   ═════════════════════════════════════════════════════════════════════════ */
+/* One line, always: the words change when the country's facts arrive and the
+   card must not change height when they do. */
+.cw-job-loc{ display:block; min-height:1.5em; line-height:1.5; margin-top:var(--sp-2);
+  font-size:var(--t-xs); font-weight:500; color:var(--accent);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cw-facts-h{ margin:var(--sp-5) 0 var(--sp-2); font-size:var(--t-md); font-weight:600; color:var(--tx); }
+.cw-facts{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:var(--sp-2) var(--sp-4); margin:0 0 var(--sp-3); }
+.cw-facts-r{ padding:var(--sp-2) 0; border-top:1px solid var(--bd); min-width:0; }
+.cw-facts-r dt{ font-size:var(--t-xs); color:var(--mu); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+.cw-facts-r dd{ margin:2px 0 0; font-size:var(--t-sm); color:var(--tx); line-height:1.45; }
+
+/* The card near the top of Connectors. Always drawn, the same size whether or
+   not the country is known yet - only its words change. */
+.int-local{ display:flex; align-items:center; gap:var(--sp-3); width:100%; text-align:left;
+  margin:var(--sp-4) 0; padding:var(--sp-3) var(--sp-4); min-height:72px;
+  background:var(--s1); color:var(--tx); border:1px solid var(--bd); border-radius:var(--r-lg);
+  cursor:pointer; font:inherit; transition:border-color .15s var(--ease); }
+.int-local:hover{ border-color:var(--accent); }
+.int-local:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.int-local-flag{ flex:none; width:40px; height:40px; display:grid; place-items:center;
+  font-size:var(--t-2xl); line-height:1; border-radius:var(--r-md); background:var(--s2); }
+.int-local-b{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.int-local-t{ font-size:var(--t-md); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.int-local-s{ font-size:var(--t-sm); color:var(--mu); line-height:1.45; }
+.int-local-go{ flex:none; display:inline-flex; align-items:center; gap:6px; font-size:var(--t-sm); font-weight:600; color:var(--accent); white-space:nowrap; }
+@media(max-width:560px){ .int-local-go{ display:none; } }
+.int-local-names{ font-size:var(--t-sm); font-weight:500; color:var(--tx); margin-top:2px; line-height:1.45; }
+@media(prefers-reduced-motion:reduce){ .int-local{ transition:none; } }
+/* In the dialog each row gets the full width: the names are the point, and two
+   columns wrapped a tax office across six lines. */
+#lc-body .int-list{ grid-template-columns:1fr; }
+#lc-body .int-card{ align-items:center; }
+@media(max-width:560px){ #lc-body .ss2{ padding:var(--sp-3); } }

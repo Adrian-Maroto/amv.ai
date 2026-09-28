@@ -1,0 +1,191 @@
+/* EVERY JOB ANSWERS FOR WHERE YOU ARE, AND CONNECTORS SHOWS WHAT IS USED THERE.
+
+   Asked for: in each country, 105+ of the most common jobs - the five written
+   for that country plus the hundred below it, each one naming where it looks
+   there - and, on Connectors, the things people in that country use, so they
+   can connect them. Measured with the real Worker behind a real server, told
+   the request comes from Spain, in a browser set to en-US.
+
+   Three things only a browser can say:
+     · the cards name Spain's own services (InfoJobs, Mercadona, the AEAT), not
+       a flag on a generic list;
+     · those words arrive without moving anything - the line holds its place;
+     · Connectors offers Connect only for what really connects there. A Spanish
+       bank gets Notify me, never a button that looks like it links money. */
+import { createServer } from 'http';
+import { chromium } from 'playwright';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { LAUNCH } from '../lib/harness.mjs';
+import { makeEnv, serveArtifact } from '../lib/live-backend.mjs';
+import { ok, section, report, done } from '../lib/assert.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const worker = (await import(join(ROOT, 'amv-backend.js') + '?where=' + Date.now())).default;
+const env = makeEnv({});
+let FROM = 'ES';
+const api = createServer(async (req, res) => {
+  const chunks = []; for await (const c of req) chunks.push(c);
+  const headers = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (v != null) headers.set(k, String(v));
+  const r0 = new Request('http://localhost:' + api.address().port + req.url, { method: req.method, headers,
+    body: (req.method === 'GET' || req.method === 'HEAD') ? undefined : Buffer.concat(chunks) });
+  Object.defineProperty(r0, 'cf', { value: { country: FROM } });
+  const r = await worker.fetch(r0, env, { waitUntil() {}, passThroughOnException() {} });
+  const o = {}; r.headers.forEach((v, k) => { o[k] = v; }); res.writeHead(r.status, o); res.end(Buffer.from(await r.arrayBuffer()));
+});
+await new Promise(r => api.listen(0, r));
+const site = await serveArtifact(0, 'http://localhost:' + api.address().port);
+const SITE = 'http://localhost:' + site.address().port;
+const browser = await chromium.launch(LAUNCH);
+const errors = [];
+async function open(from, hash, width = 1280) {
+  FROM = from;
+  const phone = width === 390;
+  const ctx = await browser.newContext({ viewport: { width, height: phone ? 844 : 1000 }, locale: 'en-US', hasTouch: phone, isMobile: phone });
+  await ctx.addInitScript(() => {
+    try { localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true })); } catch (e) {}
+    window.__cls = 0; window.__src = [];
+    try { new PerformanceObserver(l => { for (const e of l.getEntries()) { window.__cls += e.value;
+      window.__src.push((e.sources || []).map(x => x.node && (x.node.id || x.node.className)).join(' ').slice(0, 80)); } }).observe({ type: 'layout-shift', buffered: true }); } catch (e) {}
+  });
+  const page = await ctx.newPage();
+  page.on('pageerror', e => errors.push(e.message));
+  await page.goto(SITE + '/#/' + hash, { waitUntil: 'load' });
+  return { ctx, page };
+}
+/* Connectors belongs to an account, so the visitor signs up for real - through
+   the Worker, the way the page does - and then opens it. */
+let seq = 0;
+async function openConnectors(from, width = 1280) {
+  const { ctx, page } = await open(from, '', width);
+  const email = 'where' + (++seq) + '@example.com';
+  const r = await page.evaluate(async (email) => {
+    try { const d = await AMV_API.signup(email, 'Where', 'A-real-Passw0rd!'); loginUser((d && d.user) || { name: 'Where', email, ini: 'W' }); return 'ok'; }
+    catch (e) { return String(e && e.message); }
+  }, email);
+  if (r !== 'ok') errors.push('sign-up failed: ' + r);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { window.__cls = 0; window.__src = []; setTab('integrations'); });
+  return { ctx, page };
+}
+const lines = (page) => page.evaluate(() => [...document.querySelectorAll('.cw-job-loc')].map(e => ({ id: e.dataset.loc, t: e.textContent.trim(), h: e.getBoundingClientRect().height })));
+
+section('Crew, from Spain: the hundred below the five name Spain’s own services');
+{
+  const { ctx, page } = await open('ES', 'crew');
+  await page.waitForFunction(() => { const e = document.querySelector('.cw-job-loc[data-loc="job_hunt"]'); return e && /InfoJobs/.test(e.textContent); }, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(400);
+  const L = await lines(page);
+  const byId = Object.fromEntries(L.map(x => [x.id, x.t]));
+  ok(L.length >= 30, 'dozens of cards say where they look in Spain', L.length);
+  ok(/^In Spain: .*InfoJobs/.test(byId.job_hunt || ''), 'the job hunt looks on InfoJobs and the SEPE', byId.job_hunt);
+  const shop = L.find(x => /Mercadona/.test(x.t));
+  ok(!!shop, 'the shopping jobs compare Mercadona and the rest', L.map(x => x.id).join(','));
+  ok(/Agencia Tributaria/.test(byId.tax_catch || ''), 'the tax job uses the Agencia Tributaria', byId.tax_catch);
+  ok(L.every(x => /Spain/.test(x.t)), 'every line is for Spain - none for the browser’s United States', L.filter(x => !/Spain/.test(x.t)).slice(0, 3));
+  ok(L.every(x => x.h > 10 && x.h < 24), 'each is one line, however long the list of names', L.filter(x => !(x.h > 10 && x.h < 24)).slice(0, 3));
+  const five = await page.evaluate(() => document.querySelectorAll('#cw-foryou .cw-job-loc').length);
+  ok(five === 0, 'the five written for Spain need no line - they are Spain’s already', five);
+  const cls = await page.evaluate(() => ({ v: window.__cls, s: window.__src.slice(0, 4) }));
+  ok(cls.v < 0.001, 'and the Spanish names arrive without moving the page', { cls: +cls.v.toFixed(4), src: cls.s });
+  const run = await page.evaluate(() => typeof _cwCountryGuess === 'function' ? _cwCountryGuess() : '');
+  ok(run === 'ES', 'and a job switched on here is created for Spain', run);
+  await ctx.close();
+}
+
+section('Crew, from Spain, on a phone');
+{
+  const { ctx, page } = await open('ES', 'crew', 390);
+  await page.waitForFunction(() => { const e = document.querySelector('.cw-job-loc[data-loc="job_hunt"]'); return e && /InfoJobs/.test(e.textContent); }, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(400);
+  const L = await lines(page);
+  ok(L.length >= 30 && L.every(x => /Spain/.test(x.t)), 'the same lines on a phone', L.length);
+  const cls = await page.evaluate(() => ({ v: window.__cls, s: window.__src.slice(0, 4) }));
+  ok(cls.v < 0.001, 'and nothing moves there either', { cls: +cls.v.toFixed(4), src: cls.s });
+  const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+  ok(wide <= 0, 'and no line pushes the page sideways', wide);
+  await ctx.close();
+}
+
+section('Crew, from the United States: the same cards, for the United States');
+{
+  const { ctx, page } = await open('US', 'crew');
+  await page.waitForFunction(() => { const e = document.querySelector('.cw-job-loc[data-loc="job_hunt"]'); return e && /^In United States/.test(e.textContent); }, null, { timeout: 15000 }).catch(() => {});
+  const L = await lines(page);
+  const byId = Object.fromEntries(L.map(x => [x.id, x.t]));
+  ok(/^In United States/.test(byId.job_hunt || '') && !/InfoJobs/.test(byId.job_hunt || ''), 'the job hunt is the United States’ one', byId.job_hunt);
+  ok(/IRS/.test(byId.tax_catch || ''), 'and the tax job uses the IRS', byId.tax_catch);
+  await ctx.close();
+}
+
+section('Other countries: Mexico’s facts, from the bottom of Crew');
+{
+  const { ctx, page } = await open('ES', 'crew');
+  await page.waitForSelector('#cw-morec [data-dact="cwMoreCountries"]', { timeout: 15000 });
+  await page.click('#cw-morec [data-dact="cwMoreCountries"]');
+  await page.click('#cw-morec [data-darg="MX"]');
+  await page.waitForFunction(() => document.querySelector('#cw-browse .cw-facts'), null, { timeout: 10000 }).catch(() => {});
+  const r = await page.evaluate(() => ({
+    h: ((document.querySelector('#cw-browse .cw-facts-h') || {}).textContent || '').trim(),
+    facts: [...document.querySelectorAll('#cw-browse .cw-facts-r')].map(e => e.textContent.replace(/\s+/g, ' ').trim()),
+  }));
+  ok(/Mexico/.test(r.h), 'Mexico says where AMV looks there', r.h);
+  ok(r.facts.length >= 8 && r.facts.some(t => /SAT/.test(t)), 'with Mexico’s tax office and the rest', r.facts.slice(0, 4));
+  await ctx.close();
+}
+
+section('Connectors, from Spain: popular in Spain, honestly');
+{
+  const { ctx, page } = await openConnectors('ES');
+  await page.waitForSelector('#int-local', { timeout: 15000 });
+  await page.waitForFunction(() => /Spain/.test((document.getElementById('int-local-t') || {}).textContent || ''), null, { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  const head = await page.evaluate(() => document.getElementById('int-local-t').textContent);
+  ok(/Popular in Spain/.test(head), 'the card near the top says Spain', head);
+  const cls = await page.evaluate(() => ({ v: window.__cls, s: window.__src.slice(0, 4) }));
+  ok(cls.v < 0.001, 'and learning the country moved nothing on the page', { cls: +cls.v.toFixed(4), src: cls.s });
+  await page.click('#int-local');
+  await page.waitForFunction(() => document.querySelector('#lc-body .int-card'), null, { timeout: 10000 }).catch(() => {});
+  const d = await page.evaluate(() => {
+    const secs = [...document.querySelectorAll('#lc-body .ss2')].map(s => ({
+      h: s.querySelector('h3').textContent,
+      rows: [...s.querySelectorAll('.int-card')].map(c => ({ n: c.querySelector('.int-name').textContent, t: c.textContent.replace(/\s+/g, ' '), b: (c.querySelector('.int-act') || {}).textContent.trim() })),
+    }));
+    return { title: document.getElementById('lc-h').textContent, secs };
+  });
+  const find = (re) => d.secs.flatMap(s => s.rows.map(r => Object.assign({ sec: s.h }, r))).find(r => re.test(r.t));
+  ok(/Popular in Spain/.test(d.title), 'the dialog is for Spain', d.title);
+  const connectSec = d.secs.find(s => /^Connect in Spain/.test(s.h));
+  ok(connectSec && connectSec.rows.length >= 1 && connectSec.rows.every(r => r.b === 'Connect'), 'Spain’s own mailboxes, each with a real Connect', connectSec);
+  const jobs = find(/InfoJobs/);
+  ok(jobs && /no sign-in/.test(jobs.sec) && jobs.b === 'See the jobs', 'InfoJobs is used without a sign-in, and leads to the jobs that use it', jobs);
+  const bank = find(/Santander/);
+  ok(bank && bank.b === 'Notify me' && /Not available in Spain/.test(bank.t), 'Spain’s banks get Notify me and a reason - never a Connect', bank);
+  ok(!d.secs.some(s => s.rows.some(r => /Link in Spending/.test(r.b))), 'and nothing offers to link a Spanish bank', d.secs.map(s => s.h));
+  await page.click('#lc-body [data-lc-find="job"]');
+  await page.waitForFunction(() => document.getElementById('cw-find') && document.getElementById('cw-find').value === 'job', null, { timeout: 8000 }).catch(() => {});
+  const crew = await page.evaluate(() => ({ v: (document.getElementById('cw-find') || {}).value, n: document.querySelectorAll('#cw-jobs-body .cw-job').length }));
+  ok(crew.v === 'job' && crew.n >= 3, 'See the jobs opens Crew already searched, with jobs in it', crew);
+  await ctx.close();
+}
+
+section('Connectors, from the United States: the bank really links there');
+{
+  const { ctx, page } = await openConnectors('US');
+  await page.waitForSelector('#int-local', { timeout: 15000 });
+  await page.click('#int-local');
+  await page.waitForFunction(() => document.querySelector('#lc-body .int-card'), null, { timeout: 10000 }).catch(() => {});
+  const r = await page.evaluate(() => [...document.querySelectorAll('#lc-body .int-card')].map(c => c.textContent.replace(/\s+/g, ' ')));
+  ok(r.some(t => /Your bank/.test(t) && /Link in Spending/.test(t)), 'the bank row goes to the real link in Spending', r.filter(t => /bank/i.test(t)));
+  ok(!r.some(t => /Bank sign-in in/.test(t)), 'and is not on a waiting list there', r.length);
+  await page.selectOption('#lc-c', 'JP');
+  await page.waitForFunction(() => /Japan/.test((document.getElementById('lc-h') || {}).textContent || '') && document.querySelector('#lc-body .int-card'), null, { timeout: 10000 }).catch(() => {});
+  const jp = await page.evaluate(() => ({ h: document.getElementById('lc-h').textContent, t: document.getElementById('lc-body').textContent }));
+  ok(/Japan/.test(jp.h) && /Bank sign-in in Japan/.test(jp.t), 'choosing another country shows that country, honestly', jp.h);
+  await ctx.close();
+}
+
+ok(errors.length === 0, 'no page errors', errors.slice(0, 3));
+await browser.close(); site.close(); api.close();
+report();
+done();

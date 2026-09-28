@@ -1566,6 +1566,81 @@ function _cwUniversalJobs(){
    what somebody comparing does. */
 const _cwLocalCache = {};
 let _cwLocalState = {};        // code -> 'loading' | 'ok' | 'offline'
+/* ── EVERY JOB, FOR THE COUNTRY IT RUNS IN ───────────────────────────────────
+
+   Asked for: 105+ of the most common jobs for EACH country, not the same list
+   with a flag on it. The common jobs are common everywhere - finding work,
+   bills, tax, the weekly shop, a passport running out - and what changes is
+   where each one looks. So the country's facts (its tax office, its banks, its
+   job sites, its supermarkets) come with the country's five from the server,
+   every card that depends on one names it, and the run itself is told where
+   the person is and to check anything official against that country's source.
+
+   The five written for the country + the hundred below, each answering for it,
+   is the 105. The box above them is the rest: none of this is the limit.
+
+   Keys are the server's COUNTRY_FACTS keys. A job with no entry here is the
+   same everywhere (a code review, a weekly report) and says nothing, rather
+   than being dressed up as local. */
+const _cwFacts = {};           // code -> facts object from /v1/everyday
+const CW_LOC = {
+  job_hunt:['jobs'], salary_bench:['jobs','cur'], recruiter_triage:['jobs'], interview_pack:['jobs'],
+  portfolio_fresh:['jobs'], employer_health:['news'], application_help:['uni','jobs'],
+  opportunity_student:['uni'], morning_brief:['news'], morning_brief_student:['news','weather'],
+  calendar_brief:['weather'], weather_day:['weather'], deal_watch:['shop'], target_buy:['shop'],
+  price_protect:['shop'], coupons:['shop','groc'], store_deals:['shop','groc'], groceries:['groc'],
+  local_basket:['groc'], fridge_recipes:['groc'], deliveries:['post'], ev_deliveries:['post'],
+  ev_returns:['shop'], money_morning:['banks'], unusual_spend:['banks'], low_balance:['banks'],
+  budget_trend:['banks','cur'], money_leaks:['banks','pay'], money_student:['banks','pay'],
+  rate_watch:['banks'], bills_due:['banks','pay'], ev_bills_due:['banks','pay'],
+  bill_negotiate:['telco'], ev_utility_spike:['telco'], tax_catch:['tax'], ev_official:['tax','gov'],
+  regulation_watch:['gov'], life_admin:['id','gov'], life_admin_student:['id','gov'],
+  doc_expiry:['id'], ev_renewals:['id','car'], car_admin:['car'], health_admin:['health'],
+  appt_prep:['health'], appt_chase:['health'], family_health:['health'], move_watch:['prop'],
+  travel_guardian:['rail'], ev_trip:['rail'], book_table:['food'], exam_prep:['exams'],
+  deadline_radar:['exams'], school_admin:['exams'], ev_school_week:['exams'], school_week:['exams']
+};
+/* The names a person reads for each fact, in the order a page lists them. */
+const CW_FACT_LABELS = [['jobs','Job sites'],['banks','Banks'],['pay','Everyday payments'],['tax','Tax'],
+  ['gov','Government sign-in'],['id','ID and passports'],['shop','Shopping online'],['groc','Supermarkets'],
+  ['food','Food delivery'],['rail','Trains'],['prop','Property'],['car','Vehicle admin'],['health','Health'],
+  ['exams','Exams'],['uni','University applications'],['telco','Mobile networks'],['post','Post and parcels'],
+  ['news','News'],['weather','Weather'],['cur','Currency']];
+function _ccFactsHTML(cc){
+  const f = _cwFacts[cc]; if(!f) return '';
+  const rows = CW_FACT_LABELS.filter(([k]) => f[k]).map(([k, label]) =>
+    `<div class="cw-facts-r"><dt>${escH(T(label))}</dt><dd>${escH(String(f[k]))}</dd></div>`).join('');
+  return rows ? `<dl class="cw-facts">${rows}</dl>` : '';
+}
+function _cwLocText(id, cc){
+  const row = _cwCountryRow(cc); if(!row) return '';
+  const f = _cwFacts[cc], keys = CW_LOC[id] || [];
+  const hits = f ? keys.map(k => String(f[k] || '')).filter(Boolean) : [];
+  /* Said the same way whether the facts arrived or not, so a card never
+     changes height when they do - only the words after the colon change. */
+  return hits.length ? T('In') + ' ' + row[1] + ': ' + hits.join(' · ')
+                     : T('Answers for') + ' ' + row[1];
+}
+function _cwLocLine(j){
+  if(!j || j.local || !CW_LOC[j.id]) return '';
+  /* While AMV is still hearing where somebody is, the line holds its place
+     empty: naming the browser's guess and then another country is the flash
+     this page was fixed not to have. */
+  const text = _cwHerePending() ? '' : _cwLocText(j.id, _cwCountryGuess());
+  return `<span class="cw-job-loc" data-loc="${escH(j.id)}">${escH(text)}</span>`;
+}
+/* Fills the lines in place once the country or its facts arrive - the cards
+   are not rebuilt, so nothing on the page moves and nothing open closes. */
+function _cwLocFill(){
+  try{
+    if(_cwHerePending()) return;
+    const cc = _cwCountryGuess();
+    document.querySelectorAll('.cw-job-loc[data-loc]').forEach(el => {
+      const t = _cwLocText(el.getAttribute('data-loc'), cc);
+      if(el.textContent !== t) el.textContent = t;
+    });
+  }catch(e){}
+}
 /* WHAT WAS ALREADY ASKED, AND UNDER WHAT CONDITIONS.
 
    A failed lookup leaves no cache entry, and the failure path re-renders. So
@@ -1620,6 +1695,7 @@ async function _cwLoadLocal(code){
     if(!d || !Array.isArray(d.countries)) throw new Error('no catalogue');
     const name = (d && d.name) || cc;
     const local = Array.isArray(d.local) ? d.local : [];
+    _cwFacts[cc] = (d.facts && typeof d.facts === 'object' && !Array.isArray(d.facts)) ? d.facts : {};
     _cwLocalCache[cc] = local.map(j => _cwEverydayJob(Object.assign({ country: cc }, j), name, true));
     _cwLocalState[cc] = 'ok';
   }catch(e){
@@ -1641,6 +1717,7 @@ async function _cwLoadLocal(code){
       if(cc === _cwCountryGuess()){ const el = document.getElementById('cw-foryou'); if(el){ el.outerHTML = _cwForYouHTML(); done = true; } }
       if(cc === _cwBrowse){ const el = document.getElementById('cw-morec'); if(el){ el.outerHTML = _cwMoreCountriesHTML(); done = true; } }
       if(!done) _cwRepaintSoon();
+      if(cc === _cwCountryGuess()) _cwLocFill();
     }
   }catch(e){ try{ if(S.tab === 'crew') _cwRepaintSoon(); }catch(e2){} }
 }
@@ -2223,6 +2300,7 @@ function _cwForYouRepaint(){
     const el = document.getElementById('cw-foryou') || document.getElementById('cw-pop');
     if(el) el.outerHTML = _cwForYouHTML(); else _cwRepaintSoon();
   }catch(e){ try{ _cwRepaintSoon(); }catch(_){} }
+  _cwLocFill();
 }
 
 /* SEE MORE COUNTRIES - at the very bottom, as asked. A list of every country
@@ -2266,7 +2344,8 @@ function _cwBrowsePanelHTML(cc){
     <div class="cw-browse-h"><h4><span aria-hidden="true">${flag}</span> ${escH(T('Only in'))} ${escH(name)}</h4>
       ${mine ? `<span class="cw-cc-you">${escH(T('your country'))}</span>` : `<button class="btn bs" data-dact="cwCountry" data-darg="${escH(cc)}">${escH(T('This is my country'))}</button>`}</div>
     ${body}
-    <p class="cw-foryou-note">${escH(T('Everything in the list above runs in'))} ${escH(name)} ${escH(T('too.'))}</p>
+    ${st === 'ok' && _ccFactsHTML(cc) ? `<h4 class="cw-facts-h">${escH(T('Where AMV looks in'))} ${escH(name)}</h4>${_ccFactsHTML(cc)}` : ''}
+    <p class="cw-foryou-note">${escH(T('Every job in the list above answers for'))} ${escH(name)} ${escH(T('once it is your country - its sites, prices and rules.'))}</p>
   </div>`;
 }
 function cwMoreCountries(){
@@ -2281,6 +2360,7 @@ function cwBrowse(cc){
   _cwBrowse = String(cc || '').toUpperCase();
   try{ const el = document.getElementById('cw-morec'); if(el) el.outerHTML = _cwMoreCountriesHTML(); else _cwRepaintSoon(); }catch(e){}
 }
+try{ window._cwLocText = _cwLocText; window._cwFacts = _cwFacts; window.CW_LOC = CW_LOC; }catch(e){}
 try{ window.cwMoreCountries = cwMoreCountries; window.cwBrowse = cwBrowse; window._cwForYouHTML = _cwForYouHTML;
      window._cwAskWhere = _cwAskWhere; }catch(e){}
 
@@ -3215,6 +3295,7 @@ function _cwJobCard(j){
       <span class="cw-job-t">${escH(j.title)}</span>
       <span class="cw-job-d">${escH(j.desc)}</span>
       ${_cwSampleLine(j)}
+      ${_cwLocLine(j)}
       <span class="cw-job-need">Uses: ${escH(j.needs)}
         <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
       </span>
@@ -3234,6 +3315,7 @@ function _cwLockedCard(j){
       <span class="cw-job-t">${escH(j.title)}</span>
       <span class="cw-job-d">${escH(j.desc)}</span>
       ${_cwSampleLine(j)}
+      ${_cwLocLine(j)}
       <span class="cw-job-need">Uses: ${escH(j.needs)}
         <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
       </span>
@@ -3596,6 +3678,9 @@ async function _mcScheduleServer(payload){
          Absent when somebody typed the job themselves, which is fine: the
          ranking is of catalogue entries. */
       srcId: payload.srcId || '',
+      /* The country the page is showing, so the unattended run answers for
+         the place somebody chose - the cron has no network to ask later. */
+      country: (typeof _cwCountryGuess === 'function' ? _cwCountryGuess() : '') || '',
       notify: payload.notify || 'app' }) });
     const d = await r.json().catch(()=>({}));
     if(!r.ok || d.error) return { ok:false, code:d.code||'failed', error:d.error||'' };
