@@ -25,6 +25,7 @@ const openCrew = () => page.evaluate(async () => {
   return document.getElementById('vc').textContent;
 });
 
+let shelf = null;
 section('There is a lot of it, and every one is reachable');
 {
   const t = await openCrew();
@@ -58,8 +59,25 @@ section('There is a lot of it, and every one is reachable');
      property is that the screen shows the shelf it decided on and NOT the
      whole pool, and pinning the literal here just means editing this line
      every time the shelf is retuned. */
+  /* AND THEN ALL BECAME A PREVIEW OF IT. A country's own hundred-plus jobs
+     joined the shelf, and two hundred cards on one screen is the wall this
+     note describes - so All shows the first CW_CAT_PREVIEW of every category
+     (and anything switched on), each category ends in See all with its real
+     count, and the category view holds every one. The shelf is still
+     CW_SHOWCASE_N; All is the part of it drawn at once. */
   const cap = await page.evaluate(() => CW_SHOWCASE_N);
-  ok(n.rendered === cap, 'the ranked shelf is what is shown', { rendered: n.rendered, cap });
+  shelf = await page.evaluate(() => {
+    const pool = _cwShowcase(), by = {};
+    pool.forEach(j => { (by[j.cat] = by[j.cat] || []).push(j); });
+    const expect = Object.values(by).reduce((s, l) => { let n = 0; return s + l.filter(j => j.on || n++ < CW_CAT_PREVIEW).length; }, 0);
+    const more = [...document.querySelectorAll('.cw-cat-more .int-seemore')].map(b => [b.dataset.darg, Number((b.textContent.match(/\d+/) || [0])[0])]);
+    return { pool: pool.length, expect,
+             seeAllRight: more.length > 0 && more.every(([c, k]) => (by[c] || []).length === k),
+             seeAllWhere: Object.entries(by).filter(([c, l]) => l.length > CW_CAT_PREVIEW).length === more.length };
+  });
+  ok(shelf.pool === cap, 'the ranked shelf is the hundred it decided on', { pool: shelf.pool, cap });
+  ok(n.rendered === shelf.expect, 'All draws the first few of each category of it', { rendered: n.rendered, expect: shelf.expect });
+  ok(shelf.seeAllRight && shelf.seeAllWhere, 'and every category with more ends in See all, with its real count', shelf);
   ok(cap < n.defined, 'and it is a shelf, not the whole pool', { cap, defined: n.defined });
   const reach = await page.evaluate(() => {
     const shown = new Set(_cwShowcase().map(j => j.id));
@@ -137,8 +155,7 @@ section('Filtering by category shows that category and only that category');
   /* "All" means no category filter, which is the whole SHOWN catalogue - the
      screen is a hundred-item sample now, so comparing it to every job that
      exists would be asserting the sample does not exist. */
-  ok(back === (await page.evaluate(() => _cwShowcase().length)),
-     'and All brings the whole shown catalogue back', back);
+  ok(back === shelf.expect, 'and All brings the whole shelf\u2019s preview back', { back, expect: shelf.expect });
 }
 
 section('A job that cannot run says so rather than looking active');
@@ -158,7 +175,10 @@ section('A job that cannot run says so rather than looking active');
        a job that was silently broken. The checker fails closed now, so the
        honest count is simply "jobs with something missing", and it stays
        correct as the catalogue grows past the services one table knew. */
-    const needsAcct = _cwShowcase().filter(j => _cwNeedsMissing(j).length > 0);
+    /* Of the cards on the screen - All previews each category now. */
+    const pool = new Map(_cwShowcase().map(j => [j.id, j]));
+    const drawn = [...document.querySelectorAll('.cw-cat-grid .cw-job-body')].map(b => pool.get(b.dataset.darg)).filter(Boolean);
+    const needsAcct = drawn.filter(j => _cwNeedsMissing(j).length > 0);
     return { needsAcct: needsAcct.length,
              blocked: document.querySelectorAll('.cw-cat-grid .cw-job.blocked').length,
              text: document.body.textContent,

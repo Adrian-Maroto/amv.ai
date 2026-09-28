@@ -70,7 +70,22 @@ async function openConnectors(from, width = 1280) {
   await page.evaluate(() => { window.__cls = 0; window.__src = []; setTab('integrations'); });
   return { ctx, page };
 }
-const lines = (page) => page.evaluate(() => [...document.querySelectorAll('.cw-job-loc')].map(e => ({ id: e.dataset.loc, t: e.textContent.trim(), h: e.getBoundingClientRect().height })));
+/* Every card's line, across the whole catalogue. All shows the first few of
+   each category and See all the rest, so the lines are read category by
+   category - the way somebody pressing the chips would see them - and the
+   screen is put back on All. The switching is this test's doing, not the
+   page's, so the layout-shift tally is put back as it was too. */
+const lines = (page) => page.evaluate(async () => {
+  const read = () => [...document.querySelectorAll('.cw-job-loc')].map(e => ({ id: e.dataset.loc, t: e.textContent.trim(), h: e.getBoundingClientRect().height }));
+  const cls = window.__cls, src = (window.__src || []).slice();
+  const seen = new Map(read().map(x => [x.id, x]));
+  const cats = [...document.querySelectorAll('.cw-chip')].map(c => c.dataset.darg).filter(c => c && c !== 'all');
+  for (const c of cats) { cwCat(c); read().forEach(x => { if (!seen.has(x.id)) seen.set(x.id, x); }); }
+  if (cats.length) cwCat('all');
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 150))));
+  window.__cls = cls; window.__src = src;
+  return [...seen.values()];
+});
 
 section('Crew, from Spain: the hundred below the five name Spain’s own services');
 {

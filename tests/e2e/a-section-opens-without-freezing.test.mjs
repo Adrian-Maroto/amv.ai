@@ -43,7 +43,11 @@ section('Crew lays out what is on screen, not the whole catalogue');
              hasCheck: typeof Element.prototype.checkVisibility === 'function' };
   });
   ok(r.hasCheck, 'the browser can say what it is skipping');
-  ok(r.cats >= 5 && r.cards >= 80, 'the catalogue is really there to be skipped', r);
+  /* All draws the first few of each category now (See all has the rest), so
+     there are fewer cards than the hundred this once counted - still several
+     screens of them on a phone, which is what there has to be for skipping to
+     mean anything. */
+  ok(r.cats >= 5 && r.cards >= 60, 'the catalogue is really there to be skipped', r);
   ok(r.cv.length === 1 && r.cv[0] === 'auto', 'every category is content-visibility:auto', r.cv);
   ok(r.drawn < r.cards / 10,
      'and on arrival fewer than a tenth of the job cards are rendered', r.drawn + ' of ' + r.cards);

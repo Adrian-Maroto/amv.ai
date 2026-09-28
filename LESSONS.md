@@ -13880,3 +13880,34 @@ Rules:
   checked for it - the chat, the inbox screen, and the unattended runner.
 - Name the real thing on the card. "Uses: Email" hid the gap; "Uses: QQ Mail"
   exposed it the moment it was written down.
+
+## 534. Adding a hundred good things can break a promise made about the screen they land on
+
+Asked for a hundred-plus jobs per country, the catalogue took every country's
+own jobs in front of the hundred it already showed - 233 cards, a 65,000px
+page on a phone, and every switch press re-rendering all of it (about twice
+the time at a mid-range phone's speed). Two earlier decisions were broken on
+the way, and only the suites remembered either: the owner had asked for the
+list to be a shelf of about a hundred because "two hundred cards is a wall",
+and the jobs that run on connected accounts had been promised never to fall
+off it. A first attempt kept the count down by cutting those jobs to forty,
+which the location suite caught when the job hunt disappeared.
+
+The shape that honours both: All shows the first ten of each category,
+alternating the country's own with the account-connected ones, and each
+category ends in See all with its real count - the pattern Integrations
+already uses. Every job is still one press away, and search reaches all.
+
+In the same round, re-ranking the list in place when the country's data
+arrived redrew the cards and not the category chips above them, so the
+chips kept the old counts and had no chip for a category only the country's
+jobs fill. Nothing noticed until a suite delayed the data on purpose -
+mutating the fix did not fail anything before that.
+
+Rules:
+- Before growing a screen, read what its suites say was decided about its
+  size. A comment in a test is often the only record of an owner's word.
+- Anything counted from a list is redrawn with the list. A number beside a
+  filter that disagrees with the filter is a wrong answer shown as a fact.
+- A late-arrival path is tested by making the data late on purpose; in a fast
+  harness it never runs, and a mutation of it survives.

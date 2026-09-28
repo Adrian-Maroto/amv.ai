@@ -52,10 +52,15 @@ section('What they get is the catalogue, not a pitch');
        ordinary catalogue jobs now - so what is checked is that they are STILL
        ON THE PAGE, by id, rather than that a heading above them still exists.
        A heading is how they were presented; being reachable is the promise. */
+    /* On the page, or one See all away: All draws the first few of each
+       category and every category with more ends in See all. */
     universal: (() => {
       const ids = new Set(_cwUniversalJobs().map(j => j.id));
-      return [...document.querySelectorAll('#vc [data-dact="cwPeek"]')]
-        .filter(b => ids.has(b.dataset.darg)).length;
+      const drawn = [...document.querySelectorAll('#vc [data-dact="cwPeek"]')].filter(b => ids.has(b.dataset.darg)).length;
+      const more = new Set([...document.querySelectorAll('#vc .cw-cat-more [data-darg]')].map(b => b.dataset.darg));
+      const shelved = _cwShowcase().filter(j => ids.has(j.id));
+      const oneAway = shelved.filter(j => more.has(j.cat)).length;
+      return shelved.length && shelved.length === drawn + oneAway ? shelved.length : 0;
     })(),
     /* No country dropdown any more: the top of Crew is the five for where the
        visitor is, and every other country is at the bottom. Both are what a
@@ -67,7 +72,7 @@ section('What they get is the catalogue, not a pitch');
   ok(seen.jobs > 20, 'with real jobs on it, not a description of jobs', seen.jobs);
   ok(seen.picker, 'the five for where they are, and every other country, are there', seen.picker);
   ok(seen.find, 'and so is the search box', seen.find);
-  ok(seen.universal > 0, 'the work that holds in every country is on the page', seen.universal);
+  ok(seen.universal > 0, 'the work that holds in every country is on the page, or one See all away', seen.universal);
 }
 
 section('The half that is only true where they live reaches them too');

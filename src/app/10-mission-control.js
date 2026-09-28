@@ -1678,7 +1678,7 @@ const CW_MADE_FOR = [
     d:(f, C) => 'Keeps the dates for ' + f.car + ' in view, with what to do and where, before anything lapses.',
     ask:['Which car, and what dates do you know?', 'e.g. "2016 Seat Ibiza, inspection due in May, insurance renews 1 Sept"'],
     p:(f, C) => 'For the user’s car in ' + C + ', track what is due with ' + f.car + ': the next date for each, what it costs, how to book or pay, and the penalty for missing it. Flag anything in the next 30 days first. Official sources only, linked. Never pay or book on their behalf.' },
-  { k:'rail', id:'rail', icon:'🚆', cat:'Travel', every:'daily',
+  { k:'rail', id:'rail', icon:'🚆', cat:'Home & life', every:'daily',
     t:f => 'Train fares and delays: ' + _cwNames(f.rail, 2),
     d:(f, C) => 'Watches fares on ' + f.rail + ' for the trips you make, and warns you about strikes and disruption before you leave.',
     ask:['Which trips do you make, and when?', 'e.g. "Madrid to Barcelona, Fridays after 5pm, back Sunday"'],
@@ -1708,12 +1708,12 @@ const CW_MADE_FOR = [
     d:(f, C) => 'What is due - a check-up, a repeat prescription, a screening - and how to get it through ' + f.health + '.',
     ask:['What should it keep track of?', 'e.g. "repeat inhaler prescription, yearly dental check-up, a smear test"'],
     p:(f, C) => 'For the items the user listed, explain how each is obtained or booked through ' + f.health + ' in ' + C + ', typical waiting times, and anything that must be done ahead. Remind them what is coming due. Official sources only, linked. Not medical advice; never book.' },
-  { k:'exams', id:'exams', icon:'🎓', cat:'School & study', every:'daily',
+  { k:'exams', id:'exams', icon:'🎓', cat:'Learning', every:'daily',
     t:f => 'Revision for ' + _cwShort(f.exams),
     d:(f, C) => 'A daily revision plan for ' + f.exams + ' with the real exam dates, adjusted to what you keep getting wrong.',
     ask:['Which exam, which subjects, and when?', 'e.g. "maths and chemistry, exams start 3 June"'],
     p:(f, C) => 'Build today’s revision session for the user’s exams (' + f.exams + ', ' + C + '): the topics to cover, ten practice questions in the official exam style with answers at the end, and the days left. Use the official syllabus and past papers where they exist, and link them.' },
-  { k:'uni', id:'uni', icon:'🏫', cat:'School & study', every:'weekly',
+  { k:'uni', id:'uni', icon:'🏫', cat:'Learning', every:'weekly',
     t:f => 'University applications (' + _cwShort(f.uni) + ')',
     d:(f, C) => 'Every deadline and requirement for applying through ' + f.uni + ', tracked, so nothing is missed.',
     ask:['Which courses or universities, and for which year?', 'e.g. "computer science, starting next September"'],
@@ -1746,6 +1746,177 @@ function _cwMadeForJobs(cc){
     prompt: m.p(f, C) + ' The user is in ' + C + '.',
   }));
 }
+/* ── A HUNDRED AND MORE FOR EVERY COUNTRY ─────────────────────────────────────
+
+   Asked for: every country gets 100+ of the most common, most used jobs - the
+   ones that bring people back - not the same hundred with a flag on. So on top
+   of the one-per-area jobs above, each area has the other things people do
+   there every week (a job hunt AND a salary check AND interview prep for the
+   country's own sites), plus the jobs that need nothing but the country itself
+   (public holidays, scams going around, strikes, recalls, new laws) - which
+   are local because the run is told the country and checks the official
+   source for it.
+
+   Written as data: [fact key or '' for country-only, id, category, icon,
+   how often, title, description, question, example, instruction]. In the
+   strings {C} is the country, {v} the fact as written, {1}/{2}/{3} the first
+   one, two or three names in it, {s} its short form. A row whose fact the
+   country does not have is left out - never filled with a generic name. */
+const CW_MADE_MORE = [
+  ['jobs','salary','Work & career','💵','weekly','What your job pays in {C}','Real salary ranges for your role and city from listings on {2} - so you know your number before you ask.','Which job, and which city?','e.g. "backend developer, 4 years, Madrid"','From current listings on {v} and official pay data for {C}, give the realistic salary range for the role and city the user named, what moves it up, and how the user compares. Cite listings and sources; say when data is thin.'],
+  ['jobs','interview','Work & career','🎤','weekly','Interview prep for jobs on {2}','For the roles you apply to on {2}: the questions employers in {C} actually ask, and answers built from your experience.','Which role, and what is your background?','e.g. "sales manager, 6 years in retail"','Prepare the user for interviews for the role named, as employers in {C} run them: likely questions, what a strong answer covers, and three stories from their background to use. Note local norms (salary talk, references, notice periods).'],
+  ['jobs','cv','Work & career','📄','weekly','A CV in the format employers in {C} expect','Keeps your CV in the local format and wording, tuned to the roles you are chasing on {2}.','What roles are you going for, and paste or describe your experience','e.g. "marketing roles; 5 years at an agency, 2 in-house"','Advise how CVs are written in {C} (length, photo or not, personal details, language) and draft a CV section by section from what the user gave, tuned to the roles named. Never invent experience.'],
+  ['jobs','hiring','Work & career','🏢','weekly','Who is hiring near you on {2}','Companies in your area and field that started hiring this week, with the roles and links.','Your field and area?','e.g. "nursing, Lisbon"','Find employers in the user’s field and area that posted new roles this week on {v} and company career pages. List employer, roles, links. Only real postings.'],
+  ['groc','offers','Home & life','🏷️','weekly','This week’s offers at {3}','The deals worth having this week at {3}, filtered to what you actually buy.','What do you usually buy?','e.g. "coffee, chicken, yoghurt, nappies"','List this week’s current promotions at {v} relevant to what the user buys: the item, the deal, the store, the end date. Skip offers that are not genuine savings.'],
+  ['groc','rises','Home & life','📈','weekly','Price rises on your staples at {2}','Tells you when the things you buy every week get more expensive at {2}, and where they did not.','Which staples?','e.g. "milk, bread, eggs, olive oil"','Compare current prices of the user’s staples at {v} with a month ago where published. Report rises and the cheapest current place for each. Local currency; say when a price could not be found.'],
+  ['groc','meals','Home & life','🥗','weekly','A week of dinners from {2} offers','Seven dinners planned around what is on offer at {2} this week, with the shopping list.','How many people, and anything you avoid?','e.g. "2 adults, 1 child, no pork"','Plan seven dinners for the household described, built around this week’s offers at {v}. Give the list by store with estimated cost in the local currency.'],
+  ['groc','swaps','Home & life','🔄','weekly','Own-brand swaps that save at {2}','Which of your usual products have a cheaper own-brand version at {2}, and how much you would save.','What do you usually buy?','e.g. "Nutella, Ariel, Coca-Cola, Pampers"','For each product the user named, find the own-brand equivalent at {v}, the price difference and a note on quality where reviewers compare them.'],
+  ['shop','realdeal','Money','🔍','daily','Is it really a discount? ({2})','Checks the price history of things you are about to buy on {2}, so a fake sale does not get you.','What are you thinking of buying?','e.g. "a Samsung 55″ TV, a Dyson Airwrap"','For each item, find its price history on {v} and whether today’s "sale" price is genuinely low or a raised price with a discount on it. Say plainly when to wait.'],
+  ['shop','returns','Money','↩️','weekly','Return windows about to close ({2})','What you bought recently on {2} and the last day each one can still go back.','What did you buy, and when?','e.g. "headphones on Amazon, 3 June; jacket from Zalando, 10 June"','For each purchase, work out the return deadline under the retailer’s policy and consumer law in {C}, and list them soonest first with how to return.'],
+  ['shop','sales','Money','📅','weekly','Big sale dates on {2}','When the big sales on {2} happen this year, and what usually gets cheapest in each.','Anything specific you are waiting to buy?','e.g. "a laptop, a winter coat"','List the major sale events on {v} in {C} in the coming months with dates, what typically drops most, and when to buy the items the user named.'],
+  ['shop','cheaper','Money','💸','daily','Cheaper than {1} elsewhere?','Finds the same product cheaper at another trusted shop in {C} before you pay.','What are you about to buy, and where?','e.g. "AirPods Pro on Amazon"','Find the same product at other reputable sellers in {C}, with price, delivery cost and seller reliability. Recommend the best total price.'],
+  ['food','newplaces','Home & life','🍽️','weekly','New places on {2} near you','Restaurants that just joined {2} in your area, and which are worth trying.','Your area and what you like?','e.g. "Kreuzberg, Asian food"','Find restaurants newly listed on {v} in the user’s area, with cuisine, price level and early reviews. Only real listings.'],
+  ['food','deliveryfees','Home & life','🛵','daily','Cheapest way to order tonight','Compares delivery fees and offers across {2} for the place you want tonight.','Which restaurant or dish, and your area?','e.g. "Five Guys, city centre"','Compare the total cost (items, delivery, service fees, current offers) of ordering the user’s choice via {v}. Name the cheapest.'],
+  ['rail','strikes','Home & life','⚠️','daily','Strikes and works on {2}','Planned strikes, engineering works and closures on {2} that affect your routes.','Which routes do you use?','e.g. "Lyon to Paris, Paris RER B"','Check announced strikes, engineering works and closures on {v} affecting the user’s routes in the coming two weeks, with dates and alternatives.'],
+  ['rail','release','Home & life','🎟️','weekly','Cheap tickets released on {1}','When cheap tickets go on sale for your trips on {1}, so you book the day they appear.','Which trips and dates?','e.g. "Madrid to Seville, 12 July"','Find when advance tickets are released on {v} for the trips named, the current cheapest fares and fare types. Say whether to book now or wait.'],
+  ['rail','pass','Money','🧾','weekly','Is a rail pass worth it for you?','Compares a season ticket or railcard against what you pay now on {2}.','How often do you travel, and which routes?','e.g. "commute 4 days a week Leeds to York"','Compare the season tickets, passes and railcards on {v} against the user’s pattern of travel, with the yearly cost of each option.'],
+  ['prop','rents','Home & life','🏘️','weekly','What rent costs in your area ({2})','Current asking rents on {2} for your area and size, and whether yours is high.','Your area, size, and what you pay?','e.g. "2-bed in Porto centre, paying 1,100"','From current listings on {v}, give the typical asking rent for the area and size, how the user’s rent compares, and the trend. Cite listings.'],
+  ['prop','drops','Home & life','📉','daily','Price drops on homes you like ({2})','Homes on {2} matching your search whose asking price just came down.','Your search: area, budget, rooms?','e.g. "buy, Utrecht, up to 450k, 3 rooms"','Find listings on {v} matching the search whose asking price was reduced recently, with old and new price and link.'],
+  ['banks','mortgage','Money','🏠','weekly','Mortgage rates in {C} this week','Current mortgage rates at {3} and online lenders, and what they mean for your payment.','Loan size, term, fixed or variable?','e.g. "250,000 over 25 years, fixed"','Compare current mortgage rates at {v} and reputable online lenders in {C} for the loan described, with the monthly payment for each. Information, not financial advice.'],
+  ['banks','fees','Money','🧾','monthly','Bank fees you may be paying at {1}','The charges on accounts at {3} and which accounts in {C} would cost you nothing.','Which bank and account?','e.g. "Santander Cuenta Online"','Explain the current fees on the user’s account from the bank’s published tariff, and list fee-free alternatives in {C} with their conditions.'],
+  ['banks','switch','Money','🔁','weekly','Bank switching offers in {C}','Banks in {C} currently paying you to switch, and the conditions attached.','','','List current switching and welcome offers from banks in {C} including {3}: the bonus, the conditions, the end date. Information, not financial advice.'],
+  ['banks','cards','Money','💳','weekly','Credit card offers in {C}','The best current credit card deals in {C} for how you spend - cashback, travel, 0% periods.','How do you mainly use a card?','e.g. "groceries and travel, pay in full monthly"','Compare current credit card offers in {C} for the user’s spending: rewards, fees, rates, conditions. Information, not financial advice.'],
+  ['pay','scams','Money','🛡️','weekly','Scams using {2} right now','The scams currently targeting people who pay with {2}, and how to spot them.','','','Report the scams currently circulating in {C} that abuse {v}: how they work, the red flags, and what to do if caught. Cite police, bank or consumer-agency warnings.'],
+  ['pay','limits','Money','💱','monthly','Fees and limits on {2}','What {2} charges and caps in {C}, so a transfer never surprises you.','','','Summarise the current fees, limits and protections for {v} in {C} from official sources, and what changed recently.'],
+  ['tax','deductions','Money','✂️','weekly','Deductions you can claim in {C}','The deductions and credits most people in {C} miss, checked against your situation.','Your situation?','e.g. "employee, renting, one child, commute by car"','From the official pages of {v}, list deductions and credits in {C} the user’s situation may qualify for, with the rules and evidence needed. Information, not tax advice.'],
+  ['tax','refund','Money','💰','weekly','Your tax refund, tracked ({s})','Where your refund is with {s} and what to do if it is late.','When did you file, and how?','e.g. "filed online in April"','Explain how refunds from {v} are processed and tracked, typical timelines this year and what to do if it is late. Official sources only.'],
+  ['tax','selfemployed','Money','🧮','weekly','Self-employed payments due ({s})','Advance payments, contributions and filings due to {s} if you work for yourself.','What do you do, and roughly what do you earn?','e.g. "freelance designer, 40k a year"','List upcoming payments and filings for the self-employed in {C} with {v}: dates, how the amounts are worked out, penalties. Information, not tax advice.'],
+  ['id','travel','Home & life','🧳','weekly','Travel documents check before a trip','Whether your passport, visa and ID are valid for where you are going, in time to fix it.','Where are you going, when, and your passport expiry?','e.g. "Thailand in March, passport expires next August"','Check entry rules for the destination for a citizen travelling from {C}: passport validity required, visa, other documents; compare with the user’s dates and flag anything to fix, with official links.'],
+  ['car','fines','Home & life','🚦','weekly','Fines, tolls and parking ({s})','New fines, tolls or parking penalties and how to pay or appeal them with {s}.','Which vehicle and where do you drive?','e.g. "2018 Golf, Milan"','Explain how to check for outstanding fines and tolls with {v}, deadlines for discounted payment and how appeals work in {C}. Official sources.'],
+  ['car','value','Money','🚗','monthly','What your car is worth','What your car sells for now in {C}, from real listings.','Make, model, year, mileage?','e.g. "Toyota Corolla 2019, 60,000 km"','From current listings in {C}, give the realistic private and trade-in value of the car described, and what affects it.'],
+  ['health','waits','Health','⏳','weekly','Waiting times with {s}','Current waiting times for appointments with {s} where you live, and faster routes.','What do you need, and where?','e.g. "dermatologist, Manchester"','From official published data, give current waiting times for the service named through {v}, and legitimate faster options. Not medical advice.'],
+  ['health','insurance','Health','📋','monthly','Health cover renewal check','Before your health cover renews, what else in {C} would cover you for less.','What cover do you have and pay?','e.g. "private plan, 90 a month, single"','Compare the user’s health cover with current alternatives in {C}: price, cover, exclusions. Information, not advice.'],
+  ['exams','papers','Learning','📚','weekly','Past papers for {s}','Official past papers and mark schemes for {s}, one set a week, with the answers explained.','Which subjects?','e.g. "maths and biology"','Find official past papers and mark schemes for {v} in the subjects named, set this week’s practice and explain the answers.'],
+  ['exams','results','Learning','📨','weekly','Results and appeals for {s}','Results day, what to do on it, and how appeals and resits work for {s}.','','','From official sources, give the results date for {v}, how to get results, and how reviews, appeals and resits work, with deadlines.'],
+  ['uni','grants','Learning','🎓','weekly','Scholarships and grants in {C}','Funding you could get for study in {C}, with deadlines.','What will you study, and where?','e.g. "engineering, starting next year"','List scholarships, grants and student finance in {C} relevant to the user, with eligibility, amounts and deadlines. Official sources.'],
+  ['uni','housing','Learning','🛏️','weekly','Student housing near your university','Rooms and residences near your university and what they cost.','Which university and budget?','e.g. "University of Porto, up to 400 a month"','Find student residences and rooms near the university named with prices and application deadlines.'],
+  ['news','evening','Watching the world','🌙','daily','Evening wrap from {2}','What happened in {C} today, in five lines, from {2}.','Anything to focus on?','e.g. "politics and my city"','Summarise today’s main news in {C} from {v} in five lines, weighted to what the user asked. Link sources.'],
+  ['news','industry','Work & career','📊','weekly','News for your industry in {C}','What moved in your industry in {C} this week, from {2} and trade press.','Your industry?','e.g. "logistics"','Report this week’s notable news in the user’s industry in {C}: deals, rules, launches, hiring or layoffs. Link sources.'],
+  ['weather','weekend','Home & life','☀️','weekly','The weekend forecast for your plans','Friday morning: the weekend forecast from {s} for where you will be, and what it means for your plans.','Where, and what are you planning?','e.g. "Brighton, a beach day Saturday"','Using the official forecast from {v}, give the weekend outlook for the place named and practical advice for the plans.'],
+  ['gov','appts','Home & life','🗓️','daily','Government appointment slots','Watches for appointment slots at the office you need - the ones that vanish in minutes.','Which office and procedure?','e.g. "passport renewal, Lisbon Loja do Cidadão"','Check how appointments for the procedure named are booked in {C} and whether slots are showing, with the booking link. Never book.'],
+  ['gov','benefits','Money','🤝','weekly','Benefits and support you may qualify for','Support in {C} people in your situation often do not claim, and how to apply.','Your situation?','e.g. "single parent, part-time, renting"','From official sources in {C}, list benefits and support the user may qualify for, with rules, amounts and how to apply. Information, not advice.'],
+  ['telco','roaming','Money','🌍','weekly','Roaming costs for your next trip','What your plan with {1} charges abroad, and a cheaper option if there is one.','Your network, plan, and where you are going?','e.g. "Movistar, 30GB plan, going to Morocco"','Explain the roaming charges on the user’s plan from {v} for the destination and compare with travel eSIMs or add-ons.'],
+  ['telco','broadband','Money','📶','monthly','Home internet deals in your area','Broadband and fibre offers from {3} where you live, against what you pay now.','Your area and what you pay?','e.g. "Lyon 3e, 40 a month, 300Mb"','Compare home internet offers available at the user’s area from {v} and others: speed, price, contract length.'],
+  ['post','delays','Home & life','📦','daily','Delivery disruption with {2}','Strikes, delays and holiday cut-off dates with {2} that affect your parcels.','','','Report current disruption, strikes and last-posting dates with {v} in {C}.'],
+  ['','holidays','Home & life','🎉','weekly','Public holidays and long weekends in {C}','The next public holidays in {C}, the long weekends they make, and what closes.','Which region, if holidays differ?','e.g. "Catalonia"','List the upcoming public holidays in {C} (and the region named), the long weekends they create, and what is closed. Official calendar.'],
+  ['','events','Home & life','🎭','weekly','What is on this weekend near you','Concerts, markets, exhibitions and events near you this weekend.','Your city, and what you like?','e.g. "Seville; live music, markets"','Find real events this weekend in the user’s city matching their tastes, with times, prices and links.'],
+  ['','localscams','Money','🚨','weekly','Scams going around in {C}','The scams police and banks in {C} are warning about this week, and how to spot them.','','','Report the scams currently circulating in {C} (texts, calls, parcels, online shopping, investment), with red flags. Cite police, regulators or consumer bodies.'],
+  ['','fuel','Money','⛽','daily','Where fuel is cheapest near you','Today’s cheapest fuel near you, from published prices.','Your area and fuel type?','e.g. "Porto, diesel"','From published fuel price data in {C}, list the cheapest stations near the user’s area with prices and distance.'],
+  ['','workrules','Work & career','⚖️','weekly','Pay and work-rule changes in {C}','Changes to minimum wage, holidays, overtime and contracts in {C}, and what they mean for you.','Your job and contract?','e.g. "full-time, retail, permanent contract"','Report recent and upcoming changes to employment law and pay in {C} relevant to the user. Official sources.'],
+  ['','rates','Money','🏦','weekly','Interest rates and inflation in {C}, explained','What the central bank and prices did this week in {C}, and what it means for your money.','','','Explain this week’s central-bank decisions, inflation data and rate moves affecting {C} in plain terms, and what they mean for savers and borrowers. Information, not advice.'],
+  ['','fx','Money','💱','daily','Exchange rate watch','Tells you when the currency you need hits a good rate.','Which currency, and what rate would you like?','e.g. "EUR to USD, above 1.12"','Report today’s exchange rate for the pair the user named, the recent trend, and whether it reached their target. Information, not advice.'],
+  ['','energy','Money','⚡','weekly','Energy prices and tariff changes in {C}','Changes to electricity and gas prices in {C}, and whether a better tariff exists for you.','Your supplier and tariff?','e.g. "Endesa, fixed tariff"','Report changes to regulated and market energy prices in {C} and compare the user’s tariff with current alternatives.'],
+  ['','schoolterms','Family & kids','🎒','weekly','School holidays and term dates in {C}','Term dates and school holidays where you live, so you can book before prices jump.','Which region or school district?','e.g. "Bavaria"','List the school term dates and holidays for the region named in {C} for the coming year. Official sources.'],
+  ['','elections','Watching the world','🗳️','weekly','Votes and elections coming up in {C}','Elections, referendums and registration deadlines in {C}, with what is at stake.','','','List upcoming elections and referendums in {C}, registration deadlines and how to vote, with neutral summaries of what is being decided. Official sources.'],
+  ['','disruption','Home & life','🚧','daily','Strikes and disruption in {C}','Transport, school and public-service strikes announced in {C} that could affect your week.','Your city?','e.g. "Paris"','Report strikes and major disruption announced in {C} for the coming week, affecting the user’s city, with dates and alternatives.'],
+  ['','air','Health','🌫️','daily','Air quality and pollen where you live','Tells you on the days air quality or pollen is bad where you live.','Your town?','e.g. "Milan"','Check official air-quality and pollen forecasts for the town named in {C}; alert only when levels are high, with advice.'],
+  ['','newlaws','Watching the world','📜','weekly','New laws taking effect in {C}','Rules that change this month in {C} and whether they touch you.','','','List laws and regulations taking effect in {C} this month and next that affect everyday life (money, housing, driving, work, consumer rights). Official sources.'],
+  ['','flights','Home & life','✈️','weekly','Cheap flights from your airport','Fare drops from your nearest airport to the places you want to go.','Your airport and where you would like to go?','e.g. "from Dublin; Lisbon, Rome or anywhere sunny in May"','Find current cheapest fares from the airport named to the destinations, with dates and airlines. Never book.'],
+  ['','kids','Family & kids','🧸','weekly','Things to do with kids this weekend','Family activities near you this weekend, free ones first.','Your city and the children’s ages?','e.g. "Madrid, ages 4 and 8"','Find family activities this weekend in the city named suited to the ages given, free ones first, with times and links.'],
+  ['','free','Home & life','🏛️','weekly','Free museum days and events','Free entry days, open-air events and free things to do near you.','Your city?','e.g. "Berlin"','List free museum days, free events and free activities in the user’s city in the coming two weeks.'],
+  ['','jobfairs','Work & career','🤝','weekly','Job fairs and hiring days near you','Recruitment fairs and open hiring days coming up near you.','Your city and field?','e.g. "Warsaw, IT"','Find job fairs and hiring events coming up in the user’s city and field, with dates and registration links.'],
+  ['','pricerises','Money','📈','weekly','Price rises coming in {C}','Announced price rises in {C} - transport, utilities, subscriptions, postage - before they hit.','','','List price rises announced in {C} for the coming months (transport fares, utilities, postage, common subscriptions) with dates and amounts. Cite sources.'],
+  ['','recalls','Home & life','⛔','weekly','Product recalls in {C}','Food, toy and product recalls in {C}, in case something in your home is on the list.','Anything you want watched specially?','e.g. "baby products, my car model"','List product recalls published by the authorities in {C} this week, and anything matching what the user named.'],
+  ['','commute','Home & life','🛣️','daily','Roadworks and closures on your commute','Planned roadworks and closures on your route, before you leave.','Your route?','e.g. "A1 from Porto to Aveiro"','Check planned roadworks, closures and major incidents on the user’s route in {C} today and this week.'],
+  ['','team','Watching the world','⚽','weekly','Your team, this week','Fixtures, results, injuries and ticket releases for the team you follow.','Which team?','e.g. "Benfica"','Give this week’s fixtures, last results, team news and any ticket releases for the team named.'],
+  ['','concerts','Home & life','🎵','weekly','Concert tickets for artists you like','Tells you when artists you like announce shows near you, before tickets sell out.','Which artists, and your city?','e.g. "Rosalía, Coldplay; Barcelona"','Check for newly announced concerts in or near the user’s city by the artists named, with ticket release dates and official sellers only.'],
+  ['','carinsurance','Money','🛡️','monthly','Car insurance renewal check','Before your car insurance renews, cheaper cover in {C} for the same car.','Your car, age, and what you pay?','e.g. "2017 Clio, 34, 480 a year"','Compare typical current premiums in {C} for the profile described against what the user pays, and how to cut the cost. Information, not advice.'],
+  ['','homeinsurance','Money','🏠','monthly','Home insurance check','Whether your home or contents cover in {C} is fair value, before it renews.','What cover and what you pay?','e.g. "contents, rented flat, 180 a year"','Compare the user’s home or contents cover with current alternatives in {C}: price, cover, excess.'],
+  ['','visa','Home & life','🛂','weekly','Entry rules for your next trip','Visa, entry and health rules for where you are going from {C}, checked again before you fly.','Where and when?','e.g. "USA in December"','Check the current entry requirements for a traveller from {C} to the destination named: visa or travel authorisation, passport validity, health rules. Official links.'],
+  ['','healthalerts','Health','💉','weekly','Health advisories and vaccination campaigns in {C}','Public-health advisories and free vaccination campaigns where you live.','','','Report current public-health advisories and vaccination campaigns in {C} from the health authority, with who is eligible and how to book.'],
+  ['','volunteer','Home & life','💚','weekly','Volunteering near you','Volunteering and community events near you that fit the time you have.','Your city and how much time?','e.g. "Toronto, Saturday mornings"','Find volunteering opportunities and community events in the city named that fit the time given, with links.'],
+  ['','secondhand','Money','♻️','daily','Second-hand deals on what you want','Watches second-hand listings near you for what you are after, at your price.','What, and your maximum price?','e.g. "a road bike under 300, size M"','Search the main second-hand marketplaces used in {C} for the item named under the price given, near the user. Only real listings; flag likely scams.'],
+  ['','discounts','Money','🎟️','weekly','Discounts you are entitled to in {C}','Student, youth, senior and family discounts in {C} you may not be using.','Your age and situation?','e.g. "student, 21"','List discounts and reduced fares in {C} the user is entitled to (transport, culture, software, phones), with how to get each.'],
+  ['','localtax','Money','🏛️','monthly','Local taxes and municipal charges due','Property, waste and municipal charges where you live - how much and by when.','Your town and whether you own or rent?','e.g. "Valencia, owner"','Explain the local taxes and municipal charges in the user’s town in {C}: amounts, due dates, payment and discounts. Official sources.'],
+  ['','parking','Home & life','🅿️','weekly','Parking rules and zones in your city','Resident permits, zone changes and new parking rules in your city.','Your city and neighbourhood?','e.g. "Amsterdam, De Pijp"','Report parking rules, permit costs and recent changes for the neighbourhood named. Official sources.'],
+  ['','restaurants','Home & life','🍴','weekly','New restaurants worth trying near you','The openings people are actually recommending in your area this month.','Your area and tastes?','e.g. "Shoreditch, Korean or Italian"','Find restaurants that opened recently in the user’s area with genuine early reviews, price level and booking links.'],
+  ['','rentrights','Home & life','🔑','monthly','Your rights as a tenant in {C}','Rent increases, deposits and repairs: what the rules in {C} say about your situation.','What is happening with your rental?','e.g. "landlord wants 15% more at renewal"','Explain what tenancy law in {C} says about the situation described, the limits and steps, with official sources. Not legal advice.'],
+  ['','consumer','Money','🧾','weekly','Refunds and your consumer rights in {C}','When a company owes you a refund in {C}, and how to get it.','What went wrong?','e.g. "flight delayed 5 hours", "faulty washing machine"','Explain the consumer rights in {C} that apply to the situation described, what the user is owed and exactly how to claim. Cite official sources. Not legal advice.'],
+  ['','savings','Money','🐷','weekly','Where your savings earn most in {C}','The best easy-access and fixed savings rates in {C} this week.','Easy access or fixed, and how much?','e.g. "easy access, 10,000"','List the best current savings rates in {C} for the type named, with the deposit protection that covers each. Information, not financial advice.'],
+  ['','budget','Money','📊','monthly','Your monthly budget, in {C} prices','A budget for your household built on what things really cost in {C} now.','Household, income and main costs?','e.g. "couple, 3,200 net, rent 1,100"','Build a monthly budget for the household described using current typical costs in {C}, highlighting where they are above average and realistic savings.'],
+  ['','phoneplan','Money','📱','monthly','Is your phone contract still a good deal?','Checks your phone contract against what the same usage costs today in {C}.','Your network, what you pay and use?','e.g. "20 a month, 10GB"','Compare the user’s mobile contract with current offers in {C} for the same usage, including budget brands.'],
+  ['','outages','Home & life','🔌','daily','Power and water cuts in your area','Scheduled electricity and water cuts where you live, before they happen.','Your town and area?','e.g. "Johannesburg, Soweto"','Check the published schedules of the electricity and water utilities in {C} for the area named: planned cuts today and this week, with times. Only official schedules.'],
+  ['','remit','Money','📤','weekly','Cheapest way to send money abroad from {C}','Compares fees and exchange rates for sending money to family, so more of it arrives.','How much, and to which country?','e.g. "200 to Nepal every month"','Compare the total cost (fees plus exchange-rate margin) of sending the amount named from {C} to the destination with the main banks, money-transfer apps and agents. Name the cheapest and how long it takes.'],
+  ['','govjobs','Work & career','🏛️','weekly','Public-sector jobs and exams in {C}','New government and public-sector openings and recruitment exams in {C}, with deadlines.','Your field and qualifications?','e.g. "graduate in accounting"','Find public-sector vacancies and recruitment exams announced in {C} matching the user’s field, from official portals, with deadlines and how to apply.'],
+  ['','gold','Money','🪙','daily','Gold price in {C} today','The local gold price per gram today, and how it moved this week.','Which purity?','e.g. "22 carat"','Report today’s gold price in {C} in the local currency for the purity named, the week’s change and the source. Information, not advice.'],
+  ['','staples','Money','🌾','weekly','Prices of staples in {C} this week','What rice, flour, oil, eggs and cooking gas cost this week in {C}, and what changed.','Your city?','e.g. "Karachi"','Report current prices of staple foods and cooking fuel in {C} (the city named where data exists) and the change from last week, from official or market sources.'],
+  ['','pharmacy','Health','💊','daily','Pharmacies open near you tonight','The duty pharmacies open late near you tonight.','Your town and area?','e.g. "Casablanca, Maarif"','List the on-duty (late-night or weekend) pharmacies in the user’s area in {C} for tonight, from the official rota where one exists.'],
+  ['','bus','Home & life','🚌','weekly','Cheapest bus and coach tickets','Coach and intercity bus fares for your trips, cheapest first.','Which trip and date?','e.g. "Lima to Arequipa, Friday"','Find current intercity bus and coach fares for the trip named in {C}, with operators, times and links. Never book.'],
+  ['','ride','Money','🚕','daily','Ride-hailing prices, compared','Which ride app is cheapest for your usual trip right now.','Your usual trip?','e.g. "home to airport"','Compare typical current fares on the ride-hailing apps used in {C} for the trip named, and when prices surge.'],
+  ['','farm','Money','🚜','weekly','Crop and livestock prices in {C}','This week’s market prices for what you grow or raise, and the weather ahead.','What do you grow or raise, and where?','e.g. "maize and beans, Nakuru"','Report this week’s market prices in {C} for the crops or livestock named, from official market data, and the weather outlook for the area.'],
+  ['','market','Money','📈','daily','The stock market in {C} today','How the main index in {C} closed, and the moves in shares you follow.','Which shares, if any?','e.g. "the main banks"','Report today’s close of the main stock index in {C} and the moves of the shares named, with the reasons reported. Information, not financial advice.'],
+  ['','calendar','Home & life','🕌','weekly','Religious and cultural calendar in {C}','Festivals, fasting dates and religious holidays in {C} this month, with the times that matter.','Anything specific?','e.g. "Ramadan timings", "Diwali"','List the religious and cultural observances in {C} in the coming weeks, with dates and local times where they depend on it, and what closes. Neutral and factual.'],
+  ['','drivingtest','Learning','🚘','weekly','Driving test and licence steps in {C}','Where you are in getting a licence in {C}, the next step, and test slots.','Where are you in the process?','e.g. "passed theory, need practical test"','Explain the licence process in {C} from the user’s stage, fees, and how to find test slots, from official sources.'],
+  ['','getaway','Home & life','🏖️','weekly','Weekend getaways from your city','Two-day trips from where you live, with what they cost this month.','Your city and budget?','e.g. "Nairobi, up to 150 for two"','Suggest weekend trips from the user’s city in {C} within the budget, with travel, stay and current prices.'],
+  ['','hotels','Money','🏨','weekly','Hotel prices for your next trip','Watches the hotel prices for your dates and tells you when they drop.','Where and which dates?','e.g. "Cartagena, 12-15 December"','Check current prices for hotels in the place and dates named, and report drops and good-value options. Never book.'],
+  ['','clinics','Health','🏥','weekly','Clinics and doctors near you','Clinics and doctors near you with the specialism you need, and how to book.','What do you need, and where?','e.g. "paediatrician, Accra"','Find clinics and doctors in the user’s area in {C} with the specialism named, opening hours, and how to book. Not medical advice.'],
+  ['','gym','Health','🏋️','weekly','Gyms and classes near you','Gyms and fitness classes near you, with prices and trial offers.','Your area and what you like?','e.g. "Tbilisi Vake, yoga"','Find gyms and classes in the user’s area in {C} matching their interest, with prices and trial offers.'],
+  ['','tenders','Growing a business','📑','weekly','Government tenders for your business in {C}','New public tenders and contracts in {C} that fit what your business does.','What does your business do?','e.g. "IT services and hardware supply"','Find newly published public tenders in {C} matching the business described, with deadlines and links, from official procurement portals.'],
+  ['','bizlicence','Growing a business','🪪','monthly','Business licences and filings due in {C}','Registration renewals, permits and filings your business owes in {C}, before they lapse.','Your business type and city?','e.g. "restaurant, Amman"','List the licences, permits and periodic filings a business of this type must keep current in {C}, with renewal dates and costs. Official sources.'],
+  ['','smbtax','Growing a business','🧾','weekly','Sales tax and VAT changes for small businesses in {C}','Changes to VAT, sales tax or small-business tax rules in {C} that affect you.','Your business?','e.g. "online shop, turnover 80k"','Report changes to VAT, sales tax and small-business tax regimes in {C} relevant to the business described. Official sources; not tax advice.'],
+  ['','abroad','Learning','🌍','weekly','Scholarships abroad for students from {C}','Funded study-abroad places open to students from {C}, with deadlines.','What level and subject?','e.g. "master’s in public health"','List scholarships open to citizens of {C} for the level and subject named, with eligibility, value and deadlines. Official sources.'],
+  ['','phones','Money','📱','weekly','Phone and electronics prices in {C}','The going price of the phone or laptop you want in {C}, and where it is cheapest.','What do you want?','e.g. "iPhone 15, 128GB"','Find the current price of the device named from reputable sellers in {C}, the cheapest legitimate offer, and warnings about grey imports.'],
+  ['','cookinggas','Money','🔥','weekly','Cooking gas and home fuel prices','The price of cooking gas and heating fuel in {C} this week, and any subsidy.','Your city?','e.g. "Dhaka"','Report current prices of cooking gas (LPG) and home fuel in {C}, recent changes and any subsidy scheme. Official sources.'],
+  ['','flightshome','Money','🏠','weekly','Flights home for the holidays','Watches fares for your trip home for the holidays, so you book at the low point.','From where to where, and when?','e.g. "London to Lagos, Christmas"','Track current fares for the route and dates named and say when fares are low. Never book.'],
+  ['','localnews','Watching the world','🏙️','daily','News from your city in five lines','What happened in your city today - local news only.','Your city?','e.g. "Medellín"','Summarise today’s local news for the city named in {C} in five lines from local outlets, with links.'],
+  ['','traffic','Home & life','🚥','daily','Traffic before you leave','Each morning, how long your commute will take today and anything blocking it.','Your route and time?','e.g. "Westlands to CBD, 7:30"','Report current traffic, closures and incidents on the route named and the expected travel time.'],
+  ['','dailyweather','Home & life','⛅','daily','Tomorrow’s weather where you live','Each evening, tomorrow’s weather where you are and what to wear or bring.','Your town?','e.g. "Ulaanbaatar"','Give tomorrow’s forecast for the town named from the national weather service of {C} and practical advice.'],
+  ['','crypto','Money','🪙','daily','Crypto prices in your currency','The coins you follow, priced in your currency, and big moves.','Which coins?','e.g. "BTC, ETH"','Report today’s prices of the coins named in the local currency of {C} and notable moves, with the source. Information, not financial advice; never suggest trading.'],
+  ['','schoolfees','Family & kids','🏫','monthly','School fees, grants and supplies this term','What this term costs at school - fees, uniforms, books - and any help available in {C}.','Your children’s ages and type of school?','e.g. "ages 7 and 12, public school"','Explain the typical costs for the coming term in {C} for the children described, and grants or subsidies available, from official sources.'],
+  ['','childcare','Family & kids','👶','monthly','Childcare support and places in {C}','Childcare support, free hours and nursery places you may be able to get in {C}.','Your children’s ages and work situation?','e.g. "age 2, both parents working"','From official sources in {C}, list childcare support and free hours the family may qualify for, and how to find places.'],
+  ['','pension','Money','🧓','monthly','Your pension and retirement rules in {C}','Changes to state pension and retirement rules in {C}, and what they mean for you.','Your age and situation?','e.g. "52, employed, private scheme"','Explain the state pension and retirement rules in {C} relevant to the user, and recent or upcoming changes. Official sources; not advice.'],
+  ['','ccrates','Money','💳','monthly','Loan and credit rates in {C}','Personal-loan and credit rates on offer in {C} now, if you need to borrow.','How much, and for what?','e.g. "5,000 for a car, 3 years"','Compare current personal-loan offers in {C} for the amount and term named: rate, total cost, conditions. Information, not advice.'],
+  ['','wedding','Home & life','💍','weekly','Planning an event in {C}','Venues, prices and suppliers for the event you are planning, within budget.','What event, where, how many guests, budget?','e.g. "wedding, Istanbul, 120 guests"','Find venues and key suppliers in {C} for the event described, with current prices and availability.'],
+  ['','pets','Home & life','🐾','weekly','Vets and pet care near you','Vets, vaccination reminders and pet-care costs near you.','Your area and pet?','e.g. "Bogotá, a dog"','Find vets near the area named in {C}, opening hours, typical costs for routine care, and vaccination schedules.'],
+  ['','charity','Watching the world','🤝','weekly','Verified appeals and how to help in {C}','Registered charities and emergency appeals in {C}, checked as genuine.','Any cause you care about?','e.g. "flood relief"','List current appeals in {C} from registered charities (check the registration), with how donations are used. Flag known fake appeals.'],
+  ['','hobby','Home & life','🎨','weekly','Clubs and classes for your hobby','Clubs, courses and meet-ups near you for what you enjoy.','Your hobby and city?','e.g. "chess, Yerevan"','Find clubs, classes and meet-ups in the city named for the hobby, with times and costs.'],
+  ['','transit','Money','🚌','monthly','Public transport passes in your city','The monthly passes, discounts and fare changes on buses, trams and metro where you live - and which one fits how you travel.','Your city, and how often you ride?','e.g. "Lisbon, metro twice a day on weekdays"','From the official transport operators of the user’s city in {C}, list current fares, passes and discounts (student, youth, senior, low income), any fare changes announced, and which option costs the user least per month.'],
+  ['','training','Learning','🎓','weekly','Free and funded courses in {C}','Government-funded training, free courses and certifications open to you in {C}.','What do you want to learn, or which field?','e.g. "data analysis", "forklift licence", "English"','Find free or state-funded courses and certifications in {C} in the field named: provider, format, dates, cost after funding, who qualifies. Only programmes currently open.'],
+  ['','moving','Home & life','📦','monthly','Moving to {C}: your paperwork, step by step','Residence, registration, tax number, bank account, health cover - the next step for somebody settling in {C}.','Where are you from, and what have you done so far?','e.g. "EU citizen, arrived last month, have a flat"','Using official immigration and government sources for {C}, lay out the registration steps for a newcomer in the user’s situation in the right order, what each needs, and which one to do next. Flag deadlines.'],
+  ['','bizgrants','Growing a business','🌱','weekly','Grants and funding for small businesses in {C}','Open grants, subsidised loans and programmes for businesses like yours in {C}, with the deadlines.','Your business: sector, size, stage?','e.g. "bakery, 4 staff, 3 years old"','Find currently open grants, subsidised loans and support programmes in {C} for the business described: who runs it, the amount, eligibility, deadline, link. Only programmes open now.'],
+  ['','rivals','Growing a business','🔭','weekly','What your competitors did this week','New prices, offers, openings and reviews from the businesses you compete with in {C}.','Your business and the competitors you watch?','e.g. "hair salon in Valencia; Salon X, Studio Y"','Check the public websites, social pages and review listings of the competitors named and report what changed this week: prices, offers, openings, notable reviews. Only what can be seen publicly, with links.'],
+  ['','reviews','Growing a business','⭐','daily','New reviews of your business','New public reviews of your business, and a reply drafted for each one that needs it.','Your business name and town?','e.g. "Café Sol, Seville"','Find new public reviews of the business named on the review sites used in {C}, summarise each, and draft a courteous reply for any that needs one. Never post anything.'],
+  ['','firsthire','Growing a business','🧑‍💼','monthly','Hiring your first employee in {C}','Contracts, registration, payroll tax and the minimum wage in {C} - what hiring someone involves, in order.','What role, full or part time?','e.g. "part-time shop assistant"','From official sources for {C}, explain what an employer must do to hire the person described: registration, contract type, minimum pay, employer contributions, payroll filings and deadlines. Information, not legal advice.'],
+  ['','internships','Work & career','🧑‍🎓','weekly','Internships and graduate schemes in {C}','Open internships and graduate programmes in your field in {C}, with closing dates.','Your field and when you finish studying?','e.g. "engineering, graduating next June"','Find currently open internships and graduate schemes in {C} for the field named: employer, pay where stated, closing date, link. Only real, open postings.'],
+  ['','freelance','Work & career','🧰','weekly','Freelance and side work in {C}','Paid freelance projects and side work for your skills, plus the tax rules for side income in {C}.','Your skills?','e.g. "translation EN-ES, copywriting"','Find current freelance projects and side-work openings for the user’s skills from platforms and boards used in {C}, and summarise the rules for declaring side income there.'],
+  ['','races','Health','🏃','weekly','Runs, races and sports events in {C}','Races, rides and amateur sports events near you with entry deadlines.','Your sport and area?','e.g. "running, 10k to half marathon, Barcelona"','List upcoming amateur races and sports events in the user’s sport and area in {C}: date, distance or format, entry fee, entry deadline, link.'],
+  ['','mind','Health','🫶','weekly','Free mental-health support in {C}','Free and low-cost support lines, services and groups in {C}, and how to reach them today.','Anything specific (stress, grief, a young person)?','e.g. "support for a teenager"','List free and low-cost mental-health services in {C} relevant to what the user named, from official and established charity sources: what each offers, hours, how to reach it. Always include the national emergency number and crisis line for {C}.'],
+  ['','warnings','Home & life','🌩️','daily','Severe weather warnings for your area','Official storm, flood, heat and snow warnings where you live, the evening before they hit.','Your town or region?','e.g. "Valencia province"','Check the official meteorological service of {C} for warnings for the user’s area over the next 48 hours: type, level, timing, official advice. If there are none, say so in one line.'],
+  ['','checkups','Family & kids','🩺','monthly','Your child’s check-ups and vaccines in {C}','Which check-ups and vaccinations are due for your child’s age under the schedule in {C}.','Your child’s age?','e.g. "14 months"','From the official health ministry schedule for {C}, list the check-ups and vaccinations due for a child of the age named and in the next six months, and how to book them. Information, not medical advice.'],
+  ['','parental','Family & kids','👶','monthly','Parental leave and family benefits in {C}','What parental leave, child benefit and childcare support you are entitled to in {C}, and the deadlines to claim.','Your situation (expecting, new baby, employed or self-employed)?','e.g. "expecting in March, employed full time"','From official sources for {C}, explain the parental leave, pay, child benefit and childcare support for the situation described, how to claim each, and the deadlines.'],
+  ['','eldercare','Family & kids','🧓','monthly','Care for an older parent in {C}','Home help, care allowances and residential options for an older relative in {C}, and how to apply.','Their situation and area?','e.g. "mother, 82, lives alone, Lyon"','From official and established sources for {C}, set out the care support available for the person described: home help, allowances, day centres, residential care, costs and how to apply locally.'],
+  ['','homeprices','Money','🏡','monthly','Home prices in your city','What homes sell for in your city this quarter, and whether prices are rising or falling.','Your city or area?','e.g. "Manchester"','From official statistics and major property sources for {C}, give the current typical home price in the user’s city, the change over the last year, and the direction. Cite sources.'],
+  ['','breaches','Watching the world','🔓','weekly','Data breaches that may include you','Breaches at companies people in {C} use, what leaked, and exactly what to change.','Which services do you use?','e.g. "my telecom, my bank, a food delivery app"','Report data breaches disclosed recently at companies used in {C}, especially the services the user named: what leaked, when, and the specific steps to take. Cite the company’s notice or the data-protection authority.'],
+  ['','studydeadlines','Learning','🗓️','weekly','University application deadlines in {C}','When applications, grants and entrance tests open and close in {C} for the course you want.','Which course or field, and for when?','e.g. "medicine, starting next September"','From official university and education-ministry sources for {C}, list the application windows, entrance-test dates and grant deadlines for the course and year named, soonest first.'],
+];
+function _cwFill(str, f, k, C){
+  const v = k ? String(f[k] || '') : '';
+  return String(str || '').replace(/\{C\}/g, C).replace(/\{v\}/g, v).replace(/\{1\}/g, _cwNames(v, 1))
+    .replace(/\{2\}/g, _cwNames(v, 2)).replace(/\{3\}/g, _cwNames(v, 3)).replace(/\{s\}/g, _cwShort(v));
+}
+function _cwMadeMore(cc){
+  const f = _cwFacts[cc], row = _cwCountryRow(cc);
+  if(!f || !row) return [];
+  const C = row[1], low = cc.toLowerCase();
+  return CW_MADE_MORE.filter(m => !m[0] || f[m[0]]).map(m => ({
+    id: 'cc_' + low + '_' + m[1], made: true, country: cc, countryName: C,
+    cat: m[2], icon: m[3], every: m[4] === 'monthly' ? 'weekly' : m[4], on: false, needs: 'Web research',
+    title: _cwFill(m[5], f, m[0], C), desc: _cwFill(m[6], f, m[0], C), where: m[0] ? String(f[m[0]]) : C,
+    asks: m[7] ? { q: _cwFill(m[7], f, m[0], C), ph: m[8] } : null,
+    prompt: _cwFill(m[9], f, m[0], C) + ' The user is in ' + C + '. Only real, current information with sources; never invent listings, prices or dates.',
+  }));
+}
+
 /* ── THE TOP FIVE, BUILT FROM WHAT PEOPLE THERE ACTUALLY CONNECT ─────────────
 
    Asked for: in the US the top five should say "connect Visa or Amex" and
@@ -2097,9 +2268,10 @@ function _cwAllJobs(){
                               .concat(_cwLocalJobs(cc) || [])
                               .concat((_cwTopTen(cc) || []).filter(j => !have.has(j.id)))
                               .concat((_cwMadeForJobs(cc) || []).filter(j => !have.has(j.id)))
+                              .concat((_cwMadeMore(cc) || []).filter(j => !have.has(j.id)))
                               /* And the country being browsed at the bottom, so
                                  its cards open and switch on like any other. */
-                              .concat(_cwBrowse && _cwBrowse !== cc ? (_cwMadeForJobs(_cwBrowse) || []).filter(j => !have.has(j.id)) : []); }
+                              .concat(_cwBrowse && _cwBrowse !== cc ? (_cwMadeForJobs(_cwBrowse) || []).concat(_cwMadeMore(_cwBrowse) || []).filter(j => !have.has(j.id)) : []); }
   catch(e){ return _cwJobs() || []; }
 }
 /* THE BEST ONES FIRST, AND FEWER OF THEM.
@@ -2174,16 +2346,24 @@ let _cwRankedFor = '';
 function _cwRankKey(){
   const cc = _cwCountryGuess();
   return cc + ':' + (Object.prototype.hasOwnProperty.call(_cwBank, cc) ? (_cwBank[cc] ? 1 : 0) : '?')
-    + ':' + (_cwRankedHere(cc) ? 'n' : '-');
+    + ':' + (_cwRankedHere(cc) ? 'n' : '-') + ':' + (_cwFacts[cc] ? 'f' : '-');
 }
 function _cwReRank(){
   try{
     if(!_cwShowcaseCache || _cwRankKey() === _cwRankedFor) return;
     const body = document.getElementById('cw-jobs-body');
     if(!body || S.tab !== 'crew' || _cwFind || _cwCat !== 'all') return;
-    if(body.getBoundingClientRect().top < window.innerHeight) return;
+    /* The chips are counted from the same list, so they are redrawn with it -
+       left alone they kept the counts from before the country was known and
+       had no chip for a category only the country's own jobs fill. They sit
+       just above the list, so it is THEIR position that decides whether
+       anything somebody can see would move. */
+    const chips = body.parentNode && body.parentNode.querySelector('.cw-chips');
+    if((chips || body).getBoundingClientRect().top < window.innerHeight) return;
     _cwShowcaseCache = null;
-    body.innerHTML = _cwJobsBody(_cwShowcase(), _planAllowsCrew() ? _cwJobCard : _cwLockedCard);
+    const list = _cwShowcase();
+    if(chips) chips.outerHTML = _cwCatChips(list);
+    body.innerHTML = _cwJobsBody(list, _planAllowsCrew() ? _cwJobCard : _cwLockedCard);
     _cwLocFill();
   }catch(e){}
 }
@@ -2202,13 +2382,41 @@ function _cwShowcase(){
   const ranked = rest.map((j, i) => [j, _cwStrength(j), i])
     .sort((a, b) => (b[1] - a[1]) || (a[2] - b[2]))
     .map(x => x[0]);
+  /* THE COUNTRY'S OWN JOBS COME FIRST. Once the country's facts are here,
+     the list is led by the jobs written for it (_cwMadeMore - a hundred or
+     more for every country), ranked the same way, alongside the same hundred
+     jobs that are the same everywhere that the list showed before the country
+     was known - they are the ones that run on connected accounts, so adding a
+     country's own must never push them off. Nothing already at the top of the
+     page (the top ten, the made-for row) is repeated here.
+
+     This is the whole POOL. "All" shows the first few of each category and a
+     See all that opens the category; see _cwJobsBody. */
+  const cc = _cwCountryGuess();
+  const shown = new Set();
+  try{ (_cwTopTen(cc) || []).forEach(j => shown.add(j.id)); }catch(e){}
+  try{ (_cwMadeForJobs(cc) || []).forEach(j => shown.add(j.id)); }catch(e){}
+  const local = (() => { try{ return (_cwMadeMore(cc) || []).filter(j => !shown.has(j.id)); }catch(e){ return []; } })()
+    .map((j, i) => [j, _cwStrength(j), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).map(x => x[0]);
+  const cap = on.length + local.length + CW_SHOWCASE_N;
   const out = [];
   const seen = new Set();
-  const push = (j) => { if(j && !seen.has(j.id) && out.length < CW_SHOWCASE_N){ seen.add(j.id); out.push(j); } };
+  const push = (j) => { if(j && !seen.has(j.id) && out.length < cap){ seen.add(j.id); out.push(j); } };
   /* Anything already switched on is always shown - a job you are running must
      never fall off the screen that manages it. */
   on.forEach(push);
-  ranked.forEach(push);
+  /* One of the country's own, then one that runs on connected accounts, and
+     so on - so the first cards of every category are both kinds, not a page
+     of one before the other. */
+  const everywhere = ranked.slice(0, Math.max(0, CW_SHOWCASE_N - on.length));
+  /* Alternated WITHIN each category, which is how the list is read - across
+     the whole list, one category could still open on four of one kind. */
+  const byCat = (list) => list.reduce((m, j) => { (m[j.cat] = m[j.cat] || []).push(j); return m; }, {});
+  const L = byCat(local), E = byCat(everywhere);
+  [...new Set([...local, ...everywhere].map(j => j.cat))].forEach(c => {
+    const a = L[c] || [], b = E[c] || [];
+    for(let i = 0; i < Math.max(a.length, b.length); i++){ push(a[i]); push(b[i]); }
+  });
   _cwShowcaseCache = out;
   return out;
 }
@@ -2223,7 +2431,22 @@ const CW_CATS = ['Money','Work & career','Growing a business','Making things','I
                  'Watching the world','Home & life','Family & kids','Learning','Health'];
 let _cwCat = 'all';
 function cwCat(c){ _cwCat = c || 'all'; renderCrewView(); }
-try{ window.cwCat=cwCat; }catch(e){}
+/* How many of each category All shows before See all. */
+const CW_CAT_PREVIEW = 10;
+/* See all is pressed at the foot of a category, and the category view is far
+   shorter than All - so without this it opens scrolled past its own heading. */
+function cwCatAll(c){
+  cwCat(c);
+  /* Again on the next frame: a repaint arriving in the same moment (a
+     connection or a country's data landing) would otherwise leave the
+     category opened part-way down. */
+  const top = () => { try{ const h = document.querySelector('.cw-chips') || document.getElementById('cw-jobs-body');
+                           if(h) h.scrollIntoView({ block:'start' }); }catch(e){} };
+  top();
+  try{ requestAnimationFrame(top); }catch(e){}
+  try{ const on = document.querySelector('.cw-chip.on'); if(on) on.focus({ preventScroll:true }); }catch(e){}
+}
+try{ window.cwCat=cwCat; window.cwCatAll=cwCatAll; }catch(e){}
 
 /* SEARCHING THE EXAMPLES, AND WHAT HAPPENS WHEN THERE IS NO MATCH.
 
@@ -2888,12 +3111,24 @@ function _cwJobsBody(jobs, jobCard){
   }
   /* Anything without a known category still has to appear - a job that exists
      but renders nowhere is the failure this whole screen keeps having. */
+  /* A SHELF, NOT A WALL. With a country known the pool is two hundred and
+     more, and two hundred cards is a wall - the owner's word, from when the
+     list was cut to a hundred. So All shows the first few of every category
+     (anything switched on always, so a running job never hides) and a See all
+     that opens the category, where every one of them is. Search reaches the
+     rest from here as well. */
   const known=CW_CATS.filter(c=>jobs.some(j=>j.cat===c));
   const rest=jobs.filter(j=>CW_CATS.indexOf(j.cat)<0);
-  return cgroup + known.map(c=>`<div class="cw-cat">
-      <div class="cw-cat-h">${escH(c)}<span class="cw-cat-n">${jobs.filter(j=>j.cat===c).length}</span></div>
-      <div class="cw-jobs-grid cw-cat-grid">${jobs.filter(j=>j.cat===c).map(jobCard).join('')}</div>
-    </div>`).join('')
+  const preview=(list)=>{ let n=0; return list.filter(j=>j.on || n++ < CW_CAT_PREVIEW); };
+  const seeAll=(c,n,shown)=>n>shown
+    ? `<div class="int-more cw-cat-more"><button class="int-seemore" data-dact="cwCatAll" data-darg="${escH(c)}" aria-label="${escH('See all '+n+' in '+c)}">See all ${n}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>`
+    : '';
+  return cgroup + known.map(c=>{
+      const all=jobs.filter(j=>j.cat===c), shown=preview(all);
+      return `<div class="cw-cat">
+      <div class="cw-cat-h">${escH(c)}<span class="cw-cat-n">${all.length}</span></div>
+      <div class="cw-jobs-grid cw-cat-grid">${shown.map(jobCard).join('')}</div>${seeAll(c,all.length,shown.length)}
+    </div>`; }).join('')
     + (rest.length?`<div class="cw-cat">
       <div class="cw-cat-h">More<span class="cw-cat-n">${rest.length}</span></div>
       <div class="cw-jobs-grid cw-cat-grid">${rest.map(jobCard).join('')}</div>
