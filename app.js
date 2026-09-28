@@ -5073,7 +5073,37 @@ function _wireHdrAuth(){
   if(su && !su._wired){ su._wired=1; su.addEventListener('click',()=>{ try{ openAuth('signup'); }catch(e){} }); }
   if(li && !li._wired){ li._wired=1; li.addEventListener('click',()=>{ try{ openAuth('login'); }catch(e){} }); }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} /* An address beats a remembered tab: somebody who opened #/billing asked for billing, not for wherever they were last time. But the FIRST goApp() runs at the top level of 12-handoff, while modules 13 and up are still evaluating - so a renderer that reads one of their top-level bindings throws, and `typeof x!=='undefined'` does NOT save it: typeof on a let/const still in its temporal dead zone throws too. Boot therefore always renders the tab it always rendered, and the address is applied on the next turn of the loop, once the bundle is whole. That turn is before the first paint, so there is nothing to see. */  try{ const _u=_tabFromURL(); if(_u){ if(window._BUNDLE_READY) S.tab=_u; else setTimeout(function(){ /* Closed over, NOT re-read: the setTab(S.tab) below has already run by now and it clears an address that does not match the tab it is opening, so asking the bar a second time returns nothing and the address is dropped - which is what happened. The hash is rewritten when this lands. */ try{ if(S.tab!==_u) setTab(_u); }catch(e){} },0); } }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+/* THE SCREEN IN THE ADDRESS IS THE FIRST SCREEN DRAWN.
+
+   Boot renders before the later modules have been evaluated, so a section
+   named in the address - #/settings, or Integrations on a return from a
+   provider - could not be drawn at that moment and was applied on the next
+   turn of the loop. That turn came after a paint: a reload on Settings showed
+   the chat home screen, animations and all, for a few frames and then jumped.
+   Measured, and part of what the owner described as the text moving on every
+   refresh. The switch now happens at the end of the same script, before
+   anything has been painted; the timer stays only as a fallback, and does
+   nothing if the switch has already been made. */
+function _showWhenReady(t){
+  window.__amvBootTab=t;
+  if(window._BUNDLE_READY){ _applyBootTab(); return; }
+  setTimeout(_applyBootTab, 0);
+}
+function _applyBootTab(){
+  const t=window.__amvBootTab; if(!t) return;
+  window.__amvBootTab=null;
+  /* NOT A MOVE ANYBODY MADE. Opened as if going back, so it is not recorded:
+     recorded, it put a back arrow in the header pointing at a chat screen that
+     was never shown, pushed a browser history entry for it, and the arrow
+     appearing after the first paint moved the header along by its own width.
+     Closed over rather than re-read from the address, because setTab clears an
+     address that does not match the tab it opens. */
+  let was=false;
+  try{ was=_NAV.popping; _NAV.popping=true; }catch(e){}
+  try{ if(S.tab!==t) setTab(t); }catch(e){}
+  finally{ try{ _NAV.popping=was; _navPaint(); }catch(e){} }
+}
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} /* An address beats a remembered tab: somebody who opened #/billing asked for billing, not for wherever they were last time. But the FIRST goApp() runs at the top level of 12-handoff, while modules 13 and up are still evaluating - so a renderer that reads one of their top-level bindings throws, and `typeof x!=='undefined'` does NOT save it: typeof on a let/const still in its temporal dead zone throws too. Boot therefore always renders the tab it always rendered, and the address is applied on the next turn of the loop, once the bundle is whole. That turn is before the first paint, so there is nothing to see. */  try{ const _u=_tabFromURL(); if(_u){ if(window._BUNDLE_READY) S.tab=_u; else _showWhenReady(_u); } }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
    the collapsible it managed no longer exists. The function stayed behind,
@@ -10036,6 +10066,9 @@ function _updateHdrAuth(){
     const li=document.getElementById('hdr-login');
     if(su) su.hidden = signedIn;
     if(li) li.hidden = signedIn;
+    /* The boot guess (index.html) is only for the first paint; from here the
+       answer is this one. */
+    document.documentElement.classList.remove('boot-guest');
   }catch(e){}
 }
 try{ window._updateHdrAuth=_updateHdrAuth; }catch(e){}
@@ -30848,8 +30881,7 @@ function checkOAuthCallback(){
   const showReturn = () => {
     try{
       const back = loadStr('amv_conn_return') || 'integrations';
-      const go = () => { try{ if(S.tab !== back) setTab(back); }catch(e){} };
-      if(window._BUNDLE_READY) go(); else setTimeout(go, 0);
+      _showWhenReady(back);
     }catch(e){}
   };
 
@@ -46930,3 +46962,6 @@ try {
    know whether it may honour the address bar immediately or has to wait one
    turn of the event loop for it. */
 try{ window._BUNDLE_READY = true; }catch(e){}
+/* The bundle is whole: draw the screen the address asked for now, in the same
+   task as the first render, so the one before it is never painted. */
+try{ if(typeof _applyBootTab === 'function') _applyBootTab(); }catch(e){ try{ console.error('AMV: the addressed screen could not be opened', e); }catch(_){} }

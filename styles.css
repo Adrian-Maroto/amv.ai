@@ -15789,3 +15789,31 @@ iframe.amv-sbx{
 .int-seemore[aria-expanded="true"]:hover svg{ transform:translateY(-2px); }
 .int-seemore:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 @media (prefers-reduced-motion:reduce){ .int-seemore svg{ transition:none; } }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LAYER A265 - A screen arrives still
+   Asked for plainly: "when I fresh load or refresh... the text moves, make
+   sure it's still." Measured on a reload: every view slid up 8px, every
+   heading rose 22px out of a blur for 0.7s, and chat's greeting and its five
+   chips came in one after another over a second. Each was a flourish; together
+   they were the page visibly settling after it had already arrived. All
+   entrance motion on screens is off. Loops (spinners, the typing dots, the
+   status dot) are untouched, and so are dialogs, which open on a press rather
+   than on a load. Anything that started invisible and relied on its animation
+   to finish is set back to visible here, so nothing can be left hidden.
+   ══════════════════════════════════════════════════════════════════════ */
+#vc > *, .fi, .vi h2, .sv h2, .settings-shell,
+#cv.cv-home, #cv.cv-home .chome-greet, #cv.cv-home .chome-chip, .chome-recent,
+.lab-entry, .dsn-hero, .auto-ev{
+  animation:none!important;
+}
+.stagger-in > *{ animation:none!important; opacity:1!important; }
+/* The first paint of a signed-out visit already has Sign up and Log in, so
+   nothing arrives in the header afterwards (the class is removed by the
+   bundle, which then decides). Phones keep only Sign up, as they always have. */
+html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display:inline-block!important; }
+@media(max-width:700px){ html.boot-guest .hdr-login[hidden]{ display:none!important; } }
+/* The email line under the name is empty in the page and filled by the bundle,
+   so the whole sidebar footer grew by a line after the first paint. A blank
+   line holds its place. */
+.sb-ue:empty::before{ content:"\00a0"; }

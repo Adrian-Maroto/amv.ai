@@ -3134,6 +3134,9 @@ function _updateHdrAuth(){
     const li=document.getElementById('hdr-login');
     if(su) su.hidden = signedIn;
     if(li) li.hidden = signedIn;
+    /* The boot guess (index.html) is only for the first paint; from here the
+       answer is this one. */
+    document.documentElement.classList.remove('boot-guest');
   }catch(e){}
 }
 try{ window._updateHdrAuth=_updateHdrAuth; }catch(e){}

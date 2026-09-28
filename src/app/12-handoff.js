@@ -4355,8 +4355,7 @@ function checkOAuthCallback(){
   const showReturn = () => {
     try{
       const back = loadStr('amv_conn_return') || 'integrations';
-      const go = () => { try{ if(S.tab !== back) setTab(back); }catch(e){} };
-      if(window._BUNDLE_READY) go(); else setTimeout(go, 0);
+      _showWhenReady(back);
     }catch(e){}
   };
 

@@ -412,3 +412,6 @@ try {
    know whether it may honour the address bar immediately or has to wait one
    turn of the event loop for it. */
 try{ window._BUNDLE_READY = true; }catch(e){}
+/* The bundle is whole: draw the screen the address asked for now, in the same
+   task as the first render, so the one before it is never painted. */
+try{ if(typeof _applyBootTab === 'function') _applyBootTab(); }catch(e){ try{ console.error('AMV: the addressed screen could not be opened', e); }catch(_){} }
