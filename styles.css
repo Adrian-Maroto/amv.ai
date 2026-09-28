@@ -15888,3 +15888,10 @@ html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display
 /* A phone's menu is closed before the bundle runs, not drawn open over the
    page and then slid shut: the slide ran on every load of every screen. */
 @media(max-width:720px){ html:not(.sb-init) #sb{ transform:translateX(-100%); transition:none!important; } }
+/* On a phone the heading wraps, so its size must not depend on which country
+   it names or on whether the country is known yet: the heading holds two
+   lines, and "Not in Spain?" sits on a line of its own under the sentence. */
+@media(max-width:720px){
+  #cw-foryou .sec-head h3{ min-height:calc(2 * 1.35em); line-height:1.35; align-content:flex-start; }
+  #cw-foryou .sec-sub .cw-link{ display:flex; margin-left:0; }
+}

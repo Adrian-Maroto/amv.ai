@@ -2172,7 +2172,7 @@ function _cwForYouHTML(){
   try{ setTimeout(_cwAskWhere, 0); }catch(e){}
   if(_cwHerePending()){
     return `<section class="cw-pop cw-foryou" id="cw-foryou" aria-busy="true">
-      <div class="sec-head"><h3>${escH(T('Top 5 for you'))}</h3><span class="sec-sub">${escH(T('Finding what matters where you are\u2026'))}
+      <div class="sec-head"><h3>${escH(T('Top 5 for you'))}</h3><span class="sec-sub">${escH(T('Picked for where you are, under the names things have there.'))}
         <span class="cw-link cw-link-ghost" aria-hidden="true">${escH(T('Not in'))}?</span></span></div>
       <div class="cw-top5">${'<div class="cw-top5-item"><div class="cw-card-ph" aria-hidden="true"></div></div>'.repeat(5)}</div>
     </section>`;
