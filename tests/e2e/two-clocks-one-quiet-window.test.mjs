@@ -217,7 +217,11 @@ section('Ticking the box actually sends the window to the server');
     const calls = [];
     window._autoApi = async (path, body) => { calls.push({ path, body }); return { ok: true, quiet: body.quiet }; };
     mcQuietToggle();
-    return new Promise(r => setTimeout(() => r(calls), 60));
+    /* Writes only. Drawing Crew as a paid account also refreshes the job list
+       (/auto/list), and on a slow runner that read lands inside this window -
+       which GitHub measured as "two requests" for one save. A read is not a
+       save; the claim here is that ticking the box sends exactly one. */
+    return new Promise(r => setTimeout(() => r(calls.filter(c => c.path !== '/auto/list')), 60));
   });
   ok(sent !== null, 'the checkbox is on the screen to tick', sent);
   ok(sent.length === 1, 'saving makes exactly one request', sent);

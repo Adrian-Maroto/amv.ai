@@ -9418,21 +9418,55 @@ a.skip-link:focus{ top:var(--sp-3); outline:2px solid var(--tx); outline-offset:
 
    Numbers are from the faces themselves rather than eyeballed: Inter has a
    1.0 aspect against Arial at 107%, ascent 969/1000, descent 241/1000. Space
-   Grotesk is narrower, so its adjust is smaller. */
+   Grotesk is narrower, so its adjust is smaller.
+
+   Liberation Sans and Arimo are Arial's metric twins - same widths, glyph for
+   glyph - so the same overrides hold for them. Without them a Linux machine or
+   a Chromebook has none of the three names, the face fails, and the page is
+   drawn in a much wider font and reflowed when Inter arrives: measured as the
+   Crew heading moving on every phone load on GitHub's runners. */
 @font-face{
   font-family:'Inter fallback';
-  src:local('Arial'),local('Helvetica Neue'),local('Roboto');
+  font-weight:100 500;
+  src:local('Arial'),local('Liberation Sans'),local('Arimo'),local('Helvetica Neue'),local('Roboto');
   size-adjust:107%;
   ascent-override:90%;
   descent-override:22.4%;
   line-gap-override:0%;
 }
+/* THE BOLD WEIGHTS NEED THEIR OWN FACE. local('Arial') is Arial REGULAR, and
+   a face with no weight is used for every weight - so a 600 heading was drawn
+   in regular widths made bold by the browser, about six per cent narrower than
+   the real thing, and re-flowed when the real font came. These are measured
+   against the bold faces instead (advance widths over a sample of AMV's own
+   headings, from the font files themselves). */
+@font-face{
+  font-family:'Inter fallback';
+  font-weight:600 900;
+  src:local('Arial Bold'),local('Arial-BoldMT'),local('Liberation Sans Bold'),local('LiberationSans-Bold'),
+      local('Arimo Bold'),local('Arimo-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Roboto Bold'),local('Roboto-Bold');
+  size-adjust:101.5%;
+  ascent-override:95.5%;
+  descent-override:23.8%;
+  line-gap-override:0%;
+}
 @font-face{
   font-family:'Space Grotesk fallback';
-  src:local('Arial'),local('Helvetica Neue'),local('Roboto');
-  size-adjust:102%;
-  ascent-override:95%;
-  descent-override:24%;
+  font-weight:100 500;
+  src:local('Arial'),local('Liberation Sans'),local('Arimo'),local('Helvetica Neue'),local('Roboto');
+  size-adjust:107.9%;
+  ascent-override:91.2%;
+  descent-override:27.1%;
+  line-gap-override:0%;
+}
+@font-face{
+  font-family:'Space Grotesk fallback';
+  font-weight:600 900;
+  src:local('Arial Bold'),local('Arial-BoldMT'),local('Liberation Sans Bold'),local('LiberationSans-Bold'),
+      local('Arimo Bold'),local('Arimo-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Roboto Bold'),local('Roboto-Bold');
+  size-adjust:100.5%;
+  ascent-override:97.9%;
+  descent-override:29.1%;
   line-gap-override:0%;
 }
 
@@ -15932,3 +15966,11 @@ html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display
 #lc-body .int-list{ grid-template-columns:1fr; }
 #lc-body .int-card{ align-items:center; }
 @media(max-width:560px){ #lc-body .ss2{ padding:var(--sp-3); } }
+/* Headings named Space Grotesk without its metric-matched fallback, so until
+   the font arrived they were drawn in whatever sans-serif the machine had and
+   jumped when it did. The display token carries the fallback; use it. */
+h1,h2,.ce-greeting,.vi h2{ font-family:var(--fdisplay)!important; }
+/* Settings' section list was as wide as its longest label, so it grew by 8px
+   when the real font arrived and pushed the whole pane sideways. A fixed width
+   - the one the real font gives it - on the layouts where it is a column. */
+@media(min-width:721px){ .settings-nav{ width:300px; flex:0 0 300px; } }

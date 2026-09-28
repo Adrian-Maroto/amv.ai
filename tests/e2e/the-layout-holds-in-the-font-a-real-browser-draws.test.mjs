@@ -73,14 +73,33 @@ const textWidth = page => page.evaluate(() => {
   return Math.round(w);
 });
 
-section('The sabotage applies at all - without this nothing below means anything');
+/* SINCE THE FALLBACK NAMES ARIAL'S LINUX TWINS, THIS MACHINE DRAWS WHAT CI DRAWS.
+
+   The fallback now lists Liberation Sans and Arimo itself (see
+   the-font-arriving-moves-nothing), so it resolves here without being forced
+   and the two machines no longer disagree. The control is therefore the other
+   way round: the shipped fallback must resolve on this machine UNFORCED -
+   drawn at its metric-matched width, not in the narrower generic sans-serif -
+   and forcing the declaration this file used to add must change nothing,
+   because it is already what the product does. Either failing means the gate
+   is measuring a different page from the one CI and people see. */
+const genericWidth = page => page.evaluate(() => {
+  const p = document.createElement('span');
+  p.style.cssText = "position:absolute;white-space:nowrap;font:600 13.5px 'No Such Font AMV',sans-serif";
+  p.textContent = 'Full-power engines and agents, with the highest limits';
+  document.body.appendChild(p);
+  const w = p.getBoundingClientRect().width;
+  p.remove();
+  return Math.round(w);
+});
+section('This machine draws the fallback CI draws - without this nothing below means anything');
 {
   const plain = await open(1440, 1600, false);
   const wide = await open(1440, 1600, true);
-  const a = await textWidth(plain), b = await textWidth(wide);
+  const a = await textWidth(plain), b = await textWidth(wide), g = await genericWidth(plain);
   await plain.close(); await wide.close();
-  ok(b > a, 'forcing the metric-matched fallback really does widen the text', a + ' -> ' + b);
-  ok(b - a >= 5, 'by enough to change where a line breaks', (b - a) + 'px');
+  ok(a !== g && Math.abs(a - g) >= 5, 'the shipped fallback resolves here, unforced - not the generic font', { fallback: a, generic: g });
+  ok(Math.abs(b - a) <= 1, 'and forcing it as CI resolves it changes nothing', a + ' -> ' + b);
 }
 
 section('The plan buttons stay level when the text is wider');

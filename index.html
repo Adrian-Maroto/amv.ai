@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="2c943d0f9ac29218">
+<meta name="amv-build" content="e3aac4fde68e6908">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://api.amv.homes"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -6777,18 +6777,40 @@ transition:background-color .13s var(--ease),border-color .13s var(--ease),color
 @media (prefers-reduced-motion:reduce){ .att-open{ transition:none; } }
 @font-face{
 font-family:'Inter fallback';
-src:local('Arial'),local('Helvetica Neue'),local('Roboto');
+font-weight:100 500;
+src:local('Arial'),local('Liberation Sans'),local('Arimo'),local('Helvetica Neue'),local('Roboto');
 size-adjust:107%;
 ascent-override:90%;
 descent-override:22.4%;
 line-gap-override:0%;
 }
 @font-face{
+font-family:'Inter fallback';
+font-weight:600 900;
+src:local('Arial Bold'),local('Arial-BoldMT'),local('Liberation Sans Bold'),local('LiberationSans-Bold'),
+local('Arimo Bold'),local('Arimo-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Roboto Bold'),local('Roboto-Bold');
+size-adjust:101.5%;
+ascent-override:95.5%;
+descent-override:23.8%;
+line-gap-override:0%;
+}
+@font-face{
 font-family:'Space Grotesk fallback';
-src:local('Arial'),local('Helvetica Neue'),local('Roboto');
-size-adjust:102%;
-ascent-override:95%;
-descent-override:24%;
+font-weight:100 500;
+src:local('Arial'),local('Liberation Sans'),local('Arimo'),local('Helvetica Neue'),local('Roboto');
+size-adjust:107.9%;
+ascent-override:91.2%;
+descent-override:27.1%;
+line-gap-override:0%;
+}
+@font-face{
+font-family:'Space Grotesk fallback';
+font-weight:600 900;
+src:local('Arial Bold'),local('Arial-BoldMT'),local('Liberation Sans Bold'),local('LiberationSans-Bold'),
+local('Arimo Bold'),local('Arimo-Bold'),local('Helvetica Neue Bold'),local('HelveticaNeue-Bold'),local('Roboto Bold'),local('Roboto-Bold');
+size-adjust:100.5%;
+ascent-override:97.9%;
+descent-override:29.1%;
 line-gap-override:0%;
 }
 @media (max-width:720px){
@@ -9934,6 +9956,8 @@ font-size:var(--t-2xl); line-height:1; border-radius:var(--r-md); background:var
 #lc-body .int-list{ grid-template-columns:1fr; }
 #lc-body .int-card{ align-items:center; }
 @media(max-width:560px){ #lc-body .ss2{ padding:var(--sp-3); } }
+h1,h2,.ce-greeting,.vi h2{ font-family:var(--fdisplay)!important; }
+@media(min-width:721px){ .settings-nav{ width:300px; flex:0 0 300px; } }
 </style>
 <!-- BUILD:CSS:END -->
 <script>

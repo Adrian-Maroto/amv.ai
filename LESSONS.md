@@ -13834,3 +13834,26 @@ Rules:
 - Anything that waits on a network answer before showing content waits for a
   bounded time and then shows its best guess. "Until the server answers" is
   "for ever" on the day the server does not.
+
+## 532. A fallback that fails on the test machine hides every flaw in the fallback
+
+GitHub failed the same phone Crew layout check twice (0.0015 layout shift)
+while every local run passed. Two "fixes" to the Crew heading did nothing,
+because the heading was never the cause. The cause was the font: the page is
+drawn in a metric-matched fallback until Inter arrives, and that fallback
+named only Arial, Helvetica Neue and Roboto. None exist on Linux, so on the
+runner - and on every Linux laptop and Chromebook - the fallback failed, the
+page was drawn in a much wider font, and it re-wrapped when Inter came. The
+fallback was also the REGULAR face used for every weight, so bold headings
+were six per cent too narrow everywhere, Windows and Mac included. Locally
+the web font never loaded at all, so no swap ever happened in a test.
+Replaying the real font files late reproduced GitHub's number exactly.
+
+Rules:
+- A fallback font names the metric twins of what it imitates (Liberation
+  Sans, Arimo for Arial) and has a face per weight range, with numbers taken
+  from the font files, not eyeballed.
+- A layout claim is measured in the conditions people have: the real fonts
+  arriving late (the-font-arriving-moves-nothing replays them from fixtures).
+- When CI and the local gate disagree twice, stop fixing the symptom and find
+  what differs between the two machines.
