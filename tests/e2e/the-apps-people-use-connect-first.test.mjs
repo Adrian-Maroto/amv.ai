@@ -31,27 +31,41 @@ section('Every topic is the same shape, and there is no "everything else"');
     const secs = [...document.querySelectorAll('#int-catalog > .ss2')];
     return {
       n: secs.length, cats: AMV_APP_CATS.length, count: _appCount(),
-      shaped: secs.filter(s => s.querySelector('h3') && s.querySelector('.int-list .int-card') && s.querySelector('.int-seeall')).length,
+      shaped: secs.filter(s => s.querySelector('h3') && s.querySelector('.int-list .int-card')).length,
+      /* Six, then one small See all - and only where there is more to see. */
+      sixThenMore: secs.filter(s => {
+        const cat = AMV_APP_CATS.find(c => c.t.replace(/&amp;/g, '&') === s.querySelector('h3').textContent);
+        const rows = s.querySelectorAll('.int-card').length, more = s.querySelector('.int-seemore[data-app-more]');
+        return cat && rows === Math.min(6, cat.apps.length) && (cat.apps.length > 6 ? !!more : !more);
+      }).length,
+      registryDoors: document.querySelectorAll('#int-catalog [data-dact="cdirAll"]').length,
+      badges: /\bAutonomous\b|\bManual\b/.test(document.getElementById('int-catalog').textContent),
       lump: /Everything else/i.test(document.querySelector('.vi-conn').textContent),
       intro: (document.querySelector('.vi-conn .vsub') || {}).textContent || '',
     };
   });
   ok(r.n === r.cats && r.n >= 30, 'one section per topic', r.n + ' of ' + r.cats);
-  ok(r.shaped === r.n, 'each with a heading, rows and its own See all', r.shaped + ' of ' + r.n);
+  ok(r.shaped === r.n, 'each with a heading and rows', r.shaped + ' of ' + r.n);
+  ok(r.sixThenMore === r.n, 'each shows its main six, then one small See all where there are more', r.sixThenMore + ' of ' + r.n);
+  ok(r.registryDoors === 0, 'and no second door into the open registry under a topic', r.registryDoors);
+  ok(!r.badges, 'no Autonomous or Manual labels - the name, what it does, and Connect', r.badges);
   ok(!r.lump, 'and nothing called "everything else"');
-  ok(r.count >= 500, 'the list is hundreds of real apps', r.count);
+  ok(r.count >= 400, 'the list is hundreds of real apps', r.count);
   ok(r.intro.indexOf(String(r.count)) === 0, 'and the number on the page is the length of the list, not a claim', r.intro.slice(0, 40));
 }
 
 section('The apps people named are there');
 {
   const names = await page.evaluate(() => AMV_APP_CATS.flatMap(c => c.apps.map(a => a.split('|')[0])));
-  for (const n of ['CapCut', 'Canva', 'Spotify', 'WhatsApp', 'Instagram', 'TikTok', 'Notion', 'Uber', 'Airbnb', 'Duolingo', 'Figma', 'YouTube', 'WeChat', 'Mercado Libre'])
+  for (const n of ['CapCut', 'Canva', 'Spotify', 'WhatsApp', 'Instagram', 'TikTok', 'Notion', 'Uber', 'Airbnb', 'Duolingo', 'Figma', 'YouTube', 'Microsoft Teams', 'Mercado Libre'])
     ok(names.includes(n), n + ' is listed', n);
   const dup = names.filter((n, i) => names.indexOf(n) !== i);
   ok(dup.length === 0, 'and no app is listed twice', dup);
   /* An agent that can read the vault can read every account in it. */
   ok(!names.some(n => /1Password|Bitwarden|LastPass|Dashlane|Keeper/i.test(n)), 'password managers are left out on purpose');
+  /* The owner: keep the good ones, remove the sketchy ones nobody uses. */
+  const gone = ['Temu', 'Shein', 'Binance', 'Mega', 'WPS Office', 'Yandex Mail', 'Mail.ru', 'VK', 'Paytm', 'Rocket.Chat'].filter(n => names.includes(n));
+  ok(gone.length === 0, 'and the sketchy or barely-used ones are gone', gone);
 }
 
 section('Connect only where AMV really connects, and those come first');
@@ -68,7 +82,7 @@ section('Connect only where AMV really connects, and those come first');
       return { t: s.querySelector('h3').textContent, ok: !/n+c/.test(kinds) };
     });
     return { conn, use, order,
-      temu: notifyOf('Temu'), netflix: notifyOf('Netflix'), capcut: notifyOf('CapCut'),
+      temu: notifyOf('Amazon'), netflix: notifyOf('Netflix'), capcut: notifyOf('CapCut'),
       slackConn: !!(byName('Slack') && byName('Slack').querySelector('[data-int-conn="prov"]')),
       canva: (byName('Canva') || {}).querySelector && byName('Canva').querySelector('[data-int-conn="rmcp"]') ? true : false,
       notion: (byName('Notion') || {}).querySelector && byName('Notion').querySelector('[data-int-conn="rmcp"]') ? true : false,
@@ -82,7 +96,7 @@ section('Connect only where AMV really connects, and those come first');
   /* Apps with no public API anybody may use - CapCut, Netflix, Snapchat - are
      Notify me: there is nothing to connect to, and a Connect would be a lie.
      Slack has a public API, so it connects through its own sign-in. */
-  ok(r.temu && r.netflix && r.capcut, 'CapCut, Netflix and Temu are Notify me, not a Connect that goes nowhere', r);
+  ok(r.temu && r.netflix && r.capcut, 'CapCut, Netflix and Amazon are Notify me, not a Connect that goes nowhere', r);
   ok(r.slackConn, 'Slack connects through its own sign-in', r.slackConn);
   ok(r.notion && r.canva, 'Notion and Canva connect through their own official connectors', r);
   ok(r.order.every(o => o.ok), 'in every topic the ones that connect come before the ones that do not', r.order.filter(o => !o.ok));

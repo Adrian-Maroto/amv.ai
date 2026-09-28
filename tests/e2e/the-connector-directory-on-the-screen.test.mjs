@@ -74,12 +74,12 @@ section('A topic is a door, and the page asks for nothing until one is opened');
   await CONNECT('ok');
   await open();
   const r = await page.evaluate(() => ({
-    doors: document.querySelectorAll('.int-seeall [data-dact="cdirAll"]').length,
+    doors: document.querySelectorAll('#int-catalog > .ss2 > h3').length,
     rows: document.querySelectorAll('.cdir-row').length,
     tiles: document.querySelectorAll('.cdir-tile').length,
     /* Every door carries the query it really sends, so a heading cannot
        promise a search it does not run. */
-    queries: [...document.querySelectorAll('.int-seeall [data-dact="cdirAll"]')].map(x => x.dataset.darg),
+    queries: AMV_APP_CATS.map(c => c.q),
     titles: [...document.querySelectorAll('#int-catalog .ss2 > h3')].map(x => x.textContent.trim()),
     asked: window.__asked.length,
     find: !!document.getElementById('cdir-find'),
@@ -124,7 +124,7 @@ section('A registry answer does not reach into the box somebody is typing in');
      opening a different page rebuilds the page, which is correct and is not
      the thing that was broken. */
   await page.evaluate(async () => {
-    document.querySelector('[data-dact="cdirAll"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    cdirAll(AMV_APP_CATS[0].q);
     await new Promise(x => setTimeout(x, 900));
   });
   const r = await page.evaluate(async () => {
@@ -189,7 +189,7 @@ section('A full re-render restores what was typed, not what was last submitted')
 section('See all opens a page, not a longer scroll');
 {
   const r = await page.evaluate(async () => {
-    document.querySelector('[data-dact="cdirAll"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    cdirAll(AMV_APP_CATS[0].q);
     await new Promise(x => setTimeout(x, 600));
     return {
       full: !!document.querySelector('.cdir-full'),
@@ -211,7 +211,7 @@ section('And the way back works');
   const r = await page.evaluate(async () => {
     document.querySelector('[data-dact="cdirBack"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await new Promise(x => setTimeout(x, 500));
-    return { doors: document.querySelectorAll('.int-seeall [data-dact="cdirAll"]').length, full: !!document.querySelector('.cdir-full') };
+    return { doors: document.querySelectorAll('#int-catalog > .ss2 > h3').length, full: !!document.querySelector('.cdir-full') };
   });
   ok(!r.full && r.doors >= 20, 'the topics are back', JSON.stringify(r));
 }
@@ -219,7 +219,7 @@ section('And the way back works');
 section('A page somebody left is not where they are when they return');
 {
   const r = await page.evaluate(async () => {
-    document.querySelector('[data-dact="cdirAll"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    cdirAll(AMV_APP_CATS[0].q);
     await new Promise(x => setTimeout(x, 400));
     const wasOpen = !!document.querySelector('.cdir-full');
     setTab('chat');
@@ -239,7 +239,7 @@ section('The panel names the command before anything is added');
      draws nothing until a door is opened, which is the change, so the door is
      opened. */
   await page.evaluate(async () => {
-    document.querySelector('[data-dact="cdirAll"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    cdirAll(AMV_APP_CATS[0].q);
     await new Promise(x => setTimeout(x, 800));
   });
   const r = await page.evaluate(async () => {
@@ -308,7 +308,7 @@ section('A directory that cannot be reached does not read as an empty one');
      those are different facts and one of them tells somebody this product
      connects to nothing. */
   await page.evaluate(async () => {
-    document.querySelector('[data-dact="cdirAll"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    cdirAll(AMV_APP_CATS[0].q);
     await new Promise(x => setTimeout(x, 2500));
   });
   const r = await page.evaluate(() => {
@@ -335,7 +335,7 @@ section('A deployment with no backend says that instead');
   /* Same reason as above: with no backend there is nothing to ask, so the
      sentence belongs on the page that would have asked. */
   await page.evaluate(async () => {
-    document.querySelector('[data-dact="cdirAll"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    cdirAll(AMV_APP_CATS[0].q);
     await new Promise(x => setTimeout(x, 700));
   });
   const r = await page.evaluate(() => {

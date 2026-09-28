@@ -420,16 +420,19 @@ section('9. The round after that one');
       Object.keys(_cdirTried).forEach(k => delete _cdirTried[k]);
     } catch (e) {}
     setTab('integrations'); await new Promise(r => setTimeout(r, 2600));
-    /* Every topic is now a section of the Email shape ending in its own door,
-       so a door is named by the heading of the section it closes. */
-    const doors = [...document.querySelectorAll('#int-catalog .int-seeall [data-dact="cdirAll"]')];
-    const overview = { cats: doors.length,
-      queries: doors.map(d => d.dataset.darg),
-      named: doors.filter(d => ((d.closest('.ss2') || {}).querySelector || (() => null)).call(d.closest('.ss2'), 'h3')).length,
+    /* Every topic is a section of the Email shape. The registry behind it is
+       no longer a link under each one - it is reached by searching, or from a
+       Crew job that needs an app - so a topic is counted by its heading, and
+       its query is the one the list itself carries. */
+    const secs = [...document.querySelectorAll('#int-catalog > .ss2')];
+    const overview = { cats: secs.length,
+      queries: AMV_APP_CATS.map(c => c.q),
+      named: secs.filter(s => s.querySelector('h3')).length,
+      doors: document.querySelectorAll('#int-catalog [data-dact="cdirAll"]').length,
       tiles: document.querySelectorAll('.cdir-tile').length,
       rows: document.querySelectorAll('.cdir-row').length };
-    /* And then behind one of them, which is where the tiles went. */
-    doors[0].click();
+    /* And then the page the search opens, which is where the tiles went. */
+    cdirAll(AMV_APP_CATS[0].q);
     await new Promise(r => setTimeout(r, 900));
     return Object.assign(overview, {
       full: !!document.querySelector('.cdir-full'),
@@ -444,6 +447,7 @@ section('9. The round after that one');
      grown. That is the point of pinning it. */
   ok(dir.cats === 32, 'thirty-two topics, not fifteen', String(dir.cats));
   ok(dir.named === dir.cats, 'every one of them is named', dir.named + ' of ' + dir.cats);
+  ok(dir.doors === 0, 'and none sends people into the unvetted registry from the overview', String(dir.doors));
   ok(dir.queries.every(Boolean) && new Set(dir.queries).size === dir.cats,
      'and carries its own query, so no heading promises a search it does not run',
      dir.queries.join(','));

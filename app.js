@@ -31674,9 +31674,10 @@ function _integrationsCatalogHTML(opts){
   const smsPhone=loadStr('amv_sms_phone');
   const intRow=(o)=>{
     const connected=o.connected;
-    const badge=(o.auto && !o.manual)
-      ? '<span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span>'
-      : '<span class="ax-badge ax-manual">Manual</span>';
+    /* NO AUTONOMOUS / MANUAL BADGE. Asked for: the name, what it does, and
+       Connect - nothing else on the row. Whether a connection works with AMV
+       closed is said where it matters, on the connection itself. */
+    const badge='';
     /* A connected integration that can DO something needs a way to run it. The
        Canvas automation had a working implementation and no button anywhere -
        its entry point was removed with an old toolbar and the function was left
@@ -31701,7 +31702,9 @@ function _integrationsCatalogHTML(opts){
          '<button class="btn int-disc" data-int-disc="'+o.id+'"'+(o.preset?' data-int-preset="'+escH(o.preset)+'"':'')+' style="font-size:var(--t-sm)">Disconnect</button>')
       : (o.auto
           ? '<button class="btn bp" data-int-conn="'+o.id+'"'+(o.preset?' data-int-preset="'+escH(o.preset)+'"':'')+' style="font-size:var(--t-sm)">Connect</button>'
-          : '<button class="btn bs" data-int-use="'+(o.use||'chat')+'" style="font-size:var(--t-sm)">'+(o.useLabel||'Open in chat')+'</button>');
+          /* The same button as every other Connect: the difference it used to
+             show was the Manual badge's, and the badge is gone. */
+          : '<button class="btn bp" data-int-use="'+(o.use||'chat')+'" style="font-size:var(--t-sm)">'+(o.useLabel||'Open in chat')+'</button>');
     return '<div class="int-card">'+
       '<div class="int-ic" style="background:'+(o.bg||'var(--s3)')+'">'+o.icon+'</div>'+
       '<div class="int-body">'+
@@ -31718,12 +31721,17 @@ function _integrationsCatalogHTML(opts){
      each one a program the bridge can start - so the answer to "can AMV
      connect to X" is on the screen for X, and there is no heading anywhere
      called "everything else". `q` is the query the door really sends. */
+  /* ONE WAY TO SEE MORE, AND IT IS THE TOPIC'S OWN LIST.
+
+     A topic ended in two controls: "Show all 33", which opened the rest of
+     this list, and "See all email connectors", which opened a page of the open
+     registry - programs anybody can publish, unvetted, most of which nobody
+     uses. The owner: the main six, then a small See all, and not the sketchy
+     ones. So the one control is a small link that opens the rest of this list
+     in place. The registry is still there for somebody who searches for a
+     name, and for a Crew job that needs an app this list does not have. */
   const cat=(title,rows,q,more)=>'<div class="ss2"><h3>'+title+'</h3><div class="int-list">'+rows+'</div>'+
-    (more||'')+
-    (q ? '<div class="int-seeall"><button class="cdir-more" data-dact="cdirAll" data-darg="'+escH(q)+'">'
-        + escH(T('See all')) + ' ' + escH(String(title).replace(/&amp;/g,'and').toLowerCase()) + ' '
-        + escH(T('connectors')) + ' →</button></div>' : '')
-    +'</div>';
+    (more||'')+'</div>';
   /* SAY IT BEFORE THE PRESS, NOT AFTER IT.
 
      The click gate above is the correctness fix; on its own it still means a
@@ -31834,8 +31842,11 @@ function _integrationsCatalogHTML(opts){
     const shown=open ? list : list.slice(0, APP_ROWS_SHOWN);
     const html=shown.map(r=>r.o ? intRow(r.o) : notifyRow(r.a)).join('');
     const more=(!only && list.length>APP_ROWS_SHOWN)
-      ? '<div class="int-more"><button class="btn bs" data-app-more="'+escH(c.id)+'" aria-expanded="'+(open?'true':'false')+'">'
-          +escH(open ? T('Show fewer') : (T('Show all')+' '+list.length))+'</button></div>' : '';
+      ? '<div class="int-more"><button class="int-seemore" data-app-more="'+escH(c.id)+'" aria-expanded="'+(open?'true':'false')+'"'
+          +' aria-label="'+escH((open ? T('Show fewer') : T('See all')+' '+list.length)+' '+String(c.t).replace(/&amp;/g,'and'))+'">'
+          +escH(open ? T('Show fewer') : (T('See all')+' '+list.length))
+          +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+          +(open ? '<path d="M6 15l6-6 6 6"/>' : '<path d="M5 12h14M13 6l6 6-6 6"/>')+'</svg></button></div>' : '';
     return cat(c.t, html, only?'':c.q, more);
   }).join('');
   return ''+
@@ -31849,12 +31860,6 @@ function _integrationsCatalogHTML(opts){
           '<button class="btn bp" data-auth="signup">Create a free account</button>'+
         '</div>'
       : '')+
-    (only ? '' :
-    '<div class="ax-legend">'+
-      '<div class="ax-legend-item"><span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span><span>Runs on its own in the background after you connect.</span></div>'+
-      '<div class="ax-legend-item"><span class="ax-badge ax-manual">Manual</span><span>You trigger it or upload files each time.</span></div>'+
-      '<div class="ax-legend-item"><span class="int-legend-n">'+escH(T('Notify me'))+'</span><span>Not connectable yet. Ask, and you hear the moment it is - the most-asked-for are built first.</span></div>'+
-    '</div>')+
     sections;
 }
 /* The name a connection is known by when one grant covers several rows. */
@@ -34060,12 +34065,8 @@ const AMV_APP_CATS = [
     'Outlook and Hotmail|ms|Mail across your Microsoft account, read and drafted.',
     'Mail worldwide|mail|Any provider that speaks IMAP, in 22 countries. Pick yours from the list.',
     'Yahoo Mail|mail:yahoo|', 'iCloud Mail|mail:icloud|', 'AOL Mail|mail:aol|', 'Zoho Mail|mail:zoho|',
-    'Fastmail|mail:fastmail|', 'GMX|mail:gmx|', 'WEB.DE|mail:webde|', 'mail.com|mail:mailcom|',
-    'Yandex Mail|mail:yandex|', 'Mail.ru|mail:mailru|', 'QQ Mail|mail:qq|', 'NetEase 163 Mail|mail:netease163|',
-    'Naver Mail|mail:naver|', 'Daum Mail|mail:daum|', 'Yahoo! Japan Mail|mail:yahoojp|', 'Rediffmail|mail:rediff|',
-    'UOL Mail|mail:uol|', 'Seznam.cz|mail:seznam|', 'WP.pl Poczta|mail:wppl|', 'Libero Mail|mail:libero|',
-    'Orange Mail|mail:orange|', 'T-Online|mail:tonline|', 'BT Mail|mail:bt|', 'Xfinity Mail|mail:comcast|',
-    'Proton Mail||Encrypted email from Switzerland.', 'Tuta||Encrypted email and calendar.',
+    'Fastmail|mail:fastmail|', 'GMX|mail:gmx|',
+    'Proton Mail||Encrypted email from Switzerland.',
     'HEY||Email with a screener for new senders.', 'Superhuman||A fast email app for Gmail and Outlook.',
     'Spark Mail||Email for individuals and teams.', 'Front||Shared inboxes for teams.',
   ]},
@@ -34074,23 +34075,18 @@ const AMV_APP_CATS = [
     'Outlook Calendar|ms|Your Microsoft calendar, read and arranged.',
     'Apple iCloud Calendar|cal|Read-only, through the calendar’s shared link.',
     'Any other calendar|cal|iCloud, Fastmail, Nextcloud, Yandex, Zoho, a university timetable - anything that publishes a link. Read-only: AMV sees your week and can never change it.',
-    'Fastmail Calendar|cal|', 'Proton Calendar|cal|', 'Zoho Calendar|cal|', 'Nextcloud Calendar|cal|', 'Yandex Calendar|cal|',
     'Calendly|p:calendly|Booking links for meetings.', 'Cal.com||Open scheduling for meetings.',
     'Microsoft Bookings||Appointments for Microsoft 365.', 'Doodle||Find a time that suits everyone.',
-    'Fantastical||A calendar app for Apple devices.', 'Notion Calendar||A calendar that works with Notion.',
-    'TimeTree||Shared calendars for families and groups.', 'Acuity Scheduling||Client booking and payments.',
-    'Setmore||Appointment booking for small businesses.', 'SimplyBook.me||Online booking for services.',
+    'Fantastical||A calendar app for Apple devices.', 'Notion Calendar||A calendar that works with Notion.', 'Acuity Scheduling||Client booking and payments.',
   ]},
   { id:'messaging', t:'Chat &amp; messaging', q:'messaging', apps:[
     'Telegram|tg|Run AMV from Telegram and get your background work there - through a bot you own and can revoke.',
     'Text messages (SMS)|sms|Run AMV from any phone by text - “check Project X”, “draft a reply”.',
     'WhatsApp||Messages and calls.', 'Slack|p:slack|Team channels and direct messages.', 'Microsoft Teams||Chat and meetings for work.',
     'Discord|p:discord|Servers, voice and chat.', 'Messenger||Chat from Facebook.', 'Zoom|p:zoom|Video meetings and chat.',
-    'Google Chat||Chat for Google Workspace.', 'Google Meet||Video meetings.', 'Signal||Private messaging.',
-    'WeChat||Messaging, payments and mini-programs.', 'LINE||Messaging across Japan, Taiwan and Thailand.',
-    'KakaoTalk||Korea’s messenger.', 'Viber||Messages and calls.', 'Zalo||Vietnam’s messenger.',
-    'Webex||Meetings and calling.', 'Snapchat||Photos and chat.', 'iMessage||Apple’s messaging.',
-    'Mattermost||Open-source team chat.', 'Rocket.Chat||Self-hosted team chat.', 'Element||Chat on the Matrix network.',
+    'Google Chat||Chat for Google Workspace.', 'Google Meet||Video meetings.', 'Signal||Private messaging.', 'LINE||Messaging across Japan, Taiwan and Thailand.',
+    'KakaoTalk||Korea’s messenger.',
+    'Webex||Meetings and calling.', 'iMessage||Apple’s messaging.',
   ]},
   { id:'files', t:'Files &amp; documents', q:'storage', apps:[
     'Google Drive|g|Finds and reads your files. Writes only to copies AMV makes.',
@@ -34102,19 +34098,17 @@ const AMV_APP_CATS = [
     'Dropbox|p:dropbox|Cloud storage and sharing.', 'OneDrive|ms|Microsoft’s cloud storage.', 'Box|p:box|Cloud content for business.',
     'iCloud Drive||Apple’s cloud storage.', 'Evernote||Notes and web clips.', 'OneNote||Microsoft’s notebook.',
     'Adobe Acrobat||PDFs: read, sign and edit.', 'Google Keep||Quick notes and lists.', 'Apple Notes||Notes on Apple devices.',
-    'Obsidian||Notes in plain files on your own computer.', 'Coda||Docs that work like apps.', 'Mega||Encrypted cloud storage.',
-    'pCloud||Cloud storage from Switzerland.', 'WPS Office||Documents, sheets and slides.', 'iLovePDF||PDF tools in the browser.',
-    'Smallpdf||PDF tools in the browser.', 'Scribd||Books, documents and audiobooks.',
+    'Obsidian||Notes in plain files on your own computer.', 'Coda||Docs that work like apps.',
   ]},
   { id:'money', t:'Bank &amp; money', q:'finance', apps:[
     'Bank account|bank|Real balances and real transactions, read-only. The sign-in happens on your bank’s own page - AMV never sees your password and cannot move money. Morning money summary, unusual charges, low balance warnings and the money leak detector all read from this.',
     'Prediction markets|predict|Kalshi or Polymarket, depending on where you are. AMV shows you the exact trade and places it only after you confirm those numbers - it can never place one on its own.',
     'PayPal|r:paypal|Payments and transfers.', 'Stripe|r:stripe|Payments for businesses.', 'Wise||Money across currencies.',
     'Revolut||Banking and cards.', 'Venmo||Payments between friends.', 'Cash App||Send, spend and save.', 'Zelle||Bank transfers in the US.',
-    'Coinbase||Buy and hold crypto.', 'Binance||Crypto exchange.', 'Kraken||Crypto exchange.', 'Robinhood||Stocks and crypto.',
+    'Coinbase||Buy and hold crypto.', 'Kraken||Crypto exchange.', 'Robinhood||Stocks and crypto.',
     'Interactive Brokers||Investing worldwide.', 'eToro||Social investing.', 'Trading 212||Stocks and ETFs.',
     'Monzo||Banking in the UK.', 'N26||Mobile banking in Europe.', 'Nubank||Banking in Latin America.', 'Chime||Mobile banking in the US.',
-    'Klarna||Pay later.', 'Alipay||Payments across China.', 'WeChat Pay||Payments inside WeChat.', 'Paytm||Payments in India.',
+    'Klarna||Pay later.',
     'PhonePe||UPI payments in India.', 'Google Pay||Payments and passes.', 'M-Pesa||Mobile money in Africa.',
     'Mercado Pago||Payments in Latin America.', 'GCash||Mobile wallet in the Philippines.',
     'QuickBooks||Accounting for small businesses.', 'Xero||Online accounting.', 'FreshBooks||Invoicing and accounting.',
@@ -34126,8 +34120,8 @@ const AMV_APP_CATS = [
     'GitLab|r:gitlab|Code, CI and issues.', 'Bitbucket||Git hosting for teams.', 'Linear|r:linear|Issue tracking.', 'Jira|r:atlassian|Issues and projects.',
     'Vercel|r:vercel|Deploy web apps.', 'Netlify||Deploy web sites.', 'Supabase|r:supabase|Postgres, auth and storage.', 'Firebase||Backend for apps.',
     'Postman|r:postman|Build and test APIs.', 'Stack Overflow||Questions and answers for developers.', 'Docker Hub||Container images.',
-    'npm||JavaScript packages.', 'Replit||Code in the browser.', 'CodePen||Front-end playground.', 'Expo||Build React Native apps.',
-    'JetBrains IDEs||IntelliJ, PyCharm, WebStorm and the rest.', 'Xcode Cloud||Builds for Apple platforms.',
+    'npm||JavaScript packages.', 'Replit||Code in the browser.', 'Expo||Build React Native apps.',
+    'JetBrains IDEs||IntelliJ, PyCharm, WebStorm and the rest.',
   ]},
   { id:'school', t:'School &amp; learning', q:'research', apps:[
     'Canvas LMS|canvas|Reads what is due, makes your own copy of the doc an assignment points at, and shares it with your teacher when you say to.',
@@ -34137,7 +34131,7 @@ const AMV_APP_CATS = [
     'Remind||School messages.', 'Duolingo||Learn a language.', 'Khan Academy||Free lessons and practice.', 'Coursera||Online courses.',
     'Udemy||Online courses.', 'edX||University courses online.', 'Quizlet||Flashcards and study sets.', 'Anki||Spaced-repetition flashcards.',
     'Zotero||Research references.', 'Mendeley||Papers and references.', 'Google Scholar||Search academic papers.',
-    'Notability||Notes and annotation.', 'GoodNotes||Handwritten notes.', 'Photomath||Step-by-step maths.', 'Brainly||Homework help.',
+    'Notability||Notes and annotation.', 'GoodNotes||Handwritten notes.', 'Photomath||Step-by-step maths.',
   ]},
   { id:'jobs', t:'Jobs &amp; careers', q:'jobs', apps:[
     'Job boards worldwide|jobs|StepStone, Reed, Pracuj, Naukri, Saramin, 51job, Rikunabi and more - AMV applies where a posting takes email, and prepares the rest.',
@@ -34152,7 +34146,7 @@ const AMV_APP_CATS = [
     'Google Home||Smart home from Google.', 'Amazon Alexa||Voice and smart home.', 'Apple Home||Smart home on Apple devices.',
     'SmartThings||Samsung’s smart home.', 'Philips Hue||Smart lighting.', 'Google Nest||Thermostats, cameras and doorbells.',
     'Ring||Doorbells and cameras.', 'Tesla||Your car, from your phone.', 'Home Assistant||Open-source home automation.',
-    'Sonos||Speakers around the house.', 'ecobee||Smart thermostats.', 'Tuya Smart||Smart devices.', 'Xiaomi Home||Xiaomi’s smart devices.',
+    'Sonos||Speakers around the house.', 'ecobee||Smart thermostats.',
     'Arlo||Security cameras.', 'TP-Link Kasa||Smart plugs and lights.', 'iRobot||Robot vacuums.',
   ]},
   { id:'work', t:'Work &amp; projects', q:'productivity', apps:[
@@ -34175,26 +34169,24 @@ const AMV_APP_CATS = [
     'Twitch||Live streams.', 'Vimeo||Video hosting.', 'Adobe Premiere Pro||Video editing.', 'DaVinci Resolve||Editing and colour.',
     'Final Cut Pro||Video editing on the Mac.', 'iMovie||Video editing on Apple devices.', 'InShot||Video editing on phones.',
     'Disney+||Films and series.', 'Prime Video||Films and series.', 'Max||Films and series.', 'Hulu||Films and series.',
-    'Crunchyroll||Anime.', 'Plex||Your media library.', 'OBS Studio||Recording and streaming.', 'Bilibili||Videos from China.',
+    'Crunchyroll||Anime.', 'Plex||Your media library.', 'OBS Studio||Recording and streaming.',
     'Riverside||Record podcasts and video.', 'StreamYard||Live streaming.',
   ]},
   { id:'music', t:'Music &amp; audio', q:'music', apps:[
     'Spotify|p:spotify|Music and podcasts.', 'Apple Music||Music streaming.', 'YouTube Music||Music streaming.', 'SoundCloud||Music from creators.',
     'Amazon Music||Music streaming.', 'Deezer||Music streaming.', 'Tidal||Music streaming.', 'Pandora||Radio and music.',
     'Shazam||Name that song.', 'Audible||Audiobooks.', 'Apple Podcasts||Podcasts.', 'Pocket Casts||Podcasts.',
-    'JioSaavn||Music in India.', 'Anghami||Music in the Middle East.', 'Boomplay||Music in Africa.', 'NetEase Cloud Music||Music in China.',
-    'QQ Music||Music in China.', 'GarageBand||Make music on Apple devices.', 'Bandcamp||Music from artists.', 'Last.fm||Your listening history.',
+    'JioSaavn||Music in India.', 'Anghami||Music in the Middle East.', 'Boomplay||Music in Africa.', 'GarageBand||Make music on Apple devices.', 'Bandcamp||Music from artists.', 'Last.fm||Your listening history.',
   ]},
   { id:'social', t:'Social networks', q:'social', apps:[
     'Instagram||Photos, reels and messages.', 'Facebook||Friends, groups and pages.', 'X||Posts and news.', 'Threads||Text posts from Instagram.',
     'Reddit|p:reddit|Communities and discussion.', 'Pinterest|p:pinterest|Ideas and boards.', 'Bluesky||An open social network.', 'Mastodon||Decentralised social network.',
-    'Tumblr||Blogs and communities.', 'Quora||Questions and answers.', 'VK||Russia’s social network.', 'Weibo||China’s microblog.',
-    'Xiaohongshu||Lifestyle posts from China.', 'Douyin||Short videos in China.', 'Nextdoor||Your neighbourhood.', 'BeReal||One photo a day.',
+    'Tumblr||Blogs and communities.', 'Quora||Questions and answers.', 'Nextdoor||Your neighbourhood.', 'BeReal||One photo a day.',
   ]},
   { id:'shop', t:'Shopping', q:'ecommerce', apps:[
-    'Amazon||Shopping.', 'eBay||Buy and sell.', 'AliExpress||Shopping from China.', 'Temu||Shopping.', 'Shein||Fashion.',
+    'Amazon||Shopping.', 'eBay||Buy and sell.',
     'Walmart||Shopping.', 'Etsy||Handmade and vintage.', 'Shopify||Run an online store.', 'Mercado Libre||Shopping in Latin America.',
-    'Flipkart||Shopping in India.', 'Rakuten||Shopping in Japan.', 'Taobao||Shopping in China.', 'JD.com||Shopping in China.',
+    'Flipkart||Shopping in India.', 'Rakuten||Shopping in Japan.',
     'Shopee||Shopping in Southeast Asia.', 'Lazada||Shopping in Southeast Asia.', 'Coupang||Shopping in Korea.', 'Target||Shopping.',
     'Costco||Warehouse shopping.', 'IKEA||Furniture and home.', 'Zalando||Fashion in Europe.', 'Best Buy||Electronics.',
     'Instacart||Grocery delivery.', 'Vinted||Second-hand fashion.', 'Wayfair||Home goods.',
@@ -34208,12 +34200,12 @@ const AMV_APP_CATS = [
   { id:'maps', t:'Maps &amp; rides', q:'maps', apps:[
     'Google Maps||Maps and directions.', 'Apple Maps||Maps on Apple devices.', 'Waze||Driving directions.', 'Uber||Rides.', 'Lyft||Rides in North America.',
     'Bolt||Rides in Europe and Africa.', 'Grab||Rides and food in Southeast Asia.', 'DiDi||Rides in China and Latin America.',
-    'Ola||Rides in India.', 'Gojek||Rides and payments in Indonesia.', 'Yandex Go||Rides and delivery.', 'Citymapper||Public transport.',
+    'Ola||Rides in India.', 'Gojek||Rides and payments in Indonesia.', 'Citymapper||Public transport.',
     'Moovit||Public transport.', 'Lime||Scooters and bikes.', 'BlaBlaCar||Shared rides.',
   ]},
   { id:'food', t:'Food &amp; delivery', q:'food', apps:[
     'Uber Eats||Food delivery.', 'DoorDash||Food delivery.', 'Deliveroo||Food delivery.', 'Just Eat||Food delivery.',
-    'Swiggy||Food delivery in India.', 'Zomato|r:zomato|Food delivery in India.', 'Meituan||Food delivery in China.', 'Rappi||Delivery in Latin America.',
+    'Swiggy||Food delivery in India.', 'Zomato|r:zomato|Food delivery in India.', 'Rappi||Delivery in Latin America.',
     'Glovo||Delivery in Europe and Africa.', 'Grubhub||Food delivery.', 'iFood||Delivery in Brazil.', 'foodpanda||Delivery in Asia.',
     'Talabat||Delivery in the Middle East.', 'OpenTable||Restaurant bookings.', 'Yelp||Local reviews.',
   ]},
@@ -34260,7 +34252,7 @@ const AMV_APP_CATS = [
   { id:'cloud', t:'Cloud &amp; hosting', q:'cloud', apps:[
     'Amazon Web Services||Cloud computing.', 'Google Cloud||Cloud computing.', 'Microsoft Azure||Cloud computing.', 'Cloudflare|r:cloudflare|Network, security and hosting.',
     'DigitalOcean||Cloud servers.', 'Heroku||Run apps in the cloud.', 'Render||Hosting for apps and sites.', 'Fly.io||Run apps near users.',
-    'Linode||Cloud servers.', 'Hetzner||Servers in Europe.', 'Alibaba Cloud||Cloud computing.', 'Oracle Cloud||Cloud computing.',
+    'Linode||Cloud servers.', 'Hetzner||Servers in Europe.', 'Oracle Cloud||Cloud computing.',
   ]},
   { id:'monitor', t:'Monitoring &amp; logs', q:'monitoring', apps:[
     'Sentry|r:sentry|Errors and performance.', 'Datadog||Monitoring and logs.', 'Grafana|r:grafana|Dashboards and alerts.', 'New Relic|r:newrelic|Observability.',
@@ -34269,8 +34261,7 @@ const AMV_APP_CATS = [
   ]},
   { id:'security', t:'Security', q:'security', apps:[
     'Have I Been Pwned||Check if your email was in a breach.', 'VirusTotal|r:virustotal|Scan files and links.', 'Okta||Sign-in for organisations.',
-    'Cloudflare Zero Trust||Secure access for teams.', 'Snyk||Find vulnerabilities in code.', 'CrowdStrike||Endpoint security.',
-    'Malwarebytes||Malware protection.', 'Norton||Device security.', 'Proton VPN||Private browsing.', 'NordVPN||VPN.',
+    'Cloudflare Zero Trust||Secure access for teams.', 'Snyk||Find vulnerabilities in code.',
   ]},
   { id:'legal', t:'Legal &amp; contracts', q:'legal', apps:[
     'DocuSign||Sign documents.', 'Adobe Acrobat Sign||Sign documents.', 'Dropbox Sign||Sign documents.', 'PandaDoc|r:pandadoc|Proposals and contracts.',

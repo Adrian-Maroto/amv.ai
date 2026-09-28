@@ -72,7 +72,7 @@ section('The search box is the first control on the page');
      JSON.stringify(r));
 }
 
-section('Then the main ones, each with a door to more of its own kind');
+section('Then the main ones, each ending in a small See all of its own');
 {
   const r = await page.evaluate(() => {
     const secs = [...document.querySelectorAll('#int-catalog .ss2')];
@@ -82,20 +82,20 @@ section('Then the main ones, each with a door to more of its own kind');
       /* Every hand-built section ends in a door, because the point of the
          section is that the answer to "can AMV connect to X" is on the screen
          for X rather than in one lump at the bottom. */
-      withDoor: secs.filter(s => s.querySelector('.int-seeall [data-dact="cdirAll"]')).length,
-      queries: secs.map(s => {
-        const d = s.querySelector('.int-seeall [data-dact="cdirAll"]');
-        return d ? d.dataset.darg : null;
-      }),
+      /* The door is the topic's own list now: six, then See all, which opens
+         the rest in place. The open registry is reached by searching. */
+      withDoor: secs.filter(s => s.querySelector('.int-seemore[data-app-more]')).length,
+      queries: secs.map(s => { const d = s.querySelector('[data-app-more]'); return d ? d.dataset.appMore : null; }).filter(Boolean),
+      registry: document.querySelectorAll('#int-catalog [data-dact="cdirAll"]').length,
       cards: document.querySelectorAll('#int-catalog .int-card').length,
     };
   });
   ok(r.sections >= 5, 'there are hand-built sections', String(r.sections));
-  ok(r.withDoor === r.sections, 'and every one of them has a See all',
+  ok(r.withDoor >= r.sections - 2, 'and every topic with more than six ends in a See all',
      r.withDoor + ' of ' + r.sections);
-  ok(r.queries.every(Boolean) && new Set(r.queries).size === r.sections,
-     'each door running its own query, so no two headings send the same search',
-     r.queries.join(','));
+  ok(new Set(r.queries).size === r.queries.length,
+     'each opening its own topic, never another\u2019s', r.queries.join(','));
+  ok(r.registry === 0, 'and none of them sends people into the unvetted registry', r.registry);
   ok(r.cards >= 10, 'with real connectors in them', String(r.cards));
   ok(r.titles.some(t => /email/i.test(t)), 'email is one of them', r.titles.join(' | '));
   ok(r.titles.some(t => /bank|money/i.test(t)), 'and so is the bank', r.titles.join(' | '));
@@ -144,7 +144,7 @@ section('The bank account is on the page, and says what it really is');
      'saying the one thing everybody asks about this feature', r.desc.slice(0, 120));
   ok(/read-only/i.test(r.desc) && /cannot move money/i.test(r.desc),
      'and that it reads and cannot move money', r.desc.slice(0, 200));
-  ok(r.autonomous, 'marked autonomous, because the schedule really does read it', String(r.autonomous));
+  ok(!r.autonomous, 'with no Autonomous badge - the row is its name, what it does, and its button', String(r.autonomous));
   ok(!r.connected, 'not claiming to be connected when nothing is linked', String(r.connected));
   ok(r.action === 'bank' && /Spending/i.test(r.label),
      'and the button names where the linking happens', r.label);

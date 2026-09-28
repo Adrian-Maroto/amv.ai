@@ -653,9 +653,10 @@ function _integrationsCatalogHTML(opts){
   const smsPhone=loadStr('amv_sms_phone');
   const intRow=(o)=>{
     const connected=o.connected;
-    const badge=(o.auto && !o.manual)
-      ? '<span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span>'
-      : '<span class="ax-badge ax-manual">Manual</span>';
+    /* NO AUTONOMOUS / MANUAL BADGE. Asked for: the name, what it does, and
+       Connect - nothing else on the row. Whether a connection works with AMV
+       closed is said where it matters, on the connection itself. */
+    const badge='';
     /* A connected integration that can DO something needs a way to run it. The
        Canvas automation had a working implementation and no button anywhere -
        its entry point was removed with an old toolbar and the function was left
@@ -680,7 +681,9 @@ function _integrationsCatalogHTML(opts){
          '<button class="btn int-disc" data-int-disc="'+o.id+'"'+(o.preset?' data-int-preset="'+escH(o.preset)+'"':'')+' style="font-size:var(--t-sm)">Disconnect</button>')
       : (o.auto
           ? '<button class="btn bp" data-int-conn="'+o.id+'"'+(o.preset?' data-int-preset="'+escH(o.preset)+'"':'')+' style="font-size:var(--t-sm)">Connect</button>'
-          : '<button class="btn bs" data-int-use="'+(o.use||'chat')+'" style="font-size:var(--t-sm)">'+(o.useLabel||'Open in chat')+'</button>');
+          /* The same button as every other Connect: the difference it used to
+             show was the Manual badge's, and the badge is gone. */
+          : '<button class="btn bp" data-int-use="'+(o.use||'chat')+'" style="font-size:var(--t-sm)">'+(o.useLabel||'Open in chat')+'</button>');
     return '<div class="int-card">'+
       '<div class="int-ic" style="background:'+(o.bg||'var(--s3)')+'">'+o.icon+'</div>'+
       '<div class="int-body">'+
@@ -697,12 +700,17 @@ function _integrationsCatalogHTML(opts){
      each one a program the bridge can start - so the answer to "can AMV
      connect to X" is on the screen for X, and there is no heading anywhere
      called "everything else". `q` is the query the door really sends. */
+  /* ONE WAY TO SEE MORE, AND IT IS THE TOPIC'S OWN LIST.
+
+     A topic ended in two controls: "Show all 33", which opened the rest of
+     this list, and "See all email connectors", which opened a page of the open
+     registry - programs anybody can publish, unvetted, most of which nobody
+     uses. The owner: the main six, then a small See all, and not the sketchy
+     ones. So the one control is a small link that opens the rest of this list
+     in place. The registry is still there for somebody who searches for a
+     name, and for a Crew job that needs an app this list does not have. */
   const cat=(title,rows,q,more)=>'<div class="ss2"><h3>'+title+'</h3><div class="int-list">'+rows+'</div>'+
-    (more||'')+
-    (q ? '<div class="int-seeall"><button class="cdir-more" data-dact="cdirAll" data-darg="'+escH(q)+'">'
-        + escH(T('See all')) + ' ' + escH(String(title).replace(/&amp;/g,'and').toLowerCase()) + ' '
-        + escH(T('connectors')) + ' →</button></div>' : '')
-    +'</div>';
+    (more||'')+'</div>';
   /* SAY IT BEFORE THE PRESS, NOT AFTER IT.
 
      The click gate above is the correctness fix; on its own it still means a
@@ -813,8 +821,11 @@ function _integrationsCatalogHTML(opts){
     const shown=open ? list : list.slice(0, APP_ROWS_SHOWN);
     const html=shown.map(r=>r.o ? intRow(r.o) : notifyRow(r.a)).join('');
     const more=(!only && list.length>APP_ROWS_SHOWN)
-      ? '<div class="int-more"><button class="btn bs" data-app-more="'+escH(c.id)+'" aria-expanded="'+(open?'true':'false')+'">'
-          +escH(open ? T('Show fewer') : (T('Show all')+' '+list.length))+'</button></div>' : '';
+      ? '<div class="int-more"><button class="int-seemore" data-app-more="'+escH(c.id)+'" aria-expanded="'+(open?'true':'false')+'"'
+          +' aria-label="'+escH((open ? T('Show fewer') : T('See all')+' '+list.length)+' '+String(c.t).replace(/&amp;/g,'and'))+'">'
+          +escH(open ? T('Show fewer') : (T('See all')+' '+list.length))
+          +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+          +(open ? '<path d="M6 15l6-6 6 6"/>' : '<path d="M5 12h14M13 6l6 6-6 6"/>')+'</svg></button></div>' : '';
     return cat(c.t, html, only?'':c.q, more);
   }).join('');
   return ''+
@@ -828,12 +839,6 @@ function _integrationsCatalogHTML(opts){
           '<button class="btn bp" data-auth="signup">Create a free account</button>'+
         '</div>'
       : '')+
-    (only ? '' :
-    '<div class="ax-legend">'+
-      '<div class="ax-legend-item"><span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span><span>Runs on its own in the background after you connect.</span></div>'+
-      '<div class="ax-legend-item"><span class="ax-badge ax-manual">Manual</span><span>You trigger it or upload files each time.</span></div>'+
-      '<div class="ax-legend-item"><span class="int-legend-n">'+escH(T('Notify me'))+'</span><span>Not connectable yet. Ask, and you hear the moment it is - the most-asked-for are built first.</span></div>'+
-    '</div>')+
     sections;
 }
 /* The name a connection is known by when one grant covers several rows. */
