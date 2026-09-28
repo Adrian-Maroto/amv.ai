@@ -139,7 +139,7 @@ section('Crew, from Spain: a row of jobs made for Spain');
     titles: [...document.querySelectorAll('#cw-made .cw-made-t')].map(e => e.textContent.trim()),
     heights: [...document.querySelectorAll('#cw-made .cw-made-it')].map(e => Math.round(e.getBoundingClientRect().height)),
     clipped: [...document.querySelectorAll('#cw-made .cw-made-d')].filter(e => e.scrollHeight > e.clientHeight + 30).length,
-    cls: window.__cls,
+    cls: window.__cls, src: (window.__src || []).slice(0, 6),
   }));
   ok(/Made for .*Spain/.test(r.head), 'a row made for Spain sits under the top five', r.head);
   ok(r.titles.length >= 12, 'with a dozen or more of Spain’s own jobs', r.titles.length);
@@ -147,7 +147,7 @@ section('Crew, from Spain: a row of jobs made for Spain');
      'Spain’s own work - the Renta and the DNI, written for Spain', r.titles.slice(0, 7));
   ok(!r.titles.some(t => /InfoJobs|AEAT|Mercadona/.test(t)), 'and nothing already in the top ten is repeated', r.titles);
   ok(new Set(r.heights).size === 1, 'every card the same height, so the row is one fixed height', [...new Set(r.heights)]);
-  ok(r.cls < 0.001, 'and the row arrives without moving the page', +r.cls.toFixed(4));
+  ok(r.cls < 0.001, 'and the row arrives without moving the page', { cls: +r.cls.toFixed(4), src: r.src });
   await page.click('#cw-made .cw-made-body');
   await page.waitForFunction(() => /Renta|Mercadona|AEAT|Hacienda/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
   const peek = await page.evaluate(() => (document.getElementById('ovr') || {}).textContent || '');
