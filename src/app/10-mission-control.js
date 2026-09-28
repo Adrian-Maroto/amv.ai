@@ -1864,7 +1864,10 @@ async function _cwAskWhere(){
   _cwHereAsked = true;
   if(!(window.AMV_API && AMV_API.live && typeof AMV_API.where === 'function')){ _cwHereDone = true; return; }
   try{
-    const d = await AMV_API.where();
+    /* Waited for a moment, not for ever: a slow or unreachable server must not
+       leave the five as placeholders. After a second and a half the guess from
+       the browser stands, and a late answer is still used next time. */
+    const d = await Promise.race([AMV_API.where(), new Promise(res => setTimeout(() => res(null), 1500))]);
     const cc = String((d && d.country) || '').toUpperCase();
     if(cc && CW_WORLD_COUNTRIES.some(c => c[0] === cc)){
       _cwHere = cc;

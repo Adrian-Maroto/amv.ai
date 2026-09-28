@@ -39,6 +39,8 @@ async function showCrew(reply, opts = {}) {
       delete AMV_API.crewPopular;
     } else {
       AMV_API.base = 'https://stub.amv.dev';
+      /* The stub server does not know where anybody is, which is an answer. */
+      AMV_API.where = async () => ({ country: '', name: '' });
       AMV_API.crewPopular = async () => {
         if (o.reply && o.reply.__throw) throw new Error(o.reply.__throw);
         return o.reply;
@@ -218,7 +220,7 @@ section('The band is reachable from the shipped bundle, not just from a test');
       /* Both views draw "Top 5 for you", which falls back to this block when
          no country is known - so the count is of that, plus the fallback. */
       render: (src.match(/_cwForYouHTML\s*\(/g) || []).length,
-      fallback: /function _cwForYouHTML[\s\S]{0,400}return _cwPopularHTML\(\)/.test(src),
+      fallback: /function _cwForYouHTML[\s\S]{0,1600}return _cwPopularHTML\(\)/.test(src),
       load: (src.match(/_cwLoadPopular\s*\(/g) || []).length,
       endpoint: /\/crew\/popular/.test(src),
     };

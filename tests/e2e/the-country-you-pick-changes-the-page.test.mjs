@@ -44,6 +44,8 @@ await page.evaluate(() => {
     ],
   });
   AMV_API.crewPopular = async () => { throw new Error('no ranking in this test'); };
+  /* Where the visitor is, as the network would say it. */
+  AMV_API.where = async () => ({ country: 'US', name: 'United States' });
 });
 
 const catalogue = () => page.evaluate(() => {
@@ -82,6 +84,27 @@ section('The five at the top are five real cards, for the country you are in');
   ok(/^Top 5 for you in .*United States/.test(a.head), 'headed for where the visitor is', a.head);
   ok(a.top.filter(t => /^US /.test(t)).length === 2, 'led by the work written for that country', a.top);
   ok(!a.dropdown, 'and there is no country dropdown', a.dropdown);
+}
+
+section('A server that never says where you are does not leave the five as placeholders');
+{
+  const r = await page.evaluate(async () => {
+    const real = AMV_API.where;
+    AMV_API.where = () => new Promise(() => {});        // asked, never answered
+    _cwHere = ''; _cwHereAsked = false; _cwHereDone = false; cwCountry('-');
+    try { sessionStorage.removeItem('amv_cw_here'); } catch (e) {}
+    setTab('chat'); setTab('crew');
+    await new Promise(res => setTimeout(res, 200));
+    const early = !!document.querySelector('#cw-foryou[aria-busy]');
+    await new Promise(res => setTimeout(res, 2000));
+    const out = { early, busy: !!document.querySelector('#cw-foryou[aria-busy]'),
+      cards: document.querySelectorAll('#cw-foryou .cw-job').length,
+      head: ((document.querySelector('#cw-foryou h3') || {}).textContent || '').trim() };
+    AMV_API.where = real;
+    return out;
+  });
+  ok(r.early, 'it waits a moment for the answer', r);
+  ok(!r.busy && r.cards === 5, 'and then shows five anyway, for the browser\u2019s best guess', r);
 }
 
 section('A different country changes the five');

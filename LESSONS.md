@@ -13818,3 +13818,19 @@ Rules:
   view of a running one; both sentences belong next to each other.
 - D1 on this deployment is a migration (copy KV, read through until verified),
   which is a database change and the owner's decision.
+
+## 531. A change made after its suites ran is a change no suite has run
+
+The Crew five were built, their six suites updated and run green, and then a
+refinement landed - hold placeholders until the server says where somebody is.
+Two of those suites were not run again, and the full gate found both failing:
+their stub server never answered "where", so the five stayed placeholders for
+ever. The failure was also a real one: a slow or unreachable server would have
+done the same to real people.
+
+Rules:
+- After every change to a feature, re-run every suite that feature touches,
+  not only the one written for the change.
+- Anything that waits on a network answer before showing content waits for a
+  bounded time and then shows its best guess. "Until the server answers" is
+  "for ever" on the day the server does not.

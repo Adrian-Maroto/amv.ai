@@ -33,7 +33,8 @@ const browser = await chromium.launch(LAUNCH);
 const errors = [];
 const visit = async (from, width = 1280) => {
   FROM = from;
-  const ctx = await browser.newContext({ viewport: { width, height: width < 600 ? 844 : 1000 }, locale: 'en-US', hasTouch: width < 600, isMobile: width < 600 });
+  const phone = width === 390;
+  const ctx = await browser.newContext({ viewport: { width, height: phone ? 844 : 1000 }, locale: 'en-US', hasTouch: phone, isMobile: phone });
   await ctx.addInitScript(() => {
     try { localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true })); } catch (e) {}
     window.__cls = 0; window.__src = [];
