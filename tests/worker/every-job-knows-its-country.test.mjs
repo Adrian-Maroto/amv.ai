@@ -23,7 +23,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'country-jobs.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, COUNTRY_FACTS, EVERYDAY_BY_COUNTRY, COUNTRY_NAME, JOBUSE_MAX_IDS_COUNTRY };\n');
+writeFileSync(harness, src + '\nexport { DB, COUNTRY_FACTS, EVERYDAY_BY_COUNTRY, COUNTRY_NAME, JOBUSE_MAX_IDS_COUNTRY, _jobuseBump, _jobuseRead };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -41,8 +41,9 @@ globalThis.fetch = async (url, opts) => {
 };
 
 function mkEnv() {
-  const m = new Map(); const vals = new Map(); sent = [];
+  const m = new Map(); const vals = new Map(); const objs = new Map(); sent = [];
   return {
+    _objs: objs,
     AMV_MODEL_KEY: 'k', MODEL_API_URL: 'https://model.example',
     JWT_SECRET: 'j', ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
     AMV_KV: {
@@ -54,10 +55,28 @@ function mkEnv() {
         return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true };
       },
     },
+    /* The tallies go to the REAL counter class, over in-memory storage, one
+       call at a time per object - which is what a Durable Object guarantees.
+       Everything else keeps the simple stand-in these sections always used. */
     AMV_COUNTER: {
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
+        if (b.op === 'tally' || b.op === 'tallyGet') {
+          const o = objs.get(n) || (() => {
+            const mem = new Map();
+            const state = { storage: {
+              async get(k) { return mem.has(k) ? structuredClone(mem.get(k)) : undefined; },
+              async put(k, v) { mem.set(k, structuredClone(v)); },
+              async setAlarm() { throw new Error('a tally must never set an alarm'); },
+              async deleteAll() { mem.clear(); } } };
+            const x = { obj: new W.AMVCounter(state, {}), q: Promise.resolve(), mem };
+            objs.set(n, x); return x;
+          })();
+          const run = o.q.then(() => o.obj.fetch(new Request('https://do/counter', { method: 'POST', body: init.body })));
+          o.q = run.catch(() => {});
+          return run;
+        }
         if (b.op === 'reserve') { vals.set(n, cur + b.amount); return new Response(JSON.stringify({ allowed: true, value: vals.get(n) })); }
         if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
         if (b.op === 'get') return new Response(JSON.stringify({ value: cur }));
@@ -139,32 +158,64 @@ section('What people start is counted per country, and the ranking waits for eno
   await created(env, tok, { country: 'ES', srcId: 'cc_es_groc' }, 'ES');
   await created(env, tok, { country: 'ES', srcId: 'cc_es_groc' }, 'ES');
   await created(env, tok, { country: 'MX', srcId: 'cc_mx_jobs' }, 'MX');
-  const rec = await W.DB.get(env, 'stats', 'jobuse');
-  ok(rec.byCountry && rec.byCountry.ES.counts.cc_es_groc === 2 && rec.byCountry.ES.total === 2, 'Spain’s starts are counted under Spain', rec.byCountry && rec.byCountry.ES);
-  ok(rec.byCountry.MX.counts.cc_mx_jobs === 1 && !rec.byCountry.MX.counts.cc_es_groc, 'and Mexico’s under Mexico, never mixed', rec.byCountry.MX);
-  ok(!JSON.stringify(rec).includes('@'), 'with nothing in the record that names a person', true);
+  const es = await W._jobuseRead(env, 'ES'), mx = await W._jobuseRead(env, 'MX'), all = await W._jobuseRead(env, '');
+  ok(es.counts.cc_es_groc === 2 && es.total === 2, 'Spain’s starts are counted under Spain', es);
+  ok(mx.counts.cc_mx_jobs === 1 && !mx.counts.cc_es_groc, 'and Mexico’s under Mexico, never mixed', mx);
+  ok(all.total === 3 && all.counts.cc_es_groc === 2, 'and all of them in the world’s count', all);
+  ok(!JSON.stringify([es, mx, all]).includes('@'), 'with nothing in any count that names a person', true);
+  ok((await W.DB.get(env, 'stats', 'jobuse')) === null, 'and none of it through the one shared KV record every creation used to lock', true);
   const early = await (await call(env, '/v1/everyday?country=ES')).json();
   ok(early.ranked && early.ranked.enough === false && Object.keys(early.ranked.counts).length === 0,
      'two starts is not a ranking: nothing is ranked on too little, and the counts are not handed out', early.ranked);
-  rec.byCountry.ES = { counts: { cc_es_groc: 20, cc_es_prop: 9 }, total: 29 };
-  await W.DB.put(env, 'stats', 'jobuse', rec);
+  /* Counts from before the move live in the old KV record. They still count,
+     added to the new ones - nothing counted before the move is lost. */
+  await W.DB.put(env, 'stats', 'jobuse', { counts: {}, total: 29, byCountry: { ES: { counts: { cc_es_groc: 20, cc_es_prop: 9 }, total: 29 } } });
   const later = await (await call(env, '/v1/everyday?country=ES')).json();
-  ok(later.ranked.enough === true && later.ranked.counts.cc_es_groc === 20, 'past the floor, Spain’s own counts come with Spain', later.ranked);
-  const mx = await (await call(env, '/v1/everyday?country=MX')).json();
-  ok(mx.ranked.enough === false, 'while Mexico, with one start, is still not ranked', mx.ranked);
+  ok(later.ranked.enough === true && later.ranked.counts.cc_es_groc === 22 && later.ranked.counts.cc_es_prop === 9,
+     'past the floor, Spain’s counts come with Spain - the old record and the new tally together', later.ranked);
+  const mxr = await (await call(env, '/v1/everyday?country=MX')).json();
+  ok(mxr.ranked.enough === false, 'while Mexico, with one start, is still not ranked', mxr.ranked);
+}
+
+section('Creations anywhere do not queue behind one another to be counted');
+{
+  /* Two hundred at once, across four countries. Through the old record this
+     was two hundred turns at one lock on one KV key - KV takes about one write
+     a second per key - and every timeout dropped a count and paged the owner. */
+  const env = mkEnv();
+  const cc = ['ES', 'MX', 'JP', 'NG'];
+  const t0 = Date.now();
+  await Promise.all(Array.from({ length: 200 }, (_, i) => W._jobuseBump(env, 'job_' + (i % 7), cc[i % 4])));
+  const all = await W._jobuseRead(env, '');
+  const per = await Promise.all(cc.map(c => W._jobuseRead(env, c)));
+  ok(all.total === 200, 'every one of the two hundred is counted', all.total);
+  ok(per.every(p => p.total === 50), 'fifty in each country, none lost and none doubled', per.map(p => p.total));
+  ok(Date.now() - t0 < 5000, 'without waiting on a lock', Date.now() - t0);
+  ok((await W.DB.get(env, 'stats', 'jobuse')) === null, 'and nothing written to the shared record', true);
 }
 
 section('The count cannot be stuffed with made-up job ids');
 {
   const env = mkEnv(); const tok = await setup(env);
-  const full = {}; for (let i = 0; i < W.JOBUSE_MAX_IDS_COUNTRY; i++) full['fake_' + i] = 1;
-  full.cc_es_groc = 3;
-  await W.DB.put(env, 'stats', 'jobuse', { counts: {}, total: 0, byCountry: { ES: { counts: full, total: 400 } } });
+  /* Spain's tally already at its cap of distinct ids. */
+  for (let i = 0; i < W.JOBUSE_MAX_IDS_COUNTRY; i++) await W._jobuseBump(env, i === 0 ? 'cc_es_groc' : 'fake_' + i, 'ES');
   await created(env, tok, { country: 'ES', srcId: 'brand_new_id' }, 'ES');
   await created(env, tok, { country: 'ES', srcId: 'cc_es_groc' }, 'ES');
+  const es = await W._jobuseRead(env, 'ES');
+  ok(!('brand_new_id' in es.counts), 'past the cap, a new id is not added', Object.keys(es.counts).length);
+  ok(es.counts.cc_es_groc === 2, 'while an id already counted keeps counting', es.counts.cc_es_groc);
+  ok(Object.keys(es.counts).length === W.JOBUSE_MAX_IDS_COUNTRY, 'and the tally stays at its cap', Object.keys(es.counts).length);
+}
+
+section('Without a counter object, the one KV record is the store, as before');
+{
+  const env = mkEnv(); delete env.AMV_COUNTER;
+  await W._jobuseBump(env, 'cc_es_groc', 'ES');
+  await W._jobuseBump(env, 'cc_es_groc', 'ES');
   const rec = await W.DB.get(env, 'stats', 'jobuse');
-  ok(!('brand_new_id' in rec.byCountry.ES.counts), 'past the cap, a new id is not added', Object.keys(rec.byCountry.ES.counts).length);
-  ok(rec.byCountry.ES.counts.cc_es_groc === 4, 'while an id already counted keeps counting', rec.byCountry.ES.counts.cc_es_groc);
+  ok(rec && rec.byCountry.ES.counts.cc_es_groc === 2 && rec.total === 2, 'a development machine still counts, in KV', rec);
+  const es = await W._jobuseRead(env, 'ES');
+  ok(es.counts.cc_es_groc === 2 && es.total === 2, 'and reads it back once, not twice', es);
 }
 
 section('The run is told where they are, and to check the official source');

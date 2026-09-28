@@ -1931,6 +1931,29 @@ export class AMVCounter {
     if (op === 'get') {
       return json({ value: (await this.state.storage.get('v')) || 0 });
     }
+    /* A TALLY: how many times each job id was switched on, and in all.
+       Counted here rather than in one shared KV record because every job
+       created anywhere used to take the same lock on the same key - KV takes
+       about one write a second per key - so under real traffic creations
+       queued behind each other, lock timeouts dropped counts and paged the
+       owner. Inside the object every call is serialized, with no lock to
+       take. Bounded the same way the record was: past `cap` distinct ids, ids
+       already counted keep counting and new ones are not added. No alarm is
+       ever set on a tally object, so nothing wipes it. */
+    if (op === 'tally') {
+      const id = String(body.id || '').slice(0, 120);
+      const cap = Math.max(1, Math.min(10000, Number(body.cap) || 1000));
+      const t = (await this.state.storage.get('t')) || { counts: {}, total: 0 };
+      if (id && (Object.prototype.hasOwnProperty.call(t.counts, id) || Object.keys(t.counts).length < cap)) {
+        t.counts[id] = (t.counts[id] || 0) + 1;
+      }
+      t.total = (t.total || 0) + 1;
+      await this.state.storage.put('t', t);
+      return json({ total: t.total });
+    }
+    if (op === 'tallyGet') {
+      return json((await this.state.storage.get('t')) || { counts: {}, total: 0 });
+    }
     if (op === 'checkCap') {
       const cur = (await this.state.storage.get('v')) || 0;
       return json({ allowed: cur < body.cap, value: cur });
@@ -4326,6 +4349,78 @@ async function remoteCall(request, env){
 const CREW_POPULAR_MIN = 25;      // total jobs created before any ranking is shown
 const JOBUSE_MAX_IDS = 2000;        // distinct job ids counted worldwide
 const JOBUSE_MAX_IDS_COUNTRY = 300; // and per country
+
+/* WHERE THE COUNTS LIVE.
+
+   In the counter Durable Object: one tally for the world (`jobuse`) and one
+   per country (`jobuse:<CC>`), so a country's page reads one small object and
+   no two countries' creations touch the same one. The single KV record
+   `stats:jobuse` held all of it until the day this moved; it is still READ,
+   added in, so nothing counted before is lost, and never written again.
+
+   Without a Durable Object bound (a development machine, most suites) the KV
+   record is the store, exactly as before. A tally that cannot be reached is a
+   lost count, not an error: this is a ranking, never money, and a job being
+   created must not fail over it. */
+async function _jobuseTally(env, name, payload){
+  const stub = env.AMV_COUNTER.get(env.AMV_COUNTER.idFromName(name));
+  const r = await stub.fetch('https://do/counter', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  return await r.json();
+}
+async function _jobuseBump(env, srcId, country){
+  try{
+    if(env && env.AMV_COUNTER){
+      await Promise.all([
+        _jobuseTally(env, 'jobuse', { op:'tally', id: srcId, cap: JOBUSE_MAX_IDS }),
+        country ? _jobuseTally(env, 'jobuse:' + country, { op:'tally', id: srcId, cap: JOBUSE_MAX_IDS_COUNTRY }) : null,
+      ]);
+      return;
+    }
+    await _withKV(env, 'stats', 'jobuse', (rec)=>{
+      rec.counts = rec.counts || {};
+      /* A BOUNDED RECORD. The id comes from the page and only its shape is
+         checked, so an account creating and deleting jobs in a loop could
+         mint a new id every time - and this record is read on every
+         country page. Past the cap, ids already counted keep counting and
+         new ones are not added. The catalogue is a few hundred ids; the
+         caps are several times that. */
+      const bump = (m, cap) => {
+        if(Object.prototype.hasOwnProperty.call(m, srcId) || Object.keys(m).length < cap){ m[srcId] = (m[srcId]||0) + 1; return true; }
+        return false;
+      };
+      bump(rec.counts, JOBUSE_MAX_IDS);
+      rec.total = (rec.total||0) + 1;
+      /* AND PER COUNTRY, so each country's top ten can be ordered by what
+         people THERE switch on rather than by the whole world's taste. The
+         same shape - an id and a number - under a two-letter code, and
+         still nothing that could be turned back into a person. */
+      if(country){
+        rec.byCountry = rec.byCountry || {};
+        const c = rec.byCountry[country] = rec.byCountry[country] || { counts:{}, total:0 };
+        bump(c.counts, JOBUSE_MAX_IDS_COUNTRY);
+        c.total = (c.total||0) + 1;
+      }
+    }, { counts:{}, total:0 });
+  }catch(_e){}
+}
+/* The counts for one country, or for the world when `country` is empty:
+   the Durable Object's tally plus whatever the old KV record held. */
+async function _jobuseRead(env, country){
+  const out = { counts:{}, total:0 };
+  const add = (c) => {
+    if(!c) return;
+    for(const k of Object.keys(c.counts || {})) out.counts[k] = (out.counts[k] || 0) + (c.counts[k] | 0);
+    out.total += (c.total | 0);
+  };
+  let rec = null;
+  try{ rec = await DB.get(env, 'stats', 'jobuse'); }catch(_e){ rec = null; }
+  add(country ? (rec && rec.byCountry && Object.prototype.hasOwnProperty.call(rec.byCountry, country) ? rec.byCountry[country] : null) : rec);
+  if(env && env.AMV_COUNTER){
+    try{ add(await _jobuseTally(env, country ? 'jobuse:' + country : 'jobuse', { op:'tallyGet' })); }catch(_e){}
+  }
+  return out;
+}
 async function crewPopular(request, env){
   /* PUBLIC AND UNAUTHENTICATED IS NOT THE SAME AS FREE.
 
@@ -4341,10 +4436,9 @@ async function crewPopular(request, env){
   const ip = _rlIp(request);
   const blocked = await guardAction(env, 'crewpop:' + ip, 60, 0, 'this');
   if(blocked) return blocked;
-  let rec = null;
-  try{ rec = await DB.get(env, 'stats', 'jobuse'); }catch(_e){ rec = null; }
-  const counts = (rec && rec.counts) || {};
-  const total = (rec && rec.total) || 0;
+  const rec = await _jobuseRead(env, '');
+  const counts = rec.counts;
+  const total = rec.total;
   if(total < CREW_POPULAR_MIN){
     return json({ enough:false, total, need: CREW_POPULAR_MIN, top: [] },
                 200, { 'Cache-Control': 'public, max-age=300' });
@@ -4605,35 +4699,7 @@ async function autoCreate(request, env){
      into a person, which is the whole reason it is safe to aggregate across
      everybody. Written after the job actually exists, so a refused create does
      not inflate the count. */
-  if(srcId && !overBudget){
-    try{
-      await _withKV(env, 'stats', 'jobuse', (rec)=>{
-        rec.counts = rec.counts || {};
-        /* A BOUNDED RECORD. The id comes from the page and only its shape is
-           checked, so an account creating and deleting jobs in a loop could
-           mint a new id every time - and this record is read on every
-           country page. Past the cap, ids already counted keep counting and
-           new ones are not added. The catalogue is a few hundred ids; the
-           caps are several times that. */
-        const bump = (m, cap) => {
-          if(Object.prototype.hasOwnProperty.call(m, srcId) || Object.keys(m).length < cap){ m[srcId] = (m[srcId]||0) + 1; return true; }
-          return false;
-        };
-        bump(rec.counts, JOBUSE_MAX_IDS);
-        rec.total = (rec.total||0) + 1;
-        /* AND PER COUNTRY, so each country's top ten can be ordered by what
-           people THERE switch on rather than by the whole world's taste. The
-           same shape - an id and a number - under a two-letter code, and
-           still nothing that could be turned back into a person. */
-        if(country){
-          rec.byCountry = rec.byCountry || {};
-          const c = rec.byCountry[country] = rec.byCountry[country] || { counts:{}, total:0 };
-          bump(c.counts, JOBUSE_MAX_IDS_COUNTRY);
-          c.total = (c.total||0) + 1;
-        }
-      }, { counts:{}, total:0 });
-    }catch(_e){}
-  }
+  if(srcId && !overBudget) await _jobuseBump(env, srcId, country);
   if(overBudget){
     return budget.free
       ? json({ error:'The free plan runs one job in the background, weekly. Pro runs '+AUTO_MAX_BY_PLAN.pro+
@@ -32301,9 +32367,8 @@ async function everydayJobs(request, env) {
   let ranked = { enough:false, total:0, need: CREW_POPULAR_MIN, counts:{} };
   if(code && Object.prototype.hasOwnProperty.call(COUNTRY_NAME, code)){
     try{
-      const rec = await DB.get(env, 'stats', 'jobuse');
-      const c = rec && rec.byCountry && Object.prototype.hasOwnProperty.call(rec.byCountry, code) ? rec.byCountry[code] : null;
-      const total = (c && c.total) || 0;
+      const c = await _jobuseRead(env, code);
+      const total = c.total;
       ranked = total >= CREW_POPULAR_MIN
         ? { enough:true, total, need: CREW_POPULAR_MIN, counts: (c && c.counts) || {} }
         : { enough:false, total, need: CREW_POPULAR_MIN, counts:{} };
