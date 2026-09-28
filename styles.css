@@ -15974,3 +15974,61 @@ h1,h2,.ce-greeting,.vi h2{ font-family:var(--fdisplay)!important; }
    when the real font arrived and pushed the whole pane sideways. A fixed width
    - the one the real font gives it - on the layouts where it is a column. */
 @media(min-width:721px){ .settings-nav{ width:300px; flex:0 0 300px; } }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   LAYER A268 - Made for your country: one row of cards, one fixed height
+   ═════════════════════════════════════════════════════════════════════════ */
+.cw-made{ margin:var(--sp-5) 0 var(--sp-4); }
+.cw-made[hidden]{ display:none; }
+.cw-made .sec-head h3{ display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
+.cw-made-n{ font-size:var(--t-xs); font-weight:600; color:var(--mu); background:var(--s2);
+  border:1px solid var(--bd); border-radius:var(--r-pill); padding:1px 8px; line-height:1.5; }
+.cw-made-row{ display:flex; gap:var(--sp-3); overflow-x:auto; overscroll-behavior-x:contain;
+  scroll-snap-type:x mandatory; scroll-padding-left:2px; padding:2px 2px var(--sp-3);
+  scrollbar-width:thin; -webkit-overflow-scrolling:touch; }
+.cw-made-it, .cw-made-ph{ flex:0 0 272px; height:204px; scroll-snap-align:start; }
+.cw-made-ph{ border-radius:var(--r-lg); background:var(--s1); border:1px solid var(--bd); }
+.cw-made-card{ height:100%; display:flex; flex-direction:column; background:var(--s1);
+  border:1px solid var(--bd); border-radius:var(--r-lg); transition:border-color .15s var(--ease), transform .15s var(--ease); }
+.cw-made-card:hover{ border-color:var(--bdl); }
+.cw-made-card.on{ border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent-soft); }
+.cw-made-body{ flex:1; min-height:0; display:flex; flex-direction:column; gap:var(--sp-2); text-align:left;
+  padding:var(--sp-4) var(--sp-4) var(--sp-2); background:none; border:0; color:inherit; font:inherit; cursor:pointer; border-radius:var(--r-lg) var(--r-lg) 0 0; }
+.cw-made-body:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+.cw-made-top{ display:flex; align-items:flex-start; gap:var(--sp-3); }
+.cw-made-ic{ flex:none; width:34px; height:34px; display:grid; place-items:center; border-radius:var(--r-md); background:var(--s2); font-size:var(--t-lg); }
+.cw-made-t{ font-size:var(--t-md); font-weight:600; color:var(--tx); line-height:1.35;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.cw-made-d{ font-size:var(--t-sm); color:var(--mu); line-height:1.5;
+  display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
+.cw-made-foot{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2);
+  padding:var(--sp-2) var(--sp-4) var(--sp-3); border-top:1px solid var(--bd); }
+.cw-made-run{ font-size:var(--t-xs); font-weight:600; color:var(--grn-txt); }
+.cw-made-see{ background:none; border:0; color:var(--accent-txt); font:inherit; font-size:var(--t-sm); font-weight:600; cursor:pointer; min-height:44px; padding:0 var(--sp-1); }
+@media(max-width:720px){
+  .cw-made-it, .cw-made-ph{ flex-basis:80%; }
+}
+/* One line, whatever the country: a long name ends in an ellipsis rather than
+   wrapping, so the heading is the same height before and after it is known. */
+.cw-made .sec-head h3{ flex-wrap:nowrap; white-space:nowrap; min-width:0; max-width:100%; }
+.cw-made .sec-head h3 .cw-made-cn{ overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.cw-made .sec-head h3 > *{ flex:none; }
+.cw-made .sec-head h3 > .cw-made-cn{ flex:0 1 auto; }
+/* The words are clamped, not cut: three lines, then an ellipsis, and the
+   foot is only as tall as its 44px control. */
+.cw-made-d{ -webkit-line-clamp:3; }
+.cw-made-body{ overflow:hidden; }
+.cw-made-foot{ padding:0 var(--sp-3) 0 var(--sp-4); min-height:48px; }
+.cw-made-foot .cw-toggle{ margin:0; }
+@media(prefers-reduced-motion:reduce){ .cw-made-card{ transition:none; } .cw-made-row{ scroll-behavior:auto; } }
+/* The note under a job - "Needs 1 thing: a mailbox. Connect" or the green
+   ready line - is a sibling of the card's text in a row, so it was squeezed
+   into a narrow column between the description and the switch, three words a
+   line. It belongs under the text, the full width of it. */
+#vc .cw-job{ flex-wrap:wrap; }
+#vc .cw-job > .cw-job-body{ flex:1 1 0; }
+#vc .cw-job > .cw-toggle{ order:2; }
+#vc .cw-job > .cw-job-miss, #vc .cw-job > .cw-job-ready{
+  order:3; flex:1 0 100%; margin:0; padding-left:calc(42px + 13px); box-sizing:border-box; }
+/* The rail's cards are sized to what they hold. */
+.cw-made-it, .cw-made-ph{ height:184px; }

@@ -2017,6 +2017,10 @@ async function _scheduleTask(t){
       /* The catalogue entry this came from, when it came from one. Counts only,
          and only in aggregate - see crewPopular in the worker. */
       srcId: t.srcId || '',
+      /* The country the person is looking at, so the unattended run answers
+         for it - the cron has no network to ask later. The server accepts only
+         a real country code and falls back to the network's country. */
+      country: t.country || ((typeof _cwCountryGuess === 'function' ? _cwCountryGuess() : '') || ''),
       /* Which connected-account capabilities this job may draw on. Passed
          through rather than decided here - the server validates it. */
       uses: Array.isArray(t.uses) ? t.uses : [],

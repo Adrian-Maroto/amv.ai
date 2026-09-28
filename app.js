@@ -18726,6 +18726,173 @@ function _ccFactsHTML(cc){
     `<div class="cw-facts-r"><dt>${escH(T(label))}</dt><dd>${escH(String(f[k]))}</dd></div>`).join('');
   return rows ? `<dl class="cw-facts">${rows}</dl>` : '';
 }
+/* ── MADE FOR THE COUNTRY: JOBS BUILT ON WHAT PEOPLE THERE USE ──────────────
+
+   Asked for: in every country, the jobs people there would actually start -
+   and a thousand of them, not a hundred with a flag on. The five written by
+   hand for each country stay the top five. These come after them, and each is
+   one of the everyday jobs that has a different right answer in every country
+   - find work, the weekly shop, tax, a passport, the rent - written against
+   that country's own services: InfoJobs and the SEPE in Spain, OCC and the
+   SAT in Mexico. The names come from the country's facts on the server, which
+   were written by hand and omit anything uncertain, so a country only gets
+   the jobs it has real names for. About thirteen each, 1,300 across the 105.
+
+   Every one runs unattended from the web - none needs an account connected -
+   so switching one on really does start work tonight, in any country. Every
+   one that depends on the person asks them first (which town, which exam),
+   because a job that runs on nothing can only apologise or invent. */
+function _cwNames(v, n){
+  const parts = String(v || '').split(/\s*(?:,|·|\/| and | y | et | und )\s*/).map(x => x.trim()).filter(Boolean);
+  const pick = parts.slice(0, n || 2);
+  return pick.length < 2 ? pick.join('') : pick.slice(0, -1).join(', ') + ' and ' + pick[pick.length - 1];
+}
+function _cwShort(v){
+  const m = /\(([^)]+)\)/.exec(String(v || ''));
+  return m ? m[1] : String(v || '').replace(/^the\s+/i, '');
+}
+const CW_MADE_FOR = [
+  { k:'jobs', id:'jobs', icon:'💼', cat:'Work & career', every:'daily',
+    t:f => 'Job hunt on ' + _cwNames(f.jobs, 2),
+    d:(f, C) => 'New roles that fit you on ' + f.jobs + ', each with a tailored application drafted. Nothing reaches an employer without you.',
+    ask:['What work are you looking for, and where?', 'e.g. "junior accountant, in the capital or remote, full-time"'],
+    p:(f, C) => 'Search ' + f.jobs + ' and other genuine job sites used in ' + C + ' for openings posted recently that match what the user asked for. For each: title, employer, location, pay if stated, why it fits, and the direct link. Draft a short tailored application for the three strongest. Never submit or contact anyone; never invent a listing - only ones you found, with links.' },
+  { k:'groc', id:'groc', icon:'🛒', cat:'Home & life', every:'weekly',
+    t:f => 'Cheapest weekly shop: ' + _cwNames(f.groc, 3),
+    d:(f, C) => 'Compares this week’s prices and offers at ' + f.groc + ' for the things you buy, and says where the basket is cheapest.',
+    ask:['What do you usually buy, and which town are you in?', 'e.g. "milk, eggs, chicken, rice, nappies - in Valencia"'],
+    p:(f, C) => 'Using the current published prices and promotions of ' + f.groc + ' in ' + C + ', price the user’s usual basket at each and say which is cheapest this week and by how much. Name the offers that matter. Give prices in the local currency. Where a price could not be found, say so rather than estimating.' },
+  { k:'shop', id:'shop', icon:'🏷️', cat:'Money', every:'daily',
+    t:f => 'Price drops on ' + _cwNames(f.shop, 2),
+    d:(f, C) => 'Watches the things you want on ' + f.shop + ' and tells you when the price genuinely drops - not a discount on an inflated price.',
+    ask:['What do you want, and what would you pay?', 'e.g. "a Dyson V15 under 450, a PS5 Slim under 400"'],
+    p:(f, C) => 'Check today’s prices for the items the user named on ' + f.shop + ' and other legitimate sellers in ' + C + '. Report the lowest real price with the link, whether it is at or under their target, and whether this is a genuine low or a discount on a raised price. Say plainly when nothing has dropped.' },
+  { k:'tax', id:'tax', icon:'🧾', cat:'Money', every:'weekly',
+    t:f => 'Tax deadlines and forms (' + _cwShort(f.tax) + ')',
+    d:(f, C) => 'What ' + f.tax + ' needs from you and by when - dates, forms and what changed this year - from the official pages, in time.',
+    ask:['What is your tax situation?', 'e.g. "employee, plus a flat I rent out" or "self-employed designer"'],
+    p:(f, C) => 'From the official pages of ' + f.tax + ', list the tax deadlines and filings in ' + C + ' that apply to the user’s situation in the next 90 days: the date, the form by its real name, and what it needs from them. Flag anything that changed this year. Link each official page. Information, not tax advice - say when they need a professional.' },
+  { k:'id', id:'id', icon:'🪪', cat:'Home & life', every:'weekly',
+    t:f => 'Passport and ID renewals',
+    d:(f, C) => 'Knows when your documents run out and what ' + f.id + ' needs to renew them - fees, photos, the booking step - before the queue gets long.',
+    ask:['Which documents, and when do they expire?', 'e.g. "passport June 2027, ID card March 2026"'],
+    p:(f, C) => 'For the documents the user listed, work out how far ahead each must be renewed in ' + C + ' through ' + f.id + ': current fees, required photos and papers, how appointments are booked and current waiting times. Say which is urgent. Use only official sources and link them. Never book anything.' },
+  { k:'car', id:'car', icon:'🚗', cat:'Home & life', every:'weekly',
+    t:f => 'Car inspection, tax and insurance dates',
+    d:(f, C) => 'Keeps the dates for ' + f.car + ' in view, with what to do and where, before anything lapses.',
+    ask:['Which car, and what dates do you know?', 'e.g. "2016 Seat Ibiza, inspection due in May, insurance renews 1 Sept"'],
+    p:(f, C) => 'For the user’s car in ' + C + ', track what is due with ' + f.car + ': the next date for each, what it costs, how to book or pay, and the penalty for missing it. Flag anything in the next 30 days first. Official sources only, linked. Never pay or book on their behalf.' },
+  { k:'rail', id:'rail', icon:'🚆', cat:'Travel', every:'daily',
+    t:f => 'Train fares and delays: ' + _cwNames(f.rail, 2),
+    d:(f, C) => 'Watches fares on ' + f.rail + ' for the trips you make, and warns you about strikes and disruption before you leave.',
+    ask:['Which trips do you make, and when?', 'e.g. "Madrid to Barcelona, Fridays after 5pm, back Sunday"'],
+    p:(f, C) => 'For the trips the user named, check current fares on ' + f.rail + ' in ' + C + ' and any announced strikes, engineering works or disruption. Give the cheapest real option with times and the link, and warn clearly about anything that affects their dates. Never book.' },
+  { k:'prop', id:'prop', icon:'🏠', cat:'Home & life', every:'daily',
+    t:f => 'New homes on ' + _cwNames(f.prop, 2),
+    d:(f, C) => 'New listings on ' + f.prop + ' that fit your budget and area the day they appear, with the overpriced ones called out.',
+    ask:['Rent or buy, where, what budget, how many rooms?', 'e.g. "rent, Gràcia or Eixample, up to 1,300 a month, 2 bedrooms"'],
+    p:(f, C) => 'Search ' + f.prop + ' for listings in ' + C + ' that match the user’s criteria and appeared recently. For each: price, size, area, the link, and whether the price is high or low for that area going by comparable listings. Only real listings you found. Never contact an agent.' },
+  { k:'food', id:'food', icon:'🍜', cat:'Home & life', every:'weekly',
+    t:f => 'Takeaway deals on ' + _cwNames(f.food, 2),
+    d:(f, C) => 'The real offers this week on ' + f.food + ' for what you like to eat - checked, not advertised.',
+    ask:['Which area, and what do you like to eat?', 'e.g. "central Lisbon - sushi, burgers, anything vegetarian"'],
+    p:(f, C) => 'Find the genuine current offers on ' + f.food + ' in ' + C + ' for the user’s area and tastes: the restaurant, the deal, its conditions and the link. Leave out anything that is only a delivery-fee promotion unless it is the best value. Never order.' },
+  { k:'telco', id:'telco', icon:'📱', cat:'Money', every:'weekly',
+    t:f => 'A cheaper mobile plan? ' + _cwNames(f.telco, 3),
+    d:(f, C) => 'Compares what you pay with the current plans from ' + f.telco + ' and the budget brands, and says when switching saves real money.',
+    ask:['Which network, what do you pay, and how much data do you use?', 'e.g. "Vodafone, 25 a month, about 15GB"'],
+    p:(f, C) => 'Compare the user’s current mobile plan with the plans on sale now from ' + f.telco + ' and the budget brands on their networks in ' + C + '. Name the cheapest plan that meets their usage, the yearly saving, any contract or porting catch, and the link. Say plainly if they are already on a good deal.' },
+  { k:'banks', id:'save', icon:'💰', cat:'Money', every:'weekly',
+    t:f => 'Better savings rates than ' + _cwNames(f.banks, 1),
+    d:(f, C) => 'Compares savings and deposit rates at ' + f.banks + ' and the online banks, and tells you when yours is beaten.',
+    ask:['Where are your savings now, and at what rate?', 'e.g. "Santander savings account at 1.5%"'],
+    p:(f, C) => 'Compare the user’s current savings rate with the savings and fixed-deposit rates on offer now from ' + f.banks + ' and reputable online banks in ' + C + ', including the deposit guarantee scheme that covers each. Give rates, conditions and links. Information, not financial advice - never tell them to move money.' },
+  { k:'health', id:'health', icon:'🩺', cat:'Home & life', every:'weekly',
+    t:f => 'Check-ups and prescriptions',
+    d:(f, C) => 'What is due - a check-up, a repeat prescription, a screening - and how to get it through ' + f.health + '.',
+    ask:['What should it keep track of?', 'e.g. "repeat inhaler prescription, yearly dental check-up, a smear test"'],
+    p:(f, C) => 'For the items the user listed, explain how each is obtained or booked through ' + f.health + ' in ' + C + ', typical waiting times, and anything that must be done ahead. Remind them what is coming due. Official sources only, linked. Not medical advice; never book.' },
+  { k:'exams', id:'exams', icon:'🎓', cat:'School & study', every:'daily',
+    t:f => 'Revision for ' + _cwShort(f.exams),
+    d:(f, C) => 'A daily revision plan for ' + f.exams + ' with the real exam dates, adjusted to what you keep getting wrong.',
+    ask:['Which exam, which subjects, and when?', 'e.g. "maths and chemistry, exams start 3 June"'],
+    p:(f, C) => 'Build today’s revision session for the user’s exams (' + f.exams + ', ' + C + '): the topics to cover, ten practice questions in the official exam style with answers at the end, and the days left. Use the official syllabus and past papers where they exist, and link them.' },
+  { k:'uni', id:'uni', icon:'🏫', cat:'School & study', every:'weekly',
+    t:f => 'University applications (' + _cwShort(f.uni) + ')',
+    d:(f, C) => 'Every deadline and requirement for applying through ' + f.uni + ', tracked, so nothing is missed.',
+    ask:['Which courses or universities, and for which year?', 'e.g. "computer science, starting next September"'],
+    p:(f, C) => 'For the courses the user named, list the application steps and deadlines through ' + f.uni + ' in ' + C + ': entry requirements, documents, fees and dates, soonest first. Official pages only, linked. Never submit anything.' },
+  { k:'news', id:'news', icon:'📰', cat:'Watching the world', every:'daily',
+    t:f => 'Morning brief from ' + _cwNames(f.news, 2),
+    d:(f, C) => 'What matters in ' + C + ' this morning, from ' + f.news + ', in five lines.',
+    ask:['What should it focus on?', 'e.g. "politics, housing and anything about my city" or "just the big stories"'],
+    p:(f, C) => 'Read this morning’s coverage from ' + f.news + ' and summarise what matters in ' + C + ' in five lines, weighted to what the user asked for. Link each story. Separate fact from opinion and say when outlets disagree.' },
+  { k:'weather', id:'weather', icon:'⛈️', cat:'Watching the world', every:'daily',
+    t:f => 'Weather warnings from ' + _cwShort(f.weather),
+    d:(f, C) => 'Official warnings from ' + f.weather + ' for where you are, and what to do about them - only when there is one.',
+    ask:['Which town or area?', 'e.g. "Seville"'],
+    p:(f, C) => 'Check the official warnings from ' + f.weather + ' for the user’s area in ' + C + '. If there is a warning, give its level, timing and the practical advice. If there is none, say so in one line.' },
+  { k:'gov', id:'gov', icon:'🏛️', cat:'Home & life', every:'weekly',
+    t:f => 'Government letters and deadlines',
+    d:(f, C) => 'What the authorities in ' + C + ' need from you and by when, explained - using ' + f.gov + ' when you do it yourself. AMV never signs in for you.',
+    ask:['What do you deal with?', 'e.g. "renewing my residence permit, a parking fine, child benefit"'],
+    p:(f, C) => 'For the matters the user described, explain what the authorities in ' + C + ' need from them, the deadlines, fees and forms, and how it is done online with ' + f.gov + '. Official sources only, linked. Never sign in, pay or submit anything.' },
+];
+function _cwMadeForJobs(cc){
+  const f = _cwFacts[cc], row = _cwCountryRow(cc);
+  if(!f || !row) return [];
+  const C = row[1];
+  return CW_MADE_FOR.filter(m => f[m.k]).map(m => ({
+    id: 'cc_' + cc.toLowerCase() + '_' + m.id, made: true, country: cc, countryName: C,
+    cat: m.cat, icon: m.icon, every: m.every, on: false, needs: 'Web research',
+    title: m.t(f), desc: m.d(f, C), where: String(f[m.k]),
+    asks: { q: m.ask[0], ph: m.ask[1] },
+    prompt: m.p(f, C) + ' The user is in ' + C + '.',
+  }));
+}
+/* A row of cards, not a grid: it arrives with the country and must not push
+   anything down when it does, so it is one fixed height whatever the count. */
+function _cwMadeForHTML(){
+  if(_cwHerePending()){
+    return `<section class="cw-made" id="cw-made" aria-busy="true"><div class="sec-head"><h3>${escH(T('Made for where you are'))}</h3>
+      <span class="sec-sub">${escH(T('Built on the services people there actually use.'))}</span></div>
+      <div class="cw-made-row">${'<div class="cw-made-ph" aria-hidden="true"></div>'.repeat(4)}</div></section>`;
+  }
+  const cc = _cwCountryGuess(), row = _cwCountryRow(cc);
+  const st = row ? (_cwLocalState[cc] || 'loading') : 'none';
+  if(!row || st === 'offline') return '<section class="cw-made" id="cw-made" hidden></section>';
+  const jobs = st === 'ok' ? _cwMadeForJobs(cc) : [];
+  if(st === 'ok' && !jobs.length) return '<section class="cw-made" id="cw-made" hidden></section>';
+  const card = _cwMadeCard;
+  return `<section class="cw-made" id="cw-made"${st === 'ok' ? '' : ' aria-busy="true"'}>
+    <div class="sec-head"><h3>${escH(T('Made for'))} <span class="cw-flag" aria-hidden="true">${row[2]}</span> <span class="cw-made-cn">${escH(row[1])}</span>${st === 'ok' ? ` <span class="cw-made-n">${jobs.length}</span>` : ''}</h3>
+      <span class="sec-sub">${escH(T('Built on the services people there actually use.'))}</span></div>
+    <div class="cw-made-row" role="list">${st === 'ok' ? jobs.map(j => `<div role="listitem" class="cw-made-it">${card(j)}</div>`).join('')
+                                                     : '<div class="cw-made-ph" aria-hidden="true"></div>'.repeat(4)}</div>
+  </section>`;
+}
+function _cwMadeCard(j){
+  const saved = {}; try{ (_cwJobs() || []).forEach(j => { saved[j.id] = j; }); }catch(e){}
+  const allowed = (() => { try{ return _planAllowsCrew(); }catch(e){ return false; } })();
+  const card = j => {
+    const on = !!(saved[j.id] && saved[j.id].on);
+    return `<div class="cw-made-card${on ? ' on' : ''}">
+      <button class="cw-made-body" data-dact="cwPeek" data-darg="${escH(j.id)}">
+        <span class="cw-made-top"><span class="cw-made-ic" aria-hidden="true">${_safeIcon(j.icon)}</span><span class="cw-made-t">${escH(j.title)}</span></span>
+        <span class="cw-made-d">${escH(j.desc)}</span>
+      </button>
+      <div class="cw-made-foot"><span class="cw-made-run">${escH(T('Runs with AMV closed'))}</span>
+        ${allowed
+          ? `<button class="cw-toggle ${on ? 'on' : ''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="Turn ${escH(j.title)} ${on ? 'off' : 'on'}"><span class="cw-knob"></span></button>`
+          : `<button class="cw-made-see" data-dact="cwPeek" data-darg="${escH(j.id)}">${escH(T('See it'))} \u2192</button>`}</div>
+    </div>`;
+  };
+  return card(j);
+}
+function _cwMadeForRepaint(){
+  try{ const el = document.getElementById('cw-made'); if(el) el.outerHTML = _cwMadeForHTML(); }catch(e){}
+}
+try{ window._cwMadeForJobs = _cwMadeForJobs; window.CW_MADE_FOR = CW_MADE_FOR; }catch(e){}
 function _cwLocText(id, cc){
   const row = _cwCountryRow(cc); if(!row) return '';
   const f = _cwFacts[cc], keys = CW_LOC[id] || [];
@@ -18831,7 +18998,7 @@ async function _cwLoadLocal(code){
       if(cc === _cwCountryGuess()){ const el = document.getElementById('cw-foryou'); if(el){ el.outerHTML = _cwForYouHTML(); done = true; } }
       if(cc === _cwBrowse){ const el = document.getElementById('cw-morec'); if(el){ el.outerHTML = _cwMoreCountriesHTML(); done = true; } }
       if(!done) _cwRepaintSoon();
-      if(cc === _cwCountryGuess()) _cwLocFill();
+      if(cc === _cwCountryGuess()){ _cwLocFill(); _cwMadeForRepaint(); }
     }
   }catch(e){ try{ if(S.tab === 'crew') _cwRepaintSoon(); }catch(e2){} }
 }
@@ -18854,8 +19021,14 @@ try{ window.CW_WORLD_COUNTRIES = CW_WORLD_COUNTRIES; }catch(e){}
    A world example is a real job with a country named in its instruction, so
    switching one on switches on that job - it is not a card that does nothing. */
 function _cwAllJobs(){
-  try{ return (_cwJobs() || []).concat(_cwUniversalJobs() || [])
-                              .concat(_cwLocalJobs(_cwCountryGuess()) || []); }
+  try{ const cc = _cwCountryGuess();
+       const have = new Set((_cwJobs() || []).map(j => j.id));
+       return (_cwJobs() || []).concat(_cwUniversalJobs() || [])
+                              .concat(_cwLocalJobs(cc) || [])
+                              .concat((_cwMadeForJobs(cc) || []).filter(j => !have.has(j.id)))
+                              /* And the country being browsed at the bottom, so
+                                 its cards open and switch on like any other. */
+                              .concat(_cwBrowse && _cwBrowse !== cc ? (_cwMadeForJobs(_cwBrowse) || []).filter(j => !have.has(j.id)) : []); }
   catch(e){ return _cwJobs() || []; }
 }
 /* THE BEST ONES FIRST, AND FEWER OF THEM.
@@ -19415,6 +19588,7 @@ function _cwForYouRepaint(){
     if(el) el.outerHTML = _cwForYouHTML(); else _cwRepaintSoon();
   }catch(e){ try{ _cwRepaintSoon(); }catch(_){} }
   _cwLocFill();
+  _cwMadeForRepaint();
 }
 
 /* SEE MORE COUNTRIES - at the very bottom, as asked. A list of every country
@@ -19458,6 +19632,8 @@ function _cwBrowsePanelHTML(cc){
     <div class="cw-browse-h"><h4><span aria-hidden="true">${flag}</span> ${escH(T('Only in'))} ${escH(name)}</h4>
       ${mine ? `<span class="cw-cc-you">${escH(T('your country'))}</span>` : `<button class="btn bs" data-dact="cwCountry" data-darg="${escH(cc)}">${escH(T('This is my country'))}</button>`}</div>
     ${body}
+    ${st === 'ok' && _cwMadeForJobs(cc).length ? `<h4 class="cw-facts-h">${escH(T('Made for'))} ${escH(name)} <span class="cw-made-n">${_cwMadeForJobs(cc).length}</span></h4>
+      <div class="cw-made-row" role="list">${_cwMadeForJobs(cc).map(j => `<div role="listitem" class="cw-made-it">${_cwMadeCard(j)}</div>`).join('')}</div>` : ''}
     ${st === 'ok' && _ccFactsHTML(cc) ? `<h4 class="cw-facts-h">${escH(T('Where AMV looks in'))} ${escH(name)}</h4>${_ccFactsHTML(cc)}` : ''}
     <p class="cw-foryou-note">${escH(T('Every job in the list above answers for'))} ${escH(name)} ${escH(T('once it is your country - its sites, prices and rules.'))}</p>
   </div>`;
@@ -21440,6 +21616,7 @@ function renderCrewView(){
             run, which is interesting once you know what this is and noise
             before. */ ''}
       ${_cwForYouHTML()}
+      ${_cwMadeForHTML()}
       <div class="cw-filters">
         ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
       </div>
@@ -21711,6 +21888,7 @@ function renderCrewView(){
       ${/* Same order as the locked view, for the same reason: the standing
             work first, the one-offs last. */ ''}
       ${_cwForYouHTML()}
+      ${_cwMadeForHTML()}
       <div class="cw-filters">
         ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
       </div>
@@ -22069,7 +22247,11 @@ async function _cwToggleReal(jobs, j){
                                  /* Which catalogue job this is, so the most-used
                                     list is built from what people actually turn
                                     on rather than from a guess. */
-                                 srcId: j.id });
+                                 srcId: j.id,
+                                 /* A job written for a country runs for that
+                                    country, even when somebody in Spain
+                                    switches on Mexico's. */
+                                 country: j.country || '' });
     }catch(e){ item=null; }
     finally{ _cwPending.delete(j.id); }
     /* _scheduleTask reports the reason itself - a plan limit sends them to the
@@ -36772,6 +36954,10 @@ async function _scheduleTask(t){
       /* The catalogue entry this came from, when it came from one. Counts only,
          and only in aggregate - see crewPopular in the worker. */
       srcId: t.srcId || '',
+      /* The country the person is looking at, so the unattended run answers
+         for it - the cron has no network to ask later. The server accepts only
+         a real country code and falls back to the network's country. */
+      country: t.country || ((typeof _cwCountryGuess === 'function' ? _cwCountryGuess() : '') || ''),
       /* Which connected-account capabilities this job may draw on. Passed
          through rather than decided here - the server validates it. */
       uses: Array.isArray(t.uses) ? t.uses : [],

@@ -24,8 +24,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const worker = (await import(join(ROOT, 'amv-backend.js') + '?where=' + Date.now())).default;
 const env = makeEnv({});
 let FROM = 'ES';
+const created = [];
 const api = createServer(async (req, res) => {
   const chunks = []; for await (const c of req) chunks.push(c);
+  if (req.url.startsWith('/auto/create')) { try { created.push(JSON.parse(Buffer.concat(chunks).toString())); } catch (e) {} }
   const headers = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (v != null) headers.set(k, String(v));
   const r0 = new Request('http://localhost:' + api.address().port + req.url, { method: req.method, headers,
     body: (req.method === 'GET' || req.method === 'HEAD') ? undefined : Buffer.concat(chunks) });
@@ -107,6 +109,52 @@ section('Crew, from Spain, on a phone');
   await ctx.close();
 }
 
+section('Crew, from Spain: a row of jobs made for Spain');
+{
+  const { ctx, page } = await open('ES', 'crew');
+  await page.waitForFunction(() => document.querySelectorAll('#cw-made .cw-made-card').length > 0, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(() => ({
+    head: document.querySelector('#cw-made h3').textContent.replace(/\s+/g, ' ').trim(),
+    titles: [...document.querySelectorAll('#cw-made .cw-made-t')].map(e => e.textContent.trim()),
+    heights: [...document.querySelectorAll('#cw-made .cw-made-it')].map(e => Math.round(e.getBoundingClientRect().height)),
+    clipped: [...document.querySelectorAll('#cw-made .cw-made-d')].filter(e => e.scrollHeight > e.clientHeight + 30).length,
+    cls: window.__cls,
+  }));
+  ok(/Made for .*Spain/.test(r.head), 'a row made for Spain sits under the top five', r.head);
+  ok(r.titles.length >= 12, 'with a dozen or more of Spain’s own jobs', r.titles.length);
+  ok(r.titles.some(t => /InfoJobs/.test(t)) && r.titles.some(t => /Mercadona/.test(t)) && r.titles.some(t => /AEAT/.test(t)),
+     'named for the services people in Spain use - InfoJobs, Mercadona, the AEAT', r.titles.slice(0, 6));
+  ok(new Set(r.heights).size === 1, 'every card the same height, so the row is one fixed height', [...new Set(r.heights)]);
+  ok(r.cls < 0.001, 'and the row arrives without moving the page', +r.cls.toFixed(4));
+  await page.click('#cw-made .cw-made-body');
+  await page.waitForFunction(() => /InfoJobs|Mercadona|AEAT|Amazon/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
+  const peek = await page.evaluate(() => (document.getElementById('ovr') || {}).textContent || '');
+  ok(/InfoJobs|Mercadona|AEAT|Amazon/.test(peek), 'pressing a card opens what it does, in Spain’s terms', peek.slice(0, 120));
+  await ctx.close();
+}
+
+section('Switching one on creates real work for Spain');
+{
+  const { ctx, page } = await openConnectors('ES');
+  await page.evaluate(() => { saveStr('amv_plan', 'pro'); setTab('crew'); });
+  await page.waitForFunction(() => document.querySelector('#cw-made .cw-toggle'), null, { timeout: 15000 }).catch(() => {});
+  const id = await page.evaluate(() => { const b = [...document.querySelectorAll('#cw-made .cw-toggle')].find(x => /cc_es_jobs/.test(x.dataset.darg)); return b ? b.dataset.darg : ''; });
+  ok(id === 'cc_es_jobs', 'Spain’s job hunt has a switch', id);
+  const before = created.length;
+  await page.click('#cw-made .cw-toggle[data-darg="cc_es_jobs"]');
+  const box = await page.waitForSelector('#ovr input, #ovr textarea', { timeout: 5000 }).catch(() => null);
+  ok(!!box, 'it asks what work, before it runs on nothing');
+  if (box) { await box.fill('junior accountant in Valencia, full-time'); await page.click('#ovr button.bp'); }
+  for (let i = 0; i < 40 && created.length === before; i++) await page.waitForTimeout(150);
+  const c = created[created.length - 1] || {};
+  ok(created.length > before, 'and the server is asked to create it', created.length - before);
+  ok(/InfoJobs/.test(c.detail || '') && /Spain/.test(c.detail || ''), 'with Spain’s own job sites in the instruction', String(c.detail || '').slice(0, 140));
+  ok(/junior accountant in Valencia/.test(c.detail || ''), 'and what they said they want', String(c.detail || '').slice(-120));
+  ok(c.country === 'ES' && c.srcId === 'cc_es_jobs', 'for Spain, counted as this job', { country: c.country, srcId: c.srcId });
+  await ctx.close();
+}
+
 section('Crew, from the United States: the same cards, for the United States');
 {
   const { ctx, page } = await open('US', 'crew');
@@ -131,6 +179,11 @@ section('Other countries: Mexico’s facts, from the bottom of Crew');
   }));
   ok(/Mexico/.test(r.h), 'Mexico says where AMV looks there', r.h);
   ok(r.facts.length >= 8 && r.facts.some(t => /SAT/.test(t)), 'with Mexico’s tax office and the rest', r.facts.slice(0, 4));
+  const mx = await page.evaluate(() => [...document.querySelectorAll('#cw-browse .cw-made-t')].map(e => e.textContent.trim()));
+  ok(mx.length >= 10 && mx.some(t => /SAT/.test(t)) && !mx.some(t => /InfoJobs|Mercadona/.test(t)), 'and Mexico’s own jobs, none of Spain’s', mx.slice(0, 5));
+  await page.click('#cw-browse .cw-made-body');
+  await page.waitForFunction(() => /Mexico|SAT/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
+  ok(/Mexico|SAT/.test(await page.evaluate(() => (document.getElementById('ovr') || {}).textContent || '')), 'which open from there too');
   await ctx.close();
 }
 
