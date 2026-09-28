@@ -4324,6 +4324,8 @@ async function remoteCall(request, env){
 }
 
 const CREW_POPULAR_MIN = 25;      // total jobs created before any ranking is shown
+const JOBUSE_MAX_IDS = 2000;        // distinct job ids counted worldwide
+const JOBUSE_MAX_IDS_COUNTRY = 300; // and per country
 async function crewPopular(request, env){
   /* PUBLIC AND UNAUTHENTICATED IS NOT THE SAME AS FREE.
 
@@ -4607,7 +4609,17 @@ async function autoCreate(request, env){
     try{
       await _withKV(env, 'stats', 'jobuse', (rec)=>{
         rec.counts = rec.counts || {};
-        rec.counts[srcId] = (rec.counts[srcId]||0) + 1;
+        /* A BOUNDED RECORD. The id comes from the page and only its shape is
+           checked, so an account creating and deleting jobs in a loop could
+           mint a new id every time - and this record is read on every
+           country page. Past the cap, ids already counted keep counting and
+           new ones are not added. The catalogue is a few hundred ids; the
+           caps are several times that. */
+        const bump = (m, cap) => {
+          if(Object.prototype.hasOwnProperty.call(m, srcId) || Object.keys(m).length < cap){ m[srcId] = (m[srcId]||0) + 1; return true; }
+          return false;
+        };
+        bump(rec.counts, JOBUSE_MAX_IDS);
         rec.total = (rec.total||0) + 1;
         /* AND PER COUNTRY, so each country's top ten can be ordered by what
            people THERE switch on rather than by the whole world's taste. The
@@ -4616,7 +4628,7 @@ async function autoCreate(request, env){
         if(country){
           rec.byCountry = rec.byCountry || {};
           const c = rec.byCountry[country] = rec.byCountry[country] || { counts:{}, total:0 };
-          c.counts[srcId] = (c.counts[srcId]||0) + 1;
+          bump(c.counts, JOBUSE_MAX_IDS_COUNTRY);
           c.total = (c.total||0) + 1;
         }
       }, { counts:{}, total:0 });
@@ -6403,6 +6415,30 @@ function _fenceUntrusted(text, tag){
 
    The token never leaves the server, is never returned, and is never put in an
    audit line. The audit records that a bank read happened, for which job. */
+/* ONE LOGIN PER PERSON PER FIVE MINUTES, HOWEVER MANY JOBS READ THE INBOX.
+
+   QQ Mail, NetEase, Mail.ru and most app-password providers throttle - and
+   some lock - an account that logs in over and over. Somebody running three
+   inbox jobs on the same schedule would have logged in three times in the
+   same minute, every run. Jobs in the same few minutes now share one read.
+   Held in this isolate's memory only - never written to storage, so no copy
+   of anybody's mail headers outlives the few minutes it is useful for - and
+   keyed by the account, so one person's inbox can never answer another's. */
+const MAILBOX_READ_TTL = 5 * 60 * 1000;
+const _mailboxReads = new Map();
+function _mailboxRead(email, cfg){
+  const key = String(email || '').toLowerCase() + '|' + String((cfg && cfg.address) || '').toLowerCase();
+  const now = Date.now();
+  for(const [k, v] of _mailboxReads) if(now - v.at > MAILBOX_READ_TTL) _mailboxReads.delete(k);
+  const hit = _mailboxReads.get(key);
+  if(hit && now - hit.at <= MAILBOX_READ_TTL) return hit.p;
+  const p = _imapInbox(cfg, 25);
+  _mailboxReads.set(key, { at: now, p });
+  /* A failed read is not remembered: the next job tries again rather than
+     inheriting somebody else's bad minute. */
+  p.catch(() => { if(_mailboxReads.get(key) && _mailboxReads.get(key).p === p) _mailboxReads.delete(key); });
+  return p;
+}
 /* The mailbox connected with an app password, for an unattended run. Same
    rule as the bank: a paused account opens nothing, and every read is logged
    against the job that made it. */
@@ -6591,7 +6627,7 @@ async function _autoAccountContext(env, item, email, never){
     }
     try{
       if(need === 'mail.read' && got.imap){
-        const box = await _imapInbox(got.imap, 25);
+        const box = await _mailboxRead(email, got.imap);
         const name = (MAIL_PROVIDERS[got.imap.provider] && MAIL_PROVIDERS[got.imap.provider].name) || 'their mailbox';
         const rows = Array.isArray(box.messages) ? box.messages : [];
         parts.push('REAL INBOX - ' + name + ' (' + rows.length + ' most recent, sender, subject and date only - you do not have the message bodies. '

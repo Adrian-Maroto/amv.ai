@@ -23,7 +23,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'inbox-there.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, _mailEncrypt, COUNTRY_MAIL, MAIL_PROVIDERS, _mailboxUse };\nexport function __setMailConnector(fn){ _mailConnector = fn; }\n');
+writeFileSync(harness, src + '\nexport { DB, _mailEncrypt, COUNTRY_MAIL, MAIL_PROVIDERS, _mailboxUse, _mailboxReads, _mailboxRead };\nexport function __setMailConnector(fn){ _mailConnector = fn; }\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -60,10 +60,10 @@ const get = (env, path) => worker.fetch(new Request('https://api.amv.test' + pat
 /* A scripted IMAP server: greeting, login, select, one FETCH, logout. */
 const enc = new TextEncoder(), dec = new TextDecoder();
 const literal = (t) => '{' + enc.encode(t).length + '}\r\n' + t;
-let wrote = [];
+let wrote = [], connects = 0;
 function script(replies) {
-  const q = replies.slice(); wrote = [];
-  W.__setMailConnector(async () => ({
+  const q = replies.slice(); wrote = []; connects = 0;
+  W.__setMailConnector(async () => (connects++, {
     readable: { getReader: () => ({ async read() { return q.length ? { value: enc.encode(q.shift()), done: false } : { value: undefined, done: true }; } }) },
     writable: { getWriter: () => ({ async write(b) { wrote.push(dec.decode(b)); }, async close() {} }) },
     close() {},
@@ -110,6 +110,7 @@ async function due(env, extra) {
 
 section('A job reads the QQ Mail inbox somebody connected - with no Google anywhere');
 {
+  W._mailboxReads.clear();
   const env = mkEnv(); await withMailbox(env, 'qq'); script(QQ);
   const turn = await due(env);
   ok(sent.length === 1, 'the job ran', sent.length);
@@ -117,6 +118,38 @@ section('A job reads the QQ Mail inbox somebody connected - with no Google anywh
   ok(/信用卡账单/.test(turn) && /招商银行/.test(turn), 'with the actual message - the Chinese subject decoded, the sender intact', turn.slice(0, 300));
   ok(!/COULD NOT SEE/.test(turn), 'and was not told the mailbox was missing', turn.slice(0, 200));
   ok(/BODY\.PEEK/.test(wrote.join('')), 'read with PEEK, so the run marks nothing as read', true);
+}
+
+section('Three inbox jobs, one login - QQ Mail locks accounts that log in over and over');
+{
+  W._mailboxReads.clear();
+  const env = mkEnv(); await withMailbox(env, 'qq');
+  /* Replies for ONE session; a second login would find the script empty. */
+  script(QQ);
+  await W.DB.put(env, 'auto', USER, { items: ['j1', 'j2', 'j3'].map(id => ({ id, detail: 'Summarise my inbox (' + id + ')', uses: ['mail.read'], active: true,
+    next: Date.now() - 60000, interval: 86400000, kind: 'task', approval: 'require' })), results: [] });
+  const c = mkCtx(); await worker.scheduled({ cron: '*/5 * * * *' }, env, c); await c.settle();
+  const turns = sent.map(b => JSON.stringify(b.messages || []));
+  ok(sent.length === 3, 'all three jobs ran', sent.length);
+  ok(connects === 1, 'on a single login to the mail server', connects);
+  ok(turns.every(t => /REAL INBOX - QQ Mail/.test(t) && /信用卡账单/.test(t)), 'and every one of them saw the real inbox', turns.map(t => t.slice(0, 60)));
+}
+
+section('The shared read is per account, and a failure is never reused');
+{
+  W._mailboxReads.clear();
+  let n = 0;
+  W.__setMailConnector(async () => { n++; throw Object.assign(new Error('down'), { kind: 'net' }); });
+  const cfg = { address: 'a@qq.com', password: 'x', imap: 'imap.qq.com', smtp: 'smtp.qq.com', provider: 'qq' };
+  await W._mailboxRead('a@example.com', cfg).catch(() => {});
+  await W._mailboxRead('a@example.com', cfg).catch(() => {});
+  ok(n === 2, 'a read that failed is tried again by the next job, not remembered as a failure', n);
+  script(QQ);
+  const one = await W._mailboxRead('a@example.com', cfg);
+  script(QQ);
+  const two = await W._mailboxRead('b@example.com', Object.assign({}, cfg, { address: 'b@qq.com' }));
+  ok(one && two && one !== two, 'and two people never share a read', true);
+  W._mailboxReads.clear();
 }
 
 section('Paused means paused, for this mailbox too');

@@ -23,7 +23,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'country-jobs.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, COUNTRY_FACTS, EVERYDAY_BY_COUNTRY, COUNTRY_NAME };\n');
+writeFileSync(harness, src + '\nexport { DB, COUNTRY_FACTS, EVERYDAY_BY_COUNTRY, COUNTRY_NAME, JOBUSE_MAX_IDS_COUNTRY };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -152,6 +152,19 @@ section('What people start is counted per country, and the ranking waits for eno
   ok(later.ranked.enough === true && later.ranked.counts.cc_es_groc === 20, 'past the floor, Spain’s own counts come with Spain', later.ranked);
   const mx = await (await call(env, '/v1/everyday?country=MX')).json();
   ok(mx.ranked.enough === false, 'while Mexico, with one start, is still not ranked', mx.ranked);
+}
+
+section('The count cannot be stuffed with made-up job ids');
+{
+  const env = mkEnv(); const tok = await setup(env);
+  const full = {}; for (let i = 0; i < W.JOBUSE_MAX_IDS_COUNTRY; i++) full['fake_' + i] = 1;
+  full.cc_es_groc = 3;
+  await W.DB.put(env, 'stats', 'jobuse', { counts: {}, total: 0, byCountry: { ES: { counts: full, total: 400 } } });
+  await created(env, tok, { country: 'ES', srcId: 'brand_new_id' }, 'ES');
+  await created(env, tok, { country: 'ES', srcId: 'cc_es_groc' }, 'ES');
+  const rec = await W.DB.get(env, 'stats', 'jobuse');
+  ok(!('brand_new_id' in rec.byCountry.ES.counts), 'past the cap, a new id is not added', Object.keys(rec.byCountry.ES.counts).length);
+  ok(rec.byCountry.ES.counts.cc_es_groc === 4, 'while an id already counted keeps counting', rec.byCountry.ES.counts.cc_es_groc);
 }
 
 section('The run is told where they are, and to check the official source');
