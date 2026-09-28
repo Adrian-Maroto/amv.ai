@@ -16081,3 +16081,16 @@ body:not(.sb-rail) .sb-tools{ grid-template-columns:none; grid-auto-flow:column;
    section it used to sit above, leaving a 64px hole before the first card. */
 .vi-conn > .cdir-find-wrap{ margin-bottom:var(--sp-4); }
 .vi-conn > .int-local{ margin-top:0; }
+/* The engine picker was 400px and its two longest descriptions had one or two
+   pixels to spare, so any machine that draws text a hair wider wrapped them -
+   GitHub's does. 440px gives them room on every machine. */
+.model-picker{ width:440px; }
+/* The box itself stays 32px - the phone sweep holds every control to that,
+   and it is right to - while the square you see is 20px: a transparent 6px
+   border around it, with the fill and the outline clipped to the inside. */
+#app .mc-quiet-on input{
+  width:32px; height:32px; border:6px solid transparent!important; border-radius:10px!important;
+  background-color:var(--s2); background-clip:padding-box; box-shadow:inset 0 0 0 1.5px var(--bdl); }
+#app .mc-quiet-on input:hover{ box-shadow:inset 0 0 0 1.5px var(--accent); border-color:transparent!important; }
+#app .mc-quiet-on input:checked{ background-color:var(--accent); box-shadow:none; border-color:transparent!important; }
+#app .mc-quiet-on input:checked{ background-color:var(--accent)!important; }

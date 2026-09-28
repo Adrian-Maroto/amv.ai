@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="58a404a3414c5d95">
+<meta name="amv-build" content="4545d4ca1e9eac33">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://api.amv.homes"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10026,6 +10026,13 @@ body:not(.sb-rail) .sb-tools{ grid-template-columns:none; grid-auto-flow:column;
 .ss2 > [data-dact="hoSend"]{ margin-top:var(--sp-3); }
 .vi-conn > .cdir-find-wrap{ margin-bottom:var(--sp-4); }
 .vi-conn > .int-local{ margin-top:0; }
+.model-picker{ width:440px; }
+#app .mc-quiet-on input{
+width:32px; height:32px; border:6px solid transparent!important; border-radius:10px!important;
+background-color:var(--s2); background-clip:padding-box; box-shadow:inset 0 0 0 1.5px var(--bdl); }
+#app .mc-quiet-on input:hover{ box-shadow:inset 0 0 0 1.5px var(--accent); border-color:transparent!important; }
+#app .mc-quiet-on input:checked{ background-color:var(--accent); box-shadow:none; border-color:transparent!important; }
+#app .mc-quiet-on input:checked{ background-color:var(--accent)!important; }
 </style>
 <!-- BUILD:CSS:END -->
 <script>

@@ -69,7 +69,11 @@ async function measure(hash, width) {
     window.__cls = 0; window.__src = [];
     try { new PerformanceObserver(l => { for (const e of l.getEntries()) { window.__cls += e.value;
       window.__src.push((e.sources || []).map(x => { const n = x.node; const el = n && (n.nodeType === 3 ? n.parentElement : n);
-        return (el && (el.id || el.className || el.tagName)) + ':' + (n && (n.textContent || '').trim().slice(0, 24)); }).join(' | ')); } })
+        /* Where it was and where it went, so a failure on a machine this
+           cannot be reproduced on still says what moved and by how much. */
+        const r = (q) => [q.x, q.y, q.width, q.height].map(Math.round).join(',');
+        return (el && (el.id || el.className || el.tagName)) + ':' + (n && (n.textContent || '').trim().slice(0, 24))
+          + ' [' + r(x.previousRect) + ' -> ' + r(x.currentRect) + '] @' + Math.round(e.startTime) + 'ms'; }).join(' | ')); } })
       .observe({ type: 'layout-shift', buffered: true }); } catch (e) {}
   });
   const page = await ctx.newPage();
