@@ -14,7 +14,9 @@
      · the h1/h2 rule named Space Grotesk without its fallback at all.
 
    So this replays the real font files, from fixtures, arriving 900ms late, and
-   measures layout shift on the screens people open first, phone and desktop. */
+   measures layout shift on the screens people open first, phone and desktop.
+   Those three are fixed, and the page now also asks for display=optional, so
+   a font that arrives late is not swapped in at all - see the last section. */
 import { createServer } from 'http';
 import { readFileSync } from 'fs';
 import { chromium } from 'playwright';
@@ -42,6 +44,7 @@ const site = await serveArtifact(0, 'http://localhost:' + api.address().port);
 const SITE = 'http://localhost:' + site.address().port;
 const browser = await chromium.launch(LAUNCH);
 const errors = [];
+const displays = new Set();
 
 async function measure(hash, width) {
   const phone = width === 390;
@@ -50,7 +53,12 @@ async function measure(hash, width) {
   await ctx.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, async (route) => {
     const u = route.request().url();
     await new Promise(r => setTimeout(r, 900));
-    if (/googleapis/.test(u)) return route.fulfill({ status: 200, contentType: 'text/css', body: readFileSync(join(FONTS, 'fonts.css'), 'utf8') });
+    /* Served the way Google serves it: font-display is whatever the page's own
+       URL asked for, so this measures the page's choice, not the fixture's. */
+    const display = (/[?&]display=([a-z]+)/.exec(u) || [])[1] || 'auto';
+    if (/googleapis/.test(u)) displays.add(display);
+    if (/googleapis/.test(u)) return route.fulfill({ status: 200, contentType: 'text/css',
+      body: readFileSync(join(FONTS, 'fonts.css'), 'utf8').replace(/font-display:\s*[a-z]+;/g, 'font-display: ' + display + ';') });
     const m = /amv-fixture\/([A-Za-z]+\.woff2)$/.exec(u);
     if (!m) return route.fulfill({ status: 404, body: '' });
     served++;
@@ -83,6 +91,17 @@ for (const [label, width] of [['phone', 390], ['desktop', 1280]]) {
     ok(r.served > 0 && r.fonts >= 2, hash + ': the real fonts really arrived', r);
     ok(r.cls < 0.001, hash + ': and nothing on the page moved when they did', { cls: +r.cls.toFixed(5), src: r.src });
   }
+}
+
+section('The page asks for fonts that never swap in late');
+{
+  /* display=optional: the real font is used if it is there at once (every
+     visit after the first, from cache) and otherwise the page keeps the
+     metric-matched fallback for good. "swap" re-lays the text whenever the
+     font lands - measured moving the Crew heading on GitHub's runners even
+     with the fallback tuned, because two machines never draw fonts exactly
+     alike. No swap is the only version that holds everywhere. */
+  ok(displays.size === 1 && displays.has('optional'), 'the page asks for display=optional', [...displays]);
 }
 
 section('The fallback is ready on a machine with no Arial');

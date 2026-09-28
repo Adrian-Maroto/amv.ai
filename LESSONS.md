@@ -13857,3 +13857,8 @@ Rules:
   arriving late (the-font-arriving-moves-nothing replays them from fixtures).
 - When CI and the local gate disagree twice, stop fixing the symptom and find
   what differs between the two machines.
+- Addendum, same day: tuning the fallback took the local shift to zero and
+  GitHub still measured 0.0026, because two machines never rasterise a font
+  identically. The fix that holds everywhere is structural: the web fonts are
+  requested with display=optional, so a font that is not there at once is
+  never swapped in. Prefer removing a race to tuning both sides of it.
