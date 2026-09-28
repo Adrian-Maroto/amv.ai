@@ -1,0 +1,44 @@
+name: connectors
+
+# IS EVERY CONNECTOR STILL THERE?
+#
+# Apps move their connector addresses, drop the sign-in documents AMV discovers
+# them from, and retire mail hosts - and none of that is a change to this
+# repository, so the tests (which run against stand-ins, as they must) cannot
+# see it. The Connect button keeps drawing and fails at the moment it is wanted.
+#
+# This asks the real servers, read-only, the first questions the Worker asks
+# when somebody presses Connect: every remote app's sign-in discovery, every
+# sign-in provider's authorize and token host, every mailbox's IMAP greeting.
+# It logs in to nothing, registers nothing and stores nothing.
+# See tools/connector-health.mjs.
+#
+# NOT ON PUSH, on purpose. Whether forty other companies' servers answer today
+# is not a property of a commit, and a deploy must never wait on it. Daily, and
+# by hand from the Actions tab. A red run is an email naming which connector
+# stopped answering - which is exactly the email worth getting.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: connectors
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Pinned to commits for the reason given in test.yml (AMV-058).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+        with:
+          node-version: 22
+      # No install: the check has no dependencies.
+      - name: Ask every connector whether it is still there
+        run: node tools/connector-health.mjs
