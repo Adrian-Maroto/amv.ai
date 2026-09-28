@@ -195,9 +195,25 @@ section('Nothing runs off the side of a tablet either');
       await page.waitForTimeout(360);
       const worst = await page.evaluate(() => {
         let over = 0, sel = '';
+        /* Content inside a row that clips and scrolls on purpose - Crew's
+           "Made for" cards - is past the edge by design and cannot move the
+           page, as long as the scroller itself fits. What this hunts is the
+           other kind: a box nothing clips, which drags the screen sideways. */
+        /* Marked, not inferred: the main view clips too, and treating every
+           clipping ancestor as intent excused a box cut off at the edge - which
+           the mutation run for this change proved. A row that scrolls sideways
+           on purpose says so with data-hscroll. */
+        const clipped = (e) => {
+          const row = e.closest('[data-hscroll]');
+          if (!row || row === e) return false;
+          const ox = getComputedStyle(row).overflowX;
+          return (ox === 'auto' || ox === 'scroll') && row.getBoundingClientRect().right <= window.innerWidth + 2;
+        };
+        const page = document.scrollingElement || document.documentElement;
+        if (page.scrollWidth > window.innerWidth + 2) { over = page.scrollWidth - window.innerWidth; sel = 'the page itself'; }
         document.querySelectorAll('#vc *, #cv *').forEach((e) => {
           const b = e.getBoundingClientRect();
-          if (b.width > 0 && b.right > window.innerWidth + 2 && b.right - window.innerWidth > over) {
+          if (b.width > 0 && b.right > window.innerWidth + 2 && b.right - window.innerWidth > over && !clipped(e)) {
             over = Math.round(b.right - window.innerWidth);
             sel = (e.className || e.tagName).toString().slice(0, 24);
           }

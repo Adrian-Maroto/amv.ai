@@ -18856,7 +18856,7 @@ function _cwMadeForHTML(){
   if(_cwHerePending()){
     return `<section class="cw-made" id="cw-made" aria-busy="true"><div class="sec-head"><h3>${escH(T('Made for where you are'))}</h3>
       <span class="sec-sub">${escH(T('Built on the services people there actually use.'))}</span></div>
-      <div class="cw-made-row">${'<div class="cw-made-ph" aria-hidden="true"></div>'.repeat(4)}</div></section>`;
+      <div class="cw-made-row" data-hscroll>${'<div class="cw-made-ph" aria-hidden="true"></div>'.repeat(4)}</div></section>`;
   }
   const cc = _cwCountryGuess(), row = _cwCountryRow(cc);
   const st = row ? (_cwLocalState[cc] || 'loading') : 'none';
@@ -18867,7 +18867,7 @@ function _cwMadeForHTML(){
   return `<section class="cw-made" id="cw-made"${st === 'ok' ? '' : ' aria-busy="true"'}>
     <div class="sec-head"><h3>${escH(T('Made for'))} <span class="cw-flag" aria-hidden="true">${row[2]}</span> <span class="cw-made-cn">${escH(row[1])}</span>${st === 'ok' ? ` <span class="cw-made-n">${jobs.length}</span>` : ''}</h3>
       <span class="sec-sub">${escH(T('Built on the services people there actually use.'))}</span></div>
-    <div class="cw-made-row" role="list">${st === 'ok' ? jobs.map(j => `<div role="listitem" class="cw-made-it">${card(j)}</div>`).join('')
+    <div class="cw-made-row" data-hscroll role="list">${st === 'ok' ? jobs.map(j => `<div role="listitem" class="cw-made-it">${card(j)}</div>`).join('')
                                                      : '<div class="cw-made-ph" aria-hidden="true"></div>'.repeat(4)}</div>
   </section>`;
 }
@@ -19633,7 +19633,7 @@ function _cwBrowsePanelHTML(cc){
       ${mine ? `<span class="cw-cc-you">${escH(T('your country'))}</span>` : `<button class="btn bs" data-dact="cwCountry" data-darg="${escH(cc)}">${escH(T('This is my country'))}</button>`}</div>
     ${body}
     ${st === 'ok' && _cwMadeForJobs(cc).length ? `<h4 class="cw-facts-h">${escH(T('Made for'))} ${escH(name)} <span class="cw-made-n">${_cwMadeForJobs(cc).length}</span></h4>
-      <div class="cw-made-row" role="list">${_cwMadeForJobs(cc).map(j => `<div role="listitem" class="cw-made-it">${_cwMadeCard(j)}</div>`).join('')}</div>` : ''}
+      <div class="cw-made-row" data-hscroll role="list">${_cwMadeForJobs(cc).map(j => `<div role="listitem" class="cw-made-it">${_cwMadeCard(j)}</div>`).join('')}</div>` : ''}
     ${st === 'ok' && _ccFactsHTML(cc) ? `<h4 class="cw-facts-h">${escH(T('Where AMV looks in'))} ${escH(name)}</h4>${_ccFactsHTML(cc)}` : ''}
     <p class="cw-foryou-note">${escH(T('Every job in the list above answers for'))} ${escH(name)} ${escH(T('once it is your country - its sites, prices and rules.'))}</p>
   </div>`;
