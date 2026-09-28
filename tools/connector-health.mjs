@@ -111,6 +111,7 @@ async function remoteApp(slug, app) {
   return { ok: true, why: 'sign-in at ' + new URL(as.authorization_endpoint).host };
 }
 
+const TOKEN_404_UNKNOWN_CLIENT = new Set(['github']);
 async function oauthProvider(id, p) {
   for (const [label, url] of [['authorize', p.auth], ['token', p.token]]) {
     if (!url) continue;
@@ -131,6 +132,11 @@ async function oauthProvider(id, p) {
       /* Without a client id an authorize page answers 400 or redirects, and a
          token endpoint refuses the request with 400/401 - all of which prove it
          is there. 404 and 410 say it is gone; 5xx says it is down. */
+      /* GitHub answers 404 to a token request from any client it does not
+         know - with or without a client id - so from a probe that is not AMV,
+         404 there says nothing about the address, which is GitHub's documented
+         one. Its sign-in page is still checked above. */
+      if (r.status === 404 && label === 'token' && TOKEN_404_UNKNOWN_CLIENT.has(id)) continue;
       if (r.status === 404 || r.status === 410) return { ok: false, why: label + ' answers ' + r.status + ' - it has moved' };
       if (r.status >= 500) return { ok: false, why: label + ' answers ' + r.status };
     } catch (e) { return { ok: false, why: label + ' does not answer (' + String(e.cause?.code || e.name || e.message) + ')' }; }

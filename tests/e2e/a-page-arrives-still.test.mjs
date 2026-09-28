@@ -29,8 +29,12 @@ const ctx = await browser.newContext({ viewport, hasTouch: touch, isMobile: touc
 await ctx.addInitScript(() => {
   window.__shifts = []; window.__moving = []; window.__firstTab = null;
   try {
-    new PerformanceObserver(l => { for (const e of l.getEntries()) window.__shifts.push({ v: e.value,
-      src: (e.sources || []).map(s => s.node && (s.node.id || s.node.className || s.node.nodeName)).slice(0, 3) }); })
+    /* Each shift says where its element was and where it went, so one that
+       only GitHub's machines produce can be read from the log. */
+    new PerformanceObserver(l => { for (const e of l.getEntries()) window.__shifts.push({ v: e.value, t: Math.round(e.startTime),
+      src: (e.sources || []).map(s => s.node && (s.node.id || s.node.className || s.node.nodeName)).slice(0, 3),
+      rect: (e.sources || []).slice(0, 2).map(s => [s.previousRect && [s.previousRect.x, s.previousRect.y, s.previousRect.width],
+                                                    s.currentRect && [s.currentRect.x, s.currentRect.y, s.currentRect.width]]) }); })
       .observe({ type: 'layout-shift', buffered: true });
   } catch (e) {}
   const seen = new Set();
