@@ -14,13 +14,21 @@ const harness = join(__dir, '.build', 'finance.harness.mjs');
 writeFileSync(harness, src + '\nexport { adminFinance, _recordTxn, _readTxnLog };\n');
 const W = await import(harness + '?t=' + Date.now());
 
-const store = new Map();
+const store = new Map(); const meta = new Map();
+/* Listing is by prefix, in key order, with each key's metadata - the way KV
+   answers it, because the ledger is one key per transaction and is read by
+   listing them. */
 const baseEnv = { ADMIN_TOKEN: 'admin-secret', AMV_KV: {
   async get(k){ return store.has(k)?store.get(k):null; },
-  async put(k,v){ store.set(k,v); },
-  async delete(k){ store.delete(k); },
-  async list(){ return { keys: [], list_complete: true }; }
+  async put(k,v,o){ store.set(k,v); if(o && o.metadata) meta.set(k, JSON.parse(JSON.stringify(o.metadata))); else meta.delete(k); },
+  async delete(k){ store.delete(k); meta.delete(k); },
+  async list({ prefix = '', limit = 1000 } = {}){
+    const keys = [...store.keys()].filter(k => k.startsWith(prefix)).sort().slice(0, limit)
+      .map(name => meta.has(name) ? { name, metadata: meta.get(name) } : { name });
+    return { keys, list_complete: true };
+  }
 }};
+const clearLedger = () => { for (const k of [...store.keys()]) if (k.startsWith('txn:')) { store.delete(k); meta.delete(k); } };
 const adminReq = () => new Request('https://api.amv.dev/v1/admin/finance', { method:'GET', headers:{ Authorization:'Bearer admin-secret' } });
 
 section('The finance statement is admin-only');
@@ -30,7 +38,7 @@ r = await W.adminFinance(new Request('https://api.amv.dev/v1/admin/finance', { m
 ok(r.status === 403, 'a wrong admin token → forbidden', r.status);
 
 section('Honest empty state when Stripe is not configured');
-store.delete('txn:log');
+clearLedger();
 r = await W.adminFinance(adminReq(), baseEnv);
 let d = await r.json();
 ok(d.ok && d.configured === false, 'it reports Stripe is not configured', d.configured);
@@ -38,7 +46,7 @@ ok(Array.isArray(d.transactions) && d.transactions.length === 0, 'and returns no
 ok(d.totals.gross === 0 && d.totals.net === 0, 'with zeroed totals', d.totals);
 
 section('Real transactions + correct totals from Stripe charges');
-store.delete('txn:log');   // isolate: only Stripe charges in this section
+clearLedger();   // isolate: only Stripe charges in this section
 const stripeEnv = { ...baseEnv, STRIPE_SECRET_KEY: 'sk_test' };
 const origFetch = globalThis.fetch;
 globalThis.fetch = async (url) => {
@@ -71,7 +79,7 @@ globalThis.fetch = origFetch;
 
 section('ALL payment methods appear - not just Stripe');
 // record a PayPal + a marketplace transaction in the ledger
-store.delete('txn:log');
+clearLedger();
 await W._recordTxn(stripeEnv, { provider: 'paypal', email: 'pp@test.com', amount: 75, currency: 'USD', kind: 'Elite', status: 'succeeded' });
 await W._recordTxn(stripeEnv, { provider: 'marketplace', email: 'buyer@test.com', amount: 4, currency: 'USD', kind: 'marketplace fee', status: 'succeeded' });
 
@@ -96,7 +104,7 @@ globalThis.fetch = origFetch;
 section('Stripe payments are NOT double-counted (webhook ledger + live pull)');
 // The webhook records Stripe payments to the ledger AND the live pull returns
 // them - the merge must dedup so gross isn't doubled.
-store.delete('txn:log');
+clearLedger();
 await W._recordTxn(stripeEnv, { provider: 'stripe', email: 'dup@test.com', amount: 15, currency: 'USD', kind: 'Pro', status: 'succeeded', ref: 'sub_1' });
 globalThis.fetch = async (url) => {
   if(String(url).includes('/v1/charges')){
@@ -114,12 +122,47 @@ ok(d.totals.gross === 15, 'gross is $15, not $30 (no double-count)', d.totals.gr
 globalThis.fetch = origFetch;
 
 section('Non-Stripe transactions show even with NO Stripe configured');
-store.delete('txn:log');
+clearLedger();
 await W._recordTxn(baseEnv, { provider: 'paypal', email: 'pp2@test.com', amount: 200, currency: 'USD', kind: 'Ultra', status: 'succeeded' });
 r = await W.adminFinance(adminReq(), baseEnv);  // baseEnv has no STRIPE_SECRET_KEY
 d = await r.json();
 ok(d.transactions.length === 1 && d.transactions[0].provider === 'paypal', 'a PayPal sale shows even without Stripe', d.transactions.map(t=>t.provider));
 ok(d.totals.gross === 200, 'and counts toward gross', d.totals.gross);
+
+section('Sales in the same moment are all on the books');
+{
+  /* The ledger was one record read, prepended to and written back, so two
+     sales at once each wrote a list without the other. Fifty at once now. */
+  clearLedger();
+  await Promise.all(Array.from({ length: 50 }, (_, i) =>
+    W._recordTxn(baseEnv, { provider: 'paypal', email: 'buyer' + i + '@test.com', amount: 10, currency: 'USD', kind: 'Pro', status: 'succeeded' })));
+  const all = await W._readTxnLog(baseEnv, 500);
+  ok(all.length === 50, 'every one of fifty simultaneous sales is recorded', all.length);
+  r = await W.adminFinance(adminReq(), baseEnv);
+  d = await r.json();
+  ok(d.totals.gross === 500, 'and the statement adds up to all of them', d.totals.gross);
+  ok(all.every((e, i) => i === 0 || (all[i - 1].ts || 0) >= (e.ts || 0)), 'newest first', true);
+}
+
+section('A sale recorded under its own id is on the books once, however often it is retried');
+{
+  clearLedger();
+  await W._recordTxn(baseEnv, { id: 'mktfee_x', provider: 'marketplace', email: 'b@test.com', amount: 4, kind: 'marketplace fee' });
+  await W._recordTxn(baseEnv, { id: 'mktfee_x', provider: 'marketplace', email: 'b@test.com', amount: 4, kind: 'marketplace fee' });
+  const all = await W._readTxnLog(baseEnv, 500);
+  ok(all.filter(e => e.id === 'mktfee_x').length === 1, 'the retried fee appears once', all.length);
+}
+
+section('Everything recorded before the move is still on the statement');
+{
+  clearLedger();
+  store.set('txn:log', JSON.stringify([{ id: 'old_1', ts: 1700000000000, provider: 'paypal', email: 'o@test.com', amount: 30, currency: 'USD', status: 'succeeded' }]));
+  await W._recordTxn(baseEnv, { provider: 'paypal', email: 'n@test.com', amount: 12, currency: 'USD', status: 'succeeded' });
+  const all = await W._readTxnLog(baseEnv, 500);
+  ok(all.length === 2 && all[0].email === 'n@test.com' && all[1].id === 'old_1', 'the old record and the new keys, newest first', all.map(e => e.id));
+  await W._recordTxn(baseEnv, { id: 'old_1', provider: 'paypal', email: 'o@test.com', amount: 30 });
+  ok((await W._readTxnLog(baseEnv, 500)).length === 2, 'and an id already in the old record is not recorded again', true);
+}
 
 report();
 done();

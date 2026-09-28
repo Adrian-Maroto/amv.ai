@@ -47,7 +47,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'claimwork.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { DB, _claimOnce, _releaseClaim, _onceOrRetry, _creditSale, _wallet, teamJoin, CLAIM_ONCE_TTL_S, signToken };\n');
+  '\nexport { DB, _claimOnce, _releaseClaim, _onceOrRetry, _creditSale, _wallet, teamJoin, CLAIM_ONCE_TTL_S, signToken, _readTxnLog };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 section('There is one helper for "claim, work, give it back if the work failed"');
@@ -237,7 +237,7 @@ section('A sale that fails at the very last step finishes that step, and only th
   ok(listing.sales === 1, 'and DOES finish the step that failed', listing.sales);
   ok(listing.status === 'sold', 'so a one-of-a-kind listing really does leave the catalogue', listing.status);
 
-  const log = JSON.parse(await env.AMV_KV.get('txn:log') || '[]').filter((t) => t && t.ref === ITEM);
+  const log = (await W._readTxnLog(env, 1000)).filter((t) => t && t.ref === ITEM);
   ok(log.length === 1, 'and the platform fee is on the books exactly once', log.length);
 }
 

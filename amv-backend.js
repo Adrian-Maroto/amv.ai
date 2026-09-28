@@ -22198,6 +22198,11 @@ async function stripeAutoRenew(request, env) {
    (Stripe, PayPal, marketplace/wallet) so the admin finance page shows ALL
    money, not just Stripe. Stored as a capped list under 'txn:log'. Each entry:
    {id, ts, provider, email, amount, currency, kind, status, ref}. ---- */
+const TXN_PREFIX = 'txn:e:';
+/* Newest sorts first. The prefix is spelled out at each write, not taken
+   from here, because the backup coverage check reads the writes to know
+   which kinds of record exist. */
+const _txnOrder = (e) => String(9999999999999 - (e.ts || 0)).padStart(13, '0') + ':' + e.id;
 async function _recordTxn(env, tx) {
   try {
     const entry = {
@@ -22211,23 +22216,54 @@ async function _recordTxn(env, tx) {
       status: tx.status || 'succeeded',
       ref: tx.ref || '',
     };
-    const raw = await env.AMV_KV.get('txn:log');
-    const log = raw ? JSON.parse(raw) : [];
     /* A caller that supplies its own id is saying this entry IS this event, so
        writing it again is the same write rather than a second one. That is what
        lets a retried sale record its fee without recording it twice - and the
        id has to be supplied, because a generated one is different every time
        and would make every replay look new. */
-    if (tx.id && log.some((e) => e && e.id === tx.id)) return log.find((e) => e.id === tx.id);
-    log.unshift(entry);
-    await env.AMV_KV.put('txn:log', JSON.stringify(log.slice(0, 1000)));   // keep last 1000
+    if (tx.id) {
+      const seen = await env.AMV_KV.get('txn:id:' + tx.id);
+      if (seen) { try { return JSON.parse(seen); } catch (e) {} }
+      const legacy = await env.AMV_KV.get('txn:log');
+      if (legacy) { const old = (JSON.parse(legacy) || []).find((e) => e && e.id === tx.id); if (old) return old; }
+    }
+    /* ONE KEY PER TRANSACTION. This used to be one record, read, prepended to
+       and written back - so two sales in the same moment each read the list
+       without the other and the second write erased the first, and the
+       thousand-entry cap would have held minutes of history at any volume.
+       Each entry now has its own key, named so the newest sorts first, and
+       carries itself as the key's metadata so the statement can list them
+       without reading each one. */
+    const body = JSON.stringify(entry);
+    await env.AMV_KV.put('txn:e:' + _txnOrder(entry), body, body.length <= 1000 ? { metadata: entry } : undefined);
+    if (tx.id) await env.AMV_KV.put('txn:id:' + tx.id, body);
     return entry;
   } catch (e) { return null; }
 }
 
+/* Newest first. `txn:log`, the single record from before the move, is still
+   read and merged in, and never written again. */
 async function _readTxnLog(env, limit = 200) {
-  try { const raw = await env.AMV_KV.get('txn:log'); const log = raw ? JSON.parse(raw) : []; return log.slice(0, limit); }
-  catch { return []; }
+  const out = [];
+  try {
+    let cursor;
+    for (let pages = 0; pages < 10 && out.length < limit; pages++) {
+      const r = await env.AMV_KV.list({ prefix: TXN_PREFIX, limit: Math.min(1000, limit - out.length), cursor });
+      for (const k of (r && r.keys) || []) {
+        let e = k.metadata || null;
+        if (!e) { try { e = JSON.parse(await env.AMV_KV.get(k.name) || 'null'); } catch (_) { e = null; } }
+        if (e) out.push(e);
+      }
+      if (!r || r.list_complete || !r.cursor) break;
+      cursor = r.cursor;
+    }
+  } catch (e) {}
+  try {
+    const raw = await env.AMV_KV.get('txn:log');
+    if (raw) { const have = new Set(out.map((e) => e.id)); for (const e of JSON.parse(raw) || []) if (e && !have.has(e.id)) out.push(e); }
+  } catch (e) {}
+  out.sort((x, y) => (y.ts || 0) - (x.ts || 0));
+  return out.slice(0, limit);
 }
 
 /* ---- ADMIN: financial statement - ALL real transactions across every customer.
