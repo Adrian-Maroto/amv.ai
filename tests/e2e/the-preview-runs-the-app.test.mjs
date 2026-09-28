@@ -239,7 +239,13 @@ section('If the preview document is not served, it degrades and says so');
        still names the real preview document, because that is what somebody
        has to go and fix. */
     f.src = p;
-    await new Promise(r => setTimeout(r, ms));
+    /* Polled, up to the limit, rather than one look at a fixed moment: under
+       four suites at once the frame's own load can take longer than the
+       product's grace after it, and one look at three seconds then failed a
+       path that was working. */
+    const t0 = Date.now();
+    while (!host.querySelector('.prev-degraded') && Date.now() - t0 < ms) await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 150));
     const note = host.querySelector('.prev-degraded');
     const frames = [...host.querySelectorAll('iframe')];
     const nr = note && note.getBoundingClientRect();
@@ -259,8 +265,9 @@ section('If the preview document is not served, it degrades and says so');
   }, [path, waitMs]);
 
   /* A small wrong document: it lands at once, so the grace after load is what
-     answers, and it answers quickly. */
-  const light = await probe('package.json', 3000);
+     answers, and it answers quickly - before the product's eight-second cap,
+     which is what proves it was the load that answered and not the cap. */
+  const light = await probe('package.json', 6500);
   ok(/not being served/i.test(light.note),
      'a small wrong document is spotted from its load, within seconds', light.note.slice(0, 60));
 
