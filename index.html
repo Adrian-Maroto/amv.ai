@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="06c492b365171617">
+<meta name="amv-build" content="58a404a3414c5d95">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://api.amv.homes"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -10003,6 +10003,29 @@ padding:var(--sp-2) var(--sp-4) var(--sp-3); border-top:1px solid var(--bd); }
 #vc .cw-job > .cw-job-miss, #vc .cw-job > .cw-job-ready{
 order:3; flex:1 0 100%; margin:0; padding-left:calc(42px + 13px); box-sizing:border-box; }
 .cw-made-it, .cw-made-ph{ height:184px; }
+.crew-page.mc-page{ gap:var(--sp-6); }
+.crew-page.mc-page > *{ margin-top:0; margin-bottom:0; }
+.crew-page.mc-page > .mc-allow{ margin:calc(-1 * var(--sp-5)) 0 0; }
+.mc-quiet-on{ min-height:44px; }
+.mc-quiet-on input{
+-webkit-appearance:none; appearance:none; width:20px; height:20px; margin:0; flex:0 0 auto;
+border:1.5px solid var(--bdl); border-radius:6px; background:var(--s2); cursor:pointer;
+transition:background-color .15s var(--ease), border-color .15s var(--ease); }
+.mc-quiet-on input:hover{ border-color:var(--accent); }
+.mc-quiet-on input:checked{ background:var(--accent) no-repeat center/13px
+url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E");
+border-color:var(--accent); }
+.mc-quiet-on input:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+body:not(.sb-rail) .sb-tools{ grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); }
+@media(prefers-reduced-motion:reduce){ .mc-quiet-on input{ transition:none; } }
+.crew-page.mc-page > :empty{ display:none; }
+#app .mc-quiet-on input{ padding:0; min-height:0; border-radius:6px!important; border-color:var(--bdl)!important; }
+#app .mc-quiet-on input:hover, #app .mc-quiet-on input:checked{ border-color:var(--accent)!important; }
+.inp-model-sel, .inp-model-sel > span{ white-space:nowrap; }
+.ss2 > div:has(> #ho-to){ margin-top:var(--sp-3); }
+.ss2 > [data-dact="hoSend"]{ margin-top:var(--sp-3); }
+.vi-conn > .cdir-find-wrap{ margin-bottom:var(--sp-4); }
+.vi-conn > .int-local{ margin-top:0; }
 </style>
 <!-- BUILD:CSS:END -->
 <script>

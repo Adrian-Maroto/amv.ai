@@ -16032,3 +16032,52 @@ h1,h2,.ce-greeting,.vi h2{ font-family:var(--fdisplay)!important; }
   order:3; flex:1 0 100%; margin:0; padding-left:calc(42px + 13px); box-sizing:border-box; }
 /* The rail's cards are sized to what they hold. */
 .cw-made-it, .cw-made-ph{ height:184px; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   LAYER A269 - Polish pass: Crew's rhythm, a real checkbox, one row of tools
+   ═════════════════════════════════════════════════════════════════════════ */
+/* Crew stacked a 40px gap on top of each section's own margin, so the header,
+   the usage line and the command box sat 50-65px apart and read as unrelated.
+   One rhythm: 24px between sections, and the usage line tucked under the
+   header it belongs to. */
+.crew-page.mc-page{ gap:var(--sp-6); }
+.crew-page.mc-page > *{ margin-top:0; margin-bottom:0; }
+.crew-page.mc-page > .mc-allow{ margin:calc(-1 * var(--sp-5)) 0 0; }
+/* The quiet-hours box was the browser's own checkbox at 32px - a large white
+   square on a dark page. Drawn from the tokens instead, at 20px; the label
+   around it is still the 44px target a thumb hits. */
+.mc-quiet-on{ min-height:44px; }
+.mc-quiet-on input{
+  -webkit-appearance:none; appearance:none; width:20px; height:20px; margin:0; flex:0 0 auto;
+  border:1.5px solid var(--bdl); border-radius:6px; background:var(--s2); cursor:pointer;
+  transition:background-color .15s var(--ease), border-color .15s var(--ease); }
+.mc-quiet-on input:hover{ border-color:var(--accent); }
+.mc-quiet-on input:checked{ background:var(--accent) no-repeat center/13px
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E");
+  border-color:var(--accent); }
+.mc-quiet-on input:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+/* The sidebar's tools were a four-column grid holding five, so the fifth sat
+   alone on a second row. Every visible tool on one row, however many there
+   are - a hidden one (Team, until there is a team) takes no column. */
+body:not(.sb-rail) .sb-tools{ grid-template-columns:none; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); }
+@media(prefers-reduced-motion:reduce){ .mc-quiet-on input{ transition:none; } }
+/* An empty holder in the column (filled later, or never) still took a full
+   gap on each side, which is where the 60px holes under the command box came
+   from. Empty ones take no room; the moment they are filled they do. */
+.crew-page.mc-page > :empty{ display:none; }
+/* Every input is given a large radius, a fixed border colour (both
+   !important) and, on phones, a 44px minimum height - right for a text box,
+   and what turned this 20px box into a pill. The box opts out explicitly. */
+#app .mc-quiet-on input{ padding:0; min-height:0; border-radius:6px!important; border-color:var(--bdl)!important; }
+#app .mc-quiet-on input:hover, #app .mc-quiet-on input:checked{ border-color:var(--accent)!important; }
+/* The model name in the composer ("AMV Auto") broke onto two lines on a
+   phone, doubling the height of a control that is one word wide. */
+.inp-model-sel, .inp-model-sel > span{ white-space:nowrap; }
+/* Handoff's last two rows sat flush against the note above and the field
+   they follow; each gets the form's own spacing. */
+.ss2 > div:has(> #ho-to){ margin-top:var(--sp-3); }
+.ss2 > [data-dact="hoSend"]{ margin-top:var(--sp-3); }
+/* Connectors: the search box carried a bottom margin sized for the old
+   section it used to sit above, leaving a 64px hole before the first card. */
+.vi-conn > .cdir-find-wrap{ margin-bottom:var(--sp-4); }
+.vi-conn > .int-local{ margin-top:0; }
