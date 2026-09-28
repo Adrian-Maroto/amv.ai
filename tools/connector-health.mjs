@@ -25,7 +25,7 @@
    Nothing here logs in, sends, or stores anything. Each probe gets a second
    try, because one dropped packet is not a broken connector.
 
-   Run: node tools/connector-health.mjs [--only=remote|oauth|mail] [--json]
+   Run: node tools/connector-health.mjs [--only=remote|oauth|mail|live] [--json]
    Exit 0 when every connector answered, 1 with the list of the ones that did
    not. Runs daily on GitHub (.github/workflows/connectors.yml), where the
    network is open; a sandboxed laptop may see a proxy refuse the hosts. */
@@ -163,6 +163,48 @@ function imapGreeting(host, port) {
   });
 }
 
+/* WHICH SIGN-INS THE LIVE DEPLOYMENT CAN ACTUALLY OFFER.
+
+   A provider's Connect works only when BOTH halves of its registration are
+   on the Worker - the client id and the secret - and CONNECT_KEY is there to
+   seal what comes back. GO-LIVE says it plainly: with one half, everything
+   up to the redirect works and the token exchange fails at the last step,
+   the hardest misconfiguration to find. So this asks Cloudflare which
+   settings the live Worker has - by NAME; a value is never read or printed -
+   and says per provider: live, half-set (a failure), or not set yet (not a
+   failure: it is the owner's choice which to register).
+
+   Runs only where CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are in the
+   environment (the connectors workflow passes them), otherwise it is
+   skipped and says so. */
+async function deployment() {
+  const token = process.env.CLOUDFLARE_API_TOKEN, account = process.env.CLOUDFLARE_ACCOUNT_ID;
+  if (!token || !account) return null;
+  const script = ((readFileSync(join(ROOT, 'wrangler.toml'), 'utf8').match(/^name\s*=\s*"([^"]+)"/m) || [])[1]) || 'amv-ai';
+  const r = await fetch('https://api.cloudflare.com/client/v4/accounts/' + account + '/workers/scripts/' + script + '/settings',
+    { headers: { Authorization: 'Bearer ' + token }, signal: timeout(15000) }).catch(e => ({ ok: false, status: String(e.cause?.code || e.name) }));
+  if (!r.ok) return [{ kind: 'live', id: 'settings', name: 'Live deployment settings', ok: false, why: 'Cloudflare answered ' + r.status + ' - cannot read which settings the Worker has' }];
+  const d = await r.json().catch(() => ({}));
+  /* Names only. A plain-text binding carries its value in `text`; it is never
+     touched. */
+  const names = new Set(((d.result && d.result.bindings) || []).map(b => b && b.name).filter(Boolean));
+  const out = [];
+  const providers = table('CONN_PROVIDERS');
+  let anyLive = false;
+  for (const [id, p] of Object.entries(providers)) {
+    const hasId = names.has(p.idEnv), hasSecret = names.has(p.secretEnv);
+    if (hasId && hasSecret) { anyLive = true; out.push({ kind: 'live', id, name: p.name || id, ok: true, why: 'live - both ' + p.idEnv + ' and ' + p.secretEnv + ' are set' }); }
+    else if (hasId || hasSecret) out.push({ kind: 'live', id, name: p.name || id, ok: false,
+      why: 'HALF SET - ' + (hasId ? p.secretEnv : p.idEnv) + ' is missing, so sign-in fails at the last step' });
+    else out.push({ kind: 'live', id, name: p.name || id, ok: true, off: true, why: 'not set up yet (' + p.idEnv + ' + ' + p.secretEnv + ')' });
+  }
+  if (anyLive && !names.has('CONNECT_KEY')) out.push({ kind: 'live', id: 'CONNECT_KEY', name: 'Connected accounts key', ok: false,
+    why: 'CONNECT_KEY is missing - AMV refuses every connection without it' });
+  if (anyLive && !names.has('APP_URL')) out.push({ kind: 'live', id: 'APP_URL', name: 'Return address', ok: false,
+    why: 'APP_URL is missing - the sign-in has nowhere to come back to' });
+  return out;
+}
+
 const jobs = [];
 if (!ONLY || ONLY === 'remote') for (const [k, a] of Object.entries(table('REMOTE_APPS'))) jobs.push(['remote', k, a.name, () => remoteApp(k, a)]);
 if (!ONLY || ONLY === 'oauth') for (const [k, p] of Object.entries(table('CONN_PROVIDERS'))) jobs.push(['oauth', k, p.name || k, () => oauthProvider(k, p)]);
@@ -178,6 +220,7 @@ if (!ONLY || ONLY === 'mail') {
 
 /* Eight at a time: fast, and gentle on any one provider. */
 const results = [];
+const CONN_IDS = new Set(Object.keys(table('CONN_PROVIDERS')));
 let next = 0;
 await Promise.all(Array.from({ length: 8 }, async () => {
   while (next < jobs.length) {
@@ -186,12 +229,19 @@ await Promise.all(Array.from({ length: 8 }, async () => {
     results.push({ kind, id, name, ...r });
   }
 }));
+if (!ONLY || ONLY === 'live') {
+  const live = await deployment();
+  if (live) results.push(...live);
+  else if (ONLY === 'live') console.log('Live deployment check skipped: CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not in the environment.');
+}
 results.sort((a, b) => (a.kind + a.id).localeCompare(b.kind + b.id));
 const bad = results.filter(r => !r.ok && !r.slow);
 const slow = results.filter(r => !r.ok && r.slow);
 if (JSON_OUT) console.log(JSON.stringify({ checked: results.length, failing: bad, slow }, null, 2));
 else {
-  for (const r of results) console.log((r.ok ? '  ok   ' : r.slow ? '  SLOW ' : '  FAIL ') + r.kind.padEnd(7) + r.name.padEnd(34).slice(0, 34) + ' ' + r.why);
+  for (const r of results) console.log((r.off ? '  --   ' : r.ok ? '  ok   ' : r.slow ? '  SLOW ' : '  FAIL ') + r.kind.padEnd(7) + r.name.padEnd(34).slice(0, 34) + ' ' + r.why);
+  const on = results.filter(r => r.kind === 'live' && r.ok && !r.off && CONN_IDS.has(r.id)).map(r => r.name);
+  if (results.some(r => r.kind === 'live')) console.log('\nSign-ins live on the deployment: ' + (on.length ? on.join(', ') : 'none yet'));
   console.log('\n' + (results.length - bad.length - slow.length) + ' of ' + results.length + ' connectors answered.');
   if (slow.length) console.log('Timed out from here (may be region filtering, not failing the run): ' + slow.map(r => r.kind + ':' + r.id).join(', '));
   if (bad.length) console.log('Not answering: ' + bad.map(r => r.kind + ':' + r.id).join(', '));

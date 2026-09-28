@@ -40,5 +40,11 @@ jobs:
         with:
           node-version: 22
       # No install: the check has no dependencies.
+      # The Cloudflare token is used for ONE read: the NAMES of the live
+      # Worker's settings, to say which sign-ins are really configured (both
+      # halves of each) - never a value. Without it that part is skipped.
       - name: Ask every connector whether it is still there
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: node tools/connector-health.mjs
