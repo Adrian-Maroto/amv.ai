@@ -18962,8 +18962,20 @@ function _cwTopTen(cc){
   by.home = take('prop', 'Home') || take('health', 'Health');
   by.phone = take('telco', 'Phone');
   by.news = take('news', 'News');
-  return CW_SECTION_ORDER.map(k => by[k]).filter(Boolean).slice(0, 10);
+  const rows = CW_SECTION_ORDER.map(k => by[k]).filter(Boolean).slice(0, 10);
+  /* ORDERED BY WHAT PEOPLE HERE SWITCH ON, once enough of them have. Until
+     then the order is the research's, and the heading says which it is. A
+     stable sort: rows nobody has started yet keep the research order among
+     themselves, under the ones people have. */
+  const rk = meta.ranked;
+  if(rk && rk.enough){
+    const n = id => +rk.counts[id] || 0;
+    rows.forEach((r, i) => { r._rank = i; });
+    rows.sort((a, b) => (n(b.id) - n(a.id)) || (a._rank - b._rank));
+  }
+  return rows;
 }
+function _cwRankedHere(cc){ const m = _cwMeta[cc]; return !!(m && m.ranked && m.ranked.enough); }
 /* The top five, for anything that still asks for five: the first five of ten. */
 function _cwTopFive(cc){ return _cwTopTen(cc).slice(0, 5); }
 function _cwTopRowHTML(j, i){
@@ -19145,7 +19157,10 @@ async function _cwLoadLocal(code){
     _cwFacts[cc] = (d.facts && typeof d.facts === 'object' && !Array.isArray(d.facts)) ? d.facts : {};
     _cwInbox[cc] = Array.isArray(d.inbox) ? d.inbox.filter(m => m && m.id && m.name && m.how) : [];
     _cwBank[cc] = !!d.bank;
-    _cwMeta[cc] = { classroom: !!d.classroom, bankElsewhere: String(d.bankElsewhere || ''), work: String(d.work || '') };
+    const rk = (d.ranked && typeof d.ranked === 'object') ? d.ranked : {};
+    _cwMeta[cc] = { classroom: !!d.classroom, bankElsewhere: String(d.bankElsewhere || ''), work: String(d.work || ''),
+      ranked: { enough: !!rk.enough, total: +rk.total || 0, need: +rk.need || 25,
+                counts: (rk.counts && typeof rk.counts === 'object' && !Array.isArray(rk.counts)) ? rk.counts : {} } };
     _cwLocalCache[cc] = local.map(j => _cwEverydayJob(Object.assign({ country: cc }, j), name, true));
     _cwLocalState[cc] = 'ok';
   }catch(e){
@@ -19250,6 +19265,17 @@ function _cwStrength(j){
       if(cc && !can) n -= 10;
     }
   }catch(e){}
+  /* And what people in this country have actually started, once it has been
+     counted - a lift of up to three, so a job people really use can climb
+     past one that merely sounds good, without a single start overturning
+     everything. */
+  try{
+    const m = _cwMeta[_cwCountryGuess()];
+    if(m && m.ranked && m.ranked.enough){
+      const c = +m.ranked.counts[j.id] || 0;
+      if(c > 0) n += Math.min(3, Math.log2(1 + c));
+    }
+  }catch(e){}
   return n;
 }
 let _cwShowcaseCache = null;
@@ -19261,7 +19287,8 @@ let _cwShowcaseCache = null;
 let _cwRankedFor = '';
 function _cwRankKey(){
   const cc = _cwCountryGuess();
-  return cc + ':' + (Object.prototype.hasOwnProperty.call(_cwBank, cc) ? (_cwBank[cc] ? 1 : 0) : '?');
+  return cc + ':' + (Object.prototype.hasOwnProperty.call(_cwBank, cc) ? (_cwBank[cc] ? 1 : 0) : '?')
+    + ':' + (_cwRankedHere(cc) ? 'n' : '-');
 }
 function _cwReRank(){
   try{
@@ -19777,8 +19804,13 @@ function _cwForYouHead(name, flag, n){
      the fallback (no country data, or no server to ask). */
   const k = n || 5;
   const head = k === 10 ? 'Top 10 for you in' : k === 5 ? 'Top 5 for you in' : 'Top ' + k + ' for you in';
+  /* Which order this is, said rather than implied: counted once enough people
+     in the country have started jobs, researched until then. */
+  const counted = k === 10 && _cwRankedHere(_cwCountryGuess());
+  const sub = counted ? 'Ordered by what people in ' + name + ' switch on most.'
+                      : 'Picked for where you are, under the names things have there.';
   return `<div class="sec-head"><h3>${escH(T(head))} <span class="cw-flag" aria-hidden="true">${flag}</span> ${escH(name)}</h3>
-    <span class="sec-sub">${escH(T('Picked for where you are, under the names things have there.'))}
+    <span class="sec-sub">${escH(counted ? sub : T(sub))}
       <button class="cw-link" data-dact="cwMoreCountries">${escH(T('Not in'))} ${escH(name)}?</button></span></div>`;
 }
 /* THE COUNTED FIVE, WHEN THERE IS A COUNT. "Top 5 for you" took the top of
@@ -33251,9 +33283,28 @@ function _intLocalBody(cc, d){
       act: grant ? (on ? '' : btn('data-lc-grant="'+grant+'"', T('Connect')))
          : on ? btn('data-lc-inbox="1"', T('Open inbox'), 'bs') : btn('data-lc-mail="'+escH(m.id)+'"', T('Connect')) });
   });
-  if(cc === 'US'){
+  /* The calendar that goes with the mailbox people there use, and school
+     where schools run on Google Classroom - the same connections the top ten
+     in Crew is built on, so the two screens never disagree about a country. */
+  const m1 = mail[0];
+  if(m1 && (m1.how === 'g' || m1.how === 'ms')){
+    const grant = m1.how === 'g' ? 'google' : 'outlook', calName = m1.how === 'g' ? 'Google Calendar' : 'Outlook Calendar';
+    const on = _rowConnected(grant);
+    connect.push(_intLocalRow({ name:calName, connected:on,
+      desc:T('Your week, read - never changed. Comes with the same sign-in as your mail.'),
+      act: on ? '' : btn('data-lc-grant="'+grant+'"', T('Connect')) }));
+  }
+  if(d && d.classroom){
+    const on = _rowConnected('google');
+    connect.push(_intLocalRow({ name:'Google Classroom', connected:on,
+      desc:T('What is due and what is late, read-only - AMV cannot hand anything in.'),
+      act: on ? '' : btn('data-lc-grant="google"', T('Connect')) }));
+  }
+  /* A bank wherever this deployment may link one (FINANCE_COUNTRIES on the
+     server), not only in the US - linked at the bank, read-only. */
+  if(d && d.bank){
     const linked = (function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })();
-    connect.push(_intLocalRow({ name:T('Your bank'), names:f.banks||'', connected:linked,
+    connect.push(_intLocalRow({ name:T('Your bank'), names:[f.cards, f.banks].filter(Boolean).join(' · '), connected:linked,
       desc:T('Balances and transactions for your money jobs, through your bank’s own sign-in. AMV never sees your password and cannot move money.'),
       act: btn('data-lc-bank="1"', linked ? T('Manage in Spending') : T('Link in Spending'), linked ? 'bs' : 'bp') }));
   }
@@ -33265,10 +33316,11 @@ function _intLocalBody(cc, d){
   }).filter(Boolean);
   /* NOT YET: said, with the one honest action. */
   const later = [];
-  if(cc !== 'US' && (f.banks || f.pay)){
+  if(!(d && d.bank) && (f.banks || f.pay)){
     const slug = 'bank-' + cc.toLowerCase(), label = T('Bank sign-in in')+' '+name;
+    const needs = d && d.bankElsewhere ? ' ' + T('It needs') + ' ' + d.bankElsewhere + '.' : '';
     later.push(_intLocalRow({ name:label, mark:'B', names:[f.banks, f.pay].filter(Boolean).join(' · '), notify:true,
-      desc:T('Not available in')+' '+name+' '+T('yet, so nothing here pretends to link it. Money jobs work from the statements and receipts you share.'),
+      desc:T('Not available in')+' '+name+' '+T('yet, so nothing here pretends to link it.')+needs+' '+T('Money jobs work from the bills in your mailbox meanwhile.'),
       act: notified.has(slug) ? '<span class="int-onlist">\u2713 '+escH(T('On the list'))+'</span>'
                               : btn('data-app-notify="'+escH(slug)+'" data-app-name="'+escH(label)+'"', T('Notify me'), 'bs') }));
   }

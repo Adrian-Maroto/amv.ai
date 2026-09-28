@@ -1848,8 +1848,20 @@ function _cwTopTen(cc){
   by.home = take('prop', 'Home') || take('health', 'Health');
   by.phone = take('telco', 'Phone');
   by.news = take('news', 'News');
-  return CW_SECTION_ORDER.map(k => by[k]).filter(Boolean).slice(0, 10);
+  const rows = CW_SECTION_ORDER.map(k => by[k]).filter(Boolean).slice(0, 10);
+  /* ORDERED BY WHAT PEOPLE HERE SWITCH ON, once enough of them have. Until
+     then the order is the research's, and the heading says which it is. A
+     stable sort: rows nobody has started yet keep the research order among
+     themselves, under the ones people have. */
+  const rk = meta.ranked;
+  if(rk && rk.enough){
+    const n = id => +rk.counts[id] || 0;
+    rows.forEach((r, i) => { r._rank = i; });
+    rows.sort((a, b) => (n(b.id) - n(a.id)) || (a._rank - b._rank));
+  }
+  return rows;
 }
+function _cwRankedHere(cc){ const m = _cwMeta[cc]; return !!(m && m.ranked && m.ranked.enough); }
 /* The top five, for anything that still asks for five: the first five of ten. */
 function _cwTopFive(cc){ return _cwTopTen(cc).slice(0, 5); }
 function _cwTopRowHTML(j, i){
@@ -2031,7 +2043,10 @@ async function _cwLoadLocal(code){
     _cwFacts[cc] = (d.facts && typeof d.facts === 'object' && !Array.isArray(d.facts)) ? d.facts : {};
     _cwInbox[cc] = Array.isArray(d.inbox) ? d.inbox.filter(m => m && m.id && m.name && m.how) : [];
     _cwBank[cc] = !!d.bank;
-    _cwMeta[cc] = { classroom: !!d.classroom, bankElsewhere: String(d.bankElsewhere || ''), work: String(d.work || '') };
+    const rk = (d.ranked && typeof d.ranked === 'object') ? d.ranked : {};
+    _cwMeta[cc] = { classroom: !!d.classroom, bankElsewhere: String(d.bankElsewhere || ''), work: String(d.work || ''),
+      ranked: { enough: !!rk.enough, total: +rk.total || 0, need: +rk.need || 25,
+                counts: (rk.counts && typeof rk.counts === 'object' && !Array.isArray(rk.counts)) ? rk.counts : {} } };
     _cwLocalCache[cc] = local.map(j => _cwEverydayJob(Object.assign({ country: cc }, j), name, true));
     _cwLocalState[cc] = 'ok';
   }catch(e){
@@ -2136,6 +2151,17 @@ function _cwStrength(j){
       if(cc && !can) n -= 10;
     }
   }catch(e){}
+  /* And what people in this country have actually started, once it has been
+     counted - a lift of up to three, so a job people really use can climb
+     past one that merely sounds good, without a single start overturning
+     everything. */
+  try{
+    const m = _cwMeta[_cwCountryGuess()];
+    if(m && m.ranked && m.ranked.enough){
+      const c = +m.ranked.counts[j.id] || 0;
+      if(c > 0) n += Math.min(3, Math.log2(1 + c));
+    }
+  }catch(e){}
   return n;
 }
 let _cwShowcaseCache = null;
@@ -2147,7 +2173,8 @@ let _cwShowcaseCache = null;
 let _cwRankedFor = '';
 function _cwRankKey(){
   const cc = _cwCountryGuess();
-  return cc + ':' + (Object.prototype.hasOwnProperty.call(_cwBank, cc) ? (_cwBank[cc] ? 1 : 0) : '?');
+  return cc + ':' + (Object.prototype.hasOwnProperty.call(_cwBank, cc) ? (_cwBank[cc] ? 1 : 0) : '?')
+    + ':' + (_cwRankedHere(cc) ? 'n' : '-');
 }
 function _cwReRank(){
   try{
@@ -2663,8 +2690,13 @@ function _cwForYouHead(name, flag, n){
      the fallback (no country data, or no server to ask). */
   const k = n || 5;
   const head = k === 10 ? 'Top 10 for you in' : k === 5 ? 'Top 5 for you in' : 'Top ' + k + ' for you in';
+  /* Which order this is, said rather than implied: counted once enough people
+     in the country have started jobs, researched until then. */
+  const counted = k === 10 && _cwRankedHere(_cwCountryGuess());
+  const sub = counted ? 'Ordered by what people in ' + name + ' switch on most.'
+                      : 'Picked for where you are, under the names things have there.';
   return `<div class="sec-head"><h3>${escH(T(head))} <span class="cw-flag" aria-hidden="true">${flag}</span> ${escH(name)}</h3>
-    <span class="sec-sub">${escH(T('Picked for where you are, under the names things have there.'))}
+    <span class="sec-sub">${escH(counted ? sub : T(sub))}
       <button class="cw-link" data-dact="cwMoreCountries">${escH(T('Not in'))} ${escH(name)}?</button></span></div>`;
 }
 /* THE COUNTED FIVE, WHEN THERE IS A COUNT. "Top 5 for you" took the top of

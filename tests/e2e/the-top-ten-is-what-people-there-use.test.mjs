@@ -140,6 +140,29 @@ section('In Germany: WEB.DE first, the Abitur, ELSTER, Deutsche Bahn');
   await ctx.close();
 }
 
+section('Once enough people in a country have started jobs, their order wins');
+{
+  /* Seeded the way the server writes it: counts by job id, under the country,
+     with nothing about who. Spain has 40 starts - past the floor - and people
+     there start the weekly shop most, then the homes search. The United
+     States has none, so it keeps the research order. */
+  await env.AMV_KV.put('stats:jobuse', JSON.stringify({ counts: {}, total: 40,
+    byCountry: { ES: { counts: { cc_es_groc: 22, cc_es_prop: 12, top_es_inbox: 6 }, total: 40 } } }));
+  const { ctx, page } = await open('ES', 'crew');
+  const r = await ten(page);
+  const sub = await page.evaluate(() => ((document.querySelector('#cw-foryou .sec-sub') || {}).textContent || '').replace(/\s+/g, ' '));
+  ok(r.sec[0] === 'Groceries' && r.sec[1] === 'Home' && r.sec[2] === 'Mail', 'Spain: groceries, then homes, then mail - the order people there chose', r.sec.slice(0, 4));
+  ok(/Ordered by what people in Spain switch on most/.test(sub), 'and the heading says the order is counted, not chosen', sub);
+  ok(r.cls < 0.001, 'with the counted order there from the first draw - nothing reshuffles', +r.cls.toFixed(4));
+  await ctx.close();
+  const us = await open('US', 'crew');
+  const u = await ten(us.page);
+  const usub = await us.page.evaluate(() => ((document.querySelector('#cw-foryou .sec-sub') || {}).textContent || ''));
+  ok(u.sec[0] === 'Mail' && u.sec[1] === 'Bank' && !/Ordered by/.test(usub), 'the United States, with no counts yet, keeps the research order and does not claim otherwise', u.sec.slice(0, 3));
+  await us.ctx.close();
+  await env.AMV_KV.delete('stats:jobuse');
+}
+
 section('Connect on China’s mail row opens QQ Mail, not a Google sign-in');
 {
   const { ctx, page } = await openConnectors('CN');

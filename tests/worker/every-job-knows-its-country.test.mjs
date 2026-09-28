@@ -133,6 +133,27 @@ section('A job remembers the country it was made for');
   ok(r.item && r.item.country === 'ES', 'and an unknown network does not erase a real choice', r.item && r.item.country);
 }
 
+section('What people start is counted per country, and the ranking waits for enough of it');
+{
+  const env = mkEnv(); const tok = await setup(env);
+  await created(env, tok, { country: 'ES', srcId: 'cc_es_groc' }, 'ES');
+  await created(env, tok, { country: 'ES', srcId: 'cc_es_groc' }, 'ES');
+  await created(env, tok, { country: 'MX', srcId: 'cc_mx_jobs' }, 'MX');
+  const rec = await W.DB.get(env, 'stats', 'jobuse');
+  ok(rec.byCountry && rec.byCountry.ES.counts.cc_es_groc === 2 && rec.byCountry.ES.total === 2, 'Spain’s starts are counted under Spain', rec.byCountry && rec.byCountry.ES);
+  ok(rec.byCountry.MX.counts.cc_mx_jobs === 1 && !rec.byCountry.MX.counts.cc_es_groc, 'and Mexico’s under Mexico, never mixed', rec.byCountry.MX);
+  ok(!JSON.stringify(rec).includes('@'), 'with nothing in the record that names a person', true);
+  const early = await (await call(env, '/v1/everyday?country=ES')).json();
+  ok(early.ranked && early.ranked.enough === false && Object.keys(early.ranked.counts).length === 0,
+     'two starts is not a ranking: nothing is ranked on too little, and the counts are not handed out', early.ranked);
+  rec.byCountry.ES = { counts: { cc_es_groc: 20, cc_es_prop: 9 }, total: 29 };
+  await W.DB.put(env, 'stats', 'jobuse', rec);
+  const later = await (await call(env, '/v1/everyday?country=ES')).json();
+  ok(later.ranked.enough === true && later.ranked.counts.cc_es_groc === 20, 'past the floor, Spain’s own counts come with Spain', later.ranked);
+  const mx = await (await call(env, '/v1/everyday?country=MX')).json();
+  ok(mx.ranked.enough === false, 'while Mexico, with one start, is still not ranked', mx.ranked);
+}
+
 section('The run is told where they are, and to check the official source');
 {
   const env = mkEnv(); await setup(env);

@@ -4609,6 +4609,16 @@ async function autoCreate(request, env){
         rec.counts = rec.counts || {};
         rec.counts[srcId] = (rec.counts[srcId]||0) + 1;
         rec.total = (rec.total||0) + 1;
+        /* AND PER COUNTRY, so each country's top ten can be ordered by what
+           people THERE switch on rather than by the whole world's taste. The
+           same shape - an id and a number - under a two-letter code, and
+           still nothing that could be turned back into a person. */
+        if(country){
+          rec.byCountry = rec.byCountry || {};
+          const c = rec.byCountry[country] = rec.byCountry[country] || { counts:{}, total:0 };
+          c.counts[srcId] = (c.counts[srcId]||0) + 1;
+          c.total = (c.total||0) + 1;
+        }
       }, { counts:{}, total:0 });
     }catch(_e){}
   }
@@ -32245,6 +32255,23 @@ async function everydayJobs(request, env) {
   }
   const code = String(asked).trim().toUpperCase().slice(0, 2);
   const local = EVERYDAY_BY_COUNTRY[code] || [];
+  /* What people in this country have actually switched on, once there is
+     enough of it to mean something. Read here, with the rest of the country,
+     so the page knows the order before it draws - a ranking that arrived a
+     moment later would reshuffle rows somebody is already reading. Cached at
+     the edge with everything else for an hour, which is fresh enough for a
+     count and keeps this one read per country per hour. */
+  let ranked = { enough:false, total:0, need: CREW_POPULAR_MIN, counts:{} };
+  if(code && Object.prototype.hasOwnProperty.call(COUNTRY_NAME, code)){
+    try{
+      const rec = await DB.get(env, 'stats', 'jobuse');
+      const c = rec && rec.byCountry && Object.prototype.hasOwnProperty.call(rec.byCountry, code) ? rec.byCountry[code] : null;
+      const total = (c && c.total) || 0;
+      ranked = total >= CREW_POPULAR_MIN
+        ? { enough:true, total, need: CREW_POPULAR_MIN, counts: (c && c.counts) || {} }
+        : { enough:false, total, need: CREW_POPULAR_MIN, counts:{} };
+    }catch(_e){}
+  }
   return json({
     ok: true, country: code, name: COUNTRY_NAME[code] || '',
     /* What the common jobs mean HERE - the tax office, the banks, the job
@@ -32260,6 +32287,7 @@ async function everydayJobs(request, env) {
     inbox: code ? _countryMail(code) : [],
     bank: _finCountries(env).indexOf(code) >= 0,
     classroom: COUNTRY_CLASSROOM.indexOf(code) >= 0,
+    ranked,
     bankElsewhere: Object.prototype.hasOwnProperty.call(BANK_ELSEWHERE, code) ? BANK_ELSEWHERE[code] : '',
     work: code ? (Object.prototype.hasOwnProperty.call(WORK_APPS, code) ? WORK_APPS[code] : WORK_APPS_DEFAULT) : '',
     mail: code ? Object.keys(MAIL_PROVIDERS).filter(id => MAIL_PROVIDERS[id].country === code)

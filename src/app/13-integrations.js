@@ -1521,9 +1521,28 @@ function _intLocalBody(cc, d){
       act: grant ? (on ? '' : btn('data-lc-grant="'+grant+'"', T('Connect')))
          : on ? btn('data-lc-inbox="1"', T('Open inbox'), 'bs') : btn('data-lc-mail="'+escH(m.id)+'"', T('Connect')) });
   });
-  if(cc === 'US'){
+  /* The calendar that goes with the mailbox people there use, and school
+     where schools run on Google Classroom - the same connections the top ten
+     in Crew is built on, so the two screens never disagree about a country. */
+  const m1 = mail[0];
+  if(m1 && (m1.how === 'g' || m1.how === 'ms')){
+    const grant = m1.how === 'g' ? 'google' : 'outlook', calName = m1.how === 'g' ? 'Google Calendar' : 'Outlook Calendar';
+    const on = _rowConnected(grant);
+    connect.push(_intLocalRow({ name:calName, connected:on,
+      desc:T('Your week, read - never changed. Comes with the same sign-in as your mail.'),
+      act: on ? '' : btn('data-lc-grant="'+grant+'"', T('Connect')) }));
+  }
+  if(d && d.classroom){
+    const on = _rowConnected('google');
+    connect.push(_intLocalRow({ name:'Google Classroom', connected:on,
+      desc:T('What is due and what is late, read-only - AMV cannot hand anything in.'),
+      act: on ? '' : btn('data-lc-grant="google"', T('Connect')) }));
+  }
+  /* A bank wherever this deployment may link one (FINANCE_COUNTRIES on the
+     server), not only in the US - linked at the bank, read-only. */
+  if(d && d.bank){
     const linked = (function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })();
-    connect.push(_intLocalRow({ name:T('Your bank'), names:f.banks||'', connected:linked,
+    connect.push(_intLocalRow({ name:T('Your bank'), names:[f.cards, f.banks].filter(Boolean).join(' · '), connected:linked,
       desc:T('Balances and transactions for your money jobs, through your bank’s own sign-in. AMV never sees your password and cannot move money.'),
       act: btn('data-lc-bank="1"', linked ? T('Manage in Spending') : T('Link in Spending'), linked ? 'bs' : 'bp') }));
   }
@@ -1535,10 +1554,11 @@ function _intLocalBody(cc, d){
   }).filter(Boolean);
   /* NOT YET: said, with the one honest action. */
   const later = [];
-  if(cc !== 'US' && (f.banks || f.pay)){
+  if(!(d && d.bank) && (f.banks || f.pay)){
     const slug = 'bank-' + cc.toLowerCase(), label = T('Bank sign-in in')+' '+name;
+    const needs = d && d.bankElsewhere ? ' ' + T('It needs') + ' ' + d.bankElsewhere + '.' : '';
     later.push(_intLocalRow({ name:label, mark:'B', names:[f.banks, f.pay].filter(Boolean).join(' · '), notify:true,
-      desc:T('Not available in')+' '+name+' '+T('yet, so nothing here pretends to link it. Money jobs work from the statements and receipts you share.'),
+      desc:T('Not available in')+' '+name+' '+T('yet, so nothing here pretends to link it.')+needs+' '+T('Money jobs work from the bills in your mailbox meanwhile.'),
       act: notified.has(slug) ? '<span class="int-onlist">\u2713 '+escH(T('On the list'))+'</span>'
                               : btn('data-app-notify="'+escH(slug)+'" data-app-name="'+escH(label)+'"', T('Notify me'), 'bs') }));
   }

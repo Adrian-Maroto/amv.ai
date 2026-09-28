@@ -232,6 +232,12 @@ section('Connectors, from the United States: the bank really links there');
   const r = await page.evaluate(() => [...document.querySelectorAll('#lc-body .int-card')].map(c => c.textContent.replace(/\s+/g, ' ')));
   ok(r.some(t => /Your bank/.test(t) && /Link in Spending/.test(t)), 'the bank row goes to the real link in Spending', r.filter(t => /bank/i.test(t)));
   ok(!r.some(t => /Bank sign-in in/.test(t)), 'and is not on a waiting list there', r.length);
+  ok(r.some(t => /Google Calendar/.test(t)) && r.some(t => /Google Classroom/.test(t)),
+     'with the calendar and the school system people there use, as in Crew’s top ten', r.filter(t => /Google/.test(t)).map(t => t.slice(0, 40)));
+  await page.selectOption('#lc-c', 'BR');
+  await page.waitForFunction(() => /Brazil/.test((document.getElementById('lc-h') || {}).textContent || '') && document.querySelector('#lc-body .int-card'), null, { timeout: 10000 }).catch(() => {});
+  const br = await page.evaluate(() => document.getElementById('lc-body').textContent.replace(/\s+/g, ' '));
+  ok(/Bank sign-in in Brazil/.test(br) && /Open Finance Brasil/.test(br), 'Brazil: no bank link yet, and what it would take', br.slice(br.indexOf('Bank sign-in'), br.indexOf('Bank sign-in') + 200));
   await page.selectOption('#lc-c', 'JP');
   await page.waitForFunction(() => /Japan/.test((document.getElementById('lc-h') || {}).textContent || '') && document.querySelector('#lc-body .int-card'), null, { timeout: 10000 }).catch(() => {});
   const jp = await page.evaluate(() => ({ h: document.getElementById('lc-h').textContent, t: document.getElementById('lc-body').textContent }));
