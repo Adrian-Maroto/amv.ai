@@ -121,7 +121,11 @@ async function oauthProvider(id, p) {
          check reported all five as moved, which they were not. */
       const r = label === 'token'
         ? await fetch(url, { method: 'POST', redirect: 'manual', signal: timeout(10000),
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: 'grant_type=authorization_code' })
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+            /* With a client id, as every real exchange has: GitHub answers a
+               token request that names no client with 404, which is "which
+               client?", not "moved" - the second run reported it as gone. */
+            body: 'grant_type=authorization_code&client_id=amv-connector-health&code=probe' })
         : await fetch(url, { method: 'GET', redirect: 'manual', signal: timeout(10000) });
       try { await r.body?.cancel(); } catch (e) {}
       /* Without a client id an authorize page answers 400 or redirects, and a
