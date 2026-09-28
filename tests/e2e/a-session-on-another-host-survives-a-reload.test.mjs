@@ -59,10 +59,12 @@ const outbound = makeOutbound();
 outbound.on(/resend|mail|sendgrid|postmark/i, () => ({ id: 'e1' }));
 /* Slack's side of the trip: the code AMV brings back is exchanged here for a
    token, exactly the reply Slack gives a user-token grant. */
-outbound.on(/slack\.com\/api\/oauth\.v2\.access/, () => ({ ok: true,
+/* Answered slowly on purpose: the screen shown while a connection is still
+   finishing is what the owner saw, and it has to be Integrations already. */
+outbound.on(/slack\.com\/api\/oauth\.v2\.access/, async () => { await new Promise(r => setTimeout(r, 2500)); return { ok: true,
   authed_user: { id: 'U1', access_token: 'xoxp-test-token', token_type: 'user',
     scope: 'channels:read,channels:history,groups:read,groups:history,im:read,im:history,users:read,search:read' },
-  team: { id: 'T1', name: 'Test' } }));
+  team: { id: 'T1', name: 'Test' } }; });
 outbound.on(/slack\.com\/api\//, () => ({ ok: true }));
 const env = makeEnv({ APP_URL: SITE, ALLOWED_ORIGIN: SITE, CONNECT_KEY: 'k'.repeat(40),
   SLACK_CLIENT_ID: 'slack-client', SLACK_CLIENT_SECRET: 'slack-secret' });
@@ -158,8 +160,13 @@ section('Connect, from the Integrations page, goes to the provider');
   const sent = req ? (new URL(req.url()).searchParams.get('state') || '') : '';
   ok(/^c_/.test(sent), 'the browser went to Slack carrying the state the server issued', sent);
   const back = await page.waitForURL(u => u.origin === SITE, { timeout: 30000, waitUntil: 'load' }).then(() => true).catch(() => false);
-  await until('AMV to boot again', () => page.evaluate(() => typeof S !== 'undefined' && !!window.AMV_API).catch(() => false), 30000).catch(() => {});
+  await until('AMV to boot again', () => page.evaluate(() => typeof S !== 'undefined' && !!window.AMV_API && !!window._BUNDLE_READY).catch(() => false), 30000).catch(() => {});
   ok(back, 'and came back to AMV', page.url());
+  await page.waitForTimeout(150);
+  const early = await page.evaluate(() => ({ tab: S.tab,
+    finished: (((typeof _connState !== 'undefined' && _connState.data) || {}).items || []).some(i => i.provider === 'slack') }));
+  ok(early.tab === 'integrations' && !early.finished,
+     'while it is still finishing, the screen is already Integrations - never the home screen', early);
 }
 
 section('Back from the provider: connected, with no second sign-in');

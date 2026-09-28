@@ -4340,12 +4340,33 @@ function checkOAuthCallback(){
   const clear = () => {
     try{ history.replaceState(null, '', window.location.pathname); }catch(e){}
   };
+  /* BACK WHERE CONNECT WAS PRESSED, FROM THE FIRST FRAME.
+
+     The page came back to the site root, drew the home screen, and only moved
+     to Integrations once the connection had finished - after the session was
+     restored and the server had answered, which is seconds, and never if any
+     of it went wrong. The owner saw the home page every time. And a cancel or
+     a refusal at the provider went nowhere at all. Now the screen they left is
+     the screen they come back to, straight away, whatever happens next.
+
+     Deferred one turn: this runs at boot while later modules are still being
+     evaluated, and drawing a section that reads their bindings would throw
+     (see goApp). The key is left in place for _connGoBack to read and clear. */
+  const showReturn = () => {
+    try{
+      const back = loadStr('amv_conn_return') || 'integrations';
+      const go = () => { try{ if(S.tab !== back) setTab(back); }catch(e){} };
+      if(window._BUNDLE_READY) go(); else setTimeout(go, 0);
+    }catch(e){}
+  };
 
   /* The person said no at the provider, or the provider refused. That is not a
      failure to hide - somebody is waiting on a screen for something to happen. */
   const err = q.get('error');
   if(err){
     clear();
+    showReturn();
+    try{ setTimeout(()=>{ try{ saveStr('amv_conn_return',''); }catch(e){} }, 50); }catch(e){}
     toast(err === 'access_denied'
       ? 'That connection was cancelled, so AMV has no access to the account.'
       : 'The account could not be connected. Nothing was changed.', 'info', 6000);
@@ -4355,6 +4376,7 @@ function checkOAuthCallback(){
   const code = q.get('code');
   if(!code) return;
   clear();
+  showReturn();
   if(!(isApp ? typeof _rmcpFinish === 'function' : typeof _connectFinish === 'function')){
     /* Said out loud rather than swallowed. Somebody has just approved real
        access at a provider; a silent return leaves them believing it worked. */

@@ -15677,3 +15677,95 @@ iframe.amv-sbx{
 .int-more .btn{ min-height:44px; }
 .int-legend-n{ display:inline-flex; align-items:center; padding:2px var(--sp-2); border:1px solid var(--bd); border-radius:var(--r-pill); font-size:var(--t-xs); font-weight:600; color:var(--mu); white-space:nowrap; }
 .vi-conn #int-catalog > .ss2{ content-visibility:auto; contain-intrinsic-size:auto 640px; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LAYER A263 - The Connect dialog fits the screen and scrolls
+   The permission picker was a card with no inner padding and no scrolling,
+   so Google's nine choices pushed "Continue" off the bottom of a phone. It is
+   a proper dialog now: header, a list that scrolls on its own, and a footer
+   that never leaves the screen - a sheet from the bottom edge on a phone.
+   One list with hairline rows rather than a boxed card per option, and a
+   quiet tag on anything that can change something at the provider.
+   ══════════════════════════════════════════════════════════════════════ */
+.ov.cpk-ov{ align-items:center; overflow:hidden; }
+.cpk{
+  position:relative; width:min(520px,100%);
+  max-height:min(720px, calc(100dvh - 32px));
+  display:flex; flex-direction:column;
+  background:var(--s1); color:var(--tx);
+  border:1px solid var(--bd); border-radius:var(--r-xl);
+  box-shadow:var(--sh-xl); overflow:hidden;
+}
+.cpk-head{
+  flex:0 0 auto; display:flex; align-items:center; gap:var(--sp-3);
+  padding:var(--sp-4) var(--sp-3) var(--sp-4) var(--sp-5);
+  border-bottom:1px solid var(--bd);
+}
+.cpk-mark{
+  flex:0 0 auto; width:40px; height:40px; border-radius:var(--r-md);
+  display:grid; place-items:center; background:var(--s3); border:1px solid var(--bd);
+  font-family:var(--fdisplay); font-weight:600; font-size:var(--t-lg); color:var(--tx);
+}
+.cpk-titles{ flex:1 1 auto; min-width:0; }
+.cpk-eyebrow{ font-size:var(--t-xs); font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--mu); }
+.cpk-t{ margin:2px 0 0; font-family:var(--fdisplay); font-size:var(--t-xl); font-weight:600; line-height:1.2; color:var(--tx); overflow-wrap:anywhere; }
+.cpk-x{
+  flex:0 0 auto; width:44px; height:44px; border:0; border-radius:var(--r-pill);
+  background:transparent; color:var(--mu); display:grid; place-items:center; cursor:pointer;
+  transition:background .15s var(--ease), color .15s var(--ease);
+}
+.cpk-x:hover{ background:var(--s3); color:var(--tx); }
+.cpk-x:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.cpk-body{
+  flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch; padding:var(--sp-4) var(--sp-5) var(--sp-5);
+}
+.cpk-d{ margin:0 0 var(--sp-4); font-size:var(--t-md); line-height:1.55; color:var(--mu); }
+.cpk-list-h{
+  display:flex; align-items:baseline; justify-content:space-between; gap:var(--sp-3);
+  margin:0 0 var(--sp-2); font-size:var(--t-sm); font-weight:600; color:var(--tx);
+}
+.cpk-count{ font-size:var(--t-xs); font-weight:500; color:var(--mu); white-space:nowrap; }
+.cpk-list{ border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s2); overflow:hidden; }
+.cpk-opt{
+  display:flex; align-items:center; gap:var(--sp-3); min-height:52px;
+  padding:var(--sp-3) var(--sp-4); border-top:1px solid var(--bd); cursor:pointer;
+  transition:background .15s var(--ease);
+}
+.cpk-opt:first-child{ border-top:0; }
+.cpk-opt:hover{ background:var(--s3); }
+.cpk-opt:has(input:checked){ background:var(--accent-soft); }
+.cpk-opt input{ flex:0 0 auto; width:18px; height:18px; margin:0; accent-color:var(--accent); cursor:pointer; }
+.cpk-opt input:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
+.cpk-lbl{ flex:1 1 auto; min-width:0; font-size:var(--t-base); line-height:1.45; color:var(--tx); }
+.cpk-tag{
+  flex:0 0 auto; padding:2px var(--sp-2); border:1px solid var(--bd); border-radius:var(--r-pill);
+  font-size:var(--t-xs); font-weight:600; color:var(--gold-txt); white-space:nowrap;
+}
+.cpk-note{
+  display:flex; gap:var(--sp-3); margin-top:var(--sp-4); padding:var(--sp-3) var(--sp-4);
+  border:1px solid var(--bd); border-radius:var(--r-md); background:var(--s2);
+  font-size:var(--t-sm); line-height:1.5; color:var(--mu);
+}
+.cpk-note svg{ flex:0 0 auto; margin-top:2px; }
+.cpk-note b{ color:var(--tx); font-weight:600; }
+.cpk-foot{
+  flex:0 0 auto; display:flex; justify-content:flex-end; gap:var(--sp-2);
+  padding:var(--sp-3) var(--sp-5); padding-bottom:max(var(--sp-3), env(safe-area-inset-bottom));
+  border-top:1px solid var(--bd); background:var(--s1);
+}
+.cpk-foot .btn{ min-height:44px; padding-inline:var(--sp-5); font-size:var(--t-md); }
+.cpk-go[disabled]{ opacity:.45; cursor:not-allowed; }
+@media (max-width:560px){
+  .ov.cpk-ov{ align-items:flex-end; padding:0; }
+  .cpk{ width:100%; max-height:92dvh; border-radius:var(--r-xl) var(--r-xl) 0 0; border-bottom:0; }
+  .cpk-foot .btn{ flex:1 1 0; }
+}
+@media (prefers-reduced-motion:no-preference){
+  .cpk{ animation:cpkIn .2s var(--ease-soft) both; }
+}
+@media (prefers-reduced-motion:no-preference) and (max-width:560px){
+  .cpk{ animation-name:cpkUp; animation-duration:.24s; }
+}
+@keyframes cpkIn{ from{ opacity:0; transform:translateY(6px) scale(.985); } to{ opacity:1; transform:none; } }
+@keyframes cpkUp{ from{ opacity:0; transform:translateY(28px); } to{ opacity:1; transform:none; } }

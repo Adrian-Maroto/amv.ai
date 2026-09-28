@@ -245,7 +245,7 @@ section('An app with a public API: Connect loads what it needs, and chat calls i
     return out;
   });
   ok(r.conn === 'prov' && r.preset === 'slack', 'Slack has Connect, through its own sign-in', r);
-  ok(r.addRow.length === 1 && /Slack/.test(r.addRow[0]) && /1 more become available/.test(r.darkLine), 'the add row shows only what is set up here, and counts the rest', [r.addRow, r.darkLine.slice(-80)]);
+  ok(r.addRow.length === 0 && !/more become available/.test(r.darkLine), 'Connected accounts offers no second row of Connect buttons - the app’s own row does it', [r.addRow, r.darkLine.slice(-80)]);
   ok(r.picker, 'Connect loads the list first and opens the sign-in choice, rather than doing nothing', r.picker);
   ok(r.tool === 'mcp__api-slack__request' && /https:\/\/slack\.com\/api\//.test(r.desc || ''), 'chat is offered Slack\u2019s API, with its address', r.tool);
   ok(!r.build, 'and Build\u2019s loop is not', r.build);

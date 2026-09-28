@@ -266,12 +266,22 @@ section('The screen says what it may do and when it was last used');
   ok(/Daily inbox digest/.test(t), 'and which job used it last');
   ok(/last used\s+(just now|\d+\s*(min|h)\s*ago|yesterday|\d+ days ago)/i.test(t),
      'and when', (t.match(/last used[^·]*/) || [''])[0].slice(0, 40));
-  /* No longer a greyed-out button each: a provider with no credentials is not
-     offered at all, and the rest are counted in one line. */
-  const dark = await page.evaluate(() => ({
-    button: !!document.querySelector('.conn-add[data-darg="microsoft"]'),
-    line: /more become available as they are set up/.test((document.getElementById('conn-body') || {}).textContent || '') }));
-  ok(!dark.button && dark.line, 'a provider with no credentials is not offered as a button that fails, and is counted instead', dark);
+  /* WHAT IS CONNECTED AND NOTHING ELSE. This block used to list every app
+     that could be connected as well; each has its own Connect in the
+     directory, so here it is only the connections themselves. */
+  const only = await page.evaluate(() => ({
+    adds: document.querySelectorAll('#conn-body .conn-add, #conn-body [data-dact="connAdd"]').length,
+    shown: !document.getElementById('conn-sec').hidden }));
+  ok(only.adds === 0 && only.shown, 'the block lists the connection and offers no row of Connect buttons', only);
+  const empty = await page.evaluate(async () => {
+    const real = AMV_API.connectList;
+    AMV_API.connectList = async () => ({ ok: true, configured: true, items: [], providers: [{ id: 'google', name: 'Google', ready: true, scopes: ['mail.read'] }] });
+    connReload(); await new Promise(r => setTimeout(r, 250));
+    const out = { hidden: document.getElementById('conn-sec').hidden };
+    AMV_API.connectList = real; connReload(); await new Promise(r => setTimeout(r, 250));
+    return out;
+  });
+  ok(empty.hidden, 'and with nothing connected the block is not shown at all', empty);
 }
 
 section('The vault is actually drawn on, which it twice was not');

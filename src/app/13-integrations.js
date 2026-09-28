@@ -1137,10 +1137,16 @@ function _connSig(d){
 }
 function _connPaint(){
   try{ const el=document.getElementById('conn-body'); if(el) el.innerHTML=_connBodyHTML(); }catch(e){}
+  try{ const sec=document.getElementById('conn-sec'); if(sec) sec.hidden=!_connSecShown(); }catch(e){}
 }
 /* Try again has to mean try again: the record of having asked is cleared too,
    or the button would repaint a screen and ask nothing. */
 function connReload(){ _connTried=''; _connState={state:'idle',data:null,err:''}; _connLoad(true); }
+/* The same account asking again after it changed something (a connection
+   finished, one was removed): what is on screen stays until the answer comes,
+   rather than the block vanishing and coming back. connReload, which forgets
+   everything, stays the one used when the account itself may have changed. */
+function _connRefresh(){ _connTried=''; _connLoad(true); }
 try{ window.connReload=connReload; }catch(e){}
 
 function _connAgo(ts){
@@ -1163,6 +1169,8 @@ const _CONN_SCOPE_WORDS = {
   'school.read':'see what you have been set at school and when it is due - it cannot turn work in',
   'files.read':'read your OneDrive files', 'youtube.read':'see your YouTube channel and playlists',
   'tasks.write':'read and change your Google Tasks',
+  'drive.write':'add files to your Drive - only ones AMV creates, never your existing files',
+  'code.write':'change code in your repositories',
   'slack.read':'read your channels, messages and people, and search Slack', 'slack.write':'post messages as you',
   'discord.read':'see your profile and the servers you are in',
   'spotify.read':'see what you play, your playlists and your library', 'spotify.write':'control playback and change your playlists',
@@ -1224,30 +1232,60 @@ async function connAddWhenReady(provider){
 }
 try{ window.connAddWhenReady=connAddWhenReady; }catch(e){}
 
-/* A real choice, with the consequence of each line written out. */
+/* A real choice, with the consequence of each line written out.
+
+   REBUILT AS A DIALOG THAT FITS THE SCREEN. It was a card with no inner
+   padding and no scrolling: Google's nine permissions pushed "Continue to
+   Google" below the bottom of a phone, and the only way to reach it was not to
+   have a phone. The owner: "they are able to scroll on the thing", and "it
+   looks awful". Now a header, a list that scrolls on its own, and a footer that
+   is always on screen - a sheet from the bottom on a phone. Anything that can
+   change something at the provider says so beside it. */
+const _CONN_SCOPE_CHANGES = /\.(write|send|all)$/;
 function _connScopePick(p){
   return new Promise(resolve => {
     const r = $('ovr'); if(!r){ resolve(null); return; }
+    const cap = (t) => { t = String(t||''); return t.charAt(0).toUpperCase() + t.slice(1); };
     const rows = (p.scopes||[]).map((k,i) =>
-      '<label class="conn-scope"><input type="checkbox" data-scope="'+escH(k)+'"'+(i===0?' checked':'')+'>'+
-      '<span>'+escH(_CONN_SCOPE_WORDS[k] || k)+'</span></label>').join('');
+      '<label class="cpk-opt"><input type="checkbox" data-scope="'+escH(k)+'"'+(i===0?' checked':'')+'>'+
+        '<span class="cpk-lbl">'+escH(cap(_CONN_SCOPE_WORDS[k] || k))+'</span>'+
+        (_CONN_SCOPE_CHANGES.test(k) ? '<span class="cpk-tag">'+escH(T('Can make changes'))+'</span>' : '')+
+      '</label>').join('');
     r.innerHTML =
-      '<div class="ov" id="conn-bg"><div class="cwp" role="dialog" aria-modal="true" aria-labelledby="conn-t">'+
-        '<button class="cwp-x" id="conn-x" aria-label="Close">✕</button>'+
-        '<div class="cwp-head"><div><h2 class="cwp-t" id="conn-t">Connect '+escH(p.name)+'</h2>'+
-          '<div class="cwp-meta"><span class="cwp-pill">You choose what it may do</span></div></div></div>'+
-        '<p class="cwp-desc">Pick only what you need. You can disconnect at any time, and AMV revokes it with '+escH(p.name)+' when you do.</p>'+
-        '<div class="conn-scopes">'+rows+'</div>'+
-        '<p class="conn-warn"><b>This lets AMV work while you are away.</b> It also means AMV’s servers hold a key to this account until you disconnect it. Every time a job uses it, that is recorded here with the job’s name.</p>'+
-        '<div class="cwp-foot"><button class="btn" id="conn-cancel">Cancel</button>'+
-          '<button class="btn bp" id="conn-go">Continue to '+escH(p.name)+'</button></div>'+
+      '<div class="ov cpk-ov" id="conn-bg"><div class="cpk" role="dialog" aria-modal="true" aria-labelledby="conn-t" aria-describedby="conn-d">'+
+        '<div class="cpk-head">'+
+          '<span class="cpk-mark" aria-hidden="true">'+escH(String(p.name||'?').charAt(0))+'</span>'+
+          '<div class="cpk-titles"><div class="cpk-eyebrow">'+escH(T('Connect'))+'</div>'+
+            '<h2 class="cpk-t" id="conn-t">'+escH(p.name)+'</h2></div>'+
+          '<button class="cpk-x" id="conn-x" aria-label="'+escH(T('Close'))+'">'+
+            '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>'+
+          '</button>'+
+        '</div>'+
+        '<div class="cpk-body">'+
+          '<p class="cpk-d" id="conn-d">'+escH(T('Choose only what you need. You can disconnect at any time, and AMV revokes it with')+' '+p.name+'.')+'</p>'+
+          '<div class="cpk-list-h"><span id="conn-lh">'+escH(T('What AMV may do'))+'</span><span class="cpk-count" id="conn-count"></span></div>'+
+          '<div class="cpk-list" role="group" aria-labelledby="conn-lh">'+rows+'</div>'+
+          '<div class="cpk-note">'+
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>'+
+            '<div><b>'+escH(T('Works while you are away.'))+'</b> '+escH(T('AMV’s servers keep a key to this account until you disconnect it, and every time a job uses it is recorded here.'))+'</div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="cpk-foot"><button class="btn cpk-cancel" id="conn-cancel">'+escH(T('Cancel'))+'</button>'+
+          '<button class="btn bp cpk-go" id="conn-go">'+escH(T('Continue to')+' '+p.name)+'</button></div>'+
       '</div></div>';
+    const boxes = [...r.querySelectorAll('[data-scope]')];
+    const count = () => {
+      const n = boxes.filter(c=>c.checked).length;
+      const c = $('conn-count'); if(c) c.textContent = n+' '+T('of')+' '+boxes.length+' '+T('selected');
+      const go = $('conn-go'); if(go) go.disabled = !n;
+    };
+    boxes.forEach(b => on(b,'change',count)); count();
     const done = (v) => { r.innerHTML=''; resolve(v); };
     on($('conn-x'),'click',()=>done(null));
     on($('conn-cancel'),'click',()=>done(null));
     onBackdrop($('conn-bg'),()=>done(null));
     on($('conn-go'),'click',()=>{
-      const picked=[...r.querySelectorAll('[data-scope]')].filter(c=>c.checked).map(c=>c.dataset.scope);
+      const picked=boxes.filter(c=>c.checked).map(c=>c.dataset.scope);
       if(!picked.length){ toast('Pick at least one thing AMV may do, or cancel.','info',4000); return; }
       done(picked);
     });
@@ -1269,7 +1307,7 @@ async function _connectFinish(code, state){
     toast(String((e&&e.message)||'That connection did not complete.'),'error',8000);
   }
   _connGoBack();
-  connReload();
+  _connRefresh();
   /* A job may have sent somebody here. Finishing it is the point of the trip,
      and it has to wait for the connection list to come back - `cwConnectResume`
      asks whether the thing is actually connected now, and asking before the
@@ -1290,7 +1328,7 @@ async function connRemove(id){
     'AMV will revoke this with '+(it.name||it.provider)+' and forget it. Any job using it stops working until you connect it again.');
   if(!okd) return;
   await _disconnectSaying(AMV_API.connectRemove(id));
-  connReload();
+  _connRefresh();
 }
 /* ONE WAY BACK AND ONE WAY TO REPORT A DISCONNECT, for Connected accounts and
    app connectors both - the second sign-in flow calls these rather than
@@ -1322,7 +1360,7 @@ try{ window.connRemove=connRemove; }catch(e){}
 
 function _connSectionHTML(){
   try{ setTimeout(()=>_connLoad(false), 0); }catch(e){}
-  return '<section class="conn-sec" id="conn-sec">'+
+  return '<section class="conn-sec" id="conn-sec"'+(_connSecShown()?'':' hidden')+'>'+
     '<div class="sec-head"><h3>'+escH(T('Connected accounts'))+'</h3>'+
       '<span class="sec-sub">'+escH(T('Accounts AMV holds a key to, so Crew jobs keep running with this tab closed. Every one shows what it may do and which job used it last.'))+'</span></div>'+
     '<div id="conn-body" class="conn-body">'+_connBodyHTML()+'</div>'+
@@ -1333,7 +1371,8 @@ function _connBodyHTML(){
   const st=_connState;
   if(st.state==='off')
     return '<div class="conn-note">'+escH(T('This copy of AMV is not connected to a backend, so there is nowhere safe to keep an account token. Connected accounts are off rather than pretending to work.'))+'</div>';
-  if(st.state==='idle'||st.state==='loading')
+  const had=!!(st.data && (st.data.items||[]).length);
+  if((st.state==='idle'||st.state==='loading') && !had)
     return '<div class="conn-note" aria-busy="true">'+escH(T('Checking what is connected...'))+'</div>';
   if(st.state==='error')
     return '<div class="conn-note">'+escH(T('Your connected accounts could not be loaded'))+(st.err?' ('+escH(st.err)+')':'')+
@@ -1366,19 +1405,23 @@ function _connBodyHTML(){
     '</div>';
   }).join('');
 
-  /* Only what can be connected here. A row of fifteen greyed-out buttons told
-     somebody fifteen times what they could not do; the number of apps waiting
-     to be set up is one line, and the operator's readiness screen names them. */
-  const ready=(d.providers||[]).filter(p=>p.ready), dark=(d.providers||[]).length-ready.length;
-  const add=ready.map(p =>
-    '<button class="conn-add" data-dact="connAdd" data-darg="'+escH(p.id)+'">'+
-      '<span class="conn-add-n">'+escH(p.name)+'</span>'+
-      '<span class="conn-add-s">'+escH(T('Connect'))+'</span>'+
-    '</button>').join('');
-
-  return (items || '<div class="conn-note">'+escH(T('Nothing is connected. Jobs that need an account say so on the Crew screen, and send you here.'))+'</div>')+
-    (add ? '<div class="conn-add-row">'+add+'</div>' : '')+
-    (dark ? '<div class="conn-note-sm">'+escH(dark+' '+T('more become available as they are set up on this deployment.'))+'</div>' : '');
+  /* WHAT IS CONNECTED, AND NOTHING ELSE. This block also listed every app that
+     could be connected - "Google Connect, GitHub Connect, Slack Connect..." -
+     which is the directory below said a second time, above the thing it is
+     for. Asked for: only what is connected, only once something is. Every one
+     of those apps keeps its Connect on its own row in the directory. */
+  return items;
+}
+/* The block is shown when it has something to say: a connection, or a reason
+   the list could not be read. Empty, loading, or switched off, it is not there
+   at all - so nothing appears and then disappears as the page settles. */
+function _connSecShown(){
+  const st=_connState;
+  if(st.state==='error') return true;
+  const d=st.data||{};
+  if(st.state!=='done') return !!(d.configured && (d.items||[]).length);
+  if(!d.configured) return false;
+  return !!((d.items||[]).length);
 }
 
 /* WHETHER THE SETUP PANEL IS OPEN, REMEMBERED.

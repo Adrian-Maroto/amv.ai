@@ -193,6 +193,15 @@ section('A refusal at the provider is said out loud, not swallowed');
   ok(denied.search === '', 'the failed return is cleared from the address bar', denied.search);
   ok(/cancel|no access|not.*connected/i.test(denied.toast),
      'and it says so plainly rather than doing nothing', denied.toast.slice(0, 120));
+  const back = await page.evaluate(async () => {
+    setTab('chat');
+    history.replaceState(null, '', location.pathname + '?error=access_denied&state=c_whatever');
+    checkOAuthCallback();
+    await new Promise(r => setTimeout(r, 200));
+    history.replaceState(null, '', location.pathname);
+    return S.tab;
+  });
+  ok(back === 'integrations', 'and a cancel comes back to Integrations too, not the home screen', back);
 }
 
 section('No JavaScript errors');
