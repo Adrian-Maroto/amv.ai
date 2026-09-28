@@ -1504,15 +1504,22 @@ function _intLocalRow(o){
 function _intLocalBody(cc, d){
   const row = _cwCountryRow(cc), name = row ? row[1] : (d && d.name) || cc;
   const f = (d && d.facts && typeof d.facts === 'object') ? d.facts : {};
-  const mail = Array.isArray(d && d.mail) ? d.mail : [];
+  /* The mailboxes people there use, most-used first (researched per country,
+     COUNTRY_MAIL on the server) - falling back to the country's own providers
+     for an older server that does not send the order. */
+  const mail = Array.isArray(d && d.inbox) && d.inbox.length ? d.inbox
+             : (Array.isArray(d && d.mail) ? d.mail.map(m => ({ id:m.id, name:m.name, how:'mail:' + m.id })) : []);
   const acc = _mailConnectedAccount(), notified = _appNotifiedSet();
   const btn = (attrs, label, cls) => '<button class="btn '+(cls||'bp')+'" '+attrs+' style="font-size:var(--t-sm)">'+escH(label)+'</button>';
   /* CONNECT: only what really connects. */
   const connect = mail.map(m => {
-    const on = !!acc && acc.provider === m.id;
+    const grant = m.how === 'g' ? 'google' : m.how === 'ms' ? 'outlook' : '';
+    const on = grant ? _rowConnected(grant) : (!!acc && acc.provider === m.id);
     return _intLocalRow({ name:m.name, connected:on,
-      desc: on ? T('Connected. AMV reads it, summarizes it and drafts replies.') : T('Read, summarized and answered. Connects with an app password.'),
-      act: on ? btn('data-lc-inbox="1"', T('Open inbox'), 'bs') : btn('data-lc-mail="'+escH(m.id)+'"', T('Connect')) });
+      desc: grant ? T('Read, summarized and answered. Sign in at the provider; you choose what AMV may do.')
+          : on ? T('Connected. AMV reads it, summarizes it and drafts replies.') : T('Read, summarized and answered. Connects with an app password.'),
+      act: grant ? (on ? '' : btn('data-lc-grant="'+grant+'"', T('Connect')))
+         : on ? btn('data-lc-inbox="1"', T('Open inbox'), 'bs') : btn('data-lc-mail="'+escH(m.id)+'"', T('Connect')) });
   });
   if(cc === 'US'){
     const linked = (function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })();
@@ -1570,6 +1577,10 @@ async function openLocalConnect(code){
     r.innerHTML = ''; openMailConnect(x.dataset.lcMail);
   }));
   b.querySelectorAll('[data-lc-inbox]').forEach(x => on(x, 'click', () => { r.innerHTML = ''; openMailInbox(); }));
+  b.querySelectorAll('[data-lc-grant]').forEach(x => on(x, 'click', () => {
+    if(_intNeedsAccount(_intName(x.dataset.lcGrant))) return;
+    r.innerHTML = ''; _connGoTo(x.dataset.lcGrant);
+  }));
   b.querySelectorAll('[data-lc-bank]').forEach(x => on(x, 'click', () => {
     r.innerHTML = '';
     try{ setTab('spend'); }catch(e){}

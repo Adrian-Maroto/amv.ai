@@ -13862,3 +13862,21 @@ Rules:
   identically. The fix that holds everywhere is structural: the web fonts are
   requested with display=optional, so a font that is not there at once is
   never swapped in. Prefer removing a race to tuning both sides of it.
+
+## 533. A connection somebody can make and no job can read is a promise with nothing behind it
+
+AMV has connected QQ Mail, Naver, Mail.ru, WEB.DE, GMX and forty more by app
+password for months - and every background job that read mail asked for
+`mail.read`, which the runner answered from a Google grant and nothing else.
+So in exactly the countries those mailboxes exist for, "summarise my inbox"
+switched on, ran every evening, and reported that no mailbox was connected,
+while Integrations showed one connected. Found only because the owner asked
+for the top five to name the mailbox people there actually use: writing
+"Your QQ Mail inbox" on a card is what made it obvious nothing could read it.
+
+Rules:
+- A capability is the connection AND the reader. When a new way to connect
+  something is added, every path that consumes that kind of data must be
+  checked for it - the chat, the inbox screen, and the unattended runner.
+- Name the real thing on the card. "Uses: Email" hid the gap; "Uses: QQ Mail"
+  exposed it the moment it was written down.

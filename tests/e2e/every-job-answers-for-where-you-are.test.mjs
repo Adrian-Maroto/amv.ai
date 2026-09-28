@@ -123,14 +123,15 @@ section('Crew, from Spain: a row of jobs made for Spain');
   }));
   ok(/Made for .*Spain/.test(r.head), 'a row made for Spain sits under the top five', r.head);
   ok(r.titles.length >= 12, 'with a dozen or more of Spain’s own jobs', r.titles.length);
-  ok(r.titles.some(t => /InfoJobs/.test(t)) && r.titles.some(t => /Mercadona/.test(t)) && r.titles.some(t => /AEAT/.test(t)),
-     'named for the services people in Spain use - InfoJobs, Mercadona, the AEAT', r.titles.slice(0, 6));
+  ok(r.titles.some(t => /Renta/.test(t)) && r.titles.some(t => /Mercadona/.test(t)),
+     'Spain’s own work - the Renta, then the jobs named for Mercadona and the rest', r.titles.slice(0, 7));
+  ok(!r.titles.some(t => /InfoJobs|AEAT/.test(t)), 'and nothing already in the top five is repeated', r.titles);
   ok(new Set(r.heights).size === 1, 'every card the same height, so the row is one fixed height', [...new Set(r.heights)]);
   ok(r.cls < 0.001, 'and the row arrives without moving the page', +r.cls.toFixed(4));
   await page.click('#cw-made .cw-made-body');
-  await page.waitForFunction(() => /InfoJobs|Mercadona|AEAT|Amazon/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
+  await page.waitForFunction(() => /Renta|Mercadona|AEAT|Hacienda/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
   const peek = await page.evaluate(() => (document.getElementById('ovr') || {}).textContent || '');
-  ok(/InfoJobs|Mercadona|AEAT|Amazon/.test(peek), 'pressing a card opens what it does, in Spain’s terms', peek.slice(0, 120));
+  ok(/Renta|Mercadona|AEAT|Hacienda/.test(peek), 'pressing a card opens what it does, in Spain’s terms', peek.slice(0, 120));
   await ctx.close();
 }
 
@@ -138,11 +139,11 @@ section('Switching one on creates real work for Spain');
 {
   const { ctx, page } = await openConnectors('ES');
   await page.evaluate(() => { saveStr('amv_plan', 'pro'); setTab('crew'); });
-  await page.waitForFunction(() => document.querySelector('#cw-made .cw-toggle'), null, { timeout: 15000 }).catch(() => {});
-  const id = await page.evaluate(() => { const b = [...document.querySelectorAll('#cw-made .cw-toggle')].find(x => /cc_es_jobs/.test(x.dataset.darg)); return b ? b.dataset.darg : ''; });
-  ok(id === 'cc_es_jobs', 'Spain’s job hunt has a switch', id);
+  await page.waitForFunction(() => document.querySelector('.cw-toggle[data-darg="cc_es_jobs"]'), null, { timeout: 15000 }).catch(() => {});
+  const id = await page.evaluate(() => { const b = document.querySelector('#cw-foryou .cw-toggle[data-darg="cc_es_jobs"]'); return b ? b.dataset.darg : ''; });
+  ok(id === 'cc_es_jobs', 'Spain’s job hunt has a switch in the top five', id);
   const before = created.length;
-  await page.click('#cw-made .cw-toggle[data-darg="cc_es_jobs"]');
+  await page.click('#cw-foryou .cw-toggle[data-darg="cc_es_jobs"]');
   const box = await page.waitForSelector('#ovr input, #ovr textarea', { timeout: 5000 }).catch(() => null);
   ok(!!box, 'it asks what work, before it runs on nothing');
   if (box) { await box.fill('junior accountant in Valencia, full-time'); await page.click('#ovr button.bp'); }

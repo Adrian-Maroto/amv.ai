@@ -6393,6 +6393,20 @@ function _fenceUntrusted(text, tag){
 
    The token never leaves the server, is never returned, and is never put in an
    audit line. The audit records that a bank read happened, for which job. */
+/* The mailbox connected with an app password, for an unattended run. Same
+   rule as the bank: a paused account opens nothing, and every read is logged
+   against the job that made it. */
+async function _mailboxUse(env, email, jobId){
+  try{
+    const rec = await DB.get(env, 'auto', _autoKey(email));
+    if(rec && rec.paused) return { ok:false, code:'autonomy_paused' };
+  }catch(_e){ return { ok:false, code:'autonomy_unknown' }; }
+  let cfg = null;
+  try{ cfg = await _mailCfgFor(env, email); }catch(_e){ cfg = null; }
+  if(!cfg) return { ok:false, code:'not_connected' };
+  audit(env, 'mailbox_read', { by: String(email || ''), job: String(jobId || ''), provider: cfg.provider || '' });
+  return { ok:true, cfg };
+}
 async function _bankUse(env, email, jobId, opts){
   const o = opts || {};
   if(!_finReady(env)) return { ok:false, code:'bank_not_configured' };
@@ -6533,9 +6547,21 @@ async function _autoAccountContext(env, item, email, never){
     if(AUTO_USES_ALLOWED.indexOf(need) < 0) continue;
     /* A bank link is a `fin` record, not a scoped grant, so it has its own
        door - one that enforces the same pause. See `_bankUse`. */
-    const got = need === 'bank.read'
+    let got = need === 'bank.read'
       ? await _bankUse(env, email, jobId, { attended: false })
       : await connUse(env, email, need, jobId, { attended: false });
+    /* THE INBOX PEOPLE OUTSIDE GOOGLE ACTUALLY USE.
+
+       mail.read used to mean Gmail only, so in China, Korea, Russia or
+       Germany - where the inbox is QQ Mail, Naver, Mail.ru or WEB.DE - every
+       "summarise my inbox" job ran on nothing even after the person connected
+       their mailbox. When no Google grant exists, the mailbox they connected
+       with an app password is read instead, headers only, under the same
+       pause as every other unattended read. */
+    if(!got.ok && need === 'mail.read' && (got.code === 'not_connected' || got.code === 'connect_key_missing')){
+      const box = await _mailboxUse(env, email, jobId);
+      if(box.ok) got = { ok:true, imap: box.cfg };
+    }
     if(!got.ok){
       /* Each reason gets its own sentence, because the fix is different for
          each: reconnect, unpause, or connect for the first time. */
@@ -6554,7 +6580,15 @@ async function _autoAccountContext(env, item, email, never){
       continue;
     }
     try{
-      if(need === 'mail.read'){
+      if(need === 'mail.read' && got.imap){
+        const box = await _imapInbox(got.imap, 25);
+        const name = (MAIL_PROVIDERS[got.imap.provider] && MAIL_PROVIDERS[got.imap.provider].name) || 'their mailbox';
+        const rows = Array.isArray(box.messages) ? box.messages : [];
+        parts.push('REAL INBOX - ' + name + ' (' + rows.length + ' most recent, sender, subject and date only - you do not have the message bodies. '
+          + 'Some may already have been reported on an earlier run; go by the dates):\n'
+          + (rows.length ? rows.map(m => '- ' + (m.seen ? '' : '[unread] ') + 'From ' + m.from + ' | ' + m.subject + ' | ' + m.date).join('\n')
+                         : '(no messages in the inbox)'));
+      } else if(need === 'mail.read'){
         const state = await _ingestRead(env, email);
         const st = (state.src && state.src[INGEST_SRC_MAIL]) || {};
         const cursor = Number(st.cursor) || 0;
@@ -29727,7 +29761,7 @@ const COUNTRY_NAME = {
    Keys: cur tax gov id banks pay jobs shop groc food rail prop car health news
    exams uni telco post weather. Values are plain text, lists comma-separated. */
 const COUNTRY_FACTS = {
-  US: { cur:'USD', tax:'the IRS', gov:'Login.gov', id:'the State Department (passports) and your state DMV', banks:'Chase, Bank of America, Wells Fargo, Citi', pay:'Zelle, Venmo, Cash App', jobs:'LinkedIn, Indeed, ZipRecruiter', shop:'Amazon, Walmart, Target, Best Buy', groc:'Walmart, Kroger, Costco, Aldi', food:'DoorDash, Uber Eats, Grubhub', rail:'Amtrak', prop:'Zillow, Redfin, Realtor.com', car:'your state DMV (registration and inspection)', health:'your health insurer, and Medicare or Medicaid where they apply', news:'AP, Reuters, The New York Times', exams:'the SAT, ACT and AP exams', uni:'the Common App', telco:'Verizon, AT&T, T-Mobile', post:'USPS, UPS, FedEx', weather:'the National Weather Service' },
+  US: { cur:'USD', tax:'the IRS', gov:'Login.gov', id:'the State Department (passports) and your state DMV', banks:'Chase, Bank of America, Wells Fargo, Citi', cards:'Chase, American Express, Capital One, Citi, Discover', pay:'Zelle, Venmo, Cash App', jobs:'LinkedIn, Indeed, ZipRecruiter', shop:'Amazon, Walmart, Target, Best Buy', groc:'Walmart, Kroger, Costco, Aldi', food:'DoorDash, Uber Eats, Grubhub', rail:'Amtrak', prop:'Zillow, Redfin, Realtor.com', car:'your state DMV (registration and inspection)', health:'your health insurer, and Medicare or Medicaid where they apply', news:'AP, Reuters, The New York Times', exams:'the SAT, ACT and AP exams', uni:'the Common App', telco:'Verizon, AT&T, T-Mobile', post:'USPS, UPS, FedEx', weather:'the National Weather Service' },
   CA: { cur:'CAD', tax:'the Canada Revenue Agency (CRA)', gov:'CRA My Account (GCKey or a Sign-In Partner)', id:'Passport Canada and your provincial licensing office', banks:'RBC, TD, Scotiabank, BMO, CIBC', pay:'Interac e-Transfer', jobs:'Indeed, LinkedIn, Job Bank', shop:'Amazon.ca, Walmart, Canadian Tire', groc:'Loblaws, Sobeys, Metro, Costco', food:'Uber Eats, DoorDash, SkipTheDishes', rail:'VIA Rail', prop:'Realtor.ca', car:'your provincial licensing office (ServiceOntario, SAAQ, ICBC and others)', health:'your provincial health plan (OHIP, RAMQ, MSP and others)', news:'CBC, The Globe and Mail', uni:'OUAC in Ontario, and your province’s application service', telco:'Rogers, Bell, Telus', post:'Canada Post', weather:'Environment Canada' },
   MX: { cur:'MXN', tax:'the SAT', gov:'your e.firma and the SAT portal', id:'the SRE (passports) and the INE credential', banks:'BBVA México, Banorte, Santander, Banamex', pay:'SPEI transfers, Mercado Pago', jobs:'OCC Mundial, Computrabajo, LinkedIn, Indeed', shop:'Mercado Libre, Amazon.com.mx, Liverpool', groc:'Walmart, Soriana, Chedraui', food:'Rappi, Uber Eats, DiDi Food', prop:'Inmuebles24, Vivanuncios', car:'your state’s vehicle office (tenencia, refrendo, verificación)', health:'the IMSS or ISSSTE', news:'El Universal, Reforma, Milenio', exams:'the EXANI (CENEVAL)', telco:'Telcel, AT&T México, Movistar', post:'Correos de México, Estafeta, DHL', weather:'the Servicio Meteorológico Nacional' },
   BR: { cur:'BRL', tax:'the Receita Federal', gov:'gov.br', id:'the Polícia Federal (passports)', banks:'Itaú, Banco do Brasil, Bradesco, Caixa, Nubank', pay:'Pix', jobs:'LinkedIn, Indeed, Catho, Gupy', shop:'Mercado Livre, Amazon.com.br, Magazine Luiza', groc:'Carrefour, Assaí, Pão de Açúcar', food:'iFood, Rappi', prop:'Zap Imóveis, Viva Real, QuintoAndar', car:'your state Detran (IPVA and licenciamento)', health:'the SUS or your plano de saúde', news:'Folha de S.Paulo, O Globo, g1', exams:'the ENEM', uni:'SISU and ProUni', telco:'Vivo, Claro, TIM', post:'Correios', weather:'INMET' },
@@ -29836,6 +29870,35 @@ const COUNTRY_FACTS = {
 /* The facts for one country, in one sentence the runner can read. Nothing that
    is not in the table is said, so a thin entry makes a short sentence rather
    than a confident wrong one. */
+/* WHICH MAILBOX PEOPLE IN EACH COUNTRY ACTUALLY USE, MOST-USED FIRST.
+
+   Researched, not assumed: Gmail leads in most of the world, but not in China
+   (QQ Mail, NetEase 163/126), Korea (Naver), Russia (Mail.ru, Yandex) or the
+   Czech Republic (Seznam), and Germany splits between WEB.DE, GMX and Gmail;
+   Outlook is strong in Spain, Italy, Sweden and India. Sources: provider
+   market-share surveys (clean.email, SellCell, Mailjerry, W3Techs on Naver)
+   and national-provider reporting (chat-tempmail's China/Japan/Korea
+   comparison). Every id here is one AMV can really connect: gmail through
+   Google, outlook through Microsoft, everything else by app password (see
+   MAIL_PROVIDERS). A country not listed gets the global order. */
+const COUNTRY_MAIL = {
+  US:['gmail','yahoo','outlook','icloud','aol'], CA:['gmail','outlook','yahoo'], MX:['gmail','outlook','yahoo'],
+  GB:['gmail','outlook','yahoo','bt'], IE:['gmail','outlook'], AU:['gmail','outlook','telstra'], NZ:['gmail','outlook'],
+  CN:['qq','netease163','netease126','sina'], KR:['naver','gmail','daum'], JP:['gmail','yahoojp','outlook'],
+  RU:['mailru','yandex','gmail'], UA:['gmail','ukrnet'], DE:['webde','gmx','gmail','tonline','outlook'],
+  AT:['gmail','gmx','outlook'], CH:['gmail','bluewin','outlook'], FR:['gmail','orange','outlook','free','laposte'],
+  IT:['gmail','outlook','libero'], ES:['gmail','outlook'], PT:['gmail','outlook','sapo'], PL:['gmail','wppl','onet','interia'],
+  CZ:['seznam','gmail'], NL:['gmail','outlook','kpn','ziggo'], BE:['gmail','outlook','telenet'], SE:['gmail','outlook','telia'],
+  IN:['gmail','outlook','rediff'], BR:['gmail','outlook','uol'], TR:['gmail','outlook'], IL:['gmail','walla'], ZA:['gmail','outlook','mweb'],
+};
+const MAIL_DEFAULT_ORDER = ['gmail','outlook','yahoo'];
+/* How each is connected, in the shape the page's Connect buttons already use. */
+function _countryMail(code){
+  const ids = (Object.prototype.hasOwnProperty.call(COUNTRY_MAIL, code) ? COUNTRY_MAIL[code] : MAIL_DEFAULT_ORDER)
+    .filter(id => MAIL_PROVIDERS[id]);
+  return ids.map(id => ({ id, name: String(MAIL_PROVIDERS[id].name).replace(/\s*\(.*$/, '').replace(/\s*\/.*$/, ''),
+    how: id === 'gmail' ? 'g' : id === 'outlook' ? 'ms' : 'mail:' + id }));
+}
 const FACT_LABELS = { cur:'currency', tax:'tax authority', gov:'government sign-in', id:'ID and passports', banks:'main banks', pay:'everyday payments', jobs:'job sites', shop:'where people shop online', groc:'supermarkets', food:'food delivery', rail:'trains', prop:'property sites', car:'vehicle admin', health:'health system', news:'news', exams:'school and entrance exams', uni:'university applications', telco:'mobile networks', post:'post and parcels', weather:'weather service' };
 function _jobCountry(asked, request){
   const ok = c => /^[A-Z]{2}$/.test(c) && Object.prototype.hasOwnProperty.call(COUNTRY_NAME, c) ? c : '';
@@ -32142,6 +32205,10 @@ async function everydayJobs(request, env) {
        ids only, the same entries the signed-in picker lists. Public for the
        reason the rest of this is: which providers exist is a fact about the
        product, not about anybody's account. */
+    /* The mailboxes people there use, most-used first, and whether a bank can
+       be linked there - the two facts the top five are built on. */
+    inbox: code ? _countryMail(code) : [],
+    bank: FINANCE_COUNTRIES.indexOf(code) >= 0,
     mail: code ? Object.keys(MAIL_PROVIDERS).filter(id => MAIL_PROVIDERS[id].country === code)
                    .map(id => ({ id, name: MAIL_PROVIDERS[id].name })) : [],
     /* Named separately so the interface can say which of these exist because

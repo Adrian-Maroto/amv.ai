@@ -49,6 +49,7 @@ const visit = async (from, width = 1280) => {
     lang: navigator.language,
     head: ((document.querySelector('#cw-foryou h3') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
     titles: [...document.querySelectorAll('#cw-foryou .cw-job-t')].map(e => e.textContent.trim()),
+    made: [...document.querySelectorAll('#cw-made .cw-made-t')].map(e => e.textContent.trim()),
     dropdown: !!document.getElementById('cw-country'),
     more: !!document.querySelector('#cw-morec [data-dact="cwMoreCountries"]'),
     cls: window.__cls, src: window.__src.slice(0, 4),
@@ -62,7 +63,9 @@ section('From Spain, with an English (US) browser');
   const r = await visit('ES');
   ok(r.lang === 'en-US', 'the browser really says United States', r.lang);
   ok(/Top 5 for you in .*Spain/.test(r.head), 'the top of Crew is for Spain', r.head);
-  ok(r.titles.length === 5 && r.titles.some(t => /Renta/.test(t)) && r.titles.some(t => /DNI|NIE/.test(t)), 'and the five are Spain’s own - the Renta, the DNI and NIE', r.titles);
+  ok(r.titles.length === 5 && r.titles.some(t => /InfoJobs/.test(t)) && r.titles.some(t => /AEAT/.test(t)) && r.titles.some(t => /Gmail/.test(t)),
+     'and the five are Spain’s - Gmail, InfoJobs, the AEAT', r.titles);
+  ok(r.made.some(t => /Renta/.test(t)) && r.made.some(t => /DNI|NIE/.test(t)), 'with the Renta and the DNI in the row under them', r.made.slice(0, 6));
   ok(!r.dropdown, 'with no country dropdown', r.dropdown);
   ok(r.more, 'and every other country at the bottom', r.more);
   ok(r.cls < 0.001, 'and the five arrive without moving the page', { cls: +r.cls.toFixed(4), src: r.src });
@@ -79,7 +82,9 @@ section('From the United States');
 {
   const r = await visit('US');
   ok(/Top 5 for you in .*United States/.test(r.head), 'the top of Crew is for the United States', r.head);
-  ok(!r.titles.some(t => /Renta|DNI/.test(t)), 'with none of Spain’s', r.titles);
+  ok(!r.titles.some(t => /Renta|DNI|InfoJobs|AEAT/.test(t)), 'with none of Spain’s', r.titles);
+  ok(r.titles.some(t => /Gmail/.test(t)) && r.titles.some(t => /Chase|American Express/.test(t)) && r.titles.some(t => /IRS/.test(t)),
+     'but the United States’ own - Gmail, the Chase and Amex cards, the IRS', r.titles);
 }
 
 section('When the network does not say, the browser’s guess still stands');

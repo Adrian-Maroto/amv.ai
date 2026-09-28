@@ -18445,6 +18445,13 @@ function cwConnect(jobId){
          on it for them. */
       const j = (_cwAllJobs() || []).find(x => x.id === jobId);
       const missing = j ? _cwNeedsPlan(j).filter(p => !p.met) : [];
+      /* A job named for a country's own mailbox (QQ Mail, Naver, WEB.DE)
+         connects THAT mailbox, by app password - not Google's sign-in, which
+         most people in those countries do not use. */
+      if(j && j.connectHow && /^mail:/.test(j.connectHow) && missing.length === 1 && typeof openMailConnect === 'function'){
+        if(typeof _intNeedsAccount === 'function' && _intNeedsAccount('your mailbox')) return;
+        openMailConnect(j.connectHow.slice(5)); return;
+      }
       if(missing.length === 1 && missing[0].kind === 'oauth'){ openCrewConnect(jobId); return; }
       cwNeeds(jobId); return;
     }catch(e){}
@@ -18697,6 +18704,8 @@ let _cwLocalState = {};        // code -> 'loading' | 'ok' | 'offline'
    same everywhere (a code review, a weekly report) and says nothing, rather
    than being dressed up as local. */
 const _cwFacts = {};           // code -> facts object from /v1/everyday
+const _cwInbox = {};           // code -> [{id,name,how}] mailboxes people there use, most-used first
+const _cwBank = {};            // code -> true where a bank can be linked
 const CW_LOC = {
   job_hunt:['jobs'], salary_bench:['jobs','cur'], recruiter_triage:['jobs'], interview_pack:['jobs'],
   portfolio_fresh:['jobs'], employer_health:['news'], application_help:['uni','jobs'],
@@ -18850,6 +18859,63 @@ function _cwMadeForJobs(cc){
     prompt: m.p(f, C) + ' The user is in ' + C + '.',
   }));
 }
+/* ── THE TOP FIVE, BUILT FROM WHAT PEOPLE THERE ACTUALLY CONNECT ─────────────
+
+   Asked for: in the US the top five should say "connect Visa or Amex" and
+   "check Gmail", and in China whatever China uses - not "pay bills in the US".
+   So the five are built from the country's data, most valuable first:
+
+     1. the inbox - named for the mailbox people there use most (Gmail in the
+        US, QQ Mail in China, Naver in Korea, WEB.DE in Germany; see
+        COUNTRY_MAIL on the server for the sources), with Connect going
+        straight to that provider's sign-in;
+     2. money - where a bank or card can be linked (the US), the card issuers
+        people there hold; everywhere else, the bills that arrive in that same
+        inbox, because nothing here pretends to link a bank that cannot be;
+     3-5. the local services AMV uses without a sign-in: the job sites, the
+        shops, the tax office.
+
+   Every one is a real job that runs unattended once its one connection is
+   made. The five written by hand for each country move to the row below. */
+function _cwBaseJob(id){ try{ return (_cwDefaultJobs() || []).find(j => j.id === id) || {}; }catch(e){ return {}; } }
+function _cwTopFive(cc){
+  const f = _cwFacts[cc], row = _cwCountryRow(cc);
+  if(!f || !row || !Object.keys(f).length) return [];
+  const C = row[1], box = _cwInbox[cc] || [], m1 = box[0];
+  const boxNames = _cwNames(box.map(b => b.name).join(', '), 2);
+  const low = cc.toLowerCase(), out = [];
+  if(m1){
+    const b = _cwBaseJob('inbox_digest');
+    out.push({ id:'top_' + low + '_inbox', top:true, country:cc, countryName:C, cat:'Inbox & calendar', icon:'\uD83D\uDCEC',
+      on:false, needs:'Email', connectHow:m1.how, mailName:m1.name, every:'daily',
+      title:'Your ' + m1.name + ' inbox, sorted every evening',
+      desc:'Connect ' + boxNames + ' and each evening AMV lists the emails that actually need you, with a reply drafted for each. Nothing is sent without you.',
+      prompt:(b.prompt || '') + ' The user is in ' + C + '.' });
+  }
+  if(_cwBank[cc] && f.cards){
+    const b = _cwBaseJob('unusual_spend');
+    out.push({ id:'top_' + low + '_cards', top:true, country:cc, countryName:C, cat:'Money', icon:'\uD83D\uDCB3',
+      on:false, needs:'Bank connection', every:'daily',
+      title:'Unusual charges on your ' + _cwNames(f.cards, 2) + ' cards',
+      desc:'Link ' + _cwNames(f.cards, 4) + ' or any bank once, read-only, and AMV flags double charges, new subscriptions and anything that looks like fraud. It can never move money.',
+      prompt:(b.prompt || '') + ' The user is in ' + C + '.' });
+  } else if(m1){
+    const b = _cwBaseJob('bills_due');
+    const pays = _cwNames([f.banks, f.pay].filter(Boolean).join(', '), 3);
+    out.push({ id:'top_' + low + '_bills', top:true, country:cc, countryName:C, cat:'Money', icon:'\uD83E\uDDFE',
+      on:false, needs:'Email', connectHow:m1.how, mailName:m1.name, every:'daily',
+      title:'Bills and payments, from your ' + m1.name,
+      desc:'AMV reads the bills, statements and receipts that land in ' + m1.name + (pays ? ' - from ' + pays + ' and the rest -' : '') + ' and tells you what is due, when, and what changed.',
+      prompt:(b.prompt || '') + ' The user is in ' + C + '.' });
+  }
+  const made = _cwMadeForJobs(cc);
+  ['jobs', 'shop', 'tax', 'groc', 'rail', 'prop', 'telco'].forEach(k => {
+    if(out.length >= 5) return;
+    const j = made.find(x => x.id === 'cc_' + low + '_' + k);
+    if(j) out.push(Object.assign({}, j, { top:true }));
+  });
+  return out.slice(0, 5);
+}
 /* A row of cards, not a grid: it arrives with the country and must not push
    anything down when it does, so it is one fixed height whatever the count. */
 function _cwMadeForHTML(){
@@ -18861,7 +18927,10 @@ function _cwMadeForHTML(){
   const cc = _cwCountryGuess(), row = _cwCountryRow(cc);
   const st = row ? (_cwLocalState[cc] || 'loading') : 'none';
   if(!row || st === 'offline') return '<section class="cw-made" id="cw-made" hidden></section>';
-  const jobs = st === 'ok' ? _cwMadeForJobs(cc) : [];
+  const inTop = new Set((st === 'ok' ? _cwTopFive(cc) : []).map(j => j.id));
+  const jobs = st === 'ok'
+    ? (inTop.size ? _cwLocalJobs(cc) : []).concat(_cwMadeForJobs(cc).filter(j => !inTop.has(j.id)))
+    : [];
   if(st === 'ok' && !jobs.length) return '<section class="cw-made" id="cw-made" hidden></section>';
   const card = _cwMadeCard;
   return `<section class="cw-made" id="cw-made"${st === 'ok' ? '' : ' aria-busy="true"'}>
@@ -18893,17 +18962,43 @@ function _cwMadeForRepaint(){
   try{ const el = document.getElementById('cw-made'); if(el) el.outerHTML = _cwMadeForHTML(); }catch(e){}
 }
 try{ window._cwMadeForJobs = _cwMadeForJobs; window.CW_MADE_FOR = CW_MADE_FOR; }catch(e){}
+/* What a catalogue job looks up where you are: its fixed facts (CW_LOC), plus
+   the mailboxes people there use when it reads mail, plus the cards that can
+   be linked when it reads a bank. */
+function _cwLocKeys(j){
+  if(!j) return [];
+  const needs = String(j.needs || '');
+  const keys = (CW_LOC[j.id] || []).slice();
+  if(/\bEmail\b/.test(needs) && keys.indexOf('inbox') < 0) keys.unshift('inbox');
+  if(/Bank connection/.test(needs) && keys.indexOf('cards') < 0) keys.unshift('cards');
+  return keys;
+}
 function _cwLocText(id, cc){
   const row = _cwCountryRow(cc); if(!row) return '';
-  const f = _cwFacts[cc], keys = CW_LOC[id] || [];
-  const hits = f ? keys.map(k => String(f[k] || '')).filter(Boolean) : [];
+  const f = _cwFacts[cc];
+  const j = _cwLocJob(id);
+  const keys = j ? _cwLocKeys(j) : (CW_LOC[id] || []);
+  const fact = k => {
+    if(k === 'inbox') return (_cwInbox[cc] || []).slice(0, 3).map(b => b.name).join(', ');
+    if(k === 'cards'){
+      if(!f) return '';
+      /* Said, not skipped: a bank job where no bank can be linked is a job
+         that cannot run, and the card is where somebody decides. */
+      return _cwBank[cc] ? String(f.cards || f.banks || '') : 'bank linking is not available here yet';
+    }
+    return String((f && f[k]) || '');
+  };
+  const hits = f ? keys.map(fact).filter(Boolean) : [];
   /* Said the same way whether the facts arrived or not, so a card never
      changes height when they do - only the words after the colon change. */
   return hits.length ? T('In') + ' ' + row[1] + ': ' + hits.join(' · ')
                      : T('Answers for') + ' ' + row[1];
 }
+const _cwLocJobs = {};
+function _cwLocJob(id){ return _cwLocJobs[id] || null; }
 function _cwLocLine(j){
-  if(!j || j.local || !CW_LOC[j.id]) return '';
+  if(!j || j.local || j.top || j.made || !_cwLocKeys(j).length) return '';
+  _cwLocJobs[j.id] = j;
   /* While AMV is still hearing where somebody is, the line holds its place
      empty: naming the browser's guess and then another country is the flash
      this page was fixed not to have. */
@@ -18977,6 +19072,8 @@ async function _cwLoadLocal(code){
     const name = (d && d.name) || cc;
     const local = Array.isArray(d.local) ? d.local : [];
     _cwFacts[cc] = (d.facts && typeof d.facts === 'object' && !Array.isArray(d.facts)) ? d.facts : {};
+    _cwInbox[cc] = Array.isArray(d.inbox) ? d.inbox.filter(m => m && m.id && m.name && m.how) : [];
+    _cwBank[cc] = !!d.bank;
     _cwLocalCache[cc] = local.map(j => _cwEverydayJob(Object.assign({ country: cc }, j), name, true));
     _cwLocalState[cc] = 'ok';
   }catch(e){
@@ -18998,7 +19095,7 @@ async function _cwLoadLocal(code){
       if(cc === _cwCountryGuess()){ const el = document.getElementById('cw-foryou'); if(el){ el.outerHTML = _cwForYouHTML(); done = true; } }
       if(cc === _cwBrowse){ const el = document.getElementById('cw-morec'); if(el){ el.outerHTML = _cwMoreCountriesHTML(); done = true; } }
       if(!done) _cwRepaintSoon();
-      if(cc === _cwCountryGuess()){ _cwLocFill(); _cwMadeForRepaint(); }
+      if(cc === _cwCountryGuess()){ _cwLocFill(); _cwMadeForRepaint(); _cwReRank(); }
     }
   }catch(e){ try{ if(S.tab === 'crew') _cwRepaintSoon(); }catch(e2){} }
 }
@@ -19025,6 +19122,7 @@ function _cwAllJobs(){
        const have = new Set((_cwJobs() || []).map(j => j.id));
        return (_cwJobs() || []).concat(_cwUniversalJobs() || [])
                               .concat(_cwLocalJobs(cc) || [])
+                              .concat((_cwTopFive(cc) || []).filter(j => !have.has(j.id)))
                               .concat((_cwMadeForJobs(cc) || []).filter(j => !have.has(j.id)))
                               /* And the country being browsed at the bottom, so
                                  its cards open and switch on like any other. */
@@ -19070,11 +19168,43 @@ function _cwStrength(j){
   let n = 0;
   if(_cwUsesAccount(j)) n += 2;                       // it works on something of yours
   if(_cwWhereState(j) !== 'open') n += 1;             // and it does it while you are away
+  /* Where a bank cannot be linked, a job that needs one cannot run at all, so
+     it goes to the back of the list instead of the front - somebody in Spain
+     must not open Crew to five things they cannot switch on. */
+  try{
+    if(/Bank connection/.test(String(j.needs || ''))){
+      const cc = _cwCountryGuess();
+      const can = Object.prototype.hasOwnProperty.call(_cwBank, cc) ? _cwBank[cc] : cc === 'US';
+      if(cc && !can) n -= 10;
+    }
+  }catch(e){}
   return n;
 }
 let _cwShowcaseCache = null;
+/* The ranking depends on the country (a bank job ranks last where no bank can
+   be linked), and the first draw happens before the server has said where
+   somebody is. So the ranking remembers which country it was made for, and is
+   made again when that changes - in place, and only while the list is below
+   the screen, so nothing somebody is looking at moves. */
+let _cwRankedFor = '';
+function _cwRankKey(){
+  const cc = _cwCountryGuess();
+  return cc + ':' + (Object.prototype.hasOwnProperty.call(_cwBank, cc) ? (_cwBank[cc] ? 1 : 0) : '?');
+}
+function _cwReRank(){
+  try{
+    if(!_cwShowcaseCache || _cwRankKey() === _cwRankedFor) return;
+    const body = document.getElementById('cw-jobs-body');
+    if(!body || S.tab !== 'crew' || _cwFind || _cwCat !== 'all') return;
+    if(body.getBoundingClientRect().top < window.innerHeight) return;
+    _cwShowcaseCache = null;
+    body.innerHTML = _cwJobsBody(_cwShowcase(), _planAllowsCrew() ? _cwJobCard : _cwLockedCard);
+    _cwLocFill();
+  }catch(e){}
+}
 function _cwShowcase(){
   if(_cwShowcaseCache) return _cwShowcaseCache;
+  _cwRankedFor = _cwRankKey();
   /* The jobs that are the same in every country used to live only inside the
      country panel, so removing that panel would have removed them from the
      product. They are ordinary catalogue jobs and they belong in the list with
@@ -19546,7 +19676,8 @@ function _cwForYouHTML(){
   try{ _cwLoadLocal(cc); }catch(e){}
   const [, name, flag] = row;
   const st = _cwLocalState[cc] || 'loading';
-  let jobs = _cwLocalJobs(cc).slice(0, 5), note = '';
+  const built = st === 'ok' ? _cwTopFive(cc) : [];
+  let jobs = (built.length >= 5 ? built : _cwLocalJobs(cc)).slice(0, 5), note = '';
   if(st === 'loading' && !jobs.length){
     return `<section class="cw-pop cw-foryou" id="cw-foryou" aria-busy="true">
       ${_cwForYouHead(name, flag)}
@@ -19589,6 +19720,7 @@ function _cwForYouRepaint(){
   }catch(e){ try{ _cwRepaintSoon(); }catch(_){} }
   _cwLocFill();
   _cwMadeForRepaint();
+  _cwReRank();
 }
 
 /* SEE MORE COUNTRIES - at the very bottom, as asked. A list of every country
@@ -20586,7 +20718,7 @@ function _cwJobCard(j){
       <span class="cw-job-d">${escH(j.desc)}</span>
       ${_cwSampleLine(j)}
       ${_cwLocLine(j)}
-      <span class="cw-job-need">Uses: ${escH(j.needs)}
+      <span class="cw-job-need">Uses: ${escH(j.mailName ? String(j.needs).replace(/\bEmail\b/, j.mailName) : j.needs)}
         <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
       </span>
       <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See the whole thing \u2192':'See what it does \u2192'}</span>
@@ -20606,7 +20738,7 @@ function _cwLockedCard(j){
       <span class="cw-job-d">${escH(j.desc)}</span>
       ${_cwSampleLine(j)}
       ${_cwLocLine(j)}
-      <span class="cw-job-need">Uses: ${escH(j.needs)}
+      <span class="cw-job-need">Uses: ${escH(j.mailName ? String(j.needs).replace(/\bEmail\b/, j.mailName) : j.needs)}
         <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
       </span>
       <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See the whole thing →':'See what it does →'}</span>
@@ -22140,6 +22272,12 @@ function _cwConnHas(cap){
      one question has one answer on every screen. */
   if(cap === 'bank.read'){
     try{ return typeof AMVFinance !== 'undefined' && !!AMVFinance.linked(); }catch(e){ return false; }
+  }
+  /* A mailbox connected with an app password - QQ Mail, Naver, WEB.DE - is
+     read by the server's unattended runs too (see _mailboxUse), so it answers
+     "is there a mailbox" as surely as a Google grant does. */
+  if(cap === 'mail.read'){
+    try{ if(typeof _mailConnectedAccount === 'function' && _mailConnectedAccount()) return true; }catch(e){}
   }
   try{
     const d = (typeof _connState !== 'undefined' && _connState) ? _connState.data : null;
@@ -33014,15 +33152,22 @@ function _intLocalRow(o){
 function _intLocalBody(cc, d){
   const row = _cwCountryRow(cc), name = row ? row[1] : (d && d.name) || cc;
   const f = (d && d.facts && typeof d.facts === 'object') ? d.facts : {};
-  const mail = Array.isArray(d && d.mail) ? d.mail : [];
+  /* The mailboxes people there use, most-used first (researched per country,
+     COUNTRY_MAIL on the server) - falling back to the country's own providers
+     for an older server that does not send the order. */
+  const mail = Array.isArray(d && d.inbox) && d.inbox.length ? d.inbox
+             : (Array.isArray(d && d.mail) ? d.mail.map(m => ({ id:m.id, name:m.name, how:'mail:' + m.id })) : []);
   const acc = _mailConnectedAccount(), notified = _appNotifiedSet();
   const btn = (attrs, label, cls) => '<button class="btn '+(cls||'bp')+'" '+attrs+' style="font-size:var(--t-sm)">'+escH(label)+'</button>';
   /* CONNECT: only what really connects. */
   const connect = mail.map(m => {
-    const on = !!acc && acc.provider === m.id;
+    const grant = m.how === 'g' ? 'google' : m.how === 'ms' ? 'outlook' : '';
+    const on = grant ? _rowConnected(grant) : (!!acc && acc.provider === m.id);
     return _intLocalRow({ name:m.name, connected:on,
-      desc: on ? T('Connected. AMV reads it, summarizes it and drafts replies.') : T('Read, summarized and answered. Connects with an app password.'),
-      act: on ? btn('data-lc-inbox="1"', T('Open inbox'), 'bs') : btn('data-lc-mail="'+escH(m.id)+'"', T('Connect')) });
+      desc: grant ? T('Read, summarized and answered. Sign in at the provider; you choose what AMV may do.')
+          : on ? T('Connected. AMV reads it, summarizes it and drafts replies.') : T('Read, summarized and answered. Connects with an app password.'),
+      act: grant ? (on ? '' : btn('data-lc-grant="'+grant+'"', T('Connect')))
+         : on ? btn('data-lc-inbox="1"', T('Open inbox'), 'bs') : btn('data-lc-mail="'+escH(m.id)+'"', T('Connect')) });
   });
   if(cc === 'US'){
     const linked = (function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })();
@@ -33080,6 +33225,10 @@ async function openLocalConnect(code){
     r.innerHTML = ''; openMailConnect(x.dataset.lcMail);
   }));
   b.querySelectorAll('[data-lc-inbox]').forEach(x => on(x, 'click', () => { r.innerHTML = ''; openMailInbox(); }));
+  b.querySelectorAll('[data-lc-grant]').forEach(x => on(x, 'click', () => {
+    if(_intNeedsAccount(_intName(x.dataset.lcGrant))) return;
+    r.innerHTML = ''; _connGoTo(x.dataset.lcGrant);
+  }));
   b.querySelectorAll('[data-lc-bank]').forEach(x => on(x, 'click', () => {
     r.innerHTML = '';
     try{ setTab('spend'); }catch(e){}
