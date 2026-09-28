@@ -61,6 +61,11 @@ let seq = 0;
 async function openConnectors(from, width = 1280) {
   const { ctx, page } = await open(from, '', width);
   const email = 'where' + (++seq) + '@example.com';
+  /* On Pro for real, the way a verified payment leaves it. Setting the plan in
+     the page alone loses a race under load: the server's entitlement check
+     answers "free" for a new account and puts the page back, which is that
+     check doing its job. */
+  await env.AMV_KV.put('ent:' + email, JSON.stringify({ plan: 'pro', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' }));
   const r = await page.evaluate(async (email) => {
     try { const d = await AMV_API.signup(email, 'Where', 'A-real-Passw0rd!'); loginUser((d && d.user) || { name: 'Where', email, ini: 'W' }); return 'ok'; }
     catch (e) { return String(e && e.message); }

@@ -171,7 +171,7 @@ one except the two in the first table.
 | Owner notices and the weekly digest | `OWNER_EMAIL` | Nothing. |
 | Correct links in every email and invite | `APP_URL` | Nothing. |
 | Encrypted connected-account tokens | `CONNECT_KEY` | Nothing - a random 32+ char value. Without it AMV refuses to connect an account at all. |
-| App connectors - Notion, Canva, Linear, Jira, Stripe, PayPal, Figma, Zapier and 11 more, signed in to at the app | `CONNECT_KEY` (the same one) and `APP_URL` | Nothing else. AMV registers itself with each app automatically, so there is no per-app key. Free. |
+| App connectors - Notion, Canva, Linear, Jira, Stripe, PayPal, Figma, Zapier and 27 more, signed in to at the app | `CONNECT_KEY` (the same one) and `APP_URL` | Nothing else. AMV registers itself with each app automatically, so there is no per-app key. Free. |
 | Encrypted mailbox / school / bot credentials | `MAIL_CRED_KEY` | Nothing - the same. Those three connectors refuse without it. |
 | Race-free spend and usage limits | Bind `AMV_COUNTER` | A paid Workers plan (Durable Objects). Free until you take payments; **required** once you do. |
 | Guaranteed sync writes | **Do not bind `DB` (D1) yet.** Binding it switches every read to an empty database, so every existing account would read as missing. It needs a migration first - ask before doing it. | Free tier available. Until then, two devices saving the same record in the same instant are merged rather than one refused. |

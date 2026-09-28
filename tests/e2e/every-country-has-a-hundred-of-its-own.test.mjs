@@ -203,7 +203,10 @@ section('One of them opens, and switches on for real');
   const dlg = await page.evaluate(() => ((document.getElementById('ovr') || {}).textContent || '').replace(/\s+/g, ' '));
   ok(/How often/.test(dlg), 'pressing the card opens what it does', dlg.slice(0, 200));
   await page.keyboard.press('Escape');
-  /* Switched on through the Worker, as a signed-in person on the plan Crew needs. */
+  /* Switched on through the Worker, as a signed-in person on the plan Crew
+     needs - on it for real, the way a verified payment leaves it, because the
+     page's own check puts a plan set only in the browser back to free. */
+  await env.AMV_KV.put('ent:hundred@example.com', JSON.stringify({ plan: 'pro', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' }));
   const signed = await page.evaluate(async () => {
     try { const d = await AMV_API.signup('hundred@example.com', 'Hundred', 'A-real-Passw0rd!'); loginUser((d && d.user) || { name: 'Hundred', email: 'hundred@example.com', ini: 'H' }); return 'ok'; }
     catch (e) { return String(e && e.message); }

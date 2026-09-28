@@ -134,13 +134,17 @@ section('Both halves are on the screen, and one of them names the country');
       const ids = new Set(_cwLocalJobs('ES').map(j => j.id));
       return [...document.querySelectorAll('#cw-made [data-dact="cwPeek"]')].filter(b => ids.has(b.dataset.darg)).length;
     })(),
+    /* On the page, or one See all away: All draws the first few of each
+       category, and every category with more ends in See all. */
     universal: (() => {
       const ids = new Set(_cwUniversalJobs().map(j => j.id));
-      return [...document.querySelectorAll('#vc [data-dact="cwPeek"]')]
-        .filter(b => ids.has(b.dataset.darg)).length;
+      const drawn = [...document.querySelectorAll('#vc [data-dact="cwPeek"]')].filter(b => ids.has(b.dataset.darg)).length;
+      const more = new Set([...document.querySelectorAll('#vc .cw-cat-more [data-darg]')].map(b => b.dataset.darg));
+      const shelved = _cwShowcase().filter(j => ids.has(j.id));
+      return shelved.length && shelved.length === drawn + shelved.filter(j => more.has(j.cat)).length ? shelved.length : 0;
     })(),
   }));
-  ok(seen.universal > 0, 'the work that is the same everywhere is in the list', seen.universal);
+  ok(seen.universal > 0, 'the work that is the same everywhere is in the list, or one See all away', seen.universal);
   ok(/for you in .*spain/i.test(seen.group), 'and the local half names the country', seen.group);
   ok(seen.spainTop === 10, 'and the ten at the top are built for Spain', seen.spainTop);
   ok(seen.localBelow >= 5, 'with Spain\u2019s hand-written five in the row under them', seen.localBelow);
