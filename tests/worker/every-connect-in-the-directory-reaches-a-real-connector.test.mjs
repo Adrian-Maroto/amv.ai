@@ -76,6 +76,17 @@ section('Every mailbox the directory names opens on that mailbox');
   ok(missing.length === 0, 'each mail:<id> is a MAIL_PROVIDERS entry, not the generic picker', missing.map(x => x.name + ' mail:' + x.id));
 }
 
+section('The number the directory states is the number the server has');
+{
+  /* "Any provider that speaks IMAP, in N countries" said 22 while the server
+     had 25 - and then 23, when three dead mailboxes were removed. A number
+     beside a Connect button is a claim, and it has one source. */
+  const row = rows.find(r => r.how === 'mail');
+  const said = Number(((row && CATS.flatMap(c => c.apps).find(a => a.startsWith(row.name + '|mail|'))) || '').match(/in (\d+) countries/)?.[1]);
+  const real = new Set(Object.values(MAIL).map(p => p.country).filter(Boolean)).size;
+  ok(said === real, 'the mailbox row says ' + said + ' countries and the server has ' + real, { said, real });
+}
+
 section('Nothing the server can connect is left out of the directory');
 {
   const offered = new Set(coded('r').map(x => x.id));

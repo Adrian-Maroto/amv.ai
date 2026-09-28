@@ -338,7 +338,11 @@ section('SMTP can upgrade, and never writes a password before it has');
      'and an account saved before this existed still defaults to what it connected with', true);
 
   const starttls = Object.values(W.MAIL_PROVIDERS).filter((p) => p.smtpMode === 'starttls');
-  ok(starttls.length >= 10, 'providers that need the upgrade are now reachable', starttls.length);
+  /* Was ten. Optus closed its email service, and Cox (now Yahoo Mail) and
+     Bluewin take implicit TLS on 465 by their own current instructions - the
+     daily connector check found all three wrong. The property is that the
+     STARTTLS dialect exists and is used where a provider needs it. */
+  ok(starttls.length >= 5, 'providers that need the upgrade are now reachable', starttls.length);
   ok(starttls.every((p) => p.smtpPort === 587),
      'and each names the port it actually answers on', starttls.map((p) => p.name + ':' + p.smtpPort));
   ok(Object.values(W.MAIL_PROVIDERS).filter((p) => !p.custom && !p.smtpMode).every((p) => !p.smtpPort),

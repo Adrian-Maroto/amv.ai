@@ -115,10 +115,17 @@ async function oauthProvider(id, p) {
   for (const [label, url] of [['authorize', p.auth], ['token', p.token]]) {
     if (!url) continue;
     try {
-      const r = await fetch(url, { method: 'GET', redirect: 'manual', signal: timeout(10000) });
+      /* Asked the way each is used: the authorize page is opened, the token
+         endpoint is POSTed to. A token endpoint answers a GET with 404 at
+         Google, GitHub, Dropbox, Strava and Calendly - the first run of this
+         check reported all five as moved, which they were not. */
+      const r = label === 'token'
+        ? await fetch(url, { method: 'POST', redirect: 'manual', signal: timeout(10000),
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body: 'grant_type=authorization_code' })
+        : await fetch(url, { method: 'GET', redirect: 'manual', signal: timeout(10000) });
       try { await r.body?.cancel(); } catch (e) {}
       /* Without a client id an authorize page answers 400 or redirects, and a
-         token endpoint refuses a GET with 400/401/405 - all of which prove it
+         token endpoint refuses the request with 400/401 - all of which prove it
          is there. 404 and 410 say it is gone; 5xx says it is down. */
       if (r.status === 404 || r.status === 410) return { ok: false, why: label + ' answers ' + r.status + ' - it has moved' };
       if (r.status >= 500) return { ok: false, why: label + ' answers ' + r.status };
@@ -136,8 +143,13 @@ function imapGreeting(host, port) {
     s.on('data', (d) => { buf += d; if (/\r?\n/.test(buf)) finish(/^\* (OK|PREAUTH)/i.test(buf)
       ? { ok: true, why: host + ':' + port }
       : { ok: false, why: host + ' greeted with ' + JSON.stringify(buf.slice(0, 60)) }); });
-    s.on('timeout', () => finish({ ok: false, why: host + ':' + port + ' timed out' }));
-    s.on('error', (e) => finish({ ok: false, why: host + ':' + port + ' ' + (e.code || e.message) }));
+    /* A host that does not exist (ENOTFOUND) or refuses is broken for
+       everybody. One that times out may only be refusing this runner's
+       country - NetEase and some carriers filter by region - so it is
+       reported as SLOW and does not fail the run: a check that is red every
+       day for a reason nobody can act on teaches people to ignore it. */
+    s.on('timeout', () => finish({ ok: false, slow: true, why: host + ':' + port + ' timed out' }));
+    s.on('error', (e) => finish({ ok: false, slow: e.code === 'ETIMEDOUT', why: host + ':' + port + ' ' + (e.code || e.message) }));
   });
 }
 
@@ -165,11 +177,13 @@ await Promise.all(Array.from({ length: 8 }, async () => {
   }
 }));
 results.sort((a, b) => (a.kind + a.id).localeCompare(b.kind + b.id));
-const bad = results.filter(r => !r.ok);
-if (JSON_OUT) console.log(JSON.stringify({ checked: results.length, failing: bad }, null, 2));
+const bad = results.filter(r => !r.ok && !r.slow);
+const slow = results.filter(r => !r.ok && r.slow);
+if (JSON_OUT) console.log(JSON.stringify({ checked: results.length, failing: bad, slow }, null, 2));
 else {
-  for (const r of results) console.log((r.ok ? '  ok   ' : '  FAIL ') + r.kind.padEnd(7) + r.name.padEnd(34).slice(0, 34) + ' ' + r.why);
-  console.log('\n' + (results.length - bad.length) + ' of ' + results.length + ' connectors answered.');
+  for (const r of results) console.log((r.ok ? '  ok   ' : r.slow ? '  SLOW ' : '  FAIL ') + r.kind.padEnd(7) + r.name.padEnd(34).slice(0, 34) + ' ' + r.why);
+  console.log('\n' + (results.length - bad.length - slow.length) + ' of ' + results.length + ' connectors answered.');
+  if (slow.length) console.log('Timed out from here (may be region filtering, not failing the run): ' + slow.map(r => r.kind + ':' + r.id).join(', '));
   if (bad.length) console.log('Not answering: ' + bad.map(r => r.kind + ':' + r.id).join(', '));
 }
 process.exit(bad.length ? 1 : 0);

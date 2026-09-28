@@ -46,7 +46,7 @@ const AMV_APP_CATS = [
   { id:'email', t:'Email', q:'email', apps:[
     'Gmail|g|Reads, sorts and drafts your email. You choose what AMV may do.',
     'Outlook and Hotmail|ms|Mail across your Microsoft account, read and drafted.',
-    'Mail worldwide|mail|Any provider that speaks IMAP, in 22 countries. Pick yours from the list.',
+    'Mail worldwide|mail|Any provider that speaks IMAP, in 24 countries. Pick yours from the list.',
     'Yahoo Mail|mail:yahoo|', 'iCloud Mail|mail:icloud|', 'AOL Mail|mail:aol|', 'Zoho Mail|mail:zoho|',
     'Fastmail|mail:fastmail|', 'GMX|mail:gmx|',
     'Proton Mail||Encrypted email from Switzerland.',

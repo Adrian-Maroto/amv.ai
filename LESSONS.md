@@ -13911,3 +13911,28 @@ Rules:
   filter that disagrees with the filter is a wrong answer shown as a fact.
 - A late-arrival path is tested by making the data late on purpose; in a fast
   harness it never runs, and a mutation of it survives.
+
+## 535. A connector list is a list of other companies' servers, and they move
+
+The first live run of the daily connector check found eight mailboxes whose
+IMAP host no longer exists in DNS - Bluewin, BOL, Cox, Mynet, Optus,
+Rediffmail, Telia, Walla - each drawn in AMV with a Connect button, each
+failing for anybody who pressed it. Cox had moved every cox.net mailbox to
+Yahoo; Optus closed its email service; Rediff had renamed its IMAP host to its
+paid tier's. None of it was a change to this repository, so no suite could
+have seen it: the suites run against stand-ins, as they must.
+
+The same run also reported Google, GitHub, Dropbox, Strava and Calendly as
+moved, which was the check's own mistake - their token endpoints answer a GET
+with 404 and are only ever POSTed to. A probe has to ask the question the
+product asks, or it reports its own misuse as somebody else's outage.
+
+Rules:
+- Anything AMV connects to that it does not run is checked against the real
+  thing on a schedule (tools/connector-health.mjs, daily), never on a push.
+- A connector that cannot be verified to work is removed, not left drawn.
+  Where a replacement is known (Cox -> Yahoo), it is named for what it now is.
+- A probe distinguishes "gone" (no DNS, 404) from "not answering this runner"
+  (a timeout, often region filtering). Only the first fails the run; a check
+  that is red every day for a reason nobody can act on teaches people to
+  ignore it.

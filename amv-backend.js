@@ -13295,7 +13295,7 @@ async function _route(request, env, ctx) {
     // --- GLOBAL JOB BOARDS (57 boards, 38 countries) ---
     case '/v1/jobs/boards':     return jobBoards(request, env);
     case '/v1/jobs/apply':      return jobApply(request, env);
-    // --- GLOBAL MAIL (IMAP/SMTP, 22 countries) ---
+    // --- GLOBAL MAIL (IMAP/SMTP, the countries in MAIL_PROVIDERS) ---
     case '/v1/mail/providers':  return mailProviders(request, env);
     case '/v1/mail/status':     return mailStatus(request, env);
     case '/v1/mail/connect':    return mailConnect(request, env);
@@ -28272,6 +28272,12 @@ const MAIL_PROVIDERS = {
   yandex:   { name: 'Yandex Mail (Яндекс Почта)', country: 'RU', flag: '🇷🇺',
               imap: 'imap.yandex.com', smtp: 'smtp.yandex.com',
               setup: 'In Yandex ID open Security, then App passwords, and create one for Mail. Paste that app password here, not your account password.' },
+  /* Turkey. Mynet Mail's IMAP host no longer exists; after Gmail and Outlook
+     the mailbox people in Turkey use is Yandex (yandex.com.tr addresses),
+     served by the same Yandex IMAP host as everywhere else. */
+  yandextr: { name: 'Yandex Mail (Yandex Posta)', country: 'TR', flag: '🇹🇷',
+              imap: 'imap.yandex.com', smtp: 'smtp.yandex.com',
+              setup: 'In Yandex ID open Security, then App passwords, and create one for Mail. Paste that app password here, not your account password.' },
   mailru:   { name: 'Mail.ru (Почта Mail.ru)', country: 'RU', flag: '🇷🇺',
               imap: 'imap.mail.ru', smtp: 'smtp.mail.ru',
               setup: 'In Mail.ru open Settings, All settings, Password and security, and create an app password (пароль для внешнего приложения).' },
@@ -28290,8 +28296,7 @@ const MAIL_PROVIDERS = {
               imap: 'secureimap.t-online.de', smtp: 'securesmtp.t-online.de',
               setup: 'In your Telekom account create an app password (Passwort für E-Mail-Programme) and use that.' },
   bluewin:  { name: 'Bluewin (Swisscom)', country: 'CH', flag: '🇨🇭',
-              imap: 'imap.bluewin.ch', smtp: 'smtpauths.bluewin.ch',
-              smtpPort: 587, smtpMode: 'starttls',
+              imap: 'imaps.bluewin.ch', smtp: 'smtpauths.bluewin.ch',
               setup: 'Use your Swisscom login. If you have two-factor on, create an app password in your Swisscom account first.' },
 
   /* ── France, Belgium, Netherlands ────────────────────────────────── */
@@ -28345,22 +28350,20 @@ const MAIL_PROVIDERS = {
 
   /* ── Nordics, UK, Turkey, Israel ─────────────────────────────────── */
   telia:    { name: 'Telia', country: 'SE', flag: '🇸🇪',
-              imap: 'imap.telia.com', smtp: 'smtp.telia.com',
+              imap: 'mailin.telia.com', smtp: 'mailout.telia.com',
               setup: 'Use your Telia mail address and password.' },
   btinternet:{ name: 'BT Internet', country: 'GB', flag: '🇬🇧',
               imap: 'mail.btinternet.com', smtp: 'mail.btinternet.com',
               setup: 'In your BT Mail settings, create an app password if two-step is on, otherwise use your BT ID password.' },
-  mynet:    { name: 'Mynet', country: 'TR', flag: '🇹🇷',
-              imap: 'imap.mynet.com', smtp: 'smtp.mynet.com',
-              setup: 'In Mynet Mail settings enable IMAP access.' },
-  walla:    { name: 'Walla! Mail', country: 'IL', flag: '🇮🇱',
-              imap: 'imap.walla.co.il', smtp: 'smtp.walla.co.il',
-              setup: 'In Walla! Mail settings enable IMAP access for external clients.' },
 
   /* ── India, Brazil, Africa ───────────────────────────────────────── */
-  rediff:   { name: 'Rediffmail', country: 'IN', flag: '🇮🇳',
-              imap: 'imap.rediffmail.com', smtp: 'smtp.rediffmail.com',
-              setup: 'Rediffmail enables IMAP on paid Rediffmail Pro accounts. Use your Rediffmail address and password.' },
+  /* Rediff offers IMAP only on Rediffmail Pro; a free @rediffmail.com
+     address cannot be read by any app, and the old imap.rediffmail.com host
+     no longer exists. Named as what it is, so nobody on a free account
+     tries and gets a failure that looks like a wrong password. */
+  rediff:   { name: 'Rediffmail Pro', country: 'IN', flag: '🇮🇳',
+              imap: 'imap.rediffmailpro.com', smtp: 'smtp.rediffmailpro.com',
+              setup: 'Only Rediffmail Pro accounts can be connected - Rediff does not allow any app to read a free Rediffmail account. Use your Rediffmail Pro address and password.' },
   zoho:     { name: 'Zoho Mail', country: 'IN', flag: '🇮🇳',
               imap: 'imap.zoho.com', smtp: 'smtp.zoho.com',
               setup: 'In Zoho Mail open Settings, Mail Accounts, and enable IMAP. Then create an app-specific password under My Account, Security.' },
@@ -28368,8 +28371,8 @@ const MAIL_PROVIDERS = {
               imap: 'imap.uol.com.br', smtp: 'smtps.uol.com.br',
               setup: 'Use your UOL address and password. IMAP is available on UOL Mail accounts.' },
   bol:      { name: 'BOL Mail', country: 'BR', flag: '🇧🇷',
-              imap: 'imap.bol.uol.com.br', smtp: 'smtps.bol.uol.com.br',
-              setup: 'Use your BOL address and password.' },
+              imap: 'imap.bol.com.br', smtp: 'smtps.bol.com.br',
+              setup: 'BOL lets apps read mail only on its paid BOL Completo plan - a free BOL account is webmail only. On BOL Completo, use your BOL address and password.' },
   mweb:     { name: 'Mweb', country: 'ZA', flag: '🇿🇦',
               imap: 'imap.mweb.co.za', smtp: 'smtp.mweb.co.za',
               setup: 'Use your Mweb address and password.' },
@@ -28400,18 +28403,16 @@ const MAIL_PROVIDERS = {
   telus:    { name: 'TELUS', country: 'CA', flag: '🇨🇦',
               imap: 'imap.telus.net', smtp: 'smtp.telus.net', smtpPort: 587, smtpMode: 'starttls',
               setup: 'Use your TELUS email address and password.' },
-  optus:    { name: 'Optus', country: 'AU', flag: '🇦🇺',
-              imap: 'imap.optusnet.com.au', smtp: 'mail.optusnet.com.au', smtpPort: 587, smtpMode: 'starttls',
-              setup: 'Use your Optus email address and password.' },
   att:      { name: 'AT&T / Yahoo hosted', country: 'US', flag: '🇺🇸',
               imap: 'imap.mail.att.net', smtp: 'smtp.mail.att.net', smtpPort: 587, smtpMode: 'starttls',
               setup: 'AT&T requires a secure mail key rather than your account password. Create one in your AT&T profile under Sign-in info.' },
   spectrum: { name: 'Spectrum (Charter)', country: 'US', flag: '🇺🇸',
               imap: 'mobile.charter.net', smtp: 'mobile.charter.net', smtpPort: 587, smtpMode: 'starttls',
               setup: 'Use your Spectrum email address and password.' },
-  cox:      { name: 'Cox', country: 'US', flag: '🇺🇸',
-              imap: 'imap.cox.net', smtp: 'smtp.cox.net', smtpPort: 587, smtpMode: 'starttls',
-              setup: 'In Cox settings, enable external email access first, then use your Cox password.' },
+  /* Cox moved every cox.net mailbox to Yahoo Mail; imap.cox.net is gone. */
+  cox:      { name: 'Cox (now Yahoo Mail)', country: 'US', flag: '🇺🇸',
+              imap: 'imap.mail.yahoo.com', smtp: 'smtp.mail.yahoo.com',
+              setup: 'Cox addresses now live in Yahoo Mail. Sign in to Yahoo with your cox.net address, open Account security, create an app password, and paste that here - not your Cox password.' },
   bt:       { name: 'BT Mail', country: 'GB', flag: '🇬🇧',
               imap: 'mail.btinternet.com', smtp: 'mail.btinternet.com', smtpPort: 587, smtpMode: 'starttls',
               setup: 'Use your BT email address and password.' },
@@ -29965,7 +29966,7 @@ const COUNTRY_MAIL = {
   AT:['gmail','gmx','outlook'], CH:['gmail','bluewin','outlook'], FR:['gmail','orange','outlook','free','laposte'],
   IT:['gmail','outlook','libero'], ES:['gmail','outlook'], PT:['gmail','outlook','sapo'], PL:['gmail','wppl','onet','interia'],
   CZ:['seznam','gmail'], NL:['gmail','outlook','kpn','ziggo'], BE:['gmail','outlook','telenet'], SE:['gmail','outlook','telia'],
-  IN:['gmail','outlook','rediff'], BR:['gmail','outlook','uol'], TR:['gmail','outlook'], IL:['gmail','walla'], ZA:['gmail','outlook','mweb'],
+  IN:['gmail','outlook','rediff'], BR:['gmail','outlook','uol'], TR:['gmail','outlook','yandextr'], IL:['gmail','outlook'], ZA:['gmail','outlook','mweb'],
 };
 const MAIL_DEFAULT_ORDER = ['gmail','outlook','yahoo'];
 /* WHERE SCHOOLWORK LIVES. Google Classroom leads K-12; its largest markets are
