@@ -34,9 +34,9 @@ await page.evaluate(() => {
   AMV_API.base = 'https://amv-stub.workers.dev';
   AMV_API.token = 'test-token';
   AMV_API.everyday = async (cc) => ({
-    name: cc === 'UZ' ? 'Uzbekistan' : cc === 'JP' ? 'Japan' : cc,
-    countries: ['US', 'UZ', 'JP', 'XX'],
-    local: cc === 'XX' ? [] : [
+    name: cc === 'UZ' ? 'Uzbekistan' : cc === 'JP' ? 'Japan' : cc === 'MN' ? 'Mongolia' : cc === 'US' ? 'United States' : cc,
+    countries: ['US', 'UZ', 'JP', 'MN'],
+    local: cc === 'MN' ? [] : [
       { id: cc.toLowerCase() + '_a', icon: '📄', title: cc + ' paperwork watch',
         desc: 'Only exists in ' + cc + '.', needs: 'Email' },
       { id: cc.toLowerCase() + '_b', icon: '🧾', title: cc + ' tax dates',
@@ -47,80 +47,92 @@ await page.evaluate(() => {
 });
 
 const catalogue = () => page.evaluate(() => {
-  const g = document.getElementById('cw-country-group');
+  const g = document.getElementById('cw-foryou');
   return {
-    group: g ? g.textContent.replace(/\s+/g, ' ').trim().slice(0, 400) : '',
-    titles: [...document.querySelectorAll('#vc .cw-job-t')].map(e => e.textContent.trim()),
-    picked: (document.getElementById('cw-country') || {}).value,
+    head: g ? ((g.querySelector('h3') || {}).textContent || '').replace(/\s+/g, ' ').trim() : '',
+    top: g ? [...g.querySelectorAll('.cw-job-t')].map(e => e.textContent.trim()) : [],
+    note: g ? ((g.querySelector('.cw-foryou-note') || {}).textContent || '') : '',
+    dropdown: !!document.getElementById('cw-country'),
   };
 });
 
-section('The five at the top are five real cards');
+const CW_N = await page.evaluate(() => CW_WORLD_COUNTRIES.length);
+
+/* THE COUNTRY IS WHERE SOMEBODY IS, NOT A DROPDOWN.
+
+   The owner: the first thing under the box is the top five for YOU, for the
+   country you are in, with no countries control - and every other country at
+   the very bottom. So what is pinned now is that the top five follow the
+   country, that another country is one press away at the bottom, and that a
+   country with nothing written for it says so rather than borrowing another's. */
+section('The five at the top are five real cards, for the country you are in');
 {
   await page.evaluate(() => setTab('crew'));
   await page.waitForTimeout(600);
   const out = await page.evaluate(() => ({
-    items: document.querySelectorAll('.cw-top5-item').length,
-    cards: document.querySelectorAll('.cw-top5-item .cw-job').length,
-    toggles: document.querySelectorAll('.cw-top5-item [data-dact="cwToggle"]').length,
-    ranks: document.querySelectorAll('.cw-top5-rank').length,
-    counts: document.querySelectorAll('.cw-top5-n').length,
-    head: (document.querySelector('#cw-pop h3') || {}).textContent || '',
+    items: document.querySelectorAll('#cw-foryou .cw-top5-item').length,
+    cards: document.querySelectorAll('#cw-foryou .cw-top5-item .cw-job').length,
+    toggles: document.querySelectorAll('#cw-foryou .cw-top5-item [data-dact="cwToggle"]').length,
+    ranks: document.querySelectorAll('#cw-foryou .cw-top5-rank').length,
   }));
-  ok(out.items === 5, 'five of them', JSON.stringify(out));
-  ok(out.cards === 5, 'each one a catalogue card, not a row of text', JSON.stringify(out));
+  const a = await catalogue();
+  ok(out.items === 5 && out.cards === 5, 'five of them, each a catalogue card', JSON.stringify(out));
   ok(out.toggles === 5, 'and each one can be turned on from there', JSON.stringify(out));
-  /* The ranking endpoint threw, so there is no count - and with no count there
-     must be no rank badge and no "N starts" either. */
-  ok(out.ranks === 0 && out.counts === 0,
-     'with no worldwide count, nothing on them claims one', JSON.stringify(out));
-  ok(!/most started/i.test(out.head),
-     'and the heading does not say most started', out.head.trim());
+  ok(out.ranks === 0, 'with nothing on them claiming a worldwide count', JSON.stringify(out));
+  ok(/^Top 5 for you in .*United States/.test(a.head), 'headed for where the visitor is', a.head);
+  ok(a.top.filter(t => /^US /.test(t)).length === 2, 'led by the work written for that country', a.top);
+  ok(!a.dropdown, 'and there is no country dropdown', a.dropdown);
 }
 
-section('Picking a country puts that country in the list');
+section('A different country changes the five');
 {
   await page.evaluate(() => cwCountry('UZ'));
   await page.waitForTimeout(500);
   const a = await catalogue();
-  ok(a.picked === 'UZ', 'the control shows what was picked', a.picked);
-  ok(/Only in Uzbekistan/.test(a.group), 'the list gains an Uzbekistan group', a.group);
-  ok(a.titles.some(t => /^UZ /.test(t)), 'holding work that only exists there',
-     a.titles.filter(t => /^UZ /.test(t)).join(' | '));
-}
-
-section('Picking a different country changes it');
-{
+  ok(/Uzbekistan/.test(a.head), 'the heading names Uzbekistan', a.head);
+  ok(a.top.some(t => /^UZ /.test(t)), 'holding work that only exists there', a.top);
   await page.evaluate(() => cwCountry('JP'));
   await page.waitForTimeout(500);
   const b = await catalogue();
-  ok(/Only in Japan/.test(b.group), 'the group follows the choice', b.group);
-  ok(b.titles.some(t => /^JP /.test(t)), 'with Japan’s own work in it',
-     b.titles.filter(t => /^JP /.test(t)).join(' | '));
-  ok(!b.titles.some(t => /^UZ /.test(t)), 'and none of the country left behind',
-     b.titles.filter(t => /^UZ /.test(t)).join(' | '));
+  ok(/Japan/.test(b.head) && b.top.some(t => /^JP /.test(t)), 'and Japan’s own work when it is Japan', b.top);
+  ok(!b.top.some(t => /^UZ /.test(t)), 'with none of the country left behind', b.top);
 }
 
 section('A country with nothing written for it says so');
 {
-  await page.evaluate(() => cwCountry('XX'));
+  await page.evaluate(() => cwCountry('MN'));
   await page.waitForTimeout(500);
   const c = await catalogue();
-  ok(/Nothing specific to/.test(c.group), 'it says nothing is written yet', c.group);
-  ok(!c.titles.some(t => /^JP /.test(t)), 'rather than showing another country’s',
-     c.titles.filter(t => /^JP /.test(t)).join(' | '));
+  ok(/Mongolia/.test(c.head) && c.top.length === 5, 'Mongolia still gets five', c);
+  ok(!c.top.some(t => /^(JP|UZ|US) /.test(t)), 'none of them another country’s', c.top);
+  const panel = await page.evaluate(async () => {
+    cwMoreCountries(); cwBrowse('MN');
+    await new Promise(r => setTimeout(r, 300));
+    return (document.getElementById('cw-browse') || {}).textContent || '';
+  });
+  ok(/Nothing written only for Mongolia/.test(panel), 'and its page says nothing is written only for it yet', panel.replace(/\s+/g, ' ').slice(0, 160));
 }
 
-section('Everywhere means everywhere');
+section('Every other country is at the bottom, one press away');
 {
-  await page.evaluate(() => cwCountry(''));
-  await page.waitForTimeout(400);
-  const d = await catalogue();
-  ok(d.group === '', 'choosing Everywhere removes the country group', d.group);
-  ok(d.titles.length > 20, 'and the catalogue is still there', String(d.titles.length));
+  const r = await page.evaluate(async () => {
+    cwCountry('US'); await new Promise(res => setTimeout(res, 300));
+    cwMoreCountries(); await new Promise(res => setTimeout(res, 100));
+    const n = document.querySelectorAll('#cw-morec .cw-cc').length;
+    cwBrowse('JP'); await new Promise(res => setTimeout(res, 300));
+    const b = document.getElementById('cw-browse');
+    const titles = b ? [...b.querySelectorAll('.cw-job-t')].map(e => e.textContent.trim()) : [];
+    const mine = b ? !!b.querySelector('[data-dact="cwCountry"][data-darg="JP"]') : false;
+    const secs = [...document.querySelectorAll('.crew-jobs-sec > *')].map(e => e.id || e.className);
+    return { n, titles, mine, last: secs.indexOf('cw-morec') === secs.length - 1, secs: secs.slice(-3) };
+  });
+  ok(r.n === CW_N, 'every country with work written for it is listed', r.n);
+  ok(r.titles.length === 2 && r.titles.every(t => /^JP /.test(t)), 'choosing Japan shows Japan’s own work', r.titles);
+  ok(r.mine, 'with a way to make it the country the page is for', r.mine);
+  ok(r.last, 'and it is the last thing on the page', r.secs);
 }
 
-section('When there IS a worldwide count, the count is the order');
+section('When there IS a worldwide count, it is shown under the list, in its order');
 {
   const out = await page.evaluate(async () => {
     const ids = (_cwJobs() || []).slice(0, 6).map(j => j.id);
@@ -132,21 +144,22 @@ section('When there IS a worldwide count, the count is the order');
     cwPopReload();
     await new Promise(r => setTimeout(r, 300));
     const byId = {}; (_cwJobs() || []).forEach(j => { byId[j.id] = j.title; });
+    const box = document.getElementById('cw-popc') || document;
     return {
-      head: (document.querySelector('#cw-pop h3') || {}).textContent || '',
-      shown: [...document.querySelectorAll('.cw-top5-item .cw-job-t')].map(e => e.textContent.trim()),
-      counts: [...document.querySelectorAll('.cw-top5-n')].map(e => e.textContent.trim()),
-      ranks: [...document.querySelectorAll('.cw-top5-rank')].map(e => e.textContent.trim()),
+      head: (box.querySelector('h3') || {}).textContent || '',
+      shown: [...box.querySelectorAll('.cw-top5-item .cw-job-t')].map(e => e.textContent.trim()),
+      counts: [...box.querySelectorAll('.cw-top5-n')].map(e => e.textContent.trim()),
+      ranks: [...box.querySelectorAll('.cw-top5-rank')].map(e => e.textContent.trim()),
       expect: [ids[3], ids[1], ids[5], ids[0], ids[2]].map(i => byId[i]),
+      topStill: /^Top 5 for you/.test(((document.querySelector('#cw-foryou h3') || {}).textContent || '').trim()),
     };
   });
-  ok(/most started/i.test(out.head), 'the heading says what it is now', out.head.trim());
-  ok(out.shown.length === 5, 'still five', String(out.shown.length));
+  ok(/most started/i.test(out.head), 'the counted block says what it is', out.head.trim());
   ok(JSON.stringify(out.shown) === JSON.stringify(out.expect),
-     'in the order the server counted, not the order AMV picked',
-     out.shown.join(' | '));
+     'in the order the server counted, not the order AMV picked', out.shown.join(' | '));
   ok(out.ranks.join(',') === '1,2,3,4,5', 'numbered', out.ranks.join(','));
   ok(out.counts[0] === '99 starts', 'and each one carries its real count', out.counts.join(' | '));
+  ok(out.topStill, 'while the top of the page stays the five for you', out.topStill);
 }
 
 section('Nothing follows the catalogue');

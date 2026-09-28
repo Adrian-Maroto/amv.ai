@@ -22,6 +22,11 @@ import { readFile } from 'node:fs/promises';
 const app = await bootApp({ tab: 'chat', user: { name: 'Adrian', email: 'a@amv.dev', ini: 'A' } });
 const { page, errors } = app;
 await page.evaluate(() => document.getElementById('ck')?.remove());
+/* THE TOP OF CREW IS "TOP 5 FOR YOU" WHEREVER A COUNTRY IS KNOWN, and this
+   block heads the page only when none is. So the cases below run with no
+   country - the browser's language guess switched off - and the last section
+   puts one back and checks where the ranking went. */
+await page.evaluate(() => { window.__realGuess = window._everydayGuess; window._everydayGuess = () => ''; });
 
 /* Render the Crew tab with a given server answer in place, and read back what
    the screen actually shows. `reply` is what /crew/popular returns; null means
@@ -117,6 +122,30 @@ section('Above the floor the order is the counts, unedited');
   ok(/143/.test(r.text), 'the sample size is stated, not hidden', r.text.slice(-90));
 }
 
+section('With a country, the top is the five for you and the count moves under the list');
+{
+  const r = await page.evaluate(async (top) => {
+    window._everydayGuess = window.__realGuess;
+    AMV_API.crewPopular = async () => ({ enough: true, total: 143, top });
+    _cwPop = { state: 'idle', data: null, err: '' };
+    setTab('chat'); setTab('crew');
+    await new Promise(res => setTimeout(res, 300));
+    const fy = document.getElementById('cw-foryou'), pc = document.getElementById('cw-popc-body');
+    const order = [...document.querySelectorAll('#cw-foryou, .cw-filters, #cw-popc, #cw-morec')].map(e => e.id || e.className);
+    const out = { foryou: fy ? (fy.querySelector('h3') || {}).textContent : '',
+      ranked: pc ? pc.querySelectorAll('.cw-top5-rank').length : -1, order,
+      dup: document.querySelectorAll('#cw-pop').length };
+    window._everydayGuess = () => '';
+    return out;
+  }, [{ id: catalogue[2].id, n: 91 }, { id: catalogue[0].id, n: 40 }]);
+  ok(/^Top 5 for you in/.test(r.foryou.trim()), 'the top of Crew is the five for where you are', r.foryou);
+  ok(r.ranked === 2, 'the counted ranking is still shown, under the list', r);
+  ok(r.order[0] === 'cw-foryou' && r.order.indexOf('cw-popc') > r.order.indexOf('cw-filters'), 'in that order: for you, the list, then what others start', r.order);
+  ok(r.dup === 0, 'and the ranking is not drawn twice', r.dup);
+  /* Back to the no-country state the rest of this file measures. */
+  await showCrew({ enough: true, total: 143, top: [{ id: catalogue[2].id, n: 91 }, { id: catalogue[0].id, n: 40 }, { id: catalogue[3].id, n: 12 }] }, { plan: 'pro' });
+}
+
 section('A row opens the job it names');
 {
   /* Dispatched rather than driven by the mouse. Crew repaints on its own for
@@ -186,14 +215,18 @@ section('The band is reachable from the shipped bundle, not just from a test');
   const uses = await page.evaluate(() => {
     const src = (document.getElementById('amv-app-code') || {}).textContent || '';
     return {
-      render: (src.match(/_cwPopularHTML\s*\(/g) || []).length,
+      /* Both views draw "Top 5 for you", which falls back to this block when
+         no country is known - so the count is of that, plus the fallback. */
+      render: (src.match(/_cwForYouHTML\s*\(/g) || []).length,
+      fallback: /function _cwForYouHTML[\s\S]{0,400}return _cwPopularHTML\(\)/.test(src),
       load: (src.match(/_cwLoadPopular\s*\(/g) || []).length,
       endpoint: /\/crew\/popular/.test(src),
     };
   });
   /* One is the definition. A caller makes two, and this one has two callers -
      the locked catalogue and the unlocked one. */
-  ok(uses.render >= 3, '_cwPopularHTML is rendered by both Crew views', uses.render);
+  ok(uses.render >= 3, 'the top of Crew is rendered by both Crew views', uses.render);
+  ok(uses.fallback, 'and with no country it is this block', uses.fallback);
   ok(uses.load >= 2, 'and the load is actually invoked', uses.load);
   ok(uses.endpoint, 'the bundle really calls /crew/popular');
 }

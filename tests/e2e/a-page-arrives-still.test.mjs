@@ -21,7 +21,11 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const { url, server } = await serveApp({ apiBase: '' });
 const browser = await chromium.launch(LAUNCH);
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+const errors = [];
+/* On a laptop and on a phone: the phone has its own furniture (the bottom
+   bar), which was drawn empty and grew by 48px on every load. */
+for (const [label, viewport, touch] of [['a laptop', { width: 1280, height: 860 }, false], ['a phone', { width: 390, height: 844 }, true]]) {
+const ctx = await browser.newContext({ viewport, hasTouch: touch, isMobile: touch });
 await ctx.addInitScript(() => {
   window.__shifts = []; window.__moving = []; window.__firstTab = null;
   try {
@@ -53,11 +57,10 @@ await ctx.addInitScript(() => {
   } catch (e) {}
 });
 const page = await ctx.newPage();
-const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 
 for (const [addr, want] of [['/', 'chat'], ['/#/crew', 'crew'], ['/#/settings', 'settings'], ['/#/integrations', 'integrations'], ['/#/tasks', 'tasks']]) {
-  section('A fresh load of ' + want);
+  section('A fresh load of ' + want + ' on ' + label);
   await page.goto(url + addr, { waitUntil: 'load' });
   await page.reload({ waitUntil: 'load' });
   await page.waitForTimeout(2600);
@@ -71,6 +74,8 @@ for (const [addr, want] of [['/', 'chat'], ['/#/crew', 'crew'], ['/#/settings', 
   ok(r.moving.length === 0, 'nothing slides, rises or fades in', r.moving);
   ok(r.cls < 0.001, 'nothing on the page moves after it is drawn', { cls: +r.cls.toFixed(4), shifts: r.shifts });
   ok(!r.back && r.stack === 0, 'and there is no back arrow to a screen that was never shown', r);
+}
+await ctx.close();
 }
 
 section('No JavaScript errors');

@@ -1637,13 +1637,10 @@ async function _cwLoadLocal(code){
      the block is not on the page - a search, or a category other than all. */
   try{
     if(S.tab === 'crew'){
-      const el = document.getElementById('cw-country-group');
-      if(el && !_cwFind && _cwCat === 'all'){
-        const html = _cwCountryGroupHTML(_cwAnyCard);
-        if(html) el.outerHTML = html; else _cwRepaintSoon();
-      } else {
-        _cwRepaintSoon();
-      }
+      let done = false;
+      if(cc === _cwCountryGuess()){ const el = document.getElementById('cw-foryou'); if(el){ el.outerHTML = _cwForYouHTML(); done = true; } }
+      if(cc === _cwBrowse){ const el = document.getElementById('cw-morec'); if(el){ el.outerHTML = _cwMoreCountriesHTML(); done = true; } }
+      if(!done) _cwRepaintSoon();
     }
   }catch(e){ try{ if(S.tab === 'crew') _cwRepaintSoon(); }catch(e2){} }
 }
@@ -1846,9 +1843,54 @@ function cwCountry(code){
   renderCrewView();
 }
 try{ window.cwCountry = cwCountry; }catch(e){}
+/* WHERE SOMEBODY IS, FROM THE NETWORK.
+
+   The country used to come from the browser's language alone, so somebody in
+   Madrid with an English (US) browser was shown the United States. The edge
+   knows which country a request comes from (/v1/where) - country level only,
+   no permission prompt, no coordinates - and that answer now comes before the
+   language guess. Held for the tab, so it is asked once per visit. */
+let _cwHere = (()=>{ try{ return sessionStorage.getItem('amv_cw_here') || ''; }catch(e){ return ''; } })();
+let _cwHereAsked = false, _cwHereDone = false;
+/* Still waiting to hear where somebody is. While it is, the top five hold
+   their place rather than showing the browser's guess for a moment - a visitor
+   in Spain must not glimpse the United States first. */
+function _cwHerePending(){
+  if(_cwHere || _cwHereDone || (_cwCountry && _cwCountry !== '-')) return false;
+  return !!(window.AMV_API && AMV_API.live && typeof AMV_API.where === 'function');
+}
+async function _cwAskWhere(){
+  if(_cwHereAsked || _cwHere) return;
+  _cwHereAsked = true;
+  if(!(window.AMV_API && AMV_API.live && typeof AMV_API.where === 'function')){ _cwHereDone = true; return; }
+  try{
+    const d = await AMV_API.where();
+    const cc = String((d && d.country) || '').toUpperCase();
+    if(cc && CW_WORLD_COUNTRIES.some(c => c[0] === cc)){
+      _cwHere = cc;
+      try{ sessionStorage.setItem('amv_cw_here', cc); }catch(e){}
+    }
+  }catch(e){}
+  /* Answered, or failed: either way the guess can stand now, and the five are
+     drawn for whichever country it is. */
+  _cwHereDone = true;
+  if(S.tab === 'crew' && !(_cwCountry && _cwCountry !== '-')) _cwForYouRepaint();
+}
+function _cwLangGuess(){
+  try{
+    if(typeof _everydayGuess === 'function'){
+      const g = String(_everydayGuess() || '').toUpperCase();
+      if(CW_WORLD_COUNTRIES.some(c => c[0] === g)) return g;
+    }
+  }catch(e){}
+  return '';
+}
 function _cwCountryGuess(){
-  if(_cwCountry === '-') return '';
-  if(_cwCountry) return _cwCountry;
+  /* A country somebody chose ("This is my country") wins over any guess. The
+     old "Everywhere" choice (`-`) has no control any more, so it reads as no
+     choice at all rather than as "show nowhere". */
+  if(_cwCountry && _cwCountry !== '-') return _cwCountry;
+  if(_cwHere) return _cwHere;
   try{
     if(typeof _everydayGuess === 'function'){
       const g = String(_everydayGuess() || '').toUpperCase();
@@ -2065,6 +2107,7 @@ function _cwRepaintSoon(){
 
 function _cwPopPaint(){
   try{ const el=document.getElementById('cw-pop-body'); if(el) el.innerHTML=_cwPopBodyHTML(); }catch(e){}
+  try{ const el=document.getElementById('cw-popc-body'); if(el) el.innerHTML=_cwCountedTop() ? _cwPopBodyHTML() : ''; }catch(e){}
 }
 function cwPopReload(){ _cwPop={ state:'idle', data:null, err:'' }; _cwPopPaint(); _cwLoadPopular(); }
 try{ window.cwPopReload=cwPopReload; }catch(e){}
@@ -2107,6 +2150,137 @@ function _cwStartHereJobs(){
   }
   return picked.slice(0,5);
 }
+/* ── TOP FIVE FOR YOU, WHERE YOU ARE ─────────────────────────────────────────
+
+   Asked for: the first thing under the box is the five things for YOU, and
+   because AMV knows the country, they are that country's own - Spain's five
+   in Spain, the United States' five there. They are the country packs the
+   server already carries (five genuine local jobs for each of 105 countries,
+   written for that country rather than translated), which used to sit behind
+   a dropdown further down the page. No dropdown now: the country comes from
+   where somebody is, and "Not in Spain?" at the top and "See more countries"
+   at the bottom are the two ways to look elsewhere.
+
+   While the country's five are on their way the cards hold their place, so
+   the section does not arrive and then grow. With no country - or a server
+   that cannot be reached - it is AMV's own five, as before, and says why. */
+function _cwCountryRow(cc){ return cc ? CW_WORLD_COUNTRIES.find(c => c[0] === cc) || null : null; }
+function _cwForYouHTML(){
+  try{ setTimeout(_cwAskWhere, 0); }catch(e){}
+  if(_cwHerePending()){
+    return `<section class="cw-pop cw-foryou" id="cw-foryou" aria-busy="true">
+      <div class="sec-head"><h3>${escH(T('Top 5 for you'))}</h3><span class="sec-sub">${escH(T('Finding what matters where you are\u2026'))}
+        <span class="cw-link cw-link-ghost" aria-hidden="true">${escH(T('Not in'))}?</span></span></div>
+      <div class="cw-top5">${'<div class="cw-top5-item"><div class="cw-card-ph" aria-hidden="true"></div></div>'.repeat(5)}</div>
+    </section>`;
+  }
+  const cc = _cwCountryGuess(), row = _cwCountryRow(cc);
+  if(!row) return _cwPopularHTML();
+  try{ _cwLoadLocal(cc); }catch(e){}
+  const [, name, flag] = row;
+  const st = _cwLocalState[cc] || 'loading';
+  let jobs = _cwLocalJobs(cc).slice(0, 5), note = '';
+  if(st === 'loading' && !jobs.length){
+    return `<section class="cw-pop cw-foryou" id="cw-foryou" aria-busy="true">
+      ${_cwForYouHead(name, flag)}
+      <div class="cw-top5">${'<div class="cw-top5-item"><div class="cw-card-ph" aria-hidden="true"></div></div>'.repeat(5)}</div>
+    </section>`;
+  }
+  if(st === 'offline') note = `<p class="cw-foryou-note">${escH(T('The jobs written for'))} ${escH(name)} ${escH(T('are on AMV’s servers, which cannot be reached right now - so these are AMV’s own five for anywhere.'))}</p>`;
+  if(jobs.length < 5){
+    const seen = new Set(jobs.map(j => j.id));
+    _cwStartHereJobs().forEach(j => { if(jobs.length < 5 && j && !seen.has(j.id)){ seen.add(j.id); jobs.push(j); } });
+  }
+  return `<section class="cw-pop cw-foryou" id="cw-foryou">
+    ${_cwForYouHead(name, flag)}${note}
+    <div class="cw-top5">${jobs.map(j => `<div class="cw-top5-item">${_cwAnyCard(j)}</div>`).join('')}</div>
+  </section>`;
+}
+function _cwForYouHead(name, flag){
+  return `<div class="sec-head"><h3>${escH(T('Top 5 for you in'))} <span class="cw-flag" aria-hidden="true">${flag}</span> ${escH(name)}</h3>
+    <span class="sec-sub">${escH(T('Picked for where you are, under the names things have there.'))}
+      <button class="cw-link" data-dact="cwMoreCountries">${escH(T('Not in'))} ${escH(name)}?</button></span></div>`;
+}
+/* THE COUNTED FIVE, WHEN THERE IS A COUNT. "Top 5 for you" took the top of
+   the page, so the ranking of what people actually start across AMV sits
+   under the catalogue - and only once the server has counted enough to rank.
+   Before then it adds nothing: the five for you are already on screen. */
+function _cwMostStartedHTML(){
+  /* With no country the top of the page already is this block - not twice. */
+  if(!_cwCountryRow(_cwCountryGuess())) return '';
+  try{ setTimeout(_cwLoadPopular, 0); }catch(e){}
+  /* Its own ids: with no country, "Top 5 for you" falls back to the uncounted
+     block, which already owns cw-pop, and two elements must not share one. */
+  return `<section class="cw-pop cw-pop-counted" id="cw-popc">
+    <div id="cw-popc-body" class="cw-pop-body">${_cwCountedTop() ? _cwPopBodyHTML() : ''}</div>
+  </section>`;
+}
+function _cwForYouRepaint(){
+  try{
+    const el = document.getElementById('cw-foryou') || document.getElementById('cw-pop');
+    if(el) el.outerHTML = _cwForYouHTML(); else _cwRepaintSoon();
+  }catch(e){ try{ _cwRepaintSoon(); }catch(_){} }
+}
+
+/* SEE MORE COUNTRIES - at the very bottom, as asked. A list of every country
+   AMV has written jobs for; choosing one shows that country's own five in
+   place, and "This is my country" makes it the one the top of the page is for
+   (the fix for a VPN, or somebody abroad). Nothing is fetched until somebody
+   opens a country. */
+let _cwMoreOpen = false, _cwBrowse = '';
+function _cwMoreCountriesHTML(){
+  const mine = _cwCountryGuess();
+  if(!_cwMoreOpen){
+    return `<section class="cw-morec" id="cw-morec">
+      <button class="cw-morec-btn" data-dact="cwMoreCountries" aria-expanded="false">${escH(T('See more countries'))}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+    </section>`;
+  }
+  const list = CW_WORLD_COUNTRIES.slice().sort((a, b) => a[1].localeCompare(b[1])).map(([cc, name, flag]) =>
+    `<button class="cw-cc${cc === _cwBrowse ? ' on' : ''}" data-dact="cwBrowse" data-darg="${escH(cc)}" aria-pressed="${cc === _cwBrowse}">
+      <span aria-hidden="true">${flag}</span> ${escH(name)}${cc === mine ? ' <span class="cw-cc-you">' + escH(T('you')) + '</span>' : ''}</button>`).join('');
+  return `<section class="cw-morec" id="cw-morec">
+    <div class="sec-head"><h3>${escH(T('More countries'))}</h3>
+      <span class="sec-sub">${escH(String(CW_WORLD_COUNTRIES.length))} ${escH(T('countries, each with work written for it. Choose one to see it.'))}</span></div>
+    <div class="cw-cc-list" role="group" aria-label="${escH(T('Countries'))}">${list}</div>
+    ${_cwBrowse ? _cwBrowsePanelHTML(_cwBrowse) : ''}
+  </section>`;
+}
+function _cwBrowsePanelHTML(cc){
+  const row = _cwCountryRow(cc); if(!row) return '';
+  const [, name, flag] = row;
+  try{ _cwLoadLocal(cc); }catch(e){}
+  const st = _cwLocalState[cc] || 'loading', jobs = _cwLocalJobs(cc);
+  const mine = _cwCountryGuess() === cc;
+  const body = st === 'ok' && jobs.length
+      ? `<div class="cw-jobs-grid cw-cat-grid">${jobs.map(_cwAnyCard).join('')}</div>`
+    : st === 'offline'
+      ? `<p class="cw-foryou-note">${escH(T('The jobs written for'))} ${escH(name)} ${escH(T('are on AMV’s servers, which cannot be reached right now.'))}</p>`
+    : st === 'ok'
+      ? `<p class="cw-foryou-note">${escH(T('Nothing written only for'))} ${escH(name)} ${escH(T('yet. Everything above still runs there.'))}</p>`
+      : `<p class="cw-foryou-note" aria-busy="true">${escH(T('Looking up what is different in'))} ${escH(name)}…</p>`;
+  return `<div class="cw-browse" id="cw-browse">
+    <div class="cw-browse-h"><h4><span aria-hidden="true">${flag}</span> ${escH(T('Only in'))} ${escH(name)}</h4>
+      ${mine ? `<span class="cw-cc-you">${escH(T('your country'))}</span>` : `<button class="btn bs" data-dact="cwCountry" data-darg="${escH(cc)}">${escH(T('This is my country'))}</button>`}</div>
+    ${body}
+    <p class="cw-foryou-note">${escH(T('Everything in the list above runs in'))} ${escH(name)} ${escH(T('too.'))}</p>
+  </div>`;
+}
+function cwMoreCountries(){
+  _cwMoreOpen = true;
+  try{
+    const el = document.getElementById('cw-morec');
+    if(el){ el.outerHTML = _cwMoreCountriesHTML(); } else _cwRepaintSoon();
+    setTimeout(() => { try{ const n = document.getElementById('cw-morec'); if(n) n.scrollIntoView({ block:'start' }); }catch(e){} }, 0);
+  }catch(e){}
+}
+function cwBrowse(cc){
+  _cwBrowse = String(cc || '').toUpperCase();
+  try{ const el = document.getElementById('cw-morec'); if(el) el.outerHTML = _cwMoreCountriesHTML(); else _cwRepaintSoon(); }catch(e){}
+}
+try{ window.cwMoreCountries = cwMoreCountries; window.cwBrowse = cwBrowse; window._cwForYouHTML = _cwForYouHTML;
+     window._cwAskWhere = _cwAskWhere; }catch(e){}
+
 function _cwCountedTop(){
   const st=_cwPop;
   if(st.state!=='done' || !st.data || !st.data.enough) return null;
@@ -2187,7 +2361,9 @@ function _cwJobsBody(jobs, jobCard){
      nothing narrower is being asked for. A search or a category is a narrower
      question and answering it with an unrelated group on top would be the old
      fault the other way round. */
-  const cgroup = (!_cwFind && _cwCat==='all') ? _cwCountryGroupHTML(jobCard) : '';
+  /* The country's own five are the top of the page now (Top 5 for you), so
+     they are not repeated as a group here. */
+  const cgroup = '';
   if(_cwFind){
     /* SEARCHES THE WHOLE POOL, NOT THE HUNDRED ON SCREEN.
 
@@ -4061,14 +4237,15 @@ function renderCrewView(){
             Same reason "most used" moved down: it ranks what other people
             run, which is interesting once you know what this is and noise
             before. */ ''}
-      ${_cwPopularHTML()}
+      ${_cwForYouHTML()}
       <div class="cw-filters">
         ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
-        ${_cwCountryFilterHTML()}
       </div>
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), _cwLockedCard)}</div>
+      ${_cwMostStartedHTML()}
       ${_cwErrandsHTML()}
+      ${_cwMoreCountriesHTML()}
       ${/* ONE LINE, NOT A BAND.
 
             The stats band came out because it was three numbers and a price
@@ -4331,14 +4508,15 @@ function renderCrewView(){
       <div class="cw-anything">These are starting points, not the limit. Type <b>anything</b> in the box above and AMV works out which accounts, sites and tools it needs and does it - on a schedule if you ask. If something it needs is not connected yet, it tells you exactly what to add.</div>
       ${/* Same order as the locked view, for the same reason: the standing
             work first, the one-offs last. */ ''}
-      ${_cwPopularHTML()}
+      ${_cwForYouHTML()}
       <div class="cw-filters">
         ${_cwFindBoxHTML(_cwAllJobs().filter(j=>_cwMatches(j,_cwFind)).length)}
-        ${_cwCountryFilterHTML()}
       </div>
       ${_cwCatChips(_cwShowcase())}
       <div id="cw-jobs-body">${_cwJobsBody(_cwShowcase(), jobCard)}</div>
+      ${_cwMostStartedHTML()}
       ${_cwErrandsHTML()}
+      ${_cwMoreCountriesHTML()}
     </div>
 
   </div></div>`;

@@ -126,6 +126,10 @@ const PUBLIC = {
      it touches no storage - a cache header and constants make a flood cheap to
      serve, and a rate limiter would cost a round trip more than the handler. */
   '/v1/everyday':        'what AMV does where you live, asked before anybody signs up',
+  /* The requester's own country from the edge, and nothing else: no storage,
+     no account, no coordinates. Answering it needs no login any more than
+     /v1/everyday does, and Crew asks it before somebody has an account. */
+  '/v1/where':           'the country a visitor is in, from the network edge - reads nothing',
 };
 
 /* One definition, in tests/lib/source.mjs. Three files carried an identical

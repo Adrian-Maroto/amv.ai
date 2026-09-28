@@ -12902,6 +12902,9 @@ async function _route(request, env, ctx) {
        names. A GET so a browser and the edge can cache it, which is what keeps
        a public catalogue cheap. */
     '/v1/everyday',             // what AMV does where you live
+    /* Which country this request comes from, as the network edge reports it.
+       Reads no storage and writes nothing; per visitor, so never cached. */
+    '/v1/where',                // the country Crew is for
     /* The same shape and the same reason: a catalogue, read-only, identical
        for everyone who asks, and the thing somebody reads before they have an
        account. It holds nothing belonging to anybody - it reads the public MCP
@@ -13154,6 +13157,7 @@ async function _route(request, env, ctx) {
     case '/v1/coverage':        return coverageMap(request, env);
     // --- WHAT PEOPLE ALREADY DO EVERY WEEK, WHERE THEY LIVE ---
     case '/v1/everyday':        return everydayJobs(request, env);
+    case '/v1/where':           return whereFrom(request);
     case '/v1/connectors':      return connectorDirectory(request, env);
     case '/v1/connector-logo': return connectorLogo(request, env);
     // --- TELEGRAM (official Bot API; the messenger most of the world uses) ---
@@ -31909,6 +31913,24 @@ const EVERYDAY_BY_COUNTRY = {
 /* Only what this person's country needs, plus the ten that are true
    everywhere. The whole registry is well over a hundred templates and a
    hundred and five of them are wrong for any given reader. */
+/* THE COUNTRY A VISITOR IS IN, FROM THE NETWORK, NOT FROM THEIR BROWSER.
+
+   Crew guessed the country from the browser's language, so somebody in Madrid
+   with an English (US) browser was shown work for the United States. The edge
+   already knows the country each request comes from - it is how prediction
+   markets are offered or withheld - so it is asked here. Country level only:
+   no coordinates, no permission prompt, nothing stored, nothing read. Not
+   cached, because the answer is per visitor, which is also why it is not a
+   field on /v1/everyday - that one is cached at the edge and served to
+   everybody, and would hand one visitor's country to the next. */
+function whereFrom(request) {
+  const cc = String((request.cf && request.cf.country) || '').toUpperCase();
+  /* XX and T1 are the edge's "unknown" and "Tor"; neither is a country. */
+  const country = /^[A-Z]{2}$/.test(cc) && cc !== 'XX' && cc !== 'T1' ? cc : '';
+  return json({ ok: true, country, name: country ? (COUNTRY_NAME[country] || '') : '' }, 200,
+              { 'Cache-Control': 'private, no-store' });
+}
+
 async function everydayJobs(request, env) {
   /* PUBLIC, ON PURPOSE, AND SIGNED OFF BY THE OWNER.
 

@@ -122,8 +122,14 @@ section('Both halves are on the screen, and one of them names the country');
      half is simply in the list, unlabelled, because it needs no label there.
      What still has to be true is that both sets of jobs are reachable and that
      the local group says which country it is. */
+  /* The local half is the top of the page now - "Top 5 for you in Spain" -
+     and the universal half is the list under it. */
   const seen = await page.evaluate(() => ({
-    group: (document.querySelector('#cw-country-group .cw-cat-h') || {}).textContent || '',
+    group: (document.querySelector('#cw-foryou h3') || {}).textContent || '',
+    localOnTop: (() => {
+      const ids = new Set(_cwLocalJobs('ES').map(j => j.id));
+      return [...document.querySelectorAll('#cw-foryou [data-dact="cwPeek"]')].filter(b => ids.has(b.dataset.darg)).length;
+    })(),
     universal: (() => {
       const ids = new Set(_cwUniversalJobs().map(j => j.id));
       return [...document.querySelectorAll('#vc [data-dact="cwPeek"]')]
@@ -131,7 +137,8 @@ section('Both halves are on the screen, and one of them names the country');
     })(),
   }));
   ok(seen.universal > 0, 'the work that is the same everywhere is in the list', seen.universal);
-  ok(/only in spain/i.test(seen.group), 'and the local half names the country', seen.group);
+  ok(/for you in .*spain/i.test(seen.group), 'and the local half names the country', seen.group);
+  ok(seen.localOnTop === 5, 'and it is Spain\u2019s own five at the top', seen.localOnTop);
 }
 
 section('A country with nothing written for it says so rather than inventing');
@@ -139,14 +146,16 @@ section('A country with nothing written for it says so rather than inventing');
   const none = await page.evaluate(async () => {
     /* A code the packs do not cover. The honest outcome is an empty local
        list and a sentence, never a generated stand-in. */
-    _cwLocalCache.ZZ = []; _cwLocalState.ZZ = 'ok';
-    cwCountry('ZZ');
+    /* A listed country whose pack came back empty, opened from "See more
+       countries" at the bottom. */
+    _cwLocalCache.MN = []; _cwLocalState.MN = 'ok';
+    cwMoreCountries(); cwBrowse('MN');
     await new Promise(r => setTimeout(r, 250));
-    return { local: _cwLocalJobs('ZZ').length,
-             text: (document.querySelector('.cw-country-empty') || {}).textContent || '' };
+    return { local: _cwLocalJobs('MN').length,
+             text: (document.querySelector('#cw-browse') || {}).textContent || '' };
   });
   ok(none.local === 0, 'nothing is fabricated for it', none.local);
-  ok(/still appl|same everywhere/i.test(none.text),
+  ok(/still runs there|still appl|same everywhere/i.test(none.text),
      'and it says the universal ones still hold, which is true', none.text.slice(0, 80));
 }
 
@@ -191,13 +200,13 @@ section('A lookup that fails asks once, then stops asking');
     await new Promise(res => setTimeout(res, 1200));
     const asked = window.__ev;
     window.fetch = real;
-    return { asked, text: (document.querySelector('.cw-country-empty') || {}).textContent || '' };
+    return { asked, text: (document.querySelector('#cw-foryou .cw-foryou-note') || {}).textContent || '' };
   });
   ok(r.asked >= 1, 'it does ask once', r.asked);
   /* Three at most: a GET is retried twice on a 5xx, which is the transport
      doing its job. The defect was unbounded, so the bound is the assertion. */
   ok(r.asked <= 4, 'and then stops, instead of spinning until the tab is closed', r.asked);
-  ok(/cannot reach/i.test(r.text),
+  ok(/cannot be reached|cannot reach/i.test(r.text),
      'and says the server could not be reached, not that France has nothing',
      r.text.slice(0, 90));
 }

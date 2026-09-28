@@ -248,24 +248,28 @@ section('4. A design in Recents opens, and Build goes to Build');
   ok(r.kept > 0, 'without throwing the design away', String(r.kept));
 }
 
-section('5. Crew: the country control changes the list, and five lead it');
+section('5. Crew: the country changes the five at the top, and five lead it');
 {
   const r = await page.evaluate(async () => {
     setTab('crew'); await new Promise(x => setTimeout(x, 1800));
     const five = document.querySelectorAll('.cw-top5-item .cw-job').length;
+    /* The dropdown is gone: the top is the five for where somebody is, and a
+       country chosen from "See more countries" becomes the one it is for. */
     cwCountry('UZ'); await new Promise(x => setTimeout(x, 900));
-    const uz = (document.getElementById('cw-country-group') || {}).textContent || '';
+    const uz = ((document.getElementById('cw-foryou') || {}).querySelector || (() => null)).call(document.getElementById('cw-foryou'), 'h3');
+    const uzT = uz ? uz.textContent : '';
     cwCountry('JP'); await new Promise(x => setTimeout(x, 900));
-    const jp = (document.getElementById('cw-country-group') || {}).textContent || '';
+    const jpEl = document.querySelector('#cw-foryou h3');
+    const jpT = jpEl ? jpEl.textContent : '';
     const page_ = document.querySelector('.crew-page');
     const cat = document.querySelector('.crew-jobs-sec');
     const kids = [...page_.children];
-    return { five, uz: uz.slice(0, 40), jp: jp.slice(0, 40),
+    return { five, uz: uzT.slice(0, 40), jp: jpT.slice(0, 40),
              last: kids.indexOf(cat) === kids.length - 1 };
   });
   ok(r.five === 5, 'five jobs lead the catalogue', String(r.five));
-  ok(/Uzbekistan/.test(r.uz), 'choosing Uzbekistan changes the list', r.uz);
-  ok(/Japan/.test(r.jp), 'and choosing Japan changes it again', r.jp);
+  ok(/Uzbekistan/.test(r.uz), 'choosing Uzbekistan changes the five at the top', r.uz);
+  ok(/Japan/.test(r.jp), 'and choosing Japan changes them again', r.jp);
   ok(r.last, 'and nothing follows the catalogue', r.last);
 }
 

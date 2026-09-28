@@ -1329,6 +1329,9 @@ const AMV_API = {
      same for everybody who asks - so the browser and the edge can both cache
      it, and somebody clicking through five countries costs five cached reads
      rather than five calls. */
+  /* The country this visitor is in, as the network edge reports it - country
+     level only, no prompt. Empty when the edge does not know. */
+  async where(){ const r=await this._fetch('/v1/where'); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not tell where you are.'); return { country:String(d.country||''), name:String(d.name||'') }; },
   async everyday(country){ const r=await this._fetch('/v1/everyday?country='+encodeURIComponent(country||'')); const d=await r.json().catch(()=>({})); if(!r.ok) throw new Error(d.error||'Could not load these.'); return d; },
   /* The public connector directory. The whole query is in the URL because the
      answer is a catalogue rather than anything of this account's - which is

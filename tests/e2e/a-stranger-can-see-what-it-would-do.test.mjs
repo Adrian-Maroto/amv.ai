@@ -57,12 +57,15 @@ section('What they get is the catalogue, not a pitch');
       return [...document.querySelectorAll('#vc [data-dact="cwPeek"]')]
         .filter(b => ids.has(b.dataset.darg)).length;
     })(),
-    picker: !!document.getElementById('cw-country'),
+    /* No country dropdown any more: the top of Crew is the five for where the
+       visitor is, and every other country is at the bottom. Both are what a
+       stranger sees before signing up. */
+    picker: !!(document.getElementById('cw-foryou') || document.getElementById('cw-pop')) && !!document.getElementById('cw-morec'),
     find: !!document.getElementById('cw-find'),
   }));
   ok(seen.locked === 1, 'they get the same screen somebody on the free plan gets', seen.locked);
   ok(seen.jobs > 20, 'with real jobs on it, not a description of jobs', seen.jobs);
-  ok(seen.picker, 'the country picker is there', seen.picker);
+  ok(seen.picker, 'the five for where they are, and every other country, are there', seen.picker);
   ok(seen.find, 'and so is the search box', seen.find);
   ok(seen.universal > 0, 'the work that holds in every country is on the page', seen.universal);
 }

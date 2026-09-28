@@ -15817,3 +15817,74 @@ html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display
    so the whole sidebar footer grew by a line after the first paint. A blank
    line holds its place. */
 .sb-ue:empty::before{ content:"\00a0"; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   LAYER A266 - Crew: the top five for where you are, and other countries
+   Under the box: the five jobs written for the country somebody is in, with
+   a small "Not in Spain?" beside the heading. At the very bottom: every other
+   country, opened in place. Placeholder cards hold the five's space while
+   they arrive, so the section never grows after it is drawn.
+   ══════════════════════════════════════════════════════════════════════ */
+.cw-foryou .sec-head h3{ display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
+.cw-flag{ font-size:1.1em; line-height:1; }
+.cw-link{
+  display:inline-flex; align-items:center; min-height:44px; padding:0 var(--sp-1); margin-left:var(--sp-1);
+  border:0; background:transparent; cursor:pointer; font:inherit; font-weight:600; color:var(--accent-txt);
+  border-radius:var(--r-sm);
+}
+.cw-link:hover{ text-decoration:underline; }
+.cw-link:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.cw-foryou-note{ margin:var(--sp-2) 0 var(--sp-3); font-size:var(--t-sm); line-height:1.5; color:var(--mu); }
+.cw-card-ph{
+  flex:1 1 auto; border:1px solid var(--bd); border-radius:var(--r-lg);
+  background:linear-gradient(90deg, var(--s2) 0%, var(--s3) 50%, var(--s2) 100%); background-size:200% 100%;
+}
+@media (prefers-reduced-motion:no-preference){ .cw-card-ph{ animation:cwPh 1.4s linear infinite; } }
+@keyframes cwPh{ from{ background-position:100% 0; } to{ background-position:-100% 0; } }
+
+.cw-morec{ margin:var(--sp-7) 0 var(--sp-5); padding-top:var(--sp-5); border-top:1px solid var(--bd); }
+.cw-morec-btn{
+  display:inline-flex; align-items:center; gap:var(--sp-1); min-height:44px; padding:0 var(--sp-1);
+  border:0; background:transparent; cursor:pointer; font:inherit; font-size:var(--t-md); font-weight:600; color:var(--accent-txt);
+  border-radius:var(--r-sm);
+}
+.cw-morec-btn:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.cw-cc-list{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin:var(--sp-3) 0 var(--sp-4); }
+.cw-cc{
+  display:inline-flex; align-items:center; gap:var(--sp-1); min-height:44px; padding:0 var(--sp-3);
+  border:1px solid var(--bd); border-radius:var(--r-pill); background:var(--s1); color:var(--tx);
+  font:inherit; font-size:var(--t-sm); cursor:pointer; transition:border-color .15s var(--ease), background .15s var(--ease);
+}
+.cw-cc:hover{ border-color:var(--accent); }
+.cw-cc.on{ border-color:var(--accent); background:var(--accent-soft); }
+.cw-cc:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.cw-cc-you{
+  display:inline-flex; align-items:center; padding:1px var(--sp-2); border-radius:var(--r-pill);
+  background:var(--s3); color:var(--mu); font-size:var(--t-xs); font-weight:600;
+}
+.cw-browse{ margin-top:var(--sp-2); padding:var(--sp-4); border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s1); }
+.cw-browse-h{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); flex-wrap:wrap; margin-bottom:var(--sp-3); }
+.cw-browse-h h4{ margin:0; font-family:var(--fdisplay); font-size:var(--t-lg); font-weight:600; color:var(--tx); }
+.cw-browse-h .btn{ min-height:44px; }
+/* One height for the five and for their placeholders, so the cards arriving
+   moves nothing. Measured across all 105 countries at widths from 360 to 1600:
+   the tallest card is 281px, so every card and placeholder holds 286. */
+#cw-foryou .cw-top5-item .cw-job, #cw-foryou .cw-card-ph{ min-height:286px; }
+/* The card carries a 10px margin under it (.cw-job); the placeholder does too. */
+#cw-foryou .cw-card-ph{ margin-bottom:10px; }
+/* Always drawn in full. The Crew speed layer skips sections until they are
+   near the screen and assumes 300px for them meanwhile - right for the long
+   list, wrong for the five at the fold, which were counted as 300px, drawn
+   at their real height a frame later, and pushed everything under them down. */
+.crew-jobs-sec > #cw-foryou{ content-visibility:visible; contain-intrinsic-size:none; }
+/* The heading's link, held open while the country is still being asked for,
+   so the heading is the same height before and after. */
+.cw-link-ghost{ visibility:hidden; }
+/* The phone's bottom bar is empty in the page and filled by the bundle, so it
+   was drawn 13px tall and grew to 61px a moment later, moving everything next
+   to it. It holds its real height from the first paint: 48px buttons, 6px
+   above and below, a 1px border, and the phone's own safe area. */
+@media(max-width:720px){ #bottom-nav{ min-height:calc(61px + env(safe-area-inset-bottom,0px)); } }
+/* A phone's menu is closed before the bundle runs, not drawn open over the
+   page and then slid shut: the slide ran on every load of every screen. */
+@media(max-width:720px){ html:not(.sb-init) #sb{ transform:translateX(-100%); transition:none!important; } }

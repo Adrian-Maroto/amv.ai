@@ -29,13 +29,16 @@ section('Choosing a country puts it in the sentence');
     const es = _feasWhere();
     cwCountry('JP');
     const jp = _feasWhere();
-    cwCountry('-');           // "Everywhere" is a choice, not an absence
+    /* "Everywhere" had a control, and it is gone: Crew is for the country
+       somebody is in. A stored "everywhere" from before is no choice at all,
+       so the planner is told where they actually are, not nothing. */
+    cwCountry('-');
     const none = _feasWhere();
-    return { es, jp, none };
+    return { es, jp, none, here: (CW_WORLD_COUNTRIES.find(c => c[0] === _cwCountryGuess()) || [])[1] || '' };
   });
   ok(/Spain/.test(r.es), 'the country is named, not coded', r.es.slice(0, 60));
   ok(/Japan/.test(r.jp), 'and it changes when the choice changes', r.jp.slice(0, 60));
-  ok(r.none === '', 'choosing Everywhere sends nothing rather than a default country', JSON.stringify(r.none));
+  ok(r.here && r.none.indexOf(r.here) >= 0, 'with no choice, it is where they are that is sent', JSON.stringify(r.none).slice(0, 80));
 }
 
 section('It tells the planner an unfamiliar service is a thing to look up');

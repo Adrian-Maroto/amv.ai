@@ -66,47 +66,41 @@ await page.evaluate((b) => {
 }, BASE);
 await page.waitForTimeout(4200);
 
-/* A TOPIC IS NAMED IN TWO SHAPES NOW, AND BOTH COUNT.
+/* THE DOOR IS THE TOPIC'S OWN LIST NOW.
 
-   This read `.ss2 > h3` alone, which was every topic on the page when the
-   registry ones were sections of five tiles with a heading each. They are
-   doors now - a button carrying the name and the query, fetching nothing until
-   it is pressed - because those rows each fired a request as they painted,
-   which buried the page and repainted the node the search box lived in. The
-   owner asked for them to go: "remove the things below the search bar
-   entirely", "none of the thing that it says now".
+   Every topic used to end in a door into the open registry - "See all email
+   connectors" - a page of programs anybody can publish. The owner asked for
+   the main six, then a small See all, and not the sketchy ones nobody uses. So
+   a topic's door opens the rest of THAT topic, in place, and nothing under a
+   topic sends people into the registry; searching still reaches it, for
+   somebody looking for one by name.
 
-   Every claim in this file survives that change; only the selector had to.
-   What a topic IS - a name, and a way through to the rest of its own kind - is
-   the same for a hand-built section and for a registry door, so both are
-   collected here and the assertions below are unchanged. */
+   What this file has always held survives the change: no lump called
+   "everything", thirty-odd named topics, none listed twice, and no topic a
+   dead end - a topic with more than six apps has a way to see the rest. */
 const shape = await page.evaluate(() => {
-  const curated = [...document.querySelectorAll('.ss2 > h3')].map(h => h.textContent.trim());
-  const topics = [...document.querySelectorAll('.cdir-topic')];
+  const secs = [...document.querySelectorAll('#int-catalog > .ss2')];
   return {
     lump: /everything amv can connect to/i.test(document.body.innerText),
-    headings: curated.concat(topics.map(t => (t.querySelector('.cdir-topic-t') || {}).textContent.trim())),
-    doors: [...document.querySelectorAll('.cdir-more')].map(b => ({
-      label: b.textContent.trim(), q: b.dataset.darg }))
-      .concat(topics.map(t => ({ label: (t.querySelector('.cdir-topic-t') || {}).textContent.trim(),
-                                 q: t.dataset.darg }))),
-    /* A section with a heading and no door is the thing being fixed. A door
-       cannot be a dead end by construction - it IS the way through - so only
-       the hand-built sections can fail this. */
-    sectionsWithoutDoor: [...document.querySelectorAll('.ss2')]
-      .filter(s => s.querySelector('h3') && !s.querySelector('.cdir-more'))
-      .map(s => s.querySelector('h3').textContent.trim()),
+    headings: secs.map(s => (s.querySelector('h3') || {}).textContent.trim()),
+    doors: secs.map(s => s.querySelector('[data-app-more]')).filter(Boolean).map(b => b.dataset.appMore),
+    registry: document.querySelectorAll('#int-catalog [data-dact="cdirAll"], #int-catalog .cdir-more').length,
+    /* A topic that holds more than it shows, with no way to see the rest. */
+    deadEnds: secs.filter(s => {
+      const cat = AMV_APP_CATS.find(c => c.t.replace(/&amp;/g, '&') === (s.querySelector('h3') || {}).textContent);
+      return cat && cat.apps.length > s.querySelectorAll('.int-card').length && !s.querySelector('[data-app-more]');
+    }).map(s => s.querySelector('h3').textContent.trim()),
+    search: !!document.getElementById('cdir-find'),
   };
 });
 
-section('The lump is gone and the topics carry it instead');
+section('The lump is gone, and every topic ends in its own See all');
 {
   ok(!shape.lump, 'no section is called "everything AMV can connect to"');
   ok(shape.headings.length >= 30, 'there are thirty or more named topics', shape.headings.length);
-  ok(shape.doors.length === shape.headings.length,
-     'and one door per topic', { doors: shape.doors.length, topics: shape.headings.length });
-  ok(shape.sectionsWithoutDoor.length === 0,
-     'no topic is a dead end', shape.sectionsWithoutDoor);
+  ok(shape.deadEnds.length === 0, 'no topic is a dead end', shape.deadEnds);
+  ok(shape.registry === 0, 'and none of them leads into the unvetted registry', shape.registry);
+  ok(shape.search, 'which is still one search away, for somebody looking for a name', shape.search);
 }
 
 section('No topic is listed twice');
@@ -115,38 +109,32 @@ section('No topic is listed twice');
   shape.headings.forEach(h => seen.set(h.toLowerCase(), (seen.get(h.toLowerCase()) || 0) + 1));
   const dupes = [...seen.entries()].filter(([, n]) => n > 1).map(([h]) => h);
   ok(dupes.length === 0, 'each heading appears once', dupes);
-  /* The stronger form: two headings running the SAME query is the duplication
-     that matters, whatever they are called. */
   const qs = new Map();
-  shape.doors.forEach(d => qs.set(d.q, (qs.get(d.q) || 0) + 1));
-  const sameQuery = [...qs.entries()].filter(([, n]) => n > 1).map(([q]) => q);
-  ok(sameQuery.length === 0, 'and no two doors run the same search', sameQuery);
+  shape.doors.forEach(d => qs.set(d, (qs.get(d) || 0) + 1));
+  const same = [...qs.entries()].filter(([, n]) => n > 1).map(([q]) => q);
+  ok(same.length === 0, 'and no two See alls open the same topic', same);
 }
 
-section('A door goes where its heading says');
+section('See all opens the rest of its own topic');
 {
-  /* Checked by opening one and reading what came back, rather than by
-     comparing two strings in the page - the label and the query are written
-     side by side, so comparing them proves only that they were typed
-     together. */
+  /* Checked by pressing it and counting what is on screen afterwards, rather
+     than by comparing the label with the data - they are written side by side. */
   const r = await page.evaluate(async () => {
-    const d = [...document.querySelectorAll('.cdir-more')]
-      .find(b => /email/i.test(b.textContent));
-    if (!d) return { none: true };
-    const q = d.dataset.darg;
-    d.click();
-    await new Promise(res => setTimeout(res, 900));
-    return { q, full: !!document.querySelector('.cdir-full'),
-             title: (document.querySelector('.cdir-full h3') || {}).textContent || '',
-             tiles: document.querySelectorAll('.cdir-full .cdir-tile').length,
-             names: [...document.querySelectorAll('.cdir-full .cdir-name')]
-                      .slice(0, 3).map(e => e.textContent) };
+    const sec = () => [...document.querySelectorAll('#int-catalog > .ss2')].find(s => /^Email$/.test((s.querySelector('h3') || {}).textContent));
+    const b = sec() && sec().querySelector('[data-app-more]');
+    if (!b) return { none: true };
+    const before = sec().querySelectorAll('.int-card').length;
+    b.click();
+    await new Promise(res => setTimeout(res, 300));
+    const cat = AMV_APP_CATS.find(c => c.id === 'email');
+    return { before, after: sec().querySelectorAll('.int-card').length, total: cat.apps.length,
+             names: [...sec().querySelectorAll('.int-name')].map(e => e.textContent),
+             label: (sec().querySelector('[data-app-more]') || {}).textContent || '' };
   });
-  ok(!r.none, 'the email topic has a door', r);
-  ok(r.full, 'pressing it opens a page of its own', r);
-  ok(r.tiles > 30, 'with far more than the handful the section showed', r.tiles);
-  ok(r.names.every(n => n.indexOf(r.q) === 0),
-     'and what came back is that topic, not another one', { q: r.q, got: r.names });
+  ok(!r.none, 'the email topic has a See all', r);
+  ok(r.before === 6 && r.after === r.total, 'pressing it shows every email app, not six', r);
+  ok(r.names.includes('Gmail') && r.names.includes('Proton Mail'), 'and they are email apps', r.names.slice(0, 8));
+  ok(/fewer/i.test(r.label), 'and it can be closed again', r.label);
 }
 
 ok(errors.length === 0, 'and none of it raised an error', errors);

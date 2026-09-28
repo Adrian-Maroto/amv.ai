@@ -1244,6 +1244,11 @@ function _initMobileSidebar(){
     }
     _renderBottomNav();
   }catch(e){}
+  /* The phone layout's first paint has the menu closed already (styles.css,
+     html:not(.sb-init)); from the next frame on it slides when it is opened
+     and closed, as it always has. A frame later, so the boot state itself is
+     never animated. */
+  try{ requestAnimationFrame(()=>{ try{ document.documentElement.classList.add('sb-init'); }catch(e){} }); }catch(e){}
 }
 /* Native-feeling bottom navigation for mobile. "More" opens the full sidebar
    for everything else.
