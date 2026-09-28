@@ -1025,13 +1025,14 @@ const AMV_API = {
     try{ const r = await this._fetch('/sync/push', {method:'POST', body:JSON.stringify({data, baseRev:this.syncRev})}); const d = await r.json();
       if(d && d.ok){
         this.syncRev = d.rev || 0;
-        if(d.guarded === false){
-          this.syncGuarded = false;
-          if(!this._syncUnguardedTold){
-            this._syncUnguardedTold = true;
-            _logErr('sync.unguarded', new Error('This deployment writes sync data without a conditional write, because no D1 database is bound. Two devices saving in the same instant can only be merged, never arbitrated, so one can overwrite the other. Bind DB in wrangler.toml.'));
-          }
-        }
+        /* Known here, and said to the OPERATOR by the server - once a week,
+           through the alert channel - not reported as an error from every
+           visitor's browser on every page load. That was one Sentry issue
+           growing an event per visit, about a property of the deployment that
+           no visitor can do anything about; and its advice ("bind DB") was the
+           one step that would have hidden every existing account (see
+           syncPush on the server). */
+        if(d.guarded === false) this.syncGuarded = false;
         /* The server merged because another device had written. Our in-memory
            copy is now behind what the server holds, so pull it back rather than
            carrying on from a stale list and pushing the same conflict again.

@@ -84,13 +84,18 @@ try {
     });
     ok(r.saved === true, 'the data still went, so the user is not blocked');
     ok(r.guarded === false, 'but the client no longer believes it was arbitrated', r.guarded);
-    ok(r.reported.some(x => x.startsWith('sync.unguarded')),
-       'and the condition is reported, so it is observed and not merely configurable', r.reported);
-    ok(/D1/.test(r.reported.join(' ')) && /overwrite/.test(r.reported.join(' ')),
-       'in words that name the cause and the consequence', r.reported.join(' ').slice(0, 200));
+    /* Said to the operator by the server, once a week - not reported as an
+       error from every visitor's browser, where it was one issue growing an
+       event per page load about something no visitor can act on. */
+    ok(!r.reported.some(x => x.startsWith('sync.unguarded')),
+       'and it is not reported from the visitor\u2019s browser', r.reported);
+    const W = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
+    const alert = W.slice(W.indexOf("if(!guarded){"), W.indexOf("if(!guarded){") + 900);
+    ok(/alertOnce\(env, 'sync_unguarded'/.test(alert) && /do NOT just bind/.test(alert) && /7 \* 24 \* 60/.test(alert),
+       'the server tells the operator, weekly, and warns that binding D1 without a migration would hide every account', alert.slice(0, 160));
   }
 
-  section('And it is said once, not on every autosave');
+  section('And autosaves add nothing to the error reports');
   {
     const n = await app.page.evaluate(async () => {
       window.__mode = { guarded: false, merged: false };
@@ -98,7 +103,7 @@ try {
       await _errFlush();
       return (window.__reported || []).filter(x => x.startsWith('sync.unguarded')).length;
     });
-    ok(n === 1, 'four more unguarded pushes add no further reports', n);
+    ok(n === 0, 'four more unguarded pushes add no reports', n);
   }
 
   section('A merged push waits for the reconciliation it asked for');

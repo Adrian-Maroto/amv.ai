@@ -13798,3 +13798,23 @@ Rules:
   or it is a screenshot of the moment before the answer came.
 - "Shows on every device" is tested with a second browser that shares nothing
   with the first, not assumed from the data living on the server.
+
+## 530. The fix a warning recommends is not safe because the warning recommends it
+
+Sentry emailed the owner: "This deployment writes sync data without a
+conditional write, because no D1 database is bound... Bind DB in wrangler.toml."
+Every visitor's browser sent it, once per page load. The advice was the
+dangerous part: `DB.get` and `DB.put` go to D1 alone the moment `env.DB` exists,
+with no read-through to KV, so binding it on a running deployment would make
+every account, plan, wallet and connection read as missing. GO-LIVE.md gave the
+same advice in its table.
+
+Rules:
+- A condition of the deployment is told to the operator by the server, through
+  the alert channel, rate-limited - not reported as an error from every client,
+  where no reader can act on it and it spends the error budget per visit.
+- An instruction to change infrastructure says what the change does to data
+  that already exists. "Bind D1" is safe on an empty deployment and wipes the
+  view of a running one; both sentences belong next to each other.
+- D1 on this deployment is a migration (copy KV, read through until verified),
+  which is a database change and the owner's decision.

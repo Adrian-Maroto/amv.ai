@@ -551,7 +551,13 @@ let _killCache = { val: false, ts: 0 };
    dashboard can COUNT/WHERE instead of listing every key), and no 25MB/key
    ceiling. KV stays for what it's good at: counters and rate-limit windows.
 
-   To enable D1:
+   DO NOT BIND D1 ON A DEPLOYMENT THAT ALREADY HAS DATA. get/put below go to
+   D1 alone once env.DB exists, with no read-through to KV, so every record
+   written before the binding - every account, plan and wallet - reads as
+   missing. A running deployment needs a migration first: copy KV into D1,
+   and read through to KV until the copy is verified.
+
+   To enable D1 on a NEW deployment with no data yet:
      wrangler d1 create amv
      wrangler d1 execute amv --command "CREATE TABLE IF NOT EXISTS kv (
        kind TEXT NOT NULL, id TEXT NOT NULL, json TEXT NOT NULL,
@@ -16066,6 +16072,23 @@ async function syncPush(request, env){
     }
   }
   if(!authoritative) audit(env, 'sync_merged', { email: user.email, baseRev, curRev });
+  /* TOLD TO THE OPERATOR, ONCE A WEEK, AND TOLD CORRECTLY.
+
+     This used to be reported by every visitor's browser, and the advice it
+     carried - "bind DB in wrangler.toml" - is the one step that must NOT be
+     taken as it stands: DB.get reads D1 alone the moment a binding exists, so
+     every account, plan, wallet and connection still held in KV would read as
+     missing. Binding D1 needs a migration first (copy KV into it, and read
+     through to KV until the copy is verified). Until then the push merges
+     rather than arbitrates, which loses data only if two devices save the
+     same record in the same instant. */
+  if(!guarded){
+    try{ await alertOnce(env, 'sync_unguarded',
+      'Sync writes on this deployment are merged, not arbitrated: KV has no conditional write, so two devices saving the '
+      + 'same record in the same instant can overwrite each other. The cure is a D1 database - but do NOT just bind one: '
+      + 'the moment DB is bound every read goes to D1 alone and every existing account would read as missing. It needs a '
+      + 'migration (copy KV into D1, read through to KV until verified) first.', 7 * 24 * 60); }catch(e){}
+  }
   // The client stores rev and echoes it next time, so its next push can be
   // authoritative and its deletions can stick.
   return json({ ok:true, rev: merged._rev, merged: !authoritative, guarded, serverTime: Date.now() });
