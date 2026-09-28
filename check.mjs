@@ -894,7 +894,7 @@ step('Every secret the Worker reads has a row on the readiness screen', () => {
   const gStart = report.indexOf('const GROUPS = {');
   const grouped = report.slice(gStart, report.indexOf('};', gStart));
   const storageIds = ['kv', 'd1', 'counter', 'render'];
-  const tuningIds = ['spendCap', 'writeCap', 'modelUrl', 'appOrigin', 'analyticsHost', 'financeHost'];
+  const tuningIds = ['spendCap', 'writeCap', 'modelUrl', 'appOrigin', 'analyticsHost', 'financeHost', 'financeCountries'];
   const ungrouped = ids.filter(i => !storageIds.includes(i) && !tuningIds.includes(i)
     && !new RegExp('\\b' + i + '\\s*:').test(grouped));
   if (ungrouped.length)

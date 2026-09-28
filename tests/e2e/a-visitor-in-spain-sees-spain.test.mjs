@@ -44,11 +44,11 @@ const visit = async (from, width = 1280) => {
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(e.message));
   await page.goto(SITE + '/#/crew', { waitUntil: 'load' });
-  await page.waitForFunction(() => { const g = document.getElementById('cw-foryou'); return g && !g.hasAttribute('aria-busy') && g.querySelectorAll('.cw-job').length === 5; }, null, { timeout: 15000 }).catch(() => {});
+  await page.waitForFunction(() => { const g = document.getElementById('cw-foryou'); return g && !g.hasAttribute('aria-busy') && g.querySelectorAll('.cw-t10:not(.cw-t10-ph)').length >= 5; }, null, { timeout: 15000 }).catch(() => {});
   const r = await page.evaluate(() => ({
     lang: navigator.language,
     head: ((document.querySelector('#cw-foryou h3') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
-    titles: [...document.querySelectorAll('#cw-foryou .cw-job-t')].map(e => e.textContent.trim()),
+    titles: [...document.querySelectorAll('#cw-foryou .cw-t10-t')].map(e => e.textContent.trim()),
     made: [...document.querySelectorAll('#cw-made .cw-made-t')].map(e => e.textContent.trim()),
     dropdown: !!document.getElementById('cw-country'),
     more: !!document.querySelector('#cw-morec [data-dact="cwMoreCountries"]'),
@@ -62,9 +62,9 @@ section('From Spain, with an English (US) browser');
 {
   const r = await visit('ES');
   ok(r.lang === 'en-US', 'the browser really says United States', r.lang);
-  ok(/Top 5 for you in .*Spain/.test(r.head), 'the top of Crew is for Spain', r.head);
-  ok(r.titles.length === 5 && r.titles.some(t => /InfoJobs/.test(t)) && r.titles.some(t => /AEAT/.test(t)) && r.titles.some(t => /Gmail/.test(t)),
-     'and the five are Spain’s - Gmail, InfoJobs, the AEAT', r.titles);
+  ok(/Top 10 for you in .*Spain/.test(r.head), 'the top of Crew is for Spain', r.head);
+  ok(r.titles.length === 10 && r.titles.some(t => /InfoJobs/.test(t)) && r.titles.some(t => /AEAT/.test(t)) && r.titles.some(t => /Gmail/.test(t)),
+     'and the ten are Spain’s - Gmail, InfoJobs, the AEAT', r.titles);
   ok(r.made.some(t => /Renta/.test(t)) && r.made.some(t => /DNI|NIE/.test(t)), 'with the Renta and the DNI in the row under them', r.made.slice(0, 6));
   ok(!r.dropdown, 'with no country dropdown', r.dropdown);
   ok(r.more, 'and every other country at the bottom', r.more);
@@ -74,17 +74,17 @@ section('From Spain, with an English (US) browser');
 section('From Spain, on a phone');
 {
   const r = await visit('ES', 390);
-  ok(/Spain/.test(r.head) && r.titles.length === 5, 'the five for Spain on a phone too', r.head);
+  ok(/Spain/.test(r.head) && r.titles.length === 10, 'the ten for Spain on a phone too', r.head);
   ok(r.cls < 0.001, 'and nothing moves there either', { cls: +r.cls.toFixed(4), src: r.src });
 }
 
 section('From the United States');
 {
   const r = await visit('US');
-  ok(/Top 5 for you in .*United States/.test(r.head), 'the top of Crew is for the United States', r.head);
+  ok(/Top 10 for you in .*United States/.test(r.head), 'the top of Crew is for the United States', r.head);
   ok(!r.titles.some(t => /Renta|DNI|InfoJobs|AEAT/.test(t)), 'with none of Spain’s', r.titles);
   ok(r.titles.some(t => /Gmail/.test(t)) && r.titles.some(t => /Chase|American Express/.test(t)) && r.titles.some(t => /IRS/.test(t)),
-     'but the United States’ own - Gmail, the Chase and Amex cards, the IRS', r.titles);
+     'but the United States’ own - Gmail, the Chase and Amex accounts, the IRS', r.titles);
 }
 
 section('When the network does not say, the browser’s guess still stands');

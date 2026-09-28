@@ -18706,6 +18706,7 @@ let _cwLocalState = {};        // code -> 'loading' | 'ok' | 'offline'
 const _cwFacts = {};           // code -> facts object from /v1/everyday
 const _cwInbox = {};           // code -> [{id,name,how}] mailboxes people there use, most-used first
 const _cwBank = {};            // code -> true where a bank can be linked
+const _cwMeta = {};            // code -> { classroom, bankElsewhere, work } from /v1/everyday
 const CW_LOC = {
   job_hunt:['jobs'], salary_bench:['jobs','cur'], recruiter_triage:['jobs'], interview_pack:['jobs'],
   portfolio_fresh:['jobs'], employer_health:['news'], application_help:['uni','jobs'],
@@ -18878,43 +18879,113 @@ function _cwMadeForJobs(cc){
    Every one is a real job that runs unattended once its one connection is
    made. The five written by hand for each country move to the row below. */
 function _cwBaseJob(id){ try{ return (_cwDefaultJobs() || []).find(j => j.id === id) || {}; }catch(e){ return {}; } }
-function _cwTopFive(cc){
+/* THE TOP TEN: ONE FOR EACH PART OF LIFE, BUILT FROM THE COUNTRY'S DATA.
+
+   Asked for: not only mail and money - every main thing: the bank, the mail,
+   the calendar, school and assignments, work, the weekly shop, shopping,
+   government, getting around, home. Each row is the country's own version,
+   and each is backed by research on what people there actually use (see the
+   sources beside COUNTRY_MAIL, COUNTRY_CLASSROOM, BANK_ELSEWHERE, WORK_APPS
+   and COUNTRY_FACTS on the server):
+
+     Mail      the mailbox people there use most, connected directly
+     Bank      the bank itself, linked read-only, where a bank can be linked;
+               elsewhere the bills in that inbox, and the card says plainly
+               that linking the bank is not available there yet
+     Calendar  Google Calendar or Outlook, whichever goes with that mailbox
+     School    Google Classroom where schools run on it; the national exam
+               everywhere else
+     Work      the country's own job sites
+     Groceries, Shopping, Government, Travel, Home - the local services by name
+
+   A section with no real local answer is left out rather than filled with a
+   generic one, and the list tops up from the next section down. */
+const CW_SECTION_ORDER = ['mail','bank','calendar','school','work','groceries','shopping','government','travel','home','phone','news'];
+function _cwTopTen(cc){
   const f = _cwFacts[cc], row = _cwCountryRow(cc);
   if(!f || !row || !Object.keys(f).length) return [];
-  const C = row[1], box = _cwInbox[cc] || [], m1 = box[0];
+  const C = row[1], box = _cwInbox[cc] || [], m1 = box[0], meta = _cwMeta[cc] || {};
   const boxNames = _cwNames(box.map(b => b.name).join(', '), 2);
-  const low = cc.toLowerCase(), out = [];
+  const low = cc.toLowerCase(), by = {};
+  const made = _cwMadeForJobs(cc);
+  const take = (k, sec) => { const j = made.find(x => x.id === 'cc_' + low + '_' + k); return j ? Object.assign({}, j, { top:true, section:sec }) : null; };
   if(m1){
     const b = _cwBaseJob('inbox_digest');
-    out.push({ id:'top_' + low + '_inbox', top:true, country:cc, countryName:C, cat:'Inbox & calendar', icon:'\uD83D\uDCEC',
+    by.mail = { id:'top_' + low + '_inbox', top:true, section:'Mail', country:cc, countryName:C, cat:'Inbox & calendar', icon:'📬',
       on:false, needs:'Email', connectHow:m1.how, mailName:m1.name, every:'daily',
       title:'Your ' + m1.name + ' inbox, sorted every evening',
       desc:'Connect ' + boxNames + ' and each evening AMV lists the emails that actually need you, with a reply drafted for each. Nothing is sent without you.',
-      prompt:(b.prompt || '') + ' The user is in ' + C + '.' });
+      prompt:(b.prompt || '') + ' The user is in ' + C + '.' };
   }
-  if(_cwBank[cc] && f.cards){
+  if(_cwBank[cc]){
     const b = _cwBaseJob('unusual_spend');
-    out.push({ id:'top_' + low + '_cards', top:true, country:cc, countryName:C, cat:'Money', icon:'\uD83D\uDCB3',
+    const banks = _cwNames([f.cards, f.banks].filter(Boolean).join(', '), 4);
+    by.bank = { id:'top_' + low + '_cards', top:true, section:'Bank', country:cc, countryName:C, cat:'Money', icon:'🏦',
       on:false, needs:'Bank connection', every:'daily',
-      title:'Unusual charges on your ' + _cwNames(f.cards, 2) + ' cards',
-      desc:'Link ' + _cwNames(f.cards, 4) + ' or any bank once, read-only, and AMV flags double charges, new subscriptions and anything that looks like fraud. It can never move money.',
-      prompt:(b.prompt || '') + ' The user is in ' + C + '.' });
+      title:'Your ' + _cwNames(f.cards || f.banks, 2) + ' accounts, watched daily',
+      desc:'Link ' + banks + ' or any bank directly, read-only - balances, bills and anything unusual, straight from the bank, not from emails. AMV can never move money.',
+      prompt:(b.prompt || '') + ' The user is in ' + C + '.' };
   } else if(m1){
     const b = _cwBaseJob('bills_due');
     const pays = _cwNames([f.banks, f.pay].filter(Boolean).join(', '), 3);
-    out.push({ id:'top_' + low + '_bills', top:true, country:cc, countryName:C, cat:'Money', icon:'\uD83E\uDDFE',
+    by.bank = { id:'top_' + low + '_bills', top:true, section:'Bank', country:cc, countryName:C, cat:'Money', icon:'🧾',
       on:false, needs:'Email', connectHow:m1.how, mailName:m1.name, every:'daily',
       title:'Bills and payments, from your ' + m1.name,
-      desc:'AMV reads the bills, statements and receipts that land in ' + m1.name + (pays ? ' - from ' + pays + ' and the rest -' : '') + ' and tells you what is due, when, and what changed.',
-      prompt:(b.prompt || '') + ' The user is in ' + C + '.' });
+      desc:'Linking ' + (pays || 'a bank') + ' directly is not available in ' + C + ' yet' + (meta.bankElsewhere ? ' (it needs ' + meta.bankElsewhere + ')' : '') + ', so AMV reads the bills and statements that arrive in ' + m1.name + ' instead.',
+      prompt:(b.prompt || '') + ' The user is in ' + C + '.' };
   }
-  const made = _cwMadeForJobs(cc);
-  ['jobs', 'shop', 'tax', 'groc', 'rail', 'prop', 'telco'].forEach(k => {
-    if(out.length >= 5) return;
-    const j = made.find(x => x.id === 'cc_' + low + '_' + k);
-    if(j) out.push(Object.assign({}, j, { top:true }));
-  });
-  return out.slice(0, 5);
+  if(m1 && (m1.how === 'g' || m1.how === 'ms')){
+    const b = _cwBaseJob('calendar_brief');
+    const cal = m1.how === 'g' ? 'Google Calendar' : 'Outlook Calendar';
+    by.calendar = { id:'top_' + low + '_calendar', top:true, section:'Calendar', country:cc, countryName:C, cat:'Inbox & calendar', icon:'📅',
+      on:false, needs:'Calendar', every:'daily',
+      title:'Tomorrow, from your ' + cal,
+      desc:'Every evening: what is on tomorrow, what clashes, and what to prepare - read from ' + cal + ', never changed.',
+      prompt:(b.prompt || '') + ' The user is in ' + C + '.' };
+  }
+  if(meta.classroom){
+    const b = _cwBaseJob('school_auto');
+    by.school = { id:'top_' + low + '_school', top:true, section:'School', country:cc, countryName:C, cat:'Learning', icon:'🎒',
+      on:false, needs:'Classroom', every:'daily',
+      title:'Assignments due, from Google Classroom',
+      desc:'Every day: what is due, what is late and what to start first, read from Google Classroom. AMV cannot hand anything in.',
+      prompt:(b.prompt || '') + ' The user is in ' + C + '.' };
+  } else {
+    by.school = take('exams', 'School');
+  }
+  by.work = take('jobs', 'Work');
+  if(by.work && meta.work) by.work.desc += ' People here work in ' + meta.work + '.';
+  by.groceries = take('groc', 'Groceries');
+  by.shopping = take('shop', 'Shopping');
+  by.government = take('tax', 'Government') || take('gov', 'Government');
+  by.travel = take('rail', 'Travel') || take('car', 'Travel');
+  by.home = take('prop', 'Home') || take('health', 'Health');
+  by.phone = take('telco', 'Phone');
+  by.news = take('news', 'News');
+  return CW_SECTION_ORDER.map(k => by[k]).filter(Boolean).slice(0, 10);
+}
+/* The top five, for anything that still asks for five: the first five of ten. */
+function _cwTopFive(cc){ return _cwTopTen(cc).slice(0, 5); }
+function _cwTopRowHTML(j, i){
+  const allowed = (() => { try{ return _planAllowsCrew(); }catch(e){ return false; } })();
+  const saved = (() => { try{ return (_cwJobs() || []).find(x => x.id === j.id) || null; }catch(e){ return null; } })();
+  const on = !!(saved && saved.on);
+  const miss = (() => { try{ return _cwNeedsMissing(j); }catch(e){ return []; } })();
+  const act = !allowed
+    ? `<button class="cw-t10-see" data-dact="cwPeek" data-darg="${escH(j.id)}">${escH(T('See it'))} →</button>`
+    : (miss.length && !on)
+      ? `<button class="btn bp cw-t10-conn" data-dact="cwConnect" data-darg="${escH(j.id)}">${escH(T('Connect'))}</button>`
+      : `<button class="cw-toggle ${on ? 'on' : ''}" data-dact="cwToggle" data-darg="${escH(j.id)}" aria-label="Turn ${escH(j.title)} ${on ? 'off' : 'on'}"><span class="cw-knob"></span></button>`;
+  return `<li class="cw-t10${on ? ' on' : ''}">
+    <span class="cw-t10-n" aria-hidden="true">${i + 1}</span>
+    <span class="cw-t10-ic" aria-hidden="true">${_safeIcon(j.icon)}</span>
+    <button class="cw-t10-body" data-dact="cwPeek" data-darg="${escH(j.id)}">
+      <span class="cw-t10-sec">${escH(T(j.section || ''))}</span>
+      <span class="cw-t10-t">${escH(j.title)}</span>
+      <span class="cw-t10-d">${escH(j.desc)}</span>
+    </button>
+    <span class="cw-t10-act">${act}</span>
+  </li>`;
 }
 /* A row of cards, not a grid: it arrives with the country and must not push
    anything down when it does, so it is one fixed height whatever the count. */
@@ -18927,7 +18998,7 @@ function _cwMadeForHTML(){
   const cc = _cwCountryGuess(), row = _cwCountryRow(cc);
   const st = row ? (_cwLocalState[cc] || 'loading') : 'none';
   if(!row || st === 'offline') return '<section class="cw-made" id="cw-made" hidden></section>';
-  const inTop = new Set((st === 'ok' ? _cwTopFive(cc) : []).map(j => j.id));
+  const inTop = new Set((st === 'ok' ? _cwTopTen(cc) : []).map(j => j.id));
   const jobs = st === 'ok'
     ? (inTop.size ? _cwLocalJobs(cc) : []).concat(_cwMadeForJobs(cc).filter(j => !inTop.has(j.id)))
     : [];
@@ -19074,6 +19145,7 @@ async function _cwLoadLocal(code){
     _cwFacts[cc] = (d.facts && typeof d.facts === 'object' && !Array.isArray(d.facts)) ? d.facts : {};
     _cwInbox[cc] = Array.isArray(d.inbox) ? d.inbox.filter(m => m && m.id && m.name && m.how) : [];
     _cwBank[cc] = !!d.bank;
+    _cwMeta[cc] = { classroom: !!d.classroom, bankElsewhere: String(d.bankElsewhere || ''), work: String(d.work || '') };
     _cwLocalCache[cc] = local.map(j => _cwEverydayJob(Object.assign({ country: cc }, j), name, true));
     _cwLocalState[cc] = 'ok';
   }catch(e){
@@ -19122,7 +19194,7 @@ function _cwAllJobs(){
        const have = new Set((_cwJobs() || []).map(j => j.id));
        return (_cwJobs() || []).concat(_cwUniversalJobs() || [])
                               .concat(_cwLocalJobs(cc) || [])
-                              .concat((_cwTopFive(cc) || []).filter(j => !have.has(j.id)))
+                              .concat((_cwTopTen(cc) || []).filter(j => !have.has(j.id)))
                               .concat((_cwMadeForJobs(cc) || []).filter(j => !have.has(j.id)))
                               /* And the country being browsed at the bottom, so
                                  its cards open and switch on like any other. */
@@ -19666,9 +19738,9 @@ function _cwForYouHTML(){
   try{ setTimeout(_cwAskWhere, 0); }catch(e){}
   if(_cwHerePending()){
     return `<section class="cw-pop cw-foryou" id="cw-foryou" aria-busy="true">
-      <div class="sec-head"><h3>${escH(T('Top 5 for you'))}</h3><span class="sec-sub">${escH(T('Picked for where you are, under the names things have there.'))}
+      <div class="sec-head"><h3>${escH(T('Top 10 for you'))}</h3><span class="sec-sub">${escH(T('Picked for where you are, under the names things have there.'))}
         <span class="cw-link cw-link-ghost" aria-hidden="true">${escH(T('Not in'))}?</span></span></div>
-      <div class="cw-top5">${'<div class="cw-top5-item"><div class="cw-card-ph" aria-hidden="true"></div></div>'.repeat(5)}</div>
+      <ol class="cw-top10" aria-hidden="true">${'<li class="cw-t10 cw-t10-ph"></li>'.repeat(10)}</ol>
     </section>`;
   }
   const cc = _cwCountryGuess(), row = _cwCountryRow(cc);
@@ -19676,12 +19748,18 @@ function _cwForYouHTML(){
   try{ _cwLoadLocal(cc); }catch(e){}
   const [, name, flag] = row;
   const st = _cwLocalState[cc] || 'loading';
-  const built = st === 'ok' ? _cwTopFive(cc) : [];
-  let jobs = (built.length >= 5 ? built : _cwLocalJobs(cc)).slice(0, 5), note = '';
+  const built = st === 'ok' ? _cwTopTen(cc) : [];
+  if(built.length >= 5){
+    return `<section class="cw-pop cw-foryou" id="cw-foryou">
+      ${_cwForYouHead(name, flag, built.length)}
+      <ol class="cw-top10">${built.map(_cwTopRowHTML).join('')}</ol>
+    </section>`;
+  }
+  let jobs = _cwLocalJobs(cc).slice(0, 5), note = '';
   if(st === 'loading' && !jobs.length){
     return `<section class="cw-pop cw-foryou" id="cw-foryou" aria-busy="true">
-      ${_cwForYouHead(name, flag)}
-      <div class="cw-top5">${'<div class="cw-top5-item"><div class="cw-card-ph" aria-hidden="true"></div></div>'.repeat(5)}</div>
+      ${_cwForYouHead(name, flag, 10)}
+      <ol class="cw-top10" aria-hidden="true">${'<li class="cw-t10 cw-t10-ph"></li>'.repeat(10)}</ol>
     </section>`;
   }
   if(st === 'offline') note = `<p class="cw-foryou-note">${escH(T('The jobs written for'))} ${escH(name)} ${escH(T('are on AMV’s servers, which cannot be reached right now - so these are AMV’s own five for anywhere.'))}</p>`;
@@ -19694,8 +19772,12 @@ function _cwForYouHTML(){
     <div class="cw-top5">${jobs.map(j => `<div class="cw-top5-item">${_cwAnyCard(j)}</div>`).join('')}</div>
   </section>`;
 }
-function _cwForYouHead(name, flag){
-  return `<div class="sec-head"><h3>${escH(T('Top 5 for you in'))} <span class="cw-flag" aria-hidden="true">${flag}</span> ${escH(name)}</h3>
+function _cwForYouHead(name, flag, n){
+  /* Says how many it shows: ten when the country's list is built, five on
+     the fallback (no country data, or no server to ask). */
+  const k = n || 5;
+  const head = k === 10 ? 'Top 10 for you in' : k === 5 ? 'Top 5 for you in' : 'Top ' + k + ' for you in';
+  return `<div class="sec-head"><h3>${escH(T(head))} <span class="cw-flag" aria-hidden="true">${flag}</span> ${escH(name)}</h3>
     <span class="sec-sub">${escH(T('Picked for where you are, under the names things have there.'))}
       <button class="cw-link" data-dact="cwMoreCountries">${escH(T('Not in'))} ${escH(name)}?</button></span></div>`;
 }
@@ -40128,7 +40210,9 @@ const AMVFinance = {
     if(!base){ const e=new Error('Connect the AMV backend first.'); e.code='needs_service'; throw e; }
     const r = await fetchDeadline(base + '/v1/finance/link/start', {
       method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
-      body:'{}' });
+      /* Which country's banks to offer. The server accepts it only where this
+         deployment may link banks, and otherwise uses the network's country. */
+      body: JSON.stringify({ country: (typeof _cwCountryGuess === 'function' ? _cwCountryGuess() : '') || '' }) });
     const d = await r.json().catch(()=>({}));
     if(!r.ok || !d.url){ const e=new Error(d.error||'Could not start the link.'); e.code=d.code||'provider_error'; throw e; }
     return d.url;

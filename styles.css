@@ -16094,3 +16094,47 @@ body:not(.sb-rail) .sb-tools{ grid-template-columns:none; grid-auto-flow:column;
 #app .mc-quiet-on input:hover{ box-shadow:inset 0 0 0 1.5px var(--accent); border-color:transparent!important; }
 #app .mc-quiet-on input:checked{ background-color:var(--accent); box-shadow:none; border-color:transparent!important; }
 #app .mc-quiet-on input:checked{ background-color:var(--accent)!important; }
+
+/* ═════════════════════════════════════════════════════════════════════════
+   LAYER A270 - Top 10 for you: one row for each part of life
+   ═════════════════════════════════════════════════════════════════════════ */
+/* A ranked list, not ten cards: ten cards is a wall, and what somebody wants
+   from the top of this page is to scan ten names and act on one. Every row is
+   one fixed height - rank, icon, the part of life it is, the job, one line of
+   what it does, and the one thing to press - so the list arrives without
+   moving anything under it. */
+.cw-top10{ list-style:none; margin:0 0 var(--sp-6); padding:0;
+  display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-2) var(--sp-3); }
+.cw-t10{ display:grid; grid-template-columns:26px 40px minmax(0,1fr) auto; align-items:center; gap:var(--sp-3);
+  height:104px; padding:0 var(--sp-3); background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-lg);
+  transition:border-color .15s var(--ease); min-width:0; }
+.cw-t10:hover{ border-color:var(--bdl); }
+.cw-t10.on{ border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent-soft); }
+.cw-t10-ph{ display:block; }
+.cw-t10-n{ font-family:var(--fdisplay); font-size:var(--t-lg); font-weight:700; color:var(--dim);
+  text-align:center; font-variant-numeric:tabular-nums; }
+.cw-t10-ic{ width:40px; height:40px; display:grid; place-items:center; border-radius:var(--r-md); background:var(--s2); font-size:var(--t-lg); }
+.cw-t10-body{ min-width:0; display:flex; flex-direction:column; gap:2px; align-self:stretch; justify-content:center;
+  background:none; border:0; padding:0; text-align:left; color:inherit; font:inherit; cursor:pointer; }
+.cw-t10-body:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--r-sm); }
+.cw-t10-sec{ font-size:var(--t-xs); font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--accent-txt); line-height:1.4; }
+.cw-t10-t{ font-size:var(--t-md); font-weight:600; color:var(--tx); line-height:1.35;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cw-t10-d{ font-size:var(--t-sm); color:var(--mu); line-height:1.45;
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.cw-t10-act{ display:flex; align-items:center; }
+.cw-t10-act .btn{ min-height:44px; padding:0 var(--sp-4); font-size:var(--t-sm); }
+.cw-t10-act .cw-toggle{ margin:0; }
+.cw-t10-see{ background:none; border:0; color:var(--accent-txt); font:inherit; font-size:var(--t-sm); font-weight:600;
+  cursor:pointer; min-height:44px; padding:0 var(--sp-1); white-space:nowrap; }
+@media(max-width:900px){ .cw-top10{ grid-template-columns:1fr; } }
+@media(max-width:480px){
+  .cw-t10{ grid-template-columns:20px 36px minmax(0,1fr) auto; gap:var(--sp-2); padding:0 var(--sp-2); }
+  .cw-t10-ic{ width:36px; height:36px; }
+}
+@media(prefers-reduced-motion:reduce){ .cw-t10{ transition:none; } }
+/* The job's name is what somebody scans for, so it gets two lines and the
+   description one - the other way round cut "Your WEB.DE inbox, sorte…" on a
+   phone, which is the part that says whose inbox. */
+.cw-t10-t{ white-space:normal; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.cw-t10-d{ -webkit-line-clamp:1; }

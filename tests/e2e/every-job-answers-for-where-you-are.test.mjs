@@ -123,9 +123,9 @@ section('Crew, from Spain: a row of jobs made for Spain');
   }));
   ok(/Made for .*Spain/.test(r.head), 'a row made for Spain sits under the top five', r.head);
   ok(r.titles.length >= 12, 'with a dozen or more of Spain’s own jobs', r.titles.length);
-  ok(r.titles.some(t => /Renta/.test(t)) && r.titles.some(t => /Mercadona/.test(t)),
-     'Spain’s own work - the Renta, then the jobs named for Mercadona and the rest', r.titles.slice(0, 7));
-  ok(!r.titles.some(t => /InfoJobs|AEAT/.test(t)), 'and nothing already in the top five is repeated', r.titles);
+  ok(r.titles.some(t => /Renta/.test(t)) && r.titles.some(t => /DNI|NIE/.test(t)),
+     'Spain’s own work - the Renta and the DNI, written for Spain', r.titles.slice(0, 7));
+  ok(!r.titles.some(t => /InfoJobs|AEAT|Mercadona/.test(t)), 'and nothing already in the top ten is repeated', r.titles);
   ok(new Set(r.heights).size === 1, 'every card the same height, so the row is one fixed height', [...new Set(r.heights)]);
   ok(r.cls < 0.001, 'and the row arrives without moving the page', +r.cls.toFixed(4));
   await page.click('#cw-made .cw-made-body');

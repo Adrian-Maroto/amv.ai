@@ -221,6 +221,7 @@ one except the two in the first table.
 | `APP_ORIGIN` | none | Read only when `APP_URL` is unset. Set `APP_URL` and ignore this. |
 | `POSTHOG_HOST` | US host | For the EU host or a self-hosted instance. |
 | `FINANCE_API_URL` | production | Point at the provider's sandbox while testing. |
+| `FINANCE_COUNTRIES` | `US` | Where people can link a bank directly, e.g. `US,CA,GB,ES,DE,FR`. Add a country **only after your bank-data provider approves it for your account** - Canada, the UK and the EU are separate approvals from the US. Countries the provider does not cover (China, India, Brazil, Japan, Australia) are ignored; those need a different provider (Crew names which on the Bank row). |
 | `CONNECT_KEY_PREV` | none | Set to the old key during a rotation only; remove it when everyone has reconnected. |
 
 ---

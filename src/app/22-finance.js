@@ -54,7 +54,9 @@ const AMVFinance = {
     if(!base){ const e=new Error('Connect the AMV backend first.'); e.code='needs_service'; throw e; }
     const r = await fetchDeadline(base + '/v1/finance/link/start', {
       method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + this._tok() },
-      body:'{}' });
+      /* Which country's banks to offer. The server accepts it only where this
+         deployment may link banks, and otherwise uses the network's country. */
+      body: JSON.stringify({ country: (typeof _cwCountryGuess === 'function' ? _cwCountryGuess() : '') || '' }) });
     const d = await r.json().catch(()=>({}));
     if(!r.ok || !d.url){ const e=new Error(d.error||'Could not start the link.'); e.code=d.code||'provider_error'; throw e; }
     return d.url;

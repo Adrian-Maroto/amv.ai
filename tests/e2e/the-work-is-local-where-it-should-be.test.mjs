@@ -129,7 +129,7 @@ section('Both halves are on the screen, and one of them names the country');
     /* The five at the top are built for Spain from what people there
        connect and use (top_es_* and cc_es_*); the five written by hand for
        Spain are the first of the row under them. */
-    spainTop: [...document.querySelectorAll('#cw-foryou [data-dact="cwPeek"]')].filter(b => /^(top|cc)_es_/.test(b.dataset.darg)).length,
+    spainTop: new Set([...document.querySelectorAll('#cw-foryou [data-dact="cwPeek"]')].map(b => b.dataset.darg).filter(id => /^(top|cc)_es_/.test(id))).size,
     localBelow: (() => {
       const ids = new Set(_cwLocalJobs('ES').map(j => j.id));
       return [...document.querySelectorAll('#cw-made [data-dact="cwPeek"]')].filter(b => ids.has(b.dataset.darg)).length;
@@ -142,7 +142,7 @@ section('Both halves are on the screen, and one of them names the country');
   }));
   ok(seen.universal > 0, 'the work that is the same everywhere is in the list', seen.universal);
   ok(/for you in .*spain/i.test(seen.group), 'and the local half names the country', seen.group);
-  ok(seen.spainTop === 5, 'and the five at the top are built for Spain', seen.spainTop);
+  ok(seen.spainTop === 10, 'and the ten at the top are built for Spain', seen.spainTop);
   ok(seen.localBelow >= 5, 'with Spain\u2019s hand-written five in the row under them', seen.localBelow);
 }
 

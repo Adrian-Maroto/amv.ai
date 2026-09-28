@@ -9882,6 +9882,28 @@ async function financeRoute(request, env, path){
    not logged, and not put in an audit line. */
 const FINANCE_PRODUCTS = ['investments', 'transactions'];
 const FINANCE_COUNTRIES = ['US'];
+/* WHERE A BANK CAN REALLY BE LINKED, AND WHO DECIDES.
+
+   The aggregator AMV uses covers the United States, Canada, the United
+   Kingdom and most of the EU (its published coverage: US, CA, GB, IE, FR, ES,
+   NL, DE, IT, PL, BE, AT, DK, FI, NO, SE, EE, LT, LV, PT). Whether THIS
+   deployment may link banks in each of them depends on the provider account -
+   Europe and the UK are separate approvals - which is a contract, not code.
+   So the list is a setting: FINANCE_COUNTRIES="US,CA,GB,ES" once those are
+   approved. Anything outside the provider's coverage is ignored rather than
+   trusted, and the default is the one country already approved. Brazil and
+   Mexico (Belvo, Pluggy), India (the Account Aggregator network), Australia
+   (Basiq) and Japan (Moneytree) need a different provider; China has no
+   third-party access to Alipay or WeChat Pay at all. */
+const FINANCE_COVERED = ['US','CA','GB','IE','FR','ES','NL','DE','IT','PL','BE','AT','DK','FI','NO','SE','EE','LT','LV','PT'];
+function _finCountries(env){
+  const set = String((env && env.FINANCE_COUNTRIES) || '').toUpperCase().split(/[\s,]+/)
+    .filter(c => FINANCE_COVERED.indexOf(c) >= 0);
+  return set.length ? Array.from(new Set(['US'].concat(set))) : FINANCE_COUNTRIES.slice();
+}
+/* Investments are a US product at the provider; elsewhere a link that asks for
+   them fails outright, so only transactions are asked for there. */
+function _finProductsFor(cc){ return cc === 'US' ? FINANCE_PRODUCTS : ['transactions']; }
 
 function _finReady(env){ return !!(env && env.FINANCE_CLIENT_ID && env.FINANCE_SECRET); }
 function _finBase(env){ return String((env && env.FINANCE_API_URL) || 'https://production.plaid.com').replace(/\/$/, ''); }
@@ -9927,9 +9949,15 @@ async function financeLinkStart(request, env){
     return json({ error:'Bank linking is not switched on for this deployment. Add FINANCE_CLIENT_ID and FINANCE_SECRET and it works with no other change.', code:'needs_service' }, 503);
 
   const appUrl = String(env.APP_URL || '').replace(/\/$/, '');
+  /* The country the bank is in: the page says, else the network does, and it
+     must be one this deployment may link in. */
+  const reqBody = await request.clone().json().catch(() => ({}));
+  const allowed = _finCountries(env);
+  const cc = [String(reqBody.country || '').toUpperCase(), String((request.cf && request.cf.country) || '').toUpperCase()]
+    .find(c => allowed.indexOf(c) >= 0) || 'US';
   const body = {
-    client_name: 'AMV', language: 'en', country_codes: FINANCE_COUNTRIES,
-    products: FINANCE_PRODUCTS,
+    client_name: 'AMV', language: 'en', country_codes: [cc],
+    products: _finProductsFor(cc),
     user: { client_user_id: await _finUserId(env, user.email) },
     hosted_link: appUrl ? { completion_redirect_uri: appUrl + '/?finlink=done' } : {},
   };
@@ -27174,6 +27202,8 @@ function _readinessReport(env) {
       effect: 'Where product analytics are sent. Defaults to the US host; set it for the EU one, or for a self-hosted instance.' },
     { id: 'financeHost', name: 'Bank data host', env: 'FINANCE_API_URL', set: _has(env, 'FINANCE_API_URL'),
       effect: 'Which environment of the bank-data provider to call. Defaults to production; point it at their sandbox while testing.' },
+    { id: 'financeCountries', name: 'Bank-link countries', env: 'FINANCE_COUNTRIES', set: _has(env, 'FINANCE_COUNTRIES'),
+      effect: 'Countries where people can link a bank, e.g. "US,CA,GB,ES". Defaults to the United States. Add a country only once your bank-data provider has approved it for your account; anything the provider does not cover is ignored.' },
   ];
 
   const all = items.concat(storage);
@@ -29892,6 +29922,26 @@ const COUNTRY_MAIL = {
   IN:['gmail','outlook','rediff'], BR:['gmail','outlook','uol'], TR:['gmail','outlook'], IL:['gmail','walla'], ZA:['gmail','outlook','mweb'],
 };
 const MAIL_DEFAULT_ORDER = ['gmail','outlook','yahoo'];
+/* WHERE SCHOOLWORK LIVES. Google Classroom leads K-12; its largest markets are
+   the US, the UK and Canada (6sense; ListEdTech 2026 K-12 LMS update), and it
+   is the default in the other English-speaking systems that run on Google
+   Workspace for Education. AMV reads it (school.read, on the Google
+   connection). Elsewhere the national exam is the dependable thing to plan
+   around, and that is what the country's school job is built on. */
+const COUNTRY_CLASSROOM = ['US','GB','CA','AU','NZ','IE'];
+/* WHERE A BANK COULD BE LINKED WITH A DIFFERENT PROVIDER. Said on the card
+   rather than hidden, so nobody reads "not here yet" as "not possible".
+   Sources: Open Banking Tracker's provider directory (Belvo and Pluggy for
+   Latin America; Basiq for Australia and New Zealand; Moneytree for Japan;
+   India's Account Aggregator network). */
+const BANK_ELSEWHERE = { BR:'Open Finance Brasil (Belvo, Pluggy)', MX:'Belvo', CO:'Belvo', CL:'Floid', AR:'Belvo',
+  IN:'the Account Aggregator network', AU:'Basiq (Consumer Data Right)', NZ:'Basiq', JP:'Moneytree', SG:'Finverse', PH:'Brankas', ID:'Brankas' };
+/* WHERE PEOPLE WORK. Microsoft Teams leads workplace chat and meetings
+   worldwide, with Zoom, Google and Slack (ResearchAndMarkets 2025); China runs
+   on DingTalk, WeCom and Feishu instead (hiredchina, eMarketer); Japan and
+   Korea add LINE WORKS and KakaoWork. */
+const WORK_APPS = { CN:'DingTalk, WeCom and Feishu', JP:'LINE WORKS, Microsoft Teams and Slack', KR:'KakaoWork, Naver Works and Slack' };
+const WORK_APPS_DEFAULT = 'Microsoft Teams, Slack and Google Workspace';
 /* How each is connected, in the shape the page's Connect buttons already use. */
 function _countryMail(code){
   const ids = (Object.prototype.hasOwnProperty.call(COUNTRY_MAIL, code) ? COUNTRY_MAIL[code] : MAIL_DEFAULT_ORDER)
@@ -32208,7 +32258,10 @@ async function everydayJobs(request, env) {
     /* The mailboxes people there use, most-used first, and whether a bank can
        be linked there - the two facts the top five are built on. */
     inbox: code ? _countryMail(code) : [],
-    bank: FINANCE_COUNTRIES.indexOf(code) >= 0,
+    bank: _finCountries(env).indexOf(code) >= 0,
+    classroom: COUNTRY_CLASSROOM.indexOf(code) >= 0,
+    bankElsewhere: Object.prototype.hasOwnProperty.call(BANK_ELSEWHERE, code) ? BANK_ELSEWHERE[code] : '',
+    work: code ? (Object.prototype.hasOwnProperty.call(WORK_APPS, code) ? WORK_APPS[code] : WORK_APPS_DEFAULT) : '',
     mail: code ? Object.keys(MAIL_PROVIDERS).filter(id => MAIL_PROVIDERS[id].country === code)
                    .map(id => ({ id, name: MAIL_PROVIDERS[id].name })) : [],
     /* Named separately so the interface can say which of these exist because

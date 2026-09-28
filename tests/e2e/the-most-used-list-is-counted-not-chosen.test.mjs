@@ -140,7 +140,7 @@ section('With a country, the top is the five for you and the count moves under t
     window._everydayGuess = () => '';
     return out;
   }, [{ id: catalogue[2].id, n: 91 }, { id: catalogue[0].id, n: 40 }]);
-  ok(/^Top 5 for you in/.test(r.foryou.trim()), 'the top of Crew is the five for where you are', r.foryou);
+  ok(/^Top (5|10) for you in/.test(r.foryou.trim()), 'the top of Crew is the list for where you are', r.foryou);
   ok(r.ranked === 2, 'the counted ranking is still shown, under the list', r);
   ok(r.order[0] === 'cw-foryou' && r.order.indexOf('cw-popc') > r.order.indexOf('cw-filters'), 'in that order: for you, the list, then what others start', r.order);
   ok(r.dup === 0, 'and the ranking is not drawn twice', r.dup);
