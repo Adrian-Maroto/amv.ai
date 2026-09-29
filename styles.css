@@ -16169,3 +16169,70 @@ body:not(.sb-rail) .sb-tools{ grid-template-columns:none; grid-auto-flow:column;
 /* One line above the tools, not two: the footer already draws its own top
    border, and the tool row's second hairline 12px below it read as a glitch. */
 #sb .sbfoot .sb-tools{ border-top:0!important; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   LAYER A273 - Section pass: three things that looked unfinished
+   ════════════════════════════════════════════════════════════════════════
+   The closed phone drawer sits translated off the left edge, and its shadow
+   (40px of blur) went with it - so every phone screen had a dark band down
+   the left side from a panel nobody could see. The shadow belongs to the
+   drawer being OPEN; closed, it casts nothing. */
+@media (max-width:720px){
+  #sb.cl{ box-shadow:none!important; }
+}
+/* Spending: "How this works" and the consent card below it touched, border to
+   border, and read as one broken box. */
+.set-fold + .mf-gate{ margin-top:var(--sp-4); }
+/* Memory's input and the Marketplace search were invisible until focused.
+   A broad rule gives every `.vi input[type="text"]` a TRANSPARENT border with
+   `!important`, and both sit straight on the page in a fill a shade darker
+   than it - so each read as a hole rather than a field. The connector search
+   escapes that rule only because it is `type="search"`. Both are drawn the way
+   it is drawn: same fill, same hairline, same focus. Scoped to these two by id,
+   because the broad rule reaches every text field in AMV and most of them sit
+   inside cards that already outline them. */
+#mem-inp, #mkt-search{
+  border:1px solid var(--ds-hair2)!important; border-radius:var(--r-md);
+  padding:10px 14px;
+  transition:border-color .14s var(--ease);
+}
+#mem-inp::placeholder, #mkt-search::placeholder{ color:var(--dim); }
+#mem-inp:focus, #mkt-search:focus{ outline:none; border-color:var(--accent)!important; }
+/* Build on a phone: the blank pane's head sat flush against the nav's bottom
+   edge with no room above "BUILD", and the pane's bottom border - there to
+   divide chat from preview once both are stacked - was drawn with no preview
+   below it, as a stray line floating over the tab bar. */
+@media (max-width:760px){
+  .dev-shell.dev-blank .dev-chat-pane{ padding-top:var(--sp-5); padding-bottom:var(--sp-5); }
+}
+@media (max-width:900px){
+  .dev-shell.dev-blank .dev-chat-pane{ border-bottom:0; }
+}
+/* Work on code, on a phone, put "BUILD" flush against the nav: its head is a
+   sibling of the padded entry, so it has side padding (A170) but none above. */
+@media (max-width:760px){
+  .lab-shell.lab-blank > .build-head{ padding-top:var(--sp-5); }
+}
+/* The three Build modes are one screen with a switch, and their headings were
+   two weights - 600 on Build an app and Work on code, 500 on Design it - so
+   pressing a mode looked like the title changing font. 500 is the weight every
+   other section title in AMV uses (`.sv h2`), which Design it already got by
+   sitting inside `.sv`; the other two were the odd ones out. */
+.pghd.build-head h2{ font-weight:500!important; }
+/* Marketplace's four tabs wrapped on a phone, leaving "Earnings" alone on a
+   second row under the underline of the first - 8px too wide at 390. Tighter
+   padding fits them; nowrap with a sideways scroll is the net for a language
+   whose words are longer than English's. */
+@media (max-width:560px){
+  .mkt-tabs{ flex-wrap:nowrap!important; overflow-x:auto; scrollbar-width:none; }
+  .mkt-tabs::-webkit-scrollbar{ display:none; }
+  .mkt-tab{ padding-left:10px; padding-right:10px; flex:none; white-space:nowrap; }
+}
+/* Work on code's two pickers had no arrow, so on a phone they read as text
+   boxes. An early rule gives them `background:var(--s2)`, and that SHORTHAND
+   resets the chevron every select gets from the base rule - the same fault the
+   note above `#lab-model,#dev-model` records. The chevron, restated after it. */
+.lab-lang-sel, #lab-model{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237d8590' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 9px center;
+}

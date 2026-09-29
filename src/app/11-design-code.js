@@ -717,8 +717,33 @@ function renderDesignView(){
   });
   // auto-grow the hero textarea
   const ta=$('dsn-prompt');
-  if(ta){ on(ta,'input',()=>{ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,220)+'px'; }); }
+  if(ta){ _dsnFit(ta); on(ta,'input',()=>_dsnFit(ta)); }
 }
+/* SIZED TO WHAT IT SHOWS, INCLUDING THE EXAMPLE.
+
+   The box grew with what was typed and otherwise sat at a fixed minimum, which
+   was set by measuring the example text at one width: two lines, so 80px. At
+   390 the example is three lines and at 320 it is four, so the third was cut
+   through the middle - and so was the fix before this one, for the same reason.
+   A height written down for one phone is wrong on the next. Empty, the box is
+   measured against its own placeholder, which is the text actually on screen. */
+function _dsnFit(ta){
+  if(!ta) return;
+  ta.style.height='auto';
+  /* scrollHeight leaves out the border and the box is border-box, so without
+     this the last line is short by the border's width - 2px, enough to shave
+     the descenders. */
+  const edge=ta.offsetHeight-ta.clientHeight;
+  if(ta.value){ ta.style.height=Math.min(ta.scrollHeight+edge,220)+'px'; return; }
+  ta.value=ta.placeholder;
+  const h=ta.scrollHeight;
+  ta.value='';
+  ta.style.height=Math.min(h+edge,220)+'px';
+}
+/* A rotation or a resized window rewraps the example; one listener for the
+   page, finding the box each time, because the view is re-rendered and a
+   listener per render would pile up. */
+try{ window.addEventListener('resize',()=>{ const t=$('dsn-prompt'); if(t) _dsnFit(t); },{passive:true}); }catch(e){}
 
 function designGo(){ const t=$('dsn-prompt'); const v=t?t.value.trim():''; if(!v){ toast('Describe what to design first','error'); return; } _studioCreate(v); }
 function designStart(kind){ _studioCreate('A '+String(kind).toLowerCase()); }
