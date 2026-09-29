@@ -179,7 +179,7 @@ ok(Array.isArray(capturedBody.tools) && capturedBody.tools.some(t => t.name === 
    'a paid task can search the web', capturedBody.tools);
 ok(/search the live web/i.test(capturedBody.system) && /Never answer a question about today from memory/.test(capturedBody.system),
    'and is told to, for anything current', capturedBody.system.slice(0, 120));
-ok(/cannot send email, buy, book, post/.test(capturedBody.system), 'while still being told it cannot send, buy or post');
+ok(/cannot send email, act on a website/.test(capturedBody.system) && /buy, book, post/.test(capturedBody.system), 'while still being told it cannot send, act on a site, buy or post');
 ok(!/financial advice/i.test(capturedBody.system), 'and no monitoring framing');
 capturedBody = null;
 await W._autoExecute(env, Object.assign({}, taskItem, { id: 't2', tier: 'free' }), { free: true });

@@ -263,7 +263,9 @@ section('An unattended job cannot claim to have done what it cannot do');
   } finally { globalThis.fetch = realFetch; }
 
   ok(/only produce text/i.test(prompt), 'it is told what it actually is', prompt.slice(0, 60));
-  ok(/cannot send email/i.test(prompt) && /browse/i.test(prompt),
+  /* It may search and read the web now, so "browse" is no longer the limit
+     to name - acting on a website is: signing in, clicking, submitting. */
+  ok(/cannot send email/i.test(prompt) && /(browse|act on a website)/i.test(prompt) && /submit/i.test(prompt),
      'and named the things it cannot do rather than left to infer them');
   ok(/has NOT been sent/i.test(prompt),
      'so an action-shaped job returns the finished draft, labelled unsent');
