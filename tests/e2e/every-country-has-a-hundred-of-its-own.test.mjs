@@ -49,10 +49,24 @@ async function open(from, width = 1280) {
   await ctx.addInitScript(() => {
     try { localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true })); } catch (e) {}
     window.__cls = 0;
-    try { new PerformanceObserver(l => { for (const e of l.getEntries()) window.__cls += e.value; }).observe({ type: 'layout-shift', buffered: true }); } catch (e) {}
+    /* WHAT moved, not only how much: a total of 0.0026 on a CI runner names
+       nothing, and the next person guesses. Each shift keeps its elements and
+       where they went from and to. */
+    window.__clsSrc = [];
+    try { new PerformanceObserver(l => { for (const e of l.getEntries()) { window.__cls += e.value;
+      window.__clsSrc.push(+e.value.toFixed(4) + ' @' + Math.round(e.startTime) + 'ms ' + (e.sources || []).map(x => {
+        const n = x.node, id = n ? (n.id || (typeof n.className === 'string' ? n.className : n.nodeName)) : '?';
+        return String(id).slice(0, 40) + ' ' + Math.round(x.previousRect.top) + '->' + Math.round(x.currentRect.top);
+      }).join(' | ')); } }).observe({ type: 'layout-shift', buffered: true }); } catch (e) {}
   });
   const page = await ctx.newPage();
   page.on('pageerror', e => errors.push(e.message));
+  /* AMV_THROTTLE=4 runs it at a CI runner's pace, to reproduce what only
+     shows up there. Off by default: the gate measures at full speed. */
+  if (Number(process.env.AMV_THROTTLE) > 1) {
+    const cdp = await ctx.newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: Number(process.env.AMV_THROTTLE) });
+  }
   await page.goto(SITE + '/#/crew', { waitUntil: 'load' });
   return { ctx, page };
 }
@@ -141,12 +155,12 @@ section('When the country\u2019s data arrives late, the list and its chips are r
     pool.forEach(j => { want[j.cat] = (want[j.cat] || 0) + 1; });
     const got = {};
     document.querySelectorAll('.cw-chip').forEach(c => { got[c.dataset.darg] = Number((c.querySelector('.cw-chip-n') || {}).textContent); });
-    return { want, got, own: document.querySelectorAll('#cw-jobs-body .cw-job-body[data-darg^="cc_es_"]').length, cls: window.__cls };
+    return { want, got, own: document.querySelectorAll('#cw-jobs-body .cw-job-body[data-darg^="cc_es_"]').length, cls: window.__cls, src: window.__clsSrc };
   });
   ok(r.own >= 20, 'Spain\u2019s own arrived in the list', r.own);
   const wrong = Object.keys(r.want).filter(k => r.got[k] !== r.want[k]);
   ok(wrong.length === 0, 'every chip counts the list under it, and every category has its chip', wrong.map(k => k + ': ' + r.got[k] + ' vs ' + r.want[k]));
-  ok(r.cls < 0.001, 'and nothing on the screen moved', +r.cls.toFixed(4));
+  ok(r.cls < 0.001, 'and nothing on the screen moved', { cls: +r.cls.toFixed(4), moved: r.src });
   await ctx.close();
 }
 
