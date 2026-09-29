@@ -7179,6 +7179,21 @@ async function _autoExecute(env, item, budget, email, standing, never){
      job's money actually goes. Paid work is unchanged. */
   const free = !!(budget && budget.free) || item.tier === 'free';
   const isResearch = item.kind === 'research' && !free;
+  /* THE WEB, FOR EVERY PAID JOB - NOT ONLY THE ONES CALLED RESEARCH.
+
+     Only 'research' jobs could search. Every job somebody typed - in the Crew
+     box, or by asking in chat - is a 'task', and its prompt said "you cannot
+     browse". So "send me the top AI news every morning at 8" ran at 8 with no
+     way to know the news: it could only apologise or answer from memory, and
+     memory is exactly what a morning news job must not use. The catalogue's
+     jobs were created as research and were fine; the ones people wrote
+     themselves were the ones that could not work.
+
+     A task now may search when it needs something current. The model decides
+     - "write me a poem" does not search - and each search is booked in the
+     run's reservation before it runs (_autoRunMaxUSD), so this cannot spend
+     past the ceiling. It still cannot send, buy, book or touch an account. */
+  const webOk = !free;
 
   /* Research jobs SEARCH THE LIVE WEB and report what's happening. The prompt is
      deliberately framed as monitoring and analysis - "here's what changed,
@@ -7200,7 +7215,10 @@ async function _autoExecute(env, item, budget, email, standing, never){
        unattended job is read hours later by somebody with no way to check, which
        is exactly when a fabricated action does the most damage. */
     : 'You are AMV running a scheduled automation for the user, unattended. Complete the task fully and return the finished result in markdown. Be specific and useful - this is what they will read when they come back. Never say you will do it later; do it now. '
-      + 'You can only produce text. You cannot send email, browse, buy, book, post, or touch any account or file. '
+      + (webOk
+        ? 'You can search the live web, and you MUST whenever the task depends on anything current - news, prices, listings, schedules, opening hours, weather, results, anything that changes. Name the sources you used. Never answer a question about today from memory. '
+          + 'Apart from searching, you can only produce text. You cannot send email, buy, book, post, or touch any account or file. '
+        : 'You can only produce text. You cannot send email, browse, buy, book, post, or touch any account or file. ')
       + 'If the task asks for an action like that, produce the finished thing ready to use (the email, the message, the filled-in application) and say plainly at the top that it is ready to send and has NOT been sent. '
       + 'Never state or imply that you have taken an action you cannot take, and never invent a result, a number, or a confirmation. '
       + 'Never use em or en dashes; use a plain hyphen (-) instead.';
@@ -7279,8 +7297,8 @@ async function _autoExecute(env, item, budget, email, standing, never){
     system: systemFull,
     messages: [{ role:'user', content: userTurn }]
   };
-  // Research jobs get the web_search tool so they actually pull live information.
-  if(isResearch){
+  // Every paid job gets the web_search tool, so what it reports is live (see webOk).
+  if(webOk){
     body.tools = [{ type:'web_search_20250305', name:'web_search', max_uses: AUTO_MAX_SEARCHES }];
   }
 
@@ -7332,9 +7350,9 @@ function _autoRunMaxUSD(free, isResearch){
   const inTok  = free ? AUTO_FREE_EST_IN_TOK : AUTO_EST_IN_TOK;
   const outTok = free ? FREE_AUTO_MAX_TOKENS
                : (isResearch ? AUTO_RESEARCH_MAX_TOKENS : AUTO_TASK_MAX_TOKENS);
-  /* Research is the only shape that reaches the web, and _autoExecute already
-     excludes free accounts from it. */
-  const searches = isResearch ? AUTO_MAX_SEARCHES : 0;
+  /* Every paid run may reach the web (webOk in _autoExecute), so every paid
+     run reserves its searches. A free one never searches. */
+  const searches = free ? 0 : AUTO_MAX_SEARCHES;
   return (inTok / 1e6) * 3 + (outTok / 1e6) * 15 + searches * WEB_SEARCH_COST_USD;
 }
 function _autoCostUSD(usage){

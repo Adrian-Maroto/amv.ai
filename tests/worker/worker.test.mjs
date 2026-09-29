@@ -18,7 +18,7 @@ mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'worker.harness.mjs');
 writeFileSync(harness,
   src +
-  '\nexport { runDueAutomations, AUTO_INTERVALS, AUTO_MIN_INTERVAL, _autoExecute, autoCreate, _autoEmailResult, deploySite, serveSite, deployList, deployDelete, errorsReport, errorsList, errorsResolve, stripeWebhook, stripeCheckout, abuseList, abuseClear, _abuseRecord, _abuseStatus, setEntitlement, getEntitlement, adminStats, authSignup, _recordGrowth, _growthSeries, _markActive, ENGINES, FREE_AUTO_REPEAT, _autoBucketAdd };' +
+  '\nexport { runDueAutomations, AUTO_INTERVALS, AUTO_MIN_INTERVAL, _autoExecute, autoCreate, _autoEmailResult, deploySite, serveSite, deployList, deployDelete, errorsReport, errorsList, errorsResolve, stripeWebhook, stripeCheckout, abuseList, abuseClear, _abuseRecord, _abuseStatus, setEntitlement, getEntitlement, adminStats, authSignup, _recordGrowth, _growthSeries, _markActive, ENGINES, FREE_AUTO_REPEAT, _autoBucketAdd, _autoRunMaxUSD, AUTO_MAX_SEARCHES };' +
   '\nexport function __setRequireUser(fn){ requireUser = fn; }\n'
 );
 
@@ -163,15 +163,33 @@ ok(/never tell the user to buy, sell, short/i.test(capturedBody.system),
 ok(exec.text && exec.text.length > 0, 'it returns a research brief', exec.text && exec.text.slice(0, 40));
 ok(exec.usage && typeof exec.usage.input === 'number', 'and returns usage for cost accounting', exec.usage);
 
-section('Research watch: a plain task does NOT get web search');
+section('A typed task may reach the live web too, and a free run never does');
 
+/* This section used to assert the opposite - "a normal task has no search
+   tool (saves cost)" - and that was the defect: every job somebody typed is a
+   task, so "the news every morning at 8" ran with no way to read the news.
+   The saving it protected was a search the model only makes when the task
+   needs something current, and the run reserves it up front either way. */
 capturedBody = null;
-const taskItem = { id: 't1', detail: 'Write a haiku', repeat: 'daily',
+const taskItem = { id: 't1', detail: 'Send me the top AI news', repeat: 'daily',
   interval: W.AUTO_INTERVALS.daily, kind: 'task', notify: 'app',
   next: now - 1, created: now, runs: 0, active: true };
 await W._autoExecute(env, taskItem);
-ok(!capturedBody.tools, 'a normal task has no search tool (saves cost)', capturedBody.tools);
+ok(Array.isArray(capturedBody.tools) && capturedBody.tools.some(t => t.name === 'web_search'),
+   'a paid task can search the web', capturedBody.tools);
+ok(/search the live web/i.test(capturedBody.system) && /Never answer a question about today from memory/.test(capturedBody.system),
+   'and is told to, for anything current', capturedBody.system.slice(0, 120));
+ok(/cannot send email, buy, book, post/.test(capturedBody.system), 'while still being told it cannot send, buy or post');
 ok(!/financial advice/i.test(capturedBody.system), 'and no monitoring framing');
+capturedBody = null;
+await W._autoExecute(env, Object.assign({}, taskItem, { id: 't2', tier: 'free' }), { free: true });
+ok(!capturedBody.tools, 'a free run has no search tool - searches are where an unattended job\u2019s money goes', capturedBody.tools);
+/* And the searches are PAID FOR before the run, in the reservation the day's
+   ceiling is taken against - a task that can search but reserves as if it
+   cannot is how a ceiling is spent past without anybody noticing. */
+const reserveTask = W._autoRunMaxUSD(false, false), reserveResearch = W._autoRunMaxUSD(false, true), reserveFree = W._autoRunMaxUSD(true, false);
+ok(reserveTask >= W.AUTO_MAX_SEARCHES * 0.01, 'a paid task reserves every search it may make', { reserveTask, searches: W.AUTO_MAX_SEARCHES });
+ok(reserveFree < W.AUTO_MAX_SEARCHES * 0.01, 'and a free run reserves none, because it cannot search', reserveFree);
 
 section('Research watch: short intervals are supported with a floor');
 
