@@ -20680,8 +20680,14 @@ function _mcSchedRow(t, st){
    a private window - told somebody a job was cancelled while it stayed on the
    schedule and kept running. This one is local, which is exactly why it is
    worth getting right: there is no server to correct it later. */
-function _mcCancelSched(id){
+async function _mcCancelSched(id){
   let gone = false;
+  /* The server's copy first - see _schedServer. */
+  const t0 = _loadSched().find(t=>t.id===id);
+  if(t0 && typeof _schedServer === 'function' && !await _schedServer(t0, 'delete')){
+    toast('AMV\u2019s server could not be reached, so the job was not cancelled - it still runs there. Try again in a moment.', 'error', 7000);
+    renderCrewView(); return;
+  }
   try{
     _saveSched(_loadSched().filter(t=>t.id!==id));
     gone = !_loadSched().some(t=>t.id===id);
@@ -38992,7 +38998,7 @@ async function _coworkStart(){
   let _schedId=null;
   if(cad!=='once'){ _schedId=_scheduleAuto2(goal, Object.assign({},_SCHED), {approval:(_AUTOAPP&&_AUTOAPP.mode)||'require', scope:_AUTOAPP?{run:_AUTOAPP.run,risk:_AUTOAPP.risk,until:_AUTOAPP.until,cap:_aaCapOf(_AUTOAPP.cap)}:null}); }
   $('cw-step1').style.display='none'; $('cw-step2').style.display='block';
-  if(cad!=='once'){ _autoLog('<div class="auto-ev plan"><b>Scheduled</b><div>'+_schedHuman()+'. Running the first one now. AMV runs this automatically when due (and catches up when you return). Connect the backend for true 24/7.</div></div>'); }
+  if(cad!=='once'){ _autoLog('<div class="auto-ev plan"><b>Scheduled</b><div>'+_schedHuman()+'. Running the first one now.</div></div>'); }
   const ws=AMVWorkspace.files.length?AMVWorkspace:null;
   if(ws){ _autoLog('<div class="auto-ev plan"><b>Workspace</b><div>Working across '+ws.files.length+' file'+(ws.files.length>1?'s':'')+(ws.dirHandle?' in your connected folder. Results will be written back to disk.':'. Results will be offered as downloads.')+'</div></div>'); }
   runAutonomous(goal, Object.assign({ schedId:_schedId }, ws?{ workspace:ws, fileContent:ws.contextText() }:{}));
@@ -39104,6 +39110,17 @@ async function _runDueAuto(){
   const quietEnd = inQuiet && (typeof _mcQuietEndsAt === 'function') ? _mcQuietEndsAt(now) : 0;
   for(const t of list){
     if(t.paused) continue;
+    /* ONE JOB, ONE RUN. An entry with `autoId` is a job the SERVER runs - the
+       Crew box registers it there and keeps this copy only so the row can be
+       shown and edited. This loop used to run it too, so anybody with AMV open
+       at 8 got the job twice: two model calls against their allowance and two
+       drafts or deliveries. The screen already showed it as one row
+       (_mcLocalOnly); the runner never asked the same question. Its next time
+       still moves, so the row reads right, but only the server runs it. */
+    if(t.autoId){
+      if(t.next<=now){ t.next=(t.sched?_schedNext(t.sched,now):_freqNext(t.freq,now)); changed=true; }
+      continue;
+    }
     if(t.next<=now){
       /* HELD, NOT SKIPPED - and held BEFORE lastRun is stamped, because it did
          not run. `next` moves to the far side of the window rather than staying
@@ -39217,20 +39234,46 @@ async function _recurMakeApproval(t){
    open, and the Crew page if that's the current tab. Never pops the modal open
    when it wasn't already. */
 function _schedRefreshViews(){ if($('sm-bg')) openSchedManager(); if(S.tab==='crew'){ try{ renderCrewView(); }catch(e){} } }
-function _schedTogglePause(id){
+/* THE SERVER'S COPY MOVES WITH THIS ONE.
+
+   A job made in the browser is registered on the server too (see
+   _scheduleAuto2 and the Crew box), and it is the server's copy that runs.
+   Cancel, pause and "make autonomous" here used to change only this copy - so
+   somebody cancelled a job, read "Job cancelled", and the server went on
+   running it every morning. Each control now changes the server first and
+   this copy only once the server has; if the server cannot be reached,
+   nothing changes and they are told. A job the server no longer has is
+   already gone, which is what cancel wanted. */
+async function _schedServer(t, action, extra){
+  if(!t || !t.autoId) return true;
+  if(typeof _autoApi !== 'function') return false;
+  try{ await _autoApi('/auto/update', Object.assign({ id: t.autoId, action }, extra || {})); return true; }
+  catch(e){ return action === 'delete' && /not found/i.test(String((e && e.message) || '')); }
+}
+const _SCHED_OFFLINE = 'AMV\u2019s server could not be reached, so nothing was changed - the job still runs there. Try again in a moment.';
+async function _schedTogglePause(id){
   const l=_loadSched(); const t=l.find(x=>x.id===id);
-  if(t){ t.paused=!t.paused; _saveSched(l); if(typeof toast==='function') toast(t.paused?'Job paused':'Job resumed','info'); }
+  if(t){
+    if(!await _schedServer(t, t.paused ? 'resume' : 'pause')){ if(typeof toast==='function') toast(_SCHED_OFFLINE,'error',7000); _schedRefreshViews(); return; }
+    t.paused=!t.paused; _saveSched(l); if(typeof toast==='function') toast(t.paused?'Job paused':'Job resumed','info');
+  }
   _schedRefreshViews();
 }
-function _schedToggleApproval(id){
+async function _schedToggleApproval(id){
   const l=_loadSched(); const t=l.find(x=>x.id===id);
-  if(t){ t.approval=(t.approval==='auto')?'require':'auto'; _saveSched(l); if(typeof toast==='function') toast(t.approval==='auto'?'Now autonomous - AMV sends this automatically, it will not appear in Needs your approval':'Now asks first - AMV will drop a draft in Needs your approval each time','info',4200); }
+  if(t){
+    const to=(t.approval==='auto')?'require':'auto';
+    if(!await _schedServer(t, 'edit', { approval: to })){ if(typeof toast==='function') toast(_SCHED_OFFLINE,'error',7000); _schedRefreshViews(); return; }
+    t.approval=to; _saveSched(l); if(typeof toast==='function') toast(t.approval==='auto'?'Now autonomous - AMV sends this automatically, it will not appear in Needs your approval':'Now asks first - AMV will drop a draft in Needs your approval each time','info',4200); }
   _schedRefreshViews();
 }
-function _schedCancel(id){
+async function _schedCancel(id){
+  const t=_loadSched().find(x=>x.id===id);
+  if(t && !await _schedServer(t, 'delete')){ if(typeof toast==='function') toast(_SCHED_OFFLINE,'error',7000); _schedRefreshViews(); return; }
   _saveSched(_loadSched().filter(t=>t.id!==id)); if(typeof toast==='function') toast('Job cancelled','info');
   _schedRefreshViews();
 }
+try{ window._schedServer=_schedServer; }catch(e){}
 window._schedTogglePause=_schedTogglePause; window._schedToggleApproval=_schedToggleApproval; window._schedCancel=_schedCancel;
 
 /* Full editor for a scheduled task: change what it does, how often, when, and
@@ -39407,6 +39450,27 @@ function _scheduleAuto2(goal, s, appr){
   const id='a'+Date.now();
   list.push({id, goal, sched:s, next:_schedNext(s, Date.now()), created:Date.now(), lastRun:null, approval:appr.approval||'require', scope:appr.scope||null});
   _saveSched(list);
+  /* AND ON THE SERVER, SO IT RUNS WITH THIS CLOSED.
+
+     This path saved the job in the browser and nowhere else, so an automation
+     made here ran only while AMV was open - on a deployment whose server runs
+     scheduled work all night. It is registered where the cron runs it, with
+     the time and zone, exactly as the Crew box does; once the server has it,
+     this copy is only the row (the local runner skips anything with autoId).
+     If the server refuses - a plan without scheduling, or no server at all -
+     the copy here is what runs, and the log says which. */
+  if(typeof _mcScheduleServer==='function'){
+    const cal = /^(daily|weekly|monthly)$/.test(String(s && s.cad)) ? s : null;
+    _mcScheduleServer({ goal, sched: cal, freq: (s && s.cad) || 'daily', approval: appr.approval || 'require' })
+      .then(res => {
+        if(res && res.id){ const l=_loadSched(); const me=l.find(x=>x.id===id); if(me){ me.autoId=res.id; _saveSched(l); } }
+        try{ if(typeof _autoLog==='function') _autoLog('<div class="auto-ev plan"><b>'+(res && res.ok ? 'Runs on AMV\u2019s servers' : 'Runs while AMV is open')+'</b><div>'
+          + (res && res.ok ? 'It runs at its time with this window closed and your computer off.'
+                           : (typeof _mcWhereItRuns==='function' ? escH(_mcWhereItRuns(res)) : 'The server did not take it, so it runs from here while AMV is open.'))
+          + '</div></div>'); }catch(e){}
+      })
+      .catch(()=>{});
+  }
   const modeTxt=(appr.approval==='auto')?' · Auto-approve':'';
   if(typeof toast==='function') toast('Scheduled - '+_schedHumanOf(s)+modeTxt,'success');
   /* Returned so the run that starts immediately afterwards can be TAGGED with

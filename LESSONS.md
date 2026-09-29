@@ -13991,3 +13991,21 @@ Rules:
   `now + interval`, and skips what an outage missed rather than stampeding.
 - Every door that creates a job sends the time. A suite drives each door and
   checks the request body, not only the server that would honour it.
+
+## 539. Two copies of one job need one owner for every verb
+
+A job made in the browser is kept in two places: the server, which runs it,
+and a copy on the device that draws its row. The screen knew this and showed
+one row. The page's runner did not: with AMV open at 8, the job ran twice.
+Cancel, pause and "make autonomous" changed only the copy on the device, so
+"Job cancelled" was shown while the server kept running it. And the Cowork
+panel never registered its jobs on the server at all.
+
+Rules:
+- For each verb (run, cancel, pause, change), one copy is the authority. For
+  a job with a server id, that is the server, and the local copy changes only
+  after the server has.
+- If the server cannot be reached, nothing changes and the message says it
+  still runs. It never says "cancelled".
+- Every door that creates a recurring job registers it on the server when one
+  is connected; device-only is the fallback, and it says so.

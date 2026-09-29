@@ -3441,8 +3441,14 @@ function _mcSchedRow(t, st){
    a private window - told somebody a job was cancelled while it stayed on the
    schedule and kept running. This one is local, which is exactly why it is
    worth getting right: there is no server to correct it later. */
-function _mcCancelSched(id){
+async function _mcCancelSched(id){
   let gone = false;
+  /* The server's copy first - see _schedServer. */
+  const t0 = _loadSched().find(t=>t.id===id);
+  if(t0 && typeof _schedServer === 'function' && !await _schedServer(t0, 'delete')){
+    toast('AMV\u2019s server could not be reached, so the job was not cancelled - it still runs there. Try again in a moment.', 'error', 7000);
+    renderCrewView(); return;
+  }
   try{
     _saveSched(_loadSched().filter(t=>t.id!==id));
     gone = !_loadSched().some(t=>t.id===id);
