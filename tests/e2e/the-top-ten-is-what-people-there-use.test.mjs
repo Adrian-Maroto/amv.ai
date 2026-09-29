@@ -83,7 +83,7 @@ const ten = async (page) => {
       t: rows.map(r => (r.querySelector('.cw-t10-t') || {}).textContent || ''),
       d: rows.map(r => (r.querySelector('.cw-t10-d') || {}).textContent || ''),
       heights: [...new Set(rows.map(r => Math.round(r.getBoundingClientRect().height)))],
-      cls: window.__cls,
+      cls: window.__cls, src: (window.__src || []).slice(0, 4),
     };
   });
 };
@@ -158,7 +158,7 @@ section('Once enough people in a country have started jobs, their order wins');
   const sub = await page.evaluate(() => ((document.querySelector('#cw-foryou .sec-sub') || {}).textContent || '').replace(/\s+/g, ' '));
   ok(r.sec[0] === 'Groceries' && r.sec[1] === 'Home' && r.sec[2] === 'Mail', 'Spain: groceries, then homes, then mail - the order people there chose', r.sec.slice(0, 4));
   ok(/Ordered by what people in Spain switch on most/.test(sub), 'and the heading says the order is counted, not chosen', sub);
-  ok(r.cls < 0.001, 'with the counted order there from the first draw - nothing reshuffles', +r.cls.toFixed(4));
+  ok(r.cls < 0.001, 'with the counted order there from the first draw - nothing reshuffles', { cls: +r.cls.toFixed(4), src: r.src });
   await ctx.close();
   const us = await open('US', 'crew');
   const u = await ten(us.page);

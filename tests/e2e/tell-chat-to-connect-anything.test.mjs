@@ -342,11 +342,13 @@ section('On a phone the card fits and every button can be pressed');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(400);
   const r = await page.evaluate(() => {
+    /* The harness's tolerant comparison: a rendered box is a float. */
+    const __under = (v, n) => v < n - 0.5;
     const cards = [...document.querySelectorAll('.chat-tool-out .cx-card')];
     const last = cards[cards.length - 1];
     const btns = last ? [...last.querySelectorAll('.cx-btn')] : [];
     return { n: cards.length, over: last ? last.scrollWidth > last.clientWidth + 1 : true,
-             small: btns.filter(b => b.getBoundingClientRect().height < 32).length, btns: btns.length,
+             small: btns.filter(b => __under(b.getBoundingClientRect().height, 32)).length, btns: btns.length,
              pageOver: document.documentElement.scrollWidth > window.innerWidth + 1 };
   });
   ok(r.n >= 4 && r.btns >= 2, 'the cards are in the conversation', r);

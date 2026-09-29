@@ -16154,3 +16154,18 @@ body:not(.sb-rail) .sb-tools{ grid-template-columns:none; grid-auto-flow:column;
 .cx-btn{ min-height:40px; font-size:var(--t-sm); max-width:100%; white-space:normal; text-align:left; }
 .cx-note{ margin:0; font-size:var(--t-xs); color:var(--mu); }
 @media (max-width:520px){ .cx-acts{ flex-direction:column; } .cx-btn{ width:100%; text-align:center; } }
+
+/* ════════════════════════════════════════════════════════════════════════
+   LAYER A272 - The sidebar's footer holds its place
+   ════════════════════════════════════════════════════════════════════════
+   The footer (tools, status, account) sat at the bottom by margin-top:auto,
+   which only holds while everything above it fits. On a busy machine the
+   first frame could have more above it than the sidebar has room for, so the
+   footer was drawn lower and then jumped up 84px when that settled - measured
+   by the stability suite at 473ms. Sticky to the sidebar's bottom edge, it is
+   in the same place either way, and on a short screen the account and tools
+   stay in reach instead of scrolling away. */
+#sb .sbfoot{ position:sticky!important; bottom:0; z-index:2; }
+/* One line above the tools, not two: the footer already draws its own top
+   border, and the tool row's second hairline 12px below it read as a glitch. */
+#sb .sbfoot .sb-tools{ border-top:0!important; }
