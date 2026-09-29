@@ -16236,3 +16236,15 @@ body:not(.sb-rail) .sb-tools{ grid-template-columns:none; grid-auto-flow:column;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%237d8590' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat:no-repeat; background-position:right 9px center;
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   LAYER A274 - The Crew box takes a paragraph
+   ════════════════════════════════════════════════════════════════════════
+   It is a textarea now (see _mcCmdFit): one line tall until there is more,
+   then it grows to 240px and scrolls. Drawn exactly as the one-line field
+   was - same padding, same type - so the only visible change is that a long
+   request can be read back before Run. */
+textarea.mc-cmd-input{
+  resize:none; display:block; overflow-y:auto; max-height:240px;
+  line-height:1.45; align-self:center; font-family:var(--fn);
+}

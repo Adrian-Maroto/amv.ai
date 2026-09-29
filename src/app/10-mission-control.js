@@ -2504,6 +2504,7 @@ function cwPromptSelf(q){
     const el = document.getElementById('mc-cmd-input');
     if(el){
       el.value = String(q || '');
+      _mcCmdFit(el);
       el.scrollIntoView({ block:'center', behavior:'smooth' });
       el.focus();
       return;
@@ -4527,6 +4528,38 @@ function _mcCannot(box, v, instruction){
 }
 try{ window._mcCannot=_mcCannot; }catch(e){}
 
+/* THE CREW BOX TAKES A PARAGRAPH, NOT A LINE.
+
+   It was a one-line <input>: a request pasted in with line breaks lost them,
+   and anything longer than the box's width ran off its edge where it could not
+   be read back before pressing Run. It is a textarea now that grows with what
+   is in it - to a height, and then it scrolls - so what somebody typed is what
+   they can see. Every place that puts text into it calls this too, because
+   setting .value from code does not fire `input`. */
+function _mcCmdFit(el){
+  if(!el || el.tagName !== 'TEXTAREA') return;
+  el.style.height = 'auto';
+  const edge = el.offsetHeight - el.clientHeight;
+  el.style.height = Math.min(el.scrollHeight + edge, 240) + 'px';
+}
+try{ window._mcCmdFit=_mcCmdFit; }catch(e){}
+
+/* Is this sentence a request to connect an account, and to what? Only the
+   plain shapes - "connect my X", "link X", "sign in to X", "add my X account" -
+   and only a short name, so a job that merely mentions connecting ("connect to
+   my inbox every morning and summarise it") still goes to the planner. */
+function _mcConnectIntent(s){
+  const t = String(s || '').trim().replace(/[.!?]+$/, '');
+  const m = t.match(/^(?:please\s+|can you\s+|could you\s+|i want to\s+|help me\s+)?(?:connect|link|hook up|sign (?:me )?in(?:to|\s+to)?|log (?:me )?in(?:to|\s+to)?)\s+(?:to\s+|up\s+|with\s+)?(.+)$/i)
+         || t.match(/^(?:please\s+)?add\s+(my\s+.+|.+\s+account)$/i);
+  if(!m) return '';
+  const name = m[1].trim();
+  if(!name || name.length > 60 || name.split(/\s+/).length > 6) return '';
+  if(/\b(every|each|daily|weekly|monthly|when|whenever|then|and (?:tell|send|summari[sz]e|check|email))\b/i.test(name)) return '';
+  return name;
+}
+try{ window._mcConnectIntent=_mcConnectIntent; }catch(e){}
+
 async function mcRunCommand(instruction, opts){
   opts=opts||{};
   const box=document.getElementById('mc-cmd-result'); if(!box) return;
@@ -4561,6 +4594,26 @@ async function mcRunCommand(instruction, opts){
      this - lives in the planner, which is the only thing holding the whole
      catalog; it runs a moment later, inside uniRun, and before anything is
      scheduled. */
+  /* "CONNECT MY ..." IN THIS BOX GETS THE SAME ANSWER IT GETS IN CHAT.
+
+     Chat has a connect tool; this box never did. The Crew's own tool list
+     named it, but that list belongs to a runner nothing calls, so "connect my
+     Revolut" typed here went to the job planner - which planned a job - and
+     the claim that the Crew could connect anything was true only of chat.
+     One resolver, one card, one set of buttons: the same function chat's tool
+     runs, drawn where the person asked. Before the feasibility floor, because
+     "log in to my bank" is a request to connect, not a job to refuse. */
+  const _cx = _mcConnectIntent(instruction);
+  if(_cx && typeof connectAccountTool === 'function'){
+    box.innerHTML='<div class="mc-cmd-msg run"><span class="rr-dot"></span> Looking for a way to connect '+escH(_cx)+'…</div>';
+    try{
+      const r = await connectAccountTool({ service:_cx });
+      box.innerHTML = r.render || '<div class="mc-cmd-msg">'+escH(r.text || '')+'</div>';
+    }catch(e){
+      box.innerHTML='<div class="mc-cmd-msg warn">'+escH(String((e&&e.message)||'That could not be looked up just now.'))+'</div>';
+    }
+    return;
+  }
   if(typeof _feasFloor === 'function'){
     const edge = _feasFloor(instruction);
     if(edge){ _mcCannot(box, edge, instruction); return; }
@@ -4945,9 +4998,9 @@ function renderCrewView(){
           <span>- say it in your own words and it works out the rest</span></div>
         <div class="mc-cmd-inner">
           <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
-          <input id="mc-cmd-input" class="mc-cmd-input" type="text" autocomplete="off"
-                 aria-label="Tell AMV what to do"
-                 placeholder="e.g. summarize my last meetings">
+          <textarea id="mc-cmd-input" class="mc-cmd-input" rows="1" autocomplete="off"
+                 aria-label="Tell AMV what to do" enterkeyhint="go"
+                 placeholder="e.g. summarize my last meetings"></textarea>
           <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
         </div>
         <div class="mc-cmd-chips">${[
@@ -5146,7 +5199,7 @@ function renderCrewView(){
       <div class="mc-cmd-label">Tell AMV what to do <span>- it recognizes what you mean and does it, right here</span></div>
       <div class="mc-cmd-inner">
         <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
-        <input id="mc-cmd-input" class="mc-cmd-input" type="text" aria-label="Tell AMV what to do" placeholder="e.g. “email me a summary of my unread emails” or “research the top AI news and write a brief”" autocomplete="off">
+        <textarea id="mc-cmd-input" class="mc-cmd-input" rows="1" aria-label="Tell AMV what to do" enterkeyhint="go" placeholder="e.g. “email me a summary of my unread emails” or “research the top AI news and write a brief”" autocomplete="off"></textarea>
         <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
       </div>
       <div class="mc-cmd-chips">${[
@@ -5286,8 +5339,15 @@ function _cwWireCmd(vc){
   try{
     var _mcRun=function(){ var el=$('mc-cmd-input'); var v=el?el.value.trim():''; if(!v){ el&&el.focus(); return; } mcRunCommand(v); };
     on($('mc-cmd-go'),'click',_mcRun);
-    var _ci=$('mc-cmd-input'); if(_ci) on(_ci,'keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); _mcRun(); } });
-    vc.querySelectorAll('[data-mccmd]').forEach(function(c){ on(c,'click',function(){ var el=$('mc-cmd-input'); if(el){ el.value=c.dataset.mccmd; el.focus(); } }); });
+    /* Enter runs it, as it always did; Shift+Enter is a new line, the way
+       the chat box works, because the box now takes a paragraph. An Enter
+       that finishes composing a character (Chinese, Japanese, Korean input)
+       is the input method's, not a Run. */
+    var _ci=$('mc-cmd-input'); if(_ci){
+      on(_ci,'keydown',function(e){ if(e.key==='Enter' && !e.shiftKey && !e.isComposing && e.keyCode!==229){ e.preventDefault(); _mcRun(); } });
+      on(_ci,'input',function(){ _mcCmdFit(_ci); });
+    }
+    vc.querySelectorAll('[data-mccmd]').forEach(function(c){ on(c,'click',function(){ var el=$('mc-cmd-input'); if(el){ el.value=c.dataset.mccmd; _mcCmdFit(el); el.focus(); } }); });
   }catch(e){}
   /* The search re-renders on a pause rather than on every keystroke: this
      rebuilds a hundred cards, and doing that per character makes typing feel

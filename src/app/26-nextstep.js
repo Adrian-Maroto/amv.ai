@@ -153,7 +153,7 @@ async function _nextStepRun(kind, userText, answerText){
     if(kind==='crew'){
       setTab('crew');
       // Carry the goal across so they do not retype it.
-      setTimeout(()=>{ const box=document.getElementById('mc-cmd-input'); if(box){ box.value=userText; box.focus(); } }, 300);
+      setTimeout(()=>{ const box=document.getElementById('mc-cmd-input'); if(box){ box.value=userText; try{ _mcCmdFit(box); }catch(e){} box.focus(); } }, 300);
       return;
     }
     if(kind==='first'){

@@ -658,6 +658,108 @@ try{ window._sendPendingMessage=_sendPendingMessage; }catch(e){}
    hitting it cannot drift apart. */
 const _TOOL_ROUND_MAX = 4;
 let _toolRound = 0;
+/* ══════════════════════════════════════════════════════════════
+   A MESSAGE OF ANY LENGTH GOES THROUGH.
+
+   Asked for: the chat box should take anything, however long. It did take
+   it - and then the request was refused by the server for being over its
+   600,000-character bound, or overflowed the engine's window, and the person
+   got an error for having pasted too much.
+
+   What an engine reads in one go is a fixed window, so "any length" has one
+   honest shape: past what fits, the message is read in parts, each part is
+   turned into faithful notes (quotes kept where the exact words matter), and
+   the answer is written from those notes plus the verbatim end of the
+   message, which is where the question usually is. It is lossy and says so -
+   in the confirmation, and to the engine.
+
+   Each part is a model call, and calls are what the allowance counts. So it
+   asks before spending, says how many, and refuses to start a read the
+   allowance cannot finish rather than stopping halfway.
+   ══════════════════════════════════════════════════════════════ */
+const LONG_MSG_DIRECT = 240000;   /* ~60k tokens: sent whole, with room for history and the answer */
+const LONG_MSG_PART   = 180000;   /* ~45k tokens per part */
+const LONG_MSG_MAX_PARTS = 40;    /* ~7 million characters in one message */
+const LONG_MSG_SHOWN  = 20000;    /* what stays on screen and in the saved chat */
+
+function _longParts(text){
+  const out = [];
+  let i = 0;
+  while(i < text.length){
+    let end = Math.min(text.length, i + LONG_MSG_PART);
+    /* Cut on a paragraph, else a line, else a space - never mid-word when a
+       boundary is anywhere in the last tenth of the part. */
+    if(end < text.length){
+      const floor = i + Math.floor(LONG_MSG_PART * 0.9);
+      const para = text.lastIndexOf('\n\n', end), line = text.lastIndexOf('\n', end), sp = text.lastIndexOf(' ', end);
+      const cut = para > floor ? para : line > floor ? line : sp > floor ? sp : end;
+      end = cut;
+    }
+    out.push(text.slice(i, end));
+    i = end;
+  }
+  return out;
+}
+
+async function _readLongMessage(text){
+  const parts = _longParts(text);
+  const n = parts.length, chars = text.length.toLocaleString();
+  if(n > LONG_MSG_MAX_PARTS){
+    toast('That is ' + chars + ' characters - more than AMV reads in one message (about ' + (LONG_MSG_MAX_PARTS * LONG_MSG_PART).toLocaleString()
+      + '). Send it in pieces, or attach it as files. Nothing was sent.', 'error', 9000);
+    return null;
+  }
+  if(!(window.AMV_API && AMV_API.live)){
+    toast('That message is ' + chars + ' characters, which is read in parts - and that needs the AMV engine, which is not connected on this deployment. Nothing was sent.', 'error', 9000);
+    return null;
+  }
+  try{
+    if(typeof AMVUsage !== 'undefined'){
+      const st = AMVUsage.status();
+      if(st && Number.isFinite(st.remaining) && st.remaining < n + 1){
+        toast('Reading this takes ' + (n + 1) + ' messages (' + n + ' parts and the answer) and you have ' + st.remaining
+          + ' left right now. Nothing was sent, and nothing was used.', 'error', 9000);
+        return null;
+      }
+    }
+  }catch(e){}
+  const yes = await showConfirmAsync('This message is ' + chars + ' characters - more than an engine reads at once. '
+    + 'AMV will read it in ' + n + ' parts, take faithful notes on each, and answer from those notes and the exact end of your message. '
+    + 'It uses ' + (n + 1) + ' messages of your allowance. Read it?');
+  if(!yes) return null;
+
+  const head = text.slice(0, 1500), tail = text.slice(-1500);
+  const notes = [];
+  _userStopped = false;
+  for(let k = 0; k < n; k++){
+    if(_userStopped){ toast('Stopped. Nothing was sent.', 'info', 4000); return null; }
+    toast('Reading your message: part ' + (k + 1) + ' of ' + n + '…', 'info', 4000);
+    try{
+      const out = await aiComplete(
+        'PART ' + (k + 1) + ' OF ' + n + ' of one very long message.\n\n'
+        + 'The message begins:\n"""' + head + '"""\n\nIt ends:\n"""' + tail + '"""\n\n'
+        + 'Take faithful notes on THIS part only, for someone who will answer the message and cannot see it:\n'
+        + '- every question, instruction or request in it, word for word;\n'
+        + '- every fact, figure, date, name, amount and decision;\n'
+        + '- code, formulas, tables or clauses that matter, quoted exactly;\n'
+        + '- anything that contradicts or changes something said earlier.\n'
+        + 'No commentary and no answer - notes only.\n\nPART ' + (k + 1) + ':\n"""\n' + parts[k] + '\n"""',
+        'You read one part of a long message and write precise, complete notes on it. You never invent anything that is not in the text.',
+        { max_tokens: 4000 });
+      notes.push('### Part ' + (k + 1) + ' of ' + n + '\n' + String(out || '').trim());
+    }catch(e){
+      toast('Part ' + (k + 1) + ' could not be read (' + String((e && e.message) || 'error').slice(0, 120) + '). Nothing was sent.', 'error', 9000);
+      return null;
+    }
+  }
+  const content = '[This message was ' + chars + ' characters long - more than fits in one request - so AMV read it in ' + n
+    + ' parts. The notes on each part follow, and then the exact end of the message, which is usually where the request is. '
+    + 'Answer the message. If the answer depends on wording the notes may not have kept, say so.]\n\n'
+    + notes.join('\n\n') + '\n\n--- The message ended with, word for word ---\n' + text.slice(-6000);
+  return { content, parts: n };
+}
+try{ window._readLongMessage=_readLongMessage; window._longParts=_longParts; }catch(e){}
+
 async function sendMsg(_opts) {
   _opts = _opts || {};
   const ta=$('mta');
@@ -719,10 +821,29 @@ async function sendMsg(_opts) {
       setMsgs(msgs2); S.busy=true; renderChatMsgs(); renderHist();
       await _callAI(msgs2); return;
     } else {
-      const max=20000, trunc=att.data.length>max;
-      apiContent='[File: "'+att.name+'"\n```\n'+att.data.slice(0,max)+(trunc?'\n...[truncated]':'')+'"\n```\n\nUser: '+(txt||'Please analyze this file thoroughly.');
+      /* The whole file, not its first 20,000 characters. That cut was silent
+         to the person - the model saw "[truncated]", they saw their file - so
+         a question about page forty was answered from pages one to five. A
+         file longer than one request holds is read in parts below, the same
+         as a long message, and the person is asked first. */
+      apiContent='[File: "'+att.name+'"\n```\n'+att.data+'\n```\n\nUser: '+(txt||'Please analyze this file thoroughly.');
       display=(txt?txt+' ':'')+'['+att.name+']';
     }
+  }
+
+  if(!_opts._continueTools && typeof apiContent==='string' && apiContent.length>LONG_MSG_DIRECT){
+    const read=await _readLongMessage(apiContent);
+    if(!read){
+      /* Not sent: nothing was read, so what they typed goes back in the box. */
+      if(!att){ ta.value=txt; try{ ta.dispatchEvent(new Event('input')); }catch(e){} }
+      return;
+    }
+    apiContent=read.content;
+    /* What is kept in the conversation is a readable head and a count, not
+       megabytes: conversations are saved on this device, and one pasted book
+       would fill the space every other chat is saved in. */
+    if(!att && display.length>LONG_MSG_SHOWN)
+      display=display.slice(0,LONG_MSG_SHOWN)+'\n\n… ['+(display.length-LONG_MSG_SHOWN).toLocaleString()+' more characters - read in '+read.parts+' parts]';
   }
 
   const msgs=getMsgs();
@@ -1841,7 +1962,11 @@ try{ window._draftSave=_draftSave; window._draftLoad=_draftLoad; window._draftCl
 
 function bindChatEvents() {
   const ta=$('mta');
-  on(ta,'keydown',e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();sendMsg();return;} if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
+  /* An Enter that confirms a character in a Chinese, Japanese or Korean input
+     method belongs to the input method. It was sending the message half
+     written - `isComposing`, and keyCode 229 for the browsers that report the
+     confirming Enter after composition has formally ended. */
+  on(ta,'keydown',e=>{ if(e.isComposing||e.keyCode===229) return; if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();sendMsg();return;} if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
   on(ta,'input',()=>{
     ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
     /* Debounced: a keystroke is not worth a write, and losing the last 400ms of

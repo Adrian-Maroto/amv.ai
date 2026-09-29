@@ -7599,6 +7599,108 @@ try{ window._sendPendingMessage=_sendPendingMessage; }catch(e){}
    hitting it cannot drift apart. */
 const _TOOL_ROUND_MAX = 4;
 let _toolRound = 0;
+/* ══════════════════════════════════════════════════════════════
+   A MESSAGE OF ANY LENGTH GOES THROUGH.
+
+   Asked for: the chat box should take anything, however long. It did take
+   it - and then the request was refused by the server for being over its
+   600,000-character bound, or overflowed the engine's window, and the person
+   got an error for having pasted too much.
+
+   What an engine reads in one go is a fixed window, so "any length" has one
+   honest shape: past what fits, the message is read in parts, each part is
+   turned into faithful notes (quotes kept where the exact words matter), and
+   the answer is written from those notes plus the verbatim end of the
+   message, which is where the question usually is. It is lossy and says so -
+   in the confirmation, and to the engine.
+
+   Each part is a model call, and calls are what the allowance counts. So it
+   asks before spending, says how many, and refuses to start a read the
+   allowance cannot finish rather than stopping halfway.
+   ══════════════════════════════════════════════════════════════ */
+const LONG_MSG_DIRECT = 240000;   /* ~60k tokens: sent whole, with room for history and the answer */
+const LONG_MSG_PART   = 180000;   /* ~45k tokens per part */
+const LONG_MSG_MAX_PARTS = 40;    /* ~7 million characters in one message */
+const LONG_MSG_SHOWN  = 20000;    /* what stays on screen and in the saved chat */
+
+function _longParts(text){
+  const out = [];
+  let i = 0;
+  while(i < text.length){
+    let end = Math.min(text.length, i + LONG_MSG_PART);
+    /* Cut on a paragraph, else a line, else a space - never mid-word when a
+       boundary is anywhere in the last tenth of the part. */
+    if(end < text.length){
+      const floor = i + Math.floor(LONG_MSG_PART * 0.9);
+      const para = text.lastIndexOf('\n\n', end), line = text.lastIndexOf('\n', end), sp = text.lastIndexOf(' ', end);
+      const cut = para > floor ? para : line > floor ? line : sp > floor ? sp : end;
+      end = cut;
+    }
+    out.push(text.slice(i, end));
+    i = end;
+  }
+  return out;
+}
+
+async function _readLongMessage(text){
+  const parts = _longParts(text);
+  const n = parts.length, chars = text.length.toLocaleString();
+  if(n > LONG_MSG_MAX_PARTS){
+    toast('That is ' + chars + ' characters - more than AMV reads in one message (about ' + (LONG_MSG_MAX_PARTS * LONG_MSG_PART).toLocaleString()
+      + '). Send it in pieces, or attach it as files. Nothing was sent.', 'error', 9000);
+    return null;
+  }
+  if(!(window.AMV_API && AMV_API.live)){
+    toast('That message is ' + chars + ' characters, which is read in parts - and that needs the AMV engine, which is not connected on this deployment. Nothing was sent.', 'error', 9000);
+    return null;
+  }
+  try{
+    if(typeof AMVUsage !== 'undefined'){
+      const st = AMVUsage.status();
+      if(st && Number.isFinite(st.remaining) && st.remaining < n + 1){
+        toast('Reading this takes ' + (n + 1) + ' messages (' + n + ' parts and the answer) and you have ' + st.remaining
+          + ' left right now. Nothing was sent, and nothing was used.', 'error', 9000);
+        return null;
+      }
+    }
+  }catch(e){}
+  const yes = await showConfirmAsync('This message is ' + chars + ' characters - more than an engine reads at once. '
+    + 'AMV will read it in ' + n + ' parts, take faithful notes on each, and answer from those notes and the exact end of your message. '
+    + 'It uses ' + (n + 1) + ' messages of your allowance. Read it?');
+  if(!yes) return null;
+
+  const head = text.slice(0, 1500), tail = text.slice(-1500);
+  const notes = [];
+  _userStopped = false;
+  for(let k = 0; k < n; k++){
+    if(_userStopped){ toast('Stopped. Nothing was sent.', 'info', 4000); return null; }
+    toast('Reading your message: part ' + (k + 1) + ' of ' + n + '…', 'info', 4000);
+    try{
+      const out = await aiComplete(
+        'PART ' + (k + 1) + ' OF ' + n + ' of one very long message.\n\n'
+        + 'The message begins:\n"""' + head + '"""\n\nIt ends:\n"""' + tail + '"""\n\n'
+        + 'Take faithful notes on THIS part only, for someone who will answer the message and cannot see it:\n'
+        + '- every question, instruction or request in it, word for word;\n'
+        + '- every fact, figure, date, name, amount and decision;\n'
+        + '- code, formulas, tables or clauses that matter, quoted exactly;\n'
+        + '- anything that contradicts or changes something said earlier.\n'
+        + 'No commentary and no answer - notes only.\n\nPART ' + (k + 1) + ':\n"""\n' + parts[k] + '\n"""',
+        'You read one part of a long message and write precise, complete notes on it. You never invent anything that is not in the text.',
+        { max_tokens: 4000 });
+      notes.push('### Part ' + (k + 1) + ' of ' + n + '\n' + String(out || '').trim());
+    }catch(e){
+      toast('Part ' + (k + 1) + ' could not be read (' + String((e && e.message) || 'error').slice(0, 120) + '). Nothing was sent.', 'error', 9000);
+      return null;
+    }
+  }
+  const content = '[This message was ' + chars + ' characters long - more than fits in one request - so AMV read it in ' + n
+    + ' parts. The notes on each part follow, and then the exact end of the message, which is usually where the request is. '
+    + 'Answer the message. If the answer depends on wording the notes may not have kept, say so.]\n\n'
+    + notes.join('\n\n') + '\n\n--- The message ended with, word for word ---\n' + text.slice(-6000);
+  return { content, parts: n };
+}
+try{ window._readLongMessage=_readLongMessage; window._longParts=_longParts; }catch(e){}
+
 async function sendMsg(_opts) {
   _opts = _opts || {};
   const ta=$('mta');
@@ -7660,10 +7762,29 @@ async function sendMsg(_opts) {
       setMsgs(msgs2); S.busy=true; renderChatMsgs(); renderHist();
       await _callAI(msgs2); return;
     } else {
-      const max=20000, trunc=att.data.length>max;
-      apiContent='[File: "'+att.name+'"\n```\n'+att.data.slice(0,max)+(trunc?'\n...[truncated]':'')+'"\n```\n\nUser: '+(txt||'Please analyze this file thoroughly.');
+      /* The whole file, not its first 20,000 characters. That cut was silent
+         to the person - the model saw "[truncated]", they saw their file - so
+         a question about page forty was answered from pages one to five. A
+         file longer than one request holds is read in parts below, the same
+         as a long message, and the person is asked first. */
+      apiContent='[File: "'+att.name+'"\n```\n'+att.data+'\n```\n\nUser: '+(txt||'Please analyze this file thoroughly.');
       display=(txt?txt+' ':'')+'['+att.name+']';
     }
+  }
+
+  if(!_opts._continueTools && typeof apiContent==='string' && apiContent.length>LONG_MSG_DIRECT){
+    const read=await _readLongMessage(apiContent);
+    if(!read){
+      /* Not sent: nothing was read, so what they typed goes back in the box. */
+      if(!att){ ta.value=txt; try{ ta.dispatchEvent(new Event('input')); }catch(e){} }
+      return;
+    }
+    apiContent=read.content;
+    /* What is kept in the conversation is a readable head and a count, not
+       megabytes: conversations are saved on this device, and one pasted book
+       would fill the space every other chat is saved in. */
+    if(!att && display.length>LONG_MSG_SHOWN)
+      display=display.slice(0,LONG_MSG_SHOWN)+'\n\n… ['+(display.length-LONG_MSG_SHOWN).toLocaleString()+' more characters - read in '+read.parts+' parts]';
   }
 
   const msgs=getMsgs();
@@ -8782,7 +8903,11 @@ try{ window._draftSave=_draftSave; window._draftLoad=_draftLoad; window._draftCl
 
 function bindChatEvents() {
   const ta=$('mta');
-  on(ta,'keydown',e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();sendMsg();return;} if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
+  /* An Enter that confirms a character in a Chinese, Japanese or Korean input
+     method belongs to the input method. It was sending the message half
+     written - `isComposing`, and keyCode 229 for the browsers that report the
+     confirming Enter after composition has formally ended. */
+  on(ta,'keydown',e=>{ if(e.isComposing||e.keyCode===229) return; if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)){e.preventDefault();sendMsg();return;} if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMsg();} });
   on(ta,'input',()=>{
     ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,130)+'px';
     /* Debounced: a keystroke is not worth a write, and losing the last 400ms of
@@ -19618,6 +19743,7 @@ function cwPromptSelf(q){
     const el = document.getElementById('mc-cmd-input');
     if(el){
       el.value = String(q || '');
+      _mcCmdFit(el);
       el.scrollIntoView({ block:'center', behavior:'smooth' });
       el.focus();
       return;
@@ -21641,6 +21767,38 @@ function _mcCannot(box, v, instruction){
 }
 try{ window._mcCannot=_mcCannot; }catch(e){}
 
+/* THE CREW BOX TAKES A PARAGRAPH, NOT A LINE.
+
+   It was a one-line <input>: a request pasted in with line breaks lost them,
+   and anything longer than the box's width ran off its edge where it could not
+   be read back before pressing Run. It is a textarea now that grows with what
+   is in it - to a height, and then it scrolls - so what somebody typed is what
+   they can see. Every place that puts text into it calls this too, because
+   setting .value from code does not fire `input`. */
+function _mcCmdFit(el){
+  if(!el || el.tagName !== 'TEXTAREA') return;
+  el.style.height = 'auto';
+  const edge = el.offsetHeight - el.clientHeight;
+  el.style.height = Math.min(el.scrollHeight + edge, 240) + 'px';
+}
+try{ window._mcCmdFit=_mcCmdFit; }catch(e){}
+
+/* Is this sentence a request to connect an account, and to what? Only the
+   plain shapes - "connect my X", "link X", "sign in to X", "add my X account" -
+   and only a short name, so a job that merely mentions connecting ("connect to
+   my inbox every morning and summarise it") still goes to the planner. */
+function _mcConnectIntent(s){
+  const t = String(s || '').trim().replace(/[.!?]+$/, '');
+  const m = t.match(/^(?:please\s+|can you\s+|could you\s+|i want to\s+|help me\s+)?(?:connect|link|hook up|sign (?:me )?in(?:to|\s+to)?|log (?:me )?in(?:to|\s+to)?)\s+(?:to\s+|up\s+|with\s+)?(.+)$/i)
+         || t.match(/^(?:please\s+)?add\s+(my\s+.+|.+\s+account)$/i);
+  if(!m) return '';
+  const name = m[1].trim();
+  if(!name || name.length > 60 || name.split(/\s+/).length > 6) return '';
+  if(/\b(every|each|daily|weekly|monthly|when|whenever|then|and (?:tell|send|summari[sz]e|check|email))\b/i.test(name)) return '';
+  return name;
+}
+try{ window._mcConnectIntent=_mcConnectIntent; }catch(e){}
+
 async function mcRunCommand(instruction, opts){
   opts=opts||{};
   const box=document.getElementById('mc-cmd-result'); if(!box) return;
@@ -21675,6 +21833,26 @@ async function mcRunCommand(instruction, opts){
      this - lives in the planner, which is the only thing holding the whole
      catalog; it runs a moment later, inside uniRun, and before anything is
      scheduled. */
+  /* "CONNECT MY ..." IN THIS BOX GETS THE SAME ANSWER IT GETS IN CHAT.
+
+     Chat has a connect tool; this box never did. The Crew's own tool list
+     named it, but that list belongs to a runner nothing calls, so "connect my
+     Revolut" typed here went to the job planner - which planned a job - and
+     the claim that the Crew could connect anything was true only of chat.
+     One resolver, one card, one set of buttons: the same function chat's tool
+     runs, drawn where the person asked. Before the feasibility floor, because
+     "log in to my bank" is a request to connect, not a job to refuse. */
+  const _cx = _mcConnectIntent(instruction);
+  if(_cx && typeof connectAccountTool === 'function'){
+    box.innerHTML='<div class="mc-cmd-msg run"><span class="rr-dot"></span> Looking for a way to connect '+escH(_cx)+'…</div>';
+    try{
+      const r = await connectAccountTool({ service:_cx });
+      box.innerHTML = r.render || '<div class="mc-cmd-msg">'+escH(r.text || '')+'</div>';
+    }catch(e){
+      box.innerHTML='<div class="mc-cmd-msg warn">'+escH(String((e&&e.message)||'That could not be looked up just now.'))+'</div>';
+    }
+    return;
+  }
   if(typeof _feasFloor === 'function'){
     const edge = _feasFloor(instruction);
     if(edge){ _mcCannot(box, edge, instruction); return; }
@@ -22059,9 +22237,9 @@ function renderCrewView(){
           <span>- say it in your own words and it works out the rest</span></div>
         <div class="mc-cmd-inner">
           <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
-          <input id="mc-cmd-input" class="mc-cmd-input" type="text" autocomplete="off"
-                 aria-label="Tell AMV what to do"
-                 placeholder="e.g. summarize my last meetings">
+          <textarea id="mc-cmd-input" class="mc-cmd-input" rows="1" autocomplete="off"
+                 aria-label="Tell AMV what to do" enterkeyhint="go"
+                 placeholder="e.g. summarize my last meetings"></textarea>
           <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
         </div>
         <div class="mc-cmd-chips">${[
@@ -22260,7 +22438,7 @@ function renderCrewView(){
       <div class="mc-cmd-label">Tell AMV what to do <span>- it recognizes what you mean and does it, right here</span></div>
       <div class="mc-cmd-inner">
         <svg class="mc-cmd-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/></svg>
-        <input id="mc-cmd-input" class="mc-cmd-input" type="text" aria-label="Tell AMV what to do" placeholder="e.g. “email me a summary of my unread emails” or “research the top AI news and write a brief”" autocomplete="off">
+        <textarea id="mc-cmd-input" class="mc-cmd-input" rows="1" aria-label="Tell AMV what to do" enterkeyhint="go" placeholder="e.g. “email me a summary of my unread emails” or “research the top AI news and write a brief”" autocomplete="off"></textarea>
         <button class="mc-cmd-go" id="mc-cmd-go">Run</button>
       </div>
       <div class="mc-cmd-chips">${[
@@ -22400,8 +22578,15 @@ function _cwWireCmd(vc){
   try{
     var _mcRun=function(){ var el=$('mc-cmd-input'); var v=el?el.value.trim():''; if(!v){ el&&el.focus(); return; } mcRunCommand(v); };
     on($('mc-cmd-go'),'click',_mcRun);
-    var _ci=$('mc-cmd-input'); if(_ci) on(_ci,'keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); _mcRun(); } });
-    vc.querySelectorAll('[data-mccmd]').forEach(function(c){ on(c,'click',function(){ var el=$('mc-cmd-input'); if(el){ el.value=c.dataset.mccmd; el.focus(); } }); });
+    /* Enter runs it, as it always did; Shift+Enter is a new line, the way
+       the chat box works, because the box now takes a paragraph. An Enter
+       that finishes composing a character (Chinese, Japanese, Korean input)
+       is the input method's, not a Run. */
+    var _ci=$('mc-cmd-input'); if(_ci){
+      on(_ci,'keydown',function(e){ if(e.key==='Enter' && !e.shiftKey && !e.isComposing && e.keyCode!==229){ e.preventDefault(); _mcRun(); } });
+      on(_ci,'input',function(){ _mcCmdFit(_ci); });
+    }
+    vc.querySelectorAll('[data-mccmd]').forEach(function(c){ on(c,'click',function(){ var el=$('mc-cmd-input'); if(el){ el.value=c.dataset.mccmd; _mcCmdFit(el); el.focus(); } }); });
   }catch(e){}
   /* The search re-renders on a pause rather than on every keystroke: this
      rebuilds a hundred cards, and doing that per character makes typing feel
@@ -33696,7 +33881,13 @@ function renderIntegrationsView(){
       '<span class="eyebrow">Connectors</span>'+
       '<h2>Everything AMV can work inside</h2>'+
       /* Counted, not claimed: the number is the length of the list below. */
-      '<p class="vsub">'+escH(String(_appCount()))+' of the apps people use most, by topic. The ones AMV connects to today come first in each - a real sign-in at the provider, a grant limited to what you allow, and you can take it back at any time. For the rest, press Notify me: the most-asked-for are connected next.</p>'+
+      /* ONLY WHAT IS BACKED. This said "of the apps people use most", and no
+         usage data or survey stands behind that ranking - the list is curated.
+         What IS measured is said instead: the sign-ins are checked against
+         each provider every day (tools/connector-health.mjs, run daily by the
+         connectors workflow), and every Notify me is recorded on the server
+         (/waitlist, one entry per app). */
+      '<p class="vsub">'+escH(String(_appCount()))+' apps, by topic. The ones AMV connects to today come first in each - a real sign-in at the provider, checked against every provider daily, with a grant limited to what you allow that you can take back at any time. For the rest, press Notify me: every request is recorded, and the most-asked-for are connected next.</p>'+
       /* THE SEARCH FIRST, AND OUTSIDE THE DIRECTORY.
 
          Asked for in that order - "it has to be search bar, then the main
@@ -42939,7 +43130,7 @@ async function _nextStepRun(kind, userText, answerText){
     if(kind==='crew'){
       setTab('crew');
       // Carry the goal across so they do not retype it.
-      setTimeout(()=>{ const box=document.getElementById('mc-cmd-input'); if(box){ box.value=userText; box.focus(); } }, 300);
+      setTimeout(()=>{ const box=document.getElementById('mc-cmd-input'); if(box){ box.value=userText; try{ _mcCmdFit(box); }catch(e){} box.focus(); } }, 300);
       return;
     }
     if(kind==='first'){

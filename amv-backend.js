@@ -4503,6 +4503,22 @@ function _detailSecrets(text){
   return out;
 }
 
+
+/* HOW LONG A RUNNING JOB'S INSTRUCTIONS MAY BE.
+
+   A job re-reads its instructions on every run, for as long as it is on, so
+   they are bounded - but 2,000 characters was about 350 words, short enough
+   that a careful brief ("check these six sites, ignore these, format it like
+   this") was refused. 8,000 is a page and a half, and costs a job about two
+   thousand tokens a run. The refusal says why and where long material goes
+   instead, rather than "detail too long". */
+const CREW_DETAIL_MAX = 8000;
+function _crewDetailTooLong(){
+  return json({ error:'A running job keeps its instructions under ' + CREW_DETAIL_MAX.toLocaleString('en-US')
+    + ' characters, because it re-reads them every time it runs. Shorten it, or paste the long material into chat and ask there.',
+    code:'detail_too_long', limit: CREW_DETAIL_MAX }, 400);
+}
+
 async function autoCreate(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -4574,7 +4590,7 @@ async function autoCreate(request, env){
     ? body.boosts.map(String).filter(u => AUTO_USES_ALLOWED.indexOf(u) >= 0 && uses.indexOf(u) < 0)
     : []).slice(0, 4);
   if(!detail) return json({ error:'detail required' }, 400);
-  if(detail.length > 2000) return json({ error:'detail too long' }, 400);
+  if(detail.length > CREW_DETAIL_MAX) return _crewDetailTooLong();
   /* NOTHING CREDENTIAL-SHAPED IS EVER WRITTEN TO KV.
 
      A job's detail is stored here and read by the model on every run for as
@@ -5013,7 +5029,7 @@ async function autoUpdate(request, env){
     if(typeof body.detail === 'string'){
       const detail = body.detail.trim();
       if(!detail) return json({ error:'detail required' }, 400);
-      if(detail.length > 2000) return json({ error:'detail too long' }, 400);
+      if(detail.length > CREW_DETAIL_MAX) return _crewDetailTooLong();
       /* The same rule on the way in through the side door. A guard only on
          create is not a guard: edit writes to exactly the same field. */
       const _esec = _detailSecrets(detail);

@@ -1662,7 +1662,13 @@ function renderIntegrationsView(){
       '<span class="eyebrow">Connectors</span>'+
       '<h2>Everything AMV can work inside</h2>'+
       /* Counted, not claimed: the number is the length of the list below. */
-      '<p class="vsub">'+escH(String(_appCount()))+' of the apps people use most, by topic. The ones AMV connects to today come first in each - a real sign-in at the provider, a grant limited to what you allow, and you can take it back at any time. For the rest, press Notify me: the most-asked-for are connected next.</p>'+
+      /* ONLY WHAT IS BACKED. This said "of the apps people use most", and no
+         usage data or survey stands behind that ranking - the list is curated.
+         What IS measured is said instead: the sign-ins are checked against
+         each provider every day (tools/connector-health.mjs, run daily by the
+         connectors workflow), and every Notify me is recorded on the server
+         (/waitlist, one entry per app). */
+      '<p class="vsub">'+escH(String(_appCount()))+' apps, by topic. The ones AMV connects to today come first in each - a real sign-in at the provider, checked against every provider daily, with a grant limited to what you allow that you can take back at any time. For the rest, press Notify me: every request is recorded, and the most-asked-for are connected next.</p>'+
       /* THE SEARCH FIRST, AND OUTSIDE THE DIRECTORY.
 
          Asked for in that order - "it has to be search bar, then the main
