@@ -148,10 +148,15 @@ async function connectAccountTool(input){
     };
   }
 
-  /* 3. The open registry, and 4. what can be done instead. */
+  /* 3. The open registry, and 4. signing in on their own computer - which is
+     the one door that opens for ANY service with a password, in any country -
+     and what can be done besides. */
   const reg = await _cxRegistry(q);
   const money = _CX_MONEY.test(asked);
-  const acts = [];
+  const site = (typeof _browserUrl === 'function') ? _browserUrl(input && input.url) : '';
+  const siteHost = site && site !== 'about:blank' ? new URL(site).hostname : '';
+  const bridged = typeof BRIDGE !== 'undefined' && BRIDGE.connected;
+  const acts = [{ code:'web:' + (site || 'about:blank'), label:'Sign in to ' + q + ' on your computer' }];
   reg.servers.forEach(s => acts.push({ code:'reg:' + s.id, label:'Add ' + s.name }));
   if(money) acts.push({ code:'how:bank', label:'Link a bank or brokerage' });
   acts.push({ code:'how:mail', label:'Connect the mailbox it emails' });
@@ -162,13 +167,23 @@ async function connectAccountTool(input){
     ? 'The open connector registry has ' + reg.servers.length + ' program(s) named for it (' + reg.servers.map(s => s.name + ' - ' + s.id).join('; ') + '). Each runs on THEIR OWN computer through the AMV bridge, which must be connected, and AMV did not write it - say both. Pressing Add shows exactly what will run and what it asks for before anything is added.'
     : (reg.err ? 'The connector registry could not be reached just now (' + reg.err + '), so that option was not checked.'
                : 'The open connector registry has nothing published under that name.');
+  const webLine = 'THE FIRST BUTTON works for any service with a sign-in, in any country: "Sign in to ' + q + ' on your computer" opens '
+      + (siteHost ? siteHost : 'a blank page (no address was given - pass `url` with the official website when you know it for certain)')
+      + ' in a real browser window ON THEIR OWN COMPUTER, through the AMV bridge'
+      + (bridged ? ' (connected)' : ' - which is NOT connected yet, so pressing it first takes them to connect their computer; say so') + '. '
+      + 'THEY type their own password into the real site in that window; it never passes through chat or AMV. '
+      + 'NEVER ask for their password, never repeat one, and never type one - if they paste a password into chat, tell them to change it. '
+      + 'Tell them to check the address bar shows the real site before signing in. '
+      + 'Once they say they are signed in, you can use the amv-browser tools (open a page, read it, click, fill a form) to do what they asked - each one asks their permission first. '
+      + 'It works while that window is open and AMV is open on their computer; it ends when they close it. A scheduled Crew job on AMV’s servers cannot use it. ';
   return {
-    text:'NOT DIRECTLY CONNECTABLE by name: "' + asked + '" is not in AMV’s directory and is not a mailbox AMV opens. ' + regLine + ' '
-      + (money ? 'It sounds financial, so the bank link is offered: it searches thousands of banks, cards and brokerages at the institution’s own sign-in - if it is not found there, it cannot be linked that way. ' : '')
+    text:'NOT DIRECTLY CONNECTABLE by name: "' + asked + '" is not in AMV’s directory and is not a mailbox AMV opens. ' + webLine + regLine + ' '
+      + (money ? 'It sounds financial, so the bank link is offered too: it searches thousands of banks, cards and brokerages at the institution’s own sign-in - if it is not found there, it cannot be linked that way. ' : '')
       + 'Other real options, shown as buttons: connect the mailbox that receives its statements and alerts (AMV then reads those), and Notify me, which records the request. They can also upload an export or statement in chat. '
-      + 'Tell them plainly what you know about the service - for instance if it offers no personal accounts or no way for any app to connect - and never claim a connection exists.' + signIn,
-    render:_cxCard(q, reg.servers.length ? 'Found in the open connector registry.' : 'Not in AMV’s directory yet.', acts,
-      reg.servers.length ? 'A registry connector runs on your connected computer, and AMV did not write it.' : 'Every Notify me is recorded, and decides what AMV connects next.')
+      + 'Tell them plainly what you know about the service, and never claim a connection exists until they have signed in and you have read a page from it.' + signIn,
+    render:_cxCard(q, siteHost ? 'Sign in at ' + siteHost + ', in a browser on your computer.' : 'Sign in in a browser on your computer.', acts,
+      (siteHost ? 'Check the address bar shows ' + siteHost + ' before you type your password. ' : 'Type its web address in the window that opens. ')
+        + 'AMV never sees your password, and asks before every step it takes there.')
   };
 }
 
@@ -188,6 +203,7 @@ function chatConnectGo(code){
       if(use) return _intUse(use);
       return;
     }
+    if(c.indexOf('web:') === 0) return _cxWebGo(c.slice(4));
     if(c.indexOf('mailp:') === 0) return _intConnect('mail', c.slice(6));
     if(c.indexOf('reg:') === 0){
       const s = _CX_REG[c.slice(4)];
@@ -203,4 +219,28 @@ function chatConnectGo(code){
     }
   }catch(e){ try{ toast(String((e && e.message) || 'That could not be opened.'), 'error', 6000); }catch(_e){} }
 }
-try{ window.connectAccountTool = connectAccountTool; window.chatConnectGo = chatConnectGo; window._cxDirMatch = _cxDirMatch; }catch(e){}
+/* "Sign in on your computer". No computer yet: take them to the one place that
+   connects it, and say why. Otherwise open the page in AMV's browser there and
+   say what happens next - the next step is theirs, in that window. */
+let _cxWebBusy = false;
+async function _cxWebGo(url){
+  if(_cxWebBusy) return;
+  if(!(typeof BRIDGE !== 'undefined' && BRIDGE.connected)){
+    toast('Connect this computer first - the browser opens on it, so your password never leaves it. Then press Sign in again.', 'info', 8000);
+    try{ _connMachineOpen = true; }catch(e){}
+    try{ setTab('integrations'); }catch(e){}
+    setTimeout(() => { try{ const d = document.querySelector('details.conn-machine'); if(d){ d.open = true; d.scrollIntoView({ block:'start' }); } }catch(e){} }, 250);
+    return;
+  }
+  _cxWebBusy = true;
+  toast('Opening a browser on your computer… the first time can take a minute.', 'info', 6000);
+  try{
+    const u = await browserOpen(url);
+    const host = u === 'about:blank' ? '' : new URL(u).hostname;
+    toast((host ? host + ' is open in a browser window on your computer. Check the address, sign in there' : 'A browser window is open on your computer. Go to the site and sign in there')
+      + ', then tell AMV you are in.', 'success', 10000);
+  }catch(e){
+    toast(String((e && e.message) || 'The browser could not be opened.'), 'error', 9000);
+  }finally{ _cxWebBusy = false; }
+}
+try{ window.connectAccountTool = connectAccountTool; window.chatConnectGo = chatConnectGo; window._cxDirMatch = _cxDirMatch; window._cxWebGo = _cxWebGo; }catch(e){}

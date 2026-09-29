@@ -111,6 +111,9 @@ async function handle(m) {
     /* Not listed, so no suite's tool count moves: what this process was
        given of the environment, for the suite that checks it. */
     if (name === 'env') return ok(id, { content: [{ type: 'text', text: JSON.stringify(process.env) }] });
+    /* Also unlisted: the folder it was started in, for the suite that checks
+       AMV's browser runs outside the project. */
+    if (name === 'cwd') return ok(id, { content: [{ type: 'text', text: process.cwd() }] });
     /* Never answers - and does not hold up the messages behind it, which is
        how a connector that is stuck on one call looks from outside. */
     if (name === 'hang') return;

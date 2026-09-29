@@ -3010,9 +3010,10 @@ const AMV_TOOLS = [
   },
   {
     name:'connect_account',
-    description:'Use whenever the person asks to connect, link, add, hook up or sign in to ANY account, app or service - by name, even one AMV may not know ("connect my Slack", "link my Point72 account", "add my Revolut", "connect QQ Mail"). Pass the name as they said it. This finds the real way to connect it (AMV\'s own connectors, their mailbox, the open connector registry, the bank link for banks and brokerages) and shows them a button; it never connects anything by itself, so NEVER say an account is connected after calling it - they have to press the button and finish the sign-in. Read its result and tell them plainly what is and is not possible.',
+    description:'Use whenever the person asks to connect, link, add, hook up or sign in to ANY account, app or service - by name, even one AMV may not know ("connect my Slack", "link my Point72 account", "add my Revolut", "connect QQ Mail"). Pass the name as they said it. This finds the real way to connect it (AMV\'s own connectors, their mailbox, the open connector registry, the bank link for banks and brokerages, and - for anything else with a sign-in, in any country - signing in themselves in a browser on their own computer) and shows them a button; it never connects anything by itself, so NEVER say an account is connected after calling it - they have to press the button and finish the sign-in. Read its result and tell them plainly what is and is not possible.',
     input_schema:{ type:'object', properties:{
-      service:{type:'string', description:'The account, app or service, in the person\'s words - e.g. "Slack", "my Point72 account".'}
+      service:{type:'string', description:'The account, app or service, in the person\'s words - e.g. "Slack", "my Point72 account".'},
+      url:{type:'string', description:'The service\'s official sign-in or home address, ONLY if you know it for certain (e.g. "https://www.bmi.ir"). It is opened in a browser on their own computer for them to sign in. Leave it out rather than guess - a wrong address is how people are phished.'}
     }, required:['service'] }
   },
   {

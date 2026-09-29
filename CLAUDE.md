@@ -139,6 +139,14 @@ Companion docs (do not duplicate them here - read them):
   per-call consent in chat - AMV cannot classify a third-party tool's risk, so
   any rule it invented would be a guess. Credentials go in sessionStorage and
   into the child's environment, never localStorage.
+  **AMV's own browser** (`amv-browser`, `MCP_BROWSER` in 38-mcp.js) is how chat
+  and Crew connect to ANY service with a sign-in: `@playwright/mcp` pinned to
+  one version, run by the bridge on the person's computer, visible (the bridge
+  hands the screen to this connector only, via `desktop`), sign-in in memory,
+  in a temporary folder deleted on stop. The person types their own password
+  into the real site; AMV never asks for one. Six tools (run code, page script,
+  raw network, file upload/drop) are withheld from the model. Do not add a
+  server-side password vault instead - see LESSONS 537.
 - **Any tool the client can send must be in `AMV_CLIENT_TOOLS` on the server**,
   or `_safeTools` drops it by name at the last hop before the model and the
   feature silently does not exist. LESSONS 310; covered by

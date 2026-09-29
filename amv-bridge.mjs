@@ -104,6 +104,9 @@ const ENV_ALLOW = new Set([
   'ANDROID_HOME',
 ]);
 const ENV_ALLOW_PREFIX = ['LC_', 'XDG_'];
+/* Where the screen is. Given ONLY to a connector started with `desktop` - see
+   the MCP start route - never to a command, and never by default. */
+const DESKTOP_ENV = ['DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY'];
 function childEnv(extra) {
   const out = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -467,7 +470,7 @@ const MCP_STDERR_KEEP   = 8000;
 const mcpServers = new Map();
 
 function mcpKillAll(){
-  for (const [, srv] of mcpServers) { try { killTree(srv.child); } catch (e) {} }
+  for (const [, srv] of mcpServers) { try { killTree(srv.child); } catch (e) {} mcpDropWorkDir(srv); }
   mcpServers.clear();
 }
 
@@ -510,12 +513,17 @@ for (const sig of ['exit', 'SIGINT', 'SIGTERM']) {
   });
 }
 
-function mcpStart(id, command, args, envExtra){
+/* `workDir`, when given, is where the connector runs instead of the project:
+   AMV's browser writes what it sees there (page snapshots, console logs), and
+   a bank page does not belong in somebody's project folder. It is a fresh
+   temporary folder, deleted when the connector stops or the bridge exits. */
+function mcpStart(id, command, args, envExtra, workDir){
   const shell = false;
+  const cwd = workDir || ROOT;
   /* Inside the same fence as commands - see THE FENCE. */
-  const [prog, argv] = fenced(command, Array.isArray(args) ? args : [], ROOT);
+  const [prog, argv] = fenced(command, Array.isArray(args) ? args : [], cwd);
   const child = spawn(prog, argv, {
-    cwd: ROOT,
+    cwd,
     /* The allowed environment plus the credentials typed in for THIS
        connector, and never the bridge's own - see childEnv. */
     env: childEnv(envExtra),
@@ -523,7 +531,7 @@ function mcpStart(id, command, args, envExtra){
     detached: process.platform !== 'win32',
     shell,
   });
-  const srv = { id, child, command, stderr: '', pending: new Map(), nextId: 1,
+  const srv = { id, child, command, workDir: workDir || '', stderr: '', pending: new Map(), nextId: 1,
                 tools: [], info: null, exited: false,
                 /* rev counts the tool lists this server has had; see mcpToolsChanged. */
                 rev: 0, ready: false, refreshing: false, again: false };
@@ -598,8 +606,11 @@ function mcpStart(id, command, args, envExtra){
     srv.pending.clear();
   };
   child.on('error', (e) => done('could not start: ' + (e && e.message)));
-  child.on('exit', (code) => done('the server exited (code ' + code + ')'));
+  child.on('exit', (code) => { done('the server exited (code ' + code + ')'); mcpDropWorkDir(srv); });
   return srv;
+}
+function mcpDropWorkDir(srv){
+  if (srv && srv.workDir) { try { rmSync(srv.workDir, { recursive: true, force: true }); } catch (e) {} srv.workDir = ''; }
 }
 
 function mcpSend(srv, method, params){
@@ -1147,10 +1158,25 @@ const server = createServer(async (req, res) => {
       if (body.env && typeof body.env === 'object') {
         for (const k of Object.keys(body.env).slice(0, 40)) envExtra[String(k)] = String(body.env[k]);
       }
+      /* A WINDOW ON YOUR SCREEN, FOR THE ONE CONNECTOR THAT NEEDS ONE.
 
-      const srv = mcpStart(id, command, args, envExtra);
+         The browser you sign in with has to be visible - you type your own
+         password into the real site, which is the whole point of doing it on
+         your computer - and on Linux a program cannot open a window without
+         being told where the display is. Those names are not on the allowed
+         list, and should not be: a display connection can watch and type into
+         other windows. So they are handed over only when the page asks for
+         them by name for this connector, and this terminal says so. */
+      const desktop = body.desktop === true;
+      if (desktop) {
+        for (const k of DESKTOP_ENV) if (process.env[k] != null && !(k in envExtra)) envExtra[k] = process.env[k];
+      }
+
+      const srv = mcpStart(id, command, args, envExtra,
+                           desktop ? realpathSync(mkdtempSync(join(tmpdir(), 'amv-browser-'))) : '');
       mcpServers.set(id, srv);
       console.log('  · started MCP server "' + id + '": ' + command + ' ' + args.join(' '));
+      if (desktop) console.log('    it may open a window on your screen - the browser you sign in with');
 
       const init = await mcpSend(srv, 'initialize', {
         protocolVersion: '2024-11-05',
@@ -1213,6 +1239,7 @@ const server = createServer(async (req, res) => {
       const srv = mcpServers.get(id);
       if (!srv) return json(res, 200, { id, stopped: false });
       killTree(srv.child);
+      mcpDropWorkDir(srv);
       mcpServers.delete(id);
       console.log('  · stopped MCP server "' + id + '"');
       return json(res, 200, { id, stopped: true });

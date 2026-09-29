@@ -13936,3 +13936,35 @@ Rules:
   (a timeout, often region filtering). Only the first fails the run; a check
   that is red every day for a reason nobody can act on teaches people to
   ignore it.
+
+## 536. A tool on a list is not a tool anybody can reach
+
+"Crew can connect anything" was reported done because `connect_account` was
+on the Crew surface's tool list. That list belongs to `runAgentic`, which
+nothing calls. The Crew box goes to the job planner, so "connect my Revolut"
+typed there was planned as a job. The tool existed, the list named it, and
+no path a person could take ever arrived at it.
+
+Rules:
+- A capability is claimed for a surface only after a suite drives THAT
+  surface's real control (the Crew box, not a function the Crew might call)
+  and sees the result.
+- A list of tools, routes or handlers is evidence of intent, not of
+  reachability. Find the caller; if there is none, the list is dead.
+
+## 537. Read the version you ship, not the version you remember
+
+AMV's browser connector (@playwright/mcp) was designed from its help text:
+headed by default, profile in memory with --isolated. Running the pinned
+version for real showed two things the help did not say. On Linux with no
+DISPLAY it quietly runs headless, so the person would have no window to sign
+in to. And every action wrote the page it saw to a file in the working
+folder, which was the person's project: a bank page saved into their code.
+
+Rules:
+- A third-party program AMV runs is exercised, at the pinned version, through
+  the real bridge, before it ships. Its source is read for anything that
+  writes to disk or changes behaviour by environment.
+- Anything that may see private pages runs in a temporary folder of its own,
+  deleted when it stops, with snapshots returned in the reply instead of
+  written out.

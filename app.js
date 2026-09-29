@@ -26469,9 +26469,10 @@ const AMV_TOOLS = [
   },
   {
     name:'connect_account',
-    description:'Use whenever the person asks to connect, link, add, hook up or sign in to ANY account, app or service - by name, even one AMV may not know ("connect my Slack", "link my Point72 account", "add my Revolut", "connect QQ Mail"). Pass the name as they said it. This finds the real way to connect it (AMV\'s own connectors, their mailbox, the open connector registry, the bank link for banks and brokerages) and shows them a button; it never connects anything by itself, so NEVER say an account is connected after calling it - they have to press the button and finish the sign-in. Read its result and tell them plainly what is and is not possible.',
+    description:'Use whenever the person asks to connect, link, add, hook up or sign in to ANY account, app or service - by name, even one AMV may not know ("connect my Slack", "link my Point72 account", "add my Revolut", "connect QQ Mail"). Pass the name as they said it. This finds the real way to connect it (AMV\'s own connectors, their mailbox, the open connector registry, the bank link for banks and brokerages, and - for anything else with a sign-in, in any country - signing in themselves in a browser on their own computer) and shows them a button; it never connects anything by itself, so NEVER say an account is connected after calling it - they have to press the button and finish the sign-in. Read its result and tell them plainly what is and is not possible.',
     input_schema:{ type:'object', properties:{
-      service:{type:'string', description:'The account, app or service, in the person\'s words - e.g. "Slack", "my Point72 account".'}
+      service:{type:'string', description:'The account, app or service, in the person\'s words - e.g. "Slack", "my Point72 account".'},
+      url:{type:'string', description:'The service\'s official sign-in or home address, ONLY if you know it for certain (e.g. "https://www.bmi.ir"). It is opened in a browser on their own computer for them to sign in. Leave it out rather than guess - a wrong address is how people are phished.'}
     }, required:['service'] }
   },
   {
@@ -35842,10 +35843,15 @@ async function connectAccountTool(input){
     };
   }
 
-  /* 3. The open registry, and 4. what can be done instead. */
+  /* 3. The open registry, and 4. signing in on their own computer - which is
+     the one door that opens for ANY service with a password, in any country -
+     and what can be done besides. */
   const reg = await _cxRegistry(q);
   const money = _CX_MONEY.test(asked);
-  const acts = [];
+  const site = (typeof _browserUrl === 'function') ? _browserUrl(input && input.url) : '';
+  const siteHost = site && site !== 'about:blank' ? new URL(site).hostname : '';
+  const bridged = typeof BRIDGE !== 'undefined' && BRIDGE.connected;
+  const acts = [{ code:'web:' + (site || 'about:blank'), label:'Sign in to ' + q + ' on your computer' }];
   reg.servers.forEach(s => acts.push({ code:'reg:' + s.id, label:'Add ' + s.name }));
   if(money) acts.push({ code:'how:bank', label:'Link a bank or brokerage' });
   acts.push({ code:'how:mail', label:'Connect the mailbox it emails' });
@@ -35856,13 +35862,23 @@ async function connectAccountTool(input){
     ? 'The open connector registry has ' + reg.servers.length + ' program(s) named for it (' + reg.servers.map(s => s.name + ' - ' + s.id).join('; ') + '). Each runs on THEIR OWN computer through the AMV bridge, which must be connected, and AMV did not write it - say both. Pressing Add shows exactly what will run and what it asks for before anything is added.'
     : (reg.err ? 'The connector registry could not be reached just now (' + reg.err + '), so that option was not checked.'
                : 'The open connector registry has nothing published under that name.');
+  const webLine = 'THE FIRST BUTTON works for any service with a sign-in, in any country: "Sign in to ' + q + ' on your computer" opens '
+      + (siteHost ? siteHost : 'a blank page (no address was given - pass `url` with the official website when you know it for certain)')
+      + ' in a real browser window ON THEIR OWN COMPUTER, through the AMV bridge'
+      + (bridged ? ' (connected)' : ' - which is NOT connected yet, so pressing it first takes them to connect their computer; say so') + '. '
+      + 'THEY type their own password into the real site in that window; it never passes through chat or AMV. '
+      + 'NEVER ask for their password, never repeat one, and never type one - if they paste a password into chat, tell them to change it. '
+      + 'Tell them to check the address bar shows the real site before signing in. '
+      + 'Once they say they are signed in, you can use the amv-browser tools (open a page, read it, click, fill a form) to do what they asked - each one asks their permission first. '
+      + 'It works while that window is open and AMV is open on their computer; it ends when they close it. A scheduled Crew job on AMV’s servers cannot use it. ';
   return {
-    text:'NOT DIRECTLY CONNECTABLE by name: "' + asked + '" is not in AMV’s directory and is not a mailbox AMV opens. ' + regLine + ' '
-      + (money ? 'It sounds financial, so the bank link is offered: it searches thousands of banks, cards and brokerages at the institution’s own sign-in - if it is not found there, it cannot be linked that way. ' : '')
+    text:'NOT DIRECTLY CONNECTABLE by name: "' + asked + '" is not in AMV’s directory and is not a mailbox AMV opens. ' + webLine + regLine + ' '
+      + (money ? 'It sounds financial, so the bank link is offered too: it searches thousands of banks, cards and brokerages at the institution’s own sign-in - if it is not found there, it cannot be linked that way. ' : '')
       + 'Other real options, shown as buttons: connect the mailbox that receives its statements and alerts (AMV then reads those), and Notify me, which records the request. They can also upload an export or statement in chat. '
-      + 'Tell them plainly what you know about the service - for instance if it offers no personal accounts or no way for any app to connect - and never claim a connection exists.' + signIn,
-    render:_cxCard(q, reg.servers.length ? 'Found in the open connector registry.' : 'Not in AMV’s directory yet.', acts,
-      reg.servers.length ? 'A registry connector runs on your connected computer, and AMV did not write it.' : 'Every Notify me is recorded, and decides what AMV connects next.')
+      + 'Tell them plainly what you know about the service, and never claim a connection exists until they have signed in and you have read a page from it.' + signIn,
+    render:_cxCard(q, siteHost ? 'Sign in at ' + siteHost + ', in a browser on your computer.' : 'Sign in in a browser on your computer.', acts,
+      (siteHost ? 'Check the address bar shows ' + siteHost + ' before you type your password. ' : 'Type its web address in the window that opens. ')
+        + 'AMV never sees your password, and asks before every step it takes there.')
   };
 }
 
@@ -35882,6 +35898,7 @@ function chatConnectGo(code){
       if(use) return _intUse(use);
       return;
     }
+    if(c.indexOf('web:') === 0) return _cxWebGo(c.slice(4));
     if(c.indexOf('mailp:') === 0) return _intConnect('mail', c.slice(6));
     if(c.indexOf('reg:') === 0){
       const s = _CX_REG[c.slice(4)];
@@ -35897,7 +35914,31 @@ function chatConnectGo(code){
     }
   }catch(e){ try{ toast(String((e && e.message) || 'That could not be opened.'), 'error', 6000); }catch(_e){} }
 }
-try{ window.connectAccountTool = connectAccountTool; window.chatConnectGo = chatConnectGo; window._cxDirMatch = _cxDirMatch; }catch(e){}
+/* "Sign in on your computer". No computer yet: take them to the one place that
+   connects it, and say why. Otherwise open the page in AMV's browser there and
+   say what happens next - the next step is theirs, in that window. */
+let _cxWebBusy = false;
+async function _cxWebGo(url){
+  if(_cxWebBusy) return;
+  if(!(typeof BRIDGE !== 'undefined' && BRIDGE.connected)){
+    toast('Connect this computer first - the browser opens on it, so your password never leaves it. Then press Sign in again.', 'info', 8000);
+    try{ _connMachineOpen = true; }catch(e){}
+    try{ setTab('integrations'); }catch(e){}
+    setTimeout(() => { try{ const d = document.querySelector('details.conn-machine'); if(d){ d.open = true; d.scrollIntoView({ block:'start' }); } }catch(e){} }, 250);
+    return;
+  }
+  _cxWebBusy = true;
+  toast('Opening a browser on your computer… the first time can take a minute.', 'info', 6000);
+  try{
+    const u = await browserOpen(url);
+    const host = u === 'about:blank' ? '' : new URL(u).hostname;
+    toast((host ? host + ' is open in a browser window on your computer. Check the address, sign in there' : 'A browser window is open on your computer. Go to the site and sign in there')
+      + ', then tell AMV you are in.', 'success', 10000);
+  }catch(e){
+    toast(String((e && e.message) || 'The browser could not be opened.'), 'error', 9000);
+  }finally{ _cxWebBusy = false; }
+}
+try{ window.connectAccountTool = connectAccountTool; window.chatConnectGo = chatConnectGo; window._cxDirMatch = _cxDirMatch; window._cxWebGo = _cxWebGo; }catch(e){}
 /* ============================================================
    AMV ENGINE - real working backbone for the dev/agent tools
    aiComplete(): single-shot AI text. runCode(): real execution.
@@ -47141,7 +47182,7 @@ function _mcpAdd(id, command, args, env){
   if(!id) throw new Error('Give the server a short name, like "github".');
   /* Reserved for apps connected by signing in, so a connector on the computer
      can never be mistaken for one - or take one's tool names. */
-  if(/^(app|api)-/.test(id)) throw new Error('Names starting with "app-" or "api-" are reserved for apps you connect by signing in. Pick another.');
+  if(/^(app|api|amv)-/.test(id)) throw new Error('Names starting with "app-", "api-" or "amv-" are reserved for connectors AMV provides itself. Pick another.');
   if(MCP.servers.some(s => s.id === id)) throw new Error('There is already a server called "' + id + '".');
   if(MCP.servers.length >= MCP_MAX_SERVERS) throw new Error('That is as many servers as AMV will run at once.');
   command = String(command || '').trim();
@@ -47168,7 +47209,13 @@ try{ window._mcpAdd=_mcpAdd; window._mcpRemove=_mcpRemove; }catch(e){}
 async function _mcpStart(id){
   const cfg = MCP.servers.find(s => s.id === id);
   if(!cfg) throw new Error('No server called "' + id + '".');
-  const d = await _bridgeCall('mcp/start', { id, command: cfg.command, args: cfg.args, env: _mcpEnv(id) }, 70000);
+  /* `desktop` is asked for by AMV's own browser only - see MCP_BROWSER. A
+     connector added from the registry or by hand never carries it, because
+     the stored entry it starts from is checked by id here. The first start
+     may download the program, so it gets longer than a warm one needs. */
+  const desktop = cfg.id === MCP_BROWSER.id && cfg.desktop === true;
+  const d = await _bridgeCall('mcp/start', { id, command: cfg.command, args: cfg.args, env: _mcpEnv(id), desktop },
+                              desktop ? 180000 : 70000);
   /* `session` is the bridge pairing this came from. A token belongs to one run
      of one bridge, so an entry from another pairing describes a process this
      tab has no reason to think exists. */
@@ -47265,6 +47312,126 @@ async function mcpStartAll(){
 }
 try{ window.mcpStartAll=mcpStartAll; }catch(e){}
 
+/* ══════════════════════════════════════════════════════════════════════
+   SIGNING IN TO ANYTHING: A REAL BROWSER, ON YOUR OWN COMPUTER.
+
+   Asked for: chat and the Crew must be able to connect to ANY account the
+   person has a password for - a bank in a country AMV has no list for, a
+   broker with no API, a portal nobody publishes a connector for. There is
+   one way to do that honestly: open the service's own website in a real
+   browser, let the person sign in there themselves, and then read and act
+   in that signed-in window.
+
+   Where it runs was the decision, and this is the one that holds up:
+
+     ON THEIR COMPUTER, through the bridge. The password is typed by the
+     person into the real site, in a window on their own screen; it never
+     passes through chat, the model or AMV's servers. Two-step codes and "is
+     this a new device?" checks work, because it is their device and their
+     connection - a bank that refuses logins from a data centre does not
+     refuse this. The sign-in lives in memory (`--isolated`) and ends when the
+     window closes: nothing is written to disk for another program to find.
+
+     Not on AMV's servers with a stored password. A vault of everybody's
+     banking passwords is the one database whose breach ends the company, and
+     the banks that most need this are the ones that block data-centre logins
+     anyway.
+
+   The program is Microsoft's Playwright MCP server, pinned to one version so
+   what runs is what was read (0.0.83; its tool list was taken from that exact
+   version). Six of its tools are WITHHELD from the model, because each does
+   something no sign-in needs and would turn a browser into a way out of the
+   machine: running arbitrary code in the browser driver, running script in
+   the page, reading raw network traffic (which carries session tokens), and
+   uploading or dropping files from disk onto a website. Everything else -
+   open a page, read it, click, type, fill a form - is asked for one call at a
+   time in chat, like every connector.
+   ══════════════════════════════════════════════════════════════════════ */
+const MCP_BROWSER = {
+  id: 'amv-browser',
+  command: 'npx',
+  /* --snapshot-mode none: an action does not write what the page shows to a
+     file (it did, into the project folder, by default - measured against this
+     exact version). The page is read only when the model asks for it with
+     browser_snapshot, which comes back in the reply and is itself a call the
+     person approves. The bridge also runs it in a temporary folder of its own,
+     deleted when it stops, for whatever else it writes. */
+  args: ['-y', '@playwright/mcp@0.0.83', '--isolated', '--snapshot-mode', 'none'],
+  desktop: true,
+};
+/* Which browser to open. Edge is on every Windows computer; everywhere else
+   it is Chrome, the one most people have. A computer without it gets a plain
+   message saying to install it - see browserOpen. */
+function _browserArgs(){
+  let win = false;
+  try{ win = /Windows/i.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.userAgent || ''); }catch(e){}
+  return MCP_BROWSER.args.concat(win ? ['--browser', 'msedge'] : []);
+}
+const MCP_BROWSER_WITHHELD = new Set([
+  'browser_run_code_unsafe', 'browser_evaluate',
+  'browser_network_request', 'browser_network_requests',
+  'browser_file_upload', 'browser_drop',
+]);
+function _mcpWithheld(id, toolName){
+  return id === MCP_BROWSER.id && MCP_BROWSER_WITHHELD.has(String(toolName));
+}
+/* http(s) only, or a blank page for somebody who would rather type the
+   address themselves. javascript:, file:, data: and an address carrying a
+   user name or password are not websites anybody signs in to. */
+function _browserUrl(u){
+  const raw = String(u || '').trim();
+  if(!raw || raw === 'about:blank') return 'about:blank';
+  try{
+    const x = new URL(/^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : 'https://' + raw);
+    if(x.protocol !== 'https:' && x.protocol !== 'http:') return '';
+    if(!x.hostname || x.username || x.password) return '';
+    return x.href;
+  }catch(e){ return ''; }
+}
+/* Add AMV's browser if it is not there, and start it if it is not running.
+   Throws with a code the caller can explain. */
+async function browserEnsure(){
+  if(!(typeof BRIDGE !== 'undefined' && BRIDGE.connected)){
+    throw Object.assign(new Error('This needs AMV connected to your computer - the browser opens there, so your password never leaves it.'), { code: 'no_computer' });
+  }
+  const want = { id: MCP_BROWSER.id, command: MCP_BROWSER.command, args: _browserArgs(), desktop: true };
+  const at = MCP.servers.findIndex(s => s.id === MCP_BROWSER.id);
+  if(at < 0){
+    if(MCP.servers.length >= MCP_MAX_SERVERS){
+      throw Object.assign(new Error('Eight connectors are already set up, which is as many as AMV runs at once. Remove one in Connectors, then try again.'), { code: 'full' });
+    }
+    MCP.servers.push(want);
+  }else{
+    /* A saved entry from an older AMV is brought up to what runs now, so a
+       pinned version or a safety flag changed here reaches everybody. */
+    MCP.servers[at] = want;
+  }
+  _mcpSave();
+  const had = MCP.live[MCP_BROWSER.id];
+  if(had && !had.error && had.session === BRIDGE.token) return had;
+  if(had) await _mcpStop(MCP_BROWSER.id);
+  return _mcpStart(MCP_BROWSER.id);
+}
+/* Open the service's page in that window. The person pressed a button that
+   named the address, which is the consent for this one navigation. */
+async function browserOpen(url){
+  const u = _browserUrl(url);
+  if(!u) throw Object.assign(new Error('That is not a website address AMV will open.'), { code: 'bad_url' });
+  await browserEnsure();
+  const r = await mcpCall(MCP_BROWSER.id, 'tools/call', { name: 'browser_navigate', arguments: { url: u } });
+  if(r && r.isError){
+    const said = ((r.content || []).find(c => c && c.type === 'text') || {}).text || '';
+    /* The one failure with a fix the person can make: no Chrome installed. */
+    if(/chrome|chromium|executable|distribution/i.test(said) && /not found|doesn.t exist|install/i.test(said)){
+      throw Object.assign(new Error('The browser could not start because Google Chrome is not installed on this computer. Install Chrome, then press the button again.'), { code: 'no_chrome' });
+    }
+    throw Object.assign(new Error(said.slice(0, 300) || 'The page could not be opened.'), { code: 'open_failed' });
+  }
+  return u;
+}
+try{ window.MCP_BROWSER = MCP_BROWSER; window._browserArgs = _browserArgs; window.browserEnsure = browserEnsure; window.browserOpen = browserOpen;
+     window._browserUrl = _browserUrl; window._mcpWithheld = _mcpWithheld; }catch(e){}
+
 /* ── THE TOOLS THE MODEL GETS ───────────────────────────────────────────── */
 /* Namespaced, because two servers may each have a `search` and the model has
    to be able to mean one of them. The separator is the one the server's
@@ -47329,6 +47496,9 @@ function _mcpSplitName(name){
   if(!who) return null;
   const server = _mcpServerOf(who.id);
   if(!server || server.error) return null;
+  /* A withheld tool is refused here too, so an alias handed out earlier - or
+     guessed - cannot reach it either. */
+  if(_mcpWithheld(who.id, who.tool)) return null;
   const tool = (server.tools || []).find(t => t && String(t.name) === who.tool);
   return tool ? { id: who.id, tool } : null;
 }
@@ -47352,6 +47522,7 @@ function mcpTools(opts){
       if(!t || t.name == null) continue;
       const real = String(t.name);
       if(seen.has(real)) continue;
+      if(_mcpWithheld(id, real)) continue;
       seen.add(real);
       out.push({
         name: _mcpAliasFor(id, real),
