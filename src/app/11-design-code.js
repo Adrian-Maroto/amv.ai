@@ -2984,6 +2984,13 @@ const AMV_TOOLS = [
     }, required:['ceiling'] }
   },
   {
+    name:'connect_account',
+    description:'Use whenever the person asks to connect, link, add, hook up or sign in to ANY account, app or service - by name, even one AMV may not know ("connect my Slack", "link my Point72 account", "add my Revolut", "connect QQ Mail"). Pass the name as they said it. This finds the real way to connect it (AMV\'s own connectors, their mailbox, the open connector registry, the bank link for banks and brokerages) and shows them a button; it never connects anything by itself, so NEVER say an account is connected after calling it - they have to press the button and finish the sign-in. Read its result and tell them plainly what is and is not possible.',
+    input_schema:{ type:'object', properties:{
+      service:{type:'string', description:'The account, app or service, in the person\'s words - e.g. "Slack", "my Point72 account".'}
+    }, required:['service'] }
+  },
+  {
     name:'crew_standing',
     description:'Set the standing instructions that apply to EVERY background job they have now and every one they add later - how much care to take, what to prefer, what to leave out. Use for "make my crew think harder", "always check two sources", "keep it shorter". This changes how the work is done; it cannot change what AMV is allowed to do. Pass an empty string to clear it.',
     input_schema:{ type:'object', properties:{
@@ -3004,7 +3011,8 @@ function _toolsFor(surface){
      is the gap this whole path exists to close. */
   if(surface==='crew') return [by('run_code'), by('build_app'), by('deploy_site'),
                                by('crew_list'), by('crew_add'), by('crew_update'), by('crew_pause'),
-                               by('crew_resume'), by('crew_remove'), by('crew_standing'), by('crew_ceiling')].filter(Boolean);
+                               by('crew_resume'), by('crew_remove'), by('crew_standing'), by('crew_ceiling'),
+                               by('connect_account')].filter(Boolean);
   return AMV_TOOLS;   // chat gets everything
 }
 try{ window._toolsFor=_toolsFor; }catch(e){}
@@ -3451,6 +3459,10 @@ async function _amvRunTool(name, input, onStatus){
       return { text:'Built it. A live, working version is shown to the user - they can open, edit, and download it.', render:card };
     }
 
+    if(name === 'connect_account'){
+      onStatus && onStatus('Looking for a way to connect ' + String((input && input.service) || '').slice(0, 40) + '\u2026');
+      return await connectAccountTool(input || {});
+    }
     if(name.slice(0,5) === 'crew_') return await _crewTool(name, input);
     if(name.slice(0,7) === 'memory_' || name.slice(0,8) === 'approval' || name === 'account_status')
       return await _sectionTool(name, input);

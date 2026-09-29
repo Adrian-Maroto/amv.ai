@@ -966,27 +966,57 @@ function _intName(id){
 }
 try{ window._intName=_intName; }catch(e){}
 
+/* WHAT A CONNECT BUTTON DOES, BY WHAT IT NAMES.
+
+   Pulled out of the wiring so every door runs the same path - the directory
+   row, and the card chat draws when somebody asks it to connect something.
+   A second copy of this would be a second place where Google's row runs a
+   sign-in that grants nothing, which is exactly what one of them used to do. */
+function _intConnect(conn, preset){
+  /* FIRST, before any provider branch. Put after them and the mail and
+     Telegram rows would open their own connect sheets to somebody with no
+     account to attach a mailbox to. */
+  if(_intNeedsAccount(_intName(conn))) return;
+  if(conn==='mail') return openMailConnect(preset||'');
+  if(conn==='rmcp') return rmcpConnect(preset||'');
+  if(conn==='prov') return connAddWhenReady(preset||'');
+  if(conn==='telegram') return openTelegramConnect();
+  /* Providers the connected-accounts framework owns are STARTED there, not
+     here. Google's row used to run a sign-in from this button; sending it to
+     the real flow is the whole fix, and it is done by provider id rather
+     than by naming Google, so adding Microsoft to that framework does not
+     leave a second row quietly doing the wrong thing. */
+  if(_connOwnsProvider(conn)) return _connGoTo(conn);
+  connectIntegration(conn);
+}
+function _intUse(use){
+  if(use==='jobs' && typeof openJobBoards==='function') return openJobBoards();
+  if(use==='predict' && typeof openPredictionMarkets==='function') return openPredictionMarkets();
+  if(use==='calfeeds' && typeof openCalendarFeeds==='function') return openCalendarFeeds();
+  if(use==='coverage' && typeof openCoverage==='function') return openCoverage();
+  if(use==='everyday' && typeof openEveryday==='function') return openEveryday();
+  /* No editor extension exists, and the dialog says so and offers the
+     connection that does work in a project folder. */
+  if(use==='vscode' && typeof _devConnectVSCode==='function') return _devConnectVSCode();
+  /* The bank, and it needs its own line because the fall-through below
+     tells people to upload a file - which is the right sentence for Excel
+     and a baffling one for a bank account. Named rather than folded in,
+     because the whole point of sending them to Spending is that the link
+     happens there and they should know that before they arrive. */
+  if(use==='bank'){
+    try{ setTab('spend'); }catch(e){}
+    try{ toast('Linking a bank happens here, on your bank\u2019s own sign-in page. AMV never sees your password.','info',6000); }catch(e){}
+    return;
+  }
+  setTab(use||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500);
+}
+try{ window._intConnect=_intConnect; window._intUse=_intUse; }catch(e){}
+
 function _wireIntegrationCatalog(root){
   root=root||document;
   /* Mail is connected with a password rather than an OAuth round trip, so it
      has its own flow instead of being pushed through connectIntegration. */
-  root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>{
-    /* FIRST, before any provider branch. Put after them and the mail and
-       Telegram rows would open their own connect sheets to somebody with no
-       account to attach a mailbox to. */
-    if(_intNeedsAccount(_intName(btn.dataset.intConn))) return;
-    if(btn.dataset.intConn==='mail') return openMailConnect(btn.dataset.intPreset||'');
-    if(btn.dataset.intConn==='rmcp') return rmcpConnect(btn.dataset.intPreset||'');
-    if(btn.dataset.intConn==='prov') return connAddWhenReady(btn.dataset.intPreset||'');
-    if(btn.dataset.intConn==='telegram') return openTelegramConnect();
-    /* Providers the connected-accounts framework owns are STARTED there, not
-       here. Google's row used to run a sign-in from this button; sending it to
-       the real flow is the whole fix, and it is done by provider id rather
-       than by naming Google, so adding Microsoft to that framework does not
-       leave a second row quietly doing the wrong thing. */
-    if(_connOwnsProvider(btn.dataset.intConn)) return _connGoTo(btn.dataset.intConn);
-    connectIntegration(btn.dataset.intConn);
-  }));
+  root.querySelectorAll('[data-int-conn]').forEach(btn=>on(btn,'click',()=>_intConnect(btn.dataset.intConn, btn.dataset.intPreset||'')));
   /* The bridge card is not a row, so it wires itself. Wired in the same
      pass as everything else, because a control that is drawn by one function
      and wired by another is how a button comes to do nothing. */
@@ -1013,26 +1043,7 @@ function _wireIntegrationCatalog(root){
     if(typeof fn==='function') fn();
     else toast('That automation is not available in this build.','error');
   }));
-  root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>{
-    if(btn.dataset.intUse==='jobs' && typeof openJobBoards==='function') return openJobBoards();
-    if(btn.dataset.intUse==='predict' && typeof openPredictionMarkets==='function') return openPredictionMarkets();
-    if(btn.dataset.intUse==='calfeeds' && typeof openCalendarFeeds==='function') return openCalendarFeeds();
-    if(btn.dataset.intUse==='coverage' && typeof openCoverage==='function') return openCoverage();
-    if(btn.dataset.intUse==='everyday' && typeof openEveryday==='function') return openEveryday();
-    /* No editor extension exists, and the dialog says so and offers the
-       connection that does work in a project folder. */
-    if(btn.dataset.intUse==='vscode' && typeof _devConnectVSCode==='function') return _devConnectVSCode();
-    /* The bank, and it needs its own line because the fall-through below
-       tells people to upload a file - which is the right sentence for Excel
-       and a baffling one for a bank account. Named rather than folded in,
-       because the whole point of sending them to Spending is that the link
-       happens there and they should know that before they arrive. */
-    if(btn.dataset.intUse==='bank'){
-      try{ setTab('spend'); }catch(e){}
-      try{ toast('Linking a bank happens here, on your bank\u2019s own sign-in page. AMV never sees your password.','info',6000); }catch(e){}
-      return;
-    }
-    setTab(btn.dataset.intUse||'chat'); toast('Upload your file with the \uD83D\uDCCE button, or just describe what you need.','info',4500); }));
+  root.querySelectorAll('[data-int-use]').forEach(btn=>on(btn,'click',()=>_intUse(btn.dataset.intUse)));
 }
 window._wireIntegrationCatalog=_wireIntegrationCatalog;
 

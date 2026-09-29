@@ -113,6 +113,10 @@ section('And every tool has been classified either way');
     /* Pausing is the safe direction. A confirmation in front of "stop doing
        that" is the one place a dialog makes things worse. */
     crew_pause:     'stops a job running, which reduces what AMV does and what it spends',
+    /* It draws buttons in the conversation and nothing else. The person
+       pressing one is the consent, and each opens the same sign-in, setup or
+       add-connector review the directory's own button opens. */
+    connect_account: 'shows a card of ways to connect; nothing is connected, sent or recorded until the person presses a button',
   };
   const unclassified = toolNames
     .filter(n => !consented.has(n) && !(n in SAFE_WITHOUT_ASKING))

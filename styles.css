@@ -16138,3 +16138,19 @@ body:not(.sb-rail) .sb-tools{ grid-template-columns:none; grid-auto-flow:column;
    phone, which is the part that says whose inbox. */
 .cw-t10-t{ white-space:normal; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 .cw-t10-d{ -webkit-line-clamp:1; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   LAYER A271 - Connect, from chat: one card, the same buttons as the directory
+   ════════════════════════════════════════════════════════════════════════ */
+.cx-card{ border:1px solid var(--bd); background:var(--s1); border-radius:var(--r-lg);
+  padding:var(--sp-4); display:flex; flex-direction:column; gap:var(--sp-3); max-width:560px; }
+.cx-head{ display:flex; align-items:center; gap:var(--sp-3); min-width:0; }
+.cx-mark{ flex:0 0 auto; width:36px; height:36px; border-radius:var(--r-md); background:var(--s3);
+  display:inline-flex; align-items:center; justify-content:center; font-weight:700; font-size:var(--t-md); color:var(--tx); }
+.cx-titles{ min-width:0; }
+.cx-t{ font-weight:650; font-size:var(--t-md); color:var(--tx); overflow-wrap:anywhere; }
+.cx-sub{ font-size:var(--t-sm); color:var(--mu); margin-top:2px; overflow-wrap:anywhere; }
+.cx-acts{ display:flex; flex-wrap:wrap; gap:var(--sp-2); }
+.cx-btn{ min-height:40px; font-size:var(--t-sm); max-width:100%; white-space:normal; text-align:left; }
+.cx-note{ margin:0; font-size:var(--t-xs); color:var(--mu); }
+@media (max-width:520px){ .cx-acts{ flex-direction:column; } .cx-btn{ width:100%; text-align:center; } }
