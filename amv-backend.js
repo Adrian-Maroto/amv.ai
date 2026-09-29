@@ -4675,14 +4675,33 @@ async function autoCreate(request, env){
 
   // Honour the user's requested first-run time if given, else one interval out.
   const interval = Math.max(AUTO_MIN_INTERVAL, AUTO_INTERVALS[shapedRepeat]);
-  let next = Date.now() + interval;
+  let next = Date.now() + interval, firstGiven = false;
   if(body.firstRunAt && Number.isFinite(+body.firstRunAt)){
     const t = +body.firstRunAt;
-    if(t > Date.now() - 60e3 && t < Date.now() + 366*86400e3) next = t;
+    if(t > Date.now() - 60e3 && t < Date.now() + 366*86400e3){ next = t; firstGiven = true; }
   }
+  /* THE TIME THEY SAID, ON THEIR CLOCK. See _schedNextAt. The zone is the
+     one their device reports, else the one their network is in; a schedule
+     with neither is kept in UTC and says so in `tz`. A first run given as an
+     instant with a daily or weekly repeat is turned into the same thing, so
+     every door that sets "tomorrow at 8" ends up at 8 every day after. */
+  const tzHere = _tzOk(body.tz) || _tzOk(request.cf && request.cf.timezone);
+  let sched = _schedClean(body.sched, tzHere);
+  if(!sched && firstGiven && (shapedRepeat === 'daily' || shapedRepeat === 'weekly') && tzHere){
+    const lp = _zoneParts(tzHere, next);
+    sched = _schedClean({ cad: shapedRepeat, hour: lp.h, minute: lp.mi, days: [lp.wd], tz: tzHere });
+  }
+  /* A free account runs one job once a week. It keeps the time and the day
+     it asked for - the first of them - rather than losing the schedule. */
+  if(sched && budget.free && kind !== 'invest'){
+    if(sched.cad === 'daily') sched = Object.assign({}, sched, { cad: 'weekly', days: [_zoneParts(sched.tz, _schedNextAt(sched, Date.now())).wd] });
+    else if(sched.cad === 'weekly') sched = Object.assign({}, sched, { days: sched.days.slice(0, 1) });
+  }
+  if(sched) next = _schedNextAt(sched, Date.now());
   const item = {
     id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
     detail, repeat: shapedRepeat, interval, next, kind: shapedKind, notify: effectiveNotify, approval, scope,
+    ...(sched ? { sched } : {}),
     /* Stored, so an unattended run knows which connected account it may open.
        Empty for the overwhelming majority of jobs, which are web research and
        need nobody's mailbox. */
@@ -4803,6 +4822,105 @@ function _quietEndsAt(quiet, atMs){
     if(!_quietNow(quiet, t)) return t;
   }
   return atMs + 3600000;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   A SCHEDULE IS A TIME ON SOMEBODY'S CLOCK, NOT AN INTERVAL.
+
+   "Every day at 8" was stored as `repeat:'daily'` and nothing else. Each run
+   then set the next one to `now + 24h` - and `now` is when the run happened,
+   which is the five-minute tick plus however long the job took. So 8:00 ran
+   at 8:03, then 8:06, then 8:09, a little later every morning, and a clock
+   change moved it by an hour. Worse, the Crew box never sent the time at all:
+   "every weekday at 7pm" became a job that ran every 24 hours from whenever it
+   was created, and "every month on the 1st" became weekly. Only a copy kept in
+   the browser knew the real time, and that only runs while AMV is open -
+   which is the one thing a background job is for not needing.
+
+   So the schedule is stored as what the person said - the hour and minute,
+   which weekdays or which day of the month, and their time zone - and every
+   next run is computed from it, on the person's own calendar. 8:00 is 8:00
+   every day, in their zone, through the change to summer time and back.
+
+   A job with no calendar schedule (every 10 minutes, hourly, or one made
+   before this) keeps its original rhythm instead of drifting: the next run
+   is the next slot of the schedule it started on, not `now + interval`. */
+const SCHED_CADS = ['daily', 'weekly', 'monthly'];
+function _tzOk(tz){
+  const z = String(tz || '').trim().slice(0, 64);
+  if(!z) return '';
+  try{ new Intl.DateTimeFormat('en-US', { timeZone: z }); return z; }catch(e){ return ''; }
+}
+function _schedClean(sc, tzFallback){
+  if(!sc || typeof sc !== 'object') return null;
+  const cad = String(sc.cad || '').toLowerCase();
+  if(SCHED_CADS.indexOf(cad) < 0) return null;
+  const hour = Number(sc.hour), minute = sc.minute == null ? 0 : Number(sc.minute);
+  if(!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) return null;
+  const out = { cad, hour, minute, tz: _tzOk(sc.tz) || _tzOk(tzFallback) || 'UTC' };
+  if(cad === 'weekly'){
+    const days = [...new Set((Array.isArray(sc.days) ? sc.days : []).map(Number)
+      .filter(d => Number.isInteger(d) && d >= 0 && d <= 6))].sort((a, b) => a - b);
+    if(!days.length) return null;
+    out.days = days;
+  }
+  if(cad === 'monthly'){
+    const dom = Number(sc.dom);
+    if(!Number.isInteger(dom) || dom < 1 || dom > 31) return null;
+    out.dom = dom;
+  }
+  return out;
+}
+/* The calendar in a zone at an instant: date, time and weekday. */
+function _zoneParts(tz, ms){
+  const f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric',
+    day: 'numeric', hour: 'numeric', minute: 'numeric', weekday: 'short' });
+  const p = {}; for(const x of f.formatToParts(new Date(ms))) p[x.type] = x.value;
+  return { y: +p.year, mo: +p.month, d: +p.day, h: (+p.hour) % 24, mi: +p.minute,
+           wd: { Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6 }[p.weekday] };
+}
+/* The instant the clock in `tz` reads that date and time. Corrected against
+   the zone's own answer rather than computed from an offset, so a clock
+   change between the guess and the answer is absorbed. A time that does not
+   exist that day (the hour skipped in spring) lands just after the gap. */
+function _zoneInstant(tz, y, mo, d, h, mi){
+  const want = Date.UTC(y, mo - 1, d, h, mi);
+  let t = want;
+  for(let k = 0; k < 3; k++){
+    const p = _zoneParts(tz, t);
+    const diff = want - Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi);
+    if(!diff) return t;
+    t += diff;
+  }
+  return t;
+}
+/* The first time after `afterMs` that the schedule is due. Walks the
+   person's calendar a day at a time - bounded, so a schedule that somehow
+   never matches still returns something. */
+function _schedNextAt(sc, afterMs){
+  const tz = sc.tz || 'UTC';
+  const base = _zoneParts(tz, afterMs);
+  for(let i = 0; i <= 62; i++){
+    const day = new Date(Date.UTC(base.y, base.mo - 1, base.d + i));
+    const y = day.getUTCFullYear(), mo = day.getUTCMonth() + 1, d = day.getUTCDate(), wd = day.getUTCDay();
+    if(sc.cad === 'weekly' && sc.days.indexOf(wd) < 0) continue;
+    /* "The 31st" in a thirty-day month is its last day, not a skipped month. */
+    if(sc.cad === 'monthly' && d !== Math.min(sc.dom, new Date(Date.UTC(y, mo, 0)).getUTCDate())) continue;
+    const t = _zoneInstant(tz, y, mo, d, sc.hour, sc.minute || 0);
+    if(t > afterMs) return t;
+  }
+  return afterMs + AUTO_INTERVALS.daily;
+}
+/* When a job that has just run - or been skipped, or failed - runs next. */
+function _autoNextAfter(item, now){
+  const sc = item && item.sched ? _schedClean(item.sched) : null;
+  if(sc) return _schedNextAt(sc, now);
+  const iv = Math.max(AUTO_MIN_INTERVAL, Number(item && item.interval) || AUTO_INTERVALS.daily);
+  const due = Number(item && item.next);
+  if(!Number.isFinite(due) || due <= 0 || due > now) return now + iv;
+  /* The next slot of the rhythm it started on. A run that was late by more
+     than one interval skips what it missed rather than firing them all. */
+  return due + Math.ceil((now - due + 1) / iv) * iv;
 }
 
 /* Long enough for a real standing instruction, short enough that it cannot
@@ -5009,7 +5127,10 @@ async function autoUpdate(request, env){
 
   if(body.action === 'delete') items.splice(i,1);
   else if(body.action === 'pause')  items[i].active = false;
-  else if(body.action === 'resume'){ items[i].active = true; items[i].next = Date.now() + items[i].interval; }
+  else if(body.action === 'resume'){ items[i].active = true;
+    /* Back on its own clock: a job resumed at noon that runs at 8 next runs at
+       8, not at noon tomorrow. */
+    items[i].next = items[i].sched ? _autoNextAfter(items[i], Date.now()) : Date.now() + items[i].interval; }
   /* An explicit level, not a toggle. A toggle can only ever reach two of the
      three, so the screen could not express "suggest only" at all and the chat
      tool had to guess which way pressing it would go. A caller that sends no
@@ -5047,6 +5168,21 @@ async function autoUpdate(request, env){
       /* Next run moves with the new interval rather than keeping a time the old
          cadence chose - otherwise "change it to weekly" still fires tomorrow. */
       items[i].next = Date.now() + items[i].interval;
+      /* A new cadence with no new time drops the old calendar - "make it
+         hourly" must not go on running at 8 every morning. */
+      if(body.sched === undefined) delete items[i].sched;
+    }
+    /* A new time, days or zone. Sent together with repeat when both change,
+       and applied after it, so "make it weekly on Mondays at 7" lands on
+       Monday at 7 rather than a week from now. */
+    if(body.sched !== undefined){
+      if(body.sched === null){ delete items[i].sched; }
+      else{
+        const sc = _schedClean(body.sched, body.tz || (items[i].sched && items[i].sched.tz) || (request.cf && request.cf.timezone));
+        if(!sc) return json({ error:'That schedule is not one AMV can keep - it needs a time, and the days or date it runs on.', code:'bad_schedule' }, 400);
+        items[i].sched = sc;
+        items[i].next = _schedNextAt(sc, Date.now());
+      }
     }
     if(AUTO_APPROVALS.includes(body.approval)) items[i].approval = body.approval;
   }
@@ -7912,7 +8048,7 @@ async function runDueAutomations(env, atMs){
         }).slice(-AUTO_MAX_RESULTS);
         item.runs = (item.runs||0) + 1;
         item.lastLevel = 'suggest';
-        item.next = now + (item.interval || AUTO_INTERVALS.daily);
+        item.next = _autoNextAfter(item, now);
         ran++; changed = true;
         /* Suggest-only: nothing was generated and no model was called, so the
            money booked for it belongs back in the allowance. */
@@ -7968,7 +8104,7 @@ async function runDueAutomations(env, atMs){
         item.lastNeeds = nowWaitingFor;
         if(newlyBlocked && item.notify === 'email' && env.EMAIL_API_KEY)
           mails.push({ item, out: needsMsg });
-        item.next = now + (item.interval || AUTO_INTERVALS.daily);
+        item.next = _autoNextAfter(item, now);
         ran++; changed = true;
         /* Blocked on access it does not have, so no model call happened. */
         await releaseItem();
@@ -8121,7 +8257,7 @@ async function runDueAutomations(env, atMs){
                 + 'After five failed runs it switches itself off rather than keep spending.')
         }).slice(-AUTO_MAX_RESULTS);
       }
-      item.next = now + (item.interval || AUTO_INTERVALS.daily);
+      item.next = _autoNextAfter(item, now);
       changed = true;
     }
 

@@ -13968,3 +13968,26 @@ Rules:
 - Anything that may see private pages runs in a temporary folder of its own,
   deleted when it stops, with snapshots returned in the reply instead of
   written out.
+
+## 538. "Every day at 8" is a time on somebody's clock, not an interval
+
+Background jobs are the point of Crew, and they did run on the server with
+nothing open, but not at the time anybody asked for. Each run set the next to
+`now + 24h`, and `now` is when the run happened, so 8:00 crept to 8:03, 8:06,
+8:09. The Crew box and chat's crew_add never sent the time at all:
+- "every weekday at 7:30pm" reached the server as once a week, at whatever
+  time it was created;
+- "the 1st of the month" became weekly;
+- the parser dropped minutes.
+The only copy that knew the real time lived in the browser, and a browser copy
+runs only while AMV is open, which is the one thing a background job exists
+not to need.
+
+Rules:
+- A schedule is stored as what the person said: hour, minute, weekdays or day
+  of month, and their IANA zone. Every next run is computed from it on their
+  calendar, so it holds through clock changes.
+- A job with no calendar keeps its original rhythm (the next slot) rather than
+  `now + interval`, and skips what an outage missed rather than stampeding.
+- Every door that creates a job sends the time. A suite drives each door and
+  checks the request body, not only the server that would honour it.

@@ -799,7 +799,7 @@ setTimeout(function(){ try{ if(typeof _runDueAuto==="function") _runDueAuto(); }
 setTimeout(function(){ try{ if(typeof _localizePrices==="function") _localizePrices(document); }catch(e){} }, 400);
 
 let _SCHED={cad:'once', days:[1], dom:1, hour:9};
-function _hourLabel(h){ return ((h%12)||12)+':00 '+(h<12?'AM':'PM'); }
+function _hourLabel(h, m){ return ((h%12)||12)+':'+String(m||0).padStart(2,'0')+' '+(h<12?'AM':'PM'); }
 const _DOWNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function _schedHuman(){
   const t='at '+_hourLabel(_SCHED.hour);
@@ -832,12 +832,18 @@ function _scheduleAuto2(goal, s, appr){
   return id;
 }
 function _schedHumanOf(s){
-  const t='at '+_hourLabel(s.hour);
+  const t='at '+_hourLabel(s.hour, s.minute);
   if(s.cad==='daily') return 'Every day '+t;
-  if(s.cad==='weekly'){ const ds=(s.days||[]).slice().sort().map(d=>_DOWNAMES[d]); return ds.join(', ')+' '+t; }
+  if(s.cad==='weekly'){
+    const ds=(s.days||[]).slice().sort((a,b)=>a-b);
+    if(ds.join()==='1,2,3,4,5') return 'Every weekday '+t;
+    if(ds.join()==='0,6') return 'Every weekend day '+t;
+    return 'Every '+ds.map(d=>_DOWNAMES[d]).join(', ')+' '+t;
+  }
   if(s.cad==='monthly') return 'Day '+s.dom+' of each month '+t;
   return s.cad;
 }
+try{ window._schedHumanOf=_schedHumanOf; }catch(e){}
 
 
 function openCoworkWith(goal){ openCowork(); setTimeout(()=>{ const g=$('cw-goal'); if(g){ g.value=goal; g.focus(); } const wk=document.querySelector('[data-cad="weekly"]'); }, 60); }

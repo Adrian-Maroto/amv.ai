@@ -2962,10 +2962,13 @@ const AMV_TOOLS = [
   },
   {
     name:'crew_add',
-    description:'Create a real background job that runs on a schedule without them present, and appears in the Crew tab. Use when they ask for something to happen regularly ("every morning", "each week", "keep an eye on"). Not for one-off work you can just do now.',
+    description:'Create a real background job that runs on AMV\'s servers on a schedule - overnight, at 8 every morning, every Monday - with their computer off and AMV closed, and appears in the Crew tab. Use when they ask for something to happen regularly ("every morning at 8", "each Friday at 5pm", "on the 1st of every month", "keep an eye on"). Pass the time they said; it runs at that time on THEIR clock. Not for one-off work you can just do now.',
     input_schema:{ type:'object', properties:{
       detail:{type:'string', description:'Exactly what the job should do on each run, written as an instruction to whoever runs it. Be specific - this is all it will have.'},
-      repeat:{type:'string', enum:['10min','30min','hourly','daily','weekly'], description:'How often it runs.'},
+      repeat:{type:'string', enum:['10min','30min','hourly','daily','weekly','monthly'], description:'How often it runs.'},
+      time:{type:'string', description:'For daily, weekly and monthly jobs: the time it runs, 24-hour "HH:MM" on their own clock - "08:00", "19:30", "03:00" for overnight. Leave out only if they gave no time and none is implied; "every morning" means 08:00.'},
+      days:{type:'array', items:{type:'string', enum:['sun','mon','tue','wed','thu','fri','sat']}, description:'For weekly jobs: which days. "weekdays" is mon-fri.'},
+      day_of_month:{type:'integer', minimum:1, maximum:31, description:'For monthly jobs: which day (31 means the last day in shorter months).'},
       approval:{type:'string', enum:['suggest','require','auto'], description:'How far it may go alone. "require" (default) does the work and waits for them before anything goes out. "auto" delivers on its own - only for jobs that purely produce information. "suggest" does not run the job at all, it just tells them it is due, which costs nothing.'}
     }, required:['detail'] }
   },
@@ -2976,7 +2979,10 @@ const AMV_TOOLS = [
       id:{type:'string', description:'The job id from crew_list. Preferred.'},
       match:{type:'string', description:'Only if you have no id: words from the job, used to find exactly one. Ambiguous matches are refused rather than guessed.'},
       detail:{type:'string', description:'The new instruction, if it is changing.'},
-      repeat:{type:'string', enum:['10min','30min','hourly','daily','weekly'], description:'The new frequency, if it is changing.'},
+      repeat:{type:'string', enum:['10min','30min','hourly','daily','weekly','monthly'], description:'The new frequency, if it is changing.'},
+      time:{type:'string', description:'The new time, 24-hour "HH:MM" on their clock, if it is changing ("move it to 7am" is "07:00").'},
+      days:{type:'array', items:{type:'string', enum:['sun','mon','tue','wed','thu','fri','sat']}, description:'For weekly: the new days.'},
+      day_of_month:{type:'integer', minimum:1, maximum:31, description:'For monthly: the new day.'},
       approval:{type:'string', enum:['suggest','require','auto']}
     }, required:[] }
   },
@@ -3575,8 +3581,31 @@ function _crewErr(e){
 }
 
 /* One line per job, in the terms the person thinks in. */
+/* "08:00" + days + day of month -> the schedule the server keeps. Null when
+   the cadence has no time of day (every 10 minutes, hourly) or no time was
+   given, which leaves the server's own first-run rule in place. */
+const _CREW_DOW = { sun:0, mon:1, tue:2, wed:3, thu:4, fri:5, sat:6 };
+function _crewSchedOf(cad, input){
+  const m = String((input && input.time) || '').match(/^\s*(\d{1,2}):(\d{2})\s*$/);
+  if(!m || ['daily','weekly','monthly'].indexOf(cad) < 0) return null;
+  const hour = +m[1], minute = +m[2];
+  if(hour > 23 || minute > 59) return null;
+  if(cad === 'weekly'){
+    let days = (Array.isArray(input.days) ? input.days : []).map(d => _CREW_DOW[String(d).slice(0,3).toLowerCase()]).filter(d => d != null);
+    if(!days.length) days = [new Date().getDay()];
+    return { cad, hour, minute, days };
+  }
+  if(cad === 'monthly') return { cad, hour, minute, dom: Math.min(31, Math.max(1, parseInt(input.day_of_month, 10) || 1)) };
+  return { cad, hour, minute };
+}
+/* How a job's schedule reads, on the person's clock when it has one. */
+function _crewWhen(x){
+  if(x && x.sched && typeof _schedHumanOf === 'function') return _schedHumanOf(x.sched).replace(/^Every/, 'every') + (x.sched.tz ? ' (' + x.sched.tz + ')' : '');
+  return _CREW_EVERY[String((x && x.repeat) || '')] || 'on a schedule';
+}
+try{ window._crewSchedOf=_crewSchedOf; window._crewWhen=_crewWhen; }catch(e){}
 function _crewLine(x){
-  const every = _CREW_EVERY[String(x.repeat||'')] || 'on a schedule';
+  const every = _crewWhen(x);
   return '- [' + x.id + '] ' + (x.active === false ? 'PAUSED' : 'running ' + every)
        + ({ auto:', results delivered automatically',
             suggest:', suggest only - it does not run until asked',
@@ -3619,11 +3648,13 @@ async function _crewTool(name, input){
   if(name === 'crew_add'){
     const detail = String(input.detail || '').trim();
     if(!detail) return { text:'A job needs to say what it does. Ask the user what they want it to do each time it runs.', render:null };
-    const repeat = _CREW_REPEATS.includes(String(input.repeat)) ? String(input.repeat) : 'daily';
+    const asked = String(input.repeat || '');
+    const repeat = asked === 'monthly' ? 'weekly' : _CREW_REPEATS.includes(asked) ? asked : 'daily';
     const approval = ['suggest','require','auto'].includes(input.approval) ? input.approval : 'require';
+    const sched = _crewSchedOf(asked || 'daily', input);
     let d;
     try{
-      d = await _autoApi('/auto/create', { detail, repeat, kind:'task', approval, notify:'app' });
+      d = await _autoApi('/auto/create', Object.assign({ detail, repeat, kind:'task', approval, notify:'app' }, sched ? { sched } : {}));
     }catch(e){ return { text: _crewErr(e), render:null }; }
     _crewSynced();
     /* The server is allowed to give a free account something smaller than was
@@ -3633,8 +3664,10 @@ async function _crewTool(name, input){
     const made = d.item || {};
     const gotRepeat = String(made.repeat || repeat);
     const shaped = gotRepeat !== repeat || d.shaped;
-    return { text:'Created. It is in their Crew tab now and runs '
-      + (_CREW_EVERY[gotRepeat] || 'on a schedule') + ' on its own.'
+    const firstAt = Number(made.next) ? new Date(Number(made.next)).toLocaleString([], { weekday:'long', hour:'numeric', minute:'2-digit' }) : '';
+    return { text:'Created. It is in their Crew tab now and runs ' + _crewWhen(made)
+      + ' on AMV\u2019s servers - with their computer off and AMV closed.'
+      + (firstAt ? ' First run: ' + firstAt + '.' : '')
       + ({ auto:' Results are delivered without review.',
            suggest:' It will NOT run on its own - AMV tells them it is due and waits to be asked, which costs nothing.',
            require:' Each result waits for their approval.' }[String(made.approval||'require')] || '')
@@ -3701,15 +3734,26 @@ async function _crewTool(name, input){
     if(name === 'crew_update'){
       const patch = { id:item.id, action:'edit' };
       if(typeof input.detail === 'string' && input.detail.trim()) patch.detail = input.detail.trim();
-      if(_CREW_REPEATS.includes(String(input.repeat))) patch.repeat = String(input.repeat);
+      const askedRepeat = String(input.repeat || '');
+      if(askedRepeat === 'monthly') patch.repeat = 'weekly';
+      else if(_CREW_REPEATS.includes(askedRepeat)) patch.repeat = askedRepeat;
+      /* A new time keeps the cadence it has unless a new one was given. */
+      if(input.time){
+        const cad = askedRepeat || (item.sched && item.sched.cad) || item.repeat || 'daily';
+        const base = item.sched || {};
+        const sc = _crewSchedOf(cad, Object.assign({ days: (base.days || []).map(d => ['sun','mon','tue','wed','thu','fri','sat'][d]), day_of_month: base.dom }, input));
+        if(!sc) return { text:'That time could not be used - give it as 24-hour HH:MM for a daily, weekly or monthly job. Nothing was changed.', render:null };
+        patch.sched = sc;
+      }
       if(['suggest','require','auto'].includes(input.approval)) patch.approval = input.approval;
-      if(!patch.detail && !patch.repeat && !patch.approval)
-        return { text:'Nothing was actually changed - no new instruction, frequency or approval setting was given. Ask the user what they want changed.', render:null };
+      if(!patch.detail && !patch.repeat && !patch.approval && !patch.sched)
+        return { text:'Nothing was actually changed - no new instruction, time, frequency or approval setting was given. Ask the user what they want changed.', render:null };
       await _autoApi('/auto/update', patch);
       _crewSynced();
       return { text:'Updated "' + what + '".'
         + (patch.detail ? ' It now does: ' + patch.detail.slice(0,120) + '.' : '')
-        + (patch.repeat ? ' It now runs ' + (_CREW_EVERY[patch.repeat] || patch.repeat) + ', starting one interval from now.' : '')
+        + (patch.sched ? ' It now runs ' + _crewWhen({ sched: patch.sched }) + ' on their clock.'
+           : patch.repeat ? ' It now runs ' + (_CREW_EVERY[patch.repeat] || patch.repeat) + ', starting one interval from now.' : '')
         + (patch.approval ? ({ auto:' Results are now delivered without review.',
                               suggest:' It will no longer run on its own - AMV will say it is due and wait to be asked.',
                               require:' Each result now waits for their approval.' }[patch.approval] || '') : ''),

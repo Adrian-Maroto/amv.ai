@@ -4148,7 +4148,10 @@ try{ window.cwPeek = cwPeek; }catch(e){}
    screen and the conversation are two doors onto one job rather than two
    records that drift apart. */
 function _mcServerSchedRow(x){
-  const every = _CREW_EVERY_UI[String(x.repeat||'')] || 'on a schedule';
+  /* The time it runs on their clock when it has one - "every day at 8:00 AM",
+     "every weekday at 7:30 PM" - rather than only how often. */
+  const every = (x.sched && typeof _schedHumanOf === 'function')
+    ? _schedHumanOf(x.sched).replace(/^Every/, 'every') : (_CREW_EVERY_UI[String(x.repeat||'')] || 'on a schedule');
   const paused = x.active === false;
   const auto = x.approval === 'auto';
   const when = paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : ''));
@@ -4309,6 +4312,11 @@ async function _clarifyCheck(goal){
    with "invalid repeat interval". A monthly cadence has no server bucket, so it
    is registered weekly rather than not at all - the job still runs unattended,
    and the local schedule keeps the exact day. */
+/* The person's own time zone, as their device reports it. */
+function _myTimeZone(){
+  try{ return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }catch(e){ return ''; }
+}
+try{ window._myTimeZone=_myTimeZone; }catch(e){}
 function _mcRepeatFor(payload){
   const cad = (payload.sched && payload.sched.cad) || payload.freq || 'daily';
   const map = { '10min':'10min', '30min':'30min', hourly:'hourly', daily:'daily',
@@ -4329,6 +4337,13 @@ async function _mcScheduleServer(payload){
        and the cron already walks it. */
     const r = await AMV_API._fetch('/auto/create',{ method:'POST', body:JSON.stringify({
       detail: payload.goal, repeat: _mcRepeatFor(payload),
+      /* The time they asked for, on their own clock - so the SERVER runs it
+         at 8, overnight, with this tab and this computer closed. Before this
+         only the repeat went, and the server ran it every 24 hours from
+         whenever it was created. */
+      sched: payload.sched ? { cad: payload.sched.cad, hour: payload.sched.hour, minute: payload.sched.minute || 0,
+                               days: payload.sched.days, dom: payload.sched.dom } : undefined,
+      tz: _myTimeZone(),
       kind: payload.kind || 'task', approval: payload.approval === 'auto' ? 'auto' : 'require',
       /* Which catalogue entry this came from, so a most-used list can be built
          from what people actually run rather than from a guess. Counts only,
@@ -6105,27 +6120,40 @@ function apvEdit(id){
 function _parseWhen(raw){
   const s=(raw||'').trim().toLowerCase();
   if(!s || /^(now|asap|immediately|right away)$/.test(s)) return {kind:'now', label:''};
-  const hourFrom=(txt)=>{
-    const m=txt.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/) || txt.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\b/);
-    if(m){ let h=parseInt(m[1],10); const ap=(m[3]||'').toLowerCase(); if(ap==='pm'&&h<12)h+=12; if(ap==='am'&&h===12)h=0; if(h>=0&&h<=23) return h; }
-    if(/\bmorning\b/.test(txt)) return 9;
-    if(/\b(noon|midday)\b/.test(txt)) return 12;
-    if(/\bafternoon\b/.test(txt)) return 15;
-    if(/\b(evening|tonight)\b/.test(txt)) return 19;
-    if(/\bnight\b/.test(txt)) return 21;
-    return 9;
+  /* The time, to the minute. "7:30pm" used to become 7pm - the minutes were
+     matched and dropped - and "overnight" had no meaning at all. */
+  const timeFrom=(txt)=>{
+    const m=txt.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/) || txt.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\b/) || txt.match(/\b(\d{1,2}):(\d{2})\b/);
+    if(m){ let h=parseInt(m[1],10); const mi=m[2]?parseInt(m[2],10):0; const ap=(m[3]||'').toLowerCase();
+      if(ap==='pm'&&h<12)h+=12; if(ap==='am'&&h===12)h=0; if(h>=0&&h<=23&&mi>=0&&mi<=59) return {hour:h, minute:mi}; }
+    if(/\bovernight\b/.test(txt)) return {hour:3, minute:0};
+    if(/\bmorning\b/.test(txt)) return {hour:9, minute:0};
+    if(/\b(noon|midday)\b/.test(txt)) return {hour:12, minute:0};
+    if(/\bafternoon\b/.test(txt)) return {hour:15, minute:0};
+    if(/\b(evening|tonight)\b/.test(txt)) return {hour:19, minute:0};
+    if(/\bnight\b/.test(txt)) return {hour:21, minute:0};
+    return {hour:9, minute:0};
   };
   const DOW={sunday:0,sun:0,monday:1,mon:1,tuesday:2,tue:2,tues:2,wednesday:3,wed:3,thursday:4,thu:4,thurs:4,friday:5,fri:5,saturday:6,sat:6};
-  const recurring=/\b(every|each|daily|weekly|hourly|monthly)\b/.test(s);
+  const recurring=/\b(every|each|daily|weekly|hourly|monthly|weekdays|weekends|nightly|overnight)\b/.test(s);
   if(recurring){
+    if(/\bevery\s+10\s*min/.test(s)) return {kind:'recurring', freq:'10min', label:'Every 10 minutes'};
+    if(/\bevery\s+30\s*min|every half(?:\s|-)hour/.test(s)) return {kind:'recurring', freq:'30min', label:'Every 30 minutes'};
     if(/\bhour/.test(s)) return {kind:'recurring', freq:'hourly', label:'Every hour'};
-    let days=[]; for(const k in DOW){ if(new RegExp('\\b'+k+'\\b').test(s)) days.push(DOW[k]); }
-    days=[...new Set(days)];
-    const hour=hourFrom(s);
-    if(days.length){ const sc={cad:'weekly',days,hour}; return {kind:'recurring', sched:sc, label:_schedHumanOf(sc)}; }
-    if(/\bweek/.test(s)){ const sc={cad:'weekly',days:[1],hour}; return {kind:'recurring', sched:sc, label:_schedHumanOf(sc)}; }
-    if(/\bmonth/.test(s)){ const sc={cad:'monthly',dom:1,hour}; return {kind:'recurring', sched:sc, label:_schedHumanOf(sc)}; }
-    const sc={cad:'daily',hour}; return {kind:'recurring', sched:sc, label:_schedHumanOf(sc)};
+    const t=timeFrom(s);
+    let days=[]; for(const k in DOW){ if(new RegExp('\\b'+k+'s?\\b').test(s)) days.push(DOW[k]); }
+    if(/\bweekdays?\b/.test(s)) days=days.concat([1,2,3,4,5]);
+    if(/\bweekends?\b/.test(s)) days=days.concat([0,6]);
+    days=[...new Set(days)].sort((a,b)=>a-b);
+    if(days.length){ const sc={cad:'weekly',days,hour:t.hour,minute:t.minute}; return {kind:'recurring', sched:sc, label:_schedHumanOf(sc)}; }
+    if(/\bweek/.test(s)){ const sc={cad:'weekly',days:[1],hour:t.hour,minute:t.minute}; return {kind:'recurring', sched:sc, label:_schedHumanOf(sc)}; }
+    if(/\bmonth/.test(s)){
+      /* "on the 15th", "the 1st of every month" - the first one by default. */
+      const dm=s.match(/\b(?:on\s+)?(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)\b/);
+      const dom=dm?Math.min(31,Math.max(1,parseInt(dm[1],10))):1;
+      const sc={cad:'monthly',dom,hour:t.hour,minute:t.minute}; return {kind:'recurring', sched:sc, label:_schedHumanOf(sc)};
+    }
+    const sc={cad:'daily',hour:t.hour,minute:t.minute}; return {kind:'recurring', sched:sc, label:_schedHumanOf(sc)};
   }
   return {kind:'once', label:raw.trim()};
 }

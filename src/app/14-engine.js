@@ -1895,6 +1895,12 @@ async function _taskRun(mode){
 async function _autoApi(path, body){
   if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession))
     throw new Error('not-connected');
+  /* Every job is created, or re-timed, on the person's own clock. The server
+     falls back to the zone their network is in, but the device knows better
+     - a VPN, a laptop that travelled. */
+  if((path === '/auto/create' || path === '/auto/update') && body && !body.tz){
+    try{ body = Object.assign({}, body, { tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '' }); }catch(e){}
+  }
   const r = await fetchDeadline(AMV_API.base.replace(/\/$/,'') + path, {
     method:'POST',
     headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+AMV_API.token },
