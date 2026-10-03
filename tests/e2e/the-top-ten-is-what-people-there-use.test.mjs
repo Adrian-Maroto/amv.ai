@@ -1,5 +1,8 @@
 /* THE TOP TEN IS WHAT PEOPLE THERE USE - FOR EVERY PART OF LIFE.
 
+   (Five of them at the top of Crew now, as asked; six to ten lead the row
+   under them - see `ten` below.)
+
    Asked for: not only mail and money - a top ten across every main thing (the
    bank, the mail, the calendar, school and assignments, work, the weekly shop,
    shopping, government, getting around, home), each the country's own, backed
@@ -72,16 +75,23 @@ async function openConnectors(from, width = 1280) {
   await page.evaluate(() => { window.__cls = 0; window.__src = []; setTab('integrations'); });
   return { ctx, page };
 }
+/* FIVE ON SCREEN, TEN RANKED. Asked for later: "the top 5 in that country
+   plus 100+". The ranking is still ten parts of life; the first five are the
+   top of Crew and six to ten lead the made-for row under them, so the ten is
+   read from the ranking and both halves are checked to be where they belong. */
 const ten = async (page) => {
   await page.waitForFunction(() => { const g = document.getElementById('cw-foryou'); return g && !g.hasAttribute('aria-busy') && g.querySelectorAll('.cw-t10:not(.cw-t10-ph)').length >= 5; }, null, { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(400);
   return page.evaluate(() => {
     const rows = [...document.querySelectorAll('#cw-foryou .cw-t10')];
+    const all = _cwTopTen(_cwCountryGuess());
+    const made = [...document.querySelectorAll('#cw-made [data-dact="cwPeek"]')].map(b => b.dataset.darg).filter((v, i, a) => a.indexOf(v) === i);
     return {
       head: ((document.querySelector('#cw-foryou h3') || {}).textContent || '').replace(/\s+/g, ' ').trim(),
-      sec: rows.map(r => (r.querySelector('.cw-t10-sec') || {}).textContent || ''),
-      t: rows.map(r => (r.querySelector('.cw-t10-t') || {}).textContent || ''),
-      d: rows.map(r => (r.querySelector('.cw-t10-d') || {}).textContent || ''),
+      shown: rows.map(r => (r.querySelector('.cw-t10-t') || {}).textContent || ''),
+      sec: all.map(j => j.section || ''), t: all.map(j => j.title || ''), d: all.map(j => j.desc || ''),
+      fiveAreFirst: rows.map(r => (r.querySelector('[data-darg]') || {}).getAttribute('data-darg')).join() === all.slice(0, 5).map(j => j.id).join(),
+      restLead: all.slice(5).map(j => j.id).join() === made.slice(0, all.length - 5).join(),
       heights: [...new Set(rows.map(r => Math.round(r.getBoundingClientRect().height)))],
       cls: window.__cls, src: (window.__src || []).slice(0, 4),
     };
@@ -93,7 +103,8 @@ section('In the United States: every part of life, the American way');
 {
   const { ctx, page } = await open('US', 'crew');
   const r = await ten(page);
-  ok(/Top 10 for you in .*United States/.test(r.head) && r.t.length === 10, 'ten, for the United States', r.head);
+  ok(/Top 5 for you in .*United States/.test(r.head) && r.shown.length === 5 && r.t.length === 10, 'five on screen, of ten ranked, for the United States', r.head);
+  ok(r.fiveAreFirst && r.restLead, 'the first five are the top of Crew, and six to ten lead the row under it', r);
   ok(['mail','bank','calendar','school','work','groceries','shopping','government','travel','home'].every(s => row(r, s)),
      'one for each part of life - mail, bank, calendar, school, work, groceries, shopping, government, travel, home', r.sec);
   ok(/Gmail/.test(row(r, 'mail').t), 'mail: Gmail', row(r, 'mail').t);
@@ -113,7 +124,7 @@ section('In China: nothing American, and the bank row says the truth');
 {
   const { ctx, page } = await open('CN', 'crew', 390);
   const r = await ten(page);
-  ok(r.t.length === 10, 'ten for China', r.t.length);
+  ok(r.t.length === 10 && r.shown.length === 5 && r.fiveAreFirst && r.restLead, 'ten ranked for China, five at the top', r.t.length);
   ok(!r.t.some(t => /Gmail|Chase|Amex|American Express|IRS|Google/.test(t)), 'nothing from the United States, and no Google', r.t);
   ok(/QQ Mail/.test(row(r, 'mail').t), 'mail: QQ Mail', row(r, 'mail').t);
   ok(/not available in China yet/.test(row(r, 'bank').d), 'bank: says plainly that linking a bank is not available in China yet', row(r, 'bank').d);

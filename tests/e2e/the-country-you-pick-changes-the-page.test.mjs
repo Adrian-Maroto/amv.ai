@@ -131,28 +131,31 @@ section('A country with nothing written for it says so');
   const panel = await page.evaluate(async () => {
     cwMoreCountries(); cwBrowse('MN');
     await new Promise(r => setTimeout(r, 300));
-    return (document.getElementById('cw-browse') || {}).textContent || '';
+    const t = (document.getElementById('cw-cp-list') || {}).textContent || '';
+    cwBackMain();
+    return t;
   });
-  ok(/Nothing written only for Mongolia/.test(panel), 'and its page says nothing is written only for it yet', panel.replace(/\s+/g, ' ').slice(0, 160));
+  ok(/Nothing is written only for Mongolia/.test(panel), 'and its page says nothing is written only for it yet', panel.replace(/\s+/g, ' ').slice(0, 160));
 }
 
-section('Every other country is at the bottom, one press away');
+section('Every other country is one press away, on a page of its own');
 {
   const r = await page.evaluate(async () => {
     cwCountry('US'); await new Promise(res => setTimeout(res, 300));
-    cwMoreCountries(); await new Promise(res => setTimeout(res, 100));
-    const n = document.querySelectorAll('#cw-morec .cw-cc').length;
-    cwBrowse('JP'); await new Promise(res => setTimeout(res, 300));
-    const b = document.getElementById('cw-browse');
-    const titles = b ? [...b.querySelectorAll('.cw-job-t')].map(e => e.textContent.trim()) : [];
-    const mine = b ? !!b.querySelector('[data-dact="cwCountry"][data-darg="JP"]') : false;
     const secs = [...document.querySelectorAll('.crew-jobs-sec > *')].map(e => e.id || e.className);
-    return { n, titles, mine, last: secs.indexOf('cw-morec') === secs.length - 1, secs: secs.slice(-3) };
+    cwMoreCountries(); await new Promise(res => setTimeout(res, 100));
+    const n = document.querySelectorAll('#cw-cp-grid .cw-cpick').length;
+    cwBrowse('JP'); await new Promise(res => setTimeout(res, 300));
+    const titles = [...document.querySelectorAll('#cw-cp-list .cw-job-t')].map(e => e.textContent.trim());
+    const out = { n, titles, mine: loadStr('amv_cw_country') === 'JP', page: S.crewPage,
+      last: secs.indexOf('cw-morec') === secs.length - 1, secs: secs.slice(-3) };
+    cwCountry('US'); cwBackMain();
+    return out;
   });
   ok(r.n === CW_N, 'every country with work written for it is listed', r.n);
-  ok(r.titles.length === 2 && r.titles.every(t => /^JP /.test(t)), 'choosing Japan shows Japan’s own work', r.titles);
-  ok(r.mine, 'with a way to make it the country the page is for', r.mine);
-  ok(r.last, 'and it is the last thing on the page', r.secs);
+  ok(r.page === 'country' && r.titles.filter(t => /^JP /.test(t)).length === 2 && !r.titles.some(t => /^(UZ|US) /.test(t)), 'choosing Japan opens Japan’s page, with Japan’s own work', r.titles.slice(0, 4));
+  ok(r.mine, 'and choosing it makes it the country the page is for', r.mine);
+  ok(r.last, 'and "See more countries" is the last thing on Crew', r.secs);
 }
 
 section('When there IS a worldwide count, it is shown under the list, in its order');

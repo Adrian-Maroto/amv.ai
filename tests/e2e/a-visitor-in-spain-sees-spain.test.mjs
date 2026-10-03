@@ -62,9 +62,10 @@ section('From Spain, with an English (US) browser');
 {
   const r = await visit('ES');
   ok(r.lang === 'en-US', 'the browser really says United States', r.lang);
-  ok(/Top 10 for you in .*Spain/.test(r.head), 'the top of Crew is for Spain', r.head);
-  ok(r.titles.length === 10 && r.titles.some(t => /InfoJobs/.test(t)) && r.titles.some(t => /AEAT/.test(t)) && r.titles.some(t => /Gmail/.test(t)),
-     'and the ten are Spain’s - Gmail, InfoJobs, the AEAT', r.titles);
+  ok(/Top 5 for you in .*Spain/.test(r.head), 'the top of Crew is for Spain', r.head);
+  ok(r.titles.length === 5 && r.titles.some(t => /InfoJobs/.test(t)) && r.titles.some(t => /Gmail/.test(t)),
+     'and the five are Spain’s - Gmail, InfoJobs', r.titles);
+  ok(r.made.some(t => /AEAT/.test(t)), 'with the AEAT among the ones under them', r.made.slice(0, 8));
   ok(r.made.some(t => /Renta/.test(t)) && r.made.some(t => /DNI|NIE/.test(t)), 'with the Renta and the DNI in the row under them', r.made.slice(0, 6));
   ok(!r.dropdown, 'with no country dropdown', r.dropdown);
   ok(r.more, 'and every other country at the bottom', r.more);
@@ -74,17 +75,17 @@ section('From Spain, with an English (US) browser');
 section('From Spain, on a phone');
 {
   const r = await visit('ES', 390);
-  ok(/Spain/.test(r.head) && r.titles.length === 10, 'the ten for Spain on a phone too', r.head);
+  ok(/Spain/.test(r.head) && r.titles.length === 5, 'the five for Spain on a phone too', r.head);
   ok(r.cls < 0.001, 'and nothing moves there either', { cls: +r.cls.toFixed(4), src: r.src });
 }
 
 section('From the United States');
 {
   const r = await visit('US');
-  ok(/Top 10 for you in .*United States/.test(r.head), 'the top of Crew is for the United States', r.head);
-  ok(!r.titles.some(t => /Renta|DNI|InfoJobs|AEAT/.test(t)), 'with none of Spain’s', r.titles);
-  ok(r.titles.some(t => /Gmail/.test(t)) && r.titles.some(t => /Chase|American Express/.test(t)) && r.titles.some(t => /IRS/.test(t)),
-     'but the United States’ own - Gmail, the Chase and Amex accounts, the IRS', r.titles);
+  ok(/Top 5 for you in .*United States/.test(r.head), 'the top of Crew is for the United States', r.head);
+  ok(!r.titles.concat(r.made).some(t => /Renta|DNI|InfoJobs|AEAT/.test(t)), 'with none of Spain’s', r.titles);
+  ok(r.titles.some(t => /Gmail/.test(t)) && r.titles.some(t => /Chase|American Express/.test(t)) && r.made.some(t => /IRS/.test(t)),
+     'but the United States’ own - Gmail, the Chase and Amex accounts, and the IRS under them', [r.titles, r.made.slice(0, 6)]);
 }
 
 section('When the network does not say, the browser’s guess still stands');

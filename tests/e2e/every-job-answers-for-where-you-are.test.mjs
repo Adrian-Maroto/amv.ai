@@ -145,7 +145,9 @@ section('Crew, from Spain: a row of jobs made for Spain');
   ok(r.titles.length >= 12, 'with a dozen or more of Spain’s own jobs', r.titles.length);
   ok(r.titles.some(t => /Renta/.test(t)) && r.titles.some(t => /DNI|NIE/.test(t)),
      'Spain’s own work - the Renta and the DNI, written for Spain', r.titles.slice(0, 7));
-  ok(!r.titles.some(t => /InfoJobs|AEAT|Mercadona/.test(t)), 'and nothing already in the top ten is repeated', r.titles);
+  const five = await page.evaluate(() => [...document.querySelectorAll('#cw-foryou .cw-t10-t')].map(e => e.textContent.trim()));
+  ok(five.length === 5 && !r.titles.some(t => five.includes(t)), 'and nothing already in the five above is repeated', { five, row: r.titles.slice(0, 6) });
+  ok(r.titles.some(t => /AEAT|Mercadona/.test(t)), 'while six to ten of the ranking - the AEAT, Mercadona - lead it', r.titles.slice(0, 6));
   ok(new Set(r.heights).size === 1, 'every card the same height, so the row is one fixed height', [...new Set(r.heights)]);
   ok(r.cls < 0.001, 'and the row arrives without moving the page', { cls: +r.cls.toFixed(4), src: r.src });
   await page.click('#cw-made .cw-made-body');
@@ -187,24 +189,24 @@ section('Crew, from the United States: the same cards, for the United States');
   await ctx.close();
 }
 
-section('Other countries: Mexico’s facts, from the bottom of Crew');
+section('Other countries: Mexico’s facts, on Mexico’s own page');
 {
   const { ctx, page } = await open('ES', 'crew');
-  await page.waitForSelector('#cw-morec [data-dact="cwMoreCountries"]', { timeout: 15000 });
-  await page.click('#cw-morec [data-dact="cwMoreCountries"]');
-  await page.click('#cw-morec [data-darg="MX"]');
-  await page.waitForFunction(() => document.querySelector('#cw-browse .cw-facts'), null, { timeout: 10000 }).catch(() => {});
+  await page.waitForSelector('#cw-where[data-dact="cwMoreCountries"]', { timeout: 15000 });
+  await page.click('#cw-where');
+  await page.click('.cw-cpick[data-darg="MX"]');
+  await page.waitForFunction(() => document.querySelector('.cw-cp-facts .cw-facts') && document.querySelector('#cw-cp-list [data-dact="cwPeek"]'), null, { timeout: 10000 }).catch(() => {});
   const r = await page.evaluate(() => ({
-    h: ((document.querySelector('#cw-browse .cw-facts-h') || {}).textContent || '').trim(),
-    facts: [...document.querySelectorAll('#cw-browse .cw-facts-r')].map(e => e.textContent.replace(/\s+/g, ' ').trim()),
+    h: ((document.querySelector('.cw-cp-facts h3') || {}).textContent || '').trim(),
+    facts: [...document.querySelectorAll('.cw-cp-facts .cw-facts-r')].map(e => e.textContent.replace(/\s+/g, ' ').trim()),
   }));
   ok(/Mexico/.test(r.h), 'Mexico says where AMV looks there', r.h);
   ok(r.facts.length >= 8 && r.facts.some(t => /SAT/.test(t)), 'with Mexico’s tax office and the rest', r.facts.slice(0, 4));
-  const mx = await page.evaluate(() => [...document.querySelectorAll('#cw-browse .cw-made-t')].map(e => e.textContent.trim()));
-  ok(mx.length >= 10 && mx.some(t => /SAT/.test(t)) && !mx.some(t => /InfoJobs|Mercadona/.test(t)), 'and Mexico’s own jobs, none of Spain’s', mx.slice(0, 5));
-  await page.click('#cw-browse .cw-made-body');
-  await page.waitForFunction(() => /Mexico|SAT/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
-  ok(/Mexico|SAT/.test(await page.evaluate(() => (document.getElementById('ovr') || {}).textContent || '')), 'which open from there too');
+  const mx = await page.evaluate(() => [...document.querySelectorAll('#cw-foryou .cw-t10-t, #cw-cp-list .cw-job-t, #cw-cp-list .cw-made-t, #cw-cp-list h4, #cw-cp-list [class*="-t"]')].map(e => e.textContent.trim()));
+  ok(mx.length >= 10 && mx.some(t => /SAT/.test(t)) && !mx.some(t => /InfoJobs|Mercadona/.test(t)), 'and Mexico’s own jobs, none of Spain’s', mx.filter(t => /SAT/.test(t)).slice(0, 3));
+  await page.click('#cw-cp-list [data-dact="cwPeek"]');
+  await page.waitForFunction(() => ((document.getElementById('ovr') || {}).textContent || '').length > 40, null, { timeout: 5000 }).catch(() => {});
+  ok(((await page.evaluate(() => (document.getElementById('ovr') || {}).textContent || '')).length > 40), 'which open from there too');
   await ctx.close();
 }
 

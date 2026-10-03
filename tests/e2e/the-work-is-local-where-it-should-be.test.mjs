@@ -146,7 +146,7 @@ section('Both halves are on the screen, and one of them names the country');
   }));
   ok(seen.universal > 0, 'the work that is the same everywhere is in the list, or one See all away', seen.universal);
   ok(/for you in .*spain/i.test(seen.group), 'and the local half names the country', seen.group);
-  ok(seen.spainTop === 10, 'and the ten at the top are built for Spain', seen.spainTop);
+  ok(seen.spainTop === 5, 'and the five at the top are built for Spain', seen.spainTop);
   ok(seen.localBelow >= 5, 'with Spain\u2019s hand-written five in the row under them', seen.localBelow);
 }
 
@@ -160,11 +160,14 @@ section('A country with nothing written for it says so rather than inventing');
     _cwLocalCache.MN = []; _cwLocalState.MN = 'ok';
     cwMoreCountries(); cwBrowse('MN');
     await new Promise(r => setTimeout(r, 250));
-    return { local: _cwLocalJobs('MN').length,
-             text: (document.querySelector('#cw-browse') || {}).textContent || '' };
+    const out = { local: _cwLocalJobs('MN').length,
+             text: (document.querySelector('#cw-cp-list') || {}).textContent || '' };
+    /* Back to the country the rest of this file is about. */
+    cwBackMain();
+    return out;
   });
   ok(none.local === 0, 'nothing is fabricated for it', none.local);
-  ok(/still runs there|still appl|same everywhere/i.test(none.text),
+  ok(/Nothing is written only for Mongolia/.test(none.text) && /everyday ones, and each runs there/i.test(none.text),
      'and it says the universal ones still hold, which is true', none.text.slice(0, 80));
 }
 

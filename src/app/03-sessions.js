@@ -1492,8 +1492,15 @@ try{ window._tabFromURL=_tabFromURL; window._URL_TABS=_URL_TABS;
    the same path. Both go through `navBack`, which moves without recording -
    otherwise Back would record where you left and Back again would bounce. */
 const _NAV = { stack: [], popping: false, MAX: 40 };
+/* A pane is the page inside a tab: the Settings section, or Crew's country
+   pages (S.crewPage). */
+function _navPane(t){
+  if(t === 'settings') return S.settingsPane || null;
+  if(t === 'crew') return S.crewPage || null;
+  return null;
+}
 function _navHere(){
-  try{ return { tab: S.tab, pane: S.tab === 'settings' ? (S.settingsPane || null) : null }; }
+  try{ return { tab: S.tab, pane: _navPane(S.tab) }; }
   catch(e){ return null; }
 }
 const _navSame = (a, b) => !!(a && b && a.tab === b.tab && (a.pane || null) === (b.pane || null));
@@ -1509,6 +1516,7 @@ function _navGo(to){
   _NAV.popping = true;
   try{
     if(to.tab === 'settings') S.settingsPane = to.pane || null;
+    if(to.tab === 'crew') S.crewPage = to.pane || '';
     setTab(to.tab);
   } finally { _NAV.popping = false; }
   _navPaint();
@@ -1600,7 +1608,10 @@ function setTab(t){
   /* The connector directory's own page state. A screen somebody left is not
      where they are when they come back. */
   try{ if(t!=='integrations' && typeof _cdirReset==='function') _cdirReset(); }catch(e){}
-  try{ _navRecord(_navFrom, { tab: t, pane: t === 'settings' ? (S.settingsPane || null) : null }); }catch(e){}
+  /* Crew's country pages are pages of Crew: leaving the tab leaves them, and
+     coming back opens Crew's own page. The country chosen on them stays. */
+  try{ if(t!=='crew' && S.crewPage) S.crewPage=''; }catch(e){}
+  try{ _navRecord(_navFrom, { tab: t, pane: _navPane(t) }); }catch(e){}
   S.tab=t;
   /* THE ADDRESS BAR SAYS WHERE YOU ARE - AS A HASH, AND THAT IS DELIBERATE.
 

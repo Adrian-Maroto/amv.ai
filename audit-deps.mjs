@@ -42,6 +42,30 @@ const ACCEPTED = {
     why: 'Present only as the parent of extract-zip above, and unreachable for the same '
        + 'reason: nothing in a Worker downloads or extracts a browser.',
   },
+  'basic-ftp': {
+    since: '2026-10',
+    why: 'Quadratic-time parsing of an FTP directory listing. Reached only through '
+       + 'get-uri -> pac-proxy-agent -> proxy-agent -> @puppeteer/browsers, i.e. a proxy '
+       + 'auto-config file fetched over ftp:// while puppeteer DOWNLOADS a browser. Traced, '
+       + 'not assumed: walking every import from the entry the Worker loads '
+       + '(@cloudflare/puppeteer -> lib/esm/puppeteer/puppeteer-cloudflare.js) reaches 115 '
+       + 'files and the only packages they import are debug, ws and node built-ins - '
+       + '@puppeteer/browsers is never imported, so nothing above it can run. No 5.x fix '
+       + 'exists and get-uri pins ^5, so forcing 6.x would be a major bump for dead code.',
+  },
+  'get-uri': {
+    since: '2026-10',
+    why: 'Flagged only as the parent of basic-ftp above; unreachable for the same traced reason.',
+  },
+  'pac-proxy-agent': {
+    since: '2026-10',
+    why: 'Flagged only as the parent of get-uri above; unreachable for the same traced reason.',
+  },
+  'proxy-agent': {
+    since: '2026-10',
+    why: 'Flagged only as the parent of pac-proxy-agent above; a dependency of '
+       + '@puppeteer/browsers, which the Worker entry never imports (see basic-ftp).',
+  },
   '@cloudflare/puppeteer': {
     since: '2026-08',
     why: 'Flagged solely because it depends on the two above. The only version npm offers '

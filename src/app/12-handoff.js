@@ -3858,6 +3858,9 @@ try {
   try{ _setPlan(loadStr('amv_plan')||'free'); }catch(e){}
   // deferred: not needed for first interaction - run when idle
   _idle(()=>{ try{ _initReveal(); }catch(e){} });
+  /* Where somebody is, asked as AMV loads rather than when Crew first opens,
+     so every screen that is specialised by country already knows it. */
+  _idle(()=>{ try{ if(typeof _cwAskWhere==='function') _cwAskWhere(); }catch(e){ try{ console.error('AMV: could not ask where you are', e); }catch(_){} } });
   _idle(()=>{ try{ _translateUI(); }catch(e){} });
   _idle(()=>{ try{ _checkPayReturn(); }catch(e){} });
   _idle(()=>{ try{ _verifyEntitlement(); }catch(e){} });
