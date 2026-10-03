@@ -1,0 +1,130 @@
+/* THE HUNDRED IS WHAT IS USED THERE.
+
+   Asked for: "the top 5 most popular and the other 100 below it also have to
+   be the most popular" - for that country.
+
+   What it replaced was not a ranking at all: the catalogue in CATEGORY order,
+   cut at a hundred - so every country's hundred was twenty work jobs and
+   sixty-four home jobs, in the same order everywhere, and no money, school,
+   health or family job ever reached the page. This measures the hundred for
+   all 105 countries with the real Worker behind a real server, then checks
+   that what the research says matters in a country leads it there and nowhere
+   else, and that a real count of what people start beats the research. */
+import { createServer } from 'http';
+import { chromium } from 'playwright';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { LAUNCH } from '../lib/harness.mjs';
+import { makeEnv, serveArtifact } from '../lib/live-backend.mjs';
+import { ok, section, report, done } from '../lib/assert.mjs';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const worker = (await import(join(ROOT, 'amv-backend.js') + '?hundred-used=' + Date.now())).default;
+const env = makeEnv({});
+const api = createServer(async (req, res) => {
+  const chunks = []; for await (const c of req) chunks.push(c);
+  const headers = new Headers(); for (const [k, v] of Object.entries(req.headers)) if (v != null) headers.set(k, String(v));
+  const r0 = new Request('http://localhost:' + api.address().port + req.url, { method: req.method, headers,
+    body: (req.method === 'GET' || req.method === 'HEAD') ? undefined : Buffer.concat(chunks) });
+  Object.defineProperty(r0, 'cf', { value: { country: 'US' } });
+  const r = await worker.fetch(r0, env, { waitUntil() {}, passThroughOnException() {} });
+  const o = {}; r.headers.forEach((v, k) => { o[k] = v; }); res.writeHead(r.status, o); res.end(Buffer.from(await r.arrayBuffer()));
+});
+await new Promise(r => api.listen(0, r));
+const site = await serveArtifact(0, 'http://localhost:' + api.address().port);
+const browser = await chromium.launch(LAUNCH);
+const errors = [];
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US' });
+await ctx.addInitScript(() => { try { localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true })); } catch (e) {} });
+const page = await ctx.newPage();
+page.on('pageerror', e => errors.push(e.message));
+await page.goto('http://localhost:' + site.address().port + '/#/crew', { waitUntil: 'load' });
+await page.waitForTimeout(800);
+
+/* Every country's hundred, computed the way its page computes it. */
+const hundredOf = (codes) => page.evaluate(async (codes) => {
+  const out = {};
+  for (const cc of codes) {
+    await _cwLoadLocal(cc);
+    for (let i = 0; i < 100 && _cwLocalState[cc] === 'loading'; i++) await new Promise(r => setTimeout(r, 20));
+    const L = _cwCountryHundred(cc);
+    const by = {}; L.forEach(j => { by[j.cat] = (by[j.cat] || 0) + 1; });
+    out[cc] = { n: L.length, ids: L.map(j => j.id), kinds: L.map(j => _cwKind(j)), titles: L.map(j => j.title), by,
+                top: (_cwTopTen(cc) || []).slice(0, 5).map(j => j.id) };
+  }
+  return out;
+}, codes);
+
+section('Every country: a hundred, from every part of life');
+const codes = await page.evaluate(() => CW_WORLD_COUNTRIES.map(c => c[0]));
+const all = await hundredOf(codes);
+{
+  const short = codes.filter(cc => all[cc].n !== 100);
+  ok(short.length === 0, 'all ' + codes.length + ' countries have exactly a hundred', short.map(cc => cc + ':' + all[cc].n));
+  const dup = codes.filter(cc => new Set(all[cc].ids).size !== all[cc].ids.length);
+  ok(dup.length === 0, 'none with a job twice', dup);
+  const repeatTop = codes.filter(cc => all[cc].ids.some(id => all[cc].top.includes(id)));
+  ok(repeatTop.length === 0, 'none repeating one of its top five', repeatTop);
+  /* ev_ev_* are the everyday jobs that are the same everywhere, not a country called "ev". */
+  const other = (cc) => all[cc].ids.filter(id => { const m = /^(cc|top|ev)_([a-z]{2})_/.exec(id); return m && m[2] !== 'ev' && m[2] !== cc.toLowerCase(); });
+  const foreign = codes.filter(cc => other(cc).length);
+  ok(foreign.length === 0, 'none holding another country’s job', foreign.map(cc => cc + ':' + other(cc).slice(0, 2)).slice(0, 3));
+  const narrow = codes.filter(cc => Object.keys(all[cc].by).length < 6);
+  ok(narrow.length === 0, 'every one spans at least six parts of life - not twenty kinds of grocery list', narrow.map(cc => cc + ':' + JSON.stringify(all[cc].by)).slice(0, 3));
+  const heavy = codes.filter(cc => Object.values(all[cc].by).some(n => n > 25));
+  ok(heavy.length === 0, 'and no part of life takes more than a quarter', heavy.map(cc => cc + ':' + JSON.stringify(all[cc].by)).slice(0, 3));
+  const money = codes.filter(cc => !(all[cc].by.Money >= 10));
+  ok(money.length === 0, 'money is there in every country (it was 4 of 100 everywhere)', money.slice(0, 5));
+  const same = new Set(codes.map(cc => all[cc].kinds.slice(0, 12).join())).size;
+  ok(same > codes.length * 0.6, 'and the order differs by country - ' + same + ' different openings across ' + codes.length, same);
+}
+
+section('What the research says matters there leads there');
+const rank = (cc, kind) => all[cc].kinds.indexOf(kind);
+ok(rank('KE', 'remit') >= 0 && rank('KE', 'remit') < 10 && rank('KE', 'limits') < 10,
+   'Kenya: sending money home and M-Pesa’s fees in the first ten (World Bank, Global Findex)', [rank('KE', 'remit'), rank('KE', 'limits')]);
+ok(rank('MX', 'remit') >= 0 && rank('MX', 'remit') < 5, 'Mexico: remittances in the first five', rank('MX', 'remit'));
+/* The train is a part of life with its own row in the top five - where the
+   research says people live on trains, it is IN the top five. */
+ok(all.JP.top.includes('cc_jp_rail'), 'Japan: the train is one of its top five (UIC)', all.JP.top);
+ok(all.CH.top.includes('cc_ch_rail'), 'Switzerland too', all.CH.top);
+ok(!all.US.top.includes('cc_us_rail'), 'and not in the United States', all.US.top);
+ok(rank('AR', 'staples') >= 0 && rank('AR', 'staples') < 5 && rank('AR', 'parallel') >= 0, 'Argentina: staple prices first, and the parallel rate (IMF)', [rank('AR', 'staples'), rank('AR', 'parallel')]);
+ok(rank('PK', 'prayer') >= 0 && rank('PK', 'loadshedding') >= 0 && rank('PK', 'loadshedding') < 5, 'Pakistan: prayer times, and load-shedding in the first five', [rank('PK', 'prayer'), rank('PK', 'loadshedding')]);
+ok(rank('IN', 'gold') >= 0 && rank('IN', 'gold') < 25, 'India: the gold price (World Gold Council)', rank('IN', 'gold'));
+ok(rank('ET', 'farm') >= 0 && rank('ET', 'farm') < 25, 'Ethiopia: crop and livestock prices (World Bank)', rank('ET', 'farm'));
+{
+  const za = all.ZA.titles.filter(t => /load.?shedding|power cut/i.test(t));
+  ok(za.length === 1, 'South Africa has load-shedding once - its own job, not a second copy', za);
+  const us = ['prayer', 'loadshedding', 'parallel', 'bundles', 'farm'].filter(k => rank('US', k) >= 0);
+  ok(us.length === 0, 'and none of that in the United States', us);
+  ok(rank('US', 'remit') < 0 || rank('US', 'remit') > 60, 'where sending money abroad is not near the top', rank('US', 'remit'));
+}
+
+section('A count of what people start beats the research');
+{
+  /* Seeded the way the server writes it. Kenya, 40 starts - past the floor -
+     30 of them for a job the research puts far down the list. */
+  const low = all.KE.kinds.slice(-1)[0];
+  const lowId = all.KE.ids.slice(-1)[0];
+  await env.AMV_KV.put('stats:jobuse', JSON.stringify({ counts: {}, total: 40, byCountry: { KE: { counts: { [lowId]: 30 }, total: 40 } } }));
+  /* A fresh browser: the catalogue is a public GET the browser may cache, and
+     a visitor tomorrow is a new visit, not this one. */
+  const c2 = await browser.newContext({ viewport: { width: 1280, height: 900 }, locale: 'en-US' });
+  const p2 = await c2.newPage();
+  p2.on('pageerror', e => errors.push(e.message));
+  await p2.goto('http://localhost:' + site.address().port + '/#/crew', { waitUntil: 'load' });
+  const r = await p2.evaluate(async () => {
+    await _cwLoadLocal('KE');
+    for (let i = 0; i < 100 && _cwLocalState.KE === 'loading'; i++) await new Promise(r => setTimeout(r, 20));
+    return _cwCountryHundred('KE').map(j => j.id);
+  });
+  await c2.close();
+  ok(r.indexOf(lowId) >= 0 && r.indexOf(lowId) < 15, 'the job people in Kenya actually switch on climbs from last to the top fifteen (' + low + ')', r.indexOf(lowId));
+  await env.AMV_KV.delete('stats:jobuse');
+}
+
+ok(errors.length === 0, 'and nothing threw', errors.slice(0, 3));
+await browser.close(); api.close(); site.close();
+if (report('the-hundred-is-what-is-used-there') > 0) process.exitCode = 1;
+done();

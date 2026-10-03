@@ -19148,24 +19148,169 @@ const CW_MADE_MORE = [
   ['','homeprices','Money','🏡','monthly','Home prices in your city','What homes sell for in your city this quarter, and whether prices are rising or falling.','Your city or area?','e.g. "Manchester"','From official statistics and major property sources for {C}, give the current typical home price in the user’s city, the change over the last year, and the direction. Cite sources.'],
   ['','breaches','Watching the world','🔓','weekly','Data breaches that may include you','Breaches at companies people in {C} use, what leaked, and exactly what to change.','Which services do you use?','e.g. "my telecom, my bank, a food delivery app"','Report data breaches disclosed recently at companies used in {C}, especially the services the user named: what leaked, when, and the specific steps to take. Cite the company’s notice or the data-protection authority.'],
   ['','studydeadlines','Learning','🗓️','weekly','University application deadlines in {C}','When applications, grants and entrance tests open and close in {C} for the course you want.','Which course or field, and for when?','e.g. "medicine, starting next September"','From official university and education-ministry sources for {C}, list the application windows, entrance-test dates and grant deadlines for the course and year named, soonest first.'],
+  /* Jobs only some countries need, gated by CW_SIGNAL rather than by a fact,
+     each from a published source (see CW_SIGNAL). */
+  ['@MUSLIM','prayer','Home & life','🕌','daily','Prayer times and Ramadan dates for your city','Today’s prayer times where you are, and the Ramadan, Eid and holiday dates as the official bodies in {C} announce them.','Which city?','e.g. "Riyadh"','From the official religious authority or national calendar for {C}, give today’s prayer times for the user’s city and the announced dates for Ramadan, Eid and the related public holidays, saying which dates are confirmed and which still await the moon sighting. Link the source.'],
+  ['@POWER','loadshedding','Home & life','🔌','daily','Power cuts and load-shedding for your area','The published load-shedding stage and cut times for your area today and tomorrow, from the utility in {C}.','Which town, and which area or zone?','e.g. "Soweto, block 7"','Check the utility’s official load-shedding or outage schedule in {C} for the user’s area today and tomorrow: the stage, the exact times and any change announced. If there is none, say so in one line. Link the source.'],
+  ['@PREPAID','bundles','Money','📶','weekly','Cheapest data bundles this week','The best-value prepaid data and airtime bundles from the networks in {C}, for how much you actually use.','Which network, and how much data a week?','e.g. "Safaricom, about 3GB a week"','Compare the current prepaid data and airtime bundles from the mobile networks in {C} for the user’s usage: price per GB, validity, and any night-only or app-only catch. Name the cheapest that fits, with the link or dial code.'],
+  ['@PARALLEL','parallel','Money','💱','daily','The official and the parallel exchange rate today','Today’s official rate and the parallel-market rate as reported in {C}, and how far apart they are.','Which currency?','e.g. "US dollars"','Report today’s official exchange rate in {C} for the currency named and the parallel-market rate as reported by named, reputable outlets, the gap between them and how it moved this week. Information only: never advise buying or selling, and say plainly that trading outside official channels may be illegal.'],
+  ['@FUELWEEK','fuelweek','Money','⛽','weekly','Fuel price change announced for next week','The pump-price change announced in {C} for the coming period, and whether to fill up before it starts.','Petrol or diesel?','e.g. "petrol"','Check the official fuel-price announcement in {C} for the coming week or period: the new pump price for the user’s fuel, the change, and when it takes effect. Link the official source.'],
 ];
 function _cwFill(str, f, k, C){
   const v = k ? String(f[k] || '') : '';
   return String(str || '').replace(/\{C\}/g, C).replace(/\{v\}/g, v).replace(/\{1\}/g, _cwNames(v, 1))
     .replace(/\{2\}/g, _cwNames(v, 2)).replace(/\{3\}/g, _cwNames(v, 3)).replace(/\{s\}/g, _cwShort(v));
 }
+/* WHICH COUNTRIES A SIGNAL-GATED JOB IS FOR. Conservative lists - only
+   countries the source plainly names:
+     MUSLIM    Pew Research Center: Muslim-majority populations.
+     POWER     Scheduled load-shedding published by the national utility:
+               Eskom (South Africa), ZESCO (Zambia), ZESA (Zimbabwe), EDL
+               (Lebanon), and the published outage schedules in Pakistan,
+               Nigeria and Ghana.
+     PREPAID   GSMA Intelligence: markets where most mobile connections are
+               prepaid.
+     PARALLEL  A widely reported parallel exchange rate (Argentina's dólar
+               blue, Nigeria, Lebanon, Venezuela, Zimbabwe, Ethiopia).
+     FUELWEEK  Fuel prices set and announced by the authorities on a fixed
+               cycle: weekly in Malaysia and the Philippines, fortnightly in
+               Pakistan, monthly in South Africa. */
+const CW_SIGNAL = {
+  MUSLIM:   'SA AE QA KW OM BH EG MA DZ TN JO IQ LB PK BD ID MY TR AZ UZ KZ SN',
+  POWER:    'ZA ZM ZW LB PK NG GH',
+  PREPAID:  'IN PK BD NG KE GH UG TZ ZM EG PH ID VN MM KH NP LK ET',
+  PARALLEL: 'AR NG LB VE ZW ET',
+  FUELWEEK: 'MY PH PK ZA',
+};
+/* A country whose own hand-written jobs already cover one of these does not
+   get it twice - South Africa's pack has "Load shedding for my area". */
+const CW_SIGNAL_SAME = { prayer:/prayer|ramadan/i, loadshedding:/load.?shedding|power cut/i, bundles:/bundle|airtime/i,
+                         parallel:/parallel|d[oó]lar blue|black.market/i, fuelweek:/fuel price|petrol price|pump price/i };
+function _cwRowFor(m, f, cc){
+  if(!m[0]) return true;
+  if(m[0].charAt(0) === '@'){
+    if((CW_SIGNAL[m[0].slice(1)] || '').split(' ').indexOf(cc) < 0) return false;
+    const same = CW_SIGNAL_SAME[m[1]];
+    return !(same && (_cwLocalJobs(cc) || []).some(j => same.test(String(j.title || ''))));
+  }
+  return !!f[m[0]];
+}
 function _cwMadeMore(cc){
   const f = _cwFacts[cc], row = _cwCountryRow(cc);
   if(!f || !row) return [];
   const C = row[1], low = cc.toLowerCase();
-  return CW_MADE_MORE.filter(m => !m[0] || f[m[0]]).map(m => ({
+  const key = m => (m[0] && m[0].charAt(0) !== '@') ? m[0] : '';
+  return CW_MADE_MORE.filter(m => _cwRowFor(m, f, cc)).map(m => ({
     id: 'cc_' + low + '_' + m[1], made: true, country: cc, countryName: C,
     cat: m[2], icon: m[3], every: m[4] === 'monthly' ? 'weekly' : m[4], on: false, needs: 'Web research',
-    title: _cwFill(m[5], f, m[0], C), desc: _cwFill(m[6], f, m[0], C), where: m[0] ? String(f[m[0]]) : C,
-    asks: m[7] ? { q: _cwFill(m[7], f, m[0], C), ph: m[8] } : null,
-    prompt: _cwFill(m[9], f, m[0], C) + ' The user is in ' + C + '. Only real, current information with sources; never invent listings, prices or dates.',
+    title: _cwFill(m[5], f, key(m), C), desc: _cwFill(m[6], f, key(m), C), where: key(m) ? String(f[key(m)]) : C,
+    asks: m[7] ? { q: _cwFill(m[7], f, key(m), C), ph: m[8] } : null,
+    prompt: _cwFill(m[9], f, key(m), C) + ' The user is in ' + C + '. Only real, current information with sources; never invent listings, prices or dates.',
   }));
 }
+
+/* ── WHAT IS MOST USED WHERE YOU ARE: THE ORDER OF THE HUNDRED ──────────────
+
+   Asked for: "the top 5 most popular and the other 100 below it also have to
+   be the most popular" - for that country.
+
+   The hundred used to be the catalogue in CATEGORY order, cut at a hundred:
+   twenty work jobs, then sixty-four home jobs, and nothing else. Money, school,
+   health and family never reached the page in any country, and every country
+   got the same order. Now every candidate is scored for the country and the
+   hundred are the highest scores, a category never more than a quarter of
+   them.
+
+   The score is, in order of authority:
+   1. What people in this country actually switch on, once the server has
+      counted enough of them (meta.ranked) - the same counts that reorder the
+      top five. A real count always outranks research.
+   2. Research about the country, from published data, as boosts to the jobs
+      it makes matter more there. Each list is conservative - only countries
+      the source plainly names - and cites it:
+        REMIT  World Bank remittance inflows 2024: largest by volume (India,
+               Mexico, the Philippines, Pakistan, Egypt, Bangladesh, Nigeria,
+               Viet Nam) and by share of GDP (Nepal, Guatemala, ...).
+        MOMO   Global Findex 2025 / GSMA State of the Industry 2024: mobile
+               money used by most adults (Kenya 87%, Ghana 78%, Zambia,
+               Uganda, Senegal, Tanzania, Rwanda, ...; bKash in Bangladesh).
+        INFL   IMF World Economic Outlook 2025: the highest inflation
+               (Venezuela, Zimbabwe, Argentina, Türkiye, Egypt, Nigeria, ...).
+        RAIL   UIC: the most rail travel per person (Switzerland, Japan,
+               Austria, then France, Germany, the Netherlands, Denmark,
+               Sweden and Britain), plus the largest networks by passengers
+               (India, China) and the commuter networks of Korea and Taiwan.
+        CAR    Car-dependent countries with the most vehicles per person.
+        EXAM   A single national exam that decides university entry (gaokao,
+               suneung, JEE/NEET, YKS, WAEC/WASSCE, KCSE, ...).
+        GOLD   World Gold Council: the largest consumer gold demand.
+        HOUSE  OECD: the highest house-price-to-income ratios.
+        FARM   World Bank: a large share of employment in agriculture.
+   3. A base weight per job for how often anybody, anywhere, needs it - the
+      weekly shop and the tax deadline above a hobby club.
+   A job written by hand for the country (the five in its pack) starts high,
+   because somebody chose it for exactly that country. */
+const CW_POP_BASE = {
+  groc:9, offers:8, staples:7, rises:6, meals:6, swaps:5,
+  jobs:9, salary:7, hiring:6, interview:6, cv:5, freelance:5, internships:4, govjobs:4, jobfairs:3, workrules:4, industry:5,
+  shop:8, realdeal:7, cheaper:7, sales:6, returns:5, secondhand:5, phones:5,
+  tax:8, refund:7, deductions:6, selfemployed:4, localtax:4,
+  budget:7, save:6, savings:6, fees:5, cards:5, switch:4, mortgage:5, ccrates:4, market:4, crypto:3, gold:3, fx:4, rates:4,
+  pricerises:6, energy:5, consumer:4, discounts:4, localscams:6, scams:6, limits:4, remit:3, pension:4, benefits:6,
+  telco:6, phoneplan:6, broadband:5, roaming:3,
+  news:8, localnews:6, evening:5, weather:8, dailyweather:8, warnings:6, weekend:6, elections:4, newlaws:4, breaches:4, team:5, charity:2,
+  id:6, travel:5, visa:4, flights:6, hotels:5, getaway:4, flightshome:3,
+  car:6, fines:5, value:3, fuel:6, carinsurance:5, parking:4, traffic:6, commute:5, drivingtest:4,
+  rail:5, strikes:4, release:4, pass:3, bus:4, ride:4, transit:5,
+  prop:6, rents:6, drops:4, homeprices:5, rentrights:4, homeinsurance:4, moving:3,
+  health:6, clinics:5, pharmacy:4, waits:4, insurance:4, healthalerts:4, air:4, mind:4, gym:4, races:3,
+  exams:6, papers:5, results:4, uni:5, studydeadlines:4, grants:5, housing:3, abroad:4, training:5,
+  gov:6, appts:5, disruption:4, outages:5, recalls:4, holidays:7, events:6, calendar:4,
+  schoolterms:6, kids:5, schoolfees:5, childcare:4, checkups:5, parental:4, eldercare:3,
+  tenders:3, bizlicence:3, smbtax:3, bizgrants:3, rivals:3, reviews:3, firsthire:2,
+  food:6, deliveryfees:5, newplaces:4, restaurants:4, concerts:4, free:4, volunteer:2, hobby:3, wedding:2, pets:3,
+  post:3, delays:3, cookinggas:3, farm:2,
+  prayer:9, loadshedding:10, bundles:7, parallel:8, fuelweek:6,
+};
+const CW_POP_BOOST = [
+  ['REMIT', 'IN MX PH PK EG BD NG VN GT NP DO CO UA LK MA UZ LB JO SN AM GE KE GH', { remit:8, fx:3, limits:2 }],
+  ['MOMO',  'KE GH ZM UG SN TZ RW CI CM ZW BD', { limits:5, scams:4, remit:2 }],
+  ['INFL',  'VE ZW AR TR EG NG ET GH AO', { staples:4, rises:4, pricerises:4, fx:4, gold:2, budget:2 }],
+  ['RAIL',  'CH JP AT FR DE NL DK SE GB KR CN TW IN', { rail:4, strikes:3, release:3, pass:3, transit:3 }],
+  ['CAR',   'US CA AU NZ SA AE QA KW OM BH', { car:3, fuel:3, carinsurance:3, traffic:2, drivingtest:2, fines:2 }],
+  ['EXAM',  'CN KR IN JP VN TR EG NG GH KE PK BD ID', { exams:4, papers:4, results:3, uni:2, studydeadlines:2 }],
+  ['GOLD',  'IN CN TR AE SA EG PK VN', { gold:6 }],
+  ['HOUSE', 'GB US CA AU NZ IE NL ES PT DE SE', { prop:2, rents:3, homeprices:3, rentrights:2, mortgage:2 }],
+  ['FARM',  'ET TZ UG IN NP MM KH MZ RW BD PK', { farm:7 }],
+];
+/* The job's kind, without its country: cc_jp_tax -> tax, top_jp_inbox -> inbox. */
+function _cwKind(j){
+  const id = String((j && j.id) || '');
+  const m = /^(?:cc|top|ev)_[a-z]{2}_(.+)$/.exec(id);
+  return m ? m[1] : id;
+}
+function _cwPopScore(j, cc){
+  const kind = _cwKind(j);
+  let n;
+  if(String(j.id || '').indexOf('ev_' + String(cc).toLowerCase() + '_') === 0) n = 9;   // written by hand for this country
+  else if(Object.prototype.hasOwnProperty.call(CW_POP_BASE, kind)) n = CW_POP_BASE[kind];
+  else n = 3 + Math.min(4, (() => { try{ return _cwStrength(j); }catch(e){ return 0; } })());   // the jobs that are the same everywhere
+  CW_POP_BOOST.forEach(([, where, add]) => { if(where.split(' ').indexOf(cc) >= 0 && add[kind]) n += add[kind]; });
+  /* A count beats research: up to +16 for what people here switch on most,
+     weighted by its share of every start in the country - 30 of 40 is the
+     country speaking, one of 40 is a single person. */
+  try{
+    const m = _cwMeta[cc];
+    if(m && m.ranked && m.ranked.enough){
+      const c = +m.ranked.counts[j.id] || 0, total = Math.max(1, +m.ranked.total || 0);
+      if(c > 0) n += Math.min(16, 2 * Math.log2(1 + c) + 12 * Math.min(1, c / total));
+    }
+  }catch(e){}
+  /* Where a bank cannot be linked, a job that needs one cannot run at all. */
+  try{ if(/Bank connection/.test(String(j.needs || '')) && cc && !(Object.prototype.hasOwnProperty.call(_cwBank, cc) ? _cwBank[cc] : cc === 'US')) n -= 20; }catch(e){}
+  return n;
+}
+try{ window._cwPopScore = _cwPopScore; window.CW_POP_BOOST = CW_POP_BOOST; window._cwKind = _cwKind; }catch(e){}
 
 /* ── THE TOP FIVE, BUILT FROM WHAT PEOPLE THERE ACTUALLY CONNECT ─────────────
 
@@ -19269,7 +19414,18 @@ function _cwTopTen(cc){
   by.home = take('prop', 'Home') || take('health', 'Health');
   by.phone = take('telco', 'Phone');
   by.news = take('news', 'News');
-  const rows = CW_SECTION_ORDER.map(k => by[k]).filter(Boolean).slice(0, 10);
+  /* The inbox and the money come first everywhere - they are the two jobs
+     that work on what is yours. The rest follow the research for the country
+     (CW_POP_BOOST): the train where people live on trains, the weekly shop
+     where prices move fastest, the exam where one exam decides university. */
+  const SEC_BOOST = { travel:{ RAIL:5 }, groceries:{ INFL:4 }, school:{ EXAM:2 }, home:{ HOUSE:2 }, shopping:{}, government:{}, work:{}, calendar:{} };
+  const signals = CW_POP_BOOST.filter(([, where]) => where.split(' ').indexOf(cc) >= 0).map(b => b[0]);
+  const keys = CW_SECTION_ORDER.filter(k => by[k]);
+  const head = keys.filter(k => k === 'mail' || k === 'bank');
+  const rest = keys.filter(k => k !== 'mail' && k !== 'bank')
+    .map((k, i) => [k, (CW_SECTION_ORDER.length - CW_SECTION_ORDER.indexOf(k)) + signals.reduce((n, sig) => n + ((SEC_BOOST[k] || {})[sig] || 0), 0), i])
+    .sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).map(x => x[0]);
+  const rows = head.concat(rest).map(k => by[k]).slice(0, 10);
   /* ORDERED BY WHAT PEOPLE HERE SWITCH ON, once enough of them have. Until
      then the order is the research's, and the heading says which it is. A
      stable sort: rows nobody has started yet keep the research order among
@@ -19657,8 +19813,10 @@ function _cwShowcase(){
   const shown = new Set();
   try{ (_cwTopTen(cc) || []).forEach(j => shown.add(j.id)); }catch(e){}
   try{ (_cwMadeForJobs(cc) || []).forEach(j => shown.add(j.id)); }catch(e){}
+  /* The country's own, most used there first (_cwPopScore - counted where
+     there are counts, researched where there are not). */
   const local = (() => { try{ return (_cwMadeMore(cc) || []).filter(j => !shown.has(j.id)); }catch(e){ return []; } })()
-    .map((j, i) => [j, _cwStrength(j), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).map(x => x[0]);
+    .map((j, i) => [j, _cwPopScore(j, cc), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).map(x => x[0]);
   const cap = on.length + local.length + CW_SHOWCASE_N;
   const out = [];
   const seen = new Set();
@@ -20304,12 +20462,25 @@ const CW_COUNTRY_N = 100;
 let _cwCpCat = 'all';
 function _cwCountryHundred(cc){
   const ten = (() => { try{ return _cwTopTen(cc) || []; }catch(e){ return []; } })();
-  const seen = new Set(ten.slice(0, 5).map(j => j.id)), out = [];
-  const push = j => { if(j && j.id && !seen.has(j.id) && out.length < CW_COUNTRY_N){ seen.add(j.id); out.push(j); } };
-  ten.slice(5).forEach(push);
-  try{ (_cwLocalJobs(cc) || []).forEach(push); }catch(e){}
-  try{ (_cwMadeForJobs(cc) || []).forEach(push); }catch(e){}
-  try{ (_cwShowcase() || []).forEach(push); }catch(e){}
+  const seen = new Set(ten.slice(0, 5).map(j => j.id)), pool = [];
+  const add = j => { if(j && j.id && !seen.has(j.id)){ seen.add(j.id); pool.push(j); } };
+  ten.slice(5).forEach(add);
+  try{ (_cwLocalJobs(cc) || []).forEach(add); }catch(e){}
+  try{ (_cwMadeForJobs(cc) || []).forEach(add); }catch(e){}
+  try{ (_cwMadeMore(cc) || []).forEach(add); }catch(e){}
+  try{ (_cwJobs() || []).concat(_cwUniversalJobs() || []).forEach(add); }catch(e){}
+  /* Highest score first; a stable sort, so equal scores keep the order the
+     catalogue wrote them in. No category takes more than a quarter, so the
+     page is the country's life and not twenty kinds of grocery list. */
+  const ranked = pool.map((j, i) => [j, _cwPopScore(j, cc), i]).sort((a, b) => (b[1] - a[1]) || (a[2] - b[2])).map(x => x[0]);
+  const cap = Math.ceil(CW_COUNTRY_N / 4), per = {}, out = [], spill = [];
+  ranked.forEach(j => {
+    if(out.length >= CW_COUNTRY_N) return;
+    const c = j.cat || 'More';
+    if((per[c] || 0) >= cap){ spill.push(j); return; }
+    per[c] = (per[c] || 0) + 1; out.push(j);
+  });
+  for(let i = 0; out.length < CW_COUNTRY_N && i < spill.length; i++) out.push(spill[i]);
   return out;
 }
 function _cwCpListHTML(cc){
