@@ -9282,7 +9282,11 @@ function renderChatMsgs() {
          tell them (AMV-083). Usually renders nothing. */
       (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+
       '<div class="chome">'+
-        '<h1 class="chome-title"><span class="chome-greet">'+title+'</span></h1>'+
+        /* The sweep: an accent copy of the greeting, seen through a window
+           that crosses it left to right (see LAYER A277). A copy, hidden from
+           screen readers, so the greeting itself is untouched. */
+        '<h1 class="chome-title"><span class="chome-greet-w"><span class="chome-greet">'+title+'</span>'+
+          '<span class="chome-shine" aria-hidden="true"><span>'+title+'</span></span></span></h1>'+
       '</div>'+
       /* THE NEW CHAT IS A GREETING AND SOME SMALL CHIPS, AND NOTHING ELSE.
 
@@ -22946,7 +22950,10 @@ function _cwWireCmd(vc){
     var _ci=$('mc-cmd-input'); if(_ci){
       on(_ci,'keydown',function(e){ if(e.key==='Enter' && !e.shiftKey && !e.isComposing && e.keyCode!==229){ e.preventDefault(); _mcRun(); } });
       on(_ci,'input',function(){ _mcCmdFit(_ci); });
-      _mcCmdFit(_ci);
+      /* In the next frame, not now: measuring here forced the whole freshly
+         drawn Crew page to be laid out inside the click that opened it (130ms
+         at a phone's speed), and the frame then laid it out again. */
+      try{ requestAnimationFrame(function(){ _mcCmdFit(_ci); }); }catch(e){ _mcCmdFit(_ci); }
     }
     vc.querySelectorAll('[data-mccmd]').forEach(function(c){ on(c,'click',function(){ var el=$('mc-cmd-input'); if(el){ el.value=c.dataset.mccmd; _mcCmdFit(el); el.focus(); } }); });
   }catch(e){}

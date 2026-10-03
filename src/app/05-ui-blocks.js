@@ -2330,7 +2330,11 @@ function renderChatMsgs() {
          tell them (AMV-083). Usually renders nothing. */
       (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+
       '<div class="chome">'+
-        '<h1 class="chome-title"><span class="chome-greet">'+title+'</span></h1>'+
+        /* The sweep: an accent copy of the greeting, seen through a window
+           that crosses it left to right (see LAYER A277). A copy, hidden from
+           screen readers, so the greeting itself is untouched. */
+        '<h1 class="chome-title"><span class="chome-greet-w"><span class="chome-greet">'+title+'</span>'+
+          '<span class="chome-shine" aria-hidden="true"><span>'+title+'</span></span></span></h1>'+
       '</div>'+
       /* THE NEW CHAT IS A GREETING AND SOME SMALL CHIPS, AND NOTHING ELSE.
 

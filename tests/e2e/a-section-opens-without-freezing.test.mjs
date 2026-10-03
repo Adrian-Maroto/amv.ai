@@ -157,7 +157,34 @@ section('No screen keeps the page repainting on its own');
     return { found: !!el, names };
   });
   ok(g.found, 'the chat greeting is on screen to be checked');
-  ok(g.found && !g.names.includes('amvSweep'), 'and it rises without the repainting sweep', g.names);
+  ok(g.found && !g.names.includes('amvSweep'), 'and it has no repainting sweep', g.names);
+
+  /* THE SWEEP IS BACK, ON THE GPU (A277). Asked for: "I still want the text
+     moving from left to right when AMV loads, I just don't want it to lag".
+     So: it exists, it moves by transform and nothing else, and the accent copy
+     sits exactly on the real letters at every point of it - a copy that drifts
+     even a few pixels reads as a blurred, doubled greeting. */
+  const sw = await page.evaluate(async () => {
+    const shine = document.querySelector('#cv.cv-home .chome-shine');
+    if (!shine) return { found: false };
+    const anims = document.getAnimations().filter(a => /amvShine/.test(a.animationName || ''));
+    const props = [...new Set(anims.flatMap(a => a.effect.getKeyframes().flatMap(k => Object.keys(k))))]
+      .filter(k => !['offset', 'easing', 'composite', 'computedOffset'].includes(k));
+    const drift = [];
+    for (const t of [400, 900, 1400]) {
+      anims.forEach(a => { a.pause(); a.currentTime = t; });
+      await new Promise(r => requestAnimationFrame(r));
+      const g = document.querySelector('#cv.cv-home .chome-greet').getBoundingClientRect();
+      const c = shine.firstElementChild.getBoundingClientRect();
+      drift.push(Math.abs(g.left - c.left));
+    }
+    anims.forEach(a => a.finish());
+    return { found: true, n: anims.length, props, drift, hidden: shine.getAttribute('aria-hidden') };
+  });
+  ok(sw.found && sw.n === 2, 'the greeting sweeps left to right again - a window and the accent copy in it', sw);
+  ok(sw.found && sw.props.length === 1 && sw.props[0] === 'transform', 'and it moves by transform alone, which the GPU does', sw.props);
+  ok(sw.found && sw.drift.every(d => d < 1.5), 'with the copy on top of the real letters the whole way across', sw.drift);
+  ok(sw.found && sw.hidden === 'true', 'and a screen reader hears the greeting once', sw.hidden);
 }
 
 section('Nothing threw');

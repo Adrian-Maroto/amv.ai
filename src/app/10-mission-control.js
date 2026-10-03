@@ -5696,7 +5696,10 @@ function _cwWireCmd(vc){
     var _ci=$('mc-cmd-input'); if(_ci){
       on(_ci,'keydown',function(e){ if(e.key==='Enter' && !e.shiftKey && !e.isComposing && e.keyCode!==229){ e.preventDefault(); _mcRun(); } });
       on(_ci,'input',function(){ _mcCmdFit(_ci); });
-      _mcCmdFit(_ci);
+      /* In the next frame, not now: measuring here forced the whole freshly
+         drawn Crew page to be laid out inside the click that opened it (130ms
+         at a phone's speed), and the frame then laid it out again. */
+      try{ requestAnimationFrame(function(){ _mcCmdFit(_ci); }); }catch(e){ _mcCmdFit(_ci); }
     }
     vc.querySelectorAll('[data-mccmd]').forEach(function(c){ on(c,'click',function(){ var el=$('mc-cmd-input'); if(el){ el.value=c.dataset.mccmd; _mcCmdFit(el); el.focus(); } }); });
   }catch(e){}

@@ -16375,3 +16375,45 @@ textarea.mc-cmd-input{
 #vc .uni-tried-row{ font-size:var(--t-sm); color:var(--mu); line-height:1.45; padding-left:var(--sp-3); border-left:2px solid var(--bd); }
 #vc .uni-gaveup{ margin-top:var(--sp-3); font-size:var(--t-base); color:var(--tx); font-weight:600; }
 @media (max-width:560px){ #vc .uni-alts{ grid-template-columns:1fr; } #vc .uni-alt-go{ align-self:stretch; } }
+
+/* ════════════════════════════════════════════════════════════════════════
+   LAYER A277 - The greeting's accent sweep, back, on the GPU
+   ════════════════════════════════════════════════════════════════════════
+   Asked for: "when you load AMV I still want the text moving from left to
+   right - I just don't want it to lag."
+
+   The sweep was taken out (A261) because of HOW it moved: background-position
+   under background-clip:text, which the browser repaints on the main thread
+   every frame - twenty restyles a second during boot. Same look, other
+   mechanism: a narrow window (.chome-shine) crosses the greeting left to right
+   while the accent copy inside it moves right to left by exactly as much, so
+   the copy stays on top of the real letters. Both move by transform only, which
+   the GPU does without the page; same duration and easing, so they cannot
+   drift apart. Nothing moves the text itself (A273's "no movement on load"
+   still holds) and nothing changes size, so nothing shifts.
+
+   The window is 40% of the greeting: it travels from -100% to +250% of its own
+   width, and the copy - 250% of the window, i.e. the greeting's width - from
+   +40% to -100% of its own, so their sum is zero at every frame. */
+#cv.cv-home .chome-greet-w{ position:relative; display:inline-block; }
+#cv.cv-home .chome-shine{
+  position:absolute; top:0; bottom:0; left:0; width:40%;
+  overflow:hidden; pointer-events:none;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0%,#000 38%,#000 62%,transparent 100%);
+          mask-image:linear-gradient(90deg,transparent 0%,#000 38%,#000 62%,transparent 100%);
+  transform:translateX(250%); will-change:transform;
+  animation:amvShineBand 1.9s cubic-bezier(.45,.05,.3,1) .35s both;
+}
+#cv.cv-home .chome-shine > span{
+  /* 250% of the window is the greeting's width; the extra pixel is rounding -
+     at exactly 250% the copy measured a third of a pixel narrower than the
+     greeting and wrapped its last word onto a second line. */
+  position:absolute; top:0; left:0; width:calc(250% + 1px);
+  color:var(--accent); -webkit-text-fill-color:var(--accent); text-align:inherit;
+  transform:translateX(-100%); will-change:transform;
+  animation:amvShineText 1.9s cubic-bezier(.45,.05,.3,1) .35s both;
+}
+@keyframes amvShineBand{ from{ transform:translateX(-100%); } to{ transform:translateX(250%); } }
+@keyframes amvShineText{ from{ transform:translateX(40%); } to{ transform:translateX(-100%); } }
+html.reduce-motion #cv.cv-home .chome-shine{ display:none; }
+@media (prefers-reduced-motion:reduce){ #cv.cv-home .chome-shine{ display:none; } }
