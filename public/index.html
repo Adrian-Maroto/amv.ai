@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="17fff07e26eefb50">
+<meta name="amv-build" content="14ac22fe64372821">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://api.amv.homes"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -9768,6 +9768,15 @@ animation:amvShineText 1.9s cubic-bezier(.45,.05,.3,1) .35s both;
 @keyframes amvShineText{ from{ transform:translateX(40%); } to{ transform:translateX(-100%); } }
 html.reduce-motion #cv.cv-home .chome-shine{ display:none; }
 @media (prefers-reduced-motion:reduce){ #cv.cv-home .chome-shine{ display:none; } }
+.set-search-wrap input.set-search{
+background:none!important; border:0!important; box-shadow:none!important;
+border-radius:0!important; padding:0!important; min-height:0;
+}
+.bill-cc-no{ background:var(--s1); }
+.bill-cc-no{ background:color-mix(in srgb, var(--accent) 7%, var(--s1)); border-color:color-mix(in srgb, var(--accent) 30%, var(--bd)); }
+@media(max-width:600px){ #cv #mta:placeholder-shown, #cv.cv-home #mta:placeholder-shown{ min-height:calc(3.2em + 22px); } }
+@media(max-width:700px){ .settings-nav{ padding-right:62px!important; } }
+@media(max-width:430px){ #anav:has(#nav-back:not([hidden])):has(.hdr-signup:not([hidden])) .logo-wm{ display:none; } }
 </style>
 <!-- BUILD:CSS:END -->
 <script>

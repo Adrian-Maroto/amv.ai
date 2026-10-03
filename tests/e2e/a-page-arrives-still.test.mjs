@@ -47,6 +47,12 @@ await ctx.addInitScript(() => {
         const t = a.effect && a.effect.target, timing = a.effect && a.effect.getTiming();
         if (!t || !timing || timing.iterations === Infinity) continue;          // loops: spinners, dots
         if (t.closest && t.closest('.ov, .toast, [role="dialog"]')) continue;   // opened by a press, not a load
+        /* The greeting's sweep, asked for back ("the text moving left to
+           right, just without the lag"): an accent copy, hidden from screen
+           readers, passing over the greeting. The letters themselves do not
+           move - which is checked below, on the greeting itself - so it is
+           not an entrance and is excused by exactly its own name and place. */
+        if (/^amvShine(Band|Text)$/.test(a.animationName || '') && t.closest && t.closest('.chome-shine[aria-hidden="true"]')) continue;
         const moves = (a.effect.getKeyframes() || []).some(k => (k.transform && k.transform !== 'none') || (k.filter && k.filter !== 'none'));
         if (moves) window.__moving.push((a.animationName || 'anim') + ' on ' + (t.id ? '#' + t.id : (typeof t.className === 'string' ? '.' + t.className.split(' ')[0] : t.nodeName)));
       }
@@ -76,6 +82,10 @@ for (const [addr, want] of [['/', 'chat'], ['/#/crew', 'crew'], ['/#/settings', 
   ok(r.tab === want, 'it opens ' + want, r.tab);
   ok(r.first === want, 'and ' + want + ' is the first screen drawn, not chat for a few frames first', r.first);
   ok(r.moving.length === 0, 'nothing slides, rises or fades in', r.moving);
+  if (want === 'chat') {
+    const g = await page.evaluate(() => { const el = document.querySelector('.chome-greet'); return el ? el.getAnimations().map(a => a.animationName) : null; });
+    ok(Array.isArray(g) && g.length === 0, 'and the greeting’s own letters do not move - only the sweep passes over them', g);
+  }
   ok(r.cls < 0.001, 'nothing on the page moves after it is drawn', { cls: +r.cls.toFixed(4), shifts: r.shifts });
   ok(!r.back && r.stack === 0, 'and there is no back arrow to a screen that was never shown', r);
 }

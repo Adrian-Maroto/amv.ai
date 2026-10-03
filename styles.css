@@ -16417,3 +16417,35 @@ textarea.mc-cmd-input{
 @keyframes amvShineText{ from{ transform:translateX(40%); } to{ transform:translateX(-100%); } }
 html.reduce-motion #cv.cv-home .chome-shine{ display:none; }
 @media (prefers-reduced-motion:reduce){ #cv.cv-home .chome-shine{ display:none; } }
+
+/* ════════════════════════════════════════════════════════════════════════
+   LAYER A278 - Visual pass: the things that looked boxed-in or off-colour
+   ════════════════════════════════════════════════════════════════════════ */
+/* Settings search: an input drawn as a field inside a box that is already the
+   field - a box in a box. `input[type=search]` from the form base outranks
+   `.set-search`, so the inner input painted its own fill, border and radius.
+   The wrapper is the field; the input is transparent inside it. */
+.set-search-wrap input.set-search{
+  background:none!important; border:0!important; box-shadow:none!important;
+  border-radius:0!important; padding:0!important; min-height:0;
+}
+/* Billing: what the next plan adds sat on a 14% accent wash, which in the
+   light theme read as a grey-blue slab beside a white card. A light tint of
+   the accent over the card colour, and an accent hairline, says the same
+   thing without the slab. (The first declaration is for browsers without
+   color-mix.) */
+.bill-cc-no{ background:var(--s1); }
+.bill-cc-no{ background:color-mix(in srgb, var(--accent) 7%, var(--s1)); border-color:color-mix(in srgb, var(--accent) 30%, var(--bd)); }
+/* Chat on a phone: the box's example wraps to two lines and the box was one
+   line tall, so the second line was cut in half. While it is empty it is two
+   lines tall; typing hands the height back to the autosize, so nothing moves
+   for anybody who has started. CSS rather than script, so every path that
+   empties the box (send, new chat, a restored draft cleared) gets it. */
+@media(max-width:600px){ #cv #mta:placeholder-shown, #cv.cv-home #mta:placeholder-shown{ min-height:calc(3.2em + 22px); } }
+/* Settings on a phone: the section picker ran 2px under the Close button,
+   which is 44px wide here, not the 40px the padding was cut for. */
+@media(max-width:700px){ .settings-nav{ padding-right:62px!important; } }
+/* The phone header with a Back arrow had more than fits: the AMV.AI wordmark
+   ran under Sign up and New chat under the theme switch. When the arrow is
+   showing on a narrow screen, the mark alone stands for the name. */
+@media(max-width:430px){ #anav:has(#nav-back:not([hidden])):has(.hdr-signup:not([hidden])) .logo-wm{ display:none; } }
