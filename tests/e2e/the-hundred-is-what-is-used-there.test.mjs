@@ -130,6 +130,32 @@ section('Every research list names countries AMV covers, and says what the sourc
   ok(r.ptHouse && !r.gbHouse && r.mzFarm && !r.bdFarm, 'housing (OECD index) and farming (ILO, 40%) by their stated thresholds', r);
 }
 
+section('No country is described by a name that has been retired');
+{
+  /* Each of these was in the facts, and each stopped being true: the name a
+     job shows is the one a person searches for in their inbox, so a retired
+     one finds nothing. [country, field, what was retired, what replaced it]. */
+  const RETIRED = [
+    ['NG', 'tax', /^the FIRS/, 'the Nigeria Revenue Service, from 1 January 2026'],
+    ['BH', 'banks', /Ahli United/, 'Kuwait Finance House - Bahrain'],
+    ['DK', 'telco', /Telia/, 'Norlys, which bought Telia Denmark in 2024'],
+    ['GH', 'food', /Glovo/, 'Glovo left Ghana'],
+    ['BG', 'food', /foodpanda/, 'Glovo since 2021'],
+    ['BG', 'cur', /BGN/, 'the euro, from 1 January 2026'],
+    ['AR', 'tax', /^AFIP/, 'ARCA'],
+  ];
+  const r = await page.evaluate(async (rows) => {
+    const out = [];
+    for (const [cc, k, src] of rows) { await _cwLoadLocal(cc); out.push([cc, k, String((_cwFacts[cc] || {})[k] || '')]); }
+    const titles = {}; for (const cc of ['AR', 'ZA', 'GH']) titles[cc] = (_cwLocalJobs(cc) || []).map(j => j.title);
+    return { facts: out, titles };
+  }, RETIRED.map(r => [r[0], r[1], r[2].source]));
+  const stale = r.facts.filter(([cc, k, v], i) => !v || RETIRED[i][2].test(v)).map(([cc, k, v], i) => cc + '.' + k + '=' + v);
+  ok(stale.length === 0, 'none of the retired names is back, and none of the fields is empty', stale);
+  ok(r.titles.AR.some(t => /ARCA/.test(t)) && !r.titles.AR.some(t => /^AFIP/.test(t)), 'Argentina’s tax job is titled for ARCA', r.titles.AR);
+  ok(r.titles.GH.some(t => /E-Levy/.test(t)), 'Ghana’s mobile money job looks for the E-Levy taken after its repeal (Act 1128, 2 April 2025)', r.titles.GH);
+}
+
 section('Nothing on a country\u2019s page is called something it could be called anywhere');
 {
   /* Asked for: "nothing is generic". Measured before: 65 of every 105 titles

@@ -14069,3 +14069,19 @@ Rules:
   it is out of date. Spend the slot on what people there do now.
 - A suite pins the corrections (no Gulf in CAR, no Lebanon in PARALLEL) and
   that every listed code exists - a typo boosts nobody, silently.
+
+## 543. The name a job shows is the one a person searches their inbox for
+The facts behind every country's titles were researched, and a year of
+mergers and laws had still moved under them: FIRS became the Nigeria Revenue
+Service on 1 January 2026, Ahli United Bank became KFH Bahrain, Telia Denmark
+became Norlys, Glovo left Ghana, Bulgaria's foodpanda has been Glovo since
+2021, and Ghana's mobile money job still treated the E-Levy as current after
+Act 1128 abolished it on 2 April 2025.
+
+Rules:
+- A retired name is not "close enough": the job searches mail for it and finds
+  nothing, which reads as "nothing to report".
+- When a law changes, the job can usually do something better than drop it:
+  Ghana's now lists E-Levy taken after the repeal, which providers must refund.
+- Every retired name goes in the suite with what replaced it, so it cannot
+  come back with a copy-paste.
