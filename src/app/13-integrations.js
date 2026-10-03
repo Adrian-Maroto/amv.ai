@@ -2249,7 +2249,9 @@ async function openMailConnect(preset){
     const list=byCountry[c];
     const label=c==='zz'?'Anywhere else':(list[0].flag+' '+c);
     return '<optgroup label="'+escH(label)+'">'+
-      list.map(p=>'<option value="'+escH(p.id)+'">'+escH(p.flag+' '+p.name)+'</option>').join('')+
+      /* A paused provider is shown, not hidden - somebody looking for it should
+         find it and read why - but it cannot be chosen. */
+      list.map(p=>'<option value="'+escH(p.id)+'"'+(p.paused?' disabled':'')+'>'+escH(p.flag+' '+p.name+(p.paused?' - paused, see below':''))+'</option>').join('')+
     '</optgroup>';
   }).join('');
 
@@ -2258,6 +2260,7 @@ async function openMailConnect(preset){
       '<button class="tp-x" id="ml-x" aria-label="Close">✕</button></div>'+
     '<p class="mu ml-intro">AMV works with '+(+cat.countries||20)+'+ countries’ mail providers over IMAP, the open standard they all support. Your password is encrypted on AMV’s server and is never sent back to this browser.</p>'+
     '<label class="ml-f"><span>Provider</span><select id="ml-prov">'+opts+'</select></label>'+
+    cat.providers.filter(p=>p.paused).map(p=>'<p class="mu ml-paused"><b>'+escH(p.name)+' is paused.</b> '+escH(p.paused)+'</p>').join('')+
     '<div id="ml-custom" style="display:none">'+
       '<label class="ml-f"><span>IMAP server</span><input id="ml-imap" placeholder="imap.example.com" autocomplete="off"></label>'+
       '<label class="ml-f"><span>SMTP server</span><input id="ml-smtp" placeholder="smtp.example.com" autocomplete="off"></label>'+

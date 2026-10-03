@@ -28670,9 +28670,18 @@ const MAIL_PROVIDERS = {
      at 7am in the middle of a scheduled run. They are consumer ISPs, which
      is to say they are what a large number of ordinary people in Canada,
      Australia and the United States actually have. */
+  /* PAUSED, NOT REMOVED. From 29 Sep 2026 the daily connector check
+     (tools/connector-health.mjs) found imap.shaw.ca presenting a certificate
+     that does not verify (UNABLE_TO_VERIFY_LEAF_SIGNATURE) on three days of
+     four - Rogers is folding Shaw mail into its own systems. Turning the check
+     off would hand a Shaw customer's password to anyone in the middle, so
+     connecting is refused with the reason instead. The daily check keeps
+     testing it and prints RESUME when the certificate verifies again; then
+     this line comes out. */
   shaw:     { name: 'Shaw / Rogers', country: 'CA', flag: '🇨🇦',
               imap: 'imap.shaw.ca', smtp: 'smtp.shaw.ca', smtpPort: 587, smtpMode: 'starttls',
-              setup: 'Use your Shaw email address and password.' },
+              setup: 'Use your Shaw email address and password.',
+              paused: { since: '2026-09-29', why: 'Shaw’s mail server is presenting a security certificate that does not verify, so AMV will not send your password to it. AMV checks it every day and turns it back on when it verifies again. Meanwhile, you can sign in to Shaw webmail on your own computer from the Connect card.' } },
   telus:    { name: 'TELUS', country: 'CA', flag: '🇨🇦',
               imap: 'imap.telus.net', smtp: 'smtp.telus.net', smtpPort: 587, smtpMode: 'starttls',
               setup: 'Use your TELUS email address and password.' },
@@ -29259,7 +29268,7 @@ async function mailProviders(request, env) {
   if (!user) return json({ error: 'unauthorized' }, 401);
   const list = Object.entries(MAIL_PROVIDERS).map(([id, p]) => ({
     id, name: p.name, country: p.country, flag: p.flag, custom: !!p.custom, setup: p.setup,
-    imap: p.imap, smtp: p.smtp,
+    imap: p.imap, smtp: p.smtp, paused: p.paused ? String(p.paused.why || 'paused') : '',
     smtpPort: p.smtpPort || MAIL_SMTP_PORT, smtpMode: p.smtpMode || 'tls',
   }));
   const countries = new Set(list.map((p) => p.country).filter(Boolean));
@@ -29298,6 +29307,9 @@ async function mailConnect(request, env) {
   const provider = String(body.provider || '');
   const p = MAIL_PROVIDERS[provider];
   if (!p) return json({ error: 'Pick a mail provider from the list.', code: 'bad_provider' }, 400);
+  /* Refused before a password is read: the server it would go to is the
+     problem (see `paused` on the provider). */
+  if (p.paused) return json({ error: String(p.paused.why || 'This provider is paused.'), code: 'provider_paused' }, 409);
 
   const address = String(body.address || '').trim().slice(0, 200);
   const password = String(body.password || '');

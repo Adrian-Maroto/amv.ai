@@ -270,6 +270,26 @@ section('Connecting is refused before it can store a password unsafely');
   /* A custom server is somebody typing a hostname, which is the shape of an
      SSRF. It goes through the same gate the web agent uses. */
   const envKey = mkEnv({ MAIL_CRED_KEY: 'a-long-enough-key-for-tests-0123456789' });
+
+  /* A PAUSED PROVIDER IS REFUSED WITH ITS REASON, before a password is read.
+     Shaw's IMAP server presented a certificate that did not verify on three
+     days of four (the daily connector check, from 29 Sep 2026). Connecting to
+     it anyway would mean sending somebody's password to a server AMV cannot
+     verify is Shaw's. */
+  {
+    /* Its own account, so these attempts do not spend the rate limit the
+       connection tests below rely on. */
+    store.set('acct:paused@test.com', JSON.stringify({ email: 'paused@test.com', name: 'P' }));
+    const tok2 = (await W.issueTokens(envKey, 'paused@test.com', 'P')).token;
+    const paused = await post(envKey, W.mailConnect, { provider: 'shaw', address: 'a@shaw.ca', password: 'secret' }, tok2);
+    ok(paused.status === 409 && paused.body.code === 'provider_paused' && /certificate/.test(paused.body.error),
+       'connecting to a paused provider is refused, and says it is the certificate', paused.body);
+    ok(!JSON.stringify(paused.body).includes('secret'), 'without echoing the password', true);
+    const list = await (await W.mailProviders(new Request('https://api/v1/mail/providers', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok2 } }), envKey)).json();
+    const shaw = (list.providers || []).find(p => p.id === 'shaw'), qq = (list.providers || []).find(p => p.id === 'qq');
+    ok(shaw && /certificate/.test(shaw.paused) && qq && qq.paused === '', 'the list still shows it, saying why, and nothing else is paused', shaw && shaw.paused);
+  }
   for (const host of ['localhost', '127.0.0.1', '169.254.169.254', '10.0.0.5']) {
     const r = await post(envKey, W.mailConnect,
       { provider: 'custom', address: 'a@b.com', password: 'p', imap: host, smtp: host }, tok);

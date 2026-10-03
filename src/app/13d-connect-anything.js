@@ -65,7 +65,9 @@ async function _cxMailMatch(q){
   let list = [];
   try{ const d = await AMV_API.mailProviders(); list = (d && d.providers) || []; }catch(e){ return null; }
   for(const p of list){
-    if(!p || p.custom) continue;
+    /* A paused provider is not offered as a mailbox to connect; the card falls
+       through to signing in to it on the person's own computer. */
+    if(!p || p.custom || p.paused) continue;
     /* "QQ Mail (QQ邮箱)" is matched on the part before the bracket too. */
     const names = [p.name, String(p.name || '').replace(/\s*\(.*\)\s*$/, ''), p.id];
     if(names.some(nm => { const m = _cxNorm(nm); return m && (m === n || (m.length >= 4 && n.length >= 4 && (m.indexOf(n) === 0 || n.indexOf(m) === 0))); }))

@@ -101,6 +101,44 @@ ok(rank('ET', 'farm') >= 0 && rank('ET', 'farm') < 25, 'Ethiopia: crop and lives
   ok(rank('US', 'remit') < 0 || rank('US', 'remit') > 60, 'where sending money abroad is not near the top', rank('US', 'remit'));
 }
 
+section('Nothing on a country\u2019s page is called something it could be called anywhere');
+{
+  /* Asked for: "nothing is generic". Measured before: 65 of every 105 titles
+     on a country's page named nothing of the country. A title counts as local
+     when it names the country, its currency, one of its mailboxes, or any of
+     its facts (its tax office, networks, weather service...). */
+  const r = await page.evaluate(() => {
+    const per = {};
+    for (const cc of CW_WORLD_COUNTRIES.map(c => c[0])) {
+      const f = _cwFacts[cc] || {}, C = _cwCountryRow(cc)[1];
+      const names = [C, f.cur].concat((_cwInbox[cc] || []).map(b => b.name), ['Google Calendar', 'Outlook Calendar', 'Google Classroom'])
+        .concat(Object.values(f).flatMap(v => String(v).split(/[(),·/]| and /).map(x => x.trim()).filter(x => x.length > 2))).filter(Boolean);
+      const L = _cwTopTen(cc).slice(0, 5).concat(_cwCountryHundred(cc));
+      /* The pack written by hand for a country is in its own words - often its
+         own script - so it is local by construction. */
+      per[cc] = L.filter(j => !/^ev_(?!ev_)/.test(j.id) && !names.some(n => (j.title || '').includes(n))).map(j => j.title);
+    }
+    const n = Object.values(per).map(x => x.length);
+    const one = (cc, kind) => (_cwMadeMore(cc).concat(_cwTopTen(cc)).find(j => _cwKind(j) === kind) || {}).title || '';
+    return { avg: n.reduce((a, b) => a + b, 0) / n.length, max: Math.max(...n), worst: Object.entries(per).sort((a, b) => b[1].length - a[1].length)[0],
+             jpWeather: one('JP', 'dailyweather'), usPhone: one('US', 'phoneplan'), krJobs: (_cwCountryHundred('KR').find(j => j.id === 'job_hunt') || {}).title || '',
+             cnInbox: (_cwCountryHundred('CN').find(j => j.id === 'inbox_digest') || {}).title || '' };
+  });
+  ok(r.avg < 8 && r.max <= 12, 'at most a handful of 105 per country name nothing local - ' + r.avg.toFixed(1) + ' on average, ' + r.max + ' at most', r.worst);
+  ok(/Japan Meteorological Agency/.test(r.jpWeather), 'Japan\u2019s weather comes from its weather service', r.jpWeather);
+  ok(/Verizon/.test(r.usPhone), 'the United States\u2019 phone plan names its networks', r.usPhone);
+  ok(r.krJobs === '' || /Saramin|JobKorea|Wanted|LinkedIn/.test(r.krJobs), 'Korea\u2019s job hunt names its job sites', r.krJobs);
+  ok(r.cnInbox === '' || /QQ/.test(r.cnInbox), 'and China\u2019s inbox digest names the inbox people there use', r.cnInbox);
+}
+
+section('The base order is published data, not a guess');
+{
+  const r = await page.evaluate(() => ({ g: CW_GWI, groc: CW_POP_BASE.groc, tax: CW_POP_BASE.tax, news: CW_POP_BASE.news, health: CW_POP_BASE.health, exams: CW_POP_BASE.exams }));
+  ok(r.g.info === 60.1 && r.g.news === 51.4 && r.g.products === 43.2 && r.g.travel === 36.9 && r.g.education === 35.8 && r.g.finance === 34.5 && r.g.health === 34.2,
+     'GWI Q4 2025: why people go online - information, news, products, travel, education, finances, health', r.g);
+  ok(r.tax > r.news && r.news > r.groc && r.groc > r.exams && r.exams > r.health, 'and each job weighs the share of the reason it serves', r);
+}
+
 section('A count of what people start beats the research');
 {
   /* Seeded the way the server writes it. Kenya, 40 starts - past the floor -

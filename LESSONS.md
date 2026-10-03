@@ -14009,3 +14009,25 @@ Rules:
   still runs. It never says "cancelled".
 - Every door that creates a recurring job registers it on the server when one
   is connected; device-only is the fallback, and it says so.
+
+## 540. A list cut at N is not a ranking, and a title is a claim of specificity
+Each country's "100 most used" page was the catalogue in category order, cut at
+100: twenty work jobs and sixty-four home jobs in every country, the same order
+everywhere, and no money, school or health job at all. Sixty-five of every 105
+titles named nothing of the country. A Crew template promised to "prepare a
+$1 XRP order on Robinhood for one-tap approval" - there is no Robinhood
+connector, and a buy/hold view is the advice every money job refuses to give.
+
+Rules:
+- "Top N" means scored, sorted and then cut. A list cut before it is sorted is
+  whatever order it was written in.
+- Every weight names its source (GWI reasons for going online, World Bank,
+  GSMA, IMF, UIC, Pew), or says plainly that it is unmeasured and takes the
+  floor. A real count of what people start outranks all of it.
+- A title on a country's page names that country's institution, network,
+  currency or mailbox, from the country's facts; the fallback names the
+  country, never a blank.
+- A template is a promise. If no connector does it, it is rewritten to what
+  AMV does, or it goes.
+- A provider whose server cannot be verified is paused with the reason, not
+  connected around: refusing is the only safe way to keep a password.

@@ -1647,6 +1647,10 @@ function _cwShort(v){
   const m = /\(([^)]+)\)/.exec(String(v || ''));
   return m ? m[1] : String(v || '').replace(/^the\s+/i, '');
 }
+/* A fact's first name with any bracket dropped: "the State Department
+   (passports) and your state DMV" -> "the State Department". */
+function _cwPlainAll(v){ return String(v || '').replace(/\s*\([^)]*\)/g, '').trim(); }
+function _cwPlain(v){ return _cwNames(_cwPlainAll(v), 1); }
 const CW_MADE_FOR = [
   { k:'jobs', id:'jobs', icon:'💼', cat:'Work & career', every:'daily',
     t:f => 'Job hunt on ' + _cwNames(f.jobs, 2),
@@ -1669,12 +1673,12 @@ const CW_MADE_FOR = [
     ask:['What is your tax situation?', 'e.g. "employee, plus a flat I rent out" or "self-employed designer"'],
     p:(f, C) => 'From the official pages of ' + f.tax + ', list the tax deadlines and filings in ' + C + ' that apply to the user’s situation in the next 90 days: the date, the form by its real name, and what it needs from them. Flag anything that changed this year. Link each official page. Information, not tax advice - say when they need a professional.' },
   { k:'id', id:'id', icon:'🪪', cat:'Home & life', every:'weekly',
-    t:f => 'Passport and ID renewals',
+    t:f => 'Passport and ID renewals with ' + _cwPlain(f.id),
     d:(f, C) => 'Knows when your documents run out and what ' + f.id + ' needs to renew them - fees, photos, the booking step - before the queue gets long.',
     ask:['Which documents, and when do they expire?', 'e.g. "passport June 2027, ID card March 2026"'],
     p:(f, C) => 'For the documents the user listed, work out how far ahead each must be renewed in ' + C + ' through ' + f.id + ': current fees, required photos and papers, how appointments are booked and current waiting times. Say which is urgent. Use only official sources and link them. Never book anything.' },
   { k:'car', id:'car', icon:'🚗', cat:'Home & life', every:'weekly',
-    t:f => 'Car inspection, tax and insurance dates',
+    t:f => 'Car inspection, tax and insurance: ' + _cwNames(_cwPlainAll(f.car), 2),
     d:(f, C) => 'Keeps the dates for ' + f.car + ' in view, with what to do and where, before anything lapses.',
     ask:['Which car, and what dates do you know?', 'e.g. "2016 Seat Ibiza, inspection due in May, insurance renews 1 Sept"'],
     p:(f, C) => 'For the user’s car in ' + C + ', track what is due with ' + f.car + ': the next date for each, what it costs, how to book or pay, and the penalty for missing it. Flag anything in the next 30 days first. Official sources only, linked. Never pay or book on their behalf.' },
@@ -1704,7 +1708,7 @@ const CW_MADE_FOR = [
     ask:['Where are your savings now, and at what rate?', 'e.g. "Santander savings account at 1.5%"'],
     p:(f, C) => 'Compare the user’s current savings rate with the savings and fixed-deposit rates on offer now from ' + f.banks + ' and reputable online banks in ' + C + ', including the deposit guarantee scheme that covers each. Give rates, conditions and links. Information, not financial advice - never tell them to move money.' },
   { k:'health', id:'health', icon:'🩺', cat:'Home & life', every:'weekly',
-    t:f => 'Check-ups and prescriptions',
+    t:f => 'Check-ups and prescriptions through ' + _cwPlain(f.health),
     d:(f, C) => 'What is due - a check-up, a repeat prescription, a screening - and how to get it through ' + f.health + '.',
     ask:['What should it keep track of?', 'e.g. "repeat inhaler prescription, yearly dental check-up, a smear test"'],
     p:(f, C) => 'For the items the user listed, explain how each is obtained or booked through ' + f.health + ' in ' + C + ', typical waiting times, and anything that must be done ahead. Remind them what is coming due. Official sources only, linked. Not medical advice; never book.' },
@@ -1729,7 +1733,7 @@ const CW_MADE_FOR = [
     ask:['Which town or area?', 'e.g. "Seville"'],
     p:(f, C) => 'Check the official warnings from ' + f.weather + ' for the user’s area in ' + C + '. If there is a warning, give its level, timing and the practical advice. If there is none, say so in one line.' },
   { k:'gov', id:'gov', icon:'🏛️', cat:'Home & life', every:'weekly',
-    t:f => 'Government letters and deadlines',
+    t:f => 'Government letters and deadlines (' + _cwPlain(f.gov) + ')',
     d:(f, C) => 'What the authorities in ' + C + ' need from you and by when, explained - using ' + f.gov + ' when you do it yourself. AMV never signs in for you.',
     ask:['What do you deal with?', 'e.g. "renewing my residence permit, a parking fine, child benefit"'],
     p:(f, C) => 'For the matters the user described, explain what the authorities in ' + C + ' need from them, the deadlines, fees and forms, and how it is done online with ' + f.gov + '. Official sources only, linked. Never sign in, pay or submit anything.' },
@@ -1909,7 +1913,91 @@ const CW_MADE_MORE = [
 function _cwFill(str, f, k, C){
   const v = k ? String(f[k] || '') : '';
   return String(str || '').replace(/\{C\}/g, C).replace(/\{v\}/g, v).replace(/\{1\}/g, _cwNames(v, 1))
-    .replace(/\{2\}/g, _cwNames(v, 2)).replace(/\{3\}/g, _cwNames(v, 3)).replace(/\{s\}/g, _cwShort(v));
+    .replace(/\{2\}/g, _cwNames(v, 2)).replace(/\{3\}/g, _cwNames(v, 3)).replace(/\{s\}/g, _cwShort(v))
+    .replace(/\{cur\}/g, String((f && f.cur) || ''))
+    /* {f:key} / {f2:key} / {f3:key}: another of the country's facts, by name -
+       its weather service, its networks. Only used where the fact exists (see
+       _cwLocalTitle), so it never renders empty. */
+    .replace(/\{f([123]?):(\w+)\}/g, (m, n, key) => _cwNames(String((f && f[key]) || ''), +n || 1));
+}
+/* NOTHING ON A COUNTRY'S PAGE IS CALLED SOMETHING IT COULD BE CALLED ANYWHERE.
+
+   Asked for: "make sure every single thing is backed by research - nothing is
+   generic". Measured first: on a country's page, 65 of every 105 titles named
+   nothing of the country - "Tomorrow's weather where you live", "Inbox
+   digest", "Is your phone contract still a good deal?". Each is now named for
+   the country it runs in: the weather service, the networks, the portal, the
+   currency, from the country's facts (written by hand on the server, with
+   anything uncertain left out). Where the fact is missing for a country, the
+   second form names the country instead, so a title is never left with a
+   blank or a guess. [form when the fact exists, fact key, fallback form]. */
+const CW_TITLE_LOCAL = {
+  deliveryfees:['Cheapest way to order tonight on {f2:food}','food','Cheapest way to order tonight in {C}'],
+  pass:['Is a pass on {f:rail} worth it for you?','rail','Is a rail pass in {C} worth it for you?'],
+  travel:['Travel documents check before a trip from {C}','',''],
+  value:['What your car is worth in {C}, in {cur}','',''],
+  insurance:['Health cover renewal check in {C}','',''],
+  housing:['Student housing near your university in {C}','',''],
+  weekend:['The weekend forecast from {f:weather}','weather','The weekend forecast in {C}'],
+  appts:['Government appointment slots on {f:gov}','gov','Government appointment slots in {C}'],
+  benefits:['Benefits and support you may qualify for in {C}','',''],
+  roaming:['Roaming costs on {f3:telco}','telco','Roaming costs from {C}'],
+  broadband:['Home internet deals from {f3:telco}','telco','Home internet deals in {C}'],
+  events:['What is on this weekend near you in {C}','',''],
+  fuel:['Where fuel is cheapest near you in {C}','',''],
+  fx:['{cur} exchange rate watch','',''],
+  air:['Air quality and pollen where you live in {C}','',''],
+  flights:['Cheap flights from your airport in {C}','',''],
+  kids:['Things to do with kids this weekend in {C}','',''],
+  free:['Free museum days and events in {C}','',''],
+  jobfairs:['Job fairs and hiring days in {C}','',''],
+  commute:['Roadworks and closures on your commute in {C}','',''],
+  team:['Your team, this week, from {f2:news}','news','Your team, this week, as {C} reports it'],
+  concerts:['Concert tickets in {C} for artists you like','',''],
+  carinsurance:['Car insurance renewal check in {C}','',''],
+  homeinsurance:['Home insurance check in {C}','',''],
+  visa:['Entry rules for your next trip from {C}','',''],
+  volunteer:['Volunteering near you in {C}','',''],
+  secondhand:['Second-hand deals in {C} on what you want','',''],
+  localtax:['Local taxes and municipal charges due in {C}','',''],
+  parking:['Parking rules and zones where you live in {C}','',''],
+  restaurants:['New restaurants worth trying near you in {C}','',''],
+  phoneplan:['Is your contract on {f3:telco} still a good deal?','telco','Is your phone contract in {C} still a good deal?'],
+  outages:['Power and water cuts in your area in {C}','',''],
+  pharmacy:['Pharmacies open near you tonight in {C}','',''],
+  bus:['Cheapest bus and coach tickets in {C}','',''],
+  ride:['Ride-hailing prices in {C}, compared','',''],
+  getaway:['Weekend getaways from your city in {C}','',''],
+  hotels:['Hotel prices for your next trip, in {cur}','',''],
+  clinics:['Clinics and doctors near you in {C}','',''],
+  gym:['Gyms and classes near you in {C}','',''],
+  cookinggas:['Cooking gas and home fuel prices in {C}','',''],
+  flightshome:['Flights home to {C} for the holidays','',''],
+  localnews:['News from your city in {C}, in five lines','',''],
+  traffic:['Traffic on your route in {C} before you leave','',''],
+  dailyweather:['Tomorrow’s weather from {f:weather}','weather','Tomorrow’s weather where you live in {C}'],
+  crypto:['Crypto prices in {cur}','',''],
+  schoolfees:['School fees, grants and supplies this term in {C}','',''],
+  pets:['Vets and pet care near you in {C}','',''],
+  hobby:['Clubs and classes for your hobby in {C}','',''],
+  transit:['Public transport passes where you live in {C}','',''],
+  rivals:['What your competitors in {C} did this week','',''],
+  reviews:['New reviews of your business in {C}','',''],
+  warnings:['Severe weather warnings from {f:weather}','weather','Severe weather warnings for your area in {C}'],
+  homeprices:['Home prices in your city, from {f2:prop}','prop','Home prices in your city in {C}'],
+  breaches:['Data breaches at services used in {C}','',''],
+  prayer:['Prayer times and Ramadan dates in {C}','',''],
+  loadshedding:['Power cuts and load-shedding in {C}','',''],
+  bundles:['Cheapest data bundles this week on {f3:telco}','telco','Cheapest data bundles this week in {C}'],
+  parallel:['The official and the parallel {cur} rate today','',''],
+  fuelweek:['Fuel price change announced in {C} for next week','',''],
+};
+function _cwLocalTitle(id, f, C, dflt){
+  const t = CW_TITLE_LOCAL[id];
+  if(!t) return dflt;
+  if(t[1] && !(f && f[t[1]])) return t[2];
+  if(/\{cur\}/.test(t[0]) && !(f && f.cur)) return dflt;
+  return t[0];
 }
 /* WHICH COUNTRIES A SIGNAL-GATED JOB IS FOR. Conservative lists - only
    countries the source plainly names:
@@ -1953,7 +2041,7 @@ function _cwMadeMore(cc){
   return CW_MADE_MORE.filter(m => _cwRowFor(m, f, cc)).map(m => ({
     id: 'cc_' + low + '_' + m[1], made: true, country: cc, countryName: C,
     cat: m[2], icon: m[3], every: m[4] === 'monthly' ? 'weekly' : m[4], on: false, needs: 'Web research',
-    title: _cwFill(m[5], f, key(m), C), desc: _cwFill(m[6], f, key(m), C), where: key(m) ? String(f[key(m)]) : C,
+    title: _cwFill(_cwLocalTitle(m[1], f, C, m[5]), f, key(m), C), desc: _cwFill(m[6], f, key(m), C), where: key(m) ? String(f[key(m)]) : C,
     asks: m[7] ? { q: _cwFill(m[7], f, key(m), C), ph: m[8] } : null,
     prompt: _cwFill(m[9], f, key(m), C) + ' The user is in ' + C + '. Only real, current information with sources; never invent listings, prices or dates.',
   }));
@@ -2000,28 +2088,35 @@ function _cwMadeMore(cc){
       weekly shop and the tax deadline above a hobby club.
    A job written by hand for the country (the five in its pack) starts high,
    because somebody chose it for exactly that country. */
-const CW_POP_BASE = {
-  groc:9, offers:8, staples:7, rises:6, meals:6, swaps:5,
-  jobs:9, salary:7, hiring:6, interview:6, cv:5, freelance:5, internships:4, govjobs:4, jobfairs:3, workrules:4, industry:5,
-  shop:8, realdeal:7, cheaper:7, sales:6, returns:5, secondhand:5, phones:5,
-  tax:8, refund:7, deductions:6, selfemployed:4, localtax:4,
-  budget:7, save:6, savings:6, fees:5, cards:5, switch:4, mortgage:5, ccrates:4, market:4, crypto:3, gold:3, fx:4, rates:4,
-  pricerises:6, energy:5, consumer:4, discounts:4, localscams:6, scams:6, limits:4, remit:3, pension:4, benefits:6,
-  telco:6, phoneplan:6, broadband:5, roaming:3,
-  news:8, localnews:6, evening:5, weather:8, dailyweather:8, warnings:6, weekend:6, elections:4, newlaws:4, breaches:4, team:5, charity:2,
-  id:6, travel:5, visa:4, flights:6, hotels:5, getaway:4, flightshome:3,
-  car:6, fines:5, value:3, fuel:6, carinsurance:5, parking:4, traffic:6, commute:5, drivingtest:4,
-  rail:5, strikes:4, release:4, pass:3, bus:4, ride:4, transit:5,
-  prop:6, rents:6, drops:4, homeprices:5, rentrights:4, homeinsurance:4, moving:3,
-  health:6, clinics:5, pharmacy:4, waits:4, insurance:4, healthalerts:4, air:4, mind:4, gym:4, races:3,
-  exams:6, papers:5, results:4, uni:5, studydeadlines:4, grants:5, housing:3, abroad:4, training:5,
-  gov:6, appts:5, disruption:4, outages:5, recalls:4, holidays:7, events:6, calendar:4,
-  schoolterms:6, kids:5, schoolfees:5, childcare:4, checkups:5, parental:4, eldercare:3,
-  tenders:3, bizlicence:3, smbtax:3, bizgrants:3, rivals:3, reviews:3, firsthire:2,
-  food:6, deliveryfees:5, newplaces:4, restaurants:4, concerts:4, free:4, volunteer:2, hobby:3, wedding:2, pets:3,
-  post:3, delays:3, cookinggas:3, farm:2,
-  prayer:9, loadshedding:10, bundles:7, parallel:8, fuelweek:6,
+/* THE BASE WEIGHT IS PUBLISHED DATA, NOT A GUESS.
+
+   GWI's survey of internet users (Q4 2025, reported by Statista, "main
+   reasons for using the internet worldwide"): finding information 60.1%,
+   keeping up with news and events 51.4%, researching products and brands
+   43.2%, researching places, vacations and travel 36.9%, education and study
+   35.8%, managing finances and savings 34.5%, researching health 34.2%. Each
+   job is filed under the reason it serves and weighs that share (divided by
+   six, to sit on the same scale as the country boosts below). Work, family
+   and small-business jobs are not among GWI's measured reasons, so they take
+   the lowest measured share rather than an invented one - and climb as soon
+   as people in a country actually switch them on (the count, below, always
+   outranks this). */
+const CW_GWI = { info:60.1, news:51.4, products:43.2, travel:36.9, education:35.8, finance:34.5, health:34.2 };
+const CW_GWI_FLOOR = 34.2;
+const CW_KIND_REASON = {
+  info:'tax refund deductions selfemployed localtax id travel gov appts benefits workrules newlaws consumer rentrights moving calendar prayer drivingtest pension childcare parental schoolterms bizlicence smbtax tenders recalls breaches localscams scams limits outages loadshedding disruption strikes commute traffic holidays events free',
+  news:'news localnews evening industry elections team weather dailyweather warnings weekend air healthalerts',
+  products:'groc offers staples rises meals swaps shop realdeal cheaper sales returns secondhand phones food deliveryfees newplaces restaurants telco phoneplan broadband bundles energy fuel fuelweek cookinggas pricerises discounts gold market crypto fx parallel carinsurance homeinsurance insurance concerts gym pets hobby ride bus transit',
+  travel:'rail release pass flights hotels getaway flightshome roaming visa',
+  education:'exams papers results uni studydeadlines grants housing abroad training schoolfees',
+  finance:'banks save savings fees cards switch mortgage ccrates budget rates remit value homeprices prop rents drops',
+  health:'health clinics pharmacy waits mind races checkups eldercare',
 };
+const CW_POP_BASE = (() => {
+  const out = {};
+  Object.keys(CW_KIND_REASON).forEach(r => CW_KIND_REASON[r].split(' ').forEach(k => { out[k] = Math.round(CW_GWI[r] / 6 * 10) / 10; }));
+  return out;
+})();
 const CW_POP_BOOST = [
   ['REMIT', 'IN MX PH PK EG BD NG VN GT NP DO CO UA LK MA UZ LB JO SN AM GE KE GH', { remit:8, fx:3, limits:2 }],
   ['MOMO',  'KE GH ZM UG SN TZ RW CI CM ZW BD', { limits:5, scams:4, remit:2 }],
@@ -2042,9 +2137,21 @@ function _cwKind(j){
 function _cwPopScore(j, cc){
   const kind = _cwKind(j);
   let n;
-  if(String(j.id || '').indexOf('ev_' + String(cc).toLowerCase() + '_') === 0) n = 9;   // written by hand for this country
+  /* Written by hand for this one country: at the top of the measured scale,
+     because somebody chose it for exactly this country from its facts. */
+  if(String(j.id || '').indexOf('ev_' + String(cc).toLowerCase() + '_') === 0) n = CW_GWI.info / 6;
   else if(Object.prototype.hasOwnProperty.call(CW_POP_BASE, kind)) n = CW_POP_BASE[kind];
-  else n = 3 + Math.min(4, (() => { try{ return _cwStrength(j); }catch(e){ return 0; } })());   // the jobs that are the same everywhere
+  /* The jobs that are the same everywhere run on the person's own accounts
+     (mail, calendar, bank): finding information in their own data - GWI's
+     largest reason - where they need an account, the floor where they do not. */
+  /* On a country's page, a job written for the country answers the same need
+     with that country's own services, so the one-size version sits at the
+     floor and climbs only when people there actually start it. */
+  else n = CW_GWI_FLOOR / 6;
+  /* A job that exists only where a published source says it matters (prayer
+     times, load-shedding, prepaid bundles, the parallel rate, weekly fuel
+     prices - see CW_SIGNAL) carries that source's weight on top. */
+  if(CW_SIGNAL_SAME[kind]) n += 4;
   CW_POP_BOOST.forEach(([, where, add]) => { if(where.split(' ').indexOf(cc) >= 0 && add[kind]) n += add[kind]; });
   /* A count beats research: up to +16 for what people here switch on most,
      weighted by its share of every start in the country - 30 of 40 is the
@@ -2060,7 +2167,7 @@ function _cwPopScore(j, cc){
   try{ if(/Bank connection/.test(String(j.needs || '')) && cc && !(Object.prototype.hasOwnProperty.call(_cwBank, cc) ? _cwBank[cc] : cc === 'US')) n -= 20; }catch(e){}
   return n;
 }
-try{ window._cwPopScore = _cwPopScore; window.CW_POP_BOOST = CW_POP_BOOST; window._cwKind = _cwKind; }catch(e){}
+try{ window._cwPopScore = _cwPopScore; window.CW_POP_BOOST = CW_POP_BOOST; window._cwKind = _cwKind; window.CW_GWI = CW_GWI; window.CW_POP_BASE = CW_POP_BASE; }catch(e){}
 
 /* ── THE TOP FIVE, BUILT FROM WHAT PEOPLE THERE ACTUALLY CONNECT ─────────────
 
@@ -3209,6 +3316,22 @@ function _cwWireCountries(vc){
    hundred - the banner at the top says "only 100", so it has to be true. */
 const CW_COUNTRY_N = 100;
 let _cwCpCat = 'all';
+/* THE JOBS THAT RUN ON YOUR OWN ACCOUNTS, NAMED FOR WHAT PEOPLE THERE USE.
+   "Inbox digest" is the same job in every country; which inbox it reads is
+   not - QQ Mail in China, Naver in Korea, WEB.DE in Germany (COUNTRY_MAIL on
+   the server, with its sources). So on a country's page the title says so.
+   A copy, so the job itself - and what it runs - is untouched. */
+function _cwAccountTitle(j, cc){
+  if(!j || /^(cc|top|ev)_[a-z]{2}_/.test(String(j.id || '')) && !/^ev_ev_/.test(String(j.id || ''))) return j;
+  const needs = String(j.needs || ''), box = _cwInbox[cc] || [], f = _cwFacts[cc] || {};
+  let tag = '';
+  if(j.id === 'job_hunt' && f.jobs) tag = _cwNames(f.jobs, 2);
+  else if(/\bEmail\b/.test(needs) && box[0]) tag = box[0].name;
+  else if(/\bCalendar\b/.test(needs) && box[0]) tag = box[0].how === 'ms' ? 'Outlook Calendar' : 'Google Calendar';
+  else if(/Bank connection/.test(needs) && (f.cards || f.banks)) tag = _cwNames(f.cards || f.banks, 2);
+  if(!tag || String(j.title || '').indexOf(tag) >= 0) return j;
+  return Object.assign({}, j, { title: j.title + ' \u00b7 ' + tag });
+}
 function _cwCountryHundred(cc){
   const ten = (() => { try{ return _cwTopTen(cc) || []; }catch(e){ return []; } })();
   const seen = new Set(ten.slice(0, 5).map(j => j.id)), pool = [];
@@ -3230,7 +3353,7 @@ function _cwCountryHundred(cc){
     per[c] = (per[c] || 0) + 1; out.push(j);
   });
   for(let i = 0; out.length < CW_COUNTRY_N && i < spill.length; i++) out.push(spill[i]);
-  return out;
+  return out.map(j => _cwAccountTitle(j, cc));
 }
 function _cwCpListHTML(cc){
   const row = _cwCountryRow(cc), name = row ? row[1] : '';
@@ -5630,7 +5753,12 @@ function renderCrewView(){
             ['\uD83D\uDCF8','Instagram post','Produce a ready-to-post Instagram package about the latest in my field: a scroll-stopping caption with line breaks, 20-30 ranked hashtags, a carousel outline, a detailed image/visual concept, and the best post time. I approve before posting.'],
             ['\uD83D\uDC26','Social posts','Write 3 ready-to-publish posts for X and 2 for LinkedIn on what\'s trending in my industry today - each with the full copy, hooks, and hashtags. I approve before anything is published.'],
             ['\uD83D\uDCC8','Market brief','Every morning, produce a tight briefing of overnight market moves: major indices, notable movers, and the 3 headlines that matter to me, each with a one-line why-it-matters.'],
-            ['\uD83D\uDCB0','Investing check-in','Each Monday, review my watchlist, give a clear buy/hold view with reasoning, and prepare a $1 XRP buy order on Robinhood. Present the exact order for my one-tap approval before placing it.'],
+            /* Was "give a buy/hold view and prepare a $1 XRP order on Robinhood for
+               one-tap approval". AMV has no Robinhood connector and cannot place an
+               order anywhere, and a buy/hold view is the financial advice every
+               money job here refuses to give - a template that promises both is a
+               fake feature twice over. What it really does, said plainly. */
+            ['\uD83D\uDCB0','Watchlist check-in','Each Monday, check the stocks and coins on my watchlist on the live web: last week\u2019s move for each with the actual figure, the news behind it with a link, and any earnings or unlock dates coming up. Information only - never tell me what to buy, sell or hold.'],
             ['\uD83C\uDFE6','Bank check-in','Every morning, check my linked bank account and report the balance, recent transactions, anything unusual, and my spend-vs-last-week. Prepare it as a clean daily report.'],
             ['\uD83D\uDCF0','News digest','Daily, gather the top developments in AI and produce a sharp 5-bullet briefing, each bullet with a link-worthy summary and why it matters.'],
             ['\u2709\uFE0F','Inbox triage','Each morning, read new emails, rank them by urgency with reasons, and draft a ready-to-send reply for each. I click send before anything goes out.']

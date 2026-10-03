@@ -214,7 +214,9 @@ if (!ONLY || ONLY === 'mail') {
   for (const [k, m] of Object.entries(table('MAIL_PROVIDERS'))) {
     if (!m.imap || seen.has(m.imap + ':' + (m.imapPort || port))) continue;
     seen.add(m.imap + ':' + (m.imapPort || port));
-    jobs.push(['mail', k, m.name, () => imapGreeting(m.imap, m.imapPort || port)]);
+    /* A paused provider is still asked every day - that is how anybody finds
+       out it can come back - but it is a known failure, not a new one. */
+    jobs.push([m.paused ? 'paused' : 'mail', k, m.name, () => imapGreeting(m.imap, m.imapPort || port)]);
   }
 }
 
@@ -235,7 +237,9 @@ if (!ONLY || ONLY === 'live') {
   else if (ONLY === 'live') console.log('Live deployment check skipped: CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not in the environment.');
 }
 results.sort((a, b) => (a.kind + a.id).localeCompare(b.kind + b.id));
-const bad = results.filter(r => !r.ok && !r.slow);
+for (const r of results.filter(r => r.kind === 'paused' && r.ok))
+  console.log('RESUME: ' + r.name + ' (' + r.id + ') answers with a certificate that verifies - remove `paused` from it in MAIL_PROVIDERS.');
+const bad = results.filter(r => !r.ok && !r.slow && r.kind !== 'paused');
 const slow = results.filter(r => !r.ok && r.slow);
 if (JSON_OUT) console.log(JSON.stringify({ checked: results.length, failing: bad, slow }, null, 2));
 else {
