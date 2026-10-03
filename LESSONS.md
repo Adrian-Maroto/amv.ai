@@ -14047,3 +14047,25 @@ Rules:
   until our own markup has been parsed - never the network. Point it at the
   element that closes the shell and before the bundle.
 - Prove the fix by removing it: 3 of 24 without, 0 of 24 with.
+
+## 542. A cited list goes stale; a citation is a date, not a guarantee
+Every country boost named a source, and checked against that source in October
+2026 a third of the entries were wrong. "Car-dependent" listed six Gulf states
+OICA does not rank in its top ten, and missed Poland, Italy and Czechia; rail
+named Korea and Taiwan with no source at all. Others were right when written
+and had stopped being right: South Africa's own pack led with a load-shedding
+schedule after 476 days without one, the parallel rate was boosted in
+Argentina, Nigeria and Lebanon after reforms closed the gap to a few per cent,
+and Argentina's tax job was titled for AFIP a year after ARCA replaced it.
+
+Rules:
+- Every list states its threshold ("10% of GDP", "half of adults", "the ten
+  highest") and the date it was checked, so the next person can re-check it
+  rather than trust it.
+- A rule decides membership, not a feeling about a country. If the source
+  cannot be found for a country, it stays off until it can (Côte d'Ivoire,
+  Cameroon, Zimbabwe and Bangladesh on mobile money).
+- A job that watches for something that has stopped happening is not local,
+  it is out of date. Spend the slot on what people there do now.
+- A suite pins the corrections (no Gulf in CAR, no Lebanon in PARALLEL) and
+  that every listed code exists - a typo boosts nobody, silently.

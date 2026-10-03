@@ -50,7 +50,7 @@ const hundredOf = (codes) => page.evaluate(async (codes) => {
     const L = _cwCountryHundred(cc);
     const by = {}; L.forEach(j => { by[j.cat] = (by[j.cat] || 0) + 1; });
     out[cc] = { n: L.length, ids: L.map(j => j.id), kinds: L.map(j => _cwKind(j)), titles: L.map(j => j.title), by,
-                top: (_cwTopTen(cc) || []).slice(0, 5).map(j => j.id) };
+                top: (_cwTopTen(cc) || []).slice(0, 5).map(j => j.id), topTitles: (_cwTopTen(cc) || []).slice(0, 5).map(j => j.title) };
   }
   return out;
 }, codes);
@@ -81,24 +81,53 @@ const all = await hundredOf(codes);
 
 section('What the research says matters there leads there');
 const rank = (cc, kind) => all[cc].kinds.indexOf(kind);
-ok(rank('KE', 'remit') >= 0 && rank('KE', 'remit') < 10 && rank('KE', 'limits') < 10,
-   'Kenya: sending money home and M-Pesa’s fees in the first ten (World Bank, Global Findex)', [rank('KE', 'remit'), rank('KE', 'limits')]);
+ok(rank('KE', 'limits') >= 0 && rank('KE', 'limits') < 10,
+   'Kenya: M-Pesa’s limits and fees in the first ten (Global Findex 2025: 87% of adults)', rank('KE', 'limits'));
 ok(rank('MX', 'remit') >= 0 && rank('MX', 'remit') < 5, 'Mexico: remittances in the first five', rank('MX', 'remit'));
 /* The train is a part of life with its own row in the top five - where the
    research says people live on trains, it is IN the top five. */
 ok(all.JP.top.includes('cc_jp_rail'), 'Japan: the train is one of its top five (UIC)', all.JP.top);
 ok(all.CH.top.includes('cc_ch_rail'), 'Switzerland too', all.CH.top);
 ok(!all.US.top.includes('cc_us_rail'), 'and not in the United States', all.US.top);
-ok(rank('AR', 'staples') >= 0 && rank('AR', 'staples') < 5 && rank('AR', 'parallel') >= 0, 'Argentina: staple prices first, and the parallel rate (IMF)', [rank('AR', 'staples'), rank('AR', 'parallel')]);
+ok(rank('AR', 'staples') >= 0 && rank('AR', 'staples') < 5, 'Argentina: staple prices first (IAS 29 hyperinflation list)', rank('AR', 'staples'));
+ok(rank('VE', 'parallel') >= 0 && rank('AR', 'parallel') < 0,
+   'the parallel rate where the gap is still real (Venezuela), not where the 2025 reform closed it (Argentina)', [rank('VE', 'parallel'), rank('AR', 'parallel')]);
 ok(rank('PK', 'prayer') >= 0 && rank('PK', 'loadshedding') >= 0 && rank('PK', 'loadshedding') < 5, 'Pakistan: prayer times, and load-shedding in the first five', [rank('PK', 'prayer'), rank('PK', 'loadshedding')]);
 ok(rank('IN', 'gold') >= 0 && rank('IN', 'gold') < 25, 'India: the gold price (World Gold Council)', rank('IN', 'gold'));
 ok(rank('ET', 'farm') >= 0 && rank('ET', 'farm') < 25, 'Ethiopia: crop and livestock prices (World Bank)', rank('ET', 'farm'));
 {
-  const za = all.ZA.titles.filter(t => /load.?shedding|power cut/i.test(t));
-  ok(za.length === 1, 'South Africa has load-shedding once - its own job, not a second copy', za);
+  /* 476 days without load-shedding by September 2026: no load-shedding row
+     is added for South Africa, and its own pack spends the slot on SASSA's
+     grant dates (about 26 million recipients) rather than a schedule that has
+     not run since 2024. Its power and water cuts are the everyday row, once. */
+  const za = all.ZA.titles.concat(all.ZA.topTitles || []);
+  const cuts = za.filter(t => /load.?shedding|power (?:and water )?cuts?/i.test(t));
+  ok(cuts.length === 1 && !/load.?shedding/i.test(cuts[0]) && za.some(t => /SASSA/.test(t)),
+     'South Africa: power and water cuts once, no load-shedding schedule, and SASSA’s grant dates', { cuts, sassa: za.filter(t => /SASSA/.test(t)) });
+  ok(rank('BD', 'loadshedding') >= 0 && rank('MM', 'loadshedding') >= 0, 'and power cuts where they are scheduled in 2026 (Bangladesh, Myanmar)', [rank('BD', 'loadshedding'), rank('MM', 'loadshedding')]);
   const us = ['prayer', 'loadshedding', 'parallel', 'bundles', 'farm'].filter(k => rank('US', k) >= 0);
   ok(us.length === 0, 'and none of that in the United States', us);
   ok(rank('US', 'remit') < 0 || rank('US', 'remit') > 60, 'where sending money abroad is not near the top', rank('US', 'remit'));
+}
+
+section('Every research list names countries AMV covers, and says what the source says');
+{
+  const r = await page.evaluate(() => {
+    const known = new Set(CW_WORLD_COUNTRIES.map(c => c[0]));
+    const lists = CW_POP_BOOST.map(b => [b[0], b[1]]).concat(Object.entries(CW_SIGNAL));
+    const bad = lists.flatMap(([n, w]) => w.split(' ').filter(cc => !known.has(cc)).map(cc => n + ':' + cc));
+    const has = (n, cc) => (lists.find(l => l[0] === n) || ['', ''])[1].split(' ').includes(cc);
+    return { bad, gulfCar: has('CAR', 'SA') || has('CAR', 'AE'), nzCar: has('CAR', 'NZ') && has('CAR', 'PL'),
+             krRail: has('RAIL', 'KR'), ruRail: has('RAIL', 'RU'), keRemit: has('REMIT', 'KE'), cnRemit: has('REMIT', 'CN'),
+             zaPower: has('POWER', 'ZA'), lbPar: has('PARALLEL', 'LB'), gbHouse: has('HOUSE', 'GB'), ptHouse: has('HOUSE', 'PT'),
+             bdFarm: has('FARM', 'BD'), mzFarm: has('FARM', 'MZ') };
+  });
+  ok(r.bad.length === 0, 'no list names a country code AMV does not have (a typo would boost nobody, silently)', r.bad);
+  ok(!r.gulfCar && r.nzCar, 'cars: OICA’s ten (New Zealand, Poland...), not a guess about the Gulf', r);
+  ok(!r.krRail && r.ruRail, 'rail: per-person kilometres and the four largest networks, nothing unsourced', r);
+  ok(!r.keRemit && r.cnRemit, 'remittances: the World Bank’s ten largest and 10% of GDP - China in, Kenya (4%) out', r);
+  ok(!r.zaPower && !r.lbPar, 'power cuts and parallel rates as they are in 2026, not as they were', r);
+  ok(r.ptHouse && !r.gbHouse && r.mzFarm && !r.bdFarm, 'housing (OECD index) and farming (ILO, 40%) by their stated thresholds', r);
 }
 
 section('Nothing on a country\u2019s page is called something it could be called anywhere');

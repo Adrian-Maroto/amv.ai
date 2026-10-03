@@ -2000,29 +2000,38 @@ function _cwLocalTitle(id, f, C, dflt){
   return t[0];
 }
 /* WHICH COUNTRIES A SIGNAL-GATED JOB IS FOR. Conservative lists - only
-   countries the source plainly names:
+   countries the source plainly names, checked against it in October 2026.
+   A list goes stale when the world changes, so each says what was true and
+   when; re-check it before adding a country.
      MUSLIM    Pew Research Center: Muslim-majority populations.
-     POWER     Scheduled load-shedding published by the national utility:
-               Eskom (South Africa), ZESCO (Zambia), ZESA (Zimbabwe), EDL
-               (Lebanon), and the published outage schedules in Pakistan,
-               Nigeria and Ghana.
+     POWER     Scheduled power cuts during 2026, with published schedules or
+               rotation groups: ZESCO (Zambia, eight-hour cuts from July),
+               Pakistan's Power Division (April), ECG's load-management
+               timetable (Ghana), EDL (Lebanon, about four hours of supply a
+               day), Nigeria's grid shortfall (NERC's Band A compensation),
+               Bangladesh (10-12 hours a day in rural areas, August), Iraq
+               (summer) and Myanmar (Yangon's four-hours-on rotation).
+               NOT South Africa - 476 days without load-shedding by September
+               2026 - nor Zimbabwe, where ZESA ended routine cuts this year.
      PREPAID   GSMA Intelligence: markets where most mobile connections are
                prepaid.
-     PARALLEL  A widely reported parallel exchange rate (Argentina's dólar
-               blue, Nigeria, Lebanon, Venezuela, Zimbabwe, Ethiopia).
+     PARALLEL  A street rate more than 10% from the official one in 2026:
+               Venezuela (12-45% over the year) and Zimbabwe (ZiG, about 20%).
+               NOT Argentina, Nigeria, Lebanon or Ethiopia, where the reforms
+               of 2024-25 closed the gap to a few per cent.
      FUELWEEK  Fuel prices set and announced by the authorities on a fixed
                cycle: weekly in Malaysia and the Philippines, fortnightly in
                Pakistan, monthly in South Africa. */
 const CW_SIGNAL = {
   MUSLIM:   'SA AE QA KW OM BH EG MA DZ TN JO IQ LB PK BD ID MY TR AZ UZ KZ SN',
-  POWER:    'ZA ZM ZW LB PK NG GH',
+  POWER:    'ZM PK GH LB NG BD IQ MM',
   PREPAID:  'IN PK BD NG KE GH UG TZ ZM EG PH ID VN MM KH NP LK ET',
-  PARALLEL: 'AR NG LB VE ZW ET',
+  PARALLEL: 'VE ZW',
   FUELWEEK: 'MY PH PK ZA',
 };
 /* A country whose own hand-written jobs already cover one of these does not
-   get it twice - South Africa's pack has "Load shedding for my area". */
-const CW_SIGNAL_SAME = { prayer:/prayer|ramadan/i, loadshedding:/load.?shedding|power cut/i, bundles:/bundle|airtime/i,
+   get it twice. */
+const CW_SIGNAL_SAME = { prayer:/prayer|ramadan/i, loadshedding:/load.?shedding|power (?:and water )?cuts?/i, bundles:/bundle|airtime/i,
                          parallel:/parallel|d[oó]lar blue|black.market/i, fuelweek:/fuel price|petrol price|pump price/i };
 function _cwRowFor(m, f, cc){
   if(!m[0]) return true;
@@ -2066,24 +2075,46 @@ function _cwMadeMore(cc){
    2. Research about the country, from published data, as boosts to the jobs
       it makes matter more there. Each list is conservative - only countries
       the source plainly names - and cites it:
-        REMIT  World Bank remittance inflows 2024: largest by volume (India,
-               Mexico, the Philippines, Pakistan, Egypt, Bangladesh, Nigeria,
-               Viet Nam) and by share of GDP (Nepal, Guatemala, ...).
-        MOMO   Global Findex 2025 / GSMA State of the Industry 2024: mobile
-               money used by most adults (Kenya 87%, Ghana 78%, Zambia,
-               Uganda, Senegal, Tanzania, Rwanda, ...; bKash in Bangladesh).
-        INFL   IMF World Economic Outlook 2025: the highest inflation
-               (Venezuela, Zimbabwe, Argentina, Türkiye, Egypt, Nigeria, ...).
-        RAIL   UIC: the most rail travel per person (Switzerland, Japan,
-               Austria, then France, Germany, the Netherlands, Denmark,
-               Sweden and Britain), plus the largest networks by passengers
-               (India, China) and the commuter networks of Korea and Taiwan.
-        CAR    Car-dependent countries with the most vehicles per person.
-        EXAM   A single national exam that decides university entry (gaokao,
-               suneung, JEE/NEET, YKS, WAEC/WASSCE, KCSE, ...).
-        GOLD   World Gold Council: the largest consumer gold demand.
-        HOUSE  OECD: the highest house-price-to-income ratios.
-        FARM   World Bank: a large share of employment in agriculture.
+        REMIT  World Bank, personal remittances received in 2024: the ten
+               largest by volume (India $138bn, Mexico, the Philippines,
+               Pakistan, China, Egypt, Bangladesh, Guatemala, Nigeria - France
+               is the tenth and is left out, as its inflow is cross-border
+               wages, not family sending money home), or 10% of GDP and more
+               (Lebanon 33%, Nepal 26%, Uzbekistan 14%, Georgia 12%, Senegal
+               11%). Viet Nam, Morocco (7.8%), Jordan (8.3%), Sri Lanka
+               (6.8%), Armenia (4.9%) and Kenya are below both.
+        MOMO   Global Findex 2025: half of adults or more hold a mobile money
+               account - Kenya 87%, Ghana 78%, Zambia 69%, Uganda 68%,
+               Senegal 67%, Tanzania 62%, Rwanda 58%.
+        INFL   PwC's IAS 29 list as at June 2026 (three-year cumulative
+               inflation above 100%: Argentina, Türkiye, Venezuela, Lebanon)
+               and the economies it is watching (Angola, Egypt, Myanmar,
+               Nigeria).
+        RAIL   Rail kilometres per person in 2023: Switzerland 2,487, Japan,
+               Austria, France, Sweden, Germany, Denmark, the Netherlands and
+               Britain; plus the four largest networks by passengers (China,
+               India, Japan, Russia).
+        CAR    OICA, vehicles in use per 1,000 people: the ten highest - New
+               Zealand 869, the United States 860, Poland, Italy, Australia,
+               Canada, France, Czechia, Portugal, Norway.
+        EXAM   A single national exam that decides university entry - gaokao,
+               suneung, JEE/NEET, the Common Test, YKS, Thanaweya Amma, JAMB
+               and WASSCE, KCSE, UTBK, ENEM, PAES, Saber 11, the Panhellenics,
+               UNT, A/Levels, EGE, NMT, Tawjihi, the Iraqi ministerial exams,
+               the Algerian and Tunisian bac, the NSC and Ethiopia's national
+               exam.
+        GOLD   World Gold Council, consumer demand 2024: China and India by
+               far, then the markets its tables report on their own -
+               Türkiye, the Gulf, Egypt, Viet Nam, Thailand (seventh in bars
+               and coins), Indonesia (23t of jewellery) and Pakistan (18t).
+        HOUSE  OECD price-to-income index (2015 = 100), the ten highest in
+               2024 - where homes have become hardest to afford: Portugal 149,
+               Canada 137, the United States 131, the Netherlands 130,
+               Switzerland 126, Czechia 124, Australia 122, New Zealand 120.
+        FARM   ILO modelled estimates (World Bank), 2023: 40% of jobs or more
+               in agriculture - Mozambique 70%, Uganda, Tanzania, Ethiopia,
+               Nepal, Angola, Zambia, Rwanda, Zimbabwe, Myanmar, Côte
+               d'Ivoire, India 44%, Cameroon 43%.
    3. A base weight per job for how often anybody, anywhere, needs it - the
       weekly shop and the tax deadline above a hobby club.
    A job written by hand for the country (the five in its pack) starts high,
@@ -2118,15 +2149,15 @@ const CW_POP_BASE = (() => {
   return out;
 })();
 const CW_POP_BOOST = [
-  ['REMIT', 'IN MX PH PK EG BD NG VN GT NP DO CO UA LK MA UZ LB JO SN AM GE KE GH', { remit:8, fx:3, limits:2 }],
-  ['MOMO',  'KE GH ZM UG SN TZ RW CI CM ZW BD', { limits:5, scams:4, remit:2 }],
-  ['INFL',  'VE ZW AR TR EG NG ET GH AO', { staples:4, rises:4, pricerises:4, fx:4, gold:2, budget:2 }],
-  ['RAIL',  'CH JP AT FR DE NL DK SE GB KR CN TW IN', { rail:4, strikes:3, release:3, pass:3, transit:3 }],
-  ['CAR',   'US CA AU NZ SA AE QA KW OM BH', { car:3, fuel:3, carinsurance:3, traffic:2, drivingtest:2, fines:2 }],
-  ['EXAM',  'CN KR IN JP VN TR EG NG GH KE PK BD ID', { exams:4, papers:4, results:3, uni:2, studydeadlines:2 }],
-  ['GOLD',  'IN CN TR AE SA EG PK VN', { gold:6 }],
-  ['HOUSE', 'GB US CA AU NZ IE NL ES PT DE SE', { prop:2, rents:3, homeprices:3, rentrights:2, mortgage:2 }],
-  ['FARM',  'ET TZ UG IN NP MM KH MZ RW BD PK', { farm:7 }],
+  ['REMIT', 'IN MX PH PK CN EG BD GT NG LB NP UZ GE SN', { remit:8, fx:3, limits:2 }],
+  ['MOMO',  'KE GH ZM UG SN TZ RW', { limits:5, scams:4, remit:2 }],
+  ['INFL',  'AR TR VE LB AO EG MM NG', { staples:4, rises:4, pricerises:4, fx:4, gold:2, budget:2 }],
+  ['RAIL',  'CH JP AT FR SE DE DK NL GB CN IN RU', { rail:4, strikes:3, release:3, pass:3, transit:3 }],
+  ['CAR',   'NZ US PL IT AU CA FR CZ PT NO', { car:3, fuel:3, carinsurance:3, traffic:2, drivingtest:2, fines:2 }],
+  ['EXAM',  'CN KR IN JP VN TR EG NG GH KE PK BD ID BR CL CO GR KZ LK RU UA GE AZ JO IQ DZ TN ZA ET', { exams:4, papers:4, results:3, uni:2, studydeadlines:2 }],
+  ['GOLD',  'IN CN TR AE SA EG PK VN TH ID', { gold:6 }],
+  ['HOUSE', 'PT CA US NL CH CZ AU NZ', { prop:2, rents:3, homeprices:3, rentrights:2, mortgage:2 }],
+  ['FARM',  'MZ UG TZ ET NP AO ZM RW ZW MM CI IN CM', { farm:7 }],
 ];
 /* The job's kind, without its country: cc_jp_tax -> tax, top_jp_inbox -> inbox. */
 function _cwKind(j){

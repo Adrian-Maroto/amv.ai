@@ -30665,7 +30665,7 @@ const EVERYDAY_BY_COUNTRY = {
   ],
 
   AR: [
-    { id: 'ar_afip', icon: '🧾', title: 'AFIP notices and monotributo dates', needs: 'Email',
+    { id: 'ar_afip', icon: '🧾', title: 'ARCA notices and monotributo dates', needs: 'Email',
       desc: 'Monthly obligations and the recategorisation windows that quietly change what you owe.',
       prompt: 'Find AFIP and ARCA correspondence in mail: monotributo payments, recategorisation notices, declaraciones juradas and any intimation. For each: what is required, the amount if stated, the deadline, and days remaining. Flag any recategorisation window, since missing it leaves the wrong category applied for months. Report any notice that states a consequence for non-compliance, with the consequence exactly as the letter states it. Report documents and dates - do not give fiscal advice.' },
     { id: 'ar_servicios', icon: '💡', title: 'Servicios and how much they moved', needs: 'Email',
@@ -30902,9 +30902,9 @@ const EVERYDAY_BY_COUNTRY = {
     { id: 'za_municipal', icon: '🏠', title: 'Municipal bill: rates, water and electricity', needs: 'Email',
       desc: 'A single account covering several services, where an increase in one is hidden in the total.',
       prompt: 'Track municipal accounts in mail across all available months. Break each bill into its components - rates, refuse, sewerage, water and electricity - and compare each component month against month, since an increase in one line disappears into the total. State whether readings were actual or estimated. Report the annual tariff increase with the old and new figures and the month it applied. Give the due date, days remaining, and any interest or disconnection notice stated.' },
-    { id: 'za_loadshedding', icon: '🔌', title: 'Load shedding for my area', needs: 'Web research',
-      desc: 'The schedule for your specific block, checked against the current stage, so the day can be planned around it.',
-      prompt: 'Establish the user municipality and load shedding block or zone from their address and correspondence. Research the current stage and the published schedule, and report the outage windows for that specific block over the next two days with start and end times. State the current stage and when it was last changed, and note that stages change at short notice so the schedule beyond two days is indicative. If the block cannot be determined from the information available, say exactly what is needed to determine it rather than reporting a schedule for the wrong area.' },
+    { id: 'za_sassa', icon: '💰', title: 'SASSA grant payment dates and amounts', needs: 'Web research',
+      desc: 'The days SASSA pays each grant this month, the current amounts, and any change announced - about 26 million people receive one.',
+      prompt: 'Ask, or establish from the conversation, which SASSA grant or grants the user or their household receives: older persons, disability, child support, foster child, care dependency, war veterans, grant-in-aid or the R370 Social Relief of Distress grant. Research the payment dates SASSA has published for this month and next for those grants, and the current amount of each. Report any change announced by SASSA or National Treasury - a new amount and the month it takes effect, a change to the payment method, or an extension or end date for the SRD grant - with its source and date. Only what SASSA, the Department of Social Development or Treasury has published; never ask for an ID number, never check an application status, and never infer a date.' },
     { id: 'za_sars', icon: '🧾', title: 'SARS correspondence and tax season', needs: 'Email',
       desc: 'IRP5, certificates and anything from SARS, tracked against the filing window.',
       prompt: 'Track SARS correspondence and tax documents in mail: IRP5, IT3(b) and IT3(c) certificates, medical aid tax certificates, retirement annuity certificates and logbook records. List what has arrived with issuer and date. Name which would be expected from the employers and institutions visible in the mail but have not. Give the filing deadline for the relevant taxpayer category and days remaining. Flag any SARS letter requiring a response, with its deadline and the stated consequence. Report documents and dates only.' },
