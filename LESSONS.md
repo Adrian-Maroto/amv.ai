@@ -14031,3 +14031,19 @@ Rules:
   AMV does, or it goes.
 - A provider whose server cannot be verified is paused with the reason, not
   connected around: refusing is the only safe way to keep a password.
+
+## 541. The parser yields, and whatever it has reached is what gets painted
+The full gate measured Sign up and Log in moving 76px on a guest's Settings
+page. It never reproduced alone or six at a time, and the header had not
+changed in that round, so it looked like noise. Replayed at 8x CPU throttle it
+happened 3 times in 24: the parser yielded after the shortcuts button and before
+the avatar, Chrome painted that half-header, and the avatar landing pushed
+everything left. Nothing about the code was wrong; the paint came too early.
+
+Rules:
+- A shift that only appears under load is a real visitor on a slow phone, not
+  a flaky test. Reproduce it with throttling before deciding anything.
+- `<link rel="expect" href="#id" blocking="render">` holds the first paint
+  until our own markup has been parsed - never the network. Point it at the
+  element that closes the shell and before the bundle.
+- Prove the fix by removing it: 3 of 24 without, 0 of 24 with.

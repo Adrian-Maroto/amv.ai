@@ -9825,6 +9825,12 @@ border-radius:0!important; padding:0!important; min-height:28px;
   try{ if(!localStorage.getItem('amv_user')) document.documentElement.classList.add('boot-guest'); }catch(e){}
 })();
 </script>
+<!-- Hold the first paint until the whole shell is parsed (#ovr closes it).
+     The parser yields on a busy machine, and a header painted after the
+     shortcuts button but before the avatar moved Sign up and Log in along by
+     the avatar's width when it arrived - measured, not guessed. This waits on
+     our own markup only, never the network; browsers without it paint as before. -->
+<link rel="expect" href="#ovr" blocking="render">
 </head>
 <body class="sig-grain">
 <input type="file" id="fi" style="display:none" accept="*/*" multiple>

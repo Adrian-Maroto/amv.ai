@@ -108,6 +108,25 @@ section('The page asks for fonts that never swap in late');
   ok(displays.size === 1 && displays.has('optional'), 'the page asks for display=optional', [...displays]);
 }
 
+section('The first paint waits for the whole shell, not half a header');
+{
+  /* Measured on a busy machine: the parser yielded after the shortcuts button
+     and before the avatar, that half-header was painted, and the avatar landing
+     moved Sign up and Log in 76px - 3 loads in 24 at 8x CPU throttle, 0 of 24
+     with the hold. A load that happens to be fast cannot show it, so the hold
+     is pinned here by structure: it must be in the head, and what it waits for
+     must come after everything the header is made of. */
+  const html = readFileSync(join(ROOT, 'public', 'index.html'), 'utf8');
+  const head = html.slice(0, html.indexOf('</head>'));
+  const hold = (head.match(/<link\b[^>]*rel="expect"[^>]*>/) || [''])[0];
+  ok(/blocking="render"/.test(hold), 'the head holds the first paint on an element of the page', hold);
+  const target = (/href="#([\w-]+)"/.exec(hold) || [])[1] || '';
+  const at = target ? html.indexOf('id="' + target + '"') : -1;
+  const last = Math.max(html.indexOf('id="nav-av"'), html.indexOf('id="abody"'));
+  ok(at > last && last > 0, 'and that element comes after the whole header and body shell', { target, at, last });
+  ok(at > 0 && at < html.indexOf('<script id="amv-app-code"'), 'but before the bundle, so the paint never waits on the code', { target, at });
+}
+
 section('The fallback is ready on a machine with no Arial');
 {
   /* Linux and ChromeOS have Arial's metric twins, not Arial. The fallback has
