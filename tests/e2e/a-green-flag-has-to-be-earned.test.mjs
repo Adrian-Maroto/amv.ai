@@ -85,7 +85,7 @@ section('An impossible request is answered, not planned around');
   ok(/cannot/.test(r.html), 'it says it cannot, on the cannot treatment', r.html.slice(0, 80));
   ok(!/Add to Running jobs/.test(r.html), 'it is not offered as a job to add');
   ok(r.jobsAfter === r.jobsBefore, 'and nothing was scheduled', r.jobsBefore + '->' + r.jobsAfter);
-  ok(/What I can do instead/.test(r.html), 'it offers what it would do instead');
+  ok(/What AMV can do instead/.test(r.html) && /Do this/.test(r.html), 'it offers what it would do instead, each with a Do this', r.html.slice(0, 200));
 }
 
 section('A refusal from the planner is read as a refusal, not as an empty plan');
@@ -230,16 +230,22 @@ section('And the way out of a dead end actually goes somewhere');
     const box = document.getElementById('mc-cmd-result');
     box.innerHTML = '';
     _mcCannot(box, { why: 'it needs hands.', instead: ['book it with somebody who has hands'] }, 'drive me there');
-    const btn = box.querySelector('.mc-cannot-opts .btn');
+    const btn = box.querySelector('.uni-alt .uni-alt-go');
     if(!btn) return { noButton: true };
+    /* Do this RUNS it - here the run is stubbed so what is measured is that
+       the click reaches it, with the alternative as the request. */
+    const real = window.mcRunCommand; window.__ran = null;
+    window.mcRunCommand = (t, o) => { window.__ran = { t, o }; };
     btn.click();
+    window.mcRunCommand = real;
     await new Promise(s => setTimeout(s, 250));
     const input = document.getElementById('mc-cmd-input');
-    return { noButton: false, typed: input ? input.value : '', focused: document.activeElement === input };
+    return { noButton: false, typed: input ? input.value : '', ran: window.__ran };
   });
   ok(!r.noButton, 'there is an alternative to press');
   ok(/book it with somebody/.test(r.typed),
-     'and pressing it puts that request in the box, ready to run', JSON.stringify(r.typed));
+     'and pressing it puts that request in the box', JSON.stringify(r.typed));
+  ok(r.ran && /book it with somebody/.test(r.ran.t), 'and runs it', r.ran);
 }
 
 section('A card somebody can actually switch on shows its example too');

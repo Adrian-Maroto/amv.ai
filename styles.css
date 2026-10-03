@@ -15271,21 +15271,6 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   letter-spacing:.04em; text-transform:uppercase;
   color:var(--dim); margin-bottom:var(--sp-2);
 }
-#vc .mc-cannot-opts{ display:flex; flex-wrap:wrap; gap:var(--sp-2); }
-/* Each one is a real request somebody can run, so it is a control, not a
-   bullet: same size rule as every other tappable thing here. */
-#vc .mc-cannot-opts .btn{
-  min-height:44px; text-align:left; white-space:normal;
-  border-color:var(--accent-soft); color:var(--accent);
-}
-#vc .uni-instead ul{ margin:0; padding-left:1.1em; }
-#vc .uni-instead li{
-  font-size:var(--t-base); color:var(--tx); line-height:1.6;
-}
-@media (max-width:720px){
-  #vc .mc-cannot-opts{ flex-direction:column; }
-  #vc .mc-cannot-opts .btn{ width:100%; }
-}
 
 /* ===========================================================================
    LAYER A246 - "it needs these first", and the green flag it has to earn
@@ -16371,3 +16356,22 @@ textarea.mc-cmd-input{
   .mc-head-r > .cw-where, .mc-head-r > .cw-where-ph{ position:absolute; top:0; right:0; }
   .mc-head-r .mc-browse{ justify-content:center; text-align:center; }
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   LAYER A276 - When every route failed: how hard it tried, then what is closest
+   ════════════════════════════════════════════════════════════════════════
+   Each alternative is a card: what AMV does, the one thing left for you (when
+   there is one), and Do this, which runs it. The approaches already tried sit
+   above the live plan as quiet lines, so a second attempt reads as the same
+   job carrying on rather than a new one starting. */
+#vc .uni-alts{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:var(--sp-2); }
+#vc .uni-alt{ display:flex; flex-direction:column; gap:var(--sp-2); padding:var(--sp-3);
+  background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-md); min-width:0; }
+#vc .uni-alt-t{ font-size:var(--t-base); color:var(--tx); line-height:1.5; }
+#vc .uni-alt-you{ font-size:var(--t-sm); color:var(--mu); line-height:1.45; }
+#vc .uni-alt-you span{ font-weight:600; color:var(--tx); }
+#vc .uni-alt-go{ align-self:flex-start; min-height:44px; margin-top:auto; }
+#vc .uni-tried{ display:flex; flex-direction:column; gap:var(--sp-1); margin-bottom:var(--sp-2); }
+#vc .uni-tried-row{ font-size:var(--t-sm); color:var(--mu); line-height:1.45; padding-left:var(--sp-3); border-left:2px solid var(--bd); }
+#vc .uni-gaveup{ margin-top:var(--sp-3); font-size:var(--t-base); color:var(--tx); font-weight:600; }
+@media (max-width:560px){ #vc .uni-alts{ grid-template-columns:1fr; } #vc .uni-alt-go{ align-self:stretch; } }

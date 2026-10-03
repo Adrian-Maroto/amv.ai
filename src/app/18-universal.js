@@ -389,10 +389,54 @@ function _feasParse(raw){
     return {
       impossible: true,
       why: String(v.why || 'AMV has nothing that can do this.').trim(),
-      instead: Array.isArray(v.instead) ? v.instead.map(x => String(x)).filter(Boolean).slice(0, 4) : [],
+      instead: Array.isArray(v.instead) ? v.instead.map(_uniAlt).filter(a => a.amv).slice(0, 4) : [],
     };
   }catch(e){ return null; }
 }
+
+/* AN ALTERNATIVE IS SOMETHING TO DO, NOT A CONSOLATION.
+
+   Asked for: "give suggestions on how to do it and what AMV can do related to
+   what they asked - so like instead AMV can xyz and you do this in one step
+   and it's done."
+
+   So each alternative has two halves: what AMV does (written as an instruction
+   it can carry out right now, because the button under it runs exactly that)
+   and the one thing left for the person, when there is one - "press Send",
+   "sign at the counter". A plain string is the older shape and still works:
+   it is the AMV half with nothing claimed about the rest. */
+function _uniAlt(x){
+  if(x && typeof x === 'object') return { amv: String(x.amv || x.do || '').trim().slice(0, 240), you: String(x.you || '').trim().slice(0, 160) };
+  return { amv: String(x || '').trim().slice(0, 240), you: '' };
+}
+function _uniInsteadHTML(list, head){
+  const alts = (Array.isArray(list) ? list : []).map(_uniAlt).filter(a => a.amv).slice(0, 4);
+  if(!alts.length) return '';
+  return '<div class="uni-instead"><b>' + escH(head || 'What AMV can do instead') + '</b><div class="uni-alts">' +
+    alts.map(a => '<div class="uni-alt">' +
+      '<div class="uni-alt-t">' + escH(a.amv) + '</div>' +
+      (a.you ? '<div class="uni-alt-you"><span>Then you:</span> ' + escH(a.you) + '</div>' : '') +
+      '<button class="btn mc-mini bp uni-alt-go" data-dact="uniDoInstead" data-darg="' + escH(a.amv) + '">Do this</button>' +
+    '</div>').join('') + '</div></div>';
+}
+/* "Do this" runs the alternative as the request, in the same box, so what
+   happens next is the ordinary path - planned, checked, run - not a special
+   case that could promise more than the ordinary path delivers. */
+function uniDoInstead(text){
+  const t = String(text || '').trim(); if(!t) return;
+  try{ const el = document.getElementById('mc-cmd-input'); if(el){ el.value = t; if(typeof _mcCmdFit === 'function') _mcCmdFit(el); } }catch(e){}
+  if(typeof mcRunCommand === 'function') mcRunCommand(t, { clarified:true });
+}
+/* "Not now" rather than "not ever": the same shape the server's run uses
+   (_autoTransient in the Worker). An error carrying a code is a known,
+   specific failure and never counts. */
+function _uniTransient(e){
+  if(!e || e.code) return false;
+  const m = String(e.message || e || '');
+  return /\b(fetch failed|failed to fetch|network ?error|socket hang up|connection (?:reset|closed|refused)|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|timed out|temporarily unavailable|try again|overloaded|rate limit(?:ed)?|too many requests)\b/i.test(m)
+      || /\b(?:HTTP |status |error )?(?:408|425|429|500|502|503|504|529)\b/.test(m);
+}
+try{ window._uniAlt = _uniAlt; window._uniInsteadHTML = _uniInsteadHTML; window.uniDoInstead = uniDoInstead; window._uniTransient = _uniTransient; }catch(e){}
 
 /* WHERE THE PERSON IS, HANDED TO THE PLANNER.
 
@@ -503,7 +547,8 @@ const AMVUniversal = {
      With the engine connected the AI plans against the live catalog (so it
      handles requests nobody preprogrammed). Offline it still produces an
      honest single-step plan rather than nothing. */
-  async plan(request){
+  async plan(request, ctx){
+    ctx = ctx || {};
     const gate = _policyCheck(request);
     if(!gate.ok) return { blocked:true, why:gate.why, steps:[] };
     /* THE FLOOR, BEFORE ANYTHING SAYS "WORKING ON IT".
@@ -529,10 +574,21 @@ const AMVUniversal = {
            refuse so it is not forced to invent steps it knows are fiction. */
         + 'If NOTHING in this catalog, in any combination, can finish the request - it needs a physical action, '
         + 'an account that is not the user\'s, a service that is not listed, or an outcome nobody can promise - '
-        + 'return ONLY {"impossible":true,"why":"one plain sentence, no apology","instead":["what you would do instead","..."]} '
-        + 'instead of the array. Do NOT use this for something that merely needs connecting: that is a step, not an impossibility.';
+        + 'return ONLY {"impossible":true,"why":"one plain sentence, no apology","instead":[{"amv":"an instruction AMV can carry out now with this catalog","you":"the one action left for the user, or empty"}]} '
+        + 'instead of the array - up to four, each closely related to what they asked. '
+        + 'Do NOT use this for something that merely needs connecting: that is a step, not an impossibility. '
+        + 'The request may be written in any language and may name local services, forms or slang: understand it as written.';
       try{
-        const raw = await aiComplete('TOOL CATALOG:\n' + tools + _feasWhere() + '\n\nREQUEST: ' + request, sys, { max_tokens: 1400 });
+        /* What already failed, so a second plan is a DIFFERENT route and not
+           the same one again. Data, not instruction - it is a record of what
+           happened. */
+        const tried = Array.isArray(ctx.failed) && ctx.failed.length
+          ? '\n\nEARLIER ATTEMPTS THAT FAILED (plan a different route - other tools, web research, or preparing it '
+            + 'so the user finishes it in one step; if nothing is left, return the impossible object):\n'
+            + ctx.failed.slice(-4).map((f, i) => (i + 1) + '. step "' + String(f.title || '').slice(0, 80) + '" using '
+              + String(f.tool || 'nothing') + ' failed: ' + String(f.error || '').slice(0, 200)).join('\n')
+          : '';
+        const raw = await aiComplete('TOOL CATALOG:\n' + tools + _feasWhere() + tried + '\n\nREQUEST: ' + request, sys, { max_tokens: 1400 });
         /* Either shape, and which one is decided by which bracket comes first
            in the reply rather than by hoping for one of them. */
         const v = _feasParse(raw);
@@ -659,7 +715,25 @@ const AMVUniversal = {
       }
       onEvent({ type:'start', i, step:s });
       try{
-        const out = await _withDeadline(AMVConnectors.run(s.tool, s.args || {}), s);
+        /* TRIED AGAIN WHERE TRYING AGAIN IS THE ANSWER - and only there. A
+           dropped connection, a rate limit or a 5xx is "not now", so a step
+           that READS gets up to three tries with a pause between. A step that
+           sends, posts, buys or contacts anyone gets exactly one: the failure
+           may have come after it landed, and a second try is a second email.
+           A failure with a code (needs a connection, a captcha, a timeout) is
+           not transient and is never retried here. */
+        let out, tries = 0;
+        for(;;){
+          try{ out = await _withDeadline(AMVConnectors.run(s.tool, s.args || {}), s); break; }
+          catch(err){
+            tries++;
+            const again = s.risk !== 'high' && tries < 3 && _uniTransient(err) && !(opts.signal && opts.signal.aborted);
+            if(!again) throw err;
+            onEvent({ type:'retry', i, step:s, tries, error:String((err && err.message) || '') });
+            await new Promise(r => setTimeout(r, tries === 1 ? (opts.retryMs || 1200) : (opts.retryMs ? opts.retryMs * 3 : 4000)));
+          }
+        }
+        if(tries) results.tries = (results.tries || 0) + tries;
         onEvent({ type:'done', i, step:s, result:out });
         results.push({ i, status:'done', result:out });
       }catch(e){
@@ -696,6 +770,33 @@ const AMVUniversal = {
     const results = await this.execute(resolved, opts);
     return { steps:resolved, results, degraded:p.degraded, planError:p.planError,
              summary:this.summarize(resolved, results) };
+  },
+
+  /* WHEN EVERY ROUTE FAILED: what AMV can do that is closest to the ask.
+
+     One call, after the last approach - never before, and never per attempt.
+     With no engine it still answers, with the three things that are always
+     true of AMV: it can find out exactly how, it can prepare the thing, and
+     it can remind on a date. */
+  async alternatives(request, failed){
+    const base = [
+      { amv: 'Research exactly how to do this, step by step, with the official links: ' + String(request).slice(0, 160), you: 'follow the steps it gives you' },
+      { amv: 'Prepare everything for this so only the final click is left: ' + String(request).slice(0, 160), you: 'press the final button yourself' },
+      { amv: 'Remind me about this tomorrow morning with what I need to do it: ' + String(request).slice(0, 140), you: '' },
+    ];
+    if(!(typeof _aiBackendReady === 'function' && _aiBackendReady() && typeof aiComplete === 'function')) return base;
+    try{
+      const cat = AMVConnectors.catalog().map(a => '- ' + a.id + ' (' + a.connectorName + (a.live ? ', connected' : ', not connected') + ')').join('\n');
+      const sys = 'Every route to finishing this request failed. Offer up to four alternatives that are as close as possible to what was asked. '
+        + 'Return ONLY JSON: [{"amv":"an instruction AMV can carry out now with the catalog, written as a command","you":"the single action left for the user, or empty"}]. '
+        + 'Prefer one where AMV does nearly all of it and the user does one small thing. Never offer something that failed below.';
+      const raw = await aiComplete('TOOL CATALOG:\n' + cat + _feasWhere() + '\n\nWHAT FAILED:\n'
+        + (failed || []).slice(-4).map(f => '- ' + String(f.title || '') + ': ' + String(f.error || '').slice(0, 160)).join('\n')
+        + '\n\nREQUEST: ' + request, sys, { max_tokens: 700 });
+      const arr = JSON.parse(String(raw).slice(String(raw).indexOf('['), String(raw).lastIndexOf(']') + 1));
+      const alts = (Array.isArray(arr) ? arr : []).map(_uniAlt).filter(a => a.amv).slice(0, 4);
+      return alts.length ? alts : base;
+    }catch(e){ return base; }
   },
 
   summarize(resolved, results){
@@ -761,66 +862,109 @@ async function uniRun(request, opts){
     paint('<div class="uni-plan cannot">' +
       '<div class="uni-h">This part I genuinely cannot do</div>' +
       '<div class="uni-why">' + escH(p.why) + '</div>' +
-      (p.instead && p.instead.length
-        ? '<div class="uni-instead"><b>What I can do instead</b><ul>' +
-          p.instead.map(x => '<li>' + escH(x) + '</li>').join('') + '</ul>' +
-          '<div class="uni-resume">Say which one and I will start on it.</div></div>'
-        : '') +
+      _uniInsteadHTML(p.instead) +
       '</div>');
     return { impossible: true, why: p.why, instead: p.instead || [], edge: p.edge || '' };
   }
-  const resolved = AMVUniversal.resolve(p.steps, { autonomous: !!opts.autonomous });
-  /* An agent that is doing real things on the user's behalf must be stoppable.
-     Cancelling takes effect between steps - the one already in flight is not
-     killed halfway, which would be worse than letting it finish - so the
-     button says so rather than implying an instant halt. */
+  /* AN AGENT THAT STOPPABLE IS STOPPED ONCE, NOT PER APPROACH: the same
+     controller spans every route tried below. */
   const ctrl = opts.signal ? null : ((typeof AbortController !== 'undefined') ? new AbortController() : null);
   const signal = opts.signal || (ctrl ? ctrl.signal : null);
-  paint('<div class="uni-plan"><div class="uni-h">' + resolved.length + ' step' + (resolved.length === 1 ? '' : 's') +
-        (ctrl ? '<button class="uni-stop" id="uni-stop" type="button">Stop</button>' : '') + '</div>' +
-        resolved.map(_uniStepRow).join('') + '</div>');
-  if(ctrl){
-    const sb = document.getElementById('uni-stop');
-    if(sb) sb.addEventListener('click', () => {
-      try{ ctrl.abort(); }catch(e){}
-      sb.disabled = true; sb.textContent = 'Stopping after this step…';
-    });
-  }
 
-  const res = await AMVUniversal.execute(resolved, {
-    autonomous: !!opts.autonomous, approved: !!opts.approved, signal: signal,
-    onEvent: e => {
-      if(e.type === 'start') _uniSetStatus(e.i, 'running');
-      else if(e.type === 'done') _uniSetStatus(e.i, 'done', typeof e.result === 'object' ? JSON.stringify(e.result).slice(0, 140) : String(e.result || '').slice(0, 140));
-      else if(e.type === 'blocked') _uniSetStatus(e.i, 'blocked');
-      else if(e.type === 'awaiting_approval') _uniSetStatus(e.i, 'needs_approval');
-      else if(e.type === 'error') _uniSetStatus(e.i, 'error', e.error);
-      else if(e.type === 'skipped') _uniSetStatus(e.i, 'skipped', (e.blocker && e.blocker.need) || 'Not attempted');
+  /* TRYING PROPERLY BEFORE GIVING UP, IN THE BOX.
+
+     Asked for: "try to actually run it, and if it can't after like 50
+     attempts, give suggestions". Fifty identical attempts would be fifty
+     identical failures and fifty charges - the same plan fails the same way.
+     What helps is DIFFERENT routes, so: up to three plans, each told what the
+     previous one tripped on, and inside each a read that hits a network blip
+     is tried three times (see execute). Never a second route once anything
+     has been sent, posted or bought - a new route would do it again. Then,
+     and only then, the alternatives closest to what was asked, each one a
+     button that runs it. The overnight runs on the server follow the same
+     rules (_autoExecuteTried in the Worker): three tries a run, counted
+     across runs, then suggestions read off the actual error. */
+  const MAX_APPROACHES = opts.maxApproaches || 3;
+  const failed = [], history = [];
+  let approach = 1, resolved, res, sum, sent = false, lastPlan = p, insteadAfter = null;
+  for(;;){
+    resolved = AMVUniversal.resolve(lastPlan.steps, { autonomous: !!opts.autonomous });
+    paint((history.length ? '<div class="uni-tried">' + history.join('') + '</div>' : '') +
+          '<div class="uni-plan"><div class="uni-h">' + (approach > 1 ? 'Approach ' + approach + ' of ' + MAX_APPROACHES + ' - ' : '') +
+          resolved.length + ' step' + (resolved.length === 1 ? '' : 's') +
+          (ctrl ? '<button class="uni-stop" id="uni-stop" type="button">Stop</button>' : '') + '</div>' +
+          resolved.map(_uniStepRow).join('') + '</div>');
+    if(ctrl){
+      const sb = document.getElementById('uni-stop');
+      if(sb) sb.addEventListener('click', () => {
+        try{ ctrl.abort(); }catch(e){}
+        sb.disabled = true; sb.textContent = 'Stopping after this step…';
+      });
     }
-  });
-  const sum = AMVUniversal.summarize(resolved, res);
+    res = await AMVUniversal.execute(resolved, {
+      autonomous: !!opts.autonomous, approved: !!opts.approved, signal: signal, retryMs: opts.retryMs,
+      onEvent: e => {
+        if(e.type === 'start') _uniSetStatus(e.i, 'running');
+        else if(e.type === 'retry') _uniSetStatus(e.i, 'running', 'The service did not answer - trying again (' + (e.tries + 1) + ' of 3)…');
+        else if(e.type === 'done') _uniSetStatus(e.i, 'done', typeof e.result === 'object' ? JSON.stringify(e.result).slice(0, 140) : String(e.result || '').slice(0, 140));
+        else if(e.type === 'blocked') _uniSetStatus(e.i, 'blocked');
+        else if(e.type === 'awaiting_approval') _uniSetStatus(e.i, 'needs_approval');
+        else if(e.type === 'error') _uniSetStatus(e.i, 'error', e.error);
+        else if(e.type === 'skipped') _uniSetStatus(e.i, 'skipped', (e.blocker && e.blocker.need) || 'Not attempted');
+      }
+    });
+    sum = AMVUniversal.summarize(resolved, res);
+    sent = sent || res.some(r => r.status === 'done' && resolved[r.i] && resolved[r.i].risk === 'high');
+    if(!sum.errors) break;
+    const f = res.find(r => r.status === 'error');
+    const fs = resolved[f.i] || {};
+    failed.push({ title: fs.title || ('Step ' + (f.i + 1)), tool: fs.tool || '', error: f.error || '' });
+    history.push('<div class="uni-tried-row">Approach ' + approach + ' stopped at "' + escH(fs.title || ('step ' + (f.i + 1))) + '": ' + escH(String(f.error || 'it failed').slice(0, 160)) + '</div>');
+    if(sent || approach >= MAX_APPROACHES || (signal && signal.aborted) || lastPlan.degraded) break;
+    approach++;
+    paint('<div class="uni-tried">' + history.join('') + '</div><div class="uni-plan"><div class="uni-h">Trying a different way - approach ' + approach + ' of ' + MAX_APPROACHES + '…</div></div>');
+    const next = await AMVUniversal.plan(request, { failed });
+    if(next.impossible){ insteadAfter = next.instead || []; break; }
+    if(next.blocked || next.planError || !Array.isArray(next.steps) || !next.steps.length || next.degraded) break;
+    lastPlan = next;
+  }
+  const p_ = lastPlan;
   const needs = sum.needs.length
     ? '<div class="uni-needs"><b>To finish this I need:</b> ' + sum.needs.map(n => escH(n.how || n.need)).join(' · ') +
       '<div class="uni-resume">Provide it and run again - I continue from here automatically.</div></div>' : '';
   /* Failures were computed and then never shown: a run where every step threw
      reported "0 done - 0 blocked - 0 awaiting your OK" and looked like nothing
      had happened. Say what failed, where, and what it means for the rest. */
-  const failed = sum.errors
+  const failedHtml = sum.errors
     ? '<div class="uni-failed"><b>Stopped at step ' + (sum.failedAt + 1) + ':</b> ' + escH(sum.failedWhy || 'it failed') +
       (sum.skipped ? '<div class="uni-resume">' + sum.skipped + ' later step' + (sum.skipped === 1 ? '' : 's') +
         ' were not attempted, because they would have run on the result of the step that failed.</div>' : '') +
       '</div>' : '';
-  const planFailed = p.planError
-    ? '<div class="uni-failed"><b>I could not plan this properly:</b> ' + escH(p.planError) +
+  const planFailed = p_.planError
+    ? '<div class="uni-failed"><b>I could not plan this properly:</b> ' + escH(p_.planError) +
       '<div class="uni-resume">What you see is a single fallback step, not a real plan.</div></div>' : '';
+  /* Every route failed: say how hard it tried, then what is closest to the
+     ask. Not after something was sent - then the honest thing is to say a
+     send happened and stop, because any alternative risks doing it twice. */
+  let alts = [];
+  if(sum.errors && !sent && !(signal && signal.aborted)){
+    alts = (insteadAfter && insteadAfter.length) ? insteadAfter : await AMVUniversal.alternatives(request, failed);
+  }
+  const gaveUp = sum.errors
+    ? (sent
+        ? '<div class="uni-failed"><b>Something was already sent</b>, so AMV did not try another route - a new route would send it again. Check what arrived before running this again.</div>'
+        : alts.length
+          ? '<div class="uni-gaveup">AMV tried ' + approach + ' different way' + (approach === 1 ? '' : 's') + ' to do this, and none got all the way.</div>' + _uniInsteadHTML(alts)
+          : '')
+    : '';
   const _sb = document.getElementById('uni-stop'); if(_sb) _sb.remove();   // the run is over
   const m = document.getElementById('uni-live');
   if(m) m.insertAdjacentHTML('beforeend',
     '<div class="uni-sum">' + sum.done + ' done · ' + sum.blocked + ' blocked · ' + sum.awaitingApproval + ' awaiting your OK' +
     (sum.errors ? ' · <span class="uni-err-n">' + sum.errors + ' failed</span>' : '') +
     (sum.skipped ? ' · ' + sum.skipped + ' not attempted' : '') +
-    (p.degraded ? ' · <span class="uni-deg">connect the engine for full planning</span>' : '') +
-    planFailed + failed + needs + '</div>');
-  return { steps: resolved, results: res, summary: sum, planError: p.planError };
+    (p_.degraded ? ' · <span class="uni-deg">connect the engine for full planning</span>' : '') +
+    planFailed + failedHtml + needs + '</div>' + gaveUp);
+  return { steps: resolved, results: res, summary: sum, planError: p_.planError, approaches: approach, gaveUp: !!sum.errors, sent, alternatives: alts };
 }
 try{ window.uniRun = uniRun; window._uniStepRow = _uniStepRow; }catch(e){}

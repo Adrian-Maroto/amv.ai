@@ -4841,15 +4841,13 @@ function _mcAskDetails(box, instruction, questions){
    each one runnable from where they are standing. */
 function _mcCannot(box, v, instruction){
   if(!box) return;
-  const opts = (v && Array.isArray(v.instead) ? v.instead : []).slice(0, 4);
+  /* Each alternative is a card with what AMV does, what is left for the
+     person, and a Do this that runs it - the same cards a failed run ends on
+     (_uniInsteadHTML), so there is one way of saying "instead". */
   box.innerHTML = '<div class="mc-cmd-msg cannot">' +
     '<div class="mc-cannot-h">This part I genuinely cannot do</div>' +
     '<div class="mc-cannot-why">' + escH(v && v.why ? v.why : 'AMV has nothing that can do this.') + '</div>' +
-    (opts.length
-      ? '<div class="mc-cannot-alt"><b>What I can do instead</b><div class="mc-cannot-opts">' +
-        opts.map(x => '<button class="btn mc-mini" data-dact="cwPromptSelf" data-darg="' + escH(x) + '">' + escH(x) + '</button>').join('') +
-        '</div></div>'
-      : '') +
+    (typeof _uniInsteadHTML === 'function' ? _uniInsteadHTML(v && v.instead) : '') +
   '</div>';
 }
 try{ window._mcCannot=_mcCannot; }catch(e){}
