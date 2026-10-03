@@ -11,6 +11,7 @@
    that what the research says matters in a country leads it there and nowhere
    else, and that a real count of what people start beats the research. */
 import { createServer } from 'http';
+import { readFileSync } from 'fs';
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -160,13 +161,21 @@ section('No country is described by a name that has been retired');
   const r = await page.evaluate(async (rows) => {
     const out = [];
     for (const [cc, k, src] of rows) { await _cwLoadLocal(cc); out.push([cc, k, String((_cwFacts[cc] || {})[k] || '')]); }
-    const titles = {}; for (const cc of ['AR', 'ZA', 'GH']) titles[cc] = (_cwLocalJobs(cc) || []).map(j => j.title);
+    const titles = {}; for (const cc of ['AR', 'ZA', 'GH', 'EE', 'PT', 'RU', 'NZ', 'NO']) { await _cwLoadLocal(cc); for (let i = 0; i < 100 && _cwLocalState[cc] === 'loading'; i++) await new Promise(r => setTimeout(r, 20)); titles[cc] = (_cwLocalJobs(cc) || []).map(j => j.title); }
     return { facts: out, titles };
   }, RETIRED.map(r => [r[0], r[1], r[2].source]));
   const stale = r.facts.filter(([cc, k, v], i) => !v || RETIRED[i][2].test(v)).map(([cc, k, v], i) => cc + '.' + k + '=' + v);
   ok(stale.length === 0, 'none of the retired names is back, and none of the fields is empty', stale);
   ok(r.titles.AR.some(t => /ARCA/.test(t)) && !r.titles.AR.some(t => /^AFIP/.test(t)), 'Argentina’s tax job is titled for ARCA', r.titles.AR);
   ok(r.titles.GH.some(t => /E-Levy/.test(t)), 'Ghana’s mobile money job looks for the E-Levy taken after its repeal (Act 1128, 2 April 2025)', r.titles.GH);
+  ok(r.titles.EE.some(t => /€700/.test(t)), 'Estonia: the flat €700 exemption of 2026, not the sliding one it replaced', r.titles.EE);
+  ok(!r.titles.PT.some(t => /birthday/i.test(t)), 'Portugal: IUC falls in the car’s registration month, not the owner’s birthday', r.titles.PT);
+  /* The instruction each job runs on stays on the server; read it there. */
+  const SRC = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'amv-backend.js'), 'utf8');
+  const job = id => { const i = SRC.indexOf("{ id: '" + id + "'"); return i < 0 ? '' : SRC.slice(i, SRC.indexOf('},', i)); };
+  ok(!/half price/i.test(job('ru_shtrafy')) && /as the notice or Gosuslugi states/.test(job('ru_shtrafy')), 'Russia: no promise of half price - the notice states the rate', job('ru_shtrafy').slice(0, 120));
+  ok(/260\.72/.test(job('nz_kiwisaver')) && /3\.5%/.test(job('nz_kiwisaver')), 'New Zealand: the 2025 government contribution and the 3.5% default from April 2026', job('nz_kiwisaver').slice(0, 120));
+  ok(/Norgespris/.test(job('no_strom')), 'Norway: the fixed Norgespris next to strømstøtte', job('no_strom').slice(0, 120));
 }
 
 section('Nothing on a country\u2019s page is called something it could be called anywhere');
