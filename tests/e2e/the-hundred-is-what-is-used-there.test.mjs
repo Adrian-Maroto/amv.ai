@@ -130,6 +130,19 @@ section('Every research list names countries AMV covers, and says what the sourc
   ok(r.ptHouse && !r.gbHouse && r.mzFarm && !r.bdFarm, 'housing (OECD index) and farming (ILO, 40%) by their stated thresholds', r);
 }
 
+section('A fuel price is named by the day it is set there');
+{
+  const r = await page.evaluate(() => {
+    const fw = CW_SIGNAL.FUELWEEK.split(' ');
+    const missing = fw.filter(cc => !CW_FUEL_CYCLE[cc]).concat(Object.keys(CW_FUEL_CYCLE).filter(cc => !fw.includes(cc)));
+    const t = cc => ((_cwMadeMore(cc).find(j => _cwKind(j) === 'fuelweek')) || {});
+    return { missing, ke: t('KE').title || '', vn: t('VN').title || '', kep: t('KE').prompt || '', us: t('US').title || '' };
+  });
+  ok(r.missing.length === 0, 'every country with a published fuel cycle says what it is, and no cycle is for a country off the list', r.missing);
+  ok(/14th/.test(r.ke) && /Thursday/.test(r.vn) && !/\{cycle\}/.test(r.ke + r.kep), 'Kenya’s on the 14th, Viet Nam’s every Thursday - not “next week” everywhere', [r.ke, r.vn]);
+  ok(r.us === '', 'and none where the price is not set by anybody on a schedule', r.us);
+}
+
 section('No country is described by a name that has been retired');
 {
   /* Each of these was in the facts, and each stopped being true: the name a

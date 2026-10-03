@@ -30252,6 +30252,10 @@ const COUNTRY_MAIL = {
   IT:['gmail','outlook','libero'], ES:['gmail','outlook'], PT:['gmail','outlook','sapo'], PL:['gmail','wppl','onet','interia'],
   CZ:['seznam','gmail'], NL:['gmail','outlook','kpn','ziggo'], BE:['gmail','outlook','telenet'], SE:['gmail','outlook','telia'],
   IN:['gmail','outlook','rediff'], BR:['gmail','outlook','uol'], TR:['gmail','outlook','yandextr'], IL:['gmail','outlook'], ZA:['gmail','outlook','mweb'],
+  /* Kazakhstan: Yandex Mail leads business email hosting (BuiltWith, 35%),
+     Mail.ru next; both serve Uzbekistan too. Consumer shares are not
+     published, so Gmail stays first and the two follow it. */
+  KZ:['gmail','yandex','mailru'], UZ:['gmail','mailru','yandex'],
 };
 const MAIL_DEFAULT_ORDER = ['gmail','outlook','yahoo'];
 /* WHERE SCHOOLWORK LIVES. Google Classroom leads K-12; its largest markets are

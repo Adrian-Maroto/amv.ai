@@ -19166,7 +19166,7 @@ const CW_MADE_MORE = [
   ['@POWER','loadshedding','Home & life','🔌','daily','Power cuts and load-shedding for your area','The published load-shedding stage and cut times for your area today and tomorrow, from the utility in {C}.','Which town, and which area or zone?','e.g. "Soweto, block 7"','Check the utility’s official load-shedding or outage schedule in {C} for the user’s area today and tomorrow: the stage, the exact times and any change announced. If there is none, say so in one line. Link the source.'],
   ['@PREPAID','bundles','Money','📶','weekly','Cheapest data bundles this week','The best-value prepaid data and airtime bundles from the networks in {C}, for how much you actually use.','Which network, and how much data a week?','e.g. "Safaricom, about 3GB a week"','Compare the current prepaid data and airtime bundles from the mobile networks in {C} for the user’s usage: price per GB, validity, and any night-only or app-only catch. Name the cheapest that fits, with the link or dial code.'],
   ['@PARALLEL','parallel','Money','💱','daily','The official and the parallel exchange rate today','Today’s official rate and the parallel-market rate as reported in {C}, and how far apart they are.','Which currency?','e.g. "US dollars"','Report today’s official exchange rate in {C} for the currency named and the parallel-market rate as reported by named, reputable outlets, the gap between them and how it moved this week. Information only: never advise buying or selling, and say plainly that trading outside official channels may be illegal.'],
-  ['@FUELWEEK','fuelweek','Money','⛽','weekly','Fuel price change announced for next week','The pump-price change announced in {C} for the coming period, and whether to fill up before it starts.','Petrol or diesel?','e.g. "petrol"','Check the official fuel-price announcement in {C} for the coming week or period: the new pump price for the user’s fuel, the change, and when it takes effect. Link the official source.'],
+  ['@FUELWEEK','fuelweek','Money','⛽','weekly','The fuel price {C} sets {cycle}','The pump price {C} sets {cycle}, the change, and whether to fill up before it takes effect.','Petrol or diesel?','e.g. "petrol"','{C} sets fuel prices {cycle}. Check the latest official announcement: the new pump price for the user’s fuel, the change from the last one, and the date it takes effect. If the next one is not out yet, say when it is due. Link the official source.'],
 ];
 function _cwFill(str, f, k, C){
   const v = k ? String(f[k] || '') : '';
@@ -19248,7 +19248,7 @@ const CW_TITLE_LOCAL = {
   loadshedding:['Power cuts and load-shedding in {C}','',''],
   bundles:['Cheapest data bundles this week on {f3:telco}','telco','Cheapest data bundles this week in {C}'],
   parallel:['The official and the parallel {cur} rate today','',''],
-  fuelweek:['Fuel price change announced in {C} for next week','',''],
+  fuelweek:['The fuel price {C} sets {cycle}','',''],
 };
 function _cwLocalTitle(id, f, C, dflt){
   const t = CW_TITLE_LOCAL[id];
@@ -19271,21 +19271,33 @@ function _cwLocalTitle(id, f, C, dflt){
                (summer) and Myanmar (Yangon's four-hours-on rotation).
                NOT South Africa - 476 days without load-shedding by September
                2026 - nor Zimbabwe, where ZESA ended routine cuts this year.
-     PREPAID   GSMA Intelligence: markets where most mobile connections are
-               prepaid.
+     PREPAID   GSMA Intelligence: 93% of connections in Sub-Saharan Africa
+               are prepaid, over 90% in India, above 85% across South and
+               Southeast Asia - every country here in those regions.
      PARALLEL  A street rate more than 10% from the official one in 2026:
                Venezuela (12-45% over the year) and Zimbabwe (ZiG, about 20%).
                NOT Argentina, Nigeria, Lebanon or Ethiopia, where the reforms
                of 2024-25 closed the gap to a few per cent.
-     FUELWEEK  Fuel prices set and announced by the authorities on a fixed
-               cycle: weekly in Malaysia and the Philippines, fortnightly in
-               Pakistan, monthly in South Africa. */
+     FUELWEEK  Pump prices set by the authority on a fixed published cycle
+               (see CW_FUEL_CYCLE): weekly in Malaysia, the Philippines and
+               Viet Nam; every two weeks in Pakistan, Ghana, Croatia and
+               Slovenia; monthly in South Africa, the UAE, Kenya, Sri Lanka,
+               Bangladesh (by formula since March 2024), Indonesia
+               (Pertamina) and Jordan. NOT Chile, whose cycle changed in 2026. */
 const CW_SIGNAL = {
   MUSLIM:   'SA AE QA KW OM BH EG MA DZ TN JO IQ LB PK BD ID MY TR AZ UZ KZ SN',
   POWER:    'ZM PK GH LB NG BD IQ MM',
-  PREPAID:  'IN PK BD NG KE GH UG TZ ZM EG PH ID VN MM KH NP LK ET',
+  PREPAID:  'IN PK BD NG KE GH UG TZ ZM EG PH ID VN MM KH NP LK ET SN CI CM RW MZ AO BW NA ZW ZA',
   PARALLEL: 'VE ZW',
-  FUELWEEK: 'MY PH PK ZA',
+  FUELWEEK: 'MY PH PK ZA AE KE GH LK BD VN HR SI ID JO',
+};
+/* WHEN EACH FUELWEEK COUNTRY ANNOUNCES ITS PRICES, as the authority does it
+   (checked October 2026), so the job names the day rather than "next week". */
+const CW_FUEL_CYCLE = {
+  MY:'every week', PH:'every Tuesday', PK:'twice a month, for the 1st and the 16th', ZA:'on the first Wednesday of the month',
+  AE:'on the last day of every month', KE:'on the 14th of every month', GH:'twice a month, for the 1st and the 16th',
+  LK:'at the end of every month', BD:'every month, by formula', VN:'every Thursday', HR:'every two weeks', SI:'every two weeks',
+  ID:'on the 1st of every month', JO:'every month',
 };
 /* A country whose own hand-written jobs already cover one of these does not
    get it twice. */
@@ -19305,12 +19317,13 @@ function _cwMadeMore(cc){
   if(!f || !row) return [];
   const C = row[1], low = cc.toLowerCase();
   const key = m => (m[0] && m[0].charAt(0) !== '@') ? m[0] : '';
+  const cyc = t => String(t).split('{cycle}').join(CW_FUEL_CYCLE[cc] || 'at its next review');
   return CW_MADE_MORE.filter(m => _cwRowFor(m, f, cc)).map(m => ({
     id: 'cc_' + low + '_' + m[1], made: true, country: cc, countryName: C,
     cat: m[2], icon: m[3], every: m[4] === 'monthly' ? 'weekly' : m[4], on: false, needs: 'Web research',
-    title: _cwFill(_cwLocalTitle(m[1], f, C, m[5]), f, key(m), C), desc: _cwFill(m[6], f, key(m), C), where: key(m) ? String(f[key(m)]) : C,
+    title: cyc(_cwFill(_cwLocalTitle(m[1], f, C, m[5]), f, key(m), C)), desc: cyc(_cwFill(m[6], f, key(m), C)), where: key(m) ? String(f[key(m)]) : C,
     asks: m[7] ? { q: _cwFill(m[7], f, key(m), C), ph: m[8] } : null,
-    prompt: _cwFill(m[9], f, key(m), C) + ' The user is in ' + C + '. Only real, current information with sources; never invent listings, prices or dates.',
+    prompt: cyc(_cwFill(m[9], f, key(m), C)) + ' The user is in ' + C + '. Only real, current information with sources; never invent listings, prices or dates.',
   }));
 }
 
