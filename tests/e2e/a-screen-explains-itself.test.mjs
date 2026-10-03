@@ -62,9 +62,11 @@ section('Crew leads with the way in, and with the brake only when it is needed (
       fixed delay here is a bet on which render you read. */
   const head = async () => {
     await page.evaluate(() => setTab('crew'));
-    await page.waitForSelector('.mc-head-r button', { timeout: 15000 }).catch(() => {});
+    /* The header also holds the country control now (Not in X?, asked for at
+       the top right); this is about the action control beside it. */
+    await page.waitForSelector('.mc-head-r button:not(.cw-where)', { timeout: 15000 }).catch(() => {});
     return page.evaluate(() => {
-      const b = document.querySelector('.mc-head-r button');
+      const b = document.querySelector('.mc-head-r button:not(.cw-where)');
       return b ? { cls: b.className, act: b.dataset.dact, txt: b.textContent.trim() } : null;
     });
   };

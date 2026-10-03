@@ -2716,7 +2716,6 @@ function cwCountry(code){
   _cwShowcaseCache = null;
   renderCrewView();
 }
-try{ window.cwCountry = cwCountry; }catch(e){}
 /* WHERE SOMEBODY IS, FROM THE NETWORK.
 
    The country used to come from the browser's language alone, so somebody in

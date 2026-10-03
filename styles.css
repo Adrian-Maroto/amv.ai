@@ -16427,8 +16427,11 @@ html.reduce-motion #cv.cv-home .chome-shine{ display:none; }
    The wrapper is the field; the input is transparent inside it. */
 .set-search-wrap input.set-search{
   background:none!important; border:0!important; box-shadow:none!important;
-  border-radius:0!important; padding:0!important; min-height:0;
+  border-radius:0!important; padding:0!important; min-height:28px;
 }
+/* Its focus ring is drawn on the input itself - the element the keyboard is
+   on - reaching out to about the wrapper's edge. */
+.set-search-wrap input.set-search:focus-visible{ outline:2px solid var(--accent)!important; outline-offset:5px; border-radius:var(--r-sm)!important; }
 /* Billing: what the next plan adds sat on a 14% accent wash, which in the
    light theme read as a grey-blue slab beside a white card. A light tint of
    the accent over the card colour, and an accent hairline, says the same
@@ -16441,7 +16444,7 @@ html.reduce-motion #cv.cv-home .chome-shine{ display:none; }
    lines tall; typing hands the height back to the autosize, so nothing moves
    for anybody who has started. CSS rather than script, so every path that
    empties the box (send, new chat, a restored draft cleared) gets it. */
-@media(max-width:600px){ #cv #mta:placeholder-shown, #cv.cv-home #mta:placeholder-shown{ min-height:calc(3.2em + 22px); } }
+@media(max-width:600px){ #mta::placeholder{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } }
 /* Settings on a phone: the section picker ran 2px under the Close button,
    which is 44px wide here, not the 40px the padding was cut for. */
 @media(max-width:700px){ .settings-nav{ padding-right:62px!important; } }
