@@ -927,7 +927,7 @@ const USER_SET_SECTIONS=[
      "password" or "language", so each section lists the words of what is in
      it - and a suite renders every pane and fails on a word it does not show,
      so search never sends anybody to a section that is not about it. */
-  {id:'account',label:'Account',find:['name','photo','profile','instructions','email','team','invite','seats','projects','about','terms','support','keyboard shortcuts','sign out'],icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
+  {id:'account',label:'Account',find:['name','photo','profile','instructions','email','notifications','email me when amv is done','team','invite','seats','projects','about','terms','support','keyboard shortcuts','sign out'],icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
   {id:'billing',label:'Plan & billing',find:['plan','usage','upgrade','payment method','transactions','invoice'],icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
   {id:'family',label:'Family',find:['family','invitation'],icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
   {id:'integrations',label:'Connectors',find:['connectors','skills','api keys','presets'],icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
@@ -2520,7 +2520,23 @@ function _renderSetPaneInner(only, into){
           '</div>'+
         '</div>'+
       '</div>'+
+      /* Email me when AMV is done (41-done-mail.js). Here so that a "Not now"
+         is never final, and a "yes" can always be taken back. */
+      '<div class="ss2"><h3>Notifications</h3>'+
+        '<div class="prv-pref"><div><div class="prv-pref-t">Email me when AMV is done</div>'+
+          '<div class="prv-pref-s">When an answer takes a while and you have gone to do something else, AMV emails '+escH((S.user&&S.user.email)||'your account')+' as soon as it is ready. Only then - never about something you watched finish.</div></div>'+
+          '<label class="sw"><input type="checkbox" id="acct-done-mail" aria-label="Email me when AMV is done" '+(loadStr('amv_done_mail')==='1'?'checked':'')+'><span class="sw-sl"></span></label></div>'+
+        '<div class="set-sub" id="acct-done-msg" role="status" aria-live="polite" style="margin:6px 0 0"></div>'+
+      '</div>'+
       _activeSessionsHTML();
+    on($('acct-done-mail'),'change',async function(){
+      const box=this, msg=$('acct-done-msg'), want=box.checked;
+      box.disabled=true;
+      const r=await _doneMailSet(want);
+      box.disabled=false;
+      if(!r.ok){ box.checked=false; if(msg) msg.textContent=r.why; return; }
+      if(msg) msg.textContent=want?'On. AMV will email you when long work finishes while you are away.':'Off. AMV will not email you about finished answers.';
+    });
     on($('pfp-c'),'click',()=>$('pfp-fi')?.click());
     on($('pfp-edit'),'click',()=>$('pfp-fi')?.click());
     on($('pfp-fi'),'change',function(){

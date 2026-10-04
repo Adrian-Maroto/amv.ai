@@ -1307,6 +1307,10 @@ const AMV_API = {
   async entitlement(email){ const r=await this._fetch('/v1/entitlement?email='+encodeURIComponent(email||'')); return await r.json(); },
   /* Family (AMV-102). The parent's controls; there is deliberately no method
      here for reading a child's conversations, because no such route exists. */
+  /* "Email me when AMV is done". {probe:true} only asks whether this AMV can
+     send email; {ok} reports how the work ended. The server picks the address
+     and the words - see notifyDone. */
+  async notifyDone(body){ const r=await this._fetch('/v1/notify/done',{method:'POST',body:JSON.stringify(body||{})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyGet(){ const r=await this._fetch('/v1/family/get',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyLimits(child,limits){ const r=await this._fetch('/v1/family/limits',{method:'POST',body:JSON.stringify({child,limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyLeave(){ const r=await this._fetch('/v1/family/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
@@ -1964,7 +1968,7 @@ function _initKeyboardNav(){
            button that says what closing means. */
         if(ovr && ovr.children.length && ovr.querySelector('[data-keep-open]')){ e.preventDefault(); return; }
         if(ovr && ovr.children.length){ closeOvr(); e.preventDefault(); return; }
-        const pop=document.querySelector('.sb-popup.on,.menu.on,.ctx-menu'); if(pop){ pop.classList.remove('on'); }
+        const pop=document.querySelector('.menu.on,.ctx-menu'); if(pop){ pop.classList.remove('on'); }
       }
       // Cmd/Ctrl+K opens the command palette
       if((e.metaKey||e.ctrlKey)&&e.key==='k'){ e.preventDefault(); try{ openCommandPalette(); }catch(err){} }

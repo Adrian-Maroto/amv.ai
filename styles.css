@@ -194,14 +194,14 @@ footer.lfoot{border-top:1px solid var(--bd);padding:20px 24px;display:flex;align
 .hit{font-size:var(--t-sm);color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 0;min-width:0}.hi.on .hit,.hi:hover .hit{color:var(--tx)}
 .nh{font-size:var(--t-sm);color:var(--dim);padding:8px 13px;font-style:italic}
 .sbfoot{padding:8px;border-top:1px solid var(--bd);flex-shrink:0;position:relative}
-.sb-user{display:flex;align-items:center;gap:7px;padding:7px 9px;border-radius:var(--r-xs);cursor:pointer;transition:background-color .13s,border-color .13s,color .13s,box-shadow .13s,transform .13s,opacity .13s,filter .13s}.sb-user:hover{background:var(--s2)}
-.sb-av{width:26px;height:26px;border-radius:50%;background:var(--blued);display:flex;align-items:center;justify-content:center;font-size:var(--t-2xs);font-weight:700;flex-shrink:0;color:#fff;overflow:hidden}
-.sb-un{font-size:var(--t-sm);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sb-ue{font-size:var(--t-2xs);color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sb-popup{display:none;position:absolute;bottom:56px;left:8px;right:8px;background:var(--s2);border:1px solid var(--bdl);border-radius:var(--r-md);padding:5px 0;z-index:200;box-shadow:0 8px 28px rgba(0,0,0,.3)}
-.sb-popup.on{display:block}
-.sb-mi{width:100%;display:flex;align-items:center;gap:8px;padding:8px 14px;font-size:var(--t-base);color:var(--mu);background:none;border:none;cursor:pointer;font-family:var(--fn);transition:background-color .13s,border-color .13s,color .13s,box-shadow .13s,transform .13s,opacity .13s,filter .13s}.sb-mi:hover{background:var(--s3);color:var(--tx)}
-.sb-mid{height:1px;background:var(--bd);margin:4px 0}
+
+
+
+
+
+
+
+
 #mc{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 #vc{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
 #tabs{display:flex;align-items:center;gap:1px;padding:0 10px;border-bottom:1px solid var(--bd);height:34px;background:var(--bg);overflow-x:auto;flex-shrink:0}
@@ -413,8 +413,8 @@ input,select,textarea{border-radius:var(--r-sm)!important}
 /* sidebar group spacing */
 .sbl{height:14px;margin-top:10px}
 .sbdiv{height:1px;background:var(--bd);width:60%;margin:12px auto}
-#sb .sb-user,#sb #sb-user-btn{justify-content:center;padding:0!important;margin-top:auto!important}
-#sb .sb-un,#sb .sb-ue,#sb #sb-name,#sb #sb-email{display:none!important}
+
+
 /* toolbar centered title */
 #anav{position:relative;gap:12px}
 #nav-title{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:var(--t-md);font-weight:600;letter-spacing:-.2px;color:var(--tx);opacity:0;transition:opacity .25s var(--ease);pointer-events:none;white-space:nowrap;z-index:0}
@@ -462,8 +462,8 @@ input,select,textarea{border-radius:var(--r-sm)!important}
 .cw-badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:var(--r-pill);background:var(--accent-fill);color:#fff;font-size:var(--t-xs);font-weight:700;margin-left:6px}
 .cw-empty{font-size:var(--t-base);color:var(--mu);padding:14px;text-align:center;background:rgba(255,255,255,.02);border:1px dashed var(--glass-bd);border-radius:var(--r-md)}
 
-.cw-appr-h{display:flex;align-items:center;gap:9px;margin-bottom:8px}
-.cw-appr-body{font-size:var(--t-base);color:var(--mu);line-height:1.6;white-space:pre-wrap;background:rgba(0,0,0,.2);border-radius:var(--r-sm);padding:12px;margin-bottom:12px}
+
+
 
 .cw-quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .cw-quick-card{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;border:1px solid var(--glass-bd);border-radius:var(--r-md);background:var(--glass);cursor:pointer;color:var(--tx);font-size:var(--t-base);font-weight:500;transition:transform .2s var(--ease),border-color .2s var(--ease)}
@@ -539,9 +539,9 @@ html,body{height:100%;overflow:hidden}
 .sbdiv{height:0;background:none;margin:11px 0}
 .sbl{display:none!important}                    /* hide group word-labels, dividers do the spacing */
 /* user footer: show name again */
-#sb .sb-user,#sb #sb-user-btn{justify-content:flex-start;padding:8px 10px!important;gap:9px;border-radius:var(--r-sm)}
-#sb .sb-un,#sb #sb-name{display:block!important;font-size:var(--t-base);font-weight:600;color:var(--tx)}
-#sb .sb-ue,#sb #sb-email{display:block!important;font-size:var(--t-xs);color:var(--mu)}
+
+
+
 /* PAST CHATS: show search + history list */
 #sb .sb-srch{display:block!important;padding:4px 6px 8px}
 #sb #hist-search{display:block!important;width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-sm);padding:7px 10px;color:var(--tx);font-size:var(--t-sm)}
@@ -893,7 +893,7 @@ html,body{height:100%;overflow:hidden}
 #anav .ib{color:#8b939e!important}
 
 /* --- 9. Subtle shadows only where elevation is real --- */
-.ctxm,.prof-menu,.sb-popup,.toast,.ob{box-shadow:0 8px 30px -10px rgba(0,0,0,.55);border:1px solid #2a313b!important;background:#15191f!important}
+.ctxm,.prof-menu,.toast,.ob{box-shadow:0 8px 30px -10px rgba(0,0,0,.55);border:1px solid #2a313b!important;background:#15191f!important}
 
 /* --- 10. Hairline accents instead of card-everywhere: let some sections breathe --- */
 .vi > .ss2:first-of-type{border:none!important;background:none!important;padding-left:0!important;padding-right:0!important}
@@ -1579,7 +1579,7 @@ input:focus,textarea:focus,select:focus,.dna-field input:focus,.dna-field textar
 
 /* ---- 12. Code blocks, previews, modals: soft, single intentional shadow ---- */
 .mb pre,.dev-code,.dev-run,.lab-sec,.crew-res,.auto-deliverable{border:1px solid var(--hair)!important;border-radius:var(--rad-md)!important;box-shadow:none}
-.ob,.ctxm,.prof-menu,.sb-popup,.dna-modal,.trip-modal,.tp-modal,.cowork-modal,.studio-side{
+.ob,.ctxm,.prof-menu,.dna-modal,.trip-modal,.tp-modal,.cowork-modal,.studio-side{
   border:1px solid var(--hair-strong)!important;border-radius:var(--rad-lg)!important;
   box-shadow:0 24px 60px -24px rgba(0,0,0,.6);     /* ONE intentional shadow */
 }
@@ -1709,14 +1709,11 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 #sb #hist .hi.on .hiic,#sb #hist .hi:hover .hiic{opacity:.7}
 
 /* ---- User footer: refined, tappable, premium ---- */
-#sb .sb-user{
-  display:flex!important;align-items:center;gap:9px!important;
-  padding:8px 9px!important;border-radius:var(--r-md)!important;transition:background .15s;
-}
-#sb .sb-user:hover{background:var(--surface)!important}
-#sb .sb-av{width:28px!important;height:28px!important;border-radius:var(--r-2xs)!important;background:var(--accent)!important;font-size:var(--t-xs)!important;box-shadow:none}
-#sb .sb-un{font-size:var(--t-base)!important;font-weight:550!important;color:var(--tx)!important}
-#sb .sb-ue{font-size:var(--t-xs)!important;color:var(--mu)!important}
+
+
+
+
+
 
 
 
@@ -1930,7 +1927,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 
 
 
-.upg-more-h{font-size:var(--t-2xs);font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mu);margin-bottom:7px}
+
 
 
 
@@ -2118,7 +2115,6 @@ body.light{ --hair:rgba(0,0,0,.1); --hair-strong:rgba(0,0,0,.15); }
 /* de-glass everything: no blur, no milky gradient panels */
 .dsn-tile,
 .wsc,
-.appx-card,
 .ho-card,
 .crew-res,
 .cw-quick-card,
@@ -2132,7 +2128,6 @@ body.light{ --hair:rgba(0,0,0,.1); --hair-strong:rgba(0,0,0,.15); }
 /* unify card surfaces: flat surface, single hairline, calm radius */
 .dsn-tile,
 .wsc,
-.appx-card,
 .ho-card,
 .crew-res,
 .cw-quick-card,
@@ -2146,7 +2141,6 @@ body.light{ --hair:rgba(0,0,0,.1); --hair-strong:rgba(0,0,0,.15); }
 }
 .dsn-tile:hover,
 .wsc:hover,
-.appx-card:hover,
 .ho-card:hover,
 .cw-quick-card:hover,
 .agent:hover{
@@ -2728,16 +2722,16 @@ body.light .dev-add-menu{background:#fff}
 .ho-flow-arrow{color:var(--accent-txt);font-size:var(--t-prose);opacity:.75}
 
 /* Team - clean feature rows */
-.team-feats{display:flex;flex-direction:column;gap:2px}
-.team-feat{display:flex;align-items:flex-start;gap:13px;padding:12px 6px;border-bottom:1px solid var(--ds-hair)}
-.team-feat:last-child{border-bottom:none}
-.team-feat-ic{font-size:var(--ic-sm);flex-shrink:0;margin-top:1px}
-.team-feat b{display:block;font-size:var(--t-base);color:var(--tx);font-weight:600;margin-bottom:1px}
-.team-feat span{font-size:var(--t-sm);color:var(--mu);line-height:1.5}
+
+
+
+
+
+
 
 /* Line icons replace emoji - muted, refined */
 
-.team-feat-ic{color:var(--accent-txt);opacity:.9;display:inline-flex;align-items:center;margin-top:2px}
+
 .es-icon svg{color:var(--mu)}
 
 /* AI failure - clean inline card */
@@ -2952,7 +2946,7 @@ body.light .plnc{box-shadow:0 1px 2px rgba(30,28,35,.04),0 8px 24px -14px rgba(3
 .adm-tab,.snb{border-radius:var(--r-md)!important}
 
 /* avatars: circular, soft neutral tint (never bare white) */
-.amv-av,.sb-av,#sb-av,.mav,.adm-user-av,#pfp-c{border-radius:50%!important;overflow:hidden}
+.amv-av,.mav,.adm-user-av,#pfp-c{border-radius:50%!important;overflow:hidden}
 .mav.ai,.amv-av{background:var(--accent-fill)!important;color:#fff!important}
 
 /* neutral accent surfaces - calm, tasteful, tinted not loud */
@@ -3538,7 +3532,7 @@ body.art-open #cv{transition:margin-right .34s cubic-bezier(.4,0,.2,1)}
    Grounded recent-work cards, only shown when there's activity.
    ============================================================ *//* When rich, don't vertically center - let it flow from the top with room */
 
-.chome-recent-h{font-size:var(--t-sm);font-weight:600;letter-spacing:.02em;color:var(--mu);margin-bottom:11px;padding-left:2px}
+
 
 
 
@@ -3657,7 +3651,6 @@ code:not(pre code){font-family:var(--mn);font-size:.9em;font-feature-settings:'k
 /* Small UI labels: subtle positive tracking reads cleaner at small sizes */
 .set-sub,
 .eyebrow,
-.chome-recent-h,
 .hi-kind{font-feature-settings:'kern' 1}
 /* Prevent orphaned single words on key short headings */
 
@@ -4048,7 +4041,7 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
    Compact inline model pill, airy panels, full-bleed preview.
    ═══════════════════════════════════════════════════════════ */
 /* Model row: a slim inline pill instead of a heavy full-width box */
-.sec-model-bar{display:flex;align-items:center;gap:9px;margin:2px 0 16px}
+
 .sec-model-l{font-size:var(--t-sm);color:var(--mu);font-weight:500}
 .sec-usage-note{display:none}                       /* redundant - folded into the pill */
 .secmodel-sel{
@@ -4101,9 +4094,9 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
 .sec-kicker{font-size:var(--t-2xs);letter-spacing:.09em;font-weight:700;color:var(--accent-txt);text-transform:uppercase}
 
 /* Keep the Dev/Lab action row on one line, compact */
-.sec-model-bar{flex-wrap:wrap;row-gap:8px}
 
-.sec-model-bar + div .btn{font-size:var(--t-sm);padding:6px 11px;border-radius:var(--r-md)}
+
+
 
 /* Preview placeholder: no floating card - just quiet centered text */
 .dev-prev-body > .lab-placeholder,
@@ -4169,7 +4162,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 
 /* Jump back in: centered under the chips, matching the home's calm rhythm */
 .chome-recent{display:flex;flex-direction:column;align-items:center}
-.chome-recent-h{font-size:var(--t-xs);letter-spacing:.07em;text-transform:uppercase;color:var(--dim);font-weight:600;text-align:center;margin:0 0 10px}
+
 
 
 
@@ -4291,7 +4284,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:11px 16px;border-bottom:1px solid var(--bd);flex-shrink:0;
 }
-.lab-bar-l,.lab-bar-r{display:flex;align-items:center;gap:7px}
+
 .lab-lang-sel,#lab-model{
   padding:6px 26px 6px 11px;font-size:var(--t-sm);font-weight:500;
   background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);color:var(--tx);
@@ -4327,11 +4320,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 .lab-split{display:flex;flex:1;min-height:0;overflow:hidden}
 .lab-editor,.lab-out{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
 .lab-editor{border-right:1px solid var(--bd)}
-.lab-pane-h{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:9px 15px;font-size:var(--t-xs);font-weight:600;letter-spacing:.05em;text-transform:uppercase;
-  color:var(--dim);border-bottom:1px solid var(--bd);flex-shrink:0;
-}
+
 #lab-code{
   flex:1;min-height:0;resize:none;border:none;outline:none;
   background:var(--bg);color:var(--tx);
@@ -5262,8 +5251,7 @@ html.fs-scaled #cv{ overflow:hidden !important; }   /* chat keeps its own scroll
    ═══════════════════════════════════════════════════════════ */
 #ovr.on:has(> .share-modal),
 #ovr.on:has(> .rw-modal),
-#ovr.on:has(> .wn-modal),
-#ovr.on:has(> .nudge-modal){
+#ovr.on:has(> .wn-modal){
   position:fixed;
   inset:0;
   z-index:9000;
@@ -5280,8 +5268,7 @@ html.fs-scaled #cv{ overflow:hidden !important; }   /* chat keeps its own scroll
 /* light-mode backdrop for these centered overlays */
 body.light #ovr.on:has(> .share-modal),
 body.light #ovr.on:has(> .rw-modal),
-body.light #ovr.on:has(> .wn-modal),
-body.light #ovr.on:has(> .nudge-modal){ background:rgba(40,40,50,.55); }
+body.light #ovr.on:has(> .wn-modal){ background:rgba(40,40,50,.55); }
 
 /* Auth message shown as success, not an error */
 .ae.ae-ok{
@@ -5594,18 +5581,14 @@ body.sb-rail .sb-tool:hover .sb-tool-tip{
    left out of the 64px rail. Collapse it to a centered avatar-only control and
    hide the name/email/status text so nothing overflows. */
 body.sb-rail #sb .sbfoot{ padding:8px 0!important; }
-body.sb-rail #sb .sb-user,
 body.sb-rail #sb .sb-status{
   width:44px!important; min-width:44px!important; max-width:44px!important;
   margin:2px auto!important; padding:0!important;
   justify-content:center!important; gap:0!important; overflow:hidden;
 }
-body.sb-rail #sb .sb-un,
-body.sb-rail #sb .sb-ue,
 body.sb-rail #sb .sb-name,
-body.sb-rail #sb .sb-email,
-body.sb-rail #sb .sb-user > div:not(.sb-av){ display:none!important; }
-body.sb-rail #sb .sb-av{ margin:0 auto!important; }
+body.sb-rail #sb .sb-email{ display:none!important; }
+
 
 /* ── Research Watch modal ── */
 .rw-modal{
@@ -5788,7 +5771,6 @@ body.sb-rail #sb .sb-av{ margin:0 auto!important; }
    override - so they stayed black in light mode. These restore them
    to proper light surfaces. Dark mode is unaffected.
    ════════════════════════════════════════════════════════════════ */
-body.light .sb-popup,
 body.light .ctxm,
 body.light .prof-menu,
 body.light .toast,
@@ -5805,13 +5787,10 @@ body.light .studio-side{
   box-shadow:0 12px 40px -16px rgba(30,28,35,.22)!important;
 }
 /* menu items + text inside those popups read dark on the light surface */
-body.light .sb-popup .sb-mi,
-body.light .sb-popup a,
 body.light .ctxm *,
 body.light .prof-menu *,
 body.light .ctx-menu *{ color:var(--tx)!important; }
 /* hover state for menu rows in light mode */
-body.light .sb-popup .sb-mi:hover,
 body.light .ctxm > *:hover,
 body.light .ctx-menu > *:hover{ background:var(--s2,#f0efec)!important; }
 
@@ -6361,9 +6340,9 @@ body.light .aa-date{color-scheme:light}
 /* Lab toolbar: on phones let the action bar wrap instead of overflowing */
 @media(max-width:640px){
   .lab-bar{flex-wrap:wrap!important;gap:8px!important;padding:10px 12px!important}
-  .lab-bar-l,.lab-bar-r{flex-wrap:wrap;min-width:0}
-  .lab-bar-r{gap:6px}
-  .lab-bar-l .lab-lang-sel,.lab-bar-l #lab-model{max-width:44vw}
+  
+  
+  
 }
 
 /* ============================================================
@@ -7347,8 +7326,8 @@ html,body{height:100%;height:100dvh}
    It wraps rather than shrinking the tap targets, because a stepper
    you miss is worse than one on a second row.
    ============================================================ */
-.seat-buy{border-color:var(--accent-txt);background:var(--accent-soft)}
-.seat-why{font-size:var(--t-base);color:var(--tx);line-height:1.65;margin:0 0 var(--sp-4)}
+
+
 .seat-pick{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-2)}
 .seat-step{min-width:38px;min-height:38px;font-size:var(--t-lg);line-height:1;padding:0;flex:0 0 auto}
 .seat-n{width:84px;flex:0 0 auto;text-align:center;font-variant-numeric:tabular-nums;
@@ -8879,10 +8858,7 @@ body.light{ --on-accent:#ffffff; }
    you get code in, so they are the two that still mean something here.
 
    Nothing is removed. Every one of these returns the moment there is code. */
-.lab-shell.lab-blank .lab-bar-r #lab-run,
-.lab-shell.lab-blank .lab-bar-r #lab-debug,
-.lab-shell.lab-blank .lab-bar-r #lab-agents,
-.lab-shell.lab-blank .lab-bar-r #lab-deploy{ display:none; }
+
 
 .lab-entry-acts{ display:flex;flex-direction:column;align-items:center;gap:var(--sp-2); }
 .lab-go-row{ display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-2); }
@@ -9911,22 +9887,12 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
    Two labelled bands rather than one grid, because the distinction IS the
    point: a universal tool has to show what it does for everybody and what it
    does only for you, and a single undifferentiated list says neither. */
-.cw-split-h{
-  display:flex;align-items:baseline;gap:var(--sp-3);flex-wrap:wrap;
-  margin:var(--sp-6) 0 var(--sp-3);
-  padding-top:var(--sp-4);border-top:1px solid var(--bd);
-}
-.cw-split-h:first-of-type{ border-top:none;padding-top:0; }
-.cw-split-h > b{
-  font-size:var(--t-md);font-weight:650;color:var(--tx);
-  letter-spacing:-.1px;flex:0 0 auto;
-}
-.cw-split-h > span{
-  font-size:var(--t-base);color:var(--mu);line-height:1.55;
-  flex:1 1 320px;min-width:0;
-}
+
+
+
+
 @media (max-width:720px){
-  .cw-split-h{ flex-direction:column;gap:var(--sp-1); }
+  
 }
 
 /* ── LAYER A128 · the degraded preview note ──────────────────────────────────
@@ -11576,8 +11542,7 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    what a working surface looks like there is a different decision from
    rescuing one that does not fit. */
 @media(max-width:760px){
-  .lab-shell.lab-blank .lab-bar-l > *:not(.dev-badge):not(.bld-home),
-  .lab-shell.lab-blank .lab-bar-r{ display:none; }
+  
   .lab-shell.lab-blank .lab-bar{ padding-top:var(--sp-2); padding-bottom:var(--sp-2); }
 }
 
@@ -12232,9 +12197,7 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 @media(max-width:760px){
   /* The language and the engine come back: both are decisions about the run
      that the entry's own buttons are about to start. */
-  .lab-shell.lab-blank .lab-bar-l > #lab-lang,
-  .lab-shell.lab-blank .lab-bar-l > #lab-model,
-  .lab-shell.lab-blank .lab-bar-l > .secmodel-sel{ display:block; }
+  
   /* Split the row by what each label needs, not evenly. `max-width:44vw` caps
      both at 172px on a 390 screen, and "Auto - picks for you" needs 178 - so
      the engine picker was truncated by six pixels while "JavaScript" sat in
@@ -12247,15 +12210,15 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   /* And nowrap: with the cap gone they each took their natural width and wrapped
      onto a row apiece, which is two rows of chrome on the screen A168 exists to
      keep clear. One row, shared by need. */
-  .lab-shell.lab-blank .lab-bar-l{ display:flex; gap:var(--sp-2); min-width:0; flex-wrap:nowrap; }
+  
   /* The engine picker gets the room it needs and the language absorbs the rest.
      `flex:0 1 auto` on one and `1 1 auto` on the other is not enough on its
      own: a select's natural basis is its WIDEST OPTION, not its selected one,
      so the engine had the larger basis, shrank more in absolute terms, and
      ended up the narrow one - the reverse of what was asked for. A floor on
      the engine states it directly. */
-  .lab-shell.lab-blank .lab-bar-l .lab-lang-sel{ flex:0 1 auto; min-width:0; max-width:none; }
-  .lab-shell.lab-blank .lab-bar-l #lab-model{ flex:1 1 auto; min-width:190px; max-width:none; }
+  
+  
   /* And the badge goes, on all three, because the choice above it says it. */
   .lab-shell.lab-blank .dev-badge,
   .dev-shell.dev-blank .dev-badge,
@@ -15795,7 +15758,7 @@ html.boot-guest .hdr-signup[hidden], html.boot-guest .hdr-login[hidden]{ display
 /* The email line under the name is empty in the page and filled by the bundle,
    so the whole sidebar footer grew by a line after the first paint. A blank
    line holds its place. */
-.sb-ue:empty::before{ content:"\00a0"; }
+
 
 /* ══════════════════════════════════════════════════════════════════════
    LAYER A266 - Crew: the top five for where you are, and other countries
@@ -16497,3 +16460,17 @@ body.set-open{ overflow:hidden; }
 .prof-item .smi-badge{ margin-left:auto; }
 #nav-av.has-news{ position:relative; }
 #nav-av.has-news::after{ content:''; position:absolute; top:2px; right:2px; z-index:1; width:9px; height:9px; border-radius:50%; background:var(--gold); box-shadow:0 0 0 2px var(--bg); }
+
+/* ── LAYER A284: "Email me when AMV is done" ──────────────────────────────
+   Asked once, beside the work it is about, not as a pop-up over it. */
+.done-ask{ position:fixed; left:50%; bottom:calc(var(--sp-8) + 64px); transform:translateX(-50%); z-index:7000;
+  display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap; justify-content:center;
+  max-width:min(560px, calc(100vw - 32px)); padding:var(--sp-3) var(--sp-4); border:1px solid var(--bd);
+  border-radius:var(--r-lg); background:var(--s2); box-shadow:var(--sh-lg); font-size:var(--t-base); color:var(--tx);
+  animation:doneAskIn .2s var(--ease) both; }
+.done-ask-t{ flex:1 1 220px; line-height:1.45; }
+.done-ask-b{ display:flex; gap:var(--sp-2); }
+.done-ask .btn{ font-size:var(--t-sm); min-height:36px; }
+@keyframes doneAskIn{ from{ opacity:0; transform:translate(-50%,6px); } to{ opacity:1; transform:translate(-50%,0); } }
+@media(prefers-reduced-motion:reduce){ .done-ask{ animation:none; } }
+@media(max-width:720px){ .done-ask{ bottom:calc(76px + var(--sp-8) + env(safe-area-inset-bottom,0px)); } }

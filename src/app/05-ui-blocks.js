@@ -937,7 +937,21 @@ function _isPlanRefusal(e){
 try{ window._isPlanRefusal = _isPlanRefusal; }catch(e){}
 try{ window._refusalRoute = _refusalRoute; }catch(e){}
 
+/* One turn of chat, start to finish - tool rounds included, because those
+   call back in nested (sendMsg with _continueTools) inside this await. The
+   wrapper is what "email me when AMV is done" hangs off (41-done-mail.js). */
 async function _callAI(msgs, _opts) {
+  const nested = !!(_opts && _opts._continueTools);
+  if(!nested){ try{ _doneMailStart('chat'); }catch(e){} }
+  try{ return await _callAITurn(msgs, _opts); }
+  finally{
+    if(!nested){ try{
+      const last = (getMsgs()||[]).slice(-1)[0];
+      _doneMailFinish({ stopped: !!_userStopped, failed: !!(last && last._error) });
+    }catch(e){} }
+  }
+}
+async function _callAITurn(msgs, _opts) {
   _opts = _opts || {};
   /* The tool budget resets here rather than in sendMsg, because Regenerate,
      Retry, and editing a message all call _callAI directly. Resetting only in

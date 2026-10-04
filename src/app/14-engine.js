@@ -345,7 +345,24 @@ const AGENT_ROUND_MAX = 24;
 const AGENT_WALL_MS   = 12 * 60 * 1000;
 const AGENT_RESULT_MAX = 12000;   // per tool result, so one noisy build log cannot fill the window
 
+/* Build and agent runs are the longest work AMV does, so they are what
+   "email me when AMV is done" is most for (41-done-mail.js). A run inside a
+   chat turn is already covered by that turn; otherwise the run is its own. */
 async function aiAgentLoop(opts){
+  const own = (typeof _doneTurn === 'undefined') || !_doneTurn;
+  if(own){ try{ _doneMailStart('build'); }catch(e){} }
+  let failed = false;
+  try{ return await _aiAgentLoopRun(opts); }
+  catch(e){ failed = true; throw e; }
+  finally{
+    if(own){ try{
+      let stopped = false;
+      try{ stopped = !!(opts && typeof opts.stopped === 'function' && opts.stopped()); }catch(e){}
+      _doneMailFinish({ stopped, failed });
+    }catch(e){} }
+  }
+}
+async function _aiAgentLoopRun(opts){
   opts = opts || {};
   const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-core', tokens:4096};
   const modelStr = opts.model || mdl.model;

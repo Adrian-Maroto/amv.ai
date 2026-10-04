@@ -10345,6 +10345,48 @@ async function familyGet(request, env){
     } : null });
 }
 
+/* EMAIL ME WHEN AMV IS DONE.
+
+   The page asks once, when an answer has been running a while, and the person
+   says yes or not now. When a long answer then finishes while they are away
+   from the tab, the page calls this, and this emails the account.
+
+   What it will not do is the part that matters at scale. Signing up does not
+   prove you own the address, so anything this route sends could be aimed at
+   a stranger's inbox by creating an account in their name. So it sends ONE
+   fixed message - no chat title, no text from the request, nothing the caller
+   chooses - to the account's own address only (there is no recipient field),
+   inside its own daily budget per address. The worst a bad actor gets is a
+   few copies of "your answer is ready" in somebody's inbox, which is not
+   worth the captcha it costs.
+
+   `probe` answers whether email can go out at all, so the page can say "this
+   AMV cannot send email yet" when somebody says yes, rather than agreeing to
+   something that will never happen. */
+async function notifyDone(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const body = await request.json().catch(()=>({}));
+  const emailReady = !!env.EMAIL_API_KEY;
+  if(body && body.probe) return json({ ok:true, emailReady, sent:false });
+  if(!emailReady) return json({ ok:true, emailReady:false, sent:false });
+  const appUrl = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/, '');
+  const failed = !!(body && body.ok === false);
+  const subject = failed ? 'AMV stopped before it finished' : 'AMV is done';
+  const line = failed
+    ? 'The work you left running stopped before it finished. Open AMV to see where it got to and pick it up again.'
+    : 'The answer you were waiting for is ready.';
+  const html = _emailShell(subject,
+    '<p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#333">' + _escHtml(line) + '</p>',
+    appUrl ? { label: 'Open AMV', url: appUrl } : null,
+    '<p style="margin:0;font-size:11px;color:#999">You asked AMV to email you when long work finishes while you are away. Turn it off in Settings &rarr; Account.</p>',
+    'Sent because you asked to be told.');
+  const text = line + (appUrl ? '\n\nOpen AMV: ' + appUrl : '')
+    + '\n\nYou asked AMV to email you when long work finishes while you are away. Turn it off in Settings -> Account.';
+  const sent = await _sendEmail(env, user.email, subject, html, text, 'done');
+  return json({ ok:true, emailReady:true, sent });
+}
+
 async function familySetLimits(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -13420,6 +13462,7 @@ async function _route(request, env, ctx) {
     case '/v1/spend/limits':         return spendGet(request, env);
     case '/v1/spend/set':            return spendSet(request, env);
     case '/v1/family/get':           return familyGet(request, env);
+    case '/v1/notify/done':          return notifyDone(request, env);
     case '/v1/school/connect':       return schoolConnect(request, env);
     case '/v1/school/disconnect':    return schoolDisconnect(request, env);
     case '/v1/school/work':          return schoolWork(request, env);
@@ -28397,6 +28440,7 @@ const EMAIL_DAY_CAP = {
   message:  25,   // somebody messaged you on the marketplace
   task:     25,   // work landed on you in a team
   auto:    250,   // your own scheduled jobs, addressed to you, at your request
+  done:     20,   // "AMV is done" - one per long answer you walked away from
   other:    25,
 };
 const EMAIL_SENDS_WITHOUT_A_COUNTER = { security: true, owner: true };

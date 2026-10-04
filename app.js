@@ -1307,6 +1307,10 @@ const AMV_API = {
   async entitlement(email){ const r=await this._fetch('/v1/entitlement?email='+encodeURIComponent(email||'')); return await r.json(); },
   /* Family (AMV-102). The parent's controls; there is deliberately no method
      here for reading a child's conversations, because no such route exists. */
+  /* "Email me when AMV is done". {probe:true} only asks whether this AMV can
+     send email; {ok} reports how the work ended. The server picks the address
+     and the words - see notifyDone. */
+  async notifyDone(body){ const r=await this._fetch('/v1/notify/done',{method:'POST',body:JSON.stringify(body||{})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyGet(){ const r=await this._fetch('/v1/family/get',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyLimits(child,limits){ const r=await this._fetch('/v1/family/limits',{method:'POST',body:JSON.stringify({child,limits})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
   async familyLeave(){ const r=await this._fetch('/v1/family/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error) throw new Error(d.error); return d; },
@@ -1964,7 +1968,7 @@ function _initKeyboardNav(){
            button that says what closing means. */
         if(ovr && ovr.children.length && ovr.querySelector('[data-keep-open]')){ e.preventDefault(); return; }
         if(ovr && ovr.children.length){ closeOvr(); e.preventDefault(); return; }
-        const pop=document.querySelector('.sb-popup.on,.menu.on,.ctx-menu'); if(pop){ pop.classList.remove('on'); }
+        const pop=document.querySelector('.menu.on,.ctx-menu'); if(pop){ pop.classList.remove('on'); }
       }
       // Cmd/Ctrl+K opens the command palette
       if((e.metaKey||e.ctrlKey)&&e.key==='k'){ e.preventDefault(); try{ openCommandPalette(); }catch(err){} }
@@ -7896,7 +7900,21 @@ function _isPlanRefusal(e){
 try{ window._isPlanRefusal = _isPlanRefusal; }catch(e){}
 try{ window._refusalRoute = _refusalRoute; }catch(e){}
 
+/* One turn of chat, start to finish - tool rounds included, because those
+   call back in nested (sendMsg with _continueTools) inside this await. The
+   wrapper is what "email me when AMV is done" hangs off (41-done-mail.js). */
 async function _callAI(msgs, _opts) {
+  const nested = !!(_opts && _opts._continueTools);
+  if(!nested){ try{ _doneMailStart('chat'); }catch(e){} }
+  try{ return await _callAITurn(msgs, _opts); }
+  finally{
+    if(!nested){ try{
+      const last = (getMsgs()||[]).slice(-1)[0];
+      _doneMailFinish({ stopped: !!_userStopped, failed: !!(last && last._error) });
+    }catch(e){} }
+  }
+}
+async function _callAITurn(msgs, _opts) {
   _opts = _opts || {};
   /* The tool budget resets here rather than in sendMsg, because Regenerate,
      Retry, and editing a message all call _callAI directly. Resetting only in
@@ -29307,7 +29325,7 @@ const USER_SET_SECTIONS=[
      "password" or "language", so each section lists the words of what is in
      it - and a suite renders every pane and fails on a word it does not show,
      so search never sends anybody to a section that is not about it. */
-  {id:'account',label:'Account',find:['name','photo','profile','instructions','email','team','invite','seats','projects','about','terms','support','keyboard shortcuts','sign out'],icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
+  {id:'account',label:'Account',find:['name','photo','profile','instructions','email','notifications','email me when amv is done','team','invite','seats','projects','about','terms','support','keyboard shortcuts','sign out'],icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
   {id:'billing',label:'Plan & billing',find:['plan','usage','upgrade','payment method','transactions','invoice'],icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
   {id:'family',label:'Family',find:['family','invitation'],icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
   {id:'integrations',label:'Connectors',find:['connectors','skills','api keys','presets'],icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
@@ -30900,7 +30918,23 @@ function _renderSetPaneInner(only, into){
           '</div>'+
         '</div>'+
       '</div>'+
+      /* Email me when AMV is done (41-done-mail.js). Here so that a "Not now"
+         is never final, and a "yes" can always be taken back. */
+      '<div class="ss2"><h3>Notifications</h3>'+
+        '<div class="prv-pref"><div><div class="prv-pref-t">Email me when AMV is done</div>'+
+          '<div class="prv-pref-s">When an answer takes a while and you have gone to do something else, AMV emails '+escH((S.user&&S.user.email)||'your account')+' as soon as it is ready. Only then - never about something you watched finish.</div></div>'+
+          '<label class="sw"><input type="checkbox" id="acct-done-mail" aria-label="Email me when AMV is done" '+(loadStr('amv_done_mail')==='1'?'checked':'')+'><span class="sw-sl"></span></label></div>'+
+        '<div class="set-sub" id="acct-done-msg" role="status" aria-live="polite" style="margin:6px 0 0"></div>'+
+      '</div>'+
       _activeSessionsHTML();
+    on($('acct-done-mail'),'change',async function(){
+      const box=this, msg=$('acct-done-msg'), want=box.checked;
+      box.disabled=true;
+      const r=await _doneMailSet(want);
+      box.disabled=false;
+      if(!r.ok){ box.checked=false; if(msg) msg.textContent=r.why; return; }
+      if(msg) msg.textContent=want?'On. AMV will email you when long work finishes while you are away.':'Off. AMV will not email you about finished answers.';
+    });
     on($('pfp-c'),'click',()=>$('pfp-fi')?.click());
     on($('pfp-edit'),'click',()=>$('pfp-fi')?.click());
     on($('pfp-fi'),'change',function(){
@@ -36982,7 +37016,24 @@ const AGENT_ROUND_MAX = 24;
 const AGENT_WALL_MS   = 12 * 60 * 1000;
 const AGENT_RESULT_MAX = 12000;   // per tool result, so one noisy build log cannot fill the window
 
+/* Build and agent runs are the longest work AMV does, so they are what
+   "email me when AMV is done" is most for (41-done-mail.js). A run inside a
+   chat turn is already covered by that turn; otherwise the run is its own. */
 async function aiAgentLoop(opts){
+  const own = (typeof _doneTurn === 'undefined') || !_doneTurn;
+  if(own){ try{ _doneMailStart('build'); }catch(e){} }
+  let failed = false;
+  try{ return await _aiAgentLoopRun(opts); }
+  catch(e){ failed = true; throw e; }
+  finally{
+    if(own){ try{
+      let stopped = false;
+      try{ stopped = !!(opts && typeof opts.stopped === 'function' && opts.stopped()); }catch(e){}
+      _doneMailFinish({ stopped, failed });
+    }catch(e){} }
+  }
+}
+async function _aiAgentLoopRun(opts){
   opts = opts || {};
   const mdl = (typeof MODELS!=='undefined' && MODELS[S.model]) ? MODELS[S.model] : {model:'amv-core', tokens:4096};
   const modelStr = opts.model || mdl.model;
@@ -49621,3 +49672,91 @@ try{ window._BUNDLE_READY = true; }catch(e){}
 /* The bundle is whole: draw the screen the address asked for now, in the same
    task as the first render, so the one before it is never painted. */
 try{ if(typeof _applyBootTab === 'function') _applyBootTab(); }catch(e){ try{ console.error('AMV: the addressed screen could not be opened', e); }catch(_){} }
+/* ============================================================
+   EMAIL ME WHEN AMV IS DONE
+   ============================================================
+   Asked for: "make the option like get notified when AMV is done, and if
+   they say yes then AMV sends them an email when done".
+
+   Asked ONCE, and only at the moment it means something: an answer has been
+   running long enough that somebody might go and do something else. Yes saves
+   the choice; Not now saves that too, and Settings -> Account changes either.
+
+   It emails only when it is useful: the work ran a while AND the person was
+   not looking when it finished (the tab hidden, or the window not in front).
+   Somebody who watched it finish does not need to be told. A Stop is not an
+   ending worth an email; a failure is, said as a failure.
+
+   Before agreeing, it asks the server whether this AMV can send email at all,
+   so nobody is promised mail that will never come. What the email says, and
+   to whom, the server decides - see notifyDone in the Worker. */
+const DONE_MAIL_ASK_MS  = 12000;   // running this long, it is worth offering
+const DONE_MAIL_LONG_MS = 20000;   // finished sooner than this, it was watched
+let _doneTurn = null;
+
+/* '1' yes, '0' no, '' never asked. */
+function _doneMailPref(){ return loadStr('amv_done_mail') || ''; }
+function _doneMailOn(){ return _doneMailPref() === '1'; }
+function _doneMailPossible(){
+  return !!(window.AMV_API && AMV_API.live && AMV_API.hasSession && S.user && S.user.email);
+}
+function _doneMailAway(){
+  try{ return document.hidden || !document.hasFocus(); }catch(e){ return false; }
+}
+
+function _doneMailStart(kind){
+  if(_doneTurn && _doneTurn.t) clearTimeout(_doneTurn.t);
+  _doneTurn = { at: Date.now(), kind: kind || 'chat', t: 0 };
+  if(!_doneMailPref() && _doneMailPossible()){
+    const turn = _doneTurn;
+    turn.t = setTimeout(() => { if(_doneTurn === turn) _doneMailAsk(); }, DONE_MAIL_ASK_MS);
+  }
+}
+
+function _doneMailFinish(how){
+  const turn = _doneTurn; _doneTurn = null;
+  if(!turn) return;
+  if(turn.t) clearTimeout(turn.t);
+  _doneMailAskClose();
+  how = how || {};
+  if(how.stopped) return;                                   // they stopped it themselves
+  if(!_doneMailOn() || !_doneMailPossible()) return;
+  if(Date.now() - turn.at < DONE_MAIL_LONG_MS) return;      // short enough to have been watched
+  if(!_doneMailAway()) return;                              // they are looking at it
+  try{ AMV_API.notifyDone({ ok: !how.failed, kind: turn.kind }).catch(() => {}); }catch(e){}
+}
+
+function _doneMailAskClose(){ const el = $('done-ask'); if(el) el.remove(); }
+function _doneMailAsk(){
+  if($('done-ask') || _doneMailPref()) return;
+  const el = document.createElement('div');
+  el.id = 'done-ask'; el.className = 'done-ask';
+  el.setAttribute('role', 'group'); el.setAttribute('aria-label', 'Email when done');
+  el.innerHTML =
+    '<span class="done-ask-t">This is taking a while. Want an email when AMV is done?</span>' +
+    '<span class="done-ask-b">' +
+      '<button type="button" class="btn bp" id="done-ask-yes">Email me</button>' +
+      '<button type="button" class="btn bs" id="done-ask-no">Not now</button>' +
+    '</span>';
+  document.body.appendChild(el);
+  on($('done-ask-no'), 'click', () => { saveStr('amv_done_mail', '0'); _doneMailAskClose(); });
+  on($('done-ask-yes'), 'click', async () => {
+    const r = await _doneMailSet(true);
+    _doneMailAskClose();
+    if(r.ok) toast('AMV will email ' + (S.user && S.user.email) + ' when long work finishes while you are away. Change it in Settings → Account.', 'success', 5000);
+    else toast(r.why, 'info', 5000);
+  });
+}
+
+/* Turning it on is checked with the server first; turning it off never is. */
+async function _doneMailSet(want){
+  if(!want){ saveStr('amv_done_mail', '0'); return { ok: true }; }
+  if(!_doneMailPossible()) return { ok: false, why: 'Sign in first - the email goes to your account.' };
+  try{
+    const d = await AMV_API.notifyDone({ probe: true });
+    if(!d || !d.emailReady) return { ok: false, why: 'This AMV cannot send email yet, so this stays off. Nothing else changes.' };
+  }catch(e){ return { ok: false, why: 'AMV could not reach the server to check, so this stays off. Try again in a moment.' }; }
+  saveStr('amv_done_mail', '1');
+  return { ok: true };
+}
+try{ window._doneMailSet = _doneMailSet; window._doneMailStart = _doneMailStart; window._doneMailFinish = _doneMailFinish; }catch(e){}
