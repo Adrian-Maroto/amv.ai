@@ -49,7 +49,15 @@ await page.evaluate(() => {
     /* Tap targets, against the WCAG 2.2 minimum. Measured on the thing a
        finger actually hits: a checkbox inside a <label> is clicked anywhere on
        that label, so the label is the target, not the 16px box. */
-    const target = el => (el.type === 'checkbox' || el.type === 'radio') ? (el.closest('label') || el) : el;
+    /* A switch's checkbox now covers a 44x44 square of its own over the
+       label (layer A287), so whichever of the two is bigger is what a
+       finger hits. */
+    const target = el => {
+      if (!(el.type === 'checkbox' || el.type === 'radio')) return el;
+      const lab = el.closest('label'); if (!lab) return el;
+      const a = lab.getBoundingClientRect(), b = el.getBoundingClientRect();
+      return Math.min(b.width, b.height) > Math.min(a.width, a.height) ? el : lab;
+    };
     const tiny = [...scope.querySelectorAll('button,a[href],input[type="checkbox"],input[type="radio"]')].filter(vis)
       .filter(el => { const r = target(el).getBoundingClientRect(); return Math.min(r.width, r.height) < 22; })
       .map(el => (el.id || el.className) + ' ' + Math.round(target(el).getBoundingClientRect().height) + 'px');
