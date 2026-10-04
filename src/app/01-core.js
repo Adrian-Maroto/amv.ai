@@ -2014,9 +2014,13 @@ try{ const _mq=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: re
 let _statusState='ok'; // ok | degraded | offline
 function _setStatusIndicator(state){
   _statusState=state;
-  const dot=$('sb-status-dot'), txt=$('sb-status-txt');
+  const dot=$('sb-status-dot'), txt=$('sb-status-txt'), btn=$('sb-status');
   if(dot) dot.className='sb-status-dot '+state;
   if(txt) txt.textContent = state==='ok'?'All systems operational' : state==='degraded'?'Some services degraded' : 'You\u2019re offline';
+  /* A line saying everything is fine, always, is a line nobody reads - so the
+     day it says something is not, nobody reads that either. It appears only
+     when there is something to say. */
+  if(btn) btn.hidden = state==='ok';
 }
 // Lightweight, non-blocking health check. Backend reachability defines "ok".
 async function _checkStatus(){

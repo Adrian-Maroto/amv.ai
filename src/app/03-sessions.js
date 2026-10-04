@@ -2071,7 +2071,6 @@ function signOut(){
   _syncBooted = false;   // the next account gets its own pull
   S.user=null; localStorage.removeItem('amv_user');
   _wipeAccountState();                 // clear Recents, Dev project, Lab code, memory - nothing crosses accounts
-  const m=$('sb-popup'); if(m)m.classList.remove('on');
   // Go straight to a usable no-account chat (no intro wall). Using any AMV feature
   // will prompt sign-up/login via the auth gate.
   if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }

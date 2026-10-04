@@ -61,9 +61,6 @@ window.AMVTeam=AMVTeam;
 
 function renderTeamView(){
   const vc=$('vc'); if(!vc) return;
-  const plan=loadStr('amv_plan')||'free';
-  const planName=(PLANS[plan]&&PLANS[plan].name)||'Free';
-  const teamPlan=PLANS.elite||{name:'Elite',price:75};
   const hasTeamPlan=_planAllowsTeams();
 
   /* HOW IT WORKS, IN ORDER, BEFORE ANYTHING ELSE.
@@ -133,73 +130,76 @@ function renderTeamView(){
         'no way for one to become visible by accident.</p>'+
     '</div>';
 
-  // Reusable "what Teams includes + which plan" block
-  const teamExplainer=
-    '<div class="ss2"><h3>What you get with Teams</h3><div class="team-feats">'+
-      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><div><b>Shared projects &amp; prompt library</b><span>Everyone works from the same source of truth</span></div></div>'+
-      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"/></svg></span><div><b>Roles &amp; permissions</b><span>Owner, admin, and member - you control access</span></div></div>'+
-      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3 3 3 0 0 0-3 3 3 3 0 0 0 0 6 3 3 0 0 0 3 3 3 3 0 0 0 6 0 3 3 0 0 0 3-3 3 3 0 0 0 0-6 3 3 0 0 0-3-3 3 3 0 0 0-3-3z"/></svg></span><div><b>A shared library, by choice</b><span>What somebody shares into it, the team sees. Private chats stay private.</span></div></div>'+
-      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></span><div><b>Invite by email</b><span>Add teammates in seconds</span></div></div>'+
-      '<div class="team-feat"><span class="team-feat-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><div><b>Seats on one subscription</b><span>Elite includes 10, Ultra 25. Everyone shares the plan\u2019s allowance - one bill, not one per person.</span></div></div>'+
-    '</div></div>';
+  /* TEAMS IS A PLAN FOR ORGANISATIONS, SOLD PER PERSON - AND NOTHING ELSE.
 
-  /* The buy box. Teams is the per-seat plan, and a seat picker that shows the
-     real monthly total as it moves is the difference between a price list and
-     something somebody can decide about. It never pretends to work: with no
-     seat price configured the server says so and this says the same thing. */
-  const seatBuyCard=(function(){
-    const P=(typeof PLANS!=='undefined'&&PLANS.team)||{price:20,name:'Teams'};
-    const min=(typeof TEAM_SEAT_MIN!=='undefined')?TEAM_SEAT_MIN:3;
+     This screen used to sell "Teams - $20 per person" and, two cards further
+     down, say "Teams unlocks on the Elite plan ($75/month)". Both were true
+     of different things (a per-seat Teams plan, and the people Elite and Ultra
+     happen to include), and together they read as a contradiction: why would
+     you need Elite to buy something that costs $20 a person? Nobody can buy
+     from a page that argues with itself.
+
+     So there is one offer, shaped the way people already buy a team plan: a
+     price per person, a minimum, monthly or yearly, one button, and what it
+     includes. What Elite and Ultra include is one line of fine print, said as
+     the comparison it is. */
+  const P=(typeof PLANS!=='undefined'&&PLANS.team)||{price:20,name:'Teams'};
+  const min=(typeof TEAM_SEAT_MIN!=='undefined')?TEAM_SEAT_MIN:3;
+  const ck='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  const teamPlanCard=(function(){
     const n=Math.max(min,+(loadStr('amv_seat_pick')||min)||min);
-    return '<div class="ss2 seat-buy">'+
-      '<h3>Teams - $'+P.price+' per person, per month</h3>'+
-      '<p class="seat-why">Every seat brings its own full Pro allowance into one shared pool, plus '+
-        'AMV Apex for everyone. Ten people get ten plans\u2019 worth of capacity and one bill, '+
-        'instead of one plan\u2019s worth split ten ways.</p>'+
+    const yearly=loadStr('amv_team_cycle')==='year';
+    const inc=[
+      'AMV’s top models (Apex) for every person',
+      'Every seat brings its own full allowance into one shared pool',
+      'Owner, admin and member roles - you decide who manages the team',
+      'A shared project and prompt library, by choice',
+      'Invite by email - no seat keys to hand out',
+      'One bill, not one per person',
+      'Team chats are never used to train models, and teammates never see your chats',
+    ];
+    return '<div class="team-plan" aria-labelledby="team-plan-h">'+
+      '<div class="team-plan-top">'+
+        '<h3 id="team-plan-h">Team</h3>'+
+        '<div class="team-plan-price"><b>$'+P.price+'</b> per person / month</div>'+
+        '<div class="team-cycle" role="group" aria-label="Billing">'+
+          '<button type="button" class="team-cyc'+(yearly?'':' on')+'" data-team-cycle="month" aria-pressed="'+(!yearly)+'">Monthly</button>'+
+          '<button type="button" class="team-cyc'+(yearly?' on':'')+'" data-team-cycle="year" aria-pressed="'+yearly+'">Yearly</button>'+
+        '</div>'+
+        '<p class="team-cyc-note" id="team-cyc-note">'+(yearly
+          ?'Billed once a year. The yearly total is shown at checkout, before you pay.'
+          :'Billed monthly. Cancel or change the number of people any time.')+'</p>'+
+      '</div>'+
       '<div class="seat-pick">'+
-        '<button class="btn bs seat-step" type="button" data-seat="-1" aria-label="One fewer seat">\u2212</button>'+
-        '<label class="sr-only" for="seat-n">Number of seats</label>'+
+        '<button class="btn bs seat-step" type="button" data-seat="-1" aria-label="One fewer person">−</button>'+
+        '<label class="sr-only" for="seat-n">Number of people</label>'+
         '<input id="seat-n" class="inp seat-n" type="number" inputmode="numeric" min="'+min+'" max="500" value="'+n+'">'+
-        '<button class="btn bs seat-step" type="button" data-seat="1" aria-label="One more seat">+</button>'+
+        '<button class="btn bs seat-step" type="button" data-seat="1" aria-label="One more person">+</button>'+
         '<span class="seat-total" id="seat-total"></span>'+
       '</div>'+
+      '<button class="btn bp team-plan-cta" id="seat-buy" type="button">Add Team workspace</button>'+
       '<div class="seat-say" id="seat-say" role="status" aria-live="polite"></div>'+
-      '<button class="btn bp" id="seat-buy" style="font-size:var(--t-sm)">Get Teams</button>'+
-      '<p class="seat-fine">Minimum '+min+' seats. Change the number any time - billing is prorated by the day, '+
-        'so adding somebody mid-month costs the part of the month they are there for.</p>'+
+      '<div class="team-plan-inc"><b>Everything in Pro, and:</b><ul>'+
+        inc.map(t=>'<li>'+ck+'<span>'+t+'</span></li>').join('')+
+      '</ul></div>'+
+      '<p class="seat-fine">Minimum '+min+' people. Adding somebody mid-month costs only the part of the month '+
+        'they are there for. Elite includes 10, Ultra 25 people - sharing that one plan’s allowance, '+
+        'so each gets less as the team grows; on Team each person brings their own.</p>'+
     '</div>';
   })();
+  const teamLanding=(lead)=>'<div class="sv fi"><div class="vi team-land">'+
+    '<span class="eyebrow">For organisations</span>'+
+    '<h2>AMV for your team</h2>'+
+    '<p class="vsub">'+lead+'</p>'+
+    teamPlanCard+teamHowItWorks+teamPrivacy+
+  '</div></div>';
+  const LEAD='One workspace for everyone you work with: each person signs in with their own account, '+
+    'gets AMV’s top models, and you get one bill.';
 
-  // The clear plan answer - shown whenever the user can't yet use Teams
-  const planRequirementCard=
-    '<div class="ss2" style="background:rgba(85,144,255,.06);border-color:rgba(85,144,255,.22)">'+
-      '<h3>Which plan do I need?</h3>'+
-      '<p style="font-size:var(--t-base);color:var(--tx);line-height:1.7;margin:0 0 4px">'+
-        'Teams unlocks on the <b style="color:var(--accent-txt)">'+teamPlan.name+' plan ($'+teamPlan.price+'/month)</b> and above. '+
-        'One Elite (or Ultra) subscription covers your shared workspace, roles, and team memory. '+
-        'A <b>Custom plan</b> sized at the Elite tier or above also unlocks Teams.'+
-      '</p>'+
-      '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:8px 0 12px">'+
-        'Free and Pro ($'+PLANS.pro.price+') are individual plans - they don\u2019t include team workspaces. '+
-        'You\u2019re currently on <b style="color:var(--tx)">'+planName+'</b>.'+
-      '</p>'+
-      (hasTeamPlan
-        ? '<div style="font-size:var(--t-base);color:var(--grn-txt);font-weight:600">\u2713 Your '+planName+' plan includes Teams - create yours below.</div>'
-        : '<button class="btn bp" data-stab="plans" style="font-size:var(--t-sm)">Upgrade to '+teamPlan.name+' &rarr;</button>')+
-    '</div>';
-
-  // No backend yet → show what Teams unlocks + the plan answer (honest, clear path)
+  // No backend yet: the same offer, and the button says why it cannot finish.
   if(!AMVTeam.enabled()){
-    vc.innerHTML='<div class="sv fi"><div class="vi">'+
-      '<span class="eyebrow">Collaboration</span>'+
-      '<h2>Team workspaces</h2>'+
-      '<p class="vsub">Share projects, prompts, and AMV\u2019s memory across your whole team - with roles and permissions.</p>'+
-      teamHowItWorks+
-      teamPrivacy+
-      teamExplainer+
-      planRequirementCard+
-      '<div class="ss2"><p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin:0">Team mode runs on your AMV backend. Once it\u2019s connected and you\u2019re on the '+teamPlan.name+' plan, you can create a team and invite members right here.</p></div>'+
-    '</div></div>';
+    vc.innerHTML=teamLanding(LEAD);
+    _wireSeatBuy();
     return;
   }
 
@@ -213,16 +213,7 @@ function renderTeamView(){
     try{ if(typeof _revealTeamNav==='function') _revealTeamNav(); }catch(e){}
     if(team){ _renderTeamManage(vc, team); return; }
     if(!hasTeamPlan){
-      vc.innerHTML='<div class="sv fi"><div class="vi">'+
-        '<span class="eyebrow">Collaboration</span>'+
-        '<h2>Team workspaces</h2>'+
-        '<p class="vsub">Shared projects, prompts, memory, and roles - for your whole team.</p>'+
-        seatBuyCard+
-        teamHowItWorks+
-        teamPrivacy+
-      teamExplainer+
-        planRequirementCard+
-      '</div></div>';
+      vc.innerHTML=teamLanding(LEAD);
       _wireSeatBuy();
       return;
     }
@@ -249,16 +240,38 @@ function _wireSeatBuy(){
     el.value=String(n);
     try{ saveStr('amv_seat_pick',String(n)); }catch(e){}
     const t=$('seat-total');
-    if(t) t.textContent='$'+(n*P.price)+'/month for '+n+' people';
+    /* No yearly figure is made up here: that price lives in the processor. */
+    if(t) t.textContent=loadStr('amv_team_cycle')==='year'
+      ? n+' people, billed yearly'
+      : '$'+(n*P.price)+'/month for '+n+' people';
   };
   on(el,'input',paint); on(el,'change',paint); paint();
   document.querySelectorAll('.seat-step').forEach(b=>on(b,'click',()=>{
     el.value=String(clamp(+el.value + (+b.dataset.seat||0))); paint();
   }));
+  const cycle=()=>loadStr('amv_team_cycle')==='year'?'year':'month';
+  document.querySelectorAll('[data-team-cycle]').forEach(b=>on(b,'click',()=>{
+    const y=b.dataset.teamCycle==='year';
+    try{ saveStr('amv_team_cycle', y?'year':'month'); }catch(e){}
+    document.querySelectorAll('[data-team-cycle]').forEach(x=>{
+      const onIt=x===b; x.classList.toggle('on',onIt); x.setAttribute('aria-pressed',String(onIt));
+    });
+    const note=$('team-cyc-note');
+    if(note) note.textContent=y
+      ? 'Billed once a year. The yearly total is shown at checkout, before you pay.'
+      : 'Billed monthly. Cancel or change the number of people any time.';
+    paint();
+  }));
   on($('seat-buy'),'click',async()=>{
     const n=clamp(el.value);
     const say=t=>{ const s2=$('seat-say'); if(s2) s2.textContent=t||''; };
-    if(!(window.AMV_API&&AMV_API.live&&AMV_API.hasSession)){
+    /* Two different reasons it cannot go on, said as two different things:
+       somebody signed out can fix theirs; a page with no server cannot. */
+    if(!(window.AMV_API&&AMV_API.live)){
+      say('Team checkout runs on the AMV server, which this page cannot reach right now. Nothing was charged.');
+      return;
+    }
+    if(!AMV_API.hasSession){
       say('Sign in first and this takes you straight to checkout.');
       try{ openAuth('signup'); }catch(e){}
       return;
@@ -270,14 +283,16 @@ function _wireSeatBuy(){
        the last button that should be losing itself to a pop-up blocker. */
     const pre=(typeof _preopenPay==='function')?_preopenPay():null;
     try{
-      const url=await AMV_API.stripeCheckout('team',(S.user&&S.user.email)||'',n);
+      const url=await AMV_API.stripeCheckout('team',(S.user&&S.user.email)||'',n,cycle());
       _openExternalPay(url,'team','card',pre);
     }catch(e){
       try{ if(typeof _closePay==='function') _closePay(pre); }catch(_){}
       say(e&&e.code==='not_configured'
-        ? 'Teams billing is not switched on for this deployment yet, so nothing was charged. Elite and Ultra include team seats in the meantime.'
+        ? (cycle()==='year'
+            ? 'Yearly Team billing is not switched on yet, so nothing was charged. Choose Monthly to go ahead.'
+            : 'Team billing is not switched on for this deployment yet, so nothing was charged. Elite and Ultra include team seats in the meantime.')
         : (e&&e.message)||'Could not open checkout. Nothing was charged.');
-    }finally{ if(btn){ btn.disabled=false; btn.textContent='Get Teams'; } }
+    }finally{ if(btn){ btn.disabled=false; btn.textContent='Add Team workspace'; } }
   });
 }
 try{ window._wireSeatBuy=_wireSeatBuy; }catch(e){}

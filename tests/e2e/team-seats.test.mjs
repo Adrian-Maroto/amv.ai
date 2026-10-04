@@ -54,13 +54,43 @@ const TEAM = {
 section('The pitch describes the product that actually shipped');
 {
   await serve(null, { plan: 'free' });
-  await page.waitForFunction(() => /Team workspaces/.test((document.getElementById('set-modal') || document.getElementById('vc')).textContent), { timeout: 15000 });
+  await page.waitForFunction(() => /AMV for your team/.test((document.getElementById('set-modal') || document.getElementById('vc')).textContent), { timeout: 15000 });
   const t = await view();
+  /* Asked for: "wdym I need Elite but it only costs 20 per person? It should
+     be for organizations". The page sold a per-person plan and, further down,
+     said Teams needed Elite. One offer now, and no wall in front of it. */
+  ok(!/Which plan do I need|unlocks on the|Upgrade to Elite/.test(t), 'no "you need Elite" wall in front of a plan anyone can buy', t.slice(0, 0));
+  ok(/\$\d+ per person \/ month/.test(t) && /Minimum \d+ people/.test(t), 'one price per person, with its minimum', t.slice(0, 0));
+  ok(await page.evaluate(() => /Add Team workspace/.test((document.getElementById('seat-buy') || {}).textContent || '')), 'and one button to start a team workspace');
   ok(!/Higher usage and more jobs at once/i.test(t),
      'the claim that a team buys more usage is gone, because it never did');
   ok(/one bill, not one per person/i.test(t),
      'and is replaced by what a seat really is', t.slice(0, 0));
   ok(/Elite includes 10, Ultra 25/.test(t), 'with the number of seats stated up front');
+}
+
+section('Yearly is a real choice that reaches checkout as yearly');
+{
+  const r = await page.evaluate(async () => {
+    const calls = [];
+    const orig = { co: AMV_API.stripeCheckout, live: Object.getOwnPropertyDescriptor(AMV_API, 'live') };
+    Object.defineProperty(AMV_API, 'live', { configurable: true, get: () => true });
+    Object.defineProperty(AMV_API, 'hasSession', { configurable: true, get: () => true });
+    AMV_API.stripeCheckout = async (...a) => { calls.push(a); const e = new Error('x'); e.code = 'not_configured'; throw e; };
+    document.querySelector('[data-team-cycle="year"]').click();
+    document.getElementById('seat-buy').click();
+    await new Promise(r => setTimeout(r, 200));
+    const out = { calls, say: document.getElementById('seat-say').textContent,
+                  total: document.getElementById('seat-total').textContent,
+                  pressed: document.querySelector('[data-team-cycle="year"]').getAttribute('aria-pressed') };
+    AMV_API.stripeCheckout = orig.co;
+    delete AMV_API.hasSession; if (orig.live) Object.defineProperty(AMV_API, 'live', orig.live); else delete AMV_API.live;
+    document.querySelector('[data-team-cycle="month"]').click();
+    return out;
+  });
+  ok(r.calls.length === 1 && r.calls[0][0] === 'team' && r.calls[0][3] === 'year', 'checkout is asked for the team plan, yearly', r.calls);
+  ok(r.pressed === 'true' && !/\$/.test(r.total), 'the toggle says so, and no yearly figure is invented', r);
+  ok(/Yearly Team billing is not switched on/.test(r.say) && /nothing was charged/i.test(r.say), 'and an unconfigured yearly price says so, charging nothing', r.say);
 }
 
 section('A member without the plan still sees their own team');

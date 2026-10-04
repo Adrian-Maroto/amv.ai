@@ -3235,6 +3235,12 @@ function showProfMenu(trigger) {
     '<button class="prof-item" id="pm-learn">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
       'Help &amp; Learn More</button>'+
+    /* What's New lived in the sidebar's own profile menu, which is gone; this
+       is the one menu now, so it lives here, with the dot that says there is
+       something unread. */
+    '<button class="prof-item" id="pm-whatsnew">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3l1.9 5.8H20l-4.9 3.6 1.9 5.8L12 14.6l-5 3.6 1.9-5.8L4 8.8h6.1z"/></svg>'+
+      'What\u2019s New'+((typeof _whatsNewUnread==='function'&&_whatsNewUnread())?'<span class="smi-badge" aria-label="unread"></span>':'')+'</button>'+
     '<div class="prof-divider"></div>'+
     /* Two clearly different exits, plus the shared-computer case in between:
        - Sign out: reversible, your work is waiting when you return.
@@ -3256,6 +3262,7 @@ function showProfMenu(trigger) {
   const close=()=>menu.remove();
   document.getElementById('pm-upgrade')?.addEventListener('click',()=>{ close(); setTab('plans'); });
   document.getElementById('pm-learn')?.addEventListener('click',()=>{ close(); setTab('help'); });
+  document.getElementById('pm-whatsnew')?.addEventListener('click',()=>{ close(); openWhatsNew(); });
   document.getElementById('pm-settings')?.addEventListener('click',()=>{ close(); S.settingsPane='account'; setTab('settings'); });
   document.getElementById('pm-billing')?.addEventListener('click',()=>{ close(); setTab('billing'); });
   document.getElementById('pm-team')?.addEventListener('click',()=>{ close(); setTab('team'); });
@@ -3284,15 +3291,11 @@ function updateSbUser(){
   try{ _updateHdrAuth(); }catch(e){}
   const u=S.user;
   const pfp=u&&u.email?loadStr('amv_pfp_'+u.email):'';
-  const av=$('sb-av')||$('ir-av-inner'),nav=$('nav-av'),nm=$('sb-name'),em=$('sb-email');
-  const avInner=$('ir-av-inner');
-  if(nm) nm.textContent=u&&u.name?u.name:'Guest';
-  if(em){ const _pk=loadStr('amv_plan')||'free'; const _pn=(PLANS&&PLANS[_pk]&&PLANS[_pk].name)||'Free'; em.textContent=(u&&u.email?u.email:'')+(u&&u.email?'  ·  '+_pn:''); }
-  [av,avInner,nav].filter(Boolean).forEach(el=>{
-    if(!el) return;
-    el.style.background=''; el.style.overflow='hidden';
-    el.innerHTML=_avatarInner(u&&u.email);
-  });
+  const nav=$('nav-av');
+  if(nav){
+    nav.style.background=''; nav.style.overflow='hidden';
+    nav.innerHTML=_avatarInner(u&&u.email);
+  }
   // Show/hide hist header
   setHistHeader(!!(S.convs&&S.convs.length>0));
   renderHist();

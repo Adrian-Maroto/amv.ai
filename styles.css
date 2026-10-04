@@ -16467,3 +16467,33 @@ body.set-open{ overflow:hidden; }
   .set-modal .settings-nav{ width:220px; flex:0 0 220px; }
   .set-modal .settings-content{ padding:var(--sp-6) var(--sp-5); }
 }
+
+/* ── LAYER A282: Team is one plan card ──────────────────────────────────────
+   Price per person, monthly or yearly, how many people, one button, what it
+   includes - the order somebody buying for an organisation reads it in. */
+.team-plan{ border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s1); padding:var(--sp-6); margin:var(--sp-5) 0; max-width:560px; }
+.team-plan-top h3{ font-family:var(--fdisplay); font-size:var(--t-xl); margin:0 0 var(--sp-1); }
+.team-plan-price{ font-size:var(--t-md); color:var(--mu); margin-bottom:var(--sp-4); }
+.team-plan-price b{ font-size:var(--t-2xl); color:var(--tx); font-weight:700; margin-right:2px; }
+.team-cycle{ display:inline-flex; padding:3px; gap:3px; border:1px solid var(--bd); border-radius:var(--r-pill); background:var(--s2); }
+.team-cyc{ border:0; background:none; color:var(--mu); font:inherit; font-size:var(--t-sm); font-weight:600; padding:var(--sp-2) var(--sp-4); border-radius:var(--r-pill); cursor:pointer; min-height:36px; }
+.team-cyc.on{ background:var(--bg); color:var(--tx); box-shadow:var(--sh-sm); }
+.team-cyc:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.team-cyc-note{ font-size:var(--t-sm); color:var(--mu); margin:var(--sp-2) 0 var(--sp-4); }
+.team-plan .seat-pick{ margin:0 0 var(--sp-4); }
+.team-plan-cta{ width:100%; justify-content:center; font-size:var(--t-md); min-height:44px; }
+.team-plan .seat-say:not(:empty){ margin-top:var(--sp-2); font-size:var(--t-sm); color:var(--tx); }
+.team-plan-inc{ margin-top:var(--sp-5); font-size:var(--t-base); }
+.team-plan-inc ul{ list-style:none; margin:var(--sp-2) 0 0; padding:0; display:grid; gap:var(--sp-2); }
+.team-plan-inc li{ display:flex; gap:var(--sp-2); align-items:flex-start; line-height:1.5; color:var(--tx); }
+.team-plan-inc li svg{ flex:0 0 auto; margin-top:3px; color:var(--grn); }
+@media(max-width:560px){ .team-plan{ padding:var(--sp-4); } }
+
+/* ── LAYER A283: the sidebar is navigation and Recents ─────────────────────
+   No profile block at the bottom (the avatar at the top right is the one
+   account menu) and no status line while everything works - it appears, via
+   [hidden], only when something is degraded or offline. */
+#sb .sb-status[hidden]{ display:none!important; }
+.prof-item .smi-badge{ margin-left:auto; }
+#nav-av.has-news{ position:relative; }
+#nav-av.has-news::after{ content:''; position:absolute; top:2px; right:2px; z-index:1; width:9px; height:9px; border-radius:50%; background:var(--gold); box-shadow:0 0 0 2px var(--bg); }

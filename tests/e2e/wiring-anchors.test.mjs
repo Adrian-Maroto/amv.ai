@@ -42,7 +42,7 @@ section('Structural anchors the app inserts into still exist');
 {
   const ANCHORS = [
     ['#sb-tools',     'the sidebar tool rail - Admin and Team are injected or revealed here'],
-    ['#sb-popup',     'the account menu'],
+    ['#nav-av',       'the account menu - the one avatar at the top right'],
     ['#vc',           'the view container every screen renders into'],
     ['#app',          'the app shell'],
     ['#ovr',          'the modal overlay every dialog is built inside'],

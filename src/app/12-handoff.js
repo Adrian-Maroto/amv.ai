@@ -2060,7 +2060,7 @@ async function _exportUserData(){
            ever changed their text size. A data export that quietly omits a
            setting is the same class of wrong as one that invents a value. */
         plan:collect('amv_plan'), fontSize:collect('amv_fs'),
-        privacy:{ locationMetadata:collect('amv_location_opt')==='1', helpImproveModels:collect('amv_improve_opt')==='1', analyticsOptOut:collect('amv_analytics_opt_out')==='1' },
+        privacy:{ locationMetadata:collect('amv_location_opt')==='1', analyticsOptOut:collect('amv_analytics_opt_out')==='1' },
         capabilities:{ webSearch:collect('amv_cap_websearch')!=='0', memory:collect('amv_cap_memory')!=='0', interactiveBlocks:collect('amv_cap_suggestions')!=='0' }
       }
     };
@@ -2646,9 +2646,11 @@ function _renderSetPaneInner(only, into){
           '<p>We use your data to run the product and, only if you allow it, to improve our AI. Analytics are opt-in and off by default. We never sell your data.</p></div>'+
       '</div></div>'+
       // Preferences
+      /* No "help improve our AI models" switch: it saved a value nothing read,
+         and AMV does not train on private chats (Privacy Policy, section 4),
+         so it offered a choice that did not exist. */
       '<div class="ss2"><h3>Preferences</h3>'+
         '<div class="prv-pref"><div><div class="prv-pref-t">Location metadata</div><div class="prv-pref-s">Allow AMV to use coarse location (city/region) to improve results like local search and time-aware answers.</div></div><label class="sw"><input type="checkbox" id="prv-location" '+(loadStr('amv_location_opt')==='1'?'checked':'')+'><span class="sw-sl"></span></label></div>'+
-        '<div class="prv-pref"><div><div class="prv-pref-t">Help improve our AI models</div><div class="prv-pref-s">Allow your chats and coding sessions to help train and improve AMV\u2019s models. Off by default.</div></div><label class="sw"><input type="checkbox" id="prv-improve" '+(loadStr('amv_improve_opt')==='1'?'checked':'')+'><span class="sw-sl"></span></label></div>'+
         '<div class="prv-pref"><div><div class="prv-pref-t">Usage analytics</div><div class="prv-pref-s">Anonymous product analytics that help improve AMV. Never sold or shared.</div></div><label class="sw"><input type="checkbox" id="prv-analytics" '+(loadStr('amv_analytics_opt_out')==='1'?'':'checked')+'><span class="sw-sl"></span></label></div>'+
       '</div>'+
       // Your data
@@ -2705,7 +2707,6 @@ function _renderSetPaneInner(only, into){
     });
     on($('prv-analytics'),'change',function(){ saveStr('amv_analytics_opt_out', this.checked?'':'1'); toast(this.checked?'Analytics on - thank you for helping improve AMV':'Analytics off - no product data will be collected','success'); });
     on($('prv-location'),'change',function(){ saveStr('amv_location_opt', this.checked?'1':'0'); toast(this.checked?'Location metadata on':'Location metadata off','info',2200); });
-    on($('prv-improve'),'change',function(){ saveStr('amv_improve_opt', this.checked?'1':'0'); toast(this.checked?'Thanks - your data can help improve AMV\u2019s models':'Off - your chats won\u2019t be used for model training','success'); });
     on($('prv-shared'),'click',()=>{ openSharedChatsManager(); });
     on($('prv-memory'),'click',()=>{ S.settingsPane=null; setTab('memory'); });
     on($('prv-clrall'),'click',()=>{
@@ -3343,11 +3344,8 @@ function setupApp(){
     }
     renderHist();
   });
-  on($('sb-user-btn'),'click',()=>{ const p=$('sb-popup'); if(p) p.classList.toggle('on'); });
-  on($('smi-settings'),'click',()=>{ $('sb-popup').classList.remove('on'); S.settingsPane='account'; setTab('settings'); });
-  on($('smi-whatsnew'),'click',()=>{ $('sb-popup').classList.remove('on'); openWhatsNew(); });
-  on($('smi-switch'),'click',()=>{ $('sb-popup').classList.remove('on'); openAuth('login'); });
-  on($('smi-signout'),'click',()=>{ $('sb-popup').classList.remove('on'); signOut(); });
+  /* The sidebar's own profile button is gone: it opened the same menu as the
+     avatar at the top right, and the space it took is Recents' now. */
 
   /* The history drawer and the canvas button were replaced by the sidebar and
      the composer toolbar. Their handlers stayed, binding to elements that no
@@ -3355,9 +3353,6 @@ function setupApp(){
      unreachable and went unnoticed for months. Removed rather than kept as
      no-ops that read like live wiring. */
   on($('kb-btn'),'click',()=>openShortcuts());
-  // Sidebar user popup
-  on($('sb-user-btn'),'click',function(e){ e.stopPropagation(); showProfMenu(this); });
-  // Profile actions handled via showProfMenu dropdown
   // Star filter
   // Sidebar nav tabs
   document.querySelectorAll('.snb[data-tab]').forEach(btn=>{
@@ -3397,13 +3392,6 @@ function setupApp(){
     if(act==='star') starConv(id);
     else if(act==='rename') renameConv(id);
     else if(act==='del') deleteConv(id);
-  });
-  // Close popup on outside click
-  document.addEventListener('click',e=>{
-    const popup=$('sb-popup');
-    if(popup&&popup.classList.contains('on')&&!popup.contains(e.target)&&e.target!=$('sb-user-btn')&&!$('sb-user-btn')?.contains(e.target)){
-      popup.classList.remove('on');
-    }
   });
 }
 
@@ -3514,12 +3502,12 @@ const CHANGELOG=[
     'A refreshed, friendlier design across the whole app' ] },
 ];
 function _latestVersion(){ return CHANGELOG.length?CHANGELOG[0].v:''; }
+function _whatsNewUnread(){ try{ return (loadStr('amv_changelog_seen')||'')!==_latestVersion(); }catch(e){ return false; } }
+/* The unread dot is drawn with the account menu each time it opens
+   (_whatsNewUnread), so there is no standing element to keep in step. The
+   avatar carries it too, so an unread note is visible before the menu is. */
 function _checkWhatsNew(){
-  try{
-    const seen=loadStr('amv_changelog_seen')||'';
-    const dot=document.getElementById('whatsnew-dot');
-    if(dot) dot.style.display=(seen!==_latestVersion())?'inline-block':'none';
-  }catch(e){}
+  try{ const av=$('nav-av'); if(av) av.classList.toggle('has-news', _whatsNewUnread()); }catch(e){}
 }
 function openWhatsNew(){
   const ovr=$('ovr'); if(!ovr) return;

@@ -590,10 +590,12 @@ ok(en.stuck === 0, 'no text is left stuck in the previous language', en.stuck);
    hardcoded dark background that stayed black in light mode. They must follow the theme. */
 section('Light mode: the account menu is light, not black');
 
-await page.evaluate(() => { document.body.classList.add('light'); const b=document.getElementById('sb-user-btn'); if(b) b.click(); });
+/* The account menu is the avatar's at the top right; the sidebar's own copy
+   of it is gone. */
+await page.evaluate(() => { document.body.classList.add('light'); const b=document.getElementById('nav-av'); if(b) b.click(); });
 await new Promise(r => setTimeout(r, 200));
 const lightMenu = await page.evaluate(() => {
-  const pop = document.getElementById('sb-popup');
+  const pop = document.querySelector('.prof-menu');
   if (!pop) return { ok:false };
   const m = getComputedStyle(pop).backgroundColor.match(/[\d.]+/g).map(Number);
   return { light: m[0] > 200 && m[1] > 200 && m[2] > 200 };
@@ -603,12 +605,12 @@ ok(lightMenu.light, 'the account popup is a light surface in light mode', lightM
 await page.evaluate(() => { document.body.classList.remove('light'); });
 await new Promise(r => setTimeout(r, 100));
 const darkMenu = await page.evaluate(() => {
-  const pop = document.getElementById('sb-popup');
+  const pop = document.querySelector('.prof-menu');
   const m = getComputedStyle(pop).backgroundColor.match(/[\d.]+/g).map(Number);
   return { dark: m[0] < 55 && m[1] < 55 && m[2] < 60 };
 });
 ok(darkMenu.dark, 'and stays dark in dark mode (fix is theme-aware)', darkMenu);
-await page.evaluate(() => { const b=document.getElementById('sb-user-btn'); if(b) b.click(); });
+await page.evaluate(() => { document.querySelector('.prof-menu')?.remove(); });
 
 /* What's New opened a modal that rendered OFF-SCREEN (top ~= viewport height)
    because #ovr wasn't centering .wn-modal, and closeOvr left an invisible
