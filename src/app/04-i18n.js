@@ -840,32 +840,12 @@ function _langInstruction(){
   if(code==='auto') return base+"detect the language the user is writing in and reply ENTIRELY in that same language. If they switch languages mid-conversation, follow their lead.";
   return base+"reply ENTIRELY in "+_langName(code)+" ("+LANGS[code].native+"), naturally and fluently, even if this prompt is in another language. Never mix languages unless the user does.";
 }
-/* Detects an explicit "in <language>" request in any of the supported languages. */
-function _explicitLangInPrompt(text){
-  if(!text) return null;
-  const t=' '+text.toLowerCase()+' ';
-  const map={
-    english:'English', spanish:'Spanish', 'espa\u00f1ol':'Spanish', chinese:'Chinese', mandarin:'Chinese',
-    hindi:'Hindi', arabic:'Arabic', portuguese:'Portuguese', 'portugu\u00eas':'Portuguese',
-    french:'French', 'fran\u00e7ais':'French', german:'German', deutsch:'German',
-    japanese:'Japanese', russian:'Russian', italian:'Italian', korean:'Korean', dutch:'Dutch',
-    turkish:'Turkish', polish:'Polish', swedish:'Swedish', greek:'Greek', hebrew:'Hebrew',
-    thai:'Thai', vietnamese:'Vietnamese', indonesian:'Indonesian', 'chino':'Chinese','japon\u00e9s':'Japanese'
-  };
-  // look for "in <lang>", "en <lang>", "auf <lang>", "<lang> version", "translate to <lang>"
-  for(const k in map){
-    const re=new RegExp('\\b(in|en|to|into|auf|\u0628\u0627\u0644|\u0e40\u0e1b\u0e47\u0e19|make it|write it|respond in|reply in|translate (?:to|into))?\\s*'+k+'\\b','i');
-    if(re.test(t)) return map[k];
-  }
-  return null;
-}
 /* _langForGeneration stood here and told a generator to write any text, labels,
    captions or signage in the reader's language. It was for image and video
    generation, which the owner removed - so it had nothing left to instruct, and
-   nothing called it.
-
-   _explicitLangInPrompt above it survives and is used: reading "in Spanish" out
-   of what somebody typed is about the CONVERSATION, not about a picture. */
+   nothing called it. _explicitLangInPrompt went later for the same reason:
+   the language rule in _langInstruction asks the model to honour "in Spanish"
+   itself, and nothing ever called the parser. */
 const AMV_EXCELLENCE = [
 "",
 "=== AMV QUALITY STANDARD (non-negotiable) ===",

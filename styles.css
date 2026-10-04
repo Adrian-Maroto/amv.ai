@@ -902,7 +902,7 @@ html,body{height:100%;overflow:hidden}
 .crew-page{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:40px}
 /* hero: text + a prominent stat, not a card */
 
-.crew-hero-l{flex:1}
+
 .eyebrow{font-size:var(--t-xs);letter-spacing:.16em;text-transform:uppercase;color:var(--accent-txt);font-weight:600;margin-bottom:12px}
 
 
@@ -1033,8 +1033,7 @@ a{color:var(--accent-txt)!important;}
 .mb.ai{background:transparent!important;}
 .mb.u{background:var(--s2)!important;border:1px solid var(--bd)!important;border-radius:var(--r-xl)!important;}
 #composer,
-.composer,
-#cbar{background:var(--s1)!important;border:1px solid var(--bd)!important;border-radius:var(--r-2xl)!important;}
+.composer{background:var(--s1)!important;border:1px solid var(--bd)!important;border-radius:var(--r-2xl)!important;}
 
 /* ---- Inputs warmed ---- */
 input,textarea,select{font-family:var(--fn);}
@@ -1134,7 +1133,7 @@ input,textarea,select{font-family:var(--fn);}
 
 
 
-.dev-term-body{height:100%;background:#0d0d0f;display:flex;flex-direction:column}
+
 
 
 
@@ -1208,7 +1207,7 @@ input,textarea,select{font-family:var(--fn);}
 
 
 
-.crew-feature-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+
 
 
 
@@ -1604,7 +1603,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .sn-btn.on::before{background:var(--accent)!important}
 
 /* ---- 16. Asymmetry: hero text left-anchored & wider, not dead-center boxes ---- */
-.dsn-hero,.crew-hero-l{text-align:left;align-items:flex-start}
+.dsn-hero{text-align:left;align-items:flex-start}
 .dsn-hero{align-items:flex-start}
 
 .dsn-input-wrap{margin-left:0!important}
@@ -3338,8 +3337,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
 .art-foot .btn{font-size:var(--t-base)}
 /* When the panel is open on wide screens, let the chat breathe (shift, not cover) */
 @media(min-width:1100px){
-  body.art-open #main-scroll,
-body.art-open #cv{transition:margin-right .34s cubic-bezier(.4,0,.2,1)}
+  body.art-open #cv{transition:margin-right .34s cubic-bezier(.4,0,.2,1)}
   body.art-open #cv{margin-right:min(560px,46vw)}
 }
 
@@ -3698,7 +3696,6 @@ code:not(pre code){font-family:var(--mn);font-size:.9em;font-feature-settings:'k
 body.sb-rail #sb .sbl,
 body.sb-rail #sb .sb-srch,
 body.sb-rail #sb #hist-search,
-body.sb-rail #sb #hist-wrap,
 body.sb-rail #sb #hist{display:none!important}
   /* center the nav rows to icon-only (labels are bare text nodes → font-size:0 hides them) */
   body.sb-rail #sb .snb{width:44px!important;height:44px!important;padding:0!important;margin:2px auto!important;
@@ -4042,7 +4039,7 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
    ═══════════════════════════════════════════════════════════ */
 /* Model row: a slim inline pill instead of a heavy full-width box */
 
-.sec-model-l{font-size:var(--t-sm);color:var(--mu);font-weight:500}
+
 .sec-usage-note{display:none}                       /* redundant - folded into the pill */
 .secmodel-sel{
   width:auto;min-width:0;
@@ -4083,12 +4080,12 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
 
 /* Composer at the bottom of Dev/Lab: softer, roomier */
 
-#dev-msg,#lab-msg{
+#dev-msg{
   background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-lg);
   padding:12px 14px;font-size:var(--t-base);color:var(--tx);
   transition:border-color .14s;
 }
-#dev-msg:focus,#lab-msg:focus{border-color:var(--accent-txt);outline:none}
+#dev-msg:focus{border-color:var(--accent-txt);outline:none}
 
 /* Section header: tighter, calmer */
 .sec-kicker{font-size:var(--t-2xs);letter-spacing:.09em;font-weight:700;color:var(--accent-txt);text-transform:uppercase}
@@ -6284,7 +6281,7 @@ body.light .aa-date{color-scheme:light}
   #vc,.vi,.sv{max-width:100%!important}
   .vi,.sv{padding-left:14px!important;padding-right:14px!important}
   #snd{flex:none}
-  #chome-input{max-width:100%!important;box-sizing:border-box}
+  
 }
 @media(max-width:560px){
   #itb{gap:6px!important;flex-wrap:nowrap;min-width:0}
@@ -14769,15 +14766,12 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 .spv-sub{ margin:0; max-width:64ch; font-size:var(--t-lg); line-height:1.55; color:var(--mu); }
 
 /* What you are on, and what it gives you. */
-.spv-now{
-  background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-xl);
-  padding:var(--sp-5); margin-bottom:var(--sp-6);
-}
-.spv-now-h{ display:flex; align-items:flex-start; justify-content:space-between; gap:var(--sp-4); flex-wrap:wrap; }
-.spv-now-l{ font-size:var(--t-xs); font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--mu); }
-.spv-now-p{ font-family:var(--fdisplay); font-size:var(--t-2xl); font-weight:650; line-height:1.2; margin-top:2px; }
-.spv-now-x{ font-family:var(--fn); font-size:var(--t-md); font-weight:500; color:var(--mu); }
-.spv-manage{ flex:0 0 auto; }
+
+
+
+
+
+
 
 /* The four numbers the server refuses on. Equal weight, because no one of
    them is the one somebody meets first. */
@@ -14802,8 +14796,8 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 
 @media (max-width:860px){
   .spv-facts{ grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-3); }
-  .spv-now-h{ flex-direction:column; align-items:stretch; }
-  .spv-manage{ width:100%; }
+  
+  
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -14957,14 +14951,11 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    AMV spent is not here to be sold to, and a plan grid above their own
    numbers makes the page read as being about the sale.
    ══════════════════════════════════════════════════════════════════════════ */
-.spv-what{ margin:var(--sp-2) 0 var(--sp-6); }
-.spv-w-g{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--sp-4); }
-.spv-w-i{
-  min-width:0; padding:var(--sp-4);
-  background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-lg);
-}
-.spv-w-t{ font-size:var(--t-md); font-weight:650; color:var(--tx); margin-bottom:var(--sp-2); }
-.spv-w-i p{ margin:0; font-size:var(--t-sm); color:var(--mu); line-height:1.6; }
+
+
+
+
+
 /* The money row is four facts like the plan row, so it uses the same grid and
    only says what is different: these are dollars, not allowances. */
 .spv-facts-m{ border-top:none; padding-top:0; margin-top:var(--sp-2); }
@@ -15001,7 +14992,7 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
 .wl-add .btn{ white-space:nowrap; }
 
 @media (max-width:860px){
-  .spv-w-g{ grid-template-columns:minmax(0,1fr); }
+  
   .wl-add{ grid-template-columns:minmax(0,1fr); }
   .wl-row{ flex-direction:column; align-items:stretch; gap:var(--sp-2); }
   .wl-a{ justify-content:space-between; }

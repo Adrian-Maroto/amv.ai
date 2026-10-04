@@ -6911,32 +6911,12 @@ function _langInstruction(){
   if(code==='auto') return base+"detect the language the user is writing in and reply ENTIRELY in that same language. If they switch languages mid-conversation, follow their lead.";
   return base+"reply ENTIRELY in "+_langName(code)+" ("+LANGS[code].native+"), naturally and fluently, even if this prompt is in another language. Never mix languages unless the user does.";
 }
-/* Detects an explicit "in <language>" request in any of the supported languages. */
-function _explicitLangInPrompt(text){
-  if(!text) return null;
-  const t=' '+text.toLowerCase()+' ';
-  const map={
-    english:'English', spanish:'Spanish', 'espa\u00f1ol':'Spanish', chinese:'Chinese', mandarin:'Chinese',
-    hindi:'Hindi', arabic:'Arabic', portuguese:'Portuguese', 'portugu\u00eas':'Portuguese',
-    french:'French', 'fran\u00e7ais':'French', german:'German', deutsch:'German',
-    japanese:'Japanese', russian:'Russian', italian:'Italian', korean:'Korean', dutch:'Dutch',
-    turkish:'Turkish', polish:'Polish', swedish:'Swedish', greek:'Greek', hebrew:'Hebrew',
-    thai:'Thai', vietnamese:'Vietnamese', indonesian:'Indonesian', 'chino':'Chinese','japon\u00e9s':'Japanese'
-  };
-  // look for "in <lang>", "en <lang>", "auf <lang>", "<lang> version", "translate to <lang>"
-  for(const k in map){
-    const re=new RegExp('\\b(in|en|to|into|auf|\u0628\u0627\u0644|\u0e40\u0e1b\u0e47\u0e19|make it|write it|respond in|reply in|translate (?:to|into))?\\s*'+k+'\\b','i');
-    if(re.test(t)) return map[k];
-  }
-  return null;
-}
 /* _langForGeneration stood here and told a generator to write any text, labels,
    captions or signage in the reader's language. It was for image and video
    generation, which the owner removed - so it had nothing left to instruct, and
-   nothing called it.
-
-   _explicitLangInPrompt above it survives and is used: reading "in Spanish" out
-   of what somebody typed is about the CONVERSATION, not about a picture. */
+   nothing called it. _explicitLangInPrompt went later for the same reason:
+   the language rule in _langInstruction asks the model to honour "in Spanish"
+   itself, and nothing ever called the parser. */
 const AMV_EXCELLENCE = [
 "",
 "=== AMV QUALITY STANDARD (non-negotiable) ===",
@@ -20283,15 +20263,6 @@ async function _cwAskWhere(){
 /* Which country the top of Crew was last drawn for, so a late answer that
    agrees with it does not redraw anything. */
 let _cwGuessDrawn = '';
-function _cwLangGuess(){
-  try{
-    if(typeof _everydayGuess === 'function'){
-      const g = String(_everydayGuess() || '').toUpperCase();
-      if(CW_WORLD_COUNTRIES.some(c => c[0] === g)) return g;
-    }
-  }catch(e){}
-  return '';
-}
 function _cwCountryGuess(){
   /* A country somebody chose ("This is my country") wins over any guess. The
      old "Everywhere" choice (`-`) has no control any more, so it reads as no
@@ -42917,52 +42888,7 @@ try { window.openPredictionMarkets = openPredictionMarkets; } catch (e) {}
    screen was just built out of.
    ══════════════════════════════════════════════════════════════════════════ */
 
-function _spvPlanNow() {
-  const plan = (typeof loadStr === 'function' && loadStr('amv_plan')) || 'free';
-  const P = (typeof PLANS !== 'undefined' && PLANS[plan]) || null;
-  const name = P ? P.name : 'Free';
-  const price = P ? P.price : 0;
-  const cell = (big, small) =>
-    '<div class="spv-f"><div class="spv-f-b">' + escH(big) + '</div>'
-    + '<div class="spv-f-s">' + escH(small) + '</div></div>';
-  return '<section class="spv-now">'
-    + '<div class="spv-now-h">'
-      + '<div><div class="spv-now-l">' + escH(T('Your plan')) + '</div>'
-        + '<div class="spv-now-p">' + escH(name)
-          + (price ? ' <span class="spv-now-x">$' + escH(String(price)) + '/mo</span>' : '')
-        + '</div></div>'
-      + '<button type="button" class="btn bs spv-manage" data-gs="billing">'
-        + escH(T('Manage billing')) + '</button>'
-    + '</div>'
-    /* The three numbers the server actually refuses on, for the plan somebody
-       is on right now - not for the plan the page would like to sell them. */
-    + '<div class="spv-facts">'
-      + cell(_msgMonthLabel(plan), T('messages a month'))
-      + cell(_msg5hLabel(plan), T('every') + ' ' + USAGE_WINDOW_HOURS + ' ' + T('hours'))
-      + cell(_topWeekLabel(plan), T('top-engine messages a week'))
-      + cell(_rpmForPlan(plan) + '', T('requests a minute'))
-    + '</div>'
-  + '</section>';
-}
 
-/* WHAT SPENDING IS, BEFORE ANY NUMBER ABOUT IT.
-
-   The screen opened on the plan panel, which answers a question somebody has
-   not asked yet. "Spending" means two different things in this product - the
-   subscription you pay AMV, and the money AMV may spend on your behalf - and
-   until that is said, every figure below is ambiguous.
-
-   Two sentences, one for each meaning, at the top. */
-function _spvWhat() {
-  return '<section class="spv-what">'
-    + '<div class="spv-w-g">'
-      + '<div class="spv-w-i"><div class="spv-w-t">' + escH(T('What you pay AMV')) + '</div>'
-        + '<p>' + escH(T('Your plan, and how much of it you have used. This is the only thing AMV charges you for - there is nothing metered on top and no surprise bill.')) + '</p></div>'
-      + '<div class="spv-w-i"><div class="spv-w-t">' + escH(T('What AMV may spend for you')) + '</div>'
-        + '<p>' + escH(T('When a job you started needs something bought, this is what decides whether AMV may buy it and how much it may spend without asking. It is off until you turn it on.')) + '</p></div>'
-    + '</div>'
-  + '</section>';
-}
 
 /* Balance and the ceiling, side by side, because the useful question is not
    what either one is - it is which of them is smaller. */

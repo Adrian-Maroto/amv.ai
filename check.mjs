@@ -1227,7 +1227,13 @@ step('Page weight is under control', () => {
      page shell, which the build cannot strip because index.html is its own
      source - moving those notes into docs is the next trim, not a bigger
      ceiling. */
-  const CEILING = 628 * 1024;   // gzipped, which is what actually crosses the network
+  /* 628 -> 630, 2026-10-04, deliberately. Three features the owner asked for
+     in one message - the Team plan card, "email me when AMV is done", and the
+     rationed upgrade card - after ~13KB raw of dead code and CSS was removed
+     first (the sidebar profile and its menu, the old Team feature cards, the
+     unused Spending plan panel, four functions nothing called). What was left
+     over is the new features themselves. */
+  const CEILING = 630 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

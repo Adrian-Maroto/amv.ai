@@ -3046,15 +3046,6 @@ async function _cwAskWhere(){
 /* Which country the top of Crew was last drawn for, so a late answer that
    agrees with it does not redraw anything. */
 let _cwGuessDrawn = '';
-function _cwLangGuess(){
-  try{
-    if(typeof _everydayGuess === 'function'){
-      const g = String(_everydayGuess() || '').toUpperCase();
-      if(CW_WORLD_COUNTRIES.some(c => c[0] === g)) return g;
-    }
-  }catch(e){}
-  return '';
-}
 function _cwCountryGuess(){
   /* A country somebody chose ("This is my country") wins over any guess. The
      old "Everywhere" choice (`-`) has no control any more, so it reads as no
