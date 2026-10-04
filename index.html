@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="826fa98d3d8e3471">
+<meta name="amv-build" content="e3c656ec354d29a3">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://api.amv.homes"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -9766,6 +9766,9 @@ animation:doneAskIn .2s var(--ease) both; }
 @supports (field-sizing: content){
 textarea.mc-cmd-input{ field-sizing:content; height:auto; min-height:1lh; }
 }
+.sw input{ inset:0; width:100%; height:100%; margin:0; z-index:1; cursor:pointer; }
+.sw input:focus-visible + .sw-sl{ outline:2px solid var(--accent); outline-offset:2px; }
+.seat-pick .seat-step{ min-width:44px; }
 </style>
 <!-- BUILD:CSS:END -->
 <script>

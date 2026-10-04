@@ -125,7 +125,7 @@ section('The decision is a tag, not a guess at the wording');
 {
   /* The whole defect was a regex deciding whether prose "looked" already
      human. Any message somebody rewrites now keeps working. */
-  const src = await page.evaluate(() => String(_callAI));
+  const src = await page.evaluate(() => String(_callAITurn));
   ok(/_saidPlainly/.test(src), 'errors that were written for a person carry a mark', true);
   const helper = await page.evaluate(() => typeof _saidPlainly);
   ok(helper === 'function', 'and there is one place that sets it', helper);

@@ -16524,3 +16524,12 @@ body.set-open{ overflow:hidden; }
 @supports (field-sizing: content){
   textarea.mc-cmd-input{ field-sizing:content; height:auto; min-height:1lh; }
 }
+
+/* ── LAYER A287: a switch the keyboard can see ─────────────────────────────
+   The checkbox inside every .sw was a 0x0 box: focus landed on nothing you
+   could see or scroll to. It now covers the switch it belongs to (still
+   invisible, still the real control), and its focus draws on the track. */
+.sw input{ inset:0; width:100%; height:100%; margin:0; z-index:1; cursor:pointer; }
+.sw input:focus-visible + .sw-sl{ outline:2px solid var(--accent); outline-offset:2px; }
+/* The seat stepper on Team met the 44px floor in height only. */
+.seat-pick .seat-step{ min-width:44px; }

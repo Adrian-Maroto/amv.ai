@@ -178,7 +178,7 @@ section('The send path really uses it - the seam, not just the helper');
   /* `_ctxPrepare` can be perfect while the request still says `.slice(-20)`,
      and every check above would stay green. */
   const src = codeOnly(readFileSync(join(ROOT, 'app.js'), 'utf8'));
-  const body = functionBody(src, '_callAI');
+  const body = functionBody(src, '_callAITurn');
   ok(body.length > 1000, 'the send function was found, so this has a subject', body.length);
   /* Scoped to the function it was IN. The first version of this asserted the
      bundle held no `slice(-20)` anywhere and failed on three unrelated ones -

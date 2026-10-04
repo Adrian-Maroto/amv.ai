@@ -104,7 +104,7 @@ const consent = await page.evaluate(async () => {
   window._showModalAsync = async () => true;             // user clicks Allow
   const allowed = await race(_confirmModelTool('deploy_site', { title: 'x' }));
   window._showModalAsync = orig;
-  const wired = /_toolNeedsConsent/.test(_callAI.toString());
+  const wired = /_toolNeedsConsent/.test(_callAITurn.toString());
   return { cls, denied, allowed, wired };
 });
 ok(consent.cls.deploy_site && consent.cls.run_code && consent.cls.fix_code, 'deploy/run/fix are consent-gated');
