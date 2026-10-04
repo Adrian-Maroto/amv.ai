@@ -39,12 +39,20 @@ const turn = (o) => page.evaluate(async (o) => {
 
 section('It asks once, while a long answer is still running');
 {
+  /* A conversation on screen, so the message box is docked at the bottom -
+     where a prompt pinned near the bottom used to cover it. */
+  await page.evaluate(() => { const m = getMsgs(); for (let i = 0; i < 4; i++) { m.push({ r: 'u', c: 'Q' + i }); m.push({ r: 'a', c: 'A long answer. '.repeat(40) }); } setMsgs(m); renderChatMsgs(); });
   await page.evaluate(() => { S.busy = true; _doneMailStart('chat'); });
   const early = await page.evaluate(() => !!document.getElementById('done-ask'));
   ok(!early, 'not the moment something starts', early);
   await page.waitForSelector('#done-ask', { timeout: 16000 });
   const t = await page.evaluate(() => document.getElementById('done-ask').textContent);
   ok(/email when AMV is done/i.test(t) && /Email me/.test(t) && /Not now/.test(t), 'but once it has run a while: Email me, or Not now', t);
+  const pos = await page.evaluate(() => {
+    const a = document.getElementById('done-ask').getBoundingClientRect(), m = document.getElementById('mta').getBoundingClientRect();
+    return { clear: a.bottom <= m.top || a.top >= m.bottom, a: Math.round(a.bottom), m: Math.round(m.top) };
+  });
+  ok(pos.clear, 'and it never covers the message box', pos);
 }
 
 section('Yes is checked with the server before it is promised');

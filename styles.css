@@ -5591,8 +5591,6 @@ body.sb-rail #sb .sb-status{
   margin:2px auto!important; padding:0!important;
   justify-content:center!important; gap:0!important; overflow:hidden;
 }
-body.sb-rail #sb .sb-name,
-body.sb-rail #sb .sb-email{ display:none!important; }
 
 
 /* ── Research Watch modal ── */
@@ -16478,7 +16476,7 @@ body.set-open{ overflow:hidden; }
 
 /* ── LAYER A284: "Email me when AMV is done" ──────────────────────────────
    Asked once, beside the work it is about, not as a pop-up over it. */
-.done-ask{ position:fixed; left:50%; bottom:calc(var(--sp-8) + 64px); transform:translateX(-50%); z-index:7000;
+.done-ask{ position:fixed; left:50%; top:calc(var(--nav-h) + var(--sp-3)); transform:translateX(-50%); z-index:7000;
   display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap; justify-content:center;
   max-width:min(560px, calc(100vw - 32px)); padding:var(--sp-3) var(--sp-4); border:1px solid var(--bd);
   border-radius:var(--r-lg); background:var(--s2); box-shadow:var(--sh-lg); font-size:var(--t-base); color:var(--tx);
@@ -16488,7 +16486,9 @@ body.set-open{ overflow:hidden; }
 .done-ask .btn{ font-size:var(--t-sm); min-height:36px; }
 @keyframes doneAskIn{ from{ opacity:0; transform:translate(-50%,6px); } to{ opacity:1; transform:translate(-50%,0); } }
 @media(prefers-reduced-motion:reduce){ .done-ask{ animation:none; } }
-@media(max-width:720px){ .done-ask{ bottom:calc(76px + var(--sp-8) + env(safe-area-inset-bottom,0px)); } }
+/* In chat it is part of the page, directly above the message box. */
+.done-ask.in-flow{ position:static; transform:none; align-self:center; margin:0 auto var(--sp-3); animation-name:doneAskInFlow; }
+@keyframes doneAskInFlow{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
 
 /* ── LAYER A285: the occasional upgrade card ────────────────────────────────
    Centred, quiet, one decision: the engine it unlocks, what else comes with

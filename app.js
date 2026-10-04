@@ -49679,7 +49679,12 @@ function _doneMailAsk(){
       '<button type="button" class="btn bp" id="done-ask-yes">Email me</button>' +
       '<button type="button" class="btn bs" id="done-ask-no">Not now</button>' +
     '</span>';
-  document.body.appendChild(el);
+  /* Beside the work it is about: in chat, in the page just above the message
+     box; anywhere else (a Build run), pinned under the top bar, where no
+     message box can be. A fixed spot at the bottom covered the composer. */
+  const cia = $('cia');
+  if(cia && cia.offsetParent && cia.parentElement){ el.classList.add('in-flow'); cia.parentElement.insertBefore(el, cia); }
+  else document.body.appendChild(el);
   on($('done-ask-no'), 'click', () => { saveStr('amv_done_mail', '0'); _doneMailAskClose(); });
   on($('done-ask-yes'), 'click', async () => {
     const r = await _doneMailSet(true);
