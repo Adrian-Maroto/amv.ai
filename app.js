@@ -16790,9 +16790,6 @@ function _mountStripe(pk,plan){
 window.openCheckout=openCheckout;window.openPaymentSheet=openPaymentSheet;
 
 
-/* === APPS & EXTENSIONS === */
-function setTabBtn(t){ setTab(t); }
-window.setTabBtn=setTabBtn;
 
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -33452,64 +33449,6 @@ function launchUnique(kind){
   setTab(map[kind]||'chat');
 }
 window.launchUnique=launchUnique;
-function downloadDesktop(platform){
-  const url=loadStr(platform==='mac'?'amv_dl_mac':'amv_dl_win');
-  if(url){ window.open(url,'_blank','noopener'); return; }
-  toast('Desktop builds publish here at launch - bookmark this page','info',4000);
-}
-window.downloadDesktop=downloadDesktop;
-/* Unified store/listing link: opens the real published URL once you set it
-   (in Settings → Integrations at launch), otherwise tells the user honestly
-   that it's coming, instead of sending them to a generic store homepage. */
-/* Install as a PWA (add to home screen) - uses the captured beforeinstallprompt
-   event when available, otherwise shows clear platform instructions. */
-let _deferredPWA=null;
-try{ window.addEventListener('beforeinstallprompt',(e)=>{ e.preventDefault(); _deferredPWA=e; }); }catch(e){}
-function installPWA(){
-  if(_deferredPWA){
-    _deferredPWA.prompt();
-    _deferredPWA.userChoice.finally(()=>{ _deferredPWA=null; });
-    return;
-  }
-  const ua=navigator.userAgent||'';
-  let how;
-  if(/iPhone|iPad|iPod/i.test(ua)) how='In Safari: tap the Share button, then "Add to Home Screen".';
-  else if(/Android/i.test(ua)) how='In Chrome: tap the ⋮ menu, then "Add to Home screen" or "Install app".';
-  else how='In your browser menu, choose "Install AMV" or "Add to Home screen" / "Create shortcut".';
-  toast(how, 'info', 6000);
-}
-function openDevView(){ try{ setTab('dev'); }catch(e){} }
-window.installPWA=installPWA; window.openDevView=openDevView;
-
-function amvStoreLink(which){
-  const map={
-    chrome:'amv_url_chrome', vscode:'amv_url_vscode', slack:'amv_url_slack',
-    ios:'amv_url_ios', android:'amv_url_android', jetbrains:'amv_url_jetbrains'
-  };
-  const names={chrome:'AMV for Chrome',vscode:'VS Code extension',slack:'Slack app',ios:'iOS app',android:'Android app',jetbrains:'JetBrains plugin'};
-  const url=loadStr(map[which]||'');
-  // If a real published URL has been set (post-launch), open it.
-  if(url){ window.open(url,'_blank','noopener'); return; }
-  // Otherwise: a real "notify me" waitlist - honest and actually useful.
-  const name=names[which]||'this app';
-  const waitKey='amv_waitlist_'+which;
-  if(loadStr(waitKey)){ toast('You\u2019re on the list for '+name+'. We\u2019ll email you the moment it\u2019s live.','success',4000); return; }
-  amvNotifyMe(which,name,waitKey);
-}
-async function amvNotifyMe(which,name,waitKey){
-  const email=(S.user&&S.user.email)||'';
-  const useEmail = email || await showTextPromptAsync('Get notified when '+name+' launches - enter your email:');
-  if(!useEmail||!String(useEmail).includes('@')){ if(useEmail) showError('Please enter a valid email.'); return; }
-  // record interest (and send to backend if available so you have the real waitlist)
-  try{ saveStr(waitKey,'1'); }catch(e){}
-  let stored=false;
-  if(window.AMV_API && AMV_API.live){
-    try{ const r=await AMV_API._fetch('/waitlist',{method:'POST',body:JSON.stringify({product:which,email:String(useEmail).toLowerCase()})}); stored=r&&r.ok!==false; }catch(e){}
-  }
-  toast('You\u2019re on the list for '+name+'! We\u2019ll let you know the moment it\u2019s ready.','success',4500);
-}
-window.amvStoreLink=amvStoreLink;
-window.amvNotifyMe=amvNotifyMe;
 let _taskCat=null;
 
 /* 5. INTEGRATIONS VIEW - routes to the unified catalog in Settings so there is

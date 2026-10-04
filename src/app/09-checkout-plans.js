@@ -1055,9 +1055,6 @@ function _mountStripe(pk,plan){
 window.openCheckout=openCheckout;window.openPaymentSheet=openPaymentSheet;
 
 
-/* === APPS & EXTENSIONS === */
-function setTabBtn(t){ setTab(t); }
-window.setTabBtn=setTabBtn;
 
 
 /* ═══════════════════════════════════════════════════════════════════════
