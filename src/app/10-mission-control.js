@@ -3369,6 +3369,19 @@ function _cwAccountTitle(j, cc){
   if(!j || /^(cc|top|ev)_[a-z]{2}_/.test(String(j.id || '')) && !/^ev_ev_/.test(String(j.id || ''))) return j;
   const needs = String(j.needs || ''), box = _cwInbox[cc] || [], f = _cwFacts[cc] || {};
   let tag = '';
+  /* The jobs that run on the web rather than an account still run for this
+     country (the run is told where the person is), so the title says where:
+     its own news outlets where the facts name them, otherwise the country.
+     "Did anything change today?" watches what the person names, wherever it
+     is, so it stays as it is. */
+  const C = (_cwCountryRow(cc) || [])[1] || '';
+  const WHERE = { competitor_watch:1, content_calendar:1, opportunity_radar:1, job_hunt:1 };
+  if(j.id === 'morning_brief' && (f.news || C)){
+    return Object.assign({}, j, { title: j.title + (f.news ? ' \u00b7 ' + _cwNames(f.news, 2) : ' for ' + C) });
+  }
+  if(WHERE[j.id] && C && !(j.id === 'job_hunt' && f.jobs) && String(j.title || '').indexOf(C) < 0){
+    return Object.assign({}, j, { title: j.title + (j.id === 'content_calendar' ? ' for ' : ' in ') + C });
+  }
   if(j.id === 'job_hunt' && f.jobs) tag = _cwNames(f.jobs, 2);
   else if(/\bEmail\b/.test(needs) && box[0]) tag = box[0].name;
   else if(/\bCalendar\b/.test(needs) && box[0]) tag = box[0].how === 'ms' ? 'Outlook Calendar' : 'Google Calendar';

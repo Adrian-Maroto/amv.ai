@@ -189,7 +189,7 @@ section('Nothing on a country\u2019s page is called something it could be called
     for (const cc of CW_WORLD_COUNTRIES.map(c => c[0])) {
       const f = _cwFacts[cc] || {}, C = _cwCountryRow(cc)[1];
       const names = [C, f.cur].concat((_cwInbox[cc] || []).map(b => b.name), ['Google Calendar', 'Outlook Calendar', 'Google Classroom'])
-        .concat(Object.values(f).flatMap(v => String(v).split(/[(),·/]| and /).map(x => x.trim()).filter(x => x.length > 2))).filter(Boolean);
+        .concat(Object.values(f).flatMap(v => String(v).split(/[(),·/]| and /).map(x => x.trim().replace(/^the /i, '')).filter(x => x.length > 2))).filter(Boolean);
       const L = _cwTopTen(cc).slice(0, 5).concat(_cwCountryHundred(cc));
       /* The pack written by hand for a country is in its own words - often its
          own script - so it is local by construction. */
@@ -199,9 +199,11 @@ section('Nothing on a country\u2019s page is called something it could be called
     const one = (cc, kind) => (_cwMadeMore(cc).concat(_cwTopTen(cc)).find(j => _cwKind(j) === kind) || {}).title || '';
     return { avg: n.reduce((a, b) => a + b, 0) / n.length, max: Math.max(...n), worst: Object.entries(per).sort((a, b) => b[1].length - a[1].length)[0],
              jpWeather: one('JP', 'dailyweather'), usPhone: one('US', 'phoneplan'), krJobs: (_cwCountryHundred('KR').find(j => j.id === 'job_hunt') || {}).title || '',
-             cnInbox: (_cwCountryHundred('CN').find(j => j.id === 'inbox_digest') || {}).title || '' };
+             cnInbox: (_cwCountryHundred('CN').find(j => j.id === 'inbox_digest') || {}).title || '',
+             brief: ['US', 'KE', 'JP'].map(cc => ((_cwTopTen(cc).slice(0, 5).concat(_cwCountryHundred(cc))).find(j => j.id === 'morning_brief') || {}).title || '') };
   });
-  ok(r.avg < 8 && r.max <= 12, 'at most a handful of 105 per country name nothing local - ' + r.avg.toFixed(1) + ' on average, ' + r.max + ' at most', r.worst);
+  ok(r.avg < 1 && r.max <= 4, 'almost nothing of 105 per country names nothing local ("Did anything change today?" watches what you name, anywhere) - ' + r.avg.toFixed(1) + ' on average, ' + r.max + ' at most', r.worst);
+  ok(r.brief.every(t => !t || / \u00b7 | for /.test(t)) && /Reuters|AP/.test(r.brief[0] || 'AP'), 'the morning brief names the country\u2019s own news, not \u201cnews\u201d', r.brief);
   ok(/Japan Meteorological Agency/.test(r.jpWeather), 'Japan\u2019s weather comes from its weather service', r.jpWeather);
   ok(/Verizon/.test(r.usPhone), 'the United States\u2019 phone plan names its networks', r.usPhone);
   ok(r.krJobs === '' || /Saramin|JobKorea|Wanted|LinkedIn/.test(r.krJobs), 'Korea\u2019s job hunt names its job sites', r.krJobs);
