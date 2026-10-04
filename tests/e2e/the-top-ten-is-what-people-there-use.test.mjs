@@ -97,7 +97,9 @@ const ten = async (page) => {
     };
   });
 };
-const row = (r, sec) => { const i = r.sec.findIndex(s => s.toLowerCase() === sec); return i < 0 ? null : { t: r.t[i], d: r.d[i], i }; };
+const row = (r, sec) => { const i = r.sec.findIndex(s => s.toLowerCase() === sec); return i < 0 ? { t: '', d: '', i: -1 } : { t: r.t[i], d: r.d[i], i }; };
+/* Everything Crew offers the country, the ten and the hundred below it. */
+const anywhere = (page, cc) => page.evaluate(c => _cwTopTen(c).concat(_cwCountryHundred(c)).map(j => j.title).join(' | '), cc);
 
 section('In the United States: every part of life, the American way');
 {
@@ -105,8 +107,14 @@ section('In the United States: every part of life, the American way');
   const r = await ten(page);
   ok(/Top 5 for you in .*United States/.test(r.head) && r.shown.length === 5 && r.t.length === 10, 'five on screen, of ten ranked, for the United States', r.head);
   ok(r.fiveAreFirst && r.restLead, 'the first five are the top of Crew, and six to ten lead the row under it', r);
-  ok(['mail','bank','calendar','school','work','groceries','shopping','government','travel','home'].every(s => row(r, s)),
-     'one for each part of life - mail, bank, calendar, school, work, groceries, shopping, government, travel, home', r.sec);
+  /* The five are the country's own, not a template: the mailbox, the bank
+     where one can be linked, then three different parts of life with evidence
+     for the US - at least one of them written for the US by hand. Calendar,
+     school and work follow in the ten. */
+  const own = await page.evaluate(() => _cwTopFive('US').filter(j => /^ev_us_/.test(j.id)).length);
+  ok(r.sec[0] === 'Mail' && r.sec[1] === 'Bank' && new Set(r.sec.slice(0, 5)).size === 5 && own >= 1,
+     'the mailbox, the bank, then three different parts of life - at least one written for the US', { sec: r.sec.slice(0, 5), own });
+  ok(['calendar','school','work'].every(s => row(r, s)), 'with calendar, school and work in the rest of the ten', r.sec);
   ok(/Gmail/.test(row(r, 'mail').t), 'mail: Gmail', row(r, 'mail').t);
   ok(/Chase/.test(row(r, 'bank').t) && /directly/.test(row(r, 'bank').d) && !/email/i.test(row(r, 'bank').t),
      'bank: the Chase and Amex accounts themselves, linked directly - not read out of emails', row(r, 'bank'));
@@ -114,7 +122,8 @@ section('In the United States: every part of life, the American way');
   ok(/Google Classroom/.test(row(r, 'school').t), 'school: assignments from Google Classroom', row(r, 'school').t);
   ok(/LinkedIn|Indeed/.test(row(r, 'work').t), 'work: LinkedIn and Indeed', row(r, 'work').t);
   ok(/Walmart|Kroger|Costco/.test(row(r, 'groceries').t), 'groceries: Walmart, Kroger, Costco', row(r, 'groceries').t);
-  ok(/IRS/.test(row(r, 'government').t) && /Amtrak/.test(row(r, 'travel').t) && /Zillow/.test(row(r, 'home').t), 'the IRS, Amtrak, Zillow', [row(r, 'government').t, row(r, 'travel').t, row(r, 'home').t]);
+  const usAll = await anywhere(page, 'US');
+  ok(/IRS/.test(usAll) && /Amtrak/.test(usAll) && /Zillow/.test(usAll), 'the IRS, Amtrak and Zillow are all in Crew for the US', usAll.slice(0, 200));
   ok(r.heights.length === 1, 'every row one height', r.heights);
   ok(r.cls < 0.001, 'arriving without moving the page', +r.cls.toFixed(4));
   await ctx.close();
@@ -129,8 +138,9 @@ section('In China: nothing American, and the bank row says the truth');
   ok(/QQ Mail/.test(row(r, 'mail').t), 'mail: QQ Mail', row(r, 'mail').t);
   ok(/not available in China yet/.test(row(r, 'bank').d), 'bank: says plainly that linking a bank is not available in China yet', row(r, 'bank').d);
   ok(/gaokao/i.test(row(r, 'school').t), 'school: the gaokao', row(r, 'school').t);
-  ok(/BOSS Zhipin|51job/.test(row(r, 'work').t) && /Taobao|JD/.test(row(r, 'shopping').t) && /12306/.test(row(r, 'travel').t),
-     'work, shopping and travel: BOSS Zhipin, Taobao, 12306', [row(r, 'work').t, row(r, 'shopping').t, row(r, 'travel').t]);
+  const cnAll = await anywhere(page, 'CN');
+  ok(/BOSS Zhipin|51job/.test(cnAll) && /Taobao|JD/.test(cnAll) && /12306/.test(cnAll),
+     'work, shopping and travel: BOSS Zhipin, Taobao, 12306', cnAll.slice(0, 200));
   ok(r.cls < 0.001, 'on a phone, without moving the page', +r.cls.toFixed(4));
   const bank = await page.evaluate(() => [...document.querySelectorAll('#cw-jobs-body .cw-job')].slice(0, 20)
     .filter(c => /Bank connection/.test((c.querySelector('.cw-job-need') || {}).textContent || '')).length);
@@ -143,7 +153,8 @@ section('In Brazil: the bank row names what linking would take there');
   const { ctx, page } = await open('BR', 'crew');
   const r = await ten(page);
   ok(/Open Finance Brasil/.test(row(r, 'bank').d), 'bank: not available yet - it needs Open Finance Brasil', row(r, 'bank').d);
-  ok(/ENEM/.test(row(r, 'school').t) && /Receita Federal/.test(row(r, 'government').t), 'the ENEM and the Receita Federal', [row(r, 'school').t, row(r, 'government').t]);
+  const brAll = await anywhere(page, 'BR');
+  ok(/ENEM/.test(r.t.join(' ')) && /Receita Federal/.test(brAll), 'the ENEM in the ten, and the Receita Federal', r.t);
   await ctx.close();
 }
 
@@ -151,8 +162,9 @@ section('In Germany: WEB.DE first, the Abitur, ELSTER, Deutsche Bahn');
 {
   const { ctx, page } = await open('DE', 'crew');
   const r = await ten(page);
-  ok(/WEB\.DE/.test(row(r, 'mail').t) && /Abitur/.test(row(r, 'school').t) && /ELSTER/.test(row(r, 'government').t) && /Deutsche Bahn/.test(row(r, 'travel').t),
-     'WEB.DE, the Abitur, ELSTER, Deutsche Bahn', [row(r, 'mail').t, row(r, 'school').t, row(r, 'government').t, row(r, 'travel').t]);
+  const deAll = await anywhere(page, 'DE');
+  ok(/WEB\.DE/.test(row(r, 'mail').t) && /Abitur/.test(r.t.join(' ')) && /ELSTER/.test(deAll) && /Deutsche Bahn/.test(r.t.join(' ')),
+     'WEB.DE, the Abitur, ELSTER, Deutsche Bahn', r.t);
   await ctx.close();
 }
 

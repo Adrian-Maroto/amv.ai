@@ -143,17 +143,17 @@ section('Crew, from Spain: a row of jobs made for Spain');
   }));
   ok(/Made for .*Spain/.test(r.head), 'a row made for Spain sits under the top five', r.head);
   ok(r.titles.length >= 12, 'with a dozen or more of Spain’s own jobs', r.titles.length);
-  ok(r.titles.some(t => /Renta/.test(t)) && r.titles.some(t => /DNI|NIE/.test(t)),
-     'Spain’s own work - the Renta and the DNI, written for Spain', r.titles.slice(0, 7));
   const five = await page.evaluate(() => [...document.querySelectorAll('#cw-foryou .cw-t10-t')].map(e => e.textContent.trim()));
+  ok(five.concat(r.titles).some(t => /Renta/.test(t)) && r.titles.some(t => /DNI|NIE/.test(t)),
+     'Spain’s own work - the Renta and the DNI, written for Spain, in the five or the row', { five, row: r.titles.slice(0, 7) });
   ok(five.length === 5 && !r.titles.some(t => five.includes(t)), 'and nothing already in the five above is repeated', { five, row: r.titles.slice(0, 6) });
   ok(r.titles.some(t => /AEAT|Mercadona/.test(t)), 'while six to ten of the ranking - the AEAT, Mercadona - lead it', r.titles.slice(0, 6));
   ok(new Set(r.heights).size === 1, 'every card the same height, so the row is one fixed height', [...new Set(r.heights)]);
   ok(r.cls < 0.001, 'and the row arrives without moving the page', { cls: +r.cls.toFixed(4), src: r.src });
   await page.click('#cw-made .cw-made-body');
-  await page.waitForFunction(() => /Renta|Mercadona|AEAT|Hacienda/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
+  await page.waitForFunction(() => /Renta|Mercadona|AEAT|Hacienda|Santander|BBVA|Caixa/.test((document.getElementById('ovr') || {}).textContent || ''), null, { timeout: 5000 }).catch(() => {});
   const peek = await page.evaluate(() => (document.getElementById('ovr') || {}).textContent || '');
-  ok(/Renta|Mercadona|AEAT|Hacienda/.test(peek), 'pressing a card opens what it does, in Spain’s terms', peek.slice(0, 120));
+  ok(/Renta|Mercadona|AEAT|Hacienda|Santander|BBVA|Caixa/.test(peek), 'pressing a card opens what it does, in Spain’s terms', peek.slice(0, 120));
   await ctx.close();
 }
 

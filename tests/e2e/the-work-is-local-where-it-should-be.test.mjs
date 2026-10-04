@@ -129,10 +129,10 @@ section('Both halves are on the screen, and one of them names the country');
     /* The five at the top are built for Spain from what people there
        connect and use (top_es_* and cc_es_*); the five written by hand for
        Spain are the first of the row under them. */
-    spainTop: new Set([...document.querySelectorAll('#cw-foryou [data-dact="cwPeek"]')].map(b => b.dataset.darg).filter(id => /^(top|cc)_es_/.test(id))).size,
+    spainTop: new Set([...document.querySelectorAll('#cw-foryou [data-dact="cwPeek"]')].map(b => b.dataset.darg).filter(id => /^(top|cc|ev)_es_/.test(id))).size,
     localBelow: (() => {
       const ids = new Set(_cwLocalJobs('ES').map(j => j.id));
-      return [...document.querySelectorAll('#cw-made [data-dact="cwPeek"]')].filter(b => ids.has(b.dataset.darg)).length;
+      return [...document.querySelectorAll('#cw-foryou [data-dact="cwPeek"], #cw-made [data-dact="cwPeek"]')].filter(b => ids.has(b.dataset.darg)).length;
     })(),
     /* On the page, or one See all away: All draws the first few of each
        category, and every category with more ends in See all. */
@@ -147,7 +147,7 @@ section('Both halves are on the screen, and one of them names the country');
   ok(seen.universal > 0, 'the work that is the same everywhere is in the list, or one See all away', seen.universal);
   ok(/for you in .*spain/i.test(seen.group), 'and the local half names the country', seen.group);
   ok(seen.spainTop === 5, 'and the five at the top are built for Spain', seen.spainTop);
-  ok(seen.localBelow >= 5, 'with Spain\u2019s hand-written five in the row under them', seen.localBelow);
+  ok(seen.localBelow >= 5, 'with Spain\u2019s hand-written five in the five or the row under them', seen.localBelow);
 }
 
 section('A country with nothing written for it says so rather than inventing');

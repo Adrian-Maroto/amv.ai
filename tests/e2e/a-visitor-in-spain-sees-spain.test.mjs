@@ -66,7 +66,7 @@ section('From Spain, with an English (US) browser');
   ok(r.titles.length === 5 && r.titles.some(t => /InfoJobs/.test(t)) && r.titles.some(t => /Gmail/.test(t)),
      'and the five are Spain’s - Gmail, InfoJobs', r.titles);
   ok(r.made.some(t => /AEAT/.test(t)), 'with the AEAT among the ones under them', r.made.slice(0, 8));
-  ok(r.made.some(t => /Renta/.test(t)) && r.made.some(t => /DNI|NIE/.test(t)), 'with the Renta and the DNI in the row under them', r.made.slice(0, 6));
+  ok(r.titles.concat(r.made).some(t => /Renta/.test(t)) && r.made.some(t => /DNI|NIE/.test(t)), 'with the Renta and the DNI in the five or the row under them', r.made.slice(0, 6));
   ok(!r.dropdown, 'with no country dropdown', r.dropdown);
   ok(r.more, 'and every other country at the bottom', r.more);
   ok(r.cls < 0.001, 'and the five arrive without moving the page', { cls: +r.cls.toFixed(4), src: r.src });

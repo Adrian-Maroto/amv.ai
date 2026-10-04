@@ -51,7 +51,7 @@ const hundredOf = (codes) => page.evaluate(async (codes) => {
     const L = _cwCountryHundred(cc);
     const by = {}; L.forEach(j => { by[j.cat] = (by[j.cat] || 0) + 1; });
     out[cc] = { n: L.length, ids: L.map(j => j.id), kinds: L.map(j => _cwKind(j)), titles: L.map(j => j.title), by,
-                top: (_cwTopTen(cc) || []).slice(0, 5).map(j => j.id), topTitles: (_cwTopTen(cc) || []).slice(0, 5).map(j => j.title) };
+                top: (_cwTopTen(cc) || []).slice(0, 5).map(j => j.id), topKinds: (_cwTopTen(cc) || []).slice(0, 5).map(j => _cwKind(j)), topTitles: (_cwTopTen(cc) || []).slice(0, 5).map(j => j.title) };
   }
   return out;
 }, codes);
@@ -80,8 +80,38 @@ const all = await hundredOf(codes);
   ok(same > codes.length * 0.6, 'and the order differs by country - ' + same + ' different openings across ' + codes.length, same);
 }
 
+section('Every country’s five is its own');
+{
+  /* Measured before: 28 countries shared one five (inbox, bills, calendar,
+     exam, job hunt) and 105 countries had 21 line-ups between them. */
+  const r = await page.evaluate(() => {
+    const out = {};
+    for (const cc of CW_WORLD_COUNTRIES.map(c => c[0])) {
+      const five = _cwTopFive(cc), own = new Set((_cwLocalJobs(cc) || []).map(j => j.id));
+      out[cc] = { kinds: five.map(j => _cwKind(j)).join(','), own: five.filter(j => own.has(j.id)).length,
+        generic: five.filter(j => /^top_[a-z]{2}_(calendar|bills)$/.test(j.id)).map(j => j.id),
+        secs: five.map(j => j.section || ''), needs: five.map(j => j.needs || ''),
+        bankless: five.filter(j => /Bank connection/.test(j.needs || '') && !_cwBank[cc]).length };
+    }
+    return out;
+  });
+  const cs = Object.keys(r);
+  ok(new Set(cs.map(cc => r[cc].kinds)).size === cs.length, 'no two countries have the same five', new Set(cs.map(cc => r[cc].kinds)).size + ' of ' + cs.length);
+  const noOwn = cs.filter(cc => r[cc].own < 1);
+  ok(noOwn.length === 0, 'every five has at least one job written for that country', noOwn);
+  const gen = cs.filter(cc => r[cc].generic.length);
+  ok(gen.length === 0, 'and none of them is the calendar or the generic bills - those follow in the ten', gen.map(cc => cc + ':' + r[cc].generic));
+  const twice = cs.filter(cc => new Set(r[cc].secs).size < r[cc].secs.length);
+  ok(twice.length === 0, 'no part of life twice in a five', twice.map(cc => cc + ':' + r[cc].secs.join('/')).slice(0, 4));
+  ok(!/remit/.test(r.CN.kinds), 'China: no money-from-abroad job in the five (under 1% of its economy)', r.CN.kinds);
+  const runs = new Set(['', 'Email', 'Web research', 'Calendar', 'Classroom', 'Bank connection']);
+  const cannot = cs.filter(cc => r[cc].bankless || r[cc].needs.some(n => !n.split(/\s*\+\s*|\s*,\s*/).every(x => runs.has(x))));
+  ok(cannot.length === 0, 'and every job in every five runs on something AMV can connect there', cannot.map(cc => cc + ':' + r[cc].needs.join('/')).slice(0, 4));
+}
+
 section('What the research says matters there leads there');
-const rank = (cc, kind) => all[cc].kinds.indexOf(kind);
+/* Where a kind sits on the country's page: the top five first, then the hundred. */
+const rank = (cc, kind) => (all[cc].topKinds || []).concat(all[cc].kinds).indexOf(kind);
 ok(rank('KE', 'limits') >= 0 && rank('KE', 'limits') < 10,
    'Kenya: M-Pesa’s limits and fees in the first ten (Global Findex 2025: 87% of adults)', rank('KE', 'limits'));
 ok(rank('MX', 'remit') >= 0 && rank('MX', 'remit') < 5, 'Mexico: remittances in the first five', rank('MX', 'remit'));
@@ -90,7 +120,7 @@ ok(rank('MX', 'remit') >= 0 && rank('MX', 'remit') < 5, 'Mexico: remittances in 
 ok(all.JP.top.includes('cc_jp_rail'), 'Japan: the train is one of its top five (UIC)', all.JP.top);
 ok(all.CH.top.includes('cc_ch_rail'), 'Switzerland too', all.CH.top);
 ok(!all.US.top.includes('cc_us_rail'), 'and not in the United States', all.US.top);
-ok(rank('AR', 'staples') >= 0 && rank('AR', 'staples') < 5, 'Argentina: staple prices first (IAS 29 hyperinflation list)', rank('AR', 'staples'));
+ok(Math.min(...['staples', 'rises', 'pricerises'].map(k => rank('AR', k)).filter(n => n >= 0)) < 5, 'Argentina: what prices are doing, in the first five (IAS 29 hyperinflation list)', ['staples', 'rises', 'pricerises'].map(k => rank('AR', k)));
 ok(rank('VE', 'parallel') >= 0 && rank('AR', 'parallel') < 0,
    'the parallel rate where the gap is still real (Venezuela), not where the 2025 reform closed it (Argentina)', [rank('VE', 'parallel'), rank('AR', 'parallel')]);
 ok(rank('PK', 'prayer') >= 0 && rank('PK', 'loadshedding') >= 0 && rank('PK', 'loadshedding') < 5, 'Pakistan: prayer times, and load-shedding in the first five', [rank('PK', 'prayer'), rank('PK', 'loadshedding')]);
@@ -250,10 +280,10 @@ section('A count of what people start beats the research');
   const r = await p2.evaluate(async () => {
     await _cwLoadLocal('KE');
     for (let i = 0; i < 100 && _cwLocalState.KE === 'loading'; i++) await new Promise(r => setTimeout(r, 20));
-    return _cwCountryHundred('KE').map(j => j.id);
+    return _cwTopFive('KE').concat(_cwCountryHundred('KE')).map(j => j.id);
   });
   await c2.close();
-  ok(r.indexOf(lowId) >= 0 && r.indexOf(lowId) < 15, 'the job people in Kenya actually switch on climbs from last to the top fifteen (' + low + ')', r.indexOf(lowId));
+  ok(r.indexOf(lowId) >= 0 && r.indexOf(lowId) < 5, 'the job people in Kenya actually switch on climbs from last to the top five (' + low + ')', r.indexOf(lowId));
   await env.AMV_KV.delete('stats:jobuse');
 }
 
