@@ -11,6 +11,9 @@
    panel - no tall empty frame of its own below Platform. It closes on X or
    Esc, and the layer goes with it. A phone gets the whole screen. And the
    account menu has Team beside Settings, and Team opens. */
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
@@ -150,6 +153,26 @@ section('On a phone it takes the whole screen');
   });
   ok(r.w === 390 && r.h === 844 && r.x === 0 && r.y === 0, 'edge to edge', r);
   ok(r.picker && r.wide <= 390, 'with the section picker, and nothing wider than the screen', r);
+}
+
+section('Every rule that styles a screen reaches Settings too');
+{
+  /* Settings is drawn outside #vc, so a rule written "#vc .card" silently
+     stops applying to it - which is how the light-theme plan list fell to
+     1.05:1 contrast. Descendant rules name both containers. */
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'styles.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const bare = (css.match(/[^,{}]*(?<!:is\()#vc(?=\s+[^>\s{,])[^{,]*/g) || []).map(s => s.trim());
+  ok(bare.length === 0, 'no "#vc ..." descendant rule that misses the Settings panel', bare.slice(0, 5));
+  const r = await page.evaluate(async () => {
+    document.body.classList.add('light'); S.settingsPane = 'billing'; setTab('settings');
+    await new Promise(r => setTimeout(r, 700));
+    const v = document.querySelector('#set-modal .vi-bill');
+    const out = { card: !!v, radius: v ? getComputedStyle(v).maxWidth : '' };
+    document.body.classList.remove('light');
+    return out;
+  });
+  ok(r.card && r.radius === '720px', 'and the billing pane in Settings gets the rules written for it', r);
 }
 
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));

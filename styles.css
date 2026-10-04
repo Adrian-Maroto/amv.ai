@@ -2618,7 +2618,7 @@ h3{letter-spacing:-.01em}
 .ss2 .ss2{background:var(--glass-soft)!important;box-shadow:none!important;border-radius:var(--r-xl)!important;padding:18px 20px!important}
 .ds-note{background:linear-gradient(180deg,rgba(63, 118, 245,.07),rgba(63, 118, 245,.02))!important;border:1px solid rgba(63, 118, 245,.20)!important;box-shadow:none!important}
 /* neutralize older competing ss2 paddings so spacing is uniform */
-body #vc .ss2{padding:26px 28px!important;border-radius:var(--r-3xl)!important}
+body :is(#vc,#set-modal) .ss2{padding:26px 28px!important;border-radius:var(--r-3xl)!important}
 /* chat: nudge a touch further left per feedback */
 @media (min-width:1380px){ #cv{ transform:translateX(6px)!important; } }
 /* removed: this 2px nudge pushed the chat scrollbar off-screen */
@@ -2710,13 +2710,13 @@ body.light .dev-add-menu{background:#fff}
    wide column (860px) centered in the content area reads balanced and
    intentional - never pinned to one side.
    ================================================================ */
-#vc .sv{padding:48px 40px 76px!important;align-items:center!important}
-#vc .vi{max-width:860px!important;margin:0 auto!important;width:100%!important;gap:18px!important}
-#vc .vi h2{margin-bottom:6px!important;line-height:1.12!important}
-#vc .vi .eyebrow{margin-bottom:10px!important;display:block}
-#vc .vsub{max-width:680px!important;margin-bottom:6px!important;line-height:1.65!important}
-@media (min-width:1600px){ #vc .vi{max-width:920px!important} }
-@media (max-width:720px){ #vc .sv{padding:30px 20px 56px!important} }
+:is(#vc,#set-modal) .sv{padding:48px 40px 76px!important;align-items:center!important}
+:is(#vc,#set-modal) .vi{max-width:860px!important;margin:0 auto!important;width:100%!important;gap:18px!important}
+:is(#vc,#set-modal) .vi h2{margin-bottom:6px!important;line-height:1.12!important}
+:is(#vc,#set-modal) .vi .eyebrow{margin-bottom:10px!important;display:block}
+:is(#vc,#set-modal) .vsub{max-width:680px!important;margin-bottom:6px!important;line-height:1.65!important}
+@media (min-width:1600px){ :is(#vc,#set-modal) .vi{max-width:920px!important} }
+@media (max-width:720px){ :is(#vc,#set-modal) .sv{padding:30px 20px 56px!important} }
 /* marketplace header: eyebrow gets real space above the title (was crammed) */
 .mkt-head{align-items:flex-start!important;gap:24px!important;margin-bottom:4px}
 .mkt-head h2{margin-bottom:0!important;margin-top:12px!important}
@@ -5696,22 +5696,22 @@ body.sb-rail #sb .sb-av{ margin:0 auto!important; }
 
 /* 1. One consistent gap between stacked section panels everywhere.
    (Different layers set this to 18/20/24/26/34px - unify to one calm rhythm.) */
-#vc .ss2 + .ss2{margin-top:22px!important}
+:is(#vc,#set-modal) .ss2 + .ss2{margin-top:22px!important}
 
 /* 2. Consistent inner padding on section panels - not cramped, not bloated. */
-#vc .ss2{padding:24px 26px!important}
-@media(max-width:720px){#vc .ss2{padding:18px 18px!important}}
+:is(#vc,#set-modal) .ss2{padding:24px 26px!important}
+@media(max-width:720px){:is(#vc,#set-modal) .ss2{padding:18px 18px!important}}
 
 /* 3. Section headings sit a touch closer to their content (deliberate grouping). */
-#vc .ss2 h3{margin-bottom:15px!important}
+:is(#vc,#set-modal) .ss2 h3{margin-bottom:15px!important}
 
 /* 4. Give the content column a hair more breathing room on big screens,
    and keep it comfortably centered (never pinned wide). */
-@media(min-width:1200px){ #vc .sv{padding:52px 44px 84px!important} }
+@media(min-width:1200px){ :is(#vc,#set-modal) .sv{padding:52px 44px 84px!important} }
 
 /* 5. Soften the one generic tell: heading-to-subtitle spacing is uniform. */
-#vc .vi h2 + .vsub,#vc .vi .eyebrow + h2{margin-top:0!important}
-#vc .vsub{margin-bottom:10px!important}
+:is(#vc,#set-modal) .vi h2 + .vsub,:is(#vc,#set-modal) .vi .eyebrow + h2{margin-top:0!important}
+:is(#vc,#set-modal) .vsub{margin-bottom:10px!important}
 
 /* 6. Cards get a single consistent hover behaviour (some layers lift, some
    don't - pick one restrained treatment so it doesn't feel scattered). */
@@ -5757,7 +5757,7 @@ body.sb-rail #sb .sb-av{ margin:0 auto!important; }
 
 /* 2. Very small phones (≤360px): tighten padding so content isn't crushed. */
 @media(max-width:360px){
-  #vc .sv{padding-left:14px!important;padding-right:14px!important}
+  :is(#vc,#set-modal) .sv{padding-left:14px!important;padding-right:14px!important}
   .ob{padding:24px 18px!important}
   #cm > .mr{padding-left:14px!important;padding-right:14px!important}
   #cia{padding-left:12px!important;padding-right:12px!important}
@@ -5767,17 +5767,17 @@ body.sb-rail #sb .sb-av{ margin:0 auto!important; }
    centers - never stretched edge-to-edge on ultrawide displays. The message
    rows already cap at ~748px; ensure views cap too and sit centered. */
 @media(min-width:1800px){
-  #vc .vi{max-width:960px!important}
+  :is(#vc,#set-modal) .vi{max-width:960px!important}
   /* keep the whole content area from feeling lost on huge screens */
-  #vc .sv{padding-left:6vw!important;padding-right:6vw!important}
+  :is(#vc,#set-modal) .sv{padding-left:6vw!important;padding-right:6vw!important}
 }
 @media(min-width:2400px){
-  #vc .sv{padding-left:10vw!important;padding-right:10vw!important}
+  :is(#vc,#set-modal) .sv{padding-left:10vw!important;padding-right:10vw!important}
 }
 
 /* 4. Landscape phones (short height): trim vertical padding so content fits. */
 @media(max-height:480px) and (orientation:landscape){
-  #vc .sv{padding-top:20px!important;padding-bottom:32px!important}
+  :is(#vc,#set-modal) .sv{padding-top:20px!important;padding-bottom:32px!important}
   .hero{padding-top:28px!important;padding-bottom:28px!important}
 }
 
@@ -5826,18 +5826,18 @@ body.light .ctx-menu > *:hover{ background:var(--s2,#f0efec)!important; }
 @media(min-width:721px) and (max-width:1000px){
   :root{ --sbw:212px; }
   #sb .snb{ font-size:var(--t-base); }
-  #vc .sv{ padding-left:28px!important; padding-right:28px!important; }
+  :is(#vc,#set-modal) .sv{ padding-left:28px!important; padding-right:28px!important; }
 }
 
 /* Large tablets / small laptops in landscape: comfortable reading column. */
 @media(min-width:1001px) and (max-width:1300px){
-  #vc .vi{ max-width:min(860px, 92%); }
+  :is(#vc,#set-modal) .vi{ max-width:min(860px, 92%); }
 }
 
 /* Ultra-wide safety: never let any centered content column stretch too far;
    keep it centered with real breathing room past 2000px. */
 @media(min-width:2000px){
-  #vc .sv{ padding-left:8vw!important; padding-right:8vw!important; }
+  :is(#vc,#set-modal) .sv{ padding-left:8vw!important; padding-right:8vw!important; }
   #cm > .mr{ margin-left:auto; margin-right:auto; }
 }
 
@@ -7748,39 +7748,6 @@ html,body{height:100%;height:100dvh}
     padding-left:var(--sp-3)!important;
     padding-right:var(--sp-3)!important;
   }
-}
-
-/* ==========================================================================
-   LAYER A61 - Settings stops being three columns on a tablet
-
-   The settings screen collapses to a picker + full-width pane at 720px. The
-   main sidebar stays docked until 700. Between those two numbers - which is
-   iPad portrait at 768, and every small laptop window up to about 1000 - the
-   screen is THREE columns: app rail, settings nav, and whatever is left.
-
-   Whatever is left was 191px at 768. Every field label wrapped to three lines,
-   the instructions textarea showed about ten characters per line, and the body
-   copy broke every four words. It is the right screen at an unusable width.
-
-   The collapse moves to 1000px, so the picker takes over while the rail is
-   still docked. Losing a visible section list is a real cost; a 191px column
-   is a bigger one, and the picker is the pattern this screen already uses when
-   space is short.
-   ========================================================================== */
-@media(min-width:721px) and (max-width:1000px){
-  .settings-shell{flex-direction:column;height:100%!important}
-  .settings-nav{flex-direction:column!important;width:100%;min-width:0!important;
-    border-right:none!important;border-bottom:1px solid var(--bd);
-    padding:10px 52px 10px 12px!important;flex:0 0 auto}
-  .settings-nav .set-search-wrap{display:none!important}
-  .settings-nav-list{display:none!important}
-  .set-picker{display:flex;align-items:center;gap:11px;width:100%;
-    background:rgba(127,127,127,.08);border:1px solid var(--bd);border-radius:var(--r-lg);
-    padding:13px 15px;color:var(--tx);font-size:var(--t-prose);font-weight:600;cursor:pointer}
-  .set-picker-lbl{flex:1 1 auto;text-align:left}
-  .set-picker-chev{flex:0 0 auto;opacity:.65}
-  .settings-content{flex:1 1 auto!important;min-height:0;padding:18px 20px!important;padding-right:20px!important}
-  .set-pane{max-width:100%!important}
 }
 
 /* ==========================================================================
@@ -9762,7 +9729,7 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
    on one connection - real capability, one step away, so it is marked as
    promise rather than as limitation. `open` is the seven jobs that genuinely
    need this tab. */
-#vc .sv.crew-view .vi{
+:is(#vc,#set-modal) .sv.crew-view .vi{
   max-width:none!important;width:100%!important;
   margin-left:0!important;margin-right:0!important;
   box-sizing:border-box!important;
@@ -9931,14 +9898,14 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
   box-sizing:border-box;
 }
 
-#vc .sv.crew-view .vi{ text-align:center; }
-#vc .sv.crew-view .vi .vsub{
+:is(#vc,#set-modal) .sv.crew-view .vi{ text-align:center; }
+:is(#vc,#set-modal) .sv.crew-view .vi .vsub{
   margin-left:auto;margin-right:auto;
   max-width:68ch;
 }
-#vc .sv.crew-view .vi > .eyebrow{ display:block; }
+:is(#vc,#set-modal) .sv.crew-view .vi > .eyebrow{ display:block; }
 /* The command box is inside the centred block but is a control, not prose. */
-#vc .sv.crew-view .vi .mc-cmd{ text-align:left; }
+:is(#vc,#set-modal) .sv.crew-view .vi .mc-cmd{ text-align:left; }
 
 /* ── LAYER A127: THE SAME EVERYWHERE, AND THE PART THAT IS NOT ─────────────
    Two labelled bands rather than one grid, because the distinction IS the
@@ -12077,7 +12044,7 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 /* `#vc .sv` at 1200+ sets `padding:52px 44px 84px!important`, an id selector,
    so a bare class cannot reach it however important it is marked. Same
    specificity, later in the file. */
-#vc .bld-sv,
+:is(#vc,#set-modal) .bld-sv,
 .bld-sv{
   padding-top:0!important;
   padding-left:var(--sp-5)!important;
@@ -13361,7 +13328,7 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    classes it stacks, and loses silently. The measured effect was an 84px bottom
    padding nobody asked for, which is what kept this column 29px taller than its
    window and therefore pinned to the top while the other two centred. */
-#vc .sv.bld-sv{ padding-bottom:var(--sp-5)!important; }
+:is(#vc,#set-modal) .sv.bld-sv{ padding-bottom:var(--sp-5)!important; }
 .dsn-starts .dsn-tile{ padding:var(--sp-4) var(--sp-5); border-radius:var(--r-xl); }
 .dsn-starts .dsn-tile.feat{ padding:var(--sp-5); }
 .dsn-starts .dsn-tile-ic{ width:40px; height:40px; font-size:var(--t-xl); border-radius:var(--r-lg); }
@@ -13373,7 +13340,7 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    other two and pinning to the top. The inline margins in the hero need
    `!important` to reach - they are written on the elements themselves - and the
    Design DNA swatch strip is decoration, so it gives up its gap first. */
-#vc .sv.bld-sv{ padding-top:var(--sp-5)!important; }
+:is(#vc,#set-modal) .sv.bld-sv{ padding-top:var(--sp-5)!important; }
 .dsn-wrap > *{ margin-top:var(--sp-5); }
 .dsn-hero > div[style*="margin-top:22px"]{ margin-top:var(--sp-4)!important; }
 .dsn-hero > div[style*="margin-top:12px"]{ margin-top:var(--sp-2)!important; height:14px!important; }
@@ -13512,9 +13479,9 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    Clamped rather than fixed: 110px is most of a short laptop screen, and 9vh
    keeps it proportional to the window it is actually in. */
 @media(min-width:761px){
-  #vc .dev-shell.dev-blank > .dev-chat-pane,
-  #vc .lab-shell.lab-blank,
-  #vc .sv.bld-sv{ padding-top:clamp(24px, 9vh, 110px)!important; }
+  :is(#vc,#set-modal) .dev-shell.dev-blank > .dev-chat-pane,
+  :is(#vc,#set-modal) .lab-shell.lab-blank,
+  :is(#vc,#set-modal) .sv.bld-sv{ padding-top:clamp(24px, 9vh, 110px)!important; }
 }
 
 /* ======================================================================
@@ -13705,13 +13672,13 @@ p.bill-leave-s{
    rows you read down - name, price, and which one is the next step - which is
    also the only shape that survives a phone. */
 
-#vc .vi-bill{
+:is(#vc,#set-modal) .vi-bill{
   max-width:720px!important;
 }
 
 /* ONE COLUMN, HAIRLINES, NO PANELS. */
-#vc .vi-bill .ss2,
-#vc .vi-bill .bill-sum{
+:is(#vc,#set-modal) .vi-bill .ss2,
+:is(#vc,#set-modal) .vi-bill .bill-sum{
   background:none!important;
   border:none!important;
   border-top:1px solid var(--bd)!important;
@@ -13723,12 +13690,12 @@ p.bill-leave-s{
   -webkit-backdrop-filter:none!important;
 }
 /* The first section opens the page, so it has nothing to be divided from. */
-#vc .vi-bill .bill-sum{
+:is(#vc,#set-modal) .vi-bill .bill-sum{
   border-top:none!important;
   padding-top:var(--sp-2)!important;
   margin-top:var(--sp-4)!important;
 }
-#vc .vi-bill .ss2 > h3{
+:is(#vc,#set-modal) .vi-bill .ss2 > h3{
   margin:0 0 var(--sp-4)!important;
   font-size:var(--t-sm);
   font-weight:600;
@@ -13738,40 +13705,40 @@ p.bill-leave-s{
 }
 
 /* The plan and its price read as one line. */
-#vc .vi-bill .bill-sum-top{
+:is(#vc,#set-modal) .vi-bill .bill-sum-top{
   display:flex;
   align-items:baseline;
   justify-content:flex-start;
   gap:var(--sp-3);
   flex-wrap:wrap;
 }
-#vc .vi-bill .bill-sum-n{ font-size:var(--t-2xl); letter-spacing:-.4px; }
-#vc .vi-bill .bill-sum-p{
+:is(#vc,#set-modal) .vi-bill .bill-sum-n{ font-size:var(--t-2xl); letter-spacing:-.4px; }
+:is(#vc,#set-modal) .vi-bill .bill-sum-p{
   font-family:var(--fn); font-size:var(--t-md); font-weight:500;
   color:var(--mu); letter-spacing:0;
 }
-#vc .vi-bill .bill-sum-sub{ margin-top:var(--sp-2); font-size:var(--t-sm); color:var(--mu); }
+:is(#vc,#set-modal) .vi-bill .bill-sum-sub{ margin-top:var(--sp-2); font-size:var(--t-sm); color:var(--mu); }
 
 /* Label beside value, close enough to read as a pair. */
-#vc .vi-bill .bill-facts{
+:is(#vc,#set-modal) .vi-bill .bill-facts{
   margin:var(--sp-5) 0 0; padding:0; border:none;
   display:flex; flex-direction:column; gap:var(--sp-3);
 }
-#vc .vi-bill .bill-facts > div{
+:is(#vc,#set-modal) .vi-bill .bill-facts > div{
   display:flex; gap:var(--sp-3); align-items:baseline; font-size:var(--t-sm);
 }
-#vc .vi-bill .bill-facts dt{ flex:0 0 132px; color:var(--mu); }
-#vc .vi-bill .bill-facts dd{ margin:0; color:var(--tx); }
+:is(#vc,#set-modal) .vi-bill .bill-facts dt{ flex:0 0 132px; color:var(--mu); }
+:is(#vc,#set-modal) .vi-bill .bill-facts dd{ margin:0; color:var(--tx); }
 
 /* Upgrades as rows, not pills. */
-#vc .vi-bill .bill-swap{
+:is(#vc,#set-modal) .vi-bill .bill-swap{
   display:flex; flex-direction:column; gap:var(--sp-2); align-items:stretch;
 }
-#vc .vi-bill .bill-swap .btn{
+:is(#vc,#set-modal) .vi-bill .bill-swap .btn{
   width:100%; justify-content:space-between; text-align:left;
   padding:var(--sp-3) var(--sp-4); border-radius:var(--r-md); font-size:var(--t-md);
 }
-#vc .vi-bill .bill-swap .btn.bs{
+:is(#vc,#set-modal) .vi-bill .bill-swap .btn.bs{
   background:var(--s2); border:1px solid var(--bd); color:var(--tx);
 }
 
@@ -15142,7 +15109,7 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    And the plan facts were a column of four sparse rows with a 132px label
    gutter, which is a lot of screen for four short answers. Two columns.
    ══════════════════════════════════════════════════════════════════════════ */
-#vc .vi-bill .bill-facts{
+:is(#vc,#set-modal) .vi-bill .bill-facts{
   display:grid;
   grid-template-columns:repeat(2,minmax(0,1fr));
   gap:var(--sp-3) var(--sp-6);
@@ -15150,18 +15117,18 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   padding-top:var(--sp-4);
   border-top:1px solid var(--bdl);
 }
-#vc .vi-bill .bill-facts > div{
+:is(#vc,#set-modal) .vi-bill .bill-facts > div{
   display:flex; flex-direction:column; gap:1px; align-items:flex-start; min-width:0;
 }
-#vc .vi-bill .bill-facts dt{
+:is(#vc,#set-modal) .vi-bill .bill-facts dt{
   flex:none;
   font-size:var(--t-xs); font-weight:600; letter-spacing:.05em;
   text-transform:uppercase; color:var(--mu);
 }
-#vc .vi-bill .bill-facts dd{ font-size:var(--t-md); color:var(--tx); line-height:1.45; }
+:is(#vc,#set-modal) .vi-bill .bill-facts dd{ font-size:var(--t-md); color:var(--tx); line-height:1.45; }
 
 /* The recommendation, without the wall of colour. */
-#vc .vi-bill .bill-plan-row.lead,
+:is(#vc,#set-modal) .vi-bill .bill-plan-row.lead,
 .bill-plan-row.lead.btn.bp{
   background:var(--s1)!important;
   color:var(--tx)!important;
@@ -15169,18 +15136,18 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   box-shadow:none!important;
   font-weight:500!important;
 }
-#vc .vi-bill .bill-plan-row.lead:hover,
+:is(#vc,#set-modal) .vi-bill .bill-plan-row.lead:hover,
 .bill-plan-row.lead.btn.bp:hover{ background:var(--s2)!important; }
 /* Its own children stop being white-on-accent and go back to the page's
    ordinary text colours, which is what they were written for. */
-#vc .vi-bill .bill-plan-row.lead .bill-plan-d,
-#vc .vi-bill .bill-plan-row.lead .bill-plan-f{ color:var(--mu)!important; }
-#vc .vi-bill .bill-plan-row.lead .bill-plan-price{ color:var(--tx)!important; }
+:is(#vc,#set-modal) .vi-bill .bill-plan-row.lead .bill-plan-d,
+:is(#vc,#set-modal) .vi-bill .bill-plan-row.lead .bill-plan-f{ color:var(--mu)!important; }
+:is(#vc,#set-modal) .vi-bill .bill-plan-row.lead .bill-plan-price{ color:var(--tx)!important; }
 /* The "/mo" after the price was set to #fff for the filled row it used to sit
    on. On a raised surface that is white on near-white - 1.05:1 in the light
    theme, which is not low contrast, it is invisible. It follows the page's
    muted text now, like the "/mo" on every other row. */
-#vc .vi-bill .bill-plan-row.lead .bill-plan-price small,
+:is(#vc,#set-modal) .vi-bill .bill-plan-row.lead .bill-plan-price small,
 .bill-plan-row.lead .bill-plan-price small{ color:var(--mu)!important; }
 /* The tag is what says "recommended" now, so it is the one accent-coloured
    thing in the row. */
@@ -15199,7 +15166,7 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    It inherits. It is a tag by its case, its weight and the separator it
    already carries, and it keeps the stronger promise. */
 @media (max-width:720px){
-  #vc .vi-bill .bill-facts{ grid-template-columns:minmax(0,1fr); }
+  :is(#vc,#set-modal) .vi-bill .bill-facts{ grid-template-columns:minmax(0,1fr); }
 }
 
 /* ===========================================================================
@@ -15215,26 +15182,26 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    should land, because the sentence above is a dead end and the buttons are
    not. Nothing here is decorative.
    =========================================================================== */
-#vc .mc-cmd-msg.cannot,
-#vc .uni-plan.cannot{
+:is(#vc,#set-modal) .mc-cmd-msg.cannot,
+:is(#vc,#set-modal) .uni-plan.cannot{
   border-left:3px solid var(--bd);
   background:var(--s2);
   border-radius:var(--r-md);
   padding:var(--sp-3) var(--sp-4);
 }
-#vc .mc-cannot-h,
-#vc .uni-plan.cannot .uni-h{
+:is(#vc,#set-modal) .mc-cannot-h,
+:is(#vc,#set-modal) .uni-plan.cannot .uni-h{
   font-size:var(--t-md); font-weight:650; color:var(--tx);
   margin:0 0 var(--sp-1);
 }
-#vc .mc-cannot-why,
-#vc .uni-plan.cannot .uni-why{
+:is(#vc,#set-modal) .mc-cannot-why,
+:is(#vc,#set-modal) .uni-plan.cannot .uni-why{
   font-size:var(--t-base); color:var(--mu); line-height:1.5; margin:0;
 }
-#vc .mc-cannot-alt,
-#vc .uni-instead{ margin-top:var(--sp-3); }
-#vc .mc-cannot-alt > b,
-#vc .uni-instead > b{
+:is(#vc,#set-modal) .mc-cannot-alt,
+:is(#vc,#set-modal) .uni-instead{ margin-top:var(--sp-3); }
+:is(#vc,#set-modal) .mc-cannot-alt > b,
+:is(#vc,#set-modal) .uni-instead > b{
   display:block; font-size:var(--t-xs); font-weight:650;
   letter-spacing:.04em; text-transform:uppercase;
   color:var(--dim); margin-bottom:var(--sp-2);
@@ -15249,29 +15216,29 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    a fault - and only the running confirmation gets the green dot, because
    that dot is a claim about the world and it has to be earned.
    =========================================================================== */
-#vc .mc-cmd-msg.needs{
+:is(#vc,#set-modal) .mc-cmd-msg.needs{
   border-left:3px solid var(--accent);
   background:var(--s2);
   border-radius:var(--r-md);
   padding:var(--sp-3) var(--sp-4);
 }
-#vc .mc-needs-h{ font-size:var(--t-md); font-weight:650; color:var(--tx); margin:0 0 2px; }
-#vc .mc-needs-sub{ font-size:var(--t-sm); color:var(--mu); margin:0 0 var(--sp-3); }
-#vc .mc-needs-list{ list-style:none; margin:0 0 var(--sp-3); padding:0; display:grid; gap:var(--sp-2); }
-#vc .mc-needs-list li{
+:is(#vc,#set-modal) .mc-needs-h{ font-size:var(--t-md); font-weight:650; color:var(--tx); margin:0 0 2px; }
+:is(#vc,#set-modal) .mc-needs-sub{ font-size:var(--t-sm); color:var(--mu); margin:0 0 var(--sp-3); }
+:is(#vc,#set-modal) .mc-needs-list{ list-style:none; margin:0 0 var(--sp-3); padding:0; display:grid; gap:var(--sp-2); }
+:is(#vc,#set-modal) .mc-needs-list li{
   display:grid; gap:2px;
   padding:var(--sp-2) var(--sp-3);
   background:var(--s1); border:1px solid var(--bdl); border-radius:var(--r-sm);
 }
-#vc .mc-needs-list li b{ font-size:var(--t-base); color:var(--tx); font-weight:600; }
-#vc .mc-needs-list li span{ font-size:var(--t-sm); color:var(--mu); line-height:1.45; }
+:is(#vc,#set-modal) .mc-needs-list li b{ font-size:var(--t-base); color:var(--tx); font-weight:600; }
+:is(#vc,#set-modal) .mc-needs-list li span{ font-size:var(--t-sm); color:var(--mu); line-height:1.45; }
 /* The dot is the whole point of the confirmation, so it is a real element with
    a real colour rather than an emoji whose rendering nobody controls. */
-#vc .mc-cmd-msg.done .mc-cmd-done-h{ color:var(--grn); }
-#vc .mc-cmd-actions .btn{ min-height:44px; }
+:is(#vc,#set-modal) .mc-cmd-msg.done .mc-cmd-done-h{ color:var(--grn); }
+:is(#vc,#set-modal) .mc-cmd-actions .btn{ min-height:44px; }
 @media (max-width:720px){
-  #vc .mc-cmd-msg.needs .mc-cmd-actions{ flex-direction:column; align-items:stretch; }
-  #vc .mc-cmd-msg.needs .mc-cmd-actions .btn{ width:100%; }
+  :is(#vc,#set-modal) .mc-cmd-msg.needs .mc-cmd-actions{ flex-direction:column; align-items:stretch; }
+  :is(#vc,#set-modal) .mc-cmd-msg.needs .mc-cmd-actions .btn{ width:100%; }
 }
 
 /* ===========================================================================
@@ -15292,7 +15259,7 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    One line, never more. A card that unfolds into five lines of output is a
    card nobody can scan past, and the other four are one press away.
    =========================================================================== */
-#vc .cw-job-out{
+:is(#vc,#set-modal) .cw-job-out{
   display:block;
   margin:var(--sp-2) 0 0;
   padding:var(--sp-2) var(--sp-3);
@@ -15300,14 +15267,14 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
   background:var(--s1);
   border-radius:0 var(--r-sm) var(--r-sm) 0;
 }
-#vc .cw-job-out-k{
+:is(#vc,#set-modal) .cw-job-out-k{
   display:block;
   font-size:var(--t-xs); font-weight:650;
   letter-spacing:.05em; text-transform:uppercase;
   color:var(--dim);
   margin-bottom:2px;
 }
-#vc .cw-job-out-l{
+:is(#vc,#set-modal) .cw-job-out-l{
   font-size:var(--t-base); line-height:1.45; color:var(--tx);
   /* Two lines at most, because the samples are written as headlines and a
      long one must not push the card's own decision off the screen. */
@@ -15323,15 +15290,15 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    why. The body is a column and the last two rows are pushed to the bottom of
    it, so the strip changes how much a card SAYS without changing where the
    card's own facts sit. */
-#vc .cw-job{ align-items:stretch; }
-#vc .cw-job-body{
+:is(#vc,#set-modal) .cw-job{ align-items:stretch; }
+:is(#vc,#set-modal) .cw-job-body{
   display:flex; flex-direction:column; align-items:flex-start;
   flex:1 1 auto; min-width:0;
 }
-#vc .cw-job-body .cw-job-need{ margin-top:auto; padding-top:var(--sp-2); }
+:is(#vc,#set-modal) .cw-job-body .cw-job-need{ margin-top:auto; padding-top:var(--sp-2); }
 /* Full width, or a one-line example is a narrow box beside a full-width one
    and the column stops looking like a column. */
-#vc .cw-job-body .cw-job-out{ align-self:stretch; }
+:is(#vc,#set-modal) .cw-job-body .cw-job-out{ align-self:stretch; }
 
 /* The currency line on the checkout sheet. Quiet, because it is a fact rather
    than a warning - somebody paying in euros needs to know the number is in
@@ -15417,18 +15384,18 @@ body.sb-rail .sb-tool{ width:44px; margin:0 auto; }
    reassurance rather than an achievement - and the dot is a real element with
    a real token behind it rather than an emoji whose rendering nobody controls.
    =========================================================================== */
-#vc .cw-job-ready{
+:is(#vc,#set-modal) .cw-job-ready{
   display:flex; align-items:center; gap:6px;
   margin-top:var(--sp-2);
   font-size:var(--t-sm); font-weight:600; color:var(--grn);
 }
-#vc .cw-ready-dot{
+:is(#vc,#set-modal) .cw-ready-dot{
   width:7px; height:7px; border-radius:50%;
   background:var(--grn); flex-shrink:0;
 }
 /* The missing list leads with a count, so three things read as three things
    rather than as one long sentence somebody skims. */
-#vc .cw-job-miss{ line-height:1.5; }
+:is(#vc,#set-modal) .cw-job-miss{ line-height:1.5; }
 
 /* ═══════════════════════════════════════════════════════════════════════
    LAYER A250 - "better with", which is not "cannot without"
@@ -15994,10 +15961,10 @@ h2,
    ready line - is a sibling of the card's text in a row, so it was squeezed
    into a narrow column between the description and the switch, three words a
    line. It belongs under the text, the full width of it. */
-#vc .cw-job{ flex-wrap:wrap; }
-#vc .cw-job > .cw-job-body{ flex:1 1 0; }
-#vc .cw-job > .cw-toggle{ order:2; }
-#vc .cw-job > .cw-job-miss, #vc .cw-job > .cw-job-ready{
+:is(#vc,#set-modal) .cw-job{ flex-wrap:wrap; }
+:is(#vc,#set-modal) .cw-job > .cw-job-body{ flex:1 1 0; }
+:is(#vc,#set-modal) .cw-job > .cw-toggle{ order:2; }
+:is(#vc,#set-modal) .cw-job > .cw-job-miss, :is(#vc,#set-modal) .cw-job > .cw-job-ready{
   order:3; flex:1 0 100%; margin:0; padding-left:calc(42px + 13px); box-sizing:border-box; }
 /* The rail's cards are sized to what they hold. */
 .cw-made-it, .cw-made-ph{ height:184px; }
@@ -16332,17 +16299,17 @@ textarea.mc-cmd-input{
    there is one), and Do this, which runs it. The approaches already tried sit
    above the live plan as quiet lines, so a second attempt reads as the same
    job carrying on rather than a new one starting. */
-#vc .uni-alts{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:var(--sp-2); }
-#vc .uni-alt{ display:flex; flex-direction:column; gap:var(--sp-2); padding:var(--sp-3);
+:is(#vc,#set-modal) .uni-alts{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:var(--sp-2); }
+:is(#vc,#set-modal) .uni-alt{ display:flex; flex-direction:column; gap:var(--sp-2); padding:var(--sp-3);
   background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-md); min-width:0; }
-#vc .uni-alt-t{ font-size:var(--t-base); color:var(--tx); line-height:1.5; }
-#vc .uni-alt-you{ font-size:var(--t-sm); color:var(--mu); line-height:1.45; }
-#vc .uni-alt-you span{ font-weight:600; color:var(--tx); }
-#vc .uni-alt-go{ align-self:flex-start; min-height:44px; margin-top:auto; }
-#vc .uni-tried{ display:flex; flex-direction:column; gap:var(--sp-1); margin-bottom:var(--sp-2); }
-#vc .uni-tried-row{ font-size:var(--t-sm); color:var(--mu); line-height:1.45; padding-left:var(--sp-3); border-left:2px solid var(--bd); }
-#vc .uni-gaveup{ margin-top:var(--sp-3); font-size:var(--t-base); color:var(--tx); font-weight:600; }
-@media (max-width:560px){ #vc .uni-alts{ grid-template-columns:1fr; } #vc .uni-alt-go{ align-self:stretch; } }
+:is(#vc,#set-modal) .uni-alt-t{ font-size:var(--t-base); color:var(--tx); line-height:1.5; }
+:is(#vc,#set-modal) .uni-alt-you{ font-size:var(--t-sm); color:var(--mu); line-height:1.45; }
+:is(#vc,#set-modal) .uni-alt-you span{ font-weight:600; color:var(--tx); }
+:is(#vc,#set-modal) .uni-alt-go{ align-self:flex-start; min-height:44px; margin-top:auto; }
+:is(#vc,#set-modal) .uni-tried{ display:flex; flex-direction:column; gap:var(--sp-1); margin-bottom:var(--sp-2); }
+:is(#vc,#set-modal) .uni-tried-row{ font-size:var(--t-sm); color:var(--mu); line-height:1.45; padding-left:var(--sp-3); border-left:2px solid var(--bd); }
+:is(#vc,#set-modal) .uni-gaveup{ margin-top:var(--sp-3); font-size:var(--t-base); color:var(--tx); font-weight:600; }
+@media (max-width:560px){ :is(#vc,#set-modal) .uni-alts{ grid-template-columns:1fr; } :is(#vc,#set-modal) .uni-alt-go{ align-self:stretch; } }
 
 /* ════════════════════════════════════════════════════════════════════════
    LAYER A277 - The greeting's accent sweep, back, on the GPU
@@ -16457,7 +16424,14 @@ html.reduce-motion #cv.cv-home .chome-shine{ display:none; }
 /* ── LAYER A281: Settings is a centred panel over the page ─────────────────
    The page stays underneath, dimmed. The panel is a fixed size, so its list
    and its pane each scroll on their own and nothing moves when you switch
-   sections. On a phone it is the whole screen, as it was. */
+   sections. On a phone it is the whole screen, as it was.
+
+   Settings used to be drawn inside #vc, and 109 rules in the layers above
+   reach its contents through "#vc .something" - the billing cards, the .ss2
+   panels, the light-theme fixes. Drawn in its own layer it lost all of them
+   at once (the light-theme plan list fell to 1.05:1). Those rules now read
+   ":is(#vc,#set-modal) .something": the same specificity, so the cascade is
+   exactly what it was, and a suite fails on a new bare "#vc " descendant. */
 .set-modal{ position:fixed; inset:0; z-index:8000; display:flex; align-items:center; justify-content:center;
   padding:min(5vh,48px) var(--sp-5); background:rgba(1,4,9,.6); backdrop-filter:blur(3px);
   animation:setModalIn .16s var(--ease) both; }
@@ -16486,13 +16460,10 @@ body.set-open{ overflow:hidden; }
 /* What a search matched inside a section, when it was not the section's name. */
 .sn-btn .sn-hit{ margin-left:auto; padding-left:var(--sp-2); font-size:var(--t-xs); font-weight:400; color:var(--mu); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:50%; }
 /* Between phone and desktop the panel still has room for its list - the page's
-   own rail is underneath it, not beside it - so the picker the page needs at
-   these widths (A40) is not used inside it. */
+   rail is underneath it, not beside it, which is what once left Settings a
+   191px pane at 768 and made the picker take over up to 1000px (A61, removed
+   with the page version of Settings). */
 @media(min-width:721px) and (max-width:1000px){
-  .set-modal .settings-shell{ flex-direction:row!important; }
-  .set-modal .settings-nav{ width:220px!important; flex:0 0 220px!important; border-bottom:0!important; padding:var(--sp-3) var(--sp-2)!important; }
-  .set-modal .settings-nav .set-search-wrap{ display:flex!important; }
-  .set-modal .settings-nav-list{ display:flex!important; }
-  .set-modal .set-picker{ display:none!important; }
-  .set-modal .settings-content{ padding:var(--sp-6) var(--sp-5)!important; }
+  .set-modal .settings-nav{ width:220px; flex:0 0 220px; }
+  .set-modal .settings-content{ padding:var(--sp-6) var(--sp-5); }
 }
