@@ -13299,6 +13299,11 @@ async function _route(request, env, ctx) {
      who looked, and a new route is POST-only until it is. */
   const GET_SAFE = new Set([
     '/v1/health',               // liveness, reads nothing
+    /* Two booleans about the deployment - is an email provider set, and is it
+       still on the default sender - and nothing about any account. A GET so the
+       owner can open it in a browser to check their email setup; as POST-only
+       a browser visit answered "error", which reads like a broken key. */
+    '/auth/reset/status',       // can email reach people (no account data)
     '/v1/public-config',        // which features this deployment has
     '/v1/entitlement',          // what plan this account is on
     '/v1/market/list',          // the public marketplace
