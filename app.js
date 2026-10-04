@@ -16791,74 +16791,6 @@ window.openCheckout=openCheckout;window.openPaymentSheet=openPaymentSheet;
 
 
 /* === APPS & EXTENSIONS === */
-function renderAppsView(){
-  const vc=$('vc'); if(!vc) return;
-  // mode: 'auto' = runs in background once connected; 'manual' = you upload/drive it
-  const badge=(mode)=> mode==='auto'
-    ? '<span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous \u00b7 runs in the background</span>'
-    : (mode==='manual' ? '<span class="ax-badge ax-manual">Manual \u00b7 you upload &amp; drive it</span>' : '');
-  const app=(icon,name,desc,btn,bg,mode)=>'<div class="appx-card">'
-    +'<div class="appx-ic" style="background:'+bg+'">'+icon+'</div>'
-    +'<div class="appx-name">'+name+'</div>'
-    +badge(mode)
-    +'<div class="appx-desc">'+desc+'</div>'+btn+'</div>';
-  const row=(icon,name,desc,btn,bg,mode)=>'<div class="appx-row">'
-    +'<div class="appx-ic sm" style="background:'+bg+'">'+icon+'</div>'
-    +'<div class="appx-row-body"><div class="appx-name">'+name+' '+badge(mode)+'</div><div class="appx-desc">'+desc+'</div></div>'
-    +'<div class="appx-row-act">'+btn+'</div></div>';
-  vc.innerHTML=
-    '<div class="sv fi"><div class="vi" style="max-width:780px">'+
-      '<span class="eyebrow">Everywhere you work</span>'+
-      '<h2>Apps &amp; Extensions</h2>'+
-      '<p class="vsub">Put AMV in your browser, desktop, phone, editor, and the tools you already use. One account, every surface.</p>'+
-
-      // legend explaining the two kinds
-      '<div class="ax-legend">'+
-        '<div class="ax-legend-item"><span class="ax-badge ax-auto"><span class="ax-dot"></span>Autonomous</span><span>Connect once and AMV works on its own in the background - no uploads needed.</span></div>'+
-        '<div class="ax-legend-item"><span class="ax-badge ax-manual">Manual</span><span>You upload a file or kick it off each time - AMV works on what you give it.</span></div>'+
-      '</div>'+
-
-      '<div class="ss2"><h3>Featured</h3>'+
-        '<div class="appx-grid">'+
-          app('🌐','AMV for Web','Runs in any browser right now - full chat, agents, and automations. Add it to your home screen for one-tap access.','<button class="btn bp" style="width:100%" data-dact="installPWA">Add to home screen</button>','rgba(66,133,244,.12)','auto')+
-          app('💻','VS Code','Generate, explain, and debug code inline. Use the Dev workspace here, or open your project in VS Code.','<button class="btn bp" style="width:100%" data-dact="openDevView">Open Dev workspace</button>','rgba(0,118,212,.12)','auto')+
-          app('💬','Slack','Bring AMV into any channel with /amv - answers, summaries, and tasks without leaving Slack.','<button class="btn" style="width:100%" data-dact="setTabBtn" data-darg="integrations">Connect Slack</button>','rgba(74,21,75,.14)','auto')+
-        '</div>'+
-      '</div>'+
-
-      '<div class="ss2"><h3>Desktop</h3>'+
-        '<div class="appx-grid two">'+
-          app('🍎','macOS','Menu-bar access, drag-and-drop files, and native system integrations.','<a href="#" class="btn bp" style="width:100%" data-dact="downloadDesktop" data-darg="mac">Download for Mac</a>','rgba(255,255,255,.06)','auto')+
-          app('🪟','Windows','Taskbar integration, file analysis, and native automation on Windows.','<a href="#" class="btn bp" style="width:100%" data-dact="downloadDesktop" data-darg="win">Download for Windows</a>','rgba(255,255,255,.06)','auto')+
-        '</div>'+
-      '</div>'+
-
-      '<div class="ss2"><h3>Mobile</h3>'+
-        '<div class="appx-grid two">'+
-          app('📱','iPhone & iPad','Voice chat, tasks on the go, file uploads. Works in Safari now - add to your home screen for an app-like experience.','<button class="btn bp" style="width:100%" data-dact="installPWA">Add to home screen</button>','rgba(255,255,255,.06)','auto')+
-          app('🤖','Android','Full chat, voice mode, uploads, and automations. Works in Chrome now - install it straight to your home screen.','<button class="btn bp" style="width:100%" data-dact="installPWA">Install app</button>','rgba(63,185,80,.12)','auto')+
-        '</div>'+
-      '</div>'+
-
-      '<div class="ss2"><h3>Developer tools</h3>'+
-        '<div class="appx-rows">'+
-          row('🔶','JetBrains','IntelliJ, PyCharm, WebStorm, Rider - AMV across every JetBrains IDE.','<button class="btn" data-dact="amvStoreLink" data-darg="jetbrains">Notify me</button>','rgba(254,113,26,.12)','auto')+
-          row('⌨️','CLI / Terminal','Pipe context, run agents, and script AMV from your shell.','<button class="btn" data-dact="toastInfo" data-darg="CLI access ships with the API - add your key in Integrations">Get CLI</button>','rgba(255,255,255,.06)','auto')+
-          row('🔌','REST API','Build AMV into your own product. Add your key under Integrations → API.','<button class="btn" data-dact="setTabBtn" data-darg="integrations">Open API setup</button>','rgba(85,144,255,.12)','auto')+
-        '</div>'+
-      '</div>'+
-
-      '<div class="ss2"><h3>Office &amp; files</h3>'+
-        '<div class="appx-rows">'+
-          row('📊','Excel &amp; CSV','Upload any sheet - AMV runs formulas, spots trends, builds pivots and charts.','<button class="btn" data-dact="setTabBtn" data-darg="chat">Try in chat</button>','rgba(33,115,70,.12)','manual')+
-          row('📑','PowerPoint','Describe a deck and AMV builds slides, notes, and structure. Export .pptx.','<button class="btn" data-dact="setTabBtn" data-darg="chat">Try in chat</button>','rgba(198,67,30,.12)','manual')+
-          row('📝','Word','Reports, proposals, letters, contracts - written and exported, ready to edit.','<button class="btn" data-dact="setTabBtn" data-darg="chat">Try in chat</button>','rgba(0,120,212,.12)','manual')+
-        '</div>'+
-        '<p class="appx-note">These are <b>manual</b>: upload an Office file with the 📎 button in chat, or describe what you need and AMV builds it from scratch - then you download the result.</p>'+
-      '</div>'+
-
-    '</div></div>';
-}
 function setTabBtn(t){ setTab(t); }
 window.setTabBtn=setTabBtn;
 
@@ -29005,7 +28937,10 @@ function renderView(){
     case 'plans': renderPlansView(); break;
     case 'settings': renderSettingsView(); break;
     case 'help': renderHelpView(); break;
-    case 'apps': renderAppsView(); break;
+    /* Apps & Extensions was removed (asked for): it listed desktop and store
+       apps that do not exist yet. An old link to it opens Integrations, where
+       connecting things really happens. */
+    case 'apps': S.tab='integrations'; renderIntegrationsView(); break;
     case 'tasks': renderTasksView(); break;
     case 'integrations': renderIntegrationsView(); break;
     /* RENDER FROM WHAT IS HERE, THEN ASK THE SERVER.
@@ -33414,7 +33349,12 @@ const TASKS={
   contract:"Review this contract - explain terms, risks, what to negotiate:\n\n[Paste contract]",
   excel:"Analyze this data:\n\n[Paste CSV/spreadsheet data]\n\nQuestions: [what do you want to know?]",
   pptx:"Create a presentation on: [topic]\nSlides: [number]\nAudience: [who]\nKey message: [main point]",
-  word:"Write a [report/proposal/memo] on: [topic]\nAudience: [who reads it]\nLength: [approximate]"
+  word:"Write a [report/proposal/memo] on: [topic]\nAudience: [who reads it]\nLength: [approximate]",
+  compare:"Help me choose [what I am buying].\nBudget: [amount]\nWhat matters most: [list]\n\nFind the three best options available where I live, compare them on price and quality with sources, and tell me which you would pick and why.",
+  lookup:"Find out [what I need to know].\n\nGive me the current answer with the source and the date of each fact, and say plainly if sources disagree.",
+  cook:"I have [ingredients] and [time] minutes.\nWhat can I cook tonight? Give me two options with steps, and what to buy if one ingredient is missing.",
+  edit:"Improve this - clearer and tighter, without changing what I mean or how I sound:\n\n[Paste your text]",
+  translate:"Translate this into [language], keeping the tone and anything that should stay as it is:\n\n[Paste your text]"
 };
 function launchTask(key){
   const prompt=TASKS[key];
@@ -33435,25 +33375,15 @@ function launchTask(key){
 /* 4. TASKS VIEW */
 function renderTasksView(){
   const vc=$('vc'); if(!vc) return;
-  // Unique, agentic capabilities - things a plain chatbot can't do
+  /* WHAT ONLY AMV DOES, CUT TO THE SIX THAT ARE NOT ALREADY A TAB AWAY.
+     The daily brief is a Crew job, the brand canvas is Build, the debug loop
+     is Lab and the handoff has its own tab - four cards that each restated a
+     button already in the rail. These six are the reasons to be here. */
   const unique=[
     ['🔭','Set up a research watch','AMV monitors any topic on a schedule - a stock, a company, a trend - and reports what\'s happening. Info, not advice.','researchwatch'],
     ['🛰️','Run a standing job','AMV works in the background across your accounts and only sends after you approve.','crew'],
-    ['🌅','Daily brief on autopilot','Wake up to a market + inbox + calendar briefing, generated and delivered every morning.','autobrief'],
-    ['🏗️','Build & ship a working app','Not just code - AMV writes it, runs it in a live sandbox, debugs it, and shows the result.','dev'],
-    ['🎨','Design a brand + site live','Watch a landing page build on a canvas, then refine it by chatting.','studio'],
-    ['🔁','Auto-debug until it passes','Paste broken code; AMV runs it, reads the real error, fixes, and re-runs in a loop.','lab'],
-    ['🤝','Hand off with full context','Pass any task to a teammate or another agent - nothing gets dropped.','handoff'],
-    /* THREE THINGS AMV LEARNED TO DO AND NEVER MENTIONED HERE.
-
-       This list was written before Connected accounts, before the country
-       packs, and before the agent that works a website. So the page whose job
-       is to answer "what can this actually do" was describing a smaller
-       product than the one underneath it. Each of these lands somewhere real:
-       the first opens Connected accounts, the second opens the catalogue where
-       a hundred countries now are, the third opens the box that takes a
-       sentence. */
     ['\uD83D\uDD10','Act on your real accounts','Connect an account once and AMV works inside it - reading, drafting, organizing - with a scoped grant you can take back at any time.','connect'],
+    ['🏗️','Build & ship a working app','Not just code - AMV writes it, runs it in a live sandbox, debugs it, and shows the result.','dev'],
     ['\uD83C\uDF0D','Whatever your country actually needs','The paperwork, the shops, the deadlines and the weather where you live - written for 105 countries, not translated from one.','world'],
     ['\uD83D\uDCAC','Just say it, and it goes and does it','Describe the outcome in a sentence. AMV works out which accounts and sites it needs, does the work, and stops for your approval before anything leaves.','say'],
   ];
@@ -33463,11 +33393,17 @@ function renderTasksView(){
     <span class="uniq-d">${escH(u[2])}</span>
     <span class="uniq-go">Try it →</span>
   </button>`;
+  /* IN THE ORDER PEOPLE ACTUALLY USE AN ASSISTANT. Practical guidance,
+     looking things up and writing - most of it improving text the person
+     brought - are nearly 80% of conversations; programming is a small share
+     (NBER w34255, 2025). The groups follow that, not who the person is. */
   const cats=[
-    {label:'Personal',tasks:[['email','\u2709\uFE0F','Write an email','Any email, instantly'],['emailreply','\u21A9\uFE0F','Reply to an email','Smart, ready-to-send replies'],['trip','\u2708\uFE0F','Plan a trip','A full itinerary'],['meal','\uD83C\uDF7D\uFE0F','Meal plan','A 7-day plan'],['fitness','\uD83D\uDCAA','Workout plan','Tailored to your goals']]},
-    {label:'Student',tasks:[['essay','\uD83D\uDCDD','Write an essay','On any topic'],['study','\uD83D\uDCD6','Study notes','Key concepts, organized'],['flashcards','\uD83C\uDFB4','Make flashcards','20 Q&A cards'],['summarize','\uD83D\uDD0D','Summarize anything','Articles, docs or books'],['explain','\uD83D\uDCA1','Explain anything','Simple, clear breakdowns']]},
-    {label:'Work',tasks:[['resume','\uD83D\uDCC4','Write my resume','ATS-optimized'],['coverletter','\u2709\uFE0F','Cover letter','Tailored to any job'],['bizplan','\uD83D\uDCC8','Business plan','A complete plan'],['proposal','\uD83E\uDD1D','Client proposal','Built to win the client'],['meeting','\uD83D\uDCCB','Meeting notes','With action items']]},
-    {label:'Creative',tasks:[['social','\uD83D\uDCF1','Social posts','10 posts for any platform'],['script','\uD83C\uDFAC','Video script','For YouTube or TikTok'],['story','\uD83D\uDCDA','Write a story','Any genre or length']]},
+    {label:'Advice & how-to',tasks:[['trip','\u2708\uFE0F','Plan a trip','Days, stays, costs and tips'],['meal','\uD83C\uDF7D\uFE0F','Meal plan','A week, with the shopping list'],['fitness','\uD83D\uDCAA','Workout plan','For your goal and your kit'],['budget','\uD83D\uDCB8','Make a budget','From what you actually spend'],['explain','\uD83D\uDCA1','Explain anything','Simply, step by step'],['homework','\uD83D\uDCDA','Help with homework','Worked through, not just answered']]},
+    {label:'Find out',tasks:[['compare','\uD83D\uDED2','Compare before you buy','Three options, one pick'],['lookup','\uD83D\uDD0E','Look it up, with sources','The current answer, dated'],['cook','\uD83C\uDF73','Cook with what you have','Two dinners from your fridge'],['summarize','\uD83D\uDD0D','Summarize anything','Articles, docs or books']]},
+    {label:'Writing',tasks:[['edit','\u270D\uFE0F','Improve my writing','Clearer, still yours'],['email','\u2709\uFE0F','Write an email','Any email, instantly'],['emailreply','\u21A9\uFE0F','Reply to an email','Ready-to-send replies'],['translate','\uD83C\uDF10','Translate','Keeps the tone'],['essay','\uD83D\uDCDD','Write an essay','On any topic']]},
+    {label:'Work',tasks:[['resume','\uD83D\uDCC4','Write my resume','ATS-optimized'],['coverletter','\uD83D\uDCE8','Cover letter','Tailored to the job'],['meeting','\uD83D\uDCCB','Meeting notes','With action items'],['excel','\uD83D\uDCCA','Analyze data','Paste it, ask anything'],['pptx','\uD83D\uDDBC\uFE0F','Presentation','Slides with a point']]},
+    {label:'Create',tasks:[['social','\uD83D\uDCF1','Social posts','10 posts for any platform'],['script','\uD83C\uDFAC','Video script','For YouTube or TikTok'],['story','\uD83D\uDCDA','Write a story','Any genre or length']]},
+    {label:'Code',tasks:[['code','\uD83D\uDCBB','Build something','Runs, not just written'],['debug','\uD83D\uDC1B','Fix my code','From the real error']]},
   ];
   const row=(t)=>`<button class="tk-row" data-dact="launchTask" data-darg="${t[0]}"><span class="tk-ic">${t[1]}</span><span class="tk-body"><span class="tk-t">${t[2]}</span><span class="tk-d">${escH(t[3])}</span></span><span class="tk-arrow">\u2192</span></button>`;
   vc.innerHTML = `<div class="sv fi"><div class="tasks-page">
@@ -33479,20 +33415,20 @@ function renderTasksView(){
              jobs, so it says so. -->
         <span class="eyebrow">Tasks</span>
         <h2>Get something done.</h2>
-        <p class="vsub">Start with something only AMV can do - or grab a ready-made task that opens a chat set up to deliver.</p>
+        <p class="vsub">Pick a ready-made task - it opens a chat set up to deliver it - or set AMV working on its own.</p>
       </div>
     </header>
     ${_autoServerHTML()}
-    <section class="uniq-sec">
-      <div class="sec-head"><h3>Only on AMV</h3><span class="sec-sub">Capabilities a plain chatbot doesn't have</span></div>
-      <div class="uniq-grid">${unique.map(ucard).join('')}</div>
-    </section>
     <div class="tasks-masonry">
-      ${cats.map((cat,n)=>`<section class="tk-cat${n===0?' wide':''}">
+      ${cats.map((cat,n)=>`<section class="tk-cat">
         <div class="sec-head"><h3>${cat.label}</h3><span class="sec-sub">${cat.tasks.length} tasks</span></div>
         <div class="tk-list">${cat.tasks.map(row).join('')}</div>
       </section>`).join('')}
     </div>
+    <section class="uniq-sec">
+      <div class="sec-head"><h3>Only on AMV</h3><span class="sec-sub">Work it does on its own</span></div>
+      <div class="uniq-grid">${unique.map(ucard).join('')}</div>
+    </section>
   </div></div>`;
   try{ _wireAutoServer(vc); }catch(e){}
 }

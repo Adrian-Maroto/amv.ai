@@ -1718,23 +1718,22 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 #sb .sb-un{font-size:var(--t-base)!important;font-weight:550!important;color:var(--tx)!important}
 #sb .sb-ue{font-size:var(--t-xs)!important;color:var(--mu)!important}
 
-/* ---- Apps & Extensions: clean grid/rows ---- */
-.appx-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.appx-grid.two{grid-template-columns:1fr 1fr}
-@media(max-width:680px){.appx-grid,.appx-grid.two{grid-template-columns:1fr}}
-.appx-card{background:var(--surface)!important;border:1px solid transparent;border-radius:var(--rad-md);padding:16px;display:flex;flex-direction:column;gap:8px;transition:border-color .15s,background .15s}
-.appx-card:hover{background:var(--surface-2)!important;border-color:var(--hair)}
-.appx-ic{width:38px;height:38px;border-radius:var(--r-md);display:flex;align-items:center;justify-content:center;font-size:var(--ic-sm);flex-shrink:0}
-.appx-ic.sm{width:34px;height:34px;font-size:var(--t-lg);border-radius:var(--r-md)}
-.appx-name{font-size:var(--t-md);font-weight:600;color:var(--tx);letter-spacing:-.1px}
-.appx-desc{font-size:var(--t-sm);color:var(--mu);line-height:1.55;flex:1}
-.appx-card .btn{margin-top:4px;justify-content:center}
-.appx-rows{display:flex;flex-direction:column}
-.appx-row{display:flex;align-items:center;gap:13px;padding:13px 4px;border-bottom:1px solid var(--hair)}
-.appx-row:last-child{border-bottom:none}
-.appx-row-body{flex:1;min-width:0}
-.appx-row-act{flex-shrink:0}
-.appx-note{font-size:var(--t-sm);color:var(--mu);line-height:1.6;margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)}
+
+
+@media(max-width:680px){}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* ---- AI connection status ---- */
 .conn-status{display:inline-flex;align-items:center;gap:9px;padding:9px 15px;border-radius:var(--r-md);font-size:var(--t-base);font-weight:500;margin-bottom:20px}
@@ -2422,16 +2421,12 @@ hr,.divider,.hairline{border-color:var(--hair)!important;background:var(--hair)!
 .mkt-rate-star{color:var(--hair,#3a342c);transition:color .1s}
 .mkt-rate-star.on,.mkt-rate-star:hover{color:var(--accent-txt)}
 
-/* ============================================================
-   INTEGRATIONS - card grid, autonomous/manual badges, legend
-   (these classes had no CSS, so the page rendered as raw text)
-   ============================================================ */
-.ax-legend{display:flex;gap:20px;flex-wrap:wrap;background:var(--glass-soft,rgba(255,255,255,.03));border:1px solid var(--hair,#2a2620);border-radius:var(--r-lg);padding:14px 16px;margin:6px 0 22px}
-.ax-legend-item{display:flex;align-items:center;gap:10px;font-size:var(--t-sm);color:var(--mu,#9a9085);line-height:1.4}
-.ax-badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--t-2xs);font-weight:600;padding:3px 9px;border-radius:var(--r-pill);white-space:nowrap;letter-spacing:.2px}
-.ax-auto{background:rgba(63,185,80,.14);color:var(--grn-txt)}
-.ax-manual{background:rgba(210,153,34,.14);color:#d9912f}
-.ax-dot{width:6px;height:6px;border-radius:50%;background:#3fb950;display:inline-block;animation:axpulse 2s ease-in-out infinite}
+
+
+
+
+
+
 @keyframes axpulse{0%,100%{opacity:1}50%{opacity:.35}}
 .int-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
 .int-card{display:flex;align-items:flex-start;gap:13px;background:var(--surface,#1a1f26);border:1px solid var(--hair,#2a2620);border-radius:var(--r-xl);padding:15px 16px;transition:border-color .15s,transform .15s}
@@ -11057,7 +11052,7 @@ body.light{
 
 /* Hand-written hex that predates the status tokens. */
 .mk-kind-agent{ color:var(--gold-txt); }
-.ax-manual{ color:var(--gold-txt); }
+
 
 /* ── LAYER A153 · the browser's own text-size setting does something ─────────
    Measured: setting the root font to 24px or 32px - Chrome's Large and Very
@@ -13343,7 +13338,7 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 .vi-conn .int-card:hover .int-act .btn.bp{
   background:var(--accent)!important; color:#fff!important; border-color:transparent!important;
 }
-.vi-conn .ax-legend{ background:none; border:none; padding:0; margin:0 0 var(--sp-5); }
+
 .vi-conn .sec-head{ display:block; }
 .vi-conn .sec-head h3{ margin-bottom:4px; }
 
@@ -14100,35 +14095,13 @@ p.bill-leave-s{
   .mk-filter,.hc-chip,.cw-chip,.mkt-tab{ min-width:44px!important; }
 }
 
-/* ── LAYER A218 · the Apps grid could not shrink, so it went off the screen ──
-   `.appx-grid` is `repeat(3,1fr)` with one breakpoint, at 680px, that drops it
-   to a single column. `1fr` is `minmax(auto,1fr)`, and that `auto` floor is the
-   card's min-content width - about 252px - so the tracks cannot shrink below
-   it. Between 680 and roughly 1030 the grid is three 252px columns inside a
-   container narrower than their sum, and the third one leaves the screen.
 
-   Measured at 768x1024 with touch: the "Connect Slack" button rendered from
-   813 to 1031 in a 768-wide window, and elementFromPoint at its centre did not
-   return the button. It was not merely ugly - it could not be pressed. The
-   page does not scroll sideways either, because the overflow is inside the
-   view's own scroller, so nothing about the screen suggested there was more to
-   the right.
 
-   The same floor bites at the bottom end: at 320 the single column still
-   measured 252px inside a 206px container.
-
-   Two changes, both about letting the grid do what a grid does. `minmax(0,1fr)`
-   removes the min-content floor so a track may actually shrink, and a
-   two-column step covers the tablet range that had nothing between three and
-   one. `min-width:0` on the card is the same fix one level down - a grid item's
-   default `min-width:auto` is what hands the track its floor. */
-.appx-grid,.appx-grid.two{ grid-template-columns:repeat(3,minmax(0,1fr)); }
-.appx-card{ min-width:0; }
 @media(max-width:1040px){
-  .appx-grid,.appx-grid.two{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  
 }
 @media(max-width:680px){
-  .appx-grid,.appx-grid.two{ grid-template-columns:minmax(0,1fr); }
+  
 }
 
 /* ── LAYER A219 · a badge that cannot wrap, in a row that cannot wrap ────────
@@ -14144,14 +14117,9 @@ p.bill-leave-s{
    wanted - a pill that stays a pill - and this is not a reason to change it
    everywhere. */
 @media(max-width:680px){
-  .appx-card{ flex-wrap:wrap; }
-  /* ANY ax-badge, not just the one in a card. The first version of this scoped
-     the rule to .appx-card and the pixel did not move: the badge that actually
-     overflows is the one in the connector LEGEND, which explains what
-     "Autonomous" means and is the longest of them all. Scoping a fix to where
-     the bug was first noticed is how it survives being fixed. */
-  .ax-badge{ white-space:normal; max-width:100%; }
-  .ax-legend-item{ flex-wrap:wrap; }
+  
+  
+  
 }
 
 /* ── LAYER A220 · the same auto floor, one list over ─────────────────────────
@@ -16475,3 +16443,13 @@ html.reduce-motion #cv.cv-home .chome-shine{ display:none; }
 /* The pane spaces its children 22px apart (gap), which is right between cards
    and wrong between a heading and its own subtitle. */
 .settings-content .set-title + .set-sub{ font-size:var(--t-md); line-height:1.5; margin:calc(var(--sp-1) - 22px) 0 0!important; max-width:64ch; }
+
+/* ── LAYER A280: Tasks - the tasks lead, the header gets out of the way ──── */
+.tasks-page{ gap:var(--sp-6)!important; }
+.tasks-hero{ grid-template-columns:1fr!important; padding:0!important; }
+.tasks-hero h2{ margin-bottom:var(--sp-2); }
+.tasks-hero .vsub{ margin:0; max-width:60ch; }
+/* A group's count sits beside its name on a phone too, not a line below it. */
+.tasks-page .sec-head{ display:flex!important; flex-direction:row!important; align-items:baseline; gap:var(--sp-2); flex-wrap:wrap; }
+.tasks-page .sec-head h3{ margin:0; flex:0 0 auto!important; width:auto!important; }
+.tasks-page .sec-head .sec-sub{ margin:0!important; flex:0 1 auto!important; width:auto!important; }

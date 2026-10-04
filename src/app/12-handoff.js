@@ -582,7 +582,10 @@ function renderView(){
     case 'plans': renderPlansView(); break;
     case 'settings': renderSettingsView(); break;
     case 'help': renderHelpView(); break;
-    case 'apps': renderAppsView(); break;
+    /* Apps & Extensions was removed (asked for): it listed desktop and store
+       apps that do not exist yet. An old link to it opens Integrations, where
+       connecting things really happens. */
+    case 'apps': S.tab='integrations'; renderIntegrationsView(); break;
     case 'tasks': renderTasksView(); break;
     case 'integrations': renderIntegrationsView(); break;
     /* RENDER FROM WHAT IS HERE, THEN ASK THE SERVER.
