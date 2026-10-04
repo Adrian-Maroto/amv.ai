@@ -16474,3 +16474,24 @@ body.set-open{ overflow:hidden; }
 @keyframes doneAskIn{ from{ opacity:0; transform:translate(-50%,6px); } to{ opacity:1; transform:translate(-50%,0); } }
 @media(prefers-reduced-motion:reduce){ .done-ask{ animation:none; } }
 @media(max-width:720px){ .done-ask{ bottom:calc(76px + var(--sp-8) + env(safe-area-inset-bottom,0px)); } }
+
+/* ── LAYER A285: the occasional upgrade card ────────────────────────────────
+   Centred, quiet, one decision: the engine it unlocks, what else comes with
+   it, monthly or yearly, one button. Rationed in 42-upgrade-nudge.js. */
+.upn-bg{ display:flex; align-items:center; justify-content:center; padding:var(--sp-5); }
+.upn{ position:relative; width:min(520px,100%); background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-xl); box-shadow:var(--sh-xl); padding:var(--sp-7) var(--sp-6) var(--sp-5); }
+.upn-x{ position:absolute; top:var(--sp-3); right:var(--sp-3); width:36px; height:36px; border:0; background:none; color:var(--mu); border-radius:var(--r-pill); cursor:pointer; font-size:var(--t-md); }
+.upn-x:hover{ background:var(--s2); color:var(--tx); }
+.upn-h{ font-family:var(--fdisplay); font-size:var(--t-2xl); line-height:1.2; margin:0 var(--sp-6) var(--sp-5) 0; }
+.upn-pts{ list-style:none; margin:0 0 var(--sp-5); padding:0; display:grid; gap:var(--sp-3); }
+.upn-pts li{ display:flex; gap:var(--sp-3); align-items:flex-start; font-size:var(--t-md); line-height:1.45; color:var(--tx); }
+.upn-pts li svg{ flex:0 0 auto; margin-top:2px; color:var(--accent); }
+.upn-cyc{ display:grid; grid-template-columns:1fr 1fr; gap:3px; padding:3px; border:1px solid var(--bd); border-radius:var(--r-md); background:var(--s2); margin-bottom:var(--sp-3); }
+.upn-c{ border:0; background:none; color:var(--mu); font:inherit; font-weight:600; font-size:var(--t-base); padding:var(--sp-2); min-height:40px; border-radius:var(--r-sm); cursor:pointer; }
+.upn-c.on{ background:var(--bg); color:var(--tx); box-shadow:var(--sh-sm); }
+.upn-go{ width:100%; justify-content:center; min-height:46px; font-size:var(--t-md); }
+.upn-links{ display:flex; justify-content:center; align-items:center; gap:var(--sp-2); margin-top:var(--sp-3); color:var(--mu); }
+.upn-l{ border:0; background:none; color:var(--accent-txt); font:inherit; font-size:var(--t-base); text-decoration:underline; text-underline-offset:3px; cursor:pointer; padding:var(--sp-2) var(--sp-1); min-height:36px; }
+.upn-fine{ margin:var(--sp-3) 0 0; text-align:center; font-size:var(--t-xs); color:var(--mu); }
+.upn-c:focus-visible, .upn-l:focus-visible, .upn-x:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+@media(max-width:560px){ .upn{ padding:var(--sp-6) var(--sp-4) var(--sp-4); } .upn-h{ font-size:var(--t-xl); } }

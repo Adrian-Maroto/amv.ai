@@ -948,6 +948,7 @@ async function _callAI(msgs, _opts) {
     if(!nested){ try{
       const last = (getMsgs()||[]).slice(-1)[0];
       _doneMailFinish({ stopped: !!_userStopped, failed: !!(last && last._error) });
+      if(!_userStopped && last && last.r === 'a' && !last._error) _upnAnswered();
     }catch(e){} }
   }
 }
