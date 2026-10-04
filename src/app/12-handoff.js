@@ -1602,7 +1602,19 @@ async function _loadReadiness(note){
       return _loadReadiness('That admin token was rejected. Paste the current value of ADMIN_TOKEN from Cloudflare - exactly, with no quotes or spaces.');
     }
     if(!r.ok || !d.ok){ host.innerHTML = '<div class="gl-note">'+escH(d.error||'Could not read your configuration.')+'</div>'; return; }
-    host.innerHTML = _readinessHTML(d);
+    host.innerHTML = _readinessHTML(d) +
+      /* One real send, and the provider's own answer (adminEmailTest): the only
+         way to tell an unverified sender from a spam folder. */
+      '<div class="gl-note"><button class="btn bs" id="gl-mailtest" type="button">Send me a test email</button> '+
+      '<span id="gl-mailsay" role="status" aria-live="polite"></span></div>';
+    on($('gl-mailtest'),'click',async()=>{
+      const say=$('gl-mailsay'); if(say) say.textContent='Sending\u2026';
+      try{
+        const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/email-test',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:'{}'},20000);
+        const x=await r.json().catch(()=>({}));
+        if(say) say.textContent = x.ok ? ('Sent to '+x.to+'. '+(x.hint||'')) : ((x.hint||x.error||'Not sent.')+(x.provider?' The provider said: '+x.provider:''));
+      }catch(e){ if(say) say.textContent='Could not reach your Worker.'; }
+    });
   }catch(e){
     host.innerHTML = '<div class="gl-note">Could not reach your Worker, so this would be out of date. It will load when you are back online.</div>';
   }

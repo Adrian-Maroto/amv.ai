@@ -478,6 +478,12 @@ try{ window.configUnreachable=configUnreachable; }catch(e){}
 
    'include' only where the server says it uses the cookie. Elsewhere the API
    answers `*`, and a credentialed request to `*` is refused by the browser. */
+/* The trusted-device token, for deployments that do not use cookies (where
+   they do, it is an HttpOnly cookie and this is never set). Kept per address
+   and outside the per-account namespace, because it is read before anybody is
+   signed in. It only ever skips the emailed code - the password is still asked. */
+function _devTok(email){ try{ return localStorage.getItem('amv_devtok:'+String(email||'').toLowerCase()) || ''; }catch(e){ return ''; } }
+function _devTokSet(email, tok){ try{ if(tok) localStorage.setItem('amv_devtok:'+String(email||'').toLowerCase(), tok); }catch(e){} }
 function _authCreds(){
   try{
     if(window.AMV_API && AMV_API.cookieAuth) return 'include';
@@ -863,12 +869,18 @@ const AMV_API = {
     const body = { email, name:o.name||'', password:o.password||'', provider:o.provider||'email' };
     if(o.company!=null) body.company = o.company;
     if(o.captchaToken) body.captchaToken = o.captchaToken;
+    /* A device that has entered a code before says so - by cookie where the
+       deployment uses one, else by the token it was given (_devTok). */
+    try{ const dt = _devTok(email); if(dt) body.deviceToken = dt; }catch(e){}
     /* Whether to ask the browser to keep the session cookie is in the public
        config; a sign-in sent before it arrives would lose the cookie. */
     try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
     const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
+    /* Right password on a device this account has not proved itself on: no
+       session yet - the caller asks for the code that was just emailed. */
+    if(d.needsCode && d.challenge) return d;
     /* The CODE, not only the sentence. `captcha_required` is the moment the
        server states that a verification was expected - the one fact that
        separates "this deployment has no captcha" from "it has one and the
@@ -1067,7 +1079,25 @@ const AMV_API = {
     const r = await this._fetch('/auth/signup', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
+    if(d.needsCode && d.challenge) return d;     // the emailed code finishes it
     { const e=new Error(d.error || 'Signup failed'); if(d.code) e.code=d.code; throw e; }
+  },
+
+  /* The emailed code that finishes a sign-in or sign-up (/auth/login/verify).
+     Only this returns a session for a device that has not proved itself. */
+  async verifyCode(challenge, code, email){
+    if(!this.live) return null;
+    const r = await this._fetch('/auth/login/verify', {method:'POST', body:JSON.stringify({challenge, code})});
+    const d = await r.json().catch(()=>({}));
+    if(d.token){ if(d.deviceToken) _devTokSet(email, d.deviceToken); this._setTokens(d); return d; }
+    { const e=new Error(d.error || 'That code did not work.'); if(d.code) e.code=d.code; throw e; }
+  },
+  async resendCode(challenge){
+    if(!this.live) return null;
+    const r = await this._fetch('/auth/login/resend', {method:'POST', body:JSON.stringify({challenge})});
+    const d = await r.json().catch(()=>({}));
+    if(d.ok) return d;
+    { const e=new Error(d.error || 'Could not send a new code.'); if(d.code) e.code=d.code; throw e; }
   },
 
   /* Programmatic access to this account. The key is returned exactly once, at
@@ -1110,7 +1140,9 @@ const AMV_API = {
   /* Sign out. `everywhere` kills every session on the account; without it this
      device's refresh token is retired and the others are left alone. */
   async logout(everywhere){
-    if(!this.live || !this.token) return false;
+    /* No access token is not "nothing to sign out of": the sign-in cookie can
+       outlive it by weeks, and the server ends the session from that alone. */
+    if(!this.live) return false;
     try{
       /* In cookie mode this side has no refresh token to name, so the cookie
          has to travel or the server cannot tell WHICH session is signing out -
@@ -4557,7 +4589,9 @@ async function doSignupForm() {
   // When a backend is connected, create a real SERVER account + session token.
   if(window.AMV_API && AMV_API.live){
     try{
-      const d=await AMV_API.signup(em, nm, pw, _authBotFields());
+      let d=await AMV_API.signup(em, nm, pw, _authBotFields());
+      /* No session until the address is proved: the emailed code finishes it. */
+      if(d&&d.needsCode){ d = await _askForCode(d, em, 'signup'); if(!d) return; }
       if(d&&d.token){
         // The invite has been spent on this account. Leaving it would attach it
         // to the next person who signs up on this browser too.
@@ -4569,6 +4603,9 @@ async function doSignupForm() {
         try{ AEGIS.log('signup_complete',{provider:'email'}); }catch(e){}
         return;
       }
+      /* With a server, ONLY the server makes an account. Falling through to the
+         local copy below would make one the server never confirmed. */
+      throw new Error('AMV could not finish creating your account. Nothing was created - please try again.');
     }catch(e){
       if(/exists/i.test(e.message||'')){
         openAuth('login'); const ef=$('a-email'); if(ef) ef.value=em;
@@ -4583,6 +4620,71 @@ async function doSignupForm() {
   if(acct){ closeOvr(); _completeIntroLogin(acct); try{ AEGIS.log('signup_complete',{provider:'email'}); }catch(e){} }
   else { const b=$('auth-submit');if(b){b.disabled=false;b.textContent='Create Free Account';} showAuthErr('Could not create account. Try again.'); }
 }
+
+/* THE EMAILED CODE - THE SECOND HALF OF SIGNING IN ON A NEW DEVICE, AND THE
+   WHOLE OF PROVING AN ADDRESS AT SIGN-UP.
+
+   Resolves with the session (as AMV_API.verifyCode returns it) once the code is
+   right, or null if the person backs out. Nothing here can produce a session
+   without the server accepting the code: there is no client-side shortcut, the
+   way there was in the old offline password reset. */
+function _askForCode(d, email, kind){
+  return new Promise((resolve) => {
+    const ovr = $('ovr'); if(!ovr){ resolve(null); return; }
+    const challenge = d.challenge;
+    const signup = kind === 'signup';
+    let busy = false;
+    ovr.innerHTML =
+      '<div class="share-modal fp-modal" role="dialog" aria-modal="true" aria-labelledby="cv-h">'+
+        '<button class="oc" id="cv-x" aria-label="Close">&#215;</button>'+
+        '<div class="share-title" id="cv-h">Check your email</div>'+
+        '<p class="fp-sub">'+(signup ? 'To finish creating your account, enter' : 'This device is new to your account. Enter')+
+          ' the 6-digit code we sent to <b>'+escH(d.to || email)+'</b>. It expires in 10 minutes.</p>'+
+        '<div id="cv-msg" class="fp-msg" role="status" aria-live="polite"></div>'+
+        '<label class="fp-lbl" for="cv-code">Verification code</label>'+
+        '<input id="cv-code" class="fp-in fp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">'+
+        '<button class="btn bp fp-go" id="cv-go">'+(signup ? 'Create account' : 'Sign in')+'</button>'+
+        '<div class="fp-alt"><button id="cv-resend">Didn\u2019t get it? Send again</button>'+
+        '<button id="cv-back">Use a different email</button></div>'+
+        '<p class="fp-sub" style="margin-top:12px;font-size:var(--t-xs)">Can\u2019t find it? Check spam. Never share this code - AMV will never ask you for it.</p>'+
+      '</div>';
+    ovr.classList.add('on');
+    const msg = (t, k) => { const e = $('cv-msg'); if(e){ e.textContent = t || ''; e.className = 'fp-msg' + (t ? ' on ' + (k || 'err') : ''); } };
+    const done = (v) => { resolve(v); };
+    const go = async () => {
+      if(busy) return;
+      const ci = $('cv-code'); const code = ((ci && ci.value) || '').replace(/\D/g, '');
+      if(code.length !== 6){ msg('Enter the 6-digit code.'); return; }
+      busy = true; const b = $('cv-go'); if(b){ b.disabled = true; b.textContent = 'Checking\u2026'; }
+      msg('');
+      try{
+        const r = await AMV_API.verifyCode(challenge, code, email);
+        done(r);
+      }catch(e){
+        busy = false; if(b){ b.disabled = false; b.textContent = signup ? 'Create account' : 'Sign in'; }
+        msg(e.message || 'That code did not work.');
+        if(ci){ ci.value = ''; ci.focus(); }
+        /* An expired or used-up challenge cannot be revived here: back to the form. */
+        if(e && (e.code === 'code_expired' || e.code === 'code_exhausted')){
+          setTimeout(() => { closeOvr(); try{ openAuth(signup ? 'signup' : 'login'); const ef = $('a-email'); if(ef) ef.value = email; showAuthErr(e.message); }catch(_){} done(null); }, 1600);
+        }
+      }
+    };
+    on($('cv-go'), 'click', go);
+    const ci = $('cv-code');
+    on(ci, 'keydown', e => { if(e.key === 'Enter') go(); });
+    on(ci, 'input', () => { ci.value = ci.value.replace(/\D/g, '').slice(0, 6); if(ci.value.length === 6) go(); });
+    on($('cv-resend'), 'click', async () => {
+      try{ await AMV_API.resendCode(challenge); msg('New code sent.', 'ok'); }
+      catch(e){ msg(e.message || 'Could not send a new code.'); }
+    });
+    const back = () => { closeOvr(); try{ openAuth(signup ? 'signup' : 'login'); const ef = $('a-email'); if(ef) ef.value = email; }catch(e){} done(null); };
+    on($('cv-back'), 'click', back);
+    on($('cv-x'), 'click', back);
+    setTimeout(() => { try{ ci && ci.focus(); }catch(e){} }, 60);
+  });
+}
+try{ window._askForCode = _askForCode; }catch(e){}
 
 /* Password reset - sends a secure reset link via the backend's email service.
    Real apps do exactly this: no "current password" needed. */
@@ -4629,14 +4731,19 @@ const _RESET = { email:'', token:'', step:1, sending:false, local:false };
    already has the browser open, and a local account's data lives in that same
    localStorage - they could read it regardless. The account is device-bound by
    nature, so recovery is device-bound too. */
+/* THERE IS NO PASSWORD RESET WITHOUT THE CODE.
+
+   With the server unreachable this used to skip the emailed code and go
+   straight to "set a new password" for any account saved in this browser -
+   then sign in as it. Anybody at the keyboard could take over every account
+   that had ever been used on the machine, which is the opposite of what a
+   reset is for. Now a reset always goes through the server and the code; with
+   no server, this says so and stops. */
 function _localResetPossible(email){
   try{
     if(window.AMV_API && AMV_API.live) return false;   // server is the source of truth
-    const acct = findAccount(email);
-    if(!acct) return false;
-    if(!acct.pwHash) return 'google';                  // signed up with Google - no password to reset
-    return true;
-  }catch(e){ return false; }
+    return 'offline';
+  }catch(e){ return 'offline'; }
 }
 
 function openForgot(prefillEmail){
@@ -4671,10 +4778,7 @@ function _renderForgot(){
       '<div class="fp-alt"><button id="fp-resend">Didn\u2019t get it? Send again</button>'+
       '<button id="fp-back">Use a different email</button></div>'
     ) : (
-      (_RESET.local
-        ? '<p class="fp-sub">Your account is saved on <b>this device only</b> - AMV isn\u2019t connected to a server yet, so there\u2019s nowhere to email a code. You can set a new password right here; your chats and projects stay exactly where they are.</p>'+
-          '<div class="fp-warn">\u26a0 Because this account only exists in this browser, clearing your browsing data will delete it permanently. Connect the AMV engine in Settings to make it recoverable by email.</div>'
-        : '<p class="fp-sub">Code confirmed. Choose a new password for <b>'+escH(_RESET.email)+'</b>.</p>')+
+      '<p class="fp-sub">Code confirmed. Choose a new password for <b>'+escH(_RESET.email)+'</b>.</p>'+
       '<label class="fp-lbl" for="fp-pw">New password</label>'+
       '<input id="fp-pw" class="fp-in" type="password" autocomplete="new-password" placeholder="At least 8 characters">'+
       '<label class="fp-lbl" for="fp-pw2">Confirm password</label>'+
@@ -4685,17 +4789,11 @@ function _renderForgot(){
   ovr.innerHTML =
     '<div class="share-modal fp-modal">'+
       '<button class="oc" id="fp-x">&#215;</button>'+
-      // The device-local path has no email step, so don't show a phantom step 3.
-      (_RESET.local
-        ? '<div class="fp-steps">'+
-            '<span class="on">1</span><i></i>'+
-            '<span class="'+(step>=3?'on':'')+'">2</span>'+
-          '</div>'
-        : '<div class="fp-steps">'+
-            '<span class="'+(step>=1?'on':'')+'">1</span><i></i>'+
-            '<span class="'+(step>=2?'on':'')+'">2</span><i></i>'+
-            '<span class="'+(step>=3?'on':'')+'">3</span>'+
-          '</div>')+
+      '<div class="fp-steps">'+
+        '<span class="'+(step>=1?'on':'')+'">1</span><i></i>'+
+        '<span class="'+(step>=2?'on':'')+'">2</span><i></i>'+
+        '<span class="'+(step>=3?'on':'')+'">3</span>'+
+      '</div>'+
       '<div class="share-title">'+(step===1?'Reset your password':step===2?'Check your email':'Set a new password')+'</div>'+
       '<div id="fp-msg" class="fp-msg"></div>'+
       body+
@@ -4767,16 +4865,11 @@ async function _forgotSend(isResend){
 
   const btn = $('fp-send');
 
-  // No server? The account may still be right here on this device.
-  const local = _localResetPossible(em);
-  if(local === 'google'){
-    _forgotMsg('This account signs in with Google - there\u2019s no password to reset. Close this and use \u201cContinue with Google\u201d.');
-    return;
-  }
-  if(local === true){
-    _RESET.local = true;
-    _RESET.step  = 3;                       // straight to "set a new password"
-    _renderForgot();
+  /* No server configured. There used to be a reset right here for accounts
+     kept on this device, with no code - which is a reset anybody holding the
+     device could do. The emailed code is the proof, so no server, no reset. */
+  if(_localResetPossible(em) === 'offline'){
+    _forgotMsg('This AMV is not connected to its server, so a password cannot be reset here. A reset needs the code AMV emails you, and nothing was changed.','err');
     return;
   }
 
@@ -4829,27 +4922,12 @@ async function _forgotSave(){
   if(btn){ btn.disabled=true; btn.textContent='Saving\u2026'; }
   _forgotMsg('');
 
-  // ── Device-local reset: no server involved. ──
-  if(_RESET.local){
-    try{
-      const existing = findAccount(_RESET.email) || {};
-      const nm = existing.name || _RESET.email.split('@')[0];
-      await createAccount(nm, _RESET.email, pw);   // overwrites the stored hash, same email
-      const acct = await verifyLogin(_RESET.email, pw);
-      if(!acct) throw new Error('Could not set the password on this device.');
-      closeOvr();
-      // Data is scoped by EMAIL, not password - chats and projects are untouched.
-      _completeIntroLogin({ name:acct.name, email:acct.email, ini:acct.ini, provider:'email' });
-      if(typeof toast==='function') toast('Password updated - you\u2019re signed in.','success',4000);
-    }catch(e){
-      if(btn){ btn.disabled=false; btn.textContent='Set new password'; }
-      _forgotMsg(e.message || 'Could not set the password.');
-    }
-    return;
-  }
 
   try{
-    await _resetApi('/auth/reset/confirm', { token:_RESET.token, password:pw });
+    const cd = await _resetApi('/auth/reset/confirm', { token:_RESET.token, password:pw });
+    /* The reset code proved this device; it is trusted, so the sign-in below
+       needs the new password only. */
+    try{ if(cd && cd.deviceToken) _devTokSet(_RESET.email, cd.deviceToken); }catch(e){}
     // Straight into the account - don't make them retype what they just set.
     //
     // NOTE: AMV_API._fetch returns the raw Response, NOT parsed JSON. This code
@@ -4909,7 +4987,9 @@ async function doLoginForm() {
   // When a backend is connected, authenticate against the SERVER for a real session.
   if(window.AMV_API && AMV_API.live){
     try{
-      const d=await AMV_API.login(em, {password:pw, provider:'email', ..._authBotFields()});
+      let d=await AMV_API.login(em, {password:pw, provider:'email', ..._authBotFields()});
+      /* Right password, new device: the code emailed to the address finishes it. */
+      if(d&&d.needsCode){ d = await _askForCode(d, em, 'signin'); if(!d) return; }
       if(d&&d.token){
         clearFails(em);
         const nm=d.name||(findAccount(em)?.name)||em.split('@')[0];
@@ -4918,6 +4998,10 @@ async function doLoginForm() {
         loginUser({name:nm,email:em,ini,provider:'email'});
         return;
       }
+      /* With a server, ONLY the server signs anybody in. An answer with no
+         session in it used to fall through to the password copy kept in this
+         browser below - a sign-in the server never agreed to, and no code. */
+      throw new Error('AMV could not finish signing you in. Nothing was signed in - please try again.');
     }catch(e){
       logFail(em);
       if(btn){btn.disabled=false;btn.textContent='Sign In';}
@@ -5993,7 +6077,7 @@ function signOut(){
      signs in, and so the logout below is not itself among what is cancelled.
      (AMV-AUD-014) */
   try{ if(window.AMV_API && typeof AMV_API.abortAll === 'function') AMV_API.abortAll(); }catch(e){}
-  try{ if(window.AMV_API && AMV_API.live && AMV_API.hasSession) AMV_API.logout(false); }catch(e){}
+  try{ if(window.AMV_API && AMV_API.live) AMV_API.logout(false); }catch(e){}   // even with no access token: the cookie is the session
   /* Disk AND memory. The removeItem calls clear the non-cookie path; in cookie
      mode both halves are held in module variables, and a sign-out that emptied
      storage while leaving a usable token in memory would be a sign-out that
@@ -29977,7 +30061,19 @@ async function _loadReadiness(note){
       return _loadReadiness('That admin token was rejected. Paste the current value of ADMIN_TOKEN from Cloudflare - exactly, with no quotes or spaces.');
     }
     if(!r.ok || !d.ok){ host.innerHTML = '<div class="gl-note">'+escH(d.error||'Could not read your configuration.')+'</div>'; return; }
-    host.innerHTML = _readinessHTML(d);
+    host.innerHTML = _readinessHTML(d) +
+      /* One real send, and the provider's own answer (adminEmailTest): the only
+         way to tell an unverified sender from a spam folder. */
+      '<div class="gl-note"><button class="btn bs" id="gl-mailtest" type="button">Send me a test email</button> '+
+      '<span id="gl-mailsay" role="status" aria-live="polite"></span></div>';
+    on($('gl-mailtest'),'click',async()=>{
+      const say=$('gl-mailsay'); if(say) say.textContent='Sending\u2026';
+      try{
+        const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/email-test',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:'{}'},20000);
+        const x=await r.json().catch(()=>({}));
+        if(say) say.textContent = x.ok ? ('Sent to '+x.to+'. '+(x.hint||'')) : ((x.hint||x.error||'Not sent.')+(x.provider?' The provider said: '+x.provider:''));
+      }catch(e){ if(say) say.textContent='Could not reach your Worker.'; }
+    });
   }catch(e){
     host.innerHTML = '<div class="gl-note">Could not reach your Worker, so this would be out of date. It will load when you are back online.</div>';
   }

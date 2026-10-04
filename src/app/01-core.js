@@ -478,6 +478,12 @@ try{ window.configUnreachable=configUnreachable; }catch(e){}
 
    'include' only where the server says it uses the cookie. Elsewhere the API
    answers `*`, and a credentialed request to `*` is refused by the browser. */
+/* The trusted-device token, for deployments that do not use cookies (where
+   they do, it is an HttpOnly cookie and this is never set). Kept per address
+   and outside the per-account namespace, because it is read before anybody is
+   signed in. It only ever skips the emailed code - the password is still asked. */
+function _devTok(email){ try{ return localStorage.getItem('amv_devtok:'+String(email||'').toLowerCase()) || ''; }catch(e){ return ''; } }
+function _devTokSet(email, tok){ try{ if(tok) localStorage.setItem('amv_devtok:'+String(email||'').toLowerCase(), tok); }catch(e){} }
 function _authCreds(){
   try{
     if(window.AMV_API && AMV_API.cookieAuth) return 'include';
@@ -863,12 +869,18 @@ const AMV_API = {
     const body = { email, name:o.name||'', password:o.password||'', provider:o.provider||'email' };
     if(o.company!=null) body.company = o.company;
     if(o.captchaToken) body.captchaToken = o.captchaToken;
+    /* A device that has entered a code before says so - by cookie where the
+       deployment uses one, else by the token it was given (_devTok). */
+    try{ const dt = _devTok(email); if(dt) body.deviceToken = dt; }catch(e){}
     /* Whether to ask the browser to keep the session cookie is in the public
        config; a sign-in sent before it arrives would lose the cookie. */
     try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
     const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
+    /* Right password on a device this account has not proved itself on: no
+       session yet - the caller asks for the code that was just emailed. */
+    if(d.needsCode && d.challenge) return d;
     /* The CODE, not only the sentence. `captcha_required` is the moment the
        server states that a verification was expected - the one fact that
        separates "this deployment has no captcha" from "it has one and the
@@ -1067,7 +1079,25 @@ const AMV_API = {
     const r = await this._fetch('/auth/signup', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
     if(d.token){ this._setTokens(d); return d; }
+    if(d.needsCode && d.challenge) return d;     // the emailed code finishes it
     { const e=new Error(d.error || 'Signup failed'); if(d.code) e.code=d.code; throw e; }
+  },
+
+  /* The emailed code that finishes a sign-in or sign-up (/auth/login/verify).
+     Only this returns a session for a device that has not proved itself. */
+  async verifyCode(challenge, code, email){
+    if(!this.live) return null;
+    const r = await this._fetch('/auth/login/verify', {method:'POST', body:JSON.stringify({challenge, code})});
+    const d = await r.json().catch(()=>({}));
+    if(d.token){ if(d.deviceToken) _devTokSet(email, d.deviceToken); this._setTokens(d); return d; }
+    { const e=new Error(d.error || 'That code did not work.'); if(d.code) e.code=d.code; throw e; }
+  },
+  async resendCode(challenge){
+    if(!this.live) return null;
+    const r = await this._fetch('/auth/login/resend', {method:'POST', body:JSON.stringify({challenge})});
+    const d = await r.json().catch(()=>({}));
+    if(d.ok) return d;
+    { const e=new Error(d.error || 'Could not send a new code.'); if(d.code) e.code=d.code; throw e; }
   },
 
   /* Programmatic access to this account. The key is returned exactly once, at
@@ -1110,7 +1140,9 @@ const AMV_API = {
   /* Sign out. `everywhere` kills every session on the account; without it this
      device's refresh token is retired and the others are left alone. */
   async logout(everywhere){
-    if(!this.live || !this.token) return false;
+    /* No access token is not "nothing to sign out of": the sign-in cookie can
+       outlive it by weeks, and the server ends the session from that alone. */
+    if(!this.live) return false;
     try{
       /* In cookie mode this side has no refresh token to name, so the cookie
          has to travel or the server cannot tell WHICH session is signing out -

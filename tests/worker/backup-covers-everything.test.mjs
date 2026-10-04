@@ -114,7 +114,7 @@ section('Credentials are never written into a snapshot file');
   ['fin', 'finlink', 'goauth',
    /* Live, short-lived credentials: a reset token in a downloadable file is a
       way into an account, and losing one costs the person a second click. */
-   'reset', 'resetcode', 'smsverify', 'invite'].forEach(k => {
+   'reset', 'resetcode', 'signincode', 'smsverify', 'invite'].forEach(k => {
     ok(never.has(k), k + ' is excluded on purpose', k);
     ok(!backed.has(k), 'and is not exported', k);
   });

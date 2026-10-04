@@ -168,22 +168,17 @@ ok(/isn.t set up|no email/i.test(noEmail),
    'with no email provider it says so plainly, instead of "check your inbox"', noEmail);
 
 /* ────────────────────────────────────────────────────────────────────────
-   With NO backend, the account lives in this browser. The flow used to
-   dead-end ("AMV isn't connected to its engine") and the only way back into
-   your own account was to open devtools and call a function by hand. That is
-   not a real answer for a paying user.
+   With NO backend there used to be a reset on this device for an account kept
+   in this browser - with no code. That is a reset anybody holding the device
+   can do, and it is how the owner was "signed in without putting the code".
+   The emailed code is the proof of who you are, so no server means no reset,
+   said plainly, and nothing about the account changes.
    ──────────────────────────────────────────────────────────────────────── */
-section('No backend: you can still reset on this device');
+section('No backend: no code, so no reset');
 
 const localReset = await page.evaluate(async () => {
   AMV_API.base = '';                                   // no Worker at all
   await createAccount('Valeria', 'local@test.com', 'forgottenPass');
-  S.user = findAccount('local@test.com');
-  S.convs = [{ id: 'c1', title: 'REAL CONVERSATION', msgs: [] }];
-  store('amv_convs', S.convs);
-  _SESSIONS.length = 0;
-  _SESSIONS.push({ id: 's1', kind: 'dev', title: 'REAL PROJECT', updated: Date.now(), state: {} });
-  _persistSessions();
   S.user = null;
 
   openForgot('local@test.com');
@@ -191,32 +186,18 @@ const localReset = await page.evaluate(async () => {
   document.getElementById('fp-send').click();
   await new Promise(r => setTimeout(r, 350));
 
-  const offersReset = !!document.getElementById('fp-pw');
-  const sub = document.querySelector('.fp-sub')?.textContent || '';
-
-  document.getElementById('fp-pw').value = 'brandNewPass1';
-  document.getElementById('fp-pw2').value = 'brandNewPass1';
-  document.getElementById('fp-save').click();
-  await new Promise(r => setTimeout(r, 900));
-
-  _loadSessions();
   return {
-    offersReset, sub,
+    offersReset: !!document.getElementById('fp-pw'),
+    msg: document.getElementById('fp-msg')?.textContent || '',
     signedIn: (typeof S !== 'undefined') && !!(S.user && S.user.email),
-    newWorks: !!(await verifyLogin('local@test.com', 'brandNewPass1')),
-    oldDead: !(await verifyLogin('local@test.com', 'forgottenPass')),
-    convs: (load('amv_convs') || []).map(c => c.title),
-    sessions: (_SESSIONS || []).map(x => x.title)
+    oldStill: !!(await verifyLogin('local@test.com', 'forgottenPass')),
   };
 });
 
-ok(localReset.offersReset, 'it offers to reset on this device instead of dead-ending');
-ok(/this device/i.test(localReset.sub), 'and explains why', localReset.sub.slice(0, 60));
-ok(localReset.newWorks, 'the new password works');
-ok(localReset.oldDead, 'the forgotten password is dead');
-ok(localReset.signedIn, 'you are signed straight in');
-ok(localReset.convs.includes('REAL CONVERSATION'), 'YOUR CHATS SURVIVE the reset', localReset.convs);
-ok(localReset.sessions.includes('REAL PROJECT'), 'your projects survive too', localReset.sessions);
+ok(!localReset.offersReset, 'it does NOT offer a new password without the emailed code', localReset);
+ok(/code/i.test(localReset.msg) && /nothing was changed/i.test(localReset.msg), 'and says why, and that nothing changed', localReset.msg);
+ok(!localReset.signedIn, 'nobody is signed in', localReset.signedIn);
+ok(localReset.oldStill, 'and the account is exactly as it was', localReset.oldStill);
 
 /* THE SECURITY QUESTION: the device-local reset must switch OFF the moment a
    real server exists. Otherwise a local override could bypass the server's

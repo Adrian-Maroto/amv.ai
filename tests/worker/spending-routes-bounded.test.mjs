@@ -69,6 +69,7 @@ const EXEMPT = {
      the roster noticing on its own, which is what it is for. */
   authDeleteAccount:   'one call per account deletion, behind an explicit confirmation',
   adminFinance:        'admin only',
+  adminEmailTest:      'admin token only, and _adminGate holds it to 3 a minute and 30 a day',
 };
 
 const routes = [...src.matchAll(/case\s+'([^']+)'\s*:\s*return\s+([A-Za-z_$][\w$]*)\(/g)]

@@ -79,12 +79,23 @@ const call = (path, body, ip) => worker.fetch(new Request('https://api.amv.test'
   body: JSON.stringify(body || {}),
 }), env, ctx);
 
+/* Signing up ends with the emailed code (a-code-is-the-other-half-of-the-key).
+   The helper finishes it the way a person would, and takes that mail back out
+   of `sent` so the counts below are about the reset mail they test. */
 async function signup(email, password) {
   const r = await call('/auth/signup', { email, name: 'Locked', password });
-  return (await r.json().catch(() => ({}))).token || '';
+  const d = await r.json().catch(() => ({}));
+  if (!d.needsCode) return d.token || '';
+  let code = '';
+  for (let i = sent.length - 1; i >= 0; i--) {
+    const m = /Your AMV code: (\d{6})/.exec(sent[i].body);
+    if (m && sent[i].body.includes(email)) { code = m[1]; sent.splice(i, 1); break; }
+  }
+  const v = await call('/auth/login/verify', { challenge: d.challenge, code });
+  return (await v.json().catch(() => ({}))).token || '';
 }
-const login = async (email, password) => {
-  const r = await call('/auth/login', { email, password, provider: 'email' });
+const login = async (email, password, deviceToken) => {
+  const r = await call('/auth/login', { email, password, provider: 'email', ...(deviceToken ? { deviceToken } : {}) });
   return { status: r.status, d: await r.json().catch(() => ({})) };
 };
 
@@ -108,9 +119,18 @@ section('The link works, and they can sign in with the new password');
   const token = linkFromEmail();
   const r = await call('/auth/reset/confirm', { token, password: NEW });
   ok(r.status === 200, 'the new password is accepted', r.status);
+  /* The link came to their inbox, so the device that used it has proved the
+     address, and is trusted for the next sign-in. */
+  const deviceToken = (await r.json().catch(() => ({}))).deviceToken;
+  ok(!!deviceToken, 'and the device that used the link is trusted', !!deviceToken);
 
-  const good = await login(USER, NEW);
+  const good = await login(USER, NEW, deviceToken);
   ok(good.status === 200 && !!good.d.token, 'and they are back in', good.status);
+
+  /* Anybody else who now has the new password still needs the inbox. */
+  const elsewhere = await login(USER, NEW);
+  ok(elsewhere.status === 200 && elsewhere.d.needsCode && !elsewhere.d.token,
+     'while another device with the same password is asked for a code', elsewhere.d);
 
   const stale = await login(USER, OLD);
   ok(stale.status >= 400, 'while the old password no longer works', stale.status);

@@ -112,10 +112,17 @@ ok(/\/auth\/reset\/confirm/.test(pageHtml), 'and posts to the confirm endpoint')
 section('Setting a new password, and it actually works');
 
 r = await W.authResetConfirm(post('/auth/reset/confirm', { token, password: 'brandNewPass456' }), env);
-ok((await r.json()).ok, 'the password is updated');
+d = await r.json();
+ok(d.ok, 'the password is updated');
+/* The link came to the inbox, so this device has proved the address and
+   signs straight in; any other device is asked for an emailed code. */
+const resetDevice = d.deviceToken;
 
-r = await W.authLogin(post('/auth/login', { email: 'amarotovaleria@gmail.com', password: 'brandNewPass456' }), env);
+r = await W.authLogin(post('/auth/login', { email: 'amarotovaleria@gmail.com', password: 'brandNewPass456', deviceToken: resetDevice }), env);
 ok((await r.json()).token, 'you CAN log in with the new password');
+r = await W.authLogin(post('/auth/login', { email: 'amarotovaleria@gmail.com', password: 'brandNewPass456' }), env);
+d = await r.json();
+ok(d.needsCode && !d.token, 'and another device with it is asked for the emailed code', d);
 
 r = await W.authLogin(post('/auth/login', { email: 'amarotovaleria@gmail.com', password: 'originalPass123' }), env);
 ok(!(await r.json()).token, 'the OLD password no longer works');
@@ -138,8 +145,12 @@ r = await W.authAdminReset(adminPost('/auth/admin-reset',
   { email: 'amarotovaleria@gmail.com', password: 'ownerSetPass999' }, 'admin-secret'), env);
 ok((await r.json()).ok, 'the owner can set a password directly with ADMIN_TOKEN');
 
+/* Accepted at once - and, where email reaches people, the emailed code still
+   follows on a device that has not proved itself, because the operator setting
+   a password is not the person proving they hold the inbox. */
 r = await W.authLogin(post('/auth/login', { email: 'amarotovaleria@gmail.com', password: 'ownerSetPass999' }), env);
-ok((await r.json()).token, 'and that password works immediately');
+d = await r.json();
+ok(r.status === 200 && (d.token || d.needsCode), 'and that password works immediately', d);
 
 r = await W.authAdminReset(adminPost('/auth/admin-reset',
   { email: 'amarotovaleria@gmail.com', password: 'hackerPass123' }, 'WRONG'), env);
@@ -194,9 +205,10 @@ d = await r.json();
 ok(d.ok && !!d.token, 'the correct code returns a one-time token');
 
 r = await W.authResetConfirm(post('/auth/reset/confirm', { token: d.token, password: 'codeFlowPass123' }), env);
-ok((await r.json()).ok, 'the new password is set');
+d = await r.json();
+ok(d.ok, 'the new password is set');
 
-r = await W.authLogin(post('/auth/login', { email: 'amarotovaleria@gmail.com', password: 'codeFlowPass123' }), env);
+r = await W.authLogin(post('/auth/login', { email: 'amarotovaleria@gmail.com', password: 'codeFlowPass123', deviceToken: d.deviceToken }), env);
 ok((await r.json()).token, 'and you can log in with it');
 
 section('Code flow: a used code cannot be replayed');

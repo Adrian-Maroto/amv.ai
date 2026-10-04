@@ -11934,6 +11934,7 @@ const BACKUP_NEVER = [
      them in a downloadable file is the hazard, and losing them costs one
      retry. */
   'reset:', 'resetcode:',   // password-reset tokens - the credential itself
+  'signincode:',            // a sign-in code challenge, ten minutes long, same reason
   'smsverify:',             // a phone confirmation code, same reason
   'invite:',                // a pending invitation with its code, like link: above
   'resume:',                // a half-finished answer, held for minutes
@@ -13078,7 +13079,7 @@ function _bodyTooBig(request) {
    the correct answer to "this deployment cannot check who you are" and it needs
    no help from here.
 
-   The list is exactly the four handlers that call issueTokens or signToken,
+   The list is exactly the handlers that call issueTokens or signToken,
    read off the source rather than remembered - /auth/reset/confirm was on it
    for a first draft and does not sign anything, and a route on this list that
    does not need to be is a route refused for no reason.
@@ -13092,6 +13093,7 @@ const NEEDS_SIGNING = new Set([
   '/auth/login',
   '/auth/google',
   '/auth/refresh',
+  '/auth/login/verify',
 ]);
 
 /* Whether this deployment can serve this request at all.
@@ -13394,6 +13396,8 @@ async function _route(request, env, ctx) {
     case '/v1/visit':        return recordVisit(request, env);
     case '/auth/signup':     return authSignup(request, env);
     case '/auth/login':      return authLogin(request, env);
+    case '/auth/login/verify': return authLoginVerify(request, env);
+    case '/auth/login/resend': return authLoginResend(request, env);
     case '/auth/google':     return authGoogle(request, env);
     case '/admin/users':     return adminUsers(request, env);
     case '/auth/refresh':    return authRefresh(request, env);
@@ -13491,6 +13495,7 @@ async function _route(request, env, ctx) {
     case '/admin/payouts':       return adminPayouts(request, env);
     case '/admin/payouts/mark':  return adminPayoutMark(request, env);
     case '/admin/readiness':     return adminReadiness(request, env);
+    case '/admin/email-test':    return adminEmailTest(request, env);
     case '/admin/digest':        return adminDigest(request, env);
     case '/admin/backup/export': return backupExport(request, env);
     case '/admin/backup/import': return backupImport(request, env);
@@ -14007,6 +14012,8 @@ async function authSignup(request, env){
   await _userEvent(env, request, em, 'account_created');
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
+  /* No session until the address is proved: the code finishes the sign-up. */
+  if (_codesOn(env)) return _startSignInCode(env, request, em, safeName, 'signup');
   return _tokenResponse(env, await issueTokens(env, em, safeName));
 }
 async function authLogin(request, env) {
@@ -14161,9 +14168,204 @@ async function authLogin(request, env) {
       });
     }catch(e){ /* non-fatal - login still succeeds */ }
   }
+  /* THE PASSWORD IS ONE HALF. On a device this account has not proved itself
+     on, the other half is a code sent to the address - see _startSignInCode. */
+  if (_codesOn(env) && !(await _deviceTrusted(env, request, body, em)))
+    return _startSignInCode(env, request, em, acct.name || name || '', 'signin');
   try{ await _markActive(env, em); }catch(e){}
   await _userEvent(env, request, em, 'signed_in');
   return _tokenResponse(env, await issueTokens(env, em, acct.name || name || ''));
+}
+
+/* ============================================================
+   SIGN-IN CODES - THE PASSWORD IS NOT THE WHOLE KEY
+   ============================================================
+   Asked for: "make sure no one can log into anyone else's account... make it
+   like the big assistants do it... make sure they can't auto sign in because
+   I didn't put the code but it still signed me in".
+
+   AMV signed anybody in on email and password alone, and never checked that
+   whoever signed up owned the address. So:
+
+     - Sign-up does not hand out a session. It emails a 6-digit code to the
+       address, and only the code finishes it - which proves the address.
+     - Sign-in on a device this account has not proved itself on takes the
+       password AND a code sent to the address. A stolen or guessed password
+       is no longer enough on its own.
+     - A device that has entered a code is trusted for DEVICE_TRUST_MS, by a
+       signed token in an HttpOnly cookie (or, where the deployment does not
+       use cookies, the same token held by the page). It carries the account's
+       revocation epoch, so "sign out everywhere" un-trusts every device too.
+
+   A code is six digits, lives SIGNIN_CODE_TTL_S, may be tried
+   SIGNIN_CODE_ATTEMPTS times under the record lock (so parallel guesses
+   cannot all be "the first"), works once, and belongs to ONE challenge - the
+   id the server issued after the password check - so a code is useless
+   without the attempt it was sent for. What is stored is a hash of the code,
+   never the code. Sending is inside the per-address email budget.
+
+   Only where email can reach people (_emailReaches): a deployment with no
+   verified sender cannot deliver a code, and requiring one would lock out
+   everyone; its readiness screen says verification is off. */
+const SIGNIN_CODE_TTL_S    = 10 * 60;
+const SIGNIN_CODE_ATTEMPTS = 5;
+const SIGNIN_CODE_RESENDS  = 3;
+const DEVICE_TRUST_MS      = 30 * 864e5;
+const DEVICE_COOKIE        = 'amv_dev';
+
+function _codesOn(env) { return _emailReaches(env); }
+
+function _readCookieNamed(request, name) {
+  try {
+    const raw = request.headers.get('Cookie') || '';
+    for (const part of raw.split(';')) {
+      const i = part.indexOf('=');
+      if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+    }
+  } catch (e) {}
+  return '';
+}
+function _deviceCookie(value, maxAgeS) {
+  return [`${DEVICE_COOKIE}=${value}`, 'HttpOnly', 'Secure', 'SameSite=None', 'Path=/auth',
+          'Max-Age=' + Math.max(0, Math.floor(maxAgeS))].join('; ');
+}
+async function _deviceTrusted(env, request, body, email) {
+  const tok = _readCookieNamed(request, DEVICE_COOKIE) || String((body && body.deviceToken) || '');
+  if (!tok) return false;
+  const c = await verifyToken(tok, env.JWT_SECRET, env, 'device');
+  return !!(c && String(c.email || '').toLowerCase() === email);
+}
+async function _deviceTokenFor(env, email) {
+  const epoch = await _tokenEpoch(env, email);
+  return signToken({ email }, env.JWT_SECRET, { typ: 'device', epoch, ttlMs: DEVICE_TRUST_MS });
+}
+async function _codeHash(id, code) {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(id + ':' + code));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function _maskEmail(email) {
+  const [u, d] = String(email).split('@');
+  if (!d) return '';
+  return (u.length <= 2 ? u[0] + '\u2022' : u[0] + '\u2022'.repeat(Math.min(6, u.length - 2)) + u[u.length - 1]) + '@' + d;
+}
+async function _sendSignInCodeEmail(env, email, code, why) {
+  const signup = why === 'signup';
+  const subject = 'Your AMV code: ' + code;
+  const line = signup
+    ? 'Enter this code to finish creating your AMV account.'
+    : 'Enter this code to finish signing in to AMV on a new device.';
+  const html = _emailShell(signup ? 'Confirm your email' : 'Your sign-in code',
+    '<p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#333">' + _escHtml(line) + '</p>'
+    + '<div style="margin:0 0 20px;font-size:32px;font-weight:700;letter-spacing:8px;color:#15131f;text-align:center">' + _escHtml(code) + '</div>'
+    + '<p style="margin:0;font-size:13px;line-height:1.6;color:#777">It expires in 10 minutes and works once. '
+    + (signup ? 'If you did not try to create an account, you can ignore this email - nothing happens without the code.'
+              : 'If this was not you, somebody knows your password: change it now, and nothing happens without this code.') + '</p>',
+    null, null, 'Never share this code. AMV will never ask you for it.');
+  const text = line + '\n\n' + code + '\n\nIt expires in 10 minutes and works once. Never share this code.';
+  return _sendEmail(env, email, subject, html, text, 'signin');
+}
+
+async function _startSignInCode(env, request, email, name, why) {
+  const id = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
+  const code = _sixDigitCode();
+  await env.AMV_KV.put('signincode:' + id,
+    JSON.stringify({ email, name: name || '', why, hash: await _codeHash(id, code), attempts: 0, resends: 0, at: Date.now() }),
+    { expirationTtl: SIGNIN_CODE_TTL_S });
+  const sent = await _sendSignInCodeEmail(env, email, code, why);
+  if (!sent) {
+    audit(env, 'signin_code_not_sent', { email, why });
+    try { await env.AMV_KV.delete('signincode:' + id); } catch (e) {}
+    return json({ error: 'AMV could not email your code just now. Try again in a minute.', code: 'code_not_sent' }, 503);
+  }
+  audit(env, 'signin_code_sent', { email, why });
+  return json({ ok: true, needsCode: true, challenge: id, to: _maskEmail(email), why });
+}
+
+async function authLoginVerify(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const id = String(body.challenge || '').replace(/[^a-f0-9]/g, '').slice(0, 64);
+  const code = String(body.code || '').replace(/\D/g, '');
+  if (!id || code.length !== 6) return json({ error: 'Enter the 6-digit code.' }, 400);
+  const lim = await limitAction(env, `signinverify:${_rlIp(request)}`, 30, 600);
+  if (!lim.ok && !lim.unavailable)
+    return json({ error: 'Too many tries from here. Give it a moment.', code: 'rate_limited' }, 429, { 'Retry-After': '60' });
+  const want = await _codeHash(id, code);
+  let verdict;
+  try {
+    verdict = await _withKV(env, 'signincode', id, (rec) => {
+      if (!rec || !rec.hash || rec.used) return { gone: true };
+      if ((+rec.attempts || 0) >= SIGNIN_CODE_ATTEMPTS) return { exhausted: true };
+      const same = timingSafeEqual(new TextEncoder().encode(want), new TextEncoder().encode(rec.hash));
+      if (!same) {
+        rec.attempts = (+rec.attempts || 0) + 1;
+        return { wrong: true, left: SIGNIN_CODE_ATTEMPTS - rec.attempts, email: rec.email };
+      }
+      rec.used = true;
+      return { ok: true, email: rec.email, name: rec.name, why: rec.why, at: +rec.at || 0 };
+    }, null);
+  } catch (e) {
+    if (_isBusy(e)) return json({ error: 'That code is being checked already. Try again in a moment.' }, 409);
+    return json({ error: 'AMV could not check that code just now. Please try again in a moment.' }, 503);
+  }
+  if (!verdict || verdict.gone) return json({ error: 'That code has expired. Sign in again to get a new one.', code: 'code_expired' }, 400);
+  if (verdict.exhausted) {
+    try { await env.AMV_KV.delete('signincode:' + id); } catch (e) {}
+    return json({ error: 'Too many incorrect codes. Sign in again to get a new one.', code: 'code_exhausted' }, 429);
+  }
+  if (verdict.wrong) {
+    audit(env, 'signin_code_bad', { email: verdict.email });
+    const left = verdict.left;
+    return json({ error: left > 0
+      ? 'That code isn\u2019t right. ' + left + ' attempt' + (left === 1 ? '' : 's') + ' left.'
+      : 'Too many incorrect codes. Sign in again to get a new one.', code: 'code_wrong' }, 400);
+  }
+  try { await env.AMV_KV.delete('signincode:' + id); } catch (e) {}
+  const em = verdict.email;
+  /* A challenge is keyed by its id, so erasing an account cannot find the
+     ones in flight. One sent a minute before the account was deleted would
+     otherwise mint a session for an account that no longer exists - or, if
+     the address was registered again since, for somebody else's. The same
+     rule authResetConfirm uses: nothing issued before the account existed. */
+  const acct = await DB.get(env, 'acct', em);
+  if (!acct || (verdict.at && acct.createdAt && acct.createdAt > verdict.at))
+    return json({ error: 'That sign-in has expired. Sign in again to get a new code.', code: 'code_expired' }, 400);
+  if (verdict.why === 'signup') {
+    try { await _withAcct(env, em, (a) => { if (a) a.emailVerifiedAt = Date.now(); }); } catch (e) {}
+  }
+  try { await _markActive(env, em); } catch (e) {}
+  await _userEvent(env, request, em, verdict.why === 'signup' ? 'email_verified' : 'signed_in', { with: 'code' });
+  const tokens = await issueTokens(env, em, verdict.name || '');
+  const device = await _deviceTokenFor(env, em);
+  const cookies = _cookieAuthOn(env);
+  const resp = _tokenResponse(env, tokens, cookies ? {} : { deviceToken: device });
+  if (cookies) resp.headers.append('Set-Cookie', _deviceCookie(device, DEVICE_TRUST_MS / 1000));
+  return resp;
+}
+
+async function authLoginResend(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const id = String(body.challenge || '').replace(/[^a-f0-9]/g, '').slice(0, 64);
+  if (!id) return json({ error: 'Sign in again to get a new code.' }, 400);
+  const code = _sixDigitCode();
+  const hash = await _codeHash(id, code);
+  let rec;
+  try {
+    rec = await _withKV(env, 'signincode', id, (r) => {
+      if (!r || !r.hash || r.used) return { gone: true };
+      if ((+r.resends || 0) >= SIGNIN_CODE_RESENDS) return { capped: true };
+      if (Date.now() - (+r.sentAt || +r.at || 0) < 30000) return { tooSoon: true };
+      r.hash = hash; r.resends = (+r.resends || 0) + 1; r.sentAt = Date.now();
+      return { ok: true, email: r.email, why: r.why };
+    }, null);
+  } catch (e) {
+    return json({ error: 'AMV could not send a new code just now. Try again in a moment.' }, 503);
+  }
+  if (!rec || rec.gone) return json({ error: 'That sign-in has expired. Sign in again to get a new code.', code: 'code_expired' }, 400);
+  if (rec.capped) return json({ error: 'That is as many codes as one sign-in gets. Sign in again to start over.', code: 'resend_capped' }, 429);
+  if (rec.tooSoon) return json({ error: 'A code was just sent. Give it 30 seconds, and check spam.', code: 'resend_soon' }, 429);
+  const sent = await _sendSignInCodeEmail(env, rec.email, code, rec.why);
+  if (!sent) return json({ error: 'AMV could not email your code just now. Try again in a minute.', code: 'code_not_sent' }, 503);
+  return json({ ok: true, sent: true });
 }
 
 /* Operator user list - admin-gated. Returns accounts for the Admin Control
@@ -14432,9 +14634,23 @@ async function authRefresh(request, env) {
 async function authLogout(request, env) {
   const auth = request.headers.get('Authorization') || '';
   const tok = auth.replace(/^Bearer\s+/i, '');
-  const data = await verifyToken(tok, env.JWT_SECRET, env, 'access');
+  let data = await verifyToken(tok, env.JWT_SECRET, env, 'access');
   const body = await request.json().catch(() => ({}));
-  if (!data || !data.email) return json({ ok: true });   // nothing to revoke; never leak which
+  /* An access token lasts minutes and a sign-in cookie weeks. Signing out with
+     an expired access token answered "ok" and left the cookie working, so the
+     next visit on that browser could be signed straight back in. The refresh
+     token identifies the session just as well; it is used when the access
+     token cannot be, and the cookie is cleared whatever happens. */
+  if (!data || !data.email) {
+    const rtOnly = String((body && body.refreshToken) || _readRefreshCookie(request) || '');
+    const rt = rtOnly ? await verifyToken(rtOnly, env.JWT_SECRET, env, 'refresh') : null;
+    if (rt && rt.email && rt.jti) {
+      await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
+      await _userEvent(env, request, rt.email, 'signed_out');
+      return json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env));
+    }
+    return json({ ok: true }, 200, _clearRefreshCookie(env));   // nothing to revoke; never leak which
+  }
   if (body && body.everywhere) {
     await revokeUserTokens(env, data.email);
     await _userEvent(env, request, data.email, 'signed_out_everywhere');
@@ -19676,7 +19892,7 @@ async function revokeUserTokens(env, email) {
 /* Sign a JWT. typ is 'access' or 'refresh'. */
 async function signToken(payload, secret, opts = {}) {
   const typ = opts.typ || 'access';
-  const ttl = typ === 'refresh' ? REFRESH_TTL_MS : ACCESS_TTL_MS;
+  const ttl = opts.ttlMs || (typ === 'refresh' ? REFRESH_TTL_MS : ACCESS_TTL_MS);
   const now = Date.now();
   const header = { alg: JWT_ALG, typ: 'JWT' };
   const fullPayload = {
@@ -27157,7 +27373,7 @@ function _readinessReport(env) {
        Preflight warns about this; a running deployment could not see it. */
     { id: 'emailSender', name: 'Email actually reaches people', blocking: false,
       on: _has(env, 'EMAIL_API_KEY') && _has(env, 'RESET_EMAIL_FROM'),
-      turnsOn: 'Mail to anyone other than you - password resets, Crew results by email, and "email me when AMV is done". '
+      turnsOn: 'Mail to anyone other than you - the sign-in code that proves an address and a new device, password resets, Crew results by email, and "email me when AMV is done". '
              + 'Without a sender on a domain you have verified, the default address only delivers to the owner of the '
              + 'email account, so AMV offers none of those to anybody else until this is set.',
       how: put('RESET_EMAIL_FROM') },
@@ -27594,6 +27810,45 @@ function _readinessReport(env) {
 }
 
 /* GET /admin/readiness - admin-gated, and it never returns a secret value. */
+/* SEND ONE REAL EMAIL AND SAY WHAT THE PROVIDER ANSWERED.
+
+   "The reset email never showed up" has four causes that look identical from
+   the inbox: no key, a key the provider rejects, a sender on a domain it has
+   not verified, or a message that was accepted and filtered as spam. Only the
+   provider's own answer tells them apart, and every ordinary send swallows it
+   (on purpose - a stranger must not learn whether an address exists). So the
+   operator, with the admin token, can send one test to OWNER_EMAIL (or an
+   address they type) and read the provider's status and message verbatim.
+   Never the key itself. Rate limited like every admin surface. */
+async function adminEmailTest(request, env) {
+  { const g = await _adminGate(request, env, 'emailtest', 3, 30); if (g) return g; }
+  const body = await request.json().catch(() => ({}));
+  const to = String(body.to || env.OWNER_EMAIL || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to))
+    return json({ ok: false, error: 'No address to send to: type one, or set OWNER_EMAIL.' }, 400);
+  if (!env.EMAIL_API_KEY) return json({ ok: false, step: 'key', error: 'EMAIL_API_KEY is not set on this Worker.' });
+  const from = env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT;
+  let status = 0, said = '';
+  try {
+    const r = await fetchDeadline('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + env.EMAIL_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [to], subject: 'AMV test email',
+        text: 'This is a test from AMV. If you are reading it, email from AMV reaches this inbox.',
+        html: _emailShell('Email works', '<p style="margin:0;font-size:14px;color:#333">This is a test from AMV. If you are reading it, email from AMV reaches this inbox.</p>', null, null, 'Test email.') }),
+    });
+    status = r.status;
+    said = String((await r.text().catch(() => '')) || '').slice(0, 400);
+  } catch (e) { said = 'The email provider could not be reached: ' + String(e && e.message || e).slice(0, 200); }
+  audit(env, 'admin_email_test', { to, status });
+  const ok = status >= 200 && status < 300;
+  let hint = '';
+  if (!ok && /domain/i.test(said)) hint = 'The sender\u2019s domain is not verified with the email provider. Verify it there, or set RESET_EMAIL_FROM to an address on a verified domain.';
+  else if (!ok && (status === 401 || status === 403) && /key|auth/i.test(said)) hint = 'The provider rejected EMAIL_API_KEY. Create a new key there and set it again.';
+  else if (ok) hint = 'Accepted by the provider. If it is not in the inbox within a minute, check spam - and the provider\u2019s log for that message.';
+  return json({ ok, status, from, to, provider: said, hint });
+}
+
 async function adminReadiness(request, env) {
   { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
   return json(Object.assign({ ok: true, checkedAt: Date.now() }, _readinessReport(env)));
@@ -28363,8 +28618,19 @@ async function authResetConfirm(request, env) {
   const _revoked = await _revokeOrSay(env, email, 'password_reset');
   audit(env, 'password_reset', { email, sessionsRevoked: _revoked });
   await _userEvent(env, request, email, 'password_changed');
-  return json({ ok: true, sessionsRevoked: _revoked,
+  /* The code that got them here was sent to the address, so this device has
+     just proved itself: trust it, after the revocation above so the token
+     carries the new epoch. Signing in next asks for the password only.
+     The password has ALREADY changed by this line, so failing to sign the
+     device token must not turn a success into an error: it just means the
+     next sign-in asks for a code. */
+  let device = null;
+  try { if (env.JWT_SECRET) device = await _deviceTokenFor(env, email); } catch (e) { device = null; }
+  const cookies = _cookieAuthOn(env);
+  const resp = json({ ok: true, sessionsRevoked: _revoked, ...(cookies || !device ? {} : { deviceToken: device }),
     note: _revoked ? undefined : 'Your password was changed, but AMV could not sign out sessions that were already open. Use "sign out everywhere" once things settle.' });
+  if (cookies && device) resp.headers.append('Set-Cookie', _deviceCookie(device, DEVICE_TRUST_MS / 1000));
+  return resp;
 }
 
 // Wire this to your email provider (Resend shown as an example).
@@ -28447,6 +28713,7 @@ const EMAIL_DAY_CAP = {
   task:     25,   // work landed on you in a team
   auto:    250,   // your own scheduled jobs, addressed to you, at your request
   done:     20,   // "AMV is done" - one per long answer you walked away from
+  signin:   10,   // sign-in and sign-up codes: a person needs a few, a stranger's inbox none
   other:    25,
 };
 const EMAIL_SENDS_WITHOUT_A_COUNTER = { security: true, owner: true };

@@ -134,6 +134,7 @@ section('Every key naming a person is erased, or retained for a stated reason');
   const RETAINED_ON_PURPOSE = {
     tokepoch:  'a bare revocation integer with no personal data; keeping it is what makes any token issued before deletion stay dead',
     billing:   'invoices and payment records carry retention obligations that erasure does not override - a legal call, not an engineering one',
+    signincode: 'keyed by the challenge id and gone in ten minutes; authLoginVerify refuses a challenge for an account that no longer exists or was created after it',
     reset:     'keyed by the TOKEN, so no scan finds it from an address; authResetConfirm refuses a link older than the account it names instead',
     apikey:    'keyed by the hash, and deleted by walking the account\'s own apikeys row - which erasure does explicitly',
     entitleitem: 'an idempotency marker for a marketplace grant; erased with the kinds, and carries no content',

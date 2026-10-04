@@ -14110,3 +14110,34 @@ starts with after one, and template pieces - not just the whole name. Prune
 only what passes that, plus what you can show was produced only by code you
 deleted. And run the suites that draw the screens before calling it done: a
 stylesheet cut is a behaviour change on every screen at once.
+
+## 546. A password proves you know something; only the inbox proves who you are
+
+The owner was "signed in without putting the code". Three separate ways in,
+none of which asked the inbox anything: sign-up handed out a session to
+whoever typed an address, with nothing proving they owned it; sign-in took
+the password alone on any device; and with no server, "Forgot password"
+reset an account kept in the browser with no code at all - a reset anybody
+holding the device could do. Sign-out also did nothing on the server once the
+short access token had lapsed, so the long one stayed alive in its cookie.
+
+Now: sign-up ends with a 6-digit code sent to the address; sign-in on a
+device that has not proved itself takes the password AND a code; a device
+that entered one is trusted for 30 days by a signed HttpOnly cookie that
+"sign out everywhere" also kills; codes are hashed, single use, five tries
+under a lock, tied to the one attempt they were sent for, and refused for an
+account deleted or re-registered since. No server, no reset. Sign-out ends the
+server session with whichever token is left.
+
+Rules:
+- A second factor is only a factor if no path skips it. List every path that
+  ends in a session - sign-up, sign-in, reset, offline fallbacks - and check
+  each one asks; the hole is always the path nobody thinks of as signing in.
+- Never fall back to a local check when a server exists. The server answered;
+  an answer without a session is a "no".
+- Codes are on only where email reaches people. Requiring a code that can
+  never arrive locks out everyone, which is a worse failure than the one it
+  closes - so the readiness screen names sign-in codes under the email sender.
+- When a test you wrote fails to catch a mutation, find out why before
+  "fixing" the test. Here it was because a second guard already held - which
+  is a finding about the code, not a weak test.

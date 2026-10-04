@@ -61,7 +61,16 @@ const req = (env, path, body, tok) => W.default.fetch(new Request('https://api.a
   body: JSON.stringify(body || {}),
 }), env, ctx);
 const jsonOf = async (r) => { try { return await r.json(); } catch (e) { return {}; } };
-const signup = async (env, email) => (await jsonOf(await req(env, '/auth/signup', { email, name: 'X', password: PW }))).token;
+/* Where email can reach people, signing up ends with the emailed code
+   (tests/worker/a-code-is-the-other-half-of-the-key), so finish it the way a
+   person would: read the code out of the mail that went to the address. */
+const signup = async (env, email) => {
+  const d = await jsonOf(await req(env, '/auth/signup', { email, name: 'X', password: PW }));
+  if (!d.needsCode) return d.token;
+  const mail = sent.filter(m => JSON.stringify(m.to) === JSON.stringify([email])).pop() || {};
+  const code = (/Your AMV code: (\d{6})/.exec(mail.subject || '') || [])[1];
+  return (await jsonOf(await req(env, '/auth/login/verify', { challenge: d.challenge, code }))).token;
+};
 
 section('It needs an account');
 {

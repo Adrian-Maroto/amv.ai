@@ -1233,7 +1233,11 @@ step('Page weight is under control', () => {
      first (the sidebar profile and its menu, the old Team feature cards, the
      unused Spending plan panel, four functions nothing called). What was left
      over is the new features themselves. */
-  const CEILING = 630 * 1024;   // gzipped, which is what actually crosses the network
+  /* 630 -> 632, 2026-10-04, deliberately: the emailed sign-in / sign-up code
+     step and the owner's "send me a test email" - security the owner asked for
+     ("make sure no one can log into anyone else's account"). The code-free
+     offline password reset was removed in the same change. */
+  const CEILING = 632 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');
