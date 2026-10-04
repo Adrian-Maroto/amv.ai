@@ -133,3 +133,48 @@ adjacent tags with no source whitespace produce "Delegatewhole jobs"
 and "$0to start". One space each, and the four read as written.
 Guarded by tests/e2e/text-somebody-can-read.
 ```
+
+## Shell note 9 - Hold the first paint until the whole shell is parsed
+
+`<link rel="expect" href="#ovr" blocking="render">` in the head. `#ovr` is the
+element that closes the app shell, and it comes before the bundle, so the
+first paint waits on our own markup only - never the network or the code.
+Browsers that do not support it paint as they did before.
+
+Why: the parser yields on a busy machine, and Chrome painted whatever it had
+reached. A header painted after the shortcuts button but before the avatar
+moved Sign up and Log in 76px when the avatar arrived - 3 loads in 24 at 8x
+CPU throttle, 0 of 24 with the hold (LESSONS 541). The font suite pins it:
+the hold must be in the head, after the whole header and body shell, and
+before the bundle.
+
+## Shell note 10 - The boot script in the head
+
+The only script that runs before anything is drawn. Three jobs:
+
+- **Boot-flash guard.** It decides landing-vs-app before the first paint. The
+  main bundle is deferred, so without this the landing screen flashed for a
+  frame on every refresh even for somebody already signed in.
+- **Frame check.** `frame-ancestors` is ignored in a `<meta>` policy - the spec
+  says so - so being framed is decided here and confirmed by the bundle.
+  Marking the root element is enough: a CSS rule blanks the page, so nothing of
+  AMV is ever painted inside somebody else's site, not even for the frame it
+  would take the bundle to arrive. The embeddable widget (`#embed=1`) is framed
+  on purpose and is the exception.
+- **Everyone lands in a chat, not only people with a session.** The bundle has
+  always sent a first-time visitor straight into the app, but this guard used
+  to hide the landing page only when a saved user was found, so a signed-out
+  visitor looked at the landing page until a deferred 1.3MB bundle arrived. On
+  a phone that was the whole first impression ("amv.homes shows me a website"
+  rather than "amv.homes opens a chat"). `booted-in` is now set
+  unconditionally. The landing markup stays in the document - it carries the
+  h1, the product description and the pricing copy, the only thing a crawler
+  can read - it is simply not painted.
+- **Guest header.** Signed out, the header carries Sign up and Log in. They were
+  shown by the bundle after the first paint, which moved New chat along by
+  their width on every signed-out load. `boot-guest` guesses it here from the
+  saved account; the bundle corrects it the moment it runs (`_updateHdrAuth`).
+
+The comments lived inline until 2026-10; they were moved here because every
+visitor downloaded them, and the page sits against its weight ceiling.
+
