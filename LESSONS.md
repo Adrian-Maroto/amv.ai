@@ -14093,3 +14093,20 @@ weighted alike, and so were Portugal (house prices up 49 points against incomes
 since 2015) and New Zealand (20). Where the source gives a number for every
 country on a list, the boost now runs from half to full along that number; where
 the source only says in or out, it applies evenly and the comment says so.
+
+## 545. A class no line of code names can still be a class the code builds
+
+To pay for three new features, CSS for classes "nothing renders" was removed:
+a scan read every class in the stylesheet and kept only those whose name
+appeared somewhere in the source. `lab-bar-l` and `lab-bar-r` appeared nowhere,
+so they went - and with them the rules that hide Lab's toolbar Run and Fix on
+the entry screen, because the toolbar is built as `cls + '-r'` where `cls` is
+`'lab-bar'` or `'dev-bar'`. Two Run buttons came back. A suite caught it; the
+scan never could, because the name only exists at run time.
+
+Rule: before removing a selector as dead, check every split of its name - a
+prefix that some string ends with before a `+`, a suffix that some string
+starts with after one, and template pieces - not just the whole name. Prune
+only what passes that, plus what you can show was produced only by code you
+deleted. And run the suites that draw the screens before calling it done: a
+stylesheet cut is a behaviour change on every screen at once.

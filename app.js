@@ -22364,8 +22364,13 @@ try{ window._mcCannot=_mcCannot; }catch(e){}
    is in it - to a height, and then it scrolls - so what somebody typed is what
    they can see. Every place that puts text into it calls this too, because
    setting .value from code does not fire `input`. */
+/* Where the browser can size a field to its content itself (field-sizing,
+   layer A286), it does, and this reads nothing: measuring the box straight
+   after Crew is drawn forced the whole page through layout twice before it
+   could paint - 192ms of the 306ms that opening Crew blocked for at 4x CPU. */
+const _MC_FIELD_SIZING = (()=>{ try{ return !!(window.CSS && CSS.supports && CSS.supports('field-sizing', 'content')); }catch(e){ return false; } })();
 function _mcCmdFit(el){
-  if(!el || el.tagName !== 'TEXTAREA') return;
+  if(!el || el.tagName !== 'TEXTAREA' || _MC_FIELD_SIZING) return;
   el.style.height = 'auto';
   const edge = el.offsetHeight - el.clientHeight;
   /* Empty, it is sized to its example: on a phone the example wraps to two

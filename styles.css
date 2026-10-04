@@ -462,8 +462,8 @@ input,select,textarea{border-radius:var(--r-sm)!important}
 .cw-badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:var(--r-pill);background:var(--accent-fill);color:#fff;font-size:var(--t-xs);font-weight:700;margin-left:6px}
 .cw-empty{font-size:var(--t-base);color:var(--mu);padding:14px;text-align:center;background:rgba(255,255,255,.02);border:1px dashed var(--glass-bd);border-radius:var(--r-md)}
 
-
-
+.cw-appr-h{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.cw-appr-body{font-size:var(--t-base);color:var(--mu);line-height:1.6;white-space:pre-wrap;background:rgba(0,0,0,.2);border-radius:var(--r-sm);padding:12px;margin-bottom:12px}
 
 .cw-quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .cw-quick-card{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px;border:1px solid var(--glass-bd);border-radius:var(--r-md);background:var(--glass);cursor:pointer;color:var(--tx);font-size:var(--t-base);font-weight:500;transition:transform .2s var(--ease),border-color .2s var(--ease)}
@@ -902,7 +902,7 @@ html,body{height:100%;overflow:hidden}
 .crew-page{max-width:920px;margin:0 auto;display:flex;flex-direction:column;gap:40px}
 /* hero: text + a prominent stat, not a card */
 
-
+.crew-hero-l{flex:1}
 .eyebrow{font-size:var(--t-xs);letter-spacing:.16em;text-transform:uppercase;color:var(--accent-txt);font-weight:600;margin-bottom:12px}
 
 
@@ -1133,7 +1133,7 @@ input,textarea,select{font-family:var(--fn);}
 
 
 
-
+.dev-term-body{height:100%;background:#0d0d0f;display:flex;flex-direction:column}
 
 
 
@@ -1207,7 +1207,7 @@ input,textarea,select{font-family:var(--fn);}
 
 
 
-
+.crew-feature-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
 
 
 
@@ -1603,7 +1603,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 .sn-btn.on::before{background:var(--accent)!important}
 
 /* ---- 16. Asymmetry: hero text left-anchored & wider, not dead-center boxes ---- */
-.dsn-hero{text-align:left;align-items:flex-start}
+.dsn-hero,.crew-hero-l{text-align:left;align-items:flex-start}
 .dsn-hero{align-items:flex-start}
 
 .dsn-input-wrap{margin-left:0!important}
@@ -1926,7 +1926,7 @@ hr,.mb hr,.plndiv{border-color:var(--hair)!important;background:none!important}
 
 
 
-
+.upg-more-h{font-size:var(--t-2xs);font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mu);margin-bottom:7px}
 
 
 
@@ -2114,6 +2114,7 @@ body.light{ --hair:rgba(0,0,0,.1); --hair-strong:rgba(0,0,0,.15); }
 /* de-glass everything: no blur, no milky gradient panels */
 .dsn-tile,
 .wsc,
+.appx-card,
 .ho-card,
 .crew-res,
 .cw-quick-card,
@@ -2127,6 +2128,7 @@ body.light{ --hair:rgba(0,0,0,.1); --hair-strong:rgba(0,0,0,.15); }
 /* unify card surfaces: flat surface, single hairline, calm radius */
 .dsn-tile,
 .wsc,
+.appx-card,
 .ho-card,
 .crew-res,
 .cw-quick-card,
@@ -2140,6 +2142,7 @@ body.light{ --hair:rgba(0,0,0,.1); --hair-strong:rgba(0,0,0,.15); }
 }
 .dsn-tile:hover,
 .wsc:hover,
+.appx-card:hover,
 .ho-card:hover,
 .cw-quick-card:hover,
 .agent:hover{
@@ -2945,7 +2948,7 @@ body.light .plnc{box-shadow:0 1px 2px rgba(30,28,35,.04),0 8px 24px -14px rgba(3
 .adm-tab,.snb{border-radius:var(--r-md)!important}
 
 /* avatars: circular, soft neutral tint (never bare white) */
-.amv-av,.mav,.adm-user-av,#pfp-c{border-radius:50%!important;overflow:hidden}
+.amv-av,#sb-av,.mav,.adm-user-av,#pfp-c{border-radius:50%!important;overflow:hidden}
 .mav.ai,.amv-av{background:var(--accent-fill)!important;color:#fff!important}
 
 /* neutral accent surfaces - calm, tasteful, tinted not loud */
@@ -3530,7 +3533,7 @@ html[dir="rtl"] .qab,html[dir="rtl"] .dc,html[dir="rtl"] .ss2{text-align:right}
    Grounded recent-work cards, only shown when there's activity.
    ============================================================ *//* When rich, don't vertically center - let it flow from the top with room */
 
-
+.chome-recent-h{font-size:var(--t-sm);font-weight:600;letter-spacing:.02em;color:var(--mu);margin-bottom:11px;padding-left:2px}
 
 
 
@@ -3649,6 +3652,7 @@ code:not(pre code){font-family:var(--mn);font-size:.9em;font-feature-settings:'k
 /* Small UI labels: subtle positive tracking reads cleaner at small sizes */
 .set-sub,
 .eyebrow,
+.chome-recent-h,
 .hi-kind{font-feature-settings:'kern' 1}
 /* Prevent orphaned single words on key short headings */
 
@@ -4038,8 +4042,8 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
    Compact inline model pill, airy panels, full-bleed preview.
    ═══════════════════════════════════════════════════════════ */
 /* Model row: a slim inline pill instead of a heavy full-width box */
-
-
+.sec-model-bar{display:flex;align-items:center;gap:9px;margin:2px 0 16px}
+.sec-model-l{font-size:var(--t-sm);color:var(--mu);font-weight:500}
 .sec-usage-note{display:none}                       /* redundant - folded into the pill */
 .secmodel-sel{
   width:auto;min-width:0;
@@ -4091,9 +4095,9 @@ html.reduce-motion .voice-ring,html.reduce-motion .sb-status-dot.ok::after{anima
 .sec-kicker{font-size:var(--t-2xs);letter-spacing:.09em;font-weight:700;color:var(--accent-txt);text-transform:uppercase}
 
 /* Keep the Dev/Lab action row on one line, compact */
+.sec-model-bar{flex-wrap:wrap;row-gap:8px}
 
-
-
+.sec-model-bar + div .btn{font-size:var(--t-sm);padding:6px 11px;border-radius:var(--r-md)}
 
 /* Preview placeholder: no floating card - just quiet centered text */
 .dev-prev-body > .lab-placeholder,
@@ -4159,7 +4163,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
 
 /* Jump back in: centered under the chips, matching the home's calm rhythm */
 .chome-recent{display:flex;flex-direction:column;align-items:center}
-
+.chome-recent-h{font-size:var(--t-xs);letter-spacing:.07em;text-transform:uppercase;color:var(--dim);font-weight:600;text-align:center;margin:0 0 10px}
 
 
 
@@ -4281,7 +4285,7 @@ html.reduce-motion #cv.cv-home .chome-greet{
   display:flex;align-items:center;justify-content:space-between;gap:10px;
   padding:11px 16px;border-bottom:1px solid var(--bd);flex-shrink:0;
 }
-
+.lab-bar-l,.lab-bar-r{display:flex;align-items:center;gap:7px}
 .lab-lang-sel,#lab-model{
   padding:6px 26px 6px 11px;font-size:var(--t-sm);font-weight:500;
   background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-md);color:var(--tx);
@@ -4317,7 +4321,11 @@ html.reduce-motion #cv.cv-home .chome-greet{
 .lab-split{display:flex;flex:1;min-height:0;overflow:hidden}
 .lab-editor,.lab-out{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0}
 .lab-editor{border-right:1px solid var(--bd)}
-
+.lab-pane-h{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:9px 15px;font-size:var(--t-xs);font-weight:600;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--dim);border-bottom:1px solid var(--bd);flex-shrink:0;
+}
 #lab-code{
   flex:1;min-height:0;resize:none;border:none;outline:none;
   background:var(--bg);color:var(--tx);
@@ -6337,9 +6345,9 @@ body.light .aa-date{color-scheme:light}
 /* Lab toolbar: on phones let the action bar wrap instead of overflowing */
 @media(max-width:640px){
   .lab-bar{flex-wrap:wrap!important;gap:8px!important;padding:10px 12px!important}
-  
-  
-  
+  .lab-bar-l,.lab-bar-r{flex-wrap:wrap;min-width:0}
+  .lab-bar-r{gap:6px}
+  .lab-bar-l .lab-lang-sel,.lab-bar-l #lab-model{max-width:44vw}
 }
 
 /* ============================================================
@@ -7323,8 +7331,8 @@ html,body{height:100%;height:100dvh}
    It wraps rather than shrinking the tap targets, because a stepper
    you miss is worse than one on a second row.
    ============================================================ */
-
-
+.seat-buy{border-color:var(--accent-txt);background:var(--accent-soft)}
+.seat-why{font-size:var(--t-base);color:var(--tx);line-height:1.65;margin:0 0 var(--sp-4)}
 .seat-pick{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-2)}
 .seat-step{min-width:38px;min-height:38px;font-size:var(--t-lg);line-height:1;padding:0;flex:0 0 auto}
 .seat-n{width:84px;flex:0 0 auto;text-align:center;font-variant-numeric:tabular-nums;
@@ -8855,7 +8863,10 @@ body.light{ --on-accent:#ffffff; }
    you get code in, so they are the two that still mean something here.
 
    Nothing is removed. Every one of these returns the moment there is code. */
-
+.lab-shell.lab-blank .lab-bar-r #lab-run,
+.lab-shell.lab-blank .lab-bar-r #lab-debug,
+.lab-shell.lab-blank .lab-bar-r #lab-agents,
+.lab-shell.lab-blank .lab-bar-r #lab-deploy{ display:none; }
 
 .lab-entry-acts{ display:flex;flex-direction:column;align-items:center;gap:var(--sp-2); }
 .lab-go-row{ display:flex;flex-wrap:wrap;justify-content:center;gap:var(--sp-2); }
@@ -9884,12 +9895,22 @@ body:not(.sb-rail) #sb .sbfoot{ margin-top:auto!important; }
    Two labelled bands rather than one grid, because the distinction IS the
    point: a universal tool has to show what it does for everybody and what it
    does only for you, and a single undifferentiated list says neither. */
-
-
-
-
+.cw-split-h{
+  display:flex;align-items:baseline;gap:var(--sp-3);flex-wrap:wrap;
+  margin:var(--sp-6) 0 var(--sp-3);
+  padding-top:var(--sp-4);border-top:1px solid var(--bd);
+}
+.cw-split-h:first-of-type{ border-top:none;padding-top:0; }
+.cw-split-h > b{
+  font-size:var(--t-md);font-weight:650;color:var(--tx);
+  letter-spacing:-.1px;flex:0 0 auto;
+}
+.cw-split-h > span{
+  font-size:var(--t-base);color:var(--mu);line-height:1.55;
+  flex:1 1 320px;min-width:0;
+}
 @media (max-width:720px){
-  
+  .cw-split-h{ flex-direction:column;gap:var(--sp-1); }
 }
 
 /* ── LAYER A128 · the degraded preview note ──────────────────────────────────
@@ -11539,7 +11560,8 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
    what a working surface looks like there is a different decision from
    rescuing one that does not fit. */
 @media(max-width:760px){
-  
+  .lab-shell.lab-blank .lab-bar-l > *:not(.dev-badge):not(.bld-home),
+  .lab-shell.lab-blank .lab-bar-r{ display:none; }
   .lab-shell.lab-blank .lab-bar{ padding-top:var(--sp-2); padding-bottom:var(--sp-2); }
 }
 
@@ -12194,7 +12216,9 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
 @media(max-width:760px){
   /* The language and the engine come back: both are decisions about the run
      that the entry's own buttons are about to start. */
-  
+  .lab-shell.lab-blank .lab-bar-l > #lab-lang,
+  .lab-shell.lab-blank .lab-bar-l > #lab-model,
+  .lab-shell.lab-blank .lab-bar-l > .secmodel-sel{ display:block; }
   /* Split the row by what each label needs, not evenly. `max-width:44vw` caps
      both at 172px on a 390 screen, and "Auto - picks for you" needs 178 - so
      the engine picker was truncated by six pixels while "JavaScript" sat in
@@ -12207,15 +12231,15 @@ body:has(#ovr.on) .cc-banner{ visibility:hidden; pointer-events:none; }
   /* And nowrap: with the cap gone they each took their natural width and wrapped
      onto a row apiece, which is two rows of chrome on the screen A168 exists to
      keep clear. One row, shared by need. */
-  
+  .lab-shell.lab-blank .lab-bar-l{ display:flex; gap:var(--sp-2); min-width:0; flex-wrap:nowrap; }
   /* The engine picker gets the room it needs and the language absorbs the rest.
      `flex:0 1 auto` on one and `1 1 auto` on the other is not enough on its
      own: a select's natural basis is its WIDEST OPTION, not its selected one,
      so the engine had the larger basis, shrank more in absolute terms, and
      ended up the narrow one - the reverse of what was asked for. A floor on
      the engine states it directly. */
-  
-  
+  .lab-shell.lab-blank .lab-bar-l .lab-lang-sel{ flex:0 1 auto; min-width:0; max-width:none; }
+  .lab-shell.lab-blank .lab-bar-l #lab-model{ flex:1 1 auto; min-width:190px; max-width:none; }
   /* And the badge goes, on all three, because the choice above it says it. */
   .lab-shell.lab-blank .dev-badge,
   .dev-shell.dev-blank .dev-badge,
@@ -16387,7 +16411,7 @@ html.reduce-motion #cv.cv-home .chome-shine{ display:none; }
    ":is(#vc,#set-modal) .something": the same specificity, so the cascade is
    exactly what it was, and a suite fails on a new bare "#vc " descendant. */
 .set-modal{ position:fixed; inset:0; z-index:8000; display:flex; align-items:center; justify-content:center;
-  padding:min(5vh,48px) var(--sp-5); background:rgba(1,4,9,.6); backdrop-filter:blur(3px);
+  padding:min(5vh,48px) var(--sp-5); background:rgba(1,4,9,.66);
   animation:setModalIn .16s var(--ease) both; }
 @keyframes setModalIn{ from{ opacity:0; } to{ opacity:1; } }
 .set-modal .settings-shell{ width:min(1040px,100%); height:min(760px,100%); flex:0 0 auto;
@@ -16406,7 +16430,7 @@ body.set-open{ overflow:hidden; }
   .set-modal .set-close{ position:absolute; top:var(--sp-3); right:var(--sp-3); z-index:2; }
 }
 @media(max-width:720px){
-  .set-modal{ padding:0; background:var(--bg); backdrop-filter:none; }
+  .set-modal{ padding:0; background:var(--bg); }
   .set-modal .settings-shell{ width:100%; height:100%; border:0; border-radius:0; box-shadow:none; animation:none; }
   /* The panel covers the whole screen here, so nothing under it is drawn. */
   body.set-open #abody, body.set-open #bottom-nav{ visibility:hidden; }
@@ -16486,3 +16510,17 @@ body.set-open{ overflow:hidden; }
 .upn-fine{ margin:var(--sp-3) 0 0; text-align:center; font-size:var(--t-xs); color:var(--mu); }
 .upn-c:focus-visible, .upn-l:focus-visible, .upn-x:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 @media(max-width:560px){ .upn{ padding:var(--sp-6) var(--sp-4) var(--sp-4); } .upn-h{ font-size:var(--t-xl); } }
+
+/* ── LAYER A286: Crew lays out what is on screen first ─────────────────────
+   Measured at 4x CPU (a mid-range phone): opening Crew blocked for 306ms, and
+   ~85% of its elements are the categories and catalogue below the fold. The
+   browser now skips their layout until they are scrolled near; "auto" in the
+   intrinsic size remembers the real height once seen, so the scrollbar does
+   not jump. Nothing is hidden - find-in-page and screen readers still reach
+   all of it. */
+#cw-jobs-body{ content-visibility:auto; contain-intrinsic-size:auto 2600px; }
+/* The Crew box grows with what is in it - an empty box to its example - with
+   no script measuring it (_mcCmdFit stands down where this is supported). */
+@supports (field-sizing: content){
+  textarea.mc-cmd-input{ field-sizing:content; height:auto; min-height:1lh; }
+}
