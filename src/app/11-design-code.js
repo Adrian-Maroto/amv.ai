@@ -652,7 +652,7 @@ function renderDesignView(){
 
     <section class="dsn-hero">
       <div class="dsn-input-wrap">
-        <textarea id="dsn-prompt" rows="1" placeholder="A sleek dark pricing page for an AI startup, three tiers, purple accents&hellip;"></textarea>
+        <textarea id="dsn-prompt" rows="1" placeholder="A site for my small business - what we offer, opening hours, how to find us&hellip;"></textarea>
         <button class="dsn-go" data-dact="designGo" aria-label="Generate design">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </button>
