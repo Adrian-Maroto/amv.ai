@@ -85,6 +85,8 @@ async function _doneMailSet(want){
   if(!_doneMailPossible()) return { ok: false, why: 'Sign in first - the email goes to your account.' };
   try{
     const d = await AMV_API.notifyDone({ probe: true });
+    /* The owner's readiness screen (Settings -> Platform, "Email actually
+       reaches people") already names what is missing; this says the outcome. */
     if(!d || !d.emailReady) return { ok: false, why: 'This AMV cannot send email yet, so this stays off. Nothing else changes.' };
   }catch(e){ return { ok: false, why: 'AMV could not reach the server to check, so this stays off. Try again in a moment.' }; }
   saveStr('amv_done_mail', '1');

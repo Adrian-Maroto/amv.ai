@@ -2361,7 +2361,7 @@ async function autoList(request, env){
                    under a ceiling of "ask first" would be lying about what
                    happens tonight. */
                 ceiling: _autoApprovalOf(rec.ceiling, 'auto'),
-                emailReady: !!env.EMAIL_API_KEY, canSchedule: budget.ceiling > 0, plan: budget.plan,
+                emailReady: _emailReaches(env), canSchedule: budget.ceiling > 0, plan: budget.plan,
                 // What this account may have, so the app offers exactly that.
                 free: budget.free, maxAutomations: budget.max,
                 minRepeat: budget.free ? FREE_AUTO_REPEAT : null });
@@ -4634,7 +4634,7 @@ async function autoCreate(request, env){
      only works if an email provider is configured. Rather than accepting the
      request and delivering nowhere, we downgrade to in-app and SAY which one
      the user is getting. */
-  const emailReady = !!env.EMAIL_API_KEY;
+  const emailReady = _emailReaches(env);
   const effectiveNotify = (notify === 'email' && !emailReady) ? 'app' : notify;
 
   const key = _autoKey(user.email);
@@ -10367,7 +10367,7 @@ async function notifyDone(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const body = await request.json().catch(()=>({}));
-  const emailReady = !!env.EMAIL_API_KEY;
+  const emailReady = _emailReaches(env);
   if(body && body.probe) return json({ ok:true, emailReady, sent:false });
   if(!emailReady) return json({ ok:true, emailReady:false, sent:false });
   const appUrl = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/, '');
@@ -27152,8 +27152,9 @@ function _readinessReport(env) {
        Preflight warns about this; a running deployment could not see it. */
     { id: 'emailSender', name: 'Email actually reaches people', blocking: false,
       on: _has(env, 'EMAIL_API_KEY') && _has(env, 'RESET_EMAIL_FROM'),
-      turnsOn: 'Mail to anyone other than you. Without a sender on a domain you have verified, the default '
-             + 'address only delivers to the owner of the email account - so password resets reach you and nobody else.',
+      turnsOn: 'Mail to anyone other than you - password resets, Crew results by email, and "email me when AMV is done". '
+             + 'Without a sender on a domain you have verified, the default address only delivers to the owner of the '
+             + 'email account, so AMV offers none of those to anybody else until this is set.',
       how: put('RESET_EMAIL_FROM') },
     { id: 'appUrl', name: 'App address', blocking: false, on: _has(env, 'APP_URL'),
       turnsOn: 'Correct links in every email, invite links, and shared conversation URLs.',
@@ -28477,6 +28478,14 @@ const _sendEmail_task     = (env, ...a) => _sendEmailAs(env, 'task',     a);
 function _sendEmailAs(env, cls, [to, subject, html, text]) {
   return _sendEmail(env, to, subject, html, text, cls);
 }
+
+/* CAN EMAIL REACH SOMEBODY WHO IS NOT THE OPERATOR?
+   A Resend key alone is not enough: the default sender (onboarding@resend.dev)
+   only delivers to the address that owns the Resend account, so for every
+   other person the send fails and nothing arrives (AMV-193). Anything that
+   PROMISES a person an email - Crew's "email me the result", "email me when
+   AMV is done" - asks this, not whether a key exists. */
+function _emailReaches(env) { return !!(env.EMAIL_API_KEY && env.RESET_EMAIL_FROM); }
 
 async function _sendEmail(env, to, subject, html, text, cls) {
   if (!env.EMAIL_API_KEY) return false;

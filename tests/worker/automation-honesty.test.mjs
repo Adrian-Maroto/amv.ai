@@ -162,7 +162,10 @@ section('A lapsed subscription drops to the free allowance, not the paid one');
 
 section('Email delivery is offered only where it can actually happen');
 {
-  const withEmail = makeEnv({ EMAIL_API_KEY: 'k' });
+  /* Configured means it can reach a person: a key AND a sender on a verified
+     domain. A key alone sends from Resend's onboarding address, which only
+     ever reaches the Resend account owner (AMV-193). */
+  const withEmail = makeEnv({ EMAIL_API_KEY: 'k', RESET_EMAIL_FROM: 'AMV <hello@amv.example>' });
   await W.setEntitlement(withEmail, 'pro@x.com', 'pro');
   const t1 = await tokenFor(withEmail, 'pro@x.com');
   const d1 = await (await create(withEmail, t1, { ...DAILY, notify: 'email' })).json();
@@ -177,11 +180,18 @@ section('Email delivery is offered only where it can actually happen');
   ok(d2.item.notify === 'app', 'without one, it falls back to in-app rather than delivering nowhere', d2.item.notify);
   ok(d2.emailReady === false, 'the app is told email is unavailable');
   ok(d2.deliveryDowngraded === true, 'and told SPECIFICALLY that this request was downgraded, so it can say so');
+
+  const keyOnly = makeEnv({ EMAIL_API_KEY: 'k' });
+  await W.setEntitlement(keyOnly, 'pro@x.com', 'pro');
+  const t3 = await tokenFor(keyOnly, 'pro@x.com');
+  const d3 = await (await create(keyOnly, t3, { ...DAILY, notify: 'email' })).json();
+  ok(d3.item.notify === 'app' && d3.emailReady === false && d3.deliveryDowngraded === true,
+     'a key with no verified sender is not delivery either - it would reach only the operator', d3);
 }
 
 section('The app is told what it may promise before it promises anything');
 {
-  const env = makeEnv({ EMAIL_API_KEY: 'k' });
+  const env = makeEnv({ EMAIL_API_KEY: 'k', RESET_EMAIL_FROM: 'AMV <hello@amv.example>' });
   await W.setEntitlement(env, 'pro@x.com', 'pro');
   const paid = await (await list(env, await tokenFor(env, 'pro@x.com'))).json();
   ok(paid.canSchedule === true, 'a paying account can schedule');

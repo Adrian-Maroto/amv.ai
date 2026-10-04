@@ -65,7 +65,7 @@ const signup = async (env, email) => (await jsonOf(await req(env, '/auth/signup'
 
 section('It needs an account');
 {
-  const env = mkEnv({ EMAIL_API_KEY: 'k' });
+  const env = mkEnv({ EMAIL_API_KEY: 'k', RESET_EMAIL_FROM: 'AMV <hello@amv.example>' });
   const r = await req(env, '/v1/notify/done', { ok: true });
   ok(r.status === 401, 'no account, no email', r.status);
   ok(sent.length === 0, 'and nothing was sent', sent.length);
@@ -79,16 +79,23 @@ section('Asking whether it can work says so, and sends nothing');
   ok(p1.ok && p1.emailReady === false && !p1.sent, 'with no email provider: not ready', p1);
   const n1 = await jsonOf(await req(off, '/v1/notify/done', { ok: true }, t1));
   ok(n1.sent === false, 'and a send is refused rather than pretended', n1);
-  const on = mkEnv({ EMAIL_API_KEY: 'k' });
+  const on = mkEnv({ EMAIL_API_KEY: 'k', RESET_EMAIL_FROM: 'AMV <hello@amv.example>' });
   const t2 = await signup(on, 'b@example.com');
   const before = sent.length;
   const p2 = await jsonOf(await req(on, '/v1/notify/done', { probe: true }, t2));
   ok(p2.emailReady === true && sent.length === before, 'with one: ready, and the question itself mails nobody', { p2, mailed: sent.length - before });
+  /* A key with no verified sender reaches only the Resend account owner, so
+     saying yes would promise everybody else mail that never arrives. */
+  const keyOnly = mkEnv({ EMAIL_API_KEY: 'k' });
+  const t3 = await signup(keyOnly, 'c@example.com');
+  const p3 = await jsonOf(await req(keyOnly, '/v1/notify/done', { probe: true }, t3));
+  const n3 = await jsonOf(await req(keyOnly, '/v1/notify/done', { ok: true }, t3));
+  ok(p3.emailReady === false && n3.sent === false, 'a key without a verified sender is not ready, and sends nothing', { p3, n3 });
 }
 
 section('It goes to the account, says a fixed thing, and nothing the caller sent');
 {
-  const env = mkEnv({ EMAIL_API_KEY: 'k' });
+  const env = mkEnv({ EMAIL_API_KEY: 'k', RESET_EMAIL_FROM: 'AMV <hello@amv.example>' });
   const tok = await signup(env, 'owner@example.com');
   sent.length = 0;
   const evil = 'BUY CHEAP <a href="https://evil.example">click</a>';
@@ -107,7 +114,7 @@ section('It goes to the account, says a fixed thing, and nothing the caller sent
 
 section('It has its own daily budget per address');
 {
-  const env = mkEnv({ EMAIL_API_KEY: 'k' });
+  const env = mkEnv({ EMAIL_API_KEY: 'k', RESET_EMAIL_FROM: 'AMV <hello@amv.example>' });
   const tok = await signup(env, 'many@example.com');
   sent.length = 0;
   const cap = W.EMAIL_DAY_CAP.done;
