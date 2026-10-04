@@ -42,12 +42,11 @@ const STUB = `
 const signIn = () => page.evaluate(async () => {
   document.getElementById('cookie-consent-banner')?.remove();
   openAuth('login');
-  await new Promise(r => setTimeout(r, 150));
+  for (let i = 0; i < 150 && !document.getElementById('a-email'); i++) await new Promise(r => setTimeout(r, 100));
   document.getElementById('a-email').value = 'v@test.com';
   document.getElementById('a-pass').value = 'A-real-Passw0rd!';
   window.__login = doLoginForm();
-  await new Promise(r => setTimeout(r, 400));
-});
+}).then(() => page.waitForSelector('#cv-code', { timeout: 15000 }));
 const signedIn = () => page.evaluate(() => !!(S.user && S.user.email));
 
 await page.evaluate((stub) => { AMV_API.base = 'https://amv-stub.workers.dev'; eval(stub); }, STUB);
@@ -77,7 +76,8 @@ section('A wrong code is refused, says so, and still signs nobody in');
   const r = await page.evaluate(async () => {
     const ci = document.getElementById('cv-code');
     ci.value = '111111'; ci.dispatchEvent(new Event('input'));
-    await new Promise(r => setTimeout(r, 400));
+    for (let i = 0; i < 150 && !/right/i.test((document.getElementById('cv-msg') || {}).textContent || ''); i++)
+      await new Promise(r => setTimeout(r, 100));
     return { msg: (document.getElementById('cv-msg') || {}).textContent || '', cleared: document.getElementById('cv-code').value === '' };
   });
   ok(/isn.t right/i.test(r.msg) && /attempts left/i.test(r.msg), 'the server’s answer is shown', r.msg);
@@ -89,8 +89,8 @@ section('Backing out leaves you signed out, on the sign-in form');
 {
   const r = await page.evaluate(async () => {
     document.getElementById('cv-back').click();
-    await new Promise(r => setTimeout(r, 200));
     await window.__login;
+    for (let i = 0; i < 150 && !document.getElementById('a-email'); i++) await new Promise(r => setTimeout(r, 100));
     return { code: !!document.getElementById('cv-code'), form: !!document.getElementById('a-email'), em: (document.getElementById('a-email') || {}).value };
   });
   ok(!r.code && r.form && r.em === 'v@test.com', 'back on the form with the email kept', r);
@@ -110,7 +110,8 @@ section('An answer with no session in it is not a sign-in, whatever this browser
     window.fetch = async (u, o) => String(u).includes('/auth/login')
       ? { ok: true, status: 200, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({ ok: true }) }
       : real(u, o);
-    openAuth('login'); await new Promise(r => setTimeout(r, 150));
+    openAuth('login');
+    for (let i = 0; i < 150 && !document.getElementById('a-email'); i++) await new Promise(r => setTimeout(r, 100));
     document.getElementById('a-email').value = 'v@test.com';
     document.getElementById('a-pass').value = 'A-real-Passw0rd!';
     await doLoginForm();
@@ -127,7 +128,6 @@ section('The right code - and only then - signs you in');
     const ci = document.getElementById('cv-code');
     ci.value = '246810'; ci.dispatchEvent(new Event('input'));
     await window.__login;
-    await new Promise(r => setTimeout(r, 200));
     const v = window.__calls.filter(c => c.url.startsWith('/auth/login/verify')).pop();
     return { sent: v && v.body, modal: !!document.getElementById('cv-code') };
   });
@@ -140,7 +140,8 @@ section('This device is remembered, so it is not asked again');
 {
   const r = await page.evaluate(async () => {
     S.user = null; window.__calls = [];
-    openAuth('login'); await new Promise(r => setTimeout(r, 150));
+    openAuth('login');
+    for (let i = 0; i < 150 && !document.getElementById('a-email'); i++) await new Promise(r => setTimeout(r, 100));
     document.getElementById('a-email').value = 'v@test.com';
     document.getElementById('a-pass').value = 'A-real-Passw0rd!';
     await doLoginForm();
