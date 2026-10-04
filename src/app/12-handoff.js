@@ -688,6 +688,7 @@ try{ window._usageShapeBand=_usageShapeBand; }catch(e){}
 /* === HELP CENTER === */
 const FAQS=[
   {c:'start', q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, deep research, or a question about a photo you upload. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
+  {c:'start', q:'Where are Settings, Team and my account?', a:'Click your avatar at the top right. That one menu has Upgrade, Manage Subscription, Settings, Team, Help, What\u2019s New and the ways to sign out. Settings opens in the middle of the screen over whatever you were doing - search at the top of its list finds a setting by what it does (try \u201cpassword\u201d or \u201clanguage\u201d), and X or Esc puts you back where you were.'},
   {c:'start', q:'What can AMV actually do?', a:'One place for everything: chat and deep research, reading the files and images you upload, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve. AMV reads an image you give it; it does not generate one.'},
   {c:'auto', q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing - what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
   {c:'auto', q:'How do approvals work - Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},
@@ -699,6 +700,7 @@ const FAQS=[
   {c:'chat', q:'How do I upload files for analysis?', a:'Click the paperclip in the chat input or drag &amp; drop. AMV reads PDFs, images, code, Excel, CSV, and Word - and can work across a whole folder for autonomous tasks.'},
   {c:'connect', q:'How do I connect Gmail, Calendar, and files?', a:'Go to Settings → Connectors (or Integrations). Connect Google to let AMV read email, manage your calendar, and work with Drive files. Everything an agent wants to send still waits for your approval first.'},
   {c:'connect', q:'What is Handoff?', a:'Handoff lets you pass a task - with its full context - to a teammate inside AMV, or receive one from them, so work moves between people without losing the thread.'},
+  {c:'connect', q:'How does Team work?', a:'Team is the plan for organisations: $'+PLANS.team.price+' per person a month, from '+TEAM_SEAT_MIN+' people, billed monthly or yearly. Everyone signs in with their own account and gets AMV\u2019s top models; each person adds their own full allowance to one shared pool, and you get one bill. Owners and admins manage who is in. Teammates see only what somebody shares into the team library - never anyone\u2019s chats. Start one from Team in the avatar menu.'},
   {c:'connect', q:'What is the Marketplace?', a:'Browse and install prompts, crews, and integrations - free ones add to your Prompt Library or Crew instantly. Click any seller’s name to see their listings and reviews or message them. You can publish your own and keep 80% of every sale. Paid items always go through secure checkout.'},
   /* Priced from PLANS. Written out, this answer quoted three figures that
      nothing kept in step with the cards or with checkout, so changing a price
@@ -712,6 +714,7 @@ const FAQS=[
      different promises and only the second one survives somebody checking. */
   {c:'billing', q:'How do plans and limits work?', a:'Free is '+_msgMonthLabel('free')+' messages a month on the balanced engine, up to '+_msg5hLabel('free')+' every '+USAGE_WINDOW_HOURS+' hours. Pro ($'+PLANS.pro.price+'/mo) runs AMV Forge, a frontier engine, on the cheapest paid plan there is - '+_msgMonthLabel('pro')+' messages a month, '+_msg5hLabel('pro')+' every '+USAGE_WINDOW_HOURS+' hours, and '+_topWeekLabel('pro')+' Forge or Apex messages a week on top - and unlocks autonomous agents, Mission Control, the app builder and connected accounts. Elite ($'+PLANS.elite.price+'/mo) adds Apex and one-click deploy, with '+_msgMonthLabel('elite')+' messages a month and '+_topWeekLabel('elite')+' top-engine messages a week. Ultra ($'+PLANS.ultra.price+'/mo) is '+_msgMonthLabel('ultra')+' a month, '+_topWeekLabel('ultra')+' top-engine a week, the highest throughput AMV offers and team workspaces. Custom lets you set your own hard-capped budget. The engines above Core bill the same per token as each other, so a higher plan buys MORE of the best engine rather than a better one.'},
   {c:'privacy', q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
+  {c:'chat', q:'Can AMV email me when it is done?', a:'Yes. When an answer or a build has been running a while, AMV asks once whether you want an email when it is done. Say yes and, whenever long work finishes while you are away from the tab, AMV emails your account address - only then, never about something you watched finish, and never after you press Stop. Turn it on or off any time in Settings \u2192 Account \u2192 Notifications.'},
   {c:'chat', q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
   {c:'chat', q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
   {c:'chat', q:'Can I export my conversations?', a:'Yes - right-click any chat and choose “Export as Markdown” to download a .md file for Notion, Obsidian, or any editor.'},
@@ -3499,6 +3502,12 @@ function _submitFeedback(kind, text, email){
 try{ window.openFeedback=openFeedback; }catch(e){}
 /* Changelog / What's New - transparent product updates. Newest first. */
 const CHANGELOG=[
+  { v:'2.5', date:'2026-10-04', title:'Settings, Team and staying in touch', items:[
+    'Settings opens in the middle of the screen, over your work, with search that finds a setting by what it does',
+    'Team is one plan for organisations: a price per person, monthly or yearly, with roles and one bill',
+    'Email me when AMV is done - for long answers and builds you walk away from',
+    'More room for your chats: the account menu is the avatar at the top right, and the status line only appears when something is wrong',
+    'Crew opens noticeably faster on phones' ] },
   { v:'2.4', date:'2026-01-15', title:'Share, install, and export', items:[
     'Share any conversation with a private read-only link',
     'Install AMV as an app on your phone or desktop (PWA)',

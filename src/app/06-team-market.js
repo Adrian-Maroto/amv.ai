@@ -351,7 +351,7 @@ function _renderTeamSettingsPane(pane){
     '<div class="ss2"><h3>What a seat costs the team</h3>'+
       '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
       'Everyone on a team draws on the same monthly allowance, so one person having a heavy week '+
-      'is felt by everybody. You can see how much is left in <b>Settings \u2192 Usage</b> at any time. '+
+      'is felt by everybody. You can see how much is left in <b>Settings \u2192 Plan &amp; billing</b> at any time. '+
       'Nobody can be charged individually - there is one subscription and one bill.</p>'+
     '</div>';
   /* Fetch the team ONCE if we do not have it, then draw again with the real

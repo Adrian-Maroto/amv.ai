@@ -1026,7 +1026,7 @@ window.aegisExport=aegisExport; window.aegisClear=aegisClear;
 // Map raw API/network failures to clear, actionable messages
 function aegisErrorMessage(status, raw){
   const r=(raw||'').toLowerCase();
-  if(status===402||(r.includes('plan')&&r.includes('requires'))) return (raw||'This model needs a higher plan.')+'  →  Open Settings → Billing to upgrade.';
+  if(status===402||(r.includes('plan')&&r.includes('requires'))) return (raw||'This model needs a higher plan.')+'  →  Open Settings → Plan & billing to upgrade.';
   if(r.includes('daily usage limit')) return 'You’ve hit today’s usage limit. It resets at midnight UTC - or upgrade your plan for much more.';
   if(r.includes('monthly usage limit')) return 'You’ve reached this month’s usage. Upgrade your plan for more room to run.';
   /* Kept as a fallback for callers with no code to go on. The sentence the

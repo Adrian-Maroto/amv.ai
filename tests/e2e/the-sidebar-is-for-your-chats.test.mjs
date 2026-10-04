@@ -74,6 +74,21 @@ section("What's New lives in the account menu");
   ok(!r.after, 'and reading it clears the dot', r);
 }
 
+section('Help and What\u2019s New say where things are now');
+{
+  /* "Make sure all is updated for tasks, settings, help". A Help Center that
+     still sends people to a sidebar profile, or a Team plan behind Elite, is
+     a page explaining a product that is not there. */
+  const r = await page.evaluate(async () => {
+    setTab('help'); await new Promise(r => setTimeout(r, 300));
+    const t = document.getElementById('vc').textContent;
+    return { avatar: /avatar at the top right/.test(t), team: /per person a month/.test(t) && !/Teams unlocks on/.test(t),
+             mail: /email me when it is done/i.test(t), news: /Settings opens in the middle/.test(CHANGELOG[0].items.join(' ')) };
+  });
+  ok(r.avatar && r.team && r.mail, 'Help answers where the account menu is, how Team is sold, and the done email', r);
+  ok(r.news, 'and What\u2019s New leads with this round', r);
+}
+
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));
 await app.close();
 if (report('the-sidebar-is-for-your-chats') > 0) process.exitCode = 1;

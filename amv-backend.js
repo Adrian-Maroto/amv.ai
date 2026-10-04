@@ -9307,7 +9307,7 @@ async function schoolWork(request, env){
   if(wg) return wg;
   const rec = await _loadSchool(env, user.email);
   if(!rec) return json({ connected:false,
-    error:'Connect your school\u2019s Canvas first, in Settings \u2192 Integrations.', code:'not_connected' }, 400);
+    error:'Connect your school\u2019s Canvas first, in Settings \u2192 Connectors.', code:'not_connected' }, 400);
 
   const courses = await _canvasGet(env, rec, 'courses?enrollment_state=active&per_page=20');
   if(courses.error) return json({ error:courses.error, code:courses.code }, courses.status);

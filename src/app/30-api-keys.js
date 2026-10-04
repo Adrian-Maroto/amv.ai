@@ -172,7 +172,7 @@ function _apiDocsHTML(){
       '<code>amv-forge</code> (deep work), <code>amv-apex</code> (hardest problems), or '+
       '<code>auto</code> to let AMV choose.</p>'+
     '<p class="ak-doc">Usage counts against this account\u2019s plan, so the limits in '+
-      '<b>Settings -> Usage</b> are the limits your integration has.</p>'+
+      '<b>Settings -> Plan &amp; billing</b> are the limits your integration has.</p>'+
   '</div>';
 }
 try{ window._renderApiKeysPane=_renderApiKeysPane; window._apiLoad=_apiLoad; }catch(e){}
