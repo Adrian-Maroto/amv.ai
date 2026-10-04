@@ -143,7 +143,7 @@ section('Translating twice does not translate twice');
     _translateUI(); await settle(400, 4000);
     _translateUI(); await settle(400, 4000);
 
-    const nodes = _collectI18nNodes(document.getElementById('vc'));
+    const nodes = _collectI18nNodes((document.getElementById('set-modal') || document.getElementById('vc')));
     let eng = 0, tot = 0; const left = [];
     for (const it of nodes) {
       if (it.type !== 'text') continue;

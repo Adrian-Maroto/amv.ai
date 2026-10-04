@@ -84,10 +84,13 @@ section('Settings has a usable column at every width');
      `the settings pane is never squeezed under ${MIN_CONTENT}px`, narrow);
 }
 
-section('And the collapse happens before the squeeze does');
+section('At iPad portrait the list keeps a column only where the pane still has room');
 {
-  /* The picker replaces the section list when space is short. If the two
-     breakpoints drift apart again, a gap reopens exactly where this started. */
+  /* The picker replaced the section list here because the page's own rail
+     left Settings a 191px pane. Settings is a panel over the page now, so the
+     rail is underneath it, not beside it, and the list fits again - but only
+     if the pane beside it really is wide enough. Either the picker, or a list
+     AND a pane of usable width; never a list squeezing the pane. */
   const page = await browser.newPage({ viewport: { width: 768, height: 900 } });
   await page.goto(`http://localhost:${PORT}`, { waitUntil: 'load' });
   await page.waitForTimeout(650);
@@ -98,10 +101,11 @@ section('And the collapse happens before the squeeze does');
   await page.waitForTimeout(550);
   const r = await page.evaluate(() => {
     const vis = (s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0; };
-    return { picker: vis('.set-picker'), list: vis('.settings-nav-list') };
+    const pane = document.querySelector('.set-pane');
+    return { picker: vis('.set-picker'), list: vis('.settings-nav-list'), pane: pane ? Math.round(pane.getBoundingClientRect().width) : -1 };
   });
-  ok(r.picker, 'at iPad portrait the picker is what you get', r.picker);
-  ok(!r.list, 'and the section list is not also taking a column', r.list);
+  ok(r.picker !== r.list, 'one way to choose a section, not both', r);
+  ok(r.picker || r.pane >= MIN_CONTENT + 80, 'and a list only beside a pane with real room', r);
   await page.close();
 }
 

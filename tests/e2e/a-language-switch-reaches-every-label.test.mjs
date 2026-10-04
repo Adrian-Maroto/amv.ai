@@ -57,7 +57,7 @@ section('Every label that CAN be translated, is');
          rendered fresh and has to be caught by the observer, not by the initial
          pass. */
       await new Promise(s => setTimeout(s, 850));
-      [document.getElementById('vc'), document.getElementById('sb')].filter(Boolean).forEach(root =>
+      [(document.getElementById('set-modal') || document.getElementById('vc')), document.getElementById('sb')].filter(Boolean).forEach(root =>
         root.querySelectorAll('*').forEach(e => {
           if (e.closest('[data-no-i18n]')) return;
           const b = e.getBoundingClientRect();

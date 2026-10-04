@@ -226,7 +226,7 @@ ok(toolNav.marked, 'and the tool shows an active state');
 const projectsPane = await page.evaluate(async () => {
   goSettings('projects');
   await new Promise(r => setTimeout(r, 150));
-  const vc = document.getElementById('vc');
+  const vc = (document.getElementById('set-modal') || document.getElementById('vc'));
   return {
     tab: S.tab,
     hasProjectsPane: /Projects/.test(vc.textContent) && !!vc.querySelector('#ws-grid'),
@@ -241,7 +241,7 @@ ok(projectsPane.hasProjectsPane, 'and renders the projects grid there');
    - the redirect existed because there was no screen to show. */
 const teamTab = await page.evaluate(() => {
   setTab('team');
-  return { tab: S.tab, filled: (document.getElementById('vc').textContent || '').trim().length > 40 };
+  return { tab: S.tab, filled: ((document.getElementById('set-modal') || document.getElementById('vc')).textContent || '').trim().length > 40 };
 });
 ok(teamTab.tab === 'team', 'the Team tab routes to the team screen', teamTab.tab);
 ok(teamTab.filled, 'and renders content rather than an empty view', teamTab);
@@ -392,7 +392,7 @@ section('Unknown routes render a real 404 page');
 
 const nf = await page.evaluate(() => {
   setTab('some-nonexistent-page');
-  const vc = document.getElementById('vc');
+  const vc = (document.getElementById('set-modal') || document.getElementById('vc'));
   const txt = vc ? vc.textContent : '';
   return { has404: /404/.test(txt), hasTitle: /Page not found/i.test(txt),
            hasWayBack: !!(vc && vc.querySelector('button')) };

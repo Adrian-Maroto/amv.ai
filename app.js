@@ -10182,6 +10182,12 @@ function showProfMenu(trigger) {
     '<button class="prof-item" id="pm-settings">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'+
       'Settings</button>'+
+    /* Team sits beside Settings: seats, invites and roles are the other thing
+       you set up for an account, and it had no door left once the rail lost
+       its Team tab. */
+    '<button class="prof-item" id="pm-team">'+
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'+
+      'Team</button>'+
     '<button class="prof-item" id="pm-learn">'+
       '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
       'Help &amp; Learn More</button>'+
@@ -10208,6 +10214,7 @@ function showProfMenu(trigger) {
   document.getElementById('pm-learn')?.addEventListener('click',()=>{ close(); setTab('help'); });
   document.getElementById('pm-settings')?.addEventListener('click',()=>{ close(); S.settingsPane='account'; setTab('settings'); });
   document.getElementById('pm-billing')?.addEventListener('click',()=>{ close(); setTab('billing'); });
+  document.getElementById('pm-team')?.addEventListener('click',()=>{ close(); setTab('team'); });
   document.getElementById('pm-signout')?.addEventListener('click',()=>{ close(); signOut(); });
   document.getElementById('pm-signout-erase')?.addEventListener('click',()=>{ close(); signOutAndErase(); });
   document.getElementById('pm-delete-account')?.addEventListener('click',()=>{ close(); _confirmDeleteAccount(); });
@@ -28909,6 +28916,7 @@ function _vcSettleObserve(){
 }
 function renderView(){
   const vc=$('vc'); if(!vc) return;
+  if(S.tab!=='settings') _settingsLayerClose();
   switch(S.tab){
     case 'dashboard': renderDashboard(); break;
     case 'chat': renderChatView(); break;
@@ -29272,13 +29280,18 @@ const USER_SET_SECTIONS=[
      Account; usage is part of Plan & billing; skills and API keys are part of
      Connectors; security and the web-search, memory and answer-block switches
      are part of Privacy; language is part of Appearance. Spending has its own
-     tab. Every old id still opens where its content now lives (SET_MERGED_INTO). */
-  {id:'account',label:'Account',icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
-  {id:'billing',label:'Plan & billing',icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
-  {id:'family',label:'Family',icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
-  {id:'integrations',label:'Connectors',icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
-  {id:'privacy',label:'Privacy',icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
-  {id:'appearance',label:'Appearance',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
+     tab. Every old id still opens where its content now lives (SET_MERGED_INTO).
+
+     `find` is what search matches besides the name: six names cannot answer
+     "password" or "language", so each section lists the words of what is in
+     it - and a suite renders every pane and fails on a word it does not show,
+     so search never sends anybody to a section that is not about it. */
+  {id:'account',label:'Account',find:['name','photo','profile','instructions','email','team','invite','seats','projects','about','terms','support','keyboard shortcuts','sign out'],icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
+  {id:'billing',label:'Plan & billing',find:['plan','usage','upgrade','payment method','transactions','invoice'],icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
+  {id:'family',label:'Family',find:['family','invitation'],icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
+  {id:'integrations',label:'Connectors',find:['connectors','skills','api keys','presets'],icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
+  {id:'privacy',label:'Privacy',find:['export','delete','memory','clear chats','password','security','account activity','web search','analytics','location','sign out'],icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},
+  {id:'appearance',label:'Appearance',find:['theme','dark','light','accent','font size','motion','sound','language'],icon:'<circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/>'},
 ];
 /* OWNER-ONLY - platform controls. Hidden from end users entirely. */
 const ADMIN_SET_SECTIONS=[
@@ -29600,7 +29613,7 @@ function _openSettingsPicker(){
   const rows=sections.map(s=>{
     if(s.group!==undefined) return s.group?'<div class="setpick-group">'+escH(T(s.group))+'</div>':'';
     if(s.type==='div') return '';
-    return '<button class="setpick-row '+(s.id===_setPaneFor(S.settingsPane)?'on':'')+'" data-setpick="'+s.id+'" data-lbl="'+escH((s.label||'').toLowerCase())+'">'+
+    return '<button class="setpick-row '+(s.id===_setPaneFor(S.settingsPane)?'on':'')+'" data-setpick="'+s.id+'" data-lbl="'+escH([(s.label||''),T(s.label||'')].concat(s.find||[]).join(' ').toLowerCase())+'">'+
       '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+s.icon+'</svg>'+
       '<span>'+escH(T(s.label))+'</span></button>';
   }).join('');
@@ -29626,8 +29639,58 @@ function _openSettingsPicker(){
 }
 window._openSettingsPicker=_openSettingsPicker;
 
+/* SETTINGS OPENS OVER YOUR WORK, NOT INSTEAD OF IT.
+
+   Asked for: "when you click it, it opens in the middle", with search at the
+   top of its list. It used to replace the page - the tab you were on vanished
+   and Settings took the whole width. It is a centred panel now, drawn into its
+   own layer on top of the page, which stays where it was underneath, dimmed.
+   Still a tab as far as routing goes (#/settings, Back, Esc, every
+   setTab('settings')), so nothing that opens or closes it had to change; the
+   router removes the layer the moment any other tab is drawn. A phone gets the
+   whole screen, as before. It closes on X or Esc, never a click beside it. */
+let _setLayerFrom=null, _setLayerFresh=false;
+const _SET_UNDER=['anav','abody','bottom-nav'];
+/* Which section a search finds, and by what: its own name first, else the
+   first of its contents the words typed name ("dark mode" finds Appearance by
+   "dark"). Null when it is not about that at all. */
+function _setSearchHit(s,q){
+  if(!q) return {};
+  const lbl=(s.label||'').toLowerCase(), tl=String(T(s.label||'')).toLowerCase();
+  if(lbl.includes(q) || tl.includes(q)) return {};
+  const k=(s.find||[]).find(f=>f.includes(q) || (q.length>=3 && q.includes(f)));
+  return k ? {by:k} : null;
+}
+function _settingsLayer(){
+  let host=$('set-modal');
+  if(!host){
+    host=document.createElement('div');
+    host.id='set-modal'; host.className='set-modal';
+    host.setAttribute('role','dialog'); host.setAttribute('aria-modal','true'); host.setAttribute('aria-label','Settings');
+    /* A dialog takes the keyboard with it and gives it back: focus goes into
+       the panel when it opens and returns to whatever opened it on close. */
+    _setLayerFrom=document.activeElement; _setLayerFresh=true;
+    ($('app')||document.body).appendChild(host);
+    try{ document.body.classList.add('set-open'); }catch(e){}
+    /* The page underneath is a picture while the panel is up: Tab and a
+       screen reader stay inside the dialog instead of wandering behind it. */
+    _SET_UNDER.forEach(id=>{ const e=$(id); if(e) e.inert=true; });
+    /* Opened straight from a link there is no page under it yet: draw the chat
+       home there, so the panel is over AMV and not over nothing. */
+    try{ const v=$('vc'); if(v && !v.firstElementChild && typeof renderChatView==='function') renderChatView(); }catch(e){}
+  }
+  return host;
+}
+function _settingsLayerClose(){
+  const m=$('set-modal'); if(!m) return;
+  m.remove();
+  try{ document.body.classList.remove('set-open'); }catch(e){}
+  _SET_UNDER.forEach(id=>{ const e=$(id); if(e) e.inert=false; });
+  try{ const f=_setLayerFrom; _setLayerFrom=null; if(f && f.isConnected && f.focus) f.focus({preventScroll:true}); }catch(e){}
+}
+try{ window._settingsLayerClose=_settingsLayerClose; }catch(e){}
 function renderSettingsView(){
-  const vc=$('vc'); if(!vc) return;
+  if(!$('vc')) return;
   /* Spending and investing have their own tab now, not a Settings section. An
      address that still asks for them - a link, an error message, an older
      build - opens that tab rather than landing on Account. */
@@ -29636,6 +29699,7 @@ function renderSettingsView(){
     setTab('spend');
     return;
   }
+  const vc=_settingsLayer();
   const adminExtra=isAdmin()?[{group:'Operator'},...ADMIN_SET_SECTIONS]:[];
   const visibleSections=[...USER_SET_SECTIONS,...adminExtra];
   const q=(S._setSearch||'').toLowerCase().trim();
@@ -29645,10 +29709,12 @@ function renderSettingsView(){
       return s.group?'<div class="sn-group">'+escH(s.group)+'</div>':'<div class="sn-div"></div>';
     }
     if(s.type==='div') return q?'':'<div class="sn-div"></div>';
-    if(q && !(s.label||'').toLowerCase().includes(q)) return '';   // filter
-    return '<button class="sn-btn '+(s.id===_setPaneFor(S.settingsPane)?'on':'')+'" data-sp="'+s.id+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+s.icon+'</svg>'+T(s.label)+'</button>';
+    const hit=_setSearchHit(s,q);
+    if(!hit) return '';   // filter
+    return '<button class="sn-btn '+(s.id===_setPaneFor(S.settingsPane)?'on':'')+'" data-sp="'+s.id+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+s.icon+'</svg>'+T(s.label)+
+      (hit.by?'<span class="sn-hit" data-no-i18n>'+escH(hit.by)+'</span>':'')+'</button>';
   }).join('');
-  const noMatch = q && !visibleSections.some(s=>s.id && (s.label||'').toLowerCase().includes(q));
+  const noMatch = q && !visibleSections.some(s=>s.id && _setSearchHit(s,q));
   vc.innerHTML=
     '<div class="settings-shell">'+
       '<button class="set-close" id="set-close" title="Close settings (Esc)" aria-label="Close settings">'+
@@ -29681,8 +29747,16 @@ function renderSettingsView(){
   const si=$('set-search');
   if(si){
     on(si,'input',()=>{ S._setSearch=si.value; const pos=si.selectionStart; renderSettingsView(); const s2=$('set-search'); if(s2){ s2.focus(); try{ s2.setSelectionRange(pos,pos); }catch(e){} } });
+    // Enter opens the first section the search found.
+    on(si,'keydown',e=>{ if(e.key==='Enter'){ const b=vc.querySelector('.sn-btn'); if(b){ e.preventDefault(); b.click(); } } });
   }
   renderSetPane();
+  /* Search where the list is visible; on a phone, where the list is behind
+     the picker, the picker - never a field that would raise the keyboard. */
+  if(_setLayerFresh){
+    _setLayerFresh=false;
+    try{ const t=(si && si.offsetParent) ? si : ($('set-picker') && $('set-picker').offsetParent ? $('set-picker') : $('set-close')); if(t) t.focus({preventScroll:true}); }catch(e){}
+  }
 }
 
 /* === SETTINGS PANE RENDERER === */

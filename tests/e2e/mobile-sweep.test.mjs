@@ -179,7 +179,7 @@ section('Every control on a phone is big enough to hit');
       S.tab = t; try { setTab(t); } catch (e) {}
       await new Promise(r => setTimeout(r, 110));
       const small = [];
-      document.querySelectorAll('#vc button,#vc a[href],#vc input,#vc select').forEach(el => {
+      (document.getElementById('set-modal') || document.getElementById('vc')).querySelectorAll('button,a[href],input,select').forEach(el => {
         const b = el.getBoundingClientRect();
         if (b.width > 0 && b.height > 0 && __under(b.height, 32)) {
           small.push(t + ':' + (String(el.className).split(' ')[0] || el.tagName) + '@' + Math.round(b.height));
@@ -194,7 +194,7 @@ section('Every control on a phone is big enough to hit');
   /* And raising them must not have pushed anything off the side. */
   const over = await page.evaluate(() => {
     const w = window.innerWidth; let worst = 0;
-    document.querySelectorAll('#vc *').forEach(el => {
+    (document.getElementById('set-modal') || document.getElementById('vc')).querySelectorAll('*').forEach(el => {
       const b = el.getBoundingClientRect();
       if (b.right > w + 1) worst = Math.max(worst, Math.round(b.right - w));
     });

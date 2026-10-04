@@ -33,12 +33,15 @@ await page.click('#nav-back');
 await page.waitForTimeout(200);
 let w = await where();
 ok(w.tab === 'settings' && w.pane === 'billing', 'Back from Team lands on the Settings section it came from - this was the complaint', w);
-await page.click('#nav-back');
-await page.waitForTimeout(200);
+/* Settings is a panel over the page now, so the top bar's arrow is under its
+   backdrop. Inside it, Back is the browser's or the phone's, walking the same
+   path; X and Esc close it outright (the section after next). */
+await page.goBack();
+await page.waitForTimeout(250);
 w = await where();
 ok(w.tab === 'settings' && w.pane === 'account', 'then the section before it', w);
-await page.click('#nav-back');
-await page.waitForTimeout(200);
+await page.goBack();
+await page.waitForTimeout(250);
 w = await where();
 ok(w.tab === 'chat', 'then chat', w);
 ok(!(await arrow()), 'and the arrow goes when there is nowhere left to go', await arrow());

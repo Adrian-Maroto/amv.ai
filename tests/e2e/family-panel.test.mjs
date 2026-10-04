@@ -48,8 +48,8 @@ const serve = (payload, opts = {}) => page.evaluate(([d, o]) => {
 }, [payload, opts]);
 
 const settle = () => page.waitForFunction(
-  () => /Your family|You are in/.test(document.getElementById('vc').textContent), { timeout: 15000 });
-const view = () => page.evaluate(() => document.getElementById('vc').textContent);
+  () => /Your family|You are in/.test((document.getElementById('set-modal') || document.getElementById('vc')).textContent), { timeout: 15000 });
+const view = () => page.evaluate(() => (document.getElementById('set-modal') || document.getElementById('vc')).textContent);
 
 const PARENT = {
   ok: true, childOf: null,
@@ -182,7 +182,7 @@ section('A dropped request does not invent an empty family');
   /* Answering a network failure with "you have nobody" would tell a parent
      their controls are gone. */
   await serve(PARENT, { fail: true });
-  await page.waitForFunction(() => /Your family/.test(document.getElementById('vc').textContent), { timeout: 15000 });
+  await page.waitForFunction(() => /Your family/.test((document.getElementById('set-modal') || document.getElementById('vc')).textContent), { timeout: 15000 });
   const t = await view();
   ok(!/kid@x\.com/.test(t), 'nothing is fabricated');
   ok(/Nobody is in your family yet|Add someone/.test(t),

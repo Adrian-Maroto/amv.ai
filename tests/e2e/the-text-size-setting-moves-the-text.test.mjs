@@ -49,7 +49,7 @@ const sample = async () => page.evaluate(async (tabs) => {
   for (const t of tabs) {
     try { setTab(t); } catch (e) { continue; }
     await new Promise(s => setTimeout(s, 300));
-    [...document.querySelectorAll('#vc *')].forEach(e => {
+    [...(document.getElementById('set-modal') || document.getElementById('vc')).querySelectorAll('*')].forEach(e => {
       const b = e.getBoundingClientRect();
       if (b.width < 1 || b.height < 1) return;
       if (![...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) return;
@@ -202,7 +202,7 @@ section('And at the DEFAULT size, a heading is still a heading');
     for (const t of tabs) {
       try { setTab(t); } catch (e) { continue; }
       await new Promise(s => setTimeout(s, 330));
-      [...document.querySelectorAll('#vc h1, #vc h2')].forEach(e => {
+      [...(document.getElementById('set-modal') || document.getElementById('vc')).querySelectorAll('h1, h2')].forEach(e => {
         const b = e.getBoundingClientRect();
         if (b.width < 1 || b.height < 1) return;
         if (!(e.textContent || '').trim()) return;
@@ -268,7 +268,7 @@ section('And an icon deliberately holds its size, because its box cannot grow');
       const root = getComputedStyle(document.documentElement);
       const iconSizes = ['--ic-sm', '--ic-md', '--ic-lg']
         .map(v => root.getPropertyValue(v).trim()).filter(Boolean);
-      document.querySelectorAll('#vc *').forEach(e => {
+      (document.getElementById('set-modal') || document.getElementById('vc')).querySelectorAll('*').forEach(e => {
         const b = e.getBoundingClientRect();
         if (b.width < 1 || b.height < 1) return;
         const cs = getComputedStyle(e);
@@ -315,7 +315,7 @@ section('Chat prose is one size, not two');
     const probe = (cls) => {
       const d = document.createElement('div');
       d.className = cls; d.textContent = 'x';
-      (document.getElementById('vc') || document.body).appendChild(d);
+      ((document.getElementById('set-modal') || document.getElementById('vc')) || document.body).appendChild(d);
       const px = getComputedStyle(d).fontSize;
       d.remove();
       return px;

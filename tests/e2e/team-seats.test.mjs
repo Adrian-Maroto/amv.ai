@@ -39,7 +39,7 @@ const serve = (team, opts = {}) => page.evaluate(([t, o]) => {
   return setTab('team');
 }, [team, opts]);
 
-const view = () => page.evaluate(() => (document.getElementById('vc') || {}).textContent || '');
+const view = () => page.evaluate(() => ((document.getElementById('set-modal') || document.getElementById('vc')) || {}).textContent || '');
 
 const TEAM = {
   id: 'team_abc', name: 'Acme', ownerEmail: 'owner@x.com',
@@ -54,7 +54,7 @@ const TEAM = {
 section('The pitch describes the product that actually shipped');
 {
   await serve(null, { plan: 'free' });
-  await page.waitForFunction(() => /Team workspaces/.test(document.getElementById('vc').textContent), { timeout: 15000 });
+  await page.waitForFunction(() => /Team workspaces/.test((document.getElementById('set-modal') || document.getElementById('vc')).textContent), { timeout: 15000 });
   const t = await view();
   ok(!/Higher usage and more jobs at once/i.test(t),
      'the claim that a team buys more usage is gone, because it never did');
@@ -68,7 +68,7 @@ section('A member without the plan still sees their own team');
   /* The case the gate got backwards. Somebody on a free plan who was invited
      onto an Elite team is a full member - the team is paying for their seat. */
   await serve(TEAM, { plan: 'free' });
-  await page.waitForFunction(() => /Acme/.test(document.getElementById('vc').textContent), { timeout: 15000 });
+  await page.waitForFunction(() => /Acme/.test((document.getElementById('set-modal') || document.getElementById('vc')).textContent), { timeout: 15000 });
   const t = await view();
   ok(/Acme/.test(t), 'the team they belong to is what they are shown');
   ok(!/Which plan do I need/.test(t), 'and not an upgrade wall for a team they are already in');
@@ -83,7 +83,7 @@ section('Seats are on screen, because only the owner can fix them');
   over.members.push({ email: 'dan@x.com', role: 'member', joinedAt: 4, seated: false });
   over.seats = { used: 4, limit: 2, over: 2 };
   await serve(over, { plan: 'pro' });
-  await page.waitForFunction(() => /Acme/.test(document.getElementById('vc').textContent), { timeout: 15000 });
+  await page.waitForFunction(() => /Acme/.test((document.getElementById('set-modal') || document.getElementById('vc')).textContent), { timeout: 15000 });
   const t = await view();
   ok(/4 of 2 seats used/.test(t), 'the count is exact, not a vague warning', t.match(/\d+ of \d+ seats? used/));
   ok(/2 people are not covered by your plan/.test(t), 'and says how many people it affects');
@@ -100,7 +100,7 @@ section('Seats are on screen, because only the owner can fix them');
 section('A failed load is not the same answer as an empty one');
 {
   await serve(null, { fail: true });
-  await page.waitForFunction(() => /could not reach the server/i.test(document.getElementById('vc').textContent), { timeout: 15000 });
+  await page.waitForFunction(() => /could not reach the server/i.test((document.getElementById('set-modal') || document.getElementById('vc')).textContent), { timeout: 15000 });
   const t = await view();
   ok(/could not reach the server/i.test(t), 'it says the request failed');
   ok(!/Create your team/.test(t), 'rather than offering to create a team that may already exist');
@@ -134,7 +134,7 @@ section('It fits on a phone');
   over.members.push({ email: 'a-very-long-address-for-testing@somecompany.example', role: 'member', joinedAt: 3, seated: false });
   over.seats = { used: 3, limit: 2, over: 1 };
   await serve(over, { plan: 'elite' });
-  await page.waitForFunction(() => /Acme/.test(document.getElementById('vc').textContent), { timeout: 15000 });
+  await page.waitForFunction(() => /Acme/.test((document.getElementById('set-modal') || document.getElementById('vc')).textContent), { timeout: 15000 });
   const bad = await overflowingElement(page);
   ok(!bad, 'nothing on the team screen pushes the page sideways at 390px', bad);
   await page.setViewportSize({ width: 320, height: 700 });
@@ -147,7 +147,7 @@ section('A member has their own way off the team');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => { S.user.email = 'bob@x.com'; });
   await serve(TEAM, { plan: 'free' });
-  await page.waitForFunction(() => /Acme/.test(document.getElementById('vc').textContent), { timeout: 15000 });
+  await page.waitForFunction(() => /Acme/.test((document.getElementById('set-modal') || document.getElementById('vc')).textContent), { timeout: 15000 });
   const t = await view();
   ok(/Leave team/.test(t), 'a member is shown the exit, not only the owner');
   ok(/back to your own plan and your own allowance/.test(t),
@@ -158,7 +158,7 @@ section('A member has their own way off the team');
 
   await page.evaluate(() => { S.user.email = 'owner@x.com'; });
   await serve(TEAM, { plan: 'elite' });
-  await page.waitForFunction(() => /Acme/.test(document.getElementById('vc').textContent), { timeout: 15000 });
+  await page.waitForFunction(() => /Acme/.test((document.getElementById('set-modal') || document.getElementById('vc')).textContent), { timeout: 15000 });
   ok(!/Leave team/.test(await view()),
      'the owner is not offered it, because their subscription IS the team');
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -192,7 +192,7 @@ section('Settings answers "what is a team", with numbers');
       seats: { used: 1, limit: 10, over: 0 } } }) }; };
     S.settingsPane = 'teamset'; S.tab = 'settings'; setTab('settings');
     await new Promise(r => setTimeout(r, 500));
-    return { text: document.getElementById('vc').textContent, fetches: window.__f };
+    return { text: (document.getElementById('set-modal') || document.getElementById('vc')).textContent, fetches: window.__f };
   });
   ok(/What a team is/.test(r.text), 'it says what a team is');
   ok(/Elite/.test(r.text) && /10/.test(r.text), 'how many people fit on each plan', /Elite/.test(r.text));
@@ -212,7 +212,7 @@ section('Settings answers "what is spending", before asking for numbers');
   const r = await page.evaluate(async () => {
     S.settingsPane = 'spending'; S.tab = 'settings'; setTab('settings');
     await new Promise(r => setTimeout(r, 300));
-    return document.getElementById('vc').textContent;
+    return (document.getElementById('set-modal') || document.getElementById('vc')).textContent;
   });
   /* And it is ABOVE the terms gate. Somebody deciding whether to accept is
      exactly the person who needs the explanation, and it used to render only
@@ -329,7 +329,7 @@ section('A paying customer can reach their own billing');
   const paid = await page.evaluate(() => {
     saveStr('amv_plan', 'pro');
     S.tab = 'billing'; setTab('billing');
-    const vc = document.getElementById('vc');
+    const vc = (document.getElementById('set-modal') || document.getElementById('vc'));
     return {
       manage: !!document.getElementById('portal-open-btn'),
       cancelText: /cancel/i.test(vc.textContent),
@@ -391,7 +391,7 @@ section('Teams is on the pricing page, not only behind a tab');
 {
   const plans = await page.evaluate(() => {
     S.tab = 'plans'; setTab('plans');
-    const vc = document.getElementById('vc');
+    const vc = (document.getElementById('set-modal') || document.getElementById('vc'));
     return { text: vc.textContent, banners: vc.querySelectorAll('.cpb').length };
   });
   ok(/per person/.test(plans.text), 'the price is stated per person', /per person/.test(plans.text));

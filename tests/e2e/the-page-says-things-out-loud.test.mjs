@@ -98,7 +98,7 @@ section('Headings describe the page, on every tab');
     for (const t of tabs) {
       try { setTab(t); } catch (e) { continue; }
       await new Promise(s => setTimeout(s, 320));
-      const vc = document.getElementById('vc'); if (!vc) continue;
+      const vc = (document.getElementById('set-modal') || document.getElementById('vc')); if (!vc) continue;
       const hs = [...vc.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(e => {
         const b = e.getBoundingClientRect();
         return b.width > 1 && b.height > 1 && (e.textContent || '').trim();
@@ -126,7 +126,7 @@ section('Every field says what it is for');
     for (const t of tabs) {
       try { setTab(t); } catch (e) { continue; }
       await new Promise(s => setTimeout(s, 300));
-      const vc = document.getElementById('vc'); if (!vc) continue;
+      const vc = (document.getElementById('set-modal') || document.getElementById('vc')); if (!vc) continue;
       vc.querySelectorAll('input,select,textarea').forEach(e => {
         const b = e.getBoundingClientRect();
         if (b.width < 2 || b.height < 2 || e.type === 'hidden') return;

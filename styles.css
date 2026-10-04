@@ -16453,3 +16453,46 @@ html.reduce-motion #cv.cv-home .chome-shine{ display:none; }
 .tasks-page .sec-head{ display:flex!important; flex-direction:row!important; align-items:baseline; gap:var(--sp-2); flex-wrap:wrap; }
 .tasks-page .sec-head h3{ margin:0; flex:0 0 auto!important; width:auto!important; }
 .tasks-page .sec-head .sec-sub{ margin:0!important; flex:0 1 auto!important; width:auto!important; }
+
+/* ── LAYER A281: Settings is a centred panel over the page ─────────────────
+   The page stays underneath, dimmed. The panel is a fixed size, so its list
+   and its pane each scroll on their own and nothing moves when you switch
+   sections. On a phone it is the whole screen, as it was. */
+.set-modal{ position:fixed; inset:0; z-index:8000; display:flex; align-items:center; justify-content:center;
+  padding:min(5vh,48px) var(--sp-5); background:rgba(1,4,9,.6); backdrop-filter:blur(3px);
+  animation:setModalIn .16s var(--ease) both; }
+@keyframes setModalIn{ from{ opacity:0; } to{ opacity:1; } }
+.set-modal .settings-shell{ width:min(1040px,100%); height:min(760px,100%); flex:0 0 auto;
+  background:var(--bg); border:1px solid var(--bd); border-radius:var(--r-xl); box-shadow:var(--sh-xl);
+  overflow:hidden; animation:setPanelIn .18s var(--ease) both; }
+@keyframes setPanelIn{ from{ transform:translateY(8px) scale(.985); } to{ transform:none; } }
+@media(prefers-reduced-motion:reduce){ .set-modal, .set-modal .settings-shell{ animation:none; } }
+body.set-open{ overflow:hidden; }
+@media(min-width:721px){
+  /* Inside the panel the list is a column again - search on top, sections under
+     it - on its own surface, the full height of the panel. */
+  .set-modal .settings-nav{ align-self:stretch; margin:0; border:0; border-right:1px solid var(--bd)!important;
+    border-radius:0; background:var(--s1); max-height:none; width:260px; flex:0 0 260px; padding:var(--sp-3) var(--sp-2)!important; }
+  .set-modal .settings-nav .set-search-wrap{ margin:0 var(--sp-1) var(--sp-3); }
+  .set-modal .settings-content{ padding:var(--sp-6) var(--sp-7) var(--sp-6) var(--sp-6); }
+  .set-modal .set-close{ position:absolute; top:var(--sp-3); right:var(--sp-3); z-index:2; }
+}
+@media(max-width:720px){
+  .set-modal{ padding:0; background:var(--bg); backdrop-filter:none; }
+  .set-modal .settings-shell{ width:100%; height:100%; border:0; border-radius:0; box-shadow:none; animation:none; }
+  /* The panel covers the whole screen here, so nothing under it is drawn. */
+  body.set-open #abody, body.set-open #bottom-nav{ visibility:hidden; }
+}
+/* What a search matched inside a section, when it was not the section's name. */
+.sn-btn .sn-hit{ margin-left:auto; padding-left:var(--sp-2); font-size:var(--t-xs); font-weight:400; color:var(--mu); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:50%; }
+/* Between phone and desktop the panel still has room for its list - the page's
+   own rail is underneath it, not beside it - so the picker the page needs at
+   these widths (A40) is not used inside it. */
+@media(min-width:721px) and (max-width:1000px){
+  .set-modal .settings-shell{ flex-direction:row!important; }
+  .set-modal .settings-nav{ width:220px!important; flex:0 0 220px!important; border-bottom:0!important; padding:var(--sp-3) var(--sp-2)!important; }
+  .set-modal .settings-nav .set-search-wrap{ display:flex!important; }
+  .set-modal .settings-nav-list{ display:flex!important; }
+  .set-modal .set-picker{ display:none!important; }
+  .set-modal .settings-content{ padding:var(--sp-6) var(--sp-5)!important; }
+}

@@ -49,7 +49,7 @@ const sweep = () => page.evaluate(async (tabs) => {
   for (const t of tabs) {
     try { setTab(t); } catch (e) { continue; }
     await new Promise(s => setTimeout(s, 320));
-    document.querySelectorAll('#vc *').forEach(e => {
+    (document.getElementById('set-modal') || document.getElementById('vc')).querySelectorAll('*').forEach(e => {
       const b = e.getBoundingClientRect();
       if (b.width < 2 || b.height < 2) return;
       const txt = [...e.childNodes].filter(n => n.nodeType === 3).map(n => n.textContent.trim()).join('');

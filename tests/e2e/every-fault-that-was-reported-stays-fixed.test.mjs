@@ -81,7 +81,7 @@ await page.evaluate(() => {
   AMV_API.toggleJob   = slow({ ok: true });
   window.__an = [];
   document.addEventListener('animationstart', (e) => {
-    if (document.getElementById('vc').contains(e.target)) window.__an.push(e.animationName);
+    if ((document.getElementById('set-modal') || document.getElementById('vc')).contains(e.target)) window.__an.push(e.animationName);
   }, true);
 });
 
@@ -302,13 +302,13 @@ section('7. Billing says the plan once, and Help promises nothing removed');
 {
   const r = await page.evaluate(async () => {
     setTab('billing'); await new Promise(x => setTimeout(x, 900));
-    const t = (document.getElementById('vc').textContent || '').replace(/\s+/g, ' ');
+    const t = ((document.getElementById('set-modal') || document.getElementById('vc')).textContent || '').replace(/\s+/g, ' ');
     const cards = document.querySelectorAll('#vc .ss2').length;
     const boxed = [...document.querySelectorAll('#vc .ss2')]
       .filter(e => getComputedStyle(e).borderTopWidth !== '0px'
                 && getComputedStyle(e).backgroundColor !== 'rgba(0, 0, 0, 0)').length;
     setTab('help'); await new Promise(x => setTimeout(x, 600));
-    const h = (document.getElementById('vc').textContent || '').replace(/\s+/g, ' ');
+    const h = ((document.getElementById('set-modal') || document.getElementById('vc')).textContent || '').replace(/\s+/g, ' ');
     return { dup: (t.match(/\$15/g) || []).length, manage: /Manage billing/.test(t),
              dash: /Started -|Renews -/.test(t), cards, boxed,
              promises: /image and video generation|Images, video/i.test(h) };
@@ -330,7 +330,7 @@ section('9. The round after that one');
      container is counting the thing that actually costs. */
   const rebuilds = (tab) => page.evaluate(async (t) => {
     setTab('chat'); await new Promise(r => setTimeout(r, 300));
-    const vc = document.getElementById('vc');
+    const vc = (document.getElementById('set-modal') || document.getElementById('vc'));
     let n = 0;
     const obs = new MutationObserver(ms => { for (const m of ms)
       if (m.type === 'childList' && m.target === vc) n++; });
@@ -372,7 +372,7 @@ section('9. The round after that one');
      answer - the processor's portal is the authority and is one button away. */
   const bill = await page.evaluate(async () => {
     setTab('billing'); await new Promise(r => setTimeout(r, 900));
-    const vc = document.getElementById('vc');
+    const vc = (document.getElementById('set-modal') || document.getElementById('vc'));
     const t = (vc.textContent || '').replace(/\s+/g, ' ');
     const fine = vc.querySelector('p.bill-acts-s');
     return { apologies: /Not recorded on this device|Open Manage billing for the exact date/.test(t),
