@@ -131,6 +131,22 @@ section('Every research list names countries AMV covers, and says what the sourc
   ok(r.ptHouse && !r.gbHouse && r.mzFarm && !r.bdFarm, 'housing (OECD index) and farming (ILO, 40%) by their stated thresholds', r);
 }
 
+section('How strongly a boost applies follows the number behind it');
+{
+  const r = await page.evaluate(() => {
+    const sc = (cc, kind) => _cwPopScore({ id: 'cc_' + cc.toLowerCase() + '_' + kind }, cc);
+    const lists = Object.fromEntries(CW_POP_BOOST.map(b => [b[0], b[1].split(' ')]));
+    const stray = Object.entries(CW_POP_STRENGTH).flatMap(([n, t]) =>
+      Object.keys(t).filter(cc => !(lists[n] || []).includes(cc)).concat((lists[n] || []).filter(cc => !(cc in t))).map(cc => n + ':' + cc));
+    return { stray, ke: sc('KE', 'limits'), rw: sc('RW', 'limits'), pt: sc('PT', 'homeprices'), nz: sc('NZ', 'homeprices'),
+             ar: sc('AR', 'staples'), ng: sc('NG', 'staples') };
+  });
+  ok(r.stray.length === 0, 'every figure is for a country on its list, and every country on a scaled list has one', r.stray);
+  ok(r.ke > r.rw, 'Kenya’s 87% on mobile money counts for more than Rwanda’s 58%', [r.ke, r.rw]);
+  ok(r.pt > r.nz, 'Portugal’s rise in house prices against incomes for more than New Zealand’s', [r.pt, r.nz]);
+  ok(r.ar > r.ng, 'and a hyperinflation economy for more than one on the watch list', [r.ar, r.ng]);
+}
+
 section('A fuel price is named by the day it is set there');
 {
   const r = await page.evaluate(() => {

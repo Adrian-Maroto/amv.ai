@@ -2172,6 +2172,25 @@ const CW_POP_BOOST = [
   ['HOUSE', 'PT CA US NL CH CZ AU NZ', { prop:2, rents:3, homeprices:3, rentrights:2, mortgage:2 }],
   ['FARM',  'MZ UG TZ ET NP AO ZM RW ZW MM CI IN CM', { farm:7 }],
 ];
+/* HOW STRONGLY, where the source gives a number for every country on the
+   list: the boost is scaled from half (the lowest on the list) to full (the
+   highest), so Kenya's 87% of adults on mobile money counts for more than
+   Rwanda's 58%, and Portugal's 49-point rise in house prices against incomes
+   for more than New Zealand's 20. Lists whose source only says "in" or "out"
+   (remittances by volume, rail by network size, the national exams, the gold
+   markets) apply evenly. */
+const CW_POP_STRENGTH = {
+  MOMO:  { KE:87, GH:78, ZM:69, UG:68, SN:67, TZ:62, RW:58 },                       // Findex 2025, % adults
+  FARM:  { MZ:69.5, UG:65.9, TZ:65.4, ET:62.4, NP:61.2, AO:56.2, ZM:55.4, RW:54.8, ZW:52.5, MM:45.2, CI:45.2, IN:43.5, CM:43.4 }, // ILO 2023, % jobs
+  CAR:   { NZ:869, US:860, PL:761, IT:756, AU:737, CA:707, FR:704, CZ:658, PT:640, NO:635 }, // OICA, per 1,000
+  HOUSE: { PT:48.8, CA:37.0, US:30.7, NL:30.4, CH:25.8, CZ:24.4, AU:21.8, NZ:19.6 },  // OECD 2024, rise since 2015
+  INFL:  { AR:2, TR:2, VE:2, LB:2, AO:1, EG:1, MM:1, NG:1 },                        // IAS 29 list 2, watch list 1
+};
+function _cwBoostScale(name, cc){
+  const t = CW_POP_STRENGTH[name]; if(!t || !(cc in t)) return 1;
+  const vals = Object.values(t), lo = Math.min(...vals), hi = Math.max(...vals);
+  return hi === lo ? 1 : 0.5 + 0.5 * (t[cc] - lo) / (hi - lo);
+}
 /* The job's kind, without its country: cc_jp_tax -> tax, top_jp_inbox -> inbox. */
 function _cwKind(j){
   const id = String((j && j.id) || '');
@@ -2196,7 +2215,7 @@ function _cwPopScore(j, cc){
      times, load-shedding, prepaid bundles, the parallel rate, weekly fuel
      prices - see CW_SIGNAL) carries that source's weight on top. */
   if(CW_SIGNAL_SAME[kind]) n += 4;
-  CW_POP_BOOST.forEach(([, where, add]) => { if(where.split(' ').indexOf(cc) >= 0 && add[kind]) n += add[kind]; });
+  CW_POP_BOOST.forEach(([name, where, add]) => { if(where.split(' ').indexOf(cc) >= 0 && add[kind]) n += add[kind] * _cwBoostScale(name, cc); });
   /* A count beats research: up to +16 for what people here switch on most,
      weighted by its share of every start in the country - 30 of 40 is the
      country speaking, one of 40 is a single person. */

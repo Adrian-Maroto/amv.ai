@@ -14085,3 +14085,11 @@ Rules:
   Ghana's now lists E-Levy taken after the repeal, which providers must refund.
 - Every retired name goes in the suite with what replaced it, so it cannot
   come back with a copy-paste.
+
+## 544. Membership from data is half of it; the strength has to come from data too
+After the lists were re-sourced, every country on a list still got the same
+boost: Kenya, where 87% of adults hold mobile money, and Rwanda at 58% were
+weighted alike, and so were Portugal (house prices up 49 points against incomes
+since 2015) and New Zealand (20). Where the source gives a number for every
+country on a list, the boost now runs from half to full along that number; where
+the source only says in or out, it applies evenly and the comment says so.
