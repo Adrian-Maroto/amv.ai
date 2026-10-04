@@ -1711,7 +1711,7 @@ function renderChatView() {
       '<div id="cia">'+
         '<div id="cib">'+
           '<div id="ab2"><div id="ac"></div></div>'+
-          '<textarea id="mta" data-i18n-ph placeholder="Ask anything - essays, 3D models, code, research…" rows="1"></textarea>'+
+          '<textarea id="mta" data-i18n-ph placeholder="Ask anything - advice, facts, writing, code…" rows="1"></textarea>'+
           '<div id="itb">'+
             '<div class="il">'+
               '<button class="atb" id="att-btn" title="Attach file">'+
@@ -2152,6 +2152,7 @@ function _chip(kind, label, prompt){
     write:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
     create:'<path d="m2 12 5-5 9 9-5 5z"/><circle cx="17" cy="7" r="2"/><path d="M14 4 20 10"/>',
     research:'<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+    advice:'<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>',
     automate:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'
   }[kind]||'<circle cx="12" cy="12" r="9"/>';
   return '<button class="chome-chip" data-q="'+escH(prompt)+'">'+
@@ -2357,11 +2358,17 @@ function renderChatMsgs() {
     const chips=$('chome-chips');
     if(chips){
       chips.innerHTML=
-        _chip('build','Build','Build a full-stack web app with React, a clean UI, and auth. Then run it so I can see it working.')+
-        _chip('write','Write','Write a clear, well-structured article. Ask me what it should be about if you need to.')+
-        _chip('create','Create','Design a landing page for a premium coffee brand - a clear headline, one product shot slot, and a sign-up form. Then run it so I can see it.')+
-        _chip('research','Research','Research a topic thoroughly and write a sourced report with a clear takeaway.')+
-        _chip('automate','Automate','Every morning at 7am, research overnight news and have a concise brief ready for me.');
+        /* In the order people actually use an assistant: practical guidance,
+           looking things up and writing - mostly improving text the person
+           brought - are nearly 80% of conversations, and programming a small
+           share (NBER w34255, 2025, 1.5 million conversations). Then the two
+           AMV is for beyond a chat. Each asks for the specifics instead of
+           inventing them. */
+        _chip('advice','Advice','Help me work something out - a plan, a decision, or how to do something. Ask me what it is, then give me clear steps I can follow.')+
+        _chip('research','Look up','Find out the current facts on something I need to know, with the sources and the date of each. Ask me what it is first.')+
+        _chip('write','Edit','Improve something I have written - clearer and tighter, without changing what I mean or how I sound. I will paste it next.')+
+        _chip('build','Build','Build me a small working app I can actually use, run it, and show me the result. Ask me what it should do first.')+
+        _chip('automate','Automate','Every morning at 7, find what changed overnight in the things I follow and have a short brief ready. Ask me what to follow first.');
       chips.querySelectorAll('[data-q]').forEach(p=>p.addEventListener('click',()=>{
         const ta=$('mta');
         if(ta){ta.value=p.dataset.q;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,160)+'px';ta.focus();}

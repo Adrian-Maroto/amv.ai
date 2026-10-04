@@ -87,6 +87,19 @@ section('Every chip carries an instruction worth sending');
   ok(unlabelled.length === 0, 'and each has a label you can read', unlabelled.length);
 }
 
+section('The chips lead with what people actually ask for, and ask for their specifics');
+{
+  /* Practical guidance, looking things up and writing are nearly 80% of what
+     people bring an assistant; programming is a small share. So those come
+     first, and no chip invents a subject (a coffee brand, an article on
+     nothing) the person then has to delete. */
+  await fresh();
+  const h = await home();
+  ok(h.chips.slice(0, 3).map(c => c.label).join() === 'Advice,Look up,Edit', 'advice, looking up and editing come first', h.chips.map(c => c.label));
+  const invents = h.chips.filter(c => !/Ask me|I will paste/.test(c.q));
+  ok(invents.length === 0, 'and every one asks for the person’s own subject', invents.map(c => c.label));
+}
+
 section('Someone already talking is not greeted again');
 {
   await page.evaluate(() => {
