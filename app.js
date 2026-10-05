@@ -4553,7 +4553,7 @@ function _mountTurnstile(){
   }
   box.style.display='';
   box.setAttribute('data-sitekey', siteKey);
-  const render = ()=>{ try{ if(window.turnstile && box && !box.dataset.rendered){ turnstile.render(box, { sitekey: siteKey }); box.dataset.rendered='1'; } }catch(e){} };
+  const render = ()=>{ try{ if(window.turnstile && box && !box.dataset.rendered){ const wid = turnstile.render(box, { sitekey: siteKey }); box.dataset.rendered='1'; if(wid != null) box.dataset.wid = String(wid); } }catch(e){} };
   /* Loaded but never drew: a filter that answers with something that is not the
      script leaves window.turnstile undefined, and a silent empty box again. */
   const watch = ()=>setTimeout(()=>{ if(!box.dataset.rendered) cannotLoad('timed out'); }, 8000);
@@ -4583,8 +4583,24 @@ function _authBotFields(){
      whether it is real, whose it is, and whether it is ever worth anything. */
   try{ const rc = (typeof _refPending==='function') ? _refPending() : ''; if(rc) out.ref = rc; }catch(e){}
   try{ const hp=$('a-company'); if(hp && hp.value) out.company = hp.value; }catch(e){}
-  try{ if(window.turnstile && typeof turnstile.getResponse==='function'){ const t=turnstile.getResponse(); if(t) out.captchaToken=t; } }catch(e){}
+  try{ if(window.turnstile && typeof turnstile.getResponse==='function'){ const t=turnstile.getResponse(_turnstileId()); if(t) out.captchaToken=t; } }catch(e){}
+  /* A verification token is good for ONE attempt: the server spends it whether
+     the password was right or not. The widget went on showing its tick, so the
+     next try sent the spent token, the server asked for the verification again,
+     and there was nothing on screen to do it with - the person had to reload.
+     The token in hand is still valid for the attempt now being sent; the widget
+     starts over at once, so the next attempt has a fresh one. */
+  _resetTurnstile();
   return out;
+}
+function _turnstileId(){
+  try{ const box = document.getElementById('a-turnstile'); return (box && box.dataset.wid) || undefined; }catch(e){ return undefined; }
+}
+function _resetTurnstile(){
+  try{
+    const box = document.getElementById('a-turnstile');
+    if(window.turnstile && typeof turnstile.reset === 'function' && box && box.dataset.rendered) turnstile.reset(_turnstileId());
+  }catch(e){ try{ console.error('AMV: the verification could not be reset', e); }catch(_){} }
 }
 
 async function doSignupForm() {
@@ -30606,7 +30622,15 @@ async function _exportUserData(){
   }catch(e){ _logErr('exportData',e); if(typeof toast==='function') toast('Couldn\u2019t export right now. Please try again.','error'); }
 }
 try{ window._exportUserData=_exportUserData; }catch(e){}
-function renderSetPane(){ _renderSetPaneInner(); _killTokenAutofill(); try{ if(_lang()!=='auto'&&_lang()!=='en') _translateUI(); }catch(e){ console.error('Translate UI error in renderSetPane', e); } }
+/* EACH SECTION OPENS AT ITS TOP. The sections share one scrolling panel, so
+   scrolling down Account and then opening Privacy landed half way down
+   Privacy. Reset when the section CHANGES - a redraw of the same section
+   (after saving something in it) keeps the place the person was reading. */
+let _setPaneShown = null;
+function renderSetPane(){ _renderSetPaneInner();
+  try{ const sp = S.settingsPane || 'account';
+       if(sp !== _setPaneShown){ _setPaneShown = sp; document.querySelectorAll('.settings-content').forEach(el => { el.scrollTop = 0; }); } }catch(e){}
+  _killTokenAutofill(); try{ if(_lang()!=='auto'&&_lang()!=='en') _translateUI(); }catch(e){ console.error('Translate UI error in renderSetPane', e); } }
 /* Stop browsers / password managers from autofilling API-key & token fields.
    The only field that SHOULD autofill is the real account password (#a-pass).
 

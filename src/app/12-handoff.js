@@ -2117,7 +2117,15 @@ async function _exportUserData(){
   }catch(e){ _logErr('exportData',e); if(typeof toast==='function') toast('Couldn\u2019t export right now. Please try again.','error'); }
 }
 try{ window._exportUserData=_exportUserData; }catch(e){}
-function renderSetPane(){ _renderSetPaneInner(); _killTokenAutofill(); try{ if(_lang()!=='auto'&&_lang()!=='en') _translateUI(); }catch(e){ console.error('Translate UI error in renderSetPane', e); } }
+/* EACH SECTION OPENS AT ITS TOP. The sections share one scrolling panel, so
+   scrolling down Account and then opening Privacy landed half way down
+   Privacy. Reset when the section CHANGES - a redraw of the same section
+   (after saving something in it) keeps the place the person was reading. */
+let _setPaneShown = null;
+function renderSetPane(){ _renderSetPaneInner();
+  try{ const sp = S.settingsPane || 'account';
+       if(sp !== _setPaneShown){ _setPaneShown = sp; document.querySelectorAll('.settings-content').forEach(el => { el.scrollTop = 0; }); } }catch(e){}
+  _killTokenAutofill(); try{ if(_lang()!=='auto'&&_lang()!=='en') _translateUI(); }catch(e){ console.error('Translate UI error in renderSetPane', e); } }
 /* Stop browsers / password managers from autofilling API-key & token fields.
    The only field that SHOULD autofill is the real account password (#a-pass).
 
