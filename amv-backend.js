@@ -11935,6 +11935,8 @@ const BACKUP_NEVER = [
      retry. */
   'reset:', 'resetcode:',   // password-reset tokens - the credential itself
   'signincode:',            // a sign-in code challenge, ten minutes long, same reason
+  'rtgrace:',               // when a refresh token was first used, kept two minutes for the overlap window
+  'emailhealth:',           // the provider's last refusal of the sender, re-learned on the next send
   'smsverify:',             // a phone confirmation code, same reason
   'invite:',                // a pending invitation with its code, like link: above
   'resume:',                // a half-finished answer, held for minutes

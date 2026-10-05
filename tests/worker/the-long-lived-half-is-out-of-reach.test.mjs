@@ -195,7 +195,12 @@ section('A spent refresh token still cannot be replayed');
   const rt = cookieValue(setCookieOf(await signup(env)));
   const first = await call(env, '/auth/refresh', {}, { Cookie: `${W.REFRESH_COOKIE}=${rt}` });
   ok(first.status === 200, 'the first use works', first.status);
-  const second = await call(env, '/auth/refresh', {}, { Cookie: `${W.REFRESH_COOKIE}=${rt}` });
+  /* Past the overlap window that lets two tabs renew at once
+     (tests/worker/a-renewal-is-not-a-theft): after it, a second use is a replay. */
+  const _realNow = Date.now; Date.now = () => _realNow() + 31000;
+  let second;
+  try { second = await call(env, '/auth/refresh', {}, { Cookie: `${W.REFRESH_COOKIE}=${rt}` }); }
+  finally { Date.now = _realNow; }
   ok(second.status === 401, 'the second is refused as a replay', second.status);
 }
 
