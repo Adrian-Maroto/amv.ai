@@ -24,7 +24,7 @@ const ROOT = join(__dir, '..', '..');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'renewal.harness.mjs');
-writeFileSync(harness, src + '\nexport { issueTokens, verifyToken, authRefresh };\n');
+writeFileSync(harness, src + '\nexport { issueTokens, verifyToken, authRefresh, authLogout };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const realFetch = globalThis.fetch;
@@ -95,6 +95,21 @@ section('Two tabs renewing at once both stay signed in');
   const da = await a.json(), db = await b.json();
   ok(a.status === 200 && b.status === 200 && da.token && db.token, 'both get a session', [a.status, b.status]);
   ok(!!(await W.verifyToken(da.token, env.JWT_SECRET, env, 'access')), 'and neither revoked the other');
+}
+
+section('Signing out of one device while it was renewing leaves the others signed in');
+{
+  /* The laptop signs out; a renewal it had already sent arrives a moment
+     later with the token sign-out just retired. That is the laptop, not a
+     thief - so it is refused, and the phone stays signed in. */
+  const c = mkCounter(); const env = mkEnv(c.ns);
+  const laptop = await W.issueTokens(env, 'both@example.com', 'B');
+  const phone = await W.issueTokens(env, 'both@example.com', 'B');
+  await W.authLogout(new Request('https://api.amv.test/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + laptop.token },
+    body: JSON.stringify({ refreshToken: laptop.refreshToken }) }), env);
+  const late = await W.authRefresh(req(laptop.refreshToken), env);
+  ok(late.status === 401, 'the late renewal is refused - the laptop is signed out', late.status);
+  ok(!!(await W.verifyToken(phone.token, env.JWT_SECRET, env, 'access')), 'and the phone is still signed in');
 }
 
 section('A reuse after the overlap window is still a replay, and revokes');

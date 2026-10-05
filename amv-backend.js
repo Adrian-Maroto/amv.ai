@@ -13986,13 +13986,33 @@ async function authSignup(request, env){
     return json({ error: 'AMV could not check that address just now. Please try again in a few minutes.',
                   code: 'account_unreadable' }, 503);
   }
-  let created = false;
+  let created = false, unconfirmed = false;
   await _withKind(env, 'acct', em, (rec) => {
-    if (rec && rec.email) return;                    // somebody already has it
+    if (rec && rec.email) {                          // somebody already has it
+      unconfirmed = (rec.provider || 'email') === 'email' && !rec.emailVerifiedAt;
+      return;
+    }
     Object.assign(rec, acct);                        // written by the lock, in place
     created = true;
   }, {});
-  if (!created) return json({ error:'account exists' }, 409);
+  if (!created) {
+    /* AN ADDRESS NOBODY HAS PROVED IS NOT YET ANYBODY'S.
+
+       The account is written before the code is entered, so signing up with
+       somebody else's address and never entering the code left an account in
+       their name with the squatter's password - and the real owner, signing up
+       later, was told it already existed. Signing up again on an account nobody
+       has confirmed now sends the address a code; the new password waits in the
+       challenge and is written only when the code comes back, which only the
+       inbox can do. A confirmed account is never touched here, and where no
+       code can be sent nothing changes hands at all. */
+    if (unconfirmed && _codesOn(env)) {
+      const pending = { salt, pwHash, pwIter: PBKDF2_ITERATIONS, sipHash, name: safeName };
+      const c = await _startSignInCode(env, request, em, safeName, 'claim', pending);
+      if (c) return c;
+    }
+    return json({ error:'account exists' }, 409);
+  }
   /* THE DENOMINATOR. Conversion was computed against the number of ENTITLEMENT
      rows, and a free signup never creates one - so the denominator was, near
      enough, "people who have already paid" and the dashboard reported ~100%
@@ -14251,7 +14271,7 @@ function _maskEmail(email) {
   return (u.length <= 2 ? u[0] + '\u2022' : u[0] + '\u2022'.repeat(Math.min(6, u.length - 2)) + u[u.length - 1]) + '@' + d;
 }
 async function _sendSignInCodeEmail(env, email, code, why) {
-  const signup = why === 'signup';
+  const signup = why === 'signup' || why === 'claim';
   const subject = 'Your AMV code: ' + code;
   const line = signup
     ? 'Enter this code to finish creating your AMV account.'
@@ -14267,11 +14287,12 @@ async function _sendSignInCodeEmail(env, email, code, why) {
   return _sendEmail(env, email, subject, html, text, 'signin');
 }
 
-async function _startSignInCode(env, request, email, name, why) {
+async function _startSignInCode(env, request, email, name, why, pending) {
   const id = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
   const code = _sixDigitCode();
   await env.AMV_KV.put('signincode:' + id,
-    JSON.stringify({ email, name: name || '', why, hash: await _codeHash(id, code), attempts: 0, resends: 0, at: Date.now() }),
+    JSON.stringify({ email, name: name || '', why, hash: await _codeHash(id, code), attempts: 0, resends: 0, at: Date.now(),
+                     ...(pending ? { pending } : {}) }),
     { expirationTtl: SIGNIN_CODE_TTL_S });
   const sent = await _sendSignInCodeEmail(env, email, code, why);
   if (!sent) {
@@ -14290,6 +14311,9 @@ async function _startSignInCode(env, request, email, name, why) {
        pass, and passing through them would hand a code-free sign-in to anyone
        who can make a send fail. Returns null for "carry on". */
     if (await _emailSenderRefused(env)) {
+      /* A claim never passes through: without the inbox there is no proof, so
+         the caller answers "account exists" exactly as before claims existed. */
+      if (why === 'claim') return null;
       audit(env, 'signin_code_skipped', { email, why, reason: 'sender_refused' });
       try { await alertOnce(env, 'email_sender_refused', 'Sign-in codes cannot be sent: the email provider refuses the sender (' + String(env.RESET_EMAIL_FROM || '') + '). People are signing in WITHOUT a code until the domain is verified with the provider.', 60); } catch (e) {}
       return null;
@@ -14320,7 +14344,7 @@ async function authLoginVerify(request, env) {
         return { wrong: true, left: SIGNIN_CODE_ATTEMPTS - rec.attempts, email: rec.email };
       }
       rec.used = true;
-      return { ok: true, email: rec.email, name: rec.name, why: rec.why, at: +rec.at || 0 };
+      return { ok: true, email: rec.email, name: rec.name, why: rec.why, at: +rec.at || 0, pending: rec.pending || null };
     }, null);
   } catch (e) {
     if (_isBusy(e)) return json({ error: 'That code is being checked already. Try again in a moment.' }, 409);
@@ -14350,6 +14374,24 @@ async function authLoginVerify(request, env) {
     return json({ error: 'That sign-in has expired. Sign in again to get a new code.', code: 'code_expired' }, 400);
   if (verdict.why === 'signup') {
     try { await _withAcct(env, em, (a) => { if (a) a.emailVerifiedAt = Date.now(); }); } catch (e) {}
+  }
+  /* The inbox answered a sign-up on an unconfirmed account: the password that
+     waited in the challenge becomes the account's, and every session issued
+     under the old one ends - the squatter's included. */
+  if (verdict.why === 'claim' && verdict.pending) {
+    const p = verdict.pending;
+    let applied = false;
+    try {
+      await _withAcct(env, em, (a) => {
+        if (!a) return;
+        Object.assign(a, { salt: p.salt, pwHash: p.pwHash, pwIter: p.pwIter, sipHash: p.sipHash, name: p.name || a.name });
+        a.emailVerifiedAt = Date.now();
+        applied = true;
+      });
+    } catch (e) {}
+    if (!applied) return json({ error: 'AMV could not finish that just now. Please sign up again.', code: 'claim_failed' }, 503);
+    try { await revokeUserTokens(env, em); } catch (e) {}
+    audit(env, 'account_claimed', { email: em });
   }
   try { await _markActive(env, em); } catch (e) {}
   await _userEvent(env, request, em, verdict.why === 'signup' ? 'email_verified' : 'signed_in', { with: 'code' });
@@ -14614,6 +14656,11 @@ async function authGoogle(request, env) {
 
 /* Exchange a valid refresh token for a fresh access+refresh pair. */
 const REFRESH_GRACE_MS = 30 * 1000;
+/* Marks a refresh token as retired by sign-out (see authRefresh). Two minutes,
+   which covers any renewal already in flight; a use after that is a replay. */
+async function _retiredBySignOut(env, jti) {
+  try { await env.AMV_KV.put('rtgrace:' + jti, 'out', { expirationTtl: 120 }); } catch (e) {}
+}
 async function authRefresh(request, env) {
   const body = await request.json().catch(()=>({}));
   /* The cookie first, because on a deployment where it is in force it is the
@@ -14652,8 +14699,13 @@ async function authRefresh(request, env) {
     if (claim.claimed) {
       try { await env.AMV_KV.put('rtgrace:' + data.jti, String(Date.now()), { expirationTtl: 120 }); } catch (e) {}
     } else {
-      let first = 0;
-      try { first = +(await env.AMV_KV.get('rtgrace:' + data.jti)) || 0; } catch (e) {}
+      let mark = null;
+      try { mark = await env.AMV_KV.get('rtgrace:' + data.jti); } catch (e) {}
+      /* Spent by its own device signing out, moments ago: a renewal that was
+         already on its way from that device. Refused - the session is over -
+         but not as a theft, which would sign out every other device too. */
+      if (mark === 'out') return json({ error: 'signed out', code: 'signed_out' }, 401);
+      const first = +mark || 0;
       if (!(first && Date.now() - first <= REFRESH_GRACE_MS)) {
         await revokeUserTokens(env, data.email);
         audit(env, 'refresh_replay', { email: data.email });
@@ -14691,6 +14743,7 @@ async function authLogout(request, env) {
     const rt = rtOnly ? await verifyToken(rtOnly, env.JWT_SECRET, env, 'refresh') : null;
     if (rt && rt.email && rt.jti) {
       await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
+      await _retiredBySignOut(env, rt.jti);
       await _userEvent(env, request, rt.email, 'signed_out');
       return json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env));
     }
@@ -14716,6 +14769,7 @@ async function authLogout(request, env) {
     const rt = await verifyToken(rtRaw, env.JWT_SECRET, env, 'refresh');
     if (rt && rt.email === data.email && rt.jti) {
       await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
+      await _retiredBySignOut(env, rt.jti);
       scoped = true;
     }
   }

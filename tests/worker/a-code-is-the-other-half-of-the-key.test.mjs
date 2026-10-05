@@ -199,6 +199,49 @@ section('A code sent before the account was deleted signs nobody in');
   ok(!v.d.token && v.d.code === 'code_expired', 'the account is gone, so the code is refused', v.d);
 }
 
+section('Signing up with somebody else\u2019s address does not keep it from them');
+{
+  /* The account is written before the code is entered. A squatter who signs up
+     with your address and never enters the code used to leave you facing
+     "account exists" with their password on it. */
+  const env = mkEnv();
+  const SQUAT = 'Squatter-Passw0rd!', MINE = 'Owner-Real-Passw0rd!';
+  await call(env, '/auth/signup', { email: 'mine@example.com', name: 'Squatter', password: SQUAT });
+  mail.length = 0;
+  const again = await call(env, '/auth/signup', { email: 'mine@example.com', name: 'Owner', password: MINE });
+  ok(again.d.needsCode && !again.d.token, 'the real owner signing up gets a code, not "account exists"', again.d);
+  /* Until the inbox answers, nothing has changed hands. */
+  const early = await call(env, '/auth/login', { email: 'mine@example.com', password: MINE });
+  ok(!early.d.token && !early.d.needsCode, 'the new password does nothing before the code is entered', early.d);
+  const v = await call(env, '/auth/login/verify', { challenge: again.d.challenge, code: codeFor('mine@example.com') });
+  ok(!!v.d.token, 'the code from the inbox finishes it', v.d);
+  const theirs = await call(env, '/auth/login', { email: 'mine@example.com', password: SQUAT });
+  ok(!theirs.d.token && !theirs.d.needsCode && theirs.status >= 400, 'and the squatter\u2019s password no longer opens it', theirs.status);
+  const mine = await call(env, '/auth/login', { email: 'mine@example.com', password: MINE, deviceToken: v.d.deviceToken });
+  ok(!!mine.d.token, 'while the owner\u2019s does', mine.status);
+}
+
+section('A confirmed account cannot be signed up over');
+{
+  const env = mkEnv();
+  const s1 = await call(env, '/auth/signup', { email: 'held@example.com', name: 'H', password: PW });
+  await call(env, '/auth/login/verify', { challenge: s1.d.challenge, code: codeFor('held@example.com') });
+  mail.length = 0;
+  const over = await call(env, '/auth/signup', { email: 'held@example.com', name: 'X', password: 'Another-Passw0rd!' });
+  ok(over.status === 409 && !over.d.needsCode, 'it is "account exists", as it should be', { status: over.status, d: over.d });
+  ok(mail.length === 0, 'and nothing is mailed to its owner', mail.length);
+}
+
+section('Where no code can be sent, an unconfirmed account does not change hands');
+{
+  const env = mkEnv();
+  await call(env, '/auth/signup', { email: 'limbo@example.com', name: 'A', password: PW });
+  provider = 'refuse';
+  const over = await call(env, '/auth/signup', { email: 'limbo@example.com', name: 'B', password: 'Another-Passw0rd!' });
+  provider = 'ok';
+  ok(over.status === 409 && !over.d.token, 'no code, no handover - not even while sign-in codes are skipped', { status: over.status, d: over.d });
+}
+
 section('A sender the provider refuses outright locks nobody out - and says so');
 {
   /* The owner's deployment: RESET_EMAIL_FROM set, the domain never verified

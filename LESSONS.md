@@ -14172,3 +14172,27 @@ Rules:
   can produce - a timeout, a restart, a second tab - needs its own answer.
 - A prompt that can be dismissed must leave the app in a true state either
   way. Looking signed in without a session is not a state; it is a delay.
+
+## 548. A code that proves the address must also decide who owns the account
+
+Sign-up wrote the account first and asked for the code second, so the code
+proved the address and changed nothing about ownership: anyone could sign up
+with somebody else's address, never enter the code, and leave an account in
+their name with their own password on it. The real owner then heard "account
+exists" and had to find their way to a password reset. Signing up again on an
+account nobody has confirmed now sends a fresh code, holds the new password in
+the challenge, and writes it - ending every older session - only when the code
+comes back from the inbox. A confirmed account is never touched by sign-up,
+and where no code can be sent, nothing changes hands.
+
+In the same review: signing out retired the device's refresh token, so a
+renewal that device had already sent arrived as a "replay" and revoked every
+session on the account - signing out of a laptop signed out the phone. Sign-out
+now marks the token as retired by its owner for two minutes, and a late
+renewal is refused without the account-wide revocation.
+
+Rules:
+- Proof of an address is only worth what it controls. If the record exists
+  before the proof, ask what the proof decides - and make it decide ownership.
+- Whenever AMV's own action spends a credential, record that it did, or the
+  next ordinary request carrying it looks like an attack.
