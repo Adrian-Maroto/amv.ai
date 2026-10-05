@@ -27499,7 +27499,12 @@ function _readinessReport(env, seen) {
       turnsOn: 'Mail to anyone other than you - the sign-in code that proves an address and a new device, password resets, Crew results by email, and "email me when AMV is done". '
              + 'Without a sender on a domain you have verified, the default address only delivers to the owner of the '
              + 'email account, so AMV offers none of those to anybody else until this is set.',
-      how: put('RESET_EMAIL_FROM') },
+      /* Refused is fixed at the provider, not here: the secret is already set,
+         and telling the operator to set it again sent them to the wrong place. */
+      how: seen.senderRefused
+        ? 'In Resend: Domains > Add Domain > ' + ((/@([^>\s]+)/.exec(String(env.RESET_EMAIL_FROM || '')) || [])[1] || 'your domain')
+          + ' > add the DNS records it shows (or "Sign in to Cloudflare" to add them for you) > Verify. Then press "Send me a test email" below.'
+        : put('RESET_EMAIL_FROM') },
     { id: 'appUrl', name: 'App address', blocking: false, on: _has(env, 'APP_URL'),
       turnsOn: 'Correct links in every email, invite links, and shared conversation URLs.',
       how: put('APP_URL') },

@@ -269,6 +269,8 @@ section('A sender the provider refuses outright locks nobody out - and says so')
   const rd = await W.default.fetch(new Request('https://api.amv.test/admin/readiness', { headers: { Authorization: 'Bearer a', 'CF-Connecting-IP': '7.7.7.7' } }), env, ctx);
   const row = ((await rd.json()).items || []).find(i => i.id === 'emailSender') || {};
   ok(row.on === false && /not verified/.test(row.problem || ''), 'the readiness screen says email is refused, in the provider\u2019s words', row);
+  ok(/Resend: Domains > Add Domain > amv\.test/.test(row.how || '') && !/secret put|Variables and Secrets/i.test(row.how || ''),
+     'and its fix is the provider\u2019s domain page - not setting a secret that is already set', row.how);
 
   /* The moment the domain is verified, the next send goes through and codes
      are required again - nobody has to remember to switch them back on. */
