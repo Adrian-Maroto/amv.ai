@@ -27977,11 +27977,46 @@ async function adminEmailTest(request, env) {
     else if (/domain is not verified|verify (your )?domain|not verified/i.test(said))
       await env.AMV_KV.put('emailhealth:sender', JSON.stringify({ at: Date.now(), said: said.slice(0, 300) }), { expirationTtl: 86400 });
   } catch (e) {}
+  /* EVERY INBOX, NOT ONE. A verified domain is accepted by the provider, and
+     Gmail takes it - but Outlook, Hotmail and Yahoo also look for SPF, DKIM
+     and a DMARC policy on the sending domain, and file mail without them as
+     junk. Resend's verification adds the first two; DMARC is the one left out.
+     So the test reads all three, from public DNS, and names what is missing. */
+  const domain = ((/@([^>\s]+)/.exec(from) || [])[1] || '').toLowerCase();
+  const inboxes = domain ? await _mailDnsHealth(domain) : null;
+  const fixes = [];
+  if (inboxes) {
+    if (inboxes.dmarc === false) fixes.push('Add a TXT record named _dmarc with the value: v=DMARC1; p=none;  - Outlook, Hotmail and Yahoo junk mail from a domain without one.');
+    if (inboxes.dkim === false) fixes.push('The DKIM record (resend._domainkey) is missing - re-run "Verify DNS Records" in Resend.');
+    if (inboxes.spf === false) fixes.push('The SPF record on send.' + domain + ' is missing - re-run "Verify DNS Records" in Resend.');
+  }
   let hint = '';
   if (!ok && /domain/i.test(said)) hint = 'The sender\u2019s domain is not verified with the email provider. Verify it there, or set RESET_EMAIL_FROM to an address on a verified domain.';
   else if (!ok && (status === 401 || status === 403) && /key|auth/i.test(said)) hint = 'The provider rejected EMAIL_API_KEY. Create a new key there and set it again.';
   else if (ok) hint = 'Accepted by the provider. If it is not in the inbox within a minute, check spam - and the provider\u2019s log for that message.';
-  return json({ ok, status, from, to, provider: said, hint });
+  return json({ ok, status, from, to, provider: said, hint, domain, inboxes, fixes });
+}
+
+/* What the big inbox providers check on a sending domain, read from public
+   DNS (Cloudflare's DNS-over-HTTPS). true / false per record, or null for
+   "could not ask" - which is never reported as missing. */
+async function _dohTxt(name) {
+  try {
+    const r = await fetchDeadline('https://cloudflare-dns.com/dns-query?type=TXT&name=' + encodeURIComponent(name),
+      { headers: { accept: 'application/dns-json' } }, 5000);
+    if (!r.ok) return null;
+    const d = await r.json().catch(() => null);
+    if (!d || typeof d.Status !== 'number') return null;
+    return (d.Answer || []).filter(a => a && a.type === 16)
+      .map(a => String(a.data || '').replace(/"\s*"/g, '').replace(/^"|"$/g, ''));
+  } catch (e) { return null; }
+}
+async function _mailDnsHealth(domain) {
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return null;
+  const [dmarc, dkim, spf] = await Promise.all([
+    _dohTxt('_dmarc.' + domain), _dohTxt('resend._domainkey.' + domain), _dohTxt('send.' + domain)]);
+  const has = (list, re) => list == null ? null : list.some(t => re.test(t));
+  return { dmarc: has(dmarc, /^v=DMARC1/i), dkim: has(dkim, /p=/), spf: has(spf, /^v=spf1/i) };
 }
 
 async function adminReadiness(request, env) {

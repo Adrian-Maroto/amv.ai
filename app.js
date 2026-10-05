@@ -30094,14 +30094,30 @@ async function _loadReadiness(note){
     host.innerHTML = _readinessHTML(d) +
       /* One real send, and the provider's own answer (adminEmailTest): the only
          way to tell an unverified sender from a spam folder. */
-      '<div class="gl-note"><button class="btn bs" id="gl-mailtest" type="button">Send me a test email</button> '+
-      '<span id="gl-mailsay" role="status" aria-live="polite"></span></div>';
+      /* Any address, not only the owner's: Gmail taking it says nothing about
+         Outlook, Yahoo or iCloud, which check more - so each can be tried. */
+      '<div class="gl-note gl-mailtest">'+
+        '<label class="sr-only" for="gl-mailto">Send the test to</label>'+
+        '<input id="gl-mailto" class="fp-in" type="email" autocomplete="email" placeholder="Any address - leave empty for yours">'+
+        '<button class="btn bs" id="gl-mailtest" type="button">Send a test email</button>'+
+      '</div>'+
+      '<div id="gl-mailsay" class="gl-how" role="status" aria-live="polite"></div>';
     on($('gl-mailtest'),'click',async()=>{
       const say=$('gl-mailsay'); if(say) say.textContent='Sending\u2026';
+      const to=(($('gl-mailto')||{}).value||'').trim();
       try{
-        const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/email-test',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:'{}'},20000);
+        const r=await fetchDeadline(base.replace(/\/$/,'')+'/admin/email-test',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify(to?{to}:{})},20000);
         const x=await r.json().catch(()=>({}));
-        if(say) say.textContent = x.ok ? ('Sent to '+x.to+'. '+(x.hint||'')) : ((x.hint||x.error||'Not sent.')+(x.provider?' The provider said: '+x.provider:''));
+        let t = x.ok ? ('Sent to '+x.to+'. '+(x.hint||'')) : ((x.hint||x.error||'Not sent.')+(x.provider?' The provider said: '+x.provider:''));
+        /* What Outlook, Hotmail and Yahoo look for on the sending domain. */
+        const b=x.inboxes;
+        if(b){
+          const mark=v=>v===true?'\u2713':(v===false?'missing':'could not check');
+          t+='\nEvery-inbox check for '+x.domain+': SPF '+mark(b.spf)+', DKIM '+mark(b.dkim)+', DMARC '+mark(b.dmarc)+'.';
+          if(x.fixes && x.fixes.length) t+='\nTo fix: '+x.fixes.join('\n');
+          else if(b.spf&&b.dkim&&b.dmarc) t+='\nAll three are in place, so Gmail, Outlook, Hotmail, Yahoo and iCloud all accept it.';
+        }
+        if(say) say.textContent=t;
       }catch(e){ if(say) say.textContent='Could not reach your Worker.'; }
     });
   }catch(e){

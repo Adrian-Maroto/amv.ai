@@ -16568,3 +16568,8 @@ body.set-open{ overflow:hidden; }
 /* Right-to-left: a dialog's close button belongs at the start of the line,
    which is the left - on the right it sat on the end of an Arabic or Urdu title. */
 html[dir="rtl"] .oc{ right:auto; left:11px; }
+/* The test-email row: an address and its button on one line, wrapping on a phone. */
+.gl-mailtest{ display:flex; flex-wrap:wrap; gap:var(--sp-2); align-items:center; }
+.gl-mailtest .fp-in{ flex:1 1 220px; min-width:0; margin:0; }
+#gl-mailsay{ white-space:pre-line; }
+#gl-mailsay:not(:empty){ margin-top:var(--sp-2); }
