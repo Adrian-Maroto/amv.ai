@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="amv-build" content="872c7375d1960b1d">
+<meta name="amv-build" content="11fe2a569b3aa943">
 <!-- shell note 1: THE BACKEND THIS COPY OF THE APP TALKS TO - docs/THE-PAGE-SHELL.md -->
 <meta name="amv-api-base" content="https://api.amv.homes"><!-- BUILD:APIBASE -->
 <!-- shell note 2: SECURITY HEADERS - docs/THE-PAGE-SHELL.md -->
@@ -9773,10 +9773,15 @@ textarea.mc-cmd-input{ field-sizing:content; height:auto; min-height:1lh; }
 .set-modal .settings-nav .set-search-wrap{ margin:0 var(--sp-1) var(--sp-5); }
 }
 .setpick-searchwrap{ margin:0 0 var(--sp-5)!important; }
-.set-search-wrap{ transition:border-color .15s var(--ease), box-shadow .15s var(--ease); }
-.set-search-wrap input.set-search:focus-visible{ outline:none!important; }
-.set-search-wrap:focus-within{ border-color:var(--accent)!important; box-shadow:0 0 0 3px var(--accent-soft)!important; }
-@media(prefers-reduced-motion:reduce){ .set-search-wrap{ transition:none; } }
+.set-search-wrap{ position:relative; padding:0!important; background:none!important; border:0!important; }
+.set-search-wrap svg{ position:absolute; left:12px; top:50%; transform:translateY(-50%); pointer-events:none; color:var(--mu); }
+.set-search-wrap input.set-search{ width:100%; min-height:38px; padding:9px 12px 9px 34px!important;
+background:var(--s2)!important; border:1px solid var(--bd)!important; border-radius:var(--r-md)!important;
+transition:border-color .15s var(--ease), box-shadow .15s var(--ease); }
+.set-search-wrap input.set-search:focus-visible{ outline:none!important; border-color:var(--accent)!important;
+box-shadow:0 0 0 3px var(--accent-soft)!important; border-radius:var(--r-md)!important; }
+@media(forced-colors:active){ .set-search-wrap input.set-search:focus-visible{ outline:2px solid CanvasText!important; } }
+@media(prefers-reduced-motion:reduce){ .set-search-wrap input.set-search{ transition:none; } }
 .gl-how.gl-problem{ color:var(--red-txt, var(--red)); font-weight:500; margin-bottom:var(--sp-1); }
 </style>
 <!-- BUILD:CSS:END -->

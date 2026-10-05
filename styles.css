@@ -16543,17 +16543,25 @@ body.set-open{ overflow:hidden; }
    read as part of the field. The field now lines up with the pane's title
    opposite and the sections start a clear step below it.
 
-   The focus ring moves from the input, which drew a second rounded box inside
-   the field, to the field itself: one box, outlined in the accent while it has
-   the cursor - the way a search field looks everywhere else. */
+   The input IS the field now - the box, the fill, the border - with the icon
+   sitting in its padding, the way search fields are usually built. Its focus
+   ring was a second rounded box drawn inside the wrapper; now the ring is the
+   field's own edge, on the element the keyboard is on (which is what
+   the-keyboard-alone-is-enough measures), so there is one box, not two. */
 @media(min-width:721px){
   .set-modal .settings-nav{ padding-top:var(--sp-6)!important; }
   .set-modal .settings-nav .set-search-wrap{ margin:0 var(--sp-1) var(--sp-5); }
 }
 .setpick-searchwrap{ margin:0 0 var(--sp-5)!important; }
-.set-search-wrap{ transition:border-color .15s var(--ease), box-shadow .15s var(--ease); }
-.set-search-wrap input.set-search:focus-visible{ outline:none!important; }
-.set-search-wrap:focus-within{ border-color:var(--accent)!important; box-shadow:0 0 0 3px var(--accent-soft)!important; }
-@media(prefers-reduced-motion:reduce){ .set-search-wrap{ transition:none; } }
+.set-search-wrap{ position:relative; padding:0!important; background:none!important; border:0!important; }
+.set-search-wrap svg{ position:absolute; left:12px; top:50%; transform:translateY(-50%); pointer-events:none; color:var(--mu); }
+.set-search-wrap input.set-search{ width:100%; min-height:38px; padding:9px 12px 9px 34px!important;
+  background:var(--s2)!important; border:1px solid var(--bd)!important; border-radius:var(--r-md)!important;
+  transition:border-color .15s var(--ease), box-shadow .15s var(--ease); }
+.set-search-wrap input.set-search:focus-visible{ outline:none!important; border-color:var(--accent)!important;
+  box-shadow:0 0 0 3px var(--accent-soft)!important; border-radius:var(--r-md)!important; }
+/* Shadows are dropped in forced-colours mode; an outline is not. */
+@media(forced-colors:active){ .set-search-wrap input.set-search:focus-visible{ outline:2px solid CanvasText!important; } }
+@media(prefers-reduced-motion:reduce){ .set-search-wrap input.set-search{ transition:none; } }
 /* A readiness row that is set up and still refused says so in the status red. */
 .gl-how.gl-problem{ color:var(--red-txt, var(--red)); font-weight:500; margin-bottom:var(--sp-1); }
