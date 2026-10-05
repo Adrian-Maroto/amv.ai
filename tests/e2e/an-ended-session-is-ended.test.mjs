@@ -58,11 +58,11 @@ section('Going on to "Forgot password" is still deciding');
 {
   await ask();
   await page.click('#auth-forgot');
-  await page.waitForTimeout(300);
+  await until(() => !!document.querySelector('.fp-modal'));
   const r = await page.evaluate(() => ({ user: !!(S.user && S.user.email), forgot: !!document.querySelector('.fp-modal') }));
   ok(r.forgot && r.user, 'the reset opens, and you are not signed out underneath it', r);
   await page.evaluate(() => { const x = document.getElementById('fp-x'); if (x) x.click(); });
-  await page.waitForTimeout(200);
+  await until(() => !!document.getElementById('auth-bg'));
   ok(await page.evaluate(() => !!document.getElementById('auth-bg') && !!(S.user && S.user.email)), 'closing the reset goes back to the sign-in, still deciding');
   await page.keyboard.press('Escape');
   ok(await until(() => !(S.user && S.user.email)), 'and closing that without signing in ends it');
@@ -74,7 +74,7 @@ section('The sheet closed by code on the way somewhere else is not the person\u2
      first. Only the X and Escape - the person - count as "no". */
   await ask();
   await page.evaluate(() => closeOvr());
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(600);   /* a negative: nothing may happen, so this waits out the settle tick and more */
   ok(await page.evaluate(() => !!(S.user && S.user.email)), 'nobody is signed out by a close they did not make');
 }
 
@@ -85,7 +85,7 @@ section('Signing in keeps you signed in');
     document.getElementById('a-pass').value = 'A-real-Passw0rd!';
     return doLoginForm();
   });
-  await page.waitForTimeout(400);
+  await until(() => !!(AMV_API.token && S.user && S.user.email));
   const r = await page.evaluate(() => ({ user: !!(S.user && S.user.email), token: !!AMV_API.token, flag: _sessionEndedAsk }));
   ok(r.user && r.token && !r.flag, 'signed in, and nothing signs you back out', r);
 }
