@@ -657,15 +657,18 @@ function _askForCode(d, email, kind){
       '<div class="share-modal fp-modal" role="dialog" aria-modal="true" aria-labelledby="cv-h">'+
         '<button class="oc" id="cv-x" aria-label="Close">&#215;</button>'+
         '<div class="share-title" id="cv-h">Check your email</div>'+
-        '<p class="fp-sub">'+(signup ? 'To finish creating your account, enter' : 'This device is new to your account. Enter')+
-          ' the 6-digit code we sent to <b>'+escH(d.to || email)+'</b>. It expires in 10 minutes.</p>'+
+        /* Whole sentences, with the address on its own line: the page is
+           translated text node by text node, and a sentence split around a
+           bold address cannot be put in another language's word order. */
+        '<p class="fp-sub">'+(signup ? 'To finish creating your account, enter the 6-digit code we sent to:' : 'This device is new to your account. Enter the 6-digit code we sent to:')+'</p>'+
+        '<p class="fp-sub cv-to" data-no-i18n><b><bdi>'+escH(d.to || email)+'</bdi></b></p>'+
         '<div id="cv-msg" class="fp-msg" role="status" aria-live="polite"></div>'+
         '<label class="fp-lbl" for="cv-code">Verification code</label>'+
         '<input id="cv-code" class="fp-in fp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">'+
         '<button class="btn bp fp-go" id="cv-go">'+(signup ? 'Create account' : 'Sign in')+'</button>'+
         '<div class="fp-alt"><button id="cv-resend">Didn\u2019t get it? Send again</button>'+
         '<button id="cv-back">Use a different email</button></div>'+
-        '<p class="fp-sub" style="margin-top:12px;font-size:var(--t-xs)">Can\u2019t find it? Check spam. Never share this code - AMV will never ask you for it.</p>'+
+        '<p class="fp-sub" style="margin-top:12px;font-size:var(--t-xs)">It expires in 10 minutes. Can\u2019t find it? Check spam. Never share this code - AMV will never ask you for it.</p>'+
       '</div>';
     ovr.classList.add('on');
     const msg = (t, k) => { const e = $('cv-msg'); if(e){ e.textContent = t || ''; e.className = 'fp-msg' + (t ? ' on ' + (k || 'err') : ''); } };

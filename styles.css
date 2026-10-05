@@ -16565,3 +16565,6 @@ body.set-open{ overflow:hidden; }
 @media(prefers-reduced-motion:reduce){ .set-search-wrap input.set-search{ transition:none; } }
 /* A readiness row that is set up and still refused says so in the status red. */
 .gl-how.gl-problem{ color:var(--red-txt, var(--red)); font-weight:500; margin-bottom:var(--sp-1); }
+/* Right-to-left: a dialog's close button belongs at the start of the line,
+   which is the left - on the right it sat on the end of an Arabic or Urdu title. */
+html[dir="rtl"] .oc{ right:auto; left:11px; }

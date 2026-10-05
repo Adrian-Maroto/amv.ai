@@ -56,6 +56,46 @@ const back = await page.evaluate(() => {
 ok(/Sign Out/.test(back), 'English is restored (Sign Out is back)');
 
 section('No JavaScript errors');
+section('The sign-in code screen follows the language, and the address does not');
+{
+  /* Its instruction used to wrap the address in the middle of a sentence,
+     which split it into fragments no language's word order fits. Whole
+     sentences now, with the address on its own line and left as typed. */
+  const r = await page.evaluate(async () => {
+    saveStr('amv_lang', 'es');
+    await _i18nLoadPack('es');
+    _askForCode({ challenge: 'c1', to: 'v***@test.com' }, 'v@test.com', 'signin');
+    _translateUI();
+    await new Promise(r => setTimeout(r, 200));
+    const m = document.querySelector('.fp-modal');
+    const out = {
+      title: (document.getElementById('cv-h') || {}).textContent,
+      text: m ? m.textContent : '',
+      go: (document.getElementById('cv-go') || {}).textContent,
+      label: (document.querySelector('label[for="cv-code"]') || {}).textContent,
+      to: (document.querySelector('.cv-to') || {}).textContent,
+    };
+    closeOvr(); saveStr('amv_lang', 'en');
+    return out;
+  });
+  ok(r.title === 'Revisa tu correo', 'the title is Spanish', r.title);
+  ok(/Este dispositivo es nuevo para tu cuenta/.test(r.text) && /Caduca en 10 minutos/.test(r.text), 'so are the instruction and the warning', r.text.slice(0, 160));
+  ok(r.go === 'Iniciar sesión' && r.label === 'Código de verificación', 'and the button and the field', r);
+  ok(r.to === 'v***@test.com', 'while the address stays exactly as it was sent', r.to);
+  const all = await page.evaluate(async () => {
+    const langs = ['es','zh','hi','ar','pt','fr','de','ja','ru','id','bn','ur','tr','vi','it','ko','ta'];
+    const missing = [];
+    for (const l of langs) {
+      saveStr('amv_lang', l); await _i18nLoadPack(l);
+      for (const k of ['Check your email', 'Use a different email', 'Your sign-in had ended, so this device is now signed out. Sign in whenever you are ready.'])
+        if (T(k) === k) missing.push(l + ': ' + k.slice(0, 20));
+    }
+    saveStr('amv_lang', 'en');
+    return missing;
+  });
+  ok(all.length === 0, 'every shipped language has the new words', all);
+}
+
 section('AMV\u2019s own words in the chat area follow the language too');
 {
   /* `data-no-i18n` protects live model output, which is right. But it covers

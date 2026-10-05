@@ -100,6 +100,13 @@ section('Asking whether it can work says so, and sends nothing');
   const p3 = await jsonOf(await req(keyOnly, '/v1/notify/done', { probe: true }, t3));
   const n3 = await jsonOf(await req(keyOnly, '/v1/notify/done', { ok: true }, t3));
   ok(p3.emailReady === false && n3.sent === false, 'a key without a verified sender is not ready, and sends nothing', { p3, n3 });
+  /* Set up, and refused: the provider turning the sender's domain away is the
+     same as no sender at all, for everybody, until the operator fixes it. */
+  const refused = mkEnv({ EMAIL_API_KEY: 'k', RESET_EMAIL_FROM: 'AMV <hello@amv.example>' });
+  const t4 = await signup(refused, 'd@example.com');
+  await refused.AMV_KV.put('emailhealth:sender', JSON.stringify({ at: Date.now(), said: 'The amv.example domain is not verified.' }));
+  const p4 = await jsonOf(await req(refused, '/v1/notify/done', { probe: true }, t4));
+  ok(p4.emailReady === false, 'a sender the provider refuses is not ready either - no promise of mail that never comes', p4);
 }
 
 section('It goes to the account, says a fixed thing, and nothing the caller sent');

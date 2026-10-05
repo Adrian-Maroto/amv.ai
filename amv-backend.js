@@ -2361,7 +2361,7 @@ async function autoList(request, env){
                    under a ceiling of "ask first" would be lying about what
                    happens tonight. */
                 ceiling: _autoApprovalOf(rec.ceiling, 'auto'),
-                emailReady: _emailReaches(env), canSchedule: budget.ceiling > 0, plan: budget.plan,
+                emailReady: await _emailReachesNow(env), canSchedule: budget.ceiling > 0, plan: budget.plan,
                 // What this account may have, so the app offers exactly that.
                 free: budget.free, maxAutomations: budget.max,
                 minRepeat: budget.free ? FREE_AUTO_REPEAT : null });
@@ -4634,7 +4634,7 @@ async function autoCreate(request, env){
      only works if an email provider is configured. Rather than accepting the
      request and delivering nowhere, we downgrade to in-app and SAY which one
      the user is getting. */
-  const emailReady = _emailReaches(env);
+  const emailReady = await _emailReachesNow(env);
   const effectiveNotify = (notify === 'email' && !emailReady) ? 'app' : notify;
 
   const key = _autoKey(user.email);
@@ -10367,7 +10367,7 @@ async function notifyDone(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const body = await request.json().catch(()=>({}));
-  const emailReady = _emailReaches(env);
+  const emailReady = await _emailReachesNow(env);
   if(body && body.probe) return json({ ok:true, emailReady, sent:false });
   if(!emailReady) return json({ ok:true, emailReady:false, sent:false });
   const appUrl = String(env.APP_URL || env.APP_ORIGIN || '').replace(/\/$/, '');
@@ -28829,6 +28829,11 @@ function _sendEmailAs(env, cls, [to, subject, html, text]) {
    PROMISES a person an email - Crew's "email me the result", "email me when
    AMV is done" - asks this, not whether a key exists. */
 function _emailReaches(env) { return !!(env.EMAIL_API_KEY && env.RESET_EMAIL_FROM); }
+/* Configured AND not currently refused by the provider. What a screen asks
+   before promising someone an email: "set up" is not "will arrive" while the
+   provider is turning the sender away (an unverified domain), and a yes then
+   is a promise of mail that never comes. */
+async function _emailReachesNow(env) { return _emailReaches(env) && !(await _emailSenderRefused(env)); }
 
 async function _sendEmail(env, to, subject, html, text, cls) {
   if (!env.EMAIL_API_KEY) return false;
