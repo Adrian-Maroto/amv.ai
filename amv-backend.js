@@ -14733,16 +14733,11 @@ async function authRefresh(request, env) {
    again. The trust cookie is HttpOnly - the page cannot clear it - so the
    server does, on whichever way the sign-out below ends. */
 async function authLogout(request, env) {
-  const peek = await request.clone().json().catch(() => ({}));
-  const resp = await _authLogoutSession(request, env);
-  if (peek && peek.forgetDevice) resp.headers.append('Set-Cookie', _deviceCookie('', 0));
-  return resp;
-}
-async function _authLogoutSession(request, env) {
   const auth = request.headers.get('Authorization') || '';
   const tok = auth.replace(/^Bearer\s+/i, '');
   let data = await verifyToken(tok, env.JWT_SECRET, env, 'access');
   const body = await request.json().catch(() => ({}));
+  const fin = (r) => { if (body && body.forgetDevice) r.headers.append('Set-Cookie', _deviceCookie('', 0)); return r; };
   /* An access token lasts minutes and a sign-in cookie weeks. Signing out with
      an expired access token answered "ok" and left the cookie working, so the
      next visit on that browser could be signed straight back in. The refresh
@@ -14755,14 +14750,14 @@ async function _authLogoutSession(request, env) {
       await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
       await _retiredBySignOut(env, rt.jti);
       await _userEvent(env, request, rt.email, 'signed_out');
-      return json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env));
+      return fin(json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env)));
     }
-    return json({ ok: true }, 200, _clearRefreshCookie(env));   // nothing to revoke; never leak which
+    return fin(json({ ok: true }, 200, _clearRefreshCookie(env)));   // nothing to revoke; never leak which
   }
   if (body && body.everywhere) {
     await revokeUserTokens(env, data.email);
     await _userEvent(env, request, data.email, 'signed_out_everywhere');
-    return json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env));
+    return fin(json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env)));
   }
   /* Retire just this device's refresh token. Claiming its id is exactly what
      the refresh endpoint does on use, so a retired token is indistinguishable
@@ -14790,10 +14785,10 @@ async function _authLogoutSession(request, env) {
        would leave a live token behind on a request that promised otherwise. */
     await revokeUserTokens(env, data.email);
     await _userEvent(env, request, data.email, 'signed_out_everywhere', { reason: 'unscoped' });
-    return json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env));
+    return fin(json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env)));
   }
   await _userEvent(env, request, data.email, 'signed_out');
-  return json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env));
+  return fin(json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env)));
 }
 
 /* DELETE MY ACCOUNT - the "right to erasure" the privacy policy promises.

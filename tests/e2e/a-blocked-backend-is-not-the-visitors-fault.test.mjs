@@ -209,14 +209,25 @@ section('A fetch that merely failed does NOT announce a missing captcha');
        runner, which is slower and busier, and where this setup failed to be
        served on both tries and turned CI red. Still only the SETUP is retried;
        the assertion is the same one. */
+    /* AND THEN IT STILL WAS NOT, SO THE NETWORK IS OUT OF THIS CASE ENTIRELY.
+
+       Four tries a beat apart still failed on GitHub's runner (read from the
+       job log: "the request could not be sent", twice in one day, each time
+       green on a re-run with no change). Whatever starves the browser there,
+       a test that blocks a deploy at random is worse than one that cannot
+       flake. The loader's own fetch is handed the 503 directly for this one
+       call - the same Response a server would send - so what is measured is
+       exactly the product's reaction to a 503, and nothing about whether
+       Playwright's router won a race. The real network path is exercised by
+       the refusal sections above. */
+    const realDeadline = window.fetchDeadline;
+    window.fetchDeadline = async () => new Response('{}', { status: 503 });
     let reason = '';
-    for (let attempt = 0; attempt < 4; attempt++) {
-      if (attempt) await new Promise(r => setTimeout(r, 250));
+    try {
       _publicConfigFail = ''; _publicConfigDone = false;
       await window._loadPublicConfig();
       reason = configUnreachable();
-      if (/503/.test(reason)) break;
-    }
+    } finally { window.fetchDeadline = realDeadline; }
     _mountTurnstile();
     const b = document.getElementById('a-turnstile');
     return { reason, html: b.innerHTML || '', hidden: b.style.display === 'none' };
