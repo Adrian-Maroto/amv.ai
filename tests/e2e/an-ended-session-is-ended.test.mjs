@@ -63,8 +63,19 @@ section('Going on to "Forgot password" is still deciding');
   ok(r.forgot && r.user, 'the reset opens, and you are not signed out underneath it', r);
   await page.evaluate(() => { const x = document.getElementById('fp-x'); if (x) x.click(); });
   await page.waitForTimeout(200);
+  ok(await page.evaluate(() => !!document.getElementById('auth-bg') && !!(S.user && S.user.email)), 'closing the reset goes back to the sign-in, still deciding');
+  await page.keyboard.press('Escape');
+  ok(await until(() => !(S.user && S.user.email)), 'and closing that without signing in ends it');
+}
+
+section('The sheet closed by code on the way somewhere else is not the person\u2019s answer');
+{
+  /* A Connect, a reset, any flow that replaces what is on screen closes it
+     first. Only the X and Escape - the person - count as "no". */
+  await ask();
   await page.evaluate(() => closeOvr());
-  ok(await until(() => !(S.user && S.user.email)), 'closing everything without signing in still ends it');
+  await page.waitForTimeout(300);
+  ok(await page.evaluate(() => !!(S.user && S.user.email)), 'nobody is signed out by a close they did not make');
 }
 
 section('Signing in keeps you signed in');

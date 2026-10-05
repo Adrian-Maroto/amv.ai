@@ -26,9 +26,16 @@ const W = await import(harness + '?t=' + Date.now());
 const PW = 'A-real-Passw0rd!';
 const mail = [];
 const realFetch = globalThis.fetch;
+/* What the email provider does: 'ok', 'refuse' (the real answer for a domain
+   nobody verified), or 'down' (the network). */
+let provider = 'ok';
 globalThis.fetch = async (url, opts) => {
   const u = String(url && url.url ? url.url : url);
-  if (/api\.resend\.com/.test(u)) { mail.push(JSON.parse(String(opts.body || '{}'))); return new Response('{"id":"x"}', { status: 200 }); }
+  if (/api\.resend\.com/.test(u)) {
+    if (provider === 'refuse') return new Response('{"message":"The amv.homes domain is not verified. Please, add and verify your domain on https://resend.com/domains","name":"validation_error","statusCode":403}', { status: 403 });
+    if (provider === 'down') throw new TypeError('fetch failed');
+    mail.push(JSON.parse(String(opts.body || '{}'))); return new Response('{"id":"x"}', { status: 200 });
+  }
   return new Response('{}', { status: 200 });
 };
 const codeFor = (to) => { const m = [...mail].reverse().find(x => (x.to || [])[0] === to); return m ? (/\b(\d{6})\b/.exec(m.subject) || [])[1] : ''; };
@@ -190,6 +197,44 @@ section('A code sent before the account was deleted signs nobody in');
   for (const k of keys) if (/^acct:.*gone@example\.com/.test(k.name)) await env.AMV_KV.delete(k.name);
   const v = await call(env, '/auth/login/verify', { challenge: s.d.challenge, code });
   ok(!v.d.token && v.d.code === 'code_expired', 'the account is gone, so the code is refused', v.d);
+}
+
+section('A sender the provider refuses outright locks nobody out - and says so');
+{
+  /* The owner's deployment: RESET_EMAIL_FROM set, the domain never verified
+     with the provider. Every code was refused, so every sign-up and every new
+     device failed - the owner included, the moment their session ended. */
+  const env = mkEnv();
+  provider = 'refuse';
+  const s = await call(env, '/auth/signup', { email: 'refused@example.com', name: 'R', password: PW });
+  ok(!!s.d.token && !s.d.needsCode, 'sign-up finishes without a code that cannot be sent', s.d);
+  const l = await call(env, '/auth/login', { email: 'refused@example.com', password: PW });
+  ok(!!l.d.token, 'and so does signing in on a new device', l.d);
+  const bad = await call(env, '/auth/login', { email: 'refused@example.com', password: 'Wrong-Passw0rd!' });
+  ok(!bad.d.token && bad.status >= 400, 'the password is still checked', bad.status);
+  const rd = await W.default.fetch(new Request('https://api.amv.test/admin/readiness', { headers: { Authorization: 'Bearer a', 'CF-Connecting-IP': '7.7.7.7' } }), env, ctx);
+  const row = ((await rd.json()).items || []).find(i => i.id === 'emailSender') || {};
+  ok(row.on === false && /not verified/.test(row.problem || ''), 'the readiness screen says email is refused, in the provider\u2019s words', row);
+
+  /* The moment the domain is verified, the next send goes through and codes
+     are required again - nobody has to remember to switch them back on. */
+  provider = 'ok';
+  await call(env, '/auth/reset', { email: 'refused@example.com' });
+  const back = await call(env, '/auth/login', { email: 'refused@example.com', password: PW });
+  ok(back.d.needsCode && !back.d.token, 'once mail goes through again, a new device needs the code again', back.d);
+}
+
+section('A send that merely failed is "try again", never "come in"');
+{
+  /* Passing through on ANY failure would hand a code-free sign-in to whoever
+     can make one send fail. Only the provider's refusal of the sender counts. */
+  const env = mkEnv();
+  const s = await call(env, '/auth/signup', { email: 'flaky@example.com', name: 'F', password: PW });
+  await call(env, '/auth/login/verify', { challenge: s.d.challenge, code: codeFor('flaky@example.com') });
+  provider = 'down';
+  const l = await call(env, '/auth/login', { email: 'flaky@example.com', password: PW });
+  ok(l.status === 503 && !l.d.token && l.d.code === 'code_not_sent', 'the network failing refuses, and signs nobody in', { status: l.status, d: l.d });
+  provider = 'ok';
 }
 
 section('Where email cannot reach people, nothing is locked out');

@@ -874,7 +874,10 @@ step('Every secret the Worker reads has a row on the readiness screen', () => {
     throw new Error(`the env scan found only ${used.size} names in amv-backend.js, which cannot be right - `
       + 'the scanner is broken, not the code.');
 
-  const start = raw.indexOf('function _readinessReport(env) {');
+  /* The signature may grow (it takes what was observed at run time too); the
+     function is found by its name, not by its exact parameter list. */
+  const _rm = /function _readinessReport\(env[^)]*\) \{/.exec(raw);
+  const start = _rm ? _rm.index : -1;
   if (start < 0) throw new Error('_readinessReport is gone from amv-backend.js - the readiness screen has no source.');
   const end = raw.indexOf('\n}\n', start);
   const report = codeOnly(raw.slice(start, end === -1 ? undefined : end));

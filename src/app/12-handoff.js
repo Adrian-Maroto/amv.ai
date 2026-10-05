@@ -1628,8 +1628,11 @@ function _readinessHTML(d){
       '<div class="gl-body">'+
         '<div class="gl-label">'+escH(i.name)+
           (i.on?' <span class="gl-tag">live</span>'
-              :' <span class="gl-tag '+(i.blocking?'req':'off')+'">'+(i.blocking?'required':'not set up')+'</span>')+
+              :' <span class="gl-tag '+(i.blocking||i.problem?'req':'off')+'">'+(i.problem?'refused':(i.blocking?'required':'not set up'))+'</span>')+
         '</div>'+
+        /* Set, and still not working: the provider's own words, ahead of
+           the description, because they are the thing to act on. */
+        (i.problem?'<div class="gl-how gl-problem" role="status">'+escH(i.problem)+'</div>':'')+
         '<div class="gl-how">'+escH(i.turnsOn)+'</div>'+
         (i.on?'':'<code class="gl-cmd">'+escH(i.how)+'</code>')+
       '</div>'+
@@ -3722,7 +3725,7 @@ function openAuth(mode){
       '<p class="an">By continuing you agree to our <button id="a-terms">Terms</button> and <button id="a-priv">Privacy Policy</button></p>'+
     '</div></div>';
   onBackdrop($('auth-bg'),closeOvr);
-  document.getElementById('auth-x')?.addEventListener('click',closeOvr);
+  document.getElementById('auth-x')?.addEventListener('click',_dismissOvr);
   document.getElementById('g-btn')?.addEventListener('click',triggerGoogle);
   document.getElementById('auth-submit')?.addEventListener('click',()=>isL?doLoginForm():doSignupForm());
   try{ _mountTurnstile(); }catch(e){}
@@ -3762,10 +3765,10 @@ function openAuth(mode){
    needed the account failed one screen at a time.
 
    The way the large assistants handle an ended session is that it is ended:
-   you are signed out, and signing in is one click away. So closing the
-   question signs this device out properly. Run a tick after the close, so a
-   step that replaces it - "Forgot password", the emailed code - is still the
-   person deciding, and a sign-in that succeeded is left alone. */
+   you are signed out, and signing in is one click away. So the person closing
+   the question (its X, or Escape - see _dismissOvr) signs this device out
+   properly. Run a tick after the close, so a step that replaces it is still
+   the person deciding, and a sign-in that succeeded is left alone. */
 function _sessionEndedSettle(){
   if(!_sessionEndedAsk) return;
   const o = document.getElementById('ovr');

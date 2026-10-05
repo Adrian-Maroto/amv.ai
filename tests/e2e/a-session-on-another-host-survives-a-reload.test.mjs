@@ -272,14 +272,30 @@ section('A device whose sign-in has ended asks for it on the spot - no signing o
   ok(rm, 'and the list of apps signed in to by name is asked again, not left failed', await page2.evaluate(() => _RMCP.state));
 }
 
-section('Connect pressed with an ended sign-in asks, then carries on with the Connect');
+section('Closing "Sign in to continue" signs the device out - and opens nothing else');
 {
-  /* The sheet was offered on arrival and closed; then Connect is pressed. */
+  /* It used to leave the page looking signed in to an account the server no
+     longer recognised, so every reload asked again (tests/e2e/an-ended-session-
+     is-ended). And signing out from Integrations went back to Integrations by
+     its address, whose gate opened "Create your account" over the top. */
+  await page2.evaluate(() => setTab('integrations'));
   await device2.clearCookies();
   await page2.reload({ waitUntil: 'load' });
   await until('the sign-in sheet', () => page2.evaluate(() => !!document.getElementById('auth-bg')), 15000);
   await page2.evaluate(() => document.getElementById('auth-x').click());
   await until('the sheet to close', () => page2.evaluate(() => !document.getElementById('auth-bg')));
+  await page2.waitForTimeout(400);
+  const r = await page2.evaluate(() => ({ user: !!(S.user && S.user.email), tab: S.tab, sheet: !!document.getElementById('auth-bg'), hash: location.hash }));
+  ok(!r.user && r.tab === 'chat' && !r.sheet && !/integrations/.test(r.hash), 'signed out, on chat, with no second sheet', r);
+  await page2.evaluate(() => openAuth('login'));
+  await signInOn(page2);
+}
+
+section('Connect pressed after the sign-in ended mid-visit asks, then carries on with the Connect');
+{
+  /* Ended while the page was open: no reload, so nothing has asked yet. */
+  await device2.clearCookies();
+  await page2.evaluate(() => { AMV_API.token = 'an.expired.token'; AMV_API.refreshTok = ''; _connTried = ''; _connState = { state: 'idle', data: null, err: '' }; });
   await page2.evaluate(() => { connAddWhenReady('slack'); });
   const asked = await until('the sign-in sheet', () => page2.evaluate(() => !!document.getElementById('auth-bg')), 15000).catch(() => false);
   ok(asked, 'Connect asks for the sign-in again instead of failing', true);

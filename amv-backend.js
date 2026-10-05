@@ -14013,7 +14013,7 @@ async function authSignup(request, env){
   // An invite code, if they arrived through one. Recorded, not yet rewarded.
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
   /* No session until the address is proved: the code finishes the sign-up. */
-  if (_codesOn(env)) return _startSignInCode(env, request, em, safeName, 'signup');
+  if (_codesOn(env)) { const c = await _startSignInCode(env, request, em, safeName, 'signup'); if (c) return c; }
   return _tokenResponse(env, await issueTokens(env, em, safeName));
 }
 async function authLogin(request, env) {
@@ -14171,7 +14171,7 @@ async function authLogin(request, env) {
   /* THE PASSWORD IS ONE HALF. On a device this account has not proved itself
      on, the other half is a code sent to the address - see _startSignInCode. */
   if (_codesOn(env) && !(await _deviceTrusted(env, request, body, em)))
-    return _startSignInCode(env, request, em, acct.name || name || '', 'signin');
+    { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin'); if (c) return c; }
   try{ await _markActive(env, em); }catch(e){}
   await _userEvent(env, request, em, 'signed_in');
   return _tokenResponse(env, await issueTokens(env, em, acct.name || name || ''));
@@ -14275,6 +14275,23 @@ async function _startSignInCode(env, request, email, name, why) {
   if (!sent) {
     audit(env, 'signin_code_not_sent', { email, why });
     try { await env.AMV_KV.delete('signincode:' + id); } catch (e) {}
+    /* THE PROVIDER REFUSED THE SENDER ITSELF - NOT A HICCUP.
+
+       "The amv.homes domain is not verified" is a fact about the deployment,
+       true for every address and every attempt until the operator fixes it.
+       Requiring a code then locks everybody out of their own account - the
+       failure _codesOn already exists to avoid, reached by a setting that
+       looked right. So this is treated as what it is, a deployment whose email
+       does not reach people: the sign-in carries on without a code, the
+       operator is alerted, and the readiness screen says so. Every other
+       failure (the network, the per-address cap) still refuses, because those
+       pass, and passing through them would hand a code-free sign-in to anyone
+       who can make a send fail. Returns null for "carry on". */
+    if (await _emailSenderRefused(env)) {
+      audit(env, 'signin_code_skipped', { email, why, reason: 'sender_refused' });
+      try { await alertOnce(env, 'email_sender_refused', 'Sign-in codes cannot be sent: the email provider refuses the sender (' + String(env.RESET_EMAIL_FROM || '') + '). People are signing in WITHOUT a code until the domain is verified with the provider.', 60); } catch (e) {}
+      return null;
+    }
     return json({ error: 'AMV could not email your code just now. Try again in a minute.', code: 'code_not_sent' }, 503);
   }
   audit(env, 'signin_code_sent', { email, why });
@@ -27359,7 +27376,8 @@ function _has(env, name) { return !!String((env && env[name]) || '').trim(); }
    somebody to a page that is not theirs. */
 const WORKER_NAME = 'amv-ai';
 
-function _readinessReport(env) {
+function _readinessReport(env, seen) {
+  seen = seen || {};
   /* AN INSTRUCTION THE READER CAN ACTUALLY CARRY OUT.
 
      Every row said `wrangler secret put NAME`. That is correct and it is
@@ -27410,8 +27428,13 @@ function _readinessReport(env) {
        person who forgets their password is locked out for good, and the screen
        that exists to say what works reported email as on.
        Preflight warns about this; a running deployment could not see it. */
+    /* Set is not the same as accepted: the provider can refuse the sender's
+       domain outright, and then the sign-in code, every reset and every other
+       email fail for everyone. Its own words are shown when it has. */
     { id: 'emailSender', name: 'Email actually reaches people', blocking: false,
-      on: _has(env, 'EMAIL_API_KEY') && _has(env, 'RESET_EMAIL_FROM'),
+      on: _has(env, 'EMAIL_API_KEY') && _has(env, 'RESET_EMAIL_FROM') && !seen.senderRefused,
+      ...(seen.senderRefused ? { problem: 'The email provider refuses this sender: ' + String(seen.senderRefused.said || '').slice(0, 240)
+        + ' Until the domain is verified there, nobody receives mail and sign-in codes are skipped.' } : {}),
       turnsOn: 'Mail to anyone other than you - the sign-in code that proves an address and a new device, password resets, Crew results by email, and "email me when AMV is done". '
              + 'Without a sender on a domain you have verified, the default address only delivers to the owner of the '
              + 'email account, so AMV offers none of those to anybody else until this is set.',
@@ -27881,6 +27904,13 @@ async function adminEmailTest(request, env) {
   } catch (e) { said = 'The email provider could not be reached: ' + String(e && e.message || e).slice(0, 200); }
   audit(env, 'admin_email_test', { to, status });
   const ok = status >= 200 && status < 300;
+  /* The same record _sendEmail keeps: a test that goes through after the
+     domain is verified is what switches sign-in codes back on, straight away. */
+  try {
+    if (ok) await env.AMV_KV.delete('emailhealth:sender');
+    else if (/domain is not verified|verify (your )?domain|not verified/i.test(said))
+      await env.AMV_KV.put('emailhealth:sender', JSON.stringify({ at: Date.now(), said: said.slice(0, 300) }), { expirationTtl: 86400 });
+  } catch (e) {}
   let hint = '';
   if (!ok && /domain/i.test(said)) hint = 'The sender\u2019s domain is not verified with the email provider. Verify it there, or set RESET_EMAIL_FROM to an address on a verified domain.';
   else if (!ok && (status === 401 || status === 403) && /key|auth/i.test(said)) hint = 'The provider rejected EMAIL_API_KEY. Create a new key there and set it again.';
@@ -27890,7 +27920,7 @@ async function adminEmailTest(request, env) {
 
 async function adminReadiness(request, env) {
   { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
-  return json(Object.assign({ ok: true, checkedAt: Date.now() }, _readinessReport(env)));
+  return json(Object.assign({ ok: true, checkedAt: Date.now() }, _readinessReport(env, { senderRefused: await _emailSenderRefused(env) })));
 }
 
 /* =====================================================================
@@ -28808,8 +28838,26 @@ async function _sendEmail(env, to, subject, html, text, cls) {
       headers: { 'Authorization': 'Bearer ' + env.EMAIL_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ from, to: [to], subject, html, text }),
     });
+    /* A refusal of the SENDER (an unverified domain) is remembered, because it
+       is the same answer for everybody until the operator fixes it - see
+       _emailSenderRefused. Cleared by the first send that goes through. */
+    try {
+      if (resp.ok) { if (await env.AMV_KV.get('emailhealth:sender')) await env.AMV_KV.delete('emailhealth:sender'); }
+      else if (resp.status === 403 || resp.status === 422) {
+        const said = String((await resp.text().catch(() => '')) || '').slice(0, 300);
+        if (/domain is not verified|verify (your )?domain|not verified/i.test(said))
+          await env.AMV_KV.put('emailhealth:sender', JSON.stringify({ at: Date.now(), said }), { expirationTtl: 86400 });
+      }
+    } catch (e) {}
     return resp.ok;
   } catch (e) { return false; }
+}
+/* Whether the provider has said, in the last day, that it will not send from
+   this deployment's sender at all. A day, so a fix at the provider is noticed
+   by the next send that succeeds - which clears it - rather than never. */
+async function _emailSenderRefused(env) {
+  try { const r = await env.AMV_KV.get('emailhealth:sender'); return r ? JSON.parse(r) : null; }
+  catch (e) { return null; }
 }
 
 // minimal HTML escape for values interpolated into email markup

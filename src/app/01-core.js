@@ -891,6 +891,7 @@ const AMV_API = {
   _setTokens(d){
     /* A session is in hand: whatever the server said about the last one is over. */
     this._refreshDenied = false;
+    _sessionEndedAsk = false;
     /* Set BEFORE the token is stored: the setter below reads it to decide
        whether the refresh token may touch storage at all. */
     if(d && d.refreshInCookie) this.cookieAuth = true;
@@ -1772,12 +1773,19 @@ function _initOverlayFocus(){
 }
 
 /* Set while "Sign in to continue" is the question on screen - see
-   _askToSignInAgain. Closing that question without signing in is an answer. */
+   _askToSignInAgain. The PERSON closing that question without signing in is
+   an answer; code closing it on the way to something else is not. So this is
+   read by the two things a person closes it with - its X and Escape - through
+   _dismissOvr, and never by closeOvr, which everything calls. */
 var _sessionEndedAsk = false;
+function _dismissOvr(){
+  const ended = _sessionEndedAsk && !!document.getElementById('auth-bg');
+  closeOvr();
+  if(ended) setTimeout(()=>{ try{ _sessionEndedSettle(); }catch(e){ try{ console.error('AMV: could not settle an ended sign-in', e); }catch(_){} } }, 0);
+}
 function closeOvr() {
   try{ if(typeof _AUTO!=='undefined' && _AUTO.running && typeof stopAutonomous==='function') stopAutonomous(); }catch(e){}
   const r=$('ovr'); if(r){ r.classList.remove('on'); r.innerHTML=''; }
-  if(_sessionEndedAsk) setTimeout(()=>{ try{ _sessionEndedSettle(); }catch(e){ try{ console.error('AMV: could not settle an ended sign-in', e); }catch(_){} } }, 0);
   /* Put them back. Deferred by a tick because closing often triggers a render
      that focuses something of its own, and the last write wins. */
   const back=_ovrReturnFocus; _ovrReturnFocus=null;
@@ -2008,7 +2016,7 @@ function _initKeyboardNav(){
            remembering this line exists. The dialog still closes - through the
            button that says what closing means. */
         if(ovr && ovr.children.length && ovr.querySelector('[data-keep-open]')){ e.preventDefault(); return; }
-        if(ovr && ovr.children.length){ closeOvr(); e.preventDefault(); return; }
+        if(ovr && ovr.children.length){ _dismissOvr(); e.preventDefault(); return; }
         const pop=document.querySelector('.menu.on,.ctx-menu'); if(pop){ pop.classList.remove('on'); }
       }
       // Cmd/Ctrl+K opens the command palette
