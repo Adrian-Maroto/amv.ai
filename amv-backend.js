@@ -14728,7 +14728,17 @@ async function authRefresh(request, env) {
    Before AMV-076 the plain sign-out did the second one while the button said
    the first, so signing out of a laptop silently ended the session on a phone
    in someone's pocket. */
+/* "Sign out and erase this device" also means: this device is no longer one
+   that has proved itself, so the next sign-in here asks for the emailed code
+   again. The trust cookie is HttpOnly - the page cannot clear it - so the
+   server does, on whichever way the sign-out below ends. */
 async function authLogout(request, env) {
+  const peek = await request.clone().json().catch(() => ({}));
+  const resp = await _authLogoutSession(request, env);
+  if (peek && peek.forgetDevice) resp.headers.append('Set-Cookie', _deviceCookie('', 0));
+  return resp;
+}
+async function _authLogoutSession(request, env) {
   const auth = request.headers.get('Authorization') || '';
   const tok = auth.replace(/^Bearer\s+/i, '');
   let data = await verifyToken(tok, env.JWT_SECRET, env, 'access');

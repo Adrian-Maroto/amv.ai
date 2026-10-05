@@ -1145,7 +1145,7 @@ const AMV_API = {
   },
   /* Sign out. `everywhere` kills every session on the account; without it this
      device's refresh token is retired and the others are left alone. */
-  async logout(everywhere){
+  async logout(everywhere, opts){
     /* No access token is not "nothing to sign out of": the sign-in cookie can
        outlive it by weeks, and the server ends the session from that alone. */
     if(!this.live) return false;
@@ -1157,7 +1157,8 @@ const AMV_API = {
          sign-out about this device. */
       const r = await this._fetch('/auth/logout', {method:'POST',
         credentials: _authCreds(),
-        body: JSON.stringify(everywhere ? {everywhere:true} : (this.refreshTok ? {refreshToken: this.refreshTok} : {}))});
+        body: JSON.stringify(Object.assign(everywhere ? {everywhere:true} : (this.refreshTok ? {refreshToken: this.refreshTok} : {}),
+                                           (opts && opts.forgetDevice) ? {forgetDevice:true} : {}))});
       /* Whatever the answer, this device is signed out here. */
       this._rtMem = '';
       const d = await r.json().catch(()=>({}));

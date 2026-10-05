@@ -174,6 +174,17 @@ section('Signing out everywhere un-trusts every device');
   ok(!after.d.token && after.d.needsCode, 'after "sign out everywhere" the same device needs a code again', after.d);
 }
 
+section('"Sign out and erase this device" also forgets that the device was trusted');
+{
+  const env = mkEnv({ ALLOWED_ORIGIN: 'https://amv.test' });
+  const s1 = await call(env, '/auth/signup', { email: 'erase@example.com', name: 'E', password: PW });
+  const v = await call(env, '/auth/login/verify', { challenge: s1.d.challenge, code: codeFor('erase@example.com') });
+  const plain = await call(env, '/auth/logout', {}, { token: v.d.token });
+  ok(!plain.cookies.some(c => /^amv_dev=;/.test(c)), 'an ordinary sign-out keeps the device trusted - the next sign-in here needs no code', plain.cookies);
+  const erase = await call(env, '/auth/logout', { forgetDevice: true }, { token: v.d.token });
+  ok(erase.cookies.some(c => /^amv_dev=;.*Max-Age=0/.test(c)), 'signing out and erasing clears the trust cookie', erase.cookies);
+}
+
 section('Signing out ends the session even with no access token');
 {
   const env = mkEnv();

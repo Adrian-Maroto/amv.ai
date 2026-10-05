@@ -1973,7 +1973,9 @@ function eraseDeviceData(email){
   try{
     for(let i = localStorage.length - 1; i >= 0; i--){
       const k = localStorage.key(i);
-      if(k && (k.indexOf('amv_oauthtx_') === 0 || k.indexOf('amv_pfp_' + who) === 0)){
+      /* amv_devtok: is this device's proof it entered a sign-in code. Erasing
+         the device means it has not, so the next sign-in here asks again. */
+      if(k && (k.indexOf('amv_oauthtx_') === 0 || k.indexOf('amv_pfp_' + who) === 0 || k === 'amv_devtok:' + who)){
         localStorage.removeItem(k); removed++;
       }
     }
@@ -2007,7 +2009,7 @@ function signOutAndErase(){
   const go = () => {
     const n = eraseDeviceData(who);
     try{ toast('Signed out and erased ' + n + ' items from this device.','success',5000); }catch(e){}
-    signOut();
+    signOut({ forgetDevice: true });
   };
   /* THE RETURN VALUE IS CHECKED, NOT JUST THE TYPE.
 
@@ -2089,7 +2091,7 @@ const _DEVICE_GLOBAL_KEYS = [
   'amv_cookie_consent','amv_analytics_id','amv_ref_code','amv_links',
 ];
 try{ window._SIGNOUT_CLEAR_GLOBAL=_SIGNOUT_CLEAR_GLOBAL; window._DEVICE_GLOBAL_KEYS=_DEVICE_GLOBAL_KEYS; }catch(e){}
-function signOut(){
+function signOut(opts){
   /* Retire THIS device's session server-side, and only this one. This used to
      post to /auth/logout with no body, which revoked every token on the
      account - so signing out of a laptop silently signed out a phone. The
@@ -2099,7 +2101,7 @@ function signOut(){
      signs in, and so the logout below is not itself among what is cancelled.
      (AMV-AUD-014) */
   try{ if(window.AMV_API && typeof AMV_API.abortAll === 'function') AMV_API.abortAll(); }catch(e){}
-  try{ if(window.AMV_API && AMV_API.live) AMV_API.logout(false); }catch(e){}   // even with no access token: the cookie is the session
+  try{ if(window.AMV_API && AMV_API.live) AMV_API.logout(false, { forgetDevice: !!(opts && opts.forgetDevice) }); }catch(e){}   // even with no access token: the cookie is the session
   /* Disk AND memory. The removeItem calls clear the non-cookie path; in cookie
      mode both halves are held in module variables, and a sign-out that emptied
      storage while leaving a usable token in memory would be a sign-out that

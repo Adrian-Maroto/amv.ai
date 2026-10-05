@@ -152,6 +152,32 @@ section('One failure does not skip the rest');
   ok(a.dirHandle === null, 'and the folder handle', String(a.dirHandle));
 }
 
+section('Signing out and erasing also forgets that this device entered a sign-in code');
+{
+  /* An ordinary sign-out keeps the device trusted, so the next sign-in here
+     needs no code. Erasing the device is the opposite request: the local proof
+     goes, and the server is asked to clear the cookie copy it cannot read. */
+  const r = await page.evaluate(async () => {
+    const email = 'erase@amv.dev';
+    S.user = { name: 'E', email, ini: 'E' };
+    localStorage.setItem('amv_devtok:' + email, 'dev-token');
+    localStorage.setItem('amv_devtok:someone@else.dev', 'theirs');
+    const sent = [];
+    const realFetch = window.fetch;
+    AMV_API.base = 'https://amv-stub.workers.dev';
+    window.fetch = async (u, o) => { if (String(u).includes('/auth/logout')) sent.push(JSON.parse((o && o.body) || '{}'));
+      return { ok: true, status: 200, headers: new Headers({ 'content-type': 'application/json' }), json: async () => ({ ok: true }) }; };
+    eraseDeviceData(email);
+    signOut({ forgetDevice: true });
+    await new Promise(r => setTimeout(r, 300));
+    window.fetch = realFetch;
+    return { mine: localStorage.getItem('amv_devtok:' + email), theirs: localStorage.getItem('amv_devtok:someone@else.dev'), sent };
+  });
+  ok(r.mine === null, 'this account\u2019s device proof is erased', r.mine);
+  ok(r.theirs === 'theirs', 'another account\u2019s is left alone', r.theirs);
+  ok(r.sent.some(b => b.forgetDevice === true), 'and the server is asked to clear its cookie copy', r.sent);
+}
+
 section('Nothing threw');
 ok(errors.length === 0, 'zero uncaught page errors', JSON.stringify(errors.slice(0, 3)));
 
