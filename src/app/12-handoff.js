@@ -3753,6 +3753,30 @@ function openAuth(mode){
 
    Asked on its own at most once per page load, so dismissing it is respected;
    a press of something that needs the session (`explicit`) asks again. */
+/* "SIGN IN TO CONTINUE", CLOSED WITHOUT SIGNING IN.
+
+   The server has said this device's session is over. Closing the question used
+   to leave the page exactly as it was - the name in the corner, the chats on
+   screen - looking signed in to an account the server no longer recognises.
+   Every reload asked again, because nothing had changed, and everything that
+   needed the account failed one screen at a time.
+
+   The way the large assistants handle an ended session is that it is ended:
+   you are signed out, and signing in is one click away. So closing the
+   question signs this device out properly. Run a tick after the close, so a
+   step that replaces it - "Forgot password", the emailed code - is still the
+   person deciding, and a sign-in that succeeded is left alone. */
+function _sessionEndedSettle(){
+  if(!_sessionEndedAsk) return;
+  const o = document.getElementById('ovr');
+  if(o && o.classList.contains('on') && o.innerHTML) return;
+  _sessionEndedAsk = false;
+  if(window.AMV_API && AMV_API.token && AMV_API.tokenValid()) return;
+  if(!(S.user && S.user.email)) return;
+  _askToSignInAgain.then = null;
+  signOut();
+  if(typeof toast === 'function') toast(T('Your sign-in had ended, so this device is now signed out. Sign in whenever you are ready.'), 'info', 6000);
+}
 function _askToSignInAgain(then, explicit){
   try{
     if(!(S.user && S.user.email)) return;
@@ -3761,6 +3785,7 @@ function _askToSignInAgain(then, explicit){
     if(document.getElementById('auth-bg')) return;
     if(me.asked && !explicit) return;
     me.asked = true;
+    _sessionEndedAsk = true;
     openAuth('login');
     const h = document.querySelector('#auth-bg h2'); if(h) h.textContent = T('Sign in to continue');
     const sub = document.querySelector('#auth-bg .ob-sub');

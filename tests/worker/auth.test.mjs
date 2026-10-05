@@ -149,10 +149,22 @@ r = await W.authRefresh(req({ refreshToken: rotPair.refreshToken }), env);
 ok(r.status === 200, 'a refresh token can be exchanged once', r.status);
 const rot1 = await r.json();
 ok(rot1.refreshToken && rot1.refreshToken !== rotPair.refreshToken, 'exchange rotates to a NEW refresh token');
+/* The same person renewing twice at once - two tabs, or a reload that lost
+   the first answer - is not a theft: inside the overlap window the second
+   use gets a pair of its own, and nothing is revoked. */
 r = await W.authRefresh(req({ refreshToken: rotPair.refreshToken }), env);
-ok(r.status === 401, 'replaying the SAME refresh token is rejected (single-use)', r.status);
-const deadAccess = await W.verifyToken(rot1.token, SECRET, env, 'access');
-ok(deadAccess === null, 'detected replay revokes the whole token family', deadAccess);
+ok(r.status === 200, 'a second use moments later (two tabs) is not called a theft', r.status);
+ok(!!(await W.verifyToken(rot1.token, SECRET, env, 'access')), 'and the first tab is still signed in');
+/* After the window, a reuse IS a replay. */
+{
+  const real = Date.now; Date.now = () => real() + 31000;
+  try {
+    r = await W.authRefresh(req({ refreshToken: rotPair.refreshToken }), env);
+    ok(r.status === 401, 'replaying the SAME refresh token is rejected (single-use)', r.status);
+    const deadAccess = await W.verifyToken(rot1.token, SECRET, env, 'access');
+    ok(deadAccess === null, 'detected replay revokes the whole token family', deadAccess);
+  } finally { Date.now = real; }
+}
 
 /* ── requireUser: the gate every protected endpoint relies on ────────────── */
 section('requireUser is the real gate');

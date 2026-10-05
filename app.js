@@ -950,7 +950,7 @@ const AMV_API = {
         const _refreshOrigin = _originOf(this.base);
         const _bound = (loadStr('amv_api_token_origin') || '');
         if(this.refreshTok && _bound && _bound !== _refreshOrigin) return false;
-        const r = await fetch(this.base.replace(/\/$/,'')+'/auth/refresh', {
+        const send = () => fetch(this.base.replace(/\/$/,'')+'/auth/refresh', {
           method:'POST', headers:{'Content-Type':'application/json'},
           /* Sends the cookie. Only honoured cross-origin when the server
              answers with a concrete Allow-Origin and Allow-Credentials, which
@@ -959,6 +959,11 @@ const AMV_API = {
           body: JSON.stringify(this.refreshTok ? { refreshToken: this.refreshTok } : {}),
           signal: ctrl ? ctrl.signal : undefined
         });
+        let r = await send();
+        /* 503 is the server saying it could not check the token just now - a
+           restart during a deploy, usually - and that nothing was used up. One
+           quiet retry, so a moment's hiccup is not a sign-in screen. */
+        if(r.status === 503){ await new Promise(res=>setTimeout(res, 1500)); r = await send(); }
         /* THE SERVER SAID THERE IS NO SESSION - which is a different fact from
            "the server could not be reached", and the screen answers it
            differently: it asks for a sign-in on the spot instead of saying
@@ -1766,9 +1771,13 @@ function _initOverlayFocus(){
   }catch(e){}
 }
 
+/* Set while "Sign in to continue" is the question on screen - see
+   _askToSignInAgain. Closing that question without signing in is an answer. */
+var _sessionEndedAsk = false;
 function closeOvr() {
   try{ if(typeof _AUTO!=='undefined' && _AUTO.running && typeof stopAutonomous==='function') stopAutonomous(); }catch(e){}
   const r=$('ovr'); if(r){ r.classList.remove('on'); r.innerHTML=''; }
+  if(_sessionEndedAsk) setTimeout(()=>{ try{ _sessionEndedSettle(); }catch(e){ try{ console.error('AMV: could not settle an ended sign-in', e); }catch(_){} } }, 0);
   /* Put them back. Deferred by a tick because closing often triggers a render
      that focuses something of its own, and the last write wins. */
   const back=_ovrReturnFocus; _ovrReturnFocus=null;
@@ -6108,6 +6117,13 @@ function signOut(){
   // will prompt sign-up/login via the auth gate.
   if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
   document.getElementById('land')?.classList.add('hidden');
+  /* The address too. goApp lets an address beat S.tab, so signing out on
+     #/integrations went straight back to Integrations - a screen that needs an
+     account - and its gate opened "Create your account" over the sign-out. */
+  try{
+    if(_pathRouting && _slugFromPath()) history.replaceState(null,'','/'+location.search);
+    else if(/^#\/[a-z]+$/.test(location.hash||'')) history.replaceState(null,'',location.pathname+location.search);
+  }catch(e){}
   S.tab='chat'; goApp();
 }
 
@@ -32212,6 +32228,30 @@ function openAuth(mode){
 
    Asked on its own at most once per page load, so dismissing it is respected;
    a press of something that needs the session (`explicit`) asks again. */
+/* "SIGN IN TO CONTINUE", CLOSED WITHOUT SIGNING IN.
+
+   The server has said this device's session is over. Closing the question used
+   to leave the page exactly as it was - the name in the corner, the chats on
+   screen - looking signed in to an account the server no longer recognises.
+   Every reload asked again, because nothing had changed, and everything that
+   needed the account failed one screen at a time.
+
+   The way the large assistants handle an ended session is that it is ended:
+   you are signed out, and signing in is one click away. So closing the
+   question signs this device out properly. Run a tick after the close, so a
+   step that replaces it - "Forgot password", the emailed code - is still the
+   person deciding, and a sign-in that succeeded is left alone. */
+function _sessionEndedSettle(){
+  if(!_sessionEndedAsk) return;
+  const o = document.getElementById('ovr');
+  if(o && o.classList.contains('on') && o.innerHTML) return;
+  _sessionEndedAsk = false;
+  if(window.AMV_API && AMV_API.token && AMV_API.tokenValid()) return;
+  if(!(S.user && S.user.email)) return;
+  _askToSignInAgain.then = null;
+  signOut();
+  if(typeof toast === 'function') toast(T('Your sign-in had ended, so this device is now signed out. Sign in whenever you are ready.'), 'info', 6000);
+}
 function _askToSignInAgain(then, explicit){
   try{
     if(!(S.user && S.user.email)) return;
@@ -32220,6 +32260,7 @@ function _askToSignInAgain(then, explicit){
     if(document.getElementById('auth-bg')) return;
     if(me.asked && !explicit) return;
     me.asked = true;
+    _sessionEndedAsk = true;
     openAuth('login');
     const h = document.querySelector('#auth-bg h2'); if(h) h.textContent = T('Sign in to continue');
     const sub = document.querySelector('#auth-bg .ob-sub');

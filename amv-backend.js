@@ -14594,6 +14594,7 @@ async function authGoogle(request, env) {
 }
 
 /* Exchange a valid refresh token for a fresh access+refresh pair. */
+const REFRESH_GRACE_MS = 30 * 1000;
 async function authRefresh(request, env) {
   const body = await request.json().catch(()=>({}));
   /* The cookie first, because on a deployment where it is in force it is the
@@ -14609,12 +14610,37 @@ async function authRefresh(request, env) {
   // already used, the token is being REPLAYED - it was stolen and used twice - so
   // we revoke every token for the account (kills both the thief and the victim's
   // session; the victim simply signs in again) instead of quietly issuing more.
+  /* TWO THINGS THAT ARE NOT THEFT, AND HAD BEEN TREATED AS THEFT.
+
+     The owner was asked to sign in on every reload. A theft verdict revokes
+     every session on the account, and two ordinary events reached it:
+
+     - The lock store not answering. "Could not check" came back as "already
+       used", so a moment's hiccup on the server signed the person out of every
+       device. Now it is a 503 - the page keeps its session and tries again -
+       and only a real second use is a reuse.
+     - Two renewals of the same token within moments: two tabs, the installed
+       app and a tab, or a reload that dropped the first answer before its new
+       cookie was kept. The token was used twice by the same person. Within
+       REFRESH_GRACE_MS of the first use, a second one gets a fresh pair instead
+       of a revocation - the rotation-overlap window the large identity
+       providers keep for exactly this. After it, a reuse is a replay and is
+       treated as one. */
   if (data.jti) {
-    const firstUse = await _claimOnce(env, 'usedrefresh', data.jti, Math.floor(REFRESH_TTL_MS / 1000));
-    if (!firstUse) {
-      await revokeUserTokens(env, data.email);
-      audit(env, 'refresh_replay', { email: data.email });
-      return json({ error: 'refresh token already used' }, 401);
+    const claim = await _claimOnceDetail(env, 'usedrefresh', data.jti, Math.floor(REFRESH_TTL_MS / 1000));
+    if (claim.unavailable)
+      return json({ error: 'AMV could not renew your sign-in just now. Try again in a moment.', code: 'auth_busy' }, 503, { 'Retry-After': '5' });
+    if (claim.claimed) {
+      try { await env.AMV_KV.put('rtgrace:' + data.jti, String(Date.now()), { expirationTtl: 120 }); } catch (e) {}
+    } else {
+      let first = 0;
+      try { first = +(await env.AMV_KV.get('rtgrace:' + data.jti)) || 0; } catch (e) {}
+      if (!(first && Date.now() - first <= REFRESH_GRACE_MS)) {
+        await revokeUserTokens(env, data.email);
+        audit(env, 'refresh_replay', { email: data.email });
+        return json({ error: 'refresh token already used' }, 401);
+      }
+      audit(env, 'refresh_overlap', { email: data.email });
     }
   }
   try{ await _markActive(env, data.email); }catch(e){}
@@ -22868,7 +22894,15 @@ const CLAIM_ONCE_TTL_S = 400 * 86400;
 const _CLAIM_OWNERS = new Map();
 
 async function _claimOnce(env, kind, id, ttlSec){
-  if(!id) return true;
+  return (await _claimOnceDetail(env, kind, id, ttlSec)).claimed;
+}
+/* The same claim, saying WHY it was not taken: `unavailable` when nothing
+   could be asked, as opposed to somebody having taken it already. Every
+   caller that only needs yes/no keeps _claimOnce; a caller that treats "taken"
+   as an accusation - refresh-token reuse revokes the whole account - must not
+   make that accusation over a store that did not answer. */
+async function _claimOnceDetail(env, kind, id, ttlSec){
+  if(!id) return { claimed: true };
   /* Prefer the Durable Object: it serializes ops, so the check and the claim
      cannot interleave. This matters most for money - two simultaneous
      withdrawals must not both pass. D1 is next (PRIMARY KEY is atomic). The
@@ -22880,7 +22914,7 @@ async function _claimOnce(env, kind, id, ttlSec){
          reason to take the lock through a path that cannot hold it. Refusing
          means the caller retries or reports busy; falling through would mean
          two holders. */
-      if(r && r.unavailable) return false;
+      if(r && r.unavailable) return { claimed: false, unavailable: true };
       if(r && typeof r.claimed === 'boolean'){
         /* AMV-013: remember WHICH claim this is, so the matching release can
            prove it is giving back the lock it took rather than whatever lock
@@ -22888,7 +22922,7 @@ async function _claimOnce(env, kind, id, ttlSec){
            request rather than returned, so all seventeen call sites keep their
            boolean and none of them can forget to carry it. */
         if(r.claimed && r.owner) _CLAIM_OWNERS.set(kind + ':' + id, r.owner);
-        return r.claimed;
+        return { claimed: r.claimed };
       }
     }catch(e){ /* fall through to the next strategy */ }
   }
@@ -22896,13 +22930,18 @@ async function _claimOnce(env, kind, id, ttlSec){
     try{
       await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?)')
         .bind(kind, String(id), '1', Date.now()).run();
-      return true;
-    }catch(e){ return false; }   // PRIMARY KEY violation → already claimed
+      return { claimed: true };
+    }catch(e){
+      /* A PRIMARY KEY violation is "already claimed". Anything else is the
+         database not answering, which is not the same fact. */
+      return /UNIQUE|PRIMARY|constraint/i.test(String((e && e.message) || e))
+        ? { claimed: false } : { claimed: false, unavailable: true };
+    }
   }
   const k = `${kind}:${id}`;
-  if(await env.AMV_KV.get(k)) return false;
+  if(await env.AMV_KV.get(k)) return { claimed: false };
   await env.AMV_KV.put(k, '1', ttlSec ? { expirationTtl: ttlSec } : undefined);
-  return true;
+  return { claimed: true };
 }
 /* A CLAIM TAKEN BEFORE THE WORK MUST BE GIVEN BACK IF THE WORK DID NOT HAPPEN.
 

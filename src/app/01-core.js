@@ -950,7 +950,7 @@ const AMV_API = {
         const _refreshOrigin = _originOf(this.base);
         const _bound = (loadStr('amv_api_token_origin') || '');
         if(this.refreshTok && _bound && _bound !== _refreshOrigin) return false;
-        const r = await fetch(this.base.replace(/\/$/,'')+'/auth/refresh', {
+        const send = () => fetch(this.base.replace(/\/$/,'')+'/auth/refresh', {
           method:'POST', headers:{'Content-Type':'application/json'},
           /* Sends the cookie. Only honoured cross-origin when the server
              answers with a concrete Allow-Origin and Allow-Credentials, which
@@ -959,6 +959,11 @@ const AMV_API = {
           body: JSON.stringify(this.refreshTok ? { refreshToken: this.refreshTok } : {}),
           signal: ctrl ? ctrl.signal : undefined
         });
+        let r = await send();
+        /* 503 is the server saying it could not check the token just now - a
+           restart during a deploy, usually - and that nothing was used up. One
+           quiet retry, so a moment's hiccup is not a sign-in screen. */
+        if(r.status === 503){ await new Promise(res=>setTimeout(res, 1500)); r = await send(); }
         /* THE SERVER SAID THERE IS NO SESSION - which is a different fact from
            "the server could not be reached", and the screen answers it
            differently: it asks for a sign-in on the spot instead of saying
@@ -1766,9 +1771,13 @@ function _initOverlayFocus(){
   }catch(e){}
 }
 
+/* Set while "Sign in to continue" is the question on screen - see
+   _askToSignInAgain. Closing that question without signing in is an answer. */
+var _sessionEndedAsk = false;
 function closeOvr() {
   try{ if(typeof _AUTO!=='undefined' && _AUTO.running && typeof stopAutonomous==='function') stopAutonomous(); }catch(e){}
   const r=$('ovr'); if(r){ r.classList.remove('on'); r.innerHTML=''; }
+  if(_sessionEndedAsk) setTimeout(()=>{ try{ _sessionEndedSettle(); }catch(e){ try{ console.error('AMV: could not settle an ended sign-in', e); }catch(_){} } }, 0);
   /* Put them back. Deferred by a tick because closing often triggers a render
      that focuses something of its own, and the last write wins. */
   const back=_ovrReturnFocus; _ovrReturnFocus=null;

@@ -2127,6 +2127,13 @@ function signOut(){
   // will prompt sign-up/login via the auth gate.
   if(!S.convs||!S.convs.length){ S.convs=[newConvObj()]; S.cur=S.convs[0].id; }
   document.getElementById('land')?.classList.add('hidden');
+  /* The address too. goApp lets an address beat S.tab, so signing out on
+     #/integrations went straight back to Integrations - a screen that needs an
+     account - and its gate opened "Create your account" over the sign-out. */
+  try{
+    if(_pathRouting && _slugFromPath()) history.replaceState(null,'','/'+location.search);
+    else if(/^#\/[a-z]+$/.test(location.hash||'')) history.replaceState(null,'',location.pathname+location.search);
+  }catch(e){}
   S.tab='chat'; goApp();
 }
 

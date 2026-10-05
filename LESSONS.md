@@ -14141,3 +14141,34 @@ Rules:
 - When a test you wrote fails to catch a mutation, find out why before
   "fixing" the test. Here it was because a second guard already held - which
   is a finding about the code, not a weak test.
+
+## 547. "Could not check" is not "already used", and an ended session is ended
+
+The owner was asked to sign in on every reload, and closing the sheet left the
+app looking signed in anyway. Two defects, one on each side.
+
+Server: a refresh token is single use, and a second use revokes every session
+on the account. The claim that records the use is a Durable Object call, and
+`_claimOnce` returned `false` both for "somebody already claimed this" and for
+"the store did not answer" - a restart during a deploy is enough for the
+second. So a hiccup was read as theft and signed the person out of every
+device. Two tabs renewing at the same moment reached the same verdict. Now
+"could not check" is a 503 the page retries once, and a second use within
+30 seconds gets its own pair (the rotation-overlap window identity providers
+keep); after that, a reuse is still a replay and still revokes.
+
+Page: closing "Sign in to continue" changed nothing, so the account stayed
+on screen while the server no longer recognised it, and the next reload
+asked again. Closing it now signs this device out. And sign-out cleared
+`S.tab` but not the address, which `goApp` prefers - so signing out on a
+gated screen landed back on it and its gate opened a second sheet.
+
+Rules:
+- A boolean that answers two different questions will eventually be read as
+  the worse one. When "no" can mean "refused" or "could not ask", and the
+  caller punishes the first, return which.
+- A security response sized for an attacker (revoke everything) must be fed
+  only facts that come from the attacker. Anything AMV's own infrastructure
+  can produce - a timeout, a restart, a second tab - needs its own answer.
+- A prompt that can be dismissed must leave the app in a true state either
+  way. Looking signed in without a session is not a state; it is a delay.
