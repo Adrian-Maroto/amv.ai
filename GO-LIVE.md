@@ -181,7 +181,7 @@ one except the two in the first table.
 
 | Capability | Set | Costs |
 |---|---|---|
-| Email that reaches anyone | `EMAIL_API_KEY` **and** `RESET_EMAIL_FROM` | Resend has a free tier. **Both halves**: with only the key, the default sender delivers to the Resend account owner and NOBODY ELSE, so every other person's password reset goes nowhere. |
+| Email that reaches anyone | `EMAIL_API_KEY` **and** `RESET_EMAIL_FROM` **and the sender's domain verified in Resend** | Resend has a free tier. **All three**: with only the key, the default sender delivers to the Resend account owner and NOBODY ELSE. With a sender on a domain Resend has not verified, Resend refuses every message (`403 ... domain is not verified`) - nobody gets a reset, a sign-in code, or anything else. Verify it under Resend → Domains (on Cloudflare DNS there is a one-click button), then press **Send me a test email** in Settings → Platform. Email that works also switches on the emailed sign-in code for sign-up and new devices; while the provider refuses the sender, AMV skips the code rather than lock everyone out, and the readiness screen says so. |
 | Card payments | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, the three `STRIPE_PRICE_*` | Stripe's per-transaction fee. No monthly fee. All five, or see the three traps above. |
 | Team seats | `STRIPE_PRICE_TEAM_SEAT` | Same. Without it Teams still works on Elite and Ultra. |
 | PayPal | `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET`, `PAYPAL_WEBHOOK_ID`, the three `PAYPAL_PLAN_*`, `PAYPAL_MODE=live` | PayPal's per-transaction fee. |
@@ -295,7 +295,7 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 | Secret | Unlocks |
 |---|---|
 | `ADMIN_TOKEN` | Founder Dashboard + admin tools (any long random string) |
-| `EMAIL_API_KEY` | Password-reset emails **and** delivery of autonomous task results by email (Resend key) |
+| `EMAIL_API_KEY` | Password-reset emails, the emailed sign-in code (sign-up and new devices), and delivery of autonomous task results by email (Resend key). Needs `RESET_EMAIL_FROM` on a domain verified in Resend - see the email row in 2.0. |
 | `MAIL_CRED_KEY` | Encrypts every credential AMV holds for somebody: a mailbox password, a Telegram bot token, a school access token. Without it those three connectors **refuse to store anything** rather than store it in the clear - honest, and the first person to find out is a customer. Any long random value, 24+ characters of real randomness (not a phrase). Changing it later makes every stored credential unreadable and everyone has to reconnect. |
 | `GLOBAL_DAILY_USD_CAP` | Your daily spend ceiling across all users (defaults to $500) - your runaway-bill protection |
 
@@ -507,6 +507,11 @@ In order, because each one catches a different way the day goes wrong:
 5. **Check your alarm channel got something.** Set `ALERT_WEBHOOK` first - a
    deployment with no alarm channel is one where the first person to notice a
    problem is a customer.
+6. **Send yourself a test email.** Settings → Platform → admin token →
+   **Send me a test email**. It shows the provider's own answer. "Accepted"
+   means resets and sign-in codes will arrive; "domain is not verified" means
+   nobody will get any email until you verify the domain in Resend - this is
+   exactly how a live deployment's resets silently went nowhere.
 
 - Open the live site in a PRIVATE WINDOW - the one place the "works on my
   machine" version of this fails. Sign up, send a chat, and open the upgrade
