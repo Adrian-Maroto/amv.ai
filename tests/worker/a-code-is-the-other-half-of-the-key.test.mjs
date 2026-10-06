@@ -293,6 +293,19 @@ section('A send that merely failed is "try again", never "come in"');
   provider = 'ok';
 }
 
+section('The day\u2019s allowance of codes, used up, is said as a daily limit');
+{
+  /* "Try again in a minute" was the answer after the tenth code of the day -
+     and a minute changes nothing. */
+  const env = mkEnv();
+  const s1 = await call(env, '/auth/signup', { email: 'many@example.com', name: 'M', password: PW });
+  await call(env, '/auth/login/verify', { challenge: s1.d.challenge, code: codeFor('many@example.com') });
+  let last = null;
+  for (let i = 0; i < 12; i++) last = await call(env, '/auth/login', { email: 'many@example.com', password: PW });
+  ok(last.status === 429 && last.d.code === 'code_daily_limit' && /tomorrow/.test(last.d.error), 'it says the limit is for today, not "in a minute"', last.d);
+  ok(!last.d.token, 'and signs nobody in', last.d);
+}
+
 section('Where email cannot reach people, nothing is locked out');
 {
   const env = mkEnv({ RESET_EMAIL_FROM: '' });

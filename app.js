@@ -4920,9 +4920,21 @@ async function _forgotSend(isResend){
       if(btn){ btn.disabled=false; btn.textContent='Send code'; }
       return;
     }
+    /* NOT SENT, AND SAID SO. The server pauses codes after five requests for
+       one address in an hour and says `rateLimited` - the page ignored it and
+       said "check your inbox" anyway, so somebody testing their own address
+       waited for mail that was never sent. Saying it reveals nothing about
+       whether the address has an account: the limit counts the requests, not
+       the accounts. The code step still opens, for a code already received. */
+    if(d.unavailable){
+      _forgotMsg('AMV could not send a code just now. Please try again in a minute.','err');
+      if(btn){ btn.disabled=false; btn.textContent='Send code'; }
+      return;
+    }
     _RESET.step = 2;
     _renderForgot();
-    if(isResend) _forgotMsg('New code sent.','ok');
+    if(d.rateLimited) _forgotMsg('You have asked for several codes for this address in the last hour, so AMV has paused sending them - no new email was sent. Use the newest code you already received, or try again in an hour.','err');
+    else if(isResend) _forgotMsg('New code sent.','ok');
   }catch(e){
     if(btn){ btn.disabled=false; btn.textContent='Send code'; }
     _forgotMsg(e.message==='not-connected'

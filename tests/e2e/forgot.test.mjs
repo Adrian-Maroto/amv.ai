@@ -27,7 +27,7 @@ const STUB = `
     const body = JSON.parse((opts && opts.body) || '{}');
     window.__calls.push(url.replace('https://amv-stub.workers.dev', ''));
     if (url.includes('/auth/reset/code'))
-      return R({ ok: true, sent: window.__emailOn !== false, emailConfigured: window.__emailOn !== false });
+      return R({ ok: true, sent: window.__emailOn !== false, emailConfigured: window.__emailOn !== false, ...(window.__rl ? { rateLimited: true } : {}) });
     if (url.includes('/auth/reset/verify'))
       return body.code === '123456'
         ? R({ ok: true, token: 'reset-tok' })
@@ -237,6 +237,24 @@ ok(serverWins.localOffered === false,
    'the device-local reset is REFUSED once a server is connected', serverWins.localOffered);
 ok(serverWins.askedForCode, 'it asks for the emailed 6-digit code instead', serverWins.title);
 ok(serverWins.hitServer, 'and it really went to the server for that code');
+
+section('Paused after too many requests: said, not hidden behind "check your inbox"');
+{
+  /* Five codes an hour per address. The page used to ignore the server saying
+     so, and somebody testing their own address waited for mail never sent. */
+  const r = await page.evaluate(async (stub) => {
+    AMV_API.base = 'https://amv-stub.workers.dev';
+    eval(stub); window.__emailOn = true; window.__rl = true;
+    openForgot('v@test.com');
+    await new Promise(r => setTimeout(r, 200));
+    document.getElementById('fp-send').click();
+    await new Promise(r => setTimeout(r, 400));
+    window.__rl = false;
+    return { msg: document.getElementById('fp-msg')?.textContent || '', codeStep: !!document.getElementById('fp-code') };
+  }, STUB);
+  ok(/paused/i.test(r.msg) && /no new email was sent/i.test(r.msg), 'it says no new email was sent, and why', r.msg);
+  ok(r.codeStep, 'and still opens the code step, for a code already received', r);
+}
 
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));

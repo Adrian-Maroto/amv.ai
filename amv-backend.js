@@ -14318,6 +14318,15 @@ async function _startSignInCode(env, request, email, name, why, pending) {
       try { await alertOnce(env, 'email_sender_refused', 'Sign-in codes cannot be sent: the email provider refuses the sender (' + String(env.RESET_EMAIL_FROM || '') + '). People are signing in WITHOUT a code until the domain is verified with the provider.', 60); } catch (e) {}
       return null;
     }
+    /* The daily allowance for this address used up is not "try again in a
+       minute" - a minute changes nothing. Read without reserving (op:get), so
+       asking costs the address nothing. */
+    try {
+      const used = await counter(env, `mailto:signin:${email}:${todayKey()}`, { op: 'get' });
+      if (used && +used.value >= EMAIL_DAY_CAP.signin)
+        return json({ error: 'AMV has sent the most sign-in codes it sends to one address in a day. Use the newest code you received, or try again tomorrow.',
+                      code: 'code_daily_limit' }, 429);
+    } catch (e) {}
     return json({ error: 'AMV could not email your code just now. Try again in a minute.', code: 'code_not_sent' }, 503);
   }
   audit(env, 'signin_code_sent', { email, why });
