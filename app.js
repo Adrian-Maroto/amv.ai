@@ -877,7 +877,9 @@ const AMV_API = {
     try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
     const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
-    if(d.token){ this._setTokens(d); return d; }
+    /* A trusted sign-in hands back a renewed device token: kept, so trust runs
+       from the last sign-in and survives a browser that dropped the cookie. */
+    if(d.token){ if(d.deviceToken) _devTokSet(email, d.deviceToken); this._setTokens(d); return d; }
     /* Right password on a device this account has not proved itself on: no
        session yet - the caller asks for the code that was just emailed. */
     if(d.needsCode && d.challenge) return d;
@@ -4675,7 +4677,13 @@ function _askForCode(d, email, kind){
         /* Whole sentences, with the address on its own line: the page is
            translated text node by text node, and a sentence split around a
            bold address cannot be put in another language's word order. */
-        '<p class="fp-sub">'+(signup ? 'To finish creating your account, enter the 6-digit code we sent to:' : 'This device is new to your account. Enter the 6-digit code we sent to:')+'</p>'+
+        /* Said as it is. "This device is new" was shown every time, and was
+           false whenever the device had been trusted before (the server says
+           which: d.reason). */
+        '<p class="fp-sub">'+(signup ? 'To finish creating your account, enter the 6-digit code we sent to:'
+          : d.reason === 'revoked' ? 'Your account was signed out on every device, so this one needs to confirm it is you. Enter the 6-digit code we sent to:'
+          : d.reason === 'expired' ? 'It has been a while since this device confirmed it is you. Enter the 6-digit code we sent to:'
+          : 'This browser has not confirmed it is you yet. Enter the 6-digit code we sent to:')+'</p>'+
         '<p class="fp-sub cv-to" data-no-i18n><b><bdi>'+escH(d.to || email)+'</bdi></b></p>'+
         '<div id="cv-msg" class="fp-msg" role="status" aria-live="polite"></div>'+
         '<label class="fp-lbl" for="cv-code">Verification code</label>'+

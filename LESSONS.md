@@ -14196,3 +14196,28 @@ Rules:
   before the proof, ask what the proof decides - and make it decide ownership.
 - Whenever AMV's own action spends a credential, record that it did, or the
   next ordinary request carrying it looks like an attack.
+
+## 549. A device you trusted should stay trusted, and the screen should say why when it is not
+
+The owner kept being asked for a code with "This device is new to your
+account" on a device that was not new. Five causes, one wording:
+- "Sign out everywhere", a password reset, or (until lesson 547's fix) two tabs
+  renewing at once revoke every device's trust - by design, but the screen
+  called it a new device.
+- While the email provider refused the sender, sign-ins skipped the code, so
+  no device was marked trusted in that window.
+- Trust lived only in a cookie. A browser that dropped it (Safari caps cookies
+  set by a server on another address; private windows keep none) looked new.
+- A stale cookie beside a valid copy hid the valid one - only the first copy
+  was ever checked.
+- Trust ran 30 days from the first code, never renewed by signing in.
+
+Now both copies are tried, every trusted sign-in renews the trust, the page
+keeps its own copy, and the server says which case it is so the screen can
+too ("signed out on every device", "a while since", "not confirmed yet").
+
+Rules:
+- A security prompt that is wrong most of the times it appears teaches people
+  to stop reading it. Say the true reason, or say nothing specific.
+- When a credential can arrive two ways, try both; a stale copy must never
+  shadow a valid one.

@@ -877,7 +877,9 @@ const AMV_API = {
     try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
     const r = await this._fetch('/auth/login', {method:'POST', body:JSON.stringify(body)});
     const d = await r.json().catch(()=>({}));
-    if(d.token){ this._setTokens(d); return d; }
+    /* A trusted sign-in hands back a renewed device token: kept, so trust runs
+       from the last sign-in and survives a browser that dropped the cookie. */
+    if(d.token){ if(d.deviceToken) _devTokSet(email, d.deviceToken); this._setTokens(d); return d; }
     /* Right password on a device this account has not proved itself on: no
        session yet - the caller asks for the code that was just emailed. */
     if(d.needsCode && d.challenge) return d;

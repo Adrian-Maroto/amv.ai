@@ -306,6 +306,36 @@ section('The day\u2019s allowance of codes, used up, is said as a daily limit');
   ok(!last.d.token, 'and signs nobody in', last.d);
 }
 
+section('A trusted device stays trusted - and the code screen says why when it is not');
+{
+  /* "This device is new to your account" was shown every time a code was
+     asked for, including on devices that had been trusted. And trust lived only
+     in a cookie: a browser that dropped it, or a stale one beside a valid copy,
+     made a known device look new. */
+  const env = mkEnv({ ALLOWED_ORIGIN: 'https://amv.test' });
+  const s1 = await call(env, '/auth/signup', { email: 'known@example.com', name: 'K', password: PW });
+  const v = await call(env, '/auth/login/verify', { challenge: s1.d.challenge, code: codeFor('known@example.com') });
+  ok(!!v.d.deviceToken && !!cookieFrom(v, 'amv_dev'), 'the code gives the device a copy for the page as well as the cookie', { body: !!v.d.deviceToken, cookie: !!cookieFrom(v, 'amv_dev') });
+
+  const fresh = await call(env, '/auth/login', { email: 'known@example.com', password: PW });
+  ok(fresh.d.needsCode && fresh.d.reason === 'none', 'a browser with nothing is asked, and told it has not confirmed yet', fresh.d);
+
+  const byCopy = await call(env, '/auth/login', { email: 'known@example.com', password: PW, deviceToken: v.d.deviceToken });
+  ok(!!byCopy.d.token, 'the page\u2019s copy alone is enough - a dropped cookie does not make the device new', byCopy.d);
+  ok(!!byCopy.d.deviceToken, 'and each trusted sign-in renews the trust, so it runs from the last sign-in', !!byCopy.d.deviceToken);
+
+  /* A stale cookie beside a valid copy: the valid one wins. */
+  await new Promise(r => setTimeout(r, 1100));
+  await call(env, '/auth/logout', { everywhere: true }, { token: byCopy.d.token });
+  const after = await call(env, '/auth/login', { email: 'known@example.com', password: PW, deviceToken: byCopy.d.deviceToken },
+                           { cookie: cookieFrom(v, 'amv_dev') });
+  ok(after.d.needsCode && after.d.reason === 'revoked', 'after "sign out everywhere" it says so - not "new device"', after.d);
+  const v2 = await call(env, '/auth/login/verify', { challenge: after.d.challenge, code: codeFor('known@example.com') });
+  const mixed = await call(env, '/auth/login', { email: 'known@example.com', password: PW, deviceToken: v2.d.deviceToken },
+                           { cookie: cookieFrom(v, 'amv_dev') });
+  ok(!!mixed.d.token, 'a stale cookie no longer hides the valid copy beside it', mixed.d);
+}
+
 section('Where email cannot reach people, nothing is locked out');
 {
   const env = mkEnv({ RESET_EMAIL_FROM: '' });

@@ -14192,10 +14192,16 @@ async function authLogin(request, env) {
   }
   /* THE PASSWORD IS ONE HALF. On a device this account has not proved itself
      on, the other half is a code sent to the address - see _startSignInCode. */
-  if (_codesOn(env) && !(await _deviceTrusted(env, request, body, em)))
-    { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin'); if (c) return c; }
+  let trust = null;
+  if (_codesOn(env)) {
+    trust = await _deviceTrustState(env, request, body, em);
+    if (!trust.trusted) { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin', null, trust.reason); if (c) return c; }
+  }
   try{ await _markActive(env, em); }catch(e){}
   await _userEvent(env, request, em, 'signed_in');
+  /* Trust is counted from the LAST sign-in, not the first code: somebody who
+     signs in every week should not be asked for a code every thirty days. */
+  if (trust && trust.trusted) return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, acct.name || name || ''));
   return _tokenResponse(env, await issueTokens(env, em, acct.name || name || ''));
 }
 
@@ -14251,11 +14257,46 @@ function _deviceCookie(value, maxAgeS) {
   return [`${DEVICE_COOKIE}=${value}`, 'HttpOnly', 'Secure', 'SameSite=None', 'Path=/auth',
           'Max-Age=' + Math.max(0, Math.floor(maxAgeS))].join('; ');
 }
+/* WHETHER THIS DEVICE HAS PROVED ITSELF - AND IF NOT, WHY NOT.
+
+   Two copies may arrive: the HttpOnly cookie and the copy the page keeps. Each
+   is tried, because a stale cookie (from before a "sign out everywhere") used
+   to hide a valid copy beside it, and a browser that dropped the cookie (Safari
+   caps cookies set by a server on another address; private windows keep none)
+   still has the page's copy. Neither can be forged; both carry the account's
+   revocation epoch.
+
+   The reason is for the words on the code screen, never for the decision: the
+   payload is read unverified only to say WHICH way trust ended. "This device is
+   new" was said in every case, which was false most of the times it was shown. */
+async function _deviceTrustState(env, request, body, email) {
+  const toks = [_readCookieNamed(request, DEVICE_COOKIE), String((body && body.deviceToken) || '')].filter(Boolean);
+  if (!toks.length) return { trusted: false, reason: 'none' };
+  let reason = 'none';
+  for (const tok of toks) {
+    const c = await verifyToken(tok, env.JWT_SECRET, env, 'device');
+    if (c && String(c.email || '').toLowerCase() === email) return { trusted: true };
+    try {
+      const p = JSON.parse(atob(String(tok.split('.')[1] || '').replace(/-/g, '+').replace(/_/g, '/')));
+      if (String(p.email || '').toLowerCase() !== email) continue;
+      if (p.exp && p.exp * 1000 < Date.now()) reason = 'expired';
+      else if (reason !== 'expired') reason = 'revoked';
+    } catch (e) {}
+  }
+  return { trusted: false, reason };
+}
+/* A session response that also carries a fresh device token: in the body
+   always (the page keeps a copy), and as the HttpOnly cookie where the
+   deployment uses cookies. Signing never fails the response it rides on. */
+async function _withDeviceTrust(env, email, respond, tokens) {
+  let device = null;
+  try { if (env.JWT_SECRET) device = await _deviceTokenFor(env, email); } catch (e) { device = null; }
+  const resp = respond(env, tokens, device ? { deviceToken: device } : {});
+  if (device && _cookieAuthOn(env)) resp.headers.append('Set-Cookie', _deviceCookie(device, DEVICE_TRUST_MS / 1000));
+  return resp;
+}
 async function _deviceTrusted(env, request, body, email) {
-  const tok = _readCookieNamed(request, DEVICE_COOKIE) || String((body && body.deviceToken) || '');
-  if (!tok) return false;
-  const c = await verifyToken(tok, env.JWT_SECRET, env, 'device');
-  return !!(c && String(c.email || '').toLowerCase() === email);
+  return (await _deviceTrustState(env, request, body, email)).trusted;
 }
 async function _deviceTokenFor(env, email) {
   const epoch = await _tokenEpoch(env, email);
@@ -14287,7 +14328,7 @@ async function _sendSignInCodeEmail(env, email, code, why) {
   return _sendEmail(env, email, subject, html, text, 'signin');
 }
 
-async function _startSignInCode(env, request, email, name, why, pending) {
+async function _startSignInCode(env, request, email, name, why, pending, reason) {
   const id = [...crypto.getRandomValues(new Uint8Array(24))].map(b => b.toString(16).padStart(2, '0')).join('');
   const code = _sixDigitCode();
   await env.AMV_KV.put('signincode:' + id,
@@ -14330,7 +14371,7 @@ async function _startSignInCode(env, request, email, name, why, pending) {
     return json({ error: 'AMV could not email your code just now. Try again in a minute.', code: 'code_not_sent' }, 503);
   }
   audit(env, 'signin_code_sent', { email, why });
-  return json({ ok: true, needsCode: true, challenge: id, to: _maskEmail(email), why });
+  return json({ ok: true, needsCode: true, challenge: id, to: _maskEmail(email), why, ...(reason ? { reason } : {}) });
 }
 
 async function authLoginVerify(request, env) {
@@ -14404,12 +14445,7 @@ async function authLoginVerify(request, env) {
   }
   try { await _markActive(env, em); } catch (e) {}
   await _userEvent(env, request, em, verdict.why === 'signup' ? 'email_verified' : 'signed_in', { with: 'code' });
-  const tokens = await issueTokens(env, em, verdict.name || '');
-  const device = await _deviceTokenFor(env, em);
-  const cookies = _cookieAuthOn(env);
-  const resp = _tokenResponse(env, tokens, cookies ? {} : { deviceToken: device });
-  if (cookies) resp.headers.append('Set-Cookie', _deviceCookie(device, DEVICE_TRUST_MS / 1000));
-  return resp;
+  return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, verdict.name || ''));
 }
 
 async function authLoginResend(request, env) {
@@ -28806,7 +28842,7 @@ async function authResetConfirm(request, env) {
   let device = null;
   try { if (env.JWT_SECRET) device = await _deviceTokenFor(env, email); } catch (e) { device = null; }
   const cookies = _cookieAuthOn(env);
-  const resp = json({ ok: true, sessionsRevoked: _revoked, ...(cookies || !device ? {} : { deviceToken: device }),
+  const resp = json({ ok: true, sessionsRevoked: _revoked, ...(device ? { deviceToken: device } : {}),
     note: _revoked ? undefined : 'Your password was changed, but AMV could not sign out sessions that were already open. Use "sign out everywhere" once things settle.' });
   if (cookies && device) resp.headers.append('Set-Cookie', _deviceCookie(device, DEVICE_TRUST_MS / 1000));
   return resp;

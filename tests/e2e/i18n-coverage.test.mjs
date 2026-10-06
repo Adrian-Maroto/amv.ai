@@ -79,7 +79,7 @@ section('The sign-in code screen follows the language, and the address does not'
     return out;
   });
   ok(r.title === 'Revisa tu correo', 'the title is Spanish', r.title);
-  ok(/Este dispositivo es nuevo para tu cuenta/.test(r.text) && /Caduca en 10 minutos/.test(r.text), 'so are the instruction and the warning', r.text.slice(0, 160));
+  ok(/Este navegador aún no ha confirmado que eres tú/.test(r.text) && /Caduca en 10 minutos/.test(r.text), 'so are the instruction and the warning', r.text.slice(0, 160));
   ok(r.go === 'Iniciar sesión' && r.label === 'Código de verificación', 'and the button and the field', r);
   ok(r.to === 'v***@test.com', 'while the address stays exactly as it was sent', r.to);
   const all = await page.evaluate(async () => {
