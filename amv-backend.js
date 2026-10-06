@@ -44,6 +44,45 @@ const _originOf = (raw) => {
   }
 };
 const _corsOrigin = (env) => _originOf(env && env.ALLOWED_ORIGIN) || '*';
+/* THE SAME SERVER, ALSO AT THE SITE'S OWN ADDRESS.
+
+   The API lives on its own host. Safari counts a cookie set by a host on a
+   different network address as third party and deletes it after seven days,
+   so a person who opens AMV once a week on an iPhone signed in every visit.
+   The cure is to serve the API from the site's own address under `/api`, where
+   its cookies are first party.
+
+   Mounted by HOST, not by path alone: this server already has routes named
+   `/api/jobs` and friends, and on its own host those must keep their names. On
+   the site's host the server is reached only through `/api`, so there the
+   prefix is the mount and nothing else. Everything below the router sees the
+   path it always saw; the response's cookies are re-scoped to the mount, and
+   links the server writes to itself carry it (`_publicOrigin`). */
+const API_MOUNT = '/api';
+const _mountedAt = new WeakMap();
+function _mountRequest(request, env) {
+  let u; try { u = new URL(request.url); } catch (e) { return null; }
+  if (u.pathname !== API_MOUNT && !u.pathname.startsWith(API_MOUNT + '/')) return null;
+  const site = [_originOf(env && env.ALLOWED_ORIGIN), _originOf(env && env.APP_URL)];
+  if (!site.includes(u.origin)) return null;
+  u.pathname = u.pathname.slice(API_MOUNT.length) || '/';
+  const hasBody = request.method !== 'GET' && request.method !== 'HEAD';
+  const inner = new Request(u.toString(), { method: request.method, headers: request.headers,
+    body: hasBody ? request.body : null, redirect: request.redirect, cf: request.cf, duplex: 'half' });
+  _mountedAt.set(inner, API_MOUNT);
+  return inner;
+}
+function _publicOrigin(request) {
+  return new URL(request.url).origin + (_mountedAt.get(request) || '');
+}
+function _mountCookies(response) {
+  const cookies = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
+  if (!cookies.some(c => /;\s*Path=\/auth\b/i.test(c))) return response;
+  const out = new Response(response.body, response);
+  out.headers.delete('Set-Cookie');
+  for (const c of cookies) out.headers.append('Set-Cookie', c.replace(/;\s*Path=\/auth\b/i, '; Path=' + API_MOUNT + '/auth'));
+  return out;
+}
 const corsFor = (env) => ({
   'Access-Control-Allow-Origin': _corsOrigin(env),
   'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
@@ -8388,8 +8427,7 @@ function _slugify(t){
     .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,32) || 'app';
 }
 function _siteUrl(request, slug){
-  const u = new URL(request.url);
-  return u.origin + '/s/' + slug;
+  return _publicOrigin(request) + '/s/' + slug;
 }
 
 /* ---- Publish ---- */
@@ -12944,6 +12982,8 @@ export default {
        ctx of its own and cannot be handed one without threading it through
        several hundred call sites. */
     _liveCtx = ctx;
+    const mounted = _mountRequest(request, env);
+    if (mounted) request = mounted;
     try {
       /* AMV-029: HOW MUCH THE SENDER IS ALLOWED TO HAND OVER.
 
@@ -12985,7 +13025,8 @@ export default {
       const unconfigured = _deploymentCannotServe(request, env);
       if (unconfigured) return _applyCors(request, env, unconfigured);
 
-      return _applyCors(request, env, await _route(request, env, ctx));
+      const res = _applyCors(request, env, await _route(request, env, ctx));
+      return mounted ? _mountCookies(res) : res;
     } catch (err) {
       // An unhandled exception reached the top level. Record it AND alert (both
       // throttled + best-effort) so a broken endpoint pages you instead of
@@ -19852,7 +19893,7 @@ async function widgetLoader(request, env) {
   const k = (url.searchParams.get('k') || '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 120);
   // The app host to embed. Prefer an explicit ?host=, else an env default, else
   // this Worker's own origin (works when the app is served from the same place).
-  const appHost = (url.searchParams.get('host') || env.APP_ORIGIN || url.origin).replace(/\/+$/, '');
+  const appHost = (url.searchParams.get('host') || env.APP_ORIGIN || _publicOrigin(request)).replace(/\/+$/, '');
   const js = _widgetLoaderJS(k, appHost);
   return new Response(js, {
     status: 200,

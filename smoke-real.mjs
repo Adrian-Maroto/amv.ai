@@ -339,6 +339,21 @@ async function main() {
     }
   }
 
+  section('The server answers at the site s own address, under /api');
+  {
+    /* APP_URL is this server here, so /api is the mount. The rewrapped request
+       must carry its body through the real runtime, not only through Node. */
+    const cfg = await get('/api/v1/public-config');
+    ok(cfg.status === 200, 'public config answers at /api/v1/public-config', cfg.status);
+    const up = await post('/api/auth/signup', { email: 'mount@smoke.test', name: 'M', password: PW },
+                          { 'CF-Connecting-IP': '21.0.0.1' });
+    ok(up.status === 200 && !!up.body.refreshToken, 'a signup through the mount reads its body', up.status);
+    if (up.body.refreshToken) {
+      const r = await post('/api/auth/refresh', { refreshToken: up.body.refreshToken }, { 'CF-Connecting-IP': '21.0.0.2' });
+      ok(r.status === 200 && !!r.body.token, 'and a renewal through it works', r.status);
+    }
+  }
+
   section('One account s export is one account s');
   {
     const a = await post('/auth/signup', { email: 'idor-a@smoke.test', name: 'A', password: PW },

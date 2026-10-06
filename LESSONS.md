@@ -14221,3 +14221,25 @@ Rules:
   to stop reading it. Say the true reason, or say nothing specific.
 - When a credential can arrive two ways, try both; a stale copy must never
   shadow a valid one.
+
+## 550. A cookie from another address is a guest, and Safari evicts guests after a week
+
+Sessions survived a reload everywhere we tested and still signed iPhone users
+out every week. The session cookie was set by `api.amv.homes`, which resolves
+to a different network address from `amv.homes`; Safari counts that as a third
+party wherever the names match and caps the cookie at seven days. No test on
+one machine could see it, because the rule keys on the address the name points
+to, not on the name.
+
+The fix is structural: the server also answers at `amv.homes/api`, so its
+cookies are first party. It is mounted by HOST (only on the site's own origin)
+and not by path alone, because the server already had routes named `/api/...`
+that must keep their names on its own host. Cookies are re-scoped to
+`/api/auth`, and links the server writes to itself carry the mount.
+
+Rules:
+- A session cookie belongs to the address the person typed. Anything else
+  is borrowed time on somebody else's privacy policy.
+- When you add a prefix to a router that already uses that word, decide by
+  something the old callers can never send (here, the host), or the old
+  routes change name underneath them.
