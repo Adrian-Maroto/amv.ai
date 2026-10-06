@@ -27523,7 +27523,11 @@ function _readinessReport(env, seen) {
     { id: 'ownerEmail', name: 'Owner address', blocking: false, on: _has(env, 'OWNER_EMAIL'),
       turnsOn: 'The weekly digest, and operator privileges for that account.',
       how: put('OWNER_EMAIL') },
-    { id: 'email', name: 'Email delivery', blocking: false, on: _has(env, 'EMAIL_API_KEY'),
+    /* Not green while the provider is refusing every message: a key that is
+       set and a key that delivers are different facts, and the screen showed
+       this row live directly above the row saying nothing was delivered. */
+    { id: 'email', name: 'Email delivery', blocking: false, on: _has(env, 'EMAIL_API_KEY') && !seen.senderRefused,
+      ...(seen.senderRefused ? { problem: 'The key works, but the provider is refusing the sender - see "Email actually reaches people" below.' } : {}),
       turnsOn: 'Password resets, the weekly digest, and automation results reaching an inbox instead of only the app.',
       how: put('EMAIL_API_KEY') },
     /* AMV-193: CONFIGURED IS NOT THE SAME AS DELIVERABLE.

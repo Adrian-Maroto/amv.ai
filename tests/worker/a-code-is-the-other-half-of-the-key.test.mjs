@@ -267,7 +267,10 @@ section('A sender the provider refuses outright locks nobody out - and says so')
   const bad = await call(env, '/auth/login', { email: 'refused@example.com', password: 'Wrong-Passw0rd!' });
   ok(!bad.d.token && bad.status >= 400, 'the password is still checked', bad.status);
   const rd = await W.default.fetch(new Request('https://api.amv.test/admin/readiness', { headers: { Authorization: 'Bearer a', 'CF-Connecting-IP': '7.7.7.7' } }), env, ctx);
-  const row = ((await rd.json()).items || []).find(i => i.id === 'emailSender') || {};
+  const items = (await rd.json()).items || [];
+  const row = items.find(i => i.id === 'emailSender') || {};
+  const keyRow = items.find(i => i.id === 'email') || {};
+  ok(keyRow.on === false && /refusing/.test(keyRow.problem || ''), 'and the key row above it is not shown green meanwhile', keyRow);
   ok(row.on === false && /not verified/.test(row.problem || ''), 'the readiness screen says email is refused, in the provider\u2019s words', row);
   ok(/Resend: Domains > Add Domain > amv\.test/.test(row.how || '') && !/secret put|Variables and Secrets/i.test(row.how || ''),
      'and its fix is the provider\u2019s domain page - not setting a secret that is already set', row.how);
