@@ -934,7 +934,7 @@ async function _forgotSend(isResend){
     }
     _RESET.step = 2;
     _renderForgot();
-    if(d.rateLimited) _forgotMsg('You have asked for several codes for this address in the last hour, so AMV has paused sending them - no new email was sent. Use the newest code you already received, or try again in an hour.','err');
+    if(d.rateLimited) _forgotMsg('No new email was sent: codes for this address are paused after several in an hour. Use the newest one you have, or try again in an hour.','err');
     else if(isResend) _forgotMsg('New code sent.','ok');
   }catch(e){
     if(btn){ btn.disabled=false; btn.textContent='Send code'; }

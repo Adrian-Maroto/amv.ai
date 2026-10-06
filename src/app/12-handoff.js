@@ -1626,7 +1626,7 @@ async function _loadReadiness(note){
           const mark=v=>v===true?'\u2713':(v===false?'missing':'could not check');
           t+='\nEvery-inbox check for '+x.domain+': SPF '+mark(b.spf)+', DKIM '+mark(b.dkim)+', DMARC '+mark(b.dmarc)+'.';
           if(x.fixes && x.fixes.length) t+='\nTo fix: '+x.fixes.join('\n');
-          else if(b.spf&&b.dkim&&b.dmarc) t+='\nAll three are in place, so Gmail, Outlook, Hotmail, Yahoo and iCloud all accept it.';
+          else if(b.spf&&b.dkim&&b.dmarc) t+='\nAll three in place: every major inbox accepts it.';
         }
         if(say) say.textContent=t;
       }catch(e){ if(say) say.textContent='Could not reach your Worker.'; }

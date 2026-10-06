@@ -1240,7 +1240,14 @@ step('Page weight is under control', () => {
      step and the owner's "send me a test email" - security the owner asked for
      ("make sure no one can log into anyone else's account"). The code-free
      offline password reset was removed in the same change. */
-  const CEILING = 632 * 1024;   // gzipped, which is what actually crosses the network
+  /* 632 -> 634, 2026-10-06, deliberately: owner-reported faults - reset codes
+     that were silently not sent (now said), the captcha that had to be reloaded
+     after a wrong password, Settings scroll carried between sections, and the
+     test email to any inbox with its SPF/DKIM/DMARC check. Looked for a trim
+     first: a scan for functions nothing calls found four, and all four are
+     exercised by suites as product logic; the shell notes already live in docs.
+     The new strings were shortened; what is left is the fixes themselves. */
+  const CEILING = 634 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

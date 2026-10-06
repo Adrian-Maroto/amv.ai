@@ -4933,7 +4933,7 @@ async function _forgotSend(isResend){
     }
     _RESET.step = 2;
     _renderForgot();
-    if(d.rateLimited) _forgotMsg('You have asked for several codes for this address in the last hour, so AMV has paused sending them - no new email was sent. Use the newest code you already received, or try again in an hour.','err');
+    if(d.rateLimited) _forgotMsg('No new email was sent: codes for this address are paused after several in an hour. Use the newest one you have, or try again in an hour.','err');
     else if(isResend) _forgotMsg('New code sent.','ok');
   }catch(e){
     if(btn){ btn.disabled=false; btn.textContent='Send code'; }
@@ -30143,7 +30143,7 @@ async function _loadReadiness(note){
           const mark=v=>v===true?'\u2713':(v===false?'missing':'could not check');
           t+='\nEvery-inbox check for '+x.domain+': SPF '+mark(b.spf)+', DKIM '+mark(b.dkim)+', DMARC '+mark(b.dmarc)+'.';
           if(x.fixes && x.fixes.length) t+='\nTo fix: '+x.fixes.join('\n');
-          else if(b.spf&&b.dkim&&b.dmarc) t+='\nAll three are in place, so Gmail, Outlook, Hotmail, Yahoo and iCloud all accept it.';
+          else if(b.spf&&b.dkim&&b.dmarc) t+='\nAll three in place: every major inbox accepts it.';
         }
         if(say) say.textContent=t;
       }catch(e){ if(say) say.textContent='Could not reach your Worker.'; }
