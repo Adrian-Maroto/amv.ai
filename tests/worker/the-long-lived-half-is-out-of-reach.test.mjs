@@ -269,7 +269,9 @@ section('One place decides the origin, so no route can be forgotten');
   ok(fn.length > 200, 'the helper exists', fn.length);
   ok(/Access-Control-Allow-Credentials/.test(fn), 'it sets credentials', true);
   ok(/want === '\*'/.test(fn), 'and leaves an unconfigured deployment alone', true);
-  ok(/_applyCors\(request, env, await _route/.test(codeOnly(src)),
+  /* The site-address mount (LESSONS 550) re-scopes cookies between the route
+     and this layer; the route's answer still passes through it. */
+  ok(/_applyCors\(request, env, (?:_mountCookies\()?await _route/.test(codeOnly(src)),
      'and every routed response goes through it', true);
   ok(/_applyCors\(request, env, json\(/.test(codeOnly(src)),
      'including the one produced when a route throws', true);
