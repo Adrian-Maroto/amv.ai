@@ -75,7 +75,8 @@ function _mountRequest(request, env) {
 function _publicOrigin(request) {
   return new URL(request.url).origin + (_mountedAt.get(request) || '');
 }
-function _mountCookies(response) {
+function _mountCookies(response, mounted) {
+  if (!mounted) return response;
   const cookies = typeof response.headers.getSetCookie === 'function' ? response.headers.getSetCookie() : [];
   if (!cookies.some(c => /;\s*Path=\/auth\b/i.test(c))) return response;
   const out = new Response(response.body, response);
@@ -13025,8 +13026,7 @@ export default {
       const unconfigured = _deploymentCannotServe(request, env);
       if (unconfigured) return _applyCors(request, env, unconfigured);
 
-      const res = _applyCors(request, env, await _route(request, env, ctx));
-      return mounted ? _mountCookies(res) : res;
+      return _applyCors(request, env, _mountCookies(await _route(request, env, ctx), mounted));
     } catch (err) {
       // An unhandled exception reached the top level. Record it AND alert (both
       // throttled + best-effort) so a broken endpoint pages you instead of
