@@ -34360,8 +34360,17 @@ function _connCtx(){ return (window.AMV_API && AMV_API.live) ? '1' : '0'; }
    older one could land afterwards and overwrite the fresh answer with its
    error. Each load takes a number; only the latest may write. */
 let _connGen = 0;
+/* THE NEWEST LOAD, SO A SUPERSEDED ONE CAN WAIT FOR IT.
+
+   A load overtaken by a newer one used to return at once, with nothing loaded.
+   Its caller could not tell "superseded" from "finished": the Connect that a
+   sign-in interrupted asked for the list, was overtaken by the reload that
+   signing in starts, read an empty list, and dropped the Connect without a
+   word. Under load it happened one run in four. Now a superseded load hands
+   back the newest one, so every caller waits for a real answer. */
+let _connLatest = null;
 async function _connLoad(force){
-  if(!force && _connState.state === 'loading') return;
+  if(!force && _connState.state === 'loading') return _connLatest;
   if(_connState.state === 'done' && !force) return;
   if(!force && _connTried === _connCtx()) return;
   _connTried = _connCtx();
@@ -34371,9 +34380,14 @@ async function _connLoad(force){
   const gen = ++_connGen;
   const before = _connSig(_connState.data);
   _connState.state = 'loading'; _connPaint();
+  const run = _connLoadRun(gen, before);
+  _connLatest = run;
+  return run;
+}
+async function _connLoadRun(gen, before){
   try{
     const d = await AMV_API.connectList();
-    if(gen !== _connGen) return;
+    if(gen !== _connGen) return _connLatest;
     _connState = { state:'done', data:d || null, err:'' };
     /* THE ROWS, NOT ONLY THE LIST. _connPaint redraws the Connected accounts
        block; the app rows below it ("✓ Connected", Disconnect) and the whole
@@ -34391,7 +34405,7 @@ async function _connLoad(force){
       }
     }
   }catch(e){
-    if(gen !== _connGen) return;
+    if(gen !== _connGen) return _connLatest;
     _connState = { state:'error', data:null, err:String((e&&e.message)||'').slice(0,120), code:(e&&e.code)||'' };
   }
   _connPaint();
