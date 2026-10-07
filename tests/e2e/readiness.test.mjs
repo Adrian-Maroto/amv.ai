@@ -77,6 +77,13 @@ section('It reads the real configuration from the server');
   ok(/2 of 6 configured/.test(t), 'with a real count', t);
   ok(/Every answer, agent, build/.test(t), 'each line says what it turns on');
   ok(/wrangler secret put AMV_MODEL_KEY/.test(t), 'and the exact command for the ones that are off');
+  /* With a server connected, checkout always goes through it, so payment links
+     are never used - the pane must not send the owner to set them up. */
+  const pane = await page.evaluate(() => ({ live: !!(AMV_API && AMV_API.live),
+    text: (document.querySelector('.settings-content') || document.body).textContent, linkField: !!document.getElementById('s-sp') }));
+  ok(pane.live, 'this pane is shown with a server connected', pane.live);
+  ok(!/Add your Stripe payment links/.test(pane.text) && !pane.linkField, 'so it does not ask for payment links that would never be used', pane.linkField);
+  ok(/Checkout runs through your server/.test(pane.text), 'and says where checkout really runs');
 
   const auth = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('.gl-row')];

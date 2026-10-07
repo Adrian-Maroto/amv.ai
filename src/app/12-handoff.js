@@ -3065,7 +3065,16 @@ function _renderSetPaneInner(only, into){
     pane.innerHTML=
       '<h2 class="set-title">Platform &amp; Stripe</h2>'+
       '<div class="set-sub">Configure revenue collection and deployment.</div>'+
-      (!S.sp&&!S.se?'<div class="wb">&#9888; Add your Stripe payment links to start collecting revenue.</div>':'')+
+      /* WITH A SERVER, PAYMENT LINKS ARE NEVER USED. Checkout always goes
+         through the server, which hears about the payment from Stripe and changes
+         the plan - so links pasted here did nothing, and the warning above them
+         sent the owner to set up the wrong thing. They stay only for a deployment
+         with no server, where they are the one way to take money. */
+      ((window.AMV_API && AMV_API.live)
+        ? '<div class="ss2"><h3>Payments</h3>'+
+            '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.6">Checkout runs through your server: Stripe takes the card, Apple Pay or Google Pay, and the plan changes only when Stripe confirms the payment to the server. Payment links are not used while the server is connected. What is switched on, and what is missing, is listed under <b>Taking money</b> below.</p>'+
+          '</div>'
+        : (!S.sp&&!S.se?'<div class="wb">&#9888; Add your Stripe payment links to start collecting revenue.</div>':'')+
       '<div class="ss2"><h3>Stripe - card, Apple Pay &amp; Google Pay</h3>'+
         '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:11px;line-height:1.6">The startup standard. Create a Payment Link at stripe.com &rarr; Payments &rarr; Payment Links. <b>Apple Pay and Google Pay appear automatically inside Stripe\u2019s checkout</b> - no extra setup. Clicking &ldquo;Card / Apple Pay&rdquo; opens your real Stripe checkout. Revenue goes straight to your Stripe account. Set each link\u2019s success URL to <code>yoursite.com/?paid=pro</code> (or <code>elite</code>) so the plan activates on return.</p>'+
         '<div class="sf">'+
@@ -3074,7 +3083,7 @@ function _renderSetPaneInner(only, into){
           '<div><label class="lbl">Stripe Customer Portal (subscription management)</label><input type="url" id="s-portal" value="'+escH(loadStr('amv_portal'))+'" placeholder="https://billing.stripe.com/p/…"></div>'+
           '<button class="btn bp" id="save-stripe" style="align-self:flex-start;font-size:var(--t-sm)">Save Stripe Links</button>'+
         '</div>'+
-      '</div>'+
+      '</div>')+
       '<div class="ss2"><h3>Support email</h3>'+
         '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:11px;line-height:1.6">The address your users reach you at. Once set, the <b>&ldquo;Email Support&rdquo;</b> buttons across the app (Help Center, About, legal) open a pre-filled email to this address. Leave blank and those buttons fall back to <b>&ldquo;Ask AMV directly&rdquo;</b> - never a broken link.</p>'+
         '<div class="sf">'+
