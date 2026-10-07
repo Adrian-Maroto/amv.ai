@@ -229,6 +229,48 @@ jobs:
       #
       # So it answers the question on every deploy instead, in the summary,
       # where the answer is either "on" or a short note saying how to turn it on.
+      # THE SERVER AT THE SITE'S OWN ADDRESS (LESSONS 550).
+      #
+      # Safari keeps a cookie from the API's own host for seven days, so the
+      # server is also mounted at <site>/api - but only once Cloudflare proxies
+      # the site and routes /api/* to the Worker, which is set in the dashboard
+      # and cannot be read from this repository. This says, on every deploy,
+      # which of the two pieces is in place, so the page is pointed at the new
+      # address only after it is proved to answer. Informational: the old
+      # address keeps working either way, so nothing here goes red.
+      - name: Say whether the server answers at the site's own address
+        env:
+          SITE: ${{ vars.SITE_URL || 'https://amv.homes' }}
+        run: |
+          set -u
+          host="${SITE#https://}"; host="${host%%/*}"
+          echo "DNS for $host:"
+          for t in A AAAA CNAME NS; do
+            printf '  %-5s ' "$t"; dig +short "$host" "$t" | tr '\n' ' '; echo
+          done
+          trace="$(curl -sS --max-time 20 "$SITE/cdn-cgi/trace" 2>&1 | head -c 400 || true)"
+          if printf '%s' "$trace" | grep -q '^fl='; then proxied=yes; else proxied=no; fi
+          echo "Proxied by Cloudflare: $proxied"
+          printf '%s\n' "$trace" | grep -E '^(h|colo|http|tls)=' || printf '  trace answered: %s\n' "$(printf '%s' "$trace" | head -c 120)"
+          code="$(curl -sS -o /tmp/pc.json -w '%{http_code}' --max-time 20 "$SITE/api/v1/public-config" || true)"
+          head -c 160 /tmp/pc.json 2>/dev/null; echo
+          echo "GET $SITE/api/v1/public-config -> $code"
+          srv="$(curl -sSI --max-time 20 "$SITE/api/v1/public-config" 2>/dev/null | grep -iE '^(server|cf-ray|x-render-origin-server|rndr-id):' | tr -d '\r' || true)"
+          echo "$srv"
+          if [ "$code" = "200" ] && grep -q '{' /tmp/pc.json 2>/dev/null; then
+            verdict="on: the server answers at $SITE/api"
+          elif [ "$proxied" = "no" ]; then
+            verdict="not yet: $SITE is not proxied by Cloudflare (orange cloud), so the /api route cannot run"
+          else
+            verdict="not yet: $SITE is proxied, but /api/* is not routed to the Worker (Workers Routes)"
+          fi
+          echo "Server at the site's own address: $verdict"
+          {
+            echo "### Server at the site's own address"
+            echo
+            echo "$verdict"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Say whether bare paths work on this host
         env:
           SITE: ${{ vars.SITE_URL || 'https://amv.homes' }}

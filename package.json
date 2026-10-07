@@ -27,10 +27,10 @@
     "wrangler": "^4.123.0"
   },
 
-  "//overrides": "sharp arrives here only as a transitive dependency of miniflare, which is wrangler's local runtime. 0.35.2 and earlier bundle a libheif with two high-severity advisories (GHSA-g89c-p67h-r497, GHSA-2jg2-4ch7-h545). Nothing in this repository decodes HEIF - the vulnerable path needs an attacker-supplied image - but an unassessed high is exactly what the dependency gate exists to stop, and the fix is a patch release. Pinned forward rather than upgrading wrangler itself, so the version that deploys the Worker stays the version this repository was tested against.",
+  "//overrides": "sharp arrives here only as a transitive dependency of miniflare, which is wrangler's local runtime. 0.35.2 and earlier bundle a libheif with two high-severity advisories (GHSA-g89c-p67h-r497, GHSA-2jg2-4ch7-h545). Nothing in this repository decodes HEIF - the vulnerable path needs an attacker-supplied image - but an unassessed high is exactly what the dependency gate exists to stop, and the fix is a patch release. Moved to 0.35.5 in 2026-10 for the same reason: a librsvg advisory (CVE-2026-96889) against 0.35.4; nothing here decodes SVG through it either. Pinned forward rather than upgrading wrangler itself, so the version that deploys the Worker stays the version this repository was tested against.",
   "//overrides-2026-09": "Two more of the same kind, found when new advisories were published against releases this repository already had. undici arrives only through miniflare, wrangler's local runtime, which pins 7.29.0 exactly - inside the published range of a WebSocket decompression denial of service; every current wrangler carries it, and npm's only offered fix was a downgrade. ip-address arrives only through @cloudflare/puppeteer's browser-download tooling (proxy-agent, socks); 10.5.0 and earlier misclassify fe80::/10 and 64:ff9b:1::/48, which a caller using it for an SSRF check would get wrong. Neither is reached by the deployed Worker, and both fixes are patch or minor releases inside the ranges their parents accept, so they are pinned forward rather than accepted.",
   "overrides": {
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "undici": "^7.30.0",
     "ip-address": "^10.7.2"
   }
