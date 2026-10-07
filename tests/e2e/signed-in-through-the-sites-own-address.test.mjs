@@ -116,6 +116,30 @@ section('Sign out and back in: this browser is known, so no code');
   ok(mails.length === before, 'and no code was emailed');
 }
 
+section('Safari wiped the page\u2019s storage after a week away: still signed in');
+{
+  /* Safari clears a site's storage after seven days without a visit, and keeps
+     the cookies its server set. This is that, all at once. */
+  const hint = (await context.cookies(SITE + '/')).find(c => c.name === 'amv_si');
+  ok(hint && !hint.httpOnly && hint.value === '1', 'the page can see a marker that somebody is signed in', hint);
+  ok(hint && !/[.]/.test(hint.value), 'and the marker is not a credential', hint && hint.value);
+  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.reload({ waitUntil: 'load' }); await boot();
+  ok(await until(() => !!(AMV_API.token && S.user && S.user.email === 'mount@example.com'), 15000), 'signed in again from the cookie, as the same account',
+    await page.evaluate(() => ({ user: S.user, tok: !!AMV_API.token })));
+}
+
+section('Signed out, then the storage wiped: stays signed out');
+{
+  await page.evaluate(() => signOut());
+  await until(() => !(S.user && S.user.email));
+  ok(!(await context.cookies(SITE + '/')).some(c => c.name === 'amv_si'), 'signing out removes the marker');
+  await page.evaluate(() => { localStorage.clear(); });
+  await page.reload({ waitUntil: 'load' }); await boot();
+  await new Promise(r => setTimeout(r, 1500));
+  ok(await page.evaluate(() => !(S.user && S.user.email) && !AMV_API.token), 'nobody is signed in');
+}
+
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));
 await browser.close(); front.close(); files.close(); outbound.restore();
 if (report('signed-in-through-the-sites-own-address') > 0) process.exitCode = 1;

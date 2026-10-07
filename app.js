@@ -919,6 +919,9 @@ const AMV_API = {
     if(d && d.refreshInCookie) this.cookieAuth = true;
     this.token = d.token||'';
     if(d.refreshToken) this.refreshTok = d.refreshToken;
+    /* Who the server says this session is - read when the page itself has
+       forgotten (see _ensureBackendSession). */
+    if(d.email) this._who = { email: String(d.email), name: String(d.name || '') };
     // AMV-013: bind these tokens to the origin that issued them.
     try{ saveStr('amv_api_token_origin', _originOf(this.base)); }catch(e){}
     this._storeTokenMeta(d.token);
@@ -5474,6 +5477,30 @@ try{
 }catch(e){}
 async function _ensureBackendSession(){
   try{
+    /* SAFARI FORGOT WHO WAS SIGNED IN; THE COOKIE DID NOT (LESSONS 553).
+
+       Safari clears a site's storage after seven days without a visit, but
+       keeps the cookies its server set. So a weekly visitor arrives with no
+       account remembered here and a sign-in cookie still valid - and everything
+       below starts from "who is signed in", which is now nobody. The server
+       leaves a readable marker beside the cookie (it carries no credential);
+       when it is there and nobody is, one renewal is asked for, and the account
+       it names is signed in. A refusal clears the marker so it is never asked
+       twice; a network failure leaves it for the next visit. */
+    if(window.AMV_API && AMV_API.live && !(S.user && S.user.email) && /(?:^|;\s*)amv_si=1/.test(document.cookie || '')){
+      AMV_API.cookieAuth = true;
+      let ok = false; try{ ok = await AMV_API._doRefresh(); }catch(e){}
+      const who = AMV_API._who;
+      if(ok && who && who.email && !(S.user && S.user.email)){
+        const nm = who.name || who.email.split('@')[0];
+        const ini = nm.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2) || '??';
+        loginUser({ name:nm, email:who.email, ini, provider:'email' });
+      } else if(!ok){
+        AMV_API.cookieAuth = false;
+        if(AMV_API._refreshDenied){ try{ document.cookie = 'amv_si=; Max-Age=0; Path=/; Secure; SameSite=Lax'; }catch(e){} }
+      }
+      return;
+    }
     if(window.AMV_API && AMV_API.live && S.user && S.user.email){
       // valid token already? nothing to do.
       if(AMV_API.token && AMV_API.tokenValid()) return;

@@ -14287,3 +14287,24 @@ Rules:
   pattern is what the bug looked like.
 - APP_URL is where the app lives. Pages the server renders live where the
   server lives. Never build one from the other.
+
+## 553. Safari forgets the page's memory before it forgets the server's cookie
+
+Moving the server under the site's own address (550) made its sign-in cookie
+first party, so Safari keeps it its full 30 days. But Safari also clears a
+site's script-writable storage after seven days without a visit, and the page
+decided whether to try the cookie from what it remembered in that storage. A
+weekly visitor came back to an empty memory, never asked the server, and
+looked signed out - with a perfectly good cookie in the jar. The fix for the
+cookie had moved the failure one layer up.
+
+The server now sets a readable marker beside the session cookie (`amv_si`,
+Path=/, no credential in it) and clears it on sign-out. When the page remembers
+nobody but the marker is there, it asks for one renewal and signs in the
+account the server names. A refusal clears the marker; a network failure keeps
+it for next time.
+
+Rules:
+- When a fix is "make X survive", list everything the flow reads before it
+  reaches X. Each of those has its own lifetime.
+- Test the browser's real policy by doing it: wipe storage, keep cookies, reload.

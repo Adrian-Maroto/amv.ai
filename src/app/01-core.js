@@ -919,6 +919,9 @@ const AMV_API = {
     if(d && d.refreshInCookie) this.cookieAuth = true;
     this.token = d.token||'';
     if(d.refreshToken) this.refreshTok = d.refreshToken;
+    /* Who the server says this session is - read when the page itself has
+       forgotten (see _ensureBackendSession). */
+    if(d.email) this._who = { email: String(d.email), name: String(d.name || '') };
     // AMV-013: bind these tokens to the origin that issued them.
     try{ saveStr('amv_api_token_origin', _originOf(this.base)); }catch(e){}
     this._storeTokenMeta(d.token);

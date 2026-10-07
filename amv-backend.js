@@ -14825,7 +14825,11 @@ async function authLogout(request, env) {
   const tok = auth.replace(/^Bearer\s+/i, '');
   let data = await verifyToken(tok, env.JWT_SECRET, env, 'access');
   const body = await request.json().catch(() => ({}));
-  const fin = (r) => { if (body && body.forgetDevice) r.headers.append('Set-Cookie', _deviceCookie('', 0)); return r; };
+  const fin = (r) => {
+    if (body && body.forgetDevice) r.headers.append('Set-Cookie', _deviceCookie('', 0));
+    if (_cookieAuthOn(env)) r.headers.append('Set-Cookie', _sessionHintCookie(0));
+    return r;
+  };
   /* An access token lasts minutes and a sign-in cookie weeks. Signing out with
      an expired access token answered "ok" and left the cookie working, so the
      next visit on that browser could be signed straight back in. The refresh
@@ -20165,7 +20169,22 @@ function _tokenResponse(env, tokens, extra) {
      own copy. Saying so explicitly beats having the client infer it from a
      header it cannot read. */
   body.refreshInCookie = true;
-  return json(body, 200, { 'Set-Cookie': _refreshCookie(env, tokens.refreshToken, REFRESH_TTL_MS / 1000) });
+  const res = json(body, 200, { 'Set-Cookie': _refreshCookie(env, tokens.refreshToken, REFRESH_TTL_MS / 1000) });
+  res.headers.append('Set-Cookie', _sessionHintCookie(REFRESH_TTL_MS / 1000));
+  return res;
+}
+/* "SOMEBODY IS SIGNED IN ON THIS BROWSER" - AND NOTHING MORE (LESSONS 553).
+
+   Safari deletes a site's script-writable storage after seven days without a
+   visit, but not a cookie the server set. The page decided whether to try the
+   renewal cookie from what it remembered in storage, so a weekly visitor came
+   back to an empty memory, never tried the cookie it still had, and looked
+   signed out. This cookie is readable by the page and carries no credential:
+   it only says a renewal is worth asking for. Path=/ so the page can see it;
+   the session itself stays in the HttpOnly cookie under /auth. */
+function _sessionHintCookie(maxAgeS) {
+  return ['amv_si=' + (maxAgeS > 0 ? '1' : ''), 'Secure', 'SameSite=Lax', 'Path=/',
+          'Max-Age=' + Math.max(0, Math.floor(maxAgeS))].join('; ');
 }
 function _clearRefreshCookie(env) {
   return _cookieAuthOn(env) ? { 'Set-Cookie': _refreshCookie(env, '', 0) } : undefined;
