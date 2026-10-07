@@ -205,28 +205,38 @@ jobs:
       # visitor - while the build id above still matches, because that is one
       # meta tag. This compares the whole page, byte for byte, with what the
       # build wrote, and says what was added when they differ.
-      - name: Check the live page is byte-for-byte the build
+      - name: Check every published file is byte-for-byte the build
         env:
           SITE: ${{ vars.SITE_URL || 'https://amv.homes' }}
         run: |
           set -u
-          curl -fsS --compressed --max-time 30 "$SITE/" -o /tmp/live.html
-          want="$(sha256sum public/index.html | cut -c1-64)"
-          got="$(sha256sum /tmp/live.html | cut -c1-64)"
-          if [ "$want" = "$got" ]; then
-            echo "Live page is identical to the build ($want)."
-            exit 0
+          # Every file the host publishes, not only the page: the code sandbox
+          # carries its own security policy, the bridge is code people run on
+          # their own computers, and the offline helper decides what is cached.
+          # A rewrite of any of them in transit breaks it the same way.
+          bad=0
+          while IFS= read -r f; do
+            rel="${f#public/}"; [ "$rel" = "index.html" ] && url="$SITE/" || url="$SITE/$rel"
+            if ! curl -fsS --compressed --max-time 30 "$url" -o /tmp/live.bin; then
+              echo "::error::$url could not be fetched."; bad=1; continue
+            fi
+            if cmp -s "$f" /tmp/live.bin; then
+              echo "ok: /$rel"
+            else
+              bad=1
+              echo "::error::$url is not the file that was built ($(wc -c < "$f") built, $(wc -c < /tmp/live.bin) served)."
+              grep -aoE '/cdn-cgi/[^"'\'' ]+|rocket-loader[^"'\'' ]*|data-cfemail|email-decode[^"'\'' ]*|beacon\.min\.js' /tmp/live.bin | sort -u | head -5 || true
+            fi
+          done < <(find public -type f | sort)
+          if [ "$bad" != 0 ]; then
+            {
+              echo "### What visitors get is not what was built"
+              echo
+              echo "Something between the host and the visitor is changing files. In Cloudflare, turn off"
+              echo "Email Address Obfuscation, Rocket Loader and any page-injected script for amv.homes."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "::error::$SITE/ is not the page that was built. Something between the host and the visitor is rewriting it."
-          grep -oE '/cdn-cgi/[^"'\'' ]+|rocket-loader[^"'\'' ]*|data-cfemail|email-decode[^"'\'' ]*|beacon\.min\.js' /tmp/live.html | sort -u | head -10 || true
-          echo "Built: $(wc -c < public/index.html) bytes. Served: $(wc -c < /tmp/live.html) bytes."
-          {
-            echo "### The live page is not the build"
-            echo
-            echo "Cloudflare (or the host) is changing the page on the way out. In Cloudflare, turn off"
-            echo "Email Address Obfuscation, Rocket Loader and any page-injected script for amv.homes."
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit 1
+          exit $bad
 
       - name: Check the host is not handing out the source
         env:
