@@ -30,7 +30,7 @@ const W = await import(harness + '?t=' + Date.now());
 
 const store = new Map();
 const env = {
-  JWT_SECRET: 'x'.repeat(40), FINANCE_CLIENT_ID: 'cid', FINANCE_SECRET: 'sec',
+  JWT_SECRET: 'x'.repeat(40), FINANCE_CLIENT_ID: 'cid', FINANCE_SECRET: 'sec', CONNECT_KEY: 'test-connect-key',
   AMV_KV: {
     async get(k){ return store.has(k) ? store.get(k) : null; },
     async put(k, v){ store.set(k, String(v)); },

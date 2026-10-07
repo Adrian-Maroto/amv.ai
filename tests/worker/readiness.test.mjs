@@ -137,6 +137,11 @@ section('It NEVER returns a secret, in any form');
   const d = JSON.parse(body);
   ok(d.summary.blockingMissing === 0, 'a fully configured deployment has nothing blocking', d.summary);
   ok(/Everything is configured/.test(d.summary.verdict), 'and says so in one sentence', d.summary.verdict);
+  /* Every provider compares the redirect URL character for character; the row
+     gives the exact one, and only connection rows carry it. */
+  const conn = d.items.filter(i => /^connect[A-Z]/.test(i.id) && !/^connectKey/.test(i.id));
+  ok(conn.length >= 3 && conn.every(i => /redirect URL to exactly https:\/\/amv\.example\/$/.test(i.how)), 'each connection row gives the exact redirect URL', conn.map(i => i.how.slice(-60)));
+  ok(!d.items.filter(i => !/^connect[A-Z]/.test(i.id)).some(i => /redirect URL/.test(i.how || '')), 'and no other row does');
 }
 
 section('An empty secret is not a configured secret');

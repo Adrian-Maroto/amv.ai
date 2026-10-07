@@ -28066,6 +28066,16 @@ function _readinessReport(env, seen) {
       effect: 'Countries where people can link a bank, e.g. "US,CA,GB,ES". Defaults to the United States. Add a country only once your bank-data provider has approved it for your account; anything the provider does not cover is ignored.' },
   ];
 
+  /* THE ONE THING EVERY PROVIDER ASKS WHEN AN APP IS REGISTERED, AND THAT NO ROW
+     SAID: the redirect URL. Every connection comes back to the site's own
+     address and the provider compares it character for character, so the
+     exact string is given - trailing slash included - rather than left for the
+     owner to guess at a registration form. */
+  const back = _originOf(env && (env.APP_URL || env.APP_ORIGIN));
+  if (back) for (const i of items) {
+    if (/^connect[A-Z]/.test(i.id) && !/^connectKey/.test(i.id))
+      i.how = String(i.how || '') + '. When registering the app, set its redirect URL to exactly ' + back + '/';
+  }
   const all = items.concat(storage);
   const missingBlocking = all.filter(i => i.blocking && !i.on);
   /* A row held off on purpose (it carries a `tag`) is not something the owner
