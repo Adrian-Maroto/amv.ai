@@ -48,7 +48,9 @@ section('Every way out can be done with only a browser');
 {
   /* The test that would have caught the original: not "is there an
      instruction" but "can the person reading it do it". */
-  const withHow = list.filter(r => r.how);
+  /* A row held off on purpose (it carries a `tag`) has nothing to set - its
+     text says why, not how - so it is not an instruction to check. */
+  const withHow = list.filter(r => r.how && !r.tag);
   ok(withHow.length >= 5, 'there are instructions to check', withHow.length);
   const terminalOnly = withHow.filter(r => !/Cloudflare dashboard/i.test(String(r.how)));
   ok(terminalOnly.length === 0,

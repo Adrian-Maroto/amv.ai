@@ -305,7 +305,10 @@ section('Connect pressed after the sign-in ended mid-visit asks, then carries on
   /* 30s, not 15: a sign-in then a connection lookup, and under the parallel
      runner this missed 15s twice in a day while passing every time alone. */
   const picker = await until('the Connect choice', () => page2.evaluate(() => !!document.getElementById('conn-go')), 30000).catch(() => false);
-  ok(picker, 'after signing in, the Connect it interrupted opens by itself', true);
+  ok(picker, 'after signing in, the Connect it interrupted opens by itself', picker || await page2.evaluate(() => ({
+    toasts: [...document.querySelectorAll('.toast')].map(t => t.textContent),
+    conn: { state: _connState.state, code: _connState.code, err: _connState.err, has: !!_connState.data },
+    token: !!AMV_API.token, sheet: !!document.getElementById('auth-bg') })));
   await page2.evaluate(() => { const c = document.getElementById('conn-cancel'); if (c) c.click(); });
 }
 
