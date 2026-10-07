@@ -122,10 +122,15 @@ section('Every link the server hands out leads to a page that exists');
     ok(page.status === 200, 'and that link opens the page', page.status);
   }
 
-  const resetHtml = await (await call(env, SITE + '/api/reset?token=abc')).text();
-  ok(resetHtml.includes('"/api/auth/reset/confirm"'), 'the reset page sends its form back through /api');
-  const ownReset = await (await call(env, OWN + '/reset?token=abc')).text();
-  ok(ownReset.includes('"/auth/reset/confirm"') && !ownReset.includes('/api/auth/reset/confirm'), 'and on the server\u2019s own host, where it always did');
+  /* Where the reset page's form really goes: its fetch target, resolved
+     against the page's own address the way the browser will. */
+  const target = async (pageUrl) => {
+    const html = await (await call(env, pageUrl)).text();
+    const m = /fetch\('([^']+)'/.exec(html);
+    return m ? new URL(m[1], pageUrl).href : '';
+  };
+  ok(await target(SITE + '/api/reset?token=abc') === SITE + '/api/auth/reset/confirm', 'the reset page sends its form back through /api');
+  ok(await target(OWN + '/reset?token=abc') === OWN + '/auth/reset/confirm', 'and on the server\u2019s own host, where it always did');
 
   const sent = [];
   const before = globalThis.fetch;

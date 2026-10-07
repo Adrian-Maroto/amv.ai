@@ -12830,7 +12830,9 @@ function resetPage(request, env){
     if (pw !== pw2)    { show('Those passwords do not match.', 'err'); return; }
     btn.disabled = true; btn.textContent = 'Setting\u2026';
     try {
-      var r = await fetch(${JSON.stringify((_mountedAt.get(request) || '') + '/auth/reset/confirm')}, {
+      /* Relative to this page, so it reaches the server whether the page was
+         opened on the server's own host (/reset) or through the site (/api/reset). */
+      var r = await fetch('./auth/reset/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: TOKEN, password: pw })

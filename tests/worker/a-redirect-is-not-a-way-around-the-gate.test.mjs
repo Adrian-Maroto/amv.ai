@@ -168,7 +168,7 @@ section('Every outbound request has a deadline, or is named with why not');
      relative routes. */
     const bare = [...src.matchAll(/(?:await\s+|=\s*|return\s+)fetch\(\s*([^\n]{0,60})/g)]
     .map(m => ({ arg: m[1].trim(), at: m.index }))
-    .filter(f => !/^['"`]\//.test(f.arg))          // a relative path: browser JS in a served page
+    .filter(f => !/^['"`]\.?\//.test(f.arg))       // a relative path ('/x' or './x'): browser JS in a served page
     .filter(f => !/^\s*['"`]https:\/\/do\//.test(f.arg));  // the Durable Object stub, not the network
 
   const owner = (at) => {
