@@ -14308,3 +14308,44 @@ Rules:
 - When a fix is "make X survive", list everything the flow reads before it
   reaches X. Each of those has its own lifetime.
 - Test the browser's real policy by doing it: wipe storage, keep cookies, reload.
+
+## 554. A deployment-wide key is the operator's account, not the user's
+
+The readiness screen offered Kalshi and Polymarket as "paste a key and it is
+live". Read end to end, two things were wrong. The key is ONE secret for the
+whole deployment, so every person's approved trade would have been placed from
+the operator's venue account and paid from the operator's balance. And the order
+was not in either venue's format - Kalshi signs each request with the account's
+private key, Polymarket takes an order signed by the trader's wallet - so a
+pasted key would have produced refusals at best. The approval ticket, the caps
+and the jurisdiction check were all real; the thing they guarded was not.
+
+Trading is now held off in code (`PREDICT_TRADING_LIVE`) whatever is set, the
+readiness rows say why instead of asking for a key, and the approval rules stay
+tested behind a hook that exists only in the test's copy of the server.
+
+Rules:
+- For anything that spends money, ask whose money. A secret in the
+  deployment's environment belongs to the operator.
+- A control that guards a call is only as real as the call. Read the request
+  the venue receives, not the checks in front of it.
+
+## 555. A flaky test is a bug report with the details left out
+
+"After signing in, the Connect it interrupted opens by itself" failed a few
+times a day under the parallel runner and passed alone, so its wait was
+widened. It kept failing. Given a failure message that printed what was on
+screen and a trace of the calls, it named two real defects in a row:
+- A connections load overtaken by a newer one returned at once with nothing
+  loaded, so its caller read an empty list. Fixed: it hands back the newest.
+- The real one: with the app list already loaded, Connect went straight to the
+  permission choice on an ENDED session, and the next request asked for a
+  sign-in with no record of what to resume. Every press now asks the server
+  first, and a session that ends mid-choice resumes the Connect after sign-in.
+Two or three runs in six failed before; six in six pass after.
+
+Rules:
+- Widening a timeout is a guess. Make the failure print its state first; the
+  third time it fails, it is not slow, it is wrong.
+- Timing that only a busy machine produces is timing a phone on a train
+  produces. Reproduce under parallel load before calling anything flaky.
