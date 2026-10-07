@@ -6159,6 +6159,8 @@ const _SIGNOUT_CLEAR_GLOBAL = [
   'amv_owner','amv_credits','amv_credits_autoreload',
   'amv_market_local','amv_market_purchases','amv_market_wallet',
   'amv_market_ratings','amv_market_reviews','amv_market_installed','amv_market_threads',
+  /* Which server issued the tokens sign-out just gave up: nothing left to bind. */
+  'amv_api_token_origin',
 ];
 /* amv_api_token and amv_api_refresh stay listed even though cookie mode keeps
    neither on disk: a device that ran an older build still has them, and the
