@@ -196,6 +196,38 @@ jobs:
       # wrangler.toml to anyone who asks - which it did, confirmed live. A suite
       # checks the folder is correct; only this checks the HOST is pointed at
       # it, and that is a different claim that no amount of local testing makes.
+      # THE PAGE PEOPLE GET IS THE PAGE THAT WAS BUILT.
+      #
+      # The site now sits behind Cloudflare's proxy, and several of its features
+      # rewrite HTML on the way out (email address obfuscation, script loaders,
+      # injected beacons). AMV's policy pins its inline scripts by hash, so a page
+      # altered in transit has those scripts refused and stops working for every
+      # visitor - while the build id above still matches, because that is one
+      # meta tag. This compares the whole page, byte for byte, with what the
+      # build wrote, and says what was added when they differ.
+      - name: Check the live page is byte-for-byte the build
+        env:
+          SITE: ${{ vars.SITE_URL || 'https://amv.homes' }}
+        run: |
+          set -u
+          curl -fsS --compressed --max-time 30 "$SITE/" -o /tmp/live.html
+          want="$(sha256sum public/index.html | cut -c1-64)"
+          got="$(sha256sum /tmp/live.html | cut -c1-64)"
+          if [ "$want" = "$got" ]; then
+            echo "Live page is identical to the build ($want)."
+            exit 0
+          fi
+          echo "::error::$SITE/ is not the page that was built. Something between the host and the visitor is rewriting it."
+          grep -oE '/cdn-cgi/[^"'\'' ]+|rocket-loader[^"'\'' ]*|data-cfemail|email-decode[^"'\'' ]*|beacon\.min\.js' /tmp/live.html | sort -u | head -10 || true
+          echo "Built: $(wc -c < public/index.html) bytes. Served: $(wc -c < /tmp/live.html) bytes."
+          {
+            echo "### The live page is not the build"
+            echo
+            echo "Cloudflare (or the host) is changing the page on the way out. In Cloudflare, turn off"
+            echo "Email Address Obfuscation, Rocket Loader and any page-injected script for amv.homes."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
       - name: Check the host is not handing out the source
         env:
           SITE: ${{ vars.SITE_URL || 'https://amv.homes' }}
