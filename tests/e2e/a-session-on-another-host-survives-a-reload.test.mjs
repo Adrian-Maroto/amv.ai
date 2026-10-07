@@ -302,7 +302,9 @@ section('Connect pressed after the sign-in ended mid-visit asks, then carries on
   const toasts = await page2.evaluate(() => [...document.querySelectorAll('.toast')].map(t => t.textContent).join(' | '));
   ok(!/sign out/i.test(toasts), 'and nothing says "sign out and back in"', toasts);
   await signInOn(page2);
-  const picker = await until('the Connect choice', () => page2.evaluate(() => !!document.getElementById('conn-go')), 15000).catch(() => false);
+  /* 30s, not 15: a sign-in then a connection lookup, and under the parallel
+     runner this missed 15s twice in a day while passing every time alone. */
+  const picker = await until('the Connect choice', () => page2.evaluate(() => !!document.getElementById('conn-go')), 30000).catch(() => false);
   ok(picker, 'after signing in, the Connect it interrupted opens by itself', true);
   await page2.evaluate(() => { const c = document.getElementById('conn-cancel'); if (c) c.click(); });
 }
