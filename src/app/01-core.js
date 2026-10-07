@@ -141,7 +141,13 @@ const _GLOBAL_KEYS = new Set(['amv_cookie_session','amv_links','amv_user','amv_t
   /* An invite code is captured before anyone is signed in, and belongs to the
      visit rather than to an account - scoping it per-user would file it under
      'guest' and then hide it the moment the account it was meant for existed. */
-  'amv_ref_code']);
+  'amv_ref_code',
+  /* Which server issued this device's tokens. The tokens are per device, so
+     the binding is too: scoped, it was filed under 'guest' at sign-up (the
+     tokens arrive before the account is on screen) and read back as empty
+     once the account was - which disabled the binding and lost the record of
+     where the session lived (LESSONS 551). */
+  'amv_api_token_origin']);
 /* These were global, and should never have been. They are one person's
    profile and choices - the nickname AMV calls you, what you do, and the custom
    instructions that go into the system prompt - so on a shared device the
@@ -162,6 +168,20 @@ const _MIGRATE_TO_USER = ['amv_nickname','amv_work','amv_instructions',
      scheduled-jobs list is the serious one: it carries goal text and was
      executed under whoever was signed in. */
   'amv_autosched','amv_autonomy_paused','amv_build_models'];
+
+/* A binding saved before it became per device: adopt it once. The signed-in
+   account's copy first, then the one filed under 'guest' at sign-up. */
+try{
+  if(localStorage.getItem('amv_api_token_origin') === null){
+    let who = ''; try{ const u = JSON.parse(localStorage.getItem('amv_user') || 'null'); who = String((u && u.email) || '').toLowerCase(); }catch(e){}
+    const keys = (who ? ['u:'+who+'|amv_api_token_origin'] : []).concat(['u:guest|amv_api_token_origin']);
+    for(const k of keys){
+      const v = localStorage.getItem(k);
+      if(v){ localStorage.setItem('amv_api_token_origin', v); break; }
+    }
+    for(const k of keys) localStorage.removeItem(k);
+  }
+}catch(e){}
 
 function _migrateScopedKeys(email){
   try{
@@ -336,7 +356,7 @@ async function fetchDeadline(url, init, ms){
 }
 try{ window.fetchDeadline = fetchDeadline; }catch(e){}
 function _originOf(u){ try{ return new URL(u).origin; }catch(e){ return ''; } }
-function _isSecureApiOrigin(o){ return /^https:\/\/[^/]+$/.test(o) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(o); }
+function _isSecureApiOrigin(o){ return /^https:\/\/[^/]+$/.test(o) || /^https?:\/\/((?:[a-z0-9-]+\.)*localhost|127\.0\.0\.1)(:\d+)?$/.test(o); }
 /* THE BACKEND THIS BUILD SHIPS WITH.
 
    `base` read localStorage and nothing else, so it was empty for anybody who
@@ -972,6 +992,7 @@ const AMV_API = {
            differently: it asks for a sign-in on the spot instead of saying
            "sign out and back in". A network failure never sets this, so an
            outage cannot put a sign-in sheet in front of anybody. */
+        if((r.status === 400 || r.status === 401) && !this.refreshTok && await this._carryOver(_gen)) return true;
         if(!r.ok){ this._refreshDenied = (r.status === 400 || r.status === 401 || r.status === 403); return false; }
         const d = await r.json().catch(()=>({}));
         /* Signed out while this was in flight: the answer is real, and it is
@@ -984,6 +1005,47 @@ const AMV_API = {
     })();
     try{ return await this._refreshInFlight; }
     finally{ this._refreshInFlight = null; }
+  },
+  /* A SESSION FROM THE SERVER'S OLD ADDRESS (LESSONS 550).
+
+     The server moved from its own host to the site's own address under /api,
+     so its cookies are first party and Safari stops expiring them weekly. The
+     renewal cookie everyone already has belongs to the old host, which the new
+     address cannot read - so without this, the move would sign every person
+     out once.
+
+     Instead, when the new address has no session for a page whose tokens were
+     issued by the old one, the old host is asked for a fresh pair (its cookie
+     goes with the request) and the new address is handed the renewal token it
+     returns, which sets the first-party cookie. Two ordinary renewals, so
+     rotation and reuse detection apply exactly as they always do.
+
+     Only ever FROM a host under this site's own name and only ever TO this
+     page's own origin: the token is never offered anywhere the page itself
+     does not already live. */
+  async _carryOver(gen){
+    try{
+      const from = loadStr('amv_api_token_origin') || '';
+      const to = _originOf(this.base);
+      if(!from || from === to || to !== location.origin) return false;
+      if(!_isSecureApiOrigin(from)) return false;
+      if(!new URL(from).hostname.endsWith('.' + location.hostname)) return false;
+      const post = (url, body, creds) => fetch(url, { method:'POST', headers:{'Content-Type':'application/json'},
+        credentials: creds, body: JSON.stringify(body) });
+      const old = await post(from + '/auth/refresh', {}, 'include');
+      /* The old host has nothing either: there is no session to carry, now or
+         later, so stop asking it. */
+      if(old.status === 400 || old.status === 401){ try{ saveStr('amv_api_token_origin', ''); }catch(e){} return false; }
+      if(!old.ok) return false;
+      const d1 = await old.json().catch(()=>({}));
+      if(!d1.refreshToken || (this._authGen || 0) !== gen) return false;
+      const now = await post(this.base.replace(/\/$/,'') + '/auth/refresh', { refreshToken: d1.refreshToken }, _authCreds());
+      if(!now.ok) return false;
+      const d2 = await now.json().catch(()=>({}));
+      if(!d2.token || (this._authGen || 0) !== gen) return false;
+      this._setTokens(d2);
+      return true;
+    }catch(e){ return false; }
   },
   // decode exp from the JWT PAYLOAD (second segment, base64url) and remember it
   _storeTokenMeta(token){

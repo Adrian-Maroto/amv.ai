@@ -14243,3 +14243,27 @@ Rules:
 - When you add a prefix to a router that already uses that word, decide by
   something the old callers can never send (here, the host), or the old
   routes change name underneath them.
+
+## 551. Moving the server must not sign anybody out, and a binding nobody can read is no binding
+
+Moving the API from `api.amv.homes` to `amv.homes/api` (lesson 550) would have
+signed every person out at once: their renewal cookie belongs to the old host,
+which the new address cannot read. The page now carries the session over on
+the first renewal that finds nothing - it asks the old host for a fresh pair
+(its cookie goes along) and hands the new address the renewal token, which sets
+the first-party cookie. Two ordinary renewals, so rotation and reuse detection
+still apply. Only ever from a host under the site's own name, only ever to the
+page's own origin.
+
+Building it found an older defect. `amv_api_token_origin` - the record of which
+server issued this device's tokens, and the whole of AMV-013's binding - was
+stored per ACCOUNT, and tokens arrive at sign-up before the account is on
+screen. So it was filed under 'guest' and read back as empty, and an empty
+binding is the "attach anyway" branch. It is per device now, like the tokens it
+describes, and an old copy is adopted once.
+
+Rules:
+- Before changing where a credential lives, count who holds the old one. A
+  migration that signs everybody out is an outage with good intentions.
+- A security check that reads its input from storage needs a test where the
+  input is actually there. An empty value that means "allow" hides forever.
