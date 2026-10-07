@@ -106,6 +106,42 @@ section('Links the server writes to itself carry the mount');
   ok(W._mountRequest(new Request('https://evil.test/api/auth/refresh'), env) === null, 'and no other host can claim it');
 }
 
+section('Every link the server hands out leads to a page that exists');
+{
+  /* Found in the audit after the move: shared-chat links, the emailed reset
+     link and the reset page itself pointed at the static host, which has no
+     such pages and answers 404. Each is read back through the mount here. */
+  const env = mkEnv();
+  const pair = await W.issueTokens(env, 'links@example.com', 'L');
+  const sh = await call(env, SITE + '/api/v1/share/create', { method: 'POST', headers: { Authorization: 'Bearer ' + pair.token },
+    body: JSON.stringify({ title: 'T', msgs: [{ r: 'u', c: 'q' }, { r: 'a', c: 'a' }] }) });
+  const sd = await sh.json().catch(() => ({}));
+  ok(sd.url && sd.url.startsWith(SITE + '/api/c/'), 'a shared chat links through /api, where the server serves it', sd.url);
+  if (sd.url) {
+    const page = await call(env, sd.url);
+    ok(page.status === 200, 'and that link opens the page', page.status);
+  }
+
+  const resetHtml = await (await call(env, SITE + '/api/reset?token=abc')).text();
+  ok(resetHtml.includes('"/api/auth/reset/confirm"'), 'the reset page sends its form back through /api');
+  const ownReset = await (await call(env, OWN + '/reset?token=abc')).text();
+  ok(ownReset.includes('"/auth/reset/confirm"') && !ownReset.includes('/api/auth/reset/confirm'), 'and on the server\u2019s own host, where it always did');
+
+  const sent = [];
+  const before = globalThis.fetch;
+  globalThis.fetch = async (u, o) => { if (/resend/.test(String(u))) sent.push(JSON.parse(o.body)); return new Response('{"id":"m"}', { status: 200 }); };
+  const menv = { ...mkEnv(), EMAIL_API_KEY: 'k', RESET_EMAIL_FROM: 'AMV <hello@amv.test>' };
+  await W.issueTokens(menv, 'reset@example.com', 'R');
+  await menv.AMV_KV.put('user:reset@example.com', JSON.stringify({ email: 'reset@example.com', name: 'R' }));
+  await call(menv, SITE + '/api/auth/reset', { method: 'POST', body: JSON.stringify({ email: 'reset@example.com' }) });
+  globalThis.fetch = before;
+  const mail = JSON.stringify(sent.at(-1) || {});
+  ok(mail.includes(SITE + '/api/reset?token='), 'the emailed reset link goes through /api', mail.slice(0, 200));
+
+  const js = await (await call(env, SITE + '/api/widget.js?k=abc')).text();
+  ok(js.includes(SITE + '/#embed=1'), 'the chat widget embeds the app itself, not the server', (js.match(/https?:[^'"]*#embed[^'"]*/) || [''])[0]);
+}
+
 globalThis.fetch = realFetch;
 if (report('the-api-at-the-sites-own-address') > 0) process.exitCode = 1;
 done();

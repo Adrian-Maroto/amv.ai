@@ -40,7 +40,10 @@ section('A shared link is a real page a preview crawler can read');
   const token = await W.signToken({ email: 'alice@x.com' }, env.JWT_SECRET, 3600, env, 'access');
   const d = await (await create(env, token, CONVO)).json();
   ok(d.ok === true, 'the conversation is shared', d.ok);
-  ok(/^https:\/\/amv\.test\/c\/[a-z0-9]+$/.test(d.url), 'with a clean hosted URL', d.url);
+  /* The page is served by the server (here https://w), so that is where the
+     link points. APP_URL is the static host, which has no /c/ and answers
+     404 - every shared link in production did, until this was read back. */
+  ok(/^https:\/\/w\/c\/[a-z0-9]+$/.test(d.url), 'with a clean URL on the server that serves it, not the static host', d.url);
 
   const page = await W.sharePage(new Request(d.url), env, d.id);
   const html = await page.text();
@@ -49,7 +52,7 @@ section('A shared link is a real page a preview crawler can read');
      'carrying a real title, so a pasted link renders as a card');
   ok(/og:description" content="How should I price my SaaS product\?"/.test(html),
      'and the opening question as the description, which is what makes it worth clicking');
-  ok(html.includes('og:url" content="https://amv.test/c/' + d.id),
+  ok(html.includes('og:url" content="https://w/c/' + d.id),
      'with its own canonical URL');
   ok(/twitter:card/.test(html), 'and the equivalent tags for X');
   ok(/value delivered rather than your costs/.test(html), 'the answer is actually on the page');
@@ -120,7 +123,7 @@ section('The owner can list what they have shared');
   const l = await (await W.shareList(new Request('https://w/v1/share/list',
     { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: '{}' }), env)).json();
   ok(l.items.length === 2, 'both are listed', l.items.length);
-  ok(l.items.every(i => /^https:\/\/amv\.test\/c\//.test(i.url)), 'each with the link to hand out');
+  ok(l.items.every(i => /^https:\/\/w\/c\//.test(i.url)), 'each with the link to hand out');
   ok(l.items[0].title === 'Second one', 'newest first');
 }
 

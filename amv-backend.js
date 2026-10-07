@@ -12830,7 +12830,7 @@ function resetPage(request, env){
     if (pw !== pw2)    { show('Those passwords do not match.', 'err'); return; }
     btn.disabled = true; btn.textContent = 'Setting\u2026';
     try {
-      var r = await fetch('/auth/reset/confirm', {
+      var r = await fetch(${JSON.stringify((_mountedAt.get(request) || '') + '/auth/reset/confirm')}, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: TOKEN, password: pw })
@@ -18435,8 +18435,11 @@ async function _autoMakeGame(env, email, item, text) {
   }, { ids: [] });
   audit(env, 'game_created', { email, id, kind: 'crew', prompts: rec.prompts.length, via: 'automation' });
 
+  /* No request to read an address from. The game page is served by this
+     server, which the site reaches under API_MOUNT - the same address the page
+     itself is built to use - so APP_URL alone (the static host) would 404. */
   const base = String(env.APP_URL || '').replace(/\/$/, '');
-  return { id, url: (base || '') + '/g/' + id, count: rec.prompts.length };
+  return { id, url: (base ? base + API_MOUNT : '') + '/g/' + id, count: rec.prompts.length };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -18852,15 +18855,16 @@ async function shareCreate(request, env){
     mine.items = [{ id, title, at: rec.at, listed }, ...(mine.items || [])].slice(0, 200);
   }, { items: [] });
   audit(env, 'share_created', { by: user.email, id, listed });
-  const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
-  return json({ ok:true, id, listed, url: base + '/c/' + id });
+  /* The page is served by this server, not by the static host - so the link is
+     this server's public address (under /api on the site's own host), never
+     APP_URL, where /c/ is the static host's 404. */
+  return json({ ok:true, id, listed, url: _publicOrigin(request) + '/c/' + id });
 }
 async function shareList(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const mine = (await DB.get(env, 'shares', user.email.toLowerCase())) || { items: [] };
-  const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
-  return json({ ok:true, items: (mine.items||[]).map(i => ({ ...i, url: base + '/c/' + i.id })) });
+  return json({ ok:true, items: (mine.items||[]).map(i => ({ ...i, url: _publicOrigin(request) + '/c/' + i.id })) });
 }
 /* POST /v1/share/list already reports `listed`. This lets an owner take a page
    back OUT of search without deleting it - the decision has to be reversible or
@@ -18951,7 +18955,7 @@ async function sharePage(request, env, id){
     '<meta property="og:site_name" content="AMV.AI">' +
     '<meta property="og:title" content="' + title + '">' +
     '<meta property="og:description" content="' + desc + '">' +
-    '<meta property="og:url" content="' + _shareEsc(base + '/c/' + id) + '">' +
+    '<meta property="og:url" content="' + _shareEsc(_publicOrigin(request) + '/c/' + id) + '">' +
     '<meta name="twitter:card" content="summary_large_image">' +
     '<meta name="twitter:title" content="' + title + '">' +
     '<meta name="twitter:description" content="' + desc + '">' +
@@ -19893,7 +19897,7 @@ async function widgetLoader(request, env) {
   const k = (url.searchParams.get('k') || '').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 120);
   // The app host to embed. Prefer an explicit ?host=, else an env default, else
   // this Worker's own origin (works when the app is served from the same place).
-  const appHost = (url.searchParams.get('host') || env.APP_ORIGIN || _publicOrigin(request)).replace(/\/+$/, '');
+  const appHost = (url.searchParams.get('host') || env.APP_ORIGIN || env.APP_URL || url.origin).replace(/\/+$/, '');
   const js = _widgetLoaderJS(k, appHost);
   return new Response(js, {
     status: 200,
@@ -28796,7 +28800,8 @@ async function authReset(request, env) {
   // generate a one-time, 1-hour token
   const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
   await env.AMV_KV.put(`reset:${token}`, JSON.stringify({ email, at: Date.now() }), { expirationTtl: 3600 });
-  const link = `${new URL(request.url).origin.replace(/\/$/, '')}/reset?token=${token}`;
+  /* The reset page is served by this server: its public address, mount included. */
+  const link = `${_publicOrigin(request)}/reset?token=${token}`;
   // send the email if a provider is configured; otherwise the flow is ready but no email goes out
   let sent = false;
   try { sent = await sendResetEmail(env, email, link); } catch (e) { /* provider not set up */ }

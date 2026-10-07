@@ -14267,3 +14267,23 @@ Rules:
   migration that signs everybody out is an outage with good intentions.
 - A security check that reads its input from storage needs a test where the
   input is actually there. An empty value that means "allow" hides forever.
+
+## 552. A link is a claim that a page exists at that address - read it back
+
+The audit after the move (lessons 550-551) followed every link the server
+hands out to where it actually leads. Three led to the static host's 404:
+- Shared-chat links (`/c/<id>`) were built from APP_URL - the static host,
+  which has no such page. Every shared link in production was dead, and the
+  suite asserted the dead address because it only checked the link's SHAPE.
+- The emailed reset link and the reset page's own form were built from the
+  request's origin, which became the site once the server moved under /api.
+- Crew-made game links used APP_URL too.
+
+Each is now built from the server's public address (`_publicOrigin`, mount
+included), and the mount suite opens the link it was handed.
+
+Rules:
+- A test of a URL checks that it LOADS, not that it matches a pattern. The
+  pattern is what the bug looked like.
+- APP_URL is where the app lives. Pages the server renders live where the
+  server lives. Never build one from the other.
