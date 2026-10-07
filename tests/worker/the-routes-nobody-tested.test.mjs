@@ -191,7 +191,7 @@ section('The portal comes back to AMV, wherever the request claims to be from');
 
 section('Finishing a bank link needs a link this account actually started');
 {
-  const env = mkEnv({ FINANCE_CLIENT_ID: 'c', FINANCE_SECRET: 's' });
+  const env = mkEnv({ FINANCE_CLIENT_ID: 'c', FINANCE_SECRET: 's', CONNECT_KEY: 'test-connect-key' });
   const tok = await signup(env, 'bank@example.com');
   const nobody = await post(env, '/v1/finance/link/finish', {}, tok);
   ok(nobody.status === 400 && nobody.body.code === 'no_session',

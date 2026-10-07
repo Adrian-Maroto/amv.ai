@@ -67,7 +67,7 @@ function mkEnv(extra) {
     },
     AMV_COUNTER: { idFromName: (n) => n, get: () => ({ async fetch() { return new Response(JSON.stringify({ allowed: true, value: 0 })); } }) },
     JWT_SECRET: 'j', ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
-    FINANCE_CLIENT_ID: 'fc', FINANCE_SECRET: 'fs', FINANCE_API_URL: 'https://sandbox.plaid.com',
+    FINANCE_CLIENT_ID: 'fc', FINANCE_SECRET: 'fs', FINANCE_API_URL: 'https://sandbox.plaid.com', CONNECT_KEY: 'test-connect-key',
   }, extra || {});
 }
 const ctx = { waitUntil() {}, passThroughOnException() {} };

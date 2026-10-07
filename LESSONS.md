@@ -14349,3 +14349,22 @@ Rules:
   third time it fails, it is not slow, it is wrong.
 - Timing that only a busy machine produces is timing a phone on a train
   produces. Reproduce under parallel load before calling anything flaky.
+
+## 556. The most sensitive token was the one stored in the clear
+
+Every account token - mailbox, calendar, Slack, a school login - is sealed with
+AES-GCM under CONNECT_KEY, and the readiness screen says so: "a stolen copy of
+the database is ciphertext rather than mailboxes". The bank-data access token,
+which reads a person's balances and transactions, was written to the same store
+as plain JSON. It was the exception because it was built later, by a different
+path, and nothing compared the two.
+
+It is now sealed on write and opened on read through one pair of helpers, bank
+linking needs CONNECT_KEY to be available at all, and the suite asserts the raw
+row does not contain the token. Fixed before any bank was ever linked in
+production.
+
+Rules:
+- A guarantee stated once ("tokens are sealed") is a list: find every writer of
+  every token kind and check each one, or the newest is the one that breaks it.
+- Test a seal by reading the raw row, not by reading back through the opener.

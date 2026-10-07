@@ -217,7 +217,7 @@ function mkEnv(extra) {
       },
     },
     JWT_SECRET: 'j', ADMIN_TOKEN: 'a', APP_URL: 'https://amv.test',
-    FINANCE_CLIENT_ID: 'fc', FINANCE_SECRET: 'fs', FINANCE_API_URL: 'https://sandbox.plaid.com',
+    FINANCE_CLIENT_ID: 'fc', FINANCE_SECRET: 'fs', FINANCE_API_URL: 'https://sandbox.plaid.com', CONNECT_KEY: 'test-connect-key',
   }, extra || {});
 }
 const link = (env) => W.DB.put(env, 'fin', ME, { accessToken: TOKEN, itemId: 'i1', institution: 'A Bank' });

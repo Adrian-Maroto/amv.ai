@@ -6721,7 +6721,7 @@ async function _bankUse(env, email, jobId, opts){
     }catch(_e){ return { ok:false, code:'autonomy_unknown' }; }
   }
   let rec;
-  try{ rec = await DB.get(env, 'fin', email); }
+  try{ rec = await _finGet(env, email); }
   catch(_e){ return { ok:false, code:'unreadable' }; }
   if(!rec || !rec.accessToken) return { ok:false, code:'not_connected', need:'bank.read' };
   audit(env, 'bank_read', { by: String(email || ''), job: String(jobId || '') });
@@ -10092,7 +10092,7 @@ function _investDelta(now, prev){
    scheduled check-in and a manual one cannot drift apart. */
 async function _investCheckin(env, email, opts){
   const o = opts || {};
-  const rec = await DB.get(env, 'fin', email);
+  const rec = await _finGet(env, email);
   if(!rec || !rec.accessToken) return { ok:false, code:'needs_auth', error:'No investment account is linked yet.' };
   if(!env.FINANCE_CLIENT_ID || !env.FINANCE_SECRET)
     return { ok:false, code:'needs_service', error:'Bank data is not switched on for this deployment.' };
@@ -10146,7 +10146,7 @@ async function financeRoute(request, env, path){
     return json({ error:'Bank data is not enabled on this deployment. Add your aggregator keys (FINANCE_CLIENT_ID, FINANCE_SECRET) and it works with no other change.', code:'needs_service' }, 503);
 
   // the user's own access token for their linked institution
-  const rec = await DB.get(env, 'fin', user.email);
+  const rec = await _finGet(env, user.email);
   if(!rec || !rec.accessToken)
     return json({ error:'No bank account is linked to this profile yet.', code:'needs_auth' }, 400);
 
@@ -10226,7 +10226,28 @@ function _finCountries(env){
    them fails outright, so only transactions are asked for there. */
 function _finProductsFor(cc){ return cc === 'US' ? FINANCE_PRODUCTS : ['transactions']; }
 
-function _finReady(env){ return !!(env && env.FINANCE_CLIENT_ID && env.FINANCE_SECRET); }
+/* And CONNECT_KEY: a bank token that cannot be sealed is not stored at all, so
+   without it linking is unavailable rather than half-done. */
+function _finReady(env){ return !!(env && env.FINANCE_CLIENT_ID && env.FINANCE_SECRET && connConfigured(env)); }
+/* A BANK TOKEN IS SEALED LIKE EVERY OTHER ACCOUNT TOKEN (LESSONS 556).
+
+   It reads a person's balances and transactions, and it was the one account
+   token stored in the clear while mailboxes and calendars were sealed under
+   CONNECT_KEY - so a copy of the database was ciphertext for every connection
+   except the most sensitive one. Sealed on write, opened on read; a record
+   written before this (none exist in production: bank data was never switched
+   on) is still read, and is sealed the next time it is written. */
+async function _finPut(env, email, rec){
+  const sealed = await connSeal(env, { accessToken: rec.accessToken, itemId: rec.itemId || '' });
+  await DB.put(env, 'fin', email, { sealed, linkedAt: rec.linkedAt || Date.now() });
+}
+async function _finGet(env, email){
+  const row = await DB.get(env, 'fin', email);
+  if (!row) return null;
+  if (!row.sealed) return row;                       // written before sealing
+  const o = await connOpen(env, row.sealed);
+  return { accessToken: o.accessToken, itemId: o.itemId || '', linkedAt: row.linkedAt };
+}
 function _finBase(env){ return String((env && env.FINANCE_API_URL) || 'https://production.plaid.com').replace(/\/$/, ''); }
 
 async function _finCall(env, path, body){
@@ -10253,7 +10274,7 @@ async function _finUserId(env, email){
 async function financeStatus(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in first', code:'needs_auth' }, 401);
-  const rec = await DB.get(env, 'fin', user.email);
+  const rec = await _finGet(env, user.email);
   /* The server is the authority on whether an account is linked. The client
      used to decide this from a localStorage flag that nothing ever wrote, so
      the answer was permanently "no" however many accounts you had linked. */
@@ -10324,7 +10345,7 @@ async function financeLinkFinish(request, env){
   if(!x.ok || !x.data.access_token)
     return json({ error: x.error || 'Could not finish the link.', code:'provider_error' }, 502);
 
-  await DB.put(env, 'fin', user.email,
+  await _finPut(env, user.email,
     { accessToken: x.data.access_token, itemId: x.data.item_id || '', linkedAt: Date.now() });
   await DB.del(env, 'finlink', user.email);          // one use only
   await _userEvent(env, request, user.email, 'finance_linked', {});
@@ -10338,7 +10359,7 @@ async function financeUnlink(request, env){
   const blocked = await guardAction(env, 'finunlink:' + user.email, 10, 900, 'account unlinks');
   if(blocked) return blocked;
 
-  const rec = await DB.get(env, 'fin', user.email);
+  const rec = await _finGet(env, user.email);
   /* Told to the provider as well, so consent ends where the user ended it
      rather than only in our copy of the record. Best effort: our record goes
      either way, because a user who disconnects must not stay connected here
@@ -15581,7 +15602,7 @@ async function authDeleteAccount(request, env) {
      metered aggregator, still being billed for. Erasure has to reach outside
      this worker or it is not erasure. */
   try {
-    const fin = await DB.get(env, 'fin', email);
+    const fin = await _finGet(env, email);
     if (fin && fin.accessToken && _finReady(env)) {
       await _finCall(env, '/item/remove', { access_token: fin.accessToken });
     }
@@ -27651,7 +27672,7 @@ function _readinessReport(env, seen) {
         : 'Plans granted on payment, and revoked on cancellation, refund or chargeback. Without it a payment never reaches the account that made it.',
       how: put('STRIPE_WEBHOOK_SECRET') },
     { id: 'modelFallback', name: 'Model failover', blocking: false, on: _has(env, 'MODEL_API_FALLBACK_URL'),
-      turnsOn: 'A second endpoint AMV falls back to when the primary cannot answer. Non-streaming requests are retried there; a stream that already sent words is never retried, because repeating them is worse than an honest error.',
+      turnsOn: 'A second endpoint AMV falls back to when the primary cannot answer. Non-streaming requests are retried there; a stream that already sent words is never retried, because repeating them is worse than an honest error. It is sent the same key in the same format as the primary, so it must be an address that accepts that key - a gateway or another region of the same service, not a different provider.',
       how: put('MODEL_API_FALLBACK_URL') },
     /* THE SECRET THAT DECIDES WHETHER TOKENS ARE STORED IN THE CLEAR.
 

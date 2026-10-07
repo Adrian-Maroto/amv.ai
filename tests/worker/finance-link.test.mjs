@@ -23,7 +23,7 @@ mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'finlink.harness.mjs');
 writeFileSync(harness, src + `
 export { financeStatus, financeLinkStart, financeLinkFinish, financeUnlink,
-         _finUserId, _finReady, signToken, DB };
+         _finUserId, _finReady, signToken, DB, _finGet };
 export function __setRequireUser(fn){ requireUser = fn; }
 `);
 const W = await import(harness + '?t=' + Date.now());
@@ -31,7 +31,7 @@ const W = await import(harness + '?t=' + Date.now());
 const store = new Map();
 
 const mkEnv = (extra = {}) => ({
-  JWT_SECRET: 'x'.repeat(40), FINANCE_CLIENT_ID: 'cid', FINANCE_SECRET: 'sec',
+  JWT_SECRET: 'x'.repeat(40), FINANCE_CLIENT_ID: 'cid', FINANCE_SECRET: 'sec', CONNECT_KEY: 'test-connect-key',
   APP_URL: 'https://amv.homes',
   AMV_KV: {
     async get(k){ return store.has(k) ? store.get(k) : null; },
@@ -136,8 +136,12 @@ section('A completed link stores the token, and only on the server');
   const body = JSON.stringify(d);
   ok(!/access-SECRET/.test(body), 'the access token is NOT in the response', body);
 
-  const fin = await W.DB.get(env, 'fin', 'a@x.com');
-  ok(fin && fin.accessToken === 'access-SECRET', 'it is stored server-side where the reads need it', !!fin);
+  /* Sealed like every other account token: the row in storage is ciphertext,
+     and only the server, holding CONNECT_KEY, can open it. */
+  const raw = await W.DB.get(env, 'fin', 'a@x.com');
+  ok(raw && !JSON.stringify(raw).includes('access-SECRET'), 'what is stored is not the token in the clear', raw);
+  const fin = await W._finGet(env, 'a@x.com');
+  ok(fin && fin.accessToken === 'access-SECRET', 'and the server can open it where the reads need it', !!fin);
   ok(fin.linkedAt > 0, 'with when it happened', fin.linkedAt);
 
   const held = await W.DB.get(env, 'finlink', 'a@x.com');
