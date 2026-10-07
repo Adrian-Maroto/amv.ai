@@ -6218,6 +6218,11 @@ const _DEVICE_GLOBAL_KEYS = [
 ];
 try{ window._SIGNOUT_CLEAR_GLOBAL=_SIGNOUT_CLEAR_GLOBAL; window._DEVICE_GLOBAL_KEYS=_DEVICE_GLOBAL_KEYS; }catch(e){}
 function signOut(opts){
+  /* The "somebody is signed in here" marker goes first and here, not when the
+     server answers: until then a reload, or the next screen, would find the
+     marker, renew the session the server has not retired yet, and sign the
+     person straight back in (LESSONS 553). */
+  try{ document.cookie = 'amv_si=; Max-Age=0; Path=/; Secure; SameSite=Lax'; }catch(e){}
   /* Retire THIS device's session server-side, and only this one. This used to
      post to /auth/logout with no body, which revoked every token on the
      account - so signing out of a laptop silently signed out a phone. The

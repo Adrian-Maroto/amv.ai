@@ -20,7 +20,7 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const worker = (await import(join(ROOT, 'amv-backend.js') + '?mount=' + Date.now())).default;
 
-let env, files;
+let env, files, slowLogout = false;
 const front = createServer(async (req, res) => {
   if (!req.url.startsWith('/api/') && req.url !== '/api') {
     /* Everything else is the static host. */
@@ -30,6 +30,8 @@ const front = createServer(async (req, res) => {
     req.pipe(p); return;
   }
   const chunks = []; for await (const c of req) chunks.push(c);
+  /* A slow sign-out: the server's answer arrives after the person has moved on. */
+  if (slowLogout && req.url.startsWith('/api/auth/logout')) await new Promise(r => setTimeout(r, 3000));
   const headers = new Headers();
   for (const [k, v] of Object.entries(req.headers)) if (v != null) headers.set(k, Array.isArray(v) ? v.join(', ') : String(v));
   let r;
@@ -138,6 +140,24 @@ section('Signed out, then the storage wiped: stays signed out');
   await page.reload({ waitUntil: 'load' }); await boot();
   await new Promise(r => setTimeout(r, 1500));
   ok(await page.evaluate(() => !(S.user && S.user.email) && !AMV_API.token), 'nobody is signed in');
+}
+
+section('Signing out, then reloading before the server has answered: stays signed out');
+{
+  await page.evaluate(() => openAuth('login'));
+  await until(() => !!document.getElementById('a-email'));
+  await fill('#a-email', 'mount@example.com'); await fill('#a-pass', 'A-real-Passw0rd!');
+  await page.evaluate(() => document.getElementById('auth-submit').click());
+  await until(() => !!document.getElementById('cv-code') || !!(AMV_API.token && S.user && S.user.email));
+  if (await page.evaluate(() => !!document.getElementById('cv-code'))) { await fill('#cv-code', codeIn()); }
+  ok(await until(() => !!(AMV_API.token && S.user && S.user.email)), 'signed in');
+  slowLogout = true;
+  await page.evaluate(() => signOut());
+  await page.reload({ waitUntil: 'load' }); await boot();
+  await new Promise(r => setTimeout(r, 2000));
+  ok(await page.evaluate(() => !(S.user && S.user.email)), 'nobody is signed back in by the marker', await page.evaluate(() => S.user));
+  slowLogout = false;
+  await new Promise(r => setTimeout(r, 2000));
 }
 
 ok(errors.length === 0, 'no page errors', errors.slice(0, 3));
