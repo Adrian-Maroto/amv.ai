@@ -30265,7 +30265,7 @@ function _readinessHTML(d){
       '<div class="gl-body">'+
         '<div class="gl-label">'+escH(i.name)+
           (i.on?' <span class="gl-tag">live</span>'
-              :' <span class="gl-tag '+(i.blocking||i.problem?'req':'off')+'">'+(i.problem?'refused':(i.blocking?'required':'not set up'))+'</span>')+
+              :' <span class="gl-tag '+(i.blocking||(i.problem&&!i.tag)?'req':'off')+'">'+escH(i.tag||(i.problem?'refused':(i.blocking?'required':'not set up')))+'</span>')+
         '</div>'+
         /* Set, and still not working: the provider's own words, ahead of
            the description, because they are the thing to act on. */

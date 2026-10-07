@@ -22583,9 +22583,19 @@ function _predictVenuesFor(country) {
   });
 }
 
+/* NOT ARMED BY A KEY, BECAUSE THE KEY WOULD BE THE OWNER'S (LESSONS 554).
+
+   The venue key is one secret for the whole deployment, so a trade any person
+   approved would be placed from the operator's own venue account and paid for
+   from the operator's balance - and the order itself is not yet in either
+   venue's signed format (Kalshi signs each request with the account's private
+   key; Polymarket takes an order signed by the trader's wallet). Trading is
+   held off until each person connects their OWN account, whatever is set here:
+   a pasted key must not be able to switch on spending somebody else's money. */
+let PREDICT_TRADING_LIVE = false;
 function _predictConfigured(env, venue) {
   const v = PREDICT_VENUES[venue];
-  return !!(v && _has(env, v.keyEnv));
+  return PREDICT_TRADING_LIVE && !!(v && _has(env, v.keyEnv));
 }
 
 /* Everything a trade has to clear before a quote is even issued. Returned as a
@@ -27762,13 +27772,15 @@ function _readinessReport(env, seen) {
        Without these rows an operator would have no way to learn the names, and
        the feature would look broken rather than unconfigured. */
     { id: 'predictKalshi', name: 'Prediction markets - Kalshi', blocking: false,
-      on: _has(env, 'KALSHI_API_KEY'),
+      on: false, tag: 'not available yet',
+      problem: 'Held off on purpose: with one key for the whole site, every person\u2019s trade would be placed from your account and paid from your balance. It needs each person to connect their own account first. Setting this key does not switch it on.',
       turnsOn: 'Reading and placing trades on Kalshi, which is the venue AMV offers in the United States. Every trade still needs the person to approve the exact numbers, and AMV will not place more than $' + PREDICT_MAX_TRADE_USD + ' on one or $' + PREDICT_MAX_DAY_USD + ' in a day.',
-      how: put('KALSHI_API_KEY') },
+      how: 'Nothing to set yet. KALSHI_API_KEY is not read until people can connect their own accounts.' },
     { id: 'predictPolymarket', name: 'Prediction markets - Polymarket', blocking: false,
-      on: _has(env, 'POLYMARKET_API_KEY'),
+      on: false, tag: 'not available yet',
+      problem: 'Held off on purpose: with one key for the whole site, every person\u2019s trade would be placed from your account and paid from your balance. It needs each person to connect their own account first. Setting this key does not switch it on.',
       turnsOn: 'The same, outside the United States. Polymarket blocks US persons on its main venue, so AMV does not offer it to anybody the edge reports as being there - which is a legal line, not a preference.',
-      how: put('POLYMARKET_API_KEY') },
+      how: 'Nothing to set yet. POLYMARKET_API_KEY is not read until people can connect their own accounts.' },
     { id: 'stripePricesYearly', name: 'Yearly plan prices (Stripe)', blocking: false,
       on: _has(env, 'STRIPE_PRICE_PRO_YEAR') && _has(env, 'STRIPE_PRICE_ELITE_YEAR') && _has(env, 'STRIPE_PRICE_ULTRA_YEAR'),
       turnsOn: 'Buying a plan by the year instead of by the month. Each is a second price object on the same product in Stripe, with a yearly interval - AMV never computes a yearly amount of its own, it opens checkout with whichever price you created, so the discount is whatever you set it to. Plans with no yearly price are simply not offered yearly.',
@@ -28035,7 +28047,9 @@ function _readinessReport(env, seen) {
 
   const all = items.concat(storage);
   const missingBlocking = all.filter(i => i.blocking && !i.on);
-  const missingOptional = all.filter(i => !i.blocking && !i.on);
+  /* A row held off on purpose (it carries a `tag`) is not something the owner
+     can configure, so it does not count as "still off". */
+  const missingOptional = all.filter(i => !i.blocking && !i.on && !i.tag);
   return {
     items, storage, tuning, groupOrder: GROUP_ORDER,
     summary: {

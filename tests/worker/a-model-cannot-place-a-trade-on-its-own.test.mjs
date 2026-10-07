@@ -30,11 +30,23 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'predict.harness.mjs');
 writeFileSync(harness, src + `
-export { predictMarkets, predictQuote, predictTrade, _predictVenuesFor,
+export { predictMarkets, predictQuote, predictTrade, _predictVenuesFor, _predictConfigured as _predictConfiguredFor,
          PREDICT_VENUES, PREDICT_MAX_TRADE_USD, PREDICT_MAX_DAY_USD, DB };
 export function __setRequireUser(fn){ requireUser = fn; }
+export function __armTrading(on){ PREDICT_TRADING_LIVE = on; }
 `);
 const W = await import(harness + '?t=' + Date.now());
+
+section('A venue key alone does not switch trading on');
+{
+  /* One key for the whole site would place every person's trade from the
+     operator's own account. Held off until people connect their own. */
+  const env0 = { JWT_SECRET: 'x'.repeat(40), KALSHI_API_KEY: 'k', POLYMARKET_API_KEY: 'p' };
+  ok(Object.keys(W.PREDICT_VENUES).every(v => !W._predictConfiguredFor(env0, v)), 'with both keys set, no venue counts as ready');
+}
+/* The approval rules below are what a real per-person venue will run behind,
+   so they stay tested - armed here, in this copy of the server only. */
+W.__armTrading(true);
 
 const store = new Map();
 const mkEnv = (over) => Object.assign({

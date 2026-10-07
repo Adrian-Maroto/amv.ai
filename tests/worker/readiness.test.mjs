@@ -168,7 +168,10 @@ section('Every entry says what it turns on and how to set it');
   ok(all.length >= 13, 'the whole surface is covered, not a sample', all.length);
   ok(all.every(i => i.turnsOn && i.turnsOn.length > 20), 'each says what it enables, in a sentence');
   ok(all.every(i => i.how && i.how.length > 5), 'and how to set it');
-  ok(d.items.every(i => /wrangler secret put/.test(i.how)), 'secrets carry the exact command', d.items[0].how);
+  ok(d.items.filter(i => !i.tag).every(i => /wrangler secret put/.test(i.how)), 'secrets carry the exact command', d.items[0].how);
+  /* Held off on purpose: no command to paste, and the reason in its place. */
+  const held = d.items.filter(i => i.tag);
+  ok(held.length >= 2 && held.every(i => !i.on && i.problem && !/wrangler secret put/.test(i.how)), 'a held row says why instead of asking for a key', held.map(i => i.id));
   ok(find(d, 'kv').how.includes('wrangler.toml'), 'a binding says where it is bound instead', find(d, 'kv').how);
 }
 
