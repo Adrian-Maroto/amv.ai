@@ -1177,6 +1177,12 @@ async function connAdd(provider){
     if(r && r.url){ saveStr('amv_conn_return', S.tab||'integrations'); window.location.href = r.url; return; }
     toast('That connection could not be started.','error',5000);
   }catch(e){
+    /* The sign-in ended while the permissions were being chosen: ask for it,
+       and pick this Connect up again afterwards rather than dropping it. */
+    if(/session expired|sign in again/i.test(String((e&&e.message)||'')) && typeof _askToSignInAgain==='function'){
+      _askToSignInAgain(()=>connAddWhenReady(provider), true);
+      return;
+    }
     toast(String((e&&e.message)||'That connection could not be started.'),'error',7000);
   }
 }
@@ -1186,7 +1192,13 @@ try{ window.connAdd=connAdd; }catch(e){}
    row that says Connect, is a button that does nothing. So the list is asked
    for if it is not here, and a failure is said. */
 async function connAddWhenReady(provider){
-  if(!(_connState.data && (_connState.data.providers||[]).length)) await _connLoad(true);
+  /* ASKED FRESH, EVERY PRESS. A list already on screen says nothing about
+     whether the sign-in still holds: with one cached, Connect went straight to
+     the permission choice on an ended session, the next request asked for a
+     sign-in with nothing to come back to, and the Connect was lost. Asking
+     first means an ended session is found HERE, where the sign-in is told to
+     carry on with this Connect. One request, on a deliberate press. */
+  await _connLoad(true);
   const d=_connState.data;
   if(!d){
     /* Not signed in on this device any more: ask for the sign-in right here and
