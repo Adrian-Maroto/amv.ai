@@ -9772,6 +9772,40 @@ function renderChatMsgs() {
 
 
 let _voiceRec=null, _isRecording=false;
+/* WHICH LANGUAGE AMV LISTENS AND SPEAKS IN.
+
+   Every recogniser here was set to 'en-US', so somebody who chose Español -
+   or whose phone is in Hindi - was transcribed as if they were speaking
+   English: the words came back as English-shaped nonsense, which is worse
+   than no microphone at all. Answers were read aloud by an English voice
+   whatever language they were in.
+
+   The language is the one AMV is set to; on "Auto" it is the device's own.
+   The region comes from the device when it speaks that language (Mexico's
+   Spanish, not Spain's), otherwise from the language's most-spoken form. */
+const _SPEECH_REGION = { en:'en-US', es:'es-ES', zh:'zh-CN', hi:'hi-IN', ar:'ar-SA', pt:'pt-BR', fr:'fr-FR', de:'de-DE',
+  ja:'ja-JP', ru:'ru-RU', id:'id-ID', bn:'bn-IN', ur:'ur-PK', tr:'tr-TR', vi:'vi-VN', it:'it-IT', ko:'ko-KR', ta:'ta-IN' };
+function _speechLang(){
+  let code = '';
+  try{ code = (typeof _lang === 'function') ? String(_lang() || '') : ''; }catch(e){}
+  let navs = ['en-US'];
+  try{ const l = navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language || 'en-US']; navs = Array.from(l).map(String); }catch(e){}
+  if(!code || code === 'auto') code = (navs[0] || 'en').toLowerCase().split('-')[0];
+  const local = navs.find(l => /-/.test(l) && l.toLowerCase().split('-')[0] === code);
+  return local || _SPEECH_REGION[code] || code || 'en-US';
+}
+/* The language an answer is actually written in, where its script says so -
+   AMV answers in the language it is spoken to, which need not be the one the
+   app is set to. Latin-script text keeps the app's language, because the
+   script cannot tell Spanish from English. */
+function _speechLangOf(text){
+  const t = String(text || '').slice(0, 600), app = _speechLang(), base = app.split('-')[0];
+  const by = /[\u3040-\u30ff]/.test(t) ? 'ja' : /[\uac00-\ud7af]/.test(t) ? 'ko' : /[\u4e00-\u9fff]/.test(t) ? 'zh'
+    : /[\u0600-\u06ff]/.test(t) ? (base === 'ur' ? 'ur' : 'ar') : /[\u0400-\u04ff]/.test(t) ? 'ru'
+    : /[\u0900-\u097f]/.test(t) ? 'hi' : /[\u0980-\u09ff]/.test(t) ? 'bn' : /[\u0b80-\u0bff]/.test(t) ? 'ta' : '';
+  if(!by || by === base) return app;
+  return _SPEECH_REGION[by] || by;
+}
 function toggleVoice(){
   const btn=$('voice-btn');
   if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
@@ -9790,7 +9824,7 @@ function _amvBeginRec(){
   const btn=$('voice-btn');
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   _voiceRec=new SR();
-  _voiceRec.continuous=false; _voiceRec.interimResults=true; _voiceRec.lang='en-US';
+  _voiceRec.continuous=false; _voiceRec.interimResults=true; _voiceRec.lang=_speechLang();
   _voiceRec.onstart=()=>{
     _isRecording=true;
     if(btn) btn.classList.add('rec');
@@ -9815,14 +9849,21 @@ function _amvBeginRec(){
 const AMVSpeech = {
   speaking:false, _utter:null, _voice:null, _boundIdx:null,
   supported(){ return typeof window!=='undefined' && 'speechSynthesis' in window; },
-  _pickVoice(){
-    if(this._voice) return this._voice;
+  /* A voice for the language being read: that exact region, then any voice
+     of the language, preferring the natural-sounding ones. With none
+     installed it returns null and the browser picks from `lang` - never a
+     voice of another language, which reads the words with the wrong sounds. */
+  _voiceFor:{},
+  _pickVoice(lang){
+    lang=String(lang||_speechLang());
+    if(this._voiceFor[lang]!==undefined) return this._voiceFor[lang];
     const vs=speechSynthesis.getVoices()||[];
     if(!vs.length) return null;
-    // prefer a natural, English voice (Google/Natural/Samantha), else first en, else first
-    const pref=vs.find(v=>/natural|google us english|samantha|aria|jenny/i.test(v.name)&&/^en/i.test(v.lang))
-      || vs.find(v=>/^en-US/i.test(v.lang)) || vs.find(v=>/^en/i.test(v.lang)) || vs[0];
-    this._voice=pref; return pref;
+    const norm=l=>String(l||'').replace('_','-').toLowerCase(), want=norm(lang), base=want.split('-')[0];
+    const nice=v=>/natural|neural|google|premium|enhanced|samantha|aria|jenny/i.test(v.name);
+    const exact=vs.filter(v=>norm(v.lang)===want), same=vs.filter(v=>norm(v.lang).split('-')[0]===base);
+    const pref=exact.find(nice)||exact[0]||same.find(nice)||same[0]||null;
+    this._voiceFor[lang]=pref; return pref;
   },
   _clean(text){
     return String(text||'')
@@ -9838,8 +9879,8 @@ const AMVSpeech = {
     this.stop();
     const clean=this._clean(text); if(!clean) return false;
     const u=new SpeechSynthesisUtterance(clean);
-    const v=this._pickVoice(); if(v) u.voice=v;
-    u.rate=parseFloat(loadStr('amv_voice_rate'))||1.0; u.pitch=1.0; u.lang=(v&&v.lang)||'en-US';
+    const lang=_speechLangOf(clean), v=this._pickVoice(lang); if(v) u.voice=v;
+    u.rate=parseFloat(loadStr('amv_voice_rate'))||1.0; u.pitch=1.0; u.lang=(v&&v.lang)||lang;
     u.onstart=()=>{ this.speaking=true; if(opts&&opts.onstart) opts.onstart(); };
     u.onend=()=>{ this.speaking=false; this._boundIdx=null; _syncSpeakButtons(); if(opts&&opts.onend) opts.onend(); };
     u.onerror=()=>{ this.speaking=false; this._boundIdx=null; _syncSpeakButtons(); if(opts&&opts.onerror) opts.onerror(); };
@@ -9851,7 +9892,7 @@ const AMVSpeech = {
     this._boundIdx=idx; const ok=this.speak(text, opts); _syncSpeakButtons(); return ok;
   }
 };
-try{ if(AMVSpeech.supported()){ speechSynthesis.onvoiceschanged=()=>{ AMVSpeech._voice=null; AMVSpeech._pickVoice(); }; } }catch(e){}
+try{ if(AMVSpeech.supported()){ speechSynthesis.onvoiceschanged=()=>{ AMVSpeech._voiceFor={}; }; } }catch(e){}
 try{ window.AMVSpeech=AMVSpeech; }catch(e){}
 
 // keep every message's speak button in sync with what's actually playing
@@ -9928,7 +9969,7 @@ function _voiceModeListen(){
   _voiceSetState('listening','');
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR) return;
   try{ _voiceRec&&_voiceRec.stop(); }catch(e){}
-  _voiceRec=new SR(); _voiceRec.continuous=false; _voiceRec.interimResults=true; _voiceRec.lang='en-US';
+  _voiceRec=new SR(); _voiceRec.continuous=false; _voiceRec.interimResults=true; _voiceRec.lang=_speechLang();
   _voiceRec.onresult=e=>{
     const t=Array.from(e.results).map(r=>r[0].transcript).join('').trim();
     _voiceSetState('listening', t);   // live transcript feedback
@@ -33602,7 +33643,7 @@ function _amvStartVoice(btn){
   window._voiceRec = new SR();
   window._voiceRec.continuous = true;
   window._voiceRec.interimResults = true;
-  window._voiceRec.lang = 'en-US';
+  window._voiceRec.lang = _speechLang();
   window._voiceRec.onstart = ()=>{ window._isRecording=true; if(btn){btn.classList.add('rec');} toast('Listening - click mic to stop','info',4000); };
   window._voiceRec.onresult = e=>{
     let final='', interim='';

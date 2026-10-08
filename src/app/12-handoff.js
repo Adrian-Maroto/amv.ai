@@ -4420,7 +4420,7 @@ function _amvStartVoice(btn){
   window._voiceRec = new SR();
   window._voiceRec.continuous = true;
   window._voiceRec.interimResults = true;
-  window._voiceRec.lang = 'en-US';
+  window._voiceRec.lang = _speechLang();
   window._voiceRec.onstart = ()=>{ window._isRecording=true; if(btn){btn.classList.add('rec');} toast('Listening - click mic to stop','info',4000); };
   window._voiceRec.onresult = e=>{
     let final='', interim='';

@@ -14397,3 +14397,24 @@ Rules:
   video/mp2t) that it decides nothing on its own.
 - Test a reader against files someone else's software wrote, not only against
   fixtures built from the same assumptions as the reader.
+
+## 558. Every microphone assumed American English
+
+AMV ships in nineteen languages and translates its own screens into them, but
+all three speech recognisers were created with `lang = 'en-US'`, and the voice
+that read answers aloud was chosen by preferring English. Somebody who set AMV to
+Español and pressed the microphone got their Spanish transcribed as
+English-shaped nonsense, which is worse than having no microphone, and a Spanish
+answer was read with English sounds. Nothing failed, because the browser does
+exactly what it was told.
+
+There is now one helper for this. It uses the language AMV is set to, or the
+device's own language on Auto, and the device's region when the device speaks
+that language. The reading voice matches the answer's script, and it never falls
+back to a voice of another language.
+
+Rules:
+- A setting that changes the language has to reach every place a language is
+  named. Search the code for the literal ('en-US') as well as for the setting.
+- Better no voice than the wrong one: when no voice for the language is
+  installed, hand the browser the language and let it choose.
