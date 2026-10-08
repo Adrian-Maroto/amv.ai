@@ -14368,3 +14368,32 @@ Rules:
 - A guarantee stated once ("tokens are sealed") is a list: find every writer of
   every token kind and check each one, or the newest is the one that breaks it.
 - Test a seal by reading the raw row, not by reading back through the opener.
+
+## 557. A capability promised on one screen and decided on another
+
+Help said "AMV reads PDFs, images, code, Excel, CSV, and Word", and the app
+catalog said AMV "runs formulas, builds pivots" and lets you "export the .pptx".
+What decided the truth of all of it was `getFileCat`: a picture, a PDF, or
+everything else - and everything else went through `readAsText`. A .docx,
+.xlsx or .pptx is a ZIP of XML, so the model was handed an archive's bytes as
+text and answered questions about a file it never saw. A refusal would have
+been better than that confident answer. Audio and other binaries went the same
+way. Two more defects were in the same lines: attaching several pictures at
+once attached none (the filter compared `kind` to 'image' where the reader
+wrote 'img'), and a PDF in a batch was folded in as "[binary]".
+
+Now `amvReadFile` (05b-file-reader.js) decides from the file's first bytes, reads
+Word, Excel and PowerPoint for real (a ZIP reader over the browser's own
+DEFLATE, no library), and refuses everything else by name with what to do
+instead. Inflated bytes are counted as they come out, never taken from the
+sizes the archive declares. The catalog now claims only reading; exporting
+those formats is a separate item, and a suite fails if the copy claims it first.
+
+Rules:
+- A sentence saying what AMV can do is a test that has not been written yet.
+  Find the code path the sentence describes and write the test that drives it.
+- The format of a file is its bytes. A name is a hint, and the type the
+  operating system reports is wrong often enough (a TypeScript file arrives as
+  video/mp2t) that it decides nothing on its own.
+- Test a reader against files someone else's software wrote, not only against
+  fixtures built from the same assumptions as the reader.

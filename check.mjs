@@ -1247,7 +1247,14 @@ step('Page weight is under control', () => {
      first: a scan for functions nothing calls found four, and all four are
      exercised by suites as product logic; the shell notes already live in docs.
      The new strings were shortened; what is left is the fixes themselves. */
-  const CEILING = 634 * 1024;   // gzipped, which is what actually crosses the network
+  /* 634 -> 641, 2026-10-08, deliberately: AMV reads Word, Excel and
+     PowerPoint files for real (a ZIP reader and three document readers, no
+     library) and refuses what it cannot read by name - the gap list's top
+     bug, where Help promised Excel and Word and the model was handed the
+     archive's bytes as text. About 6.6KB gzipped. Loading it on first attach
+     was weighed and declined: a second fetch is a second way for attaching a
+     file to fail offline, for 1% of the page. */
+  const CEILING = 641 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

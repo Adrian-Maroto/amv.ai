@@ -826,7 +826,15 @@ async function sendMsg(_opts) {
          a question about page forty was answered from pages one to five. A
          file longer than one request holds is read in parts below, the same
          as a long message, and the person is asked first. */
-      apiContent='[File: "'+att.name+'"\n```\n'+att.data+'\n```\n\nUser: '+(txt||'Please analyze this file thoroughly.');
+      /* An Office file arrives as the text AMV read out of it, and the model is
+         told so - otherwise it would describe markdown tables as the file's
+         own formatting. */
+      const how = att.format ? ' - a '+_FR_LABEL[att.format]+' ('+(att.summary||'')+'), read into text by AMV' : '';
+      /* The fence is longer than any run of backticks in the file, so a README
+         or a workbook's own ```csv blocks cannot close it halfway through. */
+      const runs = String(att.data).match(/`{3,}/g) || [];
+      const fence = '`'.repeat(Math.max(3, ...runs.map(r => r.length + 1)));
+      apiContent='[File: "'+att.name+'"'+how+'\n'+fence+'\n'+att.data+'\n'+fence+'\n\nUser: '+(txt||'Please analyze this file thoroughly.');
       display=(txt?txt+' ':'')+'['+att.name+']';
     }
   }
@@ -2766,48 +2774,35 @@ function handleFiles(files){
   try{ for(const f of (files||[])) _ctxFileTrack('chat', f.name); }catch(e){}
   if(!files||!files.length) return;
   if(files.length===1){ handleFile(files[0]); return; }
-  // Multiple: combine text files
-  const all=Array.from(files);
-  Promise.all(all.map(f=>new Promise(res=>{
-    const cat=getFileCat(f);
-    const r=new FileReader();
-    if(cat==='image'){r.onload=e=>res({kind:'img',name:f.name,b64:e.target.result.split(',')[1],mime:f.type||'image/jpeg',size:f.size});r.readAsDataURL(f);}
-    else if(cat==='pdf'){r.onload=e=>res({kind:'pdf',name:f.name,b64:e.target.result.split(',')[1],mime:'application/pdf',size:f.size});r.readAsDataURL(f);}
-    else{r.onload=e=>res({kind:'text',name:f.name,data:e.target.result,size:f.size});r.onerror=()=>res({kind:'text',name:f.name,data:'[unreadable]',size:0});r.readAsText(f);}
-  }))).then(results=>{
-    const imgs=results.filter(r=>r.kind==='image');
-    if(imgs.length){ S.att=imgs[0]; }
-    else{
-      const combined=results.map(r=>'=== '+r.name+' ===\n'+(r.data||'[binary]')).join('\n\n');
-      S.att={kind:'text',name:results.map(r=>r.name).join(', '),data:combined,size:0};
+  /* Several at once. Text and Office files are read and combined into one
+     attachment. A message carries one picture or one PDF, so those are not
+     folded in as "[binary]" - which is what used to happen, silently - and
+     anything left out is named. */
+  Promise.all(Array.from(files).map(f=>amvReadFile(f))).then(results=>{
+    const refused=results.filter(r=>r.kind==='refused');
+    const texts=results.filter(r=>r.kind==='text');
+    const media=results.filter(r=>r.kind==='img'||r.kind==='pdf');
+    const left=[];
+    if(texts.length){
+      S.att = texts.length===1 ? texts[0] : {kind:'text', name:texts.map(r=>r.name).join(', '), size:texts.reduce((n,r)=>n+(r.size||0),0),
+        data:texts.map(r=>'=== '+r.name+(r.format?' ('+T(_FR_LABEL[r.format])+')':'')+' ===\n'+r.data).join('\n\n'),
+        summary:texts.length+' '+T('files')};
+      media.forEach(r=>left.push(r.name));
+    } else if(media.length){
+      S.att=media[0];
+      media.slice(1).forEach(r=>left.push(r.name));
     }
-    showAttChip();
+    if(texts.length||media.length) showAttChip();
+    refused.forEach((r,i)=>setTimeout(()=>toast(r.reason,'error',9000), i*400));
+    if(left.length) toast(T('A message carries one picture or PDF at a time, so these were not attached:')+' '+left.join(', '),'error',9000);
   });
-}
-function getFileCat(file){
-  const t=file.type;
-  if(t.startsWith('image/')) return 'image';
-  if(t==='application/pdf') return 'pdf';
-  const ext=file.name.split('.').pop().toLowerCase();
-  if(['jpg','jpeg','png','gif','webp','bmp'].includes(ext)) return 'image';
-  if(ext==='pdf') return 'pdf';
-  return 'text';
 }
 function handleFile(file){
   if(!file) return;
-  const cat=getFileCat(file);
-  const reader=new FileReader();
-  if(cat==='image'){
-    reader.onload=e=>{S.att={kind:'img',name:file.name,size:file.size,b64:e.target.result.split(',')[1],mime:file.type||'image/jpeg'};showAttChip();};
-    reader.readAsDataURL(file);
-  } else if(cat==='pdf'){
-    reader.onload=e=>{S.att={kind:'pdf',name:file.name,size:file.size,b64:e.target.result.split(',')[1],mime:'application/pdf'};showAttChip();};
-    reader.readAsDataURL(file);
-  } else {
-    reader.onload=e=>{S.att={kind:'text',name:file.name,size:file.size,data:e.target.result};showAttChip();};
-    reader.readAsText(file);
-  }
-  reader.onerror=()=>toast('Could not read file: '+file.name,'error');
+  amvReadFile(file).then(att=>{
+    if(att.kind==='refused'){ toast(att.reason,'error',9000); return; }
+    S.att=att; showAttChip();
+  });
 }
 /* Is this attachment something the spreadsheet editor can open? Extension and
    MIME both, because a CSV exported by a spreadsheet app often arrives as
@@ -2822,8 +2817,9 @@ function showAttChip(){
   const ab2=$('ab2'),ac=$('ac');
   if(!ab2||!ac) return;
   const icons={img:'🖼',pdf:'📄',text:'📎'};
-  const sz=S.att.size?(' ('+fmtSize(S.att.size)+')'):'';
-  ac.innerHTML='<span>'+(icons[_attIsSheet(S.att)?'sheet':S.att.kind]||(_attIsSheet(S.att)?'📊':'📎'))+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--dim);font-size:var(--t-2xs)">'+sz+'</span></span>';
+  const sz=S.att.size||S.att.summary?(' ('+[S.att.format?T(_FR_LABEL[S.att.format]):'', S.att.summary||'', S.att.size?fmtSize(S.att.size):''].filter(Boolean).join(' · ')+')'):'';
+  const fmtIcon=S.att.format?({docx:'📝',xlsx:'📊',pptx:'📽️'})[S.att.format]:'';
+  ac.innerHTML='<span>'+(fmtIcon||icons[_attIsSheet(S.att)?'sheet':S.att.kind]||(_attIsSheet(S.att)?'📊':'📎'))+' <strong>'+escH(S.att.name)+'</strong><span style="color:var(--dim);font-size:var(--t-2xs)">'+sz+'</span></span>';
 
   /* THE SPREADSHEET EDITOR HAD NO DOOR.
 
