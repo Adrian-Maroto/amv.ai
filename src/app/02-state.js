@@ -955,7 +955,7 @@ const AEGIS = {
     'amv-apex':  { in: 10.00, out: 50.00 },
     'amv-forge': { in: 10.00, out: 50.00 },
     'amv-core':  { in: 2.00,  out: 10.00 },
-    'amv-pulse': { in: 1.00,  out: 5.00 },
+    'amv-pulse': { in: 0.5,  out: 2.5 },
     /* An auto-routed call is sent as 'auto' and the SERVER decides the engine,
        so the browser does not know which one answered. Without an entry here
        the lookup misses and the call is costed at zero - and this figure is the

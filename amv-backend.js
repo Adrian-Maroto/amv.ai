@@ -180,9 +180,30 @@ const json = (o, s = 200, extra) => new Response(JSON.stringify(o), { status: s,
    customer off after burning two thirds of what their money actually covers,
    silently, exactly as the note above this table warns. Corrected here.
    -------------------------------------------------------------------------- */
+/* 2026-10-08: the 5.5 generation, from the published price list.
+
+   Pulse moves to the newest small model. It is billed by prompt length - 0.10/
+   0.50 up to 100k tokens, 0.50/2.50 above - and the backstop spends against
+   ONE number per engine, so it is costed at the higher band. On a short prompt
+   that overstates the cost five times, which only means the meter is cautious;
+   the opposite choice would let a long prompt cost five times what it is
+   counted as, and the backstop exists to make that impossible. Even at the
+   higher band it is half of the previous small model.
+
+   The new small model THINKS BY DEFAULT, and thinking counts against
+   max_tokens - so leaving it as an engine with no thinking setting, as the old
+   one was, would have given it medium-effort thinking inside a 4,000-token cap
+   and cut quick answers off mid-sentence. It is now stated: adaptive thinking
+   at LOW effort, the level its documentation names for chat and short tasks,
+   with the same 16k headroom the other thinking engines have.
+
+   Core moves to the next model of its line at the same published rate. Its
+   effort levels were recalibrated, and medium remains the documented starting
+   point for chat. Forge and Apex are unchanged: the top model is already the
+   newest, and moving the paid floor is a pricing decision, not a version bump. */
 const ENGINES = {
-  'amv-pulse': { model: 'claude-haiku-4-5-20251001', minPlan: 'free',  inCost: 1,  outCost: 5,   maxOut: 4000,  cacheMin: 4096 },
-  'amv-core':  { model: 'claude-sonnet-5',           minPlan: 'free',  inCost: 2,  outCost: 10,  maxOut: 16000, cacheMin: 1024, thinking: true, effort: 'medium' },
+  'amv-pulse': { model: 'claude-haiku-5-5',          minPlan: 'free',  inCost: 0.5, outCost: 2.5, maxOut: 16000, cacheMin: 4096, thinking: true, effort: 'low' },
+  'amv-core':  { model: 'claude-sonnet-5-5',         minPlan: 'free',  inCost: 2,  outCost: 10,  maxOut: 16000, cacheMin: 1024, thinking: true, effort: 'medium' },
   'amv-forge': { model: 'claude-fable-5',            minPlan: 'pro',   inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
   'amv-apex':  { model: 'claude-fable-5-1',          minPlan: 'elite', inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
 };
@@ -210,8 +231,12 @@ const _DEAREST_ENGINE_IN_COST = Math.max(...Object.values(ENGINES).map((e) => e.
    effort the upstream does not accept is a 400 on a live request, and the
    place to learn that is its documentation, not production. Adding one is a
    line in this table once it is verified. */
-const EFFORT_RANK = { medium: 0, high: 1 };
-const EFFORT_LABEL = { medium: 'Balanced', high: 'High' };
+/* 'low' joined once it was verified on every engine in the table (the effort
+   documentation lists it for all of them). It sits below the engines' own
+   settings, so choosing it can only lower a bill - the ceiling logic below
+   never needs to gate it. */
+const EFFORT_RANK = { low: 0, medium: 1, high: 2 };
+const EFFORT_LABEL = { low: 'Quick', medium: 'Balanced', high: 'High' };
 function _effortCeiling(eng, rank) {
   if (!eng.effort) return null;
   /* Below Elite the engine's own setting is the ceiling, so nobody can raise
@@ -243,6 +268,7 @@ function engineModel(key){
 // silent mis-default. (auditor #6: RAW_TO_KEY/engine resolution consistency)
 const RAW_TO_KEY = {
   // real model strings
+  'claude-haiku-5-5': 'amv-pulse', 'claude-sonnet-5-5': 'amv-core',
   'claude-haiku-4-5-20251001': 'amv-pulse', 'claude-haiku-4-5': 'amv-pulse',
   'claude-sonnet-5': 'amv-core',
   'claude-fable-5': 'amv-forge',

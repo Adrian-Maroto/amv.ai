@@ -37,7 +37,13 @@ const W = await import(harness + '?t=' + Date.now());
 
    Whoever changes an engine changes this too, from the price list and not from
    the other file. */
+/* Haiku 5.5 is billed by prompt length (0.10/0.50 up to 100k tokens,
+   0.50/2.50 above). The engine is costed at the HIGHER band on purpose, so
+   that is the rate this oracle holds it to - a cheaper number here would be a
+   meter that under-counts long prompts. */
 const RATE = {
+  'claude-haiku-5-5':          [0.5, 2.5],
+  'claude-sonnet-5-5':         [2, 10],
   'claude-haiku-4-5-20251001': [1, 5],
   'claude-haiku-4-5':          [1, 5],
   'claude-sonnet-5':           [2, 10],
@@ -167,22 +173,23 @@ section('Effort is opt-in per engine, because sending it to the wrong one is a 4
      end-to-end half - that the request really carries no output_config for
      such an engine - is asserted through the live route in
      worker/effort-cannot-outrun-the-plan. */
-  const noEffortEngines = Object.entries(W.ENGINES).filter(([, e]) => !e.effort);
-  ok(noEffortEngines.length >= 1,
-     'at least one engine declares no effort, so this has a subject',
-     noEffortEngines.map(([k]) => k));
+  /* Every engine in the table now takes effort, so the property is checked
+     against an engine declared without one - the rule is about the resolver,
+     and the next engine added might be one that rejects it. */
+  const noEffortEngines = Object.entries(W.ENGINES).filter(([, e]) => !e.effort)
+    .concat([['a-model-without-effort', { model: 'x', inCost: 1, outCost: 1, maxOut: 4000 }]]);
   let leaked = [];
   for (const [k, e] of noEffortEngines) {
     for (const rank of Object.values(W.PLAN_RANK)) {
-      for (const want of ['medium', 'high', undefined]) {
+      for (const want of ['low', 'medium', 'high', undefined]) {
         if (W._resolveEffort(e, want, rank) !== null) leaked.push(k + '/' + rank + '/' + want);
       }
     }
   }
   ok(leaked.length === 0,
      'effort is only sent when the engine declares it', leaked.slice(0, 4));
-  ok(!W.ENGINES['amv-pulse'].effort,
-     'the cheapest engine does not get an effort it would reject');
+  ok(W.ENGINES['amv-pulse'].effort === 'low' && W.ENGINES['amv-pulse'].thinking,
+     'the cheapest engine states low effort and its thinking, rather than inheriting a default that thinks harder and truncates');
   ok(W.ENGINES['amv-forge'].effort === 'high' && W.ENGINES['amv-core'].effort === 'medium',
      'and the deep engine thinks harder than the balanced one',
      [W.ENGINES['amv-core'].effort, W.ENGINES['amv-forge'].effort]);

@@ -137,11 +137,14 @@ section('Saying nothing leaves the engine exactly as it was');
   const got = await askFor(free, 'amv-core', undefined);
   ok(got.effort === 'medium', 'the engine’s own setting still goes out', got.effort);
 
-  /* The engine with no effort at all must not acquire one. Sending the field
-     to a model that does not take it is a 400 on a live request. */
+  /* The quick engine runs at low effort - the cheapest level, which is also
+     what keeps its thinking inside its output cap. A free account asking it
+     for more gets low: the ceiling is the engine's own setting. (That an
+     engine declaring no effort is sent none is checked against the resolver in
+     worker/model-economics, since every engine in the table now takes one.) */
   const pulse = await askFor(free, 'amv-pulse', 'high');
-  ok(pulse.hasConfig === false,
-     'and an engine that takes no effort is still sent none', pulse.hasConfig);
+  ok(pulse.effort === 'low',
+     'and the quick engine stays at low for an account that does not pay to raise it', pulse.effort);
 }
 
 section('A value AMV does not recognise is refused, not quietly swapped');

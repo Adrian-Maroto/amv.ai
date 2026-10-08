@@ -50,15 +50,16 @@ Users see **named model tiers** and a **Claude-style "% remaining on your plan"*
 rolling window (5-hour window; `AMVUsage` in app.js ~1059) - **never a dollar
 balance**. The plan *price* is fully decoupled from raw token cost.
 
-**Model tiers** (`MODELS` object, app.js ~1226) - key → label → real backend model → cost weight:
-| key | label | backend model | cost weight | min plan |
-|-----|-------|---------------|-------------|----------|
-| auto | AMV Auto | (auto-picks) | 0 | free |
-| fast | AMV Pulse | claude-haiku-4-5 | 1 | free |
-| core | AMV Core | claude-sonnet-4-6 | 2 | free |
-| coding | AMV Forge | claude-opus-4-8 | 3 | pro |
-| smart | AMV Apex | claude-fable-5 | 4 | elite |
-| image | AMV Vision | image | 0 | (hidden) |
+**Engines** - the source of truth is `ENGINES` in `amv-backend.js` (rates are the
+published per-million-token prices, held to an independent copy in
+`tests/worker/model-economics.test.mjs`); the browser names engines only:
+| key | label | backend model | in / out per MTok | min plan |
+|-----|-------|---------------|-------------------|----------|
+| auto | AMV Auto | routes to Core | - | free |
+| fast | AMV Pulse | claude-haiku-5-5 (low effort) | 0.5 / 2.5 (long-prompt band) | free |
+| core | AMV Core | claude-sonnet-5-5 (medium effort) | 2 / 10 | free |
+| coding | AMV Forge | claude-fable-5 (high effort) | 10 / 50 | pro |
+| smart | AMV Apex | claude-fable-5-1 (high effort) | 10 / 50 | elite |
 
 (When the owner swaps in their own models, map them into this `MODELS` object.)
 

@@ -311,11 +311,11 @@ function _devSetApplyMode(v){
 /* HOW HARD THE ENGINE THINKS, WHICH IS WHAT THE TURN COSTS.
 
    The server owns this decision and clamps whatever arrives to what the plan
-   may have; this only asks. The ladder is deliberately the two settings AMV
-   already sends upstream - a third, lower rung would be useful and is absent
-   until the value is verified rather than guessed, because an effort the
-   model does not accept is a failed request on somebody's real turn. */
-const _DEV_EFFORTS = [['medium', 'Balanced'], ['high', 'High']];
+   may have; this only asks. Quick (low) joined Balanced and High once the
+   provider's documentation was read and listed it for every engine AMV runs -
+   not guessed, because an effort the model does not accept is a failed
+   request on somebody's real turn. It only ever lowers what a turn costs. */
+const _DEV_EFFORTS = [['low', 'Quick'], ['medium', 'Balanced'], ['high', 'High']];
 function _devEffort(){
   try{ const v = loadStr('amv_dev_effort'); if(v && _DEV_EFFORTS.some(e => e[0] === v)) return v; }catch(e){}
   return '';   // empty means "whatever the engine runs at", which is the honest default

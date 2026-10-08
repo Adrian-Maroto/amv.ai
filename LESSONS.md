@@ -14482,3 +14482,24 @@ Rules:
   setup, X does happen. Without it, an absence proves nothing.
 - Assert the path was taken (here, the request was attempted) before asserting
   what was on it.
+
+## 562. A newer model is not a drop-in replacement for an old model id
+
+The quick engine ran a model that did not think, so its table entry set no
+thinking and no effort, and its 4,000-token output cap was sized for text alone.
+Its successor thinks by default at medium effort, and thinking counts against
+max_tokens. Changing only the model string would have shipped quick answers cut
+off mid-sentence. Nothing would have failed: the response is a valid response,
+just a short one.
+
+So the engine now states adaptive thinking at low effort (the documented level
+for chat and short tasks) with the same 16k headroom as the other thinking
+engines. Its price is billed by prompt length, and it is costed at the higher
+band, so the margin meter can never count a long prompt as cheaper than it is.
+
+Rules:
+- Read the new model's defaults (thinking, effort, output cap, price bands)
+  before changing a model id. Every default the old entry relied on silently
+  changes with the name.
+- When a price has bands and the meter holds one number, hold the higher one.
+  Cautious metering costs a little allowance; optimistic metering costs money.
