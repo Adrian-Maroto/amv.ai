@@ -159,6 +159,10 @@ section('Every key is both written and read, or is named here with the reason');
     amv_stripe_customer:    'cached by the checkout return path when the processor sends one',
     amv_mkt_verified:       'set by the marketplace seller verification flow',
     amv_mem:                'legacy memory list, same',
+    /* Projects were persisted as amv_workspaces but read back from amv_ws,
+       which lost synced changes on reload (LESSONS 563). The old name is now
+       only read - merged in, newest first - and removed on the next save. */
+    amv_ws:                 'legacy project list, merged into amv_workspaces on load and then removed',
     /* Read once on boot and deleted, never written again. The Google access
        token used to live here - a working bearer token to somebody's mail,
        readable by any script on the page and outliving the tab. It is held in

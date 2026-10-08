@@ -79,6 +79,13 @@ section('The choice is offered only where the operator actually priced it');
     pro: _yearlyAvailable('pro'),
     elite: _yearlyAvailable('elite'),
     ultra: _yearlyAvailable('ultra'),
+    /* Printed with any failure, because this failed once in CI and never
+       here: whether the config load finished, why not if it did not, and what
+       list arrived. The next failure names its own cause. */
+    done: (typeof _publicConfigDone !== 'undefined') ? _publicConfigDone : '?',
+    why: (typeof _publicConfigFail !== 'undefined') ? _publicConfigFail : '?',
+    plans: (typeof _YEARLY_PLANS !== 'undefined') ? _YEARLY_PLANS : '?',
+    base: (window.AMV_API && AMV_API.base) || '',
   }));
   ok(r.live === true, 'the deployment has a backend', r.live);
   ok(r.pro === true && r.elite === true,
