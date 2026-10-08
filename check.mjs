@@ -1254,7 +1254,13 @@ step('Page weight is under control', () => {
      archive's bytes as text. About 6.6KB gzipped. Loading it on first attach
      was weighed and declined: a second fetch is a second way for attaching a
      file to fail offline, for 1% of the page. */
-  const CEILING = 641 * 1024;   // gzipped, which is what actually crosses the network
+  /* 641 -> 643, 2026-10-08, deliberately: one-time scheduled jobs ("run this
+     Friday at 9") - the Later choice in Crew, its day picker, the chat tool's
+     date, and rows that say a job ran once rather than calling it paused. The
+     only unreferenced-looking candidate for a trim, amvOpenFile and its task
+     panel, is the entry point desktop and editor integrations call from
+     outside the page, so it stays. */
+  const CEILING = 643 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

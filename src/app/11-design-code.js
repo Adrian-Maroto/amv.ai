@@ -2962,11 +2962,12 @@ const AMV_TOOLS = [
   },
   {
     name:'crew_add',
-    description:'Create a real background job that runs on AMV\'s servers on a schedule - overnight, at 8 every morning, every Monday - with their computer off and AMV closed, and appears in the Crew tab. Use when they ask for something to happen regularly ("every morning at 8", "each Friday at 5pm", "on the 1st of every month", "keep an eye on"). Pass the time they said; it runs at that time on THEIR clock. Not for one-off work you can just do now.',
+    description:'Create a real background job that runs on AMV\'s servers on a schedule - overnight, at 8 every morning, every Monday - with their computer off and AMV closed, and appears in the Crew tab. Use when they ask for something to happen regularly ("every morning at 8", "each Friday at 5pm", "on the 1st of every month", "keep an eye on"), or ONCE at a later time ("on Friday at 9, check whether tickets are on sale" - repeat "once" with date and time). Pass the time they said; it runs at that time on THEIR clock. Not for one-off work you can just do now.',
     input_schema:{ type:'object', properties:{
       detail:{type:'string', description:'Exactly what the job should do on each run, written as an instruction to whoever runs it. Be specific - this is all it will have.'},
-      repeat:{type:'string', enum:['10min','30min','hourly','daily','weekly','monthly'], description:'How often it runs.'},
-      time:{type:'string', description:'For daily, weekly and monthly jobs: the time it runs, 24-hour "HH:MM" on their own clock - "08:00", "19:30", "03:00" for overnight. Leave out only if they gave no time and none is implied; "every morning" means 08:00.'},
+      repeat:{type:'string', enum:['once','10min','30min','hourly','daily','weekly','monthly'], description:'How often it runs. "once" runs one time, at date and time, and is then finished.'},
+      date:{type:'string', description:'For "once" only: the day it runs, "YYYY-MM-DD" on their calendar, within the next year. Work out the real date from what they said ("Friday" is the coming Friday).'},
+      time:{type:'string', description:'For once, daily, weekly and monthly jobs: the time it runs, 24-hour "HH:MM" on their own clock - "08:00", "19:30", "03:00" for overnight. Leave out only if they gave no time and none is implied; "every morning" means 08:00.'},
       days:{type:'array', items:{type:'string', enum:['sun','mon','tue','wed','thu','fri','sat']}, description:'For weekly jobs: which days. "weekdays" is mon-fri.'},
       day_of_month:{type:'integer', minimum:1, maximum:31, description:'For monthly jobs: which day (31 means the last day in shorter months).'},
       approval:{type:'string', enum:['suggest','require','auto'], description:'How far it may go alone. "require" (default) does the work and waits for them before anything goes out. "auto" delivers on its own - only for jobs that purely produce information. "suggest" does not run the job at all, it just tells them it is due, which costs nothing.'}
@@ -3254,7 +3255,17 @@ try{ window._toolArgPreview=_toolArgPreview; }catch(e){}
 
 /* How often a job runs, in the words a person uses. */
 const _CREW_EVERY = { '10min':'every 10 minutes', '30min':'every 30 minutes',
-                      hourly:'every hour', daily:'every day', weekly:'every week' };
+                      hourly:'every hour', daily:'every day', weekly:'every week', once:'once' };
+/* The instant a one-time job runs: its date and time on this device's clock.
+   0 when either is missing or it is not in the coming year - refused, never
+   guessed, because "once at some point" is not something anybody asked for. */
+function _crewOnceAt(input){
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String((input && input.date) || '').trim());
+  const t = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String((input && input.time) || '09:00'));
+  if(!d || !t || +t[1] > 23 || +t[2] > 59) return 0;
+  const at = new Date(+d[1], +d[2]-1, +d[3], +t[1], +t[2], 0, 0).getTime();
+  return (at > Date.now() + 60e3 && at < Date.now() + 365*864e5) ? at : 0;
+}
 async function _confirmModelTool(name, input){
   input = input || {};
   const what = ({
@@ -3300,7 +3311,9 @@ async function _confirmModelTool(name, input){
      in the abstract, and this is the last point before it starts costing
      money on a timer. */
   else if(name==='crew_add')
-    detail = 'It will run ' + (_CREW_EVERY[String(input.repeat||'daily')] || 'every day') + ':\n\n'
+    detail = 'It will run ' + (String(input.repeat) === 'once'
+               ? 'once, ' + (_crewOnceAt(input) ? new Date(_crewOnceAt(input)).toLocaleString([], { weekday:'long', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }) : 'at a time still to be given')
+               : (_CREW_EVERY[String(input.repeat||'daily')] || 'every day')) + ':\n\n'
            + String(input.detail||'').slice(0,600)
            + (String(input.approval||'require')==='auto'
                ? '\n\nResults go straight to you without review.'
@@ -3600,13 +3613,14 @@ function _crewSchedOf(cad, input){
 }
 /* How a job's schedule reads, on the person's clock when it has one. */
 function _crewWhen(x){
+  if(x && x.repeat === 'once') return 'once' + (x.next ? ', ' + new Date(Number(x.next)).toLocaleString([], { weekday:'long', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }) : '');
   if(x && x.sched && typeof _schedHumanOf === 'function') return _schedHumanOf(x.sched).replace(/^Every/, 'every') + (x.sched.tz ? ' (' + x.sched.tz + ')' : '');
   return _CREW_EVERY[String((x && x.repeat) || '')] || 'on a schedule';
 }
 try{ window._crewSchedOf=_crewSchedOf; window._crewWhen=_crewWhen; }catch(e){}
 function _crewLine(x){
   const every = _crewWhen(x);
-  return '- [' + x.id + '] ' + (x.active === false ? 'PAUSED' : 'running ' + every)
+  return '- [' + x.id + '] ' + (x.done ? 'FINISHED - a one-time job that has already run' : x.active === false ? 'PAUSED' : 'running ' + every)
        + ({ auto:', results delivered automatically',
             suggest:', suggest only - it does not run until asked',
             require:', each result waits for approval' }[String(x.approval||'require')] || '')
@@ -3649,8 +3663,20 @@ async function _crewTool(name, input){
     const detail = String(input.detail || '').trim();
     if(!detail) return { text:'A job needs to say what it does. Ask the user what they want it to do each time it runs.', render:null };
     const asked = String(input.repeat || '');
-    const repeat = asked === 'monthly' ? 'weekly' : _CREW_REPEATS.includes(asked) ? asked : 'daily';
     const approval = ['suggest','require','auto'].includes(input.approval) ? input.approval : 'require';
+    if(asked === 'once'){
+      const at = _crewOnceAt(input);
+      if(!at) return { text:'A one-time job needs a date ("YYYY-MM-DD") and a time ("HH:MM") that are still to come and within a year. Ask the user exactly when, then call again.', render:null };
+      let o;
+      try{ o = await _autoApi('/auto/create', { detail, repeat:'once', firstRunAt:at, kind:'task', approval, notify:'app' }); }
+      catch(e){ return { text: _crewErr(e), render:null }; }
+      _crewSynced();
+      return { text:'Created. It runs once, ' + new Date(at).toLocaleString([], { weekday:'long', month:'long', day:'numeric', hour:'numeric', minute:'2-digit' })
+        + ' on their clock, on AMV\u2019s servers - with their computer off and AMV closed - and is then finished. It is in their Crew tab now.'
+        + ({ auto:' The result is delivered without review.', suggest:' It will NOT run on its own - AMV tells them it is due.',
+             require:' The result waits for their approval.' }[String((o.item && o.item.approval) || approval)] || ''), render:null };
+    }
+    const repeat = asked === 'monthly' ? 'weekly' : _CREW_REPEATS.includes(asked) ? asked : 'daily';
     const sched = _crewSchedOf(asked || 'daily', input);
     let d;
     try{

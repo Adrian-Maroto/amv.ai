@@ -16573,3 +16573,18 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .gl-mailtest .fp-in{ flex:1 1 220px; min-width:0; margin:0; }
 #gl-mailsay{ white-space:pre-line; }
 #gl-mailsay:not(:empty){ margin-top:var(--sp-2); }
+
+/* ── LAYER A290: Crew's "Later" day picker ──────────────────────────────────
+   Sits beside the time picker and reads as its twin: same row, same field. */
+.sched-date{ display:flex; align-items:center; gap:var(--sp-3); }
+.sched-date .sched-sub{ margin-bottom:0; flex:0 0 auto; }
+.sched-date input[type="date"]{ flex:1; min-width:0; background:var(--bg); border:1px solid var(--bd); border-radius:var(--r-md);
+  padding:10px 12px; color:var(--tx); font-family:var(--fn); font-size:var(--t-md); outline:none; color-scheme:light dark; }
+.sched-date input[type="date"]:focus{ border-color:var(--accent-txt); }
+/* Five choices on one row at any width: equal columns, the label allowed to
+   tighten rather than push the last one onto a line of its own. */
+#cw-cad.sched-cad{ display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); }
+#cw-cad .sched-cad-b{ min-width:0; padding-left:2px; padding-right:2px; white-space:nowrap; }
+/* A phone is too narrow for five whole words, so two even rows rather than a
+   label cut short. */
+@media (max-width:420px){ #cw-cad.sched-cad{ grid-template-columns:repeat(3, minmax(0, 1fr)); row-gap:var(--sp-1); } }

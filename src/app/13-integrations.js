@@ -1941,7 +1941,8 @@ function _autoJobsNow(){ try{ return Array.isArray(_AUTOS) ? _AUTOS : []; }catch
 function _autoResultsNow(){ try{ return Array.isArray(_AUTO_RESULTS) ? _AUTO_RESULTS : []; }catch(e){ return []; } }
 
 function _autoWhenLabel(it){
-  const every = { hourly:'every hour', daily:'every day', weekly:'every week',
+  if(it.done) return 'ran once' + (it.doneAt ? ' · ' + _dayLabel(it.doneAt) : '');
+  const every = { hourly:'every hour', daily:'every day', weekly:'every week', once:'once',
                   '10min':'every 10 minutes' }[it.repeat] || ('every ' + (it.repeat || 'day'));
   let next = '';
   try{ if(it.next) next = new Date(it.next).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}

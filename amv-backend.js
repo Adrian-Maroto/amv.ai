@@ -4647,7 +4647,10 @@ async function autoCreate(request, env){
       message:'AMV does not store passwords, card numbers or security codes. Nothing was saved. '+
               'Connect the account instead, or describe the task without the credential.' }, 400);
   }
-  if(!AUTO_INTERVALS[repeat]) return json({ error:'invalid repeat interval' }, 400);
+  /* 'once' is a job with a time and no repeat: "remind me Friday at 9",
+     "check the visa page on the 3rd". See _autoNextAfter for what happens to
+     it once its time has come. */
+  if(!AUTO_INTERVALS[repeat] && repeat !== 'once') return json({ error:'invalid repeat interval' }, 400);
 
   /* Every account can schedule background work; what differs is how much.
      A free account gets one, weekly, without web search - and is told exactly
@@ -4690,7 +4693,9 @@ async function autoCreate(request, env){
      The check is re-made inside the lock below. This one stays because it is
      what produces the message naming their plan and the next one up, which
      needs the budget in scope; it is the early exit, not the enforcement. */
-  if((rec.items||[]).length >= budget.max){
+  /* A one-time job that has run is finished: it stays listed so its row can
+     say so, and it no longer holds one of the plan's places. */
+  if(_autoLiveCount(rec.items) >= budget.max){
     /* Name the number they have and the number the next plan gives, because
        "you have reached your limit" without either is an error a customer
        cannot act on. */
@@ -4705,16 +4710,17 @@ async function autoCreate(request, env){
   /* Shaped, not refused. The free tier runs weekly and does not search the web,
      because searching is the expensive part - and it is told so rather than
      silently getting something other than what it asked for. */
-  const shapedRepeat = budget.free ? FREE_AUTO_REPEAT : repeat;
+  /* A one-time job is not reshaped: one run is already less than a weekly one. */
+  const shapedRepeat = (budget.free && repeat !== 'once') ? FREE_AUTO_REPEAT : repeat;
   /* An investing check-in is never reshaped into a plain task: a "task" version
      of it would be a model guessing at balances, which is the one outcome this
      must not have. It costs no model tokens either, so there is nothing to
      shape. */
   const shapedKind   = (budget.free && kind !== 'invest') ? 'task' : kind;
-  const shaped = budget.free && kind !== 'invest' && (repeat !== FREE_AUTO_REPEAT || kind !== 'task');
+  const shaped = budget.free && kind !== 'invest' && (shapedRepeat !== repeat || kind !== 'task');
 
   // Honour the user's requested first-run time if given, else one interval out.
-  const interval = Math.max(AUTO_MIN_INTERVAL, AUTO_INTERVALS[shapedRepeat]);
+  const interval = Math.max(AUTO_MIN_INTERVAL, AUTO_INTERVALS[shapedRepeat] || AUTO_INTERVALS.daily);
   let next = Date.now() + interval, firstGiven = false;
   if(body.firstRunAt && Number.isFinite(+body.firstRunAt)){
     const t = +body.firstRunAt;
@@ -4726,7 +4732,12 @@ async function autoCreate(request, env){
      instant with a daily or weekly repeat is turned into the same thing, so
      every door that sets "tomorrow at 8" ends up at 8 every day after. */
   const tzHere = _tzOk(body.tz) || _tzOk(request.cf && request.cf.timezone);
-  let sched = _schedClean(body.sched, tzHere);
+  /* A job that runs once has its instant and nothing else: there is no "next
+     time" to keep on anybody's clock. Without an instant it is refused rather
+     than run "in a day", which is not what anybody who said a time meant. */
+  if(shapedRepeat === 'once' && !firstGiven)
+    return json({ error:'A one-time job needs the date and time it should run, within the next year.', code:'once_needs_time' }, 400);
+  let sched = shapedRepeat === 'once' ? null : _schedClean(body.sched, tzHere);
   if(!sched && firstGiven && (shapedRepeat === 'daily' || shapedRepeat === 'weekly') && tzHere){
     const lp = _zoneParts(tzHere, next);
     sched = _schedClean({ cad: shapedRepeat, hour: lp.h, minute: lp.mi, days: [lp.wd], tz: tzHere });
@@ -4742,6 +4753,7 @@ async function autoCreate(request, env){
     id: 'a' + Date.now().toString(36) + Math.random().toString(36).slice(2,7),
     detail, repeat: shapedRepeat, interval, next, kind: shapedKind, notify: effectiveNotify, approval, scope,
     ...(sched ? { sched } : {}),
+    ...(shapedRepeat === 'once' ? { onceAt: next } : {}),
     /* Stored, so an unattended run knows which connected account it may open.
        Empty for the overwhelming majority of jobs, which are web research and
        need nobody's mailbox. */
@@ -4764,7 +4776,7 @@ async function autoCreate(request, env){
     if(!fresh) return;
     /* AMV-035: decided HERE, against the list as it is at this moment, not
        against the copy read before the lock was taken. */
-    if((fresh.items||[]).length >= budget.max){ overBudget = true; return; }
+    if(_autoLiveCount(fresh.items) >= budget.max){ overBudget = true; return; }
     fresh.items = (fresh.items||[]).concat(item);
   }, { items:[], results:[] });
   /* COUNTS ONLY, AND NOTHING THAT SAYS WHO.
@@ -4951,8 +4963,26 @@ function _schedNextAt(sc, afterMs){
   }
   return afterMs + AUTO_INTERVALS.daily;
 }
-/* When a job that has just run - or been skipped, or failed - runs next. */
-function _autoNextAfter(item, now){
+/* A ONE-TIME JOB, AFTER ITS TIME HAS COME.
+
+   It is finished once it has run (or, set to suggest, once it has said it is
+   due). A run that failed, or could not start because an account it needs is
+   not connected, is tried again every half hour - "Friday at 9" that fails at
+   9:00 because a provider blinked should still happen at 9:30 - until a day
+   after the time it was set for, and then it is finished too, with the reason
+   in its results. Finished means inactive and marked done: kept, so the row
+   can say it ran, and not counted against the plan's job limit. */
+const AUTO_ONCE_RETRY_MS = 30 * 60e3;
+const AUTO_ONCE_GRACE_MS = 24 * 3600e3;
+function _autoLiveCount(items){ return (items || []).filter(x => x && !x.done).length; }
+/* When a job that has just run - or been skipped, or failed - runs next.
+   `how` matters only to a one-time job: 'ran', 'failed' or 'waiting'. */
+function _autoNextAfter(item, now, how){
+  if(item && item.repeat === 'once'){
+    const due = Number(item.onceAt) || Number(item.next) || now;
+    if(how === 'ran' || now - due >= AUTO_ONCE_GRACE_MS){ item.active = false; item.done = true; item.doneAt = now; return 0; }
+    return now + AUTO_ONCE_RETRY_MS;
+  }
   const sc = item && item.sched ? _schedClean(item.sched) : null;
   if(sc) return _schedNextAt(sc, now);
   const iv = Math.max(AUTO_MIN_INTERVAL, Number(item && item.interval) || AUTO_INTERVALS.daily);
@@ -5167,6 +5197,8 @@ async function autoUpdate(request, env){
 
   if(body.action === 'delete') items.splice(i,1);
   else if(body.action === 'pause')  items[i].active = false;
+  else if(body.action === 'resume' && items[i].done)
+    return json({ error:'That one-time job has already run. Set up a new one for another time.', code:'once_done' }, 409);
   else if(body.action === 'resume'){ items[i].active = true;
     /* Back on its own clock: a job resumed at noon that runs at 8 next runs at
        8, not at noon tomorrow. */
@@ -7777,7 +7809,9 @@ async function _autoDueCandidates(env, now) {
    the shape `lastLevel` had, which is why that suite is computed rather than
    written from a list somebody maintains. */
 const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'attempts', 'lastError', 'lastLevel', 'lastNeeds',
-                         'heldUntil', 'lastDigest', 'sameRuns', 'quietSince'];
+                         'heldUntil', 'lastDigest', 'sameRuns', 'quietSince',
+                         /* A one-time job's ending is something the run decides. */
+                         'done', 'doneAt'];
 
 async function runDueAutomations(env, atMs){
   const now = +atMs || Date.now();
@@ -8106,7 +8140,7 @@ async function runDueAutomations(env, atMs){
         }).slice(-AUTO_MAX_RESULTS);
         item.runs = (item.runs||0) + 1;
         item.lastLevel = 'suggest';
-        item.next = _autoNextAfter(item, now);
+        item.next = _autoNextAfter(item, now, 'ran');
         ran++; changed = true;
         /* Suggest-only: nothing was generated and no model was called, so the
            money booked for it belongs back in the allowance. */
@@ -8162,7 +8196,7 @@ async function runDueAutomations(env, atMs){
         item.lastNeeds = nowWaitingFor;
         if(newlyBlocked && item.notify === 'email' && env.EMAIL_API_KEY)
           mails.push({ item, out: needsMsg });
-        item.next = _autoNextAfter(item, now);
+        item.next = _autoNextAfter(item, now, 'waiting');
         ran++; changed = true;
         /* Blocked on access it does not have, so no model call happened. */
         await releaseItem();
@@ -8172,6 +8206,7 @@ async function runDueAutomations(env, atMs){
          keep showing yesterday's request. */
       if(item.lastNeeds && item.lastNeeds.length) item.lastNeeds = [];
 
+      let runFailed = false;
       try{
         /* Tried properly rather than once: a transient fault costs this run
            a few seconds, where before it cost the whole day. The deadline is
@@ -8280,6 +8315,7 @@ async function runDueAutomations(env, atMs){
           mails.push({ item, out });
         }
       }catch(e){
+        runFailed = true;
         const why = String(e.message||e).slice(0,200);
         item.lastError = why;
         item.errors = (item.errors||0) + 1;
@@ -8315,7 +8351,7 @@ async function runDueAutomations(env, atMs){
                 + 'After five failed runs it switches itself off rather than keep spending.')
         }).slice(-AUTO_MAX_RESULTS);
       }
-      item.next = _autoNextAfter(item, now);
+      item.next = _autoNextAfter(item, now, runFailed ? 'failed' : 'ran');
       changed = true;
     }
 

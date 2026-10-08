@@ -22815,9 +22815,13 @@ function _mcServerSchedRow(x){
      "every weekday at 7:30 PM" - rather than only how often. */
   const every = (x.sched && typeof _schedHumanOf === 'function')
     ? _schedHumanOf(x.sched).replace(/^Every/, 'every') : (_CREW_EVERY_UI[String(x.repeat||'')] || 'on a schedule');
-  const paused = x.active === false;
+  const paused = x.active === false && !x.done;
   const auto = x.approval === 'auto';
-  const when = paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : ''));
+  /* A one-time job reads as one: when it runs, then that it ran - never as
+     "Paused", which is what an inactive job looked like before. */
+  const when = x.done ? ('Ran once' + (x.doneAt ? ', ' + _dayLabel(x.doneAt) : '') + ' · finished')
+    : x.repeat === 'once' ? ('Runs once' + (x.next ? ', ' + _onceWhen(x.next) + ' (' + _mcWhen(x.next) + ')' : ''))
+    : paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : ''));
   return `<div class="mc-sched-row${paused?' paused':''}">
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(String(x.detail||'Background job').slice(0,180))}</div>
@@ -22856,7 +22860,7 @@ function _mcServerSchedRow(x){
       })()}</div>
     </div>
     <div class="mc-sched-acts">
-      <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>
+      ${x.done ? '' : `<button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>`}
       <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
     </div>
   </div>`;
@@ -22877,7 +22881,11 @@ function _dayLabel(ts){
 }
 /* Frequencies in the words a person uses, shared with the chat tools. */
 const _CREW_EVERY_UI = { '10min':'every 10 minutes', '30min':'every 30 minutes',
-                         hourly:'every hour', daily:'every day', weekly:'every week' };
+                         hourly:'every hour', daily:'every day', weekly:'every week', once:'once' };
+function _onceWhen(ts){
+  try{ return new Date(Number(ts)).toLocaleString([], { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
+  catch(e){ return ''; }
+}
 function _mcWhen(ts){
   const d = Number(ts)||0; if(!d) return '';
   const mins = Math.round((d - Date.now())/60000);
@@ -22983,7 +22991,7 @@ try{ window._myTimeZone=_myTimeZone; }catch(e){}
 function _mcRepeatFor(payload){
   const cad = (payload.sched && payload.sched.cad) || payload.freq || 'daily';
   const map = { '10min':'10min', '30min':'30min', hourly:'hourly', daily:'daily',
-                weekly:'weekly', monthly:'weekly' };
+                weekly:'weekly', monthly:'weekly', once:'once' };
   return map[String(cad).toLowerCase()] || 'daily';
 }
 async function _mcScheduleServer(payload){
@@ -23007,6 +23015,9 @@ async function _mcScheduleServer(payload){
       sched: payload.sched ? { cad: payload.sched.cad, hour: payload.sched.hour, minute: payload.sched.minute || 0,
                                days: payload.sched.days, dom: payload.sched.dom } : undefined,
       tz: _myTimeZone(),
+      /* The instant a one-time job runs, computed here from the day and hour
+         on this device's own clock. */
+      firstRunAt: payload.firstRunAt || undefined,
       kind: payload.kind || 'task', approval: payload.approval === 'auto' ? 'auto' : 'require',
       /* Which catalogue entry this came from, so a most-used list can be built
          from what people actually run rather than from a guess. Counts only,
@@ -27907,11 +27918,12 @@ const AMV_TOOLS = [
   },
   {
     name:'crew_add',
-    description:'Create a real background job that runs on AMV\'s servers on a schedule - overnight, at 8 every morning, every Monday - with their computer off and AMV closed, and appears in the Crew tab. Use when they ask for something to happen regularly ("every morning at 8", "each Friday at 5pm", "on the 1st of every month", "keep an eye on"). Pass the time they said; it runs at that time on THEIR clock. Not for one-off work you can just do now.',
+    description:'Create a real background job that runs on AMV\'s servers on a schedule - overnight, at 8 every morning, every Monday - with their computer off and AMV closed, and appears in the Crew tab. Use when they ask for something to happen regularly ("every morning at 8", "each Friday at 5pm", "on the 1st of every month", "keep an eye on"), or ONCE at a later time ("on Friday at 9, check whether tickets are on sale" - repeat "once" with date and time). Pass the time they said; it runs at that time on THEIR clock. Not for one-off work you can just do now.',
     input_schema:{ type:'object', properties:{
       detail:{type:'string', description:'Exactly what the job should do on each run, written as an instruction to whoever runs it. Be specific - this is all it will have.'},
-      repeat:{type:'string', enum:['10min','30min','hourly','daily','weekly','monthly'], description:'How often it runs.'},
-      time:{type:'string', description:'For daily, weekly and monthly jobs: the time it runs, 24-hour "HH:MM" on their own clock - "08:00", "19:30", "03:00" for overnight. Leave out only if they gave no time and none is implied; "every morning" means 08:00.'},
+      repeat:{type:'string', enum:['once','10min','30min','hourly','daily','weekly','monthly'], description:'How often it runs. "once" runs one time, at date and time, and is then finished.'},
+      date:{type:'string', description:'For "once" only: the day it runs, "YYYY-MM-DD" on their calendar, within the next year. Work out the real date from what they said ("Friday" is the coming Friday).'},
+      time:{type:'string', description:'For once, daily, weekly and monthly jobs: the time it runs, 24-hour "HH:MM" on their own clock - "08:00", "19:30", "03:00" for overnight. Leave out only if they gave no time and none is implied; "every morning" means 08:00.'},
       days:{type:'array', items:{type:'string', enum:['sun','mon','tue','wed','thu','fri','sat']}, description:'For weekly jobs: which days. "weekdays" is mon-fri.'},
       day_of_month:{type:'integer', minimum:1, maximum:31, description:'For monthly jobs: which day (31 means the last day in shorter months).'},
       approval:{type:'string', enum:['suggest','require','auto'], description:'How far it may go alone. "require" (default) does the work and waits for them before anything goes out. "auto" delivers on its own - only for jobs that purely produce information. "suggest" does not run the job at all, it just tells them it is due, which costs nothing.'}
@@ -28199,7 +28211,17 @@ try{ window._toolArgPreview=_toolArgPreview; }catch(e){}
 
 /* How often a job runs, in the words a person uses. */
 const _CREW_EVERY = { '10min':'every 10 minutes', '30min':'every 30 minutes',
-                      hourly:'every hour', daily:'every day', weekly:'every week' };
+                      hourly:'every hour', daily:'every day', weekly:'every week', once:'once' };
+/* The instant a one-time job runs: its date and time on this device's clock.
+   0 when either is missing or it is not in the coming year - refused, never
+   guessed, because "once at some point" is not something anybody asked for. */
+function _crewOnceAt(input){
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String((input && input.date) || '').trim());
+  const t = /^\s*(\d{1,2}):(\d{2})\s*$/.exec(String((input && input.time) || '09:00'));
+  if(!d || !t || +t[1] > 23 || +t[2] > 59) return 0;
+  const at = new Date(+d[1], +d[2]-1, +d[3], +t[1], +t[2], 0, 0).getTime();
+  return (at > Date.now() + 60e3 && at < Date.now() + 365*864e5) ? at : 0;
+}
 async function _confirmModelTool(name, input){
   input = input || {};
   const what = ({
@@ -28245,7 +28267,9 @@ async function _confirmModelTool(name, input){
      in the abstract, and this is the last point before it starts costing
      money on a timer. */
   else if(name==='crew_add')
-    detail = 'It will run ' + (_CREW_EVERY[String(input.repeat||'daily')] || 'every day') + ':\n\n'
+    detail = 'It will run ' + (String(input.repeat) === 'once'
+               ? 'once, ' + (_crewOnceAt(input) ? new Date(_crewOnceAt(input)).toLocaleString([], { weekday:'long', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }) : 'at a time still to be given')
+               : (_CREW_EVERY[String(input.repeat||'daily')] || 'every day')) + ':\n\n'
            + String(input.detail||'').slice(0,600)
            + (String(input.approval||'require')==='auto'
                ? '\n\nResults go straight to you without review.'
@@ -28545,13 +28569,14 @@ function _crewSchedOf(cad, input){
 }
 /* How a job's schedule reads, on the person's clock when it has one. */
 function _crewWhen(x){
+  if(x && x.repeat === 'once') return 'once' + (x.next ? ', ' + new Date(Number(x.next)).toLocaleString([], { weekday:'long', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }) : '');
   if(x && x.sched && typeof _schedHumanOf === 'function') return _schedHumanOf(x.sched).replace(/^Every/, 'every') + (x.sched.tz ? ' (' + x.sched.tz + ')' : '');
   return _CREW_EVERY[String((x && x.repeat) || '')] || 'on a schedule';
 }
 try{ window._crewSchedOf=_crewSchedOf; window._crewWhen=_crewWhen; }catch(e){}
 function _crewLine(x){
   const every = _crewWhen(x);
-  return '- [' + x.id + '] ' + (x.active === false ? 'PAUSED' : 'running ' + every)
+  return '- [' + x.id + '] ' + (x.done ? 'FINISHED - a one-time job that has already run' : x.active === false ? 'PAUSED' : 'running ' + every)
        + ({ auto:', results delivered automatically',
             suggest:', suggest only - it does not run until asked',
             require:', each result waits for approval' }[String(x.approval||'require')] || '')
@@ -28594,8 +28619,20 @@ async function _crewTool(name, input){
     const detail = String(input.detail || '').trim();
     if(!detail) return { text:'A job needs to say what it does. Ask the user what they want it to do each time it runs.', render:null };
     const asked = String(input.repeat || '');
-    const repeat = asked === 'monthly' ? 'weekly' : _CREW_REPEATS.includes(asked) ? asked : 'daily';
     const approval = ['suggest','require','auto'].includes(input.approval) ? input.approval : 'require';
+    if(asked === 'once'){
+      const at = _crewOnceAt(input);
+      if(!at) return { text:'A one-time job needs a date ("YYYY-MM-DD") and a time ("HH:MM") that are still to come and within a year. Ask the user exactly when, then call again.', render:null };
+      let o;
+      try{ o = await _autoApi('/auto/create', { detail, repeat:'once', firstRunAt:at, kind:'task', approval, notify:'app' }); }
+      catch(e){ return { text: _crewErr(e), render:null }; }
+      _crewSynced();
+      return { text:'Created. It runs once, ' + new Date(at).toLocaleString([], { weekday:'long', month:'long', day:'numeric', hour:'numeric', minute:'2-digit' })
+        + ' on their clock, on AMV\u2019s servers - with their computer off and AMV closed - and is then finished. It is in their Crew tab now.'
+        + ({ auto:' The result is delivered without review.', suggest:' It will NOT run on its own - AMV tells them it is due.',
+             require:' The result waits for their approval.' }[String((o.item && o.item.approval) || approval)] || ''), render:null };
+    }
+    const repeat = asked === 'monthly' ? 'weekly' : _CREW_REPEATS.includes(asked) ? asked : 'daily';
     const sched = _crewSchedOf(asked || 'daily', input);
     let d;
     try{
@@ -35850,7 +35887,8 @@ function _autoJobsNow(){ try{ return Array.isArray(_AUTOS) ? _AUTOS : []; }catch
 function _autoResultsNow(){ try{ return Array.isArray(_AUTO_RESULTS) ? _AUTO_RESULTS : []; }catch(e){ return []; } }
 
 function _autoWhenLabel(it){
-  const every = { hourly:'every hour', daily:'every day', weekly:'every week',
+  if(it.done) return 'ran once' + (it.doneAt ? ' · ' + _dayLabel(it.doneAt) : '');
+  const every = { hourly:'every hour', daily:'every day', weekly:'every week', once:'once',
                   '10min':'every 10 minutes' }[it.repeat] || ('every ' + (it.repeat || 'day'));
   let next = '';
   try{ if(it.next) next = new Date(it.next).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); }catch(e){}
@@ -40472,7 +40510,7 @@ function openCowork(){
       <div class="sched-panel">
         <div class="sched-label">Schedule</div>
         <div class="sched-cad" id="cw-cad">
-          ${['once','daily','weekly','monthly'].map(v=>`<button type="button" class="sched-cad-b${v==='once'?' on':''}" data-cad="${v}">${({once:'Once',daily:'Daily',weekly:'Weekly',monthly:'Monthly'})[v]}</button>`).join('')}
+          ${['once','later','daily','weekly','monthly'].map(v=>`<button type="button" class="sched-cad-b${v==='once'?' on':''}" data-cad="${v}">${({once:'Now',later:'Later',daily:'Daily',weekly:'Weekly',monthly:'Monthly'})[v]}</button>`).join('')}
         </div>
         <div class="sched-days" id="cw-days" style="display:none">
           <span class="sched-sub">On these days</span>
@@ -40481,6 +40519,10 @@ function openCowork(){
         <div class="sched-dom" id="cw-dom" style="display:none">
           <span class="sched-sub">Day of month</span>
           <select id="cw-dom-sel">${Array.from({length:28},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select>
+        </div>
+        <div class="sched-date" id="cw-date" style="display:none">
+          <label class="sched-sub" for="cw-date-in">On</label>
+          <input type="date" id="cw-date-in">
         </div>
         <div class="sched-time" id="cw-time" style="display:none">
           <span class="sched-sub">At</span>
@@ -40527,9 +40569,15 @@ function openCowork(){
   on($('cw-close'),'click',()=>{ stopAutonomous(); const x=$('ovr'); if(x) x.innerHTML=''; });
   onBackdrop($('cw-bg'),()=>{ if(!_AUTO.running){ const x=$('ovr'); if(x) x.innerHTML=''; } });
   on($('cw-go'),'click',_coworkStart);
-  _SCHED={cad:'once', days:[1], dom:1, hour:9};
-  const updNote=()=>{ const n=$('cw-freq-note'); if(!n) return; n.textContent = _SCHED.cad==='once' ? '' : (_schedHuman()+' - runs automatically when due while AMV is open. You still approve any send/post step.'); };
-  const showFor=cad=>{ $('cw-days').style.display = cad==='weekly'?'block':'none'; $('cw-dom').style.display = cad==='monthly'?'block':'none'; $('cw-time').style.display = cad==='once'?'none':'block'; };
+  _SCHED={cad:'once', days:[1], dom:1, hour:9, date:_schedDayKey(Date.now()+864e5)};
+  { const di=$('cw-date-in'); if(di){ di.value=_SCHED.date; di.min=_schedDayKey(Date.now()); di.max=_schedDayKey(Date.now()+365*864e5); } }
+  const updNote=()=>{ const n=$('cw-freq-note'); if(!n) return;
+    n.textContent = _SCHED.cad==='once' ? ''
+      : _SCHED.cad==='later' ? (_schedHuman()+' - once, on AMV\u2019s servers, with this closed. You still approve any send/post step.')
+      : (_schedHuman()+' - runs automatically when due while AMV is open. You still approve any send/post step.'); };
+  const showFor=cad=>{ $('cw-days').style.display = cad==='weekly'?'block':'none'; $('cw-dom').style.display = cad==='monthly'?'block':'none'; $('cw-time').style.display = cad==='once'?'none':'block'; $('cw-date').style.display = cad==='later'?'block':'none';
+    const go=$('cw-go'); if(go) go.textContent = cad==='later' ? 'Schedule it \u2192' : 'Start working \u2192'; };
+  on($('cw-date-in'),'change',()=>{ _SCHED.date=$('cw-date-in').value; updNote(); });
   document.querySelectorAll('#cw-cad .sched-cad-b').forEach(btn=>on(btn,'click',()=>{ document.querySelectorAll('#cw-cad .sched-cad-b').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); _SCHED.cad=btn.dataset.cad; showFor(_SCHED.cad); updNote(); }));
   document.querySelectorAll('#cw-days .sched-day').forEach(btn=>on(btn,'click',()=>{ const d=+btn.dataset.day; btn.classList.toggle('on'); if(btn.classList.contains('on')){ if(!_SCHED.days.includes(d)) _SCHED.days.push(d); } else { _SCHED.days=_SCHED.days.filter(x=>x!==d); } updNote(); }));
   on($('cw-dom-sel'),'change',()=>{ _SCHED.dom=+$('cw-dom-sel').value; updNote(); });
@@ -40597,6 +40645,7 @@ async function _coworkStart(){
   }
   _coworkClarified=false;   // reset for the next task
   const cad=(_SCHED&&_SCHED.cad)||'once';
+  if(cad==='later'){ await _coworkScheduleLater(goal); return; }
   let _schedId=null;
   if(cad!=='once'){ _schedId=_scheduleAuto2(goal, Object.assign({},_SCHED), {approval:(_AUTOAPP&&_AUTOAPP.mode)||'require', scope:_AUTOAPP?{run:_AUTOAPP.run,risk:_AUTOAPP.risk,until:_AUTOAPP.until,cap:_aaCapOf(_AUTOAPP.cap)}:null}); }
   $('cw-step1').style.display='none'; $('cw-step2').style.display='block';
@@ -40604,6 +40653,33 @@ async function _coworkStart(){
   const ws=AMVWorkspace.files.length?AMVWorkspace:null;
   if(ws){ _autoLog('<div class="auto-ev plan"><b>Workspace</b><div>Working across '+ws.files.length+' file'+(ws.files.length>1?'s':'')+(ws.dirHandle?' in your connected folder. Results will be written back to disk.':'. Results will be offered as downloads.')+'</div></div>'); }
   runAutonomous(goal, Object.assign({ schedId:_schedId }, ws?{ workspace:ws, fileContent:ws.contextText() }:{}));
+}
+/* ONCE, LATER: "do this on Friday at 9". It runs on the server, at that
+   instant, with AMV closed - so it is only offered as done when the server
+   took it. Without a server there is nothing that would wake up on Friday, and
+   saying it was scheduled would be the lie this panel exists to avoid. */
+function _laterAt(s){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String((s&&s.date)||''));
+  if(!m) return 0;
+  return new Date(+m[1], +m[2]-1, +m[3], +(s.hour||0), +(s.minute||0), 0, 0).getTime();
+}
+async function _coworkScheduleLater(goal){
+  const at=_laterAt(_SCHED);
+  if(!at || at < Date.now()+60e3){ toast('Pick a day and time that is still to come.','error',5000); return; }
+  if(at > Date.now()+365*864e5){ toast('AMV schedules up to a year ahead. Pick an earlier day.','error',5000); return; }
+  const goBtn=$('cw-go'); if(goBtn){ goBtn.disabled=true; goBtn.textContent='Scheduling\u2026'; }
+  const res=await _mcScheduleServer({ goal, freq:'once', firstRunAt:at, approval:(_AUTOAPP&&_AUTOAPP.mode)||'require' });
+  if(goBtn){ goBtn.disabled=false; goBtn.textContent='Schedule it \u2192'; }
+  if(!res.ok){
+    toast(res.code==='needs_service'
+      ? 'Scheduling for later needs AMV\u2019s servers, which are not connected here. Nothing was scheduled - pick Now to run it while you watch.'
+      : ('Not scheduled: '+(res.error||'the server did not accept it')+'. Nothing will run.'),'error',9000);
+    return;
+  }
+  const when=new Date(at).toLocaleString([], { weekday:'long', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+  toast('Scheduled for '+when+'. It runs once on AMV\u2019s servers, with this closed, and shows up in Crew.','success',7000);
+  try{ if(typeof _crewSynced==='function') _crewSynced(); }catch(e){}
+  const x=$('ovr'); if(x) x.innerHTML='';
 }
 function _freqLabel(f){ return {daily:'Every day',weekdays:'Every weekday',weekly_mon:'Every Monday morning',weekly:'Every week',hourly:'Every hour'}[f]||f; }
 function _freqNext(f, from){
@@ -41032,6 +41108,7 @@ function _hourLabel(h, m){ return ((h%12)||12)+':'+String(m||0).padStart(2,'0')+
 const _DOWNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function _schedHuman(){
   const t='at '+_hourLabel(_SCHED.hour);
+  if(_SCHED.cad==='later'){ const at=_laterAt(_SCHED); return at ? new Date(at).toLocaleDateString([], { weekday:'long', month:'short', day:'numeric' })+' '+t : '(pick a day)'; }
   if(_SCHED.cad==='daily') return 'Every day '+t;
   if(_SCHED.cad==='weekly'){ const ds=_SCHED.days.slice().sort().map(d=>_DOWNAMES[d]); return (ds.length?ds.join(', '):'(pick days)')+' '+t; }
   if(_SCHED.cad==='monthly') return 'Day '+_SCHED.dom+' of each month '+t;

@@ -14418,3 +14418,24 @@ Rules:
   named. Search the code for the literal ('en-US') as well as for the setting.
 - Better no voice than the wrong one: when no voice for the language is
   installed, hand the browser the language and let it choose.
+
+## 559. A field the run sets is lost unless the write-back names it
+
+The first version of one-time jobs set `done` on the job when it ran, and the
+suite found the job inactive but not done. The tick works on its own copy of
+the record, and only the keys listed in `AUTO_CARRY_KEYS` are carried back
+onto the stored record. That is deliberate: everything else belongs to the
+person. So a new field the run decides is silently dropped until somebody adds
+it to that list. This is the third time this list has caught a field
+(`lastLevel` and `attempts` were the first two).
+
+The test that showed it was also nearly wrong. Its "a run that fails" example
+asked about a "visa appointment", which the scheduler reads as needing a
+calendar. So the job was never run: it was waiting. The assertion passed for
+the wrong reason until the retry assertion after it failed.
+
+Rules:
+- Adding a field the scheduled run sets means adding it to AUTO_CARRY_KEYS in
+  the same change, then reading it back from storage, not from the run's copy.
+- A test example's wording is input. When the code reads meaning out of text,
+  check the example takes the path the test claims it takes.

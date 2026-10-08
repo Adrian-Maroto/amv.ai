@@ -4750,9 +4750,13 @@ function _mcServerSchedRow(x){
      "every weekday at 7:30 PM" - rather than only how often. */
   const every = (x.sched && typeof _schedHumanOf === 'function')
     ? _schedHumanOf(x.sched).replace(/^Every/, 'every') : (_CREW_EVERY_UI[String(x.repeat||'')] || 'on a schedule');
-  const paused = x.active === false;
+  const paused = x.active === false && !x.done;
   const auto = x.approval === 'auto';
-  const when = paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : ''));
+  /* A one-time job reads as one: when it runs, then that it ran - never as
+     "Paused", which is what an inactive job looked like before. */
+  const when = x.done ? ('Ran once' + (x.doneAt ? ', ' + _dayLabel(x.doneAt) : '') + ' · finished')
+    : x.repeat === 'once' ? ('Runs once' + (x.next ? ', ' + _onceWhen(x.next) + ' (' + _mcWhen(x.next) + ')' : ''))
+    : paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : ''));
   return `<div class="mc-sched-row${paused?' paused':''}">
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(String(x.detail||'Background job').slice(0,180))}</div>
@@ -4791,7 +4795,7 @@ function _mcServerSchedRow(x){
       })()}</div>
     </div>
     <div class="mc-sched-acts">
-      <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>
+      ${x.done ? '' : `<button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>`}
       <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
     </div>
   </div>`;
@@ -4812,7 +4816,11 @@ function _dayLabel(ts){
 }
 /* Frequencies in the words a person uses, shared with the chat tools. */
 const _CREW_EVERY_UI = { '10min':'every 10 minutes', '30min':'every 30 minutes',
-                         hourly:'every hour', daily:'every day', weekly:'every week' };
+                         hourly:'every hour', daily:'every day', weekly:'every week', once:'once' };
+function _onceWhen(ts){
+  try{ return new Date(Number(ts)).toLocaleString([], { weekday:'short', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }
+  catch(e){ return ''; }
+}
 function _mcWhen(ts){
   const d = Number(ts)||0; if(!d) return '';
   const mins = Math.round((d - Date.now())/60000);
@@ -4918,7 +4926,7 @@ try{ window._myTimeZone=_myTimeZone; }catch(e){}
 function _mcRepeatFor(payload){
   const cad = (payload.sched && payload.sched.cad) || payload.freq || 'daily';
   const map = { '10min':'10min', '30min':'30min', hourly:'hourly', daily:'daily',
-                weekly:'weekly', monthly:'weekly' };
+                weekly:'weekly', monthly:'weekly', once:'once' };
   return map[String(cad).toLowerCase()] || 'daily';
 }
 async function _mcScheduleServer(payload){
@@ -4942,6 +4950,9 @@ async function _mcScheduleServer(payload){
       sched: payload.sched ? { cad: payload.sched.cad, hour: payload.sched.hour, minute: payload.sched.minute || 0,
                                days: payload.sched.days, dom: payload.sched.dom } : undefined,
       tz: _myTimeZone(),
+      /* The instant a one-time job runs, computed here from the day and hour
+         on this device's own clock. */
+      firstRunAt: payload.firstRunAt || undefined,
       kind: payload.kind || 'task', approval: payload.approval === 'auto' ? 'auto' : 'require',
       /* Which catalogue entry this came from, so a most-used list can be built
          from what people actually run rather than from a guess. Counts only,

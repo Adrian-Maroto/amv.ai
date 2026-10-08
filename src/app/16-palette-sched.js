@@ -280,7 +280,7 @@ function openCowork(){
       <div class="sched-panel">
         <div class="sched-label">Schedule</div>
         <div class="sched-cad" id="cw-cad">
-          ${['once','daily','weekly','monthly'].map(v=>`<button type="button" class="sched-cad-b${v==='once'?' on':''}" data-cad="${v}">${({once:'Once',daily:'Daily',weekly:'Weekly',monthly:'Monthly'})[v]}</button>`).join('')}
+          ${['once','later','daily','weekly','monthly'].map(v=>`<button type="button" class="sched-cad-b${v==='once'?' on':''}" data-cad="${v}">${({once:'Now',later:'Later',daily:'Daily',weekly:'Weekly',monthly:'Monthly'})[v]}</button>`).join('')}
         </div>
         <div class="sched-days" id="cw-days" style="display:none">
           <span class="sched-sub">On these days</span>
@@ -289,6 +289,10 @@ function openCowork(){
         <div class="sched-dom" id="cw-dom" style="display:none">
           <span class="sched-sub">Day of month</span>
           <select id="cw-dom-sel">${Array.from({length:28},(_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select>
+        </div>
+        <div class="sched-date" id="cw-date" style="display:none">
+          <label class="sched-sub" for="cw-date-in">On</label>
+          <input type="date" id="cw-date-in">
         </div>
         <div class="sched-time" id="cw-time" style="display:none">
           <span class="sched-sub">At</span>
@@ -335,9 +339,15 @@ function openCowork(){
   on($('cw-close'),'click',()=>{ stopAutonomous(); const x=$('ovr'); if(x) x.innerHTML=''; });
   onBackdrop($('cw-bg'),()=>{ if(!_AUTO.running){ const x=$('ovr'); if(x) x.innerHTML=''; } });
   on($('cw-go'),'click',_coworkStart);
-  _SCHED={cad:'once', days:[1], dom:1, hour:9};
-  const updNote=()=>{ const n=$('cw-freq-note'); if(!n) return; n.textContent = _SCHED.cad==='once' ? '' : (_schedHuman()+' - runs automatically when due while AMV is open. You still approve any send/post step.'); };
-  const showFor=cad=>{ $('cw-days').style.display = cad==='weekly'?'block':'none'; $('cw-dom').style.display = cad==='monthly'?'block':'none'; $('cw-time').style.display = cad==='once'?'none':'block'; };
+  _SCHED={cad:'once', days:[1], dom:1, hour:9, date:_schedDayKey(Date.now()+864e5)};
+  { const di=$('cw-date-in'); if(di){ di.value=_SCHED.date; di.min=_schedDayKey(Date.now()); di.max=_schedDayKey(Date.now()+365*864e5); } }
+  const updNote=()=>{ const n=$('cw-freq-note'); if(!n) return;
+    n.textContent = _SCHED.cad==='once' ? ''
+      : _SCHED.cad==='later' ? (_schedHuman()+' - once, on AMV\u2019s servers, with this closed. You still approve any send/post step.')
+      : (_schedHuman()+' - runs automatically when due while AMV is open. You still approve any send/post step.'); };
+  const showFor=cad=>{ $('cw-days').style.display = cad==='weekly'?'block':'none'; $('cw-dom').style.display = cad==='monthly'?'block':'none'; $('cw-time').style.display = cad==='once'?'none':'block'; $('cw-date').style.display = cad==='later'?'block':'none';
+    const go=$('cw-go'); if(go) go.textContent = cad==='later' ? 'Schedule it \u2192' : 'Start working \u2192'; };
+  on($('cw-date-in'),'change',()=>{ _SCHED.date=$('cw-date-in').value; updNote(); });
   document.querySelectorAll('#cw-cad .sched-cad-b').forEach(btn=>on(btn,'click',()=>{ document.querySelectorAll('#cw-cad .sched-cad-b').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); _SCHED.cad=btn.dataset.cad; showFor(_SCHED.cad); updNote(); }));
   document.querySelectorAll('#cw-days .sched-day').forEach(btn=>on(btn,'click',()=>{ const d=+btn.dataset.day; btn.classList.toggle('on'); if(btn.classList.contains('on')){ if(!_SCHED.days.includes(d)) _SCHED.days.push(d); } else { _SCHED.days=_SCHED.days.filter(x=>x!==d); } updNote(); }));
   on($('cw-dom-sel'),'change',()=>{ _SCHED.dom=+$('cw-dom-sel').value; updNote(); });
@@ -405,6 +415,7 @@ async function _coworkStart(){
   }
   _coworkClarified=false;   // reset for the next task
   const cad=(_SCHED&&_SCHED.cad)||'once';
+  if(cad==='later'){ await _coworkScheduleLater(goal); return; }
   let _schedId=null;
   if(cad!=='once'){ _schedId=_scheduleAuto2(goal, Object.assign({},_SCHED), {approval:(_AUTOAPP&&_AUTOAPP.mode)||'require', scope:_AUTOAPP?{run:_AUTOAPP.run,risk:_AUTOAPP.risk,until:_AUTOAPP.until,cap:_aaCapOf(_AUTOAPP.cap)}:null}); }
   $('cw-step1').style.display='none'; $('cw-step2').style.display='block';
@@ -412,6 +423,33 @@ async function _coworkStart(){
   const ws=AMVWorkspace.files.length?AMVWorkspace:null;
   if(ws){ _autoLog('<div class="auto-ev plan"><b>Workspace</b><div>Working across '+ws.files.length+' file'+(ws.files.length>1?'s':'')+(ws.dirHandle?' in your connected folder. Results will be written back to disk.':'. Results will be offered as downloads.')+'</div></div>'); }
   runAutonomous(goal, Object.assign({ schedId:_schedId }, ws?{ workspace:ws, fileContent:ws.contextText() }:{}));
+}
+/* ONCE, LATER: "do this on Friday at 9". It runs on the server, at that
+   instant, with AMV closed - so it is only offered as done when the server
+   took it. Without a server there is nothing that would wake up on Friday, and
+   saying it was scheduled would be the lie this panel exists to avoid. */
+function _laterAt(s){
+  const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(String((s&&s.date)||''));
+  if(!m) return 0;
+  return new Date(+m[1], +m[2]-1, +m[3], +(s.hour||0), +(s.minute||0), 0, 0).getTime();
+}
+async function _coworkScheduleLater(goal){
+  const at=_laterAt(_SCHED);
+  if(!at || at < Date.now()+60e3){ toast('Pick a day and time that is still to come.','error',5000); return; }
+  if(at > Date.now()+365*864e5){ toast('AMV schedules up to a year ahead. Pick an earlier day.','error',5000); return; }
+  const goBtn=$('cw-go'); if(goBtn){ goBtn.disabled=true; goBtn.textContent='Scheduling\u2026'; }
+  const res=await _mcScheduleServer({ goal, freq:'once', firstRunAt:at, approval:(_AUTOAPP&&_AUTOAPP.mode)||'require' });
+  if(goBtn){ goBtn.disabled=false; goBtn.textContent='Schedule it \u2192'; }
+  if(!res.ok){
+    toast(res.code==='needs_service'
+      ? 'Scheduling for later needs AMV\u2019s servers, which are not connected here. Nothing was scheduled - pick Now to run it while you watch.'
+      : ('Not scheduled: '+(res.error||'the server did not accept it')+'. Nothing will run.'),'error',9000);
+    return;
+  }
+  const when=new Date(at).toLocaleString([], { weekday:'long', month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+  toast('Scheduled for '+when+'. It runs once on AMV\u2019s servers, with this closed, and shows up in Crew.','success',7000);
+  try{ if(typeof _crewSynced==='function') _crewSynced(); }catch(e){}
+  const x=$('ovr'); if(x) x.innerHTML='';
 }
 function _freqLabel(f){ return {daily:'Every day',weekdays:'Every weekday',weekly_mon:'Every Monday morning',weekly:'Every week',hourly:'Every hour'}[f]||f; }
 function _freqNext(f, from){
@@ -840,6 +878,7 @@ function _hourLabel(h, m){ return ((h%12)||12)+':'+String(m||0).padStart(2,'0')+
 const _DOWNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 function _schedHuman(){
   const t='at '+_hourLabel(_SCHED.hour);
+  if(_SCHED.cad==='later'){ const at=_laterAt(_SCHED); return at ? new Date(at).toLocaleDateString([], { weekday:'long', month:'short', day:'numeric' })+' '+t : '(pick a day)'; }
   if(_SCHED.cad==='daily') return 'Every day '+t;
   if(_SCHED.cad==='weekly'){ const ds=_SCHED.days.slice().sort().map(d=>_DOWNAMES[d]); return (ds.length?ds.join(', '):'(pick days)')+' '+t; }
   if(_SCHED.cad==='monthly') return 'Day '+_SCHED.dom+' of each month '+t;
