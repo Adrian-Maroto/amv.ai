@@ -1268,7 +1268,13 @@ step('Page weight is under control', () => {
      actually move this number is loading the per-country Crew catalogues on
      demand, the way language packs already are - its own measured change,
      not a side effect of this one. */
-  const CEILING = 645 * 1024;   // gzipped, which is what actually crosses the network
+  /* 645 -> 648, 2026-10-08, deliberately: Projects that do what the screen
+     said - instructions, files and project-only memory sent with every chat
+     inside one - plus the fix for projects being stored under two names. The
+     next change to this file is meant to LOWER it: the per-country Crew
+     catalogues move to on-demand packs (a task now on the list), which is the
+     lever measured to be worth far more than any of these features. */
+  const CEILING = 648 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

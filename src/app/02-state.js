@@ -1095,7 +1095,7 @@ try{ window._errText=_errText; }catch(e){}
 // Init state
 S.memory = load('amv_memory')||load('amv_mem')||[];
 S.prompts = load('amv_pl')||getDefaultPrompts();
-S.workspaces = load('amv_ws')||getDefaultWorkspaces();
+S.workspaces = _loadWorkspaces();
 
 
 function getDefaultPrompts() {

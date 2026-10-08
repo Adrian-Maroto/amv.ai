@@ -14503,3 +14503,25 @@ Rules:
   changes with the name.
 - When a price has bands and the meter holds one number, hold the higher one.
   Cautious metering costs a little allowance; optimistic metering costs money.
+
+## 563. Two storage names for one list, and a screen promising what nothing did
+
+Projects had two problems, one visible and one not.
+
+The visible one: the screen said "AMV remembers everything inside it". A project
+was a name, an icon and a tag on some chats, and no chat inside one sent
+anything a chat outside it did not. Projects now carry instructions, files (read
+by the attachment reader) and memory learned only inside them, and all three
+reach every request a project chat makes. The test reads that request.
+
+The hidden one: the state layer persisted projects as `amv_workspaces`, and sync
+merged into that name, but boot and sign-in read `amv_ws`. A project changed on
+another device was stored under the first name and read from the second, so a
+reload brought back the older copy and pushed it over the newer one. Loading now
+merges both names, newest first, and only one is ever written.
+
+Rules:
+- A list has one storage name. Any second name is a fork that some reader will
+  eventually follow.
+- A promise on a screen is checked where it is kept: here, in the outgoing
+  request, not in the UI that describes it.

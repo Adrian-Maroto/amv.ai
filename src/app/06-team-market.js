@@ -571,7 +571,7 @@ function _renderTeamManage(vc, team){
     el.querySelectorAll('[data-tsr-use]').forEach(b=>on(b,'click',()=>{
       const s=shared.find(x=>x.id===b.dataset.tsrUse); if(!s) return;
       if(s.kind==='prompt' && s.item){ S.prompts=S.prompts||[]; S.prompts.unshift({id:'p'+Date.now(),title:s.item.title||s.title,body:s.item.body||s.item.text||'',ts:Date.now()}); store('amv_pl',S.prompts); toast('Added to your prompts','success'); }
-      else if(s.kind==='project' && s.item){ S.workspaces=S.workspaces||[]; S.workspaces.unshift(Object.assign({id:'w'+Date.now()},s.item)); store('amv_ws',S.workspaces); toast('Added to your projects','success'); }
+      else if(s.kind==='project' && s.item){ _saveWorkspaces([Object.assign({id:'w'+Date.now()},s.item)].concat(S.workspaces||[])); toast('Added to your projects','success'); }
     }));
     el.querySelectorAll('[data-tsr-del]').forEach(b=>on(b,'click',async()=>{
       try{ const ns=await AMVTeam.unshare(b.dataset.tsrDel); drawShared(ns); toast('Removed','info'); }catch(e){ toast(e.message||'Could not remove','error'); }

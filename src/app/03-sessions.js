@@ -337,7 +337,7 @@ function loginUser(acct) {
   S.memory = load('amv_memory')||load('amv_mem')||[];
   _loadSessions();
   S.prompts = load('amv_pl')||getDefaultPrompts();
-  S.workspaces = load('amv_ws')||getDefaultWorkspaces();
+  S.workspaces = _loadWorkspaces();
   S.mk = loadStr('amv_mk');
   closeOvr();
   goApp();

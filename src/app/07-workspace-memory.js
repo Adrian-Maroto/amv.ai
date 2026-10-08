@@ -1431,6 +1431,10 @@ async function _maybeExtractMemory(msgs){
     const out=await aiComplete(recent, sys, {json:true, max_tokens:300, noLang:true});
     let facts=[]; try{ facts=JSON.parse(String(out).replace(/```json|```/g,'').trim()); }catch(e){}
     if(!Array.isArray(facts)||!facts.length){ _memExtractBusy=false; return; }
+    /* Learned inside a project, kept with the project - a client's details are
+       not general facts about the person. */
+    const proj=_curProject();
+    if(proj){ _projAddMemory(proj, facts); return; }
     const known=new Set(S.memory.map(m=>m.text.toLowerCase().trim()));
     const fresh=facts.filter(f=>typeof f==='string'&&f.trim()&&!_memDuplicate(f,known)).slice(0,5);
     if(fresh.length){
@@ -1564,7 +1568,7 @@ function renderWorkspacesView(){
     '<div class="sv fi"><div class="vi">'+
       '<span class="eyebrow">Projects</span>'+
       '<h2>Projects</h2>'+
-      '<p class="vsub">Group related chats, builds, and research into a project so AMV keeps the full context together.</p>'+
+      '<p class="vsub">A project gives its chats shared instructions, files and memory - set once, used in every chat inside it.</p>'+
       '<button class="btn bp" id="ws-new" style="align-self:flex-start">+ New project</button>'+
       '<div class="wg" id="ws-grid"></div>'+
     '</div></div>';
@@ -1578,7 +1582,7 @@ function renderWsGrid(){
     g.innerHTML='<div class="proj-empty">'+
       '<div class="proj-empty-ic">📁</div>'+
       '<div class="proj-empty-t">No projects yet</div>'+
-      '<div class="proj-empty-d">Start a project to keep related chats, builds, and research in one place. AMV remembers everything inside it.</div>'+
+      '<div class="proj-empty-d">Start a project to give related chats the same instructions, files and memory - what AMV learns inside it stays with it.</div>'+
       '<button class="btn bp" data-dact="newProjectCTA">+ Start new project</button>'+
     '</div>';
     return;
@@ -1598,7 +1602,7 @@ function renderWsGrid(){
        the NEAREST one - the row - so the card's action does not fire anyway.
        The guard was doing nothing except breaking the thing it was attached to. */
     const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" style="font-size:var(--t-sm);color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
-    return '<div class="wsc" data-dact="openWorkspace" data-darg="'+ws.id+'">'+
+    return '<div class="wsc" data-dact="openProjectPanel" data-darg="'+ws.id+'">'+
       /* _safeIcon, like every other icon on a synced record. `workspaces` is in
          _SYNC_KEYS, so this value arrives from the server and merges in from
          other devices - and the picker that sets it locally says nothing about
@@ -1636,13 +1640,14 @@ function createWorkspaceModal(){
   r.innerHTML=
     '<div class="ov" id="ws-bg"><div class="ob">'+
       '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
-      '<h2 style="margin-bottom:4px">New Workspace</h2>'+
-      '<p class="ob-sub">Create a workspace to organize related conversations.</p>'+
+      '<h2 style="margin-bottom:4px">New project</h2>'+
+      '<p class="ob-sub">Chats in a project share its instructions, files and memory.</p>'+
       '<div class="af">'+
         '<div><label class="lbl">Name</label><input type="text" id="ws-name" placeholder="e.g. Research Project"></div>'+
-        '<div><label class="lbl">Description</label><input type="text" id="ws-desc" placeholder="What is this workspace for?"></div>'+
+        '<div><label class="lbl">Description</label><input type="text" id="ws-desc" placeholder="What is this project for?"></div>'+
+        '<div><label class="lbl" for="ws-instr">Instructions (optional)</label><textarea id="ws-instr" rows="3" placeholder="How AMV should work here - who it is for, tone, what to always do"></textarea></div>'+
         '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:var(--r-sm);border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:var(--t-xl);display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
-        '<button class="btn bp" id="ws-create" style="width:100%;padding:11px">Create Workspace</button>'+
+        '<button class="btn bp" id="ws-create" style="width:100%;padding:11px">Create project</button>'+
       '</div>'+
     '</div></div>';
   let selIcon='📁';
@@ -1653,10 +1658,11 @@ function createWorkspaceModal(){
   on($('ws-create'),'click',()=>{
     const n=$('ws-name')?.value.trim(),d=$('ws-desc')?.value.trim();
     if(!n){toast('Name required','error');return;}
-    S.workspaces.unshift({id:'ws'+Date.now(),name:n,icon:selIcon,desc:d||'',created:Date.now(),convs:[]});
-    store('amv_ws',S.workspaces);
-    closeOvr(); renderWorkspacesView();
-    toast('Workspace created','success');
+    const instr=String($('ws-instr')?.value||'').slice(0,PROJ_INSTR_MAX);
+    const nw={id:'ws'+Date.now(),name:n,icon:selIcon,desc:d||'',instructions:instr,memory:[],created:Date.now(),updated:Date.now(),convs:[]};
+    _saveWorkspaces([nw].concat(S.workspaces||[]));
+    openProjectPanel(nw.id);
+    toast(T('Project created'),'success');
   });
 }
 

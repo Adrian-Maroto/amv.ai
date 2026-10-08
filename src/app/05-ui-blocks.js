@@ -1056,7 +1056,7 @@ async function _callAITurn(msgs, _opts) {
       }
     }
   }catch(e){}
-  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_chatToneContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
+  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_projectContext()+_chatToneContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
 
   // Add streaming placeholder message
   _streamBubbleReset();
@@ -2416,7 +2416,7 @@ function renderChatMsgs() {
   cm.innerHTML=
   /* Same card as the home screen, at the top of an open conversation - a
      returning user is just as likely to land in yesterday's chat. */
-  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+_tempBannerHTML()+
+  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+_tempBannerHTML()+_projectBannerHTML()+
   msgs.map((m,i)=>{
     const isU=m.r==='u';
     const rawText=m.d||(typeof m.c==='string'?m.c:'');

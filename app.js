@@ -3919,7 +3919,7 @@ try{ window._errText=_errText; }catch(e){}
 // Init state
 S.memory = load('amv_memory')||load('amv_mem')||[];
 S.prompts = load('amv_pl')||getDefaultPrompts();
-S.workspaces = load('amv_ws')||getDefaultWorkspaces();
+S.workspaces = _loadWorkspaces();
 
 
 function getDefaultPrompts() {
@@ -4455,7 +4455,7 @@ function loginUser(acct) {
   S.memory = load('amv_memory')||load('amv_mem')||[];
   _loadSessions();
   S.prompts = load('amv_pl')||getDefaultPrompts();
-  S.workspaces = load('amv_ws')||getDefaultWorkspaces();
+  S.workspaces = _loadWorkspaces();
   S.mk = loadStr('amv_mk');
   closeOvr();
   goApp();
@@ -8458,7 +8458,7 @@ async function _callAITurn(msgs, _opts) {
       }
     }
   }catch(e){}
-  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_chatToneContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
+  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_projectContext()+_chatToneContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
 
   // Add streaming placeholder message
   _streamBubbleReset();
@@ -9818,7 +9818,7 @@ function renderChatMsgs() {
   cm.innerHTML=
   /* Same card as the home screen, at the top of an open conversation - a
      returning user is just as likely to land in yesterday's chat. */
-  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+_tempBannerHTML()+
+  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+_tempBannerHTML()+_projectBannerHTML()+
   msgs.map((m,i)=>{
     const isU=m.r==='u';
     const rawText=m.d||(typeof m.c==='string'?m.c:'');
@@ -12148,7 +12148,7 @@ function _renderTeamManage(vc, team){
     el.querySelectorAll('[data-tsr-use]').forEach(b=>on(b,'click',()=>{
       const s=shared.find(x=>x.id===b.dataset.tsrUse); if(!s) return;
       if(s.kind==='prompt' && s.item){ S.prompts=S.prompts||[]; S.prompts.unshift({id:'p'+Date.now(),title:s.item.title||s.title,body:s.item.body||s.item.text||'',ts:Date.now()}); store('amv_pl',S.prompts); toast('Added to your prompts','success'); }
-      else if(s.kind==='project' && s.item){ S.workspaces=S.workspaces||[]; S.workspaces.unshift(Object.assign({id:'w'+Date.now()},s.item)); store('amv_ws',S.workspaces); toast('Added to your projects','success'); }
+      else if(s.kind==='project' && s.item){ _saveWorkspaces([Object.assign({id:'w'+Date.now()},s.item)].concat(S.workspaces||[])); toast('Added to your projects','success'); }
     }));
     el.querySelectorAll('[data-tsr-del]').forEach(b=>on(b,'click',async()=>{
       try{ const ns=await AMVTeam.unshare(b.dataset.tsrDel); drawShared(ns); toast('Removed','info'); }catch(e){ toast(e.message||'Could not remove','error'); }
@@ -14238,6 +14238,10 @@ async function _maybeExtractMemory(msgs){
     const out=await aiComplete(recent, sys, {json:true, max_tokens:300, noLang:true});
     let facts=[]; try{ facts=JSON.parse(String(out).replace(/```json|```/g,'').trim()); }catch(e){}
     if(!Array.isArray(facts)||!facts.length){ _memExtractBusy=false; return; }
+    /* Learned inside a project, kept with the project - a client's details are
+       not general facts about the person. */
+    const proj=_curProject();
+    if(proj){ _projAddMemory(proj, facts); return; }
     const known=new Set(S.memory.map(m=>m.text.toLowerCase().trim()));
     const fresh=facts.filter(f=>typeof f==='string'&&f.trim()&&!_memDuplicate(f,known)).slice(0,5);
     if(fresh.length){
@@ -14371,7 +14375,7 @@ function renderWorkspacesView(){
     '<div class="sv fi"><div class="vi">'+
       '<span class="eyebrow">Projects</span>'+
       '<h2>Projects</h2>'+
-      '<p class="vsub">Group related chats, builds, and research into a project so AMV keeps the full context together.</p>'+
+      '<p class="vsub">A project gives its chats shared instructions, files and memory - set once, used in every chat inside it.</p>'+
       '<button class="btn bp" id="ws-new" style="align-self:flex-start">+ New project</button>'+
       '<div class="wg" id="ws-grid"></div>'+
     '</div></div>';
@@ -14385,7 +14389,7 @@ function renderWsGrid(){
     g.innerHTML='<div class="proj-empty">'+
       '<div class="proj-empty-ic">📁</div>'+
       '<div class="proj-empty-t">No projects yet</div>'+
-      '<div class="proj-empty-d">Start a project to keep related chats, builds, and research in one place. AMV remembers everything inside it.</div>'+
+      '<div class="proj-empty-d">Start a project to give related chats the same instructions, files and memory - what AMV learns inside it stays with it.</div>'+
       '<button class="btn bp" data-dact="newProjectCTA">+ Start new project</button>'+
     '</div>';
     return;
@@ -14405,7 +14409,7 @@ function renderWsGrid(){
        the NEAREST one - the row - so the card's action does not fire anyway.
        The guard was doing nothing except breaking the thing it was attached to. */
     const preview=chats.slice(0,3).map(c=>'<div class="wsc-chat" data-dact="loadConv" data-darg="'+c.id+'" style="font-size:var(--t-sm);color:var(--mu);padding:4px 0;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">\u2022 '+escH(c.title||'Untitled')+'</div>').join('');
-    return '<div class="wsc" data-dact="openWorkspace" data-darg="'+ws.id+'">'+
+    return '<div class="wsc" data-dact="openProjectPanel" data-darg="'+ws.id+'">'+
       /* _safeIcon, like every other icon on a synced record. `workspaces` is in
          _SYNC_KEYS, so this value arrives from the server and merges in from
          other devices - and the picker that sets it locally says nothing about
@@ -14443,13 +14447,14 @@ function createWorkspaceModal(){
   r.innerHTML=
     '<div class="ov" id="ws-bg"><div class="ob">'+
       '<button class="oc" data-dact="closeOvr" aria-label="Close">×</button>'+
-      '<h2 style="margin-bottom:4px">New Workspace</h2>'+
-      '<p class="ob-sub">Create a workspace to organize related conversations.</p>'+
+      '<h2 style="margin-bottom:4px">New project</h2>'+
+      '<p class="ob-sub">Chats in a project share its instructions, files and memory.</p>'+
       '<div class="af">'+
         '<div><label class="lbl">Name</label><input type="text" id="ws-name" placeholder="e.g. Research Project"></div>'+
-        '<div><label class="lbl">Description</label><input type="text" id="ws-desc" placeholder="What is this workspace for?"></div>'+
+        '<div><label class="lbl">Description</label><input type="text" id="ws-desc" placeholder="What is this project for?"></div>'+
+        '<div><label class="lbl" for="ws-instr">Instructions (optional)</label><textarea id="ws-instr" rows="3" placeholder="How AMV should work here - who it is for, tone, what to always do"></textarea></div>'+
         '<div><label class="lbl">Icon</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+icons.map(ic=>'<button class="ws-ic-btn" data-ic="'+ic+'" style="width:34px;height:34px;border-radius:var(--r-sm);border:1px solid var(--bd);background:var(--s2);cursor:pointer;font-size:var(--t-xl);display:flex;align-items:center;justify-content:center;transition:background-color .12s,border-color .12s,color .12s,box-shadow .12s,transform .12s,opacity .12s">'+ic+'</button>').join('')+'</div></div>'+
-        '<button class="btn bp" id="ws-create" style="width:100%;padding:11px">Create Workspace</button>'+
+        '<button class="btn bp" id="ws-create" style="width:100%;padding:11px">Create project</button>'+
       '</div>'+
     '</div></div>';
   let selIcon='📁';
@@ -14460,10 +14465,11 @@ function createWorkspaceModal(){
   on($('ws-create'),'click',()=>{
     const n=$('ws-name')?.value.trim(),d=$('ws-desc')?.value.trim();
     if(!n){toast('Name required','error');return;}
-    S.workspaces.unshift({id:'ws'+Date.now(),name:n,icon:selIcon,desc:d||'',created:Date.now(),convs:[]});
-    store('amv_ws',S.workspaces);
-    closeOvr(); renderWorkspacesView();
-    toast('Workspace created','success');
+    const instr=String($('ws-instr')?.value||'').slice(0,PROJ_INSTR_MAX);
+    const nw={id:'ws'+Date.now(),name:n,icon:selIcon,desc:d||'',instructions:instr,memory:[],created:Date.now(),updated:Date.now(),convs:[]};
+    _saveWorkspaces([nw].concat(S.workspaces||[]));
+    openProjectPanel(nw.id);
+    toast(T('Project created'),'success');
   });
 }
 
@@ -14590,6 +14596,196 @@ function _paintServerUsage(){
 }
 try{ window._paintServerUsage=_paintServerUsage; }catch(e){}
 
+/* ── PROJECTS THAT ARE WHAT THEY SAY ──────────────────────────────────────────
+
+   The Projects screen said "AMV remembers everything inside it" and "keeps the
+   full context together". A project was a name, an icon and a tag on some
+   chats; nothing about it reached a single request, so a chat inside one knew
+   exactly what a chat outside it knew.
+
+   A project now carries three things, and every chat tagged to it is sent all
+   three:
+     - INSTRUCTIONS, written by the person ("we are a dental clinic in Lyon;
+       answers in French; cite the 2024 guidelines");
+     - FILES, read by the same reader as a chat attachment, so a Word document
+       or a workbook arrives as its text and not as an archive;
+     - MEMORY learned inside the project, kept on the project and never mixed
+       into the person's general memory, so a client's details stay with that
+       client.
+   Instructions and memory sync like the project itself. File TEXT is kept on
+   this device: it can be large, and the sync record has a hard ceiling that a
+   handful of documents would breach for everything else in it. The screen
+   says so beside the files, rather than letting a phone open a project and
+   find them missing without a word.
+
+   Bounded on the way into the prompt: a project's files are sent up to a fixed
+   size, newest first, and the rest are named as not included - the same rule
+   chat attachments follow - so a large project costs a known amount per turn
+   and never silently drops what it cannot fit. */
+
+const PROJ_INSTR_MAX = 4000;
+const PROJ_FILES_MAX = 20;
+const PROJ_CTX_CHARS = 120000;   /* about 30k tokens: room for real documents, a known ceiling per turn */
+const PROJ_MEM_MAX = 60;
+
+/* ONE store for projects. They used to be written under two names: the state
+   layer persisted `amv_workspaces` (and sync wrote there), while boot and
+   sign-in read `amv_ws`. A project made or changed on another device landed in
+   the first and was read from the second, so after a reload the older copy won
+   and was pushed back over the newer one. Read both, merge by id, newest
+   first; write one. */
+function _loadWorkspaces(){
+  const a = load('amv_workspaces'), b = load('amv_ws');
+  const merged = _mergeById(Array.isArray(a) ? a : [], Array.isArray(b) ? b : []);
+  return merged.length ? merged : getDefaultWorkspaces();
+}
+function _saveWorkspaces(list){
+  S.workspaces = (list || []).slice();      /* the proxy persists and schedules the sync push */
+  try{ localStorage.removeItem(_scopeKey('amv_ws')); }catch(e){}
+}
+function _wsById(id){ return (S.workspaces || []).find(w => w && w.id === id) || null; }
+function _wsTouch(ws){ ws.updated = Date.now(); _saveWorkspaces(S.workspaces); }
+
+/* File text lives on this device, per account, per project. */
+function _projFilesKey(id){ return 'amv_projfiles_' + id; }
+function _projFiles(id){ try{ const l = load(_projFilesKey(id)); return Array.isArray(l) ? l : []; }catch(e){ return []; } }
+/* store() reports a full device itself and does not throw, so whether the
+   files were kept is read back rather than assumed. */
+function _projSaveFiles(id, list){
+  const want = (list || []).slice(0, PROJ_FILES_MAX);
+  store(_projFilesKey(id), want);
+  const back = load(_projFilesKey(id));
+  return Array.isArray(back) && back.length === want.length;
+}
+
+function _curProject(){
+  try{ const c = getCurConv(); return c && c.wsId ? _wsById(c.wsId) : null; }catch(e){ return null; }
+}
+
+/* What a chat inside a project is told. Empty outside one. */
+function _projectContext(){
+  const ws = _curProject();
+  if(!ws) return '';
+  let out = '\n\nPROJECT: ' + String(ws.name || 'Project').slice(0, 80)
+    + '. This conversation belongs to it, and everything below applies to it.';
+  const instr = String(ws.instructions || '').trim();
+  if(instr) out += '\nProject instructions (from the person - follow them):\n' + instr.slice(0, PROJ_INSTR_MAX);
+  const mem = (ws.memory || []).map(m => m && m.text).filter(Boolean);
+  if(mem.length) out += '\nWhat AMV has learned within this project: ' + mem.slice(0, PROJ_MEM_MAX).join('; ');
+  const files = _projFiles(ws.id);
+  if(files.length){
+    let room = PROJ_CTX_CHARS; const left = [];
+    out += '\nProject files (the person’s own documents - quote and use them):';
+    for(const f of files){
+      const body = String(f.text || '');
+      if(body.length <= room){ out += '\n=== ' + f.name + ' ===\n' + body; room -= body.length; }
+      else left.push(f.name);
+    }
+    if(left.length) out += '\n(Not included, too large for one request alongside the rest: ' + left.join(', ') + '. Say so if the question needs them.)';
+  }
+  return out;
+}
+
+/* Memory learned in a project chat goes to the project. */
+function _projAddMemory(ws, facts){
+  const known = new Set((ws.memory || []).map(m => String(m.text || '').toLowerCase().trim()));
+  const fresh = facts.filter(f => typeof f === 'string' && f.trim() && !_memDuplicate(f, known)).slice(0, 5);
+  if(!fresh.length) return 0;
+  ws.memory = fresh.map(f => ({ id: 'pm' + Date.now() + Math.random().toString(36).slice(2, 5), text: f.trim().slice(0, 300), added: Date.now(), auto: true }))
+    .concat(ws.memory || []).slice(0, PROJ_MEM_MAX);
+  _wsTouch(ws);
+  return fresh.length;
+}
+
+function newChatInProject(id){
+  const ws = _wsById(id); if(!ws) return;
+  _leaveTempChats(null);
+  const c = newConvObj((ws.name || T('Project')) + ' · ' + T('New chat'));
+  c.wsId = id;
+  S.convs = [c].concat(S.convs || []);
+  S.cur = c.id;
+  _autoSave(); closeOvr(); setTab('chat'); renderHist();
+}
+
+/* ── The project page ───────────────────────────────────────────────────── */
+function openProjectPanel(id){
+  const ws = _wsById(id); if(!ws) return;
+  const r = $('ovr'); if(!r) return;
+  r.innerHTML = '<div class="ov" id="pj-bg"><div class="ob pj-ob" role="dialog" aria-modal="true" aria-labelledby="pj-h">'
+    + '<button class="oc" data-dact="closeOvr" aria-label="' + escH(T('Close')) + '">×</button>'
+    + '<h2 id="pj-h">' + _safeIcon(ws.icon) + ' ' + escH(ws.name || T('Project')) + '</h2>'
+    + '<p class="ob-sub">' + escH(T('Every chat in this project is given its instructions, its files and what AMV has learned in it.')) + '</p>'
+    + '<button type="button" class="btn bp pj-new" data-dact="newChatInProject" data-darg="' + escH(ws.id) + '">' + escH(T('New chat in this project')) + '</button>'
+    + '<div id="pj-body"></div></div></div>';
+  _renderProjectPanel(id);
+}
+function _renderProjectPanel(id){
+  const ws = _wsById(id), body = $('pj-body'); if(!ws || !body) return;
+  const files = _projFiles(id);
+  const chats = (S.convs || []).filter(c => c && c.wsId === id);
+  const used = files.reduce((n, f) => n + String(f.text || '').length, 0);
+  body.innerHTML =
+    '<h3 class="shelf-h3"><label for="pj-instr">' + escH(T('Instructions')) + '</label></h3>'
+    + '<textarea id="pj-instr" class="pj-instr" rows="4" maxlength="' + PROJ_INSTR_MAX + '" placeholder="'
+      + escH(T('How AMV should work in this project - who it is for, tone, what to always or never do.')) + '">'
+      + escH(ws.instructions || '') + '</textarea>'
+    + '<div class="pj-row"><button type="button" class="btn mc-mini" id="pj-save">' + escH(T('Save instructions')) + '</button><span class="pj-note" id="pj-saved" role="status"></span></div>'
+    + '<h3 class="shelf-h3">' + escH(T('Files')) + ' <button type="button" class="btn mc-mini ghost" id="pj-add">' + escH(T('Add files')) + '</button></h3>'
+    + '<input type="file" id="pj-file" multiple hidden>'
+    + '<p class="pj-note">' + escH(T('Kept on this device. Chats here can read them; other devices see the project without them.'))
+      + (files.length ? ' ' + (used < 1000 ? used.toLocaleString() : Math.round(used / 1000) + 'k') + ' / ' + Math.round(PROJ_CTX_CHARS / 1000) + 'k ' + escH(T('characters sent with each message.')) : '') + '</p>'
+    + (files.length ? files.map(f => '<div class="shelf-row"><div class="shelf-t"><div class="shelf-name">' + escH(f.name) + '</div>'
+        + '<div class="shelf-meta">' + escH(f.summary || (Math.round(String(f.text || '').length / 1000) + 'k ' + T('characters'))) + '</div></div>'
+        + '<div class="shelf-acts"><button type="button" class="btn mc-mini ghost" data-pj-rm="' + escH(f.id) + '">' + escH(T('Remove')) + '</button></div></div>').join('')
+      : '<p class="shelf-empty">' + escH(T('No files yet. Add documents, spreadsheets, decks or notes this project should always know.')) + '</p>')
+    + '<h3 class="shelf-h3">' + escH(T('Learned in this project')) + '</h3>'
+    + ((ws.memory || []).length ? (ws.memory || []).map(m => '<div class="shelf-row"><div class="shelf-t"><div class="shelf-name pj-mem">' + escH(m.text) + '</div></div>'
+        + '<div class="shelf-acts"><button type="button" class="btn mc-mini ghost" data-pj-forget="' + escH(m.id) + '">' + escH(T('Forget')) + '</button></div></div>').join('')
+      : '<p class="shelf-empty">' + escH(T('Nothing yet. What AMV learns in these chats stays here, apart from your general memory.')) + '</p>')
+    + '<h3 class="shelf-h3">' + escH(T('Chats')) + '</h3>'
+    + (chats.length ? chats.slice(0, 12).map(c => '<div class="shelf-row"><div class="shelf-t"><div class="shelf-name">' + escH(c.title || T('New Conversation')) + '</div></div>'
+        + '<div class="shelf-acts"><button type="button" class="btn mc-mini" data-dact="loadConv" data-darg="' + escH(c.id) + '">' + escH(T('Open')) + '</button></div></div>').join('')
+      : '<p class="shelf-empty">' + escH(T('No chats yet.')) + '</p>');
+
+  on($('pj-save'), 'click', () => {
+    ws.instructions = String(($('pj-instr') || {}).value || '').slice(0, PROJ_INSTR_MAX);
+    _wsTouch(ws);
+    const s = $('pj-saved'); if(s) s.textContent = T('Saved. The next message in this project follows it.');
+  });
+  on($('pj-add'), 'click', () => { const i = $('pj-file'); if(i) i.click(); });
+  on($('pj-file'), 'change', async function(){
+    const picked = Array.from(this.files || []); this.value = '';
+    let list = _projFiles(id);
+    for(const f of picked){
+      if(list.length >= PROJ_FILES_MAX){ toast(T('A project holds up to') + ' ' + PROJ_FILES_MAX + ' ' + T('files.'), 'error', 6000); break; }
+      const r = await amvReadFile(f);
+      if(r.kind === 'refused'){ toast(r.reason, 'error', 9000); continue; }
+      if(r.kind !== 'text'){ toast('“' + f.name + '” ' + T('is a picture or PDF. Project files are read as text - attach those in a chat instead.'), 'error', 9000); continue; }
+      list = [{ id: 'pf' + Date.now() + Math.random().toString(36).slice(2, 5), name: f.name, format: r.format || '', summary: r.summary || '', text: r.data, added: Date.now() }]
+        .concat(list.filter(x => x.name !== f.name));
+    }
+    if(!_projSaveFiles(id, list)) toast(T('This device is out of space for project files. Remove one and try again.'), 'error', 9000);
+    _renderProjectPanel(id);
+  });
+  body.querySelectorAll('[data-pj-rm]').forEach(b => on(b, 'click', () => {
+    _projSaveFiles(id, _projFiles(id).filter(f => f.id !== b.dataset.pjRm)); _renderProjectPanel(id);
+  }));
+  body.querySelectorAll('[data-pj-forget]').forEach(b => on(b, 'click', () => {
+    ws.memory = (ws.memory || []).filter(m => m.id !== b.dataset.pjForget); _wsTouch(ws); _renderProjectPanel(id);
+  }));
+}
+
+/* A line at the top of a project chat, so it is never a mystery why AMV knows
+   what it knows here. */
+function _projectBannerHTML(){
+  const ws = _curProject();
+  if(!ws) return '';
+  const n = _projFiles(ws.id).length;
+  return '<div class="temp-row"><div class="temp-banner pj-banner" role="note"><b>' + _safeIcon(ws.icon) + ' ' + escH(ws.name || T('Project')) + '</b> · '
+    + escH(T('uses this project’s instructions')) + (n ? ', ' + n + ' ' + escH(n === 1 ? T('file') : T('files')) : '') + ' '
+    + escH(T('and memory.')) + ' <button type="button" class="pj-manage" data-dact="openProjectPanel" data-darg="' + escH(ws.id) + '">' + escH(T('Manage')) + '</button></div></div>';
+}
+try{ Object.assign(window, { openProjectPanel, newChatInProject }); }catch(e){}
 /* ============================================================
    ADMIN CONTROL CENTER (operator-only)
    Spend monitoring · user management · abuse/anomaly detection ·

@@ -16621,3 +16621,17 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .temp-banner{ margin:var(--sp-2) auto var(--sp-3); max-width:680px; padding:var(--sp-2) var(--sp-3); border:1px dashed var(--bdl);
   border-radius:var(--r-md); color:var(--mu); font-size:var(--t-sm); line-height:1.45; text-align:center; }
 .temp-banner b{ color:var(--tx); font-weight:600; }
+
+/* ── LAYER A293: a project's page ───────────────────────────────────────────
+   Built from the Archived & Trash rows so the two lists look like one
+   family; the instructions box is the one field that needs room to write. */
+.pj-ob{ max-width:620px; width:100%; }
+.pj-new{ margin:var(--sp-2) 0 var(--sp-1); }
+.pj-instr{ width:100%; box-sizing:border-box; min-height:96px; resize:vertical; padding:10px 12px; background:var(--bg);
+  border:1px solid var(--bd); border-radius:var(--r-md); color:var(--tx); font-family:var(--fn); font-size:var(--t-md); line-height:1.5; }
+.pj-instr:focus{ outline:none; border-color:var(--accent-txt); }
+.pj-row{ display:flex; align-items:center; gap:var(--sp-3); margin-top:var(--sp-2); flex-wrap:wrap; }
+.pj-note{ font-size:var(--t-sm); color:var(--mu); margin:0 0 var(--sp-2); }
+.pj-mem{ white-space:normal; }
+.pj-banner{ display:flex; flex-wrap:wrap; justify-content:center; align-items:center; column-gap:var(--sp-1); }
+.pj-banner .pj-manage{ background:none; border:none; padding:0 0 0 var(--sp-1); color:var(--accent-txt); font:inherit; cursor:pointer; text-decoration:underline; }

@@ -106,13 +106,13 @@ section('While the card around it still opens the project');
   await seed();
   const got = await page.evaluate(async () => {
     let openedWs = null, loadedConv = null;
-    const rw = window.openWorkspace, rl = window.loadConv;
-    window.openWorkspace = (id) => { openedWs = id; };
+    const rw = window.openProjectPanel, rl = window.loadConv;
+    window.openProjectPanel = (id) => { openedWs = id; };
     window.loadConv = (id) => { loadedConv = id; };
     /* A part of the card that is NOT a preview row - the project's name. */
     document.querySelector('.wsc .wsn').click();
     await new Promise(r => setTimeout(r, 60));
-    window.openWorkspace = rw; window.loadConv = rl;
+    window.openProjectPanel = rw; window.loadConv = rl;
     return { openedWs, loadedConv };
   });
   ok(got.openedWs === 'ws1', 'clicking the card opens the project', got);
@@ -127,12 +127,12 @@ section('Clicking a row does not ALSO open the project behind it');
   await seed();
   const got = await page.evaluate(async () => {
     let openedWs = null, loadedConv = null;
-    const rw = window.openWorkspace, rl = window.loadConv;
-    window.openWorkspace = (id) => { openedWs = id; };
+    const rw = window.openProjectPanel, rl = window.loadConv;
+    window.openProjectPanel = (id) => { openedWs = id; };
     window.loadConv = (id) => { loadedConv = id; };
     document.querySelectorAll('.wsc-chat')[0].click();
     await new Promise(r => setTimeout(r, 60));
-    window.openWorkspace = rw; window.loadConv = rl;
+    window.openProjectPanel = rw; window.loadConv = rl;
     return { openedWs, loadedConv };
   });
   ok(got.loadedConv === 'c1', 'the chat opens', got);
