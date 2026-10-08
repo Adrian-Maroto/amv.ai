@@ -66,7 +66,7 @@ const GLOBALS = new Set(['parseInt','parseFloat','isNaN','isFinite','encodeURICo
   'structuredClone','queueMicrotask','requestAnimationFrame','cancelAnimationFrame',
   'getComputedStyle','matchMedia','btoa','atob','escape','unescape','Uint8Array','ArrayBuffer',
   'DataView','Float32Array','Int32Array','Function','Notification','crypto','indexedDB',
-  'postMessage','open','close','print','scrollTo','Stripe']);
+  'postMessage','open','close','print','scrollTo','Stripe','createImageBitmap']);
 
 const scopes = [];
 const seen = new Map();
