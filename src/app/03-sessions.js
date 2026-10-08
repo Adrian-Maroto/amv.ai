@@ -1902,7 +1902,7 @@ function _wipeAccountState(){
     _resetToolState('studio'); _STUDIO.sessId=null;
   }catch(e){}
   try{
-    S.memory=[]; S.convs=[]; S.cur=null; S.att=null;
+    S.memory=[]; S.convs=[]; S.cur=null; S.att=null; _CONV_SHELF=[];
     /* Crew's country pages are a place in this account's visit; the next
        account starts on Crew's own page. (The country itself is in storage,
        which is already per account.) */
@@ -2269,13 +2269,9 @@ function newChat(){
   renderHist();
 }
 function loadConv(id){ S.cur=id; setTab('chat'); renderHist(); }
-function deleteConv(id){
-  S.convs=S.convs.filter(c=>c.id!==id);
-  if(!S.convs.length) S.convs=[newConvObj()];
-  if(S.cur===id) S.cur=S.convs[0].id;
-  _autoSave(); renderHist();
-  if(S.tab==='chat') renderChatMsgs();
-}
+/* Delete moves a chat to Trash, where it stays restorable for 30 days.
+   See _CONV_SHELF for why it is marked rather than removed. */
+function deleteConv(id){ _shelveConv(id, 'trashed'); }
 function starConv(id){
   const c=S.convs.find(x=>x.id===id);
   if(c){ c.starred=!c.starred; _autoSave(); renderHist(); toast(c.starred?'Chat starred':'Star removed','success'); }

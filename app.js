@@ -3143,9 +3143,18 @@ const AMVSync = {
          more content wins so a trimmed upload can never erase a full one. */
       _SYNC_KEYS.forEach(k=>{
         if(data[k]===undefined) return;
-        const local=_raw[k];
-        const merged=(Array.isArray(data[k]) && Array.isArray(local) && _SYNC_MERGEABLE.has(k))
+        /* Chats merge WITH their shelf, so a delete made elsewhere (a newer
+           marked copy) beats the live copy here, and is split back out. */
+        const local = k === 'convs' ? _convsForStore(_raw.convs) : _raw[k];
+        let merged=(Array.isArray(data[k]) && Array.isArray(local) && _SYNC_MERGEABLE.has(k))
           ? _mergeById(local, data[k]) : data[k];
+        if(k === 'convs' && Array.isArray(merged)){
+          const temp = (_raw.convs || []).filter(c => c && c.temp);
+          merged = temp.concat(_shelfSplit(merged));
+          /* Every chat may have been deleted elsewhere; there is always one to type into. */
+          if(!merged.length && typeof newConvObj === 'function') merged = [newConvObj()];
+          if(_raw.cur && !merged.some(c => c && c.id === _raw.cur)) _raw.cur = merged.length ? merged[0].id : null;
+        }
         _raw[k]=merged; _persist(k,merged);
       });
 
@@ -3199,7 +3208,7 @@ const AMVSync = {
   },
   collect(){
     const out={};
-    _SYNC_KEYS.forEach(k=>{ out[k]=_raw[k]; });
+    _SYNC_KEYS.forEach(k=>{ out[k] = k === 'convs' ? _convsForStore(_raw.convs) : _raw[k]; });
     // Recents / Dev projects / Lab sessions live in a module array, not AMVState.
     try{ out.sessions = _syncSessionList(); }catch(e){ out.sessions = []; }
     try{ out.skills   = load('amv_skills')   || []; }catch(e){}
@@ -4042,18 +4051,61 @@ function saveGoogleAccount(name, email) {
   try{ if(typeof AEGIS!=='undefined') AEGIS.log('signup_complete',{provider:'google'}); }catch(e){}
   return acct;
 }
+/* ── THE SHELF: archived, trashed and deleted chats ──────────────────────────
+
+   Deleting a chat used to remove it from the list, and the list is what is
+   synced - merged by id between devices. A chat deleted on the laptop was
+   still on the phone, so the phone's next sync merged it straight back, and
+   it reappeared everywhere. The server's own note on the merge says a
+   deleted item can come back; on this list it always did.
+
+   So a chat leaves the live list by being MARKED, not removed: archived,
+   trashed (kept 30 days, restorable) or gone (a tombstone with no content,
+   kept 90 days so a device that was offline for a while still learns of the
+   delete). The merge already keeps the newest copy of each id, so the mark
+   wins over a stale live copy with no new rule.
+
+   Marked chats never sit in S.convs. Every screen that lists chats reads
+   S.convs, and there are dozens of them; keeping the shelf apart means none
+   of them can show a deleted chat by forgetting a filter. They rejoin the
+   list only on the way to storage and sync, and are split off again on the
+   way back. */
+let _CONV_SHELF = [];
+const _SHELF_TRASH_MS = 30 * 864e5, _SHELF_GONE_MS = 90 * 864e5;
+function _isShelved(c){ return !!(c && (c.archived || c.trashed || c.gone)); }
+function _convTomb(c){ return { id: c.id, gone: true, title: '', msgs: [], created: c.created || 0, updated: Date.now() }; }
+function _shelfPrune(list){
+  const now = Date.now();
+  return (list || []).map(c => (c.trashed && now - c.trashed > _SHELF_TRASH_MS) ? _convTomb(c) : c)
+    .filter(c => !(c.gone && now - (c.updated || 0) > _SHELF_GONE_MS));
+}
+/* A stored or synced list in, the live chats out; the rest becomes the shelf.
+   A temporary chat is never in a stored list, so it cannot arrive here. */
+function _shelfSplit(list){
+  const live = [], shelf = [];
+  for(const c of (list || [])){ if(!c) continue; (_isShelved(c) ? shelf : live).push(c); }
+  _CONV_SHELF = _shelfPrune(shelf);
+  return live;
+}
+/* The live chats plus the shelf, for storage and sync. Temporary chats are
+   left out here - this is the one door to both. */
+function _convsForStore(live){
+  const keep = (live || []).filter(c => c && !c.temp);
+  const ids = new Set(keep.map(c => c.id));
+  return keep.concat(_CONV_SHELF.filter(c => c && !ids.has(c.id)));
+}
 function loadUserConvs(email) {
   const key = convKey(email.toLowerCase().trim());
   const d = load(key);
-  return Array.isArray(d) ? d : null;
+  return Array.isArray(d) ? _shelfSplit(d) : null;
 }
 function saveUserConvs(email, convs) {
   if (!email||!Array.isArray(convs)) return;
   const key = convKey(email.toLowerCase().trim());
   try{
-    const slim=convs.map(cv=>({
+    const slim=_convsForStore(convs).map(cv=>({
       ...cv,
-      msgs:cv.msgs.map(m=>{
+      msgs:(cv.msgs||[]).map(m=>{
         if(typeof m.c==='string') return m;
         return {...m, c:m.d||'[file attachment]'};
       }).slice(-40)
@@ -5968,7 +6020,7 @@ function _wipeAccountState(){
     _resetToolState('studio'); _STUDIO.sessId=null;
   }catch(e){}
   try{
-    S.memory=[]; S.convs=[]; S.cur=null; S.att=null;
+    S.memory=[]; S.convs=[]; S.cur=null; S.att=null; _CONV_SHELF=[];
     /* Crew's country pages are a place in this account's visit; the next
        account starts on Crew's own page. (The country itself is in storage,
        which is already per account.) */
@@ -6335,13 +6387,9 @@ function newChat(){
   renderHist();
 }
 function loadConv(id){ S.cur=id; setTab('chat'); renderHist(); }
-function deleteConv(id){
-  S.convs=S.convs.filter(c=>c.id!==id);
-  if(!S.convs.length) S.convs=[newConvObj()];
-  if(S.cur===id) S.cur=S.convs[0].id;
-  _autoSave(); renderHist();
-  if(S.tab==='chat') renderChatMsgs();
-}
+/* Delete moves a chat to Trash, where it stays restorable for 30 days.
+   See _CONV_SHELF for why it is marked rather than removed. */
+function deleteConv(id){ _shelveConv(id, 'trashed'); }
 function starConv(id){
   const c=S.convs.find(x=>x.id===id);
   if(c){ c.starred=!c.starred; _autoSave(); renderHist(); toast(c.starred?'Chat starred':'Star removed','success'); }
@@ -6595,6 +6643,118 @@ async function openSharedChatsManager(){
 try{ window.openSharedChatsManager=openSharedChatsManager; }catch(e){}
 try{ window.shareConv=shareConv; }catch(e){}
 
+/* ── ARCHIVE AND TRASH ───────────────────────────────────────────────────────
+
+   Archive takes a chat out of Recents without losing anything. Delete moves it
+   to Trash, which keeps it for 30 days. Both can be undone from the Archived &
+   Trash screen, and Trash can be emptied for good. The storage side - why a
+   chat is marked rather than removed, and why the marked ones never sit in
+   S.convs - is explained at _CONV_SHELF. */
+
+function _shelveConv(id, how){
+  const c = (S.convs || []).find(x => x && x.id === id);
+  if(!c) return;
+  if(c.temp){
+    /* A temporary chat was never saved, so there is nothing to keep. */
+    _dropLive(id);
+    return;
+  }
+  const now = Date.now();
+  c[how] = now; c.updated = now;
+  _CONV_SHELF = [c].concat(_CONV_SHELF.filter(x => x && x.id !== id));
+  _dropLive(id);
+  toast(how === 'archived'
+    ? T('Archived. It is under Archived & Trash at the bottom of your chats.')
+    : T('Moved to Trash. It is kept for 30 days - restore it from Archived & Trash.'), 'success', 5000);
+}
+/* Out of the live list, keeping one chat open and telling sync about it -
+   reassigning S.convs is what schedules the push. */
+function _dropLive(id){
+  let live = (S.convs || []).filter(c => c && c.id !== id);
+  if(!live.length) live = [newConvObj()];
+  S.convs = live;
+  if(S.cur === id || !live.some(c => c.id === S.cur)) S.cur = live[0].id;
+  _autoSave(); renderHist();
+  if(S.tab === 'chat'){ try{ renderChatMsgs(); }catch(e){} }
+}
+function archiveConv(id){ _shelveConv(id, 'archived'); }
+
+function restoreConv(id){
+  const c = _CONV_SHELF.find(x => x && x.id === id);
+  if(!c || c.gone) return;
+  delete c.archived; delete c.trashed;
+  c.updated = Date.now();
+  _CONV_SHELF = _CONV_SHELF.filter(x => x && x.id !== id);
+  S.convs = [c].concat((S.convs || []).filter(x => x && x.id !== id));
+  _autoSave(); renderHist();
+  toast(T('Restored to your chats.'), 'success', 3500);
+  _renderChatShelf();
+}
+/* For good: the content is dropped here and on every device that syncs, and a
+   content-free marker is kept so a device that was offline learns of it. */
+async function purgeConv(id){
+  const c = _CONV_SHELF.find(x => x && x.id === id);
+  if(!c || c.gone) return;
+  const yes = await showConfirmAsync(T('Delete this chat for good? This cannot be undone.'));
+  if(!yes) return;
+  _CONV_SHELF = _CONV_SHELF.map(x => x && x.id === id ? _convTomb(x) : x);
+  _shelfChanged();
+}
+async function emptyTrash(){
+  const n = _CONV_SHELF.filter(x => x && x.trashed && !x.gone).length;
+  if(!n) return;
+  const yes = await showConfirmAsync(T('Delete the') + ' ' + n + ' ' + (n === 1 ? T('chat in Trash for good?') : T('chats in Trash for good?')) + ' ' + T('This cannot be undone.'));
+  if(!yes) return;
+  _CONV_SHELF = _CONV_SHELF.map(x => x && x.trashed && !x.gone ? _convTomb(x) : x);
+  _shelfChanged();
+}
+/* The shelf is not a state key, so a change to it alone has to save and
+   schedule the push itself. */
+function _shelfChanged(){
+  _autoSave();
+  try{ if(typeof AMVSync !== 'undefined') AMVSync.push(); }catch(e){}
+  renderHist();
+  _renderChatShelf();
+}
+
+function _shelfCounts(){
+  let archived = 0, trashed = 0;
+  for(const c of _CONV_SHELF){ if(!c || c.gone) continue; if(c.trashed) trashed++; else if(c.archived) archived++; }
+  return { archived, trashed };
+}
+
+function openChatShelf(){
+  const r = $('ovr'); if(!r) return;
+  r.innerHTML = '<div class="ov" id="shelf-bg"><div class="ob shelf-ob" role="dialog" aria-modal="true" aria-labelledby="shelf-h">'
+    + '<button class="oc" data-dact="closeOvr" aria-label="' + escH(T('Close')) + '">×</button>'
+    + '<h2 id="shelf-h">' + escH(T('Archived & Trash')) + '</h2>'
+    + '<div id="shelf-body"></div></div></div>';
+  _renderChatShelf();
+}
+function _renderChatShelf(){
+  const body = $('shelf-body'); if(!body) return;
+  const day = ts => { try{ return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' }); }catch(e){ return ''; } };
+  const row = (c, kind) => {
+    const left = kind === 'trash' ? Math.max(0, Math.ceil((c.trashed + _SHELF_TRASH_MS - Date.now()) / 864e5)) : 0;
+    return '<div class="shelf-row">'
+      + '<div class="shelf-t"><div class="shelf-name">' + escH(c.title || T('New Conversation')) + '</div>'
+      + '<div class="shelf-meta">' + escH(kind === 'trash'
+          ? T('Deleted') + ' ' + day(c.trashed) + ' · ' + left + ' ' + (left === 1 ? T('day left') : T('days left'))
+          : T('Archived') + ' ' + day(c.archived)) + '</div></div>'
+      + '<div class="shelf-acts">'
+      + '<button type="button" class="btn mc-mini" data-dact="restoreConv" data-darg="' + escH(c.id) + '">' + escH(T('Restore')) + '</button>'
+      + (kind === 'trash' ? '<button type="button" class="btn mc-mini ghost" data-dact="purgeConv" data-darg="' + escH(c.id) + '">' + escH(T('Delete for good')) + '</button>' : '')
+      + '</div></div>';
+  };
+  const arch = _CONV_SHELF.filter(c => c && !c.gone && c.archived && !c.trashed);
+  const trash = _CONV_SHELF.filter(c => c && !c.gone && c.trashed);
+  body.innerHTML =
+    '<h3 class="shelf-h3">' + escH(T('Archived')) + '</h3>'
+    + (arch.length ? arch.map(c => row(c, 'arch')).join('') : '<p class="shelf-empty">' + escH(T('Nothing archived. Archive a chat from its menu to tidy Recents without losing it.')) + '</p>')
+    + '<h3 class="shelf-h3">' + escH(T('Trash')) + (trash.length ? ' <button type="button" class="btn mc-mini ghost shelf-empty-btn" data-dact="emptyTrash">' + escH(T('Empty Trash')) + '</button>' : '') + '</h3>'
+    + (trash.length ? trash.map(c => row(c, 'trash')).join('') : '<p class="shelf-empty">' + escH(T('Trash is empty. Deleted chats wait here for 30 days.')) + '</p>');
+}
+try{ Object.assign(window, { archiveConv, restoreConv, purgeConv, emptyTrash, openChatShelf }); }catch(e){}
 /* =====================================================================
    EMBEDDABLE WIDGET - the compact chat panel shown inside the iframe that
    third-party sites load via /widget.js. It talks to the PUBLIC endpoint
@@ -10366,7 +10526,12 @@ function renderHist(){
      same thing, so the only working part was the claim. Saying what the code
      does is worth more than a note describing what it does not: if this ever
      needs windowing, it needs writing, not selecting. */
-  area.innerHTML=rows.map(rowHTML).join('');
+  /* The way back to archived and deleted chats, shown only when there are
+     some - a door to an empty room is clutter. */
+  const sc=_shelfCounts();
+  const shelf=(sc.archived||sc.trashed) && !search && !S.starFilter
+    ? '<button type="button" class="hist-shelf" data-dact="openChatShelf">'+escH(T('Archived & Trash'))+' <span>'+(sc.archived+sc.trashed)+'</span></button>' : '';
+  area.innerHTML=rows.map(rowHTML).join('')+shelf;
   bind();
 }
 
@@ -10403,6 +10568,7 @@ function showConvMenu(e,id){
     '<div class="ctxi" id="cm-proj">📁 Add to project</div>'+
     '<div class="ctxi" id="cm-export">⬇ Export as Markdown</div>'+
     '<div class="ctxi" id="cm-share">🔗 Share</div>'+
+    '<div class="ctxi" id="cm-arch">🗄 Archive</div>'+
     '<div class="ctxd"></div>'+
     '<div class="ctxi danger" id="cm-del">🗑 Delete</div>';
   document.body.appendChild(menu);
@@ -10419,6 +10585,7 @@ function showConvMenu(e,id){
   on($('cm-proj'),'click',()=>{ addToProject(id); menu.remove(); });
   on($('cm-export'),'click',()=>{ exportConv(id); menu.remove(); });
   on($('cm-share'),'click',()=>{ shareConv(id); menu.remove(); });
+  on($('cm-arch'),'click',()=>{ archiveConv(id); menu.remove(); });
   on($('cm-del'),'click',()=>{ deleteConv(id); menu.remove(); });
   const close=e2=>{ if(!menu.contains(e2.target)){ menu.remove(); document.removeEventListener('click',close); } };
   setTimeout(()=>document.addEventListener('click',close),50);

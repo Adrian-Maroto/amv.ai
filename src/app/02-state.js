@@ -319,9 +319,18 @@ const AMVSync = {
          more content wins so a trimmed upload can never erase a full one. */
       _SYNC_KEYS.forEach(k=>{
         if(data[k]===undefined) return;
-        const local=_raw[k];
-        const merged=(Array.isArray(data[k]) && Array.isArray(local) && _SYNC_MERGEABLE.has(k))
+        /* Chats merge WITH their shelf, so a delete made elsewhere (a newer
+           marked copy) beats the live copy here, and is split back out. */
+        const local = k === 'convs' ? _convsForStore(_raw.convs) : _raw[k];
+        let merged=(Array.isArray(data[k]) && Array.isArray(local) && _SYNC_MERGEABLE.has(k))
           ? _mergeById(local, data[k]) : data[k];
+        if(k === 'convs' && Array.isArray(merged)){
+          const temp = (_raw.convs || []).filter(c => c && c.temp);
+          merged = temp.concat(_shelfSplit(merged));
+          /* Every chat may have been deleted elsewhere; there is always one to type into. */
+          if(!merged.length && typeof newConvObj === 'function') merged = [newConvObj()];
+          if(_raw.cur && !merged.some(c => c && c.id === _raw.cur)) _raw.cur = merged.length ? merged[0].id : null;
+        }
         _raw[k]=merged; _persist(k,merged);
       });
 
@@ -375,7 +384,7 @@ const AMVSync = {
   },
   collect(){
     const out={};
-    _SYNC_KEYS.forEach(k=>{ out[k]=_raw[k]; });
+    _SYNC_KEYS.forEach(k=>{ out[k] = k === 'convs' ? _convsForStore(_raw.convs) : _raw[k]; });
     // Recents / Dev projects / Lab sessions live in a module array, not AMVState.
     try{ out.sessions = _syncSessionList(); }catch(e){ out.sessions = []; }
     try{ out.skills   = load('amv_skills')   || []; }catch(e){}
@@ -1218,18 +1227,61 @@ function saveGoogleAccount(name, email) {
   try{ if(typeof AEGIS!=='undefined') AEGIS.log('signup_complete',{provider:'google'}); }catch(e){}
   return acct;
 }
+/* ── THE SHELF: archived, trashed and deleted chats ──────────────────────────
+
+   Deleting a chat used to remove it from the list, and the list is what is
+   synced - merged by id between devices. A chat deleted on the laptop was
+   still on the phone, so the phone's next sync merged it straight back, and
+   it reappeared everywhere. The server's own note on the merge says a
+   deleted item can come back; on this list it always did.
+
+   So a chat leaves the live list by being MARKED, not removed: archived,
+   trashed (kept 30 days, restorable) or gone (a tombstone with no content,
+   kept 90 days so a device that was offline for a while still learns of the
+   delete). The merge already keeps the newest copy of each id, so the mark
+   wins over a stale live copy with no new rule.
+
+   Marked chats never sit in S.convs. Every screen that lists chats reads
+   S.convs, and there are dozens of them; keeping the shelf apart means none
+   of them can show a deleted chat by forgetting a filter. They rejoin the
+   list only on the way to storage and sync, and are split off again on the
+   way back. */
+let _CONV_SHELF = [];
+const _SHELF_TRASH_MS = 30 * 864e5, _SHELF_GONE_MS = 90 * 864e5;
+function _isShelved(c){ return !!(c && (c.archived || c.trashed || c.gone)); }
+function _convTomb(c){ return { id: c.id, gone: true, title: '', msgs: [], created: c.created || 0, updated: Date.now() }; }
+function _shelfPrune(list){
+  const now = Date.now();
+  return (list || []).map(c => (c.trashed && now - c.trashed > _SHELF_TRASH_MS) ? _convTomb(c) : c)
+    .filter(c => !(c.gone && now - (c.updated || 0) > _SHELF_GONE_MS));
+}
+/* A stored or synced list in, the live chats out; the rest becomes the shelf.
+   A temporary chat is never in a stored list, so it cannot arrive here. */
+function _shelfSplit(list){
+  const live = [], shelf = [];
+  for(const c of (list || [])){ if(!c) continue; (_isShelved(c) ? shelf : live).push(c); }
+  _CONV_SHELF = _shelfPrune(shelf);
+  return live;
+}
+/* The live chats plus the shelf, for storage and sync. Temporary chats are
+   left out here - this is the one door to both. */
+function _convsForStore(live){
+  const keep = (live || []).filter(c => c && !c.temp);
+  const ids = new Set(keep.map(c => c.id));
+  return keep.concat(_CONV_SHELF.filter(c => c && !ids.has(c.id)));
+}
 function loadUserConvs(email) {
   const key = convKey(email.toLowerCase().trim());
   const d = load(key);
-  return Array.isArray(d) ? d : null;
+  return Array.isArray(d) ? _shelfSplit(d) : null;
 }
 function saveUserConvs(email, convs) {
   if (!email||!Array.isArray(convs)) return;
   const key = convKey(email.toLowerCase().trim());
   try{
-    const slim=convs.map(cv=>({
+    const slim=_convsForStore(convs).map(cv=>({
       ...cv,
-      msgs:cv.msgs.map(m=>{
+      msgs:(cv.msgs||[]).map(m=>{
         if(typeof m.c==='string') return m;
         return {...m, c:m.d||'[file attachment]'};
       }).slice(-40)

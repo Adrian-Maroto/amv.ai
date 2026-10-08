@@ -16588,3 +16588,22 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 /* A phone is too narrow for five whole words, so two even rows rather than a
    label cut short. */
 @media (max-width:420px){ #cw-cad.sched-cad{ grid-template-columns:repeat(3, minmax(0, 1fr)); row-gap:var(--sp-1); } }
+
+/* ── LAYER A291: Archived & Trash ───────────────────────────────────────────
+   The door at the foot of Recents, and the screen it opens. Rows reuse the
+   job-row button sizes so the two lists read as one family. */
+/* Scoped as #hist > to outrank the row reset every child of the list gets. */
+#hist > .hist-shelf{ display:flex; align-items:center; justify-content:space-between; margin-top:var(--sp-2);
+  border:1px dashed var(--bd); font-family:var(--fn); font-size:var(--t-sm); min-height:40px; }
+#hist > .hist-shelf:hover,#hist > .hist-shelf:focus-visible{ color:var(--tx); border-color:var(--bdl); }
+#hist > .hist-shelf span{ color:var(--dim); font-variant-numeric:tabular-nums; }
+.shelf-ob{ max-width:560px; width:100%; }
+.shelf-h3{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-2); margin:var(--sp-4) 0 var(--sp-2);
+  font-size:var(--t-md); font-weight:600; color:var(--tx); }
+.shelf-row{ display:flex; align-items:center; gap:var(--sp-3); padding:var(--sp-3) 0; border-top:1px solid var(--bd); }
+.shelf-t{ flex:1; min-width:0; }
+.shelf-name{ font-size:var(--t-md); color:var(--tx); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shelf-meta{ font-size:var(--t-sm); color:var(--mu); margin-top:2px; }
+.shelf-acts{ display:flex; gap:var(--sp-2); flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end; }
+.shelf-empty{ font-size:var(--t-sm); color:var(--mu); margin:0 0 var(--sp-2); }
+@media (max-width:480px){ .shelf-row{ flex-direction:column; align-items:stretch; } .shelf-acts{ justify-content:flex-start; } }

@@ -1260,7 +1260,15 @@ step('Page weight is under control', () => {
      only unreferenced-looking candidate for a trim, amvOpenFile and its task
      panel, is the entry point desktop and editor integrations call from
      outside the page, so it stays. */
-  const CEILING = 643 * 1024;   // gzipped, which is what actually crosses the network
+  /* 643 -> 645, 2026-10-08, deliberately: Archive and Trash for chats - the
+     shelf that makes a delete survive sync (it used to be merged back from
+     any device that still had the chat), the Archive menu entry, and the
+     Archived & Trash screen. Three ceiling raises in one day is a trend, not
+     a coincidence: the gap list is a list of features. The lever that would
+     actually move this number is loading the per-country Crew catalogues on
+     demand, the way language packs already are - its own measured change,
+     not a side effect of this one. */
+  const CEILING = 645 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

@@ -14439,3 +14439,28 @@ Rules:
   the same change, then reading it back from storage, not from the run's copy.
 - A test example's wording is input. When the code reads meaning out of text,
   check the example takes the path the test claims it takes.
+
+## 560. A deleted chat came back from the other device
+
+Chats sync as a list merged by id, newest copy wins. Delete removed the chat
+from the list, so the list sent up no longer mentioned it. The phone, still
+holding its copy, merged it straight back on the next sync, and so the deleted
+chat returned on every device. The server's own comment on the merge says "a
+deleted item can reappear". On this list it always did, and nobody noticed,
+because each device on its own showed the delete working.
+
+A chat now leaves the list by being marked: archived, trashed (kept 30 days,
+restorable) or gone (a marker with no content, kept 90 days). The mark is newer
+than any stale copy, and the existing newest-wins merge does the rest; no new
+rule was needed on the server. Marked chats are kept out of S.convs entirely
+and rejoin the list only on the way to storage and sync. Every screen that
+lists chats reads S.convs, and none of them can show a deleted chat by
+forgetting a filter.
+
+Rules:
+- In a list merged by union, removing an item is not deleting it. Deletion
+  has to be a newer version of the item, or it is undone by the next merge.
+- Prove a sync behaviour with two copies, not one: the stale device is where
+  the bug lives.
+- When one change needs dozens of call sites to remember a filter, change the
+  data instead, so the call sites cannot forget it.

@@ -3177,7 +3177,12 @@ function renderHist(){
      same thing, so the only working part was the claim. Saying what the code
      does is worth more than a note describing what it does not: if this ever
      needs windowing, it needs writing, not selecting. */
-  area.innerHTML=rows.map(rowHTML).join('');
+  /* The way back to archived and deleted chats, shown only when there are
+     some - a door to an empty room is clutter. */
+  const sc=_shelfCounts();
+  const shelf=(sc.archived||sc.trashed) && !search && !S.starFilter
+    ? '<button type="button" class="hist-shelf" data-dact="openChatShelf">'+escH(T('Archived & Trash'))+' <span>'+(sc.archived+sc.trashed)+'</span></button>' : '';
+  area.innerHTML=rows.map(rowHTML).join('')+shelf;
   bind();
 }
 
@@ -3214,6 +3219,7 @@ function showConvMenu(e,id){
     '<div class="ctxi" id="cm-proj">📁 Add to project</div>'+
     '<div class="ctxi" id="cm-export">⬇ Export as Markdown</div>'+
     '<div class="ctxi" id="cm-share">🔗 Share</div>'+
+    '<div class="ctxi" id="cm-arch">🗄 Archive</div>'+
     '<div class="ctxd"></div>'+
     '<div class="ctxi danger" id="cm-del">🗑 Delete</div>';
   document.body.appendChild(menu);
@@ -3230,6 +3236,7 @@ function showConvMenu(e,id){
   on($('cm-proj'),'click',()=>{ addToProject(id); menu.remove(); });
   on($('cm-export'),'click',()=>{ exportConv(id); menu.remove(); });
   on($('cm-share'),'click',()=>{ shareConv(id); menu.remove(); });
+  on($('cm-arch'),'click',()=>{ archiveConv(id); menu.remove(); });
   on($('cm-del'),'click',()=>{ deleteConv(id); menu.remove(); });
   const close=e2=>{ if(!menu.contains(e2.target)){ menu.remove(); document.removeEventListener('click',close); } };
   setTimeout(()=>document.addEventListener('click',close),50);
