@@ -16607,3 +16607,17 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .shelf-acts{ display:flex; gap:var(--sp-2); flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end; }
 .shelf-empty{ font-size:var(--t-sm); color:var(--mu); margin:0 0 var(--sp-2); }
 @media (max-width:480px){ .shelf-row{ flex-direction:column; align-items:stretch; } .shelf-acts{ justify-content:flex-start; } }
+
+/* ── LAYER A292: temporary chat ─────────────────────────────────────────────
+   The switch under the greeting is quiet; the banner once it is on is plain
+   words, so whether this chat is being kept is never a guess. */
+.temp-toggle{ display:inline-flex; align-items:center; gap:var(--sp-1); margin-top:var(--sp-2); padding:6px 12px; min-height:36px;
+  background:none; border:1px dashed var(--bd); border-radius:var(--r-pill); color:var(--mu); font-family:var(--fn);
+  font-size:var(--t-sm); cursor:pointer; }
+.temp-toggle:hover,.temp-toggle:focus-visible{ color:var(--tx); border-color:var(--bdl); }
+/* The row takes the conversation column (#cm > div); it only needs to not
+   add space of its own. */
+.temp-row{ padding-top:0; padding-bottom:0; }
+.temp-banner{ margin:var(--sp-2) auto var(--sp-3); max-width:680px; padding:var(--sp-2) var(--sp-3); border:1px dashed var(--bdl);
+  border-radius:var(--r-md); color:var(--mu); font-size:var(--t-sm); line-height:1.45; text-align:center; }
+.temp-banner b{ color:var(--tx); font-weight:600; }

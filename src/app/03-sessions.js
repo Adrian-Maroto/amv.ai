@@ -2261,6 +2261,7 @@ function _autoSave(){
   }catch(e){}
 }
 function newChat(){
+  _leaveTempChats(null);
   const c=newConvObj();
   S.convs.unshift(c);
   S.cur=c.id;
@@ -2268,7 +2269,7 @@ function newChat(){
   setTab('chat');
   renderHist();
 }
-function loadConv(id){ S.cur=id; setTab('chat'); renderHist(); }
+function loadConv(id){ _leaveTempChats(id); S.cur=id; setTab('chat'); renderHist(); }
 /* Delete moves a chat to Trash, where it stays restorable for 30 days.
    See _CONV_SHELF for why it is marked rather than removed. */
 function deleteConv(id){ _shelveConv(id, 'trashed'); }

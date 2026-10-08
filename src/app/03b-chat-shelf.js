@@ -110,3 +110,55 @@ function _renderChatShelf(){
     + (trash.length ? trash.map(c => row(c, 'trash')).join('') : '<p class="shelf-empty">' + escH(T('Trash is empty. Deleted chats wait here for 30 days.')) + '</p>');
 }
 try{ Object.assign(window, { archiveConv, restoreConv, purgeConv, emptyTrash, openChatShelf }); }catch(e){}
+
+/* ── TEMPORARY CHAT ──────────────────────────────────────────────────────────
+
+   A conversation that leaves nothing behind: it is never written to this
+   device or synced (_convsForStore leaves it out), nothing is learned from it
+   or added to memory, and memories are not read into it either - it starts
+   from what the person says and nothing else. It goes when they open another
+   chat or reload. Their custom instructions still apply: those are how they
+   asked AMV to talk, not something it learned about them. */
+function _isTempChat(){ try{ const c = getCurConv(); return !!(c && c.temp); }catch(e){ return false; } }
+function startTempChat(){
+  const c = newConvObj(T('Temporary chat'));
+  c.temp = true;
+  S.convs = [c].concat((S.convs || []).filter(x => x && !x.temp));
+  S.cur = c.id;
+  setTab('chat'); renderHist();
+  try{ renderChatMsgs(); }catch(e){}
+  try{ const ta = $('mta'); if(ta) ta.focus(); }catch(e){}
+}
+/* Leaving a temporary chat ends it. Called wherever another chat is opened. */
+function _leaveTempChats(keepId){
+  if((S.convs || []).some(c => c && c.temp && c.id !== keepId))
+    S.convs = S.convs.filter(c => c && (!c.temp || c.id === keepId));
+}
+function _tempBannerHTML(){
+  return _isTempChat()
+    /* In a row of its own, so it takes the conversation's column and margins
+       like any message rather than the full width of the screen. */
+    ? '<div class="temp-row"><div class="temp-banner" role="note"><b>' + escH(T('Temporary chat')) + '</b> · '
+      + escH(T('not saved, not synced, nothing remembered. It is gone when you leave it.')) + '</div></div>'
+    : '';
+}
+
+/* ── BRANCH: try a different direction without losing this one ─────────────
+   A new chat holding this conversation up to the chosen answer. The original
+   is untouched, and the branch records where it came from. */
+function branchConv(idx){
+  const src = getCurConv(); if(!src) return;
+  const upto = (src.msgs || []).slice(0, (Number(idx) || 0) + 1);
+  if(!upto.length) return;
+  const c = newConvObj(T('Branch') + ': ' + String(src.title || T('chat')).slice(0, 60));
+  c.msgs = JSON.parse(JSON.stringify(upto)).map(m => { delete m.streaming; return m; });
+  c.from = { id: src.id, at: upto.length };
+  if(src.temp) c.temp = true;
+  c.updated = Date.now();
+  S.convs = [c].concat(S.convs || []);
+  S.cur = c.id;
+  _autoSave(); renderHist();
+  try{ renderChatMsgs(); }catch(e){}
+  toast(T('Branched into a new chat. The original is unchanged.'), 'success', 3500);
+}
+try{ Object.assign(window, { startTempChat, branchConv }); }catch(e){}

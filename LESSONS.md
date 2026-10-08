@@ -14464,3 +14464,21 @@ Rules:
   the bug lives.
 - When one change needs dozens of call sites to remember a filter, change the
   data instead, so the call sites cannot forget it.
+
+## 561. A "nothing happened" assertion passes when the code never ran
+
+The temporary-chat test asserted that its turns were sent without the saved
+memories, and it passed. Its control (an ordinary chat should read memories)
+failed. Neither turn had got as far as building a request: the first was
+stopped because the engine was not connected, the second by the rate limiter.
+"Memories were not read" was true only because nothing was read at all.
+
+The test now counts the network attempt and asserts it on both sides before
+asserting what the request contained. A mutation that switches the
+temporary-chat rule off is caught by the assertion that names it.
+
+Rules:
+- Every test of "X did not happen" needs a sibling proving that, under the same
+  setup, X does happen. Without it, an absence proves nothing.
+- Assert the path was taken (here, the request was attempted) before asserting
+  what was on it.

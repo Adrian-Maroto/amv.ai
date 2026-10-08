@@ -6379,6 +6379,7 @@ function _autoSave(){
   }catch(e){}
 }
 function newChat(){
+  _leaveTempChats(null);
   const c=newConvObj();
   S.convs.unshift(c);
   S.cur=c.id;
@@ -6386,7 +6387,7 @@ function newChat(){
   setTab('chat');
   renderHist();
 }
-function loadConv(id){ S.cur=id; setTab('chat'); renderHist(); }
+function loadConv(id){ _leaveTempChats(id); S.cur=id; setTab('chat'); renderHist(); }
 /* Delete moves a chat to Trash, where it stays restorable for 30 days.
    See _CONV_SHELF for why it is marked rather than removed. */
 function deleteConv(id){ _shelveConv(id, 'trashed'); }
@@ -6755,6 +6756,58 @@ function _renderChatShelf(){
     + (trash.length ? trash.map(c => row(c, 'trash')).join('') : '<p class="shelf-empty">' + escH(T('Trash is empty. Deleted chats wait here for 30 days.')) + '</p>');
 }
 try{ Object.assign(window, { archiveConv, restoreConv, purgeConv, emptyTrash, openChatShelf }); }catch(e){}
+
+/* ── TEMPORARY CHAT ──────────────────────────────────────────────────────────
+
+   A conversation that leaves nothing behind: it is never written to this
+   device or synced (_convsForStore leaves it out), nothing is learned from it
+   or added to memory, and memories are not read into it either - it starts
+   from what the person says and nothing else. It goes when they open another
+   chat or reload. Their custom instructions still apply: those are how they
+   asked AMV to talk, not something it learned about them. */
+function _isTempChat(){ try{ const c = getCurConv(); return !!(c && c.temp); }catch(e){ return false; } }
+function startTempChat(){
+  const c = newConvObj(T('Temporary chat'));
+  c.temp = true;
+  S.convs = [c].concat((S.convs || []).filter(x => x && !x.temp));
+  S.cur = c.id;
+  setTab('chat'); renderHist();
+  try{ renderChatMsgs(); }catch(e){}
+  try{ const ta = $('mta'); if(ta) ta.focus(); }catch(e){}
+}
+/* Leaving a temporary chat ends it. Called wherever another chat is opened. */
+function _leaveTempChats(keepId){
+  if((S.convs || []).some(c => c && c.temp && c.id !== keepId))
+    S.convs = S.convs.filter(c => c && (!c.temp || c.id === keepId));
+}
+function _tempBannerHTML(){
+  return _isTempChat()
+    /* In a row of its own, so it takes the conversation's column and margins
+       like any message rather than the full width of the screen. */
+    ? '<div class="temp-row"><div class="temp-banner" role="note"><b>' + escH(T('Temporary chat')) + '</b> · '
+      + escH(T('not saved, not synced, nothing remembered. It is gone when you leave it.')) + '</div></div>'
+    : '';
+}
+
+/* ── BRANCH: try a different direction without losing this one ─────────────
+   A new chat holding this conversation up to the chosen answer. The original
+   is untouched, and the branch records where it came from. */
+function branchConv(idx){
+  const src = getCurConv(); if(!src) return;
+  const upto = (src.msgs || []).slice(0, (Number(idx) || 0) + 1);
+  if(!upto.length) return;
+  const c = newConvObj(T('Branch') + ': ' + String(src.title || T('chat')).slice(0, 60));
+  c.msgs = JSON.parse(JSON.stringify(upto)).map(m => { delete m.streaming; return m; });
+  c.from = { id: src.id, at: upto.length };
+  if(src.temp) c.temp = true;
+  c.updated = Date.now();
+  S.convs = [c].concat(S.convs || []);
+  S.cur = c.id;
+  _autoSave(); renderHist();
+  try{ renderChatMsgs(); }catch(e){}
+  toast(T('Branched into a new chat. The original is unchanged.'), 'success', 3500);
+}
+try{ Object.assign(window, { startTempChat, branchConv }); }catch(e){}
 /* =====================================================================
    EMBEDDABLE WIDGET - the compact chat panel shown inside the iframe that
    third-party sites load via /widget.js. It talks to the PUBLIC endpoint
@@ -8370,7 +8423,8 @@ async function _callAITurn(msgs, _opts) {
     try{ AMVUsage.record((_inTok||0)+(_outTok||0)); }catch(e){}
   };
   const mdl=MODELS[_routeKey]||MODELS.core;
-  const _mems=(loadStr('amv_cap_memory')!=='0')?_relevantMemories(msgs):[];
+  /* A temporary chat starts from nothing it was not told in this conversation. */
+  const _mems=(loadStr('amv_cap_memory')!=='0' && !_isTempChat())?_relevantMemories(msgs):[];
   const _agenticSys = '\n\nYOU CAN ACTUALLY DO THINGS - you are not limited to describing them. You have real tools:\n'+
     '\u2022 run_code - when code should be executed, tested, or verified, RUN it and report the real output. Use it to check your own work too.\n'+
     '\u2022 fix_code - when their code is broken, actually run it, fix it, and re-run until it passes.\n'+
@@ -9004,7 +9058,7 @@ async function _callAITurn(msgs, _opts) {
 
   setMsgs(msgs); S.busy=false; renderChatMsgs();
   // learn durable facts from this exchange (best-effort, runs in background)
-  try{ if(!msgs[streamIdx]||!msgs[streamIdx]._error){ setTimeout(()=>_maybeExtractMemory(msgs),300); AMVValue.record('message'); if(!loadStr('amv_activated')){ saveStr('amv_activated','1'); track('activated_first_message'); } track('message_sent'); } }catch(e){}
+  try{ if(!msgs[streamIdx]||!msgs[streamIdx]._error){ if(!_isTempChat()) setTimeout(()=>_maybeExtractMemory(msgs),300); AMVValue.record('message'); if(!loadStr('amv_activated')){ saveStr('amv_activated','1'); track('activated_first_message'); } track('message_sent'); } }catch(e){}
 }
 /* Ask the server for an answer this device lost. The model may have finished
    after the connection dropped - those tokens are already paid for, so getting
@@ -9372,6 +9426,7 @@ function bindChatEvents() {
     else if(action==='react'){ _openReactPicker(idx, btn); }
     else if(action==='react-toggle'){ _toggleReaction(idx, btn.dataset.emoji); }
     else if(action==='regen') regenerateMsg();
+    else if(action==='branch') branchConv(idx);
     else if(action==='retry-ai') retryLastAI();
     else if(action==='speak') speakMessage(idx);
     /* "See plans" means the grid. "Upgrade to Pro" names one plan, so it opens
@@ -9708,6 +9763,11 @@ function renderChatMsgs() {
            screen readers, so the greeting itself is untouched. */
         '<h1 class="chome-title"><span class="chome-greet-w"><span class="chome-greet">'+title+'</span>'+
           '<span class="chome-shine" aria-hidden="true"><span>'+title+'</span></span></span></h1>'+
+        /* One quiet switch: a chat that is not kept. When it is on, it says so
+           in words rather than as a state somebody has to remember. */
+        (_isTempChat()
+          ? _tempBannerHTML()
+          : '<button type="button" class="temp-toggle" data-dact="startTempChat">'+escH(T('Temporary chat'))+'</button>')+
       '</div>'+
       /* THE NEW CHAT IS A GREETING AND SOME SMALL CHIPS, AND NOTHING ELSE.
 
@@ -9758,7 +9818,7 @@ function renderChatMsgs() {
   cm.innerHTML=
   /* Same card as the home screen, at the top of an open conversation - a
      returning user is just as likely to land in yesterday's chat. */
-  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+
+  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+_tempBannerHTML()+
   msgs.map((m,i)=>{
     const isU=m.r==='u';
     const rawText=m.d||(typeof m.c==='string'?m.c:'');
@@ -9859,6 +9919,7 @@ function renderChatMsgs() {
         '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'" title="Bad response"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg></button>'+
         '<button class="mact" data-action="copy-a" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
         '<button class="mact" data-action="speak" data-idx="'+i+'" title="Read aloud"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg></button>'+
+        '<button class="mact" data-action="branch" data-idx="'+i+'" title="'+escH(T('Branch from here'))+'" aria-label="'+escH(T('Branch from here'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></svg></button>'+
         '<button class="mact mact-react" data-action="react" data-idx="'+i+'" title="React"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
         (i===msgs.length-1?'<button class="mact" data-action="regen" title="Regenerate"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
       '</div>'+
@@ -28999,6 +29060,8 @@ async function _sectionTool(name, input){
   }
 
   if(name === 'memory_add'){
+    if(_isTempChat())
+      return { text:'Not saved: this is a temporary chat, so nothing from it is remembered. Tell the user so, and that they can say it again in a normal chat if they want AMV to keep it.', render:null };
     const text = String(input.text||'').trim().slice(0, _MEM_MAX);
     if(text.length < 3) return { text:'That is not enough to remember. Ask the user what exactly they want AMV to know.', render:null };
     /* Refused rather than stored. A memory is replayed into every future
