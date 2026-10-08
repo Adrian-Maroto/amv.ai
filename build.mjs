@@ -71,6 +71,8 @@ function emitBridge() {
 function emitSandbox() {
   writeFileSync('sandbox.html', readFileSync('src/sandbox/sandbox.html'));
   writeFileSync('sandbox.js', readFileSync('src/sandbox/sandbox.js'));
+  /* The Office exporter, fetched only when somebody presses Export. */
+  writeFileSync('office.js', readFileSync('src/office/office.js'));
 }
 
 function assembleJS() {
@@ -861,6 +863,7 @@ const PUBLISH = [
   'amv-bridge.mjs',        // fetched by the connect card's Download button
   'sandbox.html',          // the frame programs run in (opaque origin, its own policy)
   'sandbox.js',            // what that frame runs
+  'office.js',             // the Word/Excel/PowerPoint exporter, fetched on the first Export
 ];
 function emitPublishDir() {
   if (!existsSync(PUBLISH_DIR)) mkdirSync(PUBLISH_DIR, { recursive: true });

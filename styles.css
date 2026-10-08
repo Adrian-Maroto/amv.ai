@@ -16635,3 +16635,12 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .pj-mem{ white-space:normal; }
 .pj-banner{ display:flex; flex-wrap:wrap; justify-content:center; align-items:center; column-gap:var(--sp-1); }
 .pj-banner .pj-manage{ background:none; border:none; padding:0 0 0 var(--sp-1); color:var(--accent-txt); font:inherit; cursor:pointer; text-decoration:underline; }
+
+/* ── LAYER A294: the answer toolbar and its download menu ───────────────────
+   Eight actions no longer fit in one row at phone width, and a row that did
+   not fit pushed the whole answer sideways. The bar may now wrap, within the
+   answer's own width. The download menu's items are buttons (so a keyboard
+   reaches them); they take the menu's look rather than the browser's. */
+.macts.mact-bar{ flex-wrap:wrap; max-width:100%; }
+.ctxm button.ctxi{ width:100%; background:none; border:none; text-align:left; font-family:var(--fn); color:var(--tx); }
+.ctxm button.ctxi:hover,.ctxm button.ctxi:focus-visible{ background:var(--s3); }

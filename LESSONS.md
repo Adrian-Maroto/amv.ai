@@ -14525,3 +14525,29 @@ Rules:
   eventually follow.
 - A promise on a screen is checked where it is kept: here, in the outgoing
   request, not in the UI that describes it.
+
+## 564. An explanation is a claim; measure it before writing it down
+
+The export suite's downloads arrived named "download". The first explanation,
+written straight into a code comment, was that the shared download helper
+revoked its object URL too early. That was plausible and specific, and it was
+wrong. Comparing the old and new helpers name by name showed both named files
+correctly. The only failing case was a non-ASCII name ("café") in the headless
+test browser. The comment was corrected before it shipped. If it had shipped,
+it would have pointed every future reader at the wrong cause.
+
+Other things this change turned up:
+- Word needs one paragraph style marked w:default. Without it, an independent
+  reader returned no style for plain paragraphs, and Word handles that the
+  same way.
+- An eighth toolbar button made the answer's toolbar wider than a phone, which
+  pushed the whole answer sideways. Each screenshot is a measurement too.
+- The exporter is fetched on first use, not shipped in the page, so the page
+  did not grow. A suite that intercepts the page's own files has to block the
+  service worker, or the "fetch failed" case is quietly served from cache.
+
+Rules:
+- Before writing why something broke, change only that thing and watch the
+  result move. A comment explaining a cause is a test with no assertion.
+- Code only some visitors use goes in a separate file, fetched when wanted.
+  The page is what every visitor pays for.

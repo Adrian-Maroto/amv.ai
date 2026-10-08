@@ -184,13 +184,18 @@ section('Pictures: what the engine takes goes as itself; anything else is redraw
 section('Nothing on screen promises an Office file AMV cannot make');
 {
   /* The other half of the bug: the catalog said "export the .pptx" and
-     "builds pivots", and neither existed. Reading is proved above; making
-     these files is not built yet, so nothing may claim it. When it is built,
-     this list changes in the same commit as the code that makes it true. */
+     "builds pivots", and neither existed. Making the three files is real now
+     (office.js, driven end to end in an-answer-downloads-as-office), so a
+     claim to download one is allowed exactly when the exporter that makes it
+     exists. Pivots are still not built, so they may not be claimed. */
   const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
   const copy = ['src/app/13c-app-catalog.js', 'src/app/12-handoff.js'].map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
-  const claims = copy.match(/(export|download)[^'"\n]{0,40}\.(pptx|docx|xlsx)|\.(pptx|docx|xlsx)[^'"\n]{0,40}(export|download)|pivot/gi) || [];
-  ok(claims.length === 0, 'no claim to export a .docx, .xlsx or .pptx, or to build pivots', claims);
+  const exporter = readFileSync(join(ROOT, 'src/office/office.js'), 'utf8');
+  const makes = { docx: /function amvDocx\(/.test(exporter), xlsx: /function amvXlsx\(/.test(exporter), pptx: /function amvPptx\(/.test(exporter) };
+  const claims = (copy.match(/(?:export|download)[^'"\n]{0,40}\.(pptx|docx|xlsx)|\.(pptx|docx|xlsx)[^'"\n]{0,40}(?:export|download)|downloads as a deck/gi) || [])
+    .map(c => /deck/i.test(c) ? 'pptx' : (/(pptx|docx|xlsx)/i.exec(c) || [])[1].toLowerCase());
+  ok(claims.every(k => makes[k]), 'every Office format a screen offers to download has an exporter that makes it', { claims, makes });
+  ok(!/pivot/i.test(copy), 'and nothing claims pivot tables, which are not built');
 }
 
 section('No JavaScript errors');

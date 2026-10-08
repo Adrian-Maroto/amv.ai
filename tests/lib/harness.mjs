@@ -268,6 +268,10 @@ export async function bootApp(opts = {}) {
     viewport: opts.viewport || { width: 1280, height: 860 },
     hasTouch: !!opts.hasTouch,
     isMobile: !!opts.hasTouch,
+    /* A suite that has to intercept the page's own files asks for this: a
+       request the service worker answers from its cache never reaches
+       page.route, so a "the fetch failed" case would silently be served. */
+    ...(opts.blockServiceWorkers ? { serviceWorkers: 'block' } : {}),
   });
 
   const errors = [];

@@ -1270,10 +1270,13 @@ step('Page weight is under control', () => {
      not a side effect of this one. */
   /* 645 -> 648, 2026-10-08, deliberately: Projects that do what the screen
      said - instructions, files and project-only memory sent with every chat
-     inside one - plus the fix for projects being stored under two names. The
-     next change to this file is meant to LOWER it: the per-country Crew
-     catalogues move to on-demand packs (a task now on the list), which is the
-     lever measured to be worth far more than any of these features. */
+     inside one - plus the fix for projects being stored under two names.
+     CORRECTION, same day: this note first named the per-country Crew
+     catalogues as the lever to bring the number down. Measured, they are not
+     in the page at all - country facts are fetched from the server when a
+     country is opened. What remains is code, and splitting code out of the
+     page was measured and declined in BUNDLE-SPLIT.md; that decision, not a
+     data move, is what would have to change to lower this. */
   const CEILING = 648 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `

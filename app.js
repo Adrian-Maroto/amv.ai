@@ -9122,6 +9122,29 @@ function likeMsg(idx, type) {
   toast(type==='up'?'Feedback: helpful!':'Feedback: not helpful','success');
 }
 
+/* THE OFFICE EXPORTER, FETCHED THE FIRST TIME IT IS WANTED.
+   office.js builds Word, Excel and PowerPoint files; only people who press
+   Export need it, so it is not in the page every visitor downloads. Loaded
+   once, from this site ('self' in the script policy). A failed load says so
+   and can be tried again. */
+let _officeP = null;
+function _loadOffice(){
+  if(window.amvDocx) return Promise.resolve(true);
+  if(_officeP) return _officeP;
+  _officeP = new Promise(res => {
+    const s = document.createElement('script');
+    s.src = 'office.js';
+    s.onload = () => res(!!window.amvDocx);
+    s.onerror = () => { _officeP = null; s.remove(); res(false); };
+    document.head.appendChild(s);
+  });
+  return _officeP;
+}
+async function _exportOpen(idx, btn){
+  const ok = await _loadOffice();
+  if(!ok){ toast(T('The exporter could not be loaded. Check your connection and try again.'), 'error', 6000); return; }
+  window._amvExportMenu(idx, btn);
+}
 function copyMsg(text) {
   navigator.clipboard?.writeText(text).then(()=>toast('Copied to clipboard','success')).catch(()=>toast('Copy failed','error'));
 }
@@ -9427,6 +9450,7 @@ function bindChatEvents() {
     else if(action==='react-toggle'){ _toggleReaction(idx, btn.dataset.emoji); }
     else if(action==='regen') regenerateMsg();
     else if(action==='branch') branchConv(idx);
+    else if(action==='export') _exportOpen(idx, btn);
     else if(action==='retry-ai') retryLastAI();
     else if(action==='speak') speakMessage(idx);
     /* "See plans" means the grid. "Upgrade to Pro" names one plan, so it opens
@@ -9919,6 +9943,7 @@ function renderChatMsgs() {
         '<button class="mact '+(m.like==='down'?'disliked':'')+'" data-action="like-down" data-idx="'+i+'" title="Bad response"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88z"/></svg></button>'+
         '<button class="mact" data-action="copy-a" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
         '<button class="mact" data-action="speak" data-idx="'+i+'" title="Read aloud"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></svg></button>'+
+        '<button class="mact" data-action="export" data-idx="'+i+'" title="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-label="'+escH(T('Download as Word, Excel or PowerPoint'))+'" aria-haspopup="menu"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>'+
         '<button class="mact" data-action="branch" data-idx="'+i+'" title="'+escH(T('Branch from here'))+'" aria-label="'+escH(T('Branch from here'))+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10c0 4-6 3-12 7"/></svg></button>'+
         '<button class="mact mact-react" data-action="react" data-idx="'+i+'" title="React"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
         (i===msgs.length-1?'<button class="mact" data-action="regen" title="Regenerate"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
@@ -36108,11 +36133,15 @@ function _sheetDownloadCSV(){
 function _saveBlob(blob,name){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href=url; a.download=name; a.click();
-  /* The object URL used to be left behind, one per download, for the life of
-     the tab. Revoked on the next tick because Chrome needs the click to have
-     been dispatched first. */
-  setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} },0);
+  a.href=url; a.download=name; a.style.display='none';
+  /* In the document for the click, because some browsers only follow a
+     download link that is attached; removed and revoked a moment later. (A
+     first draft of this note blamed the revoke timing for files arriving as
+     "download" - measured, that was wrong: the old helper named them fine, and
+     the only case that failed was a non-ASCII name in the headless test
+     browser, which a real browser saves under its proper name.) */
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ try{ URL.revokeObjectURL(url); a.remove(); }catch(e){} },1500);
 }
 function _bgAddGmailCheck(){ _bgAddTask({type:'gmail_check',title:'Check Gmail inbox'}); }
 function _bgAddCalendarCheck(){ _bgAddTask({type:'calendar_check',title:'Optimize my week'}); }
@@ -37613,9 +37642,9 @@ const AMV_APP_CATS = [
     'Google Drive|g|Finds and reads your files. Writes only to copies AMV makes.',
     'Google Docs|g|Read through your Google connection.', 'Google Sheets|g|Read through your Google connection.',
     'Google Slides|g|Read through your Google connection.',
-    'Excel and CSV|file|Attach a workbook - AMV reads every sheet, its values and formulas, and answers with tables and charts.',
-    'Word|file|Attach a .docx - AMV reads it, tables, comments and footnotes included.',
-    'PowerPoint|file|Attach a .pptx - AMV reads every slide and its speaker notes.',
+    'Excel and CSV|file|Attach a workbook - AMV reads every sheet, values and formulas. Any table it answers with downloads as .xlsx.',
+    'Word|file|Attach a .docx and AMV reads it, comments included. Any answer downloads as a .docx.',
+    'PowerPoint|file|Attach a .pptx and AMV reads every slide and note. Any answer downloads as a deck.',
     'Dropbox|p:dropbox|Cloud storage and sharing.', 'OneDrive|ms|Microsoft’s cloud storage.', 'Box|p:box|Cloud content for business.',
     'iCloud Drive||Apple’s cloud storage.', 'Evernote||Notes and web clips.', 'OneNote||Microsoft’s notebook.',
     'Adobe Acrobat||PDFs: read, sign and edit.', 'Google Keep||Quick notes and lists.', 'Apple Notes||Notes on Apple devices.',

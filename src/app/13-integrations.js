@@ -1736,11 +1736,15 @@ function _sheetDownloadCSV(){
 function _saveBlob(blob,name){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href=url; a.download=name; a.click();
-  /* The object URL used to be left behind, one per download, for the life of
-     the tab. Revoked on the next tick because Chrome needs the click to have
-     been dispatched first. */
-  setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} },0);
+  a.href=url; a.download=name; a.style.display='none';
+  /* In the document for the click, because some browsers only follow a
+     download link that is attached; removed and revoked a moment later. (A
+     first draft of this note blamed the revoke timing for files arriving as
+     "download" - measured, that was wrong: the old helper named them fine, and
+     the only case that failed was a non-ASCII name in the headless test
+     browser, which a real browser saves under its proper name.) */
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ try{ URL.revokeObjectURL(url); a.remove(); }catch(e){} },1500);
 }
 function _bgAddGmailCheck(){ _bgAddTask({type:'gmail_check',title:'Check Gmail inbox'}); }
 function _bgAddCalendarCheck(){ _bgAddTask({type:'calendar_check',title:'Optimize my week'}); }
