@@ -6900,7 +6900,7 @@ function openTemplateForm(p){
     closeOvr();
     _putInComposer(out);
   });
-  setTimeout(() => { try{ const f = $('tpl-0'); if(f) f.focus(); }catch(e){} }, 30);
+  setTimeout(() => { try{ const f = document.querySelector('#tpl-form input, #tpl-form textarea'); if(f) f.focus(); }catch(e){} }, 30);
 }
 function _putInComposer(text){
   setTab('chat');
