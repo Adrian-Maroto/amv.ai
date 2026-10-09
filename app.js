@@ -10315,7 +10315,8 @@ function showAttChip(){
      most people want and what the chat box is for. This is offered ALONGSIDE
      it: the file is on the chip either way, and a CSV also gets a way into the
      editor. Nothing is taken away by adding it. */
-  if(_attIsSheet(S.att) && typeof handleSheetFile==='function' && S.att.data!=null){
+  const _xl = S.att.format==='xlsx';
+  if((_attIsSheet(S.att) || _xl) && typeof handleSheetFile==='function' && S.att.data!=null){
     const open=document.createElement('button');
     open.type='button';
     open.className='att-open';
@@ -10327,6 +10328,7 @@ function showAttChip(){
          shape rather than reading it twice or forking the parser - one path
          into the editor, and it is the one the tests already cover. */
       try{
+        if(_xl){ _openXlsxAsSheet(S.att); return; }
         const name=S.att.name, text=String(S.att.data||'');
         handleSheetFile({ name, text: () => Promise.resolve(text) });
       }catch(e){ try{ toast(T('That file could not be opened as a table.'),'error',4500); }catch(_){} }
@@ -36321,46 +36323,25 @@ function renderIntegrationsView(){
   try{ if(typeof _rmcpLoad==='function') setTimeout(()=>{ _rmcpLoad(false).then(ch=>{ if(ch) _paintIntegrations(); }); }, 0); }catch(e){}
 }
 window.renderIntegrationsView=renderIntegrationsView;
-/* 6. EXTENSIONS VIEW - real file editors */
-/* NO ROWS MEANS NO ROWS, and an empty file used to mean one empty cell.
-
-   `''.trim().split('\n')` is `['']`, so this returned [['']] for an empty file -
-   one row, one blank column. Every caller then tested `!data.length`, which was
-   false, so the "that file has no readable rows" message could never be shown
-   and an empty CSV opened an empty grid with no explanation. A guard that
-   cannot pass is a guard that is not there.
-
-   Returning [] for nothing is the honest answer, and it makes every one of
-   those existing checks start working rather than needing a new one at each
-   call site. */
-function parseCSV(text){
-  const t=String(text||'').trim();
-  if(!t) return [];
-  return t.split('\n').map(l=>{
-    const cols=[]; let cur='',inQ=false;
-    for(let i=0;i<l.length;i++){if(l[i]==='"')inQ=!inQ;else if(l[i]===','&&!inQ){cols.push(cur.trim());cur='';}else cur+=l[i];}
-    cols.push(cur.trim()); return cols;
-  /* And a file that is only blank lines or commas has no content either. */
-  }).filter(row => row.some(c => c !== ''));
+/* 6. THE SPREADSHEET EDITOR - sheet.js, fetched the first time a table is
+   opened, the way the Office exporter is. Reading CSV, formulas, sorting,
+   totals, duplicates and summaries all live there; this is the door. */
+let _sheetP = null;
+function _loadSheet(){
+  if(window.amvSheet) return Promise.resolve(true);
+  if(_sheetP) return _sheetP;
+  _sheetP = new Promise(res => {
+    const s = document.createElement('script');
+    s.src = 'sheet.js';
+    s.onload = () => res(!!window.amvSheet);
+    s.onerror = () => { _sheetP = null; s.remove(); res(false); };
+    document.head.appendChild(s);
+  });
+  return _sheetP;
 }
-function csvToTable(data){
-  if(!data||!data.length) return '';
-  const h=data[0], rows=data.slice(1);
-  return `<table id="sheet-tbl" style="width:100%;border-collapse:collapse;font-size:var(--t-sm)"><thead><tr>${h.map(hd=>`<th contenteditable="true" style="background:rgba(85,144,255,.12);border:1px solid rgba(255,255,255,.1);padding:8px 10px;text-align:left;font-weight:600;white-space:nowrap;position:sticky;top:0">${escH(hd)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${h.map((_,ci)=>`<td contenteditable="true" style="border:1px solid rgba(255,255,255,.06);padding:6px 10px;color:var(--tx)">${escH(row[ci]||'')}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
-}
-function tableToCSV(){
-  const t=document.getElementById('sheet-tbl'); if(!t) return '';
-  return Array.from(t.querySelectorAll('tr')).map(tr=>Array.from(tr.querySelectorAll('th,td')).map(c=>'"'+c.textContent.replace(/"/g,'""')+'"').join(',')).join('\n');
-}
-/* The two download buttons used to carry their whole body in an onclick
-   attribute. Named functions instead: the attribute form is the last thing
-   holding 'unsafe-inline' in the script CSP, and a download that silently
-   produced nothing had nowhere to say so. */
 function _sheetDownloadCSV(){
-  const csv=tableToCSV();
-  if(!csv){ toast('There is nothing in this sheet to download yet.','error'); return; }
-  _saveBlob(new Blob([csv],{type:'text/csv'}), 'amv_'+Date.now()+'.csv');
-  toast('Downloaded','success');
+  if(window.amvSheet) window.amvSheet.downloadCSV();
+  else toast(T('There is nothing in this sheet to download yet.'),'error');
 }
 function _saveBlob(blob,name){
   const url=URL.createObjectURL(blob);
@@ -36384,7 +36365,6 @@ try{
   window._toastResultCopied=_toastResultCopied;
 }catch(e){}
 
-let _sheetData=[];
 /* The screen the editor was opened from. openSheetEditor writes straight into
    #vc without touching S.tab, so nothing else records where you came from -
    and Close used to send everybody to a tab that renders Crew, which is not a
@@ -36398,11 +36378,12 @@ try{ window._sheetClose=_sheetClose; }catch(e){}
 function handleSheetFile(file){
   // An unreadable or corrupt file used to do nothing at all, with no error -
   // the user just saw their upload vanish.
-  file.text().then(text=>{
+  file.text().then(async text=>{
     try{
-      _sheetData=parseCSV(text);
-      if(!_sheetData || !_sheetData.length){ toast('That file has no readable rows. Check it is a CSV.','error',4500); return; }
-      openSheetEditor(_sheetData,file.name);
+      if(!await _loadSheet()){ toast(T('The spreadsheet editor could not be loaded. Check your connection and try again.'),'error',6000); return; }
+      const rows=window.amvSheet.parse(text);
+      if(!rows.length){ toast('That file has no readable rows. Check it is a CSV.','error',4500); return; }
+      openSheetEditor(rows,file.name);
     }catch(e){
       toast('That file could not be read as a spreadsheet.','error',4500);
       try{ _logErr('sheet.parse', e); }catch(_){}
@@ -36412,54 +36393,43 @@ function handleSheetFile(file){
     try{ _logErr('sheet.read', e); }catch(_){}
   });
 }
-function openSheetEditor(data,name){
+/* An Excel file read for a chat: its sheets, with their formulas, back into
+   the editor. */
+function _openXlsxAsSheet(att){
+  _loadSheet().then(ok=>{
+    if(!ok){ toast(T('The spreadsheet editor could not be loaded. Check your connection and try again.'),'error',6000); return; }
+    const sheets=window.amvSheet.fromReaderText(att&&att.data);
+    if(!sheets.length){ toast(T('No sheet in this file has cells to open.'),'error',5000); return; }
+    openSheetEditor(sheets[0].rows, att.name, { sheets, sheetIx:0 });
+  });
+}
+/* The frame is drawn at once - name, Close, the question box - and the table
+   fills in when the editor arrives. */
+function openSheetEditor(data,name,opts){
   const vc=$('vc'); if(!vc) return;
   _sheetFrom=(typeof S!=='undefined'&&S.tab)?S.tab:'chat';
-  vc.innerHTML=`<div style="display:flex;flex-direction:column;height:100%">
-<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;background:rgba(13,17,23,.95);border-bottom:1px solid rgba(255,255,255,.07);flex-shrink:0">
-  <span style="font-size:var(--t-base);font-weight:600">&#128200; ${escH(name||'Spreadsheet')}</span>
-  <span style="font-size:var(--t-xs);color:var(--mu)">${data.length-1} rows &middot; ${data[0]&&data[0].length||0} cols</span>
-  <div style="margin-left:auto;display:flex;gap:6px">
-    <button class="btn bs" data-dact="_sheetDownloadCSV">&#8681; Download</button>
-    <button class="btn bs" data-dact="_sheetClose">&#10005; Close</button>
-  </div>
-</div>
-<div style="flex:1;overflow:auto;padding:12px">${csvToTable(data)}</div>
-<div style="background:rgba(13,17,23,.97);border-top:1px solid rgba(255,255,255,.1);padding:12px 14px;flex-shrink:0">
-  <div style="font-size:var(--t-2xs);color:#7cb8ff;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:7px">AMV AI Toolbar</div>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    ${['Analyze trends','Find duplicates','Add totals row','Sort by first column','Summarize data'].map(q=>`<button class="btn bs" data-dact="runSheetAI" data-darg="${q}">${q}</button>`).join('')}
-  </div>
-  <div style="display:flex;gap:8px">
-    <input type="text" id="sheet-inp" placeholder="Ask AMV anything about this spreadsheet..." style="flex:1;font-size:var(--t-base)">
-    <button class="btn bp" id="sheet-ask" style="font-size:var(--t-base);padding:8px 18px">Ask</button>
-  </div>
-  <div id="sheet-res" style="display:none;margin-top:10px;font-size:var(--t-sm);color:var(--mu);background:var(--s2);border-radius:var(--r-md);padding:12px;max-height:180px;overflow-y:auto;white-space:pre-wrap;line-height:1.65"></div>
-</div></div>`;
+  vc.innerHTML='<div class="sh-wrap">'
+    +'<div class="sh-head"><span class="sh-name">'+escH(name||T('Spreadsheet'))+'</span><span class="sh-meta" id="sh-meta"></span>'
+    +'<div class="sh-acts"><button type="button" class="btn bs" data-dact="_sheetDownloadCSV">'+escH(T('Download CSV'))+'</button>'
+    +'<button type="button" class="btn bs" data-dact="_sheetClose">'+escH(T('Close'))+'</button></div></div>'
+    +'<div class="sh-body"><p class="sh-loading">'+escH(T('Opening the table…'))+'</p></div>'
+    +'<div class="sh-ai"><div class="sh-ai-h">'+escH(T('Ask AMV about this table'))+'</div>'
+    +'<div class="sh-ai-q">'+['Analyze trends','Summarize data'].map(q=>'<button type="button" class="btn bs" data-dact="runSheetAI" data-darg="'+escH(q)+'">'+escH(T(q))+'</button>').join('')+'</div>'
+    +'<div class="sh-ai-row"><input type="text" id="sheet-inp" placeholder="'+escH(T('Ask a question, or ask for a change'))+'" aria-label="'+escH(T('Ask AMV about this table'))+'">'
+    +'<button type="button" class="btn bp" id="sheet-ask">'+escH(T('Ask'))+'</button></div>'
+    +'<div id="sheet-res" class="sh-res" aria-live="polite" hidden></div></div></div>';
   on($('sheet-ask'),'click',()=>runSheetAI($('sheet-inp')&&$('sheet-inp').value));
   on($('sheet-inp'),'keydown',e=>{if(e.key==='Enter')runSheetAI($('sheet-inp')&&$('sheet-inp').value);});
+  const box=vc.querySelector('.sh-body');
+  _loadSheet().then(ok=>{
+    if(!box.isConnected) return;          /* left before it arrived */
+    if(ok){ window.amvSheet.open(vc, data, name, opts); return; }
+    box.innerHTML='<p class="sh-loading">'+escH(T('The spreadsheet editor could not be loaded. Check your connection and try again.'))+'</p>'
+      +'<button type="button" class="btn bs" id="sh-retry">'+escH(T('Try again'))+'</button>';
+    on($('sh-retry'),'click',()=>openSheetEditor(data,name,opts));
+  });
 }
-async function runSheetAI(query){
-  if(!query||!query.trim()) return;
-  const btn=$('sheet-ask'),res=$('sheet-res');
-  if(btn){btn.disabled=true;btn.textContent='Thinking...';}
-  if(res){res.style.display='block';res.textContent='Analyzing...';}
-  const mk=loadStr('amv_mk');
-  if(!mk){toast('AMV isn’t connected yet - ask the workspace owner to switch it on.','error');if(btn){btn.disabled=false;btn.textContent='Ask';}return;}
-  try{
-    const reply=await aiComplete('You are a data analyst. Spreadsheet (CSV):\n\n'+tableToCSV().slice(0,8000)+'\n\nRequest: '+query+'\n\nIf modifying data, return ONLY the complete modified CSV. Otherwise answer clearly.', null, {model:(typeof qModel==='function'?qModel('explain'):'amv-core'), max_tokens:2000, noLang:true});
-    const looksCSV=reply.split('\n').filter(l=>l.includes(',')).length>=2;
-    if(looksCSV&&reply.split('\n').length>2){
-      _sheetData=parseCSV(reply);
-      const scroll=document.querySelector('#sheet-tbl')&&document.querySelector('#sheet-tbl').closest('[style*="overflow"]');
-      if(scroll) scroll.innerHTML=csvToTable(_sheetData);
-      if(res){res.style.display='block';res.textContent='Table updated - '+_sheetData.length+' rows.';}
-      toast('Spreadsheet updated','success');
-    } else if(res){res.style.display='block';res.textContent=reply;}
-    if($('sheet-inp')) $('sheet-inp').value='';
-  }catch(e){if(res){res.style.display='block';res.textContent='Error: '+e.message;}}
-  if(btn){btn.disabled=false;btn.textContent='Ask';}
-}
+function runSheetAI(query){ if(window.amvSheet) window.amvSheet.ask(query); }
 
 window.amvOpenFile=amvOpenFile;
 /* 7. AUTOMATION VIEW - dark modal, real task queue */
@@ -36484,8 +36454,9 @@ async function _bgRunNext(){
   if(!task) return;
   _bgQueue.running=true;
   task.status='running';
-  const mk=loadStr('amv_mk');
-  if(!mk){task.status='failed';task.error='AMV engine not connected';_bgQueue.running=false;return;}
+  /* It used to ask for amv_mk, a key setting nothing has written since the
+     engine moved behind the server - so every task failed as "not connected". */
+  if(!_aiBackendReady()){task.status='failed';task.error='AMV isn’t connected yet';_bgQueue.running=false;return;}
   try{
     /* THE TWO BACKGROUND CHECKS ASK THE SERVER TOO.
 

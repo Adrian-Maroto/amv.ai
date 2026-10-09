@@ -2910,7 +2910,8 @@ function showAttChip(){
      most people want and what the chat box is for. This is offered ALONGSIDE
      it: the file is on the chip either way, and a CSV also gets a way into the
      editor. Nothing is taken away by adding it. */
-  if(_attIsSheet(S.att) && typeof handleSheetFile==='function' && S.att.data!=null){
+  const _xl = S.att.format==='xlsx';
+  if((_attIsSheet(S.att) || _xl) && typeof handleSheetFile==='function' && S.att.data!=null){
     const open=document.createElement('button');
     open.type='button';
     open.className='att-open';
@@ -2922,6 +2923,7 @@ function showAttChip(){
          shape rather than reading it twice or forking the parser - one path
          into the editor, and it is the one the tests already cover. */
       try{
+        if(_xl){ _openXlsxAsSheet(S.att); return; }
         const name=S.att.name, text=String(S.att.data||'');
         handleSheetFile({ name, text: () => Promise.resolve(text) });
       }catch(e){ try{ toast(T('That file could not be opened as a table.'),'error',4500); }catch(_){} }

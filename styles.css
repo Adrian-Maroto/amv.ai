@@ -16656,3 +16656,80 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .lib-foot{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); flex-wrap:wrap; margin-top:var(--sp-3); }
 .lib-foot .pj-note{ margin:0; }
 .pj-adds{ display:inline-flex; gap:var(--sp-2); flex-wrap:wrap; }
+
+/* ── LAYER A296: the spreadsheet editor ─────────────────────────────────────
+   Replaces the editor's inline dark-only colours, which ignored light mode.
+   Cells are spans inside the table cells so a click lands on text that can be
+   edited; the row numbers and header stick while the table scrolls; the sort
+   arrow is drawn by CSS so a header's text is only its name. */
+.sh-wrap{ display:flex; flex-direction:column; height:100%; min-height:0; background:var(--bg); }
+.sh-head{ display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap; padding:var(--sp-2) var(--sp-4); border-bottom:1px solid var(--bd); background:var(--s1); }
+.sh-name{ font-weight:600; font-size:var(--t-md); color:var(--tx); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:50vw; }
+.sh-meta{ font-size:var(--t-xs); color:var(--mu); }
+.sh-acts{ margin-left:auto; display:flex; gap:var(--sp-2); }
+.sh-body{ flex:1; min-height:0; display:flex; flex-direction:column; gap:var(--sp-2); padding:var(--sp-3) var(--sp-4); }
+.sh-loading{ color:var(--mu); font-size:var(--t-sm); margin:0; }
+.sh-tools{ display:flex; flex-wrap:wrap; gap:var(--sp-2); align-items:center; }
+.sh-tools .btn[aria-pressed="true"]{ border-color:var(--accent); color:var(--accent-txt); }
+.sh-filter{ flex:1 1 160px; min-width:120px; max-width:260px; padding:7px 10px; background:var(--bg); border:1px solid var(--bd);
+  border-radius:var(--r-md); color:var(--tx); font-family:var(--fn); font-size:var(--t-sm); }
+.sh-filter:focus{ outline:none; border-color:var(--accent-txt); }
+.sh-pick{ display:inline-flex; align-items:center; gap:var(--sp-2); font-size:var(--t-sm); color:var(--mu); }
+.sh-pick select,.sh-pv-ctl select{ background:var(--bg); color:var(--tx); border:1px solid var(--bd); border-radius:var(--r-sm);
+  padding:5px 8px; font-family:var(--fn); font-size:var(--t-sm); }
+.sh-fbar{ font-family:var(--mn); font-size:var(--t-sm); color:var(--mu); min-height:1.4em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sh-fbar b{ color:var(--tx); margin-right:var(--sp-2); }
+.sh-note{ font-size:var(--t-sm); color:var(--mu); display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
+.sh-note:empty{ display:none; }
+.sh-scroll{ flex:1; min-height:160px; overflow:auto; border:1px solid var(--bd); border-radius:var(--r-md); background:var(--bg); }
+.sh-tbl{ border-collapse:separate; border-spacing:0; font-size:var(--t-sm); min-width:100%; }
+.sh-tbl th,.sh-tbl td{ border-right:1px solid var(--bd); border-bottom:1px solid var(--bd); padding:0; text-align:left; vertical-align:top; color:var(--tx); }
+.sh-tbl thead th{ position:sticky; top:0; z-index:1; background:var(--s2); font-weight:600; }
+.sh-tbl tfoot td,.sh-tbl tfoot th{ position:sticky; bottom:0; background:var(--s2); font-weight:600; padding:6px 10px; }
+.sh-tbl .sh-rn{ position:sticky; left:0; z-index:1; min-width:2.5em; padding:6px 8px; background:var(--s1); color:var(--dim);
+  font-weight:400; text-align:right; font-variant-numeric:tabular-nums; }
+.sh-tbl thead .sh-rn{ z-index:2; }
+.sh-th{ display:flex; align-items:center; }
+.sh-th .sh-cell{ flex:1; }
+.sh-cell{ display:block; min-width:64px; min-height:1.4em; padding:6px 10px; outline:none; white-space:pre-wrap; color:var(--tx); }
+.sh-cell:focus{ background:var(--bg); box-shadow:inset 0 0 0 2px var(--accent); }
+.sh-n .sh-cell{ text-align:right; font-variant-numeric:tabular-nums; }
+.sh-f .sh-cell{ font-weight:500; }
+.sh-err .sh-cell{ color:var(--red); }
+.sh-dup td{ background:color-mix(in srgb, var(--gold) 16%, transparent); }
+.sh-sort{ background:none; border:none; color:var(--mu); cursor:pointer; min-width:28px; min-height:28px; padding:0 6px; font-family:var(--fn); font-size:var(--t-sm); }
+.sh-sort::after{ content:'↕'; }
+.sh-sort[data-dir="asc"]::after{ content:'↑'; color:var(--accent-txt); }
+.sh-sort[data-dir="desc"]::after{ content:'↓'; color:var(--accent-txt); }
+.sh-sort:hover,.sh-sort:focus-visible{ color:var(--tx); }
+.sh-stat{ font-size:var(--t-xs); color:var(--mu); min-height:1.2em; margin:0; }
+.sh-pivot{ flex:none; border:1px solid var(--bd); border-radius:var(--r-md); padding:var(--sp-3); background:var(--s1); max-height:40vh; overflow:auto; }
+.sh-pv-ctl{ display:flex; flex-wrap:wrap; gap:var(--sp-3); align-items:center; margin-bottom:var(--sp-2); font-size:var(--t-sm); color:var(--mu); }
+.sh-pv-tbl td,.sh-pv-tbl th{ padding:6px 10px; }
+.sh-ai{ flex:none; border-top:1px solid var(--bd); background:var(--s1); padding:var(--sp-3) var(--sp-4); }
+.sh-ai-h{ font-size:var(--t-xs); font-weight:600; color:var(--mu); margin-bottom:var(--sp-2); }
+.sh-ai-q{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-bottom:var(--sp-2); }
+.sh-ai-row{ display:flex; gap:var(--sp-2); }
+.sh-ai-row input{ flex:1; min-width:0; padding:8px 12px; background:var(--bg); border:1px solid var(--bd); border-radius:var(--r-md);
+  color:var(--tx); font-family:var(--fn); font-size:var(--t-base); }
+.sh-ai-row input:focus{ outline:none; border-color:var(--accent-txt); }
+.sh-res{ margin-top:var(--sp-2); padding:var(--sp-3); max-height:180px; overflow:auto; background:var(--s2); border-radius:var(--r-md);
+  color:var(--tx); font-size:var(--t-sm); line-height:1.6; white-space:pre-wrap; }
+.sh-res p{ margin:0 0 var(--sp-2); }
+/* On a phone the page scrolls rather than squeezing the table to nothing
+   between the tools and the question box. */
+@media (max-width:640px){
+  /* #vc never scrolls, so the editor does: everything at its natural height,
+     one scroll for the whole screen. */
+  .sh-wrap{ height:100%; overflow-y:auto; }
+  .sh-body,.sh-ai{ flex:none; }
+  .sh-head,.sh-body,.sh-ai{ padding-left:var(--sp-3); padding-right:var(--sp-3); }
+  .sh-name{ max-width:60vw; }
+  .sh-scroll{ flex:none; height:60vh; }
+  .sh-filter{ max-width:none; flex-basis:100%; }
+}
+@media (pointer:coarse){
+  .sh-sort{ min-width:44px; min-height:44px; }
+  .sh-tools .btn,.sh-acts .btn,.sh-ai .btn,.sh-note .btn{ min-height:44px; }
+}
+.sh-pv-tbl td.sh-n{ text-align:right; font-variant-numeric:tabular-nums; }

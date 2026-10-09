@@ -14573,3 +14573,37 @@ Rules:
   call having returned.
 - Files kept for later go in IndexedDB, not localStorage: localStorage is a
   few megabytes shared with saved chats, and filling it stops chats saving.
+
+## 566. A readiness check that reads a setting nothing writes
+
+The spreadsheet's AI toolbar and the background Gmail and calendar checks began
+with `if(!loadStr('amv_mk'))` and refused with "AMV isn't connected". `amv_mk`
+was the browser-held model key from before the engine moved behind the server.
+Nothing has written it since, so all three refused every time, for everybody,
+with a message that looked like an honest degradation.
+
+The STORES NOTHING WRITES stage catches this shape for server KV kinds; it
+does not look at localStorage keys, and this one slipped through.
+
+Rules:
+- "Is the engine available" has one answer: `_aiBackendReady()`. Do not
+  re-derive it from a stored setting.
+- A refusal that reads like honest degradation needs a test where the
+  condition is TRUE and the feature runs. Otherwise the refusal cannot be
+  told apart from a feature that never works.
+
+## 567. A total row is data to the eye and a formula to the sheet
+
+The new spreadsheet editor added up columns for the totals row, the column
+summary and the pivot. The first screenshot showed Margin summing to 11,740 on
+a sheet whose own Total row said 5,870. The sheet's Total row (=SUM(E2:E6))
+had been added in as one more row, which doubled every total.
+
+A row whose formulas point at OTHER rows summarises them. Such a row stays
+where it is when sorting (sorting would otherwise scatter it). It is also
+left out of everything that adds a column up again: the totals row, the
+column summary, the pivot, and the =SUM written to Excel.
+
+Rule: before showing a number someone will act on, check it against a total
+the person can already see. The screenshot caught this; the first test draft
+had asserted the doubled figure.

@@ -174,8 +174,10 @@ function _mdTables(md){
   return [];
 }
 function amvHasTable(md){ return _mdTables(md).length > 0; }
-function amvXlsx(md, names){
-  const tables = _mdTables(md);
+function amvXlsx(md, names){ return _xlsx(_mdTables(md), names); }
+/* The spreadsheet editor hands its rows over directly - a cell may hold a
+   pipe or a line break that a markdown table could not. */
+function _xlsx(tables, names){
   if(!tables.length) return null;
   const sheet = rows => _XH + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
     + rows.map((r, ri) => '<row r="' + (ri + 1) + '">' + r.map((v, ci) => {
@@ -321,5 +323,5 @@ function _exportMenu(idx, anchor){
   setTimeout(() => document.addEventListener('click', close), 30);
 }
 window.amvDocx = amvDocx; window.amvXlsx = amvXlsx; window.amvPptx = amvPptx;
-window.amvHasTable = amvHasTable; window.amvExportMsgAs = exportMsgAs; window._amvExportMenu = _exportMenu;
+window.amvXlsxRows = _xlsx; window.amvHasTable = amvHasTable; window.amvExportMsgAs = exportMsgAs; window._amvExportMenu = _exportMenu;
 })();
