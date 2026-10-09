@@ -16634,7 +16634,7 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .pj-note{ font-size:var(--t-sm); color:var(--mu); margin:0 0 var(--sp-2); }
 .pj-mem{ white-space:normal; }
 .pj-banner{ display:flex; flex-wrap:wrap; justify-content:center; align-items:center; column-gap:var(--sp-1); }
-.pj-banner .pj-manage{ background:none; border:none; padding:0 0 0 var(--sp-1); color:var(--accent-txt); font:inherit; cursor:pointer; text-decoration:underline; }
+.pj-banner .pj-manage,.study-banner .pj-manage{ background:none; border:none; padding:0 0 0 var(--sp-1); color:var(--accent-txt); font:inherit; cursor:pointer; text-decoration:underline; }
 
 /* ── LAYER A294: the answer toolbar and its download menu ───────────────────
    Eight actions no longer fit in one row at phone width, and a row that did
@@ -16733,3 +16733,17 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
   .sh-tools .btn,.sh-acts .btn,.sh-ai .btn,.sh-note .btn{ min-height:44px; }
 }
 .sh-pv-tbl td.sh-n{ text-align:right; font-variant-numeric:tabular-nums; }
+
+/* ── LAYER A297: study mode and templates ──────────────────────────────────
+   The two quiet switches under the greeting sit side by side; the template
+   form is the project panel's narrow column. */
+.chome-toggles{ display:flex; flex-wrap:wrap; justify-content:center; gap:var(--sp-2); }
+.study-banner{ border-style:solid; }
+/* Under the greeting the banner has no conversation column to sit in, so it
+   keeps its own distance from the screen's edges. */
+.chome .temp-row{ align-self:stretch; padding:0 var(--sp-4); box-sizing:border-box; }
+.tpl-ob{ max-width:560px; width:100%; }
+/* Its button keeps a finger-sized target on a line of its own, rather than
+   stretching the sentence around it. */
+.study-banner .pj-manage{ display:block; margin:var(--sp-1) auto 0; padding:0 var(--sp-3); min-height:36px; }
+@media (pointer:coarse){ .study-banner .pj-manage{ min-height:44px; } }

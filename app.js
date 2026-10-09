@@ -3002,8 +3002,8 @@ const _SYNC_EXTRA = ['sessions','skills','handoffs','profile','projects'];
    unbounded one is an unbounded request. Bounded on the way IN, where the
    value crosses into this browser, rather than at each of the places that
    later read it. */
-const _PROFILE_FIELDS = ['nickname','work','instructions'];
-const _PROFILE_MAX = { nickname: 60, work: 400, instructions: 2000 };
+const _PROFILE_FIELDS = ['nickname','work','instructions','personality'];
+const _PROFILE_MAX = { nickname: 60, work: 400, instructions: 2000, personality: 20 };
 function _profileSnapshot(){
   const out = { updatedAt: 0 };
   try{ out.updatedAt = +(loadStr('amv_profile_at')||0) || 0; }catch(e){}
@@ -6811,6 +6811,105 @@ function branchConv(idx){
   toast(T('Branched into a new chat. The original is unchanged.'), 'success', 3500);
 }
 try{ Object.assign(window, { startTempChat, branchConv }); }catch(e){}
+/* ── HOW AMV TALKS, AND STUDY MODE ─────────────────────────────────────────
+
+   A PERSONALITY is a standing choice, kept with the profile so it follows the
+   person to every device and every surface (chat through _profileContext, the
+   other surfaces through _userStyle). One sentence each, written as an
+   instruction the engine can follow. A tone set for one chat ("keep this chat
+   motivational") still wins, because it comes later in the prompt and was
+   said more recently.
+
+   STUDY MODE belongs to one conversation, like the temporary flag: AMV
+   teaches rather than answers, so the homework is learned rather than copied.
+   It says so on the screen, and one press turns it off. */
+const PERSONALITIES = [
+  ['', 'Default', 'Clear, direct and friendly.'],
+  ['concise', 'Concise', 'The answer first, nothing extra.'],
+  ['warm', 'Warm', 'Encouraging and patient.'],
+  ['professional', 'Professional', 'Precise and formal, like a senior advisor.'],
+  ['candid', 'Candid', 'Tells you plainly when something is wrong.'],
+  ['playful', 'Playful', 'Lively and witty, never at accuracy’s cost.'],
+];
+const _PERSONA_TEXT = {
+  concise: 'Be brief and direct. Lead with the answer; no preamble and no recap. Use a list only when it genuinely helps.',
+  warm: 'Be warm, patient and encouraging, like a supportive expert friend. Acknowledge how the person feels when it matters, without flattery.',
+  professional: 'Be precise and formal, like a senior advisor writing to a client: structured, measured, no slang and no emoji.',
+  candid: 'Be candid. When something is wrong, risky or a bad idea, say so plainly and explain why; do not soften a conclusion to please. Stay respectful.',
+  playful: 'Be lively, with light wit where it fits - but never at the expense of accuracy or clarity, and drop it for anything serious.',
+};
+function _personality(){ try{ const k = loadStr('amv_personality') || ''; return _PERSONA_TEXT[k] ? k : ''; }catch(e){ return ''; } }
+function _personalityLine(){ const k = _personality(); return k ? 'Personality the user chose: ' + _PERSONA_TEXT[k] : ''; }
+
+/* ── Study mode ─────────────────────────────────────────────────────────── */
+const _STUDY_PROMPT = '\n\n[STUDY MODE - on for this conversation]\n'
+  + 'The person is learning, not looking for an answer to copy. Work like an excellent tutor:\n'
+  + '- If it is unclear what they already know or what they are working towards (an exam, homework, curiosity), ask once, briefly.\n'
+  + '- Teach in small steps: explain one idea, then ask a question that makes them use it, and wait for their answer.\n'
+  + '- Do not hand over the final answer to a homework- or exam-style problem straight away. Give a hint, then a stronger hint, or work a similar example. Give the full solution when they ask for it after trying, and explain every step.\n'
+  + '- When they answer, say what is right, correct what is wrong precisely and kindly, and say why.\n'
+  + '- Check understanding with one quick question at a time; offer a short quiz when a topic is done.\n'
+  + '- Match their language and level. Keep each turn short enough to read in under a minute.\n'
+  + '- Close a topic with a three-point summary and offer practice questions.';
+function _isStudyChat(){ try{ const c = getCurConv(); return !!(c && c.study); }catch(e){ return false; } }
+function _studyContext(){ return _isStudyChat() ? _STUDY_PROMPT : ''; }
+function toggleStudyMode(id){
+  let c = null;
+  try{ c = id ? (S.convs || []).find(x => x && x.id === id) : getCurConv(); }catch(e){}
+  if(!c){ try{ newChat(); c = getCurConv(); }catch(e){} }
+  if(!c) return;
+  c.study = !c.study;
+  c.updated = Date.now();
+  try{ _autoSave(); }catch(e){}
+  try{ if(c.id === S.cur) renderChatMsgs(); }catch(e){}
+  try{ toast(c.study ? T('Study mode is on for this chat.') : T('Study mode is off.'), 'success', 2500); }catch(e){}
+}
+function _studyBannerHTML(){
+  return _isStudyChat()
+    ? '<div class="temp-row"><div class="temp-banner study-banner" role="note"><b>' + escH(T('Study mode')) + '</b> · '
+      + escH(T('AMV teaches step by step and checks your understanding, rather than handing over answers.'))
+      + ' <button type="button" class="pj-manage" data-dact="toggleStudyMode">' + escH(T('Turn off')) + '</button></div></div>'
+    : '';
+}
+
+/* ── Templates: fill in the blanks, then send ──────────────────────────────
+   A saved prompt like "Write an essay on [TOPIC]" used to be pasted into the
+   box with the brackets still in it. Now each [BLANK] becomes a field. */
+function _promptText(p){ return String((p && (p.text != null ? p.text : p.body)) || ''); }
+function _templateBlanks(text){
+  const seen = new Set(), out = [];
+  String(text || '').replace(/\[([A-Z][A-Z0-9 \/&'-]{0,40})\]/g, (m, name) => { if(!seen.has(name)){ seen.add(name); out.push(name); } return m; });
+  return out;
+}
+function openTemplateForm(p){
+  const text = _promptText(p), blanks = _templateBlanks(text);
+  const r = $('ovr'); if(!r) return;
+  const nice = n => n.charAt(0) + n.slice(1).toLowerCase();
+  r.innerHTML = '<div class="ov" id="tpl-bg"><div class="ob tpl-ob" role="dialog" aria-modal="true" aria-labelledby="tpl-h">'
+    + '<button class="oc" data-dact="closeOvr" aria-label="' + escH(T('Close')) + '">×</button>'
+    + '<h2 id="tpl-h">' + escH(p.title || T('Template')) + '</h2>'
+    + '<p class="ob-sub">' + escH(T('Fill in the blanks. Anything left empty stays in brackets for you to edit.')) + '</p>'
+    + '<form id="tpl-form" class="af">'
+    + blanks.map((b, i) => '<div><label class="lbl" for="tpl-' + i + '">' + escH(nice(b)) + '</label>'
+        + (/CODE|TEXT|DOCUMENT/.test(b) ? '<textarea id="tpl-' + i + '" rows="4" class="pj-instr"></textarea>' : '<input type="text" id="tpl-' + i + '">') + '</div>').join('')
+    + '<div class="pj-row"><button type="submit" class="btn bp">' + escH(T('Put it in the chat box')) + '</button></div></form></div></div>';
+  on($('tpl-form'), 'submit', e => {
+    e.preventDefault();
+    let out = text;
+    blanks.forEach((b, i) => { const v = String(($('tpl-' + i) || {}).value || '').trim(); if(v) out = out.split('[' + b + ']').join(v); });
+    closeOvr();
+    _putInComposer(out);
+  });
+  setTimeout(() => { try{ const f = $('tpl-0'); if(f) f.focus(); }catch(e){} }, 30);
+}
+function _putInComposer(text){
+  setTab('chat');
+  setTimeout(() => {
+    const ta = $('mta'); if(!ta) return;
+    ta.value = text; ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 260) + 'px'; ta.focus();
+  }, 100);
+}
+try{ Object.assign(window, { toggleStudyMode, openTemplateForm }); }catch(e){}
 /* =====================================================================
    EMBEDDABLE WIDGET - the compact chat panel shown inside the iframe that
    third-party sites load via /widget.js. It talks to the PUBLIC endpoint
@@ -8464,7 +8563,7 @@ async function _callAITurn(msgs, _opts) {
       }
     }
   }catch(e){}
-  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_chatToneContext()+_projectContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
+  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_chatToneContext()+_projectContext()+_studyContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
 
   // Add streaming placeholder message
   _streamBubbleReset();
@@ -9797,7 +9896,11 @@ function renderChatMsgs() {
            in words rather than as a state somebody has to remember. */
         (_isTempChat()
           ? _tempBannerHTML()
-          : '<button type="button" class="temp-toggle" data-dact="startTempChat">'+escH(T('Temporary chat'))+'</button>')+
+          : '')+_studyBannerHTML()+
+        '<div class="chome-toggles">'+
+          (_isTempChat() ? '' : '<button type="button" class="temp-toggle" data-dact="startTempChat">'+escH(T('Temporary chat'))+'</button>')+
+          (_isStudyChat() ? '' : '<button type="button" class="temp-toggle" data-dact="toggleStudyMode" title="'+escH(T('AMV teaches step by step instead of handing over answers'))+'">'+escH(T('Study mode'))+'</button>')+
+        '</div>'+
       '</div>'+
       /* THE NEW CHAT IS A GREETING AND SOME SMALL CHIPS, AND NOTHING ELSE.
 
@@ -9848,7 +9951,7 @@ function renderChatMsgs() {
   cm.innerHTML=
   /* Same card as the home screen, at the top of an open conversation - a
      returning user is just as likely to land in yesterday's chat. */
-  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+_tempBannerHTML()+_projectBannerHTML()+
+  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+_tempBannerHTML()+_projectBannerHTML()+_studyBannerHTML()+
   msgs.map((m,i)=>{
     const isU=m.r==='u';
     const rawText=m.d||(typeof m.c==='string'?m.c:'');
@@ -10662,6 +10765,7 @@ function showConvMenu(e,id){
     '<div class="ctxi" id="cm-proj">📁 Add to project</div>'+
     '<div class="ctxi" id="cm-export">⬇ Export as Markdown</div>'+
     '<div class="ctxi" id="cm-share">🔗 Share</div>'+
+    '<div class="ctxi" id="cm-study">🎓 '+(c&&c.study?escH(T('Turn off study mode')):escH(T('Study mode')))+'</div>'+
     '<div class="ctxi" id="cm-arch">🗄 Archive</div>'+
     '<div class="ctxd"></div>'+
     '<div class="ctxi danger" id="cm-del">🗑 Delete</div>';
@@ -10680,6 +10784,7 @@ function showConvMenu(e,id){
   on($('cm-export'),'click',()=>{ exportConv(id); menu.remove(); });
   on($('cm-share'),'click',()=>{ shareConv(id); menu.remove(); });
   on($('cm-arch'),'click',()=>{ archiveConv(id); menu.remove(); });
+  on($('cm-study'),'click',()=>{ toggleStudyMode(id); menu.remove(); });
   on($('cm-del'),'click',()=>{ deleteConv(id); menu.remove(); });
   const close=e2=>{ if(!menu.contains(e2.target)){ menu.remove(); document.removeEventListener('click',close); } };
   setTimeout(()=>document.addEventListener('click',close),50);
@@ -12395,7 +12500,7 @@ function _renderTeamManage(vc, team){
       '<button class="team-x" data-tsr-del="'+s.id+'" title="Remove">\u00d7</button></div>').join('')+'</div>';
     el.querySelectorAll('[data-tsr-use]').forEach(b=>on(b,'click',()=>{
       const s=shared.find(x=>x.id===b.dataset.tsrUse); if(!s) return;
-      if(s.kind==='prompt' && s.item){ S.prompts=S.prompts||[]; S.prompts.unshift({id:'p'+Date.now(),title:s.item.title||s.title,body:s.item.body||s.item.text||'',ts:Date.now()}); store('amv_pl',S.prompts); toast('Added to your prompts','success'); }
+      if(s.kind==='prompt' && s.item){ S.prompts=S.prompts||[]; S.prompts.unshift({id:'p'+Date.now(),title:s.item.title||s.title,cat:'Shared',text:s.item.body||s.item.text||'',custom:true,ts:Date.now()}); store('amv_pl',S.prompts); toast('Added to your prompts','success'); }
       else if(s.kind==='project' && s.item){ _saveWorkspaces([Object.assign({id:'w'+Date.now()},s.item)].concat(S.workspaces||[])); toast('Added to your projects','success'); }
     }));
     el.querySelectorAll('[data-tsr-del]').forEach(b=>on(b,'click',async()=>{
@@ -14560,12 +14665,13 @@ function renderPLList(cat){
   const search=($('pl-search')?.value||'').toLowerCase();
   let prompts=S.prompts;
   if(cat!=='All') prompts=prompts.filter(p=>p.cat===cat);
-  if(search) prompts=prompts.filter(p=>p.title.toLowerCase().includes(search)||p.text.toLowerCase().includes(search));
+  /* Prompts saved from the marketplace carry `body`, not `text`; every read goes through _promptText. */
+  if(search) prompts=prompts.filter(p=>String(p.title||'').toLowerCase().includes(search)||_promptText(p).toLowerCase().includes(search));
   if(!prompts.length){list.innerHTML=emptyState({icon:'\uD83D\uDD0D',title:'No prompts found',sub:'Try a different search or category - or create your own prompt with the + Create button above.',btn:{label:'Create a prompt',act:'_newPromptCTA'}});return;}
   list.innerHTML=prompts.map(p=>
     '<div class="plc">'+
-      '<div class="plt"><span>'+escH(p.title)+'</span><span class="plcat">'+p.cat+'</span></div>'+
-      '<div class="pltx">'+escH(p.text)+'</div>'+
+      '<div class="plt"><span>'+escH(p.title||'')+'</span><span class="plcat">'+escH(p.cat||T('Saved'))+'</span></div>'+
+      '<div class="pltx">'+escH(_promptText(p))+'</div>'+
       '<div style="display:flex;gap:5px;margin-top:9px">'+
         '<button class="btn bp" style="font-size:var(--t-xs);padding:4px 11px" data-dact="usePrompt" data-darg="'+p.id+'">Use Prompt</button>'+
         '<button class="btn bs" style="font-size:var(--t-xs);padding:4px 11px" data-dact="copyPrompt" data-darg="'+p.id+'">Copy</button>'+
@@ -14576,13 +14682,14 @@ function renderPLList(cat){
 }
 function usePrompt(id){
   const p=S.prompts.find(x=>x.id===id); if(!p) return;
-  setTab('chat');
-  setTimeout(()=>{ const ta=$('mta'); if(ta){ta.value=p.text;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,130)+'px';ta.focus();} },100);
+  /* Blanks like [TOPIC] become a short form rather than brackets in the box. */
+  if(_templateBlanks(_promptText(p)).length){ openTemplateForm(p); return; }
+  _putInComposer(_promptText(p));
   toast('Prompt loaded into chat','success');
 }
 function copyPrompt(id){
   const p=S.prompts.find(x=>x.id===id); if(!p) return;
-  navigator.clipboard?.writeText(p.text).then(()=>toast('Prompt copied','success'));
+  navigator.clipboard?.writeText(_promptText(p)).then(()=>toast('Prompt copied','success'));
 }
 function deletePrompt(id){
   S.prompts=S.prompts.filter(p=>p.id!==id);
@@ -32113,6 +32220,7 @@ function _profileContext(){
     if(nick) parts.push('The user prefers to be called '+nick+'.');
     if(work) parts.push('Their work area: '+work+'.');
     if(instr) parts.push('User instructions to always follow: '+instr);
+    const pers=_personalityLine(); if(pers) parts.push(pers);
     return parts.length?('\n\n[About the user]\n'+parts.join(' ')):'';
   }catch(e){ return ''; }
 }
@@ -32203,6 +32311,7 @@ function _userStyle(){
     const tone=_chatTone();
     const bits=[];
     if(instr) bits.push(instr);
+    const pers=_personalityLine(); if(pers) bits.push(pers);
     if(tone) bits.push(tone);
     return bits.length ? ('\n\nHow this user wants you to work: '+bits.join(' ')) : '';
   }catch(e){ return ''; }
@@ -32496,6 +32605,10 @@ function _renderSetPaneInner(only, into){
               }).join('')+
             '</select>'+
           '</div>'+
+          '<div><label class="lbl" for="s-pers">'+escH(T('Personality'))+'</label>'+
+            '<select id="s-pers" class="sel">'+PERSONALITIES.map(([k,l,d])=>'<option value="'+k+'"'+(k===_personality()?' selected':'')+'>'+escH(T(l))+' - '+escH(T(d))+'</option>').join('')+'</select>'+
+            '<div class="lbl-help">'+escH(T('How AMV talks to you in every chat and agent. A tone you set for one chat still wins there.'))+'</div>'+
+          '</div>'+
           '<div><label class="lbl" for="s-instr">Instructions for AMV</label>'+
             '<textarea id="s-instr" rows="3" placeholder="e.g. I primarily code in Python (not a beginner). Keep answers concise and skip the preamble." style="width:100%;resize:vertical;min-height:70px">'+escH(loadStr('amv_instructions')||'')+'</textarea>'+
             '<div class="lbl-help">AMV keeps these in mind across every chat and agent. Great for your role, preferences, and how you like answers.</div>'+
@@ -32560,6 +32673,7 @@ function _renderSetPaneInner(only, into){
         saveStr('amv_nickname', ($('s-nick')?.value||'').trim().slice(0,60));
         saveStr('amv_work', ($('s-work')?.value||''));
         saveStr('amv_instructions', ($('s-instr')?.value||'').trim().slice(0,2000));
+        saveStr('amv_personality', String($('s-pers')?.value||'').slice(0,20));
         /* STAMPED AND PUSHED, because these three keys are the personalization
            that goes into every conversation and they were staying on this
            device. The sync had a `profile` slot at both ends and nothing ever

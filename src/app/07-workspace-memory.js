@@ -1505,12 +1505,13 @@ function renderPLList(cat){
   const search=($('pl-search')?.value||'').toLowerCase();
   let prompts=S.prompts;
   if(cat!=='All') prompts=prompts.filter(p=>p.cat===cat);
-  if(search) prompts=prompts.filter(p=>p.title.toLowerCase().includes(search)||p.text.toLowerCase().includes(search));
+  /* Prompts saved from the marketplace carry `body`, not `text`; every read goes through _promptText. */
+  if(search) prompts=prompts.filter(p=>String(p.title||'').toLowerCase().includes(search)||_promptText(p).toLowerCase().includes(search));
   if(!prompts.length){list.innerHTML=emptyState({icon:'\uD83D\uDD0D',title:'No prompts found',sub:'Try a different search or category - or create your own prompt with the + Create button above.',btn:{label:'Create a prompt',act:'_newPromptCTA'}});return;}
   list.innerHTML=prompts.map(p=>
     '<div class="plc">'+
-      '<div class="plt"><span>'+escH(p.title)+'</span><span class="plcat">'+p.cat+'</span></div>'+
-      '<div class="pltx">'+escH(p.text)+'</div>'+
+      '<div class="plt"><span>'+escH(p.title||'')+'</span><span class="plcat">'+escH(p.cat||T('Saved'))+'</span></div>'+
+      '<div class="pltx">'+escH(_promptText(p))+'</div>'+
       '<div style="display:flex;gap:5px;margin-top:9px">'+
         '<button class="btn bp" style="font-size:var(--t-xs);padding:4px 11px" data-dact="usePrompt" data-darg="'+p.id+'">Use Prompt</button>'+
         '<button class="btn bs" style="font-size:var(--t-xs);padding:4px 11px" data-dact="copyPrompt" data-darg="'+p.id+'">Copy</button>'+
@@ -1521,13 +1522,14 @@ function renderPLList(cat){
 }
 function usePrompt(id){
   const p=S.prompts.find(x=>x.id===id); if(!p) return;
-  setTab('chat');
-  setTimeout(()=>{ const ta=$('mta'); if(ta){ta.value=p.text;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,130)+'px';ta.focus();} },100);
+  /* Blanks like [TOPIC] become a short form rather than brackets in the box. */
+  if(_templateBlanks(_promptText(p)).length){ openTemplateForm(p); return; }
+  _putInComposer(_promptText(p));
   toast('Prompt loaded into chat','success');
 }
 function copyPrompt(id){
   const p=S.prompts.find(x=>x.id===id); if(!p) return;
-  navigator.clipboard?.writeText(p.text).then(()=>toast('Prompt copied','success'));
+  navigator.clipboard?.writeText(_promptText(p)).then(()=>toast('Prompt copied','success'));
 }
 function deletePrompt(id){
   S.prompts=S.prompts.filter(p=>p.id!==id);

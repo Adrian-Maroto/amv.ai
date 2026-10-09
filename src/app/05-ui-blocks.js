@@ -1059,7 +1059,7 @@ async function _callAITurn(msgs, _opts) {
       }
     }
   }catch(e){}
-  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_chatToneContext()+_projectContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
+  const sysPrompt=(MODEL_SYSTEMS[_routeKey]||SYS)+_agenticSys+_profileContext()+_chatToneContext()+_projectContext()+_studyContext()+_skillsContext()+_pluginContext()+_localeContext()+_handoffContext('chat')+_langInstruction()+(_mems&&_mems.length?' Memory about you: '+_mems.join('; '):'')+_integrationStatusPrompt()+(_dnaShouldApply(msgs)?('\n\n'+dnaPromptBlock()+'\nApply this DESIGN DNA to any website, app, UI, HTML, or visual output you produce.'):'');
 
   // Add streaming placeholder message
   _streamBubbleReset();
@@ -2392,7 +2392,11 @@ function renderChatMsgs() {
            in words rather than as a state somebody has to remember. */
         (_isTempChat()
           ? _tempBannerHTML()
-          : '<button type="button" class="temp-toggle" data-dact="startTempChat">'+escH(T('Temporary chat'))+'</button>')+
+          : '')+_studyBannerHTML()+
+        '<div class="chome-toggles">'+
+          (_isTempChat() ? '' : '<button type="button" class="temp-toggle" data-dact="startTempChat">'+escH(T('Temporary chat'))+'</button>')+
+          (_isStudyChat() ? '' : '<button type="button" class="temp-toggle" data-dact="toggleStudyMode" title="'+escH(T('AMV teaches step by step instead of handing over answers'))+'">'+escH(T('Study mode'))+'</button>')+
+        '</div>'+
       '</div>'+
       /* THE NEW CHAT IS A GREETING AND SOME SMALL CHIPS, AND NOTHING ELSE.
 
@@ -2443,7 +2447,7 @@ function renderChatMsgs() {
   cm.innerHTML=
   /* Same card as the home screen, at the top of an open conversation - a
      returning user is just as likely to land in yesterday's chat. */
-  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+_tempBannerHTML()+_projectBannerHTML()+
+  (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+_tempBannerHTML()+_projectBannerHTML()+_studyBannerHTML()+
   msgs.map((m,i)=>{
     const isU=m.r==='u';
     const rawText=m.d||(typeof m.c==='string'?m.c:'');
@@ -3257,6 +3261,7 @@ function showConvMenu(e,id){
     '<div class="ctxi" id="cm-proj">📁 Add to project</div>'+
     '<div class="ctxi" id="cm-export">⬇ Export as Markdown</div>'+
     '<div class="ctxi" id="cm-share">🔗 Share</div>'+
+    '<div class="ctxi" id="cm-study">🎓 '+(c&&c.study?escH(T('Turn off study mode')):escH(T('Study mode')))+'</div>'+
     '<div class="ctxi" id="cm-arch">🗄 Archive</div>'+
     '<div class="ctxd"></div>'+
     '<div class="ctxi danger" id="cm-del">🗑 Delete</div>';
@@ -3275,6 +3280,7 @@ function showConvMenu(e,id){
   on($('cm-export'),'click',()=>{ exportConv(id); menu.remove(); });
   on($('cm-share'),'click',()=>{ shareConv(id); menu.remove(); });
   on($('cm-arch'),'click',()=>{ archiveConv(id); menu.remove(); });
+  on($('cm-study'),'click',()=>{ toggleStudyMode(id); menu.remove(); });
   on($('cm-del'),'click',()=>{ deleteConv(id); menu.remove(); });
   const close=e2=>{ if(!menu.contains(e2.target)){ menu.remove(); document.removeEventListener('click',close); } };
   setTimeout(()=>document.addEventListener('click',close),50);

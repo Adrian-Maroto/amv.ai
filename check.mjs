@@ -1281,7 +1281,11 @@ step('Page weight is under control', () => {
      chat kept on this device (in IndexedDB, so it cannot crowd out saved
      chats) and attachable again from the paperclip or into a project. About
      2KB gzipped, all of it the feature. */
-  const CEILING = 651 * 1024;   // gzipped, which is what actually crosses the network
+  /* 651 -> 653, 2026-10-09, deliberately: personality presets, Study mode
+     (its tutoring instructions are most of it) and fill-in templates. The
+     spreadsheet change before it moved the old editor out of the page and
+     came out almost even (+0.15KB); this one is about 2KB of new feature. */
+  const CEILING = 653 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

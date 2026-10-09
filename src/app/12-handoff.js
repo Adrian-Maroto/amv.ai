@@ -2168,6 +2168,7 @@ function _profileContext(){
     if(nick) parts.push('The user prefers to be called '+nick+'.');
     if(work) parts.push('Their work area: '+work+'.');
     if(instr) parts.push('User instructions to always follow: '+instr);
+    const pers=_personalityLine(); if(pers) parts.push(pers);
     return parts.length?('\n\n[About the user]\n'+parts.join(' ')):'';
   }catch(e){ return ''; }
 }
@@ -2258,6 +2259,7 @@ function _userStyle(){
     const tone=_chatTone();
     const bits=[];
     if(instr) bits.push(instr);
+    const pers=_personalityLine(); if(pers) bits.push(pers);
     if(tone) bits.push(tone);
     return bits.length ? ('\n\nHow this user wants you to work: '+bits.join(' ')) : '';
   }catch(e){ return ''; }
@@ -2551,6 +2553,10 @@ function _renderSetPaneInner(only, into){
               }).join('')+
             '</select>'+
           '</div>'+
+          '<div><label class="lbl" for="s-pers">'+escH(T('Personality'))+'</label>'+
+            '<select id="s-pers" class="sel">'+PERSONALITIES.map(([k,l,d])=>'<option value="'+k+'"'+(k===_personality()?' selected':'')+'>'+escH(T(l))+' - '+escH(T(d))+'</option>').join('')+'</select>'+
+            '<div class="lbl-help">'+escH(T('How AMV talks to you in every chat and agent. A tone you set for one chat still wins there.'))+'</div>'+
+          '</div>'+
           '<div><label class="lbl" for="s-instr">Instructions for AMV</label>'+
             '<textarea id="s-instr" rows="3" placeholder="e.g. I primarily code in Python (not a beginner). Keep answers concise and skip the preamble." style="width:100%;resize:vertical;min-height:70px">'+escH(loadStr('amv_instructions')||'')+'</textarea>'+
             '<div class="lbl-help">AMV keeps these in mind across every chat and agent. Great for your role, preferences, and how you like answers.</div>'+
@@ -2615,6 +2621,7 @@ function _renderSetPaneInner(only, into){
         saveStr('amv_nickname', ($('s-nick')?.value||'').trim().slice(0,60));
         saveStr('amv_work', ($('s-work')?.value||''));
         saveStr('amv_instructions', ($('s-instr')?.value||'').trim().slice(0,2000));
+        saveStr('amv_personality', String($('s-pers')?.value||'').slice(0,20));
         /* STAMPED AND PUSHED, because these three keys are the personalization
            that goes into every conversation and they were staying on this
            device. The sync had a `profile` slot at both ends and nothing ever
