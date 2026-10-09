@@ -798,6 +798,9 @@ async function sendMsg(_opts) {
   _draftClear();
   ta.value=''; ta.style.height='auto'; S.att=null;
   const ab2=$('ab2'); if(ab2) ab2.style.display='none';
+  /* Kept for next time, unless this chat is temporary. Not awaited: the
+     message does not wait on the shelf. */
+  if(att){ _libKeep(att).catch(()=>{}); }
 
   // ── Unified intent router: do ANYTHING from chat ──
   // Only routes on a confident match with no attachment; otherwise normal chat.
@@ -2062,7 +2065,7 @@ function bindChatEvents() {
     else if(action==='seats-upgrade'){ setTab('team'); }
     else if(action==='quota-later'){ const m2=getMsgs(); if(m2[idx]&&m2[idx]._quota){ m2.splice(idx,1); setMsgs(m2); renderChatMsgs(); } }
   });
-  on($('att-btn'),'click',()=>$('fi').click());
+  on($('att-btn'),'click',function(){ _attachMenu(this); });
   on($('voice-btn'),'click',toggleVoice);
   on($('voicemode-btn'),'click',toggleVoiceMode);
   on($('research-btn'),'click',_toggleResearch);
@@ -2860,7 +2863,7 @@ function handleFiles(files){
     if(texts.length){
       S.att = texts.length===1 ? texts[0] : {kind:'text', name:texts.map(r=>r.name).join(', '), size:texts.reduce((n,r)=>n+(r.size||0),0),
         data:texts.map(r=>'=== '+r.name+(r.format?' ('+T(_FR_LABEL[r.format])+')':'')+' ===\n'+r.data).join('\n\n'),
-        summary:texts.length+' '+T('files')};
+        summary:texts.length+' '+T('files'), parts:texts};
       media.forEach(r=>left.push(r.name));
     } else if(media.length){
       S.att=media[0];

@@ -16644,3 +16644,15 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .macts.mact-bar{ flex-wrap:wrap; max-width:100%; }
 .ctxm button.ctxi{ width:100%; background:none; border:none; text-align:left; font-family:var(--fn); color:var(--tx); }
 .ctxm button.ctxi:hover,.ctxm button.ctxi:focus-visible{ background:var(--s3); }
+
+/* ── LAYER A295: your files ─────────────────────────────────────────────────
+   The library is the Archived & Trash list with a search box above it and a
+   count below; a project's Files heading carries two buttons now, which wrap
+   on a phone rather than pushing the heading off the edge. */
+.lib-ob{ max-width:620px; width:100%; }
+.lib-q{ width:100%; box-sizing:border-box; margin:var(--sp-2) 0 var(--sp-3); padding:9px 12px; background:var(--bg);
+  border:1px solid var(--bd); border-radius:var(--r-md); color:var(--tx); font-family:var(--fn); font-size:var(--t-md); }
+.lib-q:focus{ outline:none; border-color:var(--accent-txt); }
+.lib-foot{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); flex-wrap:wrap; margin-top:var(--sp-3); }
+.lib-foot .pj-note{ margin:0; }
+.pj-adds{ display:inline-flex; gap:var(--sp-2); flex-wrap:wrap; }

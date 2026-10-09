@@ -1903,6 +1903,7 @@ function _wipeAccountState(){
   }catch(e){}
   try{
     S.memory=[]; S.convs=[]; S.cur=null; S.att=null; _CONV_SHELF=[];
+    try{ _libForget(); }catch(e){}
     /* Crew's country pages are a place in this account's visit; the next
        account starts on Crew's own page. (The country itself is in storage,
        which is already per account.) */
@@ -2009,6 +2010,8 @@ function eraseDeviceData(email){
   if(!who) return 0;
   const prefix = 'u:' + who + '|';
   let removed = 0;
+  /* Your files are in their own database, not in localStorage. */
+  try{ _libErase(who); }catch(e){}
   try{
     for(let i = localStorage.length - 1; i >= 0; i--){
       const k = localStorage.key(i);

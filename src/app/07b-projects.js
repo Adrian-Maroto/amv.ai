@@ -132,7 +132,8 @@ function _renderProjectPanel(id){
       + escH(T('How AMV should work in this project - who it is for, tone, what to always or never do.')) + '">'
       + escH(ws.instructions || '') + '</textarea>'
     + '<div class="pj-row"><button type="button" class="btn mc-mini" id="pj-save">' + escH(T('Save instructions')) + '</button><span class="pj-note" id="pj-saved" role="status"></span></div>'
-    + '<h3 class="shelf-h3">' + escH(T('Files')) + ' <button type="button" class="btn mc-mini ghost" id="pj-add">' + escH(T('Add files')) + '</button></h3>'
+    + '<h3 class="shelf-h3">' + escH(T('Files')) + ' <span class="pj-adds"><button type="button" class="btn mc-mini ghost" id="pj-lib">' + escH(T('From your files')) + '</button>'
+      + '<button type="button" class="btn mc-mini ghost" id="pj-add">' + escH(T('Add files')) + '</button></span></h3>'
     + '<input type="file" id="pj-file" multiple hidden>'
     + '<p class="pj-note">' + escH(T('Kept on this device. Chats here can read them; other devices see the project without them.'))
       + (files.length ? ' ' + (used < 1000 ? used.toLocaleString() : Math.round(used / 1000) + 'k') + ' / ' + Math.round(PROJ_CTX_CHARS / 1000) + 'k ' + escH(T('characters sent with each message.')) : '') + '</p>'
@@ -155,6 +156,16 @@ function _renderProjectPanel(id){
     const s = $('pj-saved'); if(s) s.textContent = T('Saved. The next message in this project follows it.');
   });
   on($('pj-add'), 'click', () => { const i = $('pj-file'); if(i) i.click(); });
+  /* Documents already sent in a chat, without finding them on disk again.
+     Text only: a project is given its files as text. */
+  on($('pj-lib'), 'click', () => openFileLibrary({ only: 'text', pick: f => {
+    const list = _projFiles(id);
+    if(list.length >= PROJ_FILES_MAX && !list.some(x => x.name === f.name)){ toast(T('A project holds up to') + ' ' + PROJ_FILES_MAX + ' ' + T('files.'), 'error', 6000); return; }
+    const next = [{ id: 'pf' + Date.now() + Math.random().toString(36).slice(2, 5), name: f.name, format: f.format || '', summary: f.summary || '', text: f.data, added: Date.now() }]
+      .concat(list.filter(x => x.name !== f.name));
+    if(!_projSaveFiles(id, next)){ toast(T('This device is out of space for project files. Remove one and try again.'), 'error', 9000); return; }
+    openProjectPanel(id);
+  } }));
   on($('pj-file'), 'change', async function(){
     const picked = Array.from(this.files || []); this.value = '';
     let list = _projFiles(id);

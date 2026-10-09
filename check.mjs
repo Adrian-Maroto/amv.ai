@@ -1277,7 +1277,11 @@ step('Page weight is under control', () => {
      country is opened. What remains is code, and splitting code out of the
      page was measured and declined in BUNDLE-SPLIT.md; that decision, not a
      data move, is what would have to change to lower this. */
-  const CEILING = 648 * 1024;   // gzipped, which is what actually crosses the network
+  /* 648 -> 651, 2026-10-09, deliberately: Your files - every file sent in a
+     chat kept on this device (in IndexedDB, so it cannot crowd out saved
+     chats) and attachable again from the paperclip or into a project. About
+     2KB gzipped, all of it the feature. */
+  const CEILING = 651 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

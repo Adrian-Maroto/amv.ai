@@ -14551,3 +14551,25 @@ Rules:
   result move. A comment explaining a cause is a test with no assertion.
 - Code only some visitors use goes in a separate file, fetched when wanted.
   The page is what every visitor pays for.
+
+## 565. A database you are holding open cannot be deleted
+
+Your files (the library of everything sent in a chat) lives in IndexedDB, one
+database per account, so "erase this device" deletes it with one
+`deleteDatabase`. The first test of that failed: the database was still
+there afterwards, and nothing reported an error.
+
+`deleteDatabase` does not fail when a connection is open. It waits, quietly,
+until every connection closes - and the page held one. Worse, switching
+accounts opened the new account's database without closing the old one, so
+the old account's connection was open for the life of the tab and its erase
+would have waited forever.
+
+Rules:
+- Every IndexedDB connection sets `onversionchange` to close itself. That is
+  the signal a delete or upgrade sends, from this tab or another.
+- Opening a different database closes the one before it.
+- "Erase" is verified by listing what still exists afterwards, not by the
+  call having returned.
+- Files kept for later go in IndexedDB, not localStorage: localStorage is a
+  few megabytes shared with saved chats, and filling it stops chats saving.
