@@ -171,7 +171,7 @@ function _apiDocsHTML(){
       'Sending <code>"stream": false</code> is refused with <code>stream_required</code> rather than '+
       'silently ignored, so you find out immediately rather than from a parse error.</p>'+
     '<p class="ak-doc">Engines: <code>amv-pulse</code> (fastest), <code>amv-core</code> (balanced), '+
-      '<code>amv-forge</code> (deep work), <code>amv-apex</code> (hardest problems), or '+
+      '<code>amv-swift</code> (a top engine at its fastest), <code>amv-forge</code> (deep work), <code>amv-apex</code> (hardest problems), or '+
       '<code>auto</code> to let AMV choose.</p>'+
     '<p class="ak-doc">Usage counts against this account\u2019s plan, so the limits in '+
       '<b>Settings -> Plan &amp; billing</b> are the limits your integration has.</p>'+

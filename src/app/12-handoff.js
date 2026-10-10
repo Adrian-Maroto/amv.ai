@@ -1448,7 +1448,7 @@ function _widgetSnippet(cfg, base){
 }
 function _paintWidgetForm(body, cfg, base){
   const snippet=_widgetSnippet(cfg, base);
-  const modelOpts=[['amv-pulse','Fast (cheapest)'],['amv-core','Balanced (recommended)'],['amv-forge','Advanced'],['amv-apex','Most capable']]
+  const modelOpts=[['amv-pulse','Fast (cheapest)'],['amv-core','Balanced (recommended)'],['amv-swift','Fastest top engine'],['amv-forge','Advanced'],['amv-apex','Most capable']]
     .map(m=>'<option value="'+m[0]+'"'+(cfg.model===m[0]?' selected':'')+'>'+m[1]+'</option>').join('');
   body.innerHTML=
     '<div class="ss2"><h3>Your embed code</h3>'+

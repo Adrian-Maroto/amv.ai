@@ -68,7 +68,7 @@ section('The paths that fire most often go through it');
 section('The tier table still covers every engine the client can ask for');
 {
   const keys = [...allowed.matchAll(/'(amv-[a-z]+)':\s*\{/g)].map(m => m[1]);
-  ok(keys.length === 4, 'four tiers', keys);
+  ok(keys.length === 5, 'five tiers (Swift joined as the fast top engine)', keys);
   /* Every alias target must be a tier that exists, or a client sending an old
      string resolves to nothing. */
   const targets = [...allowed.matchAll(/:\s*'(amv-[a-z]+)',?/g)].map(m => m[1]);

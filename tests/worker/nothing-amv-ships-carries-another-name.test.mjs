@@ -54,6 +54,10 @@ const ALLOWED = [
     test: (c) => /MODEL_API_DEFAULT\s*=/.test(c) },
   { name: 'the upstream protocol version header',
     test: (c) => /['"]anthropic-version['"]/.test(c) },
+  /* The beta-feature header (fast mode), named once beside the version
+     header for the same reason: the API defines the name. */
+  { name: 'the upstream beta-feature header',
+    test: (c) => /MODEL_BETA_HEADER\s*=\s*['"]anthropic-beta['"]/.test(c) },
   /* The provider's own identifier for each engine. Server-side only: the
      browser sends `amv-*` or a short key, the response header reports the AMV
      name, and nothing echoes these back. Renaming them does not rebrand

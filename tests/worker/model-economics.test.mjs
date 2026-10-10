@@ -49,6 +49,10 @@ const RATE = {
   'claude-sonnet-5':           [2, 10],
   'claude-sonnet-4-6':         [3, 15],
   'claude-opus-5':             [5, 25],
+  /* Opus 5.5 is run only in fast mode (amv-swift), whose published rate is
+     twice standard. Its standard rate (4/20) is what a turn that fell back to
+     standard speed is settled at. */
+  'claude-opus-5-5':           [8, 40],
   'claude-fable-5':            [10, 50],
   'claude-fable-5-1':          [10, 50],
 };

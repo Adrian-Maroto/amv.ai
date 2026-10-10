@@ -3561,6 +3561,7 @@ const MODELS = {
   auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', tokens:6000, cost:0, rec:'free' },
   fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', tokens:4000, cost:1, rec:'free' },
   core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', tokens:16000, cost:2, rec:'free' },
+  swift:  { label:'AMV Swift', desc:'A top engine at its fastest - answers in a fraction of the wait', color:'#22c3e6', model:'amv-swift', tokens:32000, cost:3, rec:'pro' },
   coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', tokens:32000, cost:3, rec:'pro' },
   smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', tokens:16000, cost:4, rec:'elite' },
   /* "AMV Vision - Image generation" lived here behind hidden:true, which kept
@@ -3569,10 +3570,10 @@ const MODELS = {
      'image' references are file-type categories and reading an image somebody
      uploads, which is a real feature and stays. */
 };
-const MODEL_ORDER=['auto','fast','core','coding','smart'];
+const MODEL_ORDER=['auto','fast','core','swift','coding','smart'];
 /* The server's engine keys, in AMV's own names. Used to label a turn that AMV
    Auto routed, so the user can always see which engine answered them. */
-const ENGINE_LABEL={ 'amv-pulse':'AMV Pulse', 'amv-core':'AMV Core', 'amv-forge':'AMV Forge', 'amv-apex':'AMV Apex' };
+const ENGINE_LABEL={ 'amv-pulse':'AMV Pulse', 'amv-core':'AMV Core', 'amv-forge':'AMV Forge', 'amv-apex':'AMV Apex', 'amv-swift':'AMV Swift' };
 try{ window.ENGINE_LABEL=ENGINE_LABEL; }catch(e){}
 
 /* ===== BUILD-SECTION MODEL PICKER =====
@@ -3792,6 +3793,7 @@ const AEGIS = {
   price: {
     'amv-apex':  { in: 10.00, out: 50.00 },
     'amv-forge': { in: 10.00, out: 50.00 },
+    'amv-swift': { in: 8.00,  out: 40.00 },
     'amv-core':  { in: 2.00,  out: 10.00 },
     'amv-pulse': { in: 0.5,  out: 2.5 },
     /* An auto-routed call is sent as 'auto' and the SERVER decides the engine,
@@ -16778,16 +16780,16 @@ const PLAN_TIERS={
      names, in its other direction: it would let somebody spend past the point
      the server stops them, so the stop arrives as a refusal rather than as the
      limit they were shown. */
-  pro:   { dailyTokenCap:325000,   rpmMax:20, models:['fast','core','coding'] },
-  elite: { dailyTokenCap:1170000,  rpmMax:40, models:['fast','core','coding','smart'] },
-  ultra: { dailyTokenCap:2860000,  rpmMax:80, models:['fast','core','coding','smart'] },
+  pro:   { dailyTokenCap:325000,   rpmMax:20, models:['fast','core','swift','coding'] },
+  elite: { dailyTokenCap:1170000,  rpmMax:40, models:['fast','core','swift','coding','smart'] },
+  ultra: { dailyTokenCap:2860000,  rpmMax:80, models:['fast','core','swift','coding','smart'] },
   /* The server's fallback for a custom plan with no explicit dayTokens is
      Math.round(50000 * TOKENIZER_SCALE) = 65,000. This said 52,000, which is
      the failure the comment above names: a browser guard TIGHTER than the
      server stops somebody at a number the server would have allowed, and it
      exists nowhere but here. Found by grepping for the old free-tier value
      after changing it, not by looking for it. */
-  custom:{ dailyTokenCap:65000,    rpmMax:16, models:['fast','core','coding','smart'] }, // overridden per-user below
+  custom:{ dailyTokenCap:65000,    rpmMax:16, models:['fast','core','swift','coding','smart'] }, // overridden per-user below
 };
 function _setPlan(plan){
   if(!PLANS[plan]) plan='free';
@@ -17263,7 +17265,7 @@ function _switchPlan(target){
    ============================================================ */
 const PLANS={
   free:{name:'Free',price:0,blurb:'A monthly allowance, enough to explore everything',get allowance(){return _allowanceLabel('free');}},
-  pro:{name:'Pro',price:15,blurb:'AMV Forge, autonomous agents, and the app sandbox',get allowance(){return _allowanceLabel('pro');}},
+  pro:{name:'Pro',price:15,blurb:'AMV Forge and Swift, autonomous agents, and the app sandbox',get allowance(){return _allowanceLabel('pro');}},
   elite:{name:'Elite',price:75,blurb:'Ship real apps to a live URL, on our most capable engine',get allowance(){return _allowanceLabel('elite');}},
   ultra:{name:'Ultra',price:200,blurb:'Whole codebases, autonomous projects, and a team around them',get allowance(){return _allowanceLabel('ultra');}},
   /* Priced PER SEAT, so `price` here is the price of one seat and the card that
@@ -31356,7 +31358,7 @@ function _widgetSnippet(cfg, base){
 }
 function _paintWidgetForm(body, cfg, base){
   const snippet=_widgetSnippet(cfg, base);
-  const modelOpts=[['amv-pulse','Fast (cheapest)'],['amv-core','Balanced (recommended)'],['amv-forge','Advanced'],['amv-apex','Most capable']]
+  const modelOpts=[['amv-pulse','Fast (cheapest)'],['amv-core','Balanced (recommended)'],['amv-swift','Fastest top engine'],['amv-forge','Advanced'],['amv-apex','Most capable']]
     .map(m=>'<option value="'+m[0]+'"'+(cfg.model===m[0]?' selected':'')+'>'+m[1]+'</option>').join('');
   body.innerHTML=
     '<div class="ss2"><h3>Your embed code</h3>'+
@@ -46698,7 +46700,7 @@ function _apiDocsHTML(){
       'Sending <code>"stream": false</code> is refused with <code>stream_required</code> rather than '+
       'silently ignored, so you find out immediately rather than from a parse error.</p>'+
     '<p class="ak-doc">Engines: <code>amv-pulse</code> (fastest), <code>amv-core</code> (balanced), '+
-      '<code>amv-forge</code> (deep work), <code>amv-apex</code> (hardest problems), or '+
+      '<code>amv-swift</code> (a top engine at its fastest), <code>amv-forge</code> (deep work), <code>amv-apex</code> (hardest problems), or '+
       '<code>auto</code> to let AMV choose.</p>'+
     '<p class="ak-doc">Usage counts against this account\u2019s plan, so the limits in '+
       '<b>Settings -> Plan &amp; billing</b> are the limits your integration has.</p>'+

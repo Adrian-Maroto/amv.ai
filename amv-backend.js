@@ -95,7 +95,7 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-AMV-Request-Id',
   // The browser cannot read a custom response header cross-origin unless it is
   // exposed. Without this the routed-engine name is invisible to the app.
-  'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Effort, X-AMV-Engine-Why',
+  'Access-Control-Expose-Headers': 'X-AMV-Engine, X-AMV-Effort, X-AMV-Speed, X-AMV-Engine-Why',
 };
 // Security headers applied to every response. Protects users against clickjacking,
 // MIME-sniffing, protocol downgrade, and referrer leakage. CSP here is API-appropriate
@@ -206,7 +206,15 @@ const ENGINES = {
   'amv-core':  { model: 'claude-sonnet-5-5',         minPlan: 'free',  inCost: 2,  outCost: 10,  maxOut: 16000, cacheMin: 1024, thinking: true, effort: 'medium' },
   'amv-forge': { model: 'claude-fable-5',            minPlan: 'pro',   inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
   'amv-apex':  { model: 'claude-fable-5-1',          minPlan: 'elite', inCost: 10, outCost: 50,  maxOut: 32000, cacheMin: 512,  thinking: true, effort: 'high' },
+  /* SWIFT: a top engine answering at up to two and a half times the speed.
+     Fast mode exists on one model family only and costs twice its standard
+     rate, which is what these prices are. Still below Forge, so it sits on
+     the paid floor. Low effort by default, because somebody who chose speed
+     chose it. When fast capacity is busy the turn runs at standard speed and
+     is billed at the standard rate - see the 429 handling in aiProxy. */
+  'amv-swift': { model: 'claude-opus-5-5',           minPlan: 'pro',   inCost: 8,  outCost: 40,  maxOut: 32000, cacheMin: 1024, thinking: true, effort: 'low', speed: 'fast', stdIn: 4, stdOut: 20 },
 };
+const FAST_MODE_BETA = 'fast-mode-2026-02-01';
 /* The dearest input rate on the ladder. The weekly ceiling exists to bound
    what the expensive engines cost, so which engines those ARE has to follow
    the table rather than a number somebody typed while looking at it. */
@@ -302,7 +310,9 @@ const RAW_TO_KEY = {
   // frontend short keys
   'fast': 'amv-pulse', 'core': 'amv-core', 'coding': 'amv-forge', 'smart': 'amv-apex',
   // amv-friendly aliases
-  'amv-pulse': 'amv-pulse', 'amv-core': 'amv-core', 'amv-forge': 'amv-forge', 'amv-apex': 'amv-apex',
+  'amv-pulse': 'amv-pulse', 'amv-core': 'amv-core', 'amv-forge': 'amv-forge', 'amv-apex': 'amv-apex', 'amv-swift': 'amv-swift',
+  'claude-opus-5-5': 'amv-swift',
+  'swift': 'amv-swift',
   // smart routing -> balanced default
   'auto': 'amv-core', '': 'amv-core',
 };
@@ -346,6 +356,10 @@ function _modelKey(env){
    the same wrong request twice. */
 const MODEL_API_DEFAULT = 'https://api.anthropic.com';
 const MODEL_API_VERSION = '2023-06-01';
+/* The header that switches on a feature the provider ships as a beta (fast
+   mode). Named once, beside the version header: same category - the API
+   defines the name, and a request without it does not get the feature. */
+const MODEL_BETA_HEADER = 'anthropic-beta';
 
 function _modelBase(env, which){
   const raw = which === 'fallback'
@@ -17994,6 +18008,7 @@ async function aiProxy(request, env, ctx) {
      own wish is how a clamped control comes to look broken. */
   const _effort = _resolveEffort(eng, body.effort, _planRankOf(user.plan, user.customCfg));
   if (_effort) upstreamBody.output_config = { effort: _effort };
+  if (eng.speed) upstreamBody.speed = eng.speed;
   if (body.tools && Array.isArray(body.tools)) {
     const safe = _safeTools(body.tools);
     if (safe.length) upstreamBody.tools = safe;
@@ -18001,7 +18016,8 @@ async function aiProxy(request, env, ctx) {
 
   /* stream:true - this response goes straight to the user, so it must never be
      retried on another endpoint: words already delivered would be repeated. */
-  const _callUpstream = (payload) => _modelFetch(env, payload, { stream: true });
+  const _callUpstream = (payload) => _modelFetch(env, payload, payload.speed
+    ? { stream: true, headers: { [MODEL_BETA_HEADER]: FAST_MODE_BETA } } : { stream: true });
 
   /* A THROW BURNS THE ALLOWANCE THAT AN ERROR STATUS GIVES BACK.
 
@@ -18031,6 +18047,30 @@ async function aiProxy(request, env, ctx) {
       + 'Check AMV_MODEL_URL and the provider’s status.', 10); } catch (_) {}
     return json({ error: 'AMV could not reach the model just now. Nothing has been counted against your allowance - please try again in a moment.',
                   code: 'provider_error' }, 503);
+  }
+
+  /* FAST CAPACITY IS ITS OWN, AND WHEN IT IS FULL THE ANSWER STILL COMES.
+
+     Fast mode has a rate limit separate from the engine's standard one, and
+     is a preview the provider may decline. Either way the person asked a
+     question, not for a speed: the same request goes again at standard speed
+     and is billed at the standard rate (the reservation was taken at the fast
+     rate, so settling at the lower one only gives money back). The response
+     says which speed ran. */
+  let _speed = upstreamBody.speed || '';
+  if (_speed && (upstream.status === 429 || upstream.status === 400 || upstream.status === 503)) {
+    const why = await upstream.clone().text().catch(() => '');
+    if (upstream.status !== 400 || /speed|fast/i.test(why)) {
+      const std = Object.assign({}, upstreamBody); delete std.speed;
+      try {
+        const again = await _callUpstream(std);
+        if (again.ok) {
+          upstream = again; _speed = 'standard';
+          eng.inCost = eng.stdIn || eng.inCost; eng.outCost = eng.stdOut || eng.outCost;
+          audit(env, 'fast_mode_fell_back', { status: upstream.status, why: why.slice(0, 100) });
+        }
+      } catch (_) { /* the original response stands and is handled below */ }
+    }
   }
 
   /* AMV-068: a rejected OPTIONAL parameter must not take AI down for everyone.
@@ -18109,6 +18149,7 @@ async function aiProxy(request, env, ctx) {
       // would be labelled "AMV Auto", which says nothing.
       'X-AMV-Engine': key,
       'X-AMV-Effort': _effort || '',
+      'X-AMV-Speed': _speed,
       'X-AMV-Engine-Why': routed ? routed.why : '' },
   });
 }

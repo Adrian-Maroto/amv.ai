@@ -265,6 +265,8 @@ section('The provider is named on the server and nowhere a person can see');
     /* A required request header. Same category as the model ids: the API
        defines the name, and a call that omits it is refused. */
     if (/'anthropic-version'/.test(around)) continue;
+    /* The beta-feature header, named once beside it for the same reason. */
+    if (/MODEL_BETA_HEADER = 'anthropic-beta'/.test(around)) continue;
     beyondIdentifiers.push(m[0] + ' … ' + around.slice(-70).replace(/\s+/g, ' '));
   }
   ok(beyondIdentifiers.length === 0,

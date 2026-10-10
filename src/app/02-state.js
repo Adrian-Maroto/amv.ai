@@ -723,6 +723,7 @@ const MODELS = {
   auto:   { label:'AMV Auto', desc:'Automatically picks the right model for each task', color:'#5590ff', model:'auto', tokens:6000, cost:0, rec:'free' },
   fast:   { label:'AMV Pulse', desc:'Fast and efficient for everyday tasks', color:'#4ade80', model:'amv-pulse', tokens:4000, cost:1, rec:'free' },
   core:   { label:'AMV Core',  desc:'Balanced performance for most work', color:'#5590ff', model:'amv-core', tokens:16000, cost:2, rec:'free' },
+  swift:  { label:'AMV Swift', desc:'A top engine at its fastest - answers in a fraction of the wait', color:'#22c3e6', model:'amv-swift', tokens:32000, cost:3, rec:'pro' },
   coding: { label:'AMV Forge', desc:'Built for complex coding and engineering', color:'#ff4d4d', model:'amv-forge', tokens:32000, cost:3, rec:'pro' },
   smart:  { label:'AMV Apex',  desc:'The most capable model, for the hardest problems', color:'var(--indigo)', model:'amv-apex', tokens:16000, cost:4, rec:'elite' },
   /* "AMV Vision - Image generation" lived here behind hidden:true, which kept
@@ -731,10 +732,10 @@ const MODELS = {
      'image' references are file-type categories and reading an image somebody
      uploads, which is a real feature and stays. */
 };
-const MODEL_ORDER=['auto','fast','core','coding','smart'];
+const MODEL_ORDER=['auto','fast','core','swift','coding','smart'];
 /* The server's engine keys, in AMV's own names. Used to label a turn that AMV
    Auto routed, so the user can always see which engine answered them. */
-const ENGINE_LABEL={ 'amv-pulse':'AMV Pulse', 'amv-core':'AMV Core', 'amv-forge':'AMV Forge', 'amv-apex':'AMV Apex' };
+const ENGINE_LABEL={ 'amv-pulse':'AMV Pulse', 'amv-core':'AMV Core', 'amv-forge':'AMV Forge', 'amv-apex':'AMV Apex', 'amv-swift':'AMV Swift' };
 try{ window.ENGINE_LABEL=ENGINE_LABEL; }catch(e){}
 
 /* ===== BUILD-SECTION MODEL PICKER =====
@@ -954,6 +955,7 @@ const AEGIS = {
   price: {
     'amv-apex':  { in: 10.00, out: 50.00 },
     'amv-forge': { in: 10.00, out: 50.00 },
+    'amv-swift': { in: 8.00,  out: 40.00 },
     'amv-core':  { in: 2.00,  out: 10.00 },
     'amv-pulse': { in: 0.5,  out: 2.5 },
     /* An auto-routed call is sent as 'auto' and the SERVER decides the engine,

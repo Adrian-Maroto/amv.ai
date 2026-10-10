@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 const DEFAULT_API = '__AMV_API__';
 const VERSION = '1';
-const ENGINES = ['auto', 'amv-pulse', 'amv-core', 'amv-forge', 'amv-apex'];
+const ENGINES = ['auto', 'amv-pulse', 'amv-core', 'amv-swift', 'amv-forge', 'amv-apex'];
 
 const HELP = `amv - ask AMV from a terminal
 

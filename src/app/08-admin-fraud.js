@@ -1107,16 +1107,16 @@ const PLAN_TIERS={
      names, in its other direction: it would let somebody spend past the point
      the server stops them, so the stop arrives as a refusal rather than as the
      limit they were shown. */
-  pro:   { dailyTokenCap:325000,   rpmMax:20, models:['fast','core','coding'] },
-  elite: { dailyTokenCap:1170000,  rpmMax:40, models:['fast','core','coding','smart'] },
-  ultra: { dailyTokenCap:2860000,  rpmMax:80, models:['fast','core','coding','smart'] },
+  pro:   { dailyTokenCap:325000,   rpmMax:20, models:['fast','core','swift','coding'] },
+  elite: { dailyTokenCap:1170000,  rpmMax:40, models:['fast','core','swift','coding','smart'] },
+  ultra: { dailyTokenCap:2860000,  rpmMax:80, models:['fast','core','swift','coding','smart'] },
   /* The server's fallback for a custom plan with no explicit dayTokens is
      Math.round(50000 * TOKENIZER_SCALE) = 65,000. This said 52,000, which is
      the failure the comment above names: a browser guard TIGHTER than the
      server stops somebody at a number the server would have allowed, and it
      exists nowhere but here. Found by grepping for the old free-tier value
      after changing it, not by looking for it. */
-  custom:{ dailyTokenCap:65000,    rpmMax:16, models:['fast','core','coding','smart'] }, // overridden per-user below
+  custom:{ dailyTokenCap:65000,    rpmMax:16, models:['fast','core','swift','coding','smart'] }, // overridden per-user below
 };
 function _setPlan(plan){
   if(!PLANS[plan]) plan='free';
