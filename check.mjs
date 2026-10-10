@@ -1354,7 +1354,11 @@ step('Page weight is under control', () => {
      computers - the Help card that says how to install on THIS device (the
      iPhone has no prompt of its own), the one-time iPhone hint, and opening a
      chat from the share sheet or the icon's menu (~1.3KB gzipped). */
-  const CEILING = 606 * 1024;   // gzipped, which is what actually crosses the network
+  /* 606 -> 608, 2026-10-10, deliberately: Google Docs and Sheets edited in
+     place - five actions and the handshake with Google's file picker, which
+     runs in a window of its own (picker.html) so Google's code never loads in
+     this page (~1KB gzipped). */
+  const CEILING = 608 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

@@ -3775,6 +3775,44 @@ function _ghPath(v){
   return s;
 }
 
+
+/* ── Google Docs and Sheets helpers (CONN_ACTIONS docs.* and sheets.*) ───── */
+function _gFileId(args){
+  const id = String((args && args.fileId) || '').slice(0, 200);
+  if (!/^[A-Za-z0-9_-]{10,}$/.test(id)) throw new Error('bad_file');
+  return id;
+}
+/* A1 notation: an optional tab name (quoted when it has spaces) and cells. */
+function _gRange(r){
+  const s = String(r || '').trim();
+  if (!/^(?:(?:'(?:[^']|'')+'|[A-Za-z0-9_]+)!)?(?:[A-Z]{1,3}[0-9]{0,7}(?::[A-Z]{1,3}[0-9]{0,7})?|[0-9]{1,7}:[0-9]{1,7})$/.test(s)
+      && !/^'(?:[^']|'')+'$/.test(s)) throw new Error('bad_range');
+  return s;
+}
+/* Google's answer, or an error that says which kind of no it was. A file AMV
+   was not handed is a 403 or a 404 from Google, and both mean the same thing
+   to the person: choose it first. */
+async function _gJson(token, url, api, init){
+  const r = await fetchDeadline(url, Object.assign({}, init || {}, {
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' } }), 20000);
+  if (r.status === 403 || r.status === 404) throw new Error(api + '_not_chosen');
+  if (!r.ok) throw new Error(api + '_' + r.status);
+  return await r.json().catch(() => ({}));
+}
+/* A document's words, in order: paragraphs and the cells of tables. */
+function _docText(d){
+  const out = [];
+  const walk = (content) => {
+    for (const el of (content || [])) {
+      if (el.paragraph) out.push((el.paragraph.elements || []).map(e => (e.textRun && e.textRun.content) || '').join(''));
+      else if (el.table) for (const row of (el.table.tableRows || [])) for (const cell of (row.tableCells || [])) walk(cell.content);
+      else if (el.tableOfContents) walk(el.tableOfContents.content);
+    }
+  };
+  walk(d && d.body && d.body.content);
+  return out.join('');
+}
+
 const CONN_ACTIONS = {
   'gmail.unread': {
     need: 'mail.read', writes: false,
@@ -3896,6 +3934,99 @@ const CONN_ACTIONS = {
           body: JSON.stringify({ type:'user', role, emailAddress: to }) }, 20000);
       if(!r.ok) throw new Error('drive_' + r.status);
       return { shared: true, role };
+    },
+  },
+  /* ── GOOGLE DOCS AND SHEETS, EDITED WHERE THEY ARE ─────────────────────────
+
+     On the same narrow permission as the copy above: drive.file reaches the
+     files AMV made and the ones the person CHOSE for it in Google's own file
+     picker, and nothing else in their Drive. So "edit my budget sheet" means
+     the sheet they picked, and there is no shape of arguments that reaches a
+     file they did not hand over - Google refuses it, and that refusal is
+     turned into a sentence that says how to hand it over.
+
+     Every write is read back. What comes back to the person is what the file
+     now says, not what the request said it would say. */
+  'docs.read': {
+    need: 'drive.write', writes: false,
+    async run(token, args){
+      const id = _gFileId(args);
+      const d = await _gJson(token, 'https://docs.googleapis.com/v1/documents/' + id + '?fields=title,body', 'docs');
+      return { id, title: String(d.title || '').slice(0, 200), text: _docText(d).slice(0, 60000),
+               link: 'https://docs.google.com/document/d/' + id + '/edit' };
+    },
+  },
+  'docs.edit': {
+    need: 'drive.write', writes: true,
+    async run(token, args){
+      const id = _gFileId(args);
+      const reps = (Array.isArray(args.replace) ? args.replace : []).slice(0, 20).map(r => ({
+        find: String((r && r.find) || ''), to: String((r && (r.with != null ? r.with : r.to)) || ''), matchCase: !!(r && r.matchCase) }));
+      if (reps.some(r => !r.find || r.find.length > 1000 || r.to.length > 20000)) throw new Error('bad_edit');
+      const append = args.append == null ? '' : String(args.append);
+      if (append.length > 20000) throw new Error('bad_edit');
+      if (!reps.length && !append) throw new Error('bad_edit');
+      const requests = reps.map(r => ({ replaceAllText: { containsText: { text: r.find, matchCase: r.matchCase }, replaceText: r.to } }));
+      if (append) requests.push({ insertText: { endOfSegmentLocation: {}, text: '\n' + append } });
+      const res = await _gJson(token, 'https://docs.googleapis.com/v1/documents/' + id + ':batchUpdate', 'docs',
+                               { method: 'POST', body: JSON.stringify({ requests }) });
+      const counts = reps.map((r, i) => ({ find: r.find.slice(0, 80),
+        count: +(((res.replies || [])[i] || {}).replaceAllText || {}).occurrencesChanged || 0 }));
+      /* What the document says now. A read-back that fails does not undo
+         the edit, so it is reported as unconfirmed - never as nothing done. */
+      let verified = null;
+      try{
+        const after = _docText(await _gJson(token, 'https://docs.googleapis.com/v1/documents/' + id + '?fields=body', 'docs'));
+        verified = counts.every((c, i) => !c.count || !reps[i].to || after.includes(reps[i].to))
+                && (!append || after.includes(append.trim()));
+      }catch(e){}
+      return { id, replaced: counts, appended: !!append, verified,
+               link: 'https://docs.google.com/document/d/' + id + '/edit' };
+    },
+  },
+  'sheets.read': {
+    need: 'drive.write', writes: false,
+    async run(token, args){
+      const id = _gFileId(args);
+      const meta = await _gJson(token, 'https://sheets.googleapis.com/v4/spreadsheets/' + id + '?fields=properties.title,sheets.properties.title', 'sheets');
+      const tabs = (meta.sheets || []).map(t => String((t.properties || {}).title || '')).slice(0, 50);
+      const range = args.range ? _gRange(args.range) : (tabs[0] ? "'" + tabs[0].replace(/'/g, "''") + "'" : '');
+      const v = range ? await _gJson(token, 'https://sheets.googleapis.com/v4/spreadsheets/' + id + '/values/' + encodeURIComponent(range), 'sheets') : {};
+      const rows = (v.values || []).slice(0, 2000).map(r => (r || []).slice(0, 100).map(c => String(c).slice(0, 2000)));
+      return { id, title: String((meta.properties || {}).title || '').slice(0, 200), tabs, range: v.range || range, rows,
+               link: 'https://docs.google.com/spreadsheets/d/' + id + '/edit' };
+    },
+  },
+  'sheets.write': {
+    need: 'drive.write', writes: true,
+    async run(token, args){
+      const id = _gFileId(args);
+      const range = _gRange(args.range);
+      const values = Array.isArray(args.values) ? args.values : null;
+      if (!values || !values.length || values.some(r => !Array.isArray(r))) throw new Error('bad_values');
+      let cells = 0;
+      const clean = values.map(r => r.map(c => {
+        cells++;
+        if (typeof c === 'number' || typeof c === 'boolean') return c;
+        return String(c == null ? '' : c).slice(0, 50000);
+      }));
+      if (cells > 10000) throw new Error('too_many_cells');
+      const res = await _gJson(token, 'https://sheets.googleapis.com/v4/spreadsheets/' + id + '/values/' + encodeURIComponent(range)
+        + '?valueInputOption=USER_ENTERED', 'sheets',
+        { method: 'PUT', body: JSON.stringify({ range, majorDimension: 'ROWS', values: clean }) });
+      /* What the range holds now, as entered - formulas as formulas. */
+      let verified = null;
+      try{
+        const back = await _gJson(token, 'https://sheets.googleapis.com/v4/spreadsheets/' + id + '/values/'
+          + encodeURIComponent(res.updatedRange || range) + '?valueRenderOption=FORMULA', 'sheets');
+        const got = back.values || [];
+        verified = clean.every((r, i) => r.every((c, j) => {
+          const g = (got[i] || [])[j];
+          return String(c) === '' ? (g == null || String(g) === '') : String(g) === String(c);
+        }));
+      }catch(e){}
+      return { id, range: res.updatedRange || range, updatedCells: +res.updatedCells || 0, verified,
+               link: 'https://docs.google.com/spreadsheets/d/' + id + '/edit' };
     },
   },
   /* ── GITHUB ────────────────────────────────────────────────────────────────
@@ -4090,9 +4221,36 @@ async function connAct(request, env){
        belongs in an answer to a browser. */
     audit(env, 'conn_action_failed', { by: user.email, action: name,
       error: String((e && e.message) || e).slice(0, 120) });
+    /* AMV's OWN refusals - raised before any request, or naming a file that
+       was never handed over - are said as what they are. */
+    const why = String((e && e.message) || '');
+    const own = {
+      docs_not_chosen: 'AMV can only open Google files you chose for it, or ones it made. Choose the file first.',
+      sheets_not_chosen: 'AMV can only open Google files you chose for it, or ones it made. Choose the file first.',
+      bad_file: 'That is not a Google file AMV can open.',
+      bad_range: 'That is not a range in a sheet, like Sheet1!A1:C10.',
+      bad_values: 'The values to write must be rows of cells.',
+      too_many_cells: 'That is more than 10,000 cells at once. Write it in parts.',
+      bad_edit: 'Say what to find and what to replace it with, or what to add at the end.',
+    }[why];
+    if (own) return json({ error: why, action: name, message: own + ' Nothing was changed.' }, 400);
     return json({ error:'action_failed', action: name,
       message:'That did not work. Nothing was changed.' }, 502);
   }
+}
+
+/* WHAT GOOGLE'S FILE PICKER NEEDS IN THE BROWSER (picker.html). All three
+   are public by design - a client id, a browser key limited by the site it is
+   used from, and a project number - which is why they are handed to the page
+   at all. Signed in only, so this is not a directory of the deployment's
+   settings for anyone who asks. */
+async function googlePickerConfig(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const clientId = String(env.GOOGLE_CLIENT_ID || ''), apiKey = String(env.GOOGLE_PICKER_API_KEY || '');
+  const appId = String(env.GOOGLE_PROJECT_NUMBER || '').trim();
+  if(!clientId || !apiKey || !/^\d{6,20}$/.test(appId)) return json({ ok:true, configured:false });
+  return json({ ok:true, configured:true, clientId, apiKey, appId });
 }
 
 async function connRemove(request, env){
@@ -13809,7 +13967,7 @@ async function _route(request, env, ctx) {
        would have broken the operator's own dashboard, which is precisely the
        surface the rule about verifying on the surface the owner uses exists
        for. Every one of them was then read and confirmed to write nothing. */
-    '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
+    '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/google/picker', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
     '/api/approvals',
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
     '/admin/abuse/list', '/admin/readiness', '/admin/backup/export',
@@ -13857,6 +14015,7 @@ async function _route(request, env, ctx) {
     case '/v1/activity':     return accountActivity(request, env);
     case '/v1/sessions':     return sessionsList(request, env);
     case '/v1/engines':      return enginesList(request, env);
+    case '/v1/google/picker': return googlePickerConfig(request, env);
     case '/v1/sessions/end': return sessionsEnd(request, env);
     case '/v1/keys/create':  return apiKeyCreate(request, env);
     case '/v1/keys/list':    return apiKeyList(request, env);
@@ -28365,6 +28524,10 @@ function _readinessReport(env, seen) {
       on: _has(env, 'GOOGLE_CLIENT_ID') && _has(env, 'GOOGLE_CLIENT_SECRET'),
       turnsOn: 'Gmail, Calendar and Drive as connected accounts. Needs an app registered with Google and both halves pasted here; until then Google shows as not set up rather than opening a flow that fails.',
       how: put('GOOGLE_CLIENT_ID') + ' and ' + put('GOOGLE_CLIENT_SECRET') },
+    { id: 'googlePicker', name: 'Edit the Google Docs and Sheets people choose', blocking: false,
+      on: _has(env, 'GOOGLE_CLIENT_ID') && _has(env, 'GOOGLE_PICKER_API_KEY') && /^\d{6,20}$/.test(String(env.GOOGLE_PROJECT_NUMBER || '').trim()),
+      turnsOn: 'Google\u2019s own file picker, so somebody can hand AMV one Doc or Sheet to read and edit - and only that one. Until then AMV edits only the Google files it made itself.',
+      how: put('GOOGLE_PICKER_API_KEY') + ' (a browser key with the Picker API, limited to your site) and ' + put('GOOGLE_PROJECT_NUMBER') + ' (the number of the same Google Cloud project as GOOGLE_CLIENT_ID)' },
     { id: 'connectMicrosoft', name: 'Connect Microsoft', blocking: false,
       on: _has(env, 'MS_CLIENT_ID') && _has(env, 'MS_CLIENT_SECRET'),
       turnsOn: 'Outlook mail and calendar as connected accounts.',
@@ -28687,7 +28850,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',

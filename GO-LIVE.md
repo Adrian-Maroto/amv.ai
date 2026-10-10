@@ -456,6 +456,34 @@ broken one. Every turn is metered, reserved and refunded exactly like the
 built-in engines, at the prices in this list. Check the readiness screen
 (Partner models) after setting them.
 
+## 2b2. Editing the Google Docs and Sheets people choose (optional)
+
+With Connect Google set up, AMV can already read and edit the Docs and Sheets
+it made itself. To let people hand it their OWN file - "fix the typos in my
+essay", "fill in my budget sheet" - add Google's file picker. The person
+chooses one file in Google's own window and AMV gets that file and nothing
+else in their Drive. It uses the narrow `drive.file` permission AMV already
+asks for, so there is no new Google review to pass.
+
+In the **same** Google Cloud project as `GOOGLE_CLIENT_ID`:
+
+1. APIs & Services > Library: enable the **Google Picker API**, **Google Docs
+   API** and **Google Sheets API**.
+2. Credentials > Create credentials > **API key**. Restrict it to the Picker
+   API, and to your site (`https://amv.homes/*`) under website restrictions.
+3. Note the **project number** (Dashboard, Project info - a number, not the
+   project name).
+4. Set both:
+
+   ```
+   npx wrangler secret put GOOGLE_PICKER_API_KEY
+   npx wrangler secret put GOOGLE_PROJECT_NUMBER
+   ```
+
+The readiness screen's row "Edit the Google Docs and Sheets people choose"
+turns green when all three are there. Every edit asks the person first, and
+what AMV reports afterwards is what the file says once it has been read back.
+
 ## 2c. AMV as an app on phones and computers (optional)
 
 Nothing here is needed for AMV to install. Today, with no account anywhere:

@@ -34130,6 +34130,51 @@ async function _connActRun(action, args){
 }
 try{ window._connActRun=_connActRun; }catch(e){}
 
+/* ONE GOOGLE FILE, CHOSEN BY THE PERSON IN GOOGLE'S OWN PICKER.
+
+   AMV edits Docs and Sheets on drive.file, which reaches the files it made and
+   the ones somebody chose for it here - nothing else in their Drive. The
+   picker runs in a window of its own (picker.html), so this page never loads
+   Google's code; the window posts back the one file's id and name, and this
+   accepts that message from that window, at this origin, and nothing else.
+
+   Asked first, in a dialog, because a browser opens a window only from a
+   click - and because choosing a file for AMV is a decision, not a step. */
+async function _gPickFile(){
+  if(!(window.AMV_API && AMV_API.live)) throw new Error('AMV is not connected to its engine, so it cannot open Google\u2019s file picker.');
+  let cfg = null;
+  try{ const r = await AMV_API._fetch('/v1/google/picker', { method:'GET' }); cfg = await r.json(); }catch(e){}
+  if(!cfg || !cfg.ok) throw new Error('Could not reach AMV to open Google\u2019s file picker. Nothing was opened.');
+  if(!cfg.configured) throw new Error('Choosing a Google file is not switched on for this AMV yet. AMV can still read and edit the Google files it made itself.');
+  const go = await _showModalAsync({
+    title: T('Choose a Google file for AMV?'),
+    body: T('Google opens its own window. Pick the one Doc or Sheet AMV should read and edit - it gets that file, and nothing else in your Drive.'),
+    okText: T('Choose a file'), cancelText: T('Not now'),
+  });
+  if(go !== true) throw new Error('No file was chosen.');
+  const frag = btoa(encodeURIComponent(JSON.stringify({ clientId: cfg.clientId, apiKey: cfg.apiKey, appId: cfg.appId,
+                                                       hint: (S.user && S.user.email) || '' })));
+  const w = window.open('/picker.html#' + frag, 'amv-picker', 'popup,width=780,height=640');
+  if(!w) throw new Error('Your browser blocked Google\u2019s file picker window. Allow pop-ups for AMV and try again.');
+  return await new Promise((resolve, reject) => {
+    let over = false, timer = null;
+    const end = (f) => { if(over) return; over = true; window.removeEventListener('message', onMsg); clearInterval(timer); f(); };
+    function onMsg(e){
+      if(e.origin !== location.origin || e.source !== w || !e.data || e.data.amvPicker !== true) return;
+      const d = e.data;
+      if(/^[A-Za-z0-9_-]{10,}$/.test(String(d.fileId || ''))){
+        const type = /spreadsheet/.test(String(d.mimeType)) ? 'sheet' : /document/.test(String(d.mimeType)) ? 'doc' : 'file';
+        end(() => resolve({ fileId: d.fileId, name: String(d.name || '').slice(0, 200), type }));
+      }
+      else if(d.error) end(() => reject(new Error('Google\u2019s file picker could not load. Nothing was chosen.')));
+      else end(() => reject(new Error('No file was chosen.')));
+    }
+    window.addEventListener('message', onMsg);
+    timer = setInterval(() => { if(w.closed) end(() => reject(new Error('No file was chosen.'))); }, 500);
+  });
+}
+try{ window._gPickFile=_gPickFile; }catch(e){}
+
 const INTEGRATION_ACTIONS = {
   /* ---- SCHOOL --------------------------------------------------------------
 
@@ -34191,6 +34236,32 @@ const INTEGRATION_ACTIONS = {
   drive_list: {
     desc:'List recent Google Drive files.', needs:'connect',
     async run(){ return await _connActRun('drive.list'); }
+  },
+  /* GOOGLE DOCS AND SHEETS, WHERE THEY ARE - on files the person chose (or
+     AMV made). Changes are asked first, and what comes back is what the file
+     says after the change, read back. */
+  google_file_choose: {
+    desc:'Ask the user to choose one Google Doc or Sheet for AMV in Google\u2019s own file picker. Returns {fileId, name, type}. AMV can open only Google files chosen this way or that it made, so do this before reading or editing one.',
+    needs:'connect',
+    async run(){ return await _gPickFile(); }
+  },
+  google_doc_read: {
+    desc:'Read a Google Doc the user chose. Args: {fileId}. Returns its title, text and link.', needs:'connect',
+    async run(args){ return await _connActRun('docs.read', { fileId: args && args.fileId }); }
+  },
+  google_doc_edit: {
+    desc:'Change a Google Doc the user chose, in place. Args: {fileId, replace?: [{find, with, matchCase?}], append?: text to add at the end}. Read it first. Returns how many places changed and whether the change was read back.',
+    needs:'connect', risk:'high', riskLabel:'change a Google Doc',
+    async run(args){ return await _connActRun('docs.edit', { fileId: args && args.fileId, replace: args && args.replace, append: args && args.append }); }
+  },
+  google_sheet_read: {
+    desc:'Read a Google Sheet the user chose. Args: {fileId, range?: like "Sheet1!A1:D20"}. Returns its tabs and the rows.', needs:'connect',
+    async run(args){ return await _connActRun('sheets.read', { fileId: args && args.fileId, range: args && args.range }); }
+  },
+  google_sheet_write: {
+    desc:'Write cells in a Google Sheet the user chose, in place. Args: {fileId, range: like "Sheet1!A2:C4", values: rows of cells}. Formulas like "=SUM(B2:B9)" stay formulas. Returns the cells changed and whether they were read back.',
+    needs:'connect', risk:'high', riskLabel:'change a Google Sheet',
+    async run(args){ return await _connActRun('sheets.write', { fileId: args && args.fileId, range: args && args.range, values: args && args.values }); }
   },
   /* BOTH OF THESE WENT THROUGH THE BROWSER AND COULD NEVER WORK.
 

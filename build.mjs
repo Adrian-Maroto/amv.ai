@@ -75,6 +75,10 @@ function emitBridge() {
 function emitSandbox() {
   writeFileSync('sandbox.html', readFileSync('src/sandbox/sandbox.html'));
   writeFileSync('sandbox.js', readFileSync('src/sandbox/sandbox.js'));
+  /* Google's file picker, in a window of its own with its own policy, so the
+     app's page never loads Google's code (src/picker/). */
+  writeFileSync('picker.html', readFileSync('src/picker/picker.html'));
+  writeFileSync('picker.js', readFileSync('src/picker/picker.js'));
   /* The Office exporter, fetched only when somebody presses Export. */
   writeFileSync('office.js', readFileSync('src/office/office.js'));
   writeFileSync('sheet.js', readFileSync('src/sheet/sheet.js'));
@@ -888,6 +892,8 @@ const PUBLISH = [
   'amv-cli.mjs',           // fetched by the API keys pane's Download button
   'sandbox.html',          // the frame programs run in (opaque origin, its own policy)
   'sandbox.js',            // what that frame runs
+  'picker.html',           // Google's file picker, opened as its own window
+  'picker.js',             // what that window runs
   'office.js',             // the Word/Excel/PowerPoint exporter, fetched on the first Export
   'sheet.js',              // the spreadsheet editor, fetched the first time a table is opened
   'crew-data.js',          // the Crew job catalogue, fetched the first time Crew is opened

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- Google's file picker, in a window of its own. The app's page never loads
+     Google's code: this window does, under its own policy that allows Google's
+     sign-in and picker hosts and nothing else, and it hands back only the id
+     and name of the one file the person chose. See src/picker/picker.js. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://apis.google.com https://accounts.google.com; frame-src https://docs.google.com https://drive.google.com https://accounts.google.com https://content.googleapis.com; connect-src https://www.googleapis.com https://accounts.google.com https://content.googleapis.com; style-src 'self' 'unsafe-inline' https://accounts.google.com; img-src https: data:; base-uri 'none'; form-action 'none'">
+<meta name="robots" content="noindex">
+<title>Choose a file for AMV</title>
+<style>body{margin:0;font:15px/1.5 system-ui,sans-serif;background:#232429;color:#e8e8ea;display:grid;place-items:center;min-height:100vh;padding:24px;box-sizing:border-box;text-align:center}</style>
+<script src="/picker.js"></script>
+</head>
+<body><p id="say">Opening Google&rsquo;s file picker&hellip;</p></body>
+</html>
