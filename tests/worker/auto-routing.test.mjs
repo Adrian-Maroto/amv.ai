@@ -121,7 +121,7 @@ section('The saving is real, not cosmetic');
 
 section('Auto is wired into the proxy, not just defined');
 ok(/const isAuto = rawModel === 'auto'/.test(src), 'the proxy detects the Auto model');
-ok(/const routed = isAuto \? _autoRoute\(/.test(src), 'and calls the router');
+ok(/(?:const|let) routed = isAuto \? _autoRoute\(/.test(src), 'and calls the router');
 ok(/'X-AMV-Engine': key/.test(src), 'the engine that ran is returned to the client');
 ok(/Access-Control-Expose-Headers/.test(src), 'and exposed, or the browser could not read it');
 {

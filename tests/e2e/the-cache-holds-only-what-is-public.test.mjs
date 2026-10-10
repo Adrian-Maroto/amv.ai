@@ -73,7 +73,9 @@ try {
   await page.waitForTimeout(400);
   const now = await cached();
   const keys = [].concat(...Object.values(now));
-  const allowed = new Set(['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/amv-bridge.mjs']);
+  /* crew-data.js is a published file the page fetches once it is idle (see
+     _crewPrefetch), so it is in the cache by the time this looks. */
+  const allowed = new Set(['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/amv-bridge.mjs', '/crew-data.js']);
   keys.filter(k => /^\/i18n\/[a-z]{2,3}\.json$/.test(k)).forEach(k => allowed.add(k));
   ok(keys.includes('/i18n/es.json'), 'a language pack that was used is stored for offline', now);
   ok(keys.includes('/'), 'the page is stored, under the shell key', now);

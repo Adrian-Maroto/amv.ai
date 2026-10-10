@@ -56,7 +56,7 @@ function _loadCrewData(){
 function _crewPrefetch(){
   try{ if(navigator.connection && navigator.connection.saveData) return; }catch(e){}
   const go = () => { try{ _loadCrewData(); }catch(e){} };
-  if(typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 8000 });
+  if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 8000 });
   else setTimeout(go, 3000);
 }
 function _cwDefaultJobs(){
