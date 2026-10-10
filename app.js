@@ -7140,6 +7140,8 @@ const SYS = [
   "- stats (key metrics): ```stats\\n{\\\"items\\\":[{\\\"value\\\":\\\"$2.4M\\\",\\\"label\\\":\\\"Revenue\\\",\\\"trend\\\":\\\"+12%\\\"},{\\\"value\\\":\\\"18K\\\",\\\"label\\\":\\\"Users\\\"}]}\\n``` - use for standout numbers/KPIs.",
   "- compare (side-by-side): ```compare\\n{\\\"title\\\":\\\"Plans\\\",\\\"columns\\\":[\\\"Free\\\",\\\"Pro\\\"],\\\"highlight\\\":1,\\\"rows\\\":[{\\\"label\\\":\\\"Price\\\",\\\"values\\\":[\\\"$0\\\",\\\"$19\\\"]},{\\\"label\\\":\\\"Support\\\",\\\"values\\\":[false,true]}]}\\n``` - use instead of a comparison table. highlight is the recommended column index; boolean values become ✓/✕.",
   "- steps (process/how-to): ```steps\\n{\\\"title\\\":\\\"Setup\\\",\\\"steps\\\":[{\\\"title\\\":\\\"Install\\\",\\\"detail\\\":\\\"Run npm i\\\"},{\\\"title\\\":\\\"Configure\\\"}]}\\n``` - use for ordered instructions or timelines.",
+  "- cards (options, products, places, people to choose between): ```cards\\n{\\\"title\\\":\\\"Three laptops\\\",\\\"items\\\":[{\\\"title\\\":\\\"Model A\\\",\\\"subtitle\\\":\\\"Best battery\\\",\\\"badge\\\":\\\"Top pick\\\",\\\"facts\\\":[{\\\"label\\\":\\\"Price\\\",\\\"value\\\":\\\"$999\\\"}],\\\"body\\\":\\\"Why it fits.\\\",\\\"url\\\":\\\"https://...\\\"}]}\\n``` - only real links you found; omit url otherwise.",
+  "- Tables: write ordinary markdown tables for tabular data - the person can sort, copy and open them as a spreadsheet.",
   "- choices (ask the user to pick): ```choices\\n{\\\"prompt\\\":\\\"Which do you want?\\\",\\\"options\\\":[\\\"Option A\\\",\\\"Option B\\\"]}\\n``` - tappable; the pick is sent back as their next message. Use when you need the user to choose a direction, NOT for information.",
   "- Always add a sentence of context around these blocks. Don't overuse them - reach for one only when it genuinely communicates better than prose."
 ].join("\n");
@@ -7552,6 +7554,25 @@ function _guiCompare(spec){
       }).join('')+'</div>';
   }).join('');
   return '<div class="gui-cmp">'+title+'<div class="gui-cmp-grid" style="--cmp-cols:'+cols.length+'">'+head+bodyRows+'</div></div>';
+}
+/* cards: options, products, places, people - each a title, a line under it,
+   a few facts, a short body and an optional link. Up to twelve, in a grid that
+   becomes one column on a phone. Every field is escaped; a link must be http(s). */
+function _guiCards(spec){
+  const items=(Array.isArray(spec.items)?spec.items:Array.isArray(spec)?spec:[]).slice(0,12).filter(c=>c&&c.title);
+  if(!items.length) return '';
+  const title=spec.title?'<div class="gui-cards-title">'+escH(String(spec.title))+'</div>':'';
+  return '<div class="gui-cards">'+title+'<div class="gui-cards-grid">'+items.map(c=>{
+    const url=c.url&&/^https?:\/\//i.test(String(c.url))?safeUrl(String(c.url)):'';
+    const facts=Array.isArray(c.facts)?c.facts.slice(0,6):[];
+    return '<div class="gui-card">'+(c.badge?'<span class="gui-card-badge">'+escH(String(c.badge))+'</span>':'')+
+      '<div class="gui-card-t">'+escH(String(c.title))+'</div>'+
+      (c.subtitle?'<div class="gui-card-s">'+escH(String(c.subtitle))+'</div>':'')+
+      (facts.length?'<dl class="gui-card-f">'+facts.map(f=>'<div><dt>'+escH(String((f&&f.label)||''))+'</dt><dd>'+escH(String((f&&f.value)||''))+'</dd></div>').join('')+'</dl>':'')+
+      (c.body?'<p class="gui-card-b">'+escH(String(c.body))+'</p>':'')+
+      (url?'<a class="gui-card-a" href="'+escH(url)+'" target="_blank" rel="noopener noreferrer">'+escH(String(c.linkText||T('Open')))+' ↗</a>':'')+
+    '</div>';
+  }).join('')+'</div></div>';
 }
 // steps: a vertical numbered process/timeline
 function _guiSteps(spec){
@@ -7979,6 +8000,10 @@ function md(text) {  if(!text) return '';
   t = t.replace(/```steps\n?([\s\S]*?)```/gi, (match, body) => {
     try{ return _guiSteps(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
   });
+  // cards: {"title":"..","items":[{"title":"..","subtitle":"..","facts":[{"label":"Price","value":"$9"}],"body":"..","url":"https://.."}]}
+  t = t.replace(/```cards\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiCards(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
+  });
   // choices: {"prompt":"Pick one","options":["A","B","C"]} - tappable, sends a follow-up
   t = t.replace(/```choices\n?([\s\S]*?)```/gi, (match, body) => {
     try{ return _guiChoices(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
@@ -8009,11 +8034,15 @@ function md(text) {  if(!text) return '';
   // Tables
   t = t.replace(/(\|.+\|\n)((?:[\s\S]*?\|.+\|(?:\n|$))+)/g, (match) => {
     const rows=match.trim().split('\n').filter(r=>r.trim()&&!r.match(/^\|[-: |]+\|$/));
-    return '<table>'+rows.map((row,i)=>{
+    /* An answer's table can be sorted by its headers, copied straight into a
+       spreadsheet, or opened in the spreadsheet editor (_answerTables). Wide
+       ones scroll sideways rather than squeezing every column on a phone. */
+    return '<div class="mtbl"><div class="mtbl-bar"><button type="button" class="mtbl-b" data-tbl="sheet">'+escH(T('Open as table'))+'</button>'
+      +'<button type="button" class="mtbl-b" data-tbl="copy">'+escH(T('Copy'))+'</button></div><div class="mtbl-scroll"><table class="mtbl-t">'+rows.map((row,i)=>{
       const cells=row.split('|').filter((_,ci,a)=>ci>0&&ci<a.length-1);
       const tag=i===0?'th':'td';
-      return '<tr>'+cells.map(c=>'<'+tag+'>'+c.trim()+'</'+tag+'>').join('')+'</tr>';
-    }).join('')+'</table>';
+      return '<tr>'+cells.map(c=>'<'+tag+(i===0?' tabindex="0" aria-sort="none"':'')+'>'+c.trim()+'</'+tag+'>').join('')+'</tr>';
+    }).join('')+'</table></div></div>';
   });
 
   t = t.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>');
@@ -11992,6 +12021,65 @@ async function _renderFileLibrary(){
   });
 }
 try{ Object.assign(window, { openFileLibrary }); }catch(e){}
+/* ── A TABLE IN AN ANSWER IS SOMETHING TO WORK WITH ─────────────────────────
+   md() wraps every markdown table in .mtbl with two buttons. One listener on
+   the document handles them for every answer, past and future:
+
+   - a header sorts by its column - numbers as numbers ($1,200 above 800),
+     text in the reader's own alphabet - and a second press reverses it;
+   - Copy puts it on the clipboard as tab-separated rows, which is what Excel,
+     Numbers and Sheets read as cells when pasted;
+   - Open as table hands the rows to the spreadsheet editor. */
+function _mtblRows(t){
+  return [...t.querySelectorAll('tr')].map(tr => [...tr.children].map(c => c.textContent.replace(/\s+/g, ' ').trim()));
+}
+function _mtblNum(s){
+  const v = String(s).replace(/[\s$€£¥₹%,]/g, '').replace(/^\((.*)\)$/, '-$1');
+  return /^[-+]?\d*\.?\d+$/.test(v) ? parseFloat(v) : null;
+}
+function _mtblSort(th){
+  const tr = th.parentNode, table = th.closest('table'); if(!tr || !table) return;
+  const col = [...tr.children].indexOf(th);
+  const dir = th.getAttribute('aria-sort') === 'ascending' ? -1 : 1;
+  tr.querySelectorAll('th').forEach(h => h.setAttribute('aria-sort', 'none'));
+  th.setAttribute('aria-sort', dir > 0 ? 'ascending' : 'descending');
+  const body = [...table.querySelectorAll('tr')].slice(1);
+  const coll = (() => { try{ return new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }); }catch(e){ return null; } })();
+  const key = r => (r.children[col] ? r.children[col].textContent.trim() : '');
+  body.sort((a, b) => {
+    const x = key(a), y = key(b), nx = _mtblNum(x), ny = _mtblNum(y);
+    if(!x !== !y) return x ? -1 : 1;                 /* empty cells last either way */
+    if(nx !== null && ny !== null) return (nx - ny) * dir;
+    return (coll ? coll.compare(x, y) : x.localeCompare(y)) * dir;
+  });
+  const parent = body.length ? body[0].parentNode : null;
+  if(parent) body.forEach(r => parent.appendChild(r));
+}
+function _mtblCopy(t, btn){
+  const tsv = _mtblRows(t).map(r => r.map(c => c.replace(/\t/g, ' ')).join('\t')).join('\n');
+  const done = () => { const was = btn.textContent; btn.textContent = T('Copied'); setTimeout(() => { btn.textContent = was; }, 1400); };
+  try{ navigator.clipboard.writeText(tsv).then(done, () => toast(T('The table could not be copied. Select it and copy instead.'), 'error', 5000)); }
+  catch(e){ toast(T('The table could not be copied. Select it and copy instead.'), 'error', 5000); }
+}
+function _mtblOpen(t){
+  const rows = _mtblRows(t);
+  _loadSheet().then(ok => {
+    if(!ok){ toast(T('The spreadsheet editor could not be loaded. Check your connection and try again.'), 'error', 6000); return; }
+    openSheetEditor(rows, T('Table from AMV'));
+  });
+}
+document.addEventListener('click', e => {
+  const box = e.target.closest && e.target.closest('.mtbl'); if(!box) return;
+  const t = box.querySelector('table'); if(!t) return;
+  const b = e.target.closest('[data-tbl]');
+  if(b){ if(b.dataset.tbl === 'copy') _mtblCopy(t, b); else if(b.dataset.tbl === 'sheet') _mtblOpen(t); return; }
+  const th = e.target.closest('th'); if(th && t.contains(th)) _mtblSort(th);
+});
+document.addEventListener('keydown', e => {
+  if(e.key !== 'Enter' && e.key !== ' ') return;
+  const th = e.target.closest && e.target.closest('.mtbl th'); if(!th) return;
+  e.preventDefault(); _mtblSort(th);
+});
 /* ============================================================
    TEAM / WORKSPACE MODE (frontend) - the B2B tier.
    Create a team, invite members with roles, share projects & prompts.

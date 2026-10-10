@@ -1305,7 +1305,11 @@ step('Page weight is under control', () => {
      (Command Center, fraud review, user list) moved to admin.js, fetched
      when the owner opens it - 9.6KB gzipped no visitor downloads any more.
      The ceiling follows it down so the room cannot be quietly spent. */
-  const CEILING = 646 * 1024;   // gzipped, which is what actually crosses the network
+  /* 646 -> 648, 2026-10-10, deliberately: the device list (where you are
+     signed in, end any one) and answers' tables that sort, copy and open as a
+     spreadsheet, plus a cards block. Still 8KB under where it stood before
+     the owner console moved out. */
+  const CEILING = 648 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

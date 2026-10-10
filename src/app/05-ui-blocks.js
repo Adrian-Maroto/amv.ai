@@ -35,6 +35,25 @@ function _guiCompare(spec){
   }).join('');
   return '<div class="gui-cmp">'+title+'<div class="gui-cmp-grid" style="--cmp-cols:'+cols.length+'">'+head+bodyRows+'</div></div>';
 }
+/* cards: options, products, places, people - each a title, a line under it,
+   a few facts, a short body and an optional link. Up to twelve, in a grid that
+   becomes one column on a phone. Every field is escaped; a link must be http(s). */
+function _guiCards(spec){
+  const items=(Array.isArray(spec.items)?spec.items:Array.isArray(spec)?spec:[]).slice(0,12).filter(c=>c&&c.title);
+  if(!items.length) return '';
+  const title=spec.title?'<div class="gui-cards-title">'+escH(String(spec.title))+'</div>':'';
+  return '<div class="gui-cards">'+title+'<div class="gui-cards-grid">'+items.map(c=>{
+    const url=c.url&&/^https?:\/\//i.test(String(c.url))?safeUrl(String(c.url)):'';
+    const facts=Array.isArray(c.facts)?c.facts.slice(0,6):[];
+    return '<div class="gui-card">'+(c.badge?'<span class="gui-card-badge">'+escH(String(c.badge))+'</span>':'')+
+      '<div class="gui-card-t">'+escH(String(c.title))+'</div>'+
+      (c.subtitle?'<div class="gui-card-s">'+escH(String(c.subtitle))+'</div>':'')+
+      (facts.length?'<dl class="gui-card-f">'+facts.map(f=>'<div><dt>'+escH(String((f&&f.label)||''))+'</dt><dd>'+escH(String((f&&f.value)||''))+'</dd></div>').join('')+'</dl>':'')+
+      (c.body?'<p class="gui-card-b">'+escH(String(c.body))+'</p>':'')+
+      (url?'<a class="gui-card-a" href="'+escH(url)+'" target="_blank" rel="noopener noreferrer">'+escH(String(c.linkText||T('Open')))+' ↗</a>':'')+
+    '</div>';
+  }).join('')+'</div></div>';
+}
 // steps: a vertical numbered process/timeline
 function _guiSteps(spec){
   const steps=Array.isArray(spec.steps)?spec.steps:(Array.isArray(spec)?spec:[]);
@@ -461,6 +480,10 @@ function md(text) {  if(!text) return '';
   t = t.replace(/```steps\n?([\s\S]*?)```/gi, (match, body) => {
     try{ return _guiSteps(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
   });
+  // cards: {"title":"..","items":[{"title":"..","subtitle":"..","facts":[{"label":"Price","value":"$9"}],"body":"..","url":"https://.."}]}
+  t = t.replace(/```cards\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiCards(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
+  });
   // choices: {"prompt":"Pick one","options":["A","B","C"]} - tappable, sends a follow-up
   t = t.replace(/```choices\n?([\s\S]*?)```/gi, (match, body) => {
     try{ return _guiChoices(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
@@ -491,11 +514,15 @@ function md(text) {  if(!text) return '';
   // Tables
   t = t.replace(/(\|.+\|\n)((?:[\s\S]*?\|.+\|(?:\n|$))+)/g, (match) => {
     const rows=match.trim().split('\n').filter(r=>r.trim()&&!r.match(/^\|[-: |]+\|$/));
-    return '<table>'+rows.map((row,i)=>{
+    /* An answer's table can be sorted by its headers, copied straight into a
+       spreadsheet, or opened in the spreadsheet editor (_answerTables). Wide
+       ones scroll sideways rather than squeezing every column on a phone. */
+    return '<div class="mtbl"><div class="mtbl-bar"><button type="button" class="mtbl-b" data-tbl="sheet">'+escH(T('Open as table'))+'</button>'
+      +'<button type="button" class="mtbl-b" data-tbl="copy">'+escH(T('Copy'))+'</button></div><div class="mtbl-scroll"><table class="mtbl-t">'+rows.map((row,i)=>{
       const cells=row.split('|').filter((_,ci,a)=>ci>0&&ci<a.length-1);
       const tag=i===0?'th':'td';
-      return '<tr>'+cells.map(c=>'<'+tag+'>'+c.trim()+'</'+tag+'>').join('')+'</tr>';
-    }).join('')+'</table>';
+      return '<tr>'+cells.map(c=>'<'+tag+(i===0?' tabindex="0" aria-sort="none"':'')+'>'+c.trim()+'</'+tag+'>').join('')+'</tr>';
+    }).join('')+'</table></div></div>';
   });
 
   t = t.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>');
