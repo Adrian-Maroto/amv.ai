@@ -43,7 +43,7 @@ const wire = (status = 200) => page.evaluate(cfg => {
 }, { stats: STATS, status });
 
 const openAdmin = async () => {
-  await page.evaluate(() => { S.tab = 'admin'; renderAdminView(); });
+  await page.evaluate(async () => { await _loadAdmin(); S.tab = 'admin'; renderAdminView(); });
   await page.waitForTimeout(120);
 };
 const reqs = () => page.evaluate(() => window.__req);

@@ -74,6 +74,7 @@ function emitSandbox() {
   /* The Office exporter, fetched only when somebody presses Export. */
   writeFileSync('office.js', readFileSync('src/office/office.js'));
   writeFileSync('sheet.js', readFileSync('src/sheet/sheet.js'));
+  writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
 }
 
 function assembleJS() {
@@ -866,6 +867,7 @@ const PUBLISH = [
   'sandbox.js',            // what that frame runs
   'office.js',             // the Word/Excel/PowerPoint exporter, fetched on the first Export
   'sheet.js',              // the spreadsheet editor, fetched the first time a table is opened
+  'admin.js',              // the owner console, fetched when the owner opens it
 ];
 function emitPublishDir() {
   if (!existsSync(PUBLISH_DIR)) mkdirSync(PUBLISH_DIR, { recursive: true });

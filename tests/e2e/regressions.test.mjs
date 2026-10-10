@@ -252,6 +252,8 @@ ok(teamTab.filled, 'and renders content rather than an empty view', teamTab);
    block without error. */
 section('Owner analytics dashboard renders (growth block, no crash)');
 
+/* The console is fetched on first open (admin.js). */
+await page.evaluate(() => _loadAdmin());
 const adm = await page.evaluate(() => {
   // become the owner so isAdmin() passes
   S.user = { name: 'Op', email: (window.OWNER_EMAIL || 'amarotovaleria@gmail.com'), ini: 'O' };

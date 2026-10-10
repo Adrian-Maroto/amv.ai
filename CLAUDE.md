@@ -71,8 +71,11 @@ Companion docs (do not duplicate them here - read them):
     by somebody raising it on purpose.
 - **What the static host publishes is `public/`.** The build writes it: the
   built `index.html`, `sw.js`, `manifest.webmanifest`, the two icons,
-  `amv-bridge.mjs`, the code sandbox (`sandbox.html` + `sandbox.js`) and the
-  language packs in `i18n/`, byte-identical copies and nothing else. It exists because
+  `amv-bridge.mjs`, the code sandbox (`sandbox.html` + `sandbox.js`), the
+  language packs in `i18n/`, and three files fetched on first use - `office.js`
+  (Word/Excel/PowerPoint export), `sheet.js` (the spreadsheet editor) and
+  `admin.js` (the owner console) - byte-identical copies and nothing else.
+  Code only some visitors use goes in such a file, not in the page. It exists because
   the site is one file at the ROOT of this repository, so a host pointed at the
   repository serves `amv-backend.js`, `wrangler.toml` and `SECURITY-SCAMS.md`
   too - which it was, confirmed live. Add a file to `PUBLISH` in `build.mjs`

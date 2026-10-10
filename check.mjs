@@ -1292,7 +1292,11 @@ step('Page weight is under control', () => {
      the owner's console in 08-admin-fraud.js (~24KB gzipped, some of it
      owner-only). Moving that to an on-demand file, the way office.js and
      sheet.js are, is the lever - its own change, tracked as a task. */
-  const CEILING = 656 * 1024;   // gzipped, which is what actually crosses the network
+  /* 656 -> 646, 2026-10-10: DOWN, the lever named above. The owner console
+     (Command Center, fraud review, user list) moved to admin.js, fetched
+     when the owner opens it - 9.6KB gzipped no visitor downloads any more.
+     The ceiling follows it down so the room cannot be quietly spent. */
+  const CEILING = 646 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

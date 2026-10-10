@@ -626,7 +626,7 @@ function renderView(){
     case 'market': renderMarketView(); break;
     /* Its own section, because it was a row inside Integrations and that is
        the reason nobody knew any of this existed. */
-    case 'admin': renderAdminView(); break;
+    case 'admin': _openAdmin(); break;
     case 'notfound': render404View(); break;
     default: render404View();
   }
@@ -3571,6 +3571,32 @@ function setupApp(){
 
 /* -- Navigation helpers -- */
 function goSettings(pane){ S.settingsPane=pane; setTab('settings'); }
+/* The owner console is fetched the first time it is opened. The screen says
+   it is loading, and says so plainly if the file cannot be reached. */
+let _adminP = null;
+function _loadAdmin(){
+  if(typeof window.renderAdminView === 'function') return Promise.resolve(true);
+  if(_adminP) return _adminP;
+  _adminP = new Promise(res => {
+    const s = document.createElement('script');
+    s.src = 'admin.js';
+    s.onload = () => res(typeof window.renderAdminView === 'function');
+    s.onerror = () => { _adminP = null; s.remove(); res(false); };
+    document.head.appendChild(s);
+  });
+  return _adminP;
+}
+function _openAdmin(){
+  const vc = $('vc');
+  if(vc && typeof window.renderAdminView !== 'function') vc.innerHTML = '<div class="sv fi"><div class="vi"><p class="vsub">'+escH(T('Opening the console…'))+'</p></div></div>';
+  _loadAdmin().then(ok => {
+    if(S.tab !== 'admin') return;
+    if(ok){ window.renderAdminView(); return; }
+    if(vc) vc.innerHTML = '<div class="sv fi"><div class="vi"><p class="vsub">'+escH(T('The console could not be loaded. Check your connection and try again.'))+'</p>'
+      +'<button type="button" class="btn bs" data-dact="_openAdmin">'+escH(T('Try again'))+'</button></div></div>';
+  });
+}
+try{ window._openAdmin=_openAdmin; }catch(e){}
 function askAmv(){ setTab('chat'); setTimeout(()=>{ const ta=document.getElementById('mta'); if(ta){ta.value='I need help with: ';ta.focus();} },150); }
 /* In-app feedback: bug reports & feature suggestions. Stored locally and surfaced
    to the operator in the admin, and sent to a support email/endpoint if configured. */

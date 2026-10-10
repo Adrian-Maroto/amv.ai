@@ -51,6 +51,8 @@ await app.stubFetch(async (u, o) => {
 const openList = () => page.evaluate(async () => {
   S.user = { name: 'Owner', email: OWNER_EMAIL, ini: 'O' };
   S._adminTab = 'users';
+  /* The console is fetched on first open (admin.js); this is what opening it waits for. */
+  await _loadAdmin();
   renderAdminView();
   await new Promise(r => setTimeout(r, 1500));
   return !!document.querySelector('[data-admuser]');

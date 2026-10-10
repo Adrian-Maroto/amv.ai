@@ -85,7 +85,7 @@ section('The controls that went dead now ask the resolver');
   const CONTROLS = [
     ['12-handoff.js', 'async function _loadReadiness', 'the go-live status panel'],
     ['12-handoff.js', 'const loadStats=async()=>', "the founder dashboard's Load stats"],
-    ['08-admin-fraud.js', 'async function _admFetchStats', 'the admin stats surface'],
+    ['../admin/admin.js', 'async function _admFetchStats', 'the admin stats surface'],
   ];
   for (const [file, needle, label] of CONTROLS) {
     const body = bodyOf(read(file), needle);
