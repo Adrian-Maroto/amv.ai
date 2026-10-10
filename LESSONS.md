@@ -14733,3 +14733,21 @@ Rule: before adding a model call to judge a model, name the specific failure
 and ask whether it can be seen without one. If it can, check it directly. Test
 the check against honest text as hard as against the failure, because a
 warning on every result is a warning nobody reads.
+
+## 574. Check a capability against the engines you actually run before recommending it
+
+When the gap list was triaged, "fast mode" was put in the group to say yes to,
+next to more effort levels. Read against the provider's documentation when it
+came time to build, fast mode exists only on a model family AMV does not run,
+is a research preview, and costs twice the standard rate. Adding it would
+mean adding a new engine for a feature that could change or disappear. The
+recommendation was reversed: AMV's quick engine is its fast option.
+
+The effort levels held up. All five are documented for every engine in the
+table, so Extra high and Maximum were added with plan ceilings (Elite, Ultra).
+Thinking counts inside max_tokens, which is booked before the call, so a
+higher level cannot spend past the reservation.
+
+Rule: before saying yes to a provider feature, read which models carry it and
+in what state (GA, beta, preview). A yes given on the name alone is a promise
+made about somebody else's roadmap.

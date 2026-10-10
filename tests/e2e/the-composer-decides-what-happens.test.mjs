@@ -236,6 +236,23 @@ section('The effort picker cannot offer what the plan will not give');
   });
   ok(!elite.disabled, 'a plan that pays for it can pick it', elite.disabled);
   ok(elite.stored === 'high', 'and the choice is what the turn will send', elite.stored);
+
+  /* The two dearest steps: Extra high is Elite's, Maximum is Ultra's. */
+  const steps = await page.evaluate(async () => {
+    const read = async (plan) => {
+      saveStr('amv_plan', plan);
+      setTab('chat'); await new Promise(s => setTimeout(s, 150));
+      setTab('dev'); await new Promise(s => setTimeout(s, 350));
+      const o = (v) => [...document.getElementById('dev-effort').options].find(x => x.value === v);
+      return { xhigh: { d: o('xhigh').disabled, t: o('xhigh').textContent }, max: { d: o('max').disabled, t: o('max').textContent } };
+    };
+    return { free: await read('free'), elite: await read('elite'), ultra: await read('ultra') };
+  });
+  ok(steps.free.xhigh.d && /Elite/.test(steps.free.xhigh.t) && steps.free.max.d && /Ultra/.test(steps.free.max.t),
+     'on a free plan Extra high and Maximum are shown, locked, with the plan each needs', steps.free);
+  ok(!steps.elite.xhigh.d && steps.elite.max.d && /Ultra/.test(steps.elite.max.t),
+     'Elite can pick Extra high; Maximum stays Ultra’s', steps.elite);
+  ok(!steps.ultra.xhigh.d && !steps.ultra.max.d, 'Ultra can pick both', steps.ultra);
   await page.evaluate(() => { _devSetEffort(''); saveStr('amv_plan', 'free'); });
 }
 

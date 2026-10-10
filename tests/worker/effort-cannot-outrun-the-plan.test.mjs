@@ -131,6 +131,21 @@ section('Elite and above really can raise it, or the control is an upsell that l
   ok(got.effort === 'high', 'a plan that pays for it gets it', got.effort);
 }
 
+section('Extra high is Elite’s and Maximum is Ultra’s, checked on what was sent');
+{
+  const pro = await account('pro');
+  const p1 = await askFor(pro, 'amv-forge', 'max');
+  ok(p1.effort === 'high', 'Pro asking the deep engine for Maximum gets the engine’s own High, no more and no less', p1.effort);
+  const elite = await account('elite');
+  const e1 = await askFor(elite, 'amv-forge', 'xhigh');
+  const e2 = await askFor(elite, 'amv-forge', 'max');
+  ok(e1.effort === 'xhigh', 'Elite gets Extra high', e1.effort);
+  ok(e2.effort === 'xhigh' && e2.header === 'xhigh', 'and asking Maximum lands on Extra high, and says so', e2);
+  const ultra = await account('ultra');
+  const u1 = await askFor(ultra, 'amv-apex', 'max');
+  ok(u1.effort === 'max', 'Ultra gets Maximum', u1.effort);
+}
+
 section('Saying nothing leaves the engine exactly as it was');
 {
   const free = await account('free');
@@ -166,14 +181,17 @@ section('The rule itself, on every engine and every plan');
   let bad = [];
   for (const [key, eng] of Object.entries(W.ENGINES)) {
     for (const [plan, rank] of Object.entries(W.PLAN_RANK)) {
-      for (const want of ['medium', 'high', undefined]) {
+      for (const want of ['low', 'medium', 'high', 'xhigh', 'max', undefined]) {
         const got = W._resolveEffort(eng, want, rank);
         if (!eng.effort) { if (got !== null) bad.push(`${key}/${plan}/${want}: ${got}`); continue; }
-        /* Never above what the engine itself runs at, and never above the
-           engine's own setting unless the plan is Elite or better. */
-        const ceiling = rank >= W.PLAN_RANK.elite ? 'high' : eng.effort;
-        const rankOf = { medium: 0, high: 1 };
-        if (rankOf[got] > rankOf[ceiling]) bad.push(`${key}/${plan}/${want}: ${got} > ${ceiling}`);
+        /* Never above the engine's own setting unless the plan pays to raise
+           it: Elite up to Extra high, Ultra up to Maximum. */
+        const ceiling = rank >= W.PLAN_RANK.ultra ? 'max' : rank >= W.PLAN_RANK.elite ? 'xhigh' : eng.effort;
+        const rankOf = { low: 0, medium: 1, high: 2, xhigh: 3, max: 4 };
+        if (!(got in rankOf)) bad.push(`${key}/${plan}/${want}: unknown ${got}`);
+        else if (rankOf[got] > rankOf[ceiling]) bad.push(`${key}/${plan}/${want}: ${got} > ${ceiling}`);
+        /* And asking never gets less than saying nothing would. */
+        else if (want && rankOf[want] > rankOf[eng.effort] && rankOf[got] < rankOf[eng.effort]) bad.push(`${key}/${plan}/${want}: ${got} below default`);
       }
     }
   }

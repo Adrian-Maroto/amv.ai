@@ -47575,7 +47575,10 @@ function _devSetApplyMode(v){
    provider's documentation was read and listed it for every engine AMV runs -
    not guessed, because an effort the model does not accept is a failed
    request on somebody's real turn. It only ever lowers what a turn costs. */
-const _DEV_EFFORTS = [['low', 'Quick'], ['medium', 'Balanced'], ['high', 'High']];
+const _DEV_EFFORTS = [['low', 'Quick'], ['medium', 'Balanced'], ['high', 'High'],
+                      ['xhigh', 'Extra high'], ['max', 'Maximum']];
+/* The plan each costlier step needs - the server's ceiling, said up front. */
+const _DEV_EFFORT_PLAN = { high: 'Elite', xhigh: 'Elite', max: 'Ultra' };
 function _devEffort(){
   try{ const v = loadStr('amv_dev_effort'); if(v && _DEV_EFFORTS.some(e => e[0] === v)) return v; }catch(e){}
   return '';   // empty means "whatever the engine runs at", which is the honest default
@@ -47591,22 +47594,28 @@ function _devSetEffort(v){
 function _devCanRaiseEffort(){
   try{ const p = loadStr('amv_plan') || 'free'; return p === 'elite' || p === 'ultra' || p === 'custom'; }catch(e){ return false; }
 }
+/* Whether this plan may pick that step at all. */
+function _devEffortAllowed(v){
+  const need = _DEV_EFFORT_PLAN[v];
+  if(!need) return true;
+  if(need === 'Ultra'){ try{ return (loadStr('amv_plan') || '') === 'ultra'; }catch(e){ return false; } }
+  return _devCanRaiseEffort();
+}
 try{ window._devApplyMode=_devApplyMode; window._devSetApplyMode=_devSetApplyMode;
      window._devEffort=_devEffort; window._devSetEffort=_devSetEffort;
-     window._devCanRaiseEffort=_devCanRaiseEffort; }catch(e){}
+     window._devCanRaiseEffort=_devCanRaiseEffort; window._devEffortAllowed=_devEffortAllowed; }catch(e){}
 
 function _devComposerBarHTML(){
   const mode = _devApplyMode();
   const eff = _devEffort();
-  const canRaise = _devCanRaiseEffort();
   const effOpts = '<option value=""' + (eff ? '' : ' selected') + '>Effort: engine default</option>'
     + _DEV_EFFORTS.map(([v, label]) => {
-        /* High is the only step that costs more, so it is the only one a
-           plan can withhold. Balanced is always selectable because asking
-           for less can only reduce the bill. */
-        const locked = (v === 'high' && !canRaise);
+        /* The steps that cost more are the ones a plan can withhold, and
+           each says which plan it needs. Quick and Balanced are always
+           selectable because asking for less can only reduce the bill. */
+        const locked = !_devEffortAllowed(v);
         return '<option value="' + v + '"' + (v === eff ? ' selected' : '') + (locked ? ' disabled' : '') + '>'
-          + 'Effort: ' + label + (locked ? ' · Elite' : '') + '</option>';
+          + 'Effort: ' + label + (locked ? ' · ' + _DEV_EFFORT_PLAN[v] : '') + '</option>';
       }).join('');
   return '<div class="dvi-bar">'
     + '<div class="dvi-l">'

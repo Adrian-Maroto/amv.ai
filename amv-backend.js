@@ -235,20 +235,32 @@ const _DEAREST_ENGINE_IN_COST = Math.max(...Object.values(ENGINES).map((e) => e.
    documentation lists it for all of them). It sits below the engines' own
    settings, so choosing it can only lower a bill - the ceiling logic below
    never needs to gate it. */
-const EFFORT_RANK = { low: 0, medium: 1, high: 2 };
-const EFFORT_LABEL = { low: 'Quick', medium: 'Balanced', high: 'High' };
+/* 'xhigh' and 'max' joined on the same evidence: the effort documentation
+   lists all five levels for every engine in the table. They are the two that
+   cost more, so each is a plan's to give. Spend still cannot run past the
+   reservation - thinking is counted inside max_tokens, which is booked before
+   the call - so a higher level spends more of an answer's ceiling on
+   thinking, never more than the ceiling. */
+const EFFORT_RANK = { low: 0, medium: 1, high: 2, xhigh: 3, max: 4 };
+const EFFORT_LABEL = { low: 'Quick', medium: 'Balanced', high: 'High', xhigh: 'Extra high', max: 'Maximum' };
 function _effortCeiling(eng, rank) {
   if (!eng.effort) return null;
   /* Below Elite the engine's own setting is the ceiling, so nobody can raise
-     spend past what their plan already pays for. */
-  if (rank >= PLAN_RANK.elite) return 'high';
+     spend past what their plan already pays for. Elite reaches Extra high;
+     Maximum, the dearest, is Ultra's. */
+  if (rank >= PLAN_RANK.ultra) return 'max';
+  if (rank >= PLAN_RANK.elite) return 'xhigh';
   return eng.effort;
 }
 function _resolveEffort(eng, want, rank) {
   if (!eng.effort) return null;                       // engine takes no effort
   const ceiling = _effortCeiling(eng, rank);
   if (want == null || !EFFORT_RANK.hasOwnProperty(want)) return eng.effort;
-  return EFFORT_RANK[want] <= EFFORT_RANK[ceiling] ? want : ceiling;
+  /* Clamped to the ceiling, never above it - and an ask above the ceiling
+     lands on the higher of the ceiling and the engine's own setting, so
+     asking for more never quietly gets LESS than saying nothing would. */
+  if (EFFORT_RANK[want] <= EFFORT_RANK[ceiling]) return want;
+  return EFFORT_RANK[ceiling] >= EFFORT_RANK[eng.effort] ? ceiling : eng.effort;
 }
 
 /* The model behind a tier, read from the one place that defines it.
