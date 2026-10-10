@@ -1339,7 +1339,12 @@ step('Page weight is under control', () => {
      paint. The ceiling follows it down so the room cannot be quietly spent.
      (A first draft of this said 596, from a mis-measurement; 600 is the real
      figure with a kilobyte of room.) */
-  const CEILING = 600 * 1024;   // gzipped, which is what actually crosses the network
+  /* 600 -> 602, 2026-10-10, deliberately: a team's engine choice - the
+     owner or an admin picks which engines the team uses, the chat menu and
+     section selects say when one is turned off, and the activity log names
+     the change (~1.5KB gzipped). The server enforces it; this is the part
+     that tells people before a send is refused. */
+  const CEILING = 602 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

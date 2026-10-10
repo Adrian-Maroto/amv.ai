@@ -246,6 +246,30 @@ const FAST_MODE_BETA = 'fast-mode-2026-02-01';
    partner's model id never reaches a screen.
    ══════════════════════════════════════════════════════════════════════ */
 const PARTNER_KEY_RE = /^amv-[a-z0-9-]{2,24}$/;
+
+/* WHICH ENGINES A TEAM'S PEOPLE MAY USE.
+
+   A company buying seats decides this, not each person: some keep the top
+   engines for the people who need them, some keep everyone on one supplier's
+   models. Set by the owner or an admin, stored on the team, and enforced here
+   on the server for every member - the picker only reflects it.
+
+   Pulse and Core are always allowed. Background jobs, chat summaries and the
+   automatic router fall back to them, so a policy that removed them would not
+   restrict anything - it would break the account. `null` means no policy:
+   everything the plan allows. */
+const TEAM_BASE_ENGINES = ['amv-pulse', 'amv-core'];
+function _teamEngineList(team){
+  const p = team && team.policy;
+  if (!p || !Array.isArray(p.engines)) return null;
+  return TEAM_BASE_ENGINES.concat(p.engines.filter(k => typeof k === 'string' && !TEAM_BASE_ENGINES.includes(k)));
+}
+/* The name a person knows an engine by. A partner engine carries its own. */
+function _engineTitle(key, eng){
+  if (eng && eng.label) return String(eng.label);
+  const k = String(key || '').replace(/^amv-/, '');
+  return 'AMV ' + k.charAt(0).toUpperCase() + k.slice(1);
+}
 const PARTNER_MODELS_TTL_S = 6 * 3600;
 
 function _partnerConfigured(env){
@@ -13923,6 +13947,7 @@ async function _route(request, env, ctx) {
     case '/team/leave':      return teamLeave(request, env);
     case '/team/role':       return teamSetRole(request, env);
     case '/team/audit':      return teamAuditLog(request, env);
+    case '/team/policy':     return teamSetPolicy(request, env);
     case '/team/data':       return teamData(request, env);
     case '/team/share':      return teamShare(request, env);
     case '/team/shared':     return teamShared(request, env);
@@ -16549,8 +16574,8 @@ function _boundedJson(obj, maxBytes, maxDepth){
      • member - use the shared workspace, read members, leave
    ===================================================================== */
 const TEAM_PERMS = {
-  owner:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','deleteTeam','rename']),
-  admin:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','rename']),
+  owner:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','deleteTeam','rename','setPolicy']),
+  admin:  new Set(['invite','remove','setRole','editData','viewMembers','viewAudit','rename','setPolicy']),
   member: new Set(['viewMembers']),
 };
 function _can(team, email, perm){
@@ -16823,6 +16848,44 @@ async function teamSetRole(request, env){
   if(changed && changed.error) return json({ error: changed.error, code: changed.code }, changed.status||400);
   await _teamAudit(env, team, user.email, 'role_changed', { target, from: changed.prev, to: newRole });
   return json({ ok:true, members: changed.members });
+}
+
+/* Choose which engines the team's people may use (owner/admin).
+   { engines: [...] } allows those plus the base engines; { engines: null }
+   removes the policy. Unknown names are refused rather than stored, so a
+   typo cannot become a rule that silently matches nothing. */
+async function teamSetPolicy(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const body = await request.json().catch(()=>({}));
+  let team = await _teamOf(env, user.email);
+  if(!team) return json({ error:'no team' }, 404);
+  const deny = 'Only the team\u2019s owner or an admin can choose its engines.';
+  if(!_can(team, user.email, 'setPolicy')) return json({ error: deny, code:'forbidden' }, 403);
+  let engines = null;
+  if(body.engines !== null && body.engines !== undefined){
+    if(!Array.isArray(body.engines) || body.engines.length > 32) return json({ error:'Send the engines as a list.', code:'bad_request' }, 400);
+    const known = new Set(Object.keys(ENGINES).concat(_partnerEngineDefs(env).map(d => d.key)));
+    const bad = body.engines.find(k => typeof k !== 'string' || !known.has(k));
+    if(bad !== undefined) return json({ error:'There is no engine called ' + String(bad).slice(0, 40) + '.', code:'unknown_engine' }, 400);
+    engines = [...new Set(body.engines)].filter(k => !TEAM_BASE_ENGINES.includes(k));
+  }
+  let r;
+  try{
+    r = await _withTeam(env, team.id, (fresh) => {
+      if(!fresh) return { error:'no team', status:404 };
+      if(!_can(fresh, user.email, 'setPolicy')) return { error: deny, status:403 };
+      const prev = _teamEngineList(fresh);
+      fresh.policy = Object.assign({}, fresh.policy || {}, { engines });
+      team = fresh;
+      return { prev };
+    });
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+  if(r && r.error) return json({ error: r.error }, r.status || 400);
+  const now = _teamEngineList(team);
+  await _teamAudit(env, team, user.email, 'engines_changed', {
+    engines: now ? now.join(',') : 'all', before: r.prev ? r.prev.join(',') : 'all' });
+  return json({ ok:true, engines: now });
 }
 
 /* Read the team's action audit log (owner/admin only). */
@@ -17369,7 +17432,7 @@ async function _principalOf(env, email, ent, extra) {
   data.billingSubject = sub.subject;
   data.plan = sub.plan;
   data.customCfg = sub.customCfg;
-  if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; }
+  if (sub.teamId) { data.teamId = sub.teamId; data.teamRole = sub.teamRole; data.teamSeated = sub.seated; data.teamEngines = sub.teamEngines || null; }
   data.billingRenewedAt = sub.renewedAt || 0;
   /* Set when an account is blocked for charging back or a refund pattern. It
      rides on the entitlement, which is read here anyway, so every path that
@@ -17857,7 +17920,12 @@ async function aiProxy(request, env, ctx) {
      ceiling is applied inside the router, and the choice is reported back so
      the interface can name the engine that actually answered. */
   const isAuto = rawModel === 'auto' || rawModel === 'amv-auto';
-  const routed = isAuto ? _autoRoute(body, user, limits) : null;
+  let routed = isAuto ? _autoRoute(body, user, limits) : null;
+  /* Auto never routes to an engine the team has not allowed. Core is always
+     allowed, and it is where the router's own plan cap lands as well. */
+  if (routed && Array.isArray(user.teamEngines) && !user.teamEngines.includes(routed.key)) {
+    routed = { key: 'amv-core', why: 'Balanced engine - your team has not turned on the deeper one' };
+  }
   /* A PARTNER ENGINE, OR AN AMV NAME NOTHING ANSWERS TO.
 
      An `amv-*` name that is not one of the primary engines is either a live
@@ -17880,6 +17948,12 @@ async function aiProxy(request, env, ctx) {
   // 1) PLAN ENFORCEMENT - free can't call premium engines (custom plans paid for all models)
   if (!limits.allModels && _planRankOf(user.plan, user.customCfg) < PLAN_RANK[eng.minPlan]) {
     return json({ error: `${key} requires the ${eng.minPlan} plan. Upgrade to use it.`, code: 'plan_required', minPlan: eng.minPlan }, 402);
+  }
+  /* 1b) THE TEAM'S CHOICE. Refused, never quietly swapped for an allowed
+     engine: the person picked this one and should know why it did not run. */
+  if (Array.isArray(user.teamEngines) && !user.teamEngines.includes(key)) {
+    return json({ error: `Your team has not turned on ${_engineTitle(key, eng)}. Choose another engine, or ask your team\u2019s owner or an admin to allow it in Team.`,
+                  code: 'team_policy', engine: key }, 403);
   }
 
   // 2) RATE LIMIT (per account, per minute) - ATOMIC test-and-increment.
@@ -22201,6 +22275,9 @@ async function _billingSubjectOf(env, email, ent){
   if(!m) return out;
   out.teamId = team.id;
   out.teamRole = m.role || 'member';
+  /* Every member, seated or not: the policy is the company's rule about its
+     people, not a condition of the seat it pays for. */
+  out.teamEngines = _teamEngineList(team);
   out.seated = _teamSeated(team).some(x => x.email === em);
   const teamPlan = _teamPlan(team);
   if(out.seated && _planRankOf(teamPlan, team.customCfg) >= _planRankOf(out.plan, out.customCfg)){
@@ -22677,6 +22754,7 @@ async function getEntitlement(request, env) {
                 billing: _billingState(ent),
                 renewal: _renewalState(ent),
                 bonusTokens: _bonusTokens(ent),
+                teamEngines: user.teamEngines || null,
                 referralEarned: converted && converted.paidJoiner ? converted.tokens : 0 });
 }
 

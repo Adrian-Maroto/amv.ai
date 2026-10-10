@@ -16895,3 +16895,20 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
    One quiet line where the catalogue will be, holding the screen's height so
    nothing below it moves when the jobs arrive. */
 .cw-loading{ min-height:60vh; padding:var(--sp-6) 0; color:var(--mu); font-size:var(--t-base); line-height:1.6; }
+
+/* ═══ LAYER A307 - Team engines ═══════════════════════════════════════════
+   The owner's choice of which engines the team uses (Team > Engines), and the
+   chat menu's mark on an engine the team turned off. */
+.team-eng .vsub{ margin-bottom:var(--sp-3); }
+.team-eng-mode{ display:flex; flex-wrap:wrap; gap:var(--sp-2) var(--sp-4); margin:0 0 var(--sp-3); font-size:var(--t-base); }
+.team-eng-mode label{ display:flex; align-items:center; gap:var(--sp-2); min-height:44px; cursor:pointer; }
+.team-eng-list{ display:grid; gap:var(--sp-1); margin:0 0 var(--sp-3); }
+.team-eng-list[hidden]{ display:none; }
+.team-eng-row{ display:grid; grid-template-columns:auto auto minmax(0,1fr); align-items:center; gap:var(--sp-2);
+  min-height:44px; padding:var(--sp-1) var(--sp-3); border:1px solid var(--bd); border-radius:var(--r-sm);
+  cursor:pointer; font-size:var(--t-base); }
+.team-eng-row span{ color:var(--mu); font-size:var(--t-sm); }
+.team-eng-row.is-fixed{ cursor:default; opacity:.8; }
+.team-eng-say{ margin-top:var(--sp-2); color:var(--red-txt); font-size:var(--t-sm); }
+.team-eng-say:empty{ display:none; }
+.mp-item.mp-teamoff{ opacity:.6; }

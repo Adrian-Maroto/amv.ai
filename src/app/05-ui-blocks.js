@@ -1934,11 +1934,11 @@ function showModelPicker(){
   const bars=(c)=>{ if(c===0) return '<span class="mp-auto">\u21c6</span>'; let h=''; for(let i=1;i<=4;i++) h+='<span class="mp-bar'+(i<=c?' on':'')+'"></span>'; return h; };
   menu.innerHTML=
     '<div class="mp-head">Choose a model</div>'+
-    MODEL_ORDER.map(k=>{ const v=MODELS[k]; const sel=k===S.model;
-      return '<button class="mp-item'+(sel?' sel':'')+'" data-mk="'+k+'">'+
+    MODEL_ORDER.map(k=>{ const v=MODELS[k]; const sel=k===S.model; const teamOff=!_teamAllowsModel(k);
+      return '<button class="mp-item'+(sel?' sel':'')+(teamOff?' mp-teamoff':'')+'" data-mk="'+k+'">'+
         '<span class="mp-dot" style="background:'+v.color+'"></span>'+
         '<span class="mp-body"><span class="mp-name">'+v.label+(sel?'<span class="mp-check">✓</span>':'')+'</span>'+
-        '<span class="mp-desc">'+v.desc+'</span></span>'+
+        '<span class="mp-desc">'+(teamOff?'Turned off by your team':v.desc)+'</span></span>'+
         '<span class="mp-meta"><span class="mp-bars" title="'+COST_LABEL[v.cost]+'">'+bars(v.cost)+'</span>'+
         '<span class="mp-cost">'+COST_LABEL[v.cost]+'</span></span>'+
       '</button>';
@@ -1947,6 +1947,14 @@ function showModelPicker(){
   document.body.appendChild(menu);
   menu.querySelectorAll('[data-mk]').forEach(item=>{
     item.addEventListener('click',()=>{
+      /* The team's rule comes before the plan's: an upgrade cannot turn on an
+         engine a company has turned off, so offering one would be selling
+         something that still would not work. */
+      if(!_teamAllowsModel(item.dataset.mk)){
+        menu.remove();
+        toast('Your team has turned off '+MODELS[item.dataset.mk].label+'. Ask your team\u2019s owner or an admin to allow it in Team.','info',6000);
+        return;
+      }
       if(!_planAllowsModel(item.dataset.mk)){
         menu.remove();
         openUpgradeModal(item.dataset.mk);

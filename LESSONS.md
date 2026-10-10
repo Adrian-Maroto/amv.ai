@@ -14751,3 +14751,18 @@ higher level cannot spend past the reservation.
 Rule: before saying yes to a provider feature, read which models carry it and
 in what state (GA, beta, preview). A yes given on the name alone is a promise
 made about somebody else's roadmap.
+
+## 575. Measure a ceiling with the gate's own measure, and re-measure the commit
+
+When the Crew catalogue moved out of the page, the saving was reported as 61KB
+and the page-weight ceiling was lowered to 596KB. Both came from one reading
+taken mid-edit. The gate measures `gzipSync` of the built `index.html` at the
+default level. Measured that way, the committed page was 599KB. The full gate
+failed on the commit that was meant to bank the saving, and the real figure
+was 57KB. Separately, the first visit to Crew drew a loading line and then the
+catalogue, which the flicker check caught. It is fixed by fetching the
+catalogue once the page is idle, not when Crew opens.
+
+Rule: a number that sets a ceiling is measured with the gate's own code, on
+the built artifact that will be committed, after the last edit. A ceiling set
+from a different measurement is a guess with a check attached to it.

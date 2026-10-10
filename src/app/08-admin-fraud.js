@@ -1184,6 +1184,19 @@ function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=(typeof v
   if(MODELS[mk] && MODELS[mk].partner){ const R={free:0,pro:1,elite:2,ultra:3}; return (R[plan]||0) >= (R[MODELS[mk].rec]||1); }
   const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
 
+/* WHAT THE PERSON'S TEAM HAS TURNED ON.
+
+   The owner or an admin of a team can choose which engines its people use
+   (Team > Engines). The server enforces it on every request; this copy of the
+   list, from the entitlement, only lets the picker say so before a send is
+   refused. null means no team rule - everything the plan allows. */
+let _teamEngines = null;
+function _teamAllowsModel(mk){
+  if(mk==='auto' || !Array.isArray(_teamEngines)) return true;
+  const id = MODELS[mk] && MODELS[mk].model;
+  return !id || _teamEngines.indexOf(id) >= 0;
+}
+
 /* Sync the REAL plan from the backend entitlement store. The server sets the
    plan only via a verified payment webhook, so this is the source of truth -
    the browser never grants itself a paid plan. Called on load and after the
@@ -1207,6 +1220,7 @@ async function syncEntitlement(){
         }
       }
       try{ S._entVerified = { plan:serverPlan, at:Date.now() }; }catch(e){}
+      _teamEngines = Array.isArray(d.teamEngines) ? d.teamEngines : null;
       /* WHAT THE NEXT CHARGE IS, FROM THE ONLY THING THAT KNOWS.
          The billing screen used to derive a renewal date from the day THIS
          BROWSER recorded the payment plus thirty - a number with no

@@ -20,6 +20,8 @@ const AMVTeam = {
   async join(token){ const r=await AMV_API._fetch('/team/join',{method:'POST',body:JSON.stringify({token})}); const d=await r.json(); if(d.error) throw new Error(d.error); this._cache=d.team; return d.team; },
   async remove(email){ const r=await AMV_API._fetch('/team/remove',{method:'POST',body:JSON.stringify({email})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
   async leave(){ const r=await AMV_API._fetch('/team/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error){ const e=new Error(d.error); e.code=d.code; throw e; } this._cache=null; return true; },
+  /* engines: a list of engine ids, or null for everything the plan includes. */
+  async setPolicy(engines){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({engines})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(d.error||'Could not save the team\u2019s engines.'); return d.engines||null; },
   async setRole(email,role){ const r=await AMV_API._fetch('/team/role',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
   /* The audit log is the team's security record. "No activity yet" because the
      read failed would tell an owner checking who removed a member that nobody
@@ -83,7 +85,7 @@ function renderTeamView(){
         '<li><b>Invite them by email.</b> They get a link, sign in, and they are in your '+
           'workspace - no admin console, no seat keys to hand out.</li>'+
         '<li><b>Give each person a role.</b> That decides what they can change, not what '+
-          'they can use - everybody gets the full product either way.</li>'+
+          'they can use. The owner or an admin can also choose which engines the whole team uses.</li>'+
         '<li><b>Work in one place.</b> Projects, prompts and what AMV remembers are shared, '+
           'so somebody joining on Tuesday has the context from Monday.</li>'+
       '</ol>'+
@@ -91,7 +93,7 @@ function renderTeamView(){
         '<div class="team-role"><b>Owner</b><span>You. Pays the bill, changes seat count, '+
           'can promote or remove anyone. Cannot be removed - there is always exactly one.</span></div>'+
         '<div class="team-role"><b>Admin</b><span>Invites and removes members, manages shared '+
-          'projects and prompts. Cannot remove another admin - only the owner can do that.</span></div>'+
+          'projects and prompts, and chooses the team\u2019s engines. Cannot remove another admin - only the owner can do that.</span></div>'+
         '<div class="team-role"><b>Member</b><span>Uses everything and works in the shared '+
           'projects. Does not manage who is on the team or what it is billed.</span></div>'+
       '</div>'+
@@ -465,6 +467,7 @@ function _renderTeamManage(vc, team){
     '</div>'+
     (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:var(--t-sm)">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
     '<div class="ss2"><h3>Members</h3><div class="vbreak">'+memberRows+'</div></div>'+
+    _teamEnginesHTML(team, canManage)+
     '<div class="ss2"><h3>Assigned work <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(assign tasks to teammates and track them)</span></h3>'+
       '<div class="sf" style="max-width:560px;margin-bottom:14px"><div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'+
         '<div style="flex:1;min-width:180px"><label class="lbl">Task</label><input type="text" id="tt-title" placeholder="e.g. Draft the launch email" autocomplete="off"></div>'+
@@ -677,12 +680,13 @@ async function _loadTeamTasks(team, role, myEmail){
     }catch(e){ toast(e.message||'Could not assign','error'); }
     if(btn){btn.disabled=false;btn.textContent='Assign';}
   });
+  _teamEnginesWire(vc, team);
   // load the audit log (managers only)
   if(role==='owner'||role==='admin'){
     AMVTeam.audit().then(log=>{
       const el=$('team-audit'); if(!el) return;
       if(!log.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">No activity yet.</div>'; return; }
-      const _act={team_created:'created the team',member_invited:'invited',member_joined:'joined',member_removed:'removed',role_changed:'changed a role',task_created:'assigned a task',task_status:'moved a task',task_reassigned:'reassigned a task',task_deleted:'deleted a task'};
+      const _act={engines_changed:'changed which engines the team uses',team_created:'created the team',member_invited:'invited',member_joined:'joined',member_removed:'removed',role_changed:'changed a role',task_created:'assigned a task',task_status:'moved a task',task_reassigned:'reassigned a task',task_deleted:'deleted a task'};
       el.innerHTML='<div class="team-log">'+log.slice(0,30).map(e=>{
         const when=new Date(e.t).toLocaleString();
         let what=_act[e.action]||e.action;
@@ -691,6 +695,7 @@ async function _loadTeamTasks(team, role, myEmail){
         if(e.title) what+=' \u201c'+escH(e.title)+'\u201d';
         if(e.to) what+=' \u2192 '+escH(e.to);
         if(e.from&&e.to) what+=' ('+e.from+' \u2192 '+e.to+')';
+        if(e.action==='engines_changed') what+=' \u2192 '+escH(_teamEngineNames(e.engines));
         return '<div class="team-log-row"><span class="team-log-who">'+escH(e.actor||'')+'</span> <span class="team-log-what">'+what+'</span> <span class="team-log-when">'+when+'</span></div>';
       }).join('')+'</div>';
     }).catch(err=>{
@@ -705,6 +710,72 @@ async function _loadTeamTasks(team, role, myEmail){
     });
   }
 }
+/* ── WHICH ENGINES THE TEAM USES ──────────────────────────────────────────
+   Pulse and Core are always on: background jobs, chat summaries and the
+   automatic router fall back to them, so turning them off would break the
+   account rather than limit it. Everything else is the team's choice. */
+const _TEAM_BASE_ENGINES=['amv-pulse','amv-core'];
+function _teamChoosable(){
+  return MODEL_ORDER.filter(k=>k!=='auto' && MODELS[k] && _TEAM_BASE_ENGINES.indexOf(MODELS[k].model)<0);
+}
+function _teamEngineNames(list){
+  if(!list || list==='all') return 'every engine on the plan';
+  const ids=String(list).split(',');
+  return ids.map(id=>{ const k=MODEL_ORDER.find(x=>MODELS[x]&&MODELS[x].model===id); return k?MODELS[k].label:id; }).join(', ');
+}
+function _teamEnginesHTML(team, canManage){
+  const chosen=(team.policy&&Array.isArray(team.policy.engines))?team.policy.engines:null;
+  const on=id=>!chosen || chosen.indexOf(id)>=0;
+  if(!canManage){
+    if(!chosen) return '';
+    const names=MODEL_ORDER.filter(k=>MODELS[k]&&k!=='auto'&&(_TEAM_BASE_ENGINES.indexOf(MODELS[k].model)>=0||on(MODELS[k].model))).map(k=>MODELS[k].label);
+    return '<div class="ss2"><h3>Engines</h3><p class="vsub" style="margin:0">Your team uses '+escH(names.join(', '))+
+      '. The owner or an admin chooses these.</p></div>';
+  }
+  return '<div class="ss2 team-eng"><h3>Engines</h3>'+
+    '<p class="vsub">Choose which engines your team can use. It applies to everyone, you included, '+
+      'and AMV refuses the others rather than swapping one in.</p>'+
+    '<div class="team-eng-mode" role="radiogroup" aria-label="Which engines">'+
+      '<label><input type="radio" name="team-eng-mode" value="all"'+(chosen?'':' checked')+'> Every engine on your plan</label>'+
+      '<label><input type="radio" name="team-eng-mode" value="some"'+(chosen?' checked':'')+'> Only the ones ticked</label>'+
+    '</div>'+
+    '<div class="team-eng-list" id="team-eng-list"'+(chosen?'':' hidden')+'>'+
+      MODEL_ORDER.filter(k=>MODELS[k]&&_TEAM_BASE_ENGINES.indexOf(MODELS[k].model)>=0).map(k=>
+        '<label class="team-eng-row is-fixed"><input type="checkbox" checked disabled> <b>'+escH(MODELS[k].label)+'</b><span>Always on</span></label>').join('')+
+      _teamChoosable().map(k=>
+        '<label class="team-eng-row"><input type="checkbox" data-team-eng="'+escH(MODELS[k].model)+'"'+(on(MODELS[k].model)?' checked':'')+'> <b>'+escH(MODELS[k].label)+'</b><span>'+escH(MODELS[k].desc||'')+'</span></label>').join('')+
+    '</div>'+
+    '<button class="btn bp" id="team-eng-save" style="font-size:var(--t-sm)">Save</button>'+
+    '<div class="team-eng-say" id="team-eng-say" role="status" aria-live="polite"></div>'+
+  '</div>';
+}
+function _teamEnginesWire(vc, team){
+  const list=$('team-eng-list'), save=$('team-eng-save'); if(!save) return;
+  document.querySelectorAll('input[name="team-eng-mode"]').forEach(r=>on(r,'change',()=>{
+    if(list) list.hidden = (document.querySelector('input[name="team-eng-mode"]:checked')||{}).value!=='some';
+  }));
+  on(save,'click',async()=>{
+    const mode=(document.querySelector('input[name="team-eng-mode"]:checked')||{}).value;
+    const engines = mode==='some'
+      ? [...document.querySelectorAll('[data-team-eng]')].filter(x=>x.checked).map(x=>x.dataset.teamEng)
+      : null;
+    const say=$('team-eng-say');
+    save.disabled=true; save.textContent='Saving\u2026';
+    try{
+      const now=await AMVTeam.setPolicy(engines);
+      team.policy=Object.assign({}, team.policy||{}, { engines: now ? now.filter(id=>_TEAM_BASE_ENGINES.indexOf(id)<0) : null });
+      /* This person's own picker follows at once, without waiting for the
+         next entitlement read. */
+      _teamEngines = now;
+      toast(now?'Saved. Your team now uses '+_teamEngineNames(now.join(','))+'.':'Saved. Your team can use every engine on its plan.','success',5000);
+      _renderTeamManage(vc, team);
+    }catch(e){
+      if(say) say.textContent=(e&&e.message)||'Could not save the team\u2019s engines.';
+      save.disabled=false; save.textContent='Save';
+    }
+  });
+}
+
 /* Auto-redeem a team invite from ?invite=token */
 function _checkTeamInvite(){
   try{

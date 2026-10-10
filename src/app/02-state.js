@@ -909,8 +909,10 @@ function _sectionModelSelect(section, id){
   const PLAN_LABEL={free:'Free',pro:'Pro',elite:'Elite',ultra:'Ultra'};
   return '<select id="'+id+'" class="sel secmodel-sel" aria-label="Engine for '+escH(section)+'">'+MODEL_ORDER.map(k=>{
     const m=MODELS[k];
-    const okk=canRun(k);
+    const teamOn=_teamAllowsModel(k);
+    const okk=canRun(k) && teamOn;
     const tail=okk ? _modelOutcomeLabel(k)
+      : !teamOn ? 'off for your team'
       : 'on '+(PLAN_LABEL[m.rec]||'a paid plan');
     return '<option value="'+k+'"'+(k===cur?' selected':'')+(okk?'':' disabled')+'>'+
       m.label.replace('AMV ','')+' \u00b7 '+tail+'</option>';
