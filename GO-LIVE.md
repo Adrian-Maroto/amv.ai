@@ -203,6 +203,7 @@ one except the two in the first table.
 | Pinterest: connect it and chat uses its API, asking before each call | `PINTEREST_CLIENT_ID` + `PINTEREST_CLIENT_SECRET` | Free to register. Redirect URL: your site root with its trailing slash - `https://amv.homes/` - exactly. |
 | Calendly: connect it and chat uses its API, asking before each call | `CALENDLY_CLIENT_ID` + `CALENDLY_CLIENT_SECRET` | Free to register. Redirect URL: your site root with its trailing slash - `https://amv.homes/` - exactly. |
 | Bank balances and transactions | `FINANCE_CLIENT_ID` + `FINANCE_SECRET` | **Paid and application-reviewed.** A bank-data provider (Plaid or similar) is not a key you can self-serve in an afternoon. Leave it off until you want this. |
+| AMV's cloud computer (Pro and above) | Workers Paid, deploy `cloud/`, `AMV_COMPUTER_KEY` in both Workers, uncomment the binding - see 2c2 | About 3 US cents per awake hour per person, capped by each plan's monthly minutes and by `max_instances`. |
 | Server-side PDFs and screenshots | Bind `BROWSER` | Cloudflare Browser Rendering, paid plan. Those two surfaces refuse honestly without it. |
 | Being paged when something breaks | `ALERT_WEBHOOK` | Free - a Slack or Discord incoming webhook. **Set this one even if you set nothing else here.** |
 | Errors reaching you with a stack | `SENTRY_DSN` | Sentry has a free tier. |
@@ -506,6 +507,60 @@ The store listings are what you unlock:
 
 A wrong fingerprint is refused by the build rather than published, because a
 file that vouches for the wrong key looks configured and verifies nothing.
+
+## 2c2. AMV's cloud computer (optional)
+
+Today, to let AMV run code - install packages, run tests, use git - somebody
+connects their OWN computer with the bridge. The cloud computer lends them one
+instead: a private Linux machine in your Cloudflare account, one per person,
+for Pro plans and above. It is what makes that work on a phone. Connectors,
+sign-ins and screen control still need their own computer, and the app says so.
+
+What it costs you, and what stops it costing more:
+
+- **Cloudflare Workers Paid** (US$5/month), which includes Containers.
+- Each machine is the "basic" size (a quarter of a CPU, 1 GiB of memory). At
+  Cloudflare's published container rates that is roughly **3 US cents per hour
+  it is awake**, at most. It sleeps after 5 minutes without use.
+- AMV counts the time each machine is AWAKE - which is what Cloudflare bills -
+  against the plan: **Pro 600 minutes, Elite 3,000, Ultra 6,000 a month**. At
+  most that is about US$0.30, US$1.50 and US$3 of machine time. Once the
+  minutes are spent, nothing more reaches the machine until next month.
+- `max_instances = 50` in `cloud/wrangler.toml` is how many can be awake at
+  once across everybody. The 51st person is told it did not start. Raise it as
+  you grow - it is your ceiling on the bill, so it is your decision.
+
+Files on it are deleted when it sleeps, and the app tells people that before
+they rely on it.
+
+To switch it on (about ten minutes, once):
+
+1. In Cloudflare: Workers & Pages > Plans, choose **Workers Paid**.
+2. Make the key both Workers share - any 32+ random characters, for example
+   from a password manager. Never put it in a file.
+3. Deploy the cloud computer (it is its own Worker, in `cloud/`). Docker must
+   be running on the machine you deploy from:
+
+   ```
+   cd cloud
+   npm install
+   npx wrangler deploy
+   npx wrangler secret put AMV_COMPUTER_KEY
+   ```
+
+4. Back in the main folder, set the SAME key, then open `wrangler.toml`, find
+   "AMV's cloud computer" near the end, and remove the `#` from the four lines
+   of the `AMV_COMPUTER` binding. Then deploy the main Worker as usual:
+
+   ```
+   cd ..
+   npx wrangler secret put AMV_COMPUTER_KEY
+   npx wrangler deploy
+   ```
+
+The readiness screen's row "AMV's cloud computer" turns green. If the two keys
+differ, people are told the cloud computer "is not set up correctly" and
+nothing runs - it is never mistaken for them being signed out.
 
 ## 3. Deploy the Worker
 

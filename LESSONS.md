@@ -14819,3 +14819,38 @@ the case that hung is the case that is measured.
 
 Rule: a "wait until it changes" option is a hang wherever the change may
 already have happened. Test the no-op case on purpose.
+
+## 579. Meter what the provider bills, not what the product does
+
+The first cloud computer counted COMMAND time against each plan's minutes: the
+seconds the bridge measured inside `exec`. But a container is billed for every
+second it is awake, and every request - a file read, a directory listing -
+keeps it awake for the idle window after it. A Pro account reading one file
+every four minutes would have kept a machine up all month while its meter said
+zero, at roughly ten times what the plan earns. Caught while writing the
+go-live cost table, before anything shipped.
+
+The meter now bills awake time as the union of windows: each request bills
+the stretch from now to five minutes on, minus whatever an earlier request
+already billed, and a command that outlasts its window is extended to its
+end. Once the minutes are spent, nothing reaches the machine except
+disconnecting. The suite moves the Worker's clock to check a burst, a gap and
+a long command, and breaking either the meter or the "nothing reaches it"
+rule turns it red.
+
+Rule: when a feature costs money by the second, find the provider's billing
+unit first and meter exactly that. A meter on a proxy for cost is a meter
+somebody can drive around.
+
+## 580. A pass-through status can mean something else on this side
+
+The cloud computer's bridge answers 401 when the key is wrong. Passed through
+by the Worker unchanged, the app's API client reads 401 as "your sign-in
+lapsed", tries a refresh and then asks the person to sign in again - for a
+fault in the deployment, which signing in cannot fix. The Worker now turns a
+bridge 401 into 503 `computer_unavailable` ("not set up correctly"), and the
+suite covers it.
+
+Rule: a status code relayed from a system behind you means what it means to
+the caller, not to the system that sent it. Translate the ones the caller
+already gives a meaning to.

@@ -4254,12 +4254,18 @@ async function connAct(request, env){
      it exists only where the deployment has it (the AMV_COMPUTER binding and
      a key of real length), and says so plainly where it does not;
      it is a plan's to use (Pro and above), checked here, not in the page;
-     command time is counted against the plan's monthly minutes, from what
-     the bridge measured, and a command is refused once they are spent;
+     the time it is AWAKE is counted against the plan's monthly minutes -
+     that is what the cloud provider bills, so it is what is metered: a file
+     read every few minutes keeps a machine up as surely as a build does -
+     and once they are spent nothing more is sent to it;
      each person reaches only their own container - its name is derived here
      from the signed-in account, never taken from the request. */
 const COMPUTER_MIN_PLAN = 'pro';
-const COMPUTER_MINUTES = { pro: 300, elite: 1200, ultra: 3000 };
+const COMPUTER_MINUTES = { pro: 600, elite: 3000, ultra: 6000 };
+/* How long a machine stays up after its last request (sleepAfter in
+   cloud/computer.mjs). Billed when the request is made, so the meter is never
+   behind what the provider charges. */
+const COMPUTER_AWAKE_S = 300;
 function _computerOn(env){ return !!(env && env.AMV_COMPUTER && String(env.AMV_COMPUTER_KEY || '').length >= 32); }
 function _computerCap(user){
   const rank = _planRankOf(user.plan, user.customCfg);
@@ -4272,6 +4278,22 @@ async function _computerName(email){
 }
 async function _computerUsedSeconds(env, email){
   return +((await counter(env, `cmin:${email}:${monthKey()}`, { op: 'get' })).value || 0);
+}
+/* AWAKE TIME, AS THE UNION OF WINDOWS. Each request keeps the machine up
+   until COMPUTER_AWAKE_S after it - so a request inside a window bills only
+   the extension, and one after a gap bills a fresh window. `cwake:` holds where
+   the billed time ends. An extension under 30 seconds is not written: the mark
+   stays put, so the next request bills it from there and nothing is lost -
+   and a burst of requests does not become a burst of writes to one key. */
+async function _computerBillAwake(env, email, atMs){
+  const key = `cwake:${email}`;
+  const billedTo = +(await env.AMV_KV.get(key).catch(() => null)) || 0;
+  const end = atMs + COMPUTER_AWAKE_S * 1000;
+  const add = Math.ceil((end - Math.max(billedTo, atMs)) / 1000);
+  if(add < 30) return 0;
+  await env.AMV_KV.put(key, String(end), { expirationTtl: 2 * 86400 });
+  await counter(env, `cmin:${email}:${monthKey()}`, { op: 'incr', amount: add, ttlMs: 40 * 86400000 });
+  return add;
 }
 async function computerInfo(request, env){
   const user = await requireUser(request, env);
@@ -4288,7 +4310,9 @@ async function computerRoute(request, env, route){
   if(!cap) return json({ error: 'The cloud computer comes with Pro and above.', code: 'plan_required', minPlan: COMPUTER_MIN_PLAN }, 402);
   const limited = await guardAction(env, 'computer:' + user.email, 120, 2000, 'requests to your cloud computer');
   if(limited) return limited;
-  if(route === 'exec'){
+  /* Spent: nothing more reaches the machine, because anything that reaches it
+     keeps it awake. Disconnecting still goes through - it stops what runs. */
+  if(route !== 'revoke'){
     const used = await _computerUsedSeconds(env, user.email);
     if(used >= cap * 60)
       return json({ error: `You have used this month’s ${cap} minutes of cloud computer time. It starts again next month, or upgrade for more.`,
@@ -4299,6 +4323,7 @@ async function computerRoute(request, env, route){
   let stub;
   try{ stub = env.AMV_COMPUTER.get(env.AMV_COMPUTER.idFromName(await _computerName(user.email))); }
   catch(e){ return json({ error: 'The cloud computer could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503); }
+  await _computerBillAwake(env, user.email, Date.now());
   let r, text;
   try{
     r = await stub.fetch(new Request('http://amv-computer/amv-bridge/' + route, { method: 'POST',
@@ -4310,11 +4335,18 @@ async function computerRoute(request, env, route){
   }
   let d; try{ d = JSON.parse(text); }catch(e){ d = null; }
   if(!d || typeof d !== 'object') return json({ error: 'The cloud computer answered with something AMV could not read.', code: 'computer_unavailable' }, 502);
-  /* Command time, as the bridge measured it - whole seconds, rounded up. */
-  if(route === 'exec' && r.ok){
-    const sec = Math.max(1, Math.ceil((+d.ms || 0) / 1000));
-    await counter(env, `cmin:${user.email}:${monthKey()}`, { op: 'incr', amount: sec, ttlMs: 40 * 86400000 });
-    audit(env, 'computer_exec', { by: user.email, seconds: sec, exit: d.exitCode });
+  /* The container refusing AMV's key means the two Workers hold different
+     keys - a deployment fault, not the person's session. Passed through as a
+     401 it would read as "signed out" and send them to sign in again. */
+  if(r.status === 401){
+    audit(env, 'computer_key_mismatch', { by: user.email, route });
+    return json({ error: 'The cloud computer is not set up correctly on this deployment. Nothing ran.', code: 'computer_unavailable' }, 503);
+  }
+  /* A long command kept it awake past the window billed when it started, so
+     the window is extended from when it finished. */
+  if(route === 'exec'){
+    await _computerBillAwake(env, user.email, Date.now());
+    if(r.ok) audit(env, 'computer_exec', { by: user.email, ms: +d.ms || 0, exit: d.exitCode });
   }
   return json(d, r.status);
 }
@@ -28610,7 +28642,7 @@ function _readinessReport(env, seen) {
       how: put('GOOGLE_PICKER_API_KEY') + ' (a browser key with the Picker API, limited to your site) and ' + put('GOOGLE_PROJECT_NUMBER') + ' (the number of the same Google Cloud project as GOOGLE_CLIENT_ID)' },
     { id: 'cloudComputer', name: 'AMV\u2019s cloud computer', blocking: false,
       on: _computerOn(env),
-      turnsOn: 'A computer of their own in AMV\u2019s cloud for Pro plans and above - the same commands and files as connecting their own, without installing anything. One container each, asleep after ten idle minutes, with monthly command minutes per plan.',
+      turnsOn: 'A computer of their own in AMV\u2019s cloud for Pro plans and above - the same commands and files as connecting their own, without installing anything. One container each, asleep after five idle minutes and cleared when it sleeps; the minutes it is awake count against the plan (Pro 600, Elite 3,000, Ultra 6,000 a month).',
       how: 'deploy the cloud/ folder (needs Workers Paid with Containers), then ' + put('AMV_COMPUTER_KEY') + ' (32+ random characters, the same in both Workers) and uncomment the AMV_COMPUTER binding in wrangler.toml' },
     { id: 'connectMicrosoft', name: 'Connect Microsoft', blocking: false,
       on: _has(env, 'MS_CLIENT_ID') && _has(env, 'MS_CLIENT_SECRET'),

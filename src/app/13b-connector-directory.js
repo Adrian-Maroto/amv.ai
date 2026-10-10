@@ -493,7 +493,7 @@ function cdirOpen(id){
   for(const k in _cdir){ const f = (_cdir[k].servers || []).find(x => x.id === id); if(f){ s = f; break; } }
   const r = $('ovr'); if(!s || !r) return;
   const cmd = (s.command + ' ' + (s.args || []).join(' ')).trim();
-  const bridged = !!(typeof BRIDGE !== 'undefined' && BRIDGE.connected);
+  const bridged = bridgeLocal();
   const env = s.env || [];
   const fact = (k, v, cls) => '<div class="cwp-fact' + (cls ? ' ' + cls : '') + '"><dt>' + escH(k) + '</dt><dd>' + v + '</dd></div>';
   r.innerHTML =

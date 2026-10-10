@@ -16927,3 +16927,17 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .apps-card #apps-install{ margin:0 0 var(--sp-3); font-size:var(--t-sm); }
 .apps-card .apps-gets{ margin:0; padding-left:1.2em; color:var(--mu); font-size:var(--t-sm); line-height:1.7; }
 .apps-card .apps-stores{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:var(--sp-3); }
+
+/* ═══ LAYER A310 - AMV's cloud computer on the connect card ═══════════════
+   One row above the three steps: the choice somebody without a computer to
+   hand needs first, in the card's own surfaces and type. */
+.brg-cloud{
+  display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap;
+  border:1px solid var(--bd);border-radius:var(--r-md);background:var(--s2);
+  padding:var(--sp-3);margin:0 0 var(--sp-3);
+}
+.brg-cloud[hidden]{display:none}
+.brg-cloud-t{flex:1 1 260px;min-width:0;color:var(--mu);font-size:var(--t-base);line-height:1.55}
+.brg-cloud-t b{color:var(--tx)}
+.brg-cloud .btn{min-height:44px;flex:0 0 auto}
+.brg-cloud-min:empty{display:none}

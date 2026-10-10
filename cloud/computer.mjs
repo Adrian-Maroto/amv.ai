@@ -19,7 +19,9 @@ export { ContainerProxy } from '@cloudflare/containers';
 
 export class AMVComputer extends Container {
   defaultPort = 8080;
-  sleepAfter = '10m';
+  /* Kept in step with COMPUTER_AWAKE_S in amv-backend.js, which bills this
+     tail: a machine is paid for while it is awake, not while it computes. */
+  sleepAfter = '5m';
   enableInternet = true;
   deniedHosts = [
     'localhost', '*.localhost', '*.internal', 'metadata', 'metadata.*',

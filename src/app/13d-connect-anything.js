@@ -157,7 +157,7 @@ async function connectAccountTool(input){
   const money = _CX_MONEY.test(asked);
   const site = (typeof _browserUrl === 'function') ? _browserUrl(input && input.url) : '';
   const siteHost = site && site !== 'about:blank' ? new URL(site).hostname : '';
-  const bridged = typeof BRIDGE !== 'undefined' && BRIDGE.connected;
+  const bridged = bridgeLocal();
   const acts = [{ code:'web:' + (site || 'about:blank'), label:'Sign in to ' + q + ' on your computer' }];
   reg.servers.forEach(s => acts.push({ code:'reg:' + s.id, label:'Add ' + s.name }));
   if(money) acts.push({ code:'how:bank', label:'Link a bank or brokerage' });
@@ -227,7 +227,8 @@ function chatConnectGo(code){
 let _cxWebBusy = false;
 async function _cxWebGo(url){
   if(_cxWebBusy) return;
-  if(!(typeof BRIDGE !== 'undefined' && BRIDGE.connected)){
+  if(BRIDGE.cloud){ toast(BRIDGE_CLOUD_LOCAL_ONLY, 'info', 9000); return; }
+  if(!bridgeLocal()){
     toast('Connect this computer first - the browser opens on it, so your password never leaves it. Then press Sign in again.', 'info', 8000);
     try{ _connMachineOpen = true; }catch(e){}
     try{ setTab('integrations'); }catch(e){}

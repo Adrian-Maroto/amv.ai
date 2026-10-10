@@ -12,9 +12,11 @@
      signed-in account - never the address itself, never anything the request
      says;
    - the key the Worker holds is what the container is asked with;
-   - command time is counted from what the bridge measured, shows in info,
-     and once the month's minutes are spent the next command is refused
-     before the container is asked;
+   - the time the machine is AWAKE is what is counted - that is what the
+     provider bills: a window from each request, overlapping requests billed
+     once, a command that outlasts its window billed to its end - and once the
+     month's minutes are spent nothing more is sent to the machine, a file
+     read included, while disconnecting still goes through;
    - a container that will not start is said as that, not as a crash;
    - only the bridge's own routes exist under /v1/computer. */
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync } from 'fs';
@@ -39,7 +41,10 @@ const freePort = () => new Promise(res => { const s = createServer(); s.listen(0
 
 /* One real cloud bridge per container name, started the first time it is asked for. */
 const machines = new Map(), asked = [];
-let failStart = false;
+let failStart = false, commandTakes = 0;
+/* The clock the Worker reads, moved forward by a "long" command or a gap. */
+const realNow = Date.now.bind(Date); let skew = 0;
+Date.now = () => realNow() + skew;
 async function machine(name) {
   if (machines.has(name)) return machines.get(name);
   const box = mkdtempSync(join(tmpdir(), 'amv-cc-')); const port = await freePort();
@@ -56,6 +61,7 @@ const NS = {
     async fetch(req) {
       if (failStart) throw new Error('container failed to start');
       asked.push({ name: id.name, url: req.url, key: req.headers.get('X-AMV-Bridge-Token') });
+      if (commandTakes) { skew += commandTakes; commandTakes = 0; }
       const m = await machine(id.name);
       const path = new URL(req.url).pathname;
       return fetch('http://127.0.0.1:' + m.port + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-AMV-Bridge-Token': req.headers.get('X-AMV-Bridge-Token') || '' }, body: await req.text() });
@@ -129,18 +135,38 @@ section('Each person reaches their own container, named from a hash');
   ok(forged.status === 200 && asked[asked.length - 1].name === names[1], 'a name or address in the request changes nothing', asked[asked.length - 1].name);
 }
 
-section('Command time is counted, shown, and stops at the plan’s minutes');
+section('Awake time is counted: one window per burst, a fresh one after a gap');
 {
-  const before = await jsonOf(await call(env, '/v1/computer/info', null, pat, 'GET'));
-  ok(before.d.available === true && before.d.allowed === true && before.d.minutes.cap === 300 && before.d.minutes.used >= 1, 'info shows the minutes used and the cap', before.d);
+  const key = () => [...env._vals.keys()].find(k => k.startsWith('cmin:pat-cc@example.com'));
+  const used = () => env._vals.get(key()) || 0;
+  const start = used();
+  ok(start >= 300 && start < 330, 'Pat’s first requests billed one five-minute window, not one per request', start);
+  await call(env, '/v1/computer/list', { path: '.' }, pat);
+  ok(used() === start, 'another request inside the window adds nothing', used());
+  skew += 10 * 60000;
+  await call(env, '/v1/computer/list', { path: '.' }, pat);
+  ok(used() - start >= 300 && used() - start <= 301, 'after a gap, a fresh window - a read keeps it awake as surely as a build', used());
+  const before = used();
+  commandTakes = 4 * 60000;
+  const e = await jsonOf(await call(env, '/v1/computer/exec', { command: 'echo long' }, pat));
+  ok(e.status === 200 && used() - before >= 240 && used() - before <= 242, 'a command that ran four minutes extends the window to its end', { before, after: used() });
+  const info = await jsonOf(await call(env, '/v1/computer/info', null, pat, 'GET'));
+  ok(info.d.available === true && info.d.allowed === true && info.d.minutes.cap === 600 && info.d.minutes.used === Math.ceil(used() / 60),
+     'info shows the minutes used and Pro’s 600', info.d);
+}
+
+section('Spent: nothing more reaches the machine, but disconnecting does');
+{
   const key = [...env._vals.keys()].find(k => k.startsWith('cmin:pat-cc@example.com'));
-  env._vals.set(key, 300 * 60);
+  env._vals.set(key, 600 * 60);
   const n = asked.length;
   const r = await jsonOf(await call(env, '/v1/computer/exec', { command: 'echo more' }, pat));
-  ok(r.status === 429 && r.d.code === 'computer_minutes' && /300 minutes/.test(r.d.error), 'spent: the next command is refused, and says why', r.d);
-  ok(asked.length === n, 'without asking the container');
+  ok(r.status === 429 && r.d.code === 'computer_minutes' && /600 minutes/.test(r.d.error), 'a command is refused, and says why', r.d);
   const rd = await jsonOf(await call(env, '/v1/computer/read', { path: 'a.txt' }, pat));
-  ok(rd.status === 200 && rd.d.content === 'pat was here', 'reading a file still works - only command time is metered', rd.d);
+  ok(rd.status === 429 && rd.d.code === 'computer_minutes', 'so is reading a file - it would keep the machine awake', rd.d);
+  ok(asked.length === n, 'and neither reached the container');
+  const v = await jsonOf(await call(env, '/v1/computer/revoke', {}, pat));
+  ok(v.status === 200 && v.d.revoked === true, 'disconnecting still goes through, so what runs can be stopped', v.d);
 }
 
 section('A container that will not start is said as that');
@@ -149,6 +175,15 @@ section('A container that will not start is said as that');
   const r = await jsonOf(await call(env, '/v1/computer/exec', { command: 'echo hi' }, sam));
   ok(r.status === 503 && r.d.code === 'computer_unavailable' && /did not start/.test(r.d.error), 'it says the cloud computer did not start', r);
   failStart = false;
+}
+
+section('A container holding a different key is a deployment fault, never "signed out"');
+{
+  const wrong = mkEnv({ AMV_COMPUTER: NS, AMV_COMPUTER_KEY: 'a-different-key-than-the-container-holds-000' });
+  const t = await account(wrong, 'kim-cc@example.com', 'pro');
+  const r = await jsonOf(await call(wrong, '/v1/computer/exec', { command: 'echo hi' }, t));
+  ok(r.status === 503 && r.d.code === 'computer_unavailable' && /not set up correctly/.test(r.d.error),
+     'the bridge’s 401 is not passed on as a 401, which the app would read as a lapsed sign-in', r);
 }
 
 section('Only the bridge’s own routes exist there');

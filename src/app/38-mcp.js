@@ -142,7 +142,7 @@ try{ window._mcpStart=_mcpStart; window._mcpStop=_mcpStop; window.mcpCall=mcpCal
    changing, which is what it was. Within a turn the list is fixed: a tool
    that appears mid-turn is offered from the next one. */
 async function mcpRefreshTools(){
-  if(!(typeof BRIDGE !== 'undefined' && BRIDGE.connected)) return false;
+  if(!bridgeLocal()) return false;
   const mine = Object.keys(MCP.live).filter(id => {
     const l = MCP.live[id];
     return l && !l.error && l.session === BRIDGE.token;
@@ -180,7 +180,7 @@ try{ window.mcpRefreshTools=mcpRefreshTools; }catch(e){}
    stopped (freeing the name on the bridge, which still holds a dead process)
    and started again, and the result is whatever that start says. */
 async function mcpStartAll(){
-  if(!(typeof BRIDGE !== 'undefined' && BRIDGE.connected)) return [];
+  if(!bridgeLocal()) return [];
   let running = null;
   try{
     const d = await _bridgeCall('mcp/list', {}, 15000);
@@ -285,7 +285,8 @@ function _browserUrl(u){
 /* Add AMV's browser if it is not there, and start it if it is not running.
    Throws with a code the caller can explain. */
 async function browserEnsure(){
-  if(!(typeof BRIDGE !== 'undefined' && BRIDGE.connected)){
+  if(BRIDGE.cloud) throw Object.assign(new Error(BRIDGE_CLOUD_LOCAL_ONLY), { code: 'no_computer' });
+  if(!bridgeLocal()){
     throw Object.assign(new Error('This needs AMV connected to your computer - the browser opens there, so your password never leaves it.'), { code: 'no_computer' });
   }
   const want = { id: MCP_BROWSER.id, command: MCP_BROWSER.command, args: _browserArgs(), desktop: true };
@@ -519,7 +520,7 @@ try{ _mcpLoad(); }catch(e){}
    codebase has shipped several of those.
    ══════════════════════════════════════════════════════════════════════ */
 function _mcpCardHTML(){
-  const connected = !!(typeof BRIDGE !== 'undefined' && BRIDGE.connected);
+  const connected = bridgeLocal();
   const rows = MCP.servers.map(sv => {
     const live = MCP.live[sv.id];
     const n = live && live.tools ? live.tools.length : 0;
@@ -602,7 +603,7 @@ function _mcpWireCard(root){
     add.disabled = true;
     try{
       const realId = _mcpAdd(id, command, args, _mcpParseEnv(envLine));
-      if(typeof BRIDGE !== 'undefined' && BRIDGE.connected){
+      if(bridgeLocal()){
         say('Starting ' + realId + '…');
         try{
           const live = await _mcpStart(realId);

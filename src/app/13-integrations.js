@@ -1745,7 +1745,9 @@ function renderIntegrationsView(){
       '<details class="conn-machine"'+(_connMachineOpen?' open':'')+'>'+
         '<summary><span class="conn-machine-t">Your computer</span>'+
           '<span class="conn-machine-s">'+
-            ((typeof BRIDGE!=='undefined' && BRIDGE.connected)
+            ((typeof BRIDGE!=='undefined' && BRIDGE.cloud && BRIDGE.connected)
+              ? 'AMV\u2019s cloud computer \u00b7 commands and files; connectors need your own computer'
+              : (typeof BRIDGE!=='undefined' && BRIDGE.connected)
               ? 'Connected \u00b7 AMV can run connectors and work in your files'
               : 'Not connected \u00b7 needed before any connector below can start')+
           '</span></summary>'+

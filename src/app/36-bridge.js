@@ -28,8 +28,22 @@ const BRIDGE = {
   /* The last thing that went wrong, so the surface can say which of the
      several different problems this is rather than "not connected". */
   why: '',
+  /* AMV's cloud computer rather than one on this desk: the same bridge, run
+     in a container AMV starts for this account, reached through AMV's own
+     server (/v1/computer) with the person's sign-in - so there is no port and
+     no token here at all. */
+  cloud: false,
 };
 try{ window.BRIDGE = BRIDGE; }catch(e){}
+
+/* A machine connectors, sign-ins and the screen can run on: the person's own.
+   The cloud computer runs commands and files only - the server forwards
+   nothing else to it - so everything that opens something the person sees, or
+   holds their credentials, asks for this rather than "connected". */
+function bridgeLocal(){ return !!(BRIDGE.connected && !BRIDGE.cloud); }
+const BRIDGE_CLOUD_LOCAL_ONLY = 'Connectors, sign-ins and the screen run on your own computer, and AMV is using its cloud computer right now. '
+  + 'Disconnect it under Integrations \u203a Your computer, then connect this one.';
+try{ window.bridgeLocal = bridgeLocal; }catch(e){}
 
 const _bridgeBase = (port) => 'http://127.0.0.1:' + (port || BRIDGE.port);
 
@@ -42,11 +56,13 @@ function _bridgeRestore(){
     const raw = sessionStorage.getItem('amv_bridge');
     if(!raw) return;
     const s = JSON.parse(raw);
-    if(s && s.port && s.token){ Object.assign(BRIDGE, s, { connected: true, why: '' }); }
+    if(s && s.cloud){ Object.assign(BRIDGE, _bridgeCloudState(), { connected: true, why: '' }); }
+    else if(s && s.port && s.token){ Object.assign(BRIDGE, s, { cloud: false, connected: true, why: '' }); }
   }catch(e){}
 }
 function _bridgeRemember(){
   try{
+    if(BRIDGE.cloud){ sessionStorage.setItem('amv_bridge', JSON.stringify({ cloud: true })); return; }
     sessionStorage.setItem('amv_bridge', JSON.stringify({
       port: BRIDGE.port, token: BRIDGE.token, folder: BRIDGE.folder, root: BRIDGE.root,
       sharesEnv: !!BRIDGE.sharesEnv, fence: BRIDGE.fence || '', computer: BRIDGE.computer || null }));
@@ -54,7 +70,7 @@ function _bridgeRemember(){
 }
 function _bridgeForget(){
   BRIDGE.port = 0; BRIDGE.token = ''; BRIDGE.folder = ''; BRIDGE.root = ''; BRIDGE.sharesEnv = false; BRIDGE.fence = '';
-  BRIDGE.computer = null;
+  BRIDGE.computer = null; BRIDGE.cloud = false;
   BRIDGE.connected = false;
   try{ sessionStorage.removeItem('amv_bridge'); }catch(e){}
   /* The connectors ran on that machine, so they are gone with it. Leaving
@@ -86,9 +102,22 @@ async function bridgeDisconnect(){
      local named `base` here made `/amv-bridge/revoke` look like a Worker route
      that does not exist. It is the daemon's, on a different server, so the
      variable says which server it is. */
+  let revoked = false, stopped = null, why = '';
+  /* The cloud computer: ending the session there means stopping what runs.
+     Its key is AMV's server's, not this tab's, so there is nothing to revoke
+     but the work - and the person's sign-in is what asks for that. */
+  if(BRIDGE.connected && BRIDGE.cloud){
+    try{
+      const r = await AMV_API._fetch('/v1/computer/revoke', { method: 'POST', body: '{}', timeout: 15000 });
+      const d = await r.json().catch(()=>({}));
+      if(r.ok && d.revoked){ revoked = true; stopped = d.stopped || null; }
+      else why = String(d.error || ('AMV answered ' + r.status));
+    }catch(e){ why = 'AMV could not be reached'; }
+    _bridgeForget();
+    return { revoked, stopped, why, cloud: true };
+  }
   const daemon = BRIDGE.connected ? _bridgeBase() : '';
   const token = BRIDGE.token;
-  let revoked = false, stopped = null, why = '';
   if(daemon && token){
     try{
       const r = await fetchDeadline(daemon + '/amv-bridge/revoke', {
@@ -160,6 +189,7 @@ try{ window._bridgePair=_bridgePair; }catch(e){}
    wrong one sends them to restart something that is fine. */
 async function _bridgeCall(route, body, timeoutMs){
   if(!BRIDGE.connected) throw new Error('No computer is connected. Run the AMV bridge in your project folder, then connect it here.');
+  if(BRIDGE.cloud) return await _bridgeCloudCall(route, body, timeoutMs);
   let r;
   try{
     r = await fetchDeadline(_bridgeBase() + '/amv-bridge/' + route, {
@@ -184,24 +214,29 @@ async function _bridgeCall(route, body, timeoutMs){
     BRIDGE.why = 'stale';
     throw new Error('The bridge restarted, so this tab is no longer paired with it. Connect it again with the new code.');
   }
-  const d = await r.json().catch(()=>({}));
-  if(r.status === 403 && d.error === 'refused'){
-    throw new Error('The bridge refused that command: it looks like ' + d.reason + '. That rule lives on your machine, not in AMV.');
+  return _bridgeAnswer(r.status, await r.json().catch(()=>({})));
+}
+/* The bridge's answer, wherever it ran: its refusals named, its result as-is. */
+function _bridgeAnswer(status, d){
+  d = d || {};
+  if(status === 403 && d.error === 'refused'){
+    throw new Error('The bridge refused that command: it looks like ' + d.reason + '. '
+      + (BRIDGE.cloud ? 'The cloud computer refuses it for everybody.' : 'That rule lives on your machine, not in AMV.'));
   }
-  if(r.status === 429 && d.error === 'busy'){
+  if(status === 429 && d.error === 'busy'){
     const e = new Error('Your computer is already running ' + (d.running || 'several') + ' commands, which is as many as the bridge runs at once. Wait for one to finish, then try again.');
     e.code = 'busy'; e.status = 429;
     throw e;
   }
-  if(r.status === 403 && d.error === 'outside_root'){
+  if(status === 403 && d.error === 'outside_root'){
     throw new Error('That path is outside the folder the bridge was started in, so it is not AMV’s to touch.');
   }
-  if(r.status === 403 && d.error === 'secret_path'){
+  if(status === 403 && d.error === 'secret_path'){
     const e = new Error('That is where keys or logins are kept, so the bridge will not read or change it, even inside the folder.');
     e.code = 'secret_path'; e.status = 403;
     throw e;
   }
-  if(!r.ok){
+  if(!(status >= 200 && status < 300)){
     const err = new Error(d.message || d.error || 'The bridge could not do that.');
     /* THE MACHINE-READABLE HALF, carried rather than left in the prose.
 
@@ -210,11 +245,69 @@ async function _bridgeCall(route, body, timeoutMs){
        that breaks the first time the wording changes. Same reason the API
        client carries `code` off the worker. */
     if(d.error) err.code = String(d.error);
-    err.status = r.status;
+    err.status = status;
     throw err;
   }
   return d;
 }
+
+/* ── THE CLOUD COMPUTER ───────────────────────────────────────────────────
+
+   The same calls, sent to AMV's server instead of this computer. What comes
+   back from the bridge is the bridge's own answer, passed through, so its
+   refusals are told the same way; what the SERVER refuses (the plan, the
+   month's minutes, a machine that would not start) carries a `code`, and is
+   said in the server's words. Only commands and files go: connectors and the
+   screen are refused here, before a request, with what to do instead. */
+const BRIDGE_CLOUD_ROUTES = /^(exec|exec\/cancel|read|write|list|delete|status|revoke)$/;
+function _bridgeCloudState(){
+  return { cloud: true, port: 0, token: '', folder: 'AMV\u2019s cloud computer', root: 'amv-cloud:/work',
+           sharesEnv: false, fence: 'cloud', computer: null };
+}
+async function _bridgeCloudCall(route, body, timeoutMs){
+  if(!BRIDGE_CLOUD_ROUTES.test(route)){
+    const e = new Error(BRIDGE_CLOUD_LOCAL_ONLY); e.code = 'cloud_local_only'; throw e;
+  }
+  /* A failure to reach AMV's server is NOT "the machine is gone", so unlike
+     the local bridge it does not disconnect: a dropped connection or a lapsed
+     sign-in is said in its own words, and the next call may well work. */
+  const r = await AMV_API._fetch('/v1/computer/' + route, { method: 'POST', body: JSON.stringify(body || {}),
+                                                           timeout: timeoutMs || 130000, bodyTimeout: 30000 });
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok && d && d.code){
+    const err = new Error(String(d.error || 'AMV\u2019s cloud computer could not do that.'));
+    err.code = String(d.code); err.status = r.status;
+    if(d.minutes) err.minutes = d.minutes;
+    throw err;
+  }
+  return _bridgeAnswer(r.status, d);
+}
+/* What the cloud computer has to offer this account, from the server: whether
+   this deployment runs one, whether the plan includes it, and the minutes. */
+async function bridgeCloudInfo(){
+  if(!(AMV_API && AMV_API.live && typeof S !== 'undefined' && S.user)) return null;
+  try{
+    const r = await AMV_API._fetch('/v1/computer/info', { method: 'GET', timeout: 10000 });
+    if(!r.ok) return null;
+    const d = await r.json();
+    if(!d || d.ok !== true) return null;
+    const m = d.minutes || {};
+    return { available: d.available === true, allowed: d.allowed === true, minPlan: String(d.minPlan || 'pro'),
+             used: Math.max(0, +m.used || 0), cap: Math.max(0, +m.cap || 0) };
+  }catch(e){ return null; }
+}
+/* Connecting it is asking it something: the first request starts the
+   machine, so "connected" is said only after it has answered. */
+async function bridgeCloudConnect(){
+  if(BRIDGE.connected && !BRIDGE.cloud) throw new Error('Disconnect this computer first - AMV works on one computer at a time.');
+  const prev = Object.assign({}, BRIDGE);
+  Object.assign(BRIDGE, _bridgeCloudState(), { connected: true, why: '' });
+  try{ await _bridgeCloudCall('status', {}, 90000); }
+  catch(e){ Object.assign(BRIDGE, prev); throw e; }
+  _bridgeRemember();
+  return BRIDGE;
+}
+try{ window.bridgeCloudInfo = bridgeCloudInfo; window.bridgeCloudConnect = bridgeCloudConnect; }catch(e){}
 
 /* ══════════════════════════════════════════════════════════════════════
    COMMANDS THE PERSON TOLD AMV NEVER TO RUN.
@@ -325,6 +418,11 @@ async function bridgeCancelRunning(){
   if(!_BRIDGE_RUNNING.size || !(typeof BRIDGE !== 'undefined' && BRIDGE.connected)) return 0;
   const jobs = [..._BRIDGE_RUNNING];
   let n = 0;
+  if(BRIDGE.cloud){
+    await Promise.all(jobs.map(job => AMV_API._fetch('/v1/computer/exec/cancel', { method:'POST', body: JSON.stringify({ job }), timeout: 8000 })
+      .then(r => r.json()).then(d => { if(d && d.cancelled) n++; }).catch(() => {})));
+    return n;
+  }
   await Promise.all(jobs.map(job => fetchDeadline(_bridgeBase() + '/amv-bridge/exec/cancel', {
       method:'POST', headers:{ 'Content-Type':'application/json', 'X-AMV-Bridge-Token': BRIDGE.token },
       body: JSON.stringify({ job }) }, 5000)
@@ -448,6 +546,24 @@ try{ _bridgeRestore(); }catch(e){}
    by the person who started it.
    ══════════════════════════════════════════════════════════════════════ */
 function _bridgeCardHTML(){
+  /* The cloud computer, connected. What it is, and the two things somebody
+     would otherwise find out the hard way: it is cleared when it sleeps, and
+     what needs their own computer instead. */
+  if(BRIDGE.connected && BRIDGE.cloud){
+    return '<div class="brg brg-on brg-cloud-on">'
+      + '<div class="brg-h"><span class="brg-dot" aria-hidden="true"></span>'
+        + '<b>AMV\u2019s cloud computer is connected</b></div>'
+      + '<p class="brg-p">A private Linux machine in AMV\u2019s cloud, for your account only. AMV can install '
+        + 'packages, run code and tests, and use git there - in chat it asks before each command, in Build once '
+        + 'for the whole request. Nothing on this device is reachable from it.</p>'
+      + '<p class="brg-p brg-warn"><b>It is cleared when it sleeps.</b> After 5 minutes without use it stops, '
+        + 'and its files go with it. Download or push anything you want to keep.</p>'
+      + '<p class="brg-p">Connectors, sign-ins and the screen need your own computer.</p>'
+      + '<p class="brg-p brg-cloud-min" id="brg-cloud-min" aria-live="polite"></p>'
+      + '<div class="brg-acts">'
+        + '<button class="btn bs" id="brg-off" type="button">Disconnect</button>'
+      + '</div></div>';
+  }
   if(BRIDGE.connected){
     return '<div class="brg brg-on">'
       + '<div class="brg-h"><span class="brg-dot" aria-hidden="true"></span>'
@@ -527,6 +643,9 @@ function _bridgeCardHTML(){
       + 'install packages, run the tests, start the server, use git. Files stay in '
       + 'the folder you point it at; commands run there as you, the way they would '
       + 'if you typed them. It stops when you close it.</p>'
+    /* Filled in once the server says this deployment runs a cloud computer -
+       empty, and so invisible, where it does not. */
+    + '<div class="brg-cloud" id="brg-cloud" hidden></div>'
     + '<ol class="brg-steps">'
       + '<li><span>Get the bridge. It is one small file with no dependencies, and '
         + 'you can read it before you run it.</span>'
@@ -627,8 +746,55 @@ function _neverRunWire(root){
 }
 try{ window._neverRunHTML = _neverRunHTML; window._neverRunWire = _neverRunWire; }catch(e){}
 
+/* The cloud computer's row on the card, from what the server says. Shown only
+   where this deployment runs one: an option that cannot work is not offered,
+   and a plan that does not include it says which one does. */
+function _bridgeCloudRowHTML(info){
+  const mins = info.cap ? (info.used + ' of ' + info.cap + ' minutes used this month.') : '';
+  if(!info.allowed){
+    return '<div class="brg-cloud-t"><b>No computer to hand?</b> AMV\u2019s cloud computer runs your project on a '
+      + 'private machine in AMV\u2019s cloud. It comes with ' + escH((PLANS[info.minPlan] && PLANS[info.minPlan].name) || 'Pro') + ' and above.</div>'
+      + '<button class="btn bs" id="brg-cloud-up" type="button">See plans</button>';
+  }
+  return '<div class="brg-cloud-t"><b>No computer to hand?</b> Use AMV\u2019s cloud computer: a private machine in '
+    + 'AMV\u2019s cloud that runs commands and keeps files while you work. ' + escH(mins) + '</div>'
+    + '<button class="btn bp" id="brg-cloud-go" type="button"'
+      + (info.cap && info.used >= info.cap ? ' disabled' : '') + '>Use the cloud computer</button>';
+}
+async function _bridgeCloudWire(root){
+  const slot = root.querySelector('#brg-cloud');
+  const minLine = root.querySelector('#brg-cloud-min');
+  if(!slot && !minLine) return;
+  const info = await bridgeCloudInfo();
+  if(minLine && info && info.cap) minLine.textContent = info.used + ' of ' + info.cap + ' minutes used this month. '
+    + 'Minutes count while it is on, including the 5 minutes it waits after you last use it.';
+  if(!slot || !info || !info.available || !slot.isConnected) return;
+  slot.innerHTML = _bridgeCloudRowHTML(info);
+  slot.hidden = false;
+  const up = slot.querySelector('#brg-cloud-up');
+  if(up) on(up, 'click', () => { try{ openUpgrade(info.minPlan, 'integrations'); }catch(e){} });
+  const go = slot.querySelector('#brg-cloud-go');
+  if(go) on(go, 'click', async () => {
+    const m = root.querySelector('#brg-msg');
+    const say = (t, bad) => { if(m){ m.textContent = t; m.className = 'brg-msg' + (bad ? ' brg-bad' : ''); } };
+    go.disabled = true;
+    say('Starting your cloud computer. The first time can take up to a minute\u2026');
+    try{
+      await bridgeCloudConnect();
+      say('');
+      try{ toast('Connected to AMV\u2019s cloud computer. AMV can run your project there now.', 'success', 5000); }catch(e){}
+      try{ _refreshIntegrationsUI(); }catch(e){}
+      try{ _devRenderProject(); }catch(e){}
+    }catch(e){
+      go.disabled = false;
+      say(e.message || 'The cloud computer could not be started.', true);
+    }
+  });
+}
+
 function _bridgeWireCard(root){
   root = root || document;
+  _bridgeCloudWire(root).catch(() => {});
   const dl = root.querySelector('#brg-dl');
   if(dl) on(dl, 'click', async () => {
     dl.disabled = true;
@@ -653,7 +819,13 @@ function _bridgeWireCard(root){
        the person is the only one who can act on the difference (by closing the
        bridge window themselves). */
     try{
-      if(r.revoked){
+      if(r.cloud){
+        const s = r.stopped || {};
+        toast(r.revoked
+          ? 'Disconnected from the cloud computer.' + (s.jobs ? ' ' + s.jobs + ' command' + (s.jobs === 1 ? '' : 's') + ' stopped.' : '')
+          : 'Disconnected here. AMV could not confirm the cloud computer stopped what it was running'
+            + (r.why ? ' (' + r.why + ')' : '') + '; it stops on its own after 5 minutes.', r.revoked ? 'info' : 'warn', 7000);
+      } else if(r.revoked){
         const s = r.stopped || {};
         const extra = (s.jobs || s.servers)
           ? ' ' + (s.jobs || 0) + ' command' + (s.jobs === 1 ? '' : 's')

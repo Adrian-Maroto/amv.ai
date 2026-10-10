@@ -153,6 +153,14 @@ Companion docs (do not duplicate them here - read them):
   per-call consent in chat - AMV cannot classify a third-party tool's risk, so
   any rule it invented would be a guess. Credentials go in sessionStorage and
   into the child's environment, never localStorage.
+  **AMV's cloud computer** is the same bridge started with `--cloud` in a
+  container per account (`cloud/`, a Worker of its own on Cloudflare
+  Containers): a key from the environment replaces pairing, no screen, no
+  connectors. The page reaches it only through `/v1/computer/*` with the
+  person's sign-in (`BRIDGE.cloud`, `_bridgeCloudCall`); the Worker names the
+  container from a hash of the account and meters AWAKE time - what the
+  provider bills - against the plan (LESSONS 579). Anything needing the
+  person's own machine checks `bridgeLocal()`, not `BRIDGE.connected`.
   **AMV's own browser** (`amv-browser`, `MCP_BROWSER` in 38-mcp.js) is how chat
   and Crew connect to ANY service with a sign-in: `@playwright/mcp` pinned to
   one version, run by the bridge on the person's computer, visible (the bridge
