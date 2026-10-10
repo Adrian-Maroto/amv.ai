@@ -1212,6 +1212,14 @@ const AMV_API = {
   },
   /* Where this account is signed in, and ending one of them. The answer is the
      server's: a list it could not read comes back as null, never as empty. */
+  /* What can answer right now, including partner engines the partner has
+     confirmed. Public: no session needed. */
+  async engines(){
+    if(!this.live) return null;
+    const r = await this._fetch('/v1/engines');
+    if(!r.ok) return null;
+    return await r.json().catch(()=>null);
+  },
   async sessions(){
     if(!this.live || !this.token) return null;
     const r = await this._fetch('/v1/sessions');
@@ -3575,6 +3583,29 @@ const MODEL_ORDER=['auto','fast','core','swift','coding','smart'];
    Auto routed, so the user can always see which engine answered them. */
 const ENGINE_LABEL={ 'amv-pulse':'AMV Pulse', 'amv-core':'AMV Core', 'amv-forge':'AMV Forge', 'amv-apex':'AMV Apex', 'amv-swift':'AMV Swift' };
 try{ window.ENGINE_LABEL=ENGINE_LABEL; }catch(e){}
+/* PARTNER ENGINES, ADDED WHEN THE SERVER SAYS THEY ARE LIVE.
+
+   Other companies' models AMV sells under its own names. The server lists one
+   only after the partner confirms its model exists, so the picker never
+   offers an engine nothing can answer for. The plan floor travels with it. */
+async function _loadPartnerEngines(){
+  try{
+    const d = (window.AMV_API && AMV_API.live) ? await AMV_API.engines() : null;
+    if(!d || !Array.isArray(d.engines)) return 0;
+    let n = 0;
+    for(const e of d.engines){
+      if(!e || !e.partner || !/^amv-[a-z0-9-]{2,24}$/.test(String(e.key || '')) || MODELS[e.key]) continue;
+      const label = String(e.label || e.key).slice(0, 40);
+      MODELS[e.key] = { label, desc:'Another engine AMV offers', color:'#a78bfa', model:e.key, tokens:16000, cost:2,
+                        rec: ['free','pro','elite','ultra'].indexOf(e.minPlan) >= 0 ? e.minPlan : 'pro', partner:true };
+      MODEL_ORDER.push(e.key);
+      ENGINE_LABEL[e.key] = label;
+      n++;
+    }
+    return n;
+  }catch(e){ return 0; }
+}
+try{ window._loadPartnerEngines=_loadPartnerEngines; }catch(e){}
 
 /* ===== BUILD-SECTION MODEL PICKER =====
    Lab, Dev, and Studio let the user choose which model runs their work, so they
@@ -5389,7 +5420,7 @@ function _applyBootTab(){
   try{ if(S.tab!==t) setTab(t); }catch(e){}
   finally{ try{ _NAV.popping=was; _navPaint(); }catch(e){} }
 }
-function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} /* An address beats a remembered tab: somebody who opened #/billing asked for billing, not for wherever they were last time. But the FIRST goApp() runs at the top level of 12-handoff, while modules 13 and up are still evaluating - so a renderer that reads one of their top-level bindings throws, and `typeof x!=='undefined'` does NOT save it: typeof on a let/const still in its temporal dead zone throws too. Boot therefore always renders the tab it always rendered, and the address is applied on the next turn of the loop, once the bundle is whole. That turn is before the first paint, so there is nothing to see. */  try{ const _u=_tabFromURL(); if(_u){ if(window._BUNDLE_READY) S.tab=_u; else _showWhenReady(_u); } }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
+function goApp(){ try{ _wireHdrAuth(); }catch(e){} try{ const cy=document.getElementById('copy-year'); if(cy) cy.textContent=String(new Date().getFullYear()); }catch(e){} document.getElementById('land').classList.add('hidden'); document.getElementById('app').classList.add('on'); updateSbUser(); _initMobileSidebar(); _restoreSidebarState(); try{ _vcSettleObserve(); }catch(e){} try{ _applyReduceMotion(); }catch(e){} /* An address beats a remembered tab: somebody who opened #/billing asked for billing, not for wherever they were last time. But the FIRST goApp() runs at the top level of 12-handoff, while modules 13 and up are still evaluating - so a renderer that reads one of their top-level bindings throws, and `typeof x!=='undefined'` does NOT save it: typeof on a let/const still in its temporal dead zone throws too. Boot therefore always renders the tab it always rendered, and the address is applied on the next turn of the loop, once the bundle is whole. That turn is before the first paint, so there is nothing to see. */  try{ const _u=_tabFromURL(); if(_u){ if(window._BUNDLE_READY) S.tab=_u; else _showWhenReady(_u); } }catch(e){} setTab(S.tab); _ensureBackendSession(); try{ _applyFontSize(); }catch(e){} try{ _initOfflineWatch(); }catch(e){} try{ _initErrorBoundary(); }catch(e){} try{ syncEntitlement(); _checkUpgradeReturn(); }catch(e){} try{ _loadPartnerEngines(); }catch(e){} /* Whether a bank account is linked is the server's answer, and three different screens read it. Refreshed once on start so Crew and the chat tool are not left showing 'not connected' on a device that simply has an empty cache. */ try{ if(typeof AMVFinance!=='undefined') AMVFinance.refresh(); }catch(e){} try{ _checkTeamInvite(); }catch(e){} try{ _initKeyboardNav(); _initOverlayFocus(); _initA11y(); }catch(e){} try{ _revealAdminNav(); }catch(e){} try{ _revealTeamNav(); }catch(e){} try{ _localizePrices(document); }catch(e){} try{ const sbtn=$('sb-status'); if(sbtn) sbtn.addEventListener('click',openStatusPanel); _checkStatus(); }catch(e){} try{ _initI18nObserver(); }catch(e){} try{ _translateUI(); setTimeout(_translateUI,120); }catch(e){ console.error('Translate UI error in goApp', e); } }
 
 /* The sidebar's "More" group was replaced by the tool rail in #sb-tools, so
    the collapsible it managed no longer exists. The function stayed behind,
@@ -16852,7 +16883,10 @@ function _setPlan(plan){
    they need an answer before the first round trip, and showing the last known
    plan name is better than showing Free to somebody who pays. This one gates
    a capability, so it waits for the server. */
-function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=(typeof verifiedPlan==='function'?verifiedPlan():(loadStr('amv_plan')||'free')); if(plan==='custom') return true; const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
+function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=(typeof verifiedPlan==='function'?verifiedPlan():(loadStr('amv_plan')||'free')); if(plan==='custom') return true;
+  /* A partner engine carries its own plan floor; the server enforces it regardless. */
+  if(MODELS[mk] && MODELS[mk].partner){ const R={free:0,pro:1,elite:2,ultra:3}; return (R[plan]||0) >= (R[MODELS[mk].rec]||1); }
+  const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
 
 /* Sync the REAL plan from the backend entitlement store. The server sets the
    plan only via a verified payment webhook, so this is the source of truth -

@@ -215,6 +215,222 @@ const ENGINES = {
   'amv-swift': { model: 'claude-opus-5-5',           minPlan: 'pro',   inCost: 8,  outCost: 40,  maxOut: 32000, cacheMin: 1024, thinking: true, effort: 'low', speed: 'fast', stdIn: 4, stdOut: 20 },
 };
 const FAST_MODE_BETA = 'fast-mode-2026-02-01';
+
+/* ══════════════════════════════════════════════════════════════════════
+   PARTNER ENGINES: OTHER COMPANIES' MODELS, SOLD AS AMV ENGINES.
+
+   AMV buys models; it does not train them. This is the second supplier. A
+   partner is any endpoint that speaks the widely shared chat-completions
+   protocol (most model companies and the large cloud marketplaces offer one),
+   configured by three settings and switched on by nothing else:
+
+     AMV_PARTNER_URL      the endpoint's base, e.g. https://<host>/v1
+     AMV_PARTNER_KEY      its key - read here and nowhere else
+     AMV_PARTNER_ENGINES  JSON: the engines AMV sells on it, each
+                          { key, model, label, minPlan, inCost, outCost,
+                            maxOut, tokenParam?, reasoning?, vision?, tools? }
+
+   AN ENGINE EXISTS ONLY WHEN THE PARTNER SAYS ITS MODEL DOES. The partner's
+   own model list is read (cached for six hours) and an engine whose model id
+   is not on it is not offered, not routable and not billable. A name in a
+   settings field is a claim; the list is the evidence.
+
+   EVERYTHING DOWNSTREAM IS UNCHANGED. The request is translated into the
+   partner's shape, and its stream is translated back into the event stream
+   the rest of AMV already reads - so the reservation, the metering, the
+   refund on failure, the client's parser and every limit apply exactly as
+   they do to the primary engines. Prices come from the engine's own entry,
+   so a partner engine is billed at what it costs.
+
+   NAMED AS AMV. The engines are AMV's (key and label are AMV names); the
+   partner's model id never reaches a screen.
+   ══════════════════════════════════════════════════════════════════════ */
+const PARTNER_KEY_RE = /^amv-[a-z0-9-]{2,24}$/;
+const PARTNER_MODELS_TTL_S = 6 * 3600;
+
+function _partnerConfigured(env){
+  return !!(env && env.AMV_PARTNER_URL && env.AMV_PARTNER_KEY && env.AMV_PARTNER_ENGINES);
+}
+function _partnerBase(env){
+  const u = String((env && env.AMV_PARTNER_URL) || '').trim().replace(/\/+$/, '');
+  return /^https:\/\/[^\s/]+(\/[^\s]*)?$/.test(u) ? u : '';
+}
+/* The engine entries, validated. A malformed entry is dropped, never guessed
+   at: an engine with a missing price would be one AMV gives away. */
+function _partnerEngineDefs(env){
+  let raw;
+  try{ raw = JSON.parse(String((env && env.AMV_PARTNER_ENGINES) || '[]')); }catch(e){ return []; }
+  if(!Array.isArray(raw)) return [];
+  const out = [];
+  for(const d of raw.slice(0, 12)){
+    if(!d || !PARTNER_KEY_RE.test(String(d.key || '')) || ENGINES[d.key]) continue;
+    const inCost = +d.inCost, outCost = +d.outCost, maxOut = Math.floor(+d.maxOut);
+    if(!(inCost > 0) || !(outCost > 0) || !(maxOut >= 256 && maxOut <= 128000)) continue;
+    if(!/^[\w./:-]{1,120}$/.test(String(d.model || ''))) continue;
+    if(!PLAN_RANK.hasOwnProperty(d.minPlan || 'pro')) continue;
+    out.push({ key: d.key, provider: 'partner', model: String(d.model), label: String(d.label || d.key).slice(0, 40),
+               minPlan: d.minPlan || 'pro', inCost, outCost, maxOut,
+               tokenParam: d.tokenParam === 'max_tokens' ? 'max_tokens' : 'max_completion_tokens',
+               reasoning: !!d.reasoning, vision: !!d.vision, tools: d.tools !== false,
+               thinking: false, effort: null, cacheMin: 0 });
+  }
+  return out;
+}
+/* The partner's model ids, from the partner. Cached so a model list call is
+   not paid on every message; a failure to read it is not cached, so a
+   partner that was down an hour ago is asked again. */
+async function _partnerModelIds(env){
+  const base = _partnerBase(env);
+  if(!base || !env.AMV_PARTNER_KEY) return null;
+  const ck = 'partner:models:' + base;
+  try{
+    const hit = env.AMV_KV ? await env.AMV_KV.get(ck) : null;
+    if(hit){ const arr = JSON.parse(hit); if(Array.isArray(arr)) return new Set(arr); }
+  }catch(e){}
+  try{
+    const r = await fetch(base + '/models', { headers: { 'Authorization': 'Bearer ' + env.AMV_PARTNER_KEY },
+                                              signal: AbortSignal.timeout(8000) });
+    if(!r.ok) return null;
+    const d = await r.json();
+    const ids = (Array.isArray(d && d.data) ? d.data : []).map(m => m && m.id).filter(x => typeof x === 'string').slice(0, 5000);
+    if(env.AMV_KV) await env.AMV_KV.put(ck, JSON.stringify(ids), { expirationTtl: PARTNER_MODELS_TTL_S });
+    return new Set(ids);
+  }catch(e){ return null; }
+}
+/* The engines that are really live right now. */
+async function _partnerEngines(env){
+  if(!_partnerConfigured(env)) return [];
+  const defs = _partnerEngineDefs(env);
+  if(!defs.length) return [];
+  const ids = await _partnerModelIds(env);
+  if(!ids) return [];
+  return defs.filter(d => ids.has(d.model));
+}
+
+/* ── REQUEST: AMV's message shape -> the chat-completions shape ─────────── */
+function _partnerText(c){
+  if(typeof c === 'string') return c;
+  if(!Array.isArray(c)) return '';
+  return c.filter(b => b && b.type === 'text').map(b => b.text || '').join('\n');
+}
+function _partnerRequest(eng, body){
+  const msgs = [];
+  const sys = typeof body.system === 'string' ? body.system : _partnerText(body.system);
+  if(sys) msgs.push({ role: 'system', content: sys });
+  for(const m of (body.messages || [])){
+    const c = m.content;
+    if(typeof c === 'string'){ msgs.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: c }); continue; }
+    if(!Array.isArray(c)) continue;
+    if(m.role === 'assistant'){
+      const text = c.filter(b => b && b.type === 'text').map(b => b.text || '').join('');
+      const calls = c.filter(b => b && b.type === 'tool_use').map(b => ({ id: String(b.id), type: 'function',
+        function: { name: String(b.name), arguments: JSON.stringify(b.input || {}) } }));
+      const out = { role: 'assistant', content: text || null };
+      if(calls.length) out.tool_calls = calls;
+      if(text || calls.length) msgs.push(out);
+      continue;
+    }
+    /* A user turn: tool results become their own messages, in order, before
+       whatever the person wrote alongside them. */
+    for(const b of c.filter(b => b && b.type === 'tool_result')){
+      msgs.push({ role: 'tool', tool_call_id: String(b.tool_use_id),
+                  content: typeof b.content === 'string' ? b.content : _partnerText(b.content) });
+    }
+    const parts = [];
+    for(const b of c){
+      if(!b) continue;
+      if(b.type === 'text') parts.push({ type: 'text', text: b.text || '' });
+      else if(b.type === 'image' && b.source && b.source.type === 'base64' && eng.vision)
+        parts.push({ type: 'image_url', image_url: { url: 'data:' + b.source.media_type + ';base64,' + b.source.data } });
+      else if(b.type === 'image' || b.type === 'document')
+        parts.push({ type: 'text', text: '[An attachment was included that this engine cannot read. Say so if it matters to the answer.]' });
+    }
+    if(parts.length) msgs.push({ role: 'user', content: parts.length === 1 && parts[0].type === 'text' ? parts[0].text : parts });
+  }
+  const req = { model: eng.model, messages: msgs, stream: true, stream_options: { include_usage: true } };
+  req[eng.tokenParam] = Math.min(Number(body.max_tokens) || eng.maxOut, eng.maxOut);
+  if(eng.tools && Array.isArray(body.tools)){
+    const fns = body.tools.filter(t => t && t.name && t.input_schema && !t.type)
+      .map(t => ({ type: 'function', function: { name: t.name, description: String(t.description || '').slice(0, 1024), parameters: t.input_schema } }));
+    if(fns.length) req.tools = fns;
+  }
+  if(eng.reasoning && body.effort) req.reasoning_effort = ({ low: 'low', medium: 'medium', high: 'high', xhigh: 'high', max: 'high' })[body.effort] || undefined;
+  return req;
+}
+
+/* ── RESPONSE: the partner's stream -> AMV's event stream ──────────────── */
+function _partnerStream(upstream, eng){
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  const sse = (type, data) => enc.encode('event: ' + type + '\ndata: ' + JSON.stringify(Object.assign({ type }, data)) + '\n\n');
+  const STOP = { stop: 'end_turn', length: 'max_tokens', tool_calls: 'tool_use', function_call: 'tool_use', content_filter: 'refusal' };
+  let buf = '', idx = -1, open = null, openKind = '', usage = { input_tokens: 0, output_tokens: 0 }, stop = null, started = false;
+  const tools = new Map();   // partner tool index -> our block index
+  return new ReadableStream({
+    async start(ctrl){
+      const reader = upstream.body.getReader();
+      const begin = () => { if(started) return; started = true;
+        ctrl.enqueue(sse('message_start', { message: { id: 'msg_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24), type: 'message', role: 'assistant', model: eng.key, content: [], usage: { input_tokens: 0, output_tokens: 0 } } })); };
+      const close = () => { if(open !== null){ ctrl.enqueue(sse('content_block_stop', { index: open })); open = null; openKind = ''; } };
+      try{
+        for(;;){
+          const { value, done } = await reader.read();
+          if(done) break;
+          buf += dec.decode(value, { stream: true });
+          let nl;
+          while((nl = buf.indexOf('\n')) >= 0){
+            const line = buf.slice(0, nl).replace(/\r$/, ''); buf = buf.slice(nl + 1);
+            if(!line.startsWith('data:')) continue;
+            const data = line.slice(5).trim();
+            if(!data || data === '[DONE]') continue;
+            let ch; try{ ch = JSON.parse(data); }catch(e){ continue; }
+            begin();
+            if(ch.usage){ usage = { input_tokens: ch.usage.prompt_tokens || 0, output_tokens: ch.usage.completion_tokens || 0 }; }
+            if(ch.error){ throw new Error(String((ch.error && ch.error.message) || 'partner error')); }
+            const c = ch.choices && ch.choices[0];
+            if(!c) continue;
+            const d = c.delta || {};
+            if(typeof d.content === 'string' && d.content){
+              if(openKind !== 'text'){ close(); idx++; open = idx; openKind = 'text'; ctrl.enqueue(sse('content_block_start', { index: idx, content_block: { type: 'text', text: '' } })); }
+              ctrl.enqueue(sse('content_block_delta', { index: open, delta: { type: 'text_delta', text: d.content } }));
+            }
+            for(const tc of (Array.isArray(d.tool_calls) ? d.tool_calls : [])){
+              const k = tc.index != null ? tc.index : 0;
+              if(!tools.has(k)){
+                close(); idx++; open = idx; openKind = 'tool'; tools.set(k, idx);
+                ctrl.enqueue(sse('content_block_start', { index: idx, content_block: { type: 'tool_use', id: String(tc.id || ('call_' + idx)), name: String((tc.function && tc.function.name) || ''), input: {} } }));
+              }
+              const args = tc.function && tc.function.arguments;
+              if(args) ctrl.enqueue(sse('content_block_delta', { index: tools.get(k), delta: { type: 'input_json_delta', partial_json: args } }));
+            }
+            if(c.finish_reason) stop = STOP[c.finish_reason] || 'end_turn';
+          }
+        }
+        begin(); close();
+        ctrl.enqueue(sse('message_delta', { delta: { stop_reason: stop || 'end_turn' }, usage: { output_tokens: usage.output_tokens } }));
+        ctrl.enqueue(sse('message_stop', { usage }));
+        ctrl.close();
+      }catch(e){
+        try{ ctrl.enqueue(sse('error', { error: { type: 'api_error', message: 'The engine stopped partway: ' + String(e && e.message || e).slice(0, 200) } })); }catch(_){}
+        try{ ctrl.close(); }catch(_){}
+      }
+    },
+  });
+}
+/* One streamed call to the partner, answered in AMV's own event stream. A
+   refusal before any output is a plain error response the caller already
+   knows how to refund. */
+async function _partnerCall(env, eng, body, signal){
+  const base = _partnerBase(env);
+  if(!base || !env.AMV_PARTNER_KEY) return new Response(JSON.stringify({ error: { message: 'This engine is not connected.' } }), { status: 503 });
+  const r = await fetch(base + '/chat/completions', {
+    method: 'POST', signal: signal || AbortSignal.timeout(MODEL_DEADLINE_MS),
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + env.AMV_PARTNER_KEY },
+    body: JSON.stringify(_partnerRequest(eng, body)),
+  });
+  if(!r.ok || !r.body) return new Response(await r.text().catch(() => ''), { status: r.status || 502 });
+  return new Response(_partnerStream(r, eng), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+}
+
 /* The dearest input rate on the ladder. The weekly ceiling exists to bound
    what the expensive engines cost, so which engines those ARE has to follow
    the table rather than a number somebody typed while looking at it. */
@@ -13557,7 +13773,7 @@ async function _route(request, env, ctx) {
        would have broken the operator's own dashboard, which is precisely the
        surface the rule about verifying on the surface the owner uses exists
        for. Every one of them was then read and confirmed to write nothing. */
-    '/v1/activity', '/v1/sessions', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
+    '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
     '/api/approvals',
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
     '/admin/abuse/list', '/admin/readiness', '/admin/backup/export',
@@ -13604,6 +13820,7 @@ async function _route(request, env, ctx) {
     case '/v1/stop':         return aiStop(request, env);
     case '/v1/activity':     return accountActivity(request, env);
     case '/v1/sessions':     return sessionsList(request, env);
+    case '/v1/engines':      return enginesList(request, env);
     case '/v1/sessions/end': return sessionsEnd(request, env);
     case '/v1/keys/create':  return apiKeyCreate(request, env);
     case '/v1/keys/list':    return apiKeyList(request, env);
@@ -17555,6 +17772,16 @@ async function reconcilePayments(env) {
 }
 
 /* ---------------- THE AI PROXY (the heart) -------------------------- */
+/* GET /v1/engines - what can answer right now: the primary engines, and the
+   partner engines whose models the partner confirms. AMV names only; a
+   partner's own model id never leaves the server. Public - it says what the
+   product offers, nothing about who is asking. */
+async function enginesList(request, env) {
+  const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan }));
+  const partners = (await _partnerEngines(env)).map(d => ({ key: d.key, label: d.label, minPlan: d.minPlan, partner: true }));
+  return json({ ok: true, engines: primary.concat(partners) });
+}
+
 async function aiProxy(request, env, ctx) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
@@ -17632,10 +17859,24 @@ async function aiProxy(request, env, ctx) {
      the interface can name the engine that actually answered. */
   const isAuto = rawModel === 'auto' || rawModel === 'amv-auto';
   const routed = isAuto ? _autoRoute(body, user, limits) : null;
-  const key = routed ? routed.key : (RAW_TO_KEY[rawModel] || (ENGINES[rawModel] ? rawModel : 'amv-core'));
+  /* A PARTNER ENGINE, OR AN AMV NAME NOTHING ANSWERS TO.
+
+     An `amv-*` name that is not one of the primary engines is either a live
+     partner engine or not available - and "not available" is said, never
+     quietly answered by a different engine the person did not choose. */
+  let partnerEng = null;
+  if (!routed && PARTNER_KEY_RE.test(rawModel) && !ENGINES[rawModel] && !RAW_TO_KEY[rawModel]) {
+    partnerEng = (await _partnerEngines(env)).find(d => d.key === rawModel) || null;
+    if (!partnerEng) {
+      return json({ error: 'That engine is not available right now. Choose another, or try again later.', code: 'engine_unavailable' }, 503,
+                  { 'Retry-After': '300' });
+    }
+  }
+  const key = partnerEng ? partnerEng.key
+            : routed ? routed.key : (RAW_TO_KEY[rawModel] || (ENGINES[rawModel] ? rawModel : 'amv-core'));
   // Carry the engine's own name with it, so metering can bucket by engine
   // without re-deriving it from the model string.
-  const eng = Object.assign({ key }, ENGINES[key]);
+  const eng = partnerEng ? Object.assign({}, partnerEng) : Object.assign({ key }, ENGINES[key]);
 
   // 1) PLAN ENFORCEMENT - free can't call premium engines (custom plans paid for all models)
   if (!limits.allModels && _planRankOf(user.plan, user.customCfg) < PLAN_RANK[eng.minPlan]) {
@@ -18016,7 +18257,12 @@ async function aiProxy(request, env, ctx) {
 
   /* stream:true - this response goes straight to the user, so it must never be
      retried on another endpoint: words already delivered would be repeated. */
-  const _callUpstream = (payload) => _modelFetch(env, payload, payload.speed
+  const _callUpstream = eng.provider === 'partner'
+    /* A partner engine: the same turn, translated for the partner, answered
+       in AMV's own event stream (see PARTNER ENGINES). */
+    ? (payload) => _partnerCall(env, eng, { system: _systemWithIdentity(body.system), messages: body.messages || [],
+                                             tools: payload.tools, max_tokens: payload.max_tokens, effort: body.effort })
+    : (payload) => _modelFetch(env, payload, payload.speed
     ? { stream: true, headers: { [MODEL_BETA_HEADER]: FAST_MODE_BETA } } : { stream: true });
 
   /* A THROW BURNS THE ALLOWANCE THAT AN ERROR STATUS GIVES BACK.
@@ -18080,7 +18326,7 @@ async function aiProxy(request, env, ctx) {
      the optional parts stripped: the answer is slightly less tuned and the
      product keeps working. A 400 about the messages themselves is a real
      client error and is NOT retried. */
-  if (upstream.status === 400) {
+  if (upstream.status === 400 && eng.provider !== 'partner') {
     const raw = await upstream.clone().text().catch(() => '');
     if (/thinking|output_config|effort|cache_control|unexpected|unsupported|unrecognized/i.test(raw)) {
       const plain = {
@@ -28321,6 +28567,7 @@ function _readinessReport(env, seen) {
      'Other' bucket, which is how a row goes quietly missing from a heading. */
   const GROUPS = {
     ai: 'Core', auth: 'Core', appUrl: 'Core', admin: 'Core', ownerEmail: 'Core',
+    partnerUrl: 'Core', partnerKey: 'Core', partnerEngines: 'Core',
     payments: 'Taking money', paymentsHook: 'Taking money', stripePrices: 'Taking money',
     predictKalshi: 'Taking money', predictPolymarket: 'Taking money',
     stripePricesYearly: 'Taking money',
@@ -28357,6 +28604,12 @@ function _readinessReport(env, seen) {
       effect: 'The most AMV will spend on model calls in one day across every account before it starts refusing. Defaults to $500.' },
     { id: 'writeCap', name: 'Non-essential write budget', env: 'NONESSENTIAL_WRITE_CAP', set: _has(env, 'NONESSENTIAL_WRITE_CAP'),
       effect: 'How many writes a day telemetry and the waitlist may spend before they are dropped, so they cannot exhaust the storage budget the product runs on.' },
+    { id: 'partnerUrl', name: 'Partner models: endpoint', env: 'AMV_PARTNER_URL', set: _has(env, 'AMV_PARTNER_URL'),
+      effect: 'A second model supplier speaking the shared chat-completions protocol. With the key and the engine list, its models are sold as AMV engines.' },
+    { id: 'partnerKey', name: 'Partner models: key', env: 'AMV_PARTNER_KEY', set: _has(env, 'AMV_PARTNER_KEY'),
+      effect: 'The partner supplier\u2019s key. Read only by the server.' },
+    { id: 'partnerEngines', name: 'Partner models: engines', env: 'AMV_PARTNER_ENGINES', set: _has(env, 'AMV_PARTNER_ENGINES'),
+      effect: 'Which partner models AMV sells, under which AMV names and at which prices. An engine appears only once the partner\u2019s own model list confirms it.' },
     { id: 'modelUrl', name: 'Model endpoint', env: 'MODEL_API_URL', set: _has(env, 'MODEL_API_URL'),
       effect: 'Where AMV sends model requests. Defaults to the standard endpoint; set it only to point at a proxy or a region you have been given.' },
     { id: 'appOrigin', name: 'App address (fallback)', env: 'APP_ORIGIN', set: _has(env, 'APP_ORIGIN'),

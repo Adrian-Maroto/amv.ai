@@ -1212,6 +1212,14 @@ const AMV_API = {
   },
   /* Where this account is signed in, and ending one of them. The answer is the
      server's: a list it could not read comes back as null, never as empty. */
+  /* What can answer right now, including partner engines the partner has
+     confirmed. Public: no session needed. */
+  async engines(){
+    if(!this.live) return null;
+    const r = await this._fetch('/v1/engines');
+    if(!r.ok) return null;
+    return await r.json().catch(()=>null);
+  },
   async sessions(){
     if(!this.live || !this.token) return null;
     const r = await this._fetch('/v1/sessions');

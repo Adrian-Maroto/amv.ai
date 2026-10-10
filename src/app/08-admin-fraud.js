@@ -1179,7 +1179,10 @@ function _setPlan(plan){
    they need an answer before the first round trip, and showing the last known
    plan name is better than showing Free to somebody who pays. This one gates
    a capability, so it waits for the server. */
-function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=(typeof verifiedPlan==='function'?verifiedPlan():(loadStr('amv_plan')||'free')); if(plan==='custom') return true; const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
+function _planAllowsModel(mk){ if(mk==='auto') return true; const plan=(typeof verifiedPlan==='function'?verifiedPlan():(loadStr('amv_plan')||'free')); if(plan==='custom') return true;
+  /* A partner engine carries its own plan floor; the server enforces it regardless. */
+  if(MODELS[mk] && MODELS[mk].partner){ const R={free:0,pro:1,elite:2,ultra:3}; return (R[plan]||0) >= (R[MODELS[mk].rec]||1); }
+  const t=PLAN_TIERS[plan]||PLAN_TIERS.free; return t.models.indexOf(mk)>=0; }
 
 /* Sync the REAL plan from the backend entitlement store. The server sets the
    plan only via a verified payment webhook, so this is the source of truth -

@@ -1327,7 +1327,12 @@ step('Page weight is under control', () => {
      synchronously by _cwJobs, which other modules call, so moving it to an
      on-demand file is a refactor of how Crew loads - tracked as its own task,
      next after the items in flight. */
-  const CEILING = 655 * 1024;   // gzipped, which is what actually crosses the network
+  /* 655 -> 656, 2026-10-10, deliberately: partner engines in the picker -
+     other companies' models sold under AMV names, added when the server
+     confirms the partner lists them (~0.5KB). This is the last raise before
+     the Crew catalogue move named above, which is now the NEXT task and takes
+     ~58KB gzipped out of the page; the ceiling follows it down. */
+  const CEILING = 656 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

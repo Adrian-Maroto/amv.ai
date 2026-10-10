@@ -737,6 +737,29 @@ const MODEL_ORDER=['auto','fast','core','swift','coding','smart'];
    Auto routed, so the user can always see which engine answered them. */
 const ENGINE_LABEL={ 'amv-pulse':'AMV Pulse', 'amv-core':'AMV Core', 'amv-forge':'AMV Forge', 'amv-apex':'AMV Apex', 'amv-swift':'AMV Swift' };
 try{ window.ENGINE_LABEL=ENGINE_LABEL; }catch(e){}
+/* PARTNER ENGINES, ADDED WHEN THE SERVER SAYS THEY ARE LIVE.
+
+   Other companies' models AMV sells under its own names. The server lists one
+   only after the partner confirms its model exists, so the picker never
+   offers an engine nothing can answer for. The plan floor travels with it. */
+async function _loadPartnerEngines(){
+  try{
+    const d = (window.AMV_API && AMV_API.live) ? await AMV_API.engines() : null;
+    if(!d || !Array.isArray(d.engines)) return 0;
+    let n = 0;
+    for(const e of d.engines){
+      if(!e || !e.partner || !/^amv-[a-z0-9-]{2,24}$/.test(String(e.key || '')) || MODELS[e.key]) continue;
+      const label = String(e.label || e.key).slice(0, 40);
+      MODELS[e.key] = { label, desc:'Another engine AMV offers', color:'#a78bfa', model:e.key, tokens:16000, cost:2,
+                        rec: ['free','pro','elite','ultra'].indexOf(e.minPlan) >= 0 ? e.minPlan : 'pro', partner:true };
+      MODEL_ORDER.push(e.key);
+      ENGINE_LABEL[e.key] = label;
+      n++;
+    }
+    return n;
+  }catch(e){ return 0; }
+}
+try{ window._loadPartnerEngines=_loadPartnerEngines; }catch(e){}
 
 /* ===== BUILD-SECTION MODEL PICKER =====
    Lab, Dev, and Studio let the user choose which model runs their work, so they

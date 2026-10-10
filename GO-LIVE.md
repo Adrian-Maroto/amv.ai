@@ -430,6 +430,32 @@ key to seal what comes back, and an OAuth app per provider.
 | `AUDIT_WEBHOOK` | A second sink for the audit stream, for anomaly detection. Separate from `ALERT_WEBHOOK`, which is where alarms go. |
 | `STRIPE_PRICE_TEAM_SEAT` | The Stripe price id for a team seat. Without it, team seat billing has no price to charge. |
 
+## 2b. More engines from a second model supplier (optional)
+
+AMV can sell other suppliers' models as AMV engines. Any supplier that offers
+a chat-completions endpoint works - most model companies do, and so do the big
+cloud marketplaces. Three settings switch it on; nothing else does:
+
+```
+wrangler secret put AMV_PARTNER_URL       # e.g. https://<supplier host>/v1
+wrangler secret put AMV_PARTNER_KEY       # the supplier's key
+wrangler secret put AMV_PARTNER_ENGINES   # the list below, as one line of JSON
+```
+
+The engine list says what to sell, under which AMV name, on which plan, at
+which price (dollars per million tokens - the supplier's published rate):
+
+```
+[{"key":"amv-vega","model":"<the supplier's model id>","label":"AMV Vega",
+  "minPlan":"pro","inCost":3,"outCost":12,"maxOut":16000,"tools":true}]
+```
+
+An engine appears in the picker only after the supplier's own model list
+confirms its model id, so a typo shows up as a missing engine, never as a
+broken one. Every turn is metered, reserved and refunded exactly like the
+built-in engines, at the prices in this list. Check the readiness screen
+(Partner models) after setting them.
+
 ## 3. Deploy the Worker
 
 ```bash
