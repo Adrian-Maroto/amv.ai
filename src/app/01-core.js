@@ -2614,8 +2614,8 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
         '<button class="oc" id="modal-close" aria-label="Close" style="position:absolute;top:10px;right:10px">×</button>'+
         (title?'<h2 style="margin-bottom:10px">'+escH(title)+'</h2>':'')+
         '<div class="ob-sub" style="margin-bottom:16px;white-space:pre-wrap;line-height:1.5">'+escH(body)+'</div>'+
-        (figure && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(String(figure.src||''))
-          ? '<div class="modal-fig"><img src="'+escH(figure.src)+'" alt="'+escH(T('Your screen'))+'">'+
+        (figure && /^data:image\//.test(String(figure.src||'')) && safeMediaSrc(figure.src)
+          ? '<div class="modal-fig"><img src="'+escH(safeMediaSrc(figure.src))+'" alt="'+escH(T('Your screen'))+'">'+
             (Number.isFinite(figure.x) && Number.isFinite(figure.y)
               ? '<span class="modal-fig-mark" style="left:'+(Math.max(0,Math.min(1,figure.x))*100).toFixed(2)+'%;top:'+(Math.max(0,Math.min(1,figure.y))*100).toFixed(2)+'%"></span>' : '')+
             '</div>' : '')+
