@@ -14804,3 +14804,18 @@ failures with the old layout and none with a layout kept inside 700x500.
 Rule: before fixing a failure that only happens elsewhere, make it happen
 here. A fix that cannot be shown to turn red into green is a guess, and a
 guess that passes locally passes for the same reason the bug did.
+
+## 578. A wait-for-change flag hangs when there is nothing to change
+
+The bridge moved the pointer with `xdotool mousemove --sync X Y` before every
+click. `--sync` waits until the pointer has MOVED, so a click where the pointer
+already was - somebody hovering a button, then asking AMV to press it - waited
+for ever and failed after the bridge's 15-second limit. Found only because the
+screen test was changed to put the pointer on the target first and then click.
+
+The move now has no `--sync` and a 50 ms pause before the click, which is what
+`--sync` was there for. The test moves onto the target before clicking it, so
+the case that hung is the case that is measured.
+
+Rule: a "wait until it changes" option is a hang wherever the change may
+already have happened. Test the no-op case on purpose.

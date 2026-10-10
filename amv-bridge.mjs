@@ -1136,7 +1136,10 @@ async function screenAct(a) {
   const Y = a.y === undefined ? undefined : Math.round(a.y / screenScale);
   let r;
   if (SCREEN.os === 'linux') {
-    const at = X === undefined ? [] : ['mousemove', '--sync', String(X), String(Y)];
+    /* No --sync: it waits for the pointer to MOVE, so a click where the pointer
+       already is waited for ever and timed out. A short pause after the move
+       does what --sync was for. */
+    const at = X === undefined ? [] : ['mousemove', String(X), String(Y), 'sleep', '0.05'];
     const btn = { click: ['click', '1'], double_click: ['click', '--repeat', '2', '--delay', '80', '1'],
                   right_click: ['click', '3'], middle_click: ['click', '2'] }[a.kind];
     let args;

@@ -120,6 +120,13 @@ await page.setContent(`<!doctype html><body style="margin:0;height:4000px;font:1
   <div id="pad" style="position:absolute;left:120px;top:320px;width:120px;height:80px;background:#c33"
        onclick="window.__clicks=(window.__clicks||0)+1"></div></body>`);
 await page.waitForTimeout(500);
+/* Every pointer event the page receives, with where it landed - so a failure
+   says what happened instead of only that something did not. */
+await page.evaluate(() => {
+  window.__seen = [];
+  for (const t of ['mousemove', 'mousedown', 'click'])
+    document.addEventListener(t, (e) => { if (window.__seen.length < 200) window.__seen.push(t + '@' + e.clientX + ',' + e.clientY + ':' + (e.target.id || e.target.tagName)); }, true);
+});
 /* Where the page's own pixels sit on the screen. Kiosk has no browser bar,
    so this is the window's position plus nothing - measured, not assumed. */
 const off = await page.evaluate(() => ({ x: window.screenX + (window.outerWidth - window.innerWidth), y: window.screenY + (window.outerHeight - window.innerHeight) }));
@@ -147,13 +154,22 @@ section('A click lands where it was aimed');
      focusing it. A real desktop focuses windows itself. So the window is
      focused first, with a click on empty page that nothing counts, and each
      result is waited for rather than read after a fixed pause. */
-  await b.call('screen/act', { kind: 'click', x: 40, y: 460 });
-  await page.waitForFunction(() => document.hasFocus(), null, { timeout: 5000 }).catch(() => {});
+  /* Wait until the window demonstrably takes the pointer: move onto the box
+     until the page sees the move, rather than clicking into a window that may
+     not be ready (CI lost the first click three times; LESSONS 577). */
   const p = await centre('#pad');
+  let ready = false;
+  for (let i = 0; i < 20 && !ready; i++) {
+    await b.call('screen/act', { kind: 'move', x: p.x + (i % 2), y: p.y });
+    ready = await page.evaluate(() => window.__seen.some(e => /^mousemove@.*:pad$/.test(e)));
+    if (!ready) await page.waitForTimeout(250);
+  }
+  ok(ready, 'the window takes the pointer before anything is measured', await page.evaluate(() => window.__seen.slice(-5)));
   const r = await b.call('screen/act', { kind: 'click', x: p.x, y: p.y });
   await page.waitForFunction(() => (window.__clicks || 0) >= 1, null, { timeout: 3000 }).catch(() => {});
   const clicks = await page.evaluate(() => window.__clicks || 0);
-  ok(r.status === 200 && clicks === 1, 'the red box received exactly one click', { r, clicks });
+  ok(r.status === 200 && clicks === 1, 'the red box received exactly one click',
+     { r, clicks, aimed: p, off, seen: await page.evaluate(() => window.__seen.slice(-6)) });
   const miss = await b.call('screen/act', { kind: 'click', x: 50, y: 50 });
   await page.waitForTimeout(200);
   ok(miss.status === 200 && (await page.evaluate(() => window.__clicks || 0)) === 1, 'and a click elsewhere did not reach it');
