@@ -1314,7 +1314,11 @@ step('Page weight is under control', () => {
      and background jobs before anything reaches the machine, and told to the
      model up front. About 1KB gzipped, all of it the feature; a safety
      control on the most consequential thing AMV does. */
-  const CEILING = 650 * 1024;   // gzipped, which is what actually crosses the network
+  /* 650 -> 652, 2026-10-10, deliberately: memory import and export - paste
+     another assistant's list or an AMV file, review each before it is added,
+     secrets and duplicates left out. About 1.5KB gzipped, all of it the
+     feature. A trim pass is due before the larger items on the list. */
+  const CEILING = 652 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

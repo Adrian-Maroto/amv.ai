@@ -1309,6 +1309,11 @@ function renderMemoryView(){
         '<input type="text" id="mem-inp" placeholder="e.g. I prefer concise answers" style="flex:1;font-size:var(--t-base)">'+
         '<button class="btn bp" id="mem-add" style="font-size:var(--t-sm);white-space:nowrap">Add Memory</button>'+
       '</div>'+
+      '<div class="memio-bar">'+
+        '<button class="btn bs" id="mem-imp-open" type="button">Import</button>'+
+        '<button class="btn bs" id="mem-exp" type="button">Export</button>'+
+      '</div>'+
+      '<div class="memio" id="mem-imp" hidden></div>'+
       '<div id="mem-list" style="display:flex;flex-direction:column;gap:8px"></div>'+
       (S.memory.length?'<button class="btn bd2" id="mem-clr" style="align-self:flex-start;font-size:var(--t-sm)">Clear All Memories</button>':'')+
       '<div class="ss2 ds-note">'+
@@ -1328,6 +1333,8 @@ function renderMemoryView(){
   on($('mem-add'),'click',addMemory);
   on($('mem-inp'),'keydown',e=>{if(e.key==='Enter')addMemory();});
   on($('mem-clr'),'click',()=>{S.memory=[];renderMemoryView();toast('All memories cleared','success');});
+  on($('mem-imp-open'),'click',_memImportOpen);
+  on($('mem-exp'),'click',_memExport);
   renderMemList();
 }
 /* The same refusal chat applies, applied here too.
@@ -1448,9 +1455,12 @@ function _memDuplicate(fact, knownSet){
   const f=fact.toLowerCase().trim();
   if(knownSet.has(f)) return true;
   // fuzzy: high word overlap with an existing memory = duplicate
-  const fw=new Set(f.split(/\W+/).filter(w=>w.length>3));
+  /* A plural or third-person s is the same word: "prefers short answers"
+     is a fact AMV already has when it knows "I prefer short answers". */
+  const words=t=>new Set(t.split(/\W+/).filter(w=>w.length>3).map(w=>w.length>4?w.replace(/s$/,''):w));
+  const fw=words(f);
   for(const k of knownSet){
-    const kw=new Set(k.split(/\W+/).filter(w=>w.length>3));
+    const kw=words(k);
     if(!fw.size||!kw.size) continue;
     let common=0; fw.forEach(w=>{ if(kw.has(w)) common++; });
     if(common/Math.min(fw.size,kw.size) >= 0.7) return true;

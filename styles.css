@@ -16842,3 +16842,26 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
    opens every app in the topic. */
 .int-none{ margin:0; padding:var(--sp-3) var(--sp-4); font-size:var(--t-base); color:var(--mu);
   border:1px dashed var(--bd); border-radius:var(--r-md); grid-column:1 / -1; }
+
+/* ═══ LAYER A304 - MEMORY IN AND OUT ══════════════════════════════════════
+   Import and Export beside the memory list; the import panel reads as the
+   bridge card does - a bordered panel with an instruction in it - and the
+   review list is one row per memory with its box on the left. */
+.memio-bar{ display:flex; gap:var(--sp-2); flex-wrap:wrap; }
+.memio{ border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s1); padding:var(--sp-4); }
+.memio-h{ font-size:var(--t-lg); font-weight:600; margin-bottom:var(--sp-2); }
+.memio-p{ color:var(--mu); font-size:var(--t-base); line-height:1.55; margin:0 0 var(--sp-3); max-width:64ch; }
+.memio-txt{ display:block; width:100%; box-sizing:border-box; min-height:120px; padding:var(--sp-2) var(--sp-3);
+  border:1px solid var(--bd); border-radius:var(--r-sm); background:var(--s2); color:var(--tx);
+  font:inherit; font-size:var(--t-base); line-height:1.5; resize:vertical; margin-bottom:var(--sp-3); }
+.memio-txt:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.memio-acts{ display:flex; gap:var(--sp-2); flex-wrap:wrap; }
+.memio-acts .btn{ min-height:44px; }
+.memio-say{ margin:var(--sp-3) 0 var(--sp-2); font-size:var(--t-sm); color:var(--mu); line-height:1.5; }
+.memio-list{ display:flex; flex-direction:column; gap:var(--sp-1); max-height:360px; overflow-y:auto; margin-bottom:var(--sp-3); }
+.memio-row{ display:flex; align-items:flex-start; gap:var(--sp-2); padding:var(--sp-2); border-radius:var(--r-sm);
+  font-size:var(--t-base); line-height:1.45; color:var(--tx); cursor:pointer; min-height:44px; box-sizing:border-box; }
+.memio-row:hover{ background:var(--s2); }
+.memio-row input{ margin-top:3px; width:18px; height:18px; flex:none; }
+.memio-row span{ overflow-wrap:anywhere; }
+@media (pointer:coarse){ .memio-txt{ font-size:var(--t-lg); } }
