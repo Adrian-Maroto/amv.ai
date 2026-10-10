@@ -29,6 +29,8 @@ function _renderApiKeysPane(pane){
       'the same monthly ceiling, the same protections. Nothing separate to watch.</div>'+
     '<div class="ss2" id="api-body"><div class="ak-load">Loading your keys\u2026</div></div>'+
     _apiDocsHTML();
+  const cli = document.getElementById('ak-cli');
+  if(cli) on(cli, 'click', async () => { cli.disabled = true; try{ await _cliDownload(); } finally{ cli.disabled = false; } });
 
   const body = document.getElementById('api-body');
   if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
@@ -173,6 +175,49 @@ function _apiDocsHTML(){
       '<code>auto</code> to let AMV choose.</p>'+
     '<p class="ak-doc">Usage counts against this account\u2019s plan, so the limits in '+
       '<b>Settings -> Plan &amp; billing</b> are the limits your integration has.</p>'+
+  '</div>'+
+  /* FROM A TERMINAL. One file with nothing to install, handed over the way
+     the bridge is - from this deployment, with this deployment's address
+     written into it at download, so the only thing left to set is the key. */
+  '<div class="ss2"><h3>From a terminal</h3>'+
+    '<p class="ak-doc">One file, nothing to install - it needs Node 18 or newer. It downloads with this AMV\u2019s '+
+      'address already in it. Your key goes in an environment variable, never on the command line, where '+
+      'it would be saved in your shell history.</p>'+
+    '<pre class="ak-code"><code>'+escH('export AMV_API_KEY=amv_sk_...\n'+
+      'node amv-cli.mjs "Summarise this week\'s notes"\n'+
+      'cat notes.txt | node amv-cli.mjs "Turn these into an email"\n'+
+      'node amv-cli.mjs chat')+'</code></pre>'+
+    '<button class="btn bs" id="ak-cli" type="button">Download amv-cli.mjs</button>'+
   '</div>';
 }
-try{ window._renderApiKeysPane=_renderApiKeysPane; window._apiLoad=_apiLoad; }catch(e){}
+
+const CLI_FILE = 'amv-cli.mjs';
+/* Fetched from this deployment, checked to be the tool, and saved with the
+   address filled in. A copy of AMV with no server has nothing to give it,
+   and says so rather than handing over a tool that cannot work. */
+async function _cliDownload(){
+  const base = String(apiBase() || '').replace(/\/$/, '');
+  if(!/^https:\/\/[^\s"'\\]+$/.test(base)){
+    try{ toast('This copy of AMV is not connected to its server, so the tool would have nowhere to send questions.', 'error', 7000); }catch(e){}
+    return false;
+  }
+  let text;
+  try{
+    const r = await fetchDeadline(CLI_FILE, { cache: 'no-store' }, 15000);
+    if(!r.ok) throw new Error('http_' + r.status);
+    text = await r.text();
+    if(!/^#!\/usr\/bin\/env node/.test(text) || text.indexOf("'__AMV_API__'") < 0) throw new Error('not_the_cli');
+  }catch(e){
+    try{ toast('AMV could not fetch the command-line tool from this deployment. Try again in a moment.', 'error', 7000); }catch(x){}
+    return false;
+  }
+  text = text.replace("'__AMV_API__'", JSON.stringify(base));
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/javascript' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = CLI_FILE;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => { try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
+  try{ toast('Saved amv-cli.mjs. Set AMV_API_KEY to one of your keys, then run: node amv-cli.mjs "your question"', 'success', 8000); }catch(e){}
+  return true;
+}
+try{ window._renderApiKeysPane=_renderApiKeysPane; window._apiLoad=_apiLoad; window._cliDownload=_cliDownload; }catch(e){}

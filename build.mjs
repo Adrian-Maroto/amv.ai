@@ -62,6 +62,9 @@ const BRIDGE_SRC = 'bridge/amv-bridge.mjs';
 const BRIDGE_OUT = 'amv-bridge.mjs';
 function emitBridge() {
   writeFileSync(BRIDGE_OUT, readFileSync(BRIDGE_SRC));
+  /* The command-line tool, downloaded from Settings -> API keys - the page
+     writes this deployment's address into it at download time. */
+  writeFileSync('amv-cli.mjs', readFileSync('cli/amv-cli.mjs'));
   emitSandbox();
 }
 /* THE CODE SANDBOX is its own page (src/sandbox/): the app frames it with
@@ -863,6 +866,7 @@ const PUBLISH = [
   'icon-192.png',          // linked from the head and the manifest
   'icon-512.png',          // the manifest's large and maskable icon
   'amv-bridge.mjs',        // fetched by the connect card's Download button
+  'amv-cli.mjs',           // fetched by the API keys pane's Download button
   'sandbox.html',          // the frame programs run in (opaque origin, its own policy)
   'sandbox.js',            // what that frame runs
   'office.js',             // the Word/Excel/PowerPoint exporter, fetched on the first Export

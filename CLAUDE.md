@@ -71,7 +71,8 @@ Companion docs (do not duplicate them here - read them):
     by somebody raising it on purpose.
 - **What the static host publishes is `public/`.** The build writes it: the
   built `index.html`, `sw.js`, `manifest.webmanifest`, the two icons,
-  `amv-bridge.mjs`, the code sandbox (`sandbox.html` + `sandbox.js`), the
+  `amv-bridge.mjs`, `amv-cli.mjs` (the command-line tool, from `cli/`; the API keys
+  pane writes the deployment's address into it at download), the code sandbox (`sandbox.html` + `sandbox.js`), the
   language packs in `i18n/`, and three files fetched on first use - `office.js`
   (Word/Excel/PowerPoint export), `sheet.js` (the spreadsheet editor) and
   `admin.js` (the owner console) - byte-identical copies and nothing else.
