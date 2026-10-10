@@ -761,9 +761,20 @@ function _integrationsCatalogHTML(opts){
       if(!list.length) return '';
     }
     const open=only || _appOpen.has(c.id);
-    const shown=open ? list : list.slice(0, APP_ROWS_SHOWN);
-    const html=shown.map(r=>r.o ? intRow(r.o) : notifyRow(r.a)).join('');
-    const more=(!only && list.length>APP_ROWS_SHOWN)
+    /* WHAT CONNECTS, FIRST AND ONLY, UNTIL SOMEBODY ASKS FOR THE REST.
+
+       The first screen of a topic used to be its first six apps whatever they
+       were, and 119 of the 191 rows people saw first were Notify me - apps AMV
+       cannot connect. A page that is two-thirds "not yet" reads as a product
+       that mostly does not work, and buries the rows that do. So a topic opens
+       on the apps that really connect; See all shows everything it lists, with
+       Notify me on the rest. A topic where nothing connects yet says so in one
+       line rather than six cards. */
+    const live=list.filter(r=>r.o);
+    const shown=open ? list : live.slice(0, APP_ROWS_SHOWN);
+    const html=shown.length ? shown.map(r=>r.o ? intRow(r.o) : notifyRow(r.a)).join('')
+      : '<p class="int-none">'+escH(T('Nothing here connects yet.'))+' '+escH(T('See all to ask for one.'))+'</p>';
+    const more=(!only && list.length>Math.min(live.length, APP_ROWS_SHOWN))
       ? '<div class="int-more"><button class="int-seemore" data-app-more="'+escH(c.id)+'" aria-expanded="'+(open?'true':'false')+'"'
           +' aria-label="'+escH((open ? T('Show fewer') : T('See all')+' '+list.length)+' '+String(c.t).replace(/&amp;/g,'and'))+'">'
           +escH(open ? T('Show fewer') : (T('See all')+' '+list.length))

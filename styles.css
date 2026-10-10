@@ -16836,3 +16836,9 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
   margin-bottom:var(--sp-3);line-height:1.5;resize:vertical;box-sizing:border-box;
 }
 @media (pointer:coarse){ .nr-list{ font-size:var(--t-lg); } }
+
+/* ═══ LAYER A303 - A TOPIC WHERE NOTHING CONNECTS YET ═════════════════════
+   One quiet line in place of six Notify me cards; See all under it still
+   opens every app in the topic. */
+.int-none{ margin:0; padding:var(--sp-3) var(--sp-4); font-size:var(--t-base); color:var(--mu);
+  border:1px dashed var(--bd); border-radius:var(--r-md); grid-column:1 / -1; }

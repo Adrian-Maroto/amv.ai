@@ -31,13 +31,20 @@ section('Every topic is the same shape, and there is no "everything else"');
     const secs = [...document.querySelectorAll('#int-catalog > .ss2')];
     return {
       n: secs.length, cats: AMV_APP_CATS.length, count: _appCount(),
-      shaped: secs.filter(s => s.querySelector('h3') && s.querySelector('.int-list .int-card')).length,
-      /* Six, then one small See all - and only where there is more to see. */
+      shaped: secs.filter(s => s.querySelector('h3') && s.querySelector('.int-list .int-card, .int-list .int-none')).length,
+      /* What connects, up to six, then one small See all wherever the topic
+         lists more than that - and a topic where nothing connects yet says so
+         in one line instead of a column of Notify me. */
       sixThenMore: secs.filter(s => {
-        const cat = AMV_APP_CATS.find(c => c.t.replace(/&amp;/g, '&') === s.querySelector('h3').textContent);
+        const cat = _appCats().find(c => c.t.replace(/&amp;/g, '&') === s.querySelector('h3').textContent);
+        if (!cat) return false;
+        const live = cat.apps.filter(a => a.how).length, want = Math.min(6, live);
         const rows = s.querySelectorAll('.int-card').length, more = s.querySelector('.int-seemore[data-app-more]');
-        return cat && rows === Math.min(6, cat.apps.length) && (cat.apps.length > 6 ? !!more : !more);
+        const none = !!s.querySelector('.int-none');
+        return rows === want && (cat.apps.length > want ? !!more : !more) && (want === 0) === none;
       }).length,
+      firstScreenNotify: document.querySelectorAll('#int-catalog .int-notify').length,
+      emptyTopics: secs.filter(s => s.querySelector('.int-none')).map(s => s.querySelector('h3').textContent),
       registryDoors: document.querySelectorAll('#int-catalog [data-dact="cdirAll"]').length,
       badges: /\bAutonomous\b|\bManual\b/.test(document.getElementById('int-catalog').textContent),
       lump: /Everything else/i.test(document.querySelector('.vi-conn').textContent),
@@ -46,7 +53,9 @@ section('Every topic is the same shape, and there is no "everything else"');
   });
   ok(r.n === r.cats && r.n >= 30, 'one section per topic', r.n + ' of ' + r.cats);
   ok(r.shaped === r.n, 'each with a heading and rows', r.shaped + ' of ' + r.n);
-  ok(r.sixThenMore === r.n, 'each shows its main six, then one small See all where there are more', r.sixThenMore + ' of ' + r.n);
+  ok(r.sixThenMore === r.n, 'each shows what connects (up to six), then one small See all where there are more', r.sixThenMore + ' of ' + r.n);
+  ok(r.firstScreenNotify === 0, 'and no Notify me row on the first screen - it was 119 of 191', r.firstScreenNotify);
+  ok(r.emptyTopics.includes('Shopping') && r.emptyTopics.length < r.n / 2, 'a topic where nothing connects yet says so in one line', r.emptyTopics);
   ok(r.registryDoors === 0, 'and no second door into the open registry under a topic', r.registryDoors);
   ok(!r.badges, 'no Autonomous or Manual labels - the name, what it does, and Connect', r.badges);
   ok(!r.lump, 'and nothing called "everything else"');
@@ -70,6 +79,8 @@ section('The apps people named are there');
 
 section('Connect only where AMV really connects, and those come first');
 {
+  /* Every topic opened with See all, so every row the page can show is here. */
+  await page.evaluate(() => { _appCats().forEach(c => _appOpen.add(c.id)); _paintIntegrations(); });
   const r = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('#int-catalog .int-card')];
     const conn = rows.map(c => c.querySelector('[data-int-conn]')).filter(Boolean).map(b => b.dataset.intConn);
@@ -161,6 +172,7 @@ section('Notify me says what happened');
   ok(last.path === '/waitlist' && last.body.product === 'app-capcut' && last.body.email === 'alex@x.com',
      'on the server’s waitlist, one product per app, under the account’s own address', last);
   ok(r.onList && !r.stillButton, 'and the row now says On the list', r);
+  await page.evaluate(() => { _appOpen.clear(); _paintIntegrations(); });
 }
 
 section('Show all opens the rest of a topic, and keeps it open');
@@ -177,7 +189,7 @@ section('Show all opens the rest of a topic, and keeps it open');
     const total = AMV_APP_CATS.find(c => c.id === 'shop').apps.length;
     return { before, after, repaint, total };
   });
-  ok(r.before === 6, 'a topic shows six at first', r.before);
+  ok(r.before === 0, 'Shopping, where nothing connects yet, shows no cards at first', r.before);
   ok(r.after === r.total, 'Show all shows every one', r);
   ok(r.repaint === r.total, 'and a repaint does not snap it shut', r);
 }
