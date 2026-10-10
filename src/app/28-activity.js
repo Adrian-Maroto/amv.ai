@@ -20,6 +20,9 @@ const ACT_LABEL = {
   sign_in_failed:         ['Failed sign-in attempt', 'warn'],
   signed_out:             ['Signed out of a device', ''],
   signed_out_everywhere:  ['Signed out of all devices', 'warn'],
+  /* Toned: ending one of your sign-ins from another device is exactly what an
+     intruder would do to keep a real owner out, so it is worth a second look. */
+  session_ended:          ['A sign-in was ended from the device list', 'warn'],
   account_created:        ['Account created', ''],
   password_changed:       ['Password changed', 'warn'],
   plan_changed:           ['Plan changed', ''],
