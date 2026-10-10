@@ -1,0 +1,24 @@
+# AMV's cloud computer - a Worker of its own that runs one container per person.
+# Deploy from this folder once the main Worker is live and your Cloudflare plan
+# includes Containers (Workers Paid). See GO-LIVE.md, "AMV's cloud computer".
+#
+#   cd cloud && npm install && cp ../bridge/amv-bridge.mjs . && npx wrangler deploy
+#   npx wrangler secret put AMV_COMPUTER_KEY      # the same value as the main Worker's
+name = "amv-computer"
+main = "computer.mjs"
+compatibility_date = "2026-06-01"
+
+[[containers]]
+class_name = "AMVComputer"
+image = "./Dockerfile"
+# Concurrent containers across ALL users. Raise it as the account grows; it is
+# the ceiling on what an abuse wave can cost before the per-plan minutes stop it.
+max_instances = 50
+
+[[durable_objects.bindings]]
+name = "AMV_COMPUTER"
+class_name = "AMVComputer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AMVComputer"]

@@ -335,6 +335,29 @@ const PAIR_CODE = randomBytes(12).toString('hex').toUpperCase().match(/.{4}/g).j
    only place it would ever have shown. */
 let sessionToken = '';
 let pairedAt = 0;
+
+/* ── THE CLOUD COMPUTER ─────────────────────────────────────────────────────
+
+   The same bridge, inside a container AMV runs for one person (cloud/). There
+   is no terminal to read a pairing code from and no browser talks to it: the
+   only thing that can reach it is AMV's own Worker, through the container's
+   private port. So --cloud replaces pairing with a key the Worker starts the
+   container with (AMV_CLOUD_KEY), and every request must carry it.
+
+   It will not start without a key of real length - a cloud bridge that
+   accepted anyone would be a public shell. The pairing route, the origin
+   check and the idle expiry are for a bridge on somebody's own machine and
+   do not apply here; the screen is never offered (a container has none). */
+const CLOUD = ARGS.includes('--cloud');
+if (CLOUD) {
+  const key = String(process.env.AMV_CLOUD_KEY || '');
+  if (key.length < 32) {
+    console.error('  ✗ --cloud needs AMV_CLOUD_KEY (at least 32 characters). Refusing to start without it.');
+    process.exit(1);
+  }
+  sessionToken = key;
+  pairedAt = Date.now();
+}
 /* A PAIRING NOBODY HAS USED IN TWELVE HOURS ENDS - NEVER ONE THAT IS WORKING.
 
    A token lives in a browser tab; a bridge left open in a terminal lives on.
@@ -887,7 +910,7 @@ function tokenOk(given){
    Not fenced, unlike commands: the programs here are fixed and chosen by
    this file, not by a model, and they need the display, which the fence
    would hide. */
-const COMPUTER = ARGS.includes('--computer');
+const COMPUTER = ARGS.includes('--computer') && !ARGS.includes('--cloud');
 const SCREEN_MAX_COORD = 16384;
 const SCREEN_MAX_TEXT = 2000;
 const SCREEN_TIMEOUT_MS = 15000;
@@ -1208,13 +1231,15 @@ function readBody(req){
 
 const server = createServer(async (req, res) => {
   const origin = req.headers.origin || '';
-  const allowed = ALLOWED_ORIGINS.has(origin) || (DEV_ORIGINS && isLoopbackOrigin(origin));
+  /* In the cloud nothing but AMV's Worker can reach the port, and it sends
+     no Origin; the key below is what admits it. */
+  const allowed = CLOUD || ALLOWED_ORIGINS.has(origin) || (DEV_ORIGINS && isLoopbackOrigin(origin));
 
   /* CORS, and Chrome's private-network preflight with it: a page on the
      public internet reaching a loopback server has to be granted that
      explicitly, and answering the preflight is how this says yes to AMV and
      nothing else. */
-  if (allowed) {
+  if (allowed && !CLOUD) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-AMV-Bridge-Token');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1236,10 +1261,11 @@ const server = createServer(async (req, res) => {
   if (path === '/amv-bridge/hello' && req.method === 'GET') {
     return json(res, 200, { bridge: true, version: VERSION,
                             folder: ROOT.split(sep).pop(), paired: !!sessionToken,
-                            sharesEnvironment: SHARE_ENV, fence: fenceState(), computer: screenPublic() });
+                            sharesEnvironment: SHARE_ENV, fence: fenceState(), computer: screenPublic(), cloud: CLOUD });
   }
 
   if (!allowed) return json(res, 403, { error: 'origin_not_allowed' });
+  if (CLOUD && path === '/amv-bridge/pair') return json(res, 404, { error: 'unknown_route' });
 
   if (path === '/amv-bridge/pair' && req.method === 'POST') {
     let body; try { body = await readBody(req); } catch (e) { return json(res, 400, { error: 'bad_body' }); }
@@ -1272,7 +1298,7 @@ const server = createServer(async (req, res) => {
                             sharesEnvironment: SHARE_ENV, fence: fenceState(), computer: screenPublic() });
   }
 
-  if (sessionToken && execJobs.size === 0 && Date.now() - lastUsed > SESSION_IDLE_MS
+  if (!CLOUD && sessionToken && execJobs.size === 0 && Date.now() - lastUsed > SESSION_IDLE_MS
       && tokenOk(req.headers['x-amv-bridge-token'])) {
     sessionToken = ''; pairedAt = 0;
     const servers = mcpServers.size;
@@ -1313,8 +1339,10 @@ const server = createServer(async (req, res) => {
      honest answer rather than an error. */
   if (path === '/amv-bridge/revoke') {
     const hadSession = !!sessionToken;
-    sessionToken = '';
-    pairedAt = 0;
+    /* In the cloud, disconnecting stops what is running and keeps the key:
+       the container is the person's, and the next connect is AMV's Worker
+       again, not somebody new pairing. */
+    if (!CLOUD) { sessionToken = ''; pairedAt = 0; }
     const jobs = execJobs.size, servers = mcpServers.size;
     execKillAll();
     mcpKillAll();
@@ -1749,8 +1777,16 @@ const server = createServer(async (req, res) => {
 /* Port zero: the operating system picks a free one and tells us. A fixed
    port is a port that is already taken on somebody's machine, and it is also
    the port a hostile page would guess first. */
-server.listen(0, '127.0.0.1', () => {
+/* In the cloud: the container's private port, on every interface inside the
+   container, because that is how the platform reaches it - and it is not
+   reachable from anywhere else. */
+const LISTEN = CLOUD ? [Number(process.env.PORT) > 0 ? Number(process.env.PORT) : 8080, '0.0.0.0'] : [0, '127.0.0.1'];
+server.listen(LISTEN[0], LISTEN[1], () => {
   const { port } = server.address();
+  if (CLOUD) {
+    console.log('  AMV cloud computer ' + VERSION + ' ready on port ' + port + ' - folder ' + ROOT);
+    return;
+  }
   const line = '═'.repeat(52);
   console.log('\n' + line);
   console.log('  AMV Bridge ' + VERSION + '  ·  ready');

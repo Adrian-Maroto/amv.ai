@@ -4244,6 +4244,81 @@ async function connAct(request, env){
    used from, and a project number - which is why they are handed to the page
    at all. Signed in only, so this is not a directory of the deployment's
    settings for anyone who asks. */
+/* ══ AMV'S CLOUD COMPUTER ════════════════════════════════════════════════════
+
+   A machine of the person's own, in AMV's cloud: one container each, running
+   the same bridge people run on their own computers (cloud/, --cloud mode).
+   The app drives it with the same calls it already makes to a bridge - run a
+   command, read and write a file - and they arrive here first, so:
+
+     it exists only where the deployment has it (the AMV_COMPUTER binding and
+     a key of real length), and says so plainly where it does not;
+     it is a plan's to use (Pro and above), checked here, not in the page;
+     command time is counted against the plan's monthly minutes, from what
+     the bridge measured, and a command is refused once they are spent;
+     each person reaches only their own container - its name is derived here
+     from the signed-in account, never taken from the request. */
+const COMPUTER_MIN_PLAN = 'pro';
+const COMPUTER_MINUTES = { pro: 300, elite: 1200, ultra: 3000 };
+function _computerOn(env){ return !!(env && env.AMV_COMPUTER && String(env.AMV_COMPUTER_KEY || '').length >= 32); }
+function _computerCap(user){
+  const rank = _planRankOf(user.plan, user.customCfg);
+  return rank >= PLAN_RANK.ultra ? COMPUTER_MINUTES.ultra : rank >= PLAN_RANK.elite ? COMPUTER_MINUTES.elite
+       : rank >= PLAN_RANK.pro ? COMPUTER_MINUTES.pro : 0;
+}
+async function _computerName(email){
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-computer:' + String(email).toLowerCase()));
+  return 'u:' + [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 48);
+}
+async function _computerUsedSeconds(env, email){
+  return +((await counter(env, `cmin:${email}:${monthKey()}`, { op: 'get' })).value || 0);
+}
+async function computerInfo(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const cap = _computerCap(user);
+  return json({ ok: true, available: _computerOn(env), allowed: cap > 0, minPlan: COMPUTER_MIN_PLAN,
+                minutes: { used: Math.ceil((await _computerUsedSeconds(env, user.email)) / 60), cap } });
+}
+async function computerRoute(request, env, route){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  if(!_computerOn(env)) return json({ error: 'AMV’s cloud computer is not switched on for this deployment yet. You can still connect your own computer.', code: 'needs_service' }, 503);
+  const cap = _computerCap(user);
+  if(!cap) return json({ error: 'The cloud computer comes with Pro and above.', code: 'plan_required', minPlan: COMPUTER_MIN_PLAN }, 402);
+  const limited = await guardAction(env, 'computer:' + user.email, 120, 2000, 'requests to your cloud computer');
+  if(limited) return limited;
+  if(route === 'exec'){
+    const used = await _computerUsedSeconds(env, user.email);
+    if(used >= cap * 60)
+      return json({ error: `You have used this month’s ${cap} minutes of cloud computer time. It starts again next month, or upgrade for more.`,
+                    code: 'computer_minutes', minutes: { used: Math.ceil(used / 60), cap } }, 429);
+  }
+  const raw = await request.text();
+  if(raw.length > 8 * 1024 * 1024) return json({ error: 'That is too large to send to the cloud computer.', code: 'too_large' }, 413);
+  let stub;
+  try{ stub = env.AMV_COMPUTER.get(env.AMV_COMPUTER.idFromName(await _computerName(user.email))); }
+  catch(e){ return json({ error: 'The cloud computer could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503); }
+  let r, text;
+  try{
+    r = await stub.fetch(new Request('http://amv-computer/amv-bridge/' + route, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY) }, body: raw || '{}' }));
+    text = await r.text();
+  }catch(e){
+    audit(env, 'computer_unavailable', { by: user.email, route });
+    return json({ error: 'The cloud computer did not start. Try again in a minute.', code: 'computer_unavailable' }, 503);
+  }
+  let d; try{ d = JSON.parse(text); }catch(e){ d = null; }
+  if(!d || typeof d !== 'object') return json({ error: 'The cloud computer answered with something AMV could not read.', code: 'computer_unavailable' }, 502);
+  /* Command time, as the bridge measured it - whole seconds, rounded up. */
+  if(route === 'exec' && r.ok){
+    const sec = Math.max(1, Math.ceil((+d.ms || 0) / 1000));
+    await counter(env, `cmin:${user.email}:${monthKey()}`, { op: 'incr', amount: sec, ttlMs: 40 * 86400000 });
+    audit(env, 'computer_exec', { by: user.email, seconds: sec, exit: d.exitCode });
+  }
+  return json(d, r.status);
+}
+
 async function googlePickerConfig(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
@@ -13967,7 +14042,7 @@ async function _route(request, env, ctx) {
        would have broken the operator's own dashboard, which is precisely the
        surface the rule about verifying on the surface the owner uses exists
        for. Every one of them was then read and confirmed to write nothing. */
-    '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/google/picker', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
+    '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/google/picker', '/v1/computer/info', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
     '/api/approvals',
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
     '/admin/abuse/list', '/admin/readiness', '/admin/backup/export',
@@ -14016,6 +14091,11 @@ async function _route(request, env, ctx) {
     case '/v1/sessions':     return sessionsList(request, env);
     case '/v1/engines':      return enginesList(request, env);
     case '/v1/google/picker': return googlePickerConfig(request, env);
+    case '/v1/computer/info': return computerInfo(request, env);
+    case '/v1/computer/exec': case '/v1/computer/exec/cancel': case '/v1/computer/read':
+    case '/v1/computer/write': case '/v1/computer/list': case '/v1/computer/delete':
+    case '/v1/computer/revoke': case '/v1/computer/status':
+      return computerRoute(request, env, path.slice('/v1/computer/'.length));
     case '/v1/sessions/end': return sessionsEnd(request, env);
     case '/v1/keys/create':  return apiKeyCreate(request, env);
     case '/v1/keys/list':    return apiKeyList(request, env);
@@ -28528,6 +28608,10 @@ function _readinessReport(env, seen) {
       on: _has(env, 'GOOGLE_CLIENT_ID') && _has(env, 'GOOGLE_PICKER_API_KEY') && /^\d{6,20}$/.test(String(env.GOOGLE_PROJECT_NUMBER || '').trim()),
       turnsOn: 'Google\u2019s own file picker, so somebody can hand AMV one Doc or Sheet to read and edit - and only that one. Until then AMV edits only the Google files it made itself.',
       how: put('GOOGLE_PICKER_API_KEY') + ' (a browser key with the Picker API, limited to your site) and ' + put('GOOGLE_PROJECT_NUMBER') + ' (the number of the same Google Cloud project as GOOGLE_CLIENT_ID)' },
+    { id: 'cloudComputer', name: 'AMV\u2019s cloud computer', blocking: false,
+      on: _computerOn(env),
+      turnsOn: 'A computer of their own in AMV\u2019s cloud for Pro plans and above - the same commands and files as connecting their own, without installing anything. One container each, asleep after ten idle minutes, with monthly command minutes per plan.',
+      how: 'deploy the cloud/ folder (needs Workers Paid with Containers), then ' + put('AMV_COMPUTER_KEY') + ' (32+ random characters, the same in both Workers) and uncomment the AMV_COMPUTER binding in wrangler.toml' },
     { id: 'connectMicrosoft', name: 'Connect Microsoft', blocking: false,
       on: _has(env, 'MS_CLIENT_ID') && _has(env, 'MS_CLIENT_SECRET'),
       turnsOn: 'Outlook mail and calendar as connected accounts.',
@@ -28850,7 +28934,7 @@ function _readinessReport(env, seen) {
     support: 'Reaching people', alerts: 'Reaching people', auditHook: 'Reaching people',
     googleAuth: 'Signing in', captcha: 'Signing in', apiOrigin: 'Signing in',
     connectKey: 'Connected accounts', connectKeyPrev: 'Connected accounts',
-    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', connectMicrosoft: 'Connected accounts',
+    connectGoogle: 'Connected accounts', googlePicker: 'Connected accounts', cloudComputer: 'Core', connectMicrosoft: 'Connected accounts',
     connectGithub: 'Connected accounts', mailCredKey: 'Connected accounts',
     connect_slack: 'Connected accounts', connect_discord: 'Connected accounts', connect_spotify: 'Connected accounts', connect_dropbox: 'Connected accounts', connect_hubspot: 'Connected accounts', connect_asana: 'Connected accounts', connect_zoom: 'Connected accounts', connect_box: 'Connected accounts', connect_strava: 'Connected accounts', connect_reddit: 'Connected accounts', connect_pinterest: 'Connected accounts', connect_calendly: 'Connected accounts',
     finance: 'Connected accounts',

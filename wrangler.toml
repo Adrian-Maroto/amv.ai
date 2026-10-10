@@ -132,3 +132,16 @@ new_sqlite_classes = ["AMVCounter"]
 #   GLOBAL_DAILY_USD_CAP - optional (defaults to $500). A global ceiling on what
 #                         AMV can cost you in a day across ALL users. This is
 #                         your protection against a runaway bill.
+
+# ── AMV's cloud computer (cloud/) ──
+# A computer of their own in AMV's cloud, for Pro plans and above. It runs in a
+# Worker of its own (cloud/wrangler.toml, needs Workers Paid with Containers);
+# this binding is how the main Worker reaches it. Uncomment once that Worker is
+# deployed and AMV_COMPUTER_KEY is set in BOTH (the same 32+ character value).
+# Until then /v1/computer/* answers "not switched on" and the app offers only
+# connecting your own computer. See GO-LIVE.md, "AMV's cloud computer".
+#
+# [[durable_objects.bindings]]
+# name = "AMV_COMPUTER"
+# class_name = "AMVComputer"
+# script_name = "amv-computer"

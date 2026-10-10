@@ -63,6 +63,9 @@ const BRIDGE_SRC = 'bridge/amv-bridge.mjs';
 const BRIDGE_OUT = 'amv-bridge.mjs';
 function emitBridge() {
   writeFileSync(BRIDGE_OUT, readFileSync(BRIDGE_SRC));
+  /* The cloud computer's image is built from cloud/ (cloud/Dockerfile copies
+     this), so it always carries the bridge these suites test. */
+  writeFileSync('cloud/amv-bridge.mjs', readFileSync(BRIDGE_SRC));
   /* The command-line tool, downloaded from Settings -> API keys - the page
      writes this deployment's address into it at download time. */
   writeFileSync('amv-cli.mjs', readFileSync('cli/amv-cli.mjs'));
