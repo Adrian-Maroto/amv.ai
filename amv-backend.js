@@ -7406,7 +7406,7 @@ async function _autoExecute(env, item, budget, email, standing, never){
     throw new Error('model error ' + r.status + ': ' + t.slice(0,180));
   }
   const data = await r.json();
-  const text = (data.content||[]).map(b=>b.text||'').join('').trim();
+  const text = _autoClaimCheck((data.content||[]).map(b=>b.text||'').join('').trim(), env, email);
   // Return usage too so the cron loop can charge automation spend against the
   // user's monthly cost cap - otherwise scheduled jobs would be a free way to
   // burn compute (a research watch every 10 min = thousands of calls/month).
@@ -7422,6 +7422,42 @@ async function _autoExecute(env, item, budget, email, standing, never){
               folded into the prose - a letter somebody has to retype out of a
               paragraph is not a letter they were handed. */
            drafts: acct.drafts || [] };
+}
+
+/* ── A RESULT THAT SAYS IT DID WHAT NO JOB CAN DO ────────────────────────────
+
+   The runner can search and write. It cannot send, buy, book, post, pay or
+   submit, and its instructions say so in those words. Instructions are not a
+   guarantee: a model that writes "I've sent the email to Maria" is believed
+   by somebody reading it hours later with no way to check, and that is the
+   most expensive thing a background job can get wrong - the email that was
+   never sent, the booking that does not exist.
+
+   A second model reading every result for this was considered and declined:
+   it costs on every run, spends time inside a tick every other account's jobs
+   share, and is one model's opinion of another's. This is a fixed check that
+   costs nothing and can be tested: a first-person claim of a completed action
+   puts a plain warning at the TOP of the result. The text itself is kept - it
+   is usually the finished draft, which is the useful part.
+
+   Only first-person claims ("I've sent", "AMV booked", "he enviado"): a mail
+   summary saying "your order has been shipped" is a fact read from the inbox,
+   not a claim. Quoted text and quoted mail lines are skipped for the same
+   reason. A negation ("I have NOT sent") never matches, because nothing may
+   sit between the verb and its subject except a few adverbs. */
+const _AUTO_CLAIM_EN = /\b(?:I|I've|I have|I've just|AMV(?: has)?)\s+(?:just\s+|now\s+|already\s+|successfully\s+|gone ahead and\s+|went ahead and\s+)?(sent|emailed|e-mailed|replied to|forwarded|booked|reserved|purchased|bought|placed (?:the|your|an?) order|paid|submitted|applied (?:to|for)|posted|published|transferred|cancell?ed|unsubscribed|signed you up|texted|messaged|phoned)\b/i;
+const _AUTO_CLAIM_ES = /\b(?:he|ya)\s+(?:enviado|mandado|reservado|comprado|pagado|publicado|solicitado|cancelado|envi[eé]|reserv[eé]|compr[eé]|pagu[eé])(?![A-Za-z\u00c0-\u00ff])/i;
+function _autoClaimCheck(text, env, email){
+  const t = String(text || '');
+  if(!t) return t;
+  const scan = t.split('\n').filter(l => !/^\s*>/.test(l)).join('\n')
+    .replace(/"[^"\n]{0,400}"|“[^”\n]{0,400}”/g, ' ');
+  const m = _AUTO_CLAIM_EN.exec(scan) || _AUTO_CLAIM_ES.exec(scan);
+  if(!m) return t;
+  try{ if(env) audit(env, 'auto_claimed_action', { email, phrase: m[0].slice(0, 60) }); }catch(e){}
+  return '**Check this before relying on it.** It says "' + m[0].trim() + '", but AMV’s background jobs '
+    + 'cannot send, buy, book, pay, post or submit anything - nothing was done. Treat what follows as a draft '
+    + 'for you to use.\n\n' + t;
 }
 
 /* Estimate USD cost of an automation run (worst-case-ish, matches the web path's

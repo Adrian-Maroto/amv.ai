@@ -14713,3 +14713,23 @@ check is courtesy, and each is covered by its own test, broken on purpose.
 
 The model is also told the list in run_command's description, so the refusal
 is a backstop rather than the first it hears of the rule.
+
+## 573. Check a model's output with a second model only when nothing cheaper can tell
+
+The plan was a reviewer pass: a cheap model reading every big background
+result before delivery. Looked at closely, it was the wrong tool. It costs on
+every run. It spends time inside a 25-second tick that every other account's
+jobs share. And for the failure that matters most, it is one model's opinion
+of another's.
+
+That failure is a result claiming an action no job can take: "I've sent the
+email", "I booked the table". It is visible in the text itself. A fixed check
+for first-person claims of completed actions (English and Spanish), skipping
+quoted mail and quoted lines, costs nothing, runs on every result and can be
+tested both ways. When it fires, a warning goes at the TOP and the draft is
+kept below, because the draft is usually the useful part.
+
+Rule: before adding a model call to judge a model, name the specific failure
+and ask whether it can be seen without one. If it can, check it directly. Test
+the check against honest text as hard as against the failure, because a
+warning on every result is a warning nobody reads.
