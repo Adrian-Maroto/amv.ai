@@ -26,7 +26,10 @@ permissions:
 
 jobs:
   worker:
-    runs-on: ubuntu-latest
+    # Pinned, not "latest": GitHub moves ubuntu-latest to Ubuntu 26 on 2026-10-19,
+    # which would change fonts, the browser and the sandbox under every suite
+    # overnight. Move this deliberately, with a full gate on the new image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Three conditions, all of them load-bearing:
     #   - the tests run actually succeeded (not cancelled, not failed)
@@ -132,7 +135,10 @@ jobs:
   # same bucket. It asks one question instead - is what is being served the page
   # this commit built - and says so loudly when the answer is no.
   site:
-    runs-on: ubuntu-latest
+    # Pinned, not "latest": GitHub moves ubuntu-latest to Ubuntu 26 on 2026-10-19,
+    # which would change fonts, the browser and the sandbox under every suite
+    # overnight. Move this deliberately, with a full gate on the new image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     # The same three guards as the Worker job, for the same reasons.
     if: >

@@ -31,7 +31,10 @@ permissions:
 
 jobs:
   health:
-    runs-on: ubuntu-latest
+    # Pinned, not "latest": GitHub moves ubuntu-latest to Ubuntu 26 on 2026-10-19,
+    # which would change fonts, the browser and the sandbox under every suite
+    # overnight. Move this deliberately, with a full gate on the new image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       # Pinned to commits for the reason given in test.yml (AMV-058).
