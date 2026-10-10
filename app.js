@@ -51518,8 +51518,8 @@ function _appsCardHTML(){
     desktop: 'Use the install button at the right end of the address bar, or your browser’s menu: Install AMV.',
   })[p])) + '</p>';
   const stores = [
-    APP_STORE_LINKS.play && '<a class="btn bs" href="' + escH(safeUrl(APP_STORE_LINKS.play)) + '" target="_blank" rel="noopener">Google Play</a>',
-    APP_STORE_LINKS.microsoft && '<a class="btn bs" href="' + escH(safeUrl(APP_STORE_LINKS.microsoft)) + '" target="_blank" rel="noopener">Microsoft Store</a>',
+    APP_STORE_LINKS.play && '<a class="btn bs" href="' + escH(safeUrl(APP_STORE_LINKS.play)) + '" target="_blank" rel="noopener noreferrer">Google Play</a>',
+    APP_STORE_LINKS.microsoft && '<a class="btn bs" href="' + escH(safeUrl(APP_STORE_LINKS.microsoft)) + '" target="_blank" rel="noopener noreferrer">Microsoft Store</a>',
   ].filter(Boolean).join('');
   return '<div class="ss2 apps-card" id="apps-card"><h3>' + escH(T('AMV on your phone and computer')) + '</h3>' + how +
     '<ul class="apps-gets">' +
