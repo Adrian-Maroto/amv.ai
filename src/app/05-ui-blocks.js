@@ -484,6 +484,10 @@ function md(text) {  if(!text) return '';
   t = t.replace(/```cards\n?([\s\S]*?)```/gi, (match, body) => {
     try{ return _guiCards(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
   });
+  // calc: inputs and formula outputs that follow the inputs as somebody types (05f)
+  t = t.replace(/```calc\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiCalc(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
+  });
   // choices: {"prompt":"Pick one","options":["A","B","C"]} - tappable, sends a follow-up
   t = t.replace(/```choices\n?([\s\S]*?)```/gi, (match, body) => {
     try{ return _guiChoices(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }

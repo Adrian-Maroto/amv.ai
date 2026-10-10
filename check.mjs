@@ -1318,7 +1318,16 @@ step('Page weight is under control', () => {
      another assistant's list or an AMV file, review each before it is added,
      secrets and duplicates left out. About 1.5KB gzipped, all of it the
      feature. A trim pass is due before the larger items on the list. */
-  const CEILING = 652 * 1024;   // gzipped, which is what actually crosses the network
+  /* 652 -> 655, 2026-10-10, deliberately: calculators in answers - inputs
+     and formula results that follow them, computed by AMV's own small
+     arithmetic parser (no model code runs) - and the prompt line that offers
+     them. About 3KB gzipped. THE LEVER, MEASURED: the Crew job catalogue
+     (_cwDefaultJobs and the made-for lists in 10-mission-control.js) is ~58KB
+     gzipped of data only the Crew screen and its sync read. It is read
+     synchronously by _cwJobs, which other modules call, so moving it to an
+     on-demand file is a refactor of how Crew loads - tracked as its own task,
+     next after the items in flight. */
+  const CEILING = 655 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');
