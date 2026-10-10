@@ -1,13 +1,15 @@
 /* CREW FETCHES ITS CATALOGUE - AND A FAILED FETCH NEVER COSTS YOU A JOB.
 
-   The built-in jobs moved out of the page into crew-data.js, fetched the
-   first time Crew opens. That saved ~61KB for every visitor, and it opened
-   one way to lose something real: the sync rebuilds the saved job list from
-   the catalogue, so a rebuild from a catalogue that never arrived would store
-   a list without the built-in jobs - and delete every one somebody had on.
+   The built-in jobs moved out of the page into crew-data.js, so the first
+   paint does not wait on ~57KB of job definitions; the app fetches it once
+   the browser is idle, so Crew still opens drawn. That opened one way to lose
+   something real: the sync rebuilds the saved job list from the catalogue,
+   so a rebuild from a catalogue that never arrived would store a list without
+   the built-in jobs - and delete every one somebody had on.
 
    Checked in a real browser:
-   - the chat screen does not download the catalogue;
+   - the page itself does not carry the catalogue;
+   - it is fetched after the first paint, not before;
    - before it arrives, the catalogue answers "not loaded", not "empty", and
      the saved list is still read as saved;
    - with the file blocked, Crew says it could not load and offers Try again,
@@ -21,23 +23,31 @@ import { ok, section, report, done } from '../lib/assert.mjs';
    reach of the page's routing, so it is kept out of this run. */
 const app = await bootApp({ tab: 'chat', blockServiceWorkers: true, user: { name: 'Kim', email: 'kim@example.com', ini: 'K' } });
 const { page, errors } = app;
-const fetched = [];
-page.on('request', r => { if (/crew-data\.js/.test(r.url())) fetched.push(r.url()); });
 let block = false;
 await page.route(/crew-data\.js/, (route) => block ? route.abort() : route.continue());
 
 const SAVED = [{ id: 'morning_brief', title: 'Morning news & markets brief', on: true, autoId: 'a_1' },
                { id: 'inbox_digest', title: 'Daily inbox digest', on: true, autoId: 'a_2' }];
 
-section('Chat does not download the catalogue');
+section('The page does not carry the catalogue, and fetches it after it has painted');
 {
-  await page.waitForTimeout(1500);
-  ok(fetched.length === 0, 'nothing fetched crew-data.js on the chat screen', fetched);
+  const html = await page.evaluate(async () => (await fetch(location.href)).text());
+  ok(!/window\.AMV_CREW_DATA\s*=/.test(html), 'index.html has no catalogue in it');
+  await page.waitForFunction(() => !!window.AMV_CREW_DATA, null, { timeout: 15000 });
+  const t = await page.evaluate(() => {
+    const fcp = performance.getEntriesByName('first-contentful-paint')[0];
+    const res = performance.getEntriesByType('resource').find(e => /crew-data\.js/.test(e.name));
+    return { fcp: fcp ? fcp.startTime : null, start: res ? res.startTime : null };
+  });
+  ok(t.fcp !== null && t.start !== null && t.start > t.fcp, 'the fetch starts after the first paint', t);
 }
 
-section('Before it arrives: "not loaded", and the saved list is still the saved list');
+section('Not there yet: "not loaded", and the saved list is still the saved list');
 {
+  /* As it is on a device where the fetch has not finished, or failed. */
   const r = await page.evaluate((saved) => {
+    delete window.AMV_CREW_DATA; _crewDataP = null;
+    document.querySelectorAll('script[src$="crew-data.js"]').forEach(s => s.remove());
     localStorage.setItem('amv_cookie_consent', JSON.stringify({ essential: true }));
     document.getElementById('cookie-consent-banner')?.remove();
     store('amv_cw_jobs', saved);

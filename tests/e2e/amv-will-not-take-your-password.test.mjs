@@ -25,6 +25,9 @@ import { readFile } from 'node:fs/promises';
 
 const app = await bootApp({ tab: 'chat', user: { name: 'Adrian', email: 'a@amv.dev', ini: 'A' } });
 const { page, errors } = app;
+/* Crew's catalogue arrives once the page is idle (see _crewPrefetch); waited
+   for here so a busy test machine cannot open Crew before it has. */
+await page.evaluate(() => _loadCrewData());
 await page.evaluate(() => document.getElementById('ck')?.remove());
 
 const CREDENTIALS = [

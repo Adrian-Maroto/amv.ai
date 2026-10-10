@@ -36,6 +36,9 @@ const env = makeEnv({ APP_URL: 'http://localhost:9191', AMV_MODEL_KEY: 'k',
                       GOOGLE_CLIENT_ID: 'gid', GOOGLE_CLIENT_SECRET: 'gsecret' });
 const L = await bootLive({ env, outbound, port: 9191 });
 const { page } = L;
+/* Crew's catalogue arrives once the page is idle (see _crewPrefetch); waited
+   for here so a busy test machine cannot open Crew before it has. */
+await page.evaluate(() => _loadCrewData());
 
 /* A real account, made over the wire, and a real sealed grant planted in KV -
    the same shape connFinish writes. Sealing it by hand rather than driving the

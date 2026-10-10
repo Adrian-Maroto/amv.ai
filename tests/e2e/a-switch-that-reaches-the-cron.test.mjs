@@ -41,6 +41,9 @@ const env = makeEnv();
 const outbound = makeOutbound();
 const L = await bootLive({ env, outbound, port: 9237 });
 const { page } = L;
+/* Crew's catalogue arrives once the page is idle (see _crewPrefetch); waited
+   for here so a busy test machine cannot open Crew before it has. */
+await page.evaluate(() => _loadCrewData());
 
 const EMAIL = 'cron@example.com';
 const PW = 'A-real-Passw0rd!';

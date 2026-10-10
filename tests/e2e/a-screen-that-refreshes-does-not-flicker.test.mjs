@@ -28,6 +28,9 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ tab: 'chat' });
 const page = app.page;
+/* Crew's catalogue arrives once the page is idle (see _crewPrefetch); waited
+   for here so a busy test machine cannot open Crew before it has. */
+await page.evaluate(() => _loadCrewData());
 
 /* A backend that answers the way one really does. Instant stubs hide this bug
    completely: the repaints coalesce before the first frame and nothing replays. */

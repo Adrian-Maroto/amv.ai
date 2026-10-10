@@ -38,6 +38,9 @@ const W = await import(harness + '?t=' + Date.now());
 
 const app = await bootApp({ apiBase: '' });
 const { page, errors } = app;
+/* Crew's catalogue arrives once the page is idle (see _crewPrefetch); waited
+   for here so a busy test machine cannot open Crew before it has. */
+await page.evaluate(() => _loadCrewData());
 
 /* The window and the moment, written as somebody would say them. Deliberately
    picked to cover the cases each side could get wrong on its own: midnight,

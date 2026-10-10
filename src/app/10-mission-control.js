@@ -46,6 +46,19 @@ function _loadCrewData(){
   });
   return _crewDataP;
 }
+/* FETCHED BEFORE ANYBODY ASKS, ONCE THE PAGE HAS SETTLED.
+
+   Out of the page so the first paint does not wait on it - and then fetched
+   as soon as the browser is idle, so opening Crew draws the catalogue at
+   once instead of flashing a loading line first. Somebody who has asked
+   their phone to save data is left alone: Crew fetches it when they open it.
+   A failed fetch here costs nothing; _loadCrewData tries again on open. */
+function _crewPrefetch(){
+  try{ if(navigator.connection && navigator.connection.saveData) return; }catch(e){}
+  const go = () => { try{ _loadCrewData(); }catch(e){} };
+  if(typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 8000 });
+  else setTimeout(go, 3000);
+}
 function _cwDefaultJobs(){
   const c = _cwCatalog();
   if(!c) return null;

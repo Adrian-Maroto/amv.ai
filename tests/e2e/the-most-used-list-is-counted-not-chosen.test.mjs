@@ -21,6 +21,9 @@ import { readFile } from 'node:fs/promises';
 
 const app = await bootApp({ tab: 'chat', user: { name: 'Adrian', email: 'a@amv.dev', ini: 'A' } });
 const { page, errors } = app;
+/* Crew's catalogue arrives once the page is idle (see _crewPrefetch); waited
+   for here so a busy test machine cannot open Crew before it has. */
+await page.evaluate(() => _loadCrewData());
 await page.evaluate(() => document.getElementById('ck')?.remove());
 /* THE TOP OF CREW IS "TOP 5 FOR YOU" WHEREVER A COUNTRY IS KNOWN, and this
    block heads the page only when none is. So the cases below run with no

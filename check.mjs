@@ -1332,11 +1332,14 @@ step('Page weight is under control', () => {
      confirms the partner lists them (~0.5KB). This is the last raise before
      the Crew catalogue move named above, which is now the NEXT task and takes
      ~58KB gzipped out of the page; the ceiling follows it down. */
-  /* 656 -> 596, 2026-10-10: DOWN, the lever named above. The Crew job
-     catalogue and its country lists moved to crew-data.js, fetched the first
-     time Crew opens - 61KB gzipped no visitor downloads up front any more.
-     The ceiling follows it down so the room cannot be quietly spent. */
-  const CEILING = 596 * 1024;   // gzipped, which is what actually crosses the network
+  /* 656 -> 600, 2026-10-10: DOWN, the lever named above. The Crew job
+     catalogue and its country lists moved to crew-data.js, fetched once the
+     page is idle (and on opening Crew if that has not happened) - the page
+     went from 655KB to 599KB gzipped, 57KB no visitor waits on for the first
+     paint. The ceiling follows it down so the room cannot be quietly spent.
+     (A first draft of this said 596, from a mis-measurement; 600 is the real
+     figure with a kilobyte of room.) */
+  const CEILING = 600 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');
