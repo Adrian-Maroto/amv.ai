@@ -116,8 +116,8 @@ const browser = await chromium.launch({ ...LAUNCH, headless: false, env: Object.
 const page = await (await browser.newContext({ viewport: null })).newPage();
 await page.setContent(`<!doctype html><body style="margin:0;height:4000px;font:16px sans-serif">
   <form id="f" onsubmit="event.preventDefault();window.__sent=document.getElementById('box').value;">
-  <input id="box" style="position:absolute;left:300px;top:200px;width:500px;height:40px" autocomplete="off"></form>
-  <div id="pad" style="position:absolute;left:900px;top:500px;width:120px;height:80px;background:#c33"
+  <input id="box" style="position:absolute;left:300px;top:200px;width:360px;height:40px" autocomplete="off"></form>
+  <div id="pad" style="position:absolute;left:120px;top:320px;width:120px;height:80px;background:#c33"
        onclick="window.__clicks=(window.__clicks||0)+1"></div></body>`);
 await page.waitForTimeout(500);
 /* Where the page's own pixels sit on the screen. Kiosk has no browser bar,
@@ -138,12 +138,16 @@ section('On a screen: it is on, and a screenshot is the screen');
 
 section('A click lands where it was aimed');
 {
+  /* Everything this drives sits inside the top-left 700x500. A browser on
+     a display with no window manager does not always take the size it is
+     given - on CI it came up smaller - and a target outside the window is
+     a click on the empty screen, which is not what this is measuring. */
   /* A virtual display has no window manager, so nothing has focused the
      browser window yet, and on a slow machine its first click can go to
      focusing it. A real desktop focuses windows itself. So the window is
      focused first, with a click on empty page that nothing counts, and each
      result is waited for rather than read after a fixed pause. */
-  await b.call('screen/act', { kind: 'click', x: 40, y: 700 });
+  await b.call('screen/act', { kind: 'click', x: 40, y: 460 });
   await page.waitForFunction(() => document.hasFocus(), null, { timeout: 5000 }).catch(() => {});
   const p = await centre('#pad');
   const r = await b.call('screen/act', { kind: 'click', x: p.x, y: p.y });
@@ -176,7 +180,7 @@ section('What AMV types arrives as text - including what looks like a command');
 
 section('Scrolling scrolls');
 {
-  const r = await b.call('screen/act', { kind: 'scroll', x: 640, y: 600, direction: 'down', amount: 5 });
+  const r = await b.call('screen/act', { kind: 'scroll', x: 400, y: 300, direction: 'down', amount: 5 });
   await page.waitForTimeout(400);
   const y = await page.evaluate(() => window.scrollY);
   ok(r.status === 200 && y > 0, 'the page moved down', y);

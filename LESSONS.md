@@ -14786,3 +14786,21 @@ to arrive.
 Rule: a limit justified by "more than we use" needs a test that sends what we
 really use, at its largest, and fails when the limit is reached. Check the
 request at the far end, never the list at the near end.
+
+## 577. A failure seen only on CI is fixed by reproducing it, not by explaining it
+
+The screen-control test's first click failed on CI and passed locally. The
+first fix was a plausible story - a display with no window manager, so the
+first click goes to focusing the window - so the test focused the window and
+waited. It passed locally, as it always had, shipped, and CI failed the same
+two checks again.
+
+The real cause was found by making the local run look like CI rather than
+reasoning about it. With no window manager, the browser does not always take
+the window size it is given. On CI it came up smaller, and the target sat
+outside the window. Starting the browser at 800x600 reproduced the exact two
+failures with the old layout and none with a layout kept inside 700x500.
+
+Rule: before fixing a failure that only happens elsewhere, make it happen
+here. A fix that cannot be shown to turn red into green is a guess, and a
+guess that passes locally passes for the same reason the bug did.
