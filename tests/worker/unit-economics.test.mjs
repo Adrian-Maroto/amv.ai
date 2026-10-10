@@ -127,7 +127,8 @@ section('The counters are actually written by the meter');
 
 section('It is on the screen, not just in the response');
 {
-  const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  /* The console is fetched on first open (src/admin/admin.js), so that file is the client here. */
+  const client = readFileSync(join(ROOT, 'app.js'), 'utf8') + readFileSync(join(ROOT, 'src', 'admin', 'admin.js'), 'utf8');
   ok(/Unit economics by tier/.test(client), 'the tier table is rendered');
   ok(/Accounts costing more than they pay/.test(client), 'so is the unprofitable-account list');
   ok(/Where the money goes/.test(client), 'and the feature split');

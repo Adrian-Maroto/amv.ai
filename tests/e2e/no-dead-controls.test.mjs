@@ -24,9 +24,10 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { codeOnly, functionBody } from '../lib/source.mjs';
+import { clientSource } from '../lib/client-source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+const bundle = clientSource();
 const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const all = bundle + '\n' + html;
 

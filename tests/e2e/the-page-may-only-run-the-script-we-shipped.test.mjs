@@ -45,6 +45,7 @@ import { chromium } from 'playwright';
 import { serveApp, LAUNCH } from '../lib/harness.mjs';
 import { codeOnly } from '../lib/source.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { clientSource } from '../lib/client-source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
@@ -90,7 +91,7 @@ section('It names what it does allow, by hash');
   /* The launcher falls back to running the bundle inline when a blob URL
      cannot be created. Its hash has to be there too or that fallback is a
      blocked script and the app does not start at all on those browsers. */
-  const app = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const app = clientSource();
   const inert = (html.match(/<script id="amv-app-code" type="text\/plain">\n([\s\S]*?)\n<\/script>/) || [, ''])[1];
   const restored = inert.split('<\\/scr_AMV_ipt').join('</script');
   ok(!!restored, 'the bundle is embedded as an inert block');
@@ -132,7 +133,7 @@ section('And the delegation that replaced them is still the only dispatcher');
      match counts the explanation as an instance and fails on correct code.
      That is the proxy-assertion class from LESSONS #255; it went red here on
      the first run. */
-  const app = codeOnly(readFileSync(join(ROOT, 'app.js'), 'utf8'));
+  const app = codeOnly(clientSource());
 
   /* One listener on document, resolving with closest() - the design the
      attributes were fighting. If a second dispatcher appears the guarantee
@@ -169,7 +170,7 @@ section('The one directive a meta tag cannot deliver is not left as a claim');
      approve-a-payment and delete-my-account buttons on it. So the page checks
      for itself, in code that runs: framed by somebody else, and not the
      embeddable widget being framed on purpose, means it refuses to render. */
-  const app = codeOnly(readFileSync(join(ROOT, 'app.js'), 'utf8'));
+  const app = codeOnly(clientSource());
   ok(/_framedWithoutPermission/.test(app),
      'the page decides for itself whether being framed is allowed', true);
   ok(/embed=1/.test(app.slice(app.indexOf('function _framedWithoutPermission'),

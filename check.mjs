@@ -226,6 +226,15 @@ function sh(cmd) {
 console.log(`\n${B}AMV health gate${X} ${DIM}- full shippability check${X}\n`);
 
 /* ── 1. Syntax ───────────────────────────────────────────────────────────── */
+/* THE CLIENT IS THE PAGE AND THE FILES IT FETCHES ON FIRST USE.
+
+   office.js, sheet.js and admin.js left the page to keep it light, and a
+   stage that reads only app.js would then pass on code it never looked at -
+   "nothing does X" is trivially true of a file X was moved out of. Every
+   static stage that asks a question of the whole client reads all of it. */
+const CLIENT_FILES = ['app.js', 'src/office/office.js', 'src/sheet/sheet.js', 'src/admin/admin.js'];
+const clientSrc = () => CLIENT_FILES.filter(f => existsSync(R(f))).map(f => readFileSync(R(f), 'utf8')).join('\n;\n');
+
 step('Syntax (app.js + amv-backend.js)', () => {
   for (const f of ['app.js', 'amv-backend.js']) {
     if (!existsSync(R(f))) throw new Error(`${f} is missing`);
@@ -432,7 +441,7 @@ step('No class is applied without something to apply', () => {
      shell, because everything after the BUILD:JS marker is app.js again and
      counting it twice proves nothing. */
   const shell = readFileSync(R('index.html'), 'utf8').split('BUILD:JS')[0];
-  const src = readFileSync(R('app.js'), 'utf8') + '\n' + shell;
+  const src = clientSrc() + '\n' + shell;
 
   const queried = new Set();
   for (const m of src.matchAll(/(?:querySelector(?:All)?|closest|getElementsByClassName|matches)\(\s*['"`]([^'"`]+)['"`]/g))
@@ -582,7 +591,7 @@ step('No client reads a field the server does not send', () => {
      was reported as a missing field. False alarms are what get a stage
      deleted. */
   const be = readFileSync(R('amv-backend.js'), 'utf8');
-  const app = readFileSync(R('app.js'), 'utf8');
+  const app = clientSrc();
 
   const route = new Map();
   for (const m of be.matchAll(/case\s+'([^']+)':\s*return\s+([A-Za-z_$][\w$]*)\s*\(/g))
@@ -759,7 +768,7 @@ step('No window read reaches for a binding that is not on window', () => {
      an English sentence. None of those is a plausible read today, and a control
      that can report `window.not` is a control that will one day be wrong in
      public. Blanking strings removes all seven and misses nothing. */
-  const src = codeOnly(readFileSync(R('app.js'), 'utf8'), { blankStrings: true });
+  const src = codeOnly(clientSrc(), { blankStrings: true });
 
   /* Brace depth 0 in the concatenated bundle IS the global lexical
      environment, so the depth walk answers the question exactly rather than
@@ -976,7 +985,7 @@ step('No guard names a function that does not exist', () => {
      explaining the fix. A check that reads prose as code reports a correct
      repair as the defect it repaired, and there is already a suite in this
      repo named after that exact mistake. */
-  const src = codeOnly(readFileSync(R('app.js'), 'utf8'));
+  const src = codeOnly(clientSrc());
 
   const defined = new Set();
   for (const m of src.matchAll(/\n\s*(?:async\s+)?function\s+([A-Za-z0-9_$]+)\s*\(/g)) defined.add(m[1]);
@@ -1030,7 +1039,7 @@ step('No guard names a function that does not exist', () => {
     'ResizeObserver', 'MutationObserver', 'showOpenFilePicker', 'BarcodeDetector',
     'SpeechRecognition', 'webkitSpeechRecognition', 'IdleDetector', 'ClipboardItem',
     'FileReader', 'Image', 'Audio', 'Notification', 'getComputedStyle', 'scrollTo',
-    'open', 'print', 'postMessage', 'btoa', 'atob']);
+    'open', 'print', 'postMessage', 'btoa', 'atob', 'getSelection']);
   const isPlatform = (n) => {
     if (PROVIDED.has(n)) return true;
     try { return typeof globalThis[n] !== 'undefined'; } catch (e) { return false; }
@@ -1087,7 +1096,7 @@ step('No guard names a function that does not exist', () => {
      quote starts a string that never ends, and from there it eats real code.
      That was tried here and it silently swallowed the very call this widening
      exists to catch. */
-  const noStrings = codeOnly(readFileSync(R('app.js'), 'utf8'), { blankStrings: true });
+  const noStrings = codeOnly(clientSrc(), { blankStrings: true });
   const bodyAfter = (from) => {
     let depth = 0;
     for (let i = from; i < noStrings.length; i++) {

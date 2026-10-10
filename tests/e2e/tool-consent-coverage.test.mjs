@@ -18,9 +18,10 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { codeOnly } from '../lib/source.mjs';
+import { clientSource } from '../lib/client-source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const bundleRaw = readFileSync(join(ROOT, 'app.js'), 'utf8');
+const bundleRaw = clientSource();
 /* ── THE DISPATCH RULES READ CODE, NOT PROSE ───────────────────────────────
 
    Every check below looks for a call shape and for a consent gate near it, and

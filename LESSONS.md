@@ -14625,3 +14625,24 @@ Rules:
   wrote onto it, and carry each one in on purpose.
 - A comment saying "persists" is a claim. A test that reads the stored
   message after completion is the check.
+
+## 569. Moving code out of a file makes "nothing does X" true by accident
+
+The owner console moved from the page into admin.js, fetched on first use, to
+save every visitor 9.6KB. Two suites failed afterwards, and they failed
+correctly. They looked for things the console does: calling its admin routes,
+drawing its unit-economics table. They read app.js as "the client", and those
+things were no longer in app.js.
+
+The ones that did NOT fail were the danger. Several static stages ask
+whether ANYTHING in the client does something bad: an unescaped link, a
+guard naming a missing function, a read of a field the server does not
+send, a script it may not run. Against app.js alone, every one of them
+passed on admin.js, sheet.js and office.js without looking. Absence was
+proved by not looking.
+
+Rule: the client is the page plus every file it fetches. check.mjs has
+`clientSrc()` and the suites have `tests/lib/client-source.mjs`. Any check
+that asks "does anything do X" reads all of it. The widened scan found
+one real item straight away (a browser global missing from the allowlist).
+A file added to the on-demand set goes into CLIENT_FILES in both places.

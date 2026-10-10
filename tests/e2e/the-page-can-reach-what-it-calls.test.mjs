@@ -32,10 +32,11 @@ import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { clientSource } from '../lib/client-source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
-const app = readFileSync(join(ROOT, 'app.js'), 'utf8');
+const app = clientSource();
 const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 
 /* The policy as the browser reads it - and ONLY out of the policy.

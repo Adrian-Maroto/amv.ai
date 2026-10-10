@@ -27,9 +27,10 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
+import { clientSource } from '../lib/client-source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+const bundle = clientSource();
 
 const app = await bootApp({ tab: 'chat', user: { name: 'A', email: 'a@x.com', ini: 'A' } });
 const { page, errors } = app;
