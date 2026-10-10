@@ -28,7 +28,7 @@ const ROOT = join(__dir, '..', '..');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'bounds.harness.mjs');
 writeFileSync(harness, readFileSync(join(ROOT, 'amv-backend.js'), 'utf8') + `
-export { _safeTools, TOOLS_MAX, TOOL_DESC_MAX, TOOL_SCHEMA_MAX, AMV_CLIENT_TOOLS };
+export { _safeTools, TOOLS_MAX, TOOLS_TOTAL_MAX, TOOL_DESC_MAX, TOOL_SCHEMA_MAX, AMV_CLIENT_TOOLS };
 `);
 const W = await import(harness + '?t=' + Date.now());
 
@@ -38,8 +38,15 @@ const mcp = (n, over) => Object.assign({
 
 section('The bounds are real numbers, not absent ones');
 {
-  ok(typeof W.TOOLS_MAX === 'number' && W.TOOLS_MAX > 0 && W.TOOLS_MAX <= 64,
-     'there is a tool count bound, and it is a small one', W.TOOLS_MAX);
+  /* The count was held at 24 and then at "64 or less" here - and 24 turned
+     out to be fewer than AMV itself sends with a computer connected, so every
+     connector tool after the bridge's was cut without a word. What bounds the
+     cost of a request is its SIZE, so that is the bound asserted; the count is
+     a backstop above anything real. */
+  ok(typeof W.TOOLS_MAX === 'number' && W.TOOLS_MAX >= 64 && W.TOOLS_MAX <= 256,
+     'there is a tool count backstop, above anything AMV really sends', W.TOOLS_MAX);
+  ok(typeof W.TOOLS_TOTAL_MAX === 'number' && W.TOOLS_TOTAL_MAX > 0 && W.TOOLS_TOTAL_MAX <= 400000,
+     'and a bound on the total size of every tool together', W.TOOLS_TOTAL_MAX);
   ok(typeof W.TOOL_DESC_MAX === 'number' && W.TOOL_DESC_MAX > 0 && W.TOOL_DESC_MAX <= 4000,
      'a description bound', W.TOOL_DESC_MAX);
   ok(typeof W.TOOL_SCHEMA_MAX === 'number' && W.TOOL_SCHEMA_MAX > 0 && W.TOOL_SCHEMA_MAX <= 16000,
@@ -54,6 +61,27 @@ section('A thousand connector tools do not become a thousand');
      'the count is bounded whatever the client ships', out.length);
   ok(out.length === W.TOOLS_MAX,
      'and it is the bound that stopped it, not the input running out', out.length);
+}
+
+section('A thousand LARGE connector tools stop at the size bound');
+{
+  const big = Array.from({ length: 1000 }, (_, i) => mcp(i, { description: 'd'.repeat(W.TOOL_DESC_MAX),
+    input_schema: { type: 'object', properties: { q: { type: 'string', description: 's'.repeat(2500) } } } }));
+  const out = W._safeTools(big);
+  const size = out.reduce((n, t) => n + t.description.length + JSON.stringify(t.input_schema).length, 0);
+  ok(size <= W.TOOLS_TOTAL_MAX, 'what goes through fits the size bound', size);
+  ok(out.length < W.TOOLS_MAX, 'and it is the size that stopped it, not the count', out.length);
+}
+
+section('Everything AMV sends, plus a whole connector, all reaches the model');
+{
+  /* What chat really sends with a computer connected, and a connector the size
+     of a real one behind it. None of it may be cut. */
+  const own = [...W.AMV_CLIENT_TOOLS].map(name => ({ name, description: 'x'.repeat(300),
+    input_schema: { type: 'object', properties: { a: { type: 'string' } } } }));
+  const conn = Array.from({ length: 40 }, (_, i) => mcp(i, { description: 'y'.repeat(400) }));
+  const out = W._safeTools(own.concat(conn));
+  ok(out.length === own.length + conn.length, 'every one of them', { sent: own.length + conn.length, kept: out.length });
 }
 
 section('A description is a description, not a second prompt');

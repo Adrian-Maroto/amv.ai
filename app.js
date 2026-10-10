@@ -2603,7 +2603,10 @@ function _showMoreBtn(key, remaining, pageSize){
 try{ window._paginate=_paginate; window._pageMore=_pageMore; }catch(e){}
 
 
-function _showModalAsync({title, body, okText='OK', cancelText, placeholder, defaultValue=''}){
+/* `figure`: { src, x, y } - a picture shown under the text, with a mark at
+   x,y (fractions of its width and height). Used where the consent is about a
+   PLACE: "click here" is only consent if somebody can see where here is. */
+function _showModalAsync({title, body, okText='OK', cancelText, placeholder, defaultValue='', figure}){
   return new Promise(resolve=>{
     const r=$('ovr'); if(!r){ resolve(null); return; }
     r.innerHTML=
@@ -2611,6 +2614,11 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
         '<button class="oc" id="modal-close" aria-label="Close" style="position:absolute;top:10px;right:10px">×</button>'+
         (title?'<h2 style="margin-bottom:10px">'+escH(title)+'</h2>':'')+
         '<div class="ob-sub" style="margin-bottom:16px;white-space:pre-wrap;line-height:1.5">'+escH(body)+'</div>'+
+        (figure && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(String(figure.src||''))
+          ? '<div class="modal-fig"><img src="'+escH(figure.src)+'" alt="'+escH(T('Your screen'))+'">'+
+            (Number.isFinite(figure.x) && Number.isFinite(figure.y)
+              ? '<span class="modal-fig-mark" style="left:'+(Math.max(0,Math.min(1,figure.x))*100).toFixed(2)+'%;top:'+(Math.max(0,Math.min(1,figure.y))*100).toFixed(2)+'%"></span>' : '')+
+            '</div>' : '')+
         (placeholder!==undefined?'<input id="modal-input" type="text" value="'+escH(defaultValue||'')+'" placeholder="'+escH(placeholder||'')+'" style="width:100%;margin-bottom:16px;padding:12px;border-radius:var(--r-lg);border:1px solid var(--bd);font-size:var(--t-base)">':'')+
         '<div style="display:flex;gap:10px;justify-content:flex-end">'+
           (cancelText?'<button class="btn bs" id="modal-cancel" style="padding:10px 16px;font-size:var(--t-base)">'+escH(cancelText)+'</button>':'')+
@@ -8738,6 +8746,8 @@ async function _callAITurn(msgs, _opts) {
        trying it and teaches the person that AMV is broken; appearing with
        the thing it needs is the honest shape. */
     try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(bridgeToolsOffered()); }catch(e){}
+    /* The screen, when the bridge was started to allow it (36b-computer.js). */
+    try{ tools = tools.concat(computerToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(BRIDGE.connected && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
@@ -8789,7 +8799,7 @@ async function _callAITurn(msgs, _opts) {
           msgs.slice(_ctx.from, streamIdx).forEach(m=>{
             if(m.r==='a' && m._toolContent && m._toolResults){
               out.push({ role:'assistant', content:m._toolContent });
-              out.push({ role:'user', content:m._toolResults });
+              out.push({ role:'user', content:computerWireResults(m._toolResults) });
             } else {
               out.push({ role:m.r==='u'?'user':'assistant', content:m.c });
             }
@@ -9144,6 +9154,16 @@ async function _callAITurn(msgs, _opts) {
         /* A command on the person's own never-run list is answered here,
            before they are asked to approve something that would be refused. */
         if(!out){ const nr = neverRunRefusal(t.name, input); if(nr) out = { text: nr, render:null }; }
+        /* THE SCREEN. Its own refusals and its own question: seeing is asked
+           once per request, every action one by one with the place marked. */
+        if(!out && isComputerTool(t.name)){
+          const cr = computerRefusal(t.name, input);
+          if(cr) out = { text: cr, render:null };
+          else if(!(await computerConsent(t.name, input))){
+            out = { text:'The user DENIED "'+t.name+'". Do not try it again unless they ask. Continue without it, or tell them what you would need.', render:null };
+            try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_denied',{tool:t.name}); }catch(e){}
+          } else out = await runComputerTool(t.name, input);
+        }
         if(!out && _toolNeedsConsent(t.name)){
           const allowed = await _confirmModelTool(t.name, input);
           if(!allowed){
@@ -9155,7 +9175,10 @@ async function _callAITurn(msgs, _opts) {
           msgs[streamIdx]={...msgs[streamIdx], c:fullText, _status:msg};
           setMsgs(msgs); renderChatMsgs();
         });
-        results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000)});
+        /* A screenshot's picture stays in this tab (see computerWireResults);
+           what is saved with the chat says one was taken. */
+        if(out.image){ _CU.shots.set(t.id, out.image); results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000), _shot:true}); }
+        else results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000)});
         if(out.render) renderedExtras += out.render;
       }
       // Record what actually happened so it survives re-render and reload.
@@ -48113,11 +48136,12 @@ function _bridgeRemember(){
   try{
     sessionStorage.setItem('amv_bridge', JSON.stringify({
       port: BRIDGE.port, token: BRIDGE.token, folder: BRIDGE.folder, root: BRIDGE.root,
-      sharesEnv: !!BRIDGE.sharesEnv, fence: BRIDGE.fence || '' }));
+      sharesEnv: !!BRIDGE.sharesEnv, fence: BRIDGE.fence || '', computer: BRIDGE.computer || null }));
   }catch(e){}
 }
 function _bridgeForget(){
   BRIDGE.port = 0; BRIDGE.token = ''; BRIDGE.folder = ''; BRIDGE.root = ''; BRIDGE.sharesEnv = false; BRIDGE.fence = '';
+  BRIDGE.computer = null;
   BRIDGE.connected = false;
   try{ sessionStorage.removeItem('amv_bridge'); }catch(e){}
   /* The connectors ran on that machine, so they are gone with it. Leaving
@@ -48207,6 +48231,10 @@ async function _bridgePair(port, code){
   /* 'on', or why not: off | unsupported | missing | failed. A bridge too old
      to say is treated as unfenced, which is what it is. */
   BRIDGE.fence = /^(on|off|unsupported|missing|failed)$/.test(String(d.fence || '')) ? String(d.fence) : 'unsupported';
+  /* Whether it may use the screen, mouse and keyboard - only ever true when
+     the person started it with --computer. A bridge too old to say cannot. */
+  const c = d.computer && typeof d.computer === 'object' ? d.computer : null;
+  BRIDGE.computer = c ? { on: c.on === true, os: String(c.os || '').slice(0, 16), why: String(c.why || '').slice(0, 32) } : null;
   BRIDGE.connected = true; BRIDGE.why = '';
   _bridgeRemember();
   return BRIDGE;
@@ -48534,6 +48562,21 @@ function _bridgeCardHTML(){
               : BRIDGE.fence === 'failed' ? 'This computer would not start the fence that hides them.'
               : 'Only ask for work you would run yourself.')
             + '</p>')
+      /* The screen, said either way: on only when the person started the
+         bridge with --computer, and if they asked and it could not start,
+         what is missing. */
+      + (BRIDGE.computer && BRIDGE.computer.on
+          ? '<p class="brg-p brg-warn"><b>AMV can use this screen.</b> This bridge was started with '
+            + '<code>--computer</code>, so in chat AMV can look at your screen and use the mouse and keyboard. '
+            + 'It asks before it looks, and before every click and keystroke.</p>'
+          : '<p class="brg-p">AMV cannot see or use this screen. '
+            + ({ no_display: 'This session has no screen.',
+                 wayland: 'This desktop uses Wayland; screen control needs an X11 session.',
+                 no_xdotool: 'Install xdotool and restart the bridge with <code>--computer</code> to allow it.',
+                 no_screenshot_tool: 'Install a screenshot tool (ImageMagick) and restart the bridge with <code>--computer</code> to allow it.' }
+               [BRIDGE.computer && BRIDGE.computer.why]
+               || 'To allow it, restart the bridge with <code>--computer</code>. It asks before every action.')
+            + '</p>')
       /* What commands can see of this computer's settings, said either way:
          the default is a short allowed list with no keys or tokens, and the
          full environment is a flag somebody chose when starting the bridge. */
@@ -48769,6 +48812,212 @@ function _bridgeWireCard(root){
   });
 }
 try{ window._bridgeWireCard=_bridgeWireCard; }catch(e){}
+/* ══════════════════════════════════════════════════════════════════════
+   USING THE SCREEN, ONE APPROVED ACTION AT A TIME.
+
+   The bridge can look at the screen and use the mouse and keyboard when the
+   person started it with --computer (see the bridge's own THE SCREEN, THE
+   MOUSE AND THE KEYBOARD). This is the chat side: five tools, offered only
+   when that is really on, and a person in the loop for every one.
+
+   · Seeing the screen is asked once per request, because a screenshot is the
+     whole screen - whatever else is open goes to the engine with it.
+   · Every click, keystroke and scroll is asked one by one. A click is shown
+     as a mark on the latest picture of the screen, because "click at
+     612,340" is not something anybody can consent to.
+   · Text that looks like a password, card number or code is refused before
+     anybody is asked. The person types those themselves.
+   · Screenshots never go into the saved chat: they live in this tab only,
+     and only the latest few travel to the engine.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* The widest picture sent to the engine. A 4K screenshot costs several times
+   what a 1280-wide one does and reads no better. */
+const CU_MAX_W = 1280;
+/* How many screenshots, newest first, are sent with each request. */
+const CU_KEEP_SHOTS = 3;
+
+const COMPUTER_TOOLS = [
+  { name: 'computer_screenshot',
+    description: 'See the user\'s screen as it is right now, on the computer their AMV bridge runs on. Returns a picture. '
+      + 'Coordinates for the other computer_ tools are pixels in the LATEST picture. Take one before acting, and again after '
+      + 'anything that changes the screen, rather than assuming what happened.',
+    input_schema: { type: 'object', properties: {}, required: [] } },
+  { name: 'computer_click',
+    description: 'Click on the user\'s screen at x,y - pixels in the latest screenshot. The user approves each click. '
+      + 'button defaults to left; double:true for a double click.',
+    input_schema: { type: 'object', properties: {
+      x: { type: 'integer' }, y: { type: 'integer' },
+      button: { type: 'string', enum: ['left', 'right', 'middle'] }, double: { type: 'boolean' },
+    }, required: ['x', 'y'] } },
+  { name: 'computer_type',
+    description: 'Type text into whatever has the keyboard focus on the user\'s screen - click the field first. The user '
+      + 'approves it. Never type a password, card number or one-time code: ask the user to type those themselves.',
+    input_schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
+  { name: 'computer_key',
+    description: 'Press a key or a combination on the user\'s keyboard, like "enter", "tab", "escape", "ctrl+c", "cmd+t" '
+      + 'or "alt+f4". One key besides ctrl, alt, shift and cmd. The user approves it.',
+    input_schema: { type: 'object', properties: { keys: { type: 'string' } }, required: ['keys'] } },
+  { name: 'computer_scroll',
+    description: 'Scroll the user\'s screen at x,y (pixels in the latest screenshot), up, down, left or right, by 1 to 15 steps.',
+    input_schema: { type: 'object', properties: {
+      x: { type: 'integer' }, y: { type: 'integer' },
+      direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] }, amount: { type: 'integer' },
+    }, required: ['x', 'y', 'direction'] } },
+];
+try{ window.COMPUTER_TOOLS = COMPUTER_TOOLS; }catch(e){}
+
+/* What this tab knows about the screen. `k` turns the picture the engine saw
+   back into the picture the bridge took: the engine sees a smaller copy. */
+const _CU = { k: 1, w: 0, h: 0, src: '', seeFor: -1, shots: new Map() };
+try{ window._CU = _CU; }catch(e){}
+
+function isComputerTool(name){ return /^computer_(screenshot|click|type|key|scroll)$/.test(String(name || '')); }
+function computerReady(){
+  try{ return !!(BRIDGE.connected && BRIDGE.computer && BRIDGE.computer.on === true); }catch(e){ return false; }
+}
+/* Only where they can work: a computer that says yes, and an engine that can
+   read a picture. A partner engine is sent pictures as a note that it cannot
+   read them, so offering it a screen would be offering it a blindfold. */
+function computerToolsOffered(){
+  if(!computerReady()) return [];
+  try{ if(MODELS[S.model] && MODELS[S.model].partner) return []; }catch(e){}
+  return COMPUTER_TOOLS;
+}
+try{ window.isComputerTool = isComputerTool; window.computerReady = computerReady;
+     window.computerToolsOffered = computerToolsOffered; }catch(e){}
+
+/* The request the person is on - the count of things they have said. A
+   permission to see the screen lasts until they say something new. */
+function _cuTurn(){ try{ return (getMsgs() || []).filter(m => m && m.r === 'u').length; }catch(e){ return 0; } }
+
+/* A picture from the bridge, scaled to what the engine needs, as a JPEG. */
+function _cuShrink(pngB64){
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const s = Math.min(1, CU_MAX_W / Math.max(1, w));
+      const cw = Math.max(1, Math.round(w * s)), ch = Math.max(1, Math.round(h * s));
+      const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+      c.getContext('2d').drawImage(img, 0, 0, cw, ch);
+      resolve({ src: c.toDataURL('image/jpeg', 0.8), w: cw, h: ch, k: w / cw });
+    };
+    img.onerror = () => resolve(null);
+    img.src = 'data:image/png;base64,' + pngB64;
+  });
+}
+
+/* The engine's coordinates, checked against the picture it was given. */
+function _cuPoint(input){
+  const x = Number(input && input.x), y = Number(input && input.y);
+  if(!_CU.src) return { error: 'Take a screenshot first, so there is a picture to point at.' };
+  if(!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= _CU.w || y >= _CU.h)
+    return { error: 'That point is outside the latest screenshot (' + _CU.w + 'x' + _CU.h + ').' };
+  return { x, y, bx: Math.round(x * _CU.k), by: Math.round(y * _CU.k) };
+}
+
+/* WHAT THE PERSON IS ASKED. Seeing once per request; everything else, each
+   time, with the place marked when there is a place. */
+async function computerConsent(name, input){
+  input = input || {};
+  if(name === 'computer_screenshot'){
+    if(_CU.seeFor === _cuTurn()) return true;
+    const ok = await _showModalAsync({
+      title: T('Let AMV see your screen?'),
+      body: T('AMV will take pictures of your whole screen while it works on this request, and send them to its engine to read. '
+            + 'Close or hide anything private first. It asks again when you send something new.'),
+      okText: T('Let it see'), cancelText: T('Not now'),
+    });
+    if(ok === true) _CU.seeFor = _cuTurn();
+    return ok === true;
+  }
+  let title = '', body = '', figure = null;
+  if(name === 'computer_click' || name === 'computer_scroll'){
+    const p = _cuPoint(input);
+    if(p.error) return true;                      // nothing will happen; the run says why
+    figure = { src: _CU.src, x: p.x / _CU.w, y: p.y / _CU.h };
+    if(name === 'computer_click'){
+      const how = (input.double ? 'double-' : '') + (input.button === 'right' ? 'right-' : input.button === 'middle' ? 'middle-' : '') + 'click';
+      title = T('Let AMV ' + how + ' here?');
+      body = T('The mark shows where, on the latest picture of your screen.');
+    } else {
+      title = T('Let AMV scroll ' + String(input.direction || 'down') + ' here?');
+      body = T('The mark shows where, on the latest picture of your screen.');
+    }
+  } else if(name === 'computer_type'){
+    title = T('Let AMV type this?');
+    body = T('Into whatever is selected on your screen right now:') + '\n\n' + String(input.text || '').slice(0, 600);
+  } else if(name === 'computer_key'){
+    title = T('Let AMV press') + ' ' + String(input.keys || '').slice(0, 40) + '?';
+    body = T('On your keyboard, in whatever window is in front.');
+  }
+  const ok = await _showModalAsync({ title, body, figure, okText: T('Allow once'), cancelText: T('Deny') });
+  return ok === true;
+}
+try{ window.computerConsent = computerConsent; }catch(e){}
+
+/* The text it will not type, said before anybody is asked to approve it. */
+function computerRefusal(name, input){
+  if(name !== 'computer_type') return '';
+  let kinds = [];
+  try{ kinds = (typeof findSecrets === 'function') ? findSecrets(String((input && input.text) || '')) : []; }catch(e){ kinds = []; }
+  if(!kinds.length) return '';
+  return 'AMV will not type ' + kinds[0] + ' for the user. Ask them to type it themselves, then carry on.';
+}
+try{ window.computerRefusal = computerRefusal; }catch(e){}
+
+/* RUN ONE. Returns { text, image? } - the image only for a screenshot. */
+async function runComputerTool(name, input){
+  input = input || {};
+  try{
+    if(name === 'computer_screenshot'){
+      const r = await _bridgeCall('screen/shot', {}, 30000);
+      const s = await _cuShrink(r.png || '');
+      if(!s) return { text: 'The screenshot could not be read.' };
+      Object.assign(_CU, { k: s.k, w: s.w, h: s.h, src: s.src });
+      return { text: 'The user\'s screen, ' + s.w + 'x' + s.h + '. Coordinates are pixels in this picture.',
+               image: { media_type: 'image/jpeg', data: s.src.split(',')[1] } };
+    }
+    let body;
+    if(name === 'computer_click' || name === 'computer_scroll'){
+      const p = _cuPoint(input);
+      if(p.error) return { text: p.error };
+      body = name === 'computer_scroll'
+        ? { kind: 'scroll', x: p.bx, y: p.by, direction: input.direction, amount: input.amount == null ? 3 : input.amount }
+        : { kind: input.double ? 'double_click' : input.button === 'right' ? 'right_click' : input.button === 'middle' ? 'middle_click' : 'click',
+            x: p.bx, y: p.by };
+    } else if(name === 'computer_type') body = { kind: 'type', text: String(input.text || '') };
+    else if(name === 'computer_key') body = { kind: 'key', keys: String(input.keys || '') };
+    else return { text: 'There is no screen action called ' + name + '.' };
+    await _bridgeCall('screen/act', body, 30000);
+    const said = { click: 'Clicked', double_click: 'Double-clicked', right_click: 'Right-clicked', middle_click: 'Middle-clicked',
+                   scroll: 'Scrolled ' + body.direction, type: 'Typed the text', key: 'Pressed ' + body.keys }[body.kind];
+    return { text: said + (input.x != null ? ' at ' + input.x + ',' + input.y : '') + '. Take a screenshot to see what changed.' };
+  }catch(e){
+    return { text: 'That did not work: ' + String((e && e.message) || e) };
+  }
+}
+try{ window.runComputerTool = runComputerTool; }catch(e){}
+
+/* WHAT GOES ON THE WIRE. A saved tool result carries `_shot` and no picture;
+   the picture is in this tab's memory, keyed by the call it answered. The
+   newest few are attached, the rest say they were taken, and `_shot` never
+   reaches the server. */
+function computerWireResults(results){
+  if(!Array.isArray(results)) return results;
+  return results.map(r => {
+    if(!r || !r._shot) return r;
+    const out = { type: r.type, tool_use_id: r.tool_use_id };
+    const keep = [..._CU.shots.keys()].slice(-CU_KEEP_SHOTS);
+    const img = keep.includes(r.tool_use_id) ? _CU.shots.get(r.tool_use_id) : null;
+    out.content = img
+      ? [{ type: 'text', text: String(r.content || '') }, { type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } }]
+      : String(r.content || '') + ' (This earlier picture is no longer attached.)';
+    return out;
+  });
+}
+try{ window.computerWireResults = computerWireResults; }catch(e){}
 /* ══════════════════════════════════════════════════════════════════════
    BUILDING ON THE MACHINE, WHICH MEANS DOING THE WORK RATHER THAN
    DESCRIBING IT.

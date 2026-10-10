@@ -14766,3 +14766,23 @@ catalogue once the page is idle, not when Crew opens.
 Rule: a number that sets a ceiling is measured with the gate's own code, on
 the built artifact that will be committed, after the last edit. A ceiling set
 from a different measurement is a guess with a check attached to it.
+
+## 576. A bound written as "more than we have" has to be checked against what we send
+
+The server kept at most 24 tools per request, with the comment "more than AMV
+has". It stopped being true without anybody noticing. Chat with a computer
+connected sent exactly 24 of AMV's own tools, so the cut fell after the
+bridge's four: every connector tool (Gmail, GitHub, any of them) was dropped
+before it reached the model. Nothing said so, because a tool the model never
+received looks exactly like a model that chose not to use it. It was found
+only because a new feature's tools went missing in a test that read the
+request the engine actually received, not the list the page built.
+
+The fix bounds what costs money, the total size of the tool definitions, and
+keeps the count only as a backstop well above anything real. A test now sends
+every tool AMV knows, plus a full-sized connector, and requires all of them
+to arrive.
+
+Rule: a limit justified by "more than we use" needs a test that sends what we
+really use, at its largest, and fails when the limit is reached. Check the
+request at the far end, never the list at the near end.

@@ -122,6 +122,16 @@ Companion docs (do not duplicate them here - read them):
   page, which says either way; Windows is unfenced and says so. The file routes
   act on a held, proved handle (`hold`, `proveOpen`), never on a name checked
   earlier. The gate needs bubblewrap - `.claude/session-setup.sh` installs it.
+  **The screen** is the bridge's `--computer` flag and nothing else: off unless
+  the person starts it so, a page can never turn it on. Screenshots and
+  click/type/key/scroll go through fixed system programs with argument lists
+  (xdotool + ImageMagick on Linux/X11, the system's own calls on macOS and
+  Windows), every value checked in the bridge, every action printed. In chat
+  (`36b-computer.js`) seeing is asked once per request and every action one by
+  one, with the spot marked on the picture; password-shaped text is refused,
+  and screenshots live in the tab, never in the saved chat. The Linux path is
+  measured on a real virtual display; macOS and Windows are built from the
+  documented system calls and have not yet been run on a real machine.
   `aiAgentLoop` (in `14-engine.js`) is the turn-taking on top of it: consent
   once per turn, a stop checked before every round and every command, and a
   changelist measured from the disk with an Undo that writes real bytes back.

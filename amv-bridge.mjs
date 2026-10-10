@@ -857,6 +857,339 @@ function tokenOk(given){
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THE SCREEN, THE MOUSE AND THE KEYBOARD - ONLY WHEN THE PERSON STARTED IT SO.
+
+   Everything above works on a folder. This works on the whole computer: AMV
+   can look at the screen and click, type, press keys and scroll, so it can
+   use programs that have no command line - a desktop app, a settings window,
+   a site that will not work any other way.
+
+   That is a much bigger thing to hand over than a folder, so:
+
+     Off unless the bridge was started with --computer. A page cannot turn
+     it on - not a paired one, not AMV. The person decides at the terminal,
+     on the machine, where nothing on the web can reach.
+
+     No shell, ever. Each action is a fixed program the operating system
+     already has (xdotool and a screenshot tool on Linux, the system's own
+     event and capture calls on macOS and Windows) given an argument list,
+     so the text somebody asks AMV to type is data, never a command line.
+     A typed "$(rm -rf ~)" arrives in the window as those characters.
+
+     Every value is checked here before anything moves: an action from a
+     short list, coordinates that are whole numbers on a screen, keys from a
+     named set, text of bounded length with no control characters.
+
+     Every action is printed below as it happens, and AMV asks the person
+     in the page before each one.
+
+   Not fenced, unlike commands: the programs here are fixed and chosen by
+   this file, not by a model, and they need the display, which the fence
+   would hide. */
+const COMPUTER = ARGS.includes('--computer');
+const SCREEN_MAX_COORD = 16384;
+const SCREEN_MAX_TEXT = 2000;
+const SCREEN_TIMEOUT_MS = 15000;
+
+function onPath(cmd) {
+  const dirs = String(process.env.PATH || '').split(process.platform === 'win32' ? ';' : ':');
+  const exts = process.platform === 'win32' ? ['.exe', '.cmd', ''] : [''];
+  return dirs.some(d => d && exts.some(x => { try { return statSync(join(d, cmd + x)).isFile(); } catch (e) { return false; } }));
+}
+
+/* What this computer can do, decided once at start and reported as it is.
+   `why` names the missing piece so the page can say what to install rather
+   than "not available". */
+function screenCaps() {
+  if (!COMPUTER) return { on: false, why: 'off' };
+  if (process.platform === 'darwin') return { on: true, os: 'mac', shot: 'screencapture', input: 'system' };
+  if (process.platform === 'win32') return { on: true, os: 'windows', shot: 'system', input: 'system' };
+  const x11 = !!process.env.DISPLAY, wayland = !!process.env.WAYLAND_DISPLAY;
+  if (!x11 && !wayland) return { on: false, os: 'linux', why: 'no_display' };
+  const shot = x11 ? (onPath('import') ? 'import' : onPath('scrot') ? 'scrot' : onPath('grim') ? 'grim' : '')
+                   : (onPath('grim') ? 'grim' : '');
+  const input = x11 && onPath('xdotool') ? 'xdotool' : '';
+  if (!shot) return { on: false, os: 'linux', why: x11 ? 'no_screenshot_tool' : 'wayland' };
+  if (!input) return { on: false, os: 'linux', why: x11 ? 'no_xdotool' : 'wayland' };
+  return { on: true, os: 'linux', shot, input };
+}
+const SCREEN = screenCaps();
+/* What the page is told: whether, and if not why. Not which tools. */
+function screenPublic() { return { on: SCREEN.on, os: SCREEN.os || process.platform, why: SCREEN.why || '' }; }
+
+function screenEnv(extra) {
+  const env = childEnv(extra);
+  for (const k of DESKTOP_ENV) if (process.env[k]) env[k] = process.env[k];
+  return env;
+}
+function screenRun(prog, args, extra) {
+  return new Promise((done) => {
+    let out = [], err = '', settled = false;
+    const child = spawn(prog, args, { env: screenEnv(extra), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    const finish = (r) => { if (!settled) { settled = true; clearTimeout(timer); done(r); } };
+    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch (e) {} finish({ code: null, out: Buffer.alloc(0), err: 'timed out' }); }, SCREEN_TIMEOUT_MS);
+    child.stdout.on('data', b => out.push(b));
+    child.stderr.on('data', b => { if (err.length < 4000) err += b.toString(); });
+    child.on('error', e => finish({ code: -1, out: Buffer.alloc(0), err: e.message }));
+    child.on('close', code => finish({ code, out: Buffer.concat(out), err }));
+  });
+}
+function pngSize(buf) {
+  const sig = '89504e470d0a1a0a';
+  if (!buf || buf.length < 24 || buf.subarray(0, 8).toString('hex') !== sig) return null;
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}
+function psEncoded(script) { return Buffer.from(script, 'utf16le').toString('base64'); }
+
+/* Windows: the same small program for both jobs, so the coordinates the
+   screenshot is measured in are the coordinates the mouse moves in. Data
+   arrives in an environment variable and is parsed as JSON - never pasted
+   into the script. */
+const PS_PRELUDE = [
+  "$ErrorActionPreference='Stop'",
+  'Add-Type -AssemblyName System.Windows.Forms,System.Drawing',
+  'Add-Type -TypeDefinition @"',
+  'using System; using System.Runtime.InteropServices;',
+  'public class AMVIn {',
+  '  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();',
+  '  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);',
+  '  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, int d, UIntPtr e);',
+  '}',
+  '"@',
+  '[AMVIn]::SetProcessDPIAware() | Out-Null',
+].join('\n');
+const PS_SHOT = PS_PRELUDE + '\n' + [
+  '$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds',
+  '$bmp=New-Object System.Drawing.Bitmap $b.Width,$b.Height',
+  '$g=[System.Drawing.Graphics]::FromImage($bmp)',
+  '$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size)',
+  '$ms=New-Object System.IO.MemoryStream',
+  '$bmp.Save($ms,[System.Drawing.Imaging.ImageFormat]::Png)',
+  '[Console]::Out.Write([Convert]::ToBase64String($ms.ToArray()))',
+].join('\n');
+const PS_ACT = PS_PRELUDE + '\n' + [
+  '$a=$env:AMV_SCREEN_ACT | ConvertFrom-Json',
+  'function Btn($down,$up,$n){ for($i=0;$i -lt $n;$i++){ [AMVIn]::mouse_event($down,0,0,0,[UIntPtr]::Zero); [AMVIn]::mouse_event($up,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 60 } }',
+  "if($a.x -ne $null){ [AMVIn]::SetCursorPos([int]$a.x,[int]$a.y) | Out-Null; Start-Sleep -Milliseconds 30 }",
+  "switch($a.kind){",
+  "  'click' { Btn 0x02 0x04 1 }",
+  "  'double_click' { Btn 0x02 0x04 2 }",
+  "  'right_click' { Btn 0x08 0x10 1 }",
+  "  'middle_click' { Btn 0x20 0x40 1 }",
+  "  'scroll' { $d=120*[int]$a.amount; if($a.direction -eq 'down' -or $a.direction -eq 'left'){ $d=-$d }; $f=0x0800; if($a.direction -eq 'left' -or $a.direction -eq 'right'){ $f=0x01000 }; [AMVIn]::mouse_event($f,0,0,$d,[UIntPtr]::Zero) }",
+  "  'type' { [System.Windows.Forms.SendKeys]::SendWait([string]$a.sendkeys) }",
+  "  'key' { [System.Windows.Forms.SendKeys]::SendWait([string]$a.sendkeys) }",
+  "}",
+  "[Console]::Out.Write('ok')",
+].join('\n');
+
+/* macOS: the system's own event calls, through the scripting bridge it ships
+   with. The action is the script's argument, parsed as JSON. Needs the
+   Accessibility permission for the app the bridge runs in, and Screen
+   Recording for screenshots - the error says which when one is missing. */
+const MAC_ACT = `function run(argv){
+  ObjC.import('CoreGraphics');
+  var a = JSON.parse(argv[0]);
+  function post(e){ $.CGEventPost($.kCGHIDEventTap, e); }
+  function at(){ return $.CGPointMake(a.x, a.y); }
+  function mouse(down, up, btn, n){
+    for (var i = 1; i <= n; i++){
+      var d = $.CGEventCreateMouseEvent(null, down, at(), btn);
+      $.CGEventSetIntegerValueField(d, $.kCGMouseEventClickState, i); post(d);
+      var u = $.CGEventCreateMouseEvent(null, up, at(), btn);
+      $.CGEventSetIntegerValueField(u, $.kCGMouseEventClickState, i); post(u);
+      delay(0.06);
+    }
+  }
+  if (a.x !== undefined) { post($.CGEventCreateMouseEvent(null, $.kCGEventMouseMoved, at(), 0)); delay(0.03); }
+  var se = Application('System Events');
+  switch (a.kind) {
+    case 'click': mouse($.kCGEventLeftMouseDown, $.kCGEventLeftMouseUp, 0, 1); break;
+    case 'double_click': mouse($.kCGEventLeftMouseDown, $.kCGEventLeftMouseUp, 0, 2); break;
+    case 'right_click': mouse($.kCGEventRightMouseDown, $.kCGEventRightMouseUp, 1, 1); break;
+    case 'middle_click': mouse($.kCGEventOtherMouseDown, $.kCGEventOtherMouseUp, 2, 1); break;
+    case 'scroll':
+      var n = a.amount * ((a.direction === 'up' || a.direction === 'left') ? 1 : -1);
+      var v = (a.direction === 'up' || a.direction === 'down') ? n : 0, h = v ? 0 : n;
+      post($.CGEventCreateScrollWheelEvent2(null, $.kCGScrollEventUnitLine, 2, v, h, 0)); break;
+    case 'type': se.keystroke(a.text); break;
+    case 'key':
+      var using = a.mods.map(function(m){ return m + ' down'; });
+      if (a.code !== undefined) se.keyCode(a.code, { using: using }); else se.keystroke(a.ch, { using: using });
+      break;
+  }
+  return 'ok';
+}`;
+const MAC_SIZE = `function run(){ ObjC.import('AppKit'); var f = $.NSScreen.mainScreen.frame; return f.size.width + ' ' + f.size.height; }`;
+
+/* Keys by the names a model and a person both use. Each maps to what the
+   platform calls it; a name not here is refused rather than guessed at. */
+const KEY_MAP = {
+  enter:     { x: 'Return',    mac: 36,  win: '{ENTER}' },
+  return:    { x: 'Return',    mac: 36,  win: '{ENTER}' },
+  tab:       { x: 'Tab',       mac: 48,  win: '{TAB}' },
+  escape:    { x: 'Escape',    mac: 53,  win: '{ESC}' },
+  esc:       { x: 'Escape',    mac: 53,  win: '{ESC}' },
+  backspace: { x: 'BackSpace', mac: 51,  win: '{BACKSPACE}' },
+  delete:    { x: 'Delete',    mac: 117, win: '{DELETE}' },
+  space:     { x: 'space',     mac: 49,  win: ' ' },
+  up:        { x: 'Up',        mac: 126, win: '{UP}' },
+  down:      { x: 'Down',      mac: 125, win: '{DOWN}' },
+  left:      { x: 'Left',      mac: 123, win: '{LEFT}' },
+  right:     { x: 'Right',     mac: 124, win: '{RIGHT}' },
+  home:      { x: 'Home',      mac: 115, win: '{HOME}' },
+  end:       { x: 'End',       mac: 119, win: '{END}' },
+  pageup:    { x: 'Prior',     mac: 116, win: '{PGUP}' },
+  pagedown:  { x: 'Next',      mac: 121, win: '{PGDN}' },
+};
+const F_MAC = [122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111];
+const MODS = { ctrl: 'ctrl', control: 'ctrl', alt: 'alt', option: 'alt', shift: 'shift',
+               cmd: 'super', command: 'super', super: 'super', meta: 'super', win: 'super' };
+
+/* "ctrl+shift+t" into { mods, key }, or a reason it is refused. */
+function parseKeys(s) {
+  const parts = String(s || '').toLowerCase().split('+').map(p => p.trim()).filter(Boolean);
+  if (!parts.length || parts.length > 4) return { error: 'keys must be one to four names joined by +' };
+  const mods = [], rest = [];
+  for (const p of parts) (MODS[p] ? mods : rest).push(MODS[p] || p);
+  if (rest.length !== 1) return { error: 'name exactly one key besides ctrl, alt, shift or cmd' };
+  const k = rest[0];
+  if (KEY_MAP[k] || /^f([1-9]|1[0-2])$/.test(k) || /^[a-z0-9]$/.test(k)) return { mods: [...new Set(mods)], key: k };
+  return { error: 'unknown key: ' + k.slice(0, 20) };
+}
+function sendKeysEscape(t) {
+  return String(t).replace(/[+^%~(){}[\]]/g, c => '{' + c + '}').replace(/\r?\n/g, '{ENTER}').replace(/\t/g, '{TAB}');
+}
+
+/* The checked action, or { error }. */
+const ACT_KINDS = new Set(['move', 'click', 'double_click', 'right_click', 'middle_click', 'type', 'key', 'scroll']);
+function screenCheck(b) {
+  const kind = String(b.kind || '');
+  if (!ACT_KINDS.has(kind)) return { error: 'unknown action' };
+  const a = { kind };
+  if (kind !== 'type' && kind !== 'key') {
+    const x = Number(b.x), y = Number(b.y);
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x > SCREEN_MAX_COORD || y > SCREEN_MAX_COORD)
+      return { error: 'x and y must be whole numbers on the screen' };
+    a.x = x; a.y = y;
+  }
+  if (kind === 'type') {
+    const t = String(b.text == null ? '' : b.text);
+    if (!t || t.length > SCREEN_MAX_TEXT) return { error: 'text must be 1 to ' + SCREEN_MAX_TEXT + ' characters' };
+    if (/[\u0000-\u0008\u000b-\u001f\u007f]/.test(t)) return { error: 'text may not contain control characters' };
+    a.text = t;
+  }
+  if (kind === 'key') {
+    const k = parseKeys(b.keys);
+    if (k.error) return k;
+    a.mods = k.mods; a.key = k.key;
+  }
+  if (kind === 'scroll') {
+    const dir = String(b.direction || 'down'), n = Number(b.amount == null ? 3 : b.amount);
+    if (!['up', 'down', 'left', 'right'].includes(dir)) return { error: 'direction must be up, down, left or right' };
+    if (!Number.isInteger(n) || n < 1 || n > 15) return { error: 'amount must be 1 to 15' };
+    a.direction = dir; a.amount = n;
+  }
+  return a;
+}
+
+/* Screenshot pixels to the units the mouse moves in. Equal on most screens;
+   on a Mac with a Retina display the picture has twice the pixels the
+   pointer has points, and clicking at picture coordinates would land in the
+   wrong place by exactly that factor. */
+let screenScale = 1;
+
+async function screenShot() {
+  let png = null, r;
+  const tmp = () => join(tmpdir(), 'amv-shot-' + randomBytes(6).toString('hex') + '.png');
+  if (SCREEN.os === 'linux') {
+    if (SCREEN.shot === 'import') { r = await screenRun('import', ['-window', 'root', 'png:-']); png = r.out; }
+    else if (SCREEN.shot === 'grim') { r = await screenRun('grim', ['-t', 'png', '-']); png = r.out; }
+    else { const f = tmp(); r = await screenRun('scrot', ['-o', f]); try { png = readFileSync(f); } catch (e) {} try { unlinkSync(f); } catch (e) {} }
+  } else if (SCREEN.os === 'mac') {
+    const f = tmp(); r = await screenRun('screencapture', ['-x', '-t', 'png', f]);
+    try { png = readFileSync(f); } catch (e) {} try { unlinkSync(f); } catch (e) {}
+  } else {
+    r = await screenRun('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', psEncoded(PS_SHOT)]);
+    png = Buffer.from(r.out.toString().trim(), 'base64');
+  }
+  const size = pngSize(png);
+  if (!size) return { error: 'screenshot_failed', detail: (r && r.err || '').trim().slice(0, 300)
+    || (SCREEN.os === 'mac' ? 'macOS may need Screen Recording allowed for this terminal app.' : '') };
+  /* How many picture pixels per pointer unit. */
+  let pointW = size.width;
+  if (SCREEN.os === 'linux' && SCREEN.input === 'xdotool') {
+    const g = await screenRun('xdotool', ['getdisplaygeometry']);
+    const m = /^(\d+)\s+(\d+)/.exec(g.out.toString()); if (m) pointW = Number(m[1]);
+  } else if (SCREEN.os === 'mac') {
+    const g = await screenRun('osascript', ['-l', 'JavaScript', '-e', MAC_SIZE]);
+    const m = /^(\d+(?:\.\d+)?)\s/.exec(g.out.toString()); if (m) pointW = Number(m[1]);
+  }
+  screenScale = pointW > 0 ? size.width / pointW : 1;
+  return { png: png.toString('base64'), width: size.width, height: size.height, scale: screenScale };
+}
+
+async function screenAct(a) {
+  /* Picture coordinates in, pointer coordinates out. */
+  const X = a.x === undefined ? undefined : Math.round(a.x / screenScale);
+  const Y = a.y === undefined ? undefined : Math.round(a.y / screenScale);
+  let r;
+  if (SCREEN.os === 'linux') {
+    const at = X === undefined ? [] : ['mousemove', '--sync', String(X), String(Y)];
+    const btn = { click: ['click', '1'], double_click: ['click', '--repeat', '2', '--delay', '80', '1'],
+                  right_click: ['click', '3'], middle_click: ['click', '2'] }[a.kind];
+    let args;
+    if (a.kind === 'move') args = at;
+    else if (btn) args = at.concat(btn);
+    else if (a.kind === 'scroll') args = at.concat(['click', '--repeat', String(a.amount), '--delay', '40',
+      { up: '4', down: '5', left: '6', right: '7' }[a.direction]]);
+    else if (a.kind === 'type') args = ['type', '--delay', '12', '--', a.text];
+    else {
+      const k = KEY_MAP[a.key] ? KEY_MAP[a.key].x : (/^f\d+$/.test(a.key) ? a.key.toUpperCase() : a.key);
+      args = ['key', '--', a.mods.concat([k]).join('+')];
+    }
+    r = await screenRun('xdotool', args);
+  } else if (SCREEN.os === 'mac') {
+    const m = { kind: a.kind, x: X, y: Y, text: a.text, direction: a.direction, amount: a.amount };
+    if (a.kind === 'key') {
+      m.mods = a.mods.map(x => ({ ctrl: 'control', alt: 'option', shift: 'shift', super: 'command' }[x]));
+      if (KEY_MAP[a.key]) m.code = KEY_MAP[a.key].mac;
+      else if (/^f\d+$/.test(a.key)) m.code = F_MAC[Number(a.key.slice(1)) - 1];
+      else m.ch = a.key;
+    }
+    r = await screenRun('osascript', ['-l', 'JavaScript', '-e', MAC_ACT, JSON.stringify(m)]);
+  } else {
+    const m = { kind: a.kind, x: X, y: Y, direction: a.direction, amount: a.amount };
+    if (a.kind === 'type') m.sendkeys = sendKeysEscape(a.text);
+    if (a.kind === 'key') {
+      if (a.mods.includes('super')) return { error: 'the Windows key cannot be pressed this way' };
+      const k = KEY_MAP[a.key] ? KEY_MAP[a.key].win : (/^f\d+$/.test(a.key) ? '{' + a.key.toUpperCase() + '}' : sendKeysEscape(a.key));
+      m.sendkeys = a.mods.map(x => ({ ctrl: '^', alt: '%', shift: '+' }[x])).join('') + k;
+    }
+    r = await screenRun('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', psEncoded(PS_ACT)],
+                        { AMV_SCREEN_ACT: JSON.stringify(m) });
+  }
+  if (r.code !== 0) {
+    const e = (r.err || '').trim();
+    return { error: 'action_failed', detail: e.slice(0, 300)
+      || (SCREEN.os === 'mac' ? 'macOS may need Accessibility allowed for this terminal app.' : '') };
+  }
+  return { ok: true };
+}
+/* What the terminal says, in words. Typed text is shown, cut short: the
+   person is watching their own screen and should see what is going into it. */
+function screenSay(a) {
+  const at = a.x === undefined ? '' : ' at ' + a.x + ',' + a.y;
+  if (a.kind === 'type') return 'typed "' + (a.text.length > 60 ? a.text.slice(0, 57) + '...' : a.text).replace(/\n/g, '↵') + '"';
+  if (a.kind === 'key') return 'pressed ' + a.mods.concat([a.key]).join('+');
+  if (a.kind === 'scroll') return 'scrolled ' + a.direction + ' ' + a.amount + at;
+  return { move: 'moved the pointer', click: 'clicked', double_click: 'double-clicked',
+           right_click: 'right-clicked', middle_click: 'middle-clicked' }[a.kind] + at;
+}
+/* One at a time: two clicks racing each other land in an order nobody chose. */
+let screenBusy = false;
+
 function readBody(req){
   return new Promise((res, rej) => {
     let n = 0; const chunks = [];
@@ -900,7 +1233,7 @@ const server = createServer(async (req, res) => {
   if (path === '/amv-bridge/hello' && req.method === 'GET') {
     return json(res, 200, { bridge: true, version: VERSION,
                             folder: ROOT.split(sep).pop(), paired: !!sessionToken,
-                            sharesEnvironment: SHARE_ENV, fence: fenceState() });
+                            sharesEnvironment: SHARE_ENV, fence: fenceState(), computer: screenPublic() });
   }
 
   if (!allowed) return json(res, 403, { error: 'origin_not_allowed' });
@@ -933,7 +1266,7 @@ const server = createServer(async (req, res) => {
       ? '  ✓ paired with AMV - the previous session was disconnected'
       : '  ✓ paired with AMV');
     return json(res, 200, { token: sessionToken, folder: ROOT.split(sep).pop(), root: ROOT, replaced,
-                            sharesEnvironment: SHARE_ENV, fence: fenceState() });
+                            sharesEnvironment: SHARE_ENV, fence: fenceState(), computer: screenPublic() });
   }
 
   if (sessionToken && execJobs.size === 0 && Date.now() - lastUsed > SESSION_IDLE_MS
@@ -998,6 +1331,25 @@ const server = createServer(async (req, res) => {
         exec: { running: execJobs.size, max: EXEC_MAX_CONCURRENT },
         mcp: [...mcpServers.values()].map(v => ({ id: v.id, running: !v.exited, pending: v.pending.size, maxPending: MCP_MAX_PENDING })),
       });
+    }
+    /* The screen: see THE SCREEN, THE MOUSE AND THE KEYBOARD. */
+    if (path === '/amv-bridge/screen/shot' || path === '/amv-bridge/screen/act') {
+      if (!SCREEN.on) return json(res, 403, { error: 'computer_off', computer: screenPublic() });
+      if (shuttingDown) return json(res, 503, { error: 'shutting_down' });
+      const act = path.endsWith('/act') ? screenCheck(body) : null;
+      if (act && act.error) return json(res, 400, { error: 'bad_action', detail: act.error });
+      if (screenBusy) return json(res, 429, { error: 'busy' });
+      screenBusy = true;
+      try {
+        if (!act) {
+          const r = await screenShot();
+          console.log(r.error ? '  ✗ could not take a screenshot' : '  ◉ AMV looked at the screen');
+          return json(res, r.error ? 500 : 200, r);
+        }
+        const r = await screenAct(act);
+        console.log((r.error ? '  ✗ could not do it: AMV ' : '  ◉ AMV ') + screenSay(act));
+        return json(res, r.error ? 500 : 200, r);
+      } finally { screenBusy = false; lastUsed = Date.now(); }
     }
     if (path === '/amv-bridge/list') {
       const dir = safePath(body.path || '.');
@@ -1435,6 +1787,21 @@ server.listen(0, '127.0.0.1', () => {
     console.log('\n  Commands get your PATH and basic settings, none of this');
     console.log('  window\'s keys or tokens. To share everything, restart with');
     console.log('  --share-environment.');
+  }
+  if (SCREEN.on) {
+    console.log('\n  !! --computer is ON: AMV can see this screen and use the');
+    console.log('     mouse and keyboard. It asks you in AMV before each action,');
+    console.log('     and every one is printed below.');
+  } else if (COMPUTER) {
+    console.log('\n  --computer was asked for but cannot start: ' + ({
+      no_display: 'there is no screen in this session.',
+      wayland: 'this desktop uses Wayland; AMV needs an X11 session.',
+      no_xdotool: 'install xdotool (e.g. sudo apt install xdotool) and restart.',
+      no_screenshot_tool: 'install a screenshot tool (e.g. sudo apt install imagemagick) and restart.',
+    }[SCREEN.why] || SCREEN.why));
+  } else {
+    console.log('\n  To let AMV use this screen, mouse and keyboard, restart with');
+    console.log('  --computer. It asks you before every action.');
   }
   console.log('  Close this window to stop.');
   console.log(line + '\n');

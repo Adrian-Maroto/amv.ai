@@ -79,10 +79,13 @@ jobs:
       # through AppArmor, which is the thing bubblewrap is built on; lifted for
       # this throwaway runner only. Without this step those suites fail, CI is
       # red, and the Worker deploy (which waits for green) is skipped.
-      - name: Install bubblewrap for the fence suites
+      # Xvfb, xdotool and ImageMagick: `amv-uses-the-screen-only-when-you-
+      # started-it-so` drives the bridge's screen control against a real
+      # virtual display and fails, rather than skipping, without them.
+      - name: Install bubblewrap for the fence suites, and the screen tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq bubblewrap
+          sudo apt-get install -y -qq bubblewrap xvfb xdotool imagemagick
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           bwrap --ro-bind / / --unshare-user true && echo "bubblewrap works"
       # THE SAME GATE THAT RUNS LOCALLY.

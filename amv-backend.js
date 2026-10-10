@@ -2132,6 +2132,19 @@ function validateMessagesPayload(body) {
         const data = block.source && block.source.data;
         if (typeof data === 'string') totalChars += data.length;
         if (typeof block.content === 'string') totalChars += block.content.length;
+        /* A tool result can carry its own blocks - a screenshot is a picture
+           inside one. Those count too, or a picture nested one level down
+           would ride past the bound this exists to enforce. */
+        if (Array.isArray(block.content)) {
+          if (block.content.length > MAX_BLOCKS_PER_MSG) return 'too many content blocks in a tool result';
+          for (const inner of block.content) {
+            if (!inner || typeof inner !== 'object') return 'invalid content block';
+            if (inner.type && inner.type !== 'text' && inner.type !== 'image') return `unknown tool result block type: ${String(inner.type).slice(0, 24)}`;
+            if (typeof inner.text === 'string') totalChars += inner.text.length;
+            const d2 = inner.source && inner.source.data;
+            if (typeof d2 === 'string') totalChars += d2.length;
+          }
+        }
       }
     } else {
       return 'message content must be a string or array';
@@ -17573,13 +17586,30 @@ const AMV_CLIENT_TOOLS = new Set([
      folder it was started in, behind a confirmation for the two that
      change something. */
   'run_command', 'read_file', 'write_file', 'list_dir',
+  /* The screen, through a bridge started with --computer (36b-computer.js). */
+  'computer_screenshot', 'computer_click', 'computer_type', 'computer_key', 'computer_scroll',
 ]);
-const TOOLS_MAX          = 24;      // more than AMV has, far less than an attack
+/* 24 WAS FEWER THAN AMV ITSELF SENDS.
+
+   This said "more than AMV has" and stopped being true without anybody
+   noticing: chat with a computer connected sends twenty-four of its own, so
+   every tool after the bridge's four was cut - the screen's, and every
+   connector's. Somebody with a computer AND Gmail connected had a Gmail
+   connector chat could never call, and nothing anywhere said so, because a
+   tool that is dropped looks exactly like a model that chose not to use it.
+
+   The bound that matters to AMV's bill is the SIZE of what is sent, so that
+   is bounded directly now (TOOLS_TOTAL_MAX), and the count is a backstop well
+   above anything real. AMV's own tools come first in every list the client
+   builds, so anything over the budget is a connector's, never AMV's. */
+const TOOLS_MAX          = 128;
+const TOOLS_TOTAL_MAX    = 240000;  // characters of description + schema across every tool, ~60k tokens
 const TOOL_DESC_MAX      = 1200;    // a description, not a second prompt
 const TOOL_SCHEMA_MAX    = 4000;    // a schema, not a payload
 
 function _safeTools(list) {
   const out = [];
+  let total = 0;
   for (const t of list) {
     if (!t || out.length >= TOOLS_MAX) break;
     /* Server-side tools, identified by type. max_uses is clamped because the
@@ -17625,7 +17655,10 @@ function _safeTools(list) {
     let schemaStr = '';
     try { schemaStr = JSON.stringify(schema); } catch (e) { continue; }
     if (schemaStr.length > TOOL_SCHEMA_MAX) continue;
-    out.push({ name, description: String(t.description || '').slice(0, TOOL_DESC_MAX), input_schema: schema });
+    const description = String(t.description || '').slice(0, TOOL_DESC_MAX);
+    if (total + description.length + schemaStr.length > TOOLS_TOTAL_MAX) continue;
+    total += description.length + schemaStr.length;
+    out.push({ name, description, input_schema: schema });
   }
   return out;
 }

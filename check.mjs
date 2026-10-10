@@ -1344,7 +1344,13 @@ step('Page weight is under control', () => {
      section selects say when one is turned off, and the activity log names
      the change (~1.5KB gzipped). The server enforces it; this is the part
      that tells people before a send is refused. */
-  const CEILING = 602 * 1024;   // gzipped, which is what actually crosses the network
+  /* 602 -> 604, 2026-10-10, deliberately: using the screen through the
+     bridge - five chat tools, the per-request and per-action questions with
+     the place marked on a picture, and the refusal to type a password (~2KB
+     gzipped). Kept in the page because the chat's tool loop asks it about
+     every call; a file fetched on demand would put a network wait in front
+     of a consent dialog. */
+  const CEILING = 604 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

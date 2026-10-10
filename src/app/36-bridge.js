@@ -49,11 +49,12 @@ function _bridgeRemember(){
   try{
     sessionStorage.setItem('amv_bridge', JSON.stringify({
       port: BRIDGE.port, token: BRIDGE.token, folder: BRIDGE.folder, root: BRIDGE.root,
-      sharesEnv: !!BRIDGE.sharesEnv, fence: BRIDGE.fence || '' }));
+      sharesEnv: !!BRIDGE.sharesEnv, fence: BRIDGE.fence || '', computer: BRIDGE.computer || null }));
   }catch(e){}
 }
 function _bridgeForget(){
   BRIDGE.port = 0; BRIDGE.token = ''; BRIDGE.folder = ''; BRIDGE.root = ''; BRIDGE.sharesEnv = false; BRIDGE.fence = '';
+  BRIDGE.computer = null;
   BRIDGE.connected = false;
   try{ sessionStorage.removeItem('amv_bridge'); }catch(e){}
   /* The connectors ran on that machine, so they are gone with it. Leaving
@@ -143,6 +144,10 @@ async function _bridgePair(port, code){
   /* 'on', or why not: off | unsupported | missing | failed. A bridge too old
      to say is treated as unfenced, which is what it is. */
   BRIDGE.fence = /^(on|off|unsupported|missing|failed)$/.test(String(d.fence || '')) ? String(d.fence) : 'unsupported';
+  /* Whether it may use the screen, mouse and keyboard - only ever true when
+     the person started it with --computer. A bridge too old to say cannot. */
+  const c = d.computer && typeof d.computer === 'object' ? d.computer : null;
+  BRIDGE.computer = c ? { on: c.on === true, os: String(c.os || '').slice(0, 16), why: String(c.why || '').slice(0, 32) } : null;
   BRIDGE.connected = true; BRIDGE.why = '';
   _bridgeRemember();
   return BRIDGE;
@@ -469,6 +474,21 @@ function _bridgeCardHTML(){
               : BRIDGE.fence === 'missing' ? 'Install bubblewrap on this computer and restart the bridge to hide them.'
               : BRIDGE.fence === 'failed' ? 'This computer would not start the fence that hides them.'
               : 'Only ask for work you would run yourself.')
+            + '</p>')
+      /* The screen, said either way: on only when the person started the
+         bridge with --computer, and if they asked and it could not start,
+         what is missing. */
+      + (BRIDGE.computer && BRIDGE.computer.on
+          ? '<p class="brg-p brg-warn"><b>AMV can use this screen.</b> This bridge was started with '
+            + '<code>--computer</code>, so in chat AMV can look at your screen and use the mouse and keyboard. '
+            + 'It asks before it looks, and before every click and keystroke.</p>'
+          : '<p class="brg-p">AMV cannot see or use this screen. '
+            + ({ no_display: 'This session has no screen.',
+                 wayland: 'This desktop uses Wayland; screen control needs an X11 session.',
+                 no_xdotool: 'Install xdotool and restart the bridge with <code>--computer</code> to allow it.',
+                 no_screenshot_tool: 'Install a screenshot tool (ImageMagick) and restart the bridge with <code>--computer</code> to allow it.' }
+               [BRIDGE.computer && BRIDGE.computer.why]
+               || 'To allow it, restart the bridge with <code>--computer</code>. It asks before every action.')
             + '</p>')
       /* What commands can see of this computer's settings, said either way:
          the default is a short allowed list with no keys or tokens, and the

@@ -1182,6 +1182,8 @@ async function _callAITurn(msgs, _opts) {
        trying it and teaches the person that AMV is broken; appearing with
        the thing it needs is the honest shape. */
     try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(bridgeToolsOffered()); }catch(e){}
+    /* The screen, when the bridge was started to allow it (36b-computer.js). */
+    try{ tools = tools.concat(computerToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(BRIDGE.connected && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
@@ -1233,7 +1235,7 @@ async function _callAITurn(msgs, _opts) {
           msgs.slice(_ctx.from, streamIdx).forEach(m=>{
             if(m.r==='a' && m._toolContent && m._toolResults){
               out.push({ role:'assistant', content:m._toolContent });
-              out.push({ role:'user', content:m._toolResults });
+              out.push({ role:'user', content:computerWireResults(m._toolResults) });
             } else {
               out.push({ role:m.r==='u'?'user':'assistant', content:m.c });
             }
@@ -1588,6 +1590,16 @@ async function _callAITurn(msgs, _opts) {
         /* A command on the person's own never-run list is answered here,
            before they are asked to approve something that would be refused. */
         if(!out){ const nr = neverRunRefusal(t.name, input); if(nr) out = { text: nr, render:null }; }
+        /* THE SCREEN. Its own refusals and its own question: seeing is asked
+           once per request, every action one by one with the place marked. */
+        if(!out && isComputerTool(t.name)){
+          const cr = computerRefusal(t.name, input);
+          if(cr) out = { text: cr, render:null };
+          else if(!(await computerConsent(t.name, input))){
+            out = { text:'The user DENIED "'+t.name+'". Do not try it again unless they ask. Continue without it, or tell them what you would need.', render:null };
+            try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_denied',{tool:t.name}); }catch(e){}
+          } else out = await runComputerTool(t.name, input);
+        }
         if(!out && _toolNeedsConsent(t.name)){
           const allowed = await _confirmModelTool(t.name, input);
           if(!allowed){
@@ -1599,7 +1611,10 @@ async function _callAITurn(msgs, _opts) {
           msgs[streamIdx]={...msgs[streamIdx], c:fullText, _status:msg};
           setMsgs(msgs); renderChatMsgs();
         });
-        results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000)});
+        /* A screenshot's picture stays in this tab (see computerWireResults);
+           what is saved with the chat says one was taken. */
+        if(out.image){ _CU.shots.set(t.id, out.image); results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000), _shot:true}); }
+        else results.push({type:'tool_result', tool_use_id:t.id, content:String(out.text||'').slice(0,8000)});
         if(out.render) renderedExtras += out.render;
       }
       // Record what actually happened so it survives re-render and reload.

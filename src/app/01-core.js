@@ -2603,7 +2603,10 @@ function _showMoreBtn(key, remaining, pageSize){
 try{ window._paginate=_paginate; window._pageMore=_pageMore; }catch(e){}
 
 
-function _showModalAsync({title, body, okText='OK', cancelText, placeholder, defaultValue=''}){
+/* `figure`: { src, x, y } - a picture shown under the text, with a mark at
+   x,y (fractions of its width and height). Used where the consent is about a
+   PLACE: "click here" is only consent if somebody can see where here is. */
+function _showModalAsync({title, body, okText='OK', cancelText, placeholder, defaultValue='', figure}){
   return new Promise(resolve=>{
     const r=$('ovr'); if(!r){ resolve(null); return; }
     r.innerHTML=
@@ -2611,6 +2614,11 @@ function _showModalAsync({title, body, okText='OK', cancelText, placeholder, def
         '<button class="oc" id="modal-close" aria-label="Close" style="position:absolute;top:10px;right:10px">×</button>'+
         (title?'<h2 style="margin-bottom:10px">'+escH(title)+'</h2>':'')+
         '<div class="ob-sub" style="margin-bottom:16px;white-space:pre-wrap;line-height:1.5">'+escH(body)+'</div>'+
+        (figure && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+\/=]+$/.test(String(figure.src||''))
+          ? '<div class="modal-fig"><img src="'+escH(figure.src)+'" alt="'+escH(T('Your screen'))+'">'+
+            (Number.isFinite(figure.x) && Number.isFinite(figure.y)
+              ? '<span class="modal-fig-mark" style="left:'+(Math.max(0,Math.min(1,figure.x))*100).toFixed(2)+'%;top:'+(Math.max(0,Math.min(1,figure.y))*100).toFixed(2)+'%"></span>' : '')+
+            '</div>' : '')+
         (placeholder!==undefined?'<input id="modal-input" type="text" value="'+escH(defaultValue||'')+'" placeholder="'+escH(placeholder||'')+'" style="width:100%;margin-bottom:16px;padding:12px;border-radius:var(--r-lg);border:1px solid var(--bd);font-size:var(--t-base)">':'')+
         '<div style="display:flex;gap:10px;justify-content:flex-end">'+
           (cancelText?'<button class="btn bs" id="modal-cancel" style="padding:10px 16px;font-size:var(--t-base)">'+escH(cancelText)+'</button>':'')+
