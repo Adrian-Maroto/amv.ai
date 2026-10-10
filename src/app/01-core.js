@@ -1210,6 +1210,20 @@ const AMV_API = {
     const r = await this._fetch('/v1/activity');
     return await r.json().catch(()=>null);
   },
+  /* Where this account is signed in, and ending one of them. The answer is the
+     server's: a list it could not read comes back as null, never as empty. */
+  async sessions(){
+    if(!this.live || !this.token) return null;
+    const r = await this._fetch('/v1/sessions');
+    if(!r.ok) return null;
+    return await r.json().catch(()=>null);
+  },
+  async endSession(id){
+    if(!this.live || !this.token) return { ok:false, error:'Not connected to the AMV server.' };
+    const r = await this._fetch('/v1/sessions/end', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+    const d = await r.json().catch(()=>({}));
+    return r.ok ? { ok:true } : { ok:false, error: d.error || ('The server answered '+r.status+'.') };
+  },
   /* Sign out. `everywhere` kills every session on the account; without it this
      device's refresh token is retired and the others are left alone. */
   async logout(everywhere, opts){

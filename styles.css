@@ -16782,3 +16782,11 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 @media (pointer:coarse){ .skill-tools{ gap:var(--sp-2); } .skill-mode label{ min-height:44px; } }
 .skill-name{ flex-wrap:wrap; row-gap:2px; }
 .skill-name .skill-ver{ flex-basis:100%; margin-left:0; }
+
+/* ── LAYER A300: where you are signed in ───────────────────────────────────
+   The rows already exist for the single-device card; a list of them needs
+   space between, and each other device gets its Sign out on the right. */
+.sess-list{ display:flex; flex-direction:column; gap:var(--sp-2); }
+.sess-list .sess-row .sess-txt{ flex:1; min-width:0; }
+.sess-list .sess-end{ flex:none; font-size:var(--t-sm); }
+@media (pointer:coarse){ .sess-list .sess-end{ min-height:44px; } }

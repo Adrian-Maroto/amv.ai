@@ -46,15 +46,16 @@ section('The control the Security pane names is on the Security pane');
       present: !!btn,
       label: btn ? btn.textContent.trim() : null,
       named: /Sign out everywhere/.test(document.body.innerText),
-      /* The honest line beside it: AMV cannot list other devices, and saying so
-         beats a fabricated list of one row built from the user agent. */
-      honest: /cannot list your other devices/i.test(document.body.innerText),
+      /* The list of sign-ins is the server's (GET /v1/sessions). With no
+         server there is no list - never a fabricated row built from this
+         browser's user agent - and the pane says why. */
+      honest: /no server sessions to list or end/i.test(document.body.innerText) && !document.querySelector('#sess-list .sess-row'),
     };
   });
   ok(r.present, 'the sign-out-everywhere button renders');
   ok(r.label === 'Sign out everywhere', 'and says what it does', r.label);
   ok(r.named, 'the pane still names it in the guidance');
-  ok(r.honest, 'and does not pretend to enumerate other devices');
+  ok(r.honest, 'and without a server it lists nothing rather than pretending, and says why');
 }
 
 section('It is wired to the one implementation that really revokes');

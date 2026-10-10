@@ -1210,6 +1210,20 @@ const AMV_API = {
     const r = await this._fetch('/v1/activity');
     return await r.json().catch(()=>null);
   },
+  /* Where this account is signed in, and ending one of them. The answer is the
+     server's: a list it could not read comes back as null, never as empty. */
+  async sessions(){
+    if(!this.live || !this.token) return null;
+    const r = await this._fetch('/v1/sessions');
+    if(!r.ok) return null;
+    return await r.json().catch(()=>null);
+  },
+  async endSession(id){
+    if(!this.live || !this.token) return { ok:false, error:'Not connected to the AMV server.' };
+    const r = await this._fetch('/v1/sessions/end', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+    const d = await r.json().catch(()=>({}));
+    return r.ok ? { ok:true } : { ok:false, error: d.error || ('The server answered '+r.status+'.') };
+  },
   /* Sign out. `everywhere` kills every session on the account; without it this
      device's refresh token is retired and the others are left alone. */
   async logout(everywhere, opts){
@@ -31730,28 +31744,46 @@ try{ window._userStyle=_userStyle; window._chatTone=_chatTone; window._setChatTo
    for the one that works. */
 function _activeSessionsHTML(){
   try{
-    const ua=navigator.userAgent||'';
-    const browser=/Edg/.test(ua)?'Edge':/Chrome/.test(ua)?'Chrome':/Firefox/.test(ua)?'Firefox':/Safari/.test(ua)?'Safari':'Browser';
-    const os=/Windows/.test(ua)?'Windows':/Mac/.test(ua)?'macOS':/Android/.test(ua)?'Android':/iPhone|iPad/.test(ua)?'iOS':/Linux/.test(ua)?'Linux':'';
-    const started=loadStr('amv_session_started')||Date.now();
-    if(!loadStr('amv_session_started')) saveStr('amv_session_started',String(started));
-    const when=new Date(Number(started)).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
     const live=!!(window.AMV_API && AMV_API.live && AMV_API.hasSession);
-    return '<div class="ss2"><h3>This device</h3>'+
-      '<div class="set-sub" style="margin-top:-2px;margin-bottom:12px">AMV cannot list your other devices - nothing on the server records which browsers hold a session. What it can do is end every one of them at once.</div>'+
-      '<div class="sess-row sess-current">'+
-        '<span class="sess-ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>'+
-        '<div class="sess-txt"><div class="sess-name">'+escH(browser+(os?' on '+os:''))+' <span class="sess-badge">This device</span></div>'+
-          '<div class="sess-meta">Signed in \u00b7 since '+escH(when)+'</div></div>'+
-      '</div>'+
-      '<button class="btn bs" id="signout-others" style="margin-top:12px;font-size:var(--t-sm)"'+(live?'':' disabled')+'>Sign out everywhere</button>'+
-      '<div class="set-sub" style="margin-top:8px">'+(live
-        ? 'Ends every session on your account, including this one. You will be asked to sign in again.'
-        : 'Needs the AMV backend connected. Without it there are no server sessions to end, so this would do nothing.')+'</div>'+
+    return '<div class="ss2"><h3>'+escH(T('Where you are signed in'))+'</h3>'+
+      '<div class="set-sub" style="margin-top:-2px;margin-bottom:12px">'+escH(T('Every browser and app signed in to your account. Sign one out if you do not recognise it - it stops working within a minute.'))+'</div>'+
+      '<div id="sess-list" class="sess-list" aria-live="polite">'+(live?'<div class="set-sub">'+escH(T('Loading…'))+'</div>':'')+'</div>'+
+      '<button class="btn bs" id="signout-others" style="margin-top:12px;font-size:var(--t-sm)"'+(live?'':' disabled')+'>'+escH(T('Sign out everywhere'))+'</button>'+
+      '<div class="set-sub" style="margin-top:8px">'+escH(live
+        ? T('Ends every session on your account, including this one. You will be asked to sign in again.')
+        : T('Needs the AMV backend connected. Without it there are no server sessions to list or end.'))+'</div>'+
       '<div id="sess-msg" class="set-sub" role="status" aria-live="polite" style="margin-top:8px"></div>'+
     '</div>';
   }catch(e){ return ''; }
 }
+/* The list is the server's answer. A list it could not read says so; it is
+   never shown as "only this device", which would be a reassuring lie. */
+async function _loadSignIns(){
+  const host=$('sess-list'); if(!host || !(window.AMV_API && AMV_API.live && AMV_API.hasSession)) return;
+  const list=await AMV_API.sessions().catch(()=>null);
+  if(!host.isConnected) return;
+  if(!list || !Array.isArray(list.sessions)){
+    host.innerHTML='<div class="set-sub">'+escH(T('AMV could not read your sign-ins just now.'))+' <button type="button" class="skill-link" id="sess-retry">'+escH(T('Try again'))+'</button></div>';
+    on($('sess-retry'),'click',_loadSignIns); return;
+  }
+  const ago=ts=>{ const s=(Date.now()-ts)/1000; return s<120?T('active now'):s<3600?Math.round(s/60)+' '+T('min ago'):s<86400?Math.round(s/3600)+' '+T('h ago'):Math.round(s/86400)+' '+T('days ago'); };
+  const day=ts=>{ try{ return new Date(ts).toLocaleDateString([], { month:'short', day:'numeric', year:'numeric' }); }catch(e){ return ''; } };
+  const where=c=>{ try{ return c ? new Intl.DisplayNames([document.documentElement.lang||'en'], { type:'region' }).of(c) : ''; }catch(e){ return c||''; } };
+  const rows=list.sessions.map(x=>'<div class="sess-row'+(x.current?' sess-current':'')+'"><div class="sess-txt">'+
+      '<div class="sess-name">'+escH(x.device||T('Unknown browser'))+(x.current?' <span class="sess-badge">'+escH(T('This device'))+'</span>':'')+'</div>'+
+      '<div class="sess-meta">'+escH([where(x.country), T('signed in')+' '+day(x.created), x.current?'':ago(x.seen)].filter(Boolean).join(' · '))+'</div></div>'+
+      (x.current?'':'<button type="button" class="btn bs sess-end" data-sess-end="'+escH(x.id)+'" data-sess-name="'+escH(x.device||T('Unknown browser'))+'">'+escH(T('Sign out'))+'</button>')+'</div>');
+  host.innerHTML=(rows.join('')||'<div class="set-sub">'+escH(T('No sign-ins recorded yet. This device appears here the next time it renews its sign-in, within the hour.'))+'</div>')
+    +(list.current?'':'<div class="set-sub" style="margin-top:8px">'+escH(T('This browser signed in before AMV kept this list; it appears here within the hour.'))+'</div>');
+  host.querySelectorAll('[data-sess-end]').forEach(b=>on(b,'click',async()=>{
+    b.disabled=true; b.textContent=T('Signing out…');
+    const r=await AMV_API.endSession(b.getAttribute('data-sess-end'));
+    const msg=$('sess-msg');
+    if(r.ok){ if(msg) msg.textContent=T('Signed out')+' '+b.getAttribute('data-sess-name')+'. '+T('It stops working within a minute.'); _loadSignIns(); }
+    else { b.disabled=false; b.textContent=T('Sign out'); if(msg) msg.textContent=r.error||T('That sign-in could not be ended. Try again.'); }
+  }));
+}
+try{ window._loadSignIns=_loadSignIns; }catch(e){}
 
 // ── SKILLS ────────────────────────────────────────────────────
 // User-created instruction presets. Each active skill is injected into the
@@ -32140,6 +32172,7 @@ function _renderSetPaneInner(only, into){
        out - while this button wrote a timestamp into localStorage and said
        "Signed out of all other sessions." Writing a second correct
        implementation here would leave two to keep in step; there is one. */
+    _loadSignIns();
     on($('signout-others'),'click',()=>{
       const msg=$('sess-msg');
       if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){

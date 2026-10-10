@@ -14646,3 +14646,27 @@ Rule: the client is the page plus every file it fetches. check.mjs has
 that asks "does anything do X" reads all of it. The widened scan found
 one real item straight away (a browser global missing from the allowlist).
 A file added to the on-demand set goes into CLIENT_FILES in both places.
+
+## 570. A revocation check on eventually consistent storage needs a grace, or it signs people out
+
+Every sign-in now has a record. Ending one deletes the record, and
+verifyToken refuses a token whose record is gone. Written naively, that
+check refuses a session seconds after it was created. KV writes take up to a
+minute to reach other locations. A brand-new sign-in that lands its next
+request somewhere the record has not arrived would be "ended" before it
+began, and the person would be signed straight back out.
+
+So a token issued in the last two minutes is not refused for a missing
+record (SESS_FRESH_S). The cost is a two-minute delay in ending a sign-in
+that is itself under two minutes old. The alternative is signing out real
+people at random.
+
+Related rules from the same change:
+- A record that says access was TAKEN AWAY never goes in a backup
+  (BACKUP_NEVER). Restoring one would bring back a sign-in somebody ended.
+- A screen that lists security state shows the server's answer or says it
+  could not get one. It never shows a list built from this browser's own
+  user agent, because "only this device" is the most reassuring lie
+  available.
+- Recording a sign-in must not be able to stop a sign-in. If the write
+  fails, the tokens go out without a session id, as they did before.

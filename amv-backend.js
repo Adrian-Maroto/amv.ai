@@ -12058,6 +12058,7 @@ const BACKUP_NEVER = [
   'reset:', 'resetcode:',   // password-reset tokens - the credential itself
   'signincode:',            // a sign-in code challenge, ten minutes long, same reason
   'rtgrace:',               // when a refresh token was first used, kept two minutes for the overlap window
+  'sess:',                  // a sign-in; restoring one would bring back a session somebody ended
   'emailhealth:',           // the provider's last refusal of the sender, re-learned on the next send
   'smsverify:',             // a phone confirmation code, same reason
   'invite:',                // a pending invitation with its code, like link: above
@@ -13494,7 +13495,7 @@ async function _route(request, env, ctx) {
        would have broken the operator's own dashboard, which is precisely the
        surface the rule about verifying on the surface the owner uses exists
        for. Every one of them was then read and confirmed to write nothing. */
-    '/v1/activity', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
+    '/v1/activity', '/v1/sessions', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
     '/api/approvals',
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
     '/admin/abuse/list', '/admin/readiness', '/admin/backup/export',
@@ -13540,6 +13541,8 @@ async function _route(request, env, ctx) {
     case '/v1/resume':       return resumeAnswer(request, env);
     case '/v1/stop':         return aiStop(request, env);
     case '/v1/activity':     return accountActivity(request, env);
+    case '/v1/sessions':     return sessionsList(request, env);
+    case '/v1/sessions/end': return sessionsEnd(request, env);
     case '/v1/keys/create':  return apiKeyCreate(request, env);
     case '/v1/keys/list':    return apiKeyList(request, env);
     case '/v1/keys/revoke':  return apiKeyRevoke(request, env);
@@ -14162,7 +14165,7 @@ async function authSignup(request, env){
   try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
   /* No session until the address is proved: the code finishes the sign-up. */
   if (_codesOn(env)) { const c = await _startSignInCode(env, request, em, safeName, 'signup'); if (c) return c; }
-  return _tokenResponse(env, await issueTokens(env, em, safeName));
+  return _tokenResponse(env, await issueTokens(env, em, safeName, await _sessOpen(env, request, em)));
 }
 async function authLogin(request, env) {
   const body = await request.json().catch(()=>({}));
@@ -14327,8 +14330,8 @@ async function authLogin(request, env) {
   await _userEvent(env, request, em, 'signed_in');
   /* Trust is counted from the LAST sign-in, not the first code: somebody who
      signs in every week should not be asked for a code every thirty days. */
-  if (trust && trust.trusted) return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, acct.name || name || ''));
-  return _tokenResponse(env, await issueTokens(env, em, acct.name || name || ''));
+  if (trust && trust.trusted) return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, acct.name || name || '', await _sessOpen(env, request, em)));
+  return _tokenResponse(env, await issueTokens(env, em, acct.name || name || '', await _sessOpen(env, request, em)));
 }
 
 /* ============================================================
@@ -14571,7 +14574,7 @@ async function authLoginVerify(request, env) {
   }
   try { await _markActive(env, em); } catch (e) {}
   await _userEvent(env, request, em, verdict.why === 'signup' ? 'email_verified' : 'signed_in', { with: 'code' });
-  return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, verdict.name || ''));
+  return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, verdict.name || '', await _sessOpen(env, request, em)));
 }
 
 async function authLoginResend(request, env) {
@@ -14817,7 +14820,7 @@ async function authGoogle(request, env) {
       try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
     }
     await _userEvent(env, request, em, 'signed_in', { reason: 'Google' });
-    const tokens = await issueTokens(env, em, name);
+    const tokens = await issueTokens(env, em, name, await _sessOpen(env, request, em));
     return _tokenResponse(env, tokens, { email: em, name, picture: claims.picture || '' });
   }catch(e){
     audit(env,'google_verify_error',{msg:String(e).slice(0,120)});
@@ -14886,7 +14889,18 @@ async function authRefresh(request, env) {
     }
   }
   try{ await _markActive(env, data.email); }catch(e){}
-  return _tokenResponse(env, await issueTokens(env, data.email, data.name || ''));
+  /* The session continues under the same id; a token from before sessions were
+     recorded starts one now, so it appears in the device list from here on. */
+  let sid = data.sid || '';
+  if (sid) {
+    let kept = false;
+    try { kept = await _sessTouch(env, request, data.email, sid); } catch (e) { kept = true; }
+    if (!kept && Math.floor(Date.now() / 1000) - (data.iat || 0) > SESS_FRESH_S)
+      return json({ error: 'signed out', code: 'signed_out' }, 401, _clearRefreshCookie(env));
+  } else {
+    try { sid = await _sessOpen(env, request, data.email); } catch (e) { sid = ''; }
+  }
+  return _tokenResponse(env, await issueTokens(env, data.email, data.name || '', sid));
 }
 
 /* Sign out everywhere: bump the user's token epoch, revoking all tokens. */
@@ -14924,6 +14938,7 @@ async function authLogout(request, env) {
     if (rt && rt.email && rt.jti) {
       await _claimOnce(env, 'usedrefresh', rt.jti, Math.floor(REFRESH_TTL_MS / 1000));
       await _retiredBySignOut(env, rt.jti);
+      if (rt.sid) { try { await env.AMV_KV.delete(_sessKey(rt.email, rt.sid)); } catch (e) {} }
       await _userEvent(env, request, rt.email, 'signed_out');
       return fin(json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env)));
     }
@@ -14962,8 +14977,39 @@ async function authLogout(request, env) {
     await _userEvent(env, request, data.email, 'signed_out_everywhere', { reason: 'unscoped' });
     return fin(json({ ok: true, scope: 'all' }, 200, _clearRefreshCookie(env)));
   }
+  if (data.sid) { try { await env.AMV_KV.delete(_sessKey(data.email, data.sid)); } catch (e) {} }
   await _userEvent(env, request, data.email, 'signed_out');
   return fin(json({ ok: true, scope: 'device' }, 200, _clearRefreshCookie(env)));
+}
+
+/* GET /v1/sessions - where this account is signed in, newest first.
+   POST /v1/sessions/end {id} - end one of them. Not this one: that is what
+   Sign out is for, and it also clears this browser's cookie. */
+async function sessionsList(request, env) {
+  const user = await requireUser(request, env);
+  if (!user || user.via === 'apikey') return json({ error: 'unauthorized' }, 401);
+  let list = [];
+  try { list = await _sessList(env, user.email); }
+  catch (e) { return json({ error: 'AMV could not read your sign-ins just now. Try again in a moment.', code: 'sessions_unavailable' }, 503); }
+  list.sort((a, b) => (b.seen || 0) - (a.seen || 0));
+  return json({ ok: true, current: user.sid || '',
+    sessions: list.map(r => ({ id: r.sid, device: r.dev || '', country: r.country || '', created: r.created || 0, seen: r.seen || 0, current: !!user.sid && r.sid === user.sid })) });
+}
+async function sessionsEnd(request, env) {
+  if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+  const user = await requireUser(request, env);
+  if (!user || user.via === 'apikey') return json({ error: 'unauthorized' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const id = String((body && body.id) || '');
+  if (!/^[0-9a-f-]{36}$/.test(id)) return json({ error: 'Which sign-in? The id was missing or malformed.' }, 400);
+  if (user.sid && id === user.sid) return json({ error: 'That is this device. Use Sign out to end it.', code: 'this_device' }, 400);
+  const key = _sessKey(user.email, id);
+  let rec = null;
+  try { rec = JSON.parse(await env.AMV_KV.get(key) || 'null'); } catch (e) {}
+  if (!rec) return json({ ok: true, already: true });
+  await env.AMV_KV.delete(key);
+  await _userEvent(env, request, user.email, 'session_ended', { from: rec.dev || 'a device' });
+  return json({ ok: true });
 }
 
 /* DELETE MY ACCOUNT - the "right to erasure" the privacy policy promises.
@@ -15144,7 +15190,7 @@ async function accountExport(request, env) {
   await add(`alog:${email}`, 'activity_log');
   await add(`refmine:${email}`, 'referral_code');
   await add(`refpend:${email}`, 'referral_pending');
-  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`]) {
+  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`, `sess:${email}:`]) {
     try {
       let cursor;
       do {
@@ -15871,7 +15917,7 @@ async function authDeleteAccount(request, env) {
      key itself. `mktsess:` names them and the item they were part-way through
      buying, which is a record of what somebody was shopping for. All three are
      exactly what erasure is for. */
-  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`,
+  for (const prefix of [`resume:${email}:`, `smsverify:${email}:`, `mktsess:${email}:`, `sess:${email}:`,
                         /* The throttle on this very endpoint. Confirming a deletion takes a
                            password, so it is rate limited like everything else that does -
                            and the counter keys carry the address. They expire on their own,
@@ -20170,6 +20216,69 @@ async function _revokeOrSay(env, email, where) {
 async function revokeUserTokens(env, email) {
   const cur = await _tokenEpoch(env, email);
   await env.AMV_KV.put(`tokepoch:${email}`, String(cur + 1));
+  /* The epoch already ends every token; the records go too, so the device list
+     does not show sign-ins that can no longer do anything. */
+  try { await _sessDropAll(env, email); } catch (e) {}
+}
+
+/* ── WHERE YOU ARE SIGNED IN ───────────────────────────────────────────────
+   One record per sign-in, keyed by the session id the tokens carry: the
+   browser and system it came from, the country, when it started and when it
+   was last renewed. It is what the account's device list shows, and ending one
+   deletes its record - after which that browser can neither renew nor use the
+   access token it still holds (verifyToken checks the record).
+
+   KV is eventually consistent between locations, so a record written moments
+   ago may not be visible everywhere yet. A token issued in the last two
+   minutes is therefore not refused for a missing record: refusing it would sign
+   people out just after they signed in. Ending a session that is under two
+   minutes old takes effect when it is two minutes old.
+
+   Never backed up (BACKUP_NEVER): restoring one would bring back a sign-in
+   somebody ended. Exported and erased with the account's other records. */
+const SESS_FRESH_S = 120;
+const _sessKey = (email, sid) => 'sess:' + String(email).toLowerCase() + ':' + sid;
+async function _sessOpen(env, request, email) {
+  const sid = crypto.randomUUID();
+  const cf = (request && request.cf) || {};
+  const rec = { sid, created: Date.now(), seen: Date.now(), dev: _deviceLabel(request) || '', country: cf.country ? String(cf.country).slice(0, 2) : '' };
+  /* A sign-in is never refused because its record could not be written: the
+     tokens go out without a session id, as they did before sessions were
+     recorded, and are still ended by "sign out everywhere". */
+  try { await env.AMV_KV.put(_sessKey(email, sid), JSON.stringify(rec), { expirationTtl: Math.floor(REFRESH_TTL_MS / 1000) }); }
+  catch (e) { audit(env, 'session_record_failed', { email }); return ''; }
+  return sid;
+}
+async function _sessTouch(env, request, email, sid) {
+  const raw = await env.AMV_KV.get(_sessKey(email, sid));
+  if (!raw) return false;
+  let rec; try { rec = JSON.parse(raw); } catch (e) { return false; }
+  rec.seen = Date.now();
+  const dev = _deviceLabel(request); if (dev) rec.dev = dev;
+  const cf = (request && request.cf) || {}; if (cf.country) rec.country = String(cf.country).slice(0, 2);
+  await env.AMV_KV.put(_sessKey(email, sid), JSON.stringify(rec), { expirationTtl: Math.floor(REFRESH_TTL_MS / 1000) });
+  return true;
+}
+async function _sessList(env, email) {
+  const out = [];
+  let cursor;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'sess:' + String(email).toLowerCase() + ':', cursor });
+    for (const k of page.keys) {
+      try { const r = JSON.parse(await env.AMV_KV.get(k.name) || 'null'); if (r && r.sid) out.push(r); } catch (e) {}
+      if (out.length >= 100) break;
+    }
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor && out.length < 100);
+  return out;
+}
+async function _sessDropAll(env, email) {
+  let cursor;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'sess:' + String(email).toLowerCase() + ':', cursor });
+    for (const k of page.keys) { try { await env.AMV_KV.delete(k.name); } catch (e) {} }
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor);
 }
 
 /* Sign a JWT. typ is 'access' or 'refresh'. */
@@ -20273,9 +20382,10 @@ function _clearRefreshCookie(env) {
   return _cookieAuthOn(env) ? { 'Set-Cookie': _refreshCookie(env, '', 0) } : undefined;
 }
 
-async function issueTokens(env, email, name) {
+async function issueTokens(env, email, name, sid) {
   const epoch = await _tokenEpoch(env, email);
   const base = { email, name: name || '' };
+  if (sid) base.sid = String(sid);
   const access = await signToken(base, env.JWT_SECRET, { typ: 'access', epoch });
   const refresh = await signToken(base, env.JWT_SECRET, { typ: 'refresh', epoch });
   return { token: access, refreshToken: refresh, email, name: name || '' };
@@ -20335,6 +20445,11 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
     if (env && data.email) {                                       // revocation check
       const epoch = await _tokenEpoch(env, data.email);
       if ((data.epoch || 0) !== epoch) return null;
+      /* A sign-in ended from the device list. Fresh tokens are spared while
+         their record may still be on its way to this location (SESS_FRESH_S). */
+      if (data.sid && nowSec - (data.iat || 0) > SESS_FRESH_S) {
+        if (!(await env.AMV_KV.get(_sessKey(data.email, data.sid)))) return null;
+      }
     }
     return data;
   } catch { return null; }
