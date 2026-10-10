@@ -72,6 +72,7 @@ section('It NEVER returns a secret, in any form');
        and this env sets it, so the green case is a real one. */
     CONNECT_KEY: 'ck-SUPERSECRET',
     GOOGLE_CLIENT_SECRET: 'gsec-SUPERSECRET',
+    GOOGLE_PICKER_API_KEY: 'gpick-SUPERSECRET', GOOGLE_PROJECT_NUMBER: '123456789012',
     MS_CLIENT_ID: 'msid-SUPERSECRET', MS_CLIENT_SECRET: 'mssec-SUPERSECRET',
     /* A verified sender is part of being configured, not an extra. With only a
        Resend key the default address delivers to the account owner and nobody

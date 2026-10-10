@@ -99,8 +99,15 @@ section('The account actions never hold a provider token at all');
   const direct = acts.filter(a => /Bearer|googleapis\.com/.test(a.src)).map(a => a.k);
   ok(direct.length === 0,
      'not one of them carries a token or calls a provider from the browser', direct);
-  const asks = acts.filter(a => /_connActRun/.test(a.src)).map(a => a.k);
-  ok(asks.length === acts.length, 'every one asks the server to act', { asks: asks.length, of: acts.length });
+  /* Choosing a Google file is the one that does not ask the server to ACT -
+     it opens Google's picker in a window of its own (picker.html), which signs
+     in for drive.file alone and hands back a file id. That token lives in that
+     window and is gone when it closes; this page never has it. So the picker
+     is the one other answer allowed here, and the page-side check above
+     (no Bearer, no googleapis.com) still holds for it. */
+  const asks = acts.filter(a => /_connActRun|_gPickFile/.test(a.src)).map(a => a.k);
+  ok(asks.length === acts.length, 'every one asks the server to act, or has the person choose a file in Google\u2019s own window',
+     { asks: asks.length, of: acts.length });
 }
 
 section('A failed load says so instead of looking empty');
