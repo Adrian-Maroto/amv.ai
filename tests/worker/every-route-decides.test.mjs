@@ -58,6 +58,7 @@ const PUBLIC = {
   '/auth/login/verify':  'the second half of signing in - the emailed code, bound to the challenge the password check issued, is the credential',
   '/auth/login/resend':  'the same challenge, a new code to the same address - it can only ever mail the account it was issued for',
   '/waitlist':           'a public sign-up form',
+  '/v1/engines':         'what the product offers right now, AMV names only - nothing about who is asking',
   '/v1/market/list':     'the catalogue is meant to be browsable by anyone',
   '/v1/market/view':     'a view counter on a public listing',
   '/v1/widget/config-public': 'the embeddable widget runs on other peoples sites',

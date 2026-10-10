@@ -288,8 +288,7 @@ async function _partnerModelIds(env){
     if(hit){ const arr = JSON.parse(hit); if(Array.isArray(arr)) return new Set(arr); }
   }catch(e){}
   try{
-    const r = await fetch(base + '/models', { headers: { 'Authorization': 'Bearer ' + env.AMV_PARTNER_KEY },
-                                              signal: AbortSignal.timeout(8000) });
+    const r = await fetchDeadline(base + '/models', { headers: { 'Authorization': 'Bearer ' + env.AMV_PARTNER_KEY } }, 8000);
     if(!r.ok) return null;
     const d = await r.json();
     const ids = (Array.isArray(d && d.data) ? d.data : []).map(m => m && m.id).filter(x => typeof x === 'string').slice(0, 5000);
@@ -17872,8 +17871,8 @@ async function aiProxy(request, env, ctx) {
                   { 'Retry-After': '300' });
     }
   }
-  const key = partnerEng ? partnerEng.key
-            : routed ? routed.key : (RAW_TO_KEY[rawModel] || (ENGINES[rawModel] ? rawModel : 'amv-core'));
+  const key = routed ? routed.key : partnerEng ? partnerEng.key
+            : (RAW_TO_KEY[rawModel] || (ENGINES[rawModel] ? rawModel : 'amv-core'));
   // Carry the engine's own name with it, so metering can bucket by engine
   // without re-deriving it from the model string.
   const eng = partnerEng ? Object.assign({}, partnerEng) : Object.assign({ key }, ENGINES[key]);

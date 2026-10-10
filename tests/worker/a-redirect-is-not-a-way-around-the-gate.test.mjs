@@ -158,6 +158,7 @@ section('Every outbound request has a deadline, or is named with why not');
   const EXEMPT = [
     ['_modelFetch', 'streamed: aborting a signal aborts the body too, so a deadline here cuts the sentence somebody is reading rather than bounding a hang - and it would do that to every long answer, not to the rare stuck one'],
     ['fetchDeadline', 'it IS the wrapper; wrapping itself is the one call that has to be bare'],
+    ['_partnerCall', 'the partner engines\u2019 streamed call, for the same reason as _modelFetch - and it carries the same MODEL_DEADLINE_MS signal _modelFetch does'],
   ];
 
   /* Worker-side outbound calls only. The Worker also serves an HTML page with
