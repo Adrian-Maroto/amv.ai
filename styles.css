@@ -16761,3 +16761,24 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .cite-host{ color:var(--dim); font-size:var(--t-xs); }
 .cite-q{ margin:var(--sp-1) 0 0; padding:var(--sp-1) var(--sp-3); border-left:3px solid var(--bdl); color:var(--tx); font-style:italic; line-height:1.5; }
 .cite-for{ margin-top:var(--sp-1); color:var(--mu); font-size:var(--t-xs); line-height:1.45; }
+
+/* ── LAYER A299: skills that are edited, versioned and shared ─────────────── */
+.skill-ver{ font-size:var(--t-xs); color:var(--dim); font-weight:400; margin-left:var(--sp-1); }
+.skill-tools{ display:flex; flex-wrap:wrap; gap:var(--sp-3); margin-top:var(--sp-1); }
+.skill-link{ background:none; border:none; padding:0; color:var(--accent-txt); font-family:var(--fn); font-size:var(--t-xs); cursor:pointer; }
+.skill-link:hover,.skill-link:focus-visible{ text-decoration:underline; }
+.skill-form-h{ font-size:var(--t-sm); font-weight:600; color:var(--tx); margin-bottom:var(--sp-2); }
+.skill-mode{ display:flex; flex-wrap:wrap; gap:var(--sp-4); margin-top:var(--sp-2); font-size:var(--t-sm); color:var(--tx); }
+.skill-mode label{ display:inline-flex; align-items:center; gap:var(--sp-1); cursor:pointer; }
+.skill-hist{ border-top:1px solid var(--bd); padding:var(--sp-2) 0; }
+.skill-hist-h{ font-size:var(--t-xs); color:var(--mu); display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
+.skill-hist-t{ margin:var(--sp-1) 0 0; white-space:pre-wrap; font-family:var(--fn); font-size:var(--t-sm); color:var(--tx); max-height:140px; overflow:auto; }
+@media (pointer:coarse){ .skill-link{ min-height:44px; padding:0 var(--sp-1); } }
+/* A radio is a radio, not a full-width field (the phone rule for inputs
+   would otherwise make it one); the version sits under the name. */
+.skill-mode input[type="radio"]{ width:18px; height:18px; min-height:0; min-width:0; padding:0; margin:0; flex:none; accent-color:var(--accent); }
+.skill-ver{ display:block; margin:2px 0 0; }
+.skill-info{ min-width:0; flex:1 1 0; }
+@media (pointer:coarse){ .skill-tools{ gap:var(--sp-2); } .skill-mode label{ min-height:44px; } }
+.skill-name{ flex-wrap:wrap; row-gap:2px; }
+.skill-name .skill-ver{ flex-basis:100%; margin-left:0; }

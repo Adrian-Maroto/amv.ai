@@ -1285,7 +1285,14 @@ step('Page weight is under control', () => {
      (its tutoring instructions are most of it) and fill-in templates. The
      spreadsheet change before it moved the old editor out of the page and
      came out almost even (+0.15KB); this one is about 2KB of new feature. */
-  const CEILING = 653 * 1024;   // gzipped, which is what actually crosses the network
+  /* 653 -> 656, 2026-10-10, deliberately: skills that can be edited, keep
+     their version history, apply always or only when relevant, and travel
+     as files (import shows the full text before adding). Measured for a
+     trim first: the largest module a visitor downloads but rarely uses is
+     the owner's console in 08-admin-fraud.js (~24KB gzipped, some of it
+     owner-only). Moving that to an on-demand file, the way office.js and
+     sheet.js are, is the lever - its own change, tracked as a task. */
+  const CEILING = 656 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');
