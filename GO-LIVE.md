@@ -456,6 +456,29 @@ broken one. Every turn is metered, reserved and refunded exactly like the
 built-in engines, at the prices in this list. Check the readiness screen
 (Partner models) after setting them.
 
+## 2c. AMV as an app on phones and computers (optional)
+
+Nothing here is needed for AMV to install. Today, with no account anywhere:
+
+- **Android, Windows, Mac and Linux (Chrome or Edge):** visitors get an
+  Install button (Help > "AMV on your phone and computer" says where).
+- **iPhone and iPad:** Share, then Add to Home Screen. AMV tells iPhone users
+  this once, on their second visit, because an iPhone never offers it itself.
+- Installed, AMV is in the phone's **share sheet** (share a link or message
+  into a new chat - never sent by itself), and holding the icon offers New
+  chat, Crew and Connectors.
+
+The store listings are what you unlock:
+
+| Store | What you provide | Then |
+|---|---|---|
+| **Google Play** | A Google Play developer account (one-time US$25), and the **SHA-256 fingerprint** of your app signing key (Play Console > Setup > App signing) | Paste the fingerprint into `apps/android/config.json` (`"sha256": ["AB:CD:..."]`). The build then publishes `/.well-known/assetlinks.json`, which is what lets the Play app open full screen. Build the app itself from `apps/android/twa-manifest.json` with Bubblewrap (`npx @bubblewrap/cli init --manifest https://amv.homes/manifest.webmanifest`), upload it, and put the listing link in `APP_STORE_LINKS.play` (src/app/43-apps.js) so Help shows the button. |
+| **Microsoft Store** | A Microsoft Partner Center account | Package from the manifest at pwabuilder.com, submit, and put the listing link in `APP_STORE_LINKS.microsoft`. |
+| **Apple App Store** | An Apple Developer account (US$99/year) | **Not recommended yet.** Apple rejects apps that are only a website in a frame (guideline 4.2), so an App Store build needs something an installed web app cannot do - notifications done natively, widgets, Share-extension features. Until then, iPhone users install from Safari, which is the same app. |
+
+A wrong fingerprint is refused by the build rather than published, because a
+file that vouches for the wrong key looks configured and verifies nothing.
+
 ## 3. Deploy the Worker
 
 ```bash

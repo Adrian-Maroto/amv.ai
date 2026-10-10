@@ -788,6 +788,7 @@ function renderHelpView(){
         '<div id="faq-list">'+groups+'</div>'+
         '<p id="faq-none" class="hc-none" hidden>No answer matches that. Try a different word, or ask AMV below - it can answer from the product itself.</p>'+
       '</div>'+
+      _appsCardHTML()+
       '<div class="ss2"><h3>Share feedback</h3>'+
         '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:12px;line-height:1.55">Found a bug or have an idea? Tell us - real feedback shapes what we build next.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
@@ -803,6 +804,7 @@ function renderHelpView(){
         (_supportEmail()?'<p style="font-size:var(--t-sm);color:var(--mu);margin-top:10px">Or email us directly at <b style="color:var(--tx)">'+escH(_supportEmail())+'</b> - we reply within 24 hours.</p>':'')+
       '</div>'+
     '</div></div>';
+  _appsCardWire();
   vc.querySelectorAll('.faq-q').forEach(q=>{
     q.addEventListener('click',()=>{
       document.getElementById('fi-'+q.dataset.fi)?.classList.toggle('open');

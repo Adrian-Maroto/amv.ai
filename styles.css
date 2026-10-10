@@ -16920,3 +16920,10 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .modal-fig img{ display:block; width:100%; height:auto; }
 .modal-fig-mark{ position:absolute; width:22px; height:22px; margin:-11px 0 0 -11px; border-radius:50%;
   border:3px solid var(--red); box-shadow:0 0 0 3px rgba(255,255,255,.85); pointer-events:none; }
+
+/* ═══ LAYER A309 - AMV on your phone and computer (Help) ═══════════════════ */
+.apps-card .apps-now{ margin:0 0 var(--sp-3); color:var(--grn); font-size:var(--t-base); }
+.apps-card .apps-how{ margin:0 0 var(--sp-3); font-size:var(--t-base); line-height:1.55; }
+.apps-card #apps-install{ margin:0 0 var(--sp-3); font-size:var(--t-sm); }
+.apps-card .apps-gets{ margin:0; padding-left:1.2em; color:var(--mu); font-size:var(--t-sm); line-height:1.7; }
+.apps-card .apps-stores{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:var(--sp-3); }

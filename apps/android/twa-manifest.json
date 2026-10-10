@@ -1,0 +1,22 @@
+{
+  "packageId": "homes.amv.app",
+  "host": "amv.homes",
+  "name": "AMV",
+  "launcherName": "AMV",
+  "display": "standalone",
+  "orientation": "default",
+  "themeColor": "#4478e8",
+  "navigationColor": "#232429",
+  "backgroundColor": "#232429",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://amv.homes/icon-512.png",
+  "maskableIconUrl": "https://amv.homes/icon-512.png",
+  "webManifestUrl": "https://amv.homes/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "generatorApp": "bubblewrap-cli"
+}

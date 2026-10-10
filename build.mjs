@@ -18,6 +18,7 @@ import { deflateSync as zlibDeflate } from 'zlib';
 import { createHash } from 'crypto';
 import { execSync } from 'child_process';
 import { pathToFileURL } from 'url';
+import { assetLinks } from './apps/android/assetlinks.mjs';
 import vm from 'vm';
 
 const args = process.argv.slice(2);
@@ -469,6 +470,7 @@ async function rebuild() {
 
   writePWA(html);
   emitPublishDir();
+  emitWellKnown();
   console.log(`Built index.html - deferred non-blocking script${MINIFY ? ', minified' : ''}, validated OK.`);
 }
 
@@ -783,6 +785,21 @@ self.addEventListener('fetch', e => {
       { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
     ],
+    /* The same app wherever it is installed from, so a store listing and a
+       home-screen install are one thing to the operating system. */
+    id: '/',
+    categories: ['productivity', 'business'],
+    /* Opening AMV again goes to the window already open. */
+    launch_handler: { client_mode: ['navigate-existing', 'auto'] },
+    /* The icon's own menu (src/app/43-apps.js). */
+    shortcuts: [
+      { name: 'New chat', short_name: 'Chat', url: '/?new=1', icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }] },
+      { name: 'Crew', url: '/#/crew', icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }] },
+      { name: 'Connectors', url: '/#/integrations', icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png' }] },
+    ],
+    /* In the phone's share sheet. Arrives as a new chat with it in the box,
+       never sent by itself (_launchIntent). */
+    share_target: { action: '/', method: 'GET', params: { title: 'title', text: 'text', url: 'url' } },
   };
   writeFileSync('manifest.webmanifest', JSON.stringify(manifest, null, 2));
 
@@ -876,6 +893,21 @@ const PUBLISH = [
   'crew-data.js',          // the Crew job catalogue, fetched the first time Crew is opened
   'admin.js',              // the owner console, fetched when the owner opens it
 ];
+/* GOOGLE PLAY'S PROOF THAT THE ANDROID APP IS AMV'S (apps/android). Published
+   only once the owner's signing fingerprint is in apps/android/config.json,
+   and taken down again if it is removed - a stale file would vouch for a key
+   nobody holds any more. */
+function emitWellKnown() {
+  const cfg = JSON.parse(readFileSync('apps/android/config.json', 'utf8'));
+  const links = assetLinks(cfg);
+  const path = `${PUBLISH_DIR}/.well-known/assetlinks.json`;
+  if (!links) {
+    if (existsSync(path)) { unlinkSync(path); console.warn(`  - removed ${path} (no Android signing key configured)`); }
+    return;
+  }
+  mkdirSync(`${PUBLISH_DIR}/.well-known`, { recursive: true });
+  writeFileSync(path, links);
+}
 function emitPublishDir() {
   if (!existsSync(PUBLISH_DIR)) mkdirSync(PUBLISH_DIR, { recursive: true });
 

@@ -1350,7 +1350,11 @@ step('Page weight is under control', () => {
      gzipped). Kept in the page because the chat's tool loop asks it about
      every call; a file fetched on demand would put a network wait in front
      of a consent dialog. */
-  const CEILING = 604 * 1024;   // gzipped, which is what actually crosses the network
+  /* 604 -> 606, 2026-10-10, deliberately: AMV as an app on phones and
+     computers - the Help card that says how to install on THIS device (the
+     iPhone has no prompt of its own), the one-time iPhone hint, and opening a
+     chat from the share sheet or the icon's menu (~1.3KB gzipped). */
+  const CEILING = 606 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');
