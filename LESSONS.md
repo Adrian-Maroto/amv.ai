@@ -14607,3 +14607,21 @@ column summary, the pivot, and the =SUM written to Excel.
 Rule: before showing a number someone will act on, check it against a total
 the person can already see. The screenshot caught this; the first test draft
 had asserted the doubled figure.
+
+## 568. The comment said it persisted; the next line threw it away
+
+The research panel ("Researched 6 sources across 3 searches") was frozen into
+its finished state, written onto the message, and commented "so it persists
+with the answer". About eighty lines later the finished message was rebuilt
+from scratch, `{r:'a', c:fullText, model}`, which dropped it. It survived
+only on Stop, where an earlier fix had switched that one path to spreading.
+The per-claim citations the stream carried were never kept at all.
+
+Found while adding source cards, because the first test of the cards found
+nothing stored.
+
+Rules:
+- When the final value of something is built fresh, list what earlier steps
+  wrote onto it, and carry each one in on purpose.
+- A comment saying "persists" is a claim. A test that reads the stored
+  message after completion is the check.

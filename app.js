@@ -8860,6 +8860,10 @@ async function _callAITurn(msgs, _opts) {
     const _toolBlocks={}; let _stopReason='';
     // Live research tracking - real searches and real sources, surfaced as they happen.
     const _research={ active:false, searches:0, sources:new Map(), done:false };
+    /* Which sentence each source backs: the engine attaches the passage it
+       relied on to the text block that uses it. Kept, and shown under the
+       answer (_citesHTML), so a claim can be checked against its source. */
+    const _citeBlocks={}, _cites=[];
 
     /* AMV-062: a stream can stall without ever ending. The 45s timeout above
        covers getting the response; once it arrives, reader.read() has no
@@ -8969,6 +8973,17 @@ async function _callAITurn(msgs, _opts) {
             }
             _renderResearch(msgs, streamIdx, _research);
           }
+          if(evt.type==='content_block_start' && evt.content_block?.type==='text'){
+            _citeBlocks[evt.index]={ start: fullText.length, cites: (evt.content_block.citations||[]).slice() };
+          }
+          if(evt.type==='content_block_delta' && evt.delta?.type==='citations_delta' && evt.delta.citation){
+            (_citeBlocks[evt.index] || (_citeBlocks[evt.index]={ start: fullText.length, cites: [] })).cites.push(evt.delta.citation);
+          }
+          if(evt.type==='content_block_stop' && _citeBlocks[evt.index] && _citeBlocks[evt.index].cites.length){
+            const b=_citeBlocks[evt.index];
+            _collectCites(_cites, b.cites, fullText.slice(b.start));
+            b.cites=[];
+          }
           // capture the query text as it streams, to show what's being searched
           if(evt.type==='content_block_delta' && evt.delta?.type==='input_json_delta'){
             const t=_toolBlocks[evt.index];
@@ -9003,6 +9018,7 @@ async function _callAITurn(msgs, _opts) {
       const _finishedPanel=_buildResearchPanel(_research, true);
       if(msgs[streamIdx]) msgs[streamIdx]={...msgs[streamIdx], _research:_finishedPanel};
     }
+    if(_cites.length && msgs[streamIdx]) msgs[streamIdx]={...msgs[streamIdx], cites:_cites};
     if(_userStopped){
       /* Spread rather than replace: the frozen research panel was just written
          onto this message and a wholesale replacement threw away the sources
@@ -9081,6 +9097,11 @@ async function _callAITurn(msgs, _opts) {
     if(!_sawEnd && fullText && !_userStopped && !_recovered) _stalled=true;
     if(!fullText) fullText='(no response)';
     const _base={r:'a',c:fullText,model:S.model};
+    /* The finished answer is built fresh, so what the stream gathered has to
+       be carried in: the frozen research panel (which this used to drop on
+       every normal finish - it only survived a Stop) and the citations. */
+    if(msgs[streamIdx] && msgs[streamIdx]._research) _base._research=msgs[streamIdx]._research;
+    if(_cites.length) _base.cites=_cites;
     if(_ranEngine && S.model==='auto'){ _base._engine=_ranEngine; _base._engineWhy=_ranWhy; }
     if(_recovered) _base._recovered=true;   // complete, just not delivered live
     msgs[streamIdx]=_stalled ? Object.assign(_base,{_interrupted:true}) : _base;
@@ -9797,6 +9818,35 @@ function _renderResearch(msgs, streamIdx, state){
   }catch(e){}
 }
 
+/* ── WHERE EACH CLAIM CAME FROM ──────────────────────────────────────────
+   One card per source: its title, the exact passage AMV relied on, and the
+   sentence of the answer that passage supports. Closed by default under the
+   answer, with the sites named on the summary line. */
+const CITES_MAX = 30;
+function _collectCites(list, cites, claim){
+  const c0 = String(claim || '').replace(/[*_`#>]+/g, '').replace(/\s+/g, ' ').trim().slice(0, 240);
+  for(const c of cites){
+    if(!c || !c.url || list.length >= CITES_MAX) continue;
+    const quote = String(c.cited_text || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    if(list.some(x => x.url === c.url && x.quote === quote)) continue;
+    list.push({ url: String(c.url).slice(0, 2000), title: String(c.title || '').slice(0, 160), quote, claim: c0 });
+  }
+}
+function _citesHTML(m){
+  const cites = Array.isArray(m && m.cites) ? m.cites.filter(c => c && /^https?:\/\//i.test(String(c.url || ''))) : [];
+  if(!cites.length) return '';
+  const host = u => { try{ return new URL(u).hostname.replace(/^www\./, ''); }catch(e){ return ''; } };
+  const by = new Map();
+  cites.forEach(c => { if(!by.has(c.url)) by.set(c.url, []); by.get(c.url).push(c); });
+  const hosts = [...by.keys()].map(host);
+  const named = hosts.slice(0, 3).join(', ') + (hosts.length > 3 ? ' +' + (hosts.length - 3) : '');
+  return '<details class="cite-box"><summary>' + escH(T('Sources')) + ' · ' + by.size + ' <span class="cite-hosts">' + escH(named) + '</span></summary><ol class="cite-list">'
+    + [...by.entries()].map(([url, cs]) => '<li class="cite-card"><a class="cite-t" href="' + escH(safeUrl(url)) + '" target="_blank" rel="noopener noreferrer">'
+      + escH(cs[0].title || host(url)) + '</a> <span class="cite-host">' + escH(host(url)) + '</span>'
+      + cs.map(c => (c.quote ? '<blockquote class="cite-q">“' + escH(c.quote) + '”</blockquote>' : '')
+        + (c.claim ? '<div class="cite-for">' + escH(T('Supports:')) + ' ' + escH(c.claim) + '</div>' : '')).join('')
+      + '</li>').join('') + '</ol></details>';
+}
 function _buildResearchPanel(state, finished){
   const n = state.sources.size;
   const searches = state.searches;
@@ -10015,7 +10065,7 @@ function renderChatMsgs() {
         content=(m._research?m._research:'')+'<div class="ai-working"><span class="ai-think-orb"></span><span class="ai-working-shimmer">'+escH(m._status||'Working…')+'</span></div>';
       }
     } else {
-      content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':'')+
+      content=isU?escH(rawText).replace(/\n/g,'<br>'):((m._research?m._research:'')+md(typeof m.c==='string'?m.c:rawText)+(m._rendered?('<div class="chat-tool-out">'+m._rendered+'</div>'):'')+(m.streaming?'<span class="stream-cursor"></span>':_citesHTML(m))+
         // The answer above is real but incomplete - say so rather than letting it
         // look like AMV simply stopped mid-sentence on purpose.
         (m._interrupted?'<div class="ai-cut"><span>The connection dropped partway through. What you see above is what arrived.</span><button class="ai-snag-retry" data-action="retry-ai" type="button">Retry</button></div>':'')+

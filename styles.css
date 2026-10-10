@@ -16747,3 +16747,17 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
    stretching the sentence around it. */
 .study-banner .pj-manage{ display:block; margin:var(--sp-1) auto 0; padding:0 var(--sp-3); min-height:36px; }
 @media (pointer:coarse){ .study-banner .pj-manage{ min-height:44px; } }
+
+/* ── LAYER A298: where each claim came from ────────────────────────────────
+   Under an answer that used the web: one numbered card per source with the
+   exact passage relied on and the sentence it supports. */
+.cite-box{ margin-top:var(--sp-3); border:1px solid var(--bd); border-radius:var(--r-md); background:var(--s1); }
+.cite-box > summary{ cursor:pointer; padding:var(--sp-2) var(--sp-3); font-size:var(--t-sm); font-weight:600; color:var(--tx); list-style-position:inside; }
+.cite-hosts{ font-weight:400; color:var(--mu); margin-left:var(--sp-1); }
+.cite-list{ margin:0; padding:0 var(--sp-3) var(--sp-3) calc(var(--sp-3) + 1.2em); display:flex; flex-direction:column; gap:var(--sp-3); }
+.cite-card{ font-size:var(--t-sm); color:var(--tx); }
+.cite-t{ color:var(--accent-txt); font-weight:600; text-decoration:none; overflow-wrap:anywhere; }
+.cite-t:hover,.cite-t:focus-visible{ text-decoration:underline; }
+.cite-host{ color:var(--dim); font-size:var(--t-xs); }
+.cite-q{ margin:var(--sp-1) 0 0; padding:var(--sp-1) var(--sp-3); border-left:3px solid var(--bdl); color:var(--tx); font-style:italic; line-height:1.5; }
+.cite-for{ margin-top:var(--sp-1); color:var(--mu); font-size:var(--t-xs); line-height:1.45; }
