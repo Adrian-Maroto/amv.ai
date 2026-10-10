@@ -17623,20 +17623,52 @@ async function aiProxy(request, env, ctx) {
 
   // Upper bound for this call: what we're sending + the most it can generate.
   const estIn  = _estimateReserveInput(body);
-  const estOut = Math.max(1, Math.min(Number(body.max_tokens) || 1024, 200000));
-  const reserve = estIn + estOut;
+  /* The engine's own ceiling when the caller names none - that is what the
+     upstream call below is sent, so reserving a flat 1,024 instead let a
+     request with no max_tokens book a sixteenth of what it could spend. */
+  const _outCap = Number(eng.maxOut) || 16000;
+  let estOut = Math.max(1, Math.min(Number(body.max_tokens) || _outCap, _outCap));
+  let reserve = estIn + estOut;
 
-  const dRes = await counter(env, dName, { op: 'reserve', amount: reserve, cap: limits.dayTokens,  ttlMs: 86400000 * 35 });
+  /* FIT THE ANSWER TO WHAT IS LEFT, RATHER THAN REFUSE THE QUESTION.
+
+     The reservation books the longest answer the request allows. On the free
+     plan that alone was most of the day: a 16,000-token ceiling plus ~4,000
+     tokens of AMV's own instructions against a 20,000-token day. So a free
+     account whose instructions or conversation had grown a little was told
+     "Daily usage limit reached" on its FIRST message, having used nothing.
+
+     When the full booking does not fit, the answer's ceiling is lowered to
+     exactly what remains (never below ANSWER_FLOOR_TOKENS, so there is room
+     for a real answer) and that smaller amount is booked. The cap holds just
+     as tightly - max_tokens below is set to the same number - it only stops
+     refusing questions it has room to answer. */
+  const tryFit = async (name, cap, ttlMs) => {
+    let res = await counter(env, name, { op: 'reserve', amount: reserve, cap, ttlMs });
+    if (res.allowed) return res;
+    const used = (await counter(env, name, { op: 'get' })).value || 0;
+    const fit = Math.floor(cap - used - estIn);
+    if (fit < ANSWER_FLOOR_TOKENS || fit >= estOut) return res;
+    estOut = fit; reserve = estIn + estOut; body.max_tokens = estOut;
+    return await counter(env, name, { op: 'reserve', amount: reserve, cap, ttlMs });
+  };
+
+  const dRes = await tryFit(dName, limits.dayTokens, 86400000 * 35);
   if (!dRes.allowed) {
     const now = new Date();
     const resetAt = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
     return json({ error: 'Daily usage limit reached.', code: 'quota_day', resetAt }, 429,
                 { 'Retry-After': _retryAfterUntil(resetAt) });
   }
-  const mRes = await counter(env, mName, { op: 'reserve', amount: reserve, cap: limits.monthTokens, ttlMs: 86400000 * 70 });
+  /* The month is fitted the same way. If it shrinks the answer further, the
+     day was booked at the larger amount, so the difference is given back to
+     the day at once rather than at reconciliation. */
+  const dayBooked = reserve;
+  const mRes = await tryFit(mName, limits.monthTokens, 86400000 * 70);
+  if (mRes.allowed && reserve < dayBooked) await counter(env, dName, { op: 'incr', amount: reserve - dayBooked, ttlMs: 86400000 * 35 });
   if (!mRes.allowed) {
     // give back the daily reservation we just took - this call isn't happening
-    await counter(env, dName, { op: 'incr', amount: -reserve, ttlMs: 86400000 * 35 });
+    await counter(env, dName, { op: 'incr', amount: -dayBooked, ttlMs: 86400000 * 35 });
     /* The BILLING period, not the calendar month - `mName` above is keyed on
        `_periodKeyOf(user)`, so the calendar 1st was the wrong date for every
        paying account and the client unlocked the composer on it. */
@@ -19480,6 +19512,11 @@ function _estimateInputTokens(messages) {
 /* Reservation estimate for a full request - includes the client-supplied system
    prompt so it is METERED and reserved rather than sent to the model for free
    (AMV-020). Every token-bearing field must be counted here. */
+/* The smallest answer worth booking when a day's allowance is nearly spent.
+   Below it the request is refused as over the limit: an answer with no room
+   would spend the person's last tokens on the engine's thinking and show
+   them nothing. */
+const ANSWER_FLOOR_TOKENS = 2048;
 function _estimateReserveInput(body) {
   const msgs = _estimateInputTokens((body && body.messages) || []);
   const sys = Math.ceil(String((body && body.system) || '').length / 4);

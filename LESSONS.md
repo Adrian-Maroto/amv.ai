@@ -14670,3 +14670,28 @@ Related rules from the same change:
   available.
 - Recording a sign-in must not be able to stop a sign-in. If the write
   fails, the tokens go out without a session id, as they did before.
+
+## 571. A reservation sized for the worst case refuses the ordinary one
+
+The proxy books the longest answer a request allows before it calls the
+model. That is right for the cap: parallel requests cannot race past it. It
+was wrong for the person. On the free plan the worst case was a 16,000-token
+answer plus AMV's own instructions, against a 20,000-token day. Adding a few
+lines to the instructions (tables, cards) pushed that past the day, and every
+new free account was told "Daily usage limit reached" on its first message.
+Two live-backend suites caught it. Nothing that stubs the server could have.
+
+Now, when the full booking does not fit, the answer's ceiling is lowered to
+what remains and that smaller number is both booked and sent to the model, so
+the cap holds exactly as tightly. Below a floor (ANSWER_FLOOR_TOKENS) it still
+refuses, because a 40-token answer cut off mid-sentence is worse than an
+honest "come back tomorrow". The month is fitted the same way, and any gap
+between the two bookings is given back to the day at once.
+
+The same pass found the opposite hole. A request with no max_tokens reserved a
+flat 1,024 but was sent the engine's 16,000 ceiling. It now reserves what it
+is sent.
+
+Rule: a reservation and the request it covers must be the same number. When
+the reservation does not fit, shrink the request to fit it. Do not refuse a
+question there is room to answer.
