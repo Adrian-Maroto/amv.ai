@@ -76,10 +76,17 @@ async function startBridge(args, env) {
 
 /* A real screen, there from the start: the first check below has to show
    the bridge refusing a screen it COULD reach, or it proves nothing. */
-const DISPLAY = ':' + (90 + Math.floor(Math.random() * 9));
-const xvfb = spawn('Xvfb', [DISPLAY, '-screen', '0', W + 'x' + H + 'x24', '-nolisten', 'tcp'], { stdio: 'ignore' });
+/* Xvfb picks a free display itself and says which (-displayfd). A number
+   chosen here can collide with a display a killed run left its lock file on,
+   and then nothing starts and the run fails with nothing said about why. */
+const xvfb = spawn('Xvfb', ['-displayfd', '1', '-screen', '0', W + 'x' + H + 'x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'pipe', 'ignore'] });
 running.push(xvfb);
-await new Promise(r => setTimeout(r, 900));
+const DISPLAY = ':' + await new Promise((res, rej) => {
+  let got = '';
+  const t = setTimeout(() => rej(new Error('Xvfb did not start')), 10000);
+  xvfb.stdout.on('data', b => { got += b.toString(); const m = /(\d+)\s/.exec(got); if (m) { clearTimeout(t); res(m[1]); } });
+  xvfb.on('exit', c => { clearTimeout(t); rej(new Error('Xvfb exited ' + c)); });
+});
 
 section('Started without --computer: it says so, and the screen is not there');
 {
@@ -131,9 +138,16 @@ section('On a screen: it is on, and a screenshot is the screen');
 
 section('A click lands where it was aimed');
 {
+  /* A virtual display has no window manager, so nothing has focused the
+     browser window yet, and on a slow machine its first click can go to
+     focusing it. A real desktop focuses windows itself. So the window is
+     focused first, with a click on empty page that nothing counts, and each
+     result is waited for rather than read after a fixed pause. */
+  await b.call('screen/act', { kind: 'click', x: 40, y: 700 });
+  await page.waitForFunction(() => document.hasFocus(), null, { timeout: 5000 }).catch(() => {});
   const p = await centre('#pad');
   const r = await b.call('screen/act', { kind: 'click', x: p.x, y: p.y });
-  await page.waitForTimeout(200);
+  await page.waitForFunction(() => (window.__clicks || 0) >= 1, null, { timeout: 3000 }).catch(() => {});
   const clicks = await page.evaluate(() => window.__clicks || 0);
   ok(r.status === 200 && clicks === 1, 'the red box received exactly one click', { r, clicks });
   const miss = await b.call('screen/act', { kind: 'click', x: 50, y: 50 });
