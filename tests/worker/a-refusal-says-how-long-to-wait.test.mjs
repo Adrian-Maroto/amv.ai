@@ -50,7 +50,10 @@ section('The window really is the whole of aiProxy');
 section('Every refusal from the paid path says how long to wait');
 {
   /* Each `429` in this function, with what follows it on the same statement. */
-  const refusals = body.split(/\n/).map((l, i) => ({ l, i })).filter(x => /\b429\b/.test(x.l));
+  /* A line that SENDS a 429, not one that reads one: the fast-mode fallback
+     compares an upstream status to 429 to decide to retry at standard speed,
+     which refuses nobody. */
+  const refusals = body.split(/\n/).map((l, i) => ({ l, i })).filter(x => /\b429\b/.test(x.l) && !/[=!]==\s*429\b/.test(x.l));
   ok(refusals.length >= 3, 'there are refusals to check', refusals.length);
 
   const bare = [];

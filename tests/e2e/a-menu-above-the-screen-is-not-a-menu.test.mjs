@@ -23,6 +23,10 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ apiBase: '' });
 const { page, errors } = app;
+/* How many engines the picker offers, read from the shipped order rather than
+   written here - an engine added to the product is an engine this checks. */
+const ENGINE_COUNT = (await import('fs')).readFileSync(new URL('../../app.js', import.meta.url), 'utf8')
+  .match(/const MODEL_ORDER=\[([^\]]*)\]/)[1].split(',').length;
 
 /* The picker animates in (mpIn), so measure once it has settled - a fixed wait
    here would be the bet that LESSONS 342 is about. */
@@ -95,7 +99,7 @@ section('On a phone, with the composer where it really sits, the menu is on the 
     ok(!r.offTop, `[${name}] its top edge is on the screen`, r);
     ok(!r.offBottom, `[${name}] and so is its bottom edge`, r);
     ok(!r.offLeft && !r.offRight, `[${name}] and it does not run off the sides`, r);
-    ok(r.items === 5, `[${name}] all five engines are in it`, r.items);
+    ok(r.items === ENGINE_COUNT, `[${name}] every engine is in it`, r.items);
     ok(r.canScroll ? r.overflowY === 'auto' : true,
        `[${name}] and when it is taller than the room, it scrolls rather than overflowing`, r);
   }
@@ -119,7 +123,7 @@ section('The engine at the top of the list can actually be got to');
   });
   ok(reached.insideMenu, 'the first engine sits inside the menu box', reached);
   ok(reached.onScreen, 'and on the screen', reached);
-  ok(r.items === 5, 'with the rest reachable by scrolling', r.items);
+  ok(r.items === ENGINE_COUNT, 'with the rest reachable by scrolling', r.items);
 }
 
 section('And with the composer at the bottom, where a busy chat puts it');
@@ -129,7 +133,7 @@ section('And with the composer at the bottom, where a busy chat puts it');
   await page.setViewportSize({ width: 390, height: 844 });
   const r = await openPicker(true);
   ok(!r.offTop && !r.offBottom, 'the menu is on the screen there too', r);
-  ok(r.items === 5, 'with all five engines', r.items);
+  ok(r.items === ENGINE_COUNT, 'with every engine', r.items);
 }
 
 section('Desktop is left as it was');
@@ -149,7 +153,7 @@ section('Even on a screen too short for the list, nothing is lost');
   const r = await openPicker(true);
   ok(!r.offTop && !r.offBottom, 'it is still entirely on the screen', r);
   ok(r.h >= 140, 'and still big enough to be worth opening', r.h);
-  ok(r.items === 5, 'with every engine still in the list', r.items);
+  ok(r.items === ENGINE_COUNT, 'with every engine still in the list', r.items);
   ok(r.overflowY === 'auto', 'reachable by scrolling', r.overflowY);
 }
 

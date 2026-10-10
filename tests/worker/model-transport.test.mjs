@@ -188,8 +188,10 @@ section('A stream is NEVER retried, because the words are already gone');
   ok(calls.length === 1, 'one attempt only', calls.length);
   ok(r.status === 500, 'and the failure is reported honestly rather than answered twice', r.status);
 
-  ok(/_modelFetch\(env, payload, \{ stream: true \}\)/.test(src),
-     'the chat path marks itself as streaming');
+  /* Both forms of the chat call - fast mode adds a header - are streaming. */
+  const callUp = (src.match(/const _callUpstream = \(payload\) => _modelFetch\(env, payload,[\s\S]*?\);/) || [''])[0];
+  ok(callUp && (callUp.match(/stream: true/g) || []).length === 2 && !/stream: false/.test(callUp),
+     'the chat path marks itself as streaming, in both its forms', callUp);
   ok(/_modelFetch\(env, upstreamBody, \{ stream: true \}\)/.test(src),
      'and so does the embeddable widget');
 }

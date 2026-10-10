@@ -49,6 +49,10 @@ const WIDER = `@font-face{font-family:'Inter fallback';src:local('Liberation San
   size-adjust:107%;ascent-override:90%;descent-override:22.4%;line-gap-override:0%;}`;
 
 const { url, server } = await serveApp({ apiBase: '' });
+/* How many engines the picker offers, read from the shipped order rather than
+   written here - an engine added to the product is an engine this checks. */
+const ENGINE_COUNT = (await import('fs')).readFileSync(new URL('../../app.js', import.meta.url), 'utf8')
+  .match(/const MODEL_ORDER=\[([^\]]*)\]/)[1].split(',').length;
 const browser = await chromium.launch(LAUNCH);
 
 async function open(width, height, force) {
@@ -159,9 +163,9 @@ section('The engine picker still fits on a desktop when the text is wider');
   });
   await page.close();
   ok(!r.missing, 'the picker opened');
-  ok(r.items === 5, 'with all five engines', r.items);
+  ok(r.items === ENGINE_COUNT, 'with every engine', r.items);
   ok(r.onScreen, 'entirely on the screen', r);
-  ok(!r.canScroll, 'and it fits, so a five-item menu has no scrollbar', r);
+  ok(!r.canScroll, 'and it fits, so the menu has no scrollbar', r);
   ok(new Set(r.itemHeights).size === 1,
      'because no engine description wraps at this width', JSON.stringify(r.itemHeights));
 }
