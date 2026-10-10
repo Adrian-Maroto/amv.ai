@@ -25,6 +25,8 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ tab: 'chat' });
 const { page, errors } = app;
+/* The Crew catalogue is fetched the first time Crew opens; these read it directly. */
+await page.evaluate(() => _loadCrewData());
 await app.connect();
 
 /* The server's answer, and a record of what was asked for. */

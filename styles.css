@@ -16890,3 +16890,8 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .gui-calc-ov{ font-family:var(--fdisplay); font-size:var(--t-xl); font-weight:600; font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
 .gui-calc-n{ margin:var(--sp-3) 0 0; font-size:var(--t-sm); color:var(--mu); line-height:1.5; }
 @media (pointer:coarse){ .gui-calc-in input[type=number], .gui-calc-in select{ font-size:var(--t-lg); } }
+
+/* ═══ LAYER A306 - CREW WHILE ITS CATALOGUE ARRIVES ═══════════════════════
+   One quiet line where the catalogue will be, holding the screen's height so
+   nothing below it moves when the jobs arrive. */
+.cw-loading{ min-height:60vh; padding:var(--sp-6) 0; color:var(--mu); font-size:var(--t-base); line-height:1.6; }

@@ -48,6 +48,8 @@ const env = makeEnv({
 
 const L = await bootLive({ env, outbound, port: 9183 });
 const { page } = L;
+/* The Crew catalogue is fetched the first time Crew opens; these read it directly. */
+await page.evaluate(() => _loadCrewData());
 const EMAIL = 'browsing@example.com';
 const PW = 'A-real-Passw0rd!';
 const KV = env.AMV_KV;

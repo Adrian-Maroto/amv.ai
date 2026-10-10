@@ -2520,8 +2520,12 @@ async function openEveryday(){
       /* Rebuild from definitions so the new ones appear, keeping every switch
          somebody had already set. */
       try{
+        /* Only from a catalogue that has arrived - see _cwDefaultJobs. When it
+           has not, the definitions are cached above and the next Crew sync
+           rebuilds from them. */
         const byId={}; (_cwJobs()||[]).forEach(j=>{ byId[j.id]=j; });
-        _cwSaveJobs(_cwDefaultJobs().map(def=>Object.assign({}, def, {
+        const defsAll=_cwDefaultJobs();
+        if(defsAll) _cwSaveJobs(defsAll.map(def=>Object.assign({}, def, {
           on: byId[def.id] ? !!byId[def.id].on : !!def.on,
           autoId: byId[def.id] ? (byId[def.id].autoId||null) : null,
         })));

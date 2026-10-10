@@ -26,6 +26,8 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({ tab: 'chat', user: { name: 'Adrian', email: 'a@amv.dev', ini: 'A' } });
 const { page, errors } = app;
+/* The Crew catalogue is fetched the first time Crew opens; these read it directly. */
+await page.evaluate(() => _loadCrewData());
 await page.evaluate(() => document.getElementById('ck')?.remove());
 
 const WANTED = [

@@ -72,15 +72,18 @@ const PINNED = [
 
 section('Every job that already worked still exists');
 {
-  const defs = functionBody(app, '_cwDefaultJobs');
-  const have = new Set([...defs.matchAll(/\{ id:'([a-z_0-9]+)'/g)].map((m) => m[1]));
+  /* The definitions live in the catalogue file the page fetches when Crew
+     opens (crew-data.js), so that is where they are counted. */
+  const catalog = readFileSync(join(ROOT, 'src', 'crew', 'crew-data.js'), 'utf8');
+  const jobsPart = catalog.slice(catalog.indexOf('jobs:'), catalog.indexOf('madeFor:'));
+  const have = new Set([...jobsPart.matchAll(/\{ id:'([a-z_0-9]+)'/g)].map((m) => m[1]));
   const lost = PINNED.filter((id) => !have.has(id));
   ok(lost.length === 0, 'not one of the ninety-three was removed or renamed', lost);
   ok(PINNED.length === 93, 'and the pin covers all of them', PINNED.length);
 
   /* The trap: the sync rebuilds the saved list from the DEFINITIONS, so a job
      added to the list instead is deleted on the next run. */
-  ok(/\]\.concat\(_everydayDefs\(\)\)/.test(codeOnly(app)),
+  ok(/\.concat\(_everydayDefs\(\)\)/.test(functionBody(app, '_cwDefaultJobs')),
      'the everyday jobs join the definitions, which is what survives a sync', true);
   ok(/function _everydayDefs\(\)/.test(codeOnly(app)), 'from a cache that is read there', true);
 }

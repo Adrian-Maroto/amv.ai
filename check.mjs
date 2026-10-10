@@ -232,7 +232,7 @@ console.log(`\n${B}AMV health gate${X} ${DIM}- full shippability check${X}\n`);
    stage that reads only app.js would then pass on code it never looked at -
    "nothing does X" is trivially true of a file X was moved out of. Every
    static stage that asks a question of the whole client reads all of it. */
-const CLIENT_FILES = ['app.js', 'src/office/office.js', 'src/sheet/sheet.js', 'src/admin/admin.js'];
+const CLIENT_FILES = ['app.js', 'src/office/office.js', 'src/sheet/sheet.js', 'src/crew/crew-data.js', 'src/admin/admin.js'];
 const clientSrc = () => CLIENT_FILES.filter(f => existsSync(R(f))).map(f => readFileSync(R(f), 'utf8')).join('\n;\n');
 
 step('Syntax (app.js + amv-backend.js)', () => {
@@ -1332,7 +1332,11 @@ step('Page weight is under control', () => {
      confirms the partner lists them (~0.5KB). This is the last raise before
      the Crew catalogue move named above, which is now the NEXT task and takes
      ~58KB gzipped out of the page; the ceiling follows it down. */
-  const CEILING = 656 * 1024;   // gzipped, which is what actually crosses the network
+  /* 656 -> 596, 2026-10-10: DOWN, the lever named above. The Crew job
+     catalogue and its country lists moved to crew-data.js, fetched the first
+     time Crew opens - 61KB gzipped no visitor downloads up front any more.
+     The ceiling follows it down so the room cannot be quietly spent. */
+  const CEILING = 596 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

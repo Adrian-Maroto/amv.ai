@@ -77,6 +77,8 @@ function emitSandbox() {
   /* The Office exporter, fetched only when somebody presses Export. */
   writeFileSync('office.js', readFileSync('src/office/office.js'));
   writeFileSync('sheet.js', readFileSync('src/sheet/sheet.js'));
+  /* The Crew catalogue, fetched the first time Crew is opened. */
+  writeFileSync('crew-data.js', readFileSync('src/crew/crew-data.js'));
   writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
 }
 
@@ -871,6 +873,7 @@ const PUBLISH = [
   'sandbox.js',            // what that frame runs
   'office.js',             // the Word/Excel/PowerPoint exporter, fetched on the first Export
   'sheet.js',              // the spreadsheet editor, fetched the first time a table is opened
+  'crew-data.js',          // the Crew job catalogue, fetched the first time Crew is opened
   'admin.js',              // the owner console, fetched when the owner opens it
 ];
 function emitPublishDir() {

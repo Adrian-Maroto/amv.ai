@@ -9,7 +9,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-export const CLIENT_FILES = ['app.js', 'src/office/office.js', 'src/sheet/sheet.js', 'src/admin/admin.js'];
+export const CLIENT_FILES = ['app.js', 'src/office/office.js', 'src/sheet/sheet.js', 'src/crew/crew-data.js', 'src/admin/admin.js'];
 export function clientSource(){
   return CLIENT_FILES.filter(f => existsSync(join(ROOT, f))).map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n;\n');
 }

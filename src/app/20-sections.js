@@ -87,7 +87,7 @@
     isLive(){ return typeof _cwJobs === 'function'; },
     actions:{
       running_jobs:{ desc:'Standing jobs and whether each is on, and autonomous or ask-first.',
-        async run(){ const j=_cwJobs()||[];
+        async run(){ try{ await _loadCrewData(); }catch(e){} const j=_cwJobs()||[];
           return { count:j.length, jobs:j.map(x=>({ id:x.id, title:x.title, on:!!x.on, needs:x.needs||'' })) }; } },
       approvals:{ desc:'Everything waiting for your approval right now.',
         async run(){ const a=_cwApprovals()||[];
