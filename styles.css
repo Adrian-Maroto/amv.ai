@@ -16826,3 +16826,13 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .mb .mtbl-t{ width:auto; min-width:100%; }
 .mb .mtbl-t td,.mb .mtbl-t th{ word-break:normal; overflow-wrap:normal; }
 .mb .mtbl-t td{ min-width:4.5em; }
+
+/* ═══ LAYER A302 - THE NEVER-RUN LIST ════════════════════════════════════
+   A panel beside the computer card: one command per line, in the bridge's
+   own input style, full width so a long rule is readable. 16px on touch
+   screens so a phone does not zoom the page when it is tapped. */
+.nr-list{
+  display:block;width:100%;min-height:96px;padding:var(--sp-2) var(--sp-3);
+  margin-bottom:var(--sp-3);line-height:1.5;resize:vertical;box-sizing:border-box;
+}
+@media (pointer:coarse){ .nr-list{ font-size:var(--t-lg); } }

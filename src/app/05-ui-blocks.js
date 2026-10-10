@@ -1177,7 +1177,7 @@ async function _callAITurn(msgs, _opts) {
        that is always present and always fails teaches the model to stop
        trying it and teaches the person that AMV is broken; appearing with
        the thing it needs is the honest shape. */
-    try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(BRIDGE_TOOLS); }catch(e){}
+    try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(bridgeToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(BRIDGE.connected && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
@@ -1581,6 +1581,9 @@ async function _callAITurn(msgs, _opts) {
                   + '. Use one of those, or tell the user what you cannot do.', render:null };
           try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_unoffered',{tool:t.name}); }catch(e){}
         }
+        /* A command on the person's own never-run list is answered here,
+           before they are asked to approve something that would be refused. */
+        if(!out){ const nr = neverRunRefusal(t.name, input); if(nr) out = { text: nr, render:null }; }
         if(!out && _toolNeedsConsent(t.name)){
           const allowed = await _confirmModelTool(t.name, input);
           if(!allowed){

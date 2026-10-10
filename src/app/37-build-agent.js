@@ -488,7 +488,7 @@ async function _devSendAgent(msg, stat){
       prompt: _hist
             + (typeof projBlock === 'function' ? projBlock() : '')
             + 'You are in the folder "' + folder + '".\n\nREQUEST: ' + msg,
-      tools: BRIDGE_TOOLS.concat(typeof mcpTools === 'function' ? mcpTools() : []),
+      tools: bridgeToolsOffered().concat(typeof mcpTools === 'function' ? mcpTools() : []),
       model: _sectionModel('code'),
       effort: _devEffort(),
       max_tokens: 8000,

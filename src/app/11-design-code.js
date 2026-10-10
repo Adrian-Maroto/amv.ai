@@ -3101,6 +3101,8 @@ async function runAgentic(surface, userPrompt, opts){
          for. Chat's streaming loop has always asked first; this path must
          too, or a second dispatch route executes code and publishes pages
          with no prompt at all. */
+      const nr = neverRunRefusal(name, input || {});
+      if(nr) return { ok:false, text: nr };
       if(_toolNeedsConsent(name)){
         const allowed = await _confirmModelTool(name, input || {});
         if(!allowed){

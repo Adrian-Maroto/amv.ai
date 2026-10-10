@@ -14695,3 +14695,21 @@ is sent.
 Rule: a reservation and the request it covers must be the same number. When
 the reservation does not fit, shrink the request to fit it. Do not refuse a
 question there is room to answer.
+
+## 572. A rule the person sets is enforced where every path meets, and checked again before asking
+
+The never-run list could have gone in any of the four places a command
+starts: chat's loop, the surfaces' shared loop, Build, and background jobs.
+Put in some of them, the rule holds until a fifth caller appears. So it is
+enforced in bridgeExec, which every command passes through on its way to the
+computer. A new surface inherits the rule without anyone remembering it.
+
+That alone left a bad moment. Chat would ask "Allow AMV to run git push?",
+the person would say yes, and the command would then be refused. A dialog
+asking someone to approve what their own rule forbids teaches them the
+dialogs mean nothing. So the paths that ask permission check the list first
+and answer the model directly. The chokepoint stays the authority. The early
+check is courtesy, and each is covered by its own test, broken on purpose.
+
+The model is also told the list in run_command's description, so the refusal
+is a backstop rather than the first it hears of the rule.

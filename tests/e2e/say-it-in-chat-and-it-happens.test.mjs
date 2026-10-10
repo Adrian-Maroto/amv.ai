@@ -391,6 +391,38 @@ section('An invented job id is refused rather than fuzzily matched');
   ok(/no background job with that id/i.test(out.text), 'and it says so plainly', out.text.slice(0, 120));
 }
 
+section('A command on the never-run list is refused in chat before anyone is asked');
+{
+  /* The person's own list (commands-you-told-amv-never-to-run covers the
+     matching). Here: the real chat loop, a real streamed run_command, and the
+     refusal arriving before the approval dialog - nobody is asked to approve
+     something that would then be refused - and before the computer. */
+  await page.evaluate(() => {
+    Object.assign(BRIDGE, { connected: true, port: 45673, token: 'tok', folder: 'proj', fence: 'on' });
+    window.__brgExec = [];
+    const real = window.fetch;
+    window.fetch = async (url, init) => {
+      const u = String(url);
+      if (!u.startsWith('http://127.0.0.1:45673/')) return real(url, init);
+      if (u.endsWith('/amv-bridge/exec')) window.__brgExec.push(JSON.parse(init.body).command);
+      return new Response(JSON.stringify({ exitCode: 0, ms: 1, stdout: '', stderr: '' }),
+                          { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+    neverRunSave('git push');
+  });
+  const from = modelSaw.length;
+  nextTurns = [toolUseStream('run_command', { command: 'git push origin main' }, ''), textStream('I have not pushed it.')];
+  const consent = await say('push my work', { approve: true });
+  const execs = await page.evaluate(() => window.__brgExec.slice());
+  ok(consent.seen === 0, 'nobody is asked to approve it', consent);
+  ok(execs.length === 0, 'and it never reaches the computer', execs);
+  const sent = modelSaw.slice(from);
+  ok(/never to run \\"git push\\"/.test(JSON.stringify(sent.map(b => b.messages || []))), 'the model is told whose rule refused it');
+  const rc = ((sent.find(b => Array.isArray(b.tools) && b.tools.length) || {}).tools || []).find(t => t.name === 'run_command');
+  ok(!!rc && /never to run/.test(rc.description) && /git push/.test(rc.description), 'and was told the rule before it tried', rc && rc.description);
+  await page.evaluate(() => { neverRunSave(''); BRIDGE.connected = false; });
+}
+
 section('Nothing about this is a second copy of the Crew');
 {
   /* Every write went through the routes the screen uses. If chat ever grows

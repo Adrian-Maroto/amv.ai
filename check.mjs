@@ -1309,7 +1309,12 @@ step('Page weight is under control', () => {
      signed in, end any one) and answers' tables that sort, copy and open as a
      spreadsheet, plus a cards block. Still 8KB under where it stood before
      the owner console moved out. */
-  const CEILING = 648 * 1024;   // gzipped, which is what actually crosses the network
+  /* 648 -> 650, 2026-10-10, deliberately: the never-run list - commands the
+     person tells AMV never to run on their computer, refused in chat, Build
+     and background jobs before anything reaches the machine, and told to the
+     model up front. About 1KB gzipped, all of it the feature; a safety
+     control on the most consequential thing AMV does. */
+  const CEILING = 650 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

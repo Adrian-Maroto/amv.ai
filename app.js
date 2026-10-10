@@ -8697,7 +8697,7 @@ async function _callAITurn(msgs, _opts) {
        that is always present and always fails teaches the model to stop
        trying it and teaches the person that AMV is broken; appearing with
        the thing it needs is the honest shape. */
-    try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(BRIDGE_TOOLS); }catch(e){}
+    try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(bridgeToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(BRIDGE.connected && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
@@ -9101,6 +9101,9 @@ async function _callAITurn(msgs, _opts) {
                   + '. Use one of those, or tell the user what you cannot do.', render:null };
           try{ if(typeof AEGIS!=='undefined') AEGIS.log('tool_unoffered',{tool:t.name}); }catch(e){}
         }
+        /* A command on the person's own never-run list is answered here,
+           before they are asked to approve something that would be refused. */
+        if(!out){ const nr = neverRunRefusal(t.name, input); if(nr) out = { text: nr, render:null }; }
         if(!out && _toolNeedsConsent(t.name)){
           const allowed = await _confirmModelTool(t.name, input);
           if(!allowed){
@@ -28336,6 +28339,8 @@ async function runAgentic(surface, userPrompt, opts){
          for. Chat's streaming loop has always asked first; this path must
          too, or a second dispatch route executes code and publishes pages
          with no prompt at all. */
+      const nr = neverRunRefusal(name, input || {});
+      if(nr) return { ok:false, text: nr };
       if(_toolNeedsConsent(name)){
         const allowed = await _confirmModelTool(name, input || {});
         if(!allowed){
@@ -35340,7 +35345,7 @@ function _wireIntegrationCatalog(root){
   /* The bridge card is not a row, so it wires itself. Wired in the same
      pass as everything else, because a control that is drawn by one function
      and wired by another is how a button comes to do nothing. */
-  try{ _bridgeWireCard(root); _mcpWireCard(root); }catch(e){}
+  try{ _bridgeWireCard(root); _neverRunWire(root); _mcpWireCard(root); }catch(e){}
   root.querySelectorAll('[data-app-notify]').forEach(btn=>on(btn,'click',()=>{ _appNotify(btn); }));
   root.querySelectorAll('[data-app-more]').forEach(btn=>on(btn,'click',()=>{ _appToggle(btn.dataset.appMore); }));
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
@@ -36044,7 +36049,7 @@ function renderIntegrationsView(){
               ? 'Connected \u00b7 AMV can run connectors and work in your files'
               : 'Not connected \u00b7 needed before any connector below can start')+
           '</span></summary>'+
-        '<div class="conn-machine-b">'+_bridgeCardHTML()+_mcpCardHTML()+'</div>'+
+        '<div class="conn-machine-b">'+_bridgeCardHTML()+_neverRunHTML()+_mcpCardHTML()+'</div>'+
       '</details>'+
       '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
       /* NOTHING AFTER THE TOPICS. There used to be a last section called
@@ -48521,11 +48526,101 @@ async function _bridgeCall(route, body, timeoutMs){
   return d;
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   COMMANDS THE PERSON TOLD AMV NEVER TO RUN.
+
+   The bridge refuses the catastrophic shapes on its own (a recursive
+   delete, sudo, a force push). What no built-in list can know is what THIS
+   person never wants run on their computer: `git push` because they review
+   first, `npm publish`, their own deploy script. So they write the list
+   themselves, and every command AMV starts - chat, Build, a background job -
+   is checked against it in bridgeExec, the one place they all pass through
+   on the way to the computer. Chat also checks before asking permission,
+   so nobody is asked to approve something that will then be refused.
+
+   Kept in localStorage on purpose. The bridge only ever listens on this
+   computer's own address, so the browser holding the list IS the computer
+   the commands would run on. Not a secret, and not a capability - it only
+   ever takes power away.
+
+   Matching leans towards refusing. A rule's first word may appear anywhere a
+   command can begin and its other words in order after it, inside the same
+   command: `git -C app push` is still `git push`, and so is `bash -c "git
+   push"`. That also catches `git commit -m "push later"`. The refusal names
+   the rule, so the person or the model can rephrase - the other kind of wrong
+   is the push they said never to make. */
+const NEVER_RUN_KEY = 'amv_never_run';
+const NEVER_RUN_MAX = 50;
+const NEVER_RUN_RULE_MAX = 120;
+
+function _neverRunClean(text){
+  const out = [];
+  for(const line of String(text || '').split(/\r?\n/)){
+    const rule = line.replace(/\s+/g, ' ').trim().slice(0, NEVER_RUN_RULE_MAX);
+    if(rule && !out.some(r => r.toLowerCase() === rule.toLowerCase())) out.push(rule);
+    if(out.length >= NEVER_RUN_MAX) break;
+  }
+  return out;
+}
+function neverRunRules(){
+  try{
+    const v = JSON.parse(localStorage.getItem(NEVER_RUN_KEY) || '[]');
+    return Array.isArray(v) ? _neverRunClean(v.join('\n')) : [];
+  }catch(e){ return []; }
+}
+function neverRunSave(text){
+  const rules = _neverRunClean(text);
+  try{
+    if(rules.length) localStorage.setItem(NEVER_RUN_KEY, JSON.stringify(rules));
+    else localStorage.removeItem(NEVER_RUN_KEY);
+  }catch(e){ return null; }
+  return rules;
+}
+/* One word as a shell would see the program: lower case, without the
+   folder it was called from and without Windows' .exe. */
+const _nrWord = (w) => String(w).toLowerCase().replace(/^.*[\\/]/, '').replace(/\.(exe|cmd|bat)$/, '');
+/* The rule this command breaks, or ''. */
+function neverRunHit(command){
+  const rules = neverRunRules();
+  if(!rules.length) return '';
+  /* Every place a command can begin: separators, pipes, brackets,
+     substitutions and backticks split it into pieces; quotes are dropped so a
+     command handed to `sh -c` is read like any other. */
+  const pieces = String(command || '').replace(/\\\r?\n/g, ' ').split(/\$\(|[;&|\n(){}`]/);
+  for(const piece of pieces){
+    const words = piece.replace(/["']/g, ' ').split(/\s+/).filter(Boolean).map(_nrWord);
+    for(const rule of rules){
+      const want = rule.split(' ').map(_nrWord);
+      for(let i = 0; i < words.length; i++){
+        if(words[i] !== want[0]) continue;
+        let j = 1;
+        for(let k = i + 1; k < words.length && j < want.length; k++) if(words[k] === want[j]) j++;
+        if(j === want.length) return rule;
+      }
+    }
+  }
+  return '';
+}
+/* What the model is told when a command is refused this way: the rule,
+   and that it is the person's decision - not an error to retry around. */
+function neverRunRefusal(name, input){
+  if(name !== 'run_command') return '';
+  const rule = neverRunHit(input && input.command);
+  return rule ? ('Refused: the person told AMV never to run "' + rule + '" on their computer. '
+               + 'Do not try another way to do the same thing. Tell them what you would have run, '
+               + 'and that they can run it themselves.') : '';
+}
+
 /* Every command is named, so Stop can end the ones still running rather than
    waiting for them (see the bridge's exec/cancel). */
 const _BRIDGE_RUNNING = new Set();
 async function bridgeExec(command, opts){
   opts = opts || {};
+  /* The person's own list, checked here because every command AMV starts
+     passes through here - so nothing listed reaches the computer, whichever
+     surface asked. */
+  const refused = neverRunRefusal('run_command', { command });
+  if(refused){ const e = new Error(refused); e.code = 'never_run'; throw e; }
   const job = 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   _BRIDGE_RUNNING.add(job);
   try{
@@ -48614,6 +48709,20 @@ const BRIDGE_TOOLS = [
   },
 ];
 try{ window.BRIDGE_TOOLS = BRIDGE_TOOLS; }catch(e){}
+/* The tools as offered on a turn: the same four, with the person's
+   never-run list written into run_command's description so the model knows
+   it before it tries - a refusal is still the backstop, not the first time
+   it hears of the rule. */
+function bridgeToolsOffered(){
+  const rules = neverRunRules();
+  if(!rules.length) return BRIDGE_TOOLS;
+  return BRIDGE_TOOLS.map(t => t.name !== 'run_command' ? t : Object.assign({}, t, {
+    description: t.description + ' The user has told AMV never to run these on their computer, '
+      + 'and they are refused: ' + rules.map(r => '"' + r + '"').join(', ')
+      + '. Do not try another way to do the same thing.' }));
+}
+try{ window.bridgeToolsOffered = bridgeToolsOffered; window.neverRunRules = neverRunRules;
+     window.neverRunSave = neverRunSave; window.neverRunRefusal = neverRunRefusal; }catch(e){}
 
 /* Run one of them. Errors come back as a RESULT rather than being thrown,
    because a failed command is information the model should reason about -
@@ -48774,6 +48883,44 @@ async function _bridgeDownload(){
 }
 try{ window._bridgeFetchSource=_bridgeFetchSource; window._bridgeDownload=_bridgeDownload;
      window.BRIDGE_FILE=BRIDGE_FILE; }catch(e){}
+
+/* The never-run list, on the computer card. Shown whether or not a
+   computer is connected, so it can be set before the first command. */
+function _neverRunHTML(){
+  const rules = neverRunRules();
+  return '<div class="brg nr">'
+    + '<div class="brg-h"><b>Never run</b></div>'
+    + '<p class="brg-p">Commands AMV must never run on this computer, one per line. It refuses them in chat, '
+      + 'in Build and in background jobs, before anything reaches your computer.</p>'
+    + '<label class="sr-only" for="nr-list">Commands AMV must never run</label>'
+    + '<textarea id="nr-list" class="brg-i nr-list" rows="4" spellcheck="false" autocapitalize="off" '
+      + 'autocomplete="off" placeholder="git push&#10;npm publish&#10;./deploy.sh">' + escH(rules.join('\n')) + '</textarea>'
+    + '<div class="brg-acts"><button class="btn bs" id="nr-save" type="button">Save</button></div>'
+    + '<div class="brg-msg" id="nr-msg" role="status" aria-live="polite"></div>'
+    + '</div>';
+}
+function _neverRunWire(root){
+  root = root || document;
+  const save = root.querySelector('#nr-save');
+  const box = root.querySelector('#nr-list');
+  if(!save || !box) return;
+  on(save, 'click', () => {
+    const m = root.querySelector('#nr-msg');
+    const rules = neverRunSave(box.value);
+    if(!rules){
+      if(m){ m.textContent = 'This browser would not save the list. Check that it allows this site to store data.'; m.className = 'brg-msg brg-bad'; }
+      return;
+    }
+    box.value = rules.join('\n');
+    if(m){
+      m.className = 'brg-msg';
+      m.textContent = rules.length
+        ? 'Saved. AMV will never run these ' + rules.length + ' command' + (rules.length === 1 ? '' : 's') + ' on this computer.'
+        : 'Saved. Only the bridge\u2019s own refusals apply now.';
+    }
+  });
+}
+try{ window._neverRunHTML = _neverRunHTML; window._neverRunWire = _neverRunWire; }catch(e){}
 
 function _bridgeWireCard(root){
   root = root || document;
@@ -49363,7 +49510,7 @@ async function _devSendAgent(msg, stat){
       prompt: _hist
             + (typeof projBlock === 'function' ? projBlock() : '')
             + 'You are in the folder "' + folder + '".\n\nREQUEST: ' + msg,
-      tools: BRIDGE_TOOLS.concat(typeof mcpTools === 'function' ? mcpTools() : []),
+      tools: bridgeToolsOffered().concat(typeof mcpTools === 'function' ? mcpTools() : []),
       model: _sectionModel('code'),
       effort: _devEffort(),
       max_tokens: 8000,

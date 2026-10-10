@@ -963,7 +963,7 @@ function _wireIntegrationCatalog(root){
   /* The bridge card is not a row, so it wires itself. Wired in the same
      pass as everything else, because a control that is drawn by one function
      and wired by another is how a button comes to do nothing. */
-  try{ _bridgeWireCard(root); _mcpWireCard(root); }catch(e){}
+  try{ _bridgeWireCard(root); _neverRunWire(root); _mcpWireCard(root); }catch(e){}
   root.querySelectorAll('[data-app-notify]').forEach(btn=>on(btn,'click',()=>{ _appNotify(btn); }));
   root.querySelectorAll('[data-app-more]').forEach(btn=>on(btn,'click',()=>{ _appToggle(btn.dataset.appMore); }));
   root.querySelectorAll('[data-int-disc]').forEach(btn=>on(btn,'click',()=>{
@@ -1667,7 +1667,7 @@ function renderIntegrationsView(){
               ? 'Connected \u00b7 AMV can run connectors and work in your files'
               : 'Not connected \u00b7 needed before any connector below can start')+
           '</span></summary>'+
-        '<div class="conn-machine-b">'+_bridgeCardHTML()+_mcpCardHTML()+'</div>'+
+        '<div class="conn-machine-b">'+_bridgeCardHTML()+_neverRunHTML()+_mcpCardHTML()+'</div>'+
       '</details>'+
       '<div id="int-catalog">'+_integrationsCatalogHTML()+'</div>'+
       /* NOTHING AFTER THE TOPICS. There used to be a last section called
