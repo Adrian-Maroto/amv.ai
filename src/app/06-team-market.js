@@ -22,6 +22,8 @@ const AMVTeam = {
   async leave(){ const r=await AMV_API._fetch('/team/leave',{method:'POST',body:'{}'}); const d=await r.json(); if(d.error){ const e=new Error(d.error); e.code=d.code; throw e; } this._cache=null; return true; },
   /* engines: a list of engine ids, or null for everything the plan includes. */
   async setPolicy(engines){ const r=await AMV_API._fetch('/team/policy',{method:'POST',body:JSON.stringify({engines})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error) throw new Error(d.error||'Could not save the team\u2019s engines.'); return d.engines||null; },
+  /* Company sign-in, for the owner: {action:'get'|'set'|'verify'|'require'|'remove', ...}. */
+  async sso(body){ const r=await AMV_API._fetch('/team/sso',{method:'POST',body:JSON.stringify(body||{})}); const d=await r.json().catch(()=>({})); if(!r.ok||d.error){ const e=new Error(d.error||'That did not work.'); if(d.code) e.code=d.code; throw e; } return d; },
   async setRole(email,role){ const r=await AMV_API._fetch('/team/role',{method:'POST',body:JSON.stringify({email,role})}); const d=await r.json(); if(d.error) throw new Error(d.error); return d.members; },
   /* The audit log is the team's security record. "No activity yet" because the
      read failed would tell an owner checking who removed a member that nobody
@@ -468,6 +470,7 @@ function _renderTeamManage(vc, team){
     (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:var(--t-sm)">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
     '<div class="ss2"><h3>Members</h3><div class="vbreak">'+memberRows+'</div></div>'+
     _teamEnginesHTML(team, canManage)+
+    _teamSsoHTML(isOwner)+
     '<div class="ss2"><h3>Assigned work <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(assign tasks to teammates and track them)</span></h3>'+
       '<div class="sf" style="max-width:560px;margin-bottom:14px"><div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">'+
         '<div style="flex:1;min-width:180px"><label class="lbl">Task</label><input type="text" id="tt-title" placeholder="e.g. Draft the launch email" autocomplete="off"></div>'+
@@ -681,6 +684,7 @@ async function _loadTeamTasks(team, role, myEmail){
     if(btn){btn.disabled=false;btn.textContent='Assign';}
   });
   _teamEnginesWire(vc, team);
+  _teamSsoLoad(vc).catch(()=>{});
   // load the audit log (managers only)
   if(role==='owner'||role==='admin'){
     AMVTeam.audit().then(log=>{
@@ -773,6 +777,38 @@ function _teamEnginesWire(vc, team){
       if(say) say.textContent=(e&&e.message)||'Could not save the team\u2019s engines.';
       save.disabled=false; save.textContent='Save';
     }
+  });
+}
+
+/* ── COMPANY SIGN-IN, FOR THE OWNER ───────────────────────────────────────
+   Read from the server when the team page opens rather than guessed from the
+   team record, because the proof and the record to add are the server's. The
+   three states are the three things the owner has to do: say which provider,
+   prove the domain, then decide whether to require it. */
+function _teamSsoHTML(isOwner){
+  if(!isOwner) return '';
+  return '<div class="ss2 team-sso" id="team-sso"><h3>Company sign-in</h3>'+
+    '<p class="vsub">Let your people sign in to AMV with your company’s own system - Okta, Microsoft Entra, '+
+      'Google Workspace or anything else that speaks OpenID Connect. They join this team the first time they sign in.</p>'+
+    '<div id="team-sso-body"><p class="team-sso-say">Loading…</p></div></div>';
+}
+/* The rest of the panel lives in team-sso.js, fetched the first time an owner
+   opens the team page: only owners ever see it, so nobody else downloads it. */
+let _teamSsoP = null;
+function _teamSsoLoad(vc){
+  if(!$('team-sso-body')) return Promise.resolve(false);
+  if(!_teamSsoP) _teamSsoP = new Promise(res => {
+    const s = document.createElement('script');
+    s.src = 'team-sso.js';
+    s.onload = () => res(typeof window._teamSsoStart === 'function');
+    s.onerror = () => { _teamSsoP = null; s.remove(); res(false); };
+    document.head.appendChild(s);
+  });
+  return _teamSsoP.then(ok => {
+    if(ok) return window._teamSsoStart(vc);
+    const b = $('team-sso-body');
+    if(b) b.innerHTML = '<p class="team-sso-say">'+escH(T('Company sign-in could not be loaded. Check your connection and open this page again.'))+'</p>';
+    return false;
   });
 }
 

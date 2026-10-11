@@ -910,6 +910,23 @@ const AMV_API = {
        through for the same reason. */
     { const e=new Error(d.error || 'Login failed'); if(d.code) e.code=d.code; throw e; }
   },
+  /* COMPANY SIGN-IN. Where to send somebody who typed their work address -
+     {sso:false} when their company has not set it up - and then the code
+     their company's system sent them back with. */
+  async ssoStart(email){
+    try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
+    const r = await this._fetch('/auth/sso/start', {method:'POST', body:JSON.stringify({ email })});
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok){ const e=new Error(d.error || 'Company sign-in is not available right now.'); if(d.code) e.code=d.code; throw e; }
+    return { sso: d.sso === true, url: String(d.url || ''), team: String(d.team || '') };
+  },
+  async ssoFinish(code, state){
+    try{ await Promise.race([_loadPublicConfig(), new Promise(r=>setTimeout(r,4000))]); }catch(e){}
+    const r = await this._fetch('/auth/sso/finish', {method:'POST', body:JSON.stringify({ code, state })});
+    const d = await r.json().catch(()=>({}));
+    if(r.ok && d.token){ this._setTokens(d); return d; }
+    { const e=new Error(d.error || 'Your company\u2019s sign-in did not finish. Nothing was signed in.'); if(d.code) e.code=d.code; throw e; }
+  },
   _setTokens(d){
     /* A session is in hand: whatever the server said about the last one is over. */
     this._refreshDenied = false;

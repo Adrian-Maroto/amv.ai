@@ -88,6 +88,8 @@ function emitSandbox() {
   /* The Crew catalogue, fetched the first time Crew is opened. */
   writeFileSync('crew-data.js', readFileSync('src/crew/crew-data.js'));
   writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
+  /* Company sign-in settings, fetched when a team's owner opens the team page. */
+  writeFileSync('team-sso.js', readFileSync('src/team/team-sso.js'));
 }
 
 function assembleJS() {
@@ -901,6 +903,7 @@ const PUBLISH = [
   'sheet.js',              // the spreadsheet editor, fetched the first time a table is opened
   'crew-data.js',          // the Crew job catalogue, fetched the first time Crew is opened
   'admin.js',              // the owner console, fetched when the owner opens it
+  'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page
 ];
 /* GOOGLE PLAY'S PROOF THAT THE ANDROID APP IS AMV'S (apps/android). Published
    only once the owner's signing fingerprint is in apps/android/config.json,

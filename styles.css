@@ -16941,3 +16941,23 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .brg-cloud-t b{color:var(--tx)}
 .brg-cloud .btn{min-height:44px;flex:0 0 auto}
 .brg-cloud-min:empty{display:none}
+
+/* ═══ LAYER A311 - Company sign-in, on the team page ══════════════════════
+   The three steps the owner takes - say which provider, prove the domain,
+   decide whether to require it - in the team page's own fields and type. */
+.team-sso .team-sso-say{color:var(--mu);font-size:var(--t-sm);line-height:1.55;margin:var(--sp-2) 0}
+.team-sso .team-sso-say:empty{display:none}
+.team-sso .team-sso-say code,.team-sso .team-sso-rec code{font-family:var(--mn);font-size:var(--t-sm);color:var(--tx);word-break:break-all}
+.team-sso-form{display:grid;gap:var(--sp-2);max-width:480px}
+.team-sso-form .btn{justify-self:start;min-height:44px}
+.team-sso-step{border:1px solid var(--bd);border-radius:var(--r-md);background:var(--s1);padding:var(--sp-3);
+  font-size:var(--t-base);line-height:1.55;margin-bottom:var(--sp-3);max-width:640px}
+.team-sso-step.is-on{border-color:color-mix(in srgb, var(--grn) 40%, var(--bd))}
+.team-sso-step .btn{margin-top:var(--sp-2);min-height:44px}
+.team-sso-rec{display:grid;grid-template-columns:auto 1fr;gap:var(--sp-1) var(--sp-3);margin:var(--sp-2) 0}
+.team-sso-rec dt{color:var(--mu);font-size:var(--t-sm)}
+.team-sso-rec dd{margin:0;min-width:0}
+.team-sso-req{display:flex;gap:var(--sp-2);align-items:flex-start;font-size:var(--t-base);line-height:1.5;margin-bottom:var(--sp-3);max-width:640px}
+.team-sso-req input{margin-top:3px;min-width:18px;min-height:18px}
+.team-sso-edit{margin-bottom:var(--sp-3)}
+.team-sso-edit summary{cursor:pointer;color:var(--accent);font-size:var(--t-sm);min-height:44px;display:flex;align-items:center}

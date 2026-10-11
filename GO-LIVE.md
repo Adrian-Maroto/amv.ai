@@ -562,6 +562,25 @@ The readiness screen's row "AMV's cloud computer" turns green. If the two keys
 differ, people are told the cloud computer "is not set up correctly" and
 nothing runs - it is never mistaken for them being signed out.
 
+## 2c3. Company sign-in for teams (nothing to set)
+
+A team's owner can let their people sign in with their company's own system -
+Okta, Microsoft Entra, Google Workspace, anything that speaks OpenID Connect.
+It needs nothing from you beyond `CONNECT_KEY` (it keeps each company's client
+secret sealed, the same way connected accounts are). The owner does the rest
+on the team page:
+
+1. Add AMV in their provider as a web app, with the sign-in redirect address
+   the page shows (your site root, e.g. `https://amv.homes/`).
+2. Put in their email domain, the provider's issuer, client ID and secret.
+3. Prove the domain with the DNS record the page shows. Until then nobody
+   signs in this way, and a domain anybody can get an address at (gmail.com
+   and the like) can never be claimed.
+4. Optionally require it, which turns off passwords and Google for that
+   domain. The team's owner is never locked out.
+
+People signing in this way join the team, as long as it has a free seat.
+
 ## 3. Deploy the Worker
 
 ```bash

@@ -1358,7 +1358,13 @@ step('Page weight is under control', () => {
      place - five actions and the handshake with Google's file picker, which
      runs in a window of its own (picker.html) so Google's code never loads in
      this page (~1KB gzipped). */
-  const CEILING = 608 * 1024;   // gzipped, which is what actually crosses the network
+  /* 608 -> 610, 2026-10-11, deliberately: AMV's cloud computer on the connect
+     card (offer it where the deployment runs one, the minutes, what needs your
+     own computer) and "Sign in with your company" on the sign-in screen with
+     its return (~1.5KB gzipped). Both are used before anything else could be
+     fetched. The owner's half of company sign-in is NOT here: it is
+     team-sso.js, fetched when an owner opens the team page. */
+  const CEILING = 610 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

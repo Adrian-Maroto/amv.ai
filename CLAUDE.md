@@ -169,6 +169,13 @@ Companion docs (do not duplicate them here - read them):
   into the real site; AMV never asks for one. Six tools (run code, page script,
   raw network, file upload/drop) are withheld from the model. Do not add a
   server-side password vault instead - see LESSONS 537.
+- **Company sign-in** (`teamSso`, `authSsoStart`, `authSsoFinish` in the Worker)
+  is OpenID Connect per team: a domain is proved by DNS before anyone signs in,
+  public mail domains can never be claimed, only addresses at the proved domain
+  are accepted, and the id token is verified here (signature against the
+  provider's keys, issuer, audience, expiry, nonce; state spent once, PKCE).
+  "Required" refuses passwords and Google for the domain, never for the owner.
+  The owner's settings UI is `team-sso.js`, fetched on demand.
 - **Any tool the client can send must be in `AMV_CLIENT_TOOLS` on the server**,
   or `_safeTools` drops it by name at the last hop before the model and the
   feature silently does not exist. LESSONS 310; covered by

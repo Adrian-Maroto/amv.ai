@@ -1059,8 +1059,9 @@ async function doLoginForm() {
          browser below - a sign-in the server never agreed to, and no code. */
       throw new Error('AMV could not finish signing you in. Nothing was signed in - please try again.');
     }catch(e){
-      logFail(em);
       if(btn){btn.disabled=false;btn.textContent='Sign In';}
+      if(e && e.code==='sso_required'){ showAuthErr('Your company signs in to AMV through its own system. Taking you there\u2026'); ssoBegin(em); return; }
+      logFail(em);
       if(/no such|not found|404/i.test(e.message||'')){
         // Account genuinely doesn't exist on the server - carry them into signup
         // with the email filled, rather than leaving them stuck.
@@ -1100,6 +1101,47 @@ async function doLoginForm() {
     return;
   }
   loginUser(acct);
+}
+
+/* ── COMPANY SIGN-IN ──────────────────────────────────────────────────────
+   Their company's system decides who they are, so this page only ever sends
+   them there and brings back the code: the server checks everything else. */
+async function ssoBegin(email){
+  const em = String(email || '').trim().toLowerCase();
+  if(!em || !em.includes('@')){
+    showAuthErr('Put in your work email, then choose \u201cSign in with your company\u201d.');
+    try{ $('a-email')?.focus(); }catch(e){}
+    return false;
+  }
+  if(!(window.AMV_API && AMV_API.live)){ showAuthErr('Company sign-in needs AMV\u2019s server, and this copy is not connected to one.'); return false; }
+  let d;
+  try{ d = await AMV_API.ssoStart(em); }
+  catch(e){ showAuthErr(e.message || 'Company sign-in is not available right now.'); return false; }
+  if(!d.sso){
+    showAuthErr('Your company has not set up sign-in with AMV. Use your password or Google, or ask whoever runs AMV at your company.');
+    return false;
+  }
+  let u = null; try{ u = new URL(d.url); }catch(e){}
+  if(!u || u.protocol !== 'https:'){ showAuthErr('Your company\u2019s sign-in address is not one AMV will open.'); return false; }
+  try{ saveStr('amv_sso_email', em); }catch(e){}
+  location.assign(u.toString());
+  return true;
+}
+async function ssoComplete(code, state){
+  try{
+    const d = await AMV_API.ssoFinish(code, state);
+    const nm = d.name || String(d.email).split('@')[0];
+    const ini = nm.split(' ').filter(Boolean).map(w=>w[0]).join('').toUpperCase().slice(0,2) || '??';
+    try{ saveStr('amv_sso_email', ''); }catch(e){}
+    closeOvr(); accCk(); S.ck = true;
+    document.getElementById('land')?.classList.add('hidden');
+    loginUser({ name: nm, email: d.email, ini, provider: 'sso' });
+    toast('Signed in with ' + (d.team || 'your company') + '.', 'success', 4000);
+  }catch(e){
+    openAuth('login');
+    const ef = $('a-email'); if(ef) ef.value = loadStr('amv_sso_email') || '';
+    showAuthErr(e.message || 'Company sign-in did not finish. Nothing was signed in.');
+  }
 }
 
 // Google
@@ -1152,6 +1194,10 @@ async function handleGoogleCred(resp) {
         loginUser(acct); return;
       }
       // server rejected the token - do NOT fall back to trusting it locally
+      if(r.status===403){
+        const d403=await r.json().catch(()=>({}));
+        if(d403.code==='sso_required'){ showAuthErr('Your company signs in to AMV through its own system. Taking you there\u2026'); ssoBegin(p.email); return; }
+      }
       if(r.status===401||r.status===403){ showError('Google sign-in couldn\u2019t be verified. Please try again or use email.'); return; }
       // other server errors (500/offline) fall through to local demo behavior below
     }catch(e){ /* network issue → local fallback below */ }

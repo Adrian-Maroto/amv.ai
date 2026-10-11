@@ -3907,6 +3907,7 @@ function openAuth(mode){
       '</div>'+
       '<div class="asw">'+(isL?'No account? <button id="auth-sw">Sign up free</button>':'Already have an account? <button id="auth-sw">Sign in</button>')+'</div>'+
       (isL?'<div class="asw" style="margin-top:6px"><button id="auth-forgot" style="color:var(--mu)">Forgot password?</button></div>':'')+
+      (isL?'<div class="asw" style="margin-top:6px"><button id="auth-sso">Sign in with your company</button></div>':'')+
       '<p class="an">By continuing you agree to our <button id="a-terms">Terms</button> and <button id="a-priv">Privacy Policy</button></p>'+
     '</div></div>';
   onBackdrop($('auth-bg'),closeOvr);
@@ -3919,6 +3920,7 @@ function openAuth(mode){
      it is actually wanted. */
   try{ if(typeof _gauthStart==='function') _gauthStart(); }catch(e){}
   document.getElementById('auth-sw')?.addEventListener('click',()=>openAuth(isL?'signup':'login'));
+  document.getElementById('auth-sso')?.addEventListener('click',()=>ssoBegin($('a-email')?.value));
   document.getElementById('auth-forgot')?.addEventListener('click',()=>{ const em=(document.getElementById('a-email')?.value||'').trim(); closeOvr(); openForgot(em); });
   document.getElementById('a-terms')?.addEventListener('click',()=>{closeOvr();openTerms();});
   document.getElementById('a-priv')?.addEventListener('click',()=>{closeOvr();openPrivacy();});
@@ -4645,6 +4647,21 @@ function checkOAuthCallback(){
      handler does not own would destroy the only copy of somebody else's code. */
   /* `c_` is Connected accounts, `r_` an app connector (Notion, Canva...).
      Anything else is not ours to touch. */
+  /* `s_` is company sign-in: the person is not signed in yet, so this is a
+     sign-in to finish, not a connection to resume. */
+  if(state.indexOf('s_') === 0){
+    try{ history.replaceState(null, '', window.location.pathname); }catch(e){}
+    const serr = q.get('error'), scode = q.get('code');
+    setTimeout(() => {
+      if(serr || !scode){
+        toast(serr === 'access_denied' ? 'Company sign-in was cancelled. Nothing was signed in.'
+                                       : 'Your company\u2019s system did not sign you in. Nothing was changed.', 'info', 7000);
+        return;
+      }
+      ssoComplete(scode, state);
+    }, 0);
+    return;
+  }
   const isApp = state.indexOf('r_') === 0;
   if(state.indexOf('c_') !== 0 && !isApp) return;
 
