@@ -36,7 +36,7 @@ const CLI = join(ROOT, 'cli', 'amv-cli.mjs');
 const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'cli.harness.mjs');
-writeFileSync(harness, src + '\nexport { DB, todayKey };\n');
+writeFileSync(harness, src + '\nexport { DB, todayKey, runBatches };\n');
 const W = await import(harness + '?t=' + Date.now());
 const worker = W.default;
 
@@ -252,6 +252,9 @@ section('amv batch: many requests handed over, and collected later');
   const sub = await run(['--api', API, 'batch', 'submit', f]);
   const id = (sub.out.match(/batch_[a-f0-9]{24}/) || [])[0];
   ok(sub.code === 0 && id && /amv batch status/.test(sub.out), 'a file of questions becomes one batch, with how to check on it', sub);
+  /* Batches are worked by the cron, never inside the request that made them:
+     one tick here stands in for the next five-minute run. */
+  await W.runBatches(env, ctx);
   let st = '';
   for (let i = 0; i < 40 && !/ended/.test(st); i++) { st = (await run(['--api', API, 'batch', 'status', id])).out; if (!/ended/.test(st)) await new Promise(r => setTimeout(r, 100)); }
   ok(/ended/.test(st) && /2 succeeded/.test(st), 'it finishes in the background', st);
