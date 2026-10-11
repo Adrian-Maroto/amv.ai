@@ -957,7 +957,11 @@ function renderBillingView(targetEl){
     AMV_API._fetch('/v1/credit',{method:'GET',timeout:10000}).then(r=>r.json()).then(d=>{
       const el=$('bill-credit'); if(el&&d&&d.ok) el.textContent='$'+(+d.balance||0).toFixed(2)+' '+T('balance, used only after your plan\u2019s allowance');
     }).catch(()=>{ const el=$('bill-credit'); if(el) el.textContent=T('Could not load the balance.'); });
-  } else if($('bill-credit')) $('bill-credit').textContent=T('Available once AMV\u2019s server is connected.');
+  } else if($('bill-credit')){
+    $('bill-credit').textContent=T('Available once AMV\u2019s server is connected.');
+    /* A button that can only fail is not offered. */
+    const add=document.querySelector('.bill-credit-add'); if(add) add.remove();
+  }
   on($('bill-ar-go'),'click',()=>{
     const b=$('bill-ar-go'); if(!b) return;
     const turningOn=b.dataset.on==='1';

@@ -30,7 +30,8 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 /* The client is the page plus the files it fetches on first use - the owner
    console's calls live in admin.js since it left the page. */
-const client = ['app.js', 'src/admin/admin.js', 'src/sheet/sheet.js', 'src/office/office.js']
+const client = ['app.js', 'src/admin/admin.js', 'src/sheet/sheet.js', 'src/office/office.js',
+                'src/billing/credit.js', 'src/market/sell.js', 'src/team/team-sso.js']
   .map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
 
 /* Not called by the app, on purpose, each with the reason. */

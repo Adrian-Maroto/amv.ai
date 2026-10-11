@@ -147,6 +147,7 @@ section('Every key naming a person is erased, or retained for a stated reason');
        whom, or anything the person wrote. */
     withdraw:   'the payout ledger - what AMV actually sent and when; kept for the statutory period and named in the deletion reply',
     payoutyear: 'the calendar-year totals a tax filing is built from; the same obligation, and the same disclosure',
+    creditpay:  'a pack of extra usage that was paid for - the amount, when, and the payment it is matched to on a refund or dispute; a payment record under the same retention obligation as billing',
   };
   const missing = [...KEYED_BY_PERSON]
     .filter(k => !ERASED.has(k) && !(k in RETAINED_ON_PURPOSE))

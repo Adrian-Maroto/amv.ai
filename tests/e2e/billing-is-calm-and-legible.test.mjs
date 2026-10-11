@@ -118,7 +118,10 @@ for (const light of [false, true]) {
 
   section(`The plan facts are a grid, not a column [${name}]`);
   {
-    ok(r.facts === 4, 'four facts', r.facts);
+    /* Five since extra usage: its balance is a fact about what this account
+       has paid for, so it sits with the others rather than in a panel of its
+       own. */
+    ok(r.facts === 5, 'five facts', r.facts);
     ok(r.factCols === 2, 'laid out in two columns', r.factCols);
   }
 }
