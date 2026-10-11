@@ -128,6 +128,8 @@ section('It NEVER returns a secret, in any form');
     // Bindings too, or "everything configured" would not be true - which is
     // the point of the assertion below.
     DB: { prepare(){} }, AMV_COUNTER: {}, BROWSER: {},
+    /* The cloud computer: its binding and a key of real length. */
+    AMV_COMPUTER: {}, AMV_COMPUTER_KEY: 'computer-key-SUPERSECRET-0123456789abcdef',
   });
   const body = await (await W.adminReadiness(req(env), env)).text();
   ok(!body.includes('SUPERSECRET'), 'no secret value appears anywhere in the response');

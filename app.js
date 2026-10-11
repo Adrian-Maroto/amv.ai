@@ -48422,19 +48422,27 @@ function _bridgeAnswer(status, d){
    month's minutes, a machine that would not start) carries a `code`, and is
    said in the server's words. Only commands and files go: connectors and the
    screen are refused here, before a request, with what to do instead. */
-const BRIDGE_CLOUD_ROUTES = /^(exec|exec\/cancel|read|write|list|delete|status|revoke)$/;
+/* Each route spelled out whole, so the checks that every path the app asks
+   for is one the server has can read them - and so a route not listed here is
+   simply not sent. */
+const BRIDGE_CLOUD_PATHS = {
+  'exec': '/v1/computer/exec', 'exec/cancel': '/v1/computer/exec/cancel', 'read': '/v1/computer/read',
+  'write': '/v1/computer/write', 'list': '/v1/computer/list', 'delete': '/v1/computer/delete',
+  'status': '/v1/computer/status', 'revoke': '/v1/computer/revoke',
+};
 function _bridgeCloudState(){
   return { cloud: true, port: 0, token: '', folder: 'AMV\u2019s cloud computer', root: 'amv-cloud:/work',
            sharesEnv: false, fence: 'cloud', computer: null };
 }
 async function _bridgeCloudCall(route, body, timeoutMs){
-  if(!BRIDGE_CLOUD_ROUTES.test(route)){
+  const path = Object.prototype.hasOwnProperty.call(BRIDGE_CLOUD_PATHS, route) ? BRIDGE_CLOUD_PATHS[route] : '';
+  if(!path){
     const e = new Error(BRIDGE_CLOUD_LOCAL_ONLY); e.code = 'cloud_local_only'; throw e;
   }
   /* A failure to reach AMV's server is NOT "the machine is gone", so unlike
      the local bridge it does not disconnect: a dropped connection or a lapsed
      sign-in is said in its own words, and the next call may well work. */
-  const r = await AMV_API._fetch('/v1/computer/' + route, { method: 'POST', body: JSON.stringify(body || {}),
+  const r = await AMV_API._fetch(path, { method: 'POST', body: JSON.stringify(body || {}),
                                                            timeout: timeoutMs || 130000, bodyTimeout: 30000 });
   const d = await r.json().catch(()=>({}));
   if(!r.ok && d && d.code){
