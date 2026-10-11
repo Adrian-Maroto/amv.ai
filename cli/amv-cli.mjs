@@ -12,6 +12,7 @@
      node amv-cli.mjs -m amv-pulse --json "..."  one JSON object, for scripts
      node amv-cli.mjs --count "..."              how many input tokens, without sending
      node amv-cli.mjs code "make the tests pass" AMV works in this folder, asking first
+     node amv-cli.mjs batch submit requests.jsonl  many requests, answered in the background
 
    THE KEY IS READ FROM THE ENVIRONMENT AND NOWHERE ELSE. Not a flag: a key on
    the command line is in the shell's history and in every process listing
@@ -33,6 +34,9 @@ const HELP = `amv - ask AMV from a terminal
   amv chat                       a conversation; Ctrl-D or "exit" to end
   amv code "what to do"          AMV works on the files in this folder: it reads freely,
                                  and asks before every change and every command
+  amv batch submit FILE.jsonl    up to 100 requests, one per line: {"custom_id","params"},
+                                 or just a line of text to ask; answered in the background
+  amv batch list | status ID | results ID | cancel ID
 
 Options
   -m, --model NAME     ${ENGINES.join(', ')} (default auto)
@@ -72,6 +76,7 @@ function parseArgs(argv) {
   if (o.words[0] === 'chat' && o.words.length === 1) { o.chat = true; o.words = []; }
   if (o.count && o.chat) throw usage('--count counts one request; it does not start a conversation');
   if (o.words[0] === 'code') o.code = true;
+  if (o.words[0] === 'batch') o.batch = true;
   if (o.count && o.code) throw usage('--count counts one request; it does not start work in a folder');
   if (!ENGINES.includes(o.model)) throw usage('unknown model "' + o.model + '" - one of ' + ENGINES.join(', '));
   if (!Number.isInteger(o.maxTokens) || o.maxTokens < 1 || o.maxTokens > 64000) throw usage('--max-tokens takes a whole number from 1 to 64000');
@@ -224,6 +229,7 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
     if (o.chat) return await chat(o, base, key, stdin, stdout, stderr, ctrl);
     /* Before stdin is read as part of a question: here it carries the answers. */
     if (o.code) return await code(o, base, key, stdin, stdout, stderr, ctrl);
+    if (o.batch) return await batch(o, base, key, stdout, stderr);
 
     const piped = await readStdin(stdin);
     if (piped.length > PIPED_MAX) { stderr.write('amv: what was piped in is over ' + PIPED_MAX + ' characters; send a smaller part.\n'); return 2; }
@@ -482,6 +488,42 @@ async function code(o, base, key, stdin, stdout, stderr, ctrl) {
   }
   asker.close();
   return why === 'error' ? 1 : why === 'stopped' ? 130 : 0;
+}
+
+/* ── amv batch: many requests, answered in the background ─────────────────
+   Each request is an ordinary one - charged exactly as if it were sent on its
+   own - and AMV works through them while nothing here waits. */
+async function batch(o, base, key, stdout, stderr) {
+  const [, verb, arg] = o.words;
+  const post = async (path, body) => {
+    let res;
+    try { res = await fetch(base + path, { method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'amv-cli/' + VERSION }, body: JSON.stringify(body || {}) }); }
+    catch (e) { throw fail('could not reach ' + base + ' (' + (e.cause && e.cause.code || e.message) + ')'); }
+    if (!res.ok) throw await refusal(res);
+    return res;
+  };
+  const show = (b) => b.id + '  ' + b.processing_status + '  ' + Object.entries(b.request_counts || {}).filter(([, n]) => n).map(([k, n]) => n + ' ' + k).join(', ');
+  if (verb === 'submit') {
+    if (!arg) throw usage('amv batch submit FILE.jsonl');
+    const { readFileSync } = await import('node:fs');
+    let text; try { text = readFileSync(arg, 'utf8'); } catch (e) { throw usage('could not read ' + arg); }
+    /* Named by the line of the file each came from, blank lines included,
+       so a result can be found in the file it answers. */
+    const requests = text.split(/\r?\n/).map((l, i) => [l.trim(), i + 1]).filter(([l]) => l).map(([l, n]) => {
+      let j = null; try { j = JSON.parse(l); } catch (e) {}
+      if (j && typeof j === 'object' && j.params) return j;
+      return { custom_id: 'line-' + n, params: { model: o.model, max_tokens: o.maxTokens, system: o.system || undefined, messages: [{ role: 'user', content: l }] } };
+    });
+    const b = await (await post('/v1/messages/batches', { requests })).json();
+    stdout.write(show(b) + '\nCheck on it with: amv batch status ' + b.id + '\n');
+    return 0;
+  }
+  if (verb === 'list') { const d = await (await post('/v1/messages/batches/list')).json(); stdout.write((d.data || []).map(show).join('\n') + '\n'); return 0; }
+  if (!/^batch_[a-f0-9]{24}$/.test(String(arg || ''))) throw usage('which batch? amv batch ' + (verb || 'status') + ' batch_...');
+  if (verb === 'status') { stdout.write(show(await (await post('/v1/messages/batches/get', { id: arg })).json()) + '\n'); return 0; }
+  if (verb === 'cancel') { stdout.write(show(await (await post('/v1/messages/batches/cancel', { id: arg })).json()) + '\n'); return 0; }
+  if (verb === 'results') { stdout.write(await (await post('/v1/messages/batches/results', { id: arg })).text()); return 0; }
+  throw usage('amv batch submit FILE | list | status ID | results ID | cancel ID');
 }
 
 /* A conversation. The history lives in this process only: nothing is saved

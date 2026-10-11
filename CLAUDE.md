@@ -108,6 +108,10 @@ Companion docs (do not duplicate them here - read them):
   `code:'stream_required'` before the rate limit and before the reservation -
   silently ignoring a parameter produces a parse error in somebody else's code
   with no cause attached (LESSONS 356).
+  **Batches** (`/v1/messages/batches*`) run every item through `aiProxy` itself,
+  as the batch's owner (`aiProxy(req, env, ctx, principal)`), so they are metered
+  by the one money path there is - never give batches a pricing path of their
+  own. A stale running item is reported, never re-run (it may have been charged).
 - **The bridge** (`bridge/amv-bridge.mjs`) is a zero-dependency daemon somebody
   runs on their own computer; it is what gives AMV a filesystem and a shell.
   `build.mjs` copies it to `amv-bridge.mjs` beside `index.html` (the way `sw.js`

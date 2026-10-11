@@ -17,6 +17,7 @@
      it changes and asks first, asks before every command and runs it without
      the API key in its environment, takes no answer as no, and can put every
      change back at the end;
+   - `amv batch` hands over a file of requests and collects the answers;
    - the key is only ever read from AMV_API_KEY, never a flag, and is never
      sent unencrypted to anything but this machine;
    - a revoked key, a used-up day and a bad option each end with a sentence
@@ -240,6 +241,28 @@ section('amv code works in this folder, and asks before every write and every co
   ok(!ex(join(dir, 'new', 'file.txt')) && /Put back as they were/.test(undo.out), 'and at the end every change can be put back', undo.out.slice(-200));
 
   globalThis.fetch = prev;
+}
+
+section('amv batch: many requests handed over, and collected later');
+{
+  const { mkdtempSync, writeFileSync: wf } = await import('fs');
+  const { tmpdir } = await import('os');
+  const f = join(mkdtempSync(join(tmpdir(), 'amv-batch-')), 'asks.jsonl');
+  wf(f, 'What is two plus two?\n\nName a colour.\n');
+  const sub = await run(['--api', API, 'batch', 'submit', f]);
+  const id = (sub.out.match(/batch_[a-f0-9]{24}/) || [])[0];
+  ok(sub.code === 0 && id && /amv batch status/.test(sub.out), 'a file of questions becomes one batch, with how to check on it', sub);
+  let st = '';
+  for (let i = 0; i < 40 && !/ended/.test(st); i++) { st = (await run(['--api', API, 'batch', 'status', id])).out; if (!/ended/.test(st)) await new Promise(r => setTimeout(r, 100)); }
+  ok(/ended/.test(st) && /2 succeeded/.test(st), 'it finishes in the background', st);
+  const res = await run(['--api', API, 'batch', 'results', id]);
+  const lines = res.out.trim().split('\n').map(l => JSON.parse(l));
+  ok(lines.length === 2 && lines[0].custom_id === 'line-1' && lines[1].custom_id === 'line-3' && lines[0].result.type === 'succeeded',
+     'one result per question, named by the line it came from', lines.map(l => [l.custom_id, l.result.type]));
+  const list = await run(['--api', API, 'batch', 'list']);
+  ok(list.out.includes(id), 'and it is in the list', list.out);
+  const bad = await run(['--api', API, 'batch', 'status', 'nope']);
+  ok(bad.code === 2 && /which batch/.test(bad.err), 'a malformed id is refused before anything is sent', bad.err);
 }
 
 section('Refusals say what to do');

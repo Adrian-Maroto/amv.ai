@@ -98,6 +98,8 @@ const CLASSIFIED = {
   teamData:          'role-checked team data',
   teamShare:         'role-checked shared library',
   teamUnshare:       'role-checked shared library',
+  batchCancel:       'only the caller\'s own batch: _batchOwned answers "not found" for any batch whose owner is not the caller',
+  batchCreate:       'a new batch is keyed by a fresh random id and owned by the caller resolved from their own credentials; its index is the caller\'s own',
   teamProjectCreate: 'a shared project is keyed by the caller\'s own team, resolved from their membership, never from the request',
   teamProjectSave:   'any member of the team may edit its shared projects - that is the feature - and the team is resolved from membership; a stale revision is refused',
   teamProjectDelete: 'whoever shared it, or an owner or admin of the caller\'s own team',

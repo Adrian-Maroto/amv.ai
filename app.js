@@ -46193,6 +46193,10 @@ function _apiDocsHTML(){
       '<code>model</code>, <code>system</code>, <code>messages</code> and <code>tools</code> and answers '+
       '<code>{"input_tokens": n}</code> - counted on what AMV would really send, its own instructions included, '+
       'so it matches what is billed. Free: nothing is generated and nothing counts against the plan.</p>'+
+    '<p class="ak-doc"><b>Batches.</b> <code>POST /v1/messages/batches</code> with up to 100 '+
+      '<code>{"custom_id", "params"}</code> requests; AMV answers them in the background. Then <code>/get</code>, '+
+      '<code>/results</code> (one JSON line per request) and <code>/cancel</code>, each with <code>{"id"}</code>, and '+
+      '<code>/list</code>. Each request is charged exactly as if it were sent on its own.</p>'+
   '</div>'+
   /* FROM A TERMINAL. One file with nothing to install, handed over the way
      the bridge is - from this deployment, with this deployment's address

@@ -12935,6 +12935,9 @@ const BACKUP_PREFIXES = [
    exist - which is also why erasing the creator takes them with it. */
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
+  /* Batches: work in flight and answers kept for a week. Restoring one would
+     put a finished batch back in the queue - to be run, and charged, again. */
+  'batch:', 'batchidx:', 'batchq:', 'batchreq:', 'batchres:',
   /* Which family invitations are waiting for somebody - ids only, gone in a
      day. The invitations themselves ('link:') carry the decision; this is the
      index a child's device reads to find them. Restored, it would point at
@@ -14007,6 +14010,10 @@ export default {
          counter reads that must not be able to take out the sweep that revokes
          plans. Alarmed once a month internally, so running it every tick costs
          two reads and nothing else. */
+      /* Batches with work left get their slice of this tick. Its own try,
+         like everything here: a batch fault must not take out the sweeps. */
+      try{ await runBatches(env, ctx); }
+      catch(e){ console.error('[cron] batches failed', e && e.message); try{ await _workerError(env, 'cron.batches', e); }catch(_){} }
       try{
         const c = await runCohortCheck(env);
         if(c && c.alarmed) console.log('[cron] heavy share', JSON.stringify(c));
@@ -14143,6 +14150,7 @@ const BODY_MAX_BYTES = 1024 * 1024;
 const BODY_MAX_BY_PATH = {
   '/admin/backup/import': 64 * 1024 * 1024,  // a whole namespace snapshot, restored by the operator
   '/sync/push': 8 * 1024 * 1024,             // everything one account has, from one device
+  '/v1/messages/batches': 8 * 1024 * 1024,   // up to a hundred requests at once
 };
 
 function _bodyMaxFor(path) {
@@ -14650,6 +14658,11 @@ async function _route(request, env, ctx) {
     case '/team/task/update': return teamTaskUpdate(request, env);
     case '/v1/messages':     return aiProxy(request, env, ctx);
     case '/v1/messages/count_tokens': return aiCountTokens(request, env);
+    case '/v1/messages/batches':         return batchCreate(request, env, ctx);
+    case '/v1/messages/batches/list':    return batchList(request, env);
+    case '/v1/messages/batches/get':     return batchGet(request, env);
+    case '/v1/messages/batches/results': return batchResults(request, env);
+    case '/v1/messages/batches/cancel':  return batchCancel(request, env);
     case '/v1/usage':        return usageReport(request, env);
     case '/sms/register':    return smsRegister(request, env);
     case '/waitlist':        return waitlistAdd(request, env);
@@ -16068,6 +16081,9 @@ const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs'
      and this one is a live link to somebody's calendar. Left off, deleting an
      account would keep a working view of their week. */
   'cal',
+  /* The list of somebody's batches. The batches themselves (keyed by id, not
+     by person) are deleted on erasure by walking this list first. */
+  'batchidx',
   /* AMV-SP-02: the Google grant. It was erased - by a hand-written delete in
      authDeleteAccount, which also revokes the token at Google first - and it
      was never on this list, which is the shared inventory the export walks and
@@ -16543,6 +16559,22 @@ async function authDeleteAccount(request, env) {
     try { await alertOnce(env, 'erase_team:' + email,
       'An account was deleted but could not be removed from its team, so a membership row may still name them. Remove it by hand.', 60); } catch (_) {}
   }
+
+  /* Their batches: the requests they sent, the answers, and the queue entry -
+     found through the index before the index itself goes. */
+  try {
+    const bidx = (await DB.get(env, 'batchidx', email)) || [];
+    for (const b of bidx) {
+      const id = b && b.id; if (!/^batch_[a-f0-9]{24}$/.test(String(id || ''))) continue;
+      try {
+        const rec = await DB.get(env, 'batch', id);
+        const n = rec && Array.isArray(rec.items) ? rec.items.length : BATCH_MAX;
+        for (let i = 0; i < n; i++) { await env.AMV_KV.delete(`batchreq:${id}:${i}`); await env.AMV_KV.delete(`batchres:${id}:${i}`); }
+        await env.AMV_KV.delete('batchq:' + id);
+        await DB.del(env, 'batch', id);
+      } catch { _eraseFailed('batches'); }
+    }
+  } catch { _eraseFailed('batches'); }
 
   // 2) Delete the user's deployed public sites (records + index).
   try {
@@ -18760,6 +18792,269 @@ async function enginesList(request, env) {
   return json({ ok: true, engines: primary.concat(partners) });
 }
 
+/* ══ BATCHES: MANY REQUESTS, ANSWERED IN THE BACKGROUND ══════════════════════
+
+   A developer with a thousand documents to summarise should not have to hold
+   a thousand connections open. A batch is up to BATCH_MAX requests handed
+   over at once; AMV works through them in the background and the results are
+   collected later.
+
+   EVERY ITEM IS AN ORDINARY REQUEST. Each one runs through aiProxy itself - the
+   same plan check, the same rate limit, the same token, message and dollar
+   reservations, the same extra-usage rules and the same settlement - as the
+   batch's owner, exactly as if they had sent it. There is no second metering
+   path to drift from the first, which is the whole design: batches are
+   charged like the messages they are, no more and no less, and every guard
+   that protects a message protects a batch item with no extra code.
+
+   What that means in practice:
+     - an item refused because a window is full waits and is tried again
+       later, until the batch's 24 hours run out; anything else refused is
+       recorded as that item's error, with the reason AMV gave;
+     - a batch made with an API key stops when the key is revoked;
+     - an item that was running when its worker died is NOT run again: it
+       may already have been answered and charged, and charging twice is the
+       one outcome a retry must never cause - it is reported as interrupted;
+     - cancelling stops before the next item; what was answered stays.
+
+   Results are kept for seven days. */
+const BATCH_MAX = 100, BATCH_ACTIVE_MAX = 5, BATCH_TTL_MS = 24 * 3600000, BATCH_KEEP_S = 7 * 86400;
+const BATCH_TICK_MS = 25000, BATCH_STALE_MS = 10 * 60000;
+const BATCH_WAIT_CODES = new Set(['rate_limited', 'quota_window', 'quota_top_week', 'global_cap', 'acct_busy', 'provider_error']);
+
+async function batchCreate(request, env, ctx) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Please sign in again.' }, 401);
+  const held = await _accountHold(env, user, 'chat');
+  if (held) return held;
+  const blocked = await guardAction(env, 'batch:' + user.email, 5, 100, 'batches');
+  if (blocked) return blocked;
+  const body = await request.json().catch(() => null);
+  const reqs = body && Array.isArray(body.requests) ? body.requests : null;
+  if (!reqs || !reqs.length) return json({ error: 'Send "requests": a list of {custom_id, params}.', code: 'invalid_input' }, 400);
+  if (reqs.length > BATCH_MAX) return json({ error: 'A batch holds at most ' + BATCH_MAX + ' requests. Split it into several.', code: 'invalid_input' }, 400);
+  const seen = new Set();
+  for (let i = 0; i < reqs.length; i++) {
+    const r = reqs[i] || {}, cid = String(r.custom_id || '');
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(cid)) return json({ error: 'Request ' + i + ': custom_id must be 1-64 letters, digits, _ or -.', code: 'invalid_input' }, 400);
+    if (seen.has(cid)) return json({ error: 'Request ' + i + ': custom_id "' + cid + '" is used twice.', code: 'invalid_input' }, 400);
+    seen.add(cid);
+    const p = r.params;
+    if (!p || typeof p !== 'object') return json({ error: 'Request ' + i + ' ("' + cid + '") has no params.', code: 'invalid_input' }, 400);
+    const v = validateMessagesPayload(p);
+    if (v) return json({ error: 'Request ' + i + ' ("' + cid + '"): ' + v, code: 'invalid_input' }, 400);
+    if (p.stream === false) return json({ error: 'Request ' + i + ' ("' + cid + '"): leave "stream" out - batch items are collected for you.', code: 'invalid_input' }, 400);
+  }
+  const id = 'batch_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+  const now = Date.now();
+  let res;
+  try {
+    res = await _withKind(env, 'batchidx', user.email, (idx) => {
+      const active = idx.filter(b => b && b.status !== 'ended').length;
+      if (active >= BATCH_ACTIVE_MAX) return { error: 'You have ' + BATCH_ACTIVE_MAX + ' batches still running. Wait for one to finish, or cancel one.', status: 429, code: 'batch_limit' };
+      idx.unshift({ id, created: now, status: 'in_progress', n: reqs.length });
+      if (idx.length > 50) idx.length = 50;
+      return { ok: true };
+    }, []);
+  } catch (e) { if (!_isBusy(e)) throw e; return _busyJson('batch'); }
+  if (res && res.error) return json({ error: res.error, code: res.code }, res.status || 400);
+  for (let i = 0; i < reqs.length; i++) await env.AMV_KV.put(`batchreq:${id}:${i}`, JSON.stringify(reqs[i].params), { expirationTtl: BATCH_KEEP_S + 86400 });
+  const rec = { id, owner: user.email, keyId: await _apiKeyIdOf(request, env), created: now, expiresAt: now + BATCH_TTL_MS, status: 'in_progress',
+                items: reqs.map(r => ({ cid: String(r.custom_id), state: 'pending' })) };
+  await _withKind(env, 'batch', id, (r) => { Object.assign(r, rec); return { ok: true }; }, {});
+  await env.AMV_KV.put('batchq:' + id, '1');
+  audit(env, 'batch_created', { by: user.email, n: reqs.length });
+  /* The first ones start now rather than at the next tick. */
+  try { if (ctx && ctx.waitUntil) ctx.waitUntil(_batchRun(env, ctx, id, 20000).catch(() => {})); } catch (e) {}
+  return json(_batchView(rec));
+}
+
+/* Which API key, if any, made this request - so a batch made with one stops
+   when it is revoked. Read from the key itself, the way requireUser found it. */
+async function _apiKeyIdOf(request, env) {
+  const raw = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '') || request.headers.get('X-AMV-Key') || '';
+  if (!raw.startsWith(API_KEY_PREFIX)) return '';
+  try { const ref = JSON.parse(await env.AMV_KV.get(`apikey:${await _apiKeyHash(raw)}`) || 'null'); return (ref && ref.id) || ''; }
+  catch (e) { return ''; }
+}
+function _batchView(rec) {
+  const c = { processing: 0, succeeded: 0, errored: 0, canceled: 0, expired: 0 };
+  for (const it of rec.items || []) {
+    if (it.state === 'pending' || it.state === 'running') c.processing++;
+    else c[it.result] = (c[it.result] || 0) + 1;
+  }
+  return { id: rec.id, type: 'message_batch', processing_status: rec.status === 'ended' ? 'ended' : rec.status === 'canceling' ? 'canceling' : 'in_progress',
+           request_counts: c, created_at: new Date(rec.created).toISOString(), expires_at: new Date(rec.expiresAt).toISOString(),
+           ended_at: rec.endedAt ? new Date(rec.endedAt).toISOString() : null };
+}
+
+/* Only the owner, and only by id. Somebody else's batch is "not found",
+   not "forbidden": whether it exists is not theirs to learn. */
+async function _batchOwned(request, env, user) {
+  const body = await request.json().catch(() => ({}));
+  const id = String((body && body.id) || '');
+  const rec = /^batch_[a-f0-9]{24}$/.test(id) ? await DB.get(env, 'batch', id) : null;
+  if (!rec || rec.owner !== user.email) return { res: json({ error: 'There is no batch with that id on this account.', code: 'not_found' }, 404) };
+  return { user, rec };
+}
+async function batchGet(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Please sign in again.' }, 401);
+  const o = await _batchOwned(request, env, user); if (o.res) return o.res;
+  return json(_batchView(o.rec));
+}
+async function batchList(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Please sign in again.' }, 401);
+  const idx = (await DB.get(env, 'batchidx', user.email)) || [];
+  const out = [];
+  for (const b of idx.slice(0, 50)) { const rec = await DB.get(env, 'batch', b.id); if (rec) out.push(_batchView(rec)); }
+  return json({ data: out });
+}
+async function batchCancel(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Please sign in again.' }, 401);
+  const o = await _batchOwned(request, env, user); if (o.res) return o.res;
+  let rec;
+  try {
+    rec = await _withKind(env, 'batch', o.rec.id, (r) => {
+      if (r && r.status === 'in_progress') r.status = 'canceling';
+      return r;
+    });
+  } catch (e) { if (!_isBusy(e)) throw e; return _busyJson('batch'); }
+  audit(env, 'batch_cancel', { by: o.user.email });
+  return json(_batchView(rec || o.rec));
+}
+/* One line per request, in the order sent: what it answered, or why not. */
+async function batchResults(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Please sign in again.' }, 401);
+  const o = await _batchOwned(request, env, user); if (o.res) return o.res;
+  const lines = [];
+  for (let i = 0; i < o.rec.items.length; i++) {
+    const it = o.rec.items[i];
+    if (it.state === 'pending' || it.state === 'running') continue;
+    let result = { type: it.result || 'errored' };
+    if (it.result === 'succeeded' || it.result === 'errored') {
+      const raw = await env.AMV_KV.get(`batchres:${o.rec.id}:${i}`);
+      try { if (raw) result = JSON.parse(raw); } catch (e) {}
+    }
+    lines.push(JSON.stringify({ custom_id: it.cid, result }));
+  }
+  return new Response(lines.join('\n') + (lines.length ? '\n' : ''), { status: 200, headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8' } });
+}
+
+/* An answer, read off the stream aiProxy returned: the same message shape a
+   non-streamed reply would have had. */
+function _sseMessage(text, engine) {
+  const content = []; let stop = null; const usage = { input_tokens: 0, output_tokens: 0 };
+  for (const raw of String(text).split('\n\n')) {
+    const line = raw.split('\n').find(l => l.startsWith('data:'));
+    if (!line) continue;
+    let ev; try { ev = JSON.parse(line.slice(5).trim()); } catch (e) { continue; }
+    if (ev.type === 'message_start' && ev.message && ev.message.usage) usage.input_tokens = ev.message.usage.input_tokens || 0;
+    else if (ev.type === 'content_block_start') content[ev.index] = ev.content_block && ev.content_block.type === 'tool_use'
+      ? { type: 'tool_use', id: ev.content_block.id, name: ev.content_block.name, _json: '' } : { type: 'text', text: '' };
+    else if (ev.type === 'content_block_delta' && content[ev.index]) {
+      if (ev.delta && ev.delta.type === 'text_delta') content[ev.index].text += ev.delta.text || '';
+      else if (ev.delta && ev.delta.type === 'input_json_delta') content[ev.index]._json += ev.delta.partial_json || '';
+    } else if (ev.type === 'message_delta') { if (ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason; if (ev.usage && ev.usage.output_tokens != null) usage.output_tokens = ev.usage.output_tokens; }
+  }
+  return { type: 'message', role: 'assistant', engine, stop_reason: stop, usage,
+           content: content.filter(Boolean).map(b => { if (b.type !== 'tool_use') return b; let input = {}; try { input = b._json ? JSON.parse(b._json) : {}; } catch (e) {} return { type: 'tool_use', id: b.id, name: b.name, input }; }) };
+}
+
+/* Work through one batch for up to `budgetMs`. One worker at a time per batch
+   (the claim), one item at a time, each item's state changed under the lock. */
+async function _batchRun(env, ctx, id, budgetMs) {
+  if (!(await _claimOnce(env, 'batchrun', id, 120))) return 'busy';
+  const until = Date.now() + (budgetMs || BATCH_TICK_MS);
+  try {
+    for (;;) {
+      if (Date.now() > until) return 'budget';
+      let pick = null, ended = false;
+      const rec = await _withKind(env, 'batch', id, (r) => {
+        if (!r || r.status === 'ended') { ended = true; return r; }
+        const now = Date.now();
+        for (const it of r.items) if (it.state === 'running' && now - (it.at || 0) > BATCH_STALE_MS) { it.state = 'done'; it.result = 'errored'; it.code = 'interrupted'; }
+        const finish = (why) => { for (const it of r.items) if (it.state === 'pending') { it.state = 'done'; it.result = why; } };
+        if (r.status === 'canceling') finish('canceled');
+        else if (now > r.expiresAt) finish('expired');
+        const i = r.items.findIndex(it => it.state === 'pending' && !(it.wait > now));
+        if (i >= 0) { r.items[i].state = 'running'; r.items[i].at = now; pick = i; }
+        else if (!r.items.some(it => it.state === 'pending' || it.state === 'running')) { r.status = 'ended'; r.endedAt = now; ended = true; }
+        return r;
+      });
+      if (ended || !rec) {
+        try { await env.AMV_KV.delete('batchq:' + id); } catch (e) {}
+        if (rec) await _withKind(env, 'batchidx', rec.owner, (idx) => { const b = idx.find(x => x && x.id === id); if (b) b.status = 'ended'; return { ok: true }; }, []).catch(() => {});
+        return 'ended';
+      }
+      if (pick == null) return 'waiting';
+      const outcome = await _batchItem(env, ctx, rec, pick);
+      await _withKind(env, 'batch', id, (r) => {
+        const it = r.items[pick];
+        if (outcome.wait) { it.state = 'pending'; it.wait = Date.now() + outcome.wait; }
+        else { it.state = 'done'; it.result = outcome.result; it.code = outcome.code || ''; }
+        if (outcome.stop) for (const x of r.items) if (x.state === 'pending') { x.state = 'done'; x.result = 'canceled'; }
+        return r;
+      });
+      if (outcome.wait) return 'waiting';
+    }
+  } finally { await _releaseClaim(env, 'batchrun', id); }
+}
+async function _batchItem(env, ctx, rec, i) {
+  const fail = async (code, message, extra) => {
+    await env.AMV_KV.put(`batchres:${rec.id}:${i}`, JSON.stringify({ type: 'errored', error: { code, message } }), { expirationTtl: BATCH_KEEP_S });
+    return Object.assign({ result: 'errored', code }, extra || {});
+  };
+  /* A batch made with a key lives and dies with the key. */
+  if (rec.keyId) {
+    const keys = (await DB.get(env, 'apikeys', rec.owner)) || { items: [] };
+    const k = (keys.items || []).find(x => x.id === rec.keyId);
+    if (!k || k.revoked) return fail('key_revoked', 'The API key this batch was made with was revoked, so the rest of the batch was cancelled.', { stop: true });
+  }
+  const user = await _principalOf(env, rec.owner, null, { via: rec.keyId ? 'apikey' : 'batch', keyId: rec.keyId || undefined });
+  if (!user) return fail('account_gone', 'The account this batch belongs to no longer exists.', { stop: true });
+  let params = null;
+  try { params = JSON.parse(await env.AMV_KV.get(`batchreq:${rec.id}:${i}`) || 'null'); } catch (e) {}
+  if (!params) return fail('request_missing', 'This request could not be read back, so it was not run.');
+  const req = new Request('https://batch.amv.internal/v1/messages', { method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-AMV-Request-Id': 'b' + rec.id.slice(6, 18) + 'i' + i },
+    body: JSON.stringify(Object.assign({}, params, { stream: true })) });
+  let res;
+  try { res = await aiProxy(req, env, ctx, user); }
+  catch (e) { return { wait: 60000 }; }
+  if (!res.ok) {
+    let d = {}; try { d = await res.json(); } catch (e) {}
+    /* A passing condition - a full window, a busy provider, a 5xx with no
+       verdict of AMV's own - is waited out. A decision (a plan boundary, a bad
+       request, a missing service) is the item's answer. */
+    const code = String(d.code || '');
+    if (BATCH_WAIT_CODES.has(code) || (!code && (res.status === 429 || res.status >= 500))) {
+      const ra = +res.headers.get('Retry-After') || 60;
+      return { wait: Math.min(6 * 3600, Math.max(60, ra)) * 1000 };
+    }
+    const said = d.error && typeof d.error === 'object' ? d.error.message : d.error;
+    return fail(code || 'error_' + res.status, String(said || 'The request was refused.').slice(0, 500));
+  }
+  const text = await res.text();
+  const msg = _sseMessage(text, res.headers.get('X-AMV-Engine') || String(params.model || ''));
+  await env.AMV_KV.put(`batchres:${rec.id}:${i}`, JSON.stringify({ type: 'succeeded', message: msg }), { expirationTtl: BATCH_KEEP_S });
+  return { result: 'succeeded' };
+}
+/* The cron's share: every batch with work left, a slice of time each. */
+async function runBatches(env, ctx) {
+  const page = await env.AMV_KV.list({ prefix: 'batchq:', limit: 50 });
+  const out = [];
+  const until = Date.now() + 4 * BATCH_TICK_MS;
+  for (const k of page.keys) {
+    if (Date.now() > until) break;
+    out.push(await _batchRun(env, ctx, k.name.slice('batchq:'.length), BATCH_TICK_MS).catch(e => 'error'));
+  }
+  return out;
+}
+
 /* ── COUNTING TOKENS BEFORE SENDING ─────────────────────────────────────────
    POST /v1/messages/count_tokens - how many input tokens a request would be,
    without running it. Free, nothing is reserved or counted against an
@@ -18819,8 +19114,11 @@ async function aiCountTokens(request, env){
   return json({ input_tokens: d.input_tokens, engine: key });
 }
 
-async function aiProxy(request, env, ctx) {
-  const user = await requireUser(request, env);
+/* `principal` is given only by the batch runner (_batchItem), which resolves
+   the batch's owner the same way requireUser would; every request from
+   outside is authenticated here as always. */
+async function aiProxy(request, env, ctx, principal) {
+  const user = principal || await requireUser(request, env);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
 
   /* Before the key check, the rate limit and the reservation, because none of
