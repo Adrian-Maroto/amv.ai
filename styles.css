@@ -17046,3 +17046,12 @@ button.pl-app:hover{border-color:var(--accent);color:var(--accent-txt)}
 .tp-col-h{font-size:var(--t-xs);font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
 @media (max-width:560px){.tp-cols{grid-template-columns:1fr}}
 @media (hover:none){.tp-hist>summary{min-height:44px}}
+
+/* ═══ LAYER A317 - A merged section's heading does not sit on its own first line ═══
+   `.set-sub` pulls itself up 18px under a title, which is right on a pane:
+   `.set-pane` is a flex column with a 22px gap, so the pull leaves the 8px
+   the design asks for. A merged section is a plain block with no gap, so the
+   same pull put the subtitle 14px UNDER its heading - Skills, API keys and
+   every other second section of a page printed two lines on top of each
+   other. Same 8px, reached from where this box actually starts. */
+.settings-content .set-merged .set-title + .set-sub{ margin-top:var(--sp-1)!important; }

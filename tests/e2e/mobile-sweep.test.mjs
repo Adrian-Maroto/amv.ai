@@ -20,7 +20,7 @@ const SMALL = { width: 320, height: 568 };     // the narrowest phone still in u
 /* Every tab reachable from the app shell. */
 const TABS = ['chat', 'workspaces', 'memory', 'usage', 'billing', 'plans', 'upgrade',
               'settings', 'help', 'apps', 'tasks', 'integrations', 'crew', 'studio', 'dev',
-              'handoff', 'lab', 'market'];
+              'handoff', 'lab', 'market', 'spend', 'team', 'build', 'automation'];
 
 /* Every settings pane a normal (non-operator) user can open. */
 const PANES = ['account', 'privacy', 'security', 'billing', 'usage', 'capabilities', 'spending',
@@ -91,6 +91,26 @@ section('Every settings pane fits a phone');
     if (w) bad.push(pane + ': ' + w.tag + '.' + w.cls + ' +' + w.over + 'px');
   }
   ok(bad.length === 0, 'no settings pane does either', bad);
+}
+
+section('No heading sits on top of the line under it');
+{
+  /* Measured on every pane, including the sections merged into one page -
+     the second section of a page used to print its subtitle 14px under its
+     own title. */
+  const bad = [];
+  for (const pane of PANES) {
+    await openPane(pane);
+    const hit = await page.evaluate(() => [...document.querySelectorAll('.set-title')].map(t => {
+      const s = t.nextElementSibling;
+      if (!s || !s.classList.contains('set-sub')) return null;
+      const a = t.getBoundingClientRect(), b = s.getBoundingClientRect();
+      if (!a.height || !b.height) return null;
+      return b.top < a.bottom - 1 ? t.textContent.trim().slice(0, 30) + ' (' + Math.round(a.bottom - b.top) + 'px)' : null;
+    }).filter(Boolean));
+    for (const h of hit) bad.push(pane + ': ' + h);
+  }
+  ok(bad.length === 0, 'every settings title has its subtitle below it, not under it', [...new Set(bad)]);
 }
 
 section('It still fits on the narrowest phone people actually use');
