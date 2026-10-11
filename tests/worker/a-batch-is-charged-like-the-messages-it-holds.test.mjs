@@ -51,7 +51,11 @@ const env = {
   AMV_KV: {
     _map: m,
     async get(k) { return m.has(k) ? m.get(k) : null; }, async put(k, v) { m.set(k, v); }, async delete(k) { m.delete(k); },
-    async list({ prefix, limit } = {}) { const keys = [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).sort().map(name => ({ name })); return { keys: limit ? keys.slice(0, limit) : keys, list_complete: true }; },
+    async list({ prefix, limit, cursor } = {}) {
+      const all = [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).sort().map(name => ({ name }));
+      const from = cursor ? +cursor : 0, keys = limit ? all.slice(from, from + limit) : all.slice(from), end = from + keys.length;
+      return { keys, list_complete: end >= all.length, cursor: end >= all.length ? undefined : String(end) };
+    },
   },
   AMV_COUNTER: { idFromName: (n) => n, get: (n) => ({ async fetch(_u, init) {
     const b = JSON.parse(init.body); const cur = vals.get(n) || 0; const r = (o) => new Response(JSON.stringify(o));
@@ -68,6 +72,7 @@ const env = {
 const pending = [];
 const runCtx = { waitUntil(p) { if (p) pending.push(Promise.resolve(p).catch(() => {})); }, passThroughOnException() {} };
 const settle = async () => { while (pending.length) await pending.shift(); };
+const tick = async () => { await W.runBatches(env, runCtx); await settle(); };
 const call = async (path, body, tok, ctx) => {
   const r = await worker.fetch(new Request('https://api.amv.test' + path, { method: 'POST',
     headers: Object.assign({ 'Content-Type': 'application/json', 'CF-Connecting-IP': '9.9.9.' + (1 + Math.floor(Math.random() * 200)) }, tok ? { Authorization: 'Bearer ' + tok } : {}),
@@ -84,7 +89,7 @@ const account = async (email) => {
 const req = (cid, text) => ({ custom_id: cid, params: { model: 'amv-core', max_tokens: 200, messages: [{ role: 'user', content: text }] } });
 const usedToday = (email) => vals.get(`usg:${email}:${W.todayKey()}`) || 0;
 /* A batch held still: made while the model is down, so its items are waiting. */
-const held = async (who, reqs) => { modelDown = true; const r = await call('/v1/messages/batches', { requests: reqs }, who.key); await settle(); modelDown = false; return r.body.id; };
+const held = async (who, reqs) => { const r = await call('/v1/messages/batches', { requests: reqs }, who.key); await settle(); return r.body.id; };
 const unwait = async (id) => { const rec = await W.DB.get(env, 'batch', id); rec.items.forEach(it => { it.wait = 0; }); await W.DB.put(env, 'batch', id, rec); };
 
 const A = await account('dev-a@example.com');
@@ -97,6 +102,9 @@ let first;
   ok(r.status === 200 && /^batch_/.test(r.body.id) && r.body.request_counts.processing === 3, 'it is accepted, with all three to do', r.body);
   first = r.body.id;
   await settle();
+  const g0 = await call('/v1/messages/batches/get', { id: first }, A.key);
+  ok(g0.body.request_counts.processing === 3, 'nothing runs inside the request that made it - a long answer would outlive it', g0.body);
+  await tick();
   const g = await call('/v1/messages/batches/get', { id: first }, A.key);
   ok(g.body.processing_status === 'ended' && g.body.request_counts.succeeded === 3, 'and all three are answered', g.body);
   const res = await call('/v1/messages/batches/results', { id: first }, A.key);
@@ -114,7 +122,7 @@ section('It costs exactly what the same requests sent one by one cost');
   for (const t of ['a', 'b']) { const r = await call('/v1/messages', { model: 'amv-core', max_tokens: 200, messages: [{ role: 'user', content: t }] }, A.key); await settle(); }
   const direct = usedToday('dev-a@example.com') - before;
   const mid = usedToday('dev-a@example.com');
-  await call('/v1/messages/batches', { requests: [req('x', 'a'), req('y', 'b')] }, A.key); await settle();
+  await call('/v1/messages/batches', { requests: [req('x', 'a'), req('y', 'b')] }, A.key); await tick();
   const batched = usedToday('dev-a@example.com') - mid;
   ok(direct > 0 && batched === direct, 'the same allowance is used, to the token', { direct, batched });
   ok(modelCalls - calls0 === 4, 'and the model was asked once per request, no more', modelCalls - calls0);
@@ -204,6 +212,43 @@ section('There is a ceiling on batches running at once');
   const sixth = await call('/v1/messages/batches', { requests: [req('n6', 'x')] }, D.key);
   await settle(); modelDown = false;
   ok(sixth.status === 429 && sixth.body.code === 'batch_limit', 'a sixth waits for one of the five to finish', sixth.body);
+}
+
+section('A paused deployment spends nothing on batches - and loses none');
+{
+  const E = await account('dev-e@example.com');
+  const id = await held(E, [req('k1', 'paused')]);
+  m.set('GLOBAL_KILL', '1');
+  const calls0 = modelCalls;
+  await tick();
+  const g = (await call('/v1/messages/batches/get', { id }, E.tok)).body;
+  m.delete('GLOBAL_KILL');
+  ok(modelCalls === calls0, 'while paused, the model is not asked', modelCalls - calls0);
+  ok(g && g.request_counts && g.request_counts.processing === 1 && g.request_counts.errored === 0, 'and the item waits rather than failing', g);
+  await unwait(id); await tick();
+  const g2 = (await call('/v1/messages/batches/get', { id }, E.key)).body;
+  ok(g2.processing_status === 'ended' && g2.request_counts.succeeded === 1, 'once resumed, it is answered', g2);
+}
+
+section('Every batch gets its turn, however many are waiting ahead of it');
+{
+  /* Sixty batches ahead of it in key order, each waiting hours on a window:
+     a tick that only ever read the first page would never reach it. */
+  const ahead = [];
+  for (let i = 0; i < 60; i++) {
+    const bid = 'batch_' + '0'.repeat(20) + String(i).padStart(4, '0');
+    ahead.push(bid);
+    await W.DB.put(env, 'batch', bid, { id: bid, owner: 'nobody@example.com', created: Date.now(), expiresAt: Date.now() + 86400000, status: 'in_progress',
+      items: [{ cid: 'w', state: 'pending', wait: Date.now() + 5 * 3600000 }] });
+    m.set('batchq:' + bid, '1');
+  }
+  const F = await account('dev-f@example.com');
+  const id = await held(F, [req('turn', 'my turn')]);
+  ok(id > ahead[ahead.length - 1], 'it sorts after all of them', id);
+  await tick();
+  const g = (await call('/v1/messages/batches/get', { id }, F.key)).body;
+  ok(g.processing_status === 'ended' && g.request_counts.succeeded === 1, 'and it is answered on the next tick all the same', g);
+  for (const bid of ahead) { m.delete('batchq:' + bid); }
 }
 
 report('a-batch-is-charged-like-the-messages-it-holds');

@@ -96,6 +96,8 @@ const judge = rows => {
 const app = await bootApp({ tab: 'chat', viewport: { width: 1280, height: 900 },
                             user: { name: 'T', email: 't@x.com', ini: 'T' } });
 const { page, errors } = app;
+/* The API key dialog lives in api-keys.js, fetched when its pane opens. */
+await page.evaluate(() => _apiKeysLoad());
 
 const landing = {}, dialogs = {}, empty = [];
 for (const theme of ['dark', 'light']) {

@@ -70,6 +70,14 @@ section('A protected file is never written - in chat or in Build - and the model
   });
   ok(r.a.ok === false && /\.env/.test(r.a.error) && r.b.ok === false, '.env anywhere, and anything under migrations/, is refused', [r.a.error, r.b.error]);
   ok(r.writes.join() === 'src/app.js', 'only the unprotected file reached the computer', r.writes);
+  const odd = await page.evaluate(() => ({
+    hits: ['/home/me/proj/migrations/2024/001.sql', 'src/../migrations/x.sql', './/config//.env', 'C:\\proj\\.env', 'MIGRATIONS/a.sql']
+      .map(p => _rulePathHit(p, ['.env', 'migrations/**'])),
+    misses: ['src/old-migrations/x.sql', 'src/migrations.txt', 'env', 'src/app.js', 'migrations/../src/app.js']
+      .map(p => _rulePathHit(p, ['.env', 'migrations/**'])),
+  }));
+  ok(odd.hits.every(Boolean), 'a protected file is still protected by its full path, a roundabout path, or a Windows one', odd.hits);
+  ok(odd.misses.every(h => h === ''), 'and nothing that merely looks similar is caught', odd.misses);
   ok(/protected these/.test(r.desc) && /migrations\/\*\*/.test(r.desc), 'and write_file tells the model which files before it tries', r.desc.slice(-120));
 }
 

@@ -566,14 +566,29 @@ function _agentRules(){
 const _ruleEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /* The rule that protects a path, or ''. `*` is within a folder, `**` across
    folders, and a rule with no slash in it names a file wherever it is. */
+/* Paths are compared after `.`, `..` and doubled slashes are resolved, and a
+   rule matches wherever the path ENDS with it on a folder boundary. The model
+   names files however it likes - `/home/me/proj/config/secrets.json`,
+   `src/../config/secrets.json` - and comparing from the start of the string
+   let both of those past a `config/secrets.json` rule. Matching a tail can only
+   protect more than meant, never less, which is the right way to be wrong. */
+function _ruleNormPath(path){
+  const out = [];
+  for(const seg of String(path || '').replace(/\\/g, '/').split('/')){
+    if(!seg || seg === '.') continue;
+    if(seg === '..'){ out.pop(); continue; }
+    out.push(seg);
+  }
+  return out.join('/');
+}
 function _rulePathHit(path, list){
-  const p = String(path || '').replace(/\\/g, '/').replace(/^\.\//, '');
-  const base = p.split('/').pop();
+  const p = _ruleNormPath(path);
+  if(!p) return '';
   return (list || []).find(r => {
-    const g = String(r).replace(/\\/g, '/').replace(/^\.\//, '');
-    const src = g.split('**').map(x => x.split('*').map(_ruleEsc).join('[^/]*')).join('.*').replace(/^\.\*\//, '(?:.*/)?');
-    const re = new RegExp('^' + src + '$', 'i');
-    return re.test(p) || (g.indexOf('/') < 0 && re.test(base));
+    const g = _ruleNormPath(r);
+    if(!g) return false;
+    const src = g.split('**').map(x => x.split('*').map(_ruleEsc).join('[^/]*')).join('.*');
+    return new RegExp('^(?:.*/)?' + src + '$', 'i').test(p);
   }) || '';
 }
 try{ Object.assign(window, { _agentRules, _rulePathHit, _nrMatch }); }catch(e){}

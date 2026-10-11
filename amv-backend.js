@@ -12937,7 +12937,7 @@ const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
   /* Batches: work in flight and answers kept for a week. Restoring one would
      put a finished batch back in the queue - to be run, and charged, again. */
-  'batch:', 'batchidx:', 'batchq:', 'batchreq:', 'batchres:',
+  'batch:', 'batchidx:', 'batchq:', 'batchreq:', 'batchres:', 'batchcursor',
   /* Which family invitations are waiting for somebody - ids only, gone in a
      day. The invitations themselves ('link:') carry the decision; this is the
      index a child's device reads to find them. Restored, it would point at
@@ -14006,14 +14006,18 @@ export default {
         console.error('[cron] renewal sweep failed', e && e.message);
         try{ await _workerError(env, 'cron.renewals', e); }catch(_){}
       }
+      /* Batches with work left get their slice of this tick. Its own try,
+         like everything here: a batch fault must not take out the sweeps.
+         Skipped while paused, like automations: every item is a call to the
+         model, and the switch exists to stop exactly that. */
+      if(!killed){
+        try{ await runBatches(env, ctx); }
+        catch(e){ console.error('[cron] batches failed', e && e.message); try{ await _workerError(env, 'cron.batches', e); }catch(_){} }
+      }
       /* Its own try, for the same reason as everything else on this tick: two
          counter reads that must not be able to take out the sweep that revokes
          plans. Alarmed once a month internally, so running it every tick costs
          two reads and nothing else. */
-      /* Batches with work left get their slice of this tick. Its own try,
-         like everything here: a batch fault must not take out the sweeps. */
-      try{ await runBatches(env, ctx); }
-      catch(e){ console.error('[cron] batches failed', e && e.message); try{ await _workerError(env, 'cron.batches', e); }catch(_){} }
       try{
         const c = await runCohortCheck(env);
         if(c && c.alarmed) console.log('[cron] heavy share', JSON.stringify(c));
@@ -18864,8 +18868,11 @@ async function batchCreate(request, env, ctx) {
   await _withKind(env, 'batch', id, (r) => { Object.assign(r, rec); return { ok: true }; }, {});
   await env.AMV_KV.put('batchq:' + id, '1');
   audit(env, 'batch_created', { by: user.email, n: reqs.length });
-  /* The first ones start now rather than at the next tick. */
-  try { if (ctx && ctx.waitUntil) ctx.waitUntil(_batchRun(env, ctx, id, 20000).catch(() => {})); } catch (e) {}
+  /* Nothing is started here. Work handed to waitUntil gets about thirty
+     seconds after this response, and one long answer outlives that - the item
+     would be cut off mid-answer and reported interrupted for nothing but where
+     it happened to start. The cron's next tick, within five minutes, runs it
+     with the time it needs. */
   return json(_batchView(rec));
 }
 
@@ -19008,6 +19015,12 @@ async function _batchItem(env, ctx, rec, i) {
     await env.AMV_KV.put(`batchres:${rec.id}:${i}`, JSON.stringify({ type: 'errored', error: { code, message } }), { expirationTtl: BATCH_KEEP_S });
     return Object.assign({ result: 'errored', code }, extra || {});
   };
+  /* The pause switch. Items reach aiProxy directly, not through the router
+     that refuses /v1/ while paused - so without this a paused deployment
+     would go on spending on every batch already queued. Read from KV, not
+     the router's cache: a stale answer is more of the spend being stopped.
+     Waited out, not failed: pausing must not cost anybody their batch. */
+  if ((await env.AMV_KV.get('GLOBAL_KILL')) === '1') return { wait: 5 * 60000 };
   /* A batch made with a key lives and dies with the key. */
   if (rec.keyId) {
     const keys = (await DB.get(env, 'apikeys', rec.owner)) || { items: [] };
@@ -19043,15 +19056,44 @@ async function _batchItem(env, ctx, rec, i) {
   await env.AMV_KV.put(`batchres:${rec.id}:${i}`, JSON.stringify({ type: 'succeeded', message: msg }), { expirationTtl: BATCH_KEEP_S });
   return { result: 'succeeded' };
 }
-/* The cron's share: every batch with work left, a slice of time each. */
+/* The cron's share: every batch with work left, a slice of time each.
+
+   In turns, from where the last tick stopped. Listing from the top every
+   time served the first fifty ids in key order and nobody after them - and a
+   batch waiting hours on a full window would have held its place at the
+   front the whole time. Where to resume (the listing's page, and how far into
+   it) is kept between ticks and wraps at the end.
+
+   A few batches at once (BATCH_LANES), one item at a time within each: the
+   tick is mostly waiting on the model, and every item is still its own
+   ordinary request with its own reservations. */
+const BATCH_LANES = 4;
 async function runBatches(env, ctx) {
-  const page = await env.AMV_KV.list({ prefix: 'batchq:', limit: 50 });
-  const out = [];
   const until = Date.now() + 4 * BATCH_TICK_MS;
-  for (const k of page.keys) {
-    if (Date.now() > until) break;
-    out.push(await _batchRun(env, ctx, k.name.slice('batchq:'.length), BATCH_TICK_MS).catch(e => 'error'));
+  let at = { c: null, o: 0 };
+  try { const v = JSON.parse((await env.AMV_KV.get('batchcursor')) || 'null'); if (v && typeof v === 'object') at = { c: v.c || null, o: Math.max(0, v.o | 0) }; } catch (e) {}
+  const out = [];
+  for (let pages = 0; pages < 4 && Date.now() < until; pages++) {
+    let page;
+    try { page = await env.AMV_KV.list(Object.assign({ prefix: 'batchq:', limit: 50 }, at.c ? { cursor: at.c } : {})); }
+    catch (e) { if (!at.c) throw e; at = { c: null, o: 0 }; continue; }   /* a cursor that no longer works starts again from the top */
+    const ids = page.keys.slice(at.o).map(k => k.name.slice('batchq:'.length));
+    let next = 0;
+    const lane = async () => {
+      while (next < ids.length && Date.now() < until) {
+        const i = next++;
+        out.push(await _batchRun(env, ctx, ids[i], BATCH_TICK_MS).catch(() => 'error'));
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(BATCH_LANES, ids.length) }, lane));
+    if (next < ids.length) { at = { c: at.c, o: at.o + next }; break; }
+    at = page.list_complete || !page.cursor ? { c: null, o: 0 } : { c: page.cursor, o: 0 };
+    if (!at.c) break;
   }
+  try {
+    if (at.c || at.o) await env.AMV_KV.put('batchcursor', JSON.stringify(at));
+    else await env.AMV_KV.delete('batchcursor');
+  } catch (e) {}
   return out;
 }
 

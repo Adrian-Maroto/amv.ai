@@ -14931,3 +14931,26 @@ revision at once and asserts one lands and the other is told.
 
 Rule: when more than one person writes a record, the write carries the
 version it was read at, and the check is made inside the lock.
+
+## 585. A spender that skips the router skips the pause switch too
+
+Batch items call `aiProxy` directly, as their owner - which is right for
+metering (one money path) and wrong for everything the ROUTER does before
+`aiProxy` ever runs. The router is where `GLOBAL_KILL` refuses `/v1/`, so a
+paused deployment would have gone on paying for every queued batch item.
+The same review found two more in the same feature: the cron listed the first
+fifty queued batches and nobody after them (a batch waiting hours on a full
+window held its place at the front for good), and items were started inside
+the request that made the batch, where `waitUntil` allows about thirty
+seconds - one long answer and the item is cut off and reported interrupted.
+
+Rule: any new path that reaches the model without going through `fetch` must
+check the pause switch itself, and a test must pause and prove nothing was
+asked. A queue read by a cron keeps a cursor; "the first page" is a starvation
+bug at any size worth having. Never start paid work in `waitUntil`.
+
+A related one in the same round: rules about FILES matched the path from its
+first character, so `/home/me/proj/config/secrets.json` and
+`src/../config/secrets.json` both walked past a `config/secrets.json` rule.
+Paths are normalised (`.`, `..`, doubled slashes, backslashes) and a rule
+matches any tail on a folder boundary - over-protecting is the safe error.
