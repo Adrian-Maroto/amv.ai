@@ -14874,3 +14874,20 @@ instead of claiming "a claim in front of it" that never existed.
 Rule: whenever a provider vouches for an address, ask what else already holds
 it. A verification that does not take the address back from an unverified
 holder only adds a second key.
+
+## 582. A refund the handler does not recognise is applied to the wrong thing
+
+Writing extra usage packs, the first question was what happens when one is
+refunded. The webhook's refund branch tries the marketplace, and anything it
+does not recognise falls through to the subscription: the account is set to
+free. A customer refunded $10 of extra usage would have lost the plan they
+were still paying for - the one outcome a refund must never cause.
+
+Packs are recorded by payment reference when they are paid (`creditpay:`), and
+both the refund and the dispute branch ask that record first; a match takes
+back only the credit and stops. The suite refunds a pack and checks the plan
+is still Pro.
+
+Rule: before adding a new kind of payment, read every place the processor's
+events land and ask what each one does with a reference it has never seen. A
+default branch is a decision about everything that is not yet written.

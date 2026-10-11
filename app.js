@@ -8914,7 +8914,7 @@ async function _callAITurn(msgs, _opts) {
         // A quota 429 is NOT transient. If the server says we're out of usage,
         // stop the chat with the quota card + live countdown instead of
         // retrying or showing a generic error.
-        if(res.status===429 && (srvCode==='quota_day'||srvCode==='quota_month'||srvCode==='family_cap')){
+        if(res.status===429 && (srvCode==='quota_day'||srvCode==='quota_month'||srvCode==='family_cap'||srvCode==='quota_window'||srvCode==='quota_top_week')){
           /* AN HOUR WAS NOT A GUESS, IT WAS AN ANSWER, AND IT WAS WRONG.
 
              This read `err.resetAt || (Date.now()+3600000)`. Two of the four
@@ -8932,9 +8932,11 @@ async function _callAITurn(msgs, _opts) {
              is a reset time nobody knows, and the card says what it does know
              - the server's sentence - instead of a number it made up. */
           const resetAt = +err.resetAt || 0;
-          quotaLock(resetAt, srvMsg);
+          /* The best engine's week is not the account's: everything else still
+             works, so the composer is not locked for it. */
+          if(srvCode!=='quota_top_week') quotaLock(resetAt, srvMsg);
           msgs[streamIdx]={r:'a',c:'',_quota:true,_resetAt:resetAt,
-                           _quotaCode:srvCode,_quotaMsg:srvMsg};
+                           _quotaCode:srvCode,_quotaMsg:srvMsg,_creditShort:!!(err.credit&&err.credit.short)};
           setMsgs(msgs); S.busy=false; renderChatMsgs();
           _recordUsageOnce();
           return;
@@ -9779,6 +9781,7 @@ function bindChatEvents() {
       else setTab('plans');
     }
     else if(action==='seats-upgrade'){ setTab('team'); }
+    else if(action==='credit-buy'){ _creditOpen(); }
     else if(action==='quota-later'){ const m2=getMsgs(); if(m2[idx]&&m2[idx]._quota){ m2.splice(idx,1); setMsgs(m2); renderChatMsgs(); } }
   });
   on($('att-btn'),'click',function(){ _attachMenu(this); });
@@ -10215,6 +10218,10 @@ function renderChatMsgs() {
          up named after one plan and wired to another. */
       const nextKey=plan==='free'?'pro':plan==='pro'?'elite':'ultra';
       const nextPlan=(typeof PLANS!=='undefined'&&PLANS[nextKey]&&PLANS[nextKey].name)||'Pro';
+      /* A paid plan can also buy extra usage, here, at the moment it is needed.
+         The top plan has nothing to upgrade to, so it is offered only that. */
+      const paidPlan = plan!=='free';
+      const topPlan = plan==='ultra' || plan==='custom' || plan==='team';
       /* THREE THINGS THIS CARD USED TO GET WRONG, ALL AT ONCE.
 
          It always drew a countdown, falling back to `Date.now()` when no reset
@@ -10236,8 +10243,10 @@ function renderChatMsgs() {
         (isFamily
           ? '<span>'+whenTxt+'Whoever manages your family can raise this limit - a bigger plan will not lift it.</span>'+
             '<div class="quota-actions"><button class="quota-later" data-action="quota-later" data-idx="'+i+'">Got it</button></div>'
-          : '<span>'+whenTxt+'Upgrade to '+nextPlan+' for much higher limits and keep going right now.</span>'+
-            '<div class="quota-actions"><button class="quota-upgrade" data-action="quota-upgrade" data-plan="'+escH(nextKey)+'" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>'+
+          : '<span>'+whenTxt+(m._creditShort?'Your extra usage balance does not cover this message. ':'')
+              +(topPlan?'Add extra usage to keep going right now.':paidPlan?'Upgrade to '+nextPlan+' for much higher limits, or add extra usage, and keep going right now.':'Upgrade to '+nextPlan+' for much higher limits and keep going right now.')+'</span>'+
+            '<div class="quota-actions">'+(topPlan?'':'<button class="quota-upgrade" data-action="quota-upgrade" data-plan="'+escH(nextKey)+'" data-idx="'+i+'">Upgrade to '+nextPlan+'</button>')+
+            (paidPlan?'<button class="quota-upgrade quota-credit" data-action="credit-buy" data-idx="'+i+'">Add extra usage</button>':'')+
             '<button class="quota-later" data-action="quota-later" data-idx="'+i+'">'+(when>Date.now()?'I\u2019ll wait':'Got it')+'</button></div>')+
         '</div></div>';
     } else if(!isU && m._error){
@@ -16578,6 +16587,9 @@ function renderBillingView(targetEl){
              the status line above when it is known, and the processor's own
              portal is one button away and is the authority on both. */
           (sinceDate?_bfact('Started', escH(fmt(sinceDate))):'')+
+          /* Extra usage: the balance is the server's, filled in once it answers,
+             and the button opens the packs. */
+          _bfact('Extra usage', '<span id="bill-credit">\u2026</span> <button type="button" class="bill-credit-add" data-dact="_creditOpen">Add</button>')+
           (customSummary?_bfact('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
           (customSummary?_bfact('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
         '</dl>'+
@@ -16867,6 +16879,11 @@ function renderBillingView(targetEl){
      the subscription became, so what lands back on the screen was read back
      rather than assumed. Nothing local is set on the way: a failed call leaves
      the screen saying exactly what it said before, which is the truth. */
+  if($('bill-credit') && window.AMV_API && AMV_API.live){
+    AMV_API._fetch('/v1/credit',{method:'GET',timeout:10000}).then(r=>r.json()).then(d=>{
+      const el=$('bill-credit'); if(el&&d&&d.ok) el.textContent='$'+(+d.balance||0).toFixed(2)+' '+T('balance, used only after your plan\u2019s allowance');
+    }).catch(()=>{ const el=$('bill-credit'); if(el) el.textContent=T('Could not load the balance.'); });
+  } else if($('bill-credit')) $('bill-credit').textContent=T('Available once AMV\u2019s server is connected.');
   on($('bill-ar-go'),'click',()=>{
     const b=$('bill-ar-go'); if(!b) return;
     const turningOn=b.dataset.on==='1';
@@ -18415,9 +18432,32 @@ async function _confirmMarketReturn(listingId){
 }
 try{ window._confirmMarketReturn=_confirmMarketReturn; }catch(e){}
 
+/* Extra usage: the picker lives in credit.js, fetched when it is opened. */
+let _creditP = null;
+function _creditOpen(){
+  if(typeof window._creditPicker === 'function'){ window._creditPicker(); return; }
+  if(!_creditP) _creditP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'credit.js';
+    sc.onload = () => res(typeof window._creditPicker === 'function');
+    sc.onerror = () => { _creditP = null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
+  });
+  _creditP.then(ok => { if(ok) window._creditPicker(); else toast(T('Extra usage could not be loaded. Check your connection and try again.'), 'error', 6000); });
+}
+try{ window._creditOpen = _creditOpen; }catch(e){}
+
 function _checkPayReturn(){
   try{
     const q=new URLSearchParams(window.location.search);
+    /* Back from paying for extra usage. The balance is the server's, credited
+       when Stripe confirms the money - so this says it is arriving, and does
+       not claim an amount the return address cannot know. */
+    if(q.get('credit')==='1'){
+      history.replaceState(null,'',window.location.pathname);
+      toast(T('Payment received. Your extra usage will be on your balance within a minute.'),'success',7000);
+      return;
+    }
     // --- marketplace purchase return ---
     const bought=q.get('bought');
     if(bought){

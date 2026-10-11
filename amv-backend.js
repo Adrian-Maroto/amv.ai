@@ -12847,6 +12847,9 @@ const BACKUP_PREFIXES = [
   /* Which team signs a proved domain in. Restored with the teams, or every
      company's sign-in would stop until each owner proved their domain again. */
   'ssodom:',
+  /* Each pack of extra usage that was paid for - what a refund or a dispute
+     is matched against, and what the bought total can be rebuilt from. */
+  'creditpay:',
   'teamtasks:', 'sites:', 'site:', 'abuse:', 'seller:', 'widget:', 'market:',
   'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:', 'mktreport:',
   'consent:', 'apikeys:', 'billing:', 'fam:', 'links:', 'approvals:',
@@ -14468,7 +14471,7 @@ async function _route(request, env, ctx) {
        would have broken the operator's own dashboard, which is precisely the
        surface the rule about verifying on the surface the owner uses exists
        for. Every one of them was then read and confirmed to write nothing. */
-    '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/google/picker', '/v1/computer/info', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
+    '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/google/picker', '/v1/computer/info', '/v1/credit', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
     '/api/approvals',
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
     '/admin/abuse/list', '/admin/readiness', '/admin/backup/export',
@@ -14648,6 +14651,8 @@ async function _route(request, env, ctx) {
     case '/v1/stripe/auto-renew': return stripeAutoRenew(request, env);
     case '/v1/stripe/invoices': return stripeInvoices(request, env);
     case '/v1/stripe/webhook':  return stripeWebhook(request, env, ctx);
+    case '/v1/credit':          return creditInfo(request, env);
+    case '/v1/credit/checkout': return creditCheckout(request, env);
     /* There is no /v1/paypal/create or /v1/paypal/capture. They backed a
        ONE-TIME PayPal order, and a one-time order cannot pay for a monthly
        plan: the capture granted an entitlement with no renewal to expire
@@ -18523,6 +18528,9 @@ async function reconcilePayments(env) {
         if (p.kind === 'market') {
           await _creditSale(env, { itemId: p.itemId, buyer: p.email, seller: p.seller,
                                    amountCents: d.amount_total, ref: d.payment_intent || row.id });
+        } else if (p.kind === 'credit') {
+          await _creditGrant(env, { subject: p.subject || p.email, email: p.email,
+                                    usd: Math.round(+d.amount_total || 0) / 100, ref: d.payment_intent || row.id });
         } else if (p.plan) {
           await setEntitlement(env, p.email, p.plan, { source: 'stripe' });
         }
@@ -18704,6 +18712,17 @@ async function aiProxy(request, env, ctx) {
   const subject = user.billingSubject || user.email;
   const dName = `usg:${subject}:${todayKey()}`;
   const mName = `usg:${subject}:${_periodKeyOf(user)}`;
+  /* EXTRA USAGE (see _creditGrant). Looked at only when one of the plan's own
+     limits is reached: then, if the account has prepaid credit, the message
+     goes ahead on it - booked against the credit before the model runs and
+     settled after, at CREDIT_MARKUP - and `overflowWhy` keeps the refusal it
+     replaced, so a credit too small to cover it gives the plan's own answer. */
+  let overflowWhy = null, credit = null;
+  const creditCovers = async () => {
+    if (!_creditEligible(user)) return false;
+    credit = credit || await _creditState(env, subject);
+    return credit.left > 0;
+  };
 
   // Upper bound for this call: what we're sending + the most it can generate.
   const estIn  = _estimateReserveInput(body);
@@ -18741,8 +18760,12 @@ async function aiProxy(request, env, ctx) {
   if (!dRes.allowed) {
     const now = new Date();
     const resetAt = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-    return json({ error: 'Daily usage limit reached.', code: 'quota_day', resetAt }, 429,
-                { 'Retry-After': _retryAfterUntil(resetAt) });
+    const why = { error: 'Daily usage limit reached.', code: 'quota_day', resetAt };
+    if (!(await creditCovers())) return json(why, 429, { 'Retry-After': _retryAfterUntil(resetAt) });
+    /* Booked past the cap, so the settlement after the call lands on a counter
+       that holds what was really used. */
+    await counter(env, dName, { op: 'incr', amount: reserve, ttlMs: 86400000 * 35 });
+    overflowWhy = why;
   }
   /* The month is fitted the same way. If it shrinks the answer further, the
      day was booked at the larger amount, so the difference is given back to
@@ -18751,14 +18774,18 @@ async function aiProxy(request, env, ctx) {
   const mRes = await tryFit(mName, limits.monthTokens, 86400000 * 70);
   if (mRes.allowed && reserve < dayBooked) await counter(env, dName, { op: 'incr', amount: reserve - dayBooked, ttlMs: 86400000 * 35 });
   if (!mRes.allowed) {
-    // give back the daily reservation we just took - this call isn't happening
-    await counter(env, dName, { op: 'incr', amount: -dayBooked, ttlMs: 86400000 * 35 });
     /* The BILLING period, not the calendar month - `mName` above is keyed on
        `_periodKeyOf(user)`, so the calendar 1st was the wrong date for every
        paying account and the client unlocked the composer on it. */
     const resetAt = _periodResetAtOf(user);
-    return json({ error: 'Monthly usage limit reached. Upgrade for more room.', code: 'quota_month', resetAt }, 429,
-                { 'Retry-After': _retryAfterUntil(resetAt) });
+    const why = { error: 'Monthly usage limit reached. Upgrade for more room.', code: 'quota_month', resetAt };
+    if (!(await creditCovers())) {
+      // give back the daily reservation we just took - this call isn't happening
+      await counter(env, dName, { op: 'incr', amount: -dayBooked, ttlMs: 86400000 * 35 });
+      return json(why, 429, { 'Retry-After': _retryAfterUntil(resetAt) });
+    }
+    await counter(env, mName, { op: 'incr', amount: reserve, ttlMs: 86400000 * 70 });
+    overflowWhy = overflowWhy || why;
   }
 
   /* AND THE MESSAGE, COUNTED WHERE THE TOKENS ARE COUNTED.
@@ -18821,17 +18848,22 @@ async function aiProxy(request, env, ctx) {
     await unbook();
     return json({ error: message, code, resetAt }, 429, { 'Retry-After': _retryAfterUntil(resetAt) });
   };
+  /* A window that is full is a refusal - unless prepaid credit carries it. */
+  const windowOrCredit = async (message, code, resetAt) => {
+    if (await creditCovers()) { overflowWhy = overflowWhy || { error: message, code, resetAt }; return null; }
+    return await refuseWindow(message, code, resetAt);
+  };
 
   if (win5Cap > 0) {
     const r5 = await counter(env, win5Name, { op: 'reserve', amount: 1, cap: win5Cap, ttlMs: WINDOW_5H_MS * 3 });
     if (!r5.allowed) {
       const resetAt = (Math.floor(nowMs / WINDOW_5H_MS) + 1) * WINDOW_5H_MS;
-      return await refuseWindow(
+      const refused = await windowOrCredit(
         'That is a lot of messages in a short space of time, so this window is full. It reopens at '
         + new Date(resetAt).toUTCString().replace(/ GMT$/, ' UTC') + ' - a few hours, not the rest of the month.',
         'quota_window', resetAt);
-    }
-    booked.push({ name: win5Name, amount: 1, ttlMs: WINDOW_5H_MS * 3 });
+      if (refused) return refused;
+    } else booked.push({ name: win5Name, amount: 1, ttlMs: WINDOW_5H_MS * 3 });
   }
 
   if (topCap > 0 && isTopEngine) {
@@ -18842,12 +18874,12 @@ async function aiProxy(request, env, ctx) {
       /* Named as what it is - the best engine, not "your plan" - because the
          rest of the product is still working and telling somebody they are out
          of messages when they are not is how a cancellation starts. */
-      return await refuseWindow(
+      const refused = await windowOrCredit(
         'That is this week\u2019s allowance on AMV\u2019s best engine. Everything else still works, and the '
         + 'best engine comes back on ' + new Date(resetAt).toUTCString().replace(/ GMT$/, ' UTC') + '.',
         'quota_top_week', resetAt);
-    }
-    booked.push({ name: topName, amount: 1, ttlMs: 86400000 * 21 });
+      if (refused) return refused;
+    } else booked.push({ name: topName, amount: 1, ttlMs: 86400000 * 21 });
   }
 
   let msgRes = { allowed: true };
@@ -18946,29 +18978,53 @@ async function aiProxy(request, env, ctx) {
      exists to stop a bill. */
   const estUSD = (((estIn + AI_INJECTED_INPUT_TOK) * AI_INPUT_SAFETY) / 1e6) * eng.inCost
                + (estOut / 1e6) * eng.outCost;
-  let bookedUSD = 0, bookedGlobalUSD = 0;
+  let bookedUSD = 0, bookedGlobalUSD = 0, bookedCreditUSD = 0;
+  const creditName = _creditSpentName(subject);
   const releaseUSD = async () => {
     if (bookedUSD > 0) { await _releaseUSD(env, costName, bookedUSD, 86400000 * 70); bookedUSD = 0; }
     if (bookedGlobalUSD > 0) { await _releaseUSD(env, gName, bookedGlobalUSD, 86400000 * 2); bookedGlobalUSD = 0; }
+    if (bookedCreditUSD > 0) { await _releaseUSD(env, creditName, bookedCreditUSD, CREDIT_TTL_MS); bookedCreditUSD = 0; }
   };
-  if (costCeiling != null) {
+  /* Already past a plan limit and running on credit: the plan's own dollar
+     ceiling is not booked as well - the credit is what pays for this one. */
+  if (costCeiling != null && !overflowWhy) {
     const capRes = await _reserveUSD(env, costName, estUSD, costCeiling, 86400000 * 70);
     bookedUSD = capRes.reserved;
     if (!capRes.allowed) {
-      audit(env,'spend_cap_hit',{email:user.email,plan:user.plan,family:!!(user.family)}); await refundReservation();
+      audit(env,'spend_cap_hit',{email:user.email,plan:user.plan,family:!!(user.family)});
       /* "Upgrade for more" is not an action a child can take. Tell them the
          true one: the person who set the limit is the person who can change
          it. Which one bound is decided in _monthlyCeiling, beside the numbers
          it was decided from. */
       const hitFamilyCap = ceiling.source === 'family';
       const capResetAt = _periodResetAtOf(user);
-      return json(hitFamilyCap
+      if (!hitFamilyCap && await creditCovers()) {
+        overflowWhy = { error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
+                        code: 'quota_month', resetAt: capResetAt };
+      } else {
+        await refundReservation();
+        return json(hitFamilyCap
         ? { error: 'You have used the monthly limit set for your account. It resets next month, or whoever manages your family can raise it.',
             code: 'family_cap', resetAt: capResetAt }
         : { error: 'You\u2019ve used your full plan allowance for this billing cycle. It resets next month, or upgrade for more.',
             code: 'quota_month', resetAt: capResetAt }, 429,
                 { 'Retry-After': _retryAfterUntil(capResetAt) });
+      }
     }
+  }
+  /* Running on credit: book the most this message can cost, at the markup,
+     against what was paid - atomically, so a burst cannot spend past it. Too
+     little left is the plan's own refusal, with the balance said. */
+  if (overflowWhy) {
+    const cr = await _reserveUSD(env, creditName, estUSD * CREDIT_MARKUP, credit.bought, CREDIT_TTL_MS);
+    bookedCreditUSD = cr.reserved;
+    if (!cr.allowed) {
+      await refundReservation();
+      const resetAt = overflowWhy.resetAt;
+      return json(Object.assign({}, overflowWhy, { credit: { balance: credit.balance, short: true } }), 429,
+                  { 'Retry-After': _retryAfterUntil(resetAt) });
+    }
+    audit(env, 'credit_used', { by: user.email, code: overflowWhy.code });
   }
 
   // 4) GLOBAL SPEND CAP - hard ceiling across ALL users (atomic read)
@@ -19167,7 +19223,8 @@ async function aiProxy(request, env, ctx) {
      genuinely still booked. */
   ctx.waitUntil(meterStream(flow.toMeter, eng, { dName, mName, gName, costName, user, env, limits,
     reqMessages: body.messages || [], reserved: reserve,
-    reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId, stopped: flow.stopped }));
+    reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId, stopped: flow.stopped,
+    creditName: overflowWhy ? creditName : '', reservedCreditUSD: bookedCreditUSD }));
 
   return new Response(toClient, {
     status: 200,
@@ -20410,7 +20467,7 @@ async function aiStop(request, env) {
   return json({ ok: true });
 }
 
-async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', stopped = null }) {
+async function meterStream(stream, eng, { dName, mName, gName, costName, acctCostName = '', user, env, limits, reqMessages, reserved = 0, reservedUSD = 0, reservedGlobalUSD = 0, reservedAcctUSD = 0, reqId = '', feature = 'chat', stopped = null, creditName = '', reservedCreditUSD = 0 }) {
   /* AMV-098: how long the user waited. Cost and quality are measured; speed is
      not, and it is the thing people feel most - a routing change that halves
      the bill and doubles the wait would have looked like a pure win on every
@@ -20548,8 +20605,16 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   const gRes = dCost !== 0
     ? await counter(env, gName, { op: 'incr', amount: dCost, ttlMs: 86400000 * 2 })
     : { value: 0 };
-  const dAcct = cost - (reservedUSD || 0);
-  if (dAcct !== 0) await counter(env, costName, { op: 'incr', amount: dAcct, ttlMs: 86400000 * 70 });
+  /* A message that ran on prepaid credit is paid for by the credit, at the
+     markup, and settled against what was booked for it - not added to the
+     plan's own ledger as well, which would charge it twice. */
+  if (creditName) {
+    const dCred = cost * CREDIT_MARKUP - (reservedCreditUSD || 0);
+    if (dCred !== 0) await counter(env, creditName, { op: 'incr', amount: dCred, ttlMs: CREDIT_TTL_MS });
+  } else {
+    const dAcct = cost - (reservedUSD || 0);
+    if (dAcct !== 0) await counter(env, costName, { op: 'incr', amount: dAcct, ttlMs: 86400000 * 70 });
+  }
   /* A SECOND account ledger, when this path's primary counter is not the
      account's own. The widget is the only one: its `costName` is the
      per-widget `wspend:` counter, so the owner's `cost:` counter - the one the
@@ -24556,6 +24621,136 @@ async function _releaseClaim(env, kind, id){
   }catch(e){}
 }
 
+/* ══ EXTRA USAGE: PREPAID CREDIT FOR WHEN A PLAN RUNS OUT ════════════════════
+
+   A paying customer who reaches their plan's limit used to have two choices:
+   wait, or upgrade a whole tier. Most did neither - they left for the evening,
+   and some left for good. Extra usage is the third: a prepaid pack, bought
+   once, spent only after the plan's own allowance is used up.
+
+   WHY IT CANNOT LOSE MONEY.
+     - It is prepaid. Nothing runs on credit that has not already arrived.
+     - It is spent at CREDIT_MARKUP times what the engines cost - the same
+       share of revenue the plans themselves are allowed to spend (their
+       ceiling is 45% of the price) - so an overflow message earns what an
+       ordinary one does.
+     - Each message books its cost against the credit BEFORE the model runs,
+       atomically, exactly as the plan ceiling is booked, and settles the real
+       cost after. A burst of parallel requests cannot spend past the balance.
+     - The day's global spending cap still applies to every overflow message.
+     - The message ceiling that exists to stop scripts is never bypassed.
+     - Paid plans only, and never a family member's account: a child's limit is
+       the parent's decision, not something a card can raise.
+     - A refund or a chargeback takes the credit back and never touches the
+       subscription; a chargeback is recorded as one.
+
+   Money in is read from Stripe's own total, never from what AMV wrote into the
+   session - so a session altered on the way can only ever credit what was
+   actually paid. */
+const CREDIT_PACKS_USD = [10, 25, 50];
+const CREDIT_MARKUP = 2.2;
+const CREDIT_MAX_USD = 500;
+const CREDIT_TTL_MS = 400 * 86400000;
+const _creditBuyName = (subject) => `creditbuy:${subject}`;
+const _creditSpentName = (subject) => `creditspent:${subject}`;
+async function _creditState(env, subject){
+  const bought = +((await counter(env, _creditBuyName(subject), { op: 'get' })).value || 0);
+  const spent = +((await counter(env, _creditSpentName(subject), { op: 'get' })).value || 0);
+  /* `left` is exact - it is what decides whether a message may book against
+     the credit, and a fraction of a cent paid for is still paid for. `balance`
+     is the same rounded to cents, for saying. */
+  return { bought, spent, left: Math.max(0, bought - spent), balance: Math.max(0, Math.round((bought - spent) * 100) / 100) };
+}
+function _creditEligible(user){
+  return !!(user && _planPriceUSD(user.plan, user.customCfg) > 0 && !user.family);
+}
+/* Credit a paid pack exactly once, however many times it is reported (the
+   webhook, its retries, and the reconciliation sweep can all arrive). */
+async function _creditGrant(env, { subject, email, usd, ref }){
+  if(!subject || !(usd > 0) || !ref) return false;
+  if(!(await _claimOnce(env, 'creditref', ref, CLAIM_ONCE_TTL_S))) return false;
+  await env.AMV_KV.put('creditpay:' + ref, JSON.stringify({ subject, email, usd, at: Date.now() }));
+  await counter(env, _creditBuyName(subject), { op: 'incr', amount: usd, ttlMs: CREDIT_TTL_MS });
+  await _recordTxn(env, { provider: 'stripe', email, amount: usd, currency: 'USD', kind: 'credit', status: 'succeeded', ref });
+  audit(env, 'credit_bought', { by: email, usd });
+  return true;
+}
+/* A refund or dispute on a pack. True when the payment WAS a pack, so the
+   caller does not go on to treat it as the subscription. */
+async function _creditReverse(env, ref, why, refundedUSD){
+  if(!ref) return false;
+  const rec = _safeJson(await env.AMV_KV.get('creditpay:' + ref));
+  if(!rec || !rec.subject) return false;
+  const already = +rec.reversed || 0;
+  const want = Math.min(+rec.usd || 0, refundedUSD > 0 ? refundedUSD : +rec.usd || 0);
+  const take = Math.max(0, Math.round((want - already) * 100) / 100);
+  if(take > 0){
+    await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, ttlMs: CREDIT_TTL_MS });
+    rec.reversed = already + take;
+    await env.AMV_KV.put('creditpay:' + ref, JSON.stringify(rec));
+  }
+  audit(env, 'credit_reversed', { by: rec.email, usd: take, why });
+  if(why === 'dispute' && rec.email) await _abuseRecord(env, rec.email, 'dispute', { chargeId: ref, amount: Math.round((+rec.usd || 0) * 100) });
+  return true;
+}
+
+/* GET /v1/credit - the balance, and whether packs can be bought here. */
+async function creditInfo(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error: 'unauthorized' }, 401);
+  const subject = user.billingSubject || user.email;
+  const st = await _creditState(env, subject);
+  return json({ ok: true, balance: st.balance, eligible: _creditEligible(user),
+                available: !!(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET), packs: CREDIT_PACKS_USD,
+                max: CREDIT_MAX_USD });
+}
+
+/* POST /v1/credit/checkout {usd} - a Stripe checkout for one pack. */
+async function creditCheckout(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error: 'unauthorized' }, 401);
+  if(!(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET))
+    return json({ error: 'Card payments are not switched on for this deployment yet.', code: 'needs_service' }, 503);
+  if(!_creditEligible(user))
+    return json({ error: user.family ? 'Extra usage is not available on a family member’s account - whoever manages the family sets its limits.'
+                                     : 'Extra usage comes with a paid plan. Upgrade first, then add more whenever you run out.',
+                  code: 'plan_required' }, 402);
+  const blocked = await guardAction(env, 'creditbuy:' + user.email, 5, 20, 'extra usage purchases');
+  if(blocked) return blocked;
+  const hold = await _accountHold(env, user, 'credit');
+  if(hold) return hold;
+  const body = await request.json().catch(() => ({}));
+  const usd = +body.usd;
+  if(CREDIT_PACKS_USD.indexOf(usd) < 0) return json({ error: 'Choose one of the packs offered.', code: 'bad_pack' }, 400);
+  const subject = user.billingSubject || user.email;
+  const st = await _creditState(env, subject);
+  if(st.balance + usd > CREDIT_MAX_USD)
+    return json({ error: 'That would take the balance over $' + CREDIT_MAX_USD + '. Use some first.', code: 'credit_max' }, 400);
+  const origin = String(env.APP_URL || '').replace(/\/$/, '');
+  if(!origin) return json({ error: 'APP_URL is not set, so there is nowhere to come back to after paying.', code: 'needs_service' }, 503);
+  const form = new URLSearchParams();
+  form.set('mode', 'payment');
+  form.set('line_items[0][quantity]', '1');
+  form.set('line_items[0][price_data][currency]', 'usd');
+  form.set('line_items[0][price_data][product_data][name]', 'AMV extra usage - $' + usd);
+  form.set('line_items[0][price_data][unit_amount]', String(usd * 100));
+  form.set('success_url', origin + '/?credit=1');
+  form.set('cancel_url', origin + '/');
+  form.set('customer_email', user.email);
+  form.set('metadata[kind]', 'usage_credit');
+  form.set('metadata[subject]', subject);
+  form.set('metadata[email]', user.email);
+  form.set('payment_intent_data[metadata][kind]', 'usage_credit');
+  const r = await fetchDeadline('https://api.stripe.com/v1/checkout/sessions', { method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + env.STRIPE_SECRET_KEY, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form.toString() });
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok || !d.url) return json({ error: (d.error && d.error.message) || 'The payment page could not be opened.', code: 'stripe_error' }, 502);
+  await _pendStart(env, d.id, { provider: 'stripe', kind: 'credit', email: user.email, subject });
+  audit(env, 'credit_checkout', { by: user.email, usd });
+  return json({ ok: true, url: d.url });
+}
+
 async function stripeWebhook(request, env, ctx) {
   const sig = request.headers.get('Stripe-Signature') || '';
   const raw = await request.text();
@@ -24616,6 +24811,14 @@ async function stripeWebhook(request, env, ctx) {
         return new Response('ok', { status: 200 });
       }
 
+      /* Extra usage: credited from what Stripe says was paid, once. */
+      if (obj.metadata?.kind === 'usage_credit') {
+        await _creditGrant(env, { subject: String(obj.metadata.subject || '').toLowerCase(),
+          email: String(obj.metadata.email || obj.customer_email || '').toLowerCase(),
+          usd: Math.round(+obj.amount_total || 0) / 100, ref: obj.payment_intent || obj.id });
+        await _pendDone(env, obj.id);
+        return new Response('ok', { status: 200 });
+      }
       // Marketplace one-time purchase → grant item + 80/20 split
       if (obj.metadata?.kind === 'market_purchase') {
         await _creditSale(env, {
@@ -24739,7 +24942,8 @@ async function stripeWebhook(request, env, ctx) {
          paying subscriber who charged back a $9 listing had their whole
          subscription revoked for it. */
       const mkRef = obj.payment_intent || obj.charge || obj.id;
-      const reversed = await _reverseSale(env, mkRef, 'dispute');
+      /* A pack of extra usage disputed: the credit goes, the plan stays. */
+      const reversed = (await _creditReverse(env, mkRef, 'dispute', 0)) || await _reverseSale(env, mkRef, 'dispute');
       if (!reversed) {
         const email = await _emailFromCustomer(env, obj.customer)
                    || (obj.metadata?.email || '').toLowerCase();
@@ -24754,7 +24958,9 @@ async function stripeWebhook(request, env, ctx) {
          fine (support does them); _abuseRecord only blocks on a PATTERN. */
       const charge = obj.charge ? obj : (obj.data?.object || obj);
       // Same split as a dispute: undo the sale, or fall through to the plan.
-      const reversedR = await _reverseSale(env, charge.payment_intent || charge.id, 'refund');
+      const reversedR = (await _creditReverse(env, charge.payment_intent || charge.id, 'refund',
+                          Math.round(+(charge.amount_refunded || charge.amount) || 0) / 100))
+                     || await _reverseSale(env, charge.payment_intent || charge.id, 'refund');
       if (!reversedR) {
         const email = await _emailFromCustomer(env, charge.customer)
                    || (charge.metadata?.email || '').toLowerCase();

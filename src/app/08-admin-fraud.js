@@ -661,6 +661,9 @@ function renderBillingView(targetEl){
              the status line above when it is known, and the processor's own
              portal is one button away and is the authority on both. */
           (sinceDate?_bfact('Started', escH(fmt(sinceDate))):'')+
+          /* Extra usage: the balance is the server's, filled in once it answers,
+             and the button opens the packs. */
+          _bfact('Extra usage', '<span id="bill-credit">\u2026</span> <button type="button" class="bill-credit-add" data-dact="_creditOpen">Add</button>')+
           (customSummary?_bfact('Monthly usage',customSummary.monthlyTokens.toLocaleString()+' tokens (credit-metered)'):'')+
           (customSummary?_bfact('Daily limit',customSummary.dailyCap.toLocaleString()+' tokens/day'):'')+
         '</dl>'+
@@ -950,6 +953,11 @@ function renderBillingView(targetEl){
      the subscription became, so what lands back on the screen was read back
      rather than assumed. Nothing local is set on the way: a failed call leaves
      the screen saying exactly what it said before, which is the truth. */
+  if($('bill-credit') && window.AMV_API && AMV_API.live){
+    AMV_API._fetch('/v1/credit',{method:'GET',timeout:10000}).then(r=>r.json()).then(d=>{
+      const el=$('bill-credit'); if(el&&d&&d.ok) el.textContent='$'+(+d.balance||0).toFixed(2)+' '+T('balance, used only after your plan\u2019s allowance');
+    }).catch(()=>{ const el=$('bill-credit'); if(el) el.textContent=T('Could not load the balance.'); });
+  } else if($('bill-credit')) $('bill-credit').textContent=T('Available once AMV\u2019s server is connected.');
   on($('bill-ar-go'),'click',()=>{
     const b=$('bill-ar-go'); if(!b) return;
     const turningOn=b.dataset.on==='1';

@@ -898,9 +898,32 @@ async function _confirmMarketReturn(listingId){
 }
 try{ window._confirmMarketReturn=_confirmMarketReturn; }catch(e){}
 
+/* Extra usage: the picker lives in credit.js, fetched when it is opened. */
+let _creditP = null;
+function _creditOpen(){
+  if(typeof window._creditPicker === 'function'){ window._creditPicker(); return; }
+  if(!_creditP) _creditP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'credit.js';
+    sc.onload = () => res(typeof window._creditPicker === 'function');
+    sc.onerror = () => { _creditP = null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
+  });
+  _creditP.then(ok => { if(ok) window._creditPicker(); else toast(T('Extra usage could not be loaded. Check your connection and try again.'), 'error', 6000); });
+}
+try{ window._creditOpen = _creditOpen; }catch(e){}
+
 function _checkPayReturn(){
   try{
     const q=new URLSearchParams(window.location.search);
+    /* Back from paying for extra usage. The balance is the server's, credited
+       when Stripe confirms the money - so this says it is arriving, and does
+       not claim an amount the return address cannot know. */
+    if(q.get('credit')==='1'){
+      history.replaceState(null,'',window.location.pathname);
+      toast(T('Payment received. Your extra usage will be on your balance within a minute.'),'success',7000);
+      return;
+    }
     // --- marketplace purchase return ---
     const bought=q.get('bought');
     if(bought){
