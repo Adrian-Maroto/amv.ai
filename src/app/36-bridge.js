@@ -370,10 +370,15 @@ function neverRunSave(text){
 /* One word as a shell would see the program: lower case, without the
    folder it was called from and without Windows' .exe. */
 const _nrWord = (w) => String(w).toLowerCase().replace(/^.*[\\/]/, '').replace(/\.(exe|cmd|bat)$/, '');
+/* Yours, and your team's: an owner or admin can set commands nobody's AMV
+   runs (Settings -> Skills -> Rules), and a member cannot switch those off. */
+function _teamNeverRun(){ try{ return _neverRunClean(_agentRules().teamBlock.join('\n')); }catch(e){ return []; } }
 /* The rule this command breaks, or ''. */
-function neverRunHit(command){
-  const rules = neverRunRules();
-  if(!rules.length) return '';
+function neverRunHit(command){ return _nrMatch(command, neverRunRules().concat(_teamNeverRun())); }
+/* The same reading of a command for any list of rules - the never-run list
+   above, and the ask-first list in Build. */
+function _nrMatch(command, rules){
+  if(!rules || !rules.length) return '';
   /* Every place a command can begin: separators, pipes, brackets,
      substitutions and backticks split it into pieces; quotes are dropped so a
      command handed to `sh -c` is read like any other. */
@@ -397,7 +402,8 @@ function neverRunHit(command){
 function neverRunRefusal(name, input){
   if(name !== 'run_command') return '';
   const rule = neverRunHit(input && input.command);
-  return rule ? ('Refused: the person told AMV never to run "' + rule + '" on their computer. '
+  const theirs = rule && !neverRunRules().some(r => r.toLowerCase() === rule.toLowerCase());
+  return rule ? ('Refused: ' + (theirs ? 'the person\u2019s team' : 'the person') + ' told AMV never to run "' + rule + '" on their computer. '
                + 'Do not try another way to do the same thing. Tell them what you would have run, '
                + 'and that they can run it themselves.') : '';
 }
@@ -510,12 +516,19 @@ try{ window.BRIDGE_TOOLS = BRIDGE_TOOLS; }catch(e){}
    it before it tries - a refusal is still the backstop, not the first time
    it hears of the rule. */
 function bridgeToolsOffered(){
-  const rules = neverRunRules();
-  if(!rules.length) return BRIDGE_TOOLS;
-  return BRIDGE_TOOLS.map(t => t.name !== 'run_command' ? t : Object.assign({}, t, {
-    description: t.description + ' The user has told AMV never to run these on their computer, '
-      + 'and they are refused: ' + rules.map(r => '"' + r + '"').join(', ')
-      + '. Do not try another way to do the same thing.' }));
+  const rules = neverRunRules().concat(_teamNeverRun()), prot = _agentRules().protect;
+  if(!rules.length && !prot.length) return BRIDGE_TOOLS;
+  return BRIDGE_TOOLS.map(t => {
+    if(t.name === 'run_command' && rules.length) return Object.assign({}, t, {
+      description: t.description + ' The user has told AMV never to run these on their computer, '
+        + 'and they are refused: ' + rules.map(r => '"' + r + '"').join(', ')
+        + '. Do not try another way to do the same thing.' });
+    /* Protected files, said up front for the same reason. */
+    if(t.name === 'write_file' && prot.length) return Object.assign({}, t, {
+      description: t.description + ' The user has protected these and writing them is refused: '
+        + prot.map(r => '"' + r + '"').join(', ') + '.' });
+    return t;
+  });
 }
 try{ window.bridgeToolsOffered = bridgeToolsOffered; window.neverRunRules = neverRunRules;
      window.neverRunSave = neverRunSave; window.neverRunRefusal = neverRunRefusal; }catch(e){}
@@ -523,8 +536,56 @@ try{ window.bridgeToolsOffered = bridgeToolsOffered; window.neverRunRules = neve
 /* Run one of them. Errors come back as a RESULT rather than being thrown,
    because a failed command is information the model should reason about -
    a missing package, a failing test - and not a reason to end the turn. */
+/* ── RULES FOR YOUR COMPUTER ───────────────────────────────────────────────
+   What somebody can tell AMV about working on their machine, beyond the
+   consent each turn asks for: commands it must never run, commands it must
+   ask about first even mid-turn (both read the way the never-run list above
+   reads a command), files it must never change, a check to run
+   after every file it changes (a linter, the tests) and one to run before it
+   says it is finished. A team's owner or admin can set the same rules for
+   everybody on the team; a member cannot switch those off.
+
+   Edited in Settings -> Skills (src/skills/skills.js). Enforced here, at the
+   one door every command and every write on the machine goes through, so a
+   rule holds in chat and in Build alike.
+
+   WHAT A RULE IS, SAID PLAINLY. A guardrail on AMV, not a sandbox: a command
+   spelled to dodge one is still a command the bridge prints in its own
+   window, and the screen that edits the rules says exactly that. */
+const AGENT_RULES_MAX = 30;
+function _agentRules(){
+  let mine = {}, team = {};
+  try{ mine = JSON.parse(loadStr('amv_agentrules') || '{}') || {}; }catch(e){}
+  try{ const t = window.AMVTeam && AMVTeam._cache; team = (t && t.policy && t.policy.agentRules) || {}; }catch(e){}
+  const list = k => [].concat(Array.isArray(team[k]) ? team[k] : [], Array.isArray(mine[k]) ? mine[k] : [])
+    .map(s => String(s || '').trim()).filter(Boolean).slice(0, AGENT_RULES_MAX * 2);
+  const one = k => [team[k], mine[k]].map(s => String(s || '').trim()).filter(Boolean);
+  return { ask: list('ask'), protect: list('protect'), afterWrite: one('afterWrite'), onFinish: one('onFinish'),
+           teamBlock: (Array.isArray(team.block) ? team.block : []).map(s => String(s || '').trim()).filter(Boolean) };
+}
+const _ruleEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/* The rule that protects a path, or ''. `*` is within a folder, `**` across
+   folders, and a rule with no slash in it names a file wherever it is. */
+function _rulePathHit(path, list){
+  const p = String(path || '').replace(/\\/g, '/').replace(/^\.\//, '');
+  const base = p.split('/').pop();
+  return (list || []).find(r => {
+    const g = String(r).replace(/\\/g, '/').replace(/^\.\//, '');
+    const src = g.split('**').map(x => x.split('*').map(_ruleEsc).join('[^/]*')).join('.*').replace(/^\.\*\//, '(?:.*/)?');
+    const re = new RegExp('^' + src + '$', 'i');
+    return re.test(p) || (g.indexOf('/') < 0 && re.test(base));
+  }) || '';
+}
+try{ Object.assign(window, { _agentRules, _rulePathHit, _nrMatch }); }catch(e){}
+
 async function runBridgeTool(name, args){
   args = args || {};
+  /* Files the person protected hold at the door, for chat and Build alike
+     (commands they never want run are refused in bridgeExec). */
+  if(name === 'write_file'){
+    const hit = _rulePathHit(args.path, _agentRules().protect);
+    if(hit) return { ok:false, error:'Your rule "' + hit + '" protects ' + String(args.path || '') + ', so AMV did not change it.' };
+  }
   try{
     if(name === 'run_command'){
       const r = await bridgeExec(String(args.command||''), { cwd: args.cwd, timeout: args.timeout });

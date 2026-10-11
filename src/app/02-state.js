@@ -178,8 +178,9 @@ const _SYNC_EXTRA = ['sessions','skills','handoffs','profile','projects'];
    unbounded one is an unbounded request. Bounded on the way IN, where the
    value crosses into this browser, rather than at each of the places that
    later read it. */
-const _PROFILE_FIELDS = ['nickname','work','instructions','personality'];
-const _PROFILE_MAX = { nickname: 60, work: 400, instructions: 2000, personality: 20 };
+/* agentrules: the person's rules for their computer (_agentRules), as JSON. */
+const _PROFILE_FIELDS = ['nickname','work','instructions','personality','agentrules'];
+const _PROFILE_MAX = { nickname: 60, work: 400, instructions: 2000, personality: 20, agentrules: 12000 };
 function _profileSnapshot(){
   const out = { updatedAt: 0 };
   try{ out.updatedAt = +(loadStr('amv_profile_at')||0) || 0; }catch(e){}

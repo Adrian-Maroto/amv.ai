@@ -694,7 +694,7 @@ async function _loadTeamTasks(team, role, myEmail){
     AMVTeam.audit().then(log=>{
       const el=$('team-audit'); if(!el) return;
       if(!log.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">No activity yet.</div>'; return; }
-      const _act={engines_changed:'changed which engines the team uses',team_created:'created the team',member_invited:'invited',member_joined:'joined',member_removed:'removed',role_changed:'changed a role',task_created:'assigned a task',task_status:'moved a task',task_reassigned:'reassigned a task',task_deleted:'deleted a task',project_shared:'shared a project for editing',project_edited:'edited the shared project',project_removed:'stopped sharing the project'};
+      const _act={engines_changed:'changed which engines the team uses',team_created:'created the team',member_invited:'invited',member_joined:'joined',member_removed:'removed',role_changed:'changed a role',task_created:'assigned a task',task_status:'moved a task',task_reassigned:'reassigned a task',task_deleted:'deleted a task',project_shared:'shared a project for editing',project_edited:'edited the shared project',project_removed:'stopped sharing the project',agent_rules_changed:'changed the rules for members\u2019 computers'};
       el.innerHTML='<div class="team-log">'+log.slice(0,30).map(e=>{
         const when=new Date(e.t).toLocaleString();
         let what=_act[e.action]||e.action;

@@ -17557,16 +17557,44 @@ async function teamSetRole(request, env){
    { engines: [...] } allows those plus the base engines; { engines: null }
    removes the policy. Unknown names are refused rather than stored, so a
    typo cannot become a rule that silently matches nothing. */
+/* A team's rules for its members' computers (the page enforces them: see
+   _agentRules in the client). The same shape and bounds as a person's own,
+   checked here because the request does not have to come from the page. */
+function _agentRulesClean(o){
+  if(!o || typeof o !== 'object') return { error:'Send the rules as an object.' };
+  const ctl = /[\u0000-\u001f\u007f]/, out = {};
+  for(const k of ['block', 'ask', 'protect']){
+    const v = o[k] == null ? [] : o[k];
+    if(!Array.isArray(v) || v.length > 50) return { error:'Each list of rules holds at most 50 lines.' };
+    const lines = v.map(s => String(s == null ? '' : s).trim()).filter(Boolean);
+    if(lines.some(s => s.length > 120 || ctl.test(s))) return { error:'Each rule is one short line, under 120 characters.' };
+    out[k] = [...new Set(lines)];
+  }
+  for(const k of ['afterWrite', 'onFinish']){
+    const s = String(o[k] == null ? '' : o[k]).trim();
+    if(s.length > 300 || ctl.test(s)) return { error:'A check is one command on one line, under 300 characters.' };
+    out[k] = s;
+  }
+  return { rules: out };
+}
 async function teamSetPolicy(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const body = await request.json().catch(()=>({}));
   let team = await _teamOf(env, user.email);
   if(!team) return json({ error:'no team' }, 404);
-  const deny = 'Only the team\u2019s owner or an admin can choose its engines.';
+  const setRules = Object.prototype.hasOwnProperty.call(body, 'agentRules');
+  const setEngines = !setRules || Object.prototype.hasOwnProperty.call(body, 'engines');
+  const deny = setRules ? 'Only the team\u2019s owner or an admin can set the team\u2019s rules.' : 'Only the team\u2019s owner or an admin can choose its engines.';
   if(!_can(team, user.email, 'setPolicy')) return json({ error: deny, code:'forbidden' }, 403);
+  let agentRules = null;
+  if(setRules){
+    const c = _agentRulesClean(body.agentRules);
+    if(c.error) return json({ error: c.error, code:'bad_request' }, 400);
+    agentRules = c.rules;
+  }
   let engines = null;
-  if(body.engines !== null && body.engines !== undefined){
+  if(setEngines && body.engines !== null && body.engines !== undefined){
     if(!Array.isArray(body.engines) || body.engines.length > 32) return json({ error:'Send the engines as a list.', code:'bad_request' }, 400);
     const known = new Set(Object.keys(ENGINES).concat(_partnerEngineDefs(env).map(d => d.key)));
     const bad = body.engines.find(k => typeof k !== 'string' || !known.has(k));
@@ -17579,12 +17607,19 @@ async function teamSetPolicy(request, env){
       if(!fresh) return { error:'no team', status:404 };
       if(!_can(fresh, user.email, 'setPolicy')) return { error: deny, status:403 };
       const prev = _teamEngineList(fresh);
-      fresh.policy = Object.assign({}, fresh.policy || {}, { engines });
+      /* Only what was sent changes: saving the rules leaves the engines as
+         they were, and the other way round. */
+      fresh.policy = Object.assign({}, fresh.policy || {}, setEngines ? { engines } : {}, setRules ? { agentRules } : {});
       team = fresh;
       return { prev };
     });
   }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
   if(r && r.error) return json({ error: r.error }, r.status || 400);
+  if(setRules){
+    const n = ['block', 'ask', 'protect'].reduce((a, k) => a + agentRules[k].length, 0) + (agentRules.afterWrite ? 1 : 0) + (agentRules.onFinish ? 1 : 0);
+    await _teamAudit(env, team, user.email, 'agent_rules_changed', { rules: n });
+    if(!setEngines) return json({ ok:true, agentRules });
+  }
   const now = _teamEngineList(team);
   await _teamAudit(env, team, user.email, 'engines_changed', {
     engines: now ? now.join(',') : 'all', before: r.prev ? r.prev.join(',') : 'all' });

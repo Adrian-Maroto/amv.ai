@@ -106,6 +106,8 @@ async function _agentConsent(msg){
            wrong thing. */
         + ((typeof mcpConsentLine === 'function' && mcpConsentLine())
             ? mcpConsentLine() + '\n\n' : '')
+        + (function(){ const r = _agentRules(), n = neverRunRules().length + r.teamBlock.length + r.ask.length + r.protect.length + r.afterWrite.length + r.onFinish.length;
+            return n ? 'Your rules for this computer apply (' + n + ') - see Settings, Skills.\n\n' : ''; })()
         + 'This is for this one request: '
         + String(msg || '').slice(0, 140),
     okText: 'Let it work', cancelText: 'Not now',
@@ -123,8 +125,23 @@ async function _agentRunTool(name, input, step){
   /* A connector, not one of the four. Covered by this turn's consent, which
      named the connected services before any of this started. */
   if(typeof isMcpTool === 'function' && isMcpTool(name)) return await runMcpTool(name, input);
+  const rules = _agentRules();
+  /* A rule that says to ask holds even in a turn that was consented to as a
+     whole: the person said this kind of command is one they want to see. */
+  if(name === 'run_command'){
+    const hit = _nrMatch(input.command, rules.ask);
+    if(hit && !neverRunHit(input.command)){
+      const yes = await _showModalAsync({ title: 'Run this command?', okText: 'Run it', cancelText: 'Don\u2019t run it',
+        body: 'Your rule "' + hit + '" says to ask before AMV runs:\n\n' + String(input.command || '').slice(0, 600) });
+      if(yes !== true) return { ok:false, text:'The person chose not to run that command (their rule "' + hit + '" asks first). Do not run it; carry on without it or say what you need.' };
+    }
+  }
   if(name === 'write_file'){
     const path = String(input.path || '');
+    /* Refused before the file is read, so a protected file is never listed as
+       changed or offered to Undo. */
+    const prot = _rulePathHit(path, rules.protect);
+    if(prot) return { ok:false, text:'The person\u2019s rule "' + prot + '" protects ' + path + ', so AMV did not change it. Do not try to change it another way; say what change you would make instead.' };
     /* ONLY "NOT THERE" MAY MEAN "NEW FILE".
 
        This read every failure as absence: `catch(e){ prev = null }`, and null
@@ -164,7 +181,7 @@ async function _agentRunTool(name, input, step){
     const out = await runBridgeTool(name, input);
     if(!out || out.error) return { ok:false, text:'That did not work: ' + ((out && out.error) || 'the write failed') };
     _AGENT.after[path] = String(input.content == null ? '' : input.content);
-    return { ok:true, text:'Wrote ' + out.path + ' (' + out.bytes + ' bytes).' };
+    return { ok:true, text:'Wrote ' + out.path + ' (' + out.bytes + ' bytes).' + await _agentHookRun(rules.afterWrite, 'after-change check') };
   }
 
   const r = await runBridgeTool(name, input);
@@ -184,6 +201,38 @@ async function _agentRunTool(name, input, step){
   if(name === 'read_file') return { ok:true, text:'--- ' + r.path + ' ---\n' + r.content };
   return { ok:true, text: r.path + ':\n'
            + (r.entries || []).map(e => (e.dir ? '[dir] ' : '      ') + e.name).join('\n') };
+}
+
+/* THE PERSON'S OWN CHECKS - after each change, and before finishing. Run
+   through the same door as any command (so the never-run rules apply to
+   them too), shown in the step list like any command, and bounded per turn
+   so a check that is slow cannot turn every write into a minute. Their
+   output goes back to the engine, which is the point: a red lint or a failing
+   test is what it should read next. */
+const AGENT_HOOK_RUNS = 20;
+async function _agentHookRun(cmds, label){
+  let out = '';
+  for(const command of (cmds || [])){
+    if((_AGENT.hookRuns = (_AGENT.hookRuns || 0) + 1) > AGENT_HOOK_RUNS){ out += '\n\n(' + label + ' skipped: the limit of ' + AGENT_HOOK_RUNS + ' checks for this request was reached.)'; break; }
+    const step = { name:'run_command', input:{ command }, ok:true, detail:'', hook:true };
+    if(_AGENT.steps) _AGENT.steps.push(step);
+    const r = await runBridgeTool('run_command', { command });
+    step.ok = !!(r && r.ok);
+    step.exitCode = r && r.exitCode;
+    const tail = s => String(s || '').slice(-2000);
+    step.detail = r && r.error ? r.error : ('exit ' + r.exitCode + '\n' + tail(r.stdout) + '\n' + tail(r.stderr));
+    out += '\n\nThe person\u2019s ' + label + ' `' + command + '` ' + (step.ok ? 'passed.' : 'FAILED:\n' + step.detail.slice(0, 3000));
+    try{ _devRenderLog(); }catch(e){}
+  }
+  return out;
+}
+/* Before the turn may end: the finishing checks. A failure is handed back as
+   what to do next; nothing is returned when they pass. */
+async function _agentBeforeEnd(){
+  const cmds = _agentRules().onFinish;
+  if(!cmds.length) return '';
+  const said = await _agentHookRun(cmds, 'finishing check');
+  return /FAILED/.test(said) ? 'Before you finish:' + said + '\n\nFix what it reports, then finish.' : '';
 }
 
 /* THE STEP LIST, WHICH IS THE WHOLE INTERFACE OF THIS FEATURE.
@@ -450,6 +499,8 @@ async function _devSendAgent(msg, stat){
     }
   }catch(e){}
 
+  /* The team's rules as they are now, not as they were when the page loaded. */
+  try{ if(window.AMVTeam && AMVTeam.enabled()) await AMVTeam.get(); }catch(e){}
   if(!await _agentConsent(msg)){
     _DEV.log.push({ role:'ai', text:'Left it alone. Nothing was run or changed on your computer.' });
     _devRenderLog();
@@ -459,6 +510,7 @@ async function _devSendAgent(msg, stat){
   _AGENT.ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   _AGENT.before = {}; _AGENT.after = {}; _AGENT.created = {}; _AGENT.seen = {};
   _AGENT.steps = [];
+  _AGENT.hookRuns = 0;
   _agentSetRunning(true);
 
   const entry = { role:'ai', text:'', steps:_AGENT.steps };
@@ -493,6 +545,7 @@ async function _devSendAgent(msg, stat){
       effort: _devEffort(),
       max_tokens: 8000,
       runTool: _agentRunTool,
+      beforeEnd: _agentBeforeEnd,
       signal: _AGENT.ctrl ? _AGENT.ctrl.signal : undefined,
       stopped: () => {
         if(_AGENT.stop) return true;

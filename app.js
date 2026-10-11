@@ -3049,8 +3049,9 @@ const _SYNC_EXTRA = ['sessions','skills','handoffs','profile','projects'];
    unbounded one is an unbounded request. Bounded on the way IN, where the
    value crosses into this browser, rather than at each of the places that
    later read it. */
-const _PROFILE_FIELDS = ['nickname','work','instructions','personality'];
-const _PROFILE_MAX = { nickname: 60, work: 400, instructions: 2000, personality: 20 };
+/* agentrules: the person's rules for their computer (_agentRules), as JSON. */
+const _PROFILE_FIELDS = ['nickname','work','instructions','personality','agentrules'];
+const _PROFILE_MAX = { nickname: 60, work: 400, instructions: 2000, personality: 20, agentrules: 12000 };
 function _profileSnapshot(){
   const out = { updatedAt: 0 };
   try{ out.updatedAt = +(loadStr('amv_profile_at')||0) || 0; }catch(e){}
@@ -13211,7 +13212,7 @@ async function _loadTeamTasks(team, role, myEmail){
     AMVTeam.audit().then(log=>{
       const el=$('team-audit'); if(!el) return;
       if(!log.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">No activity yet.</div>'; return; }
-      const _act={engines_changed:'changed which engines the team uses',team_created:'created the team',member_invited:'invited',member_joined:'joined',member_removed:'removed',role_changed:'changed a role',task_created:'assigned a task',task_status:'moved a task',task_reassigned:'reassigned a task',task_deleted:'deleted a task',project_shared:'shared a project for editing',project_edited:'edited the shared project',project_removed:'stopped sharing the project'};
+      const _act={engines_changed:'changed which engines the team uses',team_created:'created the team',member_invited:'invited',member_joined:'joined',member_removed:'removed',role_changed:'changed a role',task_created:'assigned a task',task_status:'moved a task',task_reassigned:'reassigned a task',task_deleted:'deleted a task',project_shared:'shared a project for editing',project_edited:'edited the shared project',project_removed:'stopped sharing the project',agent_rules_changed:'changed the rules for members\u2019 computers'};
       el.innerHTML='<div class="team-log">'+log.slice(0,30).map(e=>{
         const when=new Date(e.t).toLocaleString();
         let what=_act[e.action]||e.action;
@@ -38301,7 +38302,7 @@ async function _aiAgentLoopRun(opts){
 
   const messages = [{ role:'user', content: String(opts.prompt || '') }];
   const steps = [];
-  let text = '', rounds = 0, why = 'done';
+  let text = '', rounds = 0, why = 'done', endChecks = 0;
 
   for(;;){
     if(stopped()){ why = 'stopped'; break; }
@@ -38383,6 +38384,14 @@ async function _aiAgentLoopRun(opts){
         messages.push({ role:'user', content:
           'Continue exactly where you left off. Do not repeat anything you already wrote.' });
         continue;
+      }
+      /* The surface's own last word before the turn may end - a finishing
+         check the person set (37-build-agent.js). What it says is handed
+         back as the next thing to do, at most twice, within the same bounds. */
+      if(typeof opts.beforeEnd === 'function' && endChecks < 2 && !stopped()){
+        let more = '';
+        try{ more = await opts.beforeEnd(); }catch(e){ more = ''; }
+        if(more){ endChecks++; messages.push({ role:'assistant', content: blocks.length ? blocks : 'Done.' }); messages.push({ role:'user', content: String(more) }); continue; }
       }
       why = 'done';
       break;
@@ -48594,10 +48603,15 @@ function neverRunSave(text){
 /* One word as a shell would see the program: lower case, without the
    folder it was called from and without Windows' .exe. */
 const _nrWord = (w) => String(w).toLowerCase().replace(/^.*[\\/]/, '').replace(/\.(exe|cmd|bat)$/, '');
+/* Yours, and your team's: an owner or admin can set commands nobody's AMV
+   runs (Settings -> Skills -> Rules), and a member cannot switch those off. */
+function _teamNeverRun(){ try{ return _neverRunClean(_agentRules().teamBlock.join('\n')); }catch(e){ return []; } }
 /* The rule this command breaks, or ''. */
-function neverRunHit(command){
-  const rules = neverRunRules();
-  if(!rules.length) return '';
+function neverRunHit(command){ return _nrMatch(command, neverRunRules().concat(_teamNeverRun())); }
+/* The same reading of a command for any list of rules - the never-run list
+   above, and the ask-first list in Build. */
+function _nrMatch(command, rules){
+  if(!rules || !rules.length) return '';
   /* Every place a command can begin: separators, pipes, brackets,
      substitutions and backticks split it into pieces; quotes are dropped so a
      command handed to `sh -c` is read like any other. */
@@ -48621,7 +48635,8 @@ function neverRunHit(command){
 function neverRunRefusal(name, input){
   if(name !== 'run_command') return '';
   const rule = neverRunHit(input && input.command);
-  return rule ? ('Refused: the person told AMV never to run "' + rule + '" on their computer. '
+  const theirs = rule && !neverRunRules().some(r => r.toLowerCase() === rule.toLowerCase());
+  return rule ? ('Refused: ' + (theirs ? 'the person\u2019s team' : 'the person') + ' told AMV never to run "' + rule + '" on their computer. '
                + 'Do not try another way to do the same thing. Tell them what you would have run, '
                + 'and that they can run it themselves.') : '';
 }
@@ -48734,12 +48749,19 @@ try{ window.BRIDGE_TOOLS = BRIDGE_TOOLS; }catch(e){}
    it before it tries - a refusal is still the backstop, not the first time
    it hears of the rule. */
 function bridgeToolsOffered(){
-  const rules = neverRunRules();
-  if(!rules.length) return BRIDGE_TOOLS;
-  return BRIDGE_TOOLS.map(t => t.name !== 'run_command' ? t : Object.assign({}, t, {
-    description: t.description + ' The user has told AMV never to run these on their computer, '
-      + 'and they are refused: ' + rules.map(r => '"' + r + '"').join(', ')
-      + '. Do not try another way to do the same thing.' }));
+  const rules = neverRunRules().concat(_teamNeverRun()), prot = _agentRules().protect;
+  if(!rules.length && !prot.length) return BRIDGE_TOOLS;
+  return BRIDGE_TOOLS.map(t => {
+    if(t.name === 'run_command' && rules.length) return Object.assign({}, t, {
+      description: t.description + ' The user has told AMV never to run these on their computer, '
+        + 'and they are refused: ' + rules.map(r => '"' + r + '"').join(', ')
+        + '. Do not try another way to do the same thing.' });
+    /* Protected files, said up front for the same reason. */
+    if(t.name === 'write_file' && prot.length) return Object.assign({}, t, {
+      description: t.description + ' The user has protected these and writing them is refused: '
+        + prot.map(r => '"' + r + '"').join(', ') + '.' });
+    return t;
+  });
 }
 try{ window.bridgeToolsOffered = bridgeToolsOffered; window.neverRunRules = neverRunRules;
      window.neverRunSave = neverRunSave; window.neverRunRefusal = neverRunRefusal; }catch(e){}
@@ -48747,8 +48769,56 @@ try{ window.bridgeToolsOffered = bridgeToolsOffered; window.neverRunRules = neve
 /* Run one of them. Errors come back as a RESULT rather than being thrown,
    because a failed command is information the model should reason about -
    a missing package, a failing test - and not a reason to end the turn. */
+/* ── RULES FOR YOUR COMPUTER ───────────────────────────────────────────────
+   What somebody can tell AMV about working on their machine, beyond the
+   consent each turn asks for: commands it must never run, commands it must
+   ask about first even mid-turn (both read the way the never-run list above
+   reads a command), files it must never change, a check to run
+   after every file it changes (a linter, the tests) and one to run before it
+   says it is finished. A team's owner or admin can set the same rules for
+   everybody on the team; a member cannot switch those off.
+
+   Edited in Settings -> Skills (src/skills/skills.js). Enforced here, at the
+   one door every command and every write on the machine goes through, so a
+   rule holds in chat and in Build alike.
+
+   WHAT A RULE IS, SAID PLAINLY. A guardrail on AMV, not a sandbox: a command
+   spelled to dodge one is still a command the bridge prints in its own
+   window, and the screen that edits the rules says exactly that. */
+const AGENT_RULES_MAX = 30;
+function _agentRules(){
+  let mine = {}, team = {};
+  try{ mine = JSON.parse(loadStr('amv_agentrules') || '{}') || {}; }catch(e){}
+  try{ const t = window.AMVTeam && AMVTeam._cache; team = (t && t.policy && t.policy.agentRules) || {}; }catch(e){}
+  const list = k => [].concat(Array.isArray(team[k]) ? team[k] : [], Array.isArray(mine[k]) ? mine[k] : [])
+    .map(s => String(s || '').trim()).filter(Boolean).slice(0, AGENT_RULES_MAX * 2);
+  const one = k => [team[k], mine[k]].map(s => String(s || '').trim()).filter(Boolean);
+  return { ask: list('ask'), protect: list('protect'), afterWrite: one('afterWrite'), onFinish: one('onFinish'),
+           teamBlock: (Array.isArray(team.block) ? team.block : []).map(s => String(s || '').trim()).filter(Boolean) };
+}
+const _ruleEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/* The rule that protects a path, or ''. `*` is within a folder, `**` across
+   folders, and a rule with no slash in it names a file wherever it is. */
+function _rulePathHit(path, list){
+  const p = String(path || '').replace(/\\/g, '/').replace(/^\.\//, '');
+  const base = p.split('/').pop();
+  return (list || []).find(r => {
+    const g = String(r).replace(/\\/g, '/').replace(/^\.\//, '');
+    const src = g.split('**').map(x => x.split('*').map(_ruleEsc).join('[^/]*')).join('.*').replace(/^\.\*\//, '(?:.*/)?');
+    const re = new RegExp('^' + src + '$', 'i');
+    return re.test(p) || (g.indexOf('/') < 0 && re.test(base));
+  }) || '';
+}
+try{ Object.assign(window, { _agentRules, _rulePathHit, _nrMatch }); }catch(e){}
+
 async function runBridgeTool(name, args){
   args = args || {};
+  /* Files the person protected hold at the door, for chat and Build alike
+     (commands they never want run are refused in bridgeExec). */
+  if(name === 'write_file'){
+    const hit = _rulePathHit(args.path, _agentRules().protect);
+    if(hit) return { ok:false, error:'Your rule "' + hit + '" protects ' + String(args.path || '') + ', so AMV did not change it.' };
+  }
   try{
     if(name === 'run_command'){
       const r = await bridgeExec(String(args.command||''), { cwd: args.cwd, timeout: args.timeout });
@@ -49443,6 +49513,8 @@ async function _agentConsent(msg){
            wrong thing. */
         + ((typeof mcpConsentLine === 'function' && mcpConsentLine())
             ? mcpConsentLine() + '\n\n' : '')
+        + (function(){ const r = _agentRules(), n = neverRunRules().length + r.teamBlock.length + r.ask.length + r.protect.length + r.afterWrite.length + r.onFinish.length;
+            return n ? 'Your rules for this computer apply (' + n + ') - see Settings, Skills.\n\n' : ''; })()
         + 'This is for this one request: '
         + String(msg || '').slice(0, 140),
     okText: 'Let it work', cancelText: 'Not now',
@@ -49460,8 +49532,23 @@ async function _agentRunTool(name, input, step){
   /* A connector, not one of the four. Covered by this turn's consent, which
      named the connected services before any of this started. */
   if(typeof isMcpTool === 'function' && isMcpTool(name)) return await runMcpTool(name, input);
+  const rules = _agentRules();
+  /* A rule that says to ask holds even in a turn that was consented to as a
+     whole: the person said this kind of command is one they want to see. */
+  if(name === 'run_command'){
+    const hit = _nrMatch(input.command, rules.ask);
+    if(hit && !neverRunHit(input.command)){
+      const yes = await _showModalAsync({ title: 'Run this command?', okText: 'Run it', cancelText: 'Don\u2019t run it',
+        body: 'Your rule "' + hit + '" says to ask before AMV runs:\n\n' + String(input.command || '').slice(0, 600) });
+      if(yes !== true) return { ok:false, text:'The person chose not to run that command (their rule "' + hit + '" asks first). Do not run it; carry on without it or say what you need.' };
+    }
+  }
   if(name === 'write_file'){
     const path = String(input.path || '');
+    /* Refused before the file is read, so a protected file is never listed as
+       changed or offered to Undo. */
+    const prot = _rulePathHit(path, rules.protect);
+    if(prot) return { ok:false, text:'The person\u2019s rule "' + prot + '" protects ' + path + ', so AMV did not change it. Do not try to change it another way; say what change you would make instead.' };
     /* ONLY "NOT THERE" MAY MEAN "NEW FILE".
 
        This read every failure as absence: `catch(e){ prev = null }`, and null
@@ -49501,7 +49588,7 @@ async function _agentRunTool(name, input, step){
     const out = await runBridgeTool(name, input);
     if(!out || out.error) return { ok:false, text:'That did not work: ' + ((out && out.error) || 'the write failed') };
     _AGENT.after[path] = String(input.content == null ? '' : input.content);
-    return { ok:true, text:'Wrote ' + out.path + ' (' + out.bytes + ' bytes).' };
+    return { ok:true, text:'Wrote ' + out.path + ' (' + out.bytes + ' bytes).' + await _agentHookRun(rules.afterWrite, 'after-change check') };
   }
 
   const r = await runBridgeTool(name, input);
@@ -49521,6 +49608,38 @@ async function _agentRunTool(name, input, step){
   if(name === 'read_file') return { ok:true, text:'--- ' + r.path + ' ---\n' + r.content };
   return { ok:true, text: r.path + ':\n'
            + (r.entries || []).map(e => (e.dir ? '[dir] ' : '      ') + e.name).join('\n') };
+}
+
+/* THE PERSON'S OWN CHECKS - after each change, and before finishing. Run
+   through the same door as any command (so the never-run rules apply to
+   them too), shown in the step list like any command, and bounded per turn
+   so a check that is slow cannot turn every write into a minute. Their
+   output goes back to the engine, which is the point: a red lint or a failing
+   test is what it should read next. */
+const AGENT_HOOK_RUNS = 20;
+async function _agentHookRun(cmds, label){
+  let out = '';
+  for(const command of (cmds || [])){
+    if((_AGENT.hookRuns = (_AGENT.hookRuns || 0) + 1) > AGENT_HOOK_RUNS){ out += '\n\n(' + label + ' skipped: the limit of ' + AGENT_HOOK_RUNS + ' checks for this request was reached.)'; break; }
+    const step = { name:'run_command', input:{ command }, ok:true, detail:'', hook:true };
+    if(_AGENT.steps) _AGENT.steps.push(step);
+    const r = await runBridgeTool('run_command', { command });
+    step.ok = !!(r && r.ok);
+    step.exitCode = r && r.exitCode;
+    const tail = s => String(s || '').slice(-2000);
+    step.detail = r && r.error ? r.error : ('exit ' + r.exitCode + '\n' + tail(r.stdout) + '\n' + tail(r.stderr));
+    out += '\n\nThe person\u2019s ' + label + ' `' + command + '` ' + (step.ok ? 'passed.' : 'FAILED:\n' + step.detail.slice(0, 3000));
+    try{ _devRenderLog(); }catch(e){}
+  }
+  return out;
+}
+/* Before the turn may end: the finishing checks. A failure is handed back as
+   what to do next; nothing is returned when they pass. */
+async function _agentBeforeEnd(){
+  const cmds = _agentRules().onFinish;
+  if(!cmds.length) return '';
+  const said = await _agentHookRun(cmds, 'finishing check');
+  return /FAILED/.test(said) ? 'Before you finish:' + said + '\n\nFix what it reports, then finish.' : '';
 }
 
 /* THE STEP LIST, WHICH IS THE WHOLE INTERFACE OF THIS FEATURE.
@@ -49787,6 +49906,8 @@ async function _devSendAgent(msg, stat){
     }
   }catch(e){}
 
+  /* The team's rules as they are now, not as they were when the page loaded. */
+  try{ if(window.AMVTeam && AMVTeam.enabled()) await AMVTeam.get(); }catch(e){}
   if(!await _agentConsent(msg)){
     _DEV.log.push({ role:'ai', text:'Left it alone. Nothing was run or changed on your computer.' });
     _devRenderLog();
@@ -49796,6 +49917,7 @@ async function _devSendAgent(msg, stat){
   _AGENT.ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
   _AGENT.before = {}; _AGENT.after = {}; _AGENT.created = {}; _AGENT.seen = {};
   _AGENT.steps = [];
+  _AGENT.hookRuns = 0;
   _agentSetRunning(true);
 
   const entry = { role:'ai', text:'', steps:_AGENT.steps };
@@ -49830,6 +49952,7 @@ async function _devSendAgent(msg, stat){
       effort: _devEffort(),
       max_tokens: 8000,
       runTool: _agentRunTool,
+      beforeEnd: _agentBeforeEnd,
       signal: _AGENT.ctrl ? _AGENT.ctrl.signal : undefined,
       stopped: () => {
         if(_AGENT.stop) return true;

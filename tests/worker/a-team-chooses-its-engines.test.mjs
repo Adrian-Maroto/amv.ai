@@ -136,5 +136,28 @@ section('Removing the policy gives everything back');
   ok(ent.teamEngines === null, 'and the entitlement says there is no limit', ent.teamEngines);
 }
 
+section('The same policy carries the team\u2019s rules for its members\u2019 computers');
+{
+  const rules = (r) => call('/team/policy', { agentRules: r }, owner).then(async x => ({ status: x.status, d: await x.json() }));
+  await policy(owner, ['amv-swift']);
+  const set = await rules({ block: ['terraform apply', ' terraform apply '], ask: ['git commit'], protect: ['secrets/*'], afterWrite: 'npm run lint', onFinish: 'npm test' });
+  ok(set.status === 200 && set.d.agentRules.block.join() === 'terraform apply' && set.d.agentRules.onFinish === 'npm test', 'the owner saves them, trimmed and without repeats', set.d);
+  const team = (await (await call('/team/get', {}, member)).json()).team;
+  ok(team.policy.agentRules.protect.join() === 'secrets/*', 'every member\u2019s app is given them', team.policy.agentRules);
+  ok(JSON.stringify(team.policy.engines) === JSON.stringify(['amv-swift']), 'and saving the rules left the engines as they were', team.policy.engines);
+  await policy(owner, ['amv-swift', 'amv-forge']);
+  const after = (await (await call('/team/get', {}, member)).json()).team;
+  ok(after.policy.agentRules && after.policy.agentRules.onFinish === 'npm test', 'and saving the engines leaves the rules as they were', after.policy.agentRules);
+  const byMember = await call('/team/policy', { agentRules: { block: [] } }, member);
+  ok(byMember.status === 403, 'a member cannot change them', byMember.status);
+  const two = await rules({ afterWrite: 'npm test\nrm -rf ~' });
+  ok(two.status === 400, 'a check with a second line hidden in it is refused', two.d);
+  const many = await rules({ block: Array.from({ length: 51 }, (_, i) => 'cmd' + i) });
+  ok(many.status === 400, 'and so are more than fifty rules', many.status);
+  const log = (await (await call('/team/audit', {}, owner)).json()).log || [];
+  ok(log.some(x => x.action === 'agent_rules_changed' && x.actor === 'owner-te@example.com'), 'the change is in the activity log', log.map(x => x.action));
+  await policy(owner, null);
+}
+
 if (report('a-team-chooses-its-engines') > 0) process.exitCode = 1;
 done();

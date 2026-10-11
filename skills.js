@@ -79,8 +79,10 @@ function _renderSkillsPane(pane){
       '<div class="set-sub" style="margin-top:-2px;margin-bottom:12px">'+escH(T('Ready-made skills you can switch on.'))+'</div>'+
       '<div class="skill-list">'+_BUILTIN_SKILLS.map(s=>row(s,false)).join('')+'</div>'+
     '</div>'+
-    '<div class="ss2" id="pl-host"></div>';
+    '<div class="ss2" id="pl-host"></div>'+
+    '<div class="ss2" id="rl-host"></div>';
   _pluginsPane($('pl-host'));
+  _rulesPane($('rl-host'));
   pane.querySelectorAll('[data-sktoggle]').forEach(cb=>on(cb,'change',function(){
     const id=this.getAttribute('data-sktoggle');
     let a=_activeSkillIds();
@@ -444,3 +446,98 @@ function _pluginsPane(host){
   });
 }
 try{ Object.assign(window, { _pluginsPane, _pluginAdd, _pluginFromListing, _pluginRemove, _pluginSetOn, _plNormalize }); }catch(e){}
+
+/* ── RULES FOR YOUR COMPUTER: the editor ─────────────────────────────────────
+   The rules themselves are enforced in the page (_agentRules in
+   36-bridge.js) at the one door every command and write passes through. This
+   is where they are written: the person's own, synced with their profile,
+   and - for a team's owner or admin - the team's, which every member's AMV
+   follows and no member can switch off. */
+const RULES_LIST_MAX = 50, RULES_ITEM_MAX = 120, RULES_CMD_MAX = 300;
+function _rulesClean(o){
+  o = o && typeof o === 'object' ? o : {};
+  const ctl = /[\u0000-\u001f\u007f]/;
+  const list = (k, label) => {
+    const raw = Array.isArray(o[k]) ? o[k] : String(o[k] || '').split('\n');
+    const out = raw.map(s => String(s || '').trim()).filter(Boolean);
+    if(out.length > RULES_LIST_MAX) return { error: label + ': ' + T('at most') + ' ' + RULES_LIST_MAX + ' ' + T('lines') + '.' };
+    const bad = out.find(s => s.length > RULES_ITEM_MAX || ctl.test(s));
+    if(bad) return { error: label + ': ' + T('each line is one short rule, under') + ' ' + RULES_ITEM_MAX + ' ' + T('characters') + '.' };
+    return { v: [...new Set(out)] };
+  };
+  const cmd = (k, label) => {
+    const s = String(o[k] || '').trim();
+    if(s.length > RULES_CMD_MAX || ctl.test(s)) return { error: label + ': ' + T('one command on one line, under') + ' ' + RULES_CMD_MAX + ' ' + T('characters') + '.' };
+    return { v: s };
+  };
+  const parts = { block: list('block', T('Never run')), ask: list('ask', T('Ask first')), protect: list('protect', T('Never change')),
+                  afterWrite: cmd('afterWrite', T('After each change')), onFinish: cmd('onFinish', T('Before finishing')) };
+  for(const k in parts) if(parts[k].error) return { error: parts[k].error };
+  const r = {}; for(const k in parts) r[k] = parts[k].v;
+  return { rules: r };
+}
+/* The never-run list is the one on the computer card (neverRunRules, kept on
+   this device beside the bridge); the rest travel with the profile. */
+function _rulesMine(){
+  let r = {}; try{ r = JSON.parse(loadStr('amv_agentrules') || '{}') || {}; }catch(e){}
+  return Object.assign({}, r, { block: neverRunRules() });
+}
+function _rulesFormHTML(pre, r, ro){
+  const ta = (k, label, ph) => '<label class="lbl" for="' + pre + k + '">' + escH(label) + '</label>'
+    + '<textarea id="' + pre + k + '" class="pj-instr" rows="3"' + (ro ? ' readonly' : '') + ' placeholder="' + escH(ph) + '">' + escH((r[k] || []).join('\n')) + '</textarea>';
+  const inp = (k, label, ph) => '<label class="lbl" for="' + pre + k + '">' + escH(label) + '</label>'
+    + '<input id="' + pre + k + '" class="inp"' + (ro ? ' readonly' : '') + ' maxlength="' + RULES_CMD_MAX + '" placeholder="' + escH(ph) + '" value="' + escH(r[k] || '') + '">';
+  return ta('block', T('Never run'), T('One per line, e.g. git push, npm publish, terraform apply'))
+    + ta('ask', T('Ask me first before running'), T('One per line, e.g. git commit, docker'))
+    + ta('protect', T('Never change these files'), T('One per line, e.g. .env, migrations/**, *.lock'))
+    + inp('afterWrite', T('After each file AMV changes, run'), T('e.g. npm run lint'))
+    + inp('onFinish', T('Before AMV says it is done, run'), T('e.g. npm test - if it fails, AMV keeps working on it'));
+}
+function _rulesRead(pre){
+  const v = k => { const e = $(pre + k); return e ? e.value : ''; };
+  return { block: v('block'), ask: v('ask'), protect: v('protect'), afterWrite: v('afterWrite'), onFinish: v('onFinish') };
+}
+async function _rulesPane(host){
+  if(!host) return;
+  let team = null;
+  try{ if(window.AMVTeam && AMVTeam.enabled()) team = AMVTeam._cache || await AMVTeam.get(); }catch(e){}
+  const me = (S.user && S.user.email || '').toLowerCase();
+  const role = team ? ((team.members || []).find(m => m.email === me) || {}).role : '';
+  const manage = role === 'owner' || role === 'admin';
+  const tr = (team && team.policy && team.policy.agentRules) || {};
+  const hasTeam = ['block', 'ask', 'protect'].some(k => (tr[k] || []).length) || tr.afterWrite || tr.onFinish;
+  host.innerHTML = '<h3>' + escH(T('Rules for your computer')) + '</h3>'
+    + '<div class="set-sub">' + escH(T('What AMV must never do, or must ask about, when it works on your computer - in chat and in Build. A rule matches a command as AMV writes it: it is a guardrail on AMV, not a sandbox, and every command still shows in the bridge’s own window.')) + '</div>'
+    + _rulesFormHTML('rl-', _rulesMine(), false)
+    + '<div class="pj-row"><button type="button" class="btn bp" id="rl-save">' + escH(T('Save my rules')) + '</button><span class="pj-note" id="rl-said" role="status" aria-live="polite"></span></div>'
+    + (team && (manage || hasTeam)
+      ? '<details class="pl-make rl-team"' + (hasTeam ? ' open' : '') + '><summary>' + escH(T('Rules for everyone on') + ' ' + (team.name || T('your team'))) + '</summary>'
+        + '<p class="pj-note">' + escH(manage ? T('Every member’s AMV follows these, on top of their own rules, and they cannot switch them off.') : T('Set by your team’s owner or an admin. They apply on top of your own rules.')) + '</p>'
+        + _rulesFormHTML('rlt-', tr, !manage)
+        + (manage ? '<div class="pj-row"><button type="button" class="btn mc-mini" id="rlt-save">' + escH(T('Save for the whole team')) + '</button><span class="pj-note" id="rlt-said" role="status" aria-live="polite"></span></div>' : '')
+        + '</details>'
+      : '');
+  on($('rl-save'), 'click', () => {
+    const r = _rulesClean(_rulesRead('rl-')), say = $('rl-said');
+    if(r.error){ if(say) say.textContent = r.error; return; }
+    if(neverRunSave(r.rules.block.join('\n')) === null){ if(say) say.textContent = T('This device would not save the never-run list. Nothing changed.'); return; }
+    const keep = Object.assign({}, r.rules); delete keep.block;
+    saveStr('amv_agentrules', JSON.stringify(keep));
+    saveStr('amv_profile_at', String(Date.now()));
+    try{ if(typeof AMVSync !== 'undefined' && AMVSync.push) AMVSync.push(); }catch(e){}
+    if(say) say.textContent = T('Saved. AMV follows them from the next thing it does on your computer.');
+  });
+  on($('rlt-save'), 'click', async () => {
+    const r = _rulesClean(_rulesRead('rlt-')), say = $('rlt-said');
+    if(r.error){ if(say) say.textContent = r.error; return; }
+    const b = $('rlt-save'); if(b) b.disabled = true;
+    try{
+      const res = await AMV_API._fetch('/team/policy', { method:'POST', body: JSON.stringify({ agentRules: r.rules }) });
+      const d = await res.json().catch(() => ({}));
+      if(!res.ok || d.error){ if(say) say.textContent = d.error || T('They could not be saved.'); }
+      else { if(team){ team.policy = Object.assign({}, team.policy || {}, { agentRules: d.agentRules || r.rules }); } if(say) say.textContent = T('Saved for everyone on the team.'); }
+    }catch(e){ if(say) say.textContent = T('AMV could not reach the server, so nothing changed.'); }
+    if(b) b.disabled = false;
+  });
+}
+try{ Object.assign(window, { _rulesPane, _rulesClean }); }catch(e){}

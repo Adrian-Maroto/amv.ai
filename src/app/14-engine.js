@@ -399,7 +399,7 @@ async function _aiAgentLoopRun(opts){
 
   const messages = [{ role:'user', content: String(opts.prompt || '') }];
   const steps = [];
-  let text = '', rounds = 0, why = 'done';
+  let text = '', rounds = 0, why = 'done', endChecks = 0;
 
   for(;;){
     if(stopped()){ why = 'stopped'; break; }
@@ -481,6 +481,14 @@ async function _aiAgentLoopRun(opts){
         messages.push({ role:'user', content:
           'Continue exactly where you left off. Do not repeat anything you already wrote.' });
         continue;
+      }
+      /* The surface's own last word before the turn may end - a finishing
+         check the person set (37-build-agent.js). What it says is handed
+         back as the next thing to do, at most twice, within the same bounds. */
+      if(typeof opts.beforeEnd === 'function' && endChecks < 2 && !stopped()){
+        let more = '';
+        try{ more = await opts.beforeEnd(); }catch(e){ more = ''; }
+        if(more){ endChecks++; messages.push({ role:'assistant', content: blocks.length ? blocks : 'Done.' }); messages.push({ role:'user', content: String(more) }); continue; }
       }
       why = 'done';
       break;
