@@ -187,6 +187,12 @@ export async function bootLive(opts = {}) {
   const server = await serveArtifact(wanted, apiBase);
   /* Whatever it actually got, which is not always what was asked for. */
   const port = server.address().port;
+  /* And the deployment's own address follows it. Two suites name
+     http://localhost:9201 as APP_URL; when the parallel runner starts both,
+     one is moved to another port above, and every link its Worker builds -
+     checkout returns, emailed links - would point into the OTHER suite's
+     server. That is a failure that reads as the product being broken. */
+  if (wanted && port !== wanted && String(env.APP_URL || '') === 'http://localhost:' + wanted) env.APP_URL = 'http://localhost:' + port;
   const browser = await chromium.launch(LAUNCH);
   const context = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 } });
   /* Armed on the CONTEXT rather than the page, so every page this context makes

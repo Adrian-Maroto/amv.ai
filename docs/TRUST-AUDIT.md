@@ -1890,3 +1890,37 @@ Continued, same round - every write to somebody's connections is a merge:
 |---|---|---|
 | 245 | removing a connection saves the record read before the revoke call | 1 assertion |
 | 246 | finishing a sign-in saves the record read before sealing the token (the exact original code, not only an exaggerated delay) | 1 assertion |
+
+## Round forty-three - the build list's last features, swept and attacked
+
+Rules for your computer, `amv code`, batches, plugins, shared team projects,
+Notify me and extra usage packs - each guard broken and required to be named
+by a failing assertion. Six defects were found by reading first and are fixed
+(LESSONS 585-586): batches spent while paused, starved past the first page,
+were cut off inside `waitUntil`, and outlived their own list; protected files
+were matched from the first character; `amv code` followed a link to a file
+that did not exist yet; a paid pack's credit fell back to a store nothing
+reads.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 247 | the pause switch not checked before a batch item | 2 assertions |
+| 248 | the cron reads only the first page of queued batches | 1 assertion |
+| 249 | protected paths matched from the first character again | 1 assertion |
+| 250 | a team project saved without the revision check | 4 assertions |
+| 251 | a paid plugin's contents left in the public catalogue | 1 assertion |
+| 252 | Notify me sent without its once-per-person claim | 1 assertion |
+| 253 | the team's never-run list ignored | 2 assertions |
+| 254 | `amv code` back on `existsSync` for the folder check | 2 assertions |
+| 255 | a batch made with a revoked key keeps running | 1 assertion |
+| 256 | a batch readable by another account | 1 assertion |
+| 257 | Build's protected-file check removed (masked by the bridge's own - a suite was added so it is not) | 1 assertion |
+| 258 | Build's ask-first check removed | 2 assertions |
+| 259 | a pack's credit allowed to fall back to KV | 3 assertions |
+| 260 | a failed pack credit keeps its claim | 2 assertions |
+| 261 | a team project removable by any member | 2 assertions |
+| 262 | a batch that falls off the list kept | 1 assertion |
+
+**Not measured:** throughput. Batches are worked on the five-minute cron, four
+at a time; under heavy use that is the bottleneck, and the honest fix is a
+queue service - an infrastructure decision that is the owner's.

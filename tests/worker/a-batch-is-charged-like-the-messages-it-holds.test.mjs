@@ -251,5 +251,22 @@ section('Every batch gets its turn, however many are waiting ahead of it');
   for (const bid of ahead) { m.delete('batchq:' + bid); }
 }
 
+section('A batch that falls off the list is deleted with it - nothing outlives the list erasure reads');
+{
+  const G = await account('dev-g@example.com');
+  const old = [];
+  for (let i = 0; i < 50; i++) {
+    const bid = 'batch_' + 'f'.repeat(20) + String(i).padStart(4, '0');
+    old.push({ id: bid, created: Date.now() - (i + 1) * 1000, status: 'ended', n: 1 });
+    await W.DB.put(env, 'batch', bid, { id: bid, owner: 'dev-g@example.com', created: Date.now(), expiresAt: Date.now(), status: 'ended', items: [] });
+  }
+  await W.DB.put(env, 'batchidx', 'dev-g@example.com', old);
+  const oldest = old[old.length - 1].id;
+  const r = await call('/v1/messages/batches', { requests: [req('n1', 'x')] }, G.key);
+  ok(r.status === 200, 'a new batch is accepted', r.body);
+  ok(!(await W.DB.get(env, 'batch', oldest)), 'the one that fell off the list is gone', oldest);
+  ok(!!(await W.DB.get(env, 'batch', old[0].id)), 'and the ones still listed are not');
+}
+
 report('a-batch-is-charged-like-the-messages-it-holds');
 done();

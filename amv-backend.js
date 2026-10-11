@@ -18855,17 +18855,23 @@ async function batchCreate(request, env, ctx) {
   }
   const id = 'batch_' + crypto.randomUUID().replace(/-/g, '').slice(0, 24);
   const now = Date.now();
-  let res;
+  let res, dropped = [];
   try {
     res = await _withKind(env, 'batchidx', user.email, (idx) => {
       const active = idx.filter(b => b && b.status !== 'ended').length;
       if (active >= BATCH_ACTIVE_MAX) return { error: 'You have ' + BATCH_ACTIVE_MAX + ' batches still running. Wait for one to finish, or cancel one.', status: 429, code: 'batch_limit' };
       idx.unshift({ id, created: now, status: 'in_progress', n: reqs.length });
-      if (idx.length > 50) idx.length = 50;
+      if (idx.length > 50) dropped = idx.splice(50);
       return { ok: true };
     }, []);
   } catch (e) { if (!_isBusy(e)) throw e; return _busyJson('batch'); }
   if (res && res.error) return json({ error: res.error, code: res.code }, res.status || 400);
+  /* A batch that falls off the end of the list goes with it. Nothing else
+     ever deletes a batch record, and the list is also how erasure finds an
+     account's batches - so one left behind here would outlive the account
+     that made it, owner's address and all. (Its requests and answers expire
+     on their own.) */
+  for (const b of dropped) { try { if (b && b.id) await DB.del(env, 'batch', b.id); } catch (e) {} }
   for (let i = 0; i < reqs.length; i++) await env.AMV_KV.put(`batchreq:${id}:${i}`, JSON.stringify(reqs[i].params), { expirationTtl: BATCH_KEEP_S + 86400 });
   const rec = { id, owner: user.email, keyId: await _apiKeyIdOf(request, env), created: now, expiresAt: now + BATCH_TTL_MS, status: 'in_progress',
                 items: reqs.map(r => ({ cid: String(r.custom_id), state: 'pending' })) };
