@@ -223,6 +223,16 @@ async function main() {
        whole reason a Durable Object is in this design, and it is the one thing
        a hand-written double cannot demonstrate: the fake serialises because
        JavaScript does, not because the design is right. */
+    /* NOT ACROSS A MINUTE BOUNDARY. The ceiling counts in clock minutes, so a
+       burst that starts at :59 lands in two windows of under thirty each and
+       none is refused - which is what CI once reported as forty-five hashed
+       and none refused, with the counter answering throughout. That is the
+       documented edge of a fixed window (at most twice the cap across one
+       boundary, still bounded), not the concurrency this section is about, so
+       the burst waits for the start of a fresh minute rather than gambling on
+       where in one it lands. */
+    const intoMinute = Date.now() % 60000;
+    if (intoMinute > 40000) await new Promise(r => setTimeout(r, 60000 - intoMinute + 1000));
     const burst = await Promise.all(Array.from({ length: 45 }, (_, i) =>
       post('/auth/login', { email: `ghost${i}@smoke.test`, password: 'Not-the-Passw0rd!' },
            { 'CF-Connecting-IP': '14.0.0.1' })));
