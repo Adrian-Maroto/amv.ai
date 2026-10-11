@@ -18770,8 +18770,8 @@ async function aiCountTokens(request, env){
   if (eng.thinking) payload.thinking = { type: 'adaptive' };
   let r, d;
   try {
-    r = await fetch(_modelBase(env) + '/v1/messages/count_tokens', { method: 'POST', headers: _modelHeaders(env),
-      body: JSON.stringify(payload), signal: AbortSignal.timeout(20000) });
+    r = await fetchDeadline(_modelBase(env) + '/v1/messages/count_tokens', { method: 'POST', headers: _modelHeaders(env),
+      body: JSON.stringify(payload) }, 20000);
     d = await r.json().catch(() => ({}));
   } catch (e) {
     return json({ error: 'The count could not be made just now. Try again in a moment.', code: 'upstream_unavailable' }, 502);
