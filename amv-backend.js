@@ -4591,6 +4591,38 @@ async function _ssoRequiredFor(env, email){
 const _ssoRequiredJson = (team) => json({ error:'Your company signs in to AMV through its own system. Use “Sign in with your company”.',
                                           code:'sso_required', domain: team.sso.domain }, 403);
 
+/* AN ACCOUNT FOR AN ADDRESS SOMEBODY ELSE HAS JUST VERIFIED (Google, or a
+   company's provider).
+
+   A new one is written as it always was, without the account lock, because
+   signing in with Google has to keep working while the lock's store is down
+   (every-signup-is-counted, the-door-does-not-say-who-lives-here) - and two
+   first sign-ins racing for one address write the same record.
+
+   AN ADDRESS NOBODY CONFIRMED IS NOT THE PERSON'S YET. Somebody can sign up
+   with another person's address and never enter the code; that account
+   carries the squatter's password. The provider has now vouched for the
+   address, so that password goes, and every session it opened - otherwise the
+   real owner signs in to an account a stranger can still open. That change
+   is made under the lock, and if the lock cannot be had the sign-in is
+   refused as busy rather than going ahead with the password still on it. */
+async function _federatedAccount(env, email, fresh){
+  const cur = await DB.get(env, 'acct', email);
+  if(!cur){ await DB.put(env, 'acct', email, fresh); return { acct: fresh, created: true, squatted: false }; }
+  if((cur.provider || 'email') !== 'email' || cur.emailVerifiedAt || !cur.pwHash) return { acct: cur, created: false, squatted: false };
+  let squatted = false, after = cur;
+  await _withAcct(env, email, (rec) => {
+    if(!rec) return;
+    if((rec.provider || 'email') === 'email' && !rec.emailVerifiedAt && rec.pwHash){
+      delete rec.pwHash; delete rec.salt; delete rec.pwIter; squatted = true;
+    }
+    if(!rec.emailVerifiedAt) rec.emailVerifiedAt = Date.now();
+    after = Object.assign({}, rec);
+  });
+  if(squatted) await revokeUserTokens(env, email);
+  return { acct: after, created: false, squatted };
+}
+
 /* Step one: where to send somebody who typed their work address. */
 async function authSsoStart(request, env){
   const lim = await limitAction(env, 'ssostart:' + _rlIp(request), 20, 300);
@@ -4663,10 +4695,12 @@ async function authSsoFinish(request, env){
     if(other && _role(other, email)) return json({ error:'This account is in another AMV team. Leave it first, then sign in with your company.', code:'already_in_team' }, 409);
   }
   const name = String(claims.name || email.split('@')[0]).slice(0, 120);
-  let acct = await DB.get(env, 'acct', email);
-  if(!acct){
-    acct = { email, name, provider:'sso', createdAt: Date.now(), sipHash: await _ipHash(env, request) };
-    await DB.put(env, 'acct', email, acct);
+  let fed;
+  try{ fed = await _federatedAccount(env, email, { email, name, provider:'sso', createdAt: Date.now(), sipHash: await _ipHash(env, request) }); }
+  catch(e){ if(!_isBusy(e)) throw e; return _busyJson('account'); }
+  if(fed.squatted) audit(env, 'sso_cleared_unconfirmed_password', { team: team.id });
+  const acct = fed.acct, created = fed.created;
+  if(created){
     try{ await counter(env, 'popaccounts', { op:'incr', amount:1 }); }catch(e){}
     try{ await _recordGrowth(env, 'signup'); await _funnelMark(env, email, 'signup'); }catch(e){ try{ await _workerError(env, 'authSso:accounting', e); }catch(_){} }
   }
@@ -12810,6 +12844,9 @@ const BACKUP_MAX_KEYS        = 500000;            // per snapshot
 
 const BACKUP_PREFIXES = [
   'acct:', 'ent:', 'entitleitem:', 'data:', 'auto:', 'team:', 'userteam:',
+  /* Which team signs a proved domain in. Restored with the teams, or every
+     company's sign-in would stop until each owner proved their domain again. */
+  'ssodom:',
   'teamtasks:', 'sites:', 'site:', 'abuse:', 'seller:', 'widget:', 'market:',
   'wallet:', 'purchases:', 'stripecust:', 'tokepoch:', 'sms:', 'mktreport:',
   'consent:', 'apikeys:', 'billing:', 'fam:', 'links:', 'approvals:',
@@ -12921,6 +12958,9 @@ const BACKUP_NEVER = [
      six hours. Putting it in a backup would bulk up the file with a copy of
      somebody else's catalogue and restore a stale one. */
   'mcpcat:',
+  /* A company sign-in in flight: ten minutes of state, nonce and verifier.
+     Restoring one would put a spent sign-in back into circulation. */
+  'ssost:',
   /* A mailbox app password opens the whole mailbox, and for most providers the
      account behind it. One leaked export file must not be a way into every
      connected inbox, so this is excluded on purpose rather than forgotten. */
@@ -14153,6 +14193,7 @@ const NEEDS_SIGNING = new Set([
   '/auth/signup',
   '/auth/login',
   '/auth/google',
+  '/auth/sso/finish',
   '/auth/refresh',
   '/auth/login/verify',
 ]);
@@ -15749,10 +15790,12 @@ async function authGoogle(request, env) {
     if(!em) return json({ error:'no email in token' }, 401);
     { const sso = await _ssoRequiredFor(env, em); if(sso) return _ssoRequiredJson(sso); }
     const name = claims.name || em.split('@')[0];
-    let acct = await DB.get(env, 'acct', em);
-    if(!acct){
-      acct = { email:em, name, provider:'google', createdAt:Date.now(), sipHash: await _ipHash(env, request) };
-      await DB.put(env, 'acct', em, acct);
+    let fed;
+    try{ fed = await _federatedAccount(env, em, { email:em, name, provider:'google', createdAt:Date.now(), sipHash: await _ipHash(env, request) }); }
+    catch(e){ if(!_isBusy(e)) throw e; return _busyJson('account'); }
+    if(fed.squatted) audit(env, 'google_cleared_unconfirmed_password', {});
+    const created = fed.created;
+    if(created){
       /* AMV-SP-01: `email` does not exist here - the address in this function is
          `em`. Every Google signup threw a ReferenceError into the empty catch
          below, so none of them were ever recorded: the funnel undercounted

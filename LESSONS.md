@@ -14854,3 +14854,23 @@ suite covers it.
 Rule: a status code relayed from a system behind you means what it means to
 the caller, not to the system that sent it. Translate the ones the caller
 already gives a meaning to.
+
+## 581. An address somebody else verifies is not the squatter's any more
+
+Sign-up writes the account before the emailed code is entered, so an address
+can carry a stranger's password: they signed up with it and never confirmed
+it. Google sign-in, and now company sign-in, signed the real owner straight
+into that account and left the stranger's password - and their session -
+working. Found while writing company sign-in, then found in Google's path.
+
+Both now go through `_federatedAccount`: when the provider has just verified
+the address and the account was never confirmed, its password is removed and
+every session it opened is ended, under the account lock; if the lock cannot
+be had the sign-in is refused as busy rather than going ahead. Creating a new
+account stays unlocked on purpose, because Google sign-in must survive an
+outage of the lock store - and the exemption that allowed it now says that,
+instead of claiming "a claim in front of it" that never existed.
+
+Rule: whenever a provider vouches for an address, ask what else already holds
+it. A verification that does not take the address back from an unverified
+holder only adds a second key.

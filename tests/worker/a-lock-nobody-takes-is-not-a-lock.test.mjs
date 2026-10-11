@@ -156,7 +156,10 @@ const NO_LOCK_NEEDED = {
      It takes the account lock now, so it needs no exemption. The line is gone
      rather than reworded: an exemption whose reason has stopped being true is
      how a real bypass gets waved through by inheriting somebody else's. */
-  authGoogle:      'the same account creation through Google, with the same claim in front of it',
+  /* authGoogle was exempted here as "the same account creation through Google,
+     with the same claim in front of it". There was no claim in front of it, so
+     the reason is now the true one (LESSONS 581). */
+  _federatedAccount: 'creating the account for an address Google or a company has just verified - unlocked on purpose so sign-in survives an outage of the lock store, and two first sign-ins for one address write the same record; clearing a stranger\'s unconfirmed password DOES take the lock, and refuses the sign-in if it cannot',
   teamCreate:      'writes a team that does not exist yet, under a fresh id nobody else has',
   teamPresence:    'who is online right now, overwritten every few seconds by design - a lost write is corrected before anybody reads it',
   errorsReport:    'a telemetry sink; losing a sample of a burst that is being counted in the hundreds changes nothing anybody acts on',

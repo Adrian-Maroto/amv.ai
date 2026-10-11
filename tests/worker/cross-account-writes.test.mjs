@@ -93,6 +93,7 @@ const CLASSIFIED = {
   teamRemove:        'role-checked team membership',
   teamLeave:         'the caller removing themselves',
   teamSetRole:       'role-checked',
+  teamSso:           'owner-only (checked against ownerEmail), on the caller\'s own team resolved from their membership; the domain index it writes is claimed only after a DNS proof and never taken from another team',
   teamSetPolicy:     'role-checked (owner or admin, again inside the lock), on the caller\'s own team resolved from their membership; the list is validated against the engines that exist',
   teamData:          'role-checked team data',
   teamShare:         'role-checked shared library',

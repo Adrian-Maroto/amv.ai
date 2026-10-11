@@ -50,6 +50,8 @@ const PUBLIC = {
   '/auth/signup':        'creating an account is how you get credentials',
   '/auth/login':         'signing in is how you get credentials',
   '/auth/google':        'the same, through Google',
+  '/auth/sso/start':     'signing in through your company starts before you have credentials; it only says where to go, rate-limited per address',
+  '/auth/sso/finish':    'the company\'s code is the credential - spent once, checked against state, PKCE and a verified id token',
   '/auth/reset':         'somebody locked out has no token to present',
   '/auth/reset/confirm': 'same flow, and the emailed code is the credential',
   '/auth/reset/status':  'same flow',

@@ -194,6 +194,19 @@ section('A good token signs them in and seats them in the team');
   ok(again.status === 400 && again.d.code === 'sso_bad_state', 'the same return used twice is refused', again.d);
 }
 
+section('A stranger who signed up with the address first loses it to the company’s word');
+{
+  /* Signed up with Mia's work address, never confirmed it - and holds a session. */
+  const squat = (await call('/auth/signup', { email: 'mia@acme-corp.com', name: 'Not Mia', password: 'Squatter-Passw0rd!' })).d.token;
+  ok(!!squat, 'the stranger has a session on an unconfirmed account');
+  const r = await signIn((p) => good(p, { email: 'mia@acme-corp.com', sub: 'u-mia', name: 'Mia' }));
+  ok(r.f.status === 200 && r.f.d.email === 'mia@acme-corp.com', 'Mia signs in through her company', r.f.d.email);
+  const again = await call('/auth/login', { email: 'mia@acme-corp.com', password: 'Squatter-Passw0rd!' });
+  ok(!again.d.token, 'the stranger’s password no longer opens it', again.d);
+  const old = await call('/team/get', {}, squat);
+  ok(old.status === 401, 'and the stranger’s session is over', old.status);
+}
+
 section('Requiring company sign-in turns off passwords for the domain - not for the owner');
 {
   const req = await call('/team/sso', { action: 'require', on: true }, owner);

@@ -23,7 +23,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'authbypass.harness.mjs');
 writeFileSync(harness, src +
-  '\nexport { authSignup, authLogin, authGoogle, issueTokens, signToken, verifyToken };\n');
+  '\nexport { authSignup, authLogin, authGoogle, issueTokens, signToken, verifyToken, requireUser };\n');
 const W = await import(harness + '?t=' + Date.now());
 
 const store = new Map();
@@ -126,6 +126,27 @@ section('AMV-052: Google sign-in validates audience/issuer, fails closed');
   const gd = await body(r);
   ok(r.status === 200 && !!gd.token, 'a valid, audience-matched Google token is accepted', r.status);
   globalThis.fetch = realFetch;
+}
+
+/* ── A stranger who signed up with the address first loses it to Google's word ── */
+section('An unconfirmed password on an address Google then verifies stops working');
+{
+  const realFetch = globalThis.fetch;
+  const genv = { ...env, GOOGLE_CLIENT_ID: 'my-real-client-id' };
+  /* Signed up with somebody else's address, never entered the code. */
+  let s = await W.authSignup(post('/auth/signup', { name: 'Not Rae', email: 'rae@x.com', password: 'squatter-horse-battery' }), genv);
+  ok(s.status < 400, 'the stranger made the account');
+  let l = await W.authLogin(post('/auth/login', { email: 'rae@x.com', password: 'squatter-horse-battery', provider: 'email' }), genv);
+  const squat = (await body(l)).token;
+  ok(!!squat, 'and holds a session on it');
+  globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ aud: 'my-real-client-id', iss: 'accounts.google.com', email: 'rae@x.com', email_verified: true, name: 'Rae' }) });
+  const g = await W.authGoogle(new Request('https://api/auth/google', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential: 'tok' }) }), genv);
+  globalThis.fetch = realFetch;
+  ok(g.status === 200, 'Rae signs in with Google', g.status);
+  l = await W.authLogin(post('/auth/login', { email: 'rae@x.com', password: 'squatter-horse-battery', provider: 'email' }), genv);
+  ok(!(await body(l)).token, 'the stranger’s password no longer opens it');
+  const who = await W.requireUser(new Request('https://api/x', { headers: { Authorization: 'Bearer ' + squat } }), genv);
+  ok(!who, 'and the stranger’s session is over', who && who.email);
 }
 
 if (report() > 0) process.exitCode = 1;
