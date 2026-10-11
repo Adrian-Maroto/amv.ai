@@ -98,6 +98,8 @@ function emitSandbox() {
   writeFileSync('memory-io.js', readFileSync('src/memory/memory-io.js'));
   /* The skill editor and plugins, fetched when Skills is drawn or a plugin is installed. */
   writeFileSync('skills.js', readFileSync('src/skills/skills.js'));
+  /* Editing a project together, fetched when a team member opens a project or the team page. */
+  writeFileSync('team-projects.js', readFileSync('src/team/team-projects.js'));
 }
 
 function assembleJS() {
@@ -916,6 +918,7 @@ const PUBLISH = [
   'credit.js',             // extra usage packs, fetched at a limit or from Billing
   'memory-io.js',          // memory import and export, fetched when either is opened
   'skills.js',             // skill editor + plugins: fetched when Skills is drawn or a plugin is installed
+  'team-projects.js',      // projects a team edits together: fetched by team members
 ];
 /* GOOGLE PLAY'S PROOF THAT THE ANDROID APP IS AMV'S (apps/android). Published
    only once the owner's signing fingerprint is in apps/android/config.json,

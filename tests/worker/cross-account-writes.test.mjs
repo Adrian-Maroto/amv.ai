@@ -98,6 +98,9 @@ const CLASSIFIED = {
   teamData:          'role-checked team data',
   teamShare:         'role-checked shared library',
   teamUnshare:       'role-checked shared library',
+  teamProjectCreate: 'a shared project is keyed by the caller\'s own team, resolved from their membership, never from the request',
+  teamProjectSave:   'any member of the team may edit its shared projects - that is the feature - and the team is resolved from membership; a stale revision is refused',
+  teamProjectDelete: 'whoever shared it, or an owner or admin of the caller\'s own team',
   teamPresence:      'presence keyed by team, written by a member',
   /* Newly VISIBLE rather than newly true. The task board was written with
      _saveTeamTasks, a helper this checker's patterns cannot see through, so two

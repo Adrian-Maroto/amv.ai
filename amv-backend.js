@@ -12879,6 +12879,9 @@ const BACKUP_PREFIXES = [
      question an incident asks, and it is the cheapest record here: 200 lines a
      team, capped. */
   'teamlog:',   // a team's action history, keyed by the team
+  /* A team's shared projects and their list - the team's work, edited by its
+     members, and not something a restore should leave behind. */
+  'tproj:', 'tprojidx:',
   /* The catalogue usage tally behind the most-used ranking. One record holding
      catalogue id to an integer and a total, nothing else: no address, no job
      text, no per-user timestamp, so there is nothing in it to protect and
@@ -14636,6 +14639,11 @@ async function _route(request, env, ctx) {
     case '/team/share':      return teamShare(request, env);
     case '/team/shared':     return teamShared(request, env);
     case '/team/unshare':    return teamUnshare(request, env);
+    case '/team/project/list':   return teamProjectList(request, env);
+    case '/team/project/get':    return teamProjectGet(request, env);
+    case '/team/project/create': return teamProjectCreate(request, env);
+    case '/team/project/save':   return teamProjectSave(request, env);
+    case '/team/project/delete': return teamProjectDelete(request, env);
     case '/team/presence':   return teamPresence(request, env);
     case '/team/tasks':      return teamTasks(request, env);
     case '/team/task/create': return teamTaskCreate(request, env);
@@ -17730,6 +17738,158 @@ async function teamUnshare(request, env){
   }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
   if(cut && cut.error) return json({ error: cut.error, code: cut.code }, cut.status||400);
   return json({ ok:true, shared: cut.shared });
+}
+
+/* ---------------- SHARED PROJECTS: a team edits one project together ----------------
+   The team library above hands out COPIES: somebody shares a project, a
+   colleague takes it, and from then on there are two projects that drift. A
+   shared project is ONE record, held here, that every member edits - its
+   instructions and its text files - and every member's chats in it read.
+
+   TWO PEOPLE SAVING AT ONCE. Each save names the revision it was made from.
+   If somebody else saved in between, the save is refused with what is there
+   now (409, code 'conflict'), and the page shows both versions and lets the
+   person choose. Nothing is ever overwritten by somebody who has not seen it -
+   a last-write-wins document is one where a colleague's afternoon disappears
+   without a trace, and nobody can say whose fault it was.
+
+   Every save keeps the instructions it replaced (the last TPROJ_HISTORY), with
+   who and when, so a change can be undone - by saving the old text again, as a
+   new version, so the undo is itself on the record. Every create, edit and
+   delete goes in the team's audit log.
+
+   Keyed by the TEAM, not by a person: it is the team's work, it outlives any
+   one member, and somebody who leaves the team loses access at once because
+   membership is checked on every call (_teamOf). */
+const TPROJ_MAX = 20, TPROJ_FILES = 20, TPROJ_TEXT = 600 * 1024, TPROJ_INSTR = 4000, TPROJ_HISTORY = 20;
+const _tprojKey = (teamId, id) => String(teamId) + ':' + String(id);
+function _tprojFiles(list){
+  if(!Array.isArray(list)) return { error:'files must be a list' };
+  if(list.length > TPROJ_FILES) return { error:'A shared project holds up to ' + TPROJ_FILES + ' files.' };
+  const out = []; let total = 0;
+  for(const f of list){
+    if(!f || typeof f.name !== 'string' || typeof f.text !== 'string' || !f.name.trim()) return { error:'Every file needs a name and its text.' };
+    total += f.text.length;
+    if(total > TPROJ_TEXT) return { error:'The files in a shared project are limited to ' + Math.round(TPROJ_TEXT / 1024) + 'k characters together.', code:'too_large' };
+    out.push({ id: /^[a-z0-9_]{1,40}$/i.test(String(f.id || '')) ? String(f.id) : 'pf' + crypto.randomUUID().replace(/-/g, '').slice(0, 12),
+               name: String(f.name).slice(0, 120), text: f.text, by: String(f.by || '').slice(0, 120), at: +f.at || Date.now() });
+  }
+  return { files: out };
+}
+function _tprojSummary(p){
+  return { id:p.id, name:p.name, icon:p.icon, rev:p.rev, updated:p.updated, updatedBy:p.updatedBy, createdBy:p.createdBy, files:(p.files||[]).length };
+}
+async function teamProjectList(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const team = await _teamOf(env, user.email);
+  if(!team) return json({ ok:true, projects:[] });
+  const idx = (await DB.get(env, 'tprojidx', team.id)) || [];
+  return json({ ok:true, projects: Array.isArray(idx) ? idx : [] });
+}
+async function teamProjectGet(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const team = await _teamOf(env, user.email);
+  if(!team) return json({ error:'no team' }, 404);
+  const { id } = await request.json().catch(()=>({}));
+  const p = await DB.get(env, 'tproj', _tprojKey(team.id, id));
+  if(!p) return json({ error:'That shared project no longer exists.', code:'gone' }, 404);
+  return json({ ok:true, project:p });
+}
+async function teamProjectCreate(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const team = await _teamOf(env, user.email);
+  if(!team) return json({ error:'no team' }, 404);
+  const blocked = await guardAction(env, 'tproj:' + user.email, 10, 100, 'shared project changes');
+  if(blocked) return blocked;
+  const body = await request.json().catch(()=>({}));
+  const name = String(body.name || '').trim().slice(0, 80);
+  if(!name) return json({ error:'A shared project needs a name.' }, 400);
+  const fl = _tprojFiles(body.files || []);
+  if(fl.error) return json({ error: fl.error, code: fl.code }, fl.code === 'too_large' ? 413 : 400);
+  const now = Date.now();
+  const p = { id:'tp_' + crypto.randomUUID().replace(/-/g, '').slice(0, 20), team:team.id, name,
+    icon: (function(ic){ ic = String(ic == null ? '' : ic); return ic.indexOf('<') >= 0 ? '' : ic.slice(0, 8); })(body.icon),
+    instructions: String(body.instructions || '').slice(0, TPROJ_INSTR), files: fl.files.map(f => Object.assign(f, { by: user.email, at: now })),
+    rev:1, created:now, createdBy:user.email, updated:now, updatedBy:user.email, history:[] };
+  let res;
+  try{
+    res = await _withKind(env, 'tprojidx', team.id, (idx) => {
+      if(idx.length >= TPROJ_MAX) return { error:'Your team has ' + TPROJ_MAX + ' shared projects. Remove one to add another.', status:429, code:'tproj_limit' };
+      idx.unshift(_tprojSummary(p));
+      return { ok:true };
+    }, []);
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+  if(res && res.error) return json({ error:res.error, code:res.code }, res.status || 400);
+  try{ await _withKind(env, 'tproj', _tprojKey(team.id, p.id), (rec) => { Object.assign(rec, p); return { ok:true }; }, {}); }
+  catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+  await _teamAudit(env, team, user.email, 'project_shared', { title:name });
+  return json({ ok:true, project:p });
+}
+async function teamProjectSave(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const team = await _teamOf(env, user.email);
+  if(!team) return json({ error:'no team' }, 404);
+  const blocked = await guardAction(env, 'tproj:' + user.email, 10, 100, 'shared project changes');
+  if(blocked) return blocked;
+  const body = await request.json().catch(()=>({}));
+  let fl = null;
+  if(body.files !== undefined){ fl = _tprojFiles(body.files); if(fl.error) return json({ error: fl.error, code: fl.code }, fl.code === 'too_large' ? 413 : 400); }
+  if(body.name !== undefined && !String(body.name).trim()) return json({ error:'A shared project needs a name.' }, 400);
+  let res;
+  try{
+    res = await _withKind(env, 'tproj', _tprojKey(team.id, body.id), (p) => {
+      if(!p) return { error:'That shared project no longer exists.', status:404, code:'gone' };
+      /* The check this whole feature rests on: inside the lock, against what
+         is stored NOW. A save made from an older revision is refused with the
+         current one, never merged over it. */
+      if(+body.baseRev !== p.rev) return { error:'Somebody else saved this project while you were editing it.', status:409, code:'conflict', project:p };
+      const now = Date.now(), what = [];
+      if(body.instructions !== undefined){
+        const next = String(body.instructions || '').slice(0, TPROJ_INSTR);
+        if(next !== p.instructions){
+          p.history = [{ rev:p.rev, by:p.updatedBy, at:p.updated, instructions:p.instructions }].concat(p.history || []).slice(0, TPROJ_HISTORY);
+          p.instructions = next; what.push('instructions');
+        }
+      }
+      if(body.name !== undefined){ const n = String(body.name).trim().slice(0, 80); if(n !== p.name){ p.name = n; what.push('name'); } }
+      if(fl){
+        const was = new Map((p.files || []).map(f => [f.id, f]));
+        /* A file nobody touched keeps who added it; a new or changed one is this person's. */
+        p.files = fl.files.map(f => { const o = was.get(f.id); return o && o.text === f.text && o.name === f.name ? o : Object.assign(f, { by:user.email, at:now }); });
+        what.push('files');
+      }
+      if(!what.length) return { ok:true, project:p, unchanged:true };
+      p.rev += 1; p.updated = now; p.updatedBy = user.email;
+      return { ok:true, project:p, what };
+    });
+  }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+  if(res && res.error) return json({ error:res.error, code:res.code, project:res.project }, res.status || 400);
+  if(!res.unchanged){
+    try{ await _withKind(env, 'tprojidx', team.id, (idx) => { const i = idx.findIndex(x => x && x.id === res.project.id); if(i >= 0) idx[i] = _tprojSummary(res.project); return { ok:true }; }, []); }
+    catch(e){ if(!_isBusy(e)) throw e; /* the record is saved; the list catches up on the next save */ }
+    await _teamAudit(env, team, user.email, 'project_edited', { title:res.project.name, what:res.what.join(','), rev:res.project.rev });
+  }
+  return json({ ok:true, project:res.project });
+}
+async function teamProjectDelete(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const team = await _teamOf(env, user.email);
+  if(!team) return json({ error:'no team' }, 404);
+  const { id } = await request.json().catch(()=>({}));
+  const p = await DB.get(env, 'tproj', _tprojKey(team.id, id));
+  if(!p) return json({ error:'That shared project no longer exists.', code:'gone' }, 404);
+  /* Whoever shared it, or an owner or admin - the same rule as the library. */
+  if(p.createdBy !== user.email && !_can(team, user.email, 'editData')) return json({ error:'Only whoever shared it, or a team admin, can remove a shared project.' }, 403);
+  try{ await _withKind(env, 'tprojidx', team.id, (idx) => { const i = idx.findIndex(x => x && x.id === id); if(i >= 0) idx.splice(i, 1); return { ok:true }; }, []); }
+  catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+  await DB.del(env, 'tproj', _tprojKey(team.id, id));
+  await _teamAudit(env, team, user.email, 'project_removed', { title:p.name });
+  return json({ ok:true });
 }
 
 /* ---------------- TEAM PRESENCE ----------------

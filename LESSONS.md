@@ -14912,3 +14912,22 @@ because the active list does not sync - which is why it has not bitten).
 
 Rule: in a list that merges by id, a delete is a write. If it does not leave
 something newer behind, it is a suggestion.
+
+## 584. A record two people edit needs to know which version each one saw
+
+The team library shares COPIES, so it never had this problem: a shared project
+became two projects that drifted, which is a different failure (nobody is
+editing the same thing) but not a lost edit. Shared editing makes it one
+record, and a record two people save has exactly one honest rule: a save
+names the revision it was made from, and a save from an older revision is
+refused with what is there now. Last-write-wins is the comfortable default
+and it is the one that deletes a colleague's afternoon with nothing in any
+log to say so.
+
+The lock alone does not do it. The lock makes each save atomic; it does not
+stop the second save, made from a page loaded before the first, from being
+a perfectly atomic overwrite. The suite fires two saves from the same
+revision at once and asserts one lands and the other is told.
+
+Rule: when more than one person writes a record, the write carries the
+version it was read at, and the check is made inside the lock.

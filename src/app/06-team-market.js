@@ -467,6 +467,9 @@ function _renderTeamManage(vc, team){
         '<button class="btn bs" id="team-share-prompt" style="font-size:var(--t-sm)">Share a prompt</button></div>'+
       '<div id="team-shared"><div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">Loading\u2026</div></div>'+
     '</div>'+
+    '<div class="ss2"><h3>Projects you edit together <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(one copy, kept up to date for everyone)</span></h3>'+
+      '<div id="team-projects"><div style="color:var(--mu);font-size:var(--t-sm);padding:6px 0">Loading\u2026</div></div>'+
+    '</div>'+
     (canManage?'<div class="ss2"><h3>Invite a teammate</h3><div class="sf" style="max-width:480px"><div style="display:flex;gap:8px;align-items:flex-end"><div style="flex:1"><label class="lbl">Email</label><input type="email" id="team-invite-email" placeholder="teammate@company.com" autocomplete="off"></div><div><label class="lbl">Role</label><select id="team-invite-role" class="sel"><option value="member">Member</option><option value="admin">Admin</option></select></div><button class="btn bp" id="team-invite-btn" style="font-size:var(--t-sm)">Invite</button></div></div><div id="team-invite-result"></div></div>':'')+
     '<div class="ss2"><h3>Members</h3><div class="vbreak">'+memberRows+'</div></div>'+
     _teamEnginesHTML(team, canManage)+
@@ -685,12 +688,13 @@ async function _loadTeamTasks(team, role, myEmail){
   });
   _teamEnginesWire(vc, team);
   _teamSsoLoad(vc).catch(()=>{});
+  _teamProjLoad().then(ok=>{ const el=$('team-projects'); if(!el) return; if(ok) window._tpTeamList(el); else el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm)">Shared projects could not be loaded. Check your connection and open this page again.</div>'; });
   // load the audit log (managers only)
   if(role==='owner'||role==='admin'){
     AMVTeam.audit().then(log=>{
       const el=$('team-audit'); if(!el) return;
       if(!log.length){ el.innerHTML='<div style="color:var(--mu);font-size:var(--t-sm);padding:8px 0">No activity yet.</div>'; return; }
-      const _act={engines_changed:'changed which engines the team uses',team_created:'created the team',member_invited:'invited',member_joined:'joined',member_removed:'removed',role_changed:'changed a role',task_created:'assigned a task',task_status:'moved a task',task_reassigned:'reassigned a task',task_deleted:'deleted a task'};
+      const _act={engines_changed:'changed which engines the team uses',team_created:'created the team',member_invited:'invited',member_joined:'joined',member_removed:'removed',role_changed:'changed a role',task_created:'assigned a task',task_status:'moved a task',task_reassigned:'reassigned a task',task_deleted:'deleted a task',project_shared:'shared a project for editing',project_edited:'edited the shared project',project_removed:'stopped sharing the project'};
       el.innerHTML='<div class="team-log">'+log.slice(0,30).map(e=>{
         const when=new Date(e.t).toLocaleString();
         let what=_act[e.action]||e.action;

@@ -17031,3 +17031,18 @@ button.pl-app:hover{border-color:var(--accent);color:var(--accent-txt)}
 .pl-btns{display:flex;gap:9px;margin-top:14px}
 .pl-btns .btn{flex:1}
 @media (hover:none){.pl-in>summary,.pl-make>summary,button.pl-app,.pl-pick{min-height:44px}}
+
+/* ═══ LAYER A316 - Projects a team edits together ══════════════════════════
+   The team section at the top of a project's page: shared or not, which
+   version, who changed it, earlier instructions - and, when a colleague saved
+   first, both versions side by side with the choice. */
+.tp-box{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg);padding:var(--sp-3) 14px;margin:var(--sp-3) 0 var(--sp-4)}
+.tp-h{font-size:var(--t-base);font-weight:600;color:var(--tx);margin-bottom:var(--sp-1)}
+.tp-err{color:var(--red-txt)}
+.tp-hist>summary{cursor:pointer;font-size:var(--t-sm);color:var(--accent-txt);min-height:32px;display:flex;align-items:center}
+.tp-conflict{border-color:color-mix(in srgb,var(--gold) 55%,var(--bd));background:color-mix(in srgb,var(--gold) 7%,var(--s1))}
+.tp-cols{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-3);margin:var(--sp-2) 0}
+.tp-cols pre{max-height:220px;overflow:auto}
+.tp-col-h{font-size:var(--t-xs);font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+@media (max-width:560px){.tp-cols{grid-template-columns:1fr}}
+@media (hover:none){.tp-hist>summary{min-height:44px}}
