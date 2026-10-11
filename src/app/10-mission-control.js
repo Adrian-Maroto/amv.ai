@@ -55,9 +55,12 @@ function _loadCrewData(){
    A failed fetch here costs nothing; _loadCrewData tries again on open. */
 function _crewPrefetch(){
   try{ if(navigator.connection && navigator.connection.saveData) return; }catch(e){}
-  const go = () => { try{ _loadCrewData(); }catch(e){} };
-  if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 8000 });
-  else setTimeout(go, 3000);
+  /* And the country's own jobs with it, so opening Crew has nothing left to
+     wait for. Sooner than it was (8s): somebody who opens Crew in the first
+     few seconds should not meet "Loading your Crew". */
+  const go = () => { try{ _loadCrewData().then(ok => { if(ok){ try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){} } }); }catch(e){} };
+  if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 2500 });
+  else setTimeout(go, 1500);
 }
 function _cwDefaultJobs(){
   const c = _cwCatalog();
@@ -1799,12 +1802,44 @@ async function _cwLoadLocal(code){
      has never signed up sees what AMV does where they live - which is the
      question they are actually asking. */
   if(!(window.AMV_API && AMV_API.live)){ _cwLocalState[cc] = 'offline'; return; }
-  _cwLocalState[cc] = 'loading';
+  /* THE LAST ANSWER FIRST, THE FRESH ONE BEHIND IT.
+
+     Every open of Crew waited on this request and then redrew the country's
+     sections when it landed - the "lag at the beginning" the owner reported.
+     The answer is remembered on this device, so the screen is drawn whole at
+     once from it, the request still goes out, and the screen is touched again
+     only if what came back is different. */
+  let shown = '';
+  try{
+    const memo = load('amv_cw_local');
+    if(memo && memo.cc === cc && memo.d && Date.now() - (+memo.at || 0) < 7 * 86400000){
+      _cwApplyLocal(cc, memo.d); shown = JSON.stringify(memo.d);
+    }
+  }catch(e){ shown = ''; }
+  if(!shown) _cwLocalState[cc] = 'loading';
   try{
     const d = await AMV_API.everyday(cc);
     /* The real endpoint always returns the country list. Anything without it
        did not come from the catalogue, so it is not an answer about what
        exists - it is an absence of one. */
+    if(!d || !Array.isArray(d.countries)) throw new Error('no catalogue');
+    const same = !!shown && JSON.stringify(d) === shown;
+    _cwApplyLocal(cc, d);
+    try{ store('amv_cw_local', { cc, at: Date.now(), d }); }catch(e){}
+    if(same) return;
+  }catch(e){
+    /* One reason left, now that the catalogue is public: the server could not
+       be reached. Not cached as an empty list, so a connection coming back can
+       still fill this in - an empty list would be a claim that the country has
+       nothing, which is a different and false statement. A remembered answer
+       already on screen stays: it is what the server said last time. */
+    if(shown) return;
+    _cwLocalState[cc] = 'offline';
+  }
+  _cwLocalRepaint(cc);
+}
+/* One country's answer, put where every Crew section reads it. */
+function _cwApplyLocal(cc, d){
     if(!d || !Array.isArray(d.countries)) throw new Error('no catalogue');
     const name = (d && d.name) || cc;
     const local = Array.isArray(d.local) ? d.local : [];
@@ -1817,13 +1852,8 @@ async function _cwLoadLocal(code){
                 counts: (rk.counts && typeof rk.counts === 'object' && !Array.isArray(rk.counts)) ? rk.counts : {} } };
     _cwLocalCache[cc] = local.map(j => _cwEverydayJob(Object.assign({ country: cc }, j), name, true));
     _cwLocalState[cc] = 'ok';
-  }catch(e){
-    /* One reason left, now that the catalogue is public: the server could not
-       be reached. Not cached as an empty list, so a connection coming back can
-       still fill this in - an empty list would be a claim that the country has
-       nothing, which is a different and false statement. */
-    _cwLocalState[cc] = 'offline';
-  }
+}
+function _cwLocalRepaint(cc){
   /* THE COUNTRY BLOCK REPAINTS ITSELF. Replacing the whole Crew view because
      one country's jobs arrived is what "crew still buffers" is describing: the
      screen is thrown away and rebuilt, losing scroll and anything open, to

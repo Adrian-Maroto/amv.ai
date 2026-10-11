@@ -1400,7 +1400,7 @@ function _initMobileSidebar(){
    that runs work while the phone is in a pocket, which is the one most worth
    reaching from a phone. */
 const BOTTOM_NAV=[
-  {tab:'chat',   label:'Chat',   svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'},
+  {tab:'chat',   label:'New chat', svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'},
   {tab:'build',  label:'Build',  svg:'<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>'},
   {tab:'crew',   label:'Crew',   svg:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
   {tab:'__more', label:'More',   svg:'<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>'},
@@ -1417,6 +1417,7 @@ function _renderBottomNav(){
   nav.querySelectorAll('[data-bntab]').forEach(b=>b.addEventListener('click',()=>{
     const t=b.dataset.bntab;
     if(t==='__more'){ if(!S.sbOpen) toggleSb(); return; }
+    if(t==='chat'){ openFreshChat(); return; }
     setTab(t);
   }));
 }
@@ -1805,7 +1806,9 @@ function setTab(t){
     }
   }catch(e){}
   try{ _renderBottomNav(); }catch(e){}
-  document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  /* New chat is an action, not a place: the open conversation is marked in
+     Recents, so this entry is never shown as the one you are on. */
+  document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t && b.dataset.tab!=='chat'));
   /* (old 'More' section removed - tools now live in the bottom-left row) */
   const _titles={dashboard:'Dashboard',chat:'',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',upgrade:'Upgrade',spend:'Spending',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
   const _nt=document.getElementById('nav-title');
@@ -2318,6 +2321,23 @@ function newChat(){
   setTab('chat');
   renderHist();
 }
+/* "NEW CHAT", THE WAY EVERY CHAT PRODUCT PEOPLE KNOW DOES IT.
+
+   The sidebar entry said "Chat" and put you back in whatever conversation was
+   last open, so coming back from Crew or Build landed somebody in the middle
+   of an old thread. It says New chat now and starts one, the way the chat
+   products people already use do; an old conversation is one tap away in
+   Recents.
+
+   An empty chat that is already open is used as it is, rather than stacking
+   another blank one in Recents - which also makes this safe to call twice for
+   one press (the sidebar binds its buttons in two places). */
+function openFreshChat(){
+  const c=(S.convs||[]).find(x=>x&&x.id===S.cur);
+  if(c && !(c.msgs||[]).length && !c.wsId && !c.temp){ setTab('chat'); return; }
+  newChat();
+}
+try{ window.openFreshChat=openFreshChat; }catch(e){}
 function loadConv(id){ _leaveTempChats(id); S.cur=id; setTab('chat'); renderHist(); }
 /* Delete moves a chat to Trash, where it stays restorable for 30 days.
    See _CONV_SHELF for why it is marked rather than removed. */

@@ -3424,7 +3424,7 @@ function setupApp(){
   on($('tsb'),'click',toggleSb); // tsb toggles hist-drawer
   on($('nav-back'),'click',()=>{ navBack(); });
   try{ _navPaint(); }catch(e){}
-  on($('ncb'),'click',newChat);
+  on($('ncb'),'click',openFreshChat);
   on($('theme-btn'),'click',function(){
     document.body.classList.toggle('light');
     saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');
@@ -3437,6 +3437,7 @@ function setupApp(){
       /* Pressing the Build entry means "show me the list", never "put me back
          in what I had open". Every other tab is unaffected. */
       if(btn.dataset.tab==='build' && typeof buildHome==='function') buildHome();
+      if(btn.dataset.tab==='chat'){ openFreshChat(); return; }
       setTab(btn.dataset.tab); });
   });
   on($('hist-search'),'input',renderHist);
@@ -3468,6 +3469,7 @@ function setupApp(){
       /* Pressing the Build entry means "show me the list", never "put me back
          in what I had open". Every other tab is unaffected. */
       if(btn.dataset.tab==='build' && typeof buildHome==='function') buildHome();
+      if(btn.dataset.tab==='chat'){ openFreshChat(); return; }
       setTab(btn.dataset.tab); });
   });
   // History search
@@ -4102,7 +4104,7 @@ try {
     var b=e.target.closest && e.target.closest('.snb'); if(b) document.getElementById('amv-tip').classList.remove('on');
   });
   });
-  _idle(()=>{ try{ var _lbl={dashboard:'Dashboard',chat:'Chat',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',market:'Marketplace'}; document.querySelectorAll('.snb').forEach(function(b){var t=b.dataset.tab; if(_lbl[t]) b.setAttribute('data-label',_lbl[t]);}); }catch(e){} });
+  _idle(()=>{ try{ var _lbl={dashboard:'Dashboard',chat:'New chat',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',market:'Marketplace'}; document.querySelectorAll('.snb').forEach(function(b){var t=b.dataset.tab; if(_lbl[t]) b.setAttribute('data-label',_lbl[t]);}); }catch(e){} });
 
 } catch(e) {
   console.error('Boot error:', e);

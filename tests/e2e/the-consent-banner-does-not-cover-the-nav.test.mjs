@@ -39,7 +39,7 @@ const probe = () => page.evaluate(() => {
   const banner = [...document.querySelectorAll('div,section,aside')]
     .find(d => vis(d) && /Essential cookies keep AMV running/.test(d.textContent) && d.children.length < 8);
   const nav = [...document.querySelectorAll('button,a')]
-    .filter(el => vis(el) && /^(Chat|Build|Crew|More)$/.test(el.textContent.trim()))
+    .filter(el => vis(el) && /^(New chat|Build|Crew|More)$/.test(el.textContent.trim()))
     /* The bottom bar's copies, not the sidebar's - taken by position. */
     .filter(el => el.getBoundingClientRect().top > window.innerHeight * 0.75);
   return {

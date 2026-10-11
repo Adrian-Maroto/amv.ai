@@ -5599,7 +5599,7 @@ function _initMobileSidebar(){
    that runs work while the phone is in a pocket, which is the one most worth
    reaching from a phone. */
 const BOTTOM_NAV=[
-  {tab:'chat',   label:'Chat',   svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'},
+  {tab:'chat',   label:'New chat', svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'},
   {tab:'build',  label:'Build',  svg:'<path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>'},
   {tab:'crew',   label:'Crew',   svg:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
   {tab:'__more', label:'More',   svg:'<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>'},
@@ -5616,6 +5616,7 @@ function _renderBottomNav(){
   nav.querySelectorAll('[data-bntab]').forEach(b=>b.addEventListener('click',()=>{
     const t=b.dataset.bntab;
     if(t==='__more'){ if(!S.sbOpen) toggleSb(); return; }
+    if(t==='chat'){ openFreshChat(); return; }
     setTab(t);
   }));
 }
@@ -6004,7 +6005,9 @@ function setTab(t){
     }
   }catch(e){}
   try{ _renderBottomNav(); }catch(e){}
-  document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  /* New chat is an action, not a place: the open conversation is marked in
+     Recents, so this entry is never shown as the one you are on. */
+  document.querySelectorAll('.snb, .sb-tool').forEach(b=>b.classList.toggle('on',b.dataset.tab===t && b.dataset.tab!=='chat'));
   /* (old 'More' section removed - tools now live in the bottom-left row) */
   const _titles={dashboard:'Dashboard',chat:'',prompts:'Prompt Library',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',upgrade:'Upgrade',spend:'Spending',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',lab:'Lab',market:'Marketplace'};
   const _nt=document.getElementById('nav-title');
@@ -6517,6 +6520,23 @@ function newChat(){
   setTab('chat');
   renderHist();
 }
+/* "NEW CHAT", THE WAY EVERY CHAT PRODUCT PEOPLE KNOW DOES IT.
+
+   The sidebar entry said "Chat" and put you back in whatever conversation was
+   last open, so coming back from Crew or Build landed somebody in the middle
+   of an old thread. It says New chat now and starts one, the way the chat
+   products people already use do; an old conversation is one tap away in
+   Recents.
+
+   An empty chat that is already open is used as it is, rather than stacking
+   another blank one in Recents - which also makes this safe to call twice for
+   one press (the sidebar binds its buttons in two places). */
+function openFreshChat(){
+  const c=(S.convs||[]).find(x=>x&&x.id===S.cur);
+  if(c && !(c.msgs||[]).length && !c.wsId && !c.temp){ setTab('chat'); return; }
+  newChat();
+}
+try{ window.openFreshChat=openFreshChat; }catch(e){}
 function loadConv(id){ _leaveTempChats(id); S.cur=id; setTab('chat'); renderHist(); }
 /* Delete moves a chat to Trash, where it stays restorable for 30 days.
    See _CONV_SHELF for why it is marked rather than removed. */
@@ -19064,9 +19084,12 @@ function _loadCrewData(){
    A failed fetch here costs nothing; _loadCrewData tries again on open. */
 function _crewPrefetch(){
   try{ if(navigator.connection && navigator.connection.saveData) return; }catch(e){}
-  const go = () => { try{ _loadCrewData(); }catch(e){} };
-  if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 8000 });
-  else setTimeout(go, 3000);
+  /* And the country's own jobs with it, so opening Crew has nothing left to
+     wait for. Sooner than it was (8s): somebody who opens Crew in the first
+     few seconds should not meet "Loading your Crew". */
+  const go = () => { try{ _loadCrewData().then(ok => { if(ok){ try{ _cwLoadLocal(_cwCountryGuess()); }catch(e){} } }); }catch(e){} };
+  if(typeof window.requestIdleCallback === 'function') window.requestIdleCallback(go, { timeout: 2500 });
+  else setTimeout(go, 1500);
 }
 function _cwDefaultJobs(){
   const c = _cwCatalog();
@@ -20808,12 +20831,44 @@ async function _cwLoadLocal(code){
      has never signed up sees what AMV does where they live - which is the
      question they are actually asking. */
   if(!(window.AMV_API && AMV_API.live)){ _cwLocalState[cc] = 'offline'; return; }
-  _cwLocalState[cc] = 'loading';
+  /* THE LAST ANSWER FIRST, THE FRESH ONE BEHIND IT.
+
+     Every open of Crew waited on this request and then redrew the country's
+     sections when it landed - the "lag at the beginning" the owner reported.
+     The answer is remembered on this device, so the screen is drawn whole at
+     once from it, the request still goes out, and the screen is touched again
+     only if what came back is different. */
+  let shown = '';
+  try{
+    const memo = load('amv_cw_local');
+    if(memo && memo.cc === cc && memo.d && Date.now() - (+memo.at || 0) < 7 * 86400000){
+      _cwApplyLocal(cc, memo.d); shown = JSON.stringify(memo.d);
+    }
+  }catch(e){ shown = ''; }
+  if(!shown) _cwLocalState[cc] = 'loading';
   try{
     const d = await AMV_API.everyday(cc);
     /* The real endpoint always returns the country list. Anything without it
        did not come from the catalogue, so it is not an answer about what
        exists - it is an absence of one. */
+    if(!d || !Array.isArray(d.countries)) throw new Error('no catalogue');
+    const same = !!shown && JSON.stringify(d) === shown;
+    _cwApplyLocal(cc, d);
+    try{ store('amv_cw_local', { cc, at: Date.now(), d }); }catch(e){}
+    if(same) return;
+  }catch(e){
+    /* One reason left, now that the catalogue is public: the server could not
+       be reached. Not cached as an empty list, so a connection coming back can
+       still fill this in - an empty list would be a claim that the country has
+       nothing, which is a different and false statement. A remembered answer
+       already on screen stays: it is what the server said last time. */
+    if(shown) return;
+    _cwLocalState[cc] = 'offline';
+  }
+  _cwLocalRepaint(cc);
+}
+/* One country's answer, put where every Crew section reads it. */
+function _cwApplyLocal(cc, d){
     if(!d || !Array.isArray(d.countries)) throw new Error('no catalogue');
     const name = (d && d.name) || cc;
     const local = Array.isArray(d.local) ? d.local : [];
@@ -20826,13 +20881,8 @@ async function _cwLoadLocal(code){
                 counts: (rk.counts && typeof rk.counts === 'object' && !Array.isArray(rk.counts)) ? rk.counts : {} } };
     _cwLocalCache[cc] = local.map(j => _cwEverydayJob(Object.assign({ country: cc }, j), name, true));
     _cwLocalState[cc] = 'ok';
-  }catch(e){
-    /* One reason left, now that the catalogue is public: the server could not
-       be reached. Not cached as an empty list, so a connection coming back can
-       still fill this in - an empty list would be a claim that the country has
-       nothing, which is a different and false statement. */
-    _cwLocalState[cc] = 'offline';
-  }
+}
+function _cwLocalRepaint(cc){
   /* THE COUNTRY BLOCK REPAINTS ITSELF. Replacing the whole Crew view because
      one country's jobs arrived is what "crew still buffers" is describing: the
      screen is thrown away and rebuilt, losing scroll and anything open, to
@@ -32819,7 +32869,7 @@ function setupApp(){
   on($('tsb'),'click',toggleSb); // tsb toggles hist-drawer
   on($('nav-back'),'click',()=>{ navBack(); });
   try{ _navPaint(); }catch(e){}
-  on($('ncb'),'click',newChat);
+  on($('ncb'),'click',openFreshChat);
   on($('theme-btn'),'click',function(){
     document.body.classList.toggle('light');
     saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');
@@ -32832,6 +32882,7 @@ function setupApp(){
       /* Pressing the Build entry means "show me the list", never "put me back
          in what I had open". Every other tab is unaffected. */
       if(btn.dataset.tab==='build' && typeof buildHome==='function') buildHome();
+      if(btn.dataset.tab==='chat'){ openFreshChat(); return; }
       setTab(btn.dataset.tab); });
   });
   on($('hist-search'),'input',renderHist);
@@ -32863,6 +32914,7 @@ function setupApp(){
       /* Pressing the Build entry means "show me the list", never "put me back
          in what I had open". Every other tab is unaffected. */
       if(btn.dataset.tab==='build' && typeof buildHome==='function') buildHome();
+      if(btn.dataset.tab==='chat'){ openFreshChat(); return; }
       setTab(btn.dataset.tab); });
   });
   // History search
@@ -33497,7 +33549,7 @@ try {
     var b=e.target.closest && e.target.closest('.snb'); if(b) document.getElementById('amv-tip').classList.remove('on');
   });
   });
-  _idle(()=>{ try{ var _lbl={dashboard:'Dashboard',chat:'Chat',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',market:'Marketplace'}; document.querySelectorAll('.snb').forEach(function(b){var t=b.dataset.tab; if(_lbl[t]) b.setAttribute('data-label',_lbl[t]);}); }catch(e){} });
+  _idle(()=>{ try{ var _lbl={dashboard:'Dashboard',chat:'New chat',workspaces:'Projects',memory:'Memory',usage:'Usage',billing:'Billing',plans:'Plans',settings:'Settings',help:'Help Center',apps:'Apps',tasks:'Tasks',integrations:'Integrations',extensions:'Extensions',crew:'Crew',studio:'Studio',dev:'Dev',handoff:'Handoff',market:'Marketplace'}; document.querySelectorAll('.snb').forEach(function(b){var t=b.dataset.tab; if(_lbl[t]) b.setAttribute('data-label',_lbl[t]);}); }catch(e){} });
 
 } catch(e) {
   console.error('Boot error:', e);
