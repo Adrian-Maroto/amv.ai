@@ -11,6 +11,7 @@
      node amv-cli.mjs chat                       a conversation, Ctrl-D to end
      node amv-cli.mjs -m amv-pulse --json "..."  one JSON object, for scripts
      node amv-cli.mjs --count "..."              how many input tokens, without sending
+     node amv-cli.mjs code "make the tests pass" AMV works in this folder, asking first
 
    THE KEY IS READ FROM THE ENVIRONMENT AND NOWHERE ELSE. Not a flag: a key on
    the command line is in the shell's history and in every process listing
@@ -18,6 +19,7 @@
 
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { createInterface } from 'node:readline';
 
 const DEFAULT_API = '__AMV_API__';
 const VERSION = '1';
@@ -29,6 +31,8 @@ const HELP = `amv - ask AMV from a terminal
   some-command | amv "what to do with it"
                                  what is piped in is sent along with the question
   amv chat                       a conversation; Ctrl-D or "exit" to end
+  amv code "what to do"          AMV works on the files in this folder: it reads freely,
+                                 and asks before every change and every command
 
 Options
   -m, --model NAME     ${ENGINES.join(', ')} (default auto)
@@ -67,6 +71,8 @@ function parseArgs(argv) {
   }
   if (o.words[0] === 'chat' && o.words.length === 1) { o.chat = true; o.words = []; }
   if (o.count && o.chat) throw usage('--count counts one request; it does not start a conversation');
+  if (o.words[0] === 'code') o.code = true;
+  if (o.count && o.code) throw usage('--count counts one request; it does not start work in a folder');
   if (!ENGINES.includes(o.model)) throw usage('unknown model "' + o.model + '" - one of ' + ENGINES.join(', '));
   if (!Number.isInteger(o.maxTokens) || o.maxTokens < 1 || o.maxTokens > 64000) throw usage('--max-tokens takes a whole number from 1 to 64000');
   return o;
@@ -216,6 +222,8 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
   const write = (t) => { if (!o.json) stdout.write(t); };
   try {
     if (o.chat) return await chat(o, base, key, stdin, stdout, stderr, ctrl);
+    /* Before stdin is read as part of a question: here it carries the answers. */
+    if (o.code) return await code(o, base, key, stdin, stdout, stderr, ctrl);
 
     const piped = await readStdin(stdin);
     if (piped.length > PIPED_MAX) { stderr.write('amv: what was piped in is over ' + PIPED_MAX + ' characters; send a smaller part.\n'); return 2; }
@@ -243,6 +251,237 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
   } finally {
     process.removeListener('SIGINT', onInt);
   }
+}
+
+/* ── amv code: AMV working in this folder ──────────────────────────────────
+   The same four tools AMV uses through the bridge - read, list, write, run -
+   but here the terminal IS the computer, so they run in this process, in the
+   folder `amv code` was started in, and nowhere else.
+
+   WHAT IT MAY DO WITHOUT ASKING: read files and list folders, inside this
+   folder only (a path that leaves it, by `..` or by a link, is refused).
+
+   WHAT IT ASKS ABOUT, EVERY TIME: every write, shown as the lines it changes,
+   and every command, shown exactly as it would run. "a" at a write allows the
+   rest of this session's writes; there is no "a" for commands, because a
+   command can reach the whole computer and a write cannot leave the folder.
+
+   With no one at the keyboard (stdin is not a terminal and gives no answer),
+   every question is answered no: it can read and explain, and it changes
+   nothing. Commands run without AMV_API_KEY in their environment - nothing
+   it runs can read the key it is running on.
+
+   At the end it lists every file it changed and offers to put them all back. */
+const CODE_ROUNDS = 30, CODE_RESULT_MAX = 12000, CODE_FILE_MAX = 400000, CODE_CMD_MS = 120000;
+const CODE_TOOLS = [
+  { name: 'read_file', description: 'Read a file in the folder you are working in. Read before you change a file.',
+    input_schema: { type: 'object', properties: { path: { type: 'string', description: 'Path relative to the folder.' } }, required: ['path'] } },
+  { name: 'list_dir', description: 'List a folder inside the folder you are working in.',
+    input_schema: { type: 'object', properties: { path: { type: 'string', description: 'Path relative to the folder. Defaults to the folder itself.' } }, required: [] } },
+  { name: 'write_file', description: 'Write a whole file in the folder you are working in, creating folders as needed. The person is shown the change and asked first.',
+    input_schema: { type: 'object', properties: { path: { type: 'string' }, content: { type: 'string', description: 'The complete file contents.' } }, required: ['path', 'content'] } },
+  { name: 'run_command', description: 'Run a shell command in the folder you are working in and get stdout, stderr and the exit code. The person is asked before each one; if they say no, do not try another way to do the same thing.',
+    input_schema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] } },
+];
+const CODE_SYS = 'You are AMV, working in a folder on the person\'s computer from their terminal. Do the task with the tools: '
+  + 'look around with list_dir and read_file, change files with write_file (whole files - read first), and run builds and tests '
+  + 'with run_command. Every write and every command is shown to the person and needs their yes; if they say no, respect it and '
+  + 'carry on without it or say what you need. Never print secrets or dump the environment. Keep explanations short; finish with '
+  + 'what you changed and anything left to do.';
+
+/* Stream one turn, collecting text AND tool calls (assembled from their JSON
+   fragments). Text is shown as it is written. */
+async function askTools({ base, key, model, system, maxTokens, messages, tools, onText, signal }) {
+  let res;
+  try {
+    res = await fetch(base + '/v1/messages', { method: 'POST', signal,
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'amv-cli/' + VERSION },
+      body: JSON.stringify({ model, max_tokens: maxTokens, stream: true, system, messages, tools }) });
+  } catch (e) {
+    if (signal && signal.aborted) throw stopped();
+    throw fail('could not reach ' + base + ' (' + (e.cause && e.cause.code || e.message) + ')');
+  }
+  if (!res.ok) throw await refusal(res);
+  const blocks = []; let stop = null, buf = '';
+  const dec = new TextDecoder();
+  try {
+    for await (const chunk of res.body) {
+      buf += dec.decode(chunk, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const raw = buf.slice(0, i); buf = buf.slice(i + 2);
+        const line = raw.split('\n').find(l => l.startsWith('data:'));
+        if (!line) continue;
+        let ev; try { ev = JSON.parse(line.slice(5).trim()); } catch (e) { continue; }
+        if (ev.type === 'content_block_start') {
+          const b = ev.content_block || {};
+          blocks[ev.index] = b.type === 'tool_use' ? { type: 'tool_use', id: b.id, name: b.name, _json: '' } : { type: 'text', text: '' };
+        } else if (ev.type === 'content_block_delta' && blocks[ev.index]) {
+          const d = ev.delta || {};
+          if (d.type === 'text_delta') { blocks[ev.index].text += d.text; onText(d.text); }
+          else if (d.type === 'input_json_delta') blocks[ev.index]._json += d.partial_json || '';
+        } else if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) stop = ev.delta.stop_reason;
+        else if (ev.type === 'error') throw fail((ev.error && ev.error.message) || 'the server reported an error');
+      }
+    }
+  } catch (e) {
+    if (signal && signal.aborted) throw stopped();
+    throw e;
+  }
+  const content = blocks.filter(Boolean).map(b => {
+    if (b.type !== 'tool_use') return b;
+    let input = {}; try { input = b._json ? JSON.parse(b._json) : {}; } catch (e) { input = { _unreadable: true }; }
+    return { type: 'tool_use', id: b.id, name: b.name, input };
+  });
+  return { content, stop_reason: stop };
+}
+
+/* A question on the terminal. No answer - stdin closed, not a terminal - is no. */
+function makeAsker(stdin, stdout) {
+  const lines = []; let waiting = null, ended = false;
+  const rl = createInterface({ input: stdin, terminal: false });
+  rl.on('line', (l) => { if (waiting) { const w = waiting; waiting = null; w(l); } else lines.push(l); });
+  rl.on('close', () => { ended = true; if (waiting) { const w = waiting; waiting = null; w(null); } });
+  return {
+    ask(q) {
+      stdout.write(q);
+      if (lines.length) return Promise.resolve(lines.shift());
+      if (ended) { stdout.write('(no answer - taken as no)\n'); return Promise.resolve(null); }
+      return new Promise((r) => { waiting = r; });
+    },
+    close() { try { rl.close(); } catch (e) {} },
+  };
+}
+
+/* The changed lines, between what was there and what will be: the common
+   start and end are left out, the middle is shown, bounded. */
+function changeView(before, after) {
+  const a = before == null ? [] : before.split('\n'), b = after.split('\n');
+  let s = 0; while (s < a.length && s < b.length && a[s] === b[s]) s++;
+  let e = 0; while (e < a.length - s && e < b.length - s && a[a.length - 1 - e] === b[b.length - 1 - e]) e++;
+  const gone = a.slice(s, a.length - e), added = b.slice(s, b.length - e);
+  const show = (xs, sign) => xs.slice(0, 40).map(l => sign + ' ' + l.slice(0, 200)).join('\n') + (xs.length > 40 ? '\n' + sign + ' … ' + (xs.length - 40) + ' more lines' : '');
+  return (before == null ? '(new file, ' + b.length + ' lines)\n' : '@@ line ' + (s + 1) + ' @@\n')
+    + (gone.length ? show(gone, '-') + '\n' : '') + (added.length ? show(added, '+') : '');
+}
+
+async function code(o, base, key, stdin, stdout, stderr, ctrl) {
+  const { realpathSync, existsSync, statSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } = await import('node:fs');
+  const { resolve, relative, dirname, isAbsolute, basename } = await import('node:path');
+  const { spawn } = await import('node:child_process');
+  const task = o.words.slice(1).join(' ').trim();
+  if (!task) { stderr.write('amv: say what to do, e.g.  amv code "make the tests pass"\n'); return 2; }
+  const root = realpathSync(process.cwd());
+  const asker = makeAsker(stdin, stdout);
+  const originals = new Map();   // path -> what was there (null: it did not exist)
+  let allEdits = false;
+
+  /* Inside the folder, by name AND by where a link really leads. */
+  const inside = (p) => { const r = relative(root, p); return r === '' || (!r.startsWith('..') && !isAbsolute(r)); };
+  const place = (rel, forWrite) => {
+    const p = resolve(root, String(rel || '.'));
+    if (!inside(p)) return { error: 'That path is outside the folder AMV is working in, so it was refused.' };
+    let probe = p;
+    while (!existsSync(probe)) { if (!forWrite) return { error: 'There is no ' + rel + ' in this folder.' }; probe = dirname(probe); }
+    if (!inside(realpathSync(probe))) return { error: 'That path leads outside the folder through a link, so it was refused.' };
+    return { p };
+  };
+  const clip = (s) => { s = String(s || ''); return s.length > CODE_RESULT_MAX ? s.slice(0, CODE_RESULT_MAX) + '\n… (cut, ' + s.length + ' characters in all)' : s; };
+
+  const run = async (name, input) => {
+    if (name === 'read_file') {
+      const w = place(input.path, false); if (w.error) return { ok: false, text: w.error };
+      if (statSync(w.p).isDirectory()) return { ok: false, text: input.path + ' is a folder - use list_dir.' };
+      if (statSync(w.p).size > CODE_FILE_MAX) return { ok: false, text: input.path + ' is too large to read whole.' };
+      const t = readFileSync(w.p, 'utf8');
+      if (t.indexOf('\u0000') >= 0) return { ok: false, text: input.path + ' is not a text file.' };
+      return { ok: true, text: t };
+    }
+    if (name === 'list_dir') {
+      const w = place(input.path || '.', false); if (w.error) return { ok: false, text: w.error };
+      const ents = readdirSync(w.p, { withFileTypes: true }).slice(0, 500);
+      return { ok: true, text: ents.map(e => (e.isDirectory() ? e.name + '/' : e.name)).join('\n') || '(empty)' };
+    }
+    if (name === 'write_file') {
+      const w = place(input.path, true); if (w.error) return { ok: false, text: w.error };
+      const content = String(input.content == null ? '' : input.content);
+      const was = existsSync(w.p) ? readFileSync(w.p, 'utf8') : null;
+      if (was === content) return { ok: true, text: 'No change - ' + input.path + ' already says that.' };
+      stdout.write('\n── write ' + relative(root, w.p) + '\n' + changeView(was, content) + '\n');
+      if (!allEdits) {
+        const a = String((await asker.ask('Write this file? [y/N/a = all writes this session] ')) || '').trim().toLowerCase();
+        if (a === 'a') allEdits = true;
+        else if (a !== 'y' && a !== 'yes') return { ok: false, text: 'The person said no to writing ' + input.path + '. Do not write it another way.' };
+      }
+      if (!originals.has(w.p)) originals.set(w.p, was);
+      mkdirSync(dirname(w.p), { recursive: true });
+      writeFileSync(w.p, content);
+      return { ok: true, text: 'Wrote ' + relative(root, w.p) + ' (' + content.length + ' characters).' };
+    }
+    if (name === 'run_command') {
+      const command = String(input.command || '').trim();
+      if (!command) return { ok: false, text: 'No command was given.' };
+      const a = String((await asker.ask('\n── run in ' + basename(root) + ':\n  ' + command + '\nRun it? [y/N] ')) || '').trim().toLowerCase();
+      if (a !== 'y' && a !== 'yes') return { ok: false, text: 'The person said no to running that command. Do not try another way to do the same thing.' };
+      const env = Object.assign({}, process.env); delete env.AMV_API_KEY;
+      return await new Promise((done) => {
+        const t0 = Date.now(); let out = '', err = '', killed = false;
+        const child = spawn(command, { shell: true, cwd: root, env });
+        const timer = setTimeout(() => { killed = true; child.kill('SIGTERM'); }, CODE_CMD_MS);
+        const onAbort = () => { killed = true; child.kill('SIGTERM'); };
+        ctrl.signal.addEventListener('abort', onAbort, { once: true });
+        child.stdout.on('data', d => { out += d; if (out.length > CODE_RESULT_MAX * 4) out = out.slice(-CODE_RESULT_MAX * 2); });
+        child.stderr.on('data', d => { err += d; if (err.length > CODE_RESULT_MAX * 4) err = err.slice(-CODE_RESULT_MAX * 2); });
+        child.on('close', (codeN) => {
+          clearTimeout(timer); ctrl.signal.removeEventListener('abort', onAbort);
+          stdout.write('  exit ' + codeN + (killed ? ' (stopped)' : '') + ' in ' + (Date.now() - t0) + 'ms\n');
+          done({ ok: codeN === 0 && !killed, text: 'exit ' + codeN + (killed ? ' (stopped or timed out)' : '') + '\n\nstdout:\n' + clip(out) + '\n\nstderr:\n' + clip(err) });
+        });
+      });
+    }
+    return { ok: false, text: 'There is no tool called ' + name + '.' };
+  };
+
+  const messages = [{ role: 'user', content: task }];
+  const system = CODE_SYS + ' The folder is "' + basename(root) + '".';
+  let rounds = 0, why = 'done';
+  const write = (t) => stdout.write(t);
+  try {
+    for (;;) {
+      if (ctrl.signal.aborted) { why = 'stopped'; break; }
+      if (++rounds > CODE_ROUNDS) { why = 'rounds'; break; }
+      const r = await askTools({ base, key, model: o.model, system, maxTokens: o.maxTokens, messages, tools: CODE_TOOLS, onText: write, signal: ctrl.signal });
+      const calls = r.content.filter(b => b.type === 'tool_use');
+      if (!calls.length) break;
+      const results = [];
+      for (const c of calls) {
+        if (ctrl.signal.aborted) break;
+        let res;
+        try { res = c.input && c.input._unreadable ? { ok: false, text: 'The tool input could not be read; send it again.' } : await run(c.name, c.input || {}); }
+        catch (e) { res = { ok: false, text: 'That did not work: ' + (e && e.message || e) }; }
+        results.push(Object.assign({ type: 'tool_result', tool_use_id: c.id, content: clip(res.text) }, res.ok ? {} : { is_error: true }));
+      }
+      if (ctrl.signal.aborted) { why = 'stopped'; break; }
+      messages.push({ role: 'assistant', content: r.content });
+      messages.push({ role: 'user', content: results });
+    }
+  } catch (e) {
+    if (e && e.quiet) why = 'stopped';
+    else { stderr.write('\namv: ' + e.message + '\n'); why = 'error'; }
+  }
+  stdout.write('\n');
+  if (why === 'rounds') stderr.write('amv: stopped after ' + CODE_ROUNDS + ' rounds - run it again to carry on.\n');
+  if (why === 'stopped') stderr.write('amv: stopped.\n');
+  if (originals.size) {
+    stdout.write('Changed:\n' + [...originals.keys()].map(p => '  ' + relative(root, p) + (originals.get(p) == null ? ' (new)' : '')).join('\n') + '\n');
+    const u = String((await asker.ask('Undo all of these? [y/N] ')) || '').trim().toLowerCase();
+    if (u === 'y' || u === 'yes') {
+      for (const [p, was] of originals) { try { if (was == null) unlinkSync(p); else writeFileSync(p, was); } catch (e) { stderr.write('amv: could not put back ' + relative(root, p) + '\n'); } }
+      stdout.write('Put back as they were.\n');
+    }
+  }
+  asker.close();
+  return why === 'error' ? 1 : why === 'stopped' ? 130 : 0;
 }
 
 /* A conversation. The history lives in this process only: nothing is saved

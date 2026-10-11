@@ -46204,7 +46204,10 @@ function _apiDocsHTML(){
     '<pre class="ak-code"><code>'+escH('export AMV_API_KEY=amv_sk_...\n'+
       'node amv-cli.mjs "Summarise this week\'s notes"\n'+
       'cat notes.txt | node amv-cli.mjs "Turn these into an email"\n'+
-      'node amv-cli.mjs chat')+'</code></pre>'+
+      'node amv-cli.mjs chat\n'+
+      'node amv-cli.mjs code "make the tests pass"')+'</code></pre>'+
+    '<p class="ak-doc"><b>code</b> works on the files in the folder you start it in: it reads freely, but shows every '+
+      'change and every command and asks before each one, and offers to put everything back at the end.</p>'+
     '<button class="btn bs" id="ak-cli" type="button">Download amv-cli.mjs</button>'+
   '</div>';
 }

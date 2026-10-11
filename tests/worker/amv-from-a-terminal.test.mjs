@@ -12,6 +12,11 @@
      object; -m picks the engine;
    - --count asks how many input tokens a request would be, counted on what
      AMV would really send, and sends nothing to be answered;
+   - `amv code` works in the folder it was started in: it reads freely and
+     only there (not by .., not through a link), shows each write as the lines
+     it changes and asks first, asks before every command and runs it without
+     the API key in its environment, takes no answer as no, and can put every
+     change back at the end;
    - the key is only ever read from AMV_API_KEY, never a flag, and is never
      sent unencrypted to anything but this machine;
    - a revoked key, a used-up day and a bad option each end with a sentence
@@ -156,6 +161,85 @@ section('The key comes from the environment only, and never travels unencrypted'
   ok(plain.code === 2 && /https/.test(plain.err), 'a plain-http server elsewhere is refused before the key is sent', plain.err);
   const noServer = await run(['hi']);
   ok(noServer.code === 2 && /Download this tool again|AMV_API_URL/.test(noServer.err), 'the undownloaded copy says it has no server set', noServer.err);
+}
+
+section('amv code works in this folder, and asks before every write and every command');
+{
+  const { mkdtempSync, writeFileSync: wf, readFileSync: rf, existsSync: ex, symlinkSync } = await import('fs');
+  const { tmpdir } = await import('os');
+  const dir = mkdtempSync(join(tmpdir(), 'amv-code-'));
+  wf(join(dir, 'app.js'), 'const x = 1;\nmodule.exports = x;\n');
+  wf(join(dirname(dir), 'outside-secret.txt'), 'top secret');
+  try { symlinkSync(join(dirname(dir), 'outside-secret.txt'), join(dir, 'link.txt')); } catch (e) {}
+
+  /* The engine's side of the conversation, one turn at a time. */
+  const turn = (blocks) => 'data: {"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":0}}}\n\n'
+    + blocks.map((b, i) => b.text != null
+      ? 'data: ' + JSON.stringify({ type: 'content_block_start', index: i, content_block: { type: 'text', text: '' } }) + '\n\n'
+        + 'data: ' + JSON.stringify({ type: 'content_block_delta', index: i, delta: { type: 'text_delta', text: b.text } }) + '\n\n'
+      : 'data: ' + JSON.stringify({ type: 'content_block_start', index: i, content_block: { type: 'tool_use', id: 't' + i + Math.random().toString(36).slice(2, 6), name: b.name, input: {} } }) + '\n\n'
+        + JSON.stringify(b.input).match(/.{1,7}/g).map(p => 'data: ' + JSON.stringify({ type: 'content_block_delta', index: i, delta: { type: 'input_json_delta', partial_json: p } }) + '\n\n').join('')
+    ).join('')
+    + 'data: ' + JSON.stringify({ type: 'message_delta', delta: { stop_reason: blocks.some(b => b.name) ? 'tool_use' : 'end_turn' }, usage: { output_tokens: 3 } }) + '\n\n'
+    + 'data: {"type":"message_stop"}\n\n';
+  let script = [], seenTools = [], seenResults = [];
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (!/model\.example/.test(String(url))) return prev(url, init);
+    const b = JSON.parse(init.body);
+    seenTools.push((b.tools || []).map(t => t.name).sort().join(','));
+    const last = b.messages[b.messages.length - 1];
+    if (Array.isArray(last.content)) seenResults.push(...last.content.filter(x => x.type === 'tool_result').map(x => x.content));
+    return new Response(turn(script.shift() || [{ text: 'Done.' }]), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+  };
+  const runIn = (args, input) => new Promise((res) => {
+    const p = spawn(process.execPath, [CLI, '--api', API, ...args], { cwd: dir, env: { PATH: process.env.PATH, AMV_API_KEY: KEY } });
+    let out = '', err = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', d => err += d);
+    p.on('close', (code) => res({ code, out, err })); p.stdin.end(input || '');
+  });
+
+  script = [
+    [{ text: 'Looking. ' }, { name: 'list_dir', input: {} }, { name: 'read_file', input: { path: 'app.js' } }],
+    [{ name: 'read_file', input: { path: '../outside-secret.txt' } }, { name: 'read_file', input: { path: 'link.txt' } }],
+    [{ name: 'write_file', input: { path: 'app.js', content: 'const x = 2;\nmodule.exports = x;\n' } }],
+    [{ name: 'run_command', input: { command: 'node -e "require(\'fs\').writeFileSync(\'ran.txt\', String(process.env.AMV_API_KEY || \'none\'))"' } }],
+    [{ text: 'Changed x to 2.' }],
+  ];
+  const r = await runIn(['code', 'set', 'x', 'to', '2'], 'y\ny\nn\n');
+  ok(r.code === 0 && /Changed x to 2\./.test(r.out), 'the task runs to its end', { code: r.code, err: r.err.slice(0, 200) });
+  ok(seenTools[0] === 'list_dir,read_file,run_command,write_file', 'the engine is offered the four tools, through AMV’s own server', seenTools[0]);
+  ok(/app\.js/.test(seenResults[0] || '') && /const x = 1/.test(seenResults[1] || ''), 'it can look around and read without asking', seenResults.slice(0, 2));
+  ok(/outside the folder/.test(seenResults[2] || '') && /outside the folder/.test(seenResults[3] || ''), 'a path out of the folder is refused - by .. and by a link', seenResults.slice(2, 4));
+  ok(!/top secret/.test(seenResults.join('')), 'and nothing outside it was read');
+  ok(/@@ line 1 @@/.test(r.out) && /- const x = 1;/.test(r.out) && /\+ const x = 2;/.test(r.out), 'the write is shown as the lines it changes, before it happens', r.out.slice(0, 400));
+  ok(rf(join(dir, 'app.js'), 'utf8').startsWith('const x = 2;'), 'and with a yes, it is written');
+  ok(rf(join(dir, 'ran.txt'), 'utf8') === 'none', 'the command ran, with a yes - and without the API key in its environment');
+  ok(/Changed:\n  app\.js/.test(r.out), 'it lists what it changed at the end', r.out.slice(-200));
+
+  script = [
+    [{ name: 'write_file', input: { path: 'app.js', content: 'hacked' } }, { name: 'run_command', input: { command: 'node -e "require(\'fs\').writeFileSync(\'no.txt\',\'1\')"' } }],
+    [{ text: 'Understood.' }],
+  ];
+  seenResults = [];
+  const n = await runIn(['code', 'break', 'it'], 'n\nn\n');
+  ok(rf(join(dir, 'app.js'), 'utf8').startsWith('const x = 2;') && !ex(join(dir, 'no.txt')), 'a no leaves the file alone and runs nothing', n.out.slice(-300));
+  ok(/said no to writing/.test(seenResults[0] || '') && /said no to running/.test(seenResults[1] || ''), 'and the engine is told it was the person’s no', seenResults);
+
+  script = [
+    [{ name: 'write_file', input: { path: 'new/file.txt', content: 'hello' } }],
+    [{ text: 'Made it.' }],
+  ];
+  const nobody = await runIn(['code', 'make', 'a', 'file'], '');
+  ok(!ex(join(dir, 'new', 'file.txt')) && /no answer - taken as no/.test(nobody.out), 'with nobody at the keyboard, every question is a no', nobody.out.slice(-200));
+
+  script = [
+    [{ name: 'write_file', input: { path: 'new/file.txt', content: 'hello' } }],
+    [{ text: 'Made it.' }],
+  ];
+  const undo = await runIn(['code', 'make', 'a', 'file'], 'y\ny\n');
+  ok(!ex(join(dir, 'new', 'file.txt')) && /Put back as they were/.test(undo.out), 'and at the end every change can be put back', undo.out.slice(-200));
+
+  globalThis.fetch = prev;
 }
 
 section('Refusals say what to do');
