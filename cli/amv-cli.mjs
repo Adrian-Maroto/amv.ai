@@ -372,7 +372,7 @@ function changeView(before, after) {
 }
 
 async function code(o, base, key, stdin, stdout, stderr, ctrl) {
-  const { realpathSync, existsSync, statSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } = await import('node:fs');
+  const { realpathSync, existsSync, lstatSync, statSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } = await import('node:fs');
   const { resolve, relative, dirname, isAbsolute, basename } = await import('node:path');
   const { spawn } = await import('node:child_process');
   const task = o.words.slice(1).join(' ').trim();
@@ -387,9 +387,17 @@ async function code(o, base, key, stdin, stdout, stderr, ctrl) {
   const place = (rel, forWrite) => {
     const p = resolve(root, String(rel || '.'));
     if (!inside(p)) return { error: 'That path is outside the folder AMV is working in, so it was refused.' };
+    /* "Is there anything at this name" - asked of the name itself, not of
+       where it leads. existsSync follows links, so a link to a file that does
+       not exist yet read as "nothing here": the check climbed to the folder
+       above, found it inside, and the write then followed the link out of the
+       folder. A repository can ship such a link under an ordinary name. */
+    const there = (q) => { try { lstatSync(q); return true; } catch (e) { return false; } };
     let probe = p;
-    while (!existsSync(probe)) { if (!forWrite) return { error: 'There is no ' + rel + ' in this folder.' }; probe = dirname(probe); }
-    if (!inside(realpathSync(probe))) return { error: 'That path leads outside the folder through a link, so it was refused.' };
+    while (!there(probe)) { if (!forWrite) return { error: 'There is no ' + rel + ' in this folder.' }; probe = dirname(probe); }
+    let real;
+    try { real = realpathSync(probe); } catch (e) { return { error: 'That path is a link to something that does not exist, so it was refused.' }; }
+    if (!inside(real)) return { error: 'That path leads outside the folder through a link, so it was refused.' };
     return { p };
   };
   const clip = (s) => { s = String(s || ''); return s.length > CODE_RESULT_MAX ? s.slice(0, CODE_RESULT_MAX) + '\n… (cut, ' + s.length + ' characters in all)' : s; };

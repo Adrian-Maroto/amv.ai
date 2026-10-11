@@ -240,6 +240,20 @@ section('amv code works in this folder, and asks before every write and every co
   const undo = await runIn(['code', 'make', 'a', 'file'], 'y\ny\n');
   ok(!ex(join(dir, 'new', 'file.txt')) && /Put back as they were/.test(undo.out), 'and at the end every change can be put back', undo.out.slice(-200));
 
+  /* A link to a file that does not exist yet, under an ordinary name - the
+     shape a downloaded repository can ship. Even with a yes, nothing may be
+     written where it leads. */
+  const target = join(dirname(dir), 'planted-' + Date.now() + '.txt');
+  try { symlinkSync(target, join(dir, 'notes.txt')); } catch (e) {}
+  script = [
+    [{ name: 'write_file', input: { path: 'notes.txt', content: 'written through a link' } }],
+    [{ text: 'Done.' }],
+  ];
+  seenResults = [];
+  const planted = await runIn(['code', 'update', 'the', 'notes'], 'y\ny\n');
+  ok(!ex(target), 'a link to a file that does not exist yet does not carry a write out of the folder', planted.out.slice(-300));
+  ok(/link/.test(seenResults[0] || ''), 'and the engine is told why', seenResults[0]);
+
   globalThis.fetch = prev;
 }
 

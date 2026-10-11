@@ -93,15 +93,20 @@ section('Build: ask first, a check after each change, and a finishing check that
     window._showModalAsync = realModal;
     /* A write, followed by the person's lint. */
     const wrote = await _agentRunTool('write_file', { path: 'src/new.js', content: 'let x' }, {});
+    /* A protected file is refused before Build reads or records it, so it is
+       never listed as changed and never offered to Undo. */
+    const prot = await _agentRunTool('write_file', { path: 'config/.env', content: 'x' }, {});
+    const protSeen = !!(_AGENT.seen['config/.env'] || _AGENT.created['config/.env'] || 'config/.env' in _AGENT.before);
     /* The finishing check fails, so the engine is told to keep going. */
     const end1 = await _agentBeforeEnd();
     window.__exit = {};
     const end2 = await _agentBeforeEnd();
-    return { commit, asked, wrote, end1, end2, execs: window.__execs.slice(), steps: _AGENT.steps.filter(s => s.hook).map(s => s.input.command) };
+    return { commit, asked, wrote, prot, protSeen, end1, end2, execs: window.__execs.slice(), steps: _AGENT.steps.filter(s => s.hook).map(s => s.input.command) };
   });
   ok(/git commit/.test(r.asked) && r.commit.ok === false && /chose not to run/.test(r.commit.text), 'a command the person said to ask about is asked about, and "no" holds', r.commit.text);
   ok(!r.execs.some(c => /git commit/.test(c)), 'and it never reached the computer', r.execs);
   ok(/Wrote src\/new\.js/.test(r.wrote.text) && /npm run lint/.test(r.wrote.text) && /passed/.test(r.wrote.text), 'after the write, the person’s check ran and its result went back to the engine', r.wrote.text);
+  ok(r.prot.ok === false && /protects/.test(r.prot.text) && !r.protSeen, 'a protected file is refused in Build before it is read, so Undo never touches it', { text: r.prot.text, seen: r.protSeen });
   ok(/npm test/.test(r.end1) && /FAILED/.test(r.end1) && /Fix what it reports/.test(r.end1), 'a failing finishing check is handed back as what to do next', r.end1);
   ok(r.end2 === '', 'and once it passes, the turn may end', r.end2);
   ok(r.steps.join('|') === 'npm run lint|npm test|npm test', 'each check shows in the step list', r.steps);
