@@ -250,5 +250,31 @@ section('A refund or a dispute on a pack takes the credit back, and leaves the p
   ok(bought === 0 && (await bal(env, tok)).balance === 0 && ent2.plan === 'pro', 'a dispute takes back the rest of the $25 - still not the plan', { bought, plan: ent2.plan });
 }
 
+section('A pack whose crediting fails is credited when Stripe sends it again - not lost');
+{
+  /* The counter fails once, at the moment of crediting. The payment must not
+     be left marked as handled: Stripe's retry has to be able to finish it. */
+  const realGet = env.AMV_COUNTER.get;
+  let failed = false;
+  env.AMV_COUNTER.get = (n) => {
+    const stub = realGet(n);
+    return { fetch(u, init) {
+      const b = JSON.parse(init.body);
+      if (!failed && String(n).startsWith('creditbuy:') && b.op === 'incr') { failed = true; return Promise.reject(new Error('counter unavailable')); }
+      return stub.fetch(u, init);
+    } };
+  };
+  const boughtNow = () => env._vals.get('creditbuy:' + EMAIL) || 0;
+  const before = boughtNow();
+  const first = await webhook(env, 'checkout.session.completed', paid(EMAIL, 10, 'pi_F'));
+  env.AMV_COUNTER.get = realGet;
+  ok(failed && first !== 200, 'the failure is reported, so Stripe will send it again', first);
+  ok(boughtNow() === before, 'and nothing was credited yet', boughtNow());
+  const again = await webhook(env, 'checkout.session.completed', paid(EMAIL, 10, 'pi_F'));
+  ok(again === 200 && boughtNow() === before + 10, 'the retry credits it', { again, bought: boughtNow() - before });
+  await webhook(env, 'checkout.session.completed', paid(EMAIL, 10, 'pi_F'));
+  ok(boughtNow() === before + 10, 'and only once', boughtNow() - before);
+}
+
 if (report('extra-usage-is-prepaid-and-cannot-be-overspent') > 0) process.exitCode = 1;
 done();

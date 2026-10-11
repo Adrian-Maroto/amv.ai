@@ -2369,6 +2369,10 @@ async function counter(env, name, payload) {
        the same as the other two. An UNBOUND namespace keeps the fallback for
        the same reason it always did: that is a development machine with no
        Durable Object, and refusing there means the product does not run. */
+    /* A credit or its reversal, falling back to KV, lands on a key the balance
+       is never read from: paid for and never seen. The caller asks for that to
+       be an error instead, so the payment provider's retry can finish it. */
+    if (env.AMV_COUNTER && payload.strict) throw e;
     if (env.AMV_COUNTER && (payload.op === 'claim' || payload.op === 'reserve' || payload.op === 'rateCheck')) {
       audit(env, 'atomic_unavailable', { op: payload.op, name: String(name).slice(0, 120) });
       if (payload.op === 'claim') return { claimed: false, unavailable: true, code: 'atomic_unavailable' };
@@ -25264,12 +25268,28 @@ function _creditEligible(user){
   return !!(user && _planPriceUSD(user.plan, user.customCfg) > 0 && !user.family);
 }
 /* Credit a paid pack exactly once, however many times it is reported (the
-   webhook, its retries, and the reconciliation sweep can all arrive). */
+   webhook, its retries, and the reconciliation sweep can all arrive).
+
+   The claim is GIVEN BACK if crediting fails. Taking it and then failing at
+   the counter used to leave the payment marked as handled with nothing
+   credited: Stripe's retry and the reconciliation sweep both found the claim
+   taken and stopped, and somebody who had paid for a pack never got it.
+   Marketplace sales already went through _onceOrRetry for exactly this; packs
+   now do too. Only the record of the payment and the credit itself are inside
+   it - both are safe to run again up to the credit, and the credit is last,
+   so a retry can never add it twice.
+
+   `strict`: a failing counter used to fall back to KV, where the credit was
+   written to a key the balance is never read from - lost without an error,
+   so nothing would ever have retried it. Money is counted where it is read,
+   or the attempt fails and says so. */
 async function _creditGrant(env, { subject, email, usd, ref }){
   if(!subject || !(usd > 0) || !ref) return false;
-  if(!(await _claimOnce(env, 'creditref', ref, CLAIM_ONCE_TTL_S))) return false;
-  await env.AMV_KV.put('creditpay:' + ref, JSON.stringify({ subject, email, usd, at: Date.now() }));
-  await counter(env, _creditBuyName(subject), { op: 'incr', amount: usd, ttlMs: CREDIT_TTL_MS });
+  const once = await _onceOrRetry(env, 'creditref', ref, CLAIM_ONCE_TTL_S, async () => {
+    await env.AMV_KV.put('creditpay:' + ref, JSON.stringify({ subject, email, usd, at: Date.now() }));
+    await counter(env, _creditBuyName(subject), { op: 'incr', amount: usd, ttlMs: CREDIT_TTL_MS, strict: true });
+  });
+  if(!once.claimed) return false;
   await _recordTxn(env, { provider: 'stripe', email, amount: usd, currency: 'USD', kind: 'credit', status: 'succeeded', ref });
   audit(env, 'credit_bought', { by: email, usd });
   return true;
@@ -25284,7 +25304,7 @@ async function _creditReverse(env, ref, why, refundedUSD){
   const want = Math.min(+rec.usd || 0, refundedUSD > 0 ? refundedUSD : +rec.usd || 0);
   const take = Math.max(0, Math.round((want - already) * 100) / 100);
   if(take > 0){
-    await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, ttlMs: CREDIT_TTL_MS });
+    await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, ttlMs: CREDIT_TTL_MS, strict: true });
     rec.reversed = already + take;
     await env.AMV_KV.put('creditpay:' + ref, JSON.stringify(rec));
   }

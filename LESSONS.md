@@ -14954,3 +14954,26 @@ first character, so `/home/me/proj/config/secrets.json` and
 `src/../config/secrets.json` both walked past a `config/secrets.json` rule.
 Paths are normalised (`.`, `..`, doubled slashes, backslashes) and a rule
 matches any tail on a folder boundary - over-protecting is the safe error.
+
+## 586. A paid-for credit that falls back to the wrong store is lost without an error
+
+Extra usage packs claimed the payment, then incremented the buyer's balance.
+Two failures hid inside that, and they hid each other. If the increment had
+thrown, the claim stayed taken and Stripe's retry - and the reconciliation
+sweep - found it and stopped: paid, never credited. But it did not throw.
+`counter()` answers a bound-and-failing Durable Object by falling back to KV,
+and the credit was written to `ctr:creditbuy:...` while the balance is read
+from the Durable Object - so it succeeded, somewhere nothing reads.
+
+Rule: money that is counted must land where it is read or fail loudly.
+Credit writes pass `strict: true`, which makes a failing counter throw rather
+than degrade, and the grant runs inside `_onceOrRetry`, which gives the claim
+back on a throw so the retry finishes it. The marketplace already did the
+second half; the pack copied the older shape.
+
+The same round found its twin in `amv code`: the folder check used
+`existsSync`, which follows links, so a link to a file that does not exist yet
+read as "nothing here" and the write followed it out of the folder. The
+bridge had learned exactly this (lstat, every component) and the CLI was
+written without it. A new path that touches the same danger as an old one
+starts from the old one's guard, not from scratch.
