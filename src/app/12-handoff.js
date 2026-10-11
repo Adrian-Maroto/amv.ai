@@ -1172,6 +1172,11 @@ function _scanNoteHTML(d){
   return '<div class="fd-scan">'+escH(sc.note||'')+'</div>';
 }
 
+/* The connector catalogue entry for a waitlist slug, if it is one. */
+function _fdApp(slug){
+  try{ for(const c of _appCats()) for(const a of c.apps) if(a.slug===slug) return a; }catch(e){}
+  return null;
+}
 /* Render the founder dashboard from the /v1/admin/stats payload. */
 function _founderDashHTML(d){
   const fmt=n=>(n||0).toLocaleString();
@@ -1212,7 +1217,13 @@ function _founderDashHTML(d){
       const ar=d.appRequests||{}, top=ar.top||[];
       return '<div class="ss2"><h3>Apps people asked for <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(Notify me - connect these next)</span></h3>'+
         '<div class="fd-table"><div class="fd-row fd-head"><span>App</span><span></span><span>People</span></div>'+
-        (top.length ? top.slice(0,20).map(a=>'<div class="fd-row"><span class="fd-row-email">'+_esc(a.app)+'</span><span></span><span class="fd-row-cost">'+fmt(a.people)+'</span></div>').join('')
+        (top.length ? top.slice(0,20).map(a=>{
+            /* Once an app connects, the people who asked are told - by one press here. */
+            const slug=String(a.app||'').replace(/^app-/,''), app=_fdApp(slug);
+            return '<div class="fd-row"><span class="fd-row-email">'+_esc(app?app.name:slug)+'</span>'
+              +'<span>'+(app&&app.how?'<button class="btn bs fd-tell" data-fd-tell="'+_esc(slug)+'" data-fd-name="'+_esc(app.name)+'" data-fd-n="'+(+a.people||0)+'">'+_esc(T('It connects now - tell them'))+'</button>':'')+'</span>'
+              +'<span class="fd-row-cost">'+fmt(a.people)+'</span></div>';
+          }).join('')
                     : '<div class="fd-row"><span style="color:var(--mu)">'+(ar.error?_esc(ar.error):'Nobody has asked yet.')+'</span></div>')+
         '</div>'+(ar.complete===false&&!ar.error?'<p class="fd-sub">A sample: there are more requests than one read covers.</p>':'')+
       '</div>';
@@ -2932,6 +2943,18 @@ function _renderSetPaneInner(only, into){
            preview the operator was in the middle of reading. */
         const dh=$('fd-digest-host');
         if(dh && !dh.firstChild){ dh.innerHTML=_payoutCardHTML()+_reportsCardHTML()+_digestCardHTML(); _wireDigestCard(); _loadPayouts(); _loadReports(); }
+        body.querySelectorAll('[data-fd-tell]').forEach(b=>on(b,'click',async()=>{
+          const name=b.dataset.fdName, n=+b.dataset.fdN||0;
+          if(!await showConfirmAsync('Email the '+n+' '+(n===1?'person':'people')+' who asked for '+name+' that it connects now?\n\nEach of them gets one email, once.')) return;
+          b.disabled=true; b.textContent='Sending\u2026';
+          try{
+            const wr=await fetchDeadline(base.replace(/\/$/,'')+'/v1/admin/waitlist/notify',{method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},body:JSON.stringify({app:b.dataset.fdTell,name})},60000);
+            const wd=await wr.json().catch(()=>({}));
+            if(!wr.ok||wd.error){ toast(wd.error||('Nobody was emailed ('+wr.status+').'),'error',9000); b.disabled=false; b.textContent=T('It connects now - tell them'); return; }
+            toast('Told '+wd.sent+(wd.failed?' - '+wd.failed+' could not be reached and will be tried again next time':'')+(wd.more?' - more are waiting, press again':'')+'.', wd.failed?'info':'success', 8000);
+            loadStats();
+          }catch(e){ toast('The request did not reach the server, so nobody was emailed.','error',8000); b.disabled=false; b.textContent=T('It connects now - tell them'); }
+        }));
         // wire kill switch
         const kbtn=$('fd-kill');
         /* THE PLATFORM KILL SWITCH, and its answer was thrown away.

@@ -14696,6 +14696,7 @@ async function _route(request, env, ctx) {
     case '/v1/admin/stats':     return adminStats(request, env);
     case '/v1/admin/finance':   return adminFinance(request, env);
     case '/v1/admin/kill':      return adminKill(request, env);
+    case '/v1/admin/waitlist/notify': return adminWaitlistNotify(request, env);
     case '/v1/admin/user':      return adminUser(request, env);
     // --- EMBEDDABLE WIDGET ---
     // --- WHAT AMV CAN DO, PER COUNTRY (computed from the registries) ---
@@ -30336,6 +30337,54 @@ async function adminDigest(request, env) {
 }
 
 // flip the global kill switch on/off
+/* NOTIFY ME, KEPT. Somebody pressed Notify me on an app AMV could not connect;
+   when it can, the operator presses "Tell them" in the dashboard and each of
+   them gets one email saying so.
+
+   Once per person per app, ever: a claim is taken before each send, so a
+   second press, a retry after a timeout, or two operators at once cannot
+   email anybody twice. Their waitlist entry is removed after a send that went
+   through - so the dashboard's count is "still waiting" - and kept when the
+   send failed, so the next press reaches them. Bounded per press; the reply
+   says how many are left rather than implying it reached everyone.
+
+   The app's name comes from the operator, and is checked to be a plain name:
+   it goes into an email subject in front of people who asked for it. */
+const WAITLIST_NOTIFY_PER_CALL = 300;
+async function adminWaitlistNotify(request, env) {
+  { const g = await _adminGate(request, env, 'waitlist', 10, 200); if (g) return g; }
+  const body = await request.json().catch(() => ({}));
+  const slug = String(body.app || '');
+  const name = String(body.name || '').trim();
+  if (!/^[a-z0-9][a-z0-9-]{0,47}$/.test(slug)) return json({ error: 'Which app? Send its slug, as the dashboard lists it.' }, 400);
+  if (!/^[\p{L}\p{N}][\p{L}\p{N} .&+'’-]{0,39}$/u.test(name)) return json({ error: 'Give the app’s name in plain words.' }, 400);
+  if (!_emailReaches(env)) return json({ error: 'Email is not set up to reach people yet (EMAIL_API_KEY and RESET_EMAIL_FROM), so nobody can be told. Nothing was sent.', code: 'needs_service' }, 503);
+  const origin = String(env.APP_URL || '').replace(/\/$/, '');
+  const prefix = 'waitlist:app-' + slug + ':';
+  let sent = 0, failed = 0, skipped = 0, cursor, more = false;
+  outer: do {
+    const page = await env.AMV_KV.list({ prefix, cursor, limit: 1000 });
+    for (const k of page.keys) {
+      if (sent + failed >= WAITLIST_NOTIFY_PER_CALL) { more = true; break outer; }
+      const email = String(k.name).slice(prefix.length).toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { skipped++; continue; }
+      if (!(await _claimOnce(env, 'wlnotify', slug + ':' + email, CLAIM_ONCE_TTL_S))) { skipped++; try { await env.AMV_KV.delete(k.name); } catch (e) {} continue; }
+      const ok = await _sendEmail(env, email, name + ' now connects in AMV',
+        _emailShell(name + ' connects now',
+          `<p style="margin:0 0 22px;font-size:14px;line-height:1.65;color:#555">You asked AMV to tell you when <b>${_escHtml(name)}</b> could be connected. It can now - open Connectors in AMV and connect it in a few taps.</p>`,
+          origin ? { label: 'Open Connectors', url: origin + '/#/integrations' } : null,
+          '', 'You received this because you pressed Notify me for ' + name + '. This is the only email about it.'),
+        `You asked AMV to tell you when ${name} could be connected. It can now - open Connectors in AMV to connect it.${origin ? '\n\n' + origin + '/#/integrations' : ''}\n\nYou received this because you pressed Notify me for ${name}. This is the only email about it.`,
+        'waitlist');
+      if (ok) { sent++; try { await env.AMV_KV.delete(k.name); } catch (e) {} }
+      else { failed++; await _releaseClaim(env, 'wlnotify', slug + ':' + email); }
+    }
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor);
+  audit(env, 'waitlist_notified', { app: slug, sent, failed });
+  return json({ ok: true, sent, failed, skipped, more });
+}
+
 async function adminKill(request, env) {
   { const g = await _adminGate(request, env, 'kill', 60, 2000); if (g) return g; }
   const { on } = await request.json().catch(() => ({}));
@@ -30885,6 +30934,7 @@ const EMAIL_DAY_CAP = {
   task:     25,   // work landed on you in a team
   auto:    250,   // your own scheduled jobs, addressed to you, at your request
   done:     20,   // "AMV is done" - one per long answer you walked away from
+  waitlist:  5,   // "an app you asked for connects now" - one per app, and only if you asked
   signin:   10,   // sign-in and sign-up codes: a person needs a few, a stranger's inbox none
   other:    25,
 };
