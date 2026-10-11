@@ -313,7 +313,9 @@ section('It reads on a phone');
   }));
   ok((await overflowingElement(page)) === null, 'nothing overflows the screen', await overflowingElement(page));
   ok(m.cmdScrolls === 'auto', 'a long command scrolls inside its own box instead of stretching the page', m.cmdScrolls);
-  await page.setViewportSize({ width: 1280, height: 900 });
+  /* No resize back to desktop here: nothing after this needs it, and under a
+     full parallel run that one resize once never came back, so a suite whose
+     every check had passed was killed at the time limit. */
 }
 
 ok(errors.length === 0, 'no console errors', errors.slice(0, 3));
