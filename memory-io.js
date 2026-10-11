@@ -1,3 +1,7 @@
+/* Memory import and export - fetched the first time somebody opens either
+   (_memIOLoad in 07-workspace-memory.js), the way the sell form and the owner
+   console are: most people never move their memories in or out. A classic
+   script, so it uses the page's own helpers and lands on window. */
 /* ══════════════════════════════════════════════════════════════════════
    MEMORY THAT CAN LEAVE AND ARRIVE.
 

@@ -1049,6 +1049,20 @@ function _mktSellOpen(body){
     body.innerHTML = '<p class="vsub">'+escH(T('The sell form could not be loaded. Check your connection and try again.'))+'</p>';
   });
 }
+/* Memory import and export live in memory-io.js, fetched when first opened. */
+let _memIOP = null;
+function _memIOLoad(){
+  if(typeof window._memImportOpen === 'function') return Promise.resolve(true);
+  if(!_memIOP) _memIOP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'memory-io.js';
+    sc.onload = () => res(typeof window._memImportOpen === 'function');
+    sc.onerror = () => { _memIOP = null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
+  }).then(ok => { if(!ok) toast(T('That could not be loaded. Check your connection and try again.'), 'error', 6000); return ok; });
+  return _memIOP;
+}
+try{ window._memIOLoad = _memIOLoad; }catch(e){}
 // file helpers
 function _fmtBytes(n){ if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(0)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
 function _fileIcon(type,name){
@@ -1192,8 +1206,8 @@ function renderMemoryView(){
   on($('mem-add'),'click',addMemory);
   on($('mem-inp'),'keydown',e=>{if(e.key==='Enter')addMemory();});
   on($('mem-clr'),'click',()=>{S.memory=[];renderMemoryView();toast('All memories cleared','success');});
-  on($('mem-imp-open'),'click',_memImportOpen);
-  on($('mem-exp'),'click',_memExport);
+  on($('mem-imp-open'),'click',()=>_memIOLoad().then(ok=>{ if(ok) window._memImportOpen(); }));
+  on($('mem-exp'),'click',()=>_memIOLoad().then(ok=>{ if(ok) window._memExport(); }));
   renderMemList();
 }
 /* The same refusal chat applies, applied here too.

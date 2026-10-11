@@ -94,6 +94,8 @@ function emitSandbox() {
   writeFileSync('market-sell.js', readFileSync('src/market/sell.js'));
   /* Extra usage packs, fetched when somebody reaches a limit or opens them. */
   writeFileSync('credit.js', readFileSync('src/billing/credit.js'));
+  /* Memory import and export, fetched when somebody opens either. */
+  writeFileSync('memory-io.js', readFileSync('src/memory/memory-io.js'));
 }
 
 function assembleJS() {
@@ -910,6 +912,7 @@ const PUBLISH = [
   'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page
   'market-sell.js',        // the marketplace sell form, fetched when somebody opens Sell
   'credit.js',             // extra usage packs, fetched at a limit or from Billing
+  'memory-io.js',          // memory import and export, fetched when either is opened
 ];
 /* GOOGLE PLAY'S PROOF THAT THE ANDROID APP IS AMV'S (apps/android). Published
    only once the owner's signing fingerprint is in apps/android/config.json,

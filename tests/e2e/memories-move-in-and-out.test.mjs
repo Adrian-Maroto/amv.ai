@@ -25,6 +25,9 @@ await page.evaluate(() => {
   setTab('memory');
 });
 await page.waitForSelector('#mem-imp-open');
+/* Import and export are fetched on first use (memory-io.js); the parts of this
+   file that call them directly load it the way the buttons do. */
+ok(await page.evaluate(() => _memIOLoad()), 'memory-io.js loads on demand');
 
 const PASTE = `Saved memories:
 - Lives in Madrid and works as a nurse

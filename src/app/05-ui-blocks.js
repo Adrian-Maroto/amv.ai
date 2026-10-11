@@ -1767,9 +1767,63 @@ function retryLastAI(){
 window.retryLastAI=retryLastAI;
 
 
+/* ── VERSIONS OF A TURN ──────────────────────────────────────────────────
+   Regenerating an answer, or editing a message, used to throw away what was
+   there - the answer somebody liked better, the branch that was going well.
+   Now each is kept as a version of that turn: the user message holds every
+   version of itself and of everything that followed it, and "‹ 2/3 ›" under
+   it moves between them, the chat carrying on from the one chosen.
+
+   Bounded, because it syncs with the chat: at most VERS_MAX versions a turn
+   and VERS_CHARS of text between them, oldest dropped first. A version keeps
+   its own messages but not versions nested inside them. Nothing here is sent
+   to the engine - only each message's text is. */
+const VERS_MAX = 8, VERS_CHARS = 40000;
+function _verSnap(msgs, idx){
+  return JSON.parse(JSON.stringify({ u: { c: msgs[idx].c, d: msgs[idx].d },
+    tail: msgs.slice(idx + 1).filter(m => !m.streaming).map(m => { const x = Object.assign({}, m); delete x.alts; delete x.altCur; return x; }) }));
+}
+/* Keep what follows the user message at idx as a version, before it changes. */
+function _verKeep(msgs, idx){
+  const m = msgs[idx]; if(!m || m.r !== 'u') return;
+  const tail = msgs.slice(idx + 1);
+  /* An error card or a limit card is not an answer worth going back to. */
+  if(!tail.some(x => x.r === 'a' && !x._error && !x._quota && (typeof x.c === 'string' ? x.c : x.d))) return;
+  const alts = Array.isArray(m.alts) && m.alts.length ? m.alts : [null];
+  const cur = Number.isInteger(m.altCur) && m.altCur < alts.length ? m.altCur : alts.length - 1;
+  alts[cur] = _verSnap(msgs, idx);
+  alts.push(null);
+  while(alts.length > 2 && (alts.length > VERS_MAX || JSON.stringify(alts).length > VERS_CHARS)) alts.shift();
+  m.alts = alts; m.altCur = alts.length - 1;
+}
+function switchVersion(idx, dir){
+  if(S.busy) return;
+  const msgs = getMsgs(); const m = msgs[idx];
+  if(!m || !Array.isArray(m.alts)) return;
+  const to = m.altCur + dir;
+  if(to < 0 || to >= m.alts.length || !m.alts[to]) return;
+  const target = m.alts[to];
+  m.alts[m.altCur] = _verSnap(msgs, idx);
+  m.alts[to] = null; m.altCur = to;
+  m.c = target.u.c; if(target.u.d !== undefined) m.d = target.u.d; else delete m.d;
+  msgs.splice(idx + 1, msgs.length, ...target.tail);
+  setMsgs(msgs); renderChatMsgs();
+}
+function _verSwitchHTML(m, i){
+  if(!Array.isArray(m.alts) || m.alts.length < 2) return '';
+  const n = m.alts.length, k = (m.altCur || 0) + 1;
+  return '<span class="ver-sw" role="group" aria-label="'+escH(T('Versions'))+'">'
+    +'<button class="mact" data-action="ver-prev" data-idx="'+i+'" aria-label="'+escH(T('Previous version'))+'"'+(k<=1?' disabled':'')+'>\u2039</button>'
+    +'<span class="ver-n">'+k+' / '+n+'</span>'
+    +'<button class="mact" data-action="ver-next" data-idx="'+i+'" aria-label="'+escH(T('Next version'))+'"'+(k>=n?' disabled':'')+'>\u203a</button></span>';
+}
+
 async function regenerateMsg() {
   const msgs=getMsgs();
   if(!msgs.length) return;
+  /* The answer being replaced is kept as a version of this turn. */
+  let _u=msgs.length-1; while(_u>=0 && msgs[_u].r!=='u') _u--;
+  if(_u>=0) _verKeep(msgs, _u);
   // Remove last AI message
   while(msgs.length&&msgs[msgs.length-1].r==='a') msgs.pop();
   if(!msgs.length) return;
@@ -1783,7 +1837,9 @@ async function editMsg(idx) {
   if(!msg||msg.r!=='u') return;
   const text=await showTextPromptAsync('Edit your message:', msg.d||msg.c);
   if(!text||!text.trim()) return;
-  msgs[idx]={...msg, c:text.trim(), d:text.trim()};
+  /* What was asked before, and everything after it, stays as a version. */
+  _verKeep(msgs, idx);
+  msgs[idx]={...msgs[idx], c:text.trim(), d:text.trim()};
   // Remove all messages after this
   msgs.splice(idx+1);
   setMsgs(msgs); S.busy=true; renderChatMsgs();
@@ -2154,6 +2210,8 @@ function bindChatEvents() {
       else setTab('plans');
     }
     else if(action==='seats-upgrade'){ setTab('team'); }
+    else if(action==='ver-prev'){ switchVersion(idx, -1); }
+    else if(action==='ver-next'){ switchVersion(idx, 1); }
     else if(action==='credit-buy'){ _creditOpen(); }
     else if(action==='quota-later'){ const m2=getMsgs(); if(m2[idx]&&m2[idx]._quota){ m2.splice(idx,1); setMsgs(m2); renderChatMsgs(); } }
   });
@@ -2681,6 +2739,7 @@ function renderChatMsgs() {
       '<div class="macts mact-bar">'+
         '<button class="mact" data-action="edit" data-idx="'+i+'" title="Edit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>'+
         '<button class="mact" data-action="copy-u" data-idx="'+i+'" title="Copy"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>'+
+        _verSwitchHTML(m, i)+
       '</div>':
       '<div class="macts mact-bar">'+
         '<button class="mact '+(m.like==='up'?'liked':'')+'" data-action="like-up" data-idx="'+i+'" title="Good response"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88z"/></svg></button>'+

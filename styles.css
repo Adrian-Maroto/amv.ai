@@ -16992,3 +16992,13 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .bill-credit-add{border:1px solid var(--bd);background:var(--s2);color:var(--tx);border-radius:var(--r-sm);
   padding:0 var(--sp-3);min-height:44px;font:inherit;font-size:var(--t-sm);cursor:pointer;margin-left:var(--sp-2)}
 .quota-credit{background:var(--s2)!important;color:var(--tx)!important;border:1px solid var(--bd)!important}
+
+/* ═══ LAYER A314 - Versions of a turn ═════════════════════════════════════
+   "‹ 2 / 3 ›" under a message that has been regenerated or edited. Always
+   visible, unlike the hover actions beside it - it says something exists. */
+.ver-sw{display:inline-flex;align-items:center;gap:2px;margin-left:var(--sp-1);color:var(--mu);font-size:var(--t-sm)}
+.ver-sw .mact{min-width:32px;font-size:var(--t-lg);line-height:1}
+.ver-sw .mact:disabled{opacity:.35;cursor:default}
+.ver-n{font-variant-numeric:tabular-nums;min-width:3.2em;text-align:center}
+.macts:has(.ver-sw){opacity:1!important;visibility:visible!important}
+@media (hover:none){.ver-sw .mact{min-width:44px;min-height:44px}}
