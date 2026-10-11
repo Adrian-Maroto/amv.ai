@@ -174,7 +174,7 @@ section('The docs a key holder reads say that');
   /* Comments stripped first - the comment above the fix quotes the sentence it
      removed, and a comment explaining a removal must not read as the removal
      not having happened. Same rule as the dead-guards gate stage. */
-  const docs = readFileSync(join(ROOT, 'src', 'app', '30-api-keys.js'), 'utf8')
+  const docs = readFileSync(join(ROOT, 'src', 'api', 'api-keys.js'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
   ok(!/stream by default/i.test(docs),
      'the sentence that promised a default is gone', (docs.match(/.{0,60}stream by default.{0,40}/i) || [''])[0]);

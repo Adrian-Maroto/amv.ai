@@ -1073,6 +1073,19 @@ function _memIOLoad(){
   return _memIOP;
 }
 try{ window._memIOLoad = _memIOLoad; }catch(e){}
+/* The API keys pane lives in api-keys.js, fetched when it is first opened. */
+let _apiKeysP = null;
+function _apiKeysLoad(){
+  if(typeof window._renderApiKeysPane === 'function') return Promise.resolve(true);
+  if(!_apiKeysP) _apiKeysP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'api-keys.js';
+    sc.onload = () => res(typeof window._renderApiKeysPane === 'function');
+    sc.onerror = () => { _apiKeysP = null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
+  });
+  return _apiKeysP;
+}
 // file helpers
 function _fmtBytes(n){ if(n<1024) return n+' B'; if(n<1048576) return (n/1024).toFixed(0)+' KB'; return (n/1048576).toFixed(1)+' MB'; }
 function _fileIcon(type,name){

@@ -37,7 +37,7 @@ const DIR = join(ROOT, 'src', 'app');
 /* And the files the page fetches on first use: a key written by the Skills
    screen (skills.js) and read by the page is paired, not orphaned. */
 const ON_DEMAND = ['../admin/admin.js', '../sheet/sheet.js', '../office/office.js', '../billing/credit.js', '../market/sell.js',
-                   '../team/team-sso.js', '../memory/memory-io.js', '../skills/skills.js', '../team/team-projects.js'];
+                   '../team/team-sso.js', '../memory/memory-io.js', '../skills/skills.js', '../team/team-projects.js', '../api/api-keys.js'];
 const files = readdirSync(DIR).filter(f => f.endsWith('.js')).sort().concat(ON_DEMAND);
 const src = Object.fromEntries(files.map(f => [f, readFileSync(join(DIR, f), 'utf8')]));
 const all = files.map(f => src[f]).join('\n');

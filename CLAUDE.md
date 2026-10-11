@@ -76,7 +76,7 @@ Companion docs (do not duplicate them here - read them):
   language packs in `i18n/`, and files fetched on first use - `office.js`
   (Word/Excel/PowerPoint export), `sheet.js` (the spreadsheet editor),
   `admin.js` (the owner console), `crew-data.js` (the Crew catalogue),
-  `team-sso.js` (a team owner's company sign-in settings) and `market-sell.js`
+  `team-sso.js` (a team owner's company sign-in settings), `api-keys.js` (the API keys pane) and `market-sell.js`
   (the marketplace sell form) - byte-identical copies and nothing else.
   Code only some visitors use goes in such a file, not in the page. It exists because
   the site is one file at the ROOT of this repository, so a host pointed at the

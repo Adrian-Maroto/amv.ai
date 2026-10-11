@@ -3278,8 +3278,15 @@ function _renderSetPaneInner(only, into){
   } else if(sp==='family'){
     _renderFamilyPane(pane);
   } else if(sp==='api'){
-    /* Rendered from 30-api-keys.js. */
-    _renderApiKeysPane(pane);
+    /* Rendered from api-keys.js, fetched the first time the pane is opened -
+       developers are the only people who come here, so nobody else pays for
+       its docs on every visit. */
+    pane.innerHTML = '<h2 class="set-title">API keys</h2><div class="ss2"><div class="ak-load">'+escH(T('Loading\u2026'))+'</div></div>';
+    _apiKeysLoad().then(ok => {
+      if(!pane.isConnected) return;
+      if(ok){ window._renderApiKeysPane(pane); return; }
+      pane.querySelector('.ak-load').textContent = T('The API keys screen could not be loaded. Check your connection and try again.');
+    });
   } else if(sp==='invite'){
     /* Rendered from 27-referrals.js. */
     _renderInvitePane(pane);

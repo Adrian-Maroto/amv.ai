@@ -21,6 +21,8 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 
 const app = await bootApp({});
 const { page, errors } = app;
+/* The pane is fetched when Settings > API keys is opened; load it the same way. */
+await page.evaluate(() => _apiKeysLoad());
 
 const esc = () => page.evaluate(async () => {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));

@@ -33,7 +33,7 @@ const worker = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
    command-line tool, which is the API's own first caller (token counting is
    asked for from there, not from a screen). */
 const client = ['app.js', 'src/admin/admin.js', 'src/sheet/sheet.js', 'src/office/office.js',
-                'src/billing/credit.js', 'src/market/sell.js', 'src/team/team-sso.js', 'src/memory/memory-io.js', 'src/skills/skills.js', 'src/team/team-projects.js',
+                'src/billing/credit.js', 'src/market/sell.js', 'src/team/team-sso.js', 'src/memory/memory-io.js', 'src/skills/skills.js', 'src/team/team-projects.js', 'src/api/api-keys.js',
                 'cli/amv-cli.mjs']
   .map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
 
