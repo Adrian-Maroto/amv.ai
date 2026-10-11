@@ -17002,3 +17002,32 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .ver-n{font-variant-numeric:tabular-nums;min-width:3.2em;text-align:center}
 .macts:has(.ver-sw){opacity:1!important;visibility:visible!important}
 @media (hover:none){.ver-sw .mact{min-width:44px;min-height:44px}}
+
+/* ═══ LAYER A315 - Plugins ════════════════════════════════════════════════
+   Under Skills: installed plugins as skill rows with what is inside folded
+   below, the ready-made ones, and the window that shows every instruction
+   before one is added. */
+.pl-row{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r-lg);padding:13px 15px}
+.pl-row-h{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.pl-in{margin-top:var(--sp-2)}
+.pl-in>summary,.pl-make>summary{cursor:pointer;font-size:var(--t-sm);color:var(--accent-txt);min-height:32px;display:flex;align-items:center}
+.pl-pr{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);padding:6px 0;border-top:1px solid var(--bd);font-size:var(--t-sm);color:var(--tx)}
+.pl-apps{display:flex;flex-wrap:wrap;gap:6px;margin:var(--sp-2) 0}
+.pl-app{font:inherit;font-size:var(--t-sm);padding:4px 10px;border-radius:var(--r-pill);border:1px solid var(--bd);background:var(--s2);color:var(--tx)}
+button.pl-app{cursor:pointer;min-height:32px}
+button.pl-app:hover{border-color:var(--accent);color:var(--accent-txt)}
+.pl-del{color:var(--red-txt)}
+.pl-pre-h,.pl-pick-h{font-size:var(--t-sm);font-weight:600;color:var(--mu);margin:var(--sp-3) 0 var(--sp-2)}
+.pl-make{background:var(--s2);border:1px solid var(--bd);border-radius:var(--r-lg);padding:var(--sp-2) 14px}
+.pl-make .inp{margin-top:var(--sp-2)}
+.pl-pick{display:flex;align-items:center;gap:var(--sp-2);font-size:var(--t-sm);color:var(--tx);min-height:32px}
+.pl-price{width:80px}
+.pl-ask{max-width:560px;max-height:min(86vh,760px);overflow-y:auto}
+.pl-h{font-size:var(--t-sm);font-weight:600;color:var(--mu);margin:var(--sp-4) 0 var(--sp-2)}
+.pl-item{border:1px solid var(--bd);border-radius:var(--r-md);padding:var(--sp-2) var(--sp-3);margin-bottom:6px;background:var(--s1)}
+.pl-item>summary{cursor:pointer;font-size:var(--t-base);color:var(--tx)}
+.pl-mode{font-size:var(--t-xs);color:var(--mu);margin-left:6px}
+.pl-note{font-size:var(--t-sm);color:var(--mu);line-height:1.55;margin:var(--sp-2) 0}
+.pl-btns{display:flex;gap:9px;margin-top:14px}
+.pl-btns .btn{flex:1}
+@media (hover:none){.pl-in>summary,.pl-make>summary,button.pl-app,.pl-pick{min-height:44px}}

@@ -17921,7 +17921,10 @@ const SYNC_ALLOWED_KEYS = new Set([
      thing that stops every session paying to rediscover the same facts.
      Contains no paths: a project is keyed by a hash of its folder, so
      somebody's home directory and real name never reach this record. */
-  'projects'
+  'projects',
+  /* Installed plugins. A removed one is kept as a tombstone, so the merge
+     below lets a removal on one device win over an older copy on another. */
+  'plugins'
 ]);
 const SYNC_MAX_BYTES = 4 * 1024 * 1024;   // 4MB hard ceiling (well under KV's 25MB, sane for D1)
 
@@ -17954,7 +17957,7 @@ const SYNC_MAX_BYTES = 4 * 1024 * 1024;   // 4MB hard ceiling (well under KV's 2
    Both fields are additive; a record written before this change simply has no
    rev and takes the safe merge path.
    ===================================================================== */
-const SYNC_MERGE_KEYS = new Set(['chats','convs','memory','workspaces','prompts','imgs','vids','sessions','skills','handoffs','projects']);
+const SYNC_MERGE_KEYS = new Set(['chats','convs','memory','workspaces','prompts','imgs','vids','sessions','skills','handoffs','projects','plugins']);
 const _syncId = it => (it && (it.id || it.key || it.name)) || null;
 /* Best available "when was this touched". Different lists use different names
    and older records have none at all. */
@@ -25378,6 +25381,47 @@ function _safeHttpUrl(u) {
   } catch (e) { return undefined; }
 }
 
+/* A PLUGIN LISTING: skills, prompts and app names. Text only, bounded, the
+   same rules the page applies (_plNormalize in src/skills/skills.js) -
+   checked here because a request does not have to come from the page. Too
+   long is refused rather than cut: a cut instruction is not the one the
+   seller wrote, and not the one the buyer was shown.
+
+   Returns { plugin, text } - `text` is every word it carries, so the content
+   screen and the AMV-only rule read the instructions buyers actually get, not
+   just the listing's description. */
+const MKT_PLUGIN = { skills: 10, prompts: 20, apps: 8, text: 4000 };
+const MKT_PLUGIN_APP_RE = /^[\p{L}\p{N}][\p{L}\p{N} .&+'’-]{0,39}$/u;
+function _mktPluginClean(p){
+  const no = (error) => ({ error });
+  if(!p || typeof p !== 'object') return no('A plugin listing needs its plugin - at least one skill or prompt.');
+  const str = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, n);
+  const rs = Array.isArray(p.skills) ? p.skills : [], rp = Array.isArray(p.prompts) ? p.prompts : [], ra = Array.isArray(p.apps) ? p.apps : [];
+  if(rs.length > MKT_PLUGIN.skills || rp.length > MKT_PLUGIN.prompts || ra.length > MKT_PLUGIN.apps)
+    return no(`A plugin carries at most ${MKT_PLUGIN.skills} skills, ${MKT_PLUGIN.prompts} prompts and ${MKT_PLUGIN.apps} apps.`);
+  const skills = [], prompts = [], apps = [];
+  for(const s of rs){
+    if(!s || typeof s.name !== 'string' || typeof s.instr !== 'string' || !s.name.trim() || !s.instr.trim()) return no('Every skill in a plugin needs a name and instructions.');
+    if(s.instr.length > MKT_PLUGIN.text) return no(`A skill's instructions are limited to ${MKT_PLUGIN.text} characters.`);
+    const mode = s.mode === 'auto' ? 'auto' : 'always', when = str(s.when, 200);
+    if(mode === 'auto' && !when) return no('A skill used only when relevant has to say what it is for.');
+    skills.push({ name: str(s.name, 60), when, instr: str(s.instr, MKT_PLUGIN.text), mode });
+  }
+  for(const x of rp){
+    if(!x || typeof x.title !== 'string' || typeof x.text !== 'string' || !x.title.trim() || !x.text.trim()) return no('Every prompt in a plugin needs a title and text.');
+    if(x.text.length > MKT_PLUGIN.text) return no(`A prompt is limited to ${MKT_PLUGIN.text} characters.`);
+    prompts.push({ title: str(x.title, 100), text: str(x.text, MKT_PLUGIN.text) });
+  }
+  for(const a of ra){
+    const n = str(a, 40);
+    if(!MKT_PLUGIN_APP_RE.test(n)) return no('An app a plugin works with is named in plain words, nothing else.');
+    if(apps.indexOf(n) < 0) apps.push(n);
+  }
+  if(!skills.length && !prompts.length) return no('A plugin listing needs its plugin - at least one skill or prompt.');
+  const text = skills.map(s => s.name + ' ' + s.when + ' ' + s.instr).concat(prompts.map(x => x.title + ' ' + x.text), apps).join(' ');
+  return { plugin: { skills, prompts, apps }, text };
+}
+
 async function marketPublish(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'sign in to publish' }, 401);
@@ -25394,8 +25438,16 @@ async function marketPublish(request, env) {
     return json({ error: 'Your selling access has been suspended for repeated policy violations. Contact support to appeal.', code: 'seller_suspended' }, 403);
   }
 
+  /* A plugin is checked whole before anything is screened, and its text is
+     screened with the listing - its instructions are what buyers get. */
+  let pluginClean = null;
+  if (item.kind === 'plugin') {
+    pluginClean = _mktPluginClean(item.plugin);
+    if (pluginClean.error) return json({ error: pluginClean.error, code: 'bad_plugin' }, 400);
+  }
+
   // ── Automated content review (server-side = cannot be bypassed) ──
-  const screen = _marketScreen(item, standing.verifiedFor);
+  const screen = _marketScreen(pluginClean ? { ...item, text: String(item.text || '') + ' ' + pluginClean.text } : item, standing.verifiedFor);
   if (!screen.ok) {
     if (screen.action === 'blocked') {
       /* Under the lock: moderation writes this record too, and a strike lost
@@ -25424,14 +25476,14 @@ async function marketPublish(request, env) {
     audit(env, 'market_needs_verification', { by: user.email, title, category: screen.category });
     return json({ error: screen.reason, code: 'needs_verification', category: screen.category }, 422);
   }
-  const kind = ['prompt', 'crew', 'agent', 'integration', 'workflow', 'guide', 'bundle'].includes(item.kind) ? item.kind : 'prompt';
+  const kind = ['prompt', 'crew', 'agent', 'plugin', 'integration', 'workflow', 'guide', 'bundle'].includes(item.kind) ? item.kind : 'prompt';
   // price: 0 = free; otherwise whole dollars, $1..$999
   let price = Math.round(Number(item.price) || 0);
   if (price < 0) price = 0;
   if (price > 999) price = 999;
   const body = String(item.text || '').slice(0, 20000);
   // AMV-only content guard: reject listings that reference other AI brands.
-  const blob = (title + ' ' + (item.desc || '') + ' ' + body).toLowerCase();
+  const blob = (title + ' ' + (item.desc || '') + ' ' + body + ' ' + (pluginClean ? pluginClean.text : '')).toLowerCase();
   const banned = ['claude', 'anthropic', 'openai', 'chatgpt', 'gpt-4', 'gpt-5', 'gemini', 'copilot', 'grok', 'llama', 'mistral', 'perplexity'];
   const hit = banned.find(b => blob.includes(b));
   if (hit) return json({ error: 'Listings must be AMV-only - remove references to other AI products (' + hit + ').' }, 400);
@@ -25486,7 +25538,7 @@ async function marketPublish(request, env) {
        not where it is used. */
     url: _safeHttpUrl(f.url),
   }));
-  if (!body && !files.length && !(Array.isArray(item.crew) && item.crew.length)) {
+  if (!body && !files.length && !(Array.isArray(item.crew) && item.crew.length) && !pluginClean) {
     return json({ error: 'add a deliverable: text, a crew, or at least one file' }, 400);
   }
   /* An assistant is its instructions: without them there is nothing to install. */
@@ -25509,6 +25561,7 @@ async function marketPublish(request, env) {
     text: body,
     crew: Array.isArray(item.crew) ? item.crew.slice(0, 8) : undefined,
     assistant,
+    plugin: pluginClean ? pluginClean.plugin : undefined,
     files,
     // icon is rendered unescaped on the client, so store an emoji/short-text
     // only - reject any markup outright (never a truncated tag fragment).
@@ -25538,7 +25591,7 @@ async function marketPublish(request, env) {
    Free items keep their content inline. */
 function _publicListing(it) {
   if (!it.price || it.price <= 0) return it;
-  const { text, crew, files, ...rest } = it;
+  const { text, crew, files, plugin, ...rest } = it;
   const teaser = Array.isArray(files) ? files.map(f => ({ name: f.name, type: f.type, size: f.size })) : [];
   return { ...rest, files: teaser, locked: true };
 }

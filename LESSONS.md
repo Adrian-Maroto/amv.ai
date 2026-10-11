@@ -14891,3 +14891,24 @@ is still Pro.
 Rule: before adding a new kind of payment, read every place the processor's
 events land and ask what each one does with a reference it has never seen. A
 default branch is a decision about everything that is not yet written.
+
+## 583. A removal that syncs by merging is undone by the next device
+
+Plugins sync between devices the way skills and projects do: each side's list
+is merged by id, newest copy wins. Removing one by deleting it from the list
+looks right on the device that did it - and the next device to sync still has
+the plugin, the merge has nothing newer to weigh it against, and it comes
+back. A removed plugin whose instructions quietly return to every chat is the
+one failure this feature cannot have.
+
+A removal is written as a record: `{id, removed:true, updated}`. It is newer
+than any copy made before it, so it wins the merge everywhere; the screen and
+the chat context skip it. The suite removes a plugin, merges in the stale copy
+another device would send, and checks it stays gone.
+
+Skills have the same exposure today: deleting one drops it from `amv_skills`,
+and a device that synced before the delete can bring it back (switched off,
+because the active list does not sync - which is why it has not bitten).
+
+Rule: in a list that merges by id, a delete is a write. If it does not leave
+something newer behind, it is a suggestion.

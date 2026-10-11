@@ -931,7 +931,7 @@ const AMVMarket = {
   },
   async publish(item){
     // AMV-only guard applies in both modes
-    const blob=((item.title||'')+' '+(item.desc||'')+' '+(item.text||'')).toLowerCase();
+    const blob=((item.title||'')+' '+(item.desc||'')+' '+(item.text||'')+' '+_mktPluginText(item.plugin)).toLowerCase();
     const banned=['claude','anthropic','openai','chatgpt','gpt-4','gpt-5','gemini','copilot','grok','llama','mistral','perplexity'];
     const hit=banned.find(b=>blob.includes(b));
     if(hit) throw new Error('Listings must be AMV-only - remove references to other AI products ('+hit+').');
@@ -995,6 +995,12 @@ const AMVMarket = {
          than a line of text in the prompt library. */
       const ws=assistantFromListing(item);
       try{ toast('\u201c'+(ws.name||'Assistant')+'\u201d is in your Projects. Open it to start a chat.','success',6000); }catch(e){}
+    } else if(item.kind==='plugin'){
+      /* A plugin asks first, showing everything in it (src/skills/skills.js). */
+      _skillsLoad().then(ok=>{
+        if(ok) window._pluginFromListing(item);
+        else toast('Plugins could not be loaded. Check your connection and install it again from your purchases.','error',7000);
+      });
     } else if(item.kind==='crew' || item.kind==='workflow'){
       const me=this._me();
       const crews=load('amv_saved_crews')||[];

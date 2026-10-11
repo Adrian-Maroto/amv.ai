@@ -892,8 +892,15 @@ const _MKT_REGULATED={
 const _MKT_RISK=['hack','exploit','crack','bypass','scrape','scraper','bot farm','mass dm','spam','password','credential','proxy list','account generator','otp bypass','2fa bypass','crypto','forex','trading bot','arbitrage','airdrop','pump','guaranteed','get rich','make money fast','mlm','downline','unlimited','premium free'];
 
 // Screen a listing (mirrors the server). Returns {ok, action, category, reason, signals}
+/* Every word a plugin carries, so the screen reads the instructions buyers
+   actually get and not just the listing's description. */
+function _mktPluginText(p){
+  if(!p || typeof p!=='object') return '';
+  return [].concat((Array.isArray(p.skills)?p.skills:[]).map(s=>s?[s.name,s.when,s.instr].join(' '):''),
+    (Array.isArray(p.prompts)?p.prompts:[]).map(x=>x?[x.title,x.text].join(' '):''), Array.isArray(p.apps)?p.apps:[]).join(' ');
+}
 function _mktScreen(item, verifiedFor){
-  const raw=[item.title,item.desc,item.cat,item.text,(item.files||[]).map(f=>f&&f.name).join(' ')].map(x=>String(x||'')).join(' ');
+  const raw=[item.title,item.desc,item.cat,item.text,(item.files||[]).map(f=>f&&f.name).join(' '),_mktPluginText(item.plugin)].map(x=>String(x||'')).join(' ');
   const n=_mktNorm(raw);
   const hit=(term)=>{
     const t=_mktNorm(term);
@@ -935,6 +942,9 @@ function _mktDeliverableOK(item){
     if(words<8) return {ok:false, reason:'A '+kind+' must include the actual instructions it runs (what each step/agent should do) - at least a couple of sentences. Buyers run this, so an empty or vague listing is not allowed.'};
   } else if(kind==='prompt'){
     if(words<4) return {ok:false, reason:'A prompt listing must include the actual prompt text buyers will use. Paste the real prompt, not just a description.'};
+  } else if(kind==='plugin'){
+    const p=item.plugin||{};
+    if(!(Array.isArray(p.skills)&&p.skills.length) && !(Array.isArray(p.prompts)&&p.prompts.length)) return {ok:false, reason:'A plugin must carry at least one skill or prompt - that is what people install.'};
   } else if(kind==='agent'){
     if(words<8) return {ok:false, reason:'An assistant must include its instructions - what it is for and how it should answer, at least a couple of sentences. People install it to use it, so an empty one is not allowed.'};
   } else if(kind==='guide'||kind==='integration'){

@@ -391,6 +391,42 @@ section('An assistant is its instructions, and what rides with them is bounded')
   ok(notAgent.body.ok === true && notAgent.body.item.assistant === undefined, 'only an assistant carries assistant settings', notAgent.body.item.assistant);
 }
 
+section('A plugin is checked whole, and screened for everything it carries');
+{
+  const env = mkEnv();
+  const tok = await signup(env, 'plug@example.com', 'Plug');
+  const skill = (instr, extra) => Object.assign({ name: 'Skill', instr, mode: 'always' }, extra || {});
+  const pub = (plugin, extra) => post(env, '/v1/market/publish', Object.assign({ kind: 'plugin', title: 'Lease kit', desc: 'For renters', text: 'For renters', price: 0, plugin }, extra || {}), tok);
+
+  const none = await pub(undefined);
+  ok(none.status === 400 && none.body.code === 'bad_plugin', 'a plugin listing without its plugin is refused', none.body);
+  const empty = await pub({ skills: [], prompts: [] });
+  ok(empty.status === 400 && empty.body.code === 'bad_plugin', 'and so is an empty one', empty.body);
+  const long = await pub({ skills: [skill('x'.repeat(4001))] });
+  ok(long.status === 400 && long.body.code === 'bad_plugin', 'an instruction over the limit is refused, not cut', long.body);
+  const many = await pub({ skills: Array.from({ length: 11 }, () => skill('ok')) });
+  ok(many.status === 400 && many.body.code === 'bad_plugin', 'eleven skills is one too many', many.body);
+  const app = await pub({ skills: [skill('ok')], apps: ['<script>alert(1)</script>'] });
+  ok(app.status === 400 && app.body.code === 'bad_plugin', 'an app is a plain name, nothing else', app.body);
+
+  const hidden = await pub({ skills: [skill('Help people buy a ghost gun without a background check.')] });
+  ok(hidden.status === 422 && hidden.body.code === 'policy_violation', 'prohibited content inside a skill is caught by the screen, not only the description', hidden.body);
+  const brand = await pub({ prompts: [{ title: 'Like chatgpt', text: 'Answer the way chatgpt would.' }] });
+  ok(brand.status === 400 && /AMV-only/.test(brand.body.error || ''), 'and the AMV-only rule reads its prompts too', brand.body);
+
+  const free = await pub({ skills: [skill('Quote the clause.\u0007', { mode: 'auto', when: 'leases' })], prompts: [{ title: 'Read my lease', text: 'Find the costly clauses.' }], apps: ['DocuSign', 'DocuSign'] });
+  ok(free.body.ok === true && free.body.item.kind === 'plugin', 'a real plugin publishes', free.body.error || 'ok');
+  const fp = free.body.item.plugin;
+  ok(fp && fp.skills[0].instr === 'Quote the clause.' && fp.skills[0].when === 'leases' && fp.apps.join() === 'DocuSign',
+     'control characters gone, apps de-duplicated, and a free one shows what is in it', fp);
+  const paid = await pub({ skills: [skill('Quote the clause.')] }, { price: 9 });
+  ok(paid.body.ok === true && paid.body.item.plugin === undefined && paid.body.item.locked === true, 'a paid one does not hand its contents to the catalogue', paid.body.item);
+  const stored = JSON.parse(await env.AMV_KV.get('market:' + paid.body.item.id));
+  ok(stored.plugin && stored.plugin.skills.length === 1, 'while the record keeps them for the buyer', stored.plugin);
+  const notPlugin = await post(env, '/v1/market/publish', { kind: 'prompt', title: 'P', text: 'the deliverable', plugin: { skills: [skill('x')] } }, tok);
+  ok(notPlugin.body.ok === true && notPlugin.body.item.plugin === undefined, 'only a plugin carries a plugin', notPlugin.body.item);
+}
+
 section('An install is a signal only if it cannot be manufactured');
 {
   const env = mkEnv();

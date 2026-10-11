@@ -359,6 +359,11 @@ const AMVSync = {
       if(Array.isArray(data.skills)){
         try{ store('amv_skills', _mergeById(load('amv_skills')||[], data.skills)); }catch(e){ _logErr('sync.skills', e); }
       }
+      /* Plugins merge the same way; a removed one is a tombstone, newer than
+         the copy, so removing it on one device removes it everywhere. */
+      if(Array.isArray(data.plugins)){
+        try{ store('amv_plugins', _mergeById(load('amv_plugins')||[], data.plugins)); }catch(e){ _logErr('sync.plugins', e); }
+      }
       if(Array.isArray(data.handoffs)){
         try{ store('amv_handoffs', _mergeById(load('amv_handoffs')||[], data.handoffs)); }catch(e){ _logErr('sync.handoffs', e); }
       }
@@ -389,6 +394,7 @@ const AMVSync = {
     try{ out.sessions = _syncSessionList(); }catch(e){ out.sessions = []; }
     try{ out.skills   = load('amv_skills')   || []; }catch(e){}
     try{ out.handoffs = load('amv_handoffs') || []; }catch(e){}
+    try{ out.plugins  = load('amv_plugins')  || []; }catch(e){}
     try{ out.projects = load('amv_projects')  || []; }catch(e){}
     /* Built from the keys the settings screen writes, not from a mirror of
        them that nothing maintained. */
