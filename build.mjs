@@ -90,6 +90,8 @@ function emitSandbox() {
   writeFileSync('admin.js', readFileSync('src/admin/admin.js'));
   /* Company sign-in settings, fetched when a team's owner opens the team page. */
   writeFileSync('team-sso.js', readFileSync('src/team/team-sso.js'));
+  /* The marketplace sell form, fetched when somebody opens Sell. */
+  writeFileSync('market-sell.js', readFileSync('src/market/sell.js'));
 }
 
 function assembleJS() {
@@ -904,6 +906,7 @@ const PUBLISH = [
   'crew-data.js',          // the Crew job catalogue, fetched the first time Crew is opened
   'admin.js',              // the owner console, fetched when the owner opens it
   'team-sso.js',           // company sign-in settings, fetched when a team owner opens the team page
+  'market-sell.js',        // the marketplace sell form, fetched when somebody opens Sell
 ];
 /* GOOGLE PLAY'S PROOF THAT THE ANDROID APP IS AMV'S (apps/android). Published
    only once the owner's signing fingerprint is in apps/android/config.json,

@@ -374,6 +374,23 @@ section('Publishing is checked at the door, not on the way out');
      'and an icon carrying markup is replaced, not trimmed into a fragment', xss.body.item.icon);
 }
 
+section('An assistant is its instructions, and what rides with them is bounded');
+{
+  const env = mkEnv();
+  const tok = await signup(env, 'maker@example.com', 'Maker');
+  const thin = await post(env, '/v1/market/publish', { kind: 'agent', title: 'Thin', text: 'be helpful' }, tok);
+  ok(thin.status === 400 && thin.body.code === 'empty_assistant', 'an assistant without real instructions is refused', thin.body);
+  const a = await post(env, '/v1/market/publish', { kind: 'agent', title: 'Lease Reader', price: 0,
+    text: 'Read residential leases and flag every clause that costs the tenant money, quoting it.',
+    assistant: { starters: ['One', 'Two\u0007bell', 'Three', 'Four', 'Five', 'x'.repeat(400)], engine: 'core; drop table' } }, tok);
+  ok(a.body.ok === true, 'a real assistant publishes', a.body.error || 'ok');
+  const as = a.body.item.assistant;
+  ok(as.starters.length === 4 && as.starters[1] === 'Two bell', 'four starters at most, control characters gone', as.starters);
+  ok(as.engine === '', 'and an engine that is not a plain name is dropped', as.engine);
+  const notAgent = await post(env, '/v1/market/publish', { kind: 'prompt', title: 'P', text: 'the deliverable', assistant: { starters: ['x'] } }, tok);
+  ok(notAgent.body.ok === true && notAgent.body.item.assistant === undefined, 'only an assistant carries assistant settings', notAgent.body.item.assistant);
+}
+
 section('An install is a signal only if it cannot be manufactured');
 {
   const env = mkEnv();

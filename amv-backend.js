@@ -25283,6 +25283,18 @@ async function marketPublish(request, env) {
   if (!body && !files.length && !(Array.isArray(item.crew) && item.crew.length)) {
     return json({ error: 'add a deliverable: text, a crew, or at least one file' }, 400);
   }
+  /* An assistant is its instructions: without them there is nothing to install. */
+  if (kind === 'agent' && body.split(/\s+/).filter(Boolean).length < 8) {
+    return json({ error: 'An assistant must include its instructions - what it is for and how it answers, at least a couple of sentences.', code: 'empty_assistant' }, 400);
+  }
+  /* What makes it an assistant beyond its text: starter questions and an
+     engine. Bounded and plain - starters are shown as text, and the engine is
+     only ever a name the buyer's own plan is checked against. */
+  const assistant = kind === 'agent' && item.assistant && typeof item.assistant === 'object' ? {
+    starters: (Array.isArray(item.assistant.starters) ? item.assistant.starters : []).slice(0, 4)
+      .map(x => String(x == null ? '' : x).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 140)).filter(Boolean),
+    engine: /^[a-z][a-z0-9-]{0,31}$/.test(String(item.assistant.engine || '')) ? String(item.assistant.engine) : '',
+  } : undefined;
   const clean = {
     id: 'usr_' + crypto.randomUUID().replace(/-/g,''),
     kind, title,
@@ -25290,6 +25302,7 @@ async function marketPublish(request, env) {
     desc: String(item.desc || '').slice(0, 280),
     text: body,
     crew: Array.isArray(item.crew) ? item.crew.slice(0, 8) : undefined,
+    assistant,
     files,
     // icon is rendered unescaped on the client, so store an emoji/short-text
     // only - reject any markup outright (never a truncated tag fragment).

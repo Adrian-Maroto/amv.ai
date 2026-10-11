@@ -1037,8 +1037,11 @@ async function _callAITurn(msgs, _opts) {
     }
   }catch(e){}
   // RULE 7+8: route to the cheapest capable model when on Auto (saves ~5-20x on simple tasks)
-  let _routeKey=S.model;
-  if(S.model==='auto'){ _routeKey=_routeModel(msgs); }
+  /* A project set to an engine of its own (an assistant) uses it, when the
+     plan and team allow it - _projectEngine answers '' otherwise. */
+  const _pinned=_projectEngine();
+  let _routeKey=_pinned||S.model;
+  if(_routeKey==='auto'){ _routeKey=_routeModel(msgs); }
   AEGIS.log('request',{model:(MODELS[_routeKey]||MODELS.core).model, msgCount:msgs.length, routed:S.model==='auto'});
   let _inTok=0,_outTok=0;
   // Record usage exactly once, no matter how the stream ends (success, error, or
@@ -1975,6 +1978,14 @@ function showModelPicker(){
         openUpgradeModal(item.dataset.mk);
         return;
       }
+      /* An assistant with an engine of its own answers with it in its chats, so
+         a choice here would be shown and then not used. Said instead. */
+      const _pin=_projectEngine();
+      if(_pin && item.dataset.mk!==_pin){
+        menu.remove();
+        toast(T('This assistant always uses')+' '+MODELS[_pin].label+'. '+T('Change it under Manage, at the top of the chat.'),'info',6000);
+        return;
+      }
       S.model=item.dataset.mk;
       menu.remove();
       const mdlNow=MODELS[S.model];
@@ -2469,9 +2480,18 @@ function _announceChatTurn(msgs){
   }catch(e){}
 }
 
+/* The engine button shows what will answer: an assistant's own engine in its
+   chats, otherwise the person's choice. */
+function _syncModelBtn(){
+  const b=$('inp-mdl-btn'); if(!b) return;
+  const m=MODELS[_projectEngine()||S.model]||MODELS.core;
+  const lab=b.querySelector('span:last-of-type'); if(lab && lab.textContent!==m.label) lab.textContent=m.label;
+  const dot=b.querySelector('.inp-model-dot'); if(dot) dot.style.background=m.color;
+}
 function renderChatMsgs() {
   const cm=$('cm');
   if(!cm) return;
+  try{ _syncModelBtn(); }catch(e){}
   const msgs=getMsgs();
   _announceChatTurn(msgs);
   const ini=S.user?.ini||'?';
@@ -2500,6 +2520,9 @@ function renderChatMsgs() {
         (_isTempChat()
           ? _tempBannerHTML()
           : '')+_studyBannerHTML()+
+        /* A new chat inside a project says so before anything is typed, and an
+           assistant offers its starter questions here. */
+        _projectBannerHTML()+
         '<div class="chome-toggles">'+
           (_isTempChat() ? '' : '<button type="button" class="temp-toggle" data-dact="startTempChat">'+escH(T('Temporary chat'))+'</button>')+
           (_isStudyChat() ? '' : '<button type="button" class="temp-toggle" data-dact="toggleStudyMode" title="'+escH(T('AMV teaches step by step instead of handing over answers'))+'">'+escH(T('Study mode'))+'</button>')+

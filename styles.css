@@ -16961,3 +16961,18 @@ html[dir="rtl"] .oc{ right:auto; left:11px; }
 .team-sso-req input{margin-top:3px;min-width:18px;min-height:18px}
 .team-sso-edit{margin-bottom:var(--sp-3)}
 .team-sso-edit summary{cursor:pointer;color:var(--accent);font-size:var(--t-sm);min-height:44px;display:flex;align-items:center}
+
+/* ═══ LAYER A312 - Assistants: starter questions and sharing ══════════════
+   Starters sit under the project banner in an empty chat, as the chat's own
+   chips; the share form is a quiet disclosure inside the project page. */
+.as-starters{display:flex;flex-wrap:wrap;gap:var(--sp-2);justify-content:center;max-width:760px;margin:var(--sp-3) auto 0;padding:0 var(--sp-4)}
+.as-starter{border:1px solid var(--bd);background:var(--s1);color:var(--tx);border-radius:var(--r-md);
+  padding:var(--sp-2) var(--sp-3);min-height:44px;font:inherit;font-size:var(--t-base);text-align:left;cursor:pointer;
+  max-width:100%;transition:border-color .15s var(--ease),background .15s var(--ease)}
+.as-starter:hover{border-color:var(--accent);background:var(--s2)}
+.as-starter:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.as-share{margin:var(--sp-2) 0 var(--sp-3)}
+.as-share summary{cursor:pointer;color:var(--accent);font-size:var(--t-sm);min-height:44px;display:flex;align-items:center}
+.as-share input[type=text]{width:100%;max-width:420px;margin-bottom:var(--sp-2)}
+.as-share .btn{min-height:44px;margin-right:var(--sp-2)}
+.as-files{display:flex;gap:var(--sp-2);align-items:center;font-size:var(--t-sm);margin:var(--sp-1) 0 var(--sp-3);min-height:44px}

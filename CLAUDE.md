@@ -73,9 +73,11 @@ Companion docs (do not duplicate them here - read them):
   built `index.html`, `sw.js`, `manifest.webmanifest`, the two icons,
   `amv-bridge.mjs`, `amv-cli.mjs` (the command-line tool, from `cli/`; the API keys
   pane writes the deployment's address into it at download), the code sandbox (`sandbox.html` + `sandbox.js`), the
-  language packs in `i18n/`, and three files fetched on first use - `office.js`
-  (Word/Excel/PowerPoint export), `sheet.js` (the spreadsheet editor) and
-  `admin.js` (the owner console) - byte-identical copies and nothing else.
+  language packs in `i18n/`, and files fetched on first use - `office.js`
+  (Word/Excel/PowerPoint export), `sheet.js` (the spreadsheet editor),
+  `admin.js` (the owner console), `crew-data.js` (the Crew catalogue),
+  `team-sso.js` (a team owner's company sign-in settings) and `market-sell.js`
+  (the marketplace sell form) - byte-identical copies and nothing else.
   Code only some visitors use goes in such a file, not in the page. It exists because
   the site is one file at the ROOT of this repository, so a host pointed at the
   repository serves `amv-backend.js`, `wrangler.toml` and `SECURITY-SCAMS.md`
@@ -176,6 +178,12 @@ Companion docs (do not duplicate them here - read them):
   provider's keys, issuer, audience, expiry, nonce; state spent once, PKCE).
   "Required" refuses passwords and Google for the domain, never for the owner.
   The owner's settings UI is `team-sso.js`, fetched on demand.
+- **An assistant is a project that can travel** (`07b-projects.js`): starter
+  questions and an engine of its own on top of a project's instructions, files
+  and memory, published to the marketplace as kind `agent`. Installing one
+  makes a project marked `third`, whose instructions reach the engine labelled
+  as a third party's that cannot loosen AMV's rules or approve anything. Its
+  engine is used only when `_planAllowsModel` and `_teamAllowsModel` say so.
 - **Any tool the client can send must be in `AMV_CLIENT_TOOLS` on the server**,
   or `_safeTools` drops it by name at the last hop before the model and the
   feature silently does not exist. LESSONS 310; covered by

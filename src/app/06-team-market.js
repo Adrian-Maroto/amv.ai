@@ -989,7 +989,13 @@ const AMVMarket = {
     // Everything you get - free or paid - is recorded as OWNED so it shows in
     // Purchases, the one place your items live.
     this._markOwned(item);
-    if(item.kind==='crew' || item.kind==='workflow'){
+    if(item.kind==='agent' && typeof assistantFromListing==='function'){
+      /* An assistant becomes a project of the buyer's own - instructions,
+         starter questions, its engine and any files that came with it - rather
+         than a line of text in the prompt library. */
+      const ws=assistantFromListing(item);
+      try{ toast('\u201c'+(ws.name||'Assistant')+'\u201d is in your Projects. Open it to start a chat.','success',6000); }catch(e){}
+    } else if(item.kind==='crew' || item.kind==='workflow'){
       const me=this._me();
       const crews=load('amv_saved_crews')||[];
       // A structured crew (agents) if the listing has one; otherwise build it from
