@@ -16398,63 +16398,7 @@ function _billingTxnsHTML(){
     }).join('')+'</div></div>';
 }
 window._billingTxnsHTML=_billingTxnsHTML;
-/* WHAT THIS PLAN DOES, AND WHAT IT DOES NOT - FROM THE SAME SOURCE THE
-   PRICING PAGE SELLS FROM.
 
-   Asked for directly: say what somebody can do on their plan and what they
-   cannot, so the upgrade is a decision they can make on this screen instead of
-   a price they have to go and interpret somewhere else.
-
-   Both halves are read out of `_planPitch`, which is what the pricing cards and
-   the upgrade page already render. That matters more than it looks: a
-   hand-written list here would be a second description of the product, and the
-   two would drift the first time a plan changed. This cannot drift, because
-   there is only one list.
-
-   The "not on this plan" half is built differently depending on where somebody
-   is. Free already declares its own gaps - the entries marked 0 - so those are
-   used as they stand. A paid plan declares no gaps, and inventing some would be
-   writing marketing copy in a renderer; what is TRUE for a paid plan is what
-   the next step up adds, so that is what it shows, named as that plan. The
-   top of the ladder shows nothing, because there is nothing it cannot do. */
-function _billCanCantHTML(plan){
-  if(typeof _planPitch !== 'function') return '';
-  const pitch=_planPitch(plan); if(!pitch||!Array.isArray(pitch.feats)) return '';
-  const has=pitch.feats.filter(f=>f[0]).map(f=>f[1]);
-  let lacks=pitch.feats.filter(f=>!f[0]).map(f=>f[1]);
-  let lackLabel='Not on this plan';
-  if(!lacks.length){
-    /* The next rung, by rank, skipping the two that are not steps on this
-       ladder - Teams is per seat and Custom is sized to order, so neither is
-       "the next one up" from anywhere. */
-    const next=Object.keys(PLANS)
-      .filter(k=>k!=='custom'&&k!=='team'&&PLAN_RANK[k]>PLAN_RANK[plan])
-      .sort((a,b)=>PLAN_RANK[a]-PLAN_RANK[b])[0];
-    if(next){
-      const np=_planPitch(next);
-      if(np&&Array.isArray(np.feats)){
-        /* "Everything in Pro, plus:" is a pointer to the plan below, not a
-           capability, and listing it as something you are missing would be
-           telling somebody on Pro that they do not have Pro. */
-        lacks=np.feats.filter(f=>f[0]&&!/^\s*<b>Everything in/i.test(f[1])).map(f=>f[1]);
-        lackLabel='What '+((PLANS[next]||{}).name||next)+' adds';
-      }
-    }
-  }
-  if(!has.length&&!lacks.length) return '';
-  const col=(label,items,kind)=>
-    '<div class="bill-cc-col bill-cc-'+kind+'">'+
-      '<div class="bill-cc-h">'+escH(label)+'</div>'+
-      '<ul class="bill-cc-l">'+items.map(t=>
-        '<li><span class="bill-cc-m">'+(kind==='yes'?'\u2713':'\u2192')+'</span><span>'+t+'</span></li>').join('')+
-      '</ul>'+
-    '</div>';
-  return '<div class="bill-cc">'+
-    (has.length?col('What your plan does',has,'yes'):'')+
-    (lacks.length?col(lackLabel,lacks,'no'):'')+
-  '</div>';
-}
-try{ window._billCanCantHTML=_billCanCantHTML; }catch(e){}
 
 function renderBillingView(targetEl){
   // If billing is being shown inside Settings, render into the settings pane
@@ -16851,46 +16795,6 @@ function renderBillingView(targetEl){
        the whole truth rather than a pretence. */
     _switchPlan('free');
   });
-  /* A PRICE ON A BUTTON IS NOT ENOUGH TO DECIDE ON.
-
-     These went straight to checkout. Six words and a number is not what
-     somebody needs in order to move from Pro to Elite - what each plan
-     actually gives them is on the plans screen, and this list cannot hold it
-     without becoming that screen.
-
-     So they go there, landing on the card they picked rather than at the top
-     of four of them, because being dropped on a page and having to find your
-     own place again is its own small insult. */
-  vc.querySelectorAll('[data-pay]').forEach(b=>on(b,'click',()=>{
-    const want=b.dataset.pay;
-    /* ITS OWN PAGE, NOT A RING AROUND A CARD. This used to jump to the pricing
-       tab and highlight one card in a row of four - which leaves the plan you
-       chose sitting beside three you did not, at the same size, with what you
-       actually get a scroll away. openUpgrade gives that plan the whole screen
-       and one button. The old behaviour stays underneath as the fallback for
-       anything openUpgrade will not take, so no route to paying is removed. */
-    try{ if(typeof openUpgrade === 'function' && want && want !== 'free'){ openUpgrade(want); return; } }catch(e){}
-    try{ setTab('plans'); }catch(e){ return; }
-    setTimeout(()=>{
-      try{
-        /* Scoped to the app view. The landing page carries its own set of
-           plan cards in the same markup, so an unscoped query returns
-           whichever happens to come first in the document - and highlighting
-           and scrolling to a hidden card would do nothing at all, silently.
-           There are eight .plnc elements on the page and only four of them are
-           the ones being looked at. */
-        const view=document.getElementById('vc')||document;
-        const btn=view.querySelector('.pg [data-darg="'+want+'"]');
-        const card=btn&&btn.closest('.plnc');
-        if(!card) return;
-        let smooth=true;
-        try{ smooth=!window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
-        card.scrollIntoView({ block:'center', behavior: smooth?'smooth':'auto' });
-        card.classList.add('plnc-picked');
-        setTimeout(()=>{ try{ card.classList.remove('plnc-picked'); }catch(e){} }, 2400);
-      }catch(e){}
-    }, 60);
-  }));
   vc.querySelectorAll('[data-simpay]').forEach(b=>on(b,'click',()=>{
     const pl=b.dataset.simpay;
     if(pl==='free'){ _setPlan('free'); renderBillingView(); toast('Test: reset to Free plan','info'); }
@@ -30266,7 +30170,7 @@ const USER_SET_SECTIONS=[
      it - and a suite renders every pane and fails on a word it does not show,
      so search never sends anybody to a section that is not about it. */
   {id:'account',label:'Account',find:['name','photo','profile','instructions','email','notifications','email me when amv is done','team','invite','seats','projects','about','terms','support','keyboard shortcuts','sign out'],icon:'<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'},
-  {id:'billing',label:'Plan & billing',find:['plan','usage','upgrade','payment method','transactions','invoice'],icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
+  {id:'billing',label:'Plan & billing',find:['plan','usage','upgrade','payment','invoices'],icon:'<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>'},
   {id:'family',label:'Family',find:['family','invitation'],icon:'<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'},
   {id:'integrations',label:'Connectors',find:['connectors','skills','api keys','presets'],icon:'<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>'},
   {id:'privacy',label:'Privacy',find:['export','delete','memory','clear chats','password','security','account activity','web search','analytics','location','sign out'],icon:'<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'},

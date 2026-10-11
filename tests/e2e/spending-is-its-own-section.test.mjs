@@ -30,9 +30,9 @@ section('Upgrade opens the plans, and nothing about Spending');
     setTab('plans');
     await new Promise(r => setTimeout(r, 400));
     const t = document.getElementById('vc').innerText;
-    const head = document.querySelector('.pln-head');
-    const cards = document.querySelectorAll('.pln-v .pg > *').length;
-    return { t, cards, centred: head ? getComputedStyle(head.parentElement).textAlign : '' };
+    const head = document.querySelector('.pl2-head');
+    const cards = document.querySelectorAll('.pl2 .pl2-grid > .pl2-card').length;
+    return { t, cards, centred: head ? getComputedStyle(head).textAlign : '' };
   });
   ok(v.cards >= 3, 'the plan cards are there', v.cards);
   ok(!/Everywhere your money goes|Money AMV can spend|Buy without asking|Investing|Your responsibility/i.test(v.t),
@@ -69,7 +69,7 @@ section('Spending is its own tab, and is only Spending');
     const t = vc.innerText;
     return {
       title: (vc.querySelector('.spv-t') || {}).textContent,
-      plans: vc.querySelectorAll('.pg .plan, .pg > *').length,
+      plans: vc.querySelectorAll('.pg .plan, .pg > *, .pl2-card').length,
       planBlock: /Your plan, and what it gives you|Upgrade your plan|How the limit actually works/i.test(t),
       whatFolded: (() => { const d = vc.querySelector('details.mf-what'); return !!d && !d.open; })(),
       gate: /Before AMV can spend anything/i.test(t),

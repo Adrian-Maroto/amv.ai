@@ -28,7 +28,7 @@ section('Every paid card offers the plan, not the card form');
   const btns = await page.evaluate(async () => {
     _setPlan('free'); setTab('plans');
     await new Promise(r => setTimeout(r, 400));
-    return [...document.querySelectorAll('#vc .plnbtn')]
+    return [...document.querySelectorAll('#vc .pl2-card .pl2-cta')]
       .filter(b => b.dataset.darg)
       .map(b => ({ txt: b.textContent.trim(), dact: b.dataset.dact, plan: b.dataset.darg }));
   });
@@ -43,7 +43,7 @@ section('Every paid card offers the plan, not the card form');
   const direct = await page.evaluate(async () => {
     S.sp = 'https://pay.example/pro'; S.se = 'https://pay.example/elite';
     setTab('plans'); await new Promise(r => setTimeout(r, 400));
-    return [...document.querySelectorAll('#vc .plnbtn')]
+    return [...document.querySelectorAll('#vc .pl2-card .pl2-cta')]
       .filter(b => b.dataset.darg).map(b => b.dataset.dact);
   });
   ok(direct.every(d => d === 'openUpgrade'),
@@ -56,7 +56,7 @@ section('The page it opens argues the whole case');
   const r = await page.evaluate(async () => {
     _setPlan('free'); setTab('plans');
     await new Promise(r => setTimeout(r, 300));
-    (document.querySelector('#vc .plnbtn[data-darg="elite"]') || { click(){} }).click();
+    (document.querySelector('#vc .pl2-card .pl2-cta[data-darg="elite"]') || { click(){} }).click();
     await new Promise(r => setTimeout(r, 400));
     const vc = document.getElementById('vc');
     return {
@@ -176,7 +176,7 @@ section('Back goes back to where they actually came from');
      halfway down. */
   const fromPlans = await page.evaluate(async () => {
     setTab('plans'); await new Promise(r => setTimeout(r, 300));
-    (document.querySelector('#vc .plnbtn[data-darg="pro"]') || { click(){} }).click();
+    (document.querySelector('#vc .pl2-card .pl2-cta[data-darg="pro"]') || { click(){} }).click();
     await new Promise(r => setTimeout(r, 400));
     /* Null-safe on purpose. When this breaks, it breaks by never opening the
        upgrade page at all - and a suite that throws TypeError there aborts the
@@ -192,9 +192,11 @@ section('Back goes back to where they actually came from');
   ok(fromPlans.tab === 'plans', 'and goes there', fromPlans.tab);
 
   const fromBilling = await page.evaluate(async () => {
+    /* Billing no longer lists the plans itself - its one plan control opens
+       the Plans page (checked below). A plan page opened while on Billing,
+       from the compare table or anywhere else, still goes back there. */
     setTab('billing'); await new Promise(r => setTimeout(r, 400));
-    const row = document.querySelector('#vc [data-pay]');
-    if (row) row.click();
+    openUpgrade('elite');
     await new Promise(r => setTimeout(r, 400));
     /* Null-safe on purpose. When this breaks, it breaks by never opening the
        upgrade page at all - and a suite that throws TypeError there aborts the
@@ -208,6 +210,15 @@ section('Back goes back to where they actually came from');
   });
   ok(fromBilling.label === 'Billing', 'and Billing still says Billing', fromBilling.label);
   ok(fromBilling.tab === 'billing', 'and still returns there', fromBilling.tab);
+
+  const change = await page.evaluate(async () => {
+    setTab('billing'); await new Promise(r => setTimeout(r, 400));
+    const b = document.querySelector('#vc .bill-change');
+    if (b) b.click();
+    await new Promise(r => setTimeout(r, 400));
+    return { found: !!b, tab: S.tab };
+  });
+  ok(change.found && change.tab === 'plans', 'Billing’s plan button opens the plans, the one place a plan is chosen', change);
 
   /* Opening a plan from a plan page must not make Back a loop with no exit. */
   const chained = await page.evaluate(async () => {

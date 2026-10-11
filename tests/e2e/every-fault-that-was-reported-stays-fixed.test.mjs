@@ -387,7 +387,10 @@ section('9. The round after that one');
   ok(bill.badges === 0 && !bill.emoji, 'the emoji reassurance cards are gone from settings',
      String(bill.badges));
   ok(!bill.emptyLedger, 'an empty local ledger says nothing rather than explaining itself');
-  ok(bill.fineIsBlock === 'block', 'the fine print sits under the button, not beside it',
+  /* That note lived under the upgrade rows, which moved to the plans page
+     with Change plan; where it is drawn at all it must still sit under its
+     button. */
+  ok(bill.fineIsBlock === 'block' || bill.fineIsBlock === 'absent', 'the fine print sits under the button, not beside it',
      bill.fineIsBlock);
 
   /* Integrations: a door per topic, and nothing fetched until one is opened.
