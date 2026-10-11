@@ -10,6 +10,7 @@
      cat notes.txt | node amv-cli.mjs "Turn these notes into an email"
      node amv-cli.mjs chat                       a conversation, Ctrl-D to end
      node amv-cli.mjs -m amv-pulse --json "..."  one JSON object, for scripts
+     node amv-cli.mjs --count "..."              how many input tokens, without sending
 
    THE KEY IS READ FROM THE ENVIRONMENT AND NOWHERE ELSE. Not a flag: a key on
    the command line is in the shell's history and in every process listing
@@ -34,6 +35,7 @@ Options
   -s, --system TEXT    instructions for this request
   -t, --max-tokens N   longest answer, in tokens (default 4096)
       --json           print one JSON object when done: text, model, usage, stop_reason
+      --count          print how many input tokens the request would use, and send nothing
       --api URL        a different AMV server (or set AMV_API_URL)
   -h, --help           this text
   -v, --version
@@ -56,6 +58,7 @@ function parseArgs(argv) {
     else if (a === '-s' || a === '--system') o.system = val();
     else if (a === '-t' || a === '--max-tokens') o.maxTokens = Number(val());
     else if (a === '--json') o.json = true;
+    else if (a === '--count') o.count = true;
     else if (a === '--api') o.api = val();
     else if (/^--?(key|api-key|token)(=|$)/.test(a)) throw usage('the key is never taken on the command line, where it would be saved in your shell history. Set AMV_API_KEY instead.');
     else if (a === '--') { o.words.push(...argv.slice(i + 1)); break; }
@@ -63,6 +66,7 @@ function parseArgs(argv) {
     else o.words.push(a);
   }
   if (o.words[0] === 'chat' && o.words.length === 1) { o.chat = true; o.words = []; }
+  if (o.count && o.chat) throw usage('--count counts one request; it does not start a conversation');
   if (!ENGINES.includes(o.model)) throw usage('unknown model "' + o.model + '" - one of ' + ENGINES.join(', '));
   if (!Number.isInteger(o.maxTokens) || o.maxTokens < 1 || o.maxTokens > 64000) throw usage('--max-tokens takes a whole number from 1 to 64000');
   return o;
@@ -163,6 +167,27 @@ function human(s) {
   return Math.round(s / 3600) + ' hours';
 }
 
+/* How many input tokens a request would use - counted by the server on what
+   it would really send, AMV's own instructions included. Nothing is
+   generated and nothing counts against the plan. */
+async function countTokens({ base, key, model, system, messages, signal }) {
+  const body = { model, messages };
+  if (system) body.system = system;
+  let res;
+  try {
+    res = await fetch(base + '/v1/messages/count_tokens', {
+      method: 'POST', signal,
+      headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json', 'User-Agent': 'amv-cli/' + VERSION },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    if (signal && signal.aborted) throw stopped();
+    throw fail('could not reach ' + base + ' (' + (e.cause && e.cause.code || e.message) + ')');
+  }
+  if (!res.ok) throw await refusal(res);
+  return res.json();
+}
+
 /* ── stdin ─────────────────────────────────────────────────────────────── */
 async function readStdin(stdin) {
   if (stdin.isTTY) return '';
@@ -198,6 +223,12 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
     if (!q && !piped.trim()) { stderr.write('amv: nothing to ask. Try: amv "your question"   (or amv --help)\n'); return 2; }
     const content = piped.trim() ? (q ? q + '\n\n' + piped : piped) : q;
 
+    if (o.count) {
+      const c = await countTokens({ base, key, model: o.model, system: o.system, messages: [{ role: 'user', content }], signal: ctrl.signal });
+      stdout.write(o.json ? JSON.stringify(c) + '\n'
+        : c.input_tokens + ' input tokens' + (c.engine ? ' on ' + c.engine : '') + (c.estimate ? ' (an estimate - this engine cannot be counted exactly)' : '') + '\n');
+      return 0;
+    }
     const r = await ask({ base, key, model: o.model, system: o.system, maxTokens: o.maxTokens,
                           messages: [{ role: 'user', content }], onText: write, signal: ctrl.signal });
     if (o.json) stdout.write(JSON.stringify(r) + '\n');

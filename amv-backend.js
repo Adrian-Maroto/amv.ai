@@ -14649,6 +14649,7 @@ async function _route(request, env, ctx) {
     case '/team/task/create': return teamTaskCreate(request, env);
     case '/team/task/update': return teamTaskUpdate(request, env);
     case '/v1/messages':     return aiProxy(request, env, ctx);
+    case '/v1/messages/count_tokens': return aiCountTokens(request, env);
     case '/v1/usage':        return usageReport(request, env);
     case '/sms/register':    return smsRegister(request, env);
     case '/waitlist':        return waitlistAdd(request, env);
@@ -18721,6 +18722,65 @@ async function enginesList(request, env) {
   const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan }));
   const partners = (await _partnerEngines(env)).map(d => ({ key: d.key, label: d.label, minPlan: d.minPlan, partner: true }));
   return json({ ok: true, engines: primary.concat(partners) });
+}
+
+/* ── COUNTING TOKENS BEFORE SENDING ─────────────────────────────────────────
+   POST /v1/messages/count_tokens - how many input tokens a request would be,
+   without running it. Free, nothing is reserved or counted against an
+   allowance, and nothing is generated.
+
+   Counted on what AMV would actually send, not on what the caller wrote: the
+   identity framing every request carries is included, and so are the tools
+   that would be forwarded - because that is the number the account is billed
+   on. A count that left the framing out would be smaller than every bill.
+
+   For AMV's own engines the count is the provider's, exact. A partner engine
+   has no counting endpoint AMV can reach, so it gets AMV's own estimate, and
+   says so (`estimate: true`) rather than passing one off as the other. */
+async function aiCountTokens(request, env){
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Please sign in again.' }, 401);
+  const blocked = await guardAction(env, 'count:' + user.email, 120, 20000, 'token counts');
+  if (blocked) return blocked;
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object') return json({ error: 'Invalid request body.' }, 400);
+  const vErr = validateMessagesPayload(body);
+  if (vErr) return json({ error: vErr, code: 'invalid_input' }, 400);
+
+  const rawModel = String(body.model || 'amv-core');
+  /* Auto picks per request when it runs, so a count can only be for the engine
+     it lands on most - Core - and the reply names it. */
+  let key = (rawModel === 'auto' || rawModel === 'amv-auto') ? 'amv-core' : (RAW_TO_KEY[rawModel] || (ENGINES[rawModel] ? rawModel : ''));
+  let partner = null;
+  if (!key && PARTNER_KEY_RE.test(rawModel)) partner = (await _partnerEngines(env)).find(d => d.key === rawModel) || null;
+  if (!key && !partner) return json({ error: 'That engine is not available. Choose one of AMV’s engines.', code: 'engine_unavailable' }, 400);
+
+  const system = _systemWithIdentity(body.system);
+  const tools = Array.isArray(body.tools) ? _safeTools(body.tools) : [];
+  if (partner) {
+    const est = _estimateReserveInput(Object.assign({}, body, { system }));
+    return json({ input_tokens: est, engine: partner.key, estimate: true });
+  }
+  if (!_modelKey(env)) {
+    return json({ error: 'AMV is not connected to a model on this deployment yet, so it cannot count. Nothing was charged.', code: 'needs_service' }, 503);
+  }
+  const eng = ENGINES[key];
+  const payload = { model: eng.model, messages: body.messages, system: [{ type: 'text', text: system }] };
+  if (tools.length) payload.tools = tools;
+  if (eng.thinking) payload.thinking = { type: 'adaptive' };
+  let r, d;
+  try {
+    r = await fetch(_modelBase(env) + '/v1/messages/count_tokens', { method: 'POST', headers: _modelHeaders(env),
+      body: JSON.stringify(payload), signal: AbortSignal.timeout(20000) });
+    d = await r.json().catch(() => ({}));
+  } catch (e) {
+    return json({ error: 'The count could not be made just now. Try again in a moment.', code: 'upstream_unavailable' }, 502);
+  }
+  if (!r.ok || typeof d.input_tokens !== 'number') {
+    if (r.status === 400) return json({ error: 'That request could not be counted - it would be refused if sent as it is.', code: 'invalid_input' }, 400);
+    return json({ error: 'The count could not be made just now. Try again in a moment.', code: 'upstream_unavailable' }, 502);
+  }
+  return json({ input_tokens: d.input_tokens, engine: key });
 }
 
 async function aiProxy(request, env, ctx) {

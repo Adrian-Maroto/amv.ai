@@ -46157,6 +46157,10 @@ function _apiDocsHTML(){
       '<code>auto</code> to let AMV choose.</p>'+
     '<p class="ak-doc">Usage counts against this account\u2019s plan, so the limits in '+
       '<b>Settings -> Plan &amp; billing</b> are the limits your integration has.</p>'+
+    '<p class="ak-doc"><b>Counting before sending.</b> <code>POST /v1/messages/count_tokens</code> takes the same '+
+      '<code>model</code>, <code>system</code>, <code>messages</code> and <code>tools</code> and answers '+
+      '<code>{"input_tokens": n}</code> - counted on what AMV would really send, its own instructions included, '+
+      'so it matches what is billed. Free: nothing is generated and nothing counts against the plan.</p>'+
   '</div>'+
   /* FROM A TERMINAL. One file with nothing to install, handed over the way
      the bridge is - from this deployment, with this deployment's address

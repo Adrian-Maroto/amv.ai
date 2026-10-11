@@ -10,6 +10,8 @@
      what was asked;
    - what is piped in travels with the question; --json gives scripts one
      object; -m picks the engine;
+   - --count asks how many input tokens a request would be, counted on what
+     AMV would really send, and sends nothing to be answered;
    - the key is only ever read from AMV_API_KEY, never a flag, and is never
      sent unencrypted to anything but this machine;
    - a revoked key, a used-up day and a bad option each end with a sentence
@@ -39,8 +41,13 @@ const sse = (text) => 'data: {"type":"message_start","message":{"model":"m","usa
   + text.split(' ').map((w, i) => 'data: ' + JSON.stringify({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: (i ? ' ' : '') + w } }) + '\n\n').join('')
   + 'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}\n\n'
   + 'data: {"type":"message_stop"}\n\n';
+const counted = [];
 globalThis.fetch = async (url, init) => {
   if (!/model\.example/.test(String(url))) return { ok: true, status: 200, json: async () => ({}) };
+  if (/\/v1\/messages\/count_tokens$/.test(String(url))) {
+    counted.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ input_tokens: 4321 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
   sent.push(JSON.parse(init.body));
   return new Response(sse('Paris is the capital of France.'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
 };
@@ -119,6 +126,24 @@ section('Piped text travels with the question; --json is one object; -m picks th
   let o = null; try { o = JSON.parse(j.out); } catch (e) {}
   ok(j.code === 0 && o && o.text === 'Paris is the capital of France.' && o.usage.output_tokens === 7 && o.stop_reason === 'end_turn',
      'a script gets text, usage and stop_reason, and nothing else on stdout', j.out.slice(0, 200));
+}
+
+section('--count says how many input tokens, and sends nothing to be answered');
+{
+  sent.length = 0; counted.length = 0;
+  const before = vals.get(`usg:${EMAIL}:${W.todayKey()}`) || 0;
+  const r = await run(['--api', API, '--count', '-s', 'Be brief.', 'How long is this?']);
+  ok(r.code === 0 && r.out === '4321 input tokens on amv-core\n', 'the count is printed, and the engine it is for', r);
+  const c = counted[0] || {};
+  const sys = JSON.stringify(c.system || '');
+  ok(counted.length === 1 && /Be brief\./.test(sys) && sys.length > 200, 'counted on what AMV would send: AMV\u2019s own framing and the caller\u2019s instructions', sys.slice(0, 120));
+  ok(sent.length === 0, 'nothing was sent to be answered', sent.length);
+  ok((vals.get(`usg:${EMAIL}:${W.todayKey()}`) || 0) === before, 'and nothing was counted against the plan');
+  const j = await run(['--api', API, '--count', '--json', 'hi']);
+  let o = null; try { o = JSON.parse(j.out); } catch (e) {}
+  ok(o && o.input_tokens === 4321 && o.engine === 'amv-core', 'a script gets the number as JSON', j.out);
+  const both = await run(['--api', API, '--count', 'chat']);
+  ok(both.code === 2 && /does not start a conversation/.test(both.err), '--count with chat is refused, with the reason', both.err);
 }
 
 section('The key comes from the environment only, and never travels unencrypted');
