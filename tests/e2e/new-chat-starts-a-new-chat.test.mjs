@@ -42,10 +42,18 @@ section('From another screen, New chat opens a fresh conversation, not the old o
   ok(!r.marked, 'New chat is an action, so it is not shown as the screen you are on', r);
 
   await page.click('.snb[data-tab="chat"]');
-  await page.click('#ncb');
+  await page.click('.snb[data-tab="chat"]');
   await page.waitForTimeout(200);
   const again = await page.evaluate(() => ({ n: S.convs.length, empty: !(getCurConv().msgs || []).length }));
-  ok(again.n === r.n && again.empty, 'pressing it again (sidebar or the top button) does not stack blank chats', { before: r.n, after: again.n });
+  ok(again.n === r.n && again.empty, 'pressing it again does not stack blank chats', { before: r.n, after: again.n });
+
+  /* The owner's words: "remove the new chat section". There was a second New
+     chat, a pill in the top bar, doing the same job as the sidebar's. One
+     button for one job - the top bar holds none. */
+  const top = await page.evaluate(() => [...document.querySelectorAll('#anav button')]
+    .filter(b => b.getBoundingClientRect().width > 0 && /new chat/i.test(b.textContent + ' ' + (b.title || '') + ' ' + (b.getAttribute('aria-label') || '')))
+    .map(b => b.id || b.className));
+  ok(top.length === 0, 'and there is no second New chat in the top bar', top);
 }
 
 section('An old chat is opened from Recents');

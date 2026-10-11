@@ -17141,3 +17141,9 @@ button.pl-app:hover{border-color:var(--accent);color:var(--accent-txt)}
   .upg2-card{ display:grid; grid-template-rows:subgrid; grid-row:span 2; row-gap:var(--sp-4); }
 }
 .pl2-feats{ align-content:start; align-self:start; }
+
+/* LAYER A319 - the top bar's divider only divides something.
+   It separated the New chat pill from the icons. New chat lives in the sidebar
+   now, so for a signed-in person the line stood alone in empty space. It stays
+   while Sign up / Log in are there to be separated from. */
+html:not(.boot-guest) #anav:not(:has(.hdr-mid > :not([hidden]))) .nav-r{ border-left:none!important; padding-left:0!important; }

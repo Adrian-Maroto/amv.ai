@@ -146,15 +146,18 @@ section('Header: Sign up shows only when signed out');
 const hdr = await page.evaluate(() => {
   S.user = null; updateSbUser();
   const su = document.getElementById('hdr-signup');
-  const nc = document.getElementById('ncb');
+  const li = document.getElementById('hdr-login');
   const outVisible = !su.hidden;
-  const leftOfNewChat = su.getBoundingClientRect().right <= nc.getBoundingClientRect().left + 2;
+  /* New chat left the top bar (it is the sidebar's first item); what this
+     still holds is that Sign up comes before Log in, on the right. */
+  const leftOfNewChat = su.getBoundingClientRect().right <= li.getBoundingClientRect().left + 2
+    && su.getBoundingClientRect().left > innerWidth / 2;
   S.user = { name: 'T', email: 't@t.com', ini: 'T' }; updateSbUser();
   const inHidden = su.hidden;
   return { outVisible, leftOfNewChat, inHidden };
 });
 ok(hdr.outVisible, 'Sign up is visible when signed out');
-ok(hdr.leftOfNewChat, 'Sign up sits to the LEFT of New chat');
+ok(hdr.leftOfNewChat, 'Sign up sits on the right, before Log in');
 ok(hdr.inHidden, 'Sign up disappears once signed in');
 
 /* ────────────────────────────────────────────────────────────────────────

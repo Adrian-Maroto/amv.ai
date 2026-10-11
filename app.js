@@ -11227,7 +11227,7 @@ function showProfMenu(trigger) {
   setTimeout(()=>document.addEventListener('click',function h(e){if(!menu.contains(e.target)){close();document.removeEventListener('click',h);}},50));
 }
 /* Show Sign up / Log in in the header ONLY when signed out.
-   They sit to the left of New chat and disappear the moment you have an account. */
+   They sit at the right of the top bar and disappear the moment you have an account. */
 function _updateHdrAuth(){
   try{
     const signedIn = !!(S.user && S.user.email);
@@ -29924,7 +29924,7 @@ try{ window._usageShapeBand=_usageShapeBand; }catch(e){}
 
 /* === HELP CENTER === */
 const FAQS=[
-  {c:'start', q:'How do I start with AMV?', a:'Click “New chat” in the top bar and type anything - an essay, code, a 3D model, deep research, or a question about a photo you upload. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
+  {c:'start', q:'How do I start with AMV?', a:'Click “New chat” at the top of the sidebar and type anything - an essay, code, a 3D model, deep research, or a question about a photo you upload. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
   {c:'start', q:'Where are Settings, Team and my account?', a:'Click your avatar at the top right. That one menu has Upgrade, Manage Subscription, Settings, Team, Help, What\u2019s New and the ways to sign out. Settings opens in the middle of the screen over whatever you were doing - search at the top of its list finds a setting by what it does (try \u201cpassword\u201d or \u201clanguage\u201d), and X or Esc puts you back where you were.'},
   {c:'start', q:'What can AMV actually do?', a:'One place for everything: chat and deep research, reading the files and images you upload, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve. AMV reads an image you give it; it does not generate one.'},
   {c:'auto', q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing - what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
@@ -32661,7 +32661,6 @@ function setupApp(){
   on($('tsb'),'click',toggleSb); // tsb toggles hist-drawer
   on($('nav-back'),'click',()=>{ navBack(); });
   try{ _navPaint(); }catch(e){}
-  on($('ncb'),'click',openFreshChat);
   on($('theme-btn'),'click',function(){
     document.body.classList.toggle('light');
     saveStr('amv_theme',document.body.classList.contains('light')?'light':'dark');

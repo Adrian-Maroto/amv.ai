@@ -3573,7 +3573,7 @@ function showProfMenu(trigger) {
   setTimeout(()=>document.addEventListener('click',function h(e){if(!menu.contains(e.target)){close();document.removeEventListener('click',h);}},50));
 }
 /* Show Sign up / Log in in the header ONLY when signed out.
-   They sit to the left of New chat and disappear the moment you have an account. */
+   They sit at the right of the top bar and disappear the moment you have an account. */
 function _updateHdrAuth(){
   try{
     const signedIn = !!(S.user && S.user.email);
