@@ -28,7 +28,9 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 import { functionBody } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const src = readFileSync(join(ROOT, 'app.js'), 'utf8');
+/* The page and the parts of it fetched on first use - an id one of them
+   creates is an id that exists. */
+const src = ['app.js', 'market-sell.js', 'team-sso.js'].map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
 
 const app = await bootApp({ tab: 'chat', user: { name: 'Owner', email: 'owner@x.com', ini: 'O' } });
 const { page, errors } = app;

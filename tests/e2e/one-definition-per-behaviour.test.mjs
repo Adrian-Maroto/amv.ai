@@ -30,7 +30,10 @@ import { functionBody } from '../lib/source.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const DIR = join(ROOT, 'src/app');
-const files = readdirSync(DIR).filter(f => /\.js$/.test(f)).sort();
+/* The page's modules, and the ones split out of it to load on first use -
+   duplication does not stop being duplication because half of it moved. */
+const files = readdirSync(DIR).filter(f => /\.js$/.test(f)).sort()
+  .concat(['../market/sell.js', '../team/team-sso.js']);
 
 /* Compare code, not spelling. Comments go, whitespace goes, and string
    CONTENTS collapse - so two copies that differ only by a label or a quote

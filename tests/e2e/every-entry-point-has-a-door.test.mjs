@@ -35,7 +35,9 @@ import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+/* The page, and the parts of it fetched when they are opened (the sell form,
+   a team owner's company sign-in): a door in one of those is still a door. */
+const bundle = ['app.js', 'market-sell.js', 'team-sso.js'].map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
 
 /* Deliberately on window, and deliberately not a door. Each says which it is,
    because "internal API" is the excuse this check would rot into if it were
@@ -81,7 +83,9 @@ const exported = [...new Set(
    there. */
 const referencedElsewhere = (n) => {
   const defs = (bundle.match(new RegExp('function\\s+' + n + '\\b', 'g')) || []).length;
-  const exps = (bundle.match(new RegExp('window\\.' + n + '\\s*=', 'g')) || []).length;
+  /* An assignment, not a comparison: `window.X === 'function'` is a caller
+     checking the door exists, which is a reference, not an export. */
+  const exps = (bundle.match(new RegExp('window\\.' + n + '\\s*=(?!=)', 'g')) || []).length;
   const all  = (bundle.match(new RegExp('\\b' + n + '\\b', 'g')) || []).length;
   return all - defs - exps * 2 > 0;
 };
