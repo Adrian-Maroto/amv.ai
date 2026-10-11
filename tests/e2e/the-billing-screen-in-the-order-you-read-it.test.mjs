@@ -87,13 +87,15 @@ section('The billing pane reads in the order somebody uses it');
     const hs = await headings(plan);
     const current = at(hs, /^SECTION:current-plan$/);
     const usage   = at(hs, /^Usage$/);
-    const change  = at(hs, /^SECTION:upgrade$/);
+    /* What you could move to is the Change plan control on the plan itself
+       now; after usage come how you pay and what you were charged. */
+    const change  = at(hs, /^Payment$/);
     const secure  = at(hs, /^SECTION:payment-security$/);
 
     ok(current >= 0 && usage >= 0 && change >= 0 && secure >= 0,
-       `[${plan}] all four sections are present`, hs);
+       `[${plan}] the plan, usage, payment and the security line are all present`, hs);
     ok(current < usage,  `[${plan}] the plan you are on comes before what you have used`, hs);
-    ok(usage < change,   `[${plan}] and usage comes before what you could move to`, hs);
+    ok(usage < change,   `[${plan}] and usage comes before how you pay`, hs);
     ok(change < secure,  `[${plan}] and the payment-security block is after all of it`, hs);
     ok(secure === hs.length - 1,
        `[${plan}] in fact it is last, so it is available without being in the way`, hs.slice(-3));
@@ -120,8 +122,13 @@ section('Upgrading opens the plans screen, on the plan that was picked');
   const r = await page.evaluate(async () => {
     saveStr('amv_plan', 'pro');
     S.tab = 'settings'; S.settingsPane = 'billing'; renderSettingsView();
-    const b = document.querySelector('#set-pane [data-pay="elite"]');
-    if (!b) return { missing: true };
+    /* Change plan opens the plans; the Elite card there opens Elite's page. */
+    const ch = document.querySelector('#set-pane .bill-change');
+    if (!ch) return { missing: true };
+    ch.click();
+    await new Promise(r => setTimeout(r, 300));
+    const b = document.querySelector('#vc .pl2-card[data-plan="elite"] .pl2-cta');
+    if (!b) return { missing: true, tab: S.tab };
     const label = b.textContent.trim();
     b.click();
     /* Still a wait, because the handler defers by 60ms so the plans view has
@@ -144,8 +151,8 @@ section('Upgrading opens the plans screen, on the plan that was picked');
       back: vis(document.getElementById('upg-back')),
     };
   });
-  ok(!r.missing, 'the Change plan list offers Elite', r);
-  ok(/Upgrade to Elite/.test(r.label), 'and says so plainly', r.label);
+  ok(!r.missing, 'Change plan leads to the plans, which offer Elite', r);
+  ok(/Get Elite/.test(r.label), 'and says so plainly', r.label);
   /* ITS OWN PAGE NOW, NOT A RING AROUND A CARD.
 
      This used to assert the plans tab opened with the Elite card marked and

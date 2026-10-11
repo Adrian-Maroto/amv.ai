@@ -107,27 +107,78 @@ function renderSpendView() {
    Centred, because it is the one screen in AMV that is a choice between a few
    equal things laid side by side. */
 function renderPlansView() {
+  /* LAID OUT THE WAY THE PRODUCTS PEOPLE ALREADY PAY FOR LAY THEIRS OUT.
+
+     Reported as "too much, so unorganized". The cards carried two badges, a
+     superscript dollar sign, nine bold-studded bullets including the things a
+     plan does NOT have, and the button at the very bottom - below the fold on
+     a laptop, so the one action on the page was the last thing found.
+
+     Now: four equal cards, each with its name, its price, one line about who
+     it is for, the button straight under the price, then a short list of what
+     it includes. The next step up from where somebody is gets the only filled
+     button and a label saying where it sits on the ladder ("Start here" /
+     "Next step up") - never "Most popular", which would be a claim about other
+     customers. Team and Custom, which are not steps on the ladder, are two
+     quiet rows underneath; the full comparison and how the limits work are
+     one tap away rather than on the page. */
   const vc = $('vc'); if (!vc) return;
   const now = (typeof S !== 'undefined' && S.plan) ? S.plan : ((typeof loadStr === 'function' && loadStr('amv_plan')) || 'free');
-  const nowName = (typeof PLANS !== 'undefined' && PLANS[now] && PLANS[now].name) || 'Free';
-  vc.innerHTML =
-    '<div class="sv fi"><div class="vi pln-v">'
-      + '<div class="pln-head">'
-        + '<span class="eyebrow">' + escH(T('You are on')) + ' ' + escH(nowName) + '</span>'
-        + '<h2 class="pln-t">' + escH(T('Choose a plan')) + '</h2>'
-        + '<p class="pln-sub">' + escH(T('The same engine on every paid plan. A bigger plan buys more of it, not a better one.')) + '</p>'
+  const nowName = (PLANS[now] && PLANS[now].name) || 'Free';
+  const ladder = ['free', 'pro', 'elite', 'ultra'];
+  const rank = k => ladder.indexOf(k);
+  const nowR = rank(now);
+  const lead = (nowR >= 0 && nowR < ladder.length - 1) ? ladder[nowR + 1] : '';
+  const pitch = k => (typeof _planPitch === 'function' && _planPitch(k)) || { anchor: '', feats: [] };
+  /* What the plan HAS, only - the comparison is where what it lacks is said. */
+  const feats = k => pitch(k).feats.filter(f => f && f[0]).slice(0, 7)
+    .map(f => '<li>' + String(f[1]).replace(/\ud83d[\udc00-\udfff]\s*/g, '') + '</li>').join('');
+  const cta = k => {
+    const P = PLANS[k] || { name: 'Free' };
+    if (k === now) return '<button type="button" class="btn bs pl2-cta" disabled aria-disabled="true">' + escH(T('Your current plan')) + '</button>';
+    /* Moving to Free is cancelling, and cancelling goes through Billing. */
+    if (k === 'free') return '<button type="button" class="btn bs pl2-cta" data-gs="billing">' + escH(T('Manage in Billing')) + '</button>';
+    const up = nowR < 0 || rank(k) > nowR;
+    return '<button type="button" class="btn ' + (k === lead ? 'bp' : 'bs') + ' pl2-cta" data-dact="openUpgrade" data-darg="' + escH(k) + '">'
+      + escH((up ? T('Get') : T('Switch to')) + ' ' + P.name) + '</button>';
+  };
+  const card = k => {
+    const P = PLANS[k] || { name: 'Free', price: 0 };
+    const price = k === 'free' ? 0 : P.price;
+    /* Three parts and always three - heading block, button, list - so the
+       cards can share their rows and every button sits level. */
+    return '<div class="pl2-card' + (k === lead ? ' lead' : '') + (k === now ? ' cur' : '') + '" data-plan="' + k + '">'
+      + '<div class="pl2-top"><div class="pl2-name">' + escH(P.name || 'Free')
+        + (k === lead ? '<span class="pl2-tag">' + escH(now === 'free' ? T('Start here') : T('Next step up')) + '</span>' : '')
       + '</div>'
-      + '<div class="pg pg-app pg-4">' + planCards(true) + '</div>'
-      + _teamPlanBanner(true)
-      + _customPlanBanner(true)
+      + '<div class="pl2-price"><span class="pl2-amt">$' + price + '</span><span class="pl2-per">' + escH(T('/ month')) + '</span></div>'
+      /* Present on every card, empty on Free, so the cards share their rows. */
+      + (k === 'free' ? '<div class="pl2-local"></div>' : '<div class="pl2-local px-local" data-usd="' + price + '" data-per="mo"></div>')
+      + '<p class="pl2-line">' + (pitch(k).anchor || '') + '</p></div>'
+      + cta(k)
+      + '<ul class="pl2-feats">' + feats(k) + '</ul>'
+    + '</div>';
+  };
+  const teamP = (PLANS.team && PLANS.team.price) || 20;
+  vc.innerHTML =
+    '<div class="sv fi"><div class="vi pl2">'
+      + '<div class="pl2-head">'
+        + '<h1 class="pl2-t">' + escH(now === 'free' ? T('Upgrade your plan') : T('Change your plan')) + '</h1>'
+        + '<p class="pl2-sub">' + escH(T('You are on')) + ' ' + escH(nowName) + '. '
+          + escH(T('The same engine on every paid plan - a bigger plan buys more of it, not a better one.')) + '</p>'
+      + '</div>'
+      + '<div class="pl2-grid">' + ladder.map(card).join('') + '</div>'
+      + '<div class="pl2-more">'
+        + '<button type="button" class="pl2-row" data-stab="team"><span class="pl2-row-t"><b>' + escH(T('Team')) + '</b> · $' + teamP + ' ' + escH(T('per person / month')) + '</span>'
+          + '<span class="pl2-row-d">' + escH(T('One bill and a shared pool for everyone you work with')) + ' →</span></button>'
+        + '<button type="button" class="pl2-row" data-dact="openCustomPlan"><span class="pl2-row-t"><b>' + escH(T('Custom')) + '</b> · ' + escH(T('from $10 / month')) + '</span>'
+          + '<span class="pl2-row-d">' + escH(T('Pick an exact monthly budget, hard-capped')) + ' →</span></button>'
+      + '</div>'
+      + '<div class="pl2-foot"><button type="button" class="pl2-link" id="pln-compare">' + escH(T('Compare all plans in detail')) + '</button>'
+        + '<p class="pl2-fine">' + escH(T('Prices in US dollars \u00b7 Cancel anytime \u00b7 Secure checkout')) + '</p></div>'
+      + (typeof _usageShapeBand === 'function'
+          ? '<details class="pl2-limits"><summary>' + escH(T('How usage limits work')) + '</summary>' + _usageShapeBand() + '</details>' : '')
       + '<p class="px-note" style="display:none">' + escH(T('Prices are in US dollars. Your local-currency amount is an estimate for convenience - you are charged the same value wherever you are, so there are no cheaper prices by country.')) + '</p>'
-      + '<div class="plans-compare-row"><button class="btn bs" id="pln-compare">'
-        + escH(T('Compare all plans in detail')) + ' →</button></div>'
-      /* How the limits work, with the real numbers, before anybody pays. It
-         lived under the plan on the Spending screen, and went when Spending
-         stopped carrying plans - a page that explains its own limits sells
-         the plan, and one that hides them sells one month. */
-      + (typeof _usageShapeBand === 'function' ? _usageShapeBand() : '')
     + '</div></div>';
   on($('pln-compare'), 'click', () => {
     try { openPlanCompare(loadStr('amv_plan') || 'pro'); } catch (e) {}

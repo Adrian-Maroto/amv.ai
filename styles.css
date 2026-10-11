@@ -17055,3 +17055,89 @@ button.pl-app:hover{border-color:var(--accent);color:var(--accent-txt)}
    every other second section of a page printed two lines on top of each
    other. Same 8px, reached from where this box actually starts. */
 .settings-content .set-merged .set-title + .set-sub{ margin-top:var(--sp-1)!important; }
+
+
+/* ═══ LAYER A318 - Plans, the upgrade window and Billing, laid out the way people expect ═══
+   Equal cards with the button under the price; one filled button, for the next
+   step up; a short list of what each plan includes. The upgrade window is the
+   same cards for the plans that unlock an engine. Tokens only. */
+.pl2{ max-width:1180px; margin:0 auto; padding:var(--sp-7) var(--sp-5) var(--sp-8); }
+.pl2-head{ text-align:center; margin-bottom:var(--sp-6); }
+.pl2-t{ font-family:var(--fdisplay); font-size:var(--t-3xl); font-weight:600; letter-spacing:-.02em; color:var(--tx); margin:0 0 var(--sp-2); }
+.pl2-sub{ color:var(--mu); font-size:var(--t-md); margin:0 auto; max-width:60ch; line-height:1.5; }
+.pl2-grid{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--sp-4); }
+.pl2-card, .upg2-card{ display:flex; flex-direction:column; gap:var(--sp-3); background:var(--s1); border:1px solid var(--bd);
+  border-radius:var(--r-lg); padding:var(--sp-5); min-width:0; }
+.pl2-card.lead, .upg2-card.lead{ border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+.pl2-name{ display:flex; align-items:center; flex-wrap:wrap; gap:var(--sp-2); font-size:var(--t-lg); font-weight:600; color:var(--tx); }
+.pl2-tag{ font-size:var(--t-xs); font-weight:600; color:var(--tx); border:1px solid var(--accent); border-radius:var(--r-pill);
+  padding:2px var(--sp-2); line-height:1.4; letter-spacing:.01em; }
+.pl2-price{ display:flex; align-items:baseline; gap:var(--sp-2); }
+.pl2-amt{ font-family:var(--fdisplay); font-size:var(--t-3xl); font-weight:600; color:var(--tx); line-height:1; }
+.pl2-per{ font-size:var(--t-sm); color:var(--mu); white-space:nowrap; }
+.pl2-local:empty{ min-height:0; }
+.pl2-local{ font-size:var(--t-xs); color:var(--mu); margin-top:calc(-1 * var(--sp-2)); }
+.pl2-line{ color:var(--mu); font-size:var(--t-base); line-height:1.5; margin:0; min-height:3em; }
+.pl2-cta{ width:100%; min-height:44px; justify-content:center; font-weight:600; }
+.pl2-cta[disabled]{ opacity:1; color:var(--mu); cursor:default; }
+.pl2-feats{ list-style:none; margin:var(--sp-1) 0 0; padding:0; display:grid; gap:var(--sp-2); }
+.pl2-feats li{ position:relative; padding-left:22px; font-size:var(--t-base); line-height:1.45; color:var(--tx); }
+.pl2-feats li::before{ content:'\2713'; position:absolute; left:0; top:0; color:var(--mu); font-weight:600; }
+.pl2-feats li b{ font-weight:600; }
+.pl2-more{ display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-3); margin-top:var(--sp-5); }
+.pl2-row{ display:flex; flex-direction:column; align-items:flex-start; gap:var(--sp-1); text-align:left; width:100%;
+  background:transparent; border:1px solid var(--bd); border-radius:var(--r-md); padding:var(--sp-4); color:var(--tx); cursor:pointer;
+  font:inherit; transition:border-color .15s var(--ease); }
+.pl2-row:hover{ border-color:var(--bdl); }
+.pl2-row-t{ font-size:var(--t-md); }
+.pl2-row-d{ font-size:var(--t-sm); color:var(--mu); }
+.pl2-foot{ text-align:center; margin-top:var(--sp-5); }
+.pl2-link{ background:none; border:0; padding:var(--sp-2); color:var(--accent-txt); font:inherit; font-size:var(--t-md); cursor:pointer;
+  text-decoration:underline; text-underline-offset:3px; min-height:44px; }
+.pl2-limits{ margin-top:var(--sp-4); border-top:1px solid var(--bd); padding-top:var(--sp-4); }
+.pl2-limits > summary{ cursor:pointer; color:var(--mu); font-size:var(--t-md); text-align:center; list-style:none; min-height:44px;
+  display:flex; align-items:center; justify-content:center; }
+.pl2-limits > summary::-webkit-details-marker{ display:none; }
+@media (max-width:1100px){ .pl2-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:640px){
+  .pl2{ padding:var(--sp-5) var(--sp-4) var(--sp-7); }
+  .pl2-t{ font-size:var(--t-2xl); }
+  .pl2-grid, .pl2-more{ grid-template-columns:1fr; }
+  .pl2-line{ min-height:0; }
+}
+
+/* The upgrade window: the same cards, only the plans that unlock the engine. */
+.upg-modal.upg2{ width:min(860px, calc(100vw - 32px)); max-height:calc(100vh - 48px); overflow:auto; padding:var(--sp-6); border-radius:var(--r-xl); }
+.upg2-x{ position:absolute; top:var(--sp-4); right:var(--sp-4); }
+.upg2-head{ text-align:center; margin:0 auto var(--sp-5); max-width:52ch; }
+.upg2-ic{ display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border-radius:var(--r-pill);
+  background:var(--s2); color:var(--tx); margin-bottom:var(--sp-3); }
+.upg2-head h2{ font-family:var(--fdisplay); font-size:var(--t-xl); font-weight:600; margin:0 0 var(--sp-2); color:var(--tx); }
+.upg2-head p{ color:var(--mu); font-size:var(--t-md); margin:0; }
+.upg2-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:var(--sp-3); }
+.upg2-card{ padding:var(--sp-4); }
+.upg2-foot{ display:flex; align-items:center; justify-content:center; gap:var(--sp-2); margin-top:var(--sp-4); color:var(--mu); flex-wrap:wrap; }
+@media (max-width:640px){ .upg-modal.upg2{ padding:var(--sp-5) var(--sp-4); } .upg2-grid{ grid-template-columns:1fr; } }
+
+/* Billing: the change-plan control beside the plan. */
+.bill-sum-top{ display:flex; align-items:center; flex-wrap:wrap; gap:var(--sp-3) var(--sp-4); }
+.bill-sum-top .bill-change{ margin-left:auto; min-height:40px; }
+@media (max-width:640px){ .bill-sum-top .bill-change{ margin-left:0; width:100%; } }
+.pl2-fine{ color:var(--mu); font-size:var(--t-sm); margin:var(--sp-1) 0 0; }
+/* The price beside the plan's name, the button at the far end - not the
+   three spread evenly across the row by the older space-between. */
+:is(#vc,#set-modal) .vi-bill .bill-sum-top{ justify-content:flex-start; align-items:center; }
+:is(#vc,#set-modal) .vi-bill .bill-facts{ align-items:start; }
+:is(#vc,#set-modal) .vi-bill .bill-sum-top .bill-sum-p{ margin-left:0; }
+@media (max-width:640px){ :is(#vc,#set-modal) .vi-bill .bill-sum-top{ align-items:flex-start; } }
+/* Wide enough that a card's one line stays one or two lines, so the
+   buttons sit level - an older rule held every view to a narrow column, which
+   squeezed four cards to 190px each and wrapped Pro's line to four. */
+:is(#vc,#set-modal) .vi.pl2{ max-width:1180px!important; }
+.pl2-top{ display:flex; flex-direction:column; gap:var(--sp-3); min-width:0; }
+.pl2-line{ min-height:0; }
+@supports (grid-template-rows: subgrid){
+  .pl2-card{ display:grid; grid-template-rows:subgrid; grid-row:span 3; row-gap:var(--sp-4); align-content:start; }
+  .upg2-card{ display:grid; grid-template-rows:subgrid; grid-row:span 2; row-gap:var(--sp-4); }
+}
+.pl2-feats{ align-content:start; align-self:start; }

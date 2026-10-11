@@ -610,6 +610,9 @@ function renderBillingView(targetEl){
              duplication this page was rebuilt to remove, reintroduced at one
              word. A free plan has no price to state, so it states none. */
           (plan==='free'?'':'<div class="bill-sum-p">$'+P.price+' <span>/ month</span></div>')+
+          /* The way to another plan sits beside the one you are on, as it does
+             in every billing screen people already know. */
+          '<button type="button" class="btn '+(plan==='free'?'bp':'bs')+' bill-change" data-stab="plans">'+escH(plan==='free'?T('Upgrade plan'):T('Change plan'))+'</button>'+
         '</div>'+
         '<div class="bill-sum-sub">'+
           '<span class="bill-dot'+(plan==='free'?' free':'')+'"></span>'+
@@ -717,8 +720,12 @@ function renderBillingView(targetEl){
            this sentence for a free account, and printing it again as a
            paragraph two lines below is the same fault this page was rebuilt
            for - the same fact, twice, taking two blocks of space. What a free
-           account needs here is the way UP, which is the next section. */
-        '')+
+           account needs here is what Free allows - the figures the server
+           enforces - with the way up beside it, in Upgrade plan. */
+        '<dl class="bill-facts">'+
+          _bfact('Usage', escH(_msgMonthLabel('free')) + ' messages a month \u00b7 '
+            + escH(_msg5hLabel('free')) + ' every ' + USAGE_WINDOW_HOURS + ' hours')+
+        '</dl>')+
       '</div>'+
       /* WHERE USAGE AND SPENDING GO.
 
@@ -736,153 +743,14 @@ function renderBillingView(targetEl){
       /* WHAT IT DOES AND WHAT IT DOES NOT, under the plan it describes.
          A price with no capabilities beside it asks somebody to go and look up
          what they are paying for; this is the answer on the same screen. */
-      _billCanCantHTML(plan)+
+      /* IN THE ORDER EVERY BILLING SCREEN PEOPLE KNOW USES, BECAUSE IT IS THE ORDER PEOPLE LOOK.
+
+         Plan (with the way to change it beside it), then what has been used,
+         then how you pay, then what you have been charged, and leaving last.
+         What a plan does and does not include, and the ladder of other plans,
+         live on the plans page now - one tap away from "Change plan" - instead
+         of being stacked here between somebody and their invoices. */
       (inSettings?'<div id="bill-usage-slot"></div>':'')+
-      /* These two lists were computed on every render and shown nowhere, and the
-         click handler below bound to buttons that never existed - so the billing
-         screen told a paying customer what they had and gave them no way to
-         change it. Teams and Custom are deliberately absent: neither has a
-         single price to put on a button. */
-      ((upTargets.length||downTargets.length)?
-      /* RECENT TRANSACTIONS, ABOVE THE UPGRADE AND BELOW THE PLAN.
-
-         The order asked for, and the order that reads: what I am on, what I
-         have been charged, what I could move to, how I pay. Invoices used to
-         sit near the bottom under the cancel link, which put the record of
-         somebody's money after the door marked leave.
-
-         NOTHING HERE IS INVENTED. This page once generated a row per month
-         between the start date and today, each stamped Paid, with no invoice
-         number and no amount from a processor. _invoiceTableHTML is the
-         processor's list or an honest sentence saying there is none; it is not
-         a table this file fills in. */
-      '<div class="ss2 bill-tx"><h3>Recent transactions</h3>'+
-        '<div id="bill-invoices">'+(plan==='free'
-          ? _invoiceTableHTML(plan,P,sinceDate)
-          : (liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate)))+'</div>'+
-      '</div>'+
-      _billingTxnsHTML()+
-      '<div class="ss2 bill-up"><h3>Upgrade your plan</h3>'+
-        '<div class="bill-swap">'+
-          /* ONE RECOMMENDATION, NOT THREE SHOUTS.
-
-             Every upgrade button was `btn bp` - the filled accent - so Pro at
-             $15, Elite at $75 and Ultra at $200 arrived as three identical
-             full-width primary buttons stacked on top of each other. Nothing
-             was recommended, so the person had to do all the deciding
-             unaided, and a screen where everything is emphasised is a screen
-             where nothing is.
-
-             The one that leads is `upTargets[0]`, which is the NEXT STEP UP
-             from wherever somebody already is: Pro from Free, Elite from Pro,
-             Ultra from Elite. That is a rule rather than a favourite, so it
-             stays right when the ladder changes and it never recommends a
-             $200 jump to somebody who has not paid anything yet - which is
-             the one recommendation a brand nobody has heard of cannot make
-             credibly.
-
-             The badge says what is TRUE. Not "Most popular": AMV has no
-             customers yet, so that would be a claim about other people that
-             nobody could stand behind, and this file is not going to invent
-             social proof. "Start here" and "Next step up" are both just
-             descriptions of where the button sits on the ladder.
-
-             Nothing is hidden or made harder. The other plans keep their full
-             width, their full price, and a single tap - they are quiet, not
-             demoted. */
-          upTargets.map((k,ix)=>{
-            const lead = ix === 0;
-            const badge = lead
-              /* KEPT, AND I WAS WRONG TO TAKE IT OUT.
-
-                 It looked like a pill inside a pill and I deleted it for that.
-                 It is load-bearing: this label is the reason nobody writes
-                 "Most popular" on the lead button, which is the obvious phrase
-                 and a claim about other customers that AMV cannot stand behind.
-                 "Start here" and "Next step up" describe where the button sits
-                 on the ladder, which is true on the first day and every day
-                 after, and a suite exists whose stated job is to fail if anyone
-                 reaches for the easier words. Deleting the label removed the
-                 thing that guard reads.
-
-                 The complaint about how it LOOKED was fair, so that is fixed
-                 where it belongs - in A210, which takes away the outline and
-                 the fill and leaves the words. */
-              ? '<span class="bill-swap-tag">'+(plan==='free'?'Start here':'Next step up')+'</span>'
-              : '';
-            /* A ROW THAT SAYS WHAT YOU GET, NOT JUST WHAT IT COSTS.
-
-               "Upgrade to Elite · $75/mo" is a price with no reason attached,
-               and asking somebody to find the reason on another page is why
-               this screen was described as sloppy. The plan already carries a
-               sentence written for exactly this, and the two figures under it
-               are the ones the SERVER enforces - the allowance multiplier and
-               the scheduled-job cap from AUTO_MAX_BY_PLAN.
-
-               Nothing here is invented, and that is deliberate: this page sold
-               "unlimited scheduled automations" once while the server capped
-               Elite at 25, and somebody found out at their twenty-sixth job. A
-               number that is true is more persuasive than a word that is not,
-               and it is the only kind AMV is allowed to print. */
-            const P2 = PLANS[k];
-            const jobs = (typeof AUTO_MAX_BY_PLAN !== 'undefined') ? AUTO_MAX_BY_PLAN[k] : null;
-            /* The same unit as the row above it and as Spending. A plan
-               compared in tokens on one line and sold in messages on the next
-               is a person doing arithmetic to work out whether an upgrade is
-               worth it. */
-            const facts = [
-              (typeof _msgMonthLabel === 'function' ? _msgMonthLabel(k) + ' messages a month' : ''),
-              (jobs ? jobs + ' scheduled jobs' : '')
-            ].filter(Boolean).join(' \u00b7 ');
-            /* "Upgrade to Elite", not "Elite". A row naming a plan is a label;
-               a row saying what pressing it does is a control, and a suite
-               holds that wording. `bp` stays on the one that leads - it is what
-               makes it the filled primary, which is both the recommendation
-               and the only version of this row whose text clears 4.5:1. */
-            return '<button class="bill-plan-row'+(lead?' lead bill-swap-lead btn bp':'')+'" data-pay="'+escH(k)+'">'
-              + '<span class="bill-plan-main">'
-                + '<span class="bill-plan-h"><b>Upgrade to '+escH(P2.name)+'</b>'+badge+'</span>'
-                + '<span class="bill-plan-d">'+escH(P2.blurb||'')+'</span>'
-                + (facts ? '<span class="bill-plan-f">'+facts+'</span>' : '')
-              + '</span>'
-              + '<span class="bill-plan-price"><b>$'+P2.price+'</b><small>/mo</small></span>'
-            + '</button>';
-          }).join('')+
-          downTargets.filter(k=>k!=='free').map(k=>
-            '<button class="bill-plan-row" data-pay="'+escH(k)+'">'
-            + '<span class="bill-plan-main">'
-              + '<span class="bill-plan-h"><b>Switch to '+escH(PLANS[k].name)+'</b></span>'
-              + '<span class="bill-plan-d">'+escH(PLANS[k].blurb||'')+'</span>'
-            + '</span>'
-            + '<span class="bill-plan-price"><b>$'+PLANS[k].price+'</b><small>/mo</small></span>'
-          + '</button>').join('')+
-        '</div>'+
-        '<p class="bill-acts-s">Changes take effect immediately and are prorated. '+
-          'Working with other people? <a data-stab="team" style="color:var(--accent-txt);cursor:pointer">Teams is priced per person</a>.</p>'+
-      '</div>':'')+
-      /* Cancelling. The pricing page promises "cancel with one click" and there
-         was no control anywhere that did it, which is a claim the product did
-         not keep.
-
-         It has to go through the processor. `_switchPlan('free')` only changes
-         the plan in THIS browser - with a live subscription that is a cancel
-         button that does not cancel, and the customer finds out when the next
-         charge lands. Worse than no button. So when there is a real backend
-         this opens the processor's own portal, which is the only place a
-         subscription actually ends. */
-      (plan!=='free'?
-      /* Cancelling is one line at the foot of the page, not a panel of its own
-         with a red-outlined button in it. A product that frames leaving as a
-         section with a warning colour is a product that thinks about leaving
-         more than the person does - and the promise on the pricing page is that
-         it takes one click. It still says exactly what happens, and it still
-         goes through the processor, which is the only thing that can really end
-         a subscription. */
-      '<div class="ss2 bill-leave">'+
-        '<button class="bill-cancel-link" id="bill-cancel">Cancel subscription</button>'+
-        '<p class="bill-leave-s">You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
-        '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
-      '</div>':'')+
       /* PAYMENT METHOD - the fourth section, and the last thing anybody needs.
 
          The card itself is at the processor and AMV never held the number, so
@@ -890,7 +758,7 @@ function renderBillingView(targetEl){
          screenshot does. What it can do is say which card is on file when the
          processor has told us, and put the one control that actually changes it
          directly underneath. Anything else here would be a picture of a card. */
-      '<div class="ss2 bill-pm"><h3>Payment method</h3>'+
+      '<div class="ss2 bill-pm"><h3>Payment</h3>'+
         '<div id="bill-pm-body">'+
           (plan==='free'
             ? '<p class="bill-pm-none">No card on file. You are on Free, so there is nothing to pay and nothing stored.</p>'
@@ -902,6 +770,28 @@ function renderBillingView(targetEl){
         '</div>':'')+
       '</div>'+
 
+      /* NOTHING HERE IS INVENTED. _invoiceTableHTML is the processor's list or
+         an honest sentence saying there is none; it is not a table this file
+         fills in. */
+      '<div class="ss2 bill-tx"><h3>Invoices</h3>'+
+        '<div id="bill-invoices">'+(plan==='free'
+          ? _invoiceTableHTML(plan,P,sinceDate)
+          : (liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate)))+'</div>'+
+      '</div>'+
+      _billingTxnsHTML()+
+      (plan!=='free'?
+      /* Cancelling is one line at the foot of the page, not a panel of its own
+         with a red-outlined button in it. A product that frames leaving as a
+         section with a warning colour is a product that thinks about leaving
+         more than the person does - and the promise on the pricing page is that
+         it takes one click. It still says exactly what happens, and it still
+         goes through the processor, which is the only thing that can really end
+         a subscription. */
+      '<div class="ss2 bill-leave"><h3>Cancellation</h3>'+
+        '<button class="bill-cancel-link" id="bill-cancel">Cancel subscription</button>'+
+        '<p class="bill-leave-s">You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
+        '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
+      '</div>':'')+
       /* FOUR EMOJI REASSURANCE CARDS, REMOVED FROM THE SETTINGS SCREEN.
 
          "PCI-DSS Level 1", "256-bit TLS" and two more, each with an emoji for
@@ -1409,37 +1299,35 @@ function _minPlanForModel(mk){
   return 'pro';
 }
 function openUpgradeModal(lockedModel){
+  /* THE SAME CARDS AS THE PLANS PAGE, IN A WINDOW.
+
+     This was a stack of four full-width rows under an emoji padlock - a
+     different shape from every other place a plan is sold, and the owner's
+     word for it was "looks bad". Now it shows only the plans that include the
+     engine somebody just picked, side by side, the way the plans page does:
+     name, price, one line, one button. The cheapest one that unlocks it leads. */
   const r=$('ovr'); if(!r) return;
   const m=MODELS[lockedModel]||{label:'this model'};
   const needPlan=_minPlanForModel(lockedModel);
-  // Ordered ladder, all paid plans + custom, as stacked rows
-  const order=['pro','elite','ultra'];
-  const row=(k)=>{ const pl=PLANS[k]; const isNeed=k===needPlan;
-    return '<button class="upg-row'+(isNeed?' best':'')+'" data-upg="'+k+'">'+
-      '<div class="upg-row-l">'+
-        '<div class="upg-row-name">'+pl.name+(isNeed?'<span class="upg-row-tag">Unlocks '+escH(m.label)+'</span>':'')+'</div>'+
-        '<div class="upg-row-desc">'+escH(pl.blurb||'')+'</div>'+
-      '</div>'+
-      '<div class="upg-row-r"><div class="upg-row-price">$'+pl.price+'<small>/mo</small></div><span class="upg-row-go">Get \u2192</span></div>'+
-    '</button>';
+  const order=['pro','elite','ultra'].filter(k=>PLAN_RANK[k]>=PLAN_RANK[needPlan]);
+  const card=(k)=>{ const pl=PLANS[k]; const isNeed=k===needPlan;
+    return '<div class="upg2-card'+(isNeed?' lead':'')+'">'+
+      '<div class="pl2-top"><div class="pl2-name">'+escH(pl.name)+(isNeed?'<span class="pl2-tag">'+escH(T('Unlocks'))+' '+escH(m.label)+'</span>':'')+'</div>'+
+      '<div class="pl2-price"><span class="pl2-amt">$'+pl.price+'</span><span class="pl2-per">'+escH(T('/ month'))+'</span></div>'+
+      '<p class="pl2-line">'+escH(pl.blurb||'')+'</p></div>'+
+      '<button type="button" class="btn '+(isNeed?'bp':'bs')+' pl2-cta" data-upg="'+k+'">'+escH(T('Get'))+' '+escH(pl.name)+'</button>'+
+    '</div>';
   };
-  const customRow='<button class="upg-row upg-row-custom" data-upg="custom">'+
-      '<div class="upg-row-l">'+
-        '<div class="upg-row-name">Custom<span class="upg-row-tag alt">Build your own</span></div>'+
-        '<div class="upg-row-desc">Pick your exact monthly budget - all models, hard-capped, from $10/mo.</div>'+
-      '</div>'+
-      '<div class="upg-row-r"><div class="upg-row-price" style="font-size:var(--t-prose)">Your price</div><span class="upg-row-go">Build \u2192</span></div>'+
-    '</button>';
-  r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal" style="max-width:480px">'+
-    '<button class="dna-x" id="upg-x" style="position:absolute;top:16px;right:16px">\u2715</button>'+
-    '<div class="upg-head">'+
-      '<div class="upg-lock">\uD83D\uDD12</div>'+
-      '<h2>Unlock '+escH(m.label)+'</h2>'+
-      '<p>'+escH(m.label)+' is included from the '+PLANS[needPlan].name+' plan up. Pick the plan that fits - every option below unlocks it.</p>'+
+  const lock='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+  r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal upg2" role="dialog" aria-modal="true" aria-labelledby="upg2-t">'+
+    '<button class="dna-x upg2-x" id="upg-x" aria-label="'+escH(T('Close'))+'">✕</button>'+
+    '<div class="upg2-head"><span class="upg2-ic">'+lock+'</span>'+
+      '<h2 id="upg2-t">'+escH(T('Upgrade to use'))+' '+escH(m.label)+'</h2>'+
+      '<p>'+escH(m.label)+' '+escH(T('is included from'))+' '+escH(PLANS[needPlan].name)+' '+escH(T('up. Cancel anytime.'))+'</p>'+
     '</div>'+
-    '<div class="upg-rows">'+order.map(row).join('')+customRow+'</div>'+
-    '<div class="upg-foot"><button class="upg-compare" id="upg-compare">Compare all plans in detail \u2192</button>'+
-      '<div class="upg-trust">Cancel anytime \u00b7 Keep your free account \u00b7 Secure checkout</div></div>'+
+    '<div class="upg2-grid">'+order.map(card).join('')+'</div>'+
+    '<div class="upg2-foot"><button type="button" class="pl2-link" id="upg-compare">'+escH(T('Compare all plans'))+'</button>'+
+      '<span aria-hidden="true">·</span><button type="button" class="pl2-link" data-upg="custom">'+escH(T('Build a custom plan'))+'</button></div>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
   onBackdrop($('upg-bg'),close); on($('upg-x'),'click',close);

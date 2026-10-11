@@ -333,10 +333,12 @@ section('A per-seat plan is never shown as a fixed price');
      a payment sheet showing one seat's price as if it were the bill. It is not a
      step on that ladder - it has no single price - so it is excluded from it and
      sold from the screen that asks how many people are on it. */
+  /* Plan changes are offered on the plans page (Billing's "Change plan"
+     goes there), as the buttons that open a plan's own page. */
   const billing = await page.evaluate(() => {
-    saveStr('amv_plan', 'pro');
-    S.tab = 'billing'; setTab('billing');
-    return [...document.querySelectorAll('[data-pay]')].map(b => b.dataset.pay);
+    saveStr('amv_plan', 'pro'); S.plan = 'pro';
+    S.tab = 'plans'; setTab('plans');
+    return [...document.querySelectorAll('#vc [data-dact="openUpgrade"]')].map(b => b.dataset.darg);
   });
   ok(!billing.includes('team'), 'Teams is not a one-click upgrade button', billing);
   ok(!billing.includes('custom'), 'for the same reason Custom is not', billing);
@@ -360,12 +362,18 @@ section('A paying customer can reach their own billing');
     saveStr('amv_plan', 'pro');
     S.tab = 'billing'; setTab('billing');
     const vc = (document.getElementById('set-modal') || document.getElementById('vc'));
-    return {
+    const change = vc.querySelector('.bill-change[data-stab="plans"]');
+    const out = {
       manage: !!document.getElementById('portal-open-btn'),
       cancelText: /cancel/i.test(vc.textContent),
-      swaps: [...vc.querySelectorAll('[data-pay]')].map(b => b.dataset.pay),
+      change: !!change,
     };
+    /* Where Change plan leads, and what it offers there. */
+    S.tab = 'plans'; setTab('plans');
+    out.swaps = [...document.querySelectorAll('#vc [data-dact="openUpgrade"]')].map(b => b.dataset.darg);
+    return out;
   });
+  ok(paid.change, 'Billing has a Change plan control beside the plan', paid);
   ok(paid.manage, 'the button that opens billing exists, not just its handler');
   ok(paid.cancelText, 'and says cancelling is possible, which people look for before they buy');
   ok(paid.swaps.includes('elite') && paid.swaps.includes('ultra'),
@@ -404,13 +412,16 @@ section('A paying customer can reach their own billing');
      'and it says plainly that nothing has been cancelled yet', cancel.say);
 
   const free = await page.evaluate(() => {
-    saveStr('amv_plan', 'free');
+    saveStr('amv_plan', 'free'); S.plan = 'free';
     S.tab = 'billing'; setTab('billing');
-    return {
-      manage: !!document.getElementById('portal-open-btn'),
-      swaps: [...document.querySelectorAll('[data-pay]')].map(b => b.dataset.pay),
-    };
+    const out = { manage: !!document.getElementById('portal-open-btn'),
+                  upgrade: !!document.querySelector('.bill-change[data-stab="plans"]') };
+    S.tab = 'plans'; setTab('plans');
+    out.swaps = [...document.querySelectorAll('#vc [data-dact="openUpgrade"]')].map(b => b.dataset.darg);
+    S.tab = 'billing'; setTab('billing');
+    return out;
   });
+  ok(free.upgrade, 'Billing offers the way up beside the plan', free);
   ok(!free.manage, 'a free account is not offered billing it does not have');
   ok(!(await page.evaluate(() => !!document.getElementById('bill-cancel'))),
      'nor a cancel button for a subscription it does not have');
@@ -422,7 +433,7 @@ section('Teams is on the pricing page, not only behind a tab');
   const plans = await page.evaluate(() => {
     S.tab = 'plans'; setTab('plans');
     const vc = (document.getElementById('set-modal') || document.getElementById('vc'));
-    return { text: vc.textContent, banners: vc.querySelectorAll('.cpb').length };
+    return { text: vc.textContent, banners: vc.querySelectorAll('.pl2-row').length };
   });
   ok(/per person/.test(plans.text), 'the price is stated per person', /per person/.test(plans.text));
   ok(/ten plans/i.test(plans.text) || /shared pool/i.test(plans.text),
@@ -430,7 +441,7 @@ section('Teams is on the pricing page, not only behind a tab');
   ok(plans.banners >= 2, 'alongside Custom rather than replacing it', plans.banners);
 
   const goes = await page.evaluate(() => {
-    const b = [...document.querySelectorAll('.cpb [data-stab="team"]')][0];
+    const b = [...document.querySelectorAll('.pl2-row[data-stab="team"]')][0];
     if (!b) return 'no button';
     b.click();
     return S.tab;

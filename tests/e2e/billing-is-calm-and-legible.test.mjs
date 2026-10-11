@@ -32,8 +32,15 @@ await page.waitForTimeout(300);
 
 const read = (light) => page.evaluate(async (l) => {
   document.body.classList.toggle('light', l);
-  saveStr('amv_plan', 'pro');
+  saveStr('amv_plan', 'pro'); S.plan = 'pro';
   setTab('billing');
+  await new Promise(r => setTimeout(r, 700));
+  /* The plan facts are Billing's; the recommendation now lives on the plans
+     page that Billing's Change plan opens, so both are read. */
+  const factCols = (() => { const f = document.querySelector('.vi-bill .bill-facts');
+    return f ? getComputedStyle(f).gridTemplateColumns.split(' ').length : 0; })();
+  const facts = document.querySelectorAll('.vi-bill .bill-facts > div').length;
+  setTab('plans');
   await new Promise(r => setTimeout(r, 700));
 
   const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
@@ -69,8 +76,8 @@ const read = (light) => page.evaluate(async (l) => {
   };
   const ratio = (a, b) => { const x = L(a), y = L(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
 
-  const lead = document.querySelector('.bill-plan-row.lead');
-  const rows = [...document.querySelectorAll('.bill-plan-row')];
+  const lead = document.querySelector('#vc .pl2-card.lead');
+  const rows = [lead].concat([...document.querySelectorAll('#vc .pl2-card:not(.lead)')]).filter(Boolean);
   /* Every piece of text inside the recommended row, measured against what is
      actually painted behind it. */
   const inLead = lead ? [...lead.querySelectorAll('*')]
@@ -84,12 +91,10 @@ const read = (light) => page.evaluate(async (l) => {
     rowBg: rows[1] ? getComputedStyle(rows[1]).backgroundColor : '',
     leadBorder: lead ? getComputedStyle(lead).borderTopColor : '',
     rowBorder: rows[1] ? getComputedStyle(rows[1]).borderTopColor : '',
-    tag: !!(lead && lead.querySelector('.bill-swap-tag')),
+    tag: !!(lead && lead.querySelector('.pl2-tag')),
     worst: inLead.sort((a, b) => a.r - b.r)[0] || null,
     inLead,
-    factCols: (() => { const f = document.querySelector('.vi-bill .bill-facts');
-      return f ? getComputedStyle(f).gridTemplateColumns.split(' ').length : 0; })(),
-    facts: document.querySelectorAll('.vi-bill .bill-facts > div').length,
+    factCols, facts,
   };
 }, light);
 

@@ -83,13 +83,17 @@ section('The card, the button and the local price are the same number');
     /* Scoped to the app view. The landing page carries its own copy of these
        cards and is still in the DOM behind it, so an unscoped query reads
        whichever one happens to come first - which is not the one on screen. */
-    const cards = [...document.querySelectorAll('#vc .plnc')].map(c => {
-      const tier = (c.querySelector('.plntier') || {}).textContent || '';
-      const big = (c.querySelector('.plnprice') || {}).textContent || '';
-      const btn = (c.querySelector('.plnbtn') || {}).textContent || '';
+    /* The card names its plan in data-plan; its heading also carries the
+       "Start here" tag, so the heading is not read as the name. The button
+       says what pressing it does ("Get Pro") rather than repeating the price,
+       which now appears once per card - in the headline. */
+    const cards = [...document.querySelectorAll('#vc .pl2-card')].map(c => {
+      const plan = c.dataset.plan || '';
+      const tier = (PLANS[plan] && PLANS[plan].name) || plan;
+      const big = (c.querySelector('.pl2-amt') || {}).textContent || '';
+      const btn = (c.querySelector('.pl2-cta') || {}).textContent || '';
       const loc = c.querySelector('.px-local');
-      return { tier: tier.trim(), big: big.replace(/[^\d]/g, ''),
-               btn: (btn.match(/\$(\d+)/) || [])[1] || '',
+      return { tier, big: big.replace(/[^\d]/g, ''), btn: btn.trim(),
                usd: loc ? loc.getAttribute('data-usd') : '' };
     });
     return { cards, plans: Object.fromEntries(Object.entries(PLANS).map(([k, v]) => [k, String(v.price)])) };
@@ -100,10 +104,10 @@ section('The card, the button and the local price are the same number');
   paid.forEach(c => {
     const want = r.plans[c.tier.toLowerCase()];
     if (c.big !== want) wrong.push(`${c.tier} headline $${c.big} != $${want}`);
-    if (c.btn !== want) wrong.push(`${c.tier} button $${c.btn} != $${want}`);
+    if (!new RegExp(c.tier).test(c.btn) && !/current plan/i.test(c.btn)) wrong.push(`${c.tier} button "${c.btn}" does not name the plan`);
     if (c.usd !== want) wrong.push(`${c.tier} local-currency $${c.usd} != $${want}`);
   });
-  ok(wrong.length === 0, 'headline, button and local price all match PLANS', wrong);
+  ok(wrong.length === 0, 'headline and local price match PLANS, and each button names its plan', wrong);
 }
 
 section('Change the price and every one of them follows');
@@ -115,11 +119,9 @@ section('Change the price and every one of them follows');
     PLANS.pro.price = 4242;
     setTab('plans');
     const html = document.getElementById('vc').innerHTML;
-    const card = [...document.querySelectorAll('#vc .plnc')]
-      .find(c => /^Pro$/.test(((c.querySelector('.plntier') || {}).textContent || '').trim()));
+    const card = document.querySelector('#vc .pl2-card[data-plan="pro"]');
     const out = card ? {
-      big: (card.querySelector('.plnprice') || {}).textContent.replace(/[^\d]/g, ''),
-      btn: (((card.querySelector('.plnbtn') || {}).textContent || '').match(/\$(\d+)/) || [])[1],
+      big: (card.querySelector('.pl2-amt') || {}).textContent.replace(/[^\d]/g, ''),
       usd: (card.querySelector('.px-local') || {}).getAttribute('data-usd'),
     } : null;
     const stale = /\$15\b/.test(html);
@@ -128,7 +130,6 @@ section('Change the price and every one of them follows');
     return { out, stale };
   });
   ok(r.out && r.out.big === '4242', 'the headline follows', r.out && r.out.big);
-  ok(r.out && r.out.btn === '4242', 'the button follows', r.out && r.out.btn);
   ok(r.out && r.out.usd === '4242', 'the local-currency figure follows', r.out && r.out.usd);
   ok(!r.stale, 'and the old price is nowhere on the page', r.stale);
 }

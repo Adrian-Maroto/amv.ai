@@ -86,7 +86,7 @@ section('Spending is the money; the plans are on Upgrade');
   ok(s.planCards === 0 && !s.hasBand && !s.hasCompare, 'with no plans, no limit band and no comparison on it', s);
   const u = await page.evaluate(async () => {
     setTab('plans'); await new Promise(r => setTimeout(r, 600));
-    return { cards: document.querySelectorAll('.pln-v .plnc').length, compare: !!document.getElementById('pln-compare') };
+    return { cards: document.querySelectorAll('.pl2 .pl2-card').length, compare: !!document.getElementById('pln-compare') };
   });
   ok(u.cards === 4 && u.compare, 'while Upgrade has the four plans and the full comparison', u);
 }
@@ -160,8 +160,8 @@ section('The address Pricing used to have still goes somewhere');
     await new Promise(res => setTimeout(res, 200));
     setTab('plans');
     await new Promise(res => setTimeout(res, 700));
-    return { tab: S.tab, onPlans: !!document.querySelector('.pln-v'),
-             cards: document.querySelectorAll('.pln-v .plnc').length };
+    return { tab: S.tab, onPlans: !!document.querySelector('.pl2'),
+             cards: document.querySelectorAll('.pl2 .pl2-card').length };
   });
   ok(r.onPlans && r.cards === 4,
      'an older link to the plans lands on the plans', r);
@@ -184,7 +184,7 @@ section('Billing quotes the same plan in the same unit');
       setTab('plans'); await new Promise(r => setTimeout(r, 650));
       /* The card for this plan on Upgrade, line by line. */
       /* In ladder order - free, pro, elite, ultra - which is how planCards draws them. */
-      const card = [...document.querySelectorAll('.pln-v .plnc')][['free', 'pro', 'elite', 'ultra'].indexOf(plan)];
+      const card = document.querySelector('.pl2 .pl2-card[data-plan="' + plan + '"]');
       const spend = card ? card.innerText.split('\n').map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean) : [];
       setTab('billing'); await new Promise(r => setTimeout(r, 650));
       const bill = (document.querySelector('.bill-facts') || {}).innerText || '';

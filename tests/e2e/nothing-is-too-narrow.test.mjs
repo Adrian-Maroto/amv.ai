@@ -160,7 +160,7 @@ section('The pricing CTAs sit on one line');
     });
     await page.waitForTimeout(700);
     const rows = await page.evaluate(() => {
-      const btns = [...document.querySelectorAll('.plnc .plnbtn')]
+      const btns = [...document.querySelectorAll('.pl2-card .pl2-cta')]
         .filter(b => b.getBoundingClientRect().top > 100)
         .map(b => Math.round(b.getBoundingClientRect().top));
       /* Group by row: anything within 40px of each other is the same row. */

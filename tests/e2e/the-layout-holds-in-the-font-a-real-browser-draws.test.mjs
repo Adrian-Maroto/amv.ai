@@ -113,7 +113,7 @@ section('The plan buttons stay level when the text is wider');
     await page.evaluate(() => setTab('plans'));
     await page.waitForTimeout(800);
     const r = await page.evaluate(() => {
-      const btns = [...document.querySelectorAll('.plnc .plnbtn')]
+      const btns = [...document.querySelectorAll('.pl2-card .pl2-cta')]
         .filter(b => b.getBoundingClientRect().top > 100)
         .map(b => Math.round(b.getBoundingClientRect().top));
       const groups = [];
@@ -121,7 +121,7 @@ section('The plan buttons stay level when the text is wider');
         const g = groups.find(g => Math.abs(g[0] - y) < 40);
         if (g) g.push(y); else groups.push([y]);
       });
-      const notes = [...document.querySelectorAll('.plnreassure')]
+      const notes = [...document.querySelectorAll('.pl2-card .pl2-top')]
         .filter(n => n.getBoundingClientRect().height > 0)
         .map(n => Math.round(n.getBoundingClientRect().height));
       return { spreads: groups.map(g => Math.max(...g) - Math.min(...g)), notes };
@@ -129,11 +129,12 @@ section('The plan buttons stay level when the text is wider');
     await page.close();
     ok(r.spreads.length > 0, `there are plan buttons to check at ${width}px`, r.spreads);
     ok(r.spreads.every(s => s === 0), `and every row of them is level at ${width}px`, r.spreads);
-    /* The cause, asserted directly: the buttons drift because the note under
-       them is a different height, so holding the notes equal is what holds
-       the row level, and it says so when it breaks. */
+    /* The cause, asserted directly: the buttons drift when the block above
+       them is a different height, so the cards share their rows - holding the
+       heading blocks equal is what holds the row level, and it says so when it
+       breaks. */
     ok(new Set(r.notes).size === 1,
-       `the reassurance notes are all one height at ${width}px`, JSON.stringify(r.notes));
+       `the heading blocks above the buttons are all one height at ${width}px`, JSON.stringify(r.notes));
   }
 }
 

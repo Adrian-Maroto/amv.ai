@@ -32,53 +32,48 @@ const show = (plan) => page.evaluate(async (plan) => {
   return {
     headings: [...vc.querySelectorAll('h2,h3')].map(e => e.textContent.trim()),
     text: (vc.innerText || ''),
-    cols: [...vc.querySelectorAll('.bill-cc-h')].map(e => e.textContent.trim()),
-    upgrades: [...vc.querySelectorAll('[data-pay]')].map(b => b.dataset.pay),
-    lead: (vc.querySelector('.bill-plan-row.lead') || {}).dataset,
+    change: ((vc.querySelector('.bill-change') || {}).textContent || '').trim(),
     hash: location.hash,
   };
 }, plan);
 
-section('The four sections, in the order they were asked for');
+section('The sections, in the order every billing screen people know uses');
 {
+  /* Plan (with the way to change it beside it), then how you pay, then what
+     you have been charged, then leaving. */
   const r = await show('pro');
-  const want = ['Recent transactions', 'Upgrade your plan', 'Payment method'];
+  const want = ['Payment', 'Invoices', 'Cancellation'];
   const idx = want.map(h => r.headings.indexOf(h));
   ok(idx.every(i => i >= 0), 'all three sections are on the page', r.headings);
-  ok(idx[0] < idx[1] && idx[1] < idx[2],
-     'transactions, then upgrade, then payment method', r.headings);
+  ok(idx[0] < idx[1] && idx[1] < idx[2], 'payment, then invoices, then cancellation', r.headings);
   ok(r.headings[0] === 'Billing', 'under one heading', r.headings[0]);
-}
-
-section('What your plan does, and what it does not');
-{
-  const pro = await show('pro');
-  ok(pro.cols.length === 2, 'two columns on a paid plan', pro.cols);
-  ok(/What your plan does/i.test(pro.cols[0]), 'the first is what you have', pro.cols);
-  ok(/What Elite adds/i.test(pro.cols[1]),
-     'and the second is the next step up, named - not a blank "you cannot"', pro.cols);
+  ok(r.change === 'Change plan', 'and the plan carries its own Change plan control', r.change);
 
   const free = await show('free');
-  ok(/Not on this plan/i.test(free.cols[1] || ''),
-     'Free declares its own gaps, which it already knows', free.cols);
-  ok(/Autonomous agents/i.test(free.text),
-     'and they are the real ones, from the same list the pricing page sells from',
-     free.cols);
-
-  /* The top of the ladder has nothing above it, and inventing a column would
-     be writing copy in a renderer. */
-  const ultra = await show('ultra');
-  ok(ultra.cols.length === 1, 'the top plan shows only what it does', ultra.cols);
+  ok(free.change === 'Upgrade plan', 'on Free it is the way up instead', free.change);
+  ok(!free.headings.includes('Cancellation'), 'and there is nothing to cancel', free.headings);
+  ok(/3,000 messages a month/.test(free.text), 'Free still says what it allows', free.text.slice(0, 200));
 }
 
-section('The upgrade is one recommendation, not three shouts');
+section('Change plan opens the plans, where each plan says what it includes');
 {
-  const r = await show('free');
-  ok(r.upgrades.length >= 2, 'the ladder is offered', r.upgrades);
-  ok(r.lead && r.lead.pay === 'pro',
-     'and the one that leads is the NEXT step up, not the dearest', r.lead);
-  ok(!/Most popular/i.test(r.text),
-     'with no invented social proof', r.text.slice(0, 200));
+  const r = await page.evaluate(async () => {
+    _setPlan('free'); setTab('billing');
+    await new Promise(r => setTimeout(r, 300));
+    document.querySelector('.bill-change').click();
+    await new Promise(r => setTimeout(r, 400));
+    const card = k => document.querySelector('#vc .pl2-card[data-plan="' + k + '"]');
+    return { tab: S.tab,
+             pro: (card('pro') || {}).innerText || '',
+             lead: (document.querySelector('#vc .pl2-card.lead') || {}).dataset,
+             text: document.getElementById('vc').innerText,
+             misses: document.querySelectorAll('#vc .pl2-card .fxx').length };
+  });
+  ok(r.tab === 'plans', 'it opens the plans', r.tab);
+  ok(/AMV Forge/.test(r.pro), 'and Pro says what it includes, from the same list everywhere else sells from', r.pro.slice(0, 160));
+  ok(r.misses === 0, 'a card lists what a plan has - what it lacks is in the comparison', r.misses);
+  ok(r.lead && r.lead.plan === 'pro', 'the one that leads is the NEXT step up, not the dearest', r.lead);
+  ok(!/Most popular|Best value/i.test(r.text), 'with no invented social proof', r.text.slice(0, 200));
 }
 
 section('Nothing on it is invented');

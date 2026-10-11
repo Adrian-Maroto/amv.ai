@@ -14977,3 +14977,14 @@ read as "nothing here" and the write followed it out of the folder. The
 bridge had learned exactly this (lstat, every component) and the CLI was
 written without it. A new path that touches the same danger as an old one
 starts from the old one's guard, not from scratch.
+
+## 587. "Like ChatGPT and Claude" is the owner's brief, never AMV's words
+
+The owner asked for screens laid out the way ChatGPT and Claude lay theirs out,
+and the request was copied straight into code comments and a commit message.
+The gate's `nothing-amv-ships-carries-another-name` caught the comments; the
+commit message had already been pushed to the working branch and had to be
+rewritten before main moved. A reference the owner uses to describe what they
+want is a brief, not a sentence for the product: comments say "the way the
+products people already use do it", commits describe AMV's own behaviour, and
+the comparison stays in the conversation it came from.

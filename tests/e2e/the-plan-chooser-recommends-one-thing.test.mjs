@@ -26,18 +26,24 @@ const app = await bootApp({ tab: 'chat', user: { name: 'A', email: 'a@x.com', in
 const { page, errors } = app;
 await page.setViewportSize({ width: 390, height: 844 });
 
+/* The chooser is the plans page now (Billing's Change plan opens it): the
+   buttons that move somebody to another paid plan, with the card each sits
+   on. The one that leads comes first. */
 const chooserOn = (plan) => page.evaluate(async (p) => {
   try { S.plan = p; saveStr('amv_plan', p); } catch (e) {}
-  setTab('billing');
+  setTab('plans');
   await new Promise(r => setTimeout(r, 900));
-  return [...document.querySelectorAll('.bill-swap button')].filter(b => b.offsetParent).map(b => {
+  return [...document.querySelectorAll('#vc .pl2-card .pl2-cta[data-dact="openUpgrade"]')].filter(b => b.offsetParent)
+    .sort((a, b) => (b.closest('.pl2-card').classList.contains('lead') ? 1 : 0) - (a.closest('.pl2-card').classList.contains('lead') ? 1 : 0))
+    .map(b => {
     /* Reachability is asked AFTER scrolling to it: on a phone this list sits
        below the fold, and "below the fold" is not "unreachable". */
     b.scrollIntoView({ block: 'center' });
     const r = b.getBoundingClientRect();
     const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-    return { text: (b.textContent || '').trim().replace(/\s+/g, ' '),
-             lead: b.classList.contains('bill-swap-lead'),
+    const card = b.closest('.pl2-card');
+    return { text: ((card.querySelector('.pl2-name') || {}).textContent + ' ' + b.textContent).trim().replace(/\s+/g, ' '),
+             lead: card.classList.contains('lead'),
              primary: b.classList.contains('bp'),
              width: Math.round(r.width),
              /* Measured with the harness comparator, not by rounding here.
@@ -109,11 +115,13 @@ section('And the badge is readable in BOTH themes');
      sends somebody looking for the wrong bug. */
   const readable = (theme) => page.evaluate(async (t) => {
     try { applyTheme(t); } catch (e) { document.body.classList.toggle('light', t === 'light'); }
-    setTab('billing');
+    setTab('plans');
     await new Promise(r => setTimeout(r, 800));
-    const tag = document.querySelector('.bill-swap-tag');
+    const tag = document.querySelector('#vc .pl2-card.lead .pl2-tag');
     if (!tag) return { found: false };
-    const btn = tag.closest('button');
+    /* The label sits on its card, not on a button, so it is measured against
+       the card - and must read exactly as well as the card's own text. */
+    const btn = tag.closest('.pl2-card');
     /* 0..1 components when the value came from `color-mix()`, 0..255 otherwise. */
     const k = s => /^color\(/i.test(String(s).trim()) ? 255 : 1;
     const rgb = s => (String(s).match(/[\d.]+/g) || []).slice(0, 3).map(v => +v * k(s));
