@@ -73,6 +73,27 @@ section('In English, every slot is filled and the claims are true');
   ok(!t.proHasApex && !/Apex/.test(t.proCard), 'and the Pro card does not offer Apex, which Pro does not include', t.proCard);
 }
 
+section('Every plan line is something the server does');
+{
+  const r = await page.evaluate(() => {
+    const all = ['free', 'pro', 'elite', 'ultra'].map(k => { const p = _planPitch(k); return [p.anchor, p.reassure].concat(p.feats.map(f => f[1])).join(' | '); }).join(' || ');
+    openPlanCompare('pro');
+    const table = (document.querySelector('#ovr .pc-table') || {}).textContent || '';
+    document.getElementById('pc-x')?.click();
+    return { all, table, ultraJobs: _autoMaxForPlan('ultra'), pro5h: PLAN_MESSAGES_5H.pro };
+  });
+  /* Each of these was on a plan card or in the table, and none of them is a
+     thing AMV does: the five-hour window allows Pro about one message every
+     eighteen seconds, the weekly top-engine count is a cap inside the month,
+     and the server has no priority queue, per-plan context, faster hardware
+     or early-release channel. */
+  for (const [claim, re] of [['one every nine seconds', /nine seconds/i], ['the weekly cap comes "on top"', /on top/i],
+                             ['Apex is first in the queue', /first in the queue/i], ['Ultra has the longest context', /longest context/i],
+                             ['faster hardware', /fastest hardware|priority speed/i], ['early access', /early access/i]])
+    ok(!re.test(r.all) && !re.test(r.table), 'no longer claims ' + claim, (r.all.match(re) || r.table.match(re) || [''])[0]);
+  ok(r.all.includes(r.ultraJobs + ' scheduled'), 'Ultra’s real difference is said in the server’s own number', r.ultraJobs);
+}
+
 section('In Spanish, the money screens are Spanish');
 {
   await switchTo('es');
@@ -85,6 +106,15 @@ section('In Spanish, the money screens are Spanish');
   ok(['Pago', 'Facturas', 'Cancelación'].every(h => r.bill.heads.includes(h)), 'Billing’s sections', r.bill.heads);
   ok(r.bill.change === 'Cambiar plan', 'and its plan button', r.bill.change);
   ok(!/\{plan\}|\{model\}/.test(JSON.stringify(r)), 'no {placeholder} reaches the screen');
+  const cards = await page.evaluate(async () => {
+    setTab('plans'); await new Promise(x => setTimeout(x, 400));
+    const pro = document.querySelector('#vc .pl2-card[data-plan="pro"]');
+    return { line: (pro.querySelector('.pl2-line') || {}).textContent || '', feats: [...pro.querySelectorAll('.pl2-feats li')].map(e => e.textContent) };
+  });
+  ok(/primer nivel/.test(cards.line), 'the card’s own line is Spanish', cards.line);
+  ok(cards.feats.some(f => /mensajes al mes/.test(f)) && cards.feats.some(f => /Hasta \d+ mensajes de Forge/.test(f)),
+     'and so is what it includes, with the numbers in their places', cards.feats);
+  ok(!cards.feats.some(f => /\{[a-z]+\}/.test(f)), 'with no slot left unfilled', cards.feats);
 }
 
 section('In Japanese, the plan name goes where Japanese puts it');

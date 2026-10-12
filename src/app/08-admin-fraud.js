@@ -566,7 +566,7 @@ function renderBillingView(targetEl){
                cannot tell them apart. Somebody who has switched auto-renew off
                is looking for exactly this line to confirm it. */
             : 'Active'+(nextDate?' \u00b7 '+(rn && rn.autoRenew===false?'ends ':'renews ')+escH(fmt(nextDate)):'')+
-              ' \u00b7 '+escH(P.blurb||''))+
+              ' \u00b7 '+escH(T(P.blurb||'')))+
         '</div>'+
         (plan!=='free'?
         /* Renewal moved up into the line under the plan, where somebody looks
@@ -1218,7 +1218,7 @@ function openUpgradeModal(lockedModel){
     return '<div class="upg2-card'+(isNeed?' lead':'')+'">'+
       '<div class="pl2-top"><div class="pl2-name">'+escH(pl.name)+(isNeed?'<span class="pl2-tag">'+escH(T('Unlocks {model}').replace('{model}',()=>m.label))+'</span>':'')+'</div>'+
       '<div class="pl2-price"><span class="pl2-amt">$'+pl.price+'</span><span class="pl2-per">'+escH(T('/ month'))+'</span></div>'+
-      '<p class="pl2-line">'+escH(pl.blurb||'')+'</p></div>'+
+      '<p class="pl2-line">'+escH(T(pl.blurb||''))+'</p></div>'+
       '<button type="button" class="btn '+(isNeed?'bp':'bs')+' pl2-cta" data-upg="'+k+'">'+escH(T('Get {plan}').replace('{plan}',()=>pl.name))+'</button>'+
     '</div>';
   };
@@ -1284,8 +1284,10 @@ function openPlanCompare(highlight){
        is the thing that decides, and it is what this row now reads. */
     ['Scheduled & background jobs', p=>String(_autoMaxForPlan(p))],
     ['Connect Gmail, Drive, Calendar, GitHub', p=>p==='free'?'-':'\u2713'],
-    ['Early access to new features', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'-')],
-    ['Priority speed', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Fastest hardware':'\u2713')],
+    /* "Early access to new features" and "Priority speed / Fastest hardware"
+       were rows here. Nothing in AMV releases a feature to one plan first,
+       and every plan runs on the same engines and the same hardware - the
+       difference is how much, which the rows above already say in numbers. */
     ['Team workspaces (roles, shared projects)', p=>isC(p)?'-':(PLAN_RANK[p]>=3?'\u2713':'-')],
     ['Support', p=>isC(p)?'Priority':(PLAN_RANK[p]>=3?'Dedicated':(PLAN_RANK[p]>=2?'Priority 24/7':(p==='pro'?'Priority':'Community')))],
     ['Hard cap (no overage)', p=>p==='free'?'-':'\u2713'],

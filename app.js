@@ -11447,65 +11447,78 @@ window._ovShell=_ovShell; window._ovWire=_ovWire; window._ovOpenLoading=_ovOpenL
    Built on demand instead, so anything it calls is called at render time, which
    is when it was always called before. */
 function _planPitch(key){
+  /* Every line goes through T() as a whole sentence with its numbers in slots,
+     so a plan reads in the person's language and each language keeps its own
+     word order. The numbers come from the same tables the server enforces.
+
+     WHAT IT DOES NOT SAY ANY MORE, because none of it was true: that Pro ran
+     "one every nine seconds, all day" (its five-hour window allows about one
+     every eighteen), that the weekly top-engine allowance came "on top" (it is
+     a cap inside the monthly count, so it is "up to"), that Apex is "first in
+     the queue" and Ultra has the "longest context" (the server has neither a
+     priority queue nor a per-plan context). Ultra's real difference over Elite
+     - a hundred scheduled jobs to Elite's twenty-five - says it instead. */
+  const t=(k,v)=>{ let s=T(k); if(v) for(const x in v) s=s.split('{'+x+'}').join(String(v[x])); return s; };
+  const H=USAGE_WINDOW_HOURS;
   const P = {
   free: {
-    anchor: 'Everything you need to explore',
+    anchor: t('Everything you need to explore'),
     feats: [
-      [1,'<b>'+_msgMonthLabel('free')+' messages a month</b>, no card'],
-      [1,'Up to <b>'+_msg5hLabel('free')+' every '+USAGE_WINDOW_HOURS+' hours</b>, so it comes back the same day'],
-      [1,'Chat, code &amp; interactive 3D models'],
-      [1,'File analysis - PDF, images, code'],
-      [0,'AMV Forge and Apex, the top engines'],
-      [0,'Autonomous agents &amp; Crew'],
-      [0,'Connected accounts (mail, calendar)'],
+      [1,t('<b>{n} messages a month</b>, no card',{n:_msgMonthLabel('free')})],
+      [1,t('Up to <b>{n} every {h} hours</b>, so it comes back the same day',{n:_msg5hLabel('free'),h:H})],
+      [1,t('Chat, code &amp; interactive 3D models')],
+      [1,t('File analysis - PDF, images, code')],
+      [0,t('AMV Forge and Apex, the top engines')],
+      [0,t('Autonomous agents &amp; Crew')],
+      [0,t('Connected accounts (mail, calendar)')],
     ],
     reassure: '',
   },
   pro: {
-    anchor: 'A frontier engine at the lowest price anyone charges for one',
+    anchor: t('A frontier engine at the lowest price anyone charges for one'),
     feats: [
       /* THE HEADLINE IS THE ENGINE, NOT A MULTIPLE.
 
          "5x the usage" compared token counts across engines of completely
          different cost. What is actually better about paying is WHICH ENGINE
          runs, and the cheapest paid plan is where it starts. */
-      [1,'<b>AMV Forge</b> - a frontier engine, on the cheapest paid plan'],
-      [1,'<b>'+_msgMonthLabel('pro')+' messages a month</b> - one every nine seconds, all day'],
-      [1,'<b>'+_msg5hLabel('pro')+' every '+USAGE_WINDOW_HOURS+' hours</b>, not one monthly cliff'],
+      [1,t('<b>AMV Forge</b> - a frontier engine, on the cheapest paid plan')],
+      [1,t('<b>{n} messages a month</b>',{n:_msgMonthLabel('pro')})],
+      [1,t('<b>{n} every {h} hours</b>, not one monthly cliff',{n:_msg5hLabel('pro'),h:H})],
       /* Forge only: Apex starts at Elite (PLAN_TIERS, and the server's minPlan),
          so naming it here sold Pro something Pro cannot use. */
-      [1,'<b>'+_topWeekLabel('pro')+' Forge messages a week</b> on top'],
-      [1,'Autonomous agents &amp; Crew, run from <b>Mission Control</b>'],
-      [1,'<b>Preview &amp; approve</b> every action before it runs'],
-      [1,'Build &amp; ship real apps in Dev, connect mail, calendar &amp; files'],
+      [1,t('<b>Up to {n} Forge messages a week</b>',{n:_topWeekLabel('pro')})],
+      [1,t('Autonomous agents &amp; Crew, run from <b>Mission Control</b>')],
+      [1,t('<b>Preview &amp; approve</b> every action before it runs')],
+      [1,t('Build &amp; ship real apps in Dev, connect mail, calendar &amp; files')],
     ],
-    reassure: 'One price, cancel anytime',
+    reassure: t('One price, cancel anytime'),
   },
   elite: {
-    anchor: 'For founders, builders &amp; power users',
+    anchor: t('For founders, builders &amp; power users'),
     feats: [
-      [1,'<b>Everything in Pro</b>, plus:'],
-      [1,'<b>AMV Apex</b> - the flagship engine, first in the queue'],
-      [1,'<b>'+_msgMonthLabel('elite')+' messages a month</b>, '+_msg5hLabel('elite')+' every '+USAGE_WINDOW_HOURS+' hours'],
-      [1,'<b>'+_topWeekLabel('elite')+' Forge &amp; Apex messages a week</b>'],
-      [1,'<b>Full-stack app builder</b> + one-click deploy'],
-      [1,'Multi-file projects, code review &amp; auto-debug'],
-      [1,'<b>'+_rpmLabel('elite')+'</b> and 24/7 support'],
+      [1,t('<b>Everything in Pro</b>, plus:')],
+      [1,t('<b>AMV Apex</b> - the flagship engine')],
+      [1,t('<b>{n} messages a month</b>, {m} every {h} hours',{n:_msgMonthLabel('elite'),m:_msg5hLabel('elite'),h:H})],
+      [1,t('<b>Up to {n} Forge &amp; Apex messages a week</b>',{n:_topWeekLabel('elite')})],
+      [1,t('<b>Full-stack app builder</b> + one-click deploy')],
+      [1,t('Multi-file projects, code review &amp; auto-debug')],
+      [1,t('<b>{rpm} requests a minute</b> and 24/7 support',{rpm:_rpmForPlan('elite')})],
     ],
-    reassure: 'Full-power engines and agents, without a per-seat bill',
+    reassure: t('Full-power engines and agents, without a per-seat bill'),
   },
   ultra: {
-    anchor: 'For serious operators',
+    anchor: t('For serious operators'),
     feats: [
-      [1,'<b>Everything in Elite</b>, plus:'],
-      [1,'<b>'+_msgMonthLabel('ultra')+' messages a month</b>, '+_msg5hLabel('ultra')+' every '+USAGE_WINDOW_HOURS+' hours'],
-      [1,'<b>'+_topWeekLabel('ultra')+' Forge &amp; Apex messages a week</b>'],
-      [1,'<b>Highest throughput</b> - '+_rpmLabel('ultra')],
-      [1,'<b>Longest context</b> - whole codebases at once'],
-      [1,'Hand off a goal, get a finished result'],
-      [1,'\ud83d\udc65 Team workspaces, roles &amp; shared projects'],
+      [1,t('<b>Everything in Elite</b>, plus:')],
+      [1,t('<b>{n} messages a month</b>, {m} every {h} hours',{n:_msgMonthLabel('ultra'),m:_msg5hLabel('ultra'),h:H})],
+      [1,t('<b>Up to {n} Forge &amp; Apex messages a week</b>',{n:_topWeekLabel('ultra')})],
+      [1,t('<b>Highest throughput</b> - {rpm} requests a minute',{rpm:_rpmForPlan('ultra')})],
+      [1,t('<b>{n} scheduled &amp; background jobs</b> running for you',{n:_autoMaxForPlan('ultra')})],
+      [1,t('Hand off a goal, get a finished result')],
+      [1,'\ud83d\udc65 '+t('Team workspaces, roles &amp; shared projects')],
     ],
-    reassure: 'The highest limits AMV offers',
+    reassure: t('The highest limits AMV offers'),
   },
   };
   return P[key] || null;
@@ -16543,7 +16556,7 @@ function renderBillingView(targetEl){
                cannot tell them apart. Somebody who has switched auto-renew off
                is looking for exactly this line to confirm it. */
             : 'Active'+(nextDate?' \u00b7 '+(rn && rn.autoRenew===false?'ends ':'renews ')+escH(fmt(nextDate)):'')+
-              ' \u00b7 '+escH(P.blurb||''))+
+              ' \u00b7 '+escH(T(P.blurb||'')))+
         '</div>'+
         (plan!=='free'?
         /* Renewal moved up into the line under the plan, where somebody looks
@@ -17195,7 +17208,7 @@ function openUpgradeModal(lockedModel){
     return '<div class="upg2-card'+(isNeed?' lead':'')+'">'+
       '<div class="pl2-top"><div class="pl2-name">'+escH(pl.name)+(isNeed?'<span class="pl2-tag">'+escH(T('Unlocks {model}').replace('{model}',()=>m.label))+'</span>':'')+'</div>'+
       '<div class="pl2-price"><span class="pl2-amt">$'+pl.price+'</span><span class="pl2-per">'+escH(T('/ month'))+'</span></div>'+
-      '<p class="pl2-line">'+escH(pl.blurb||'')+'</p></div>'+
+      '<p class="pl2-line">'+escH(T(pl.blurb||''))+'</p></div>'+
       '<button type="button" class="btn '+(isNeed?'bp':'bs')+' pl2-cta" data-upg="'+k+'">'+escH(T('Get {plan}').replace('{plan}',()=>pl.name))+'</button>'+
     '</div>';
   };
@@ -17261,8 +17274,10 @@ function openPlanCompare(highlight){
        is the thing that decides, and it is what this row now reads. */
     ['Scheduled & background jobs', p=>String(_autoMaxForPlan(p))],
     ['Connect Gmail, Drive, Calendar, GitHub', p=>p==='free'?'-':'\u2713'],
-    ['Early access to new features', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'-')],
-    ['Priority speed', p=>p==='free'?'Standard':(PLAN_RANK[p]>=3?'Fastest hardware':'\u2713')],
+    /* "Early access to new features" and "Priority speed / Fastest hardware"
+       were rows here. Nothing in AMV releases a feature to one plan first,
+       and every plan runs on the same engines and the same hardware - the
+       difference is how much, which the rows above already say in numbers. */
     ['Team workspaces (roles, shared projects)', p=>isC(p)?'-':(PLAN_RANK[p]>=3?'\u2713':'-')],
     ['Support', p=>isC(p)?'Priority':(PLAN_RANK[p]>=3?'Dedicated':(PLAN_RANK[p]>=2?'Priority 24/7':(p==='pro'?'Priority':'Community')))],
     ['Hard cap (no overage)', p=>p==='free'?'-':'\u2713'],
@@ -17392,7 +17407,7 @@ const PLANS={
   free:{name:'Free',price:0,blurb:'A monthly allowance, enough to explore everything',get allowance(){return _allowanceLabel('free');}},
   pro:{name:'Pro',price:15,blurb:'AMV Forge and Swift, autonomous agents, and the app sandbox',get allowance(){return _allowanceLabel('pro');}},
   elite:{name:'Elite',price:75,blurb:'Ship real apps to a live URL, on our most capable engine',get allowance(){return _allowanceLabel('elite');}},
-  ultra:{name:'Ultra',price:200,blurb:'Whole codebases, autonomous projects, and a team around them',get allowance(){return _allowanceLabel('ultra');}},
+  ultra:{name:'Ultra',price:200,blurb:'The highest limits, autonomous projects, and a team around them',get allowance(){return _allowanceLabel('ultra');}},
   /* Priced PER SEAT, so `price` here is the price of one seat and the card that
      sells it multiplies. Every seat adds its own allowance to a shared pool
      rather than dividing a fixed one, which is why adding a teammate is worth

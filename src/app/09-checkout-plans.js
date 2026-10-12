@@ -11,7 +11,7 @@ const PLANS={
   free:{name:'Free',price:0,blurb:'A monthly allowance, enough to explore everything',get allowance(){return _allowanceLabel('free');}},
   pro:{name:'Pro',price:15,blurb:'AMV Forge and Swift, autonomous agents, and the app sandbox',get allowance(){return _allowanceLabel('pro');}},
   elite:{name:'Elite',price:75,blurb:'Ship real apps to a live URL, on our most capable engine',get allowance(){return _allowanceLabel('elite');}},
-  ultra:{name:'Ultra',price:200,blurb:'Whole codebases, autonomous projects, and a team around them',get allowance(){return _allowanceLabel('ultra');}},
+  ultra:{name:'Ultra',price:200,blurb:'The highest limits, autonomous projects, and a team around them',get allowance(){return _allowanceLabel('ultra');}},
   /* Priced PER SEAT, so `price` here is the price of one seat and the card that
      sells it multiplies. Every seat adds its own allowance to a shared pool
      rather than dividing a fixed one, which is why adding a teammate is worth
