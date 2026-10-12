@@ -140,7 +140,7 @@ function renderPlansView() {
     if (k === 'free') return '<button type="button" class="btn bs pl2-cta" data-gs="billing">' + escH(T('Manage in Billing')) + '</button>';
     const up = nowR < 0 || rank(k) > nowR;
     return '<button type="button" class="btn ' + (k === lead ? 'bp' : 'bs') + ' pl2-cta" data-dact="openUpgrade" data-darg="' + escH(k) + '">'
-      + escH((up ? T('Get') : T('Switch to')) + ' ' + P.name) + '</button>';
+      + escH((up ? T('Get {plan}') : T('Switch to {plan}')).replace('{plan}', () => P.name)) + '</button>';
   };
   const card = k => {
     const P = PLANS[k] || { name: 'Free', price: 0 };
@@ -164,8 +164,11 @@ function renderPlansView() {
     '<div class="sv fi"><div class="vi pl2">'
       + '<div class="pl2-head">'
         + '<h1 class="pl2-t">' + escH(now === 'free' ? T('Upgrade your plan') : T('Change your plan')) + '</h1>'
-        + '<p class="pl2-sub">' + escH(T('You are on')) + ' ' + escH(nowName) + '. '
-          + escH(T('The same engine on every paid plan - a bigger plan buys more of it, not a better one.')) + '</p>'
+        /* What each step buys, as PLAN_TIERS and the server have it. It used to
+           say every paid plan ran the same engine, which Pro does not: Apex
+           starts at Elite. */
+        + '<p class="pl2-sub">' + escH(T('You are on {plan}').replace('{plan}', () => nowName)) + '. '
+          + escH(T('Pro unlocks AMV Forge. Elite and Ultra add AMV Apex, and each step up gives you more usage.')) + '</p>'
       + '</div>'
       + '<div class="pl2-grid">' + ladder.map(card).join('') + '</div>'
       + '<div class="pl2-more">'

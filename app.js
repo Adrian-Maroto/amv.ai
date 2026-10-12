@@ -11436,7 +11436,9 @@ function _planPitch(key){
       [1,'<b>AMV Forge</b> - a frontier engine, on the cheapest paid plan'],
       [1,'<b>'+_msgMonthLabel('pro')+' messages a month</b> - one every nine seconds, all day'],
       [1,'<b>'+_msg5hLabel('pro')+' every '+USAGE_WINDOW_HOURS+' hours</b>, not one monthly cliff'],
-      [1,'<b>'+_topWeekLabel('pro')+' Forge &amp; Apex messages a week</b> on top'],
+      /* Forge only: Apex starts at Elite (PLAN_TIERS, and the server's minPlan),
+         so naming it here sold Pro something Pro cannot use. */
+      [1,'<b>'+_topWeekLabel('pro')+' Forge messages a week</b> on top'],
       [1,'Autonomous agents &amp; Crew, run from <b>Mission Control</b>'],
       [1,'<b>Preview &amp; approve</b> every action before it runs'],
       [1,'Build &amp; ship real apps in Dev, connect mail, calendar &amp; files'],
@@ -16641,7 +16643,7 @@ function renderBillingView(targetEl){
          screenshot does. What it can do is say which card is on file when the
          processor has told us, and put the one control that actually changes it
          directly underneath. Anything else here would be a picture of a card. */
-      '<div class="ss2 bill-pm"><h3>Payment</h3>'+
+      '<div class="ss2 bill-pm"><h3>'+escH(T('Payment'))+'</h3>'+
         '<div id="bill-pm-body">'+
           (plan==='free'
             ? '<p class="bill-pm-none">No card on file. You are on Free, so there is nothing to pay and nothing stored.</p>'
@@ -16656,7 +16658,7 @@ function renderBillingView(targetEl){
       /* NOTHING HERE IS INVENTED. _invoiceTableHTML is the processor's list or
          an honest sentence saying there is none; it is not a table this file
          fills in. */
-      '<div class="ss2 bill-tx"><h3>Invoices</h3>'+
+      '<div class="ss2 bill-tx"><h3>'+escH(T('Invoices'))+'</h3>'+
         '<div id="bill-invoices">'+(plan==='free'
           ? _invoiceTableHTML(plan,P,sinceDate)
           : (liveBackend?'<div class="bill-inv-loading">Loading your invoices\u2026</div>':_invoiceTableHTML(plan,P,sinceDate)))+'</div>'+
@@ -16670,7 +16672,7 @@ function renderBillingView(targetEl){
          it takes one click. It still says exactly what happens, and it still
          goes through the processor, which is the only thing that can really end
          a subscription. */
-      '<div class="ss2 bill-leave"><h3>Cancellation</h3>'+
+      '<div class="ss2 bill-leave"><h3>'+escH(T('Cancellation'))+'</h3>'+
         '<button class="bill-cancel-link" id="bill-cancel">Cancel subscription</button>'+
         '<p class="bill-leave-s">You keep '+escH(P.name)+' until the end of the period you have already paid for, and nothing you have made is deleted.</p>'+
         '<div class="seat-say" id="bill-cancel-say" role="status" aria-live="polite"></div>'+
@@ -17155,18 +17157,18 @@ function openUpgradeModal(lockedModel){
   const order=['pro','elite','ultra'].filter(k=>PLAN_RANK[k]>=PLAN_RANK[needPlan]);
   const card=(k)=>{ const pl=PLANS[k]; const isNeed=k===needPlan;
     return '<div class="upg2-card'+(isNeed?' lead':'')+'">'+
-      '<div class="pl2-top"><div class="pl2-name">'+escH(pl.name)+(isNeed?'<span class="pl2-tag">'+escH(T('Unlocks'))+' '+escH(m.label)+'</span>':'')+'</div>'+
+      '<div class="pl2-top"><div class="pl2-name">'+escH(pl.name)+(isNeed?'<span class="pl2-tag">'+escH(T('Unlocks {model}').replace('{model}',()=>m.label))+'</span>':'')+'</div>'+
       '<div class="pl2-price"><span class="pl2-amt">$'+pl.price+'</span><span class="pl2-per">'+escH(T('/ month'))+'</span></div>'+
       '<p class="pl2-line">'+escH(pl.blurb||'')+'</p></div>'+
-      '<button type="button" class="btn '+(isNeed?'bp':'bs')+' pl2-cta" data-upg="'+k+'">'+escH(T('Get'))+' '+escH(pl.name)+'</button>'+
+      '<button type="button" class="btn '+(isNeed?'bp':'bs')+' pl2-cta" data-upg="'+k+'">'+escH(T('Get {plan}').replace('{plan}',()=>pl.name))+'</button>'+
     '</div>';
   };
   const lock='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
   r.innerHTML='<div class="upg-ov" id="upg-bg"><div class="upg-modal upg2" role="dialog" aria-modal="true" aria-labelledby="upg2-t">'+
     '<button class="dna-x upg2-x" id="upg-x" aria-label="'+escH(T('Close'))+'">✕</button>'+
     '<div class="upg2-head"><span class="upg2-ic">'+lock+'</span>'+
-      '<h2 id="upg2-t">'+escH(T('Upgrade to use'))+' '+escH(m.label)+'</h2>'+
-      '<p>'+escH(m.label)+' '+escH(T('is included from'))+' '+escH(PLANS[needPlan].name)+' '+escH(T('up. Cancel anytime.'))+'</p>'+
+      '<h2 id="upg2-t">'+escH(T('Upgrade to use {model}').replace('{model}',()=>m.label))+'</h2>'+
+      '<p>'+escH(T('{model} is included from {plan} up. Cancel anytime.').replace('{model}',()=>m.label).replace('{plan}',()=>PLANS[needPlan].name))+'</p>'+
     '</div>'+
     '<div class="upg2-grid">'+order.map(card).join('')+'</div>'+
     '<div class="upg2-foot"><button type="button" class="pl2-link" id="upg-compare">'+escH(T('Compare all plans'))+'</button>'+
@@ -18717,7 +18719,7 @@ function renderUpgradeView(){
       + '<div class="upg-ladder" role="group" aria-label="' + escH(T('Choose a plan')) + '">' + ladder + '</div>'
 
       + '<div class="upg-head">'
-        + '<span class="upg-eyebrow">' + escH(T('You are on')) + ' ' + escH(nowName) + '</span>'
+        + '<span class="upg-eyebrow">' + escH(T('You are on {plan}').replace('{plan}', () => nowName)) + '</span>'
         + '<h1 class="upg-t">' + escH(P.name) + '</h1>'
         + '<p class="upg-anchor">' + pitch.anchor + '</p>'
         + '<div class="upg-price"><span class="upg-cur">$</span>' + P.price
@@ -44178,7 +44180,7 @@ function renderPlansView() {
     if (k === 'free') return '<button type="button" class="btn bs pl2-cta" data-gs="billing">' + escH(T('Manage in Billing')) + '</button>';
     const up = nowR < 0 || rank(k) > nowR;
     return '<button type="button" class="btn ' + (k === lead ? 'bp' : 'bs') + ' pl2-cta" data-dact="openUpgrade" data-darg="' + escH(k) + '">'
-      + escH((up ? T('Get') : T('Switch to')) + ' ' + P.name) + '</button>';
+      + escH((up ? T('Get {plan}') : T('Switch to {plan}')).replace('{plan}', () => P.name)) + '</button>';
   };
   const card = k => {
     const P = PLANS[k] || { name: 'Free', price: 0 };
@@ -44202,8 +44204,11 @@ function renderPlansView() {
     '<div class="sv fi"><div class="vi pl2">'
       + '<div class="pl2-head">'
         + '<h1 class="pl2-t">' + escH(now === 'free' ? T('Upgrade your plan') : T('Change your plan')) + '</h1>'
-        + '<p class="pl2-sub">' + escH(T('You are on')) + ' ' + escH(nowName) + '. '
-          + escH(T('The same engine on every paid plan - a bigger plan buys more of it, not a better one.')) + '</p>'
+        /* What each step buys, as PLAN_TIERS and the server have it. It used to
+           say every paid plan ran the same engine, which Pro does not: Apex
+           starts at Elite. */
+        + '<p class="pl2-sub">' + escH(T('You are on {plan}').replace('{plan}', () => nowName)) + '. '
+          + escH(T('Pro unlocks AMV Forge. Elite and Ultra add AMV Apex, and each step up gives you more usage.')) + '</p>'
       + '</div>'
       + '<div class="pl2-grid">' + ladder.map(card).join('') + '</div>'
       + '<div class="pl2-more">'

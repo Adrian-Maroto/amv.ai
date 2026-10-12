@@ -3782,7 +3782,9 @@ function _planPitch(key){
       [1,'<b>AMV Forge</b> - a frontier engine, on the cheapest paid plan'],
       [1,'<b>'+_msgMonthLabel('pro')+' messages a month</b> - one every nine seconds, all day'],
       [1,'<b>'+_msg5hLabel('pro')+' every '+USAGE_WINDOW_HOURS+' hours</b>, not one monthly cliff'],
-      [1,'<b>'+_topWeekLabel('pro')+' Forge &amp; Apex messages a week</b> on top'],
+      /* Forge only: Apex starts at Elite (PLAN_TIERS, and the server's minPlan),
+         so naming it here sold Pro something Pro cannot use. */
+      [1,'<b>'+_topWeekLabel('pro')+' Forge messages a week</b> on top'],
       [1,'Autonomous agents &amp; Crew, run from <b>Mission Control</b>'],
       [1,'<b>Preview &amp; approve</b> every action before it runs'],
       [1,'Build &amp; ship real apps in Dev, connect mail, calendar &amp; files'],

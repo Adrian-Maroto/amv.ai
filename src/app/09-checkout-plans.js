@@ -1374,7 +1374,7 @@ function renderUpgradeView(){
       + '<div class="upg-ladder" role="group" aria-label="' + escH(T('Choose a plan')) + '">' + ladder + '</div>'
 
       + '<div class="upg-head">'
-        + '<span class="upg-eyebrow">' + escH(T('You are on')) + ' ' + escH(nowName) + '</span>'
+        + '<span class="upg-eyebrow">' + escH(T('You are on {plan}').replace('{plan}', () => nowName)) + '</span>'
         + '<h1 class="upg-t">' + escH(P.name) + '</h1>'
         + '<p class="upg-anchor">' + pitch.anchor + '</p>'
         + '<div class="upg-price"><span class="upg-cur">$</span>' + P.price
