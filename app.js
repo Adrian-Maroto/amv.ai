@@ -11053,7 +11053,11 @@ function renderHist(){
       ? '<div class="nh">No results for &ldquo;'+escH(search)+'&rdquo;</div>'
       : S.starFilter
       ? emptyState({svg:'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>',title:'No starred chats yet',sub:'Star a conversation to keep it close - they\u2019ll gather here for quick access.'})
-      : emptyState({svg:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',title:'No conversations yet',sub:'Ask AMV anything to get started - your chats and work sessions will show up here.'});
+      /* Nothing at all, the way the chat products people use show an empty
+         history. It was a large card under a hidden heading, clipped at the
+         edge of the sidebar and in English whatever the language. Search and
+         the star filter keep their answers: those reply to something done. */
+      : '';
     return;
   }
   // Build a unified, recency-sorted list of rows.

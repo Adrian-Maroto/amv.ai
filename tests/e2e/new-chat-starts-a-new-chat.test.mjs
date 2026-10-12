@@ -72,6 +72,15 @@ section('A blank chat is not in Recents until something is said in it');
   });
   ok(!r.before && r.blank === 0, 'pressing New chat does not add an empty row to Recents', r);
   ok(r.after, 'and the chat appears there at its first message', r);
+  const empty = await page.evaluate(() => {
+    const keep = S.convs; S.convs = S.convs.filter(c => !(c.msgs || []).length); S.starFilter = false;
+    if (Array.isArray(_SESSIONS)) _SESSIONS.length = 0;
+    renderHist();
+    const out = { text: document.getElementById('hist').textContent.trim(), cards: document.querySelectorAll('#hist .empty-state').length };
+    S.convs = keep; renderHist();
+    return out;
+  });
+  ok(empty.text === '' && empty.cards === 0, 'with no chats yet, Recents shows nothing rather than a card', empty);
 }
 
 section('An old chat is opened from Recents');
