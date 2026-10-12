@@ -704,7 +704,7 @@ function _i18nLoadPack(code){
         const e = Object.prototype.hasOwnProperty.call(I18N, k) ? I18N[k] : (I18N[k] = {});
         e[code] = String(pack[k]);
       }
-      _I18N_PACKS[code] = true;
+      _I18N_PACKS[code] = true; _i18nIndexReset();
       return true;
     })
     .catch(err => {
@@ -726,10 +726,35 @@ try{ window.addEventListener('online', () => {
   const c = _lang();
   if(typeof _I18N_PACKS[c] === 'number'){ delete _I18N_PACKS[c]; try{ _translateUI(); }catch(e){} }
 }); }catch(e){}
+/* THE LOOKUP, IN THREE STEPS.
+
+   1. The exact string.
+   2. The same string in any case ('Sign Out' finds 'Sign out'). This used to
+      walk every key in the dictionary on every miss - fine at a few hundred
+      keys, a stall on every screen at thousands - so it reads an index that
+      is rebuilt whenever a language pack lands.
+   3. The same sentence with its numbers taken out. "100,000 messages a month"
+      is the entry "{0} messages a month" with 100,000 put back, so a number
+      that changes - a limit, a count, a price - does not knock a sentence back
+      into English. Positional slots, filled in the order the numbers appear. */
+let _i18nLowIdx=null;
+function _i18nIndexReset(){ _i18nLowIdx=null; }
+function _i18nLow(lo){
+  if(!_i18nLowIdx){ _i18nLowIdx=new Map(); for(const k in I18N){ const l=k.toLowerCase(); if(!_i18nLowIdx.has(l)) _i18nLowIdx.set(l,k); } }
+  const k=_i18nLowIdx.get(lo); return k!=null ? I18N[k] : null;
+}
+const _I18N_NUM=/\d[\d.,]*\d|\d/g;
 function T(s){ const code=_lang(); if(code==='auto'||code==='en') return s; let e=I18N[s]; if(e&&e[code]) return e[code];
-  // case-insensitive fallback so 'Sign Out' matches 'Sign out', 'New Chat' matches 'New chat', etc.
-  if(!e){ const lo=String(s).toLowerCase(); for(const k in I18N){ if(k.toLowerCase()===lo){ e=I18N[k]; break; } } }
-  return (e&&e[code])||s; }
+  const str=String(s);
+  if(!e) e=_i18nLow(str.toLowerCase());
+  if(e&&e[code]) return e[code];
+  const nums=str.match(_I18N_NUM);
+  if(nums){
+    let i=0; const tpl=str.replace(_I18N_NUM,()=>'{'+(i++)+'}');
+    const te=I18N[tpl]||_i18nLow(tpl.toLowerCase());
+    if(te&&te[code]) return te[code].replace(/\{(\d+)\}/g,(m,n)=>nums[+n]!=null?nums[+n]:m);
+  }
+  return s; }
 function _applyDir(){ try{ const code=_lang(); document.documentElement.dir=(RTL_LANGS.indexOf(code)>=0?'rtl':'ltr'); document.documentElement.lang=(code==='auto'?'en':code); }catch(e){} }
 /* Translate the static UI chrome. Stores each element's English source once,
    then re-applies T() on every language change so switching is reversible. */
@@ -754,6 +779,7 @@ function _i18nRoots(){
 function _i18nCache(){ try{ return load('amv_i18n_cache')||{}; }catch(e){ return {}; } }
 function _i18nSaveCache(c){ try{ store('amv_i18n_cache',c); }catch(e){} }
 function _i18nKey(code,s){ return code+'\u0001'+s; }
+const _I18N_ATTRS=['title','aria-label'];
 // collect every visible text node + translatable attribute under root
 function _collectI18nNodes(root){
   const out=[]; const SKIP={SCRIPT:1,STYLE:1,SVG:1,CODE:1,PRE:1,TEXTAREA:1};
@@ -787,6 +813,12 @@ function _collectI18nNodes(root){
         if(!b){
           const ph=node.getAttribute&&node.getAttribute('placeholder');
           if(ph&&ph.trim()&&(/[A-Za-z]/.test(ph)||node._i18nPhSrc!=null)) out.push({type:'ph',node});
+          /* A hover tip and a screen reader's label are words somebody reads,
+             in their language like everything else. */
+          for(const a of _I18N_ATTRS){
+            const v=node.getAttribute&&node.getAttribute(a);
+            if(v&&v.trim()&&(/[A-Za-z]{2}/.test(v)||(node._i18nAttrSrc&&node._i18nAttrSrc[a]!=null))) out.push({type:'attr',node,attr:a});
+          }
         }
         walk(node, b);
       }
@@ -871,6 +903,7 @@ function _restoreI18nDOM(root){
   for(const it of nodes){
     try{
       if(it.type==='text'){ if(it.node._i18nSrc!=null) it.node.nodeValue=it.node._i18nSrc; }
+      else if(it.type==='attr'){ const o=it.node._i18nAttrSrc; if(o&&o[it.attr]!=null) it.node.setAttribute(it.attr, o[it.attr]); }
       else { if(it.node._i18nPhSrc!=null) it.node.setAttribute('placeholder', it.node._i18nPhSrc); }
     }catch(e){}
   }
@@ -882,6 +915,21 @@ async function _autoTranslateDOM(code, root){
   const need=new Set();
   // apply cached/dict immediately; collect unknowns
   for(const it of nodes){
+    if(it.type==='attr'){
+      /* Attributes keep their own remembered originals, one per attribute:
+         a node's text key and its tooltip are different strings. */
+      const o=it.node._i18nAttrSrc||(it.node._i18nAttrSrc={});
+      const now=it.node.getAttribute(it.attr)||'';
+      /* Code that sets a new tooltip later (a button that becomes "Stop")
+         writes English again; that new English is the original from now on. */
+      if(o[it.attr]==null || (now!==o[it.attr] && now!==T(o[it.attr].trim()) && now!==cache[_i18nKey(code,o[it.attr].trim())])) o[it.attr]=now;
+      const akey=o[it.attr].trim(); if(!akey) continue;
+      const ad=T(akey);
+      if(ad!==akey){ it.node.setAttribute(it.attr, ad); continue; }
+      const ac=cache[_i18nKey(code,akey)];
+      if(ac) it.node.setAttribute(it.attr, ac); else need.add(akey);
+      continue;
+    }
     const src=(it.type==='text'?it.node.nodeValue:it.node.getAttribute('placeholder'))||'';
     // permanently remember the ORIGINAL english text so we can always restore it
     if(it.type==='text'){ if(it.node._i18nSrc==null) it.node._i18nSrc=it.node.nodeValue; }

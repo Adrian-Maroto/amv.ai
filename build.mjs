@@ -140,6 +140,7 @@ function splitI18n(full) {
     throw new Error('i18n data markers not found in src/app - refusing to build a page whose translations went nowhere');
   }
   const dict = mergeI18n(full.slice(a, b));
+  foldI18nFiles(dict);
   const packs = {};
   for (const k of Object.keys(dict).sort()) {
     for (const c of Object.keys(dict[k]).sort()) (packs[c] || (packs[c] = {}))[k] = dict[k][c];
@@ -179,6 +180,42 @@ function mergeI18n(region) {
     if (Object.keys(e).length) out[k] = e;
   }
   return out;
+}
+/* THE REST OF THE DICTIONARY, ONE FILE PER SURFACE.
+
+   src/i18n/*.json holds the translations the hand-written literal never had:
+   every string on every screen, written out for all seventeen languages. Each
+   file maps the English, exactly as it appears on screen, to one translation
+   per language.
+
+   It FILLS, never overrides: a language the literal already has keeps the
+   literal's wording, so two places can never disagree about which one wins.
+
+   And it is CHECKED here, because a translation that is missing or broken
+   does not throw anywhere - it just shows English, or worse, shows a sentence
+   whose number slot went missing. So the build refuses an entry that lacks a
+   language, drops a {slot}, or changes the bold markup. */
+const I18N_SRC_DIR = 'src/i18n';
+const I18N_LANGS = ['es','zh','hi','ar','pt','fr','de','ja','ru','id','bn','ur','tr','vi','it','ko','ta'];
+function foldI18nFiles(dict) {
+  if (!existsSync(I18N_SRC_DIR)) return;
+  const shape = s => JSON.stringify([(s.match(/\{[A-Za-z0-9]+\}/g) || []).sort(), (s.match(/<\/?b>/g) || []).sort()]);
+  const bad = [];
+  for (const f of readdirSync(I18N_SRC_DIR).filter(f => f.endsWith('.json')).sort()) {
+    let data;
+    try { data = JSON.parse(readFileSync(I18N_SRC_DIR + '/' + f, 'utf8')); }
+    catch (e) { throw new Error('i18n: ' + f + ' is not valid JSON - ' + e.message); }
+    for (const [k, tr] of Object.entries(data)) {
+      for (const c of I18N_LANGS) {
+        const v = tr && tr[c];
+        if (typeof v !== 'string' || !v.trim()) { bad.push(f + ': "' + k.slice(0, 60) + '" has no ' + c); continue; }
+        if (shape(v) !== shape(k)) bad.push(f + ': "' + k.slice(0, 60) + '" [' + c + '] changes its {slots} or <b> markup: ' + v.slice(0, 60));
+      }
+      const e = dict[k] || (dict[k] = {});
+      for (const c of I18N_LANGS) if (!e[c] && tr && tr[c]) e[c] = String(tr[c]);
+    }
+  }
+  if (bad.length) throw new Error('i18n: ' + bad.length + ' broken translation(s):\n  ' + bad.slice(0, 25).join('\n  '));
 }
 const I18N_DIR = 'i18n';
 let I18N_FILES = [];
