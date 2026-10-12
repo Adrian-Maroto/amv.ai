@@ -160,45 +160,40 @@ function _apiDocsHTML(){
     '  -H "Content-Type: application/json" \\\n' +
     '  -d \'{"model":"amv-core","max_tokens":1024,"stream":true,\n' +
     '       "messages":[{"role":"user","content":"Hello"}]}\'';
-  return '<div class="ss2"><h3>Making a call</h3>'+
-    '<p class="ak-doc">The same endpoint the app uses. Your key goes in the Authorization header - '+
-      'never in a query string, where it would end up in logs and browser history.</p>'+
+  /* Each paragraph is one whole sentence with its code in numbered slots.
+     It was English pieces around <code> tags, and a page translated piece by
+     piece can only ever come out half-English. The slots are filled after the
+     sentence is translated, so code stays code in every language. */
+  const t = (s, codes) => escH(T(s)).replace(/\{(\d+)\}/g, (m, i) => codes && codes[+i] != null ? '<code>' + escH(codes[+i]) + '</code>' : m);
+  return '<div class="ss2"><h3>'+escH(T('Making a call'))+'</h3>'+
+    '<p class="ak-doc">'+t('The same endpoint the app uses. Your key goes in the Authorization header - never in a query string, where it would end up in logs and browser history.')+'</p>'+
     '<pre class="ak-code"><code>'+escH(curl)+'</code></pre>'+
-    '<p class="ak-doc"><b>This endpoint always streams.</b> The response is '+
-      '<code>text/event-stream</code> - a sequence of <code>data:</code> lines carrying '+
-      '<code>content_block_delta</code> events, ending in <code>message_stop</code>. Read the body as a '+
-      'stream and parse each event; calling <code>.json()</code> on it will fail. '+
-      'Sending <code>"stream": false</code> is refused with <code>stream_required</code> rather than '+
-      'silently ignored, so you find out immediately rather than from a parse error.</p>'+
-    '<p class="ak-doc">Engines: <code>amv-pulse</code> (fastest), <code>amv-core</code> (balanced), '+
-      '<code>amv-swift</code> (a top engine at its fastest), <code>amv-forge</code> (deep work), <code>amv-apex</code> (hardest problems), or '+
-      '<code>auto</code> to let AMV choose.</p>'+
-    '<p class="ak-doc">Usage counts against this account\u2019s plan, so the limits in '+
-      '<b>Settings -> Plan &amp; billing</b> are the limits your integration has.</p>'+
-    '<p class="ak-doc"><b>Counting before sending.</b> <code>POST /v1/messages/count_tokens</code> takes the same '+
-      '<code>model</code>, <code>system</code>, <code>messages</code> and <code>tools</code> and answers '+
-      '<code>{"input_tokens": n}</code> - counted on what AMV would really send, its own instructions included, '+
-      'so it matches what is billed. Free: nothing is generated and nothing counts against the plan.</p>'+
-    '<p class="ak-doc"><b>Batches.</b> <code>POST /v1/messages/batches</code> with up to 100 '+
-      '<code>{"custom_id", "params"}</code> requests; AMV answers them in the background, starting within five minutes - anything not answered within 24 hours is marked expired and not charged. Then <code>/get</code>, '+
-      '<code>/results</code> (one JSON line per request) and <code>/cancel</code>, each with <code>{"id"}</code>, and '+
-      '<code>/list</code>. Each request is charged exactly as if it were sent on its own.</p>'+
+    '<p class="ak-doc"><b>'+t('This endpoint always streams.')+'</b> '+
+      t('The response is {0} - a sequence of {1} lines carrying {2} events, ending in {3}. Read the body as a stream and parse each event; calling {4} on it will fail.',
+        ['text/event-stream', 'data:', 'content_block_delta', 'message_stop', '.json()'])+' '+
+      t('Sending {0} is refused with {1} rather than silently ignored, so you find out immediately rather than from a parse error.', ['"stream": false', 'stream_required'])+'</p>'+
+    '<p class="ak-doc">'+t('Engines: {0} (fastest), {1} (balanced), {2} (a top engine at its fastest), {3} (deep work), {4} (hardest problems), or {5} to let AMV choose.',
+        ['amv-pulse', 'amv-core', 'amv-swift', 'amv-forge', 'amv-apex', 'auto'])+'</p>'+
+    '<p class="ak-doc">'+escH(T('Usage counts against this account\u2019s plan, so the limits in {0} are the limits your integration has.')).replace('{0}', () => '<b>' + escH(T('Settings -> Plan & billing')) + '</b>')+'</p>'+
+    '<p class="ak-doc"><b>'+t('Counting before sending.')+'</b> '+
+      t('{0} takes the same {1}, {2}, {3} and {4} and answers {5} - counted on what AMV would really send, its own instructions included, so it matches what is billed. Free: nothing is generated and nothing counts against the plan.',
+        ['POST /v1/messages/count_tokens', 'model', 'system', 'messages', 'tools', '{"input_tokens": n}'])+'</p>'+
+    '<p class="ak-doc"><b>'+t('Batches.')+'</b> '+
+      t('{0} with up to 100 {1} requests; AMV answers them in the background, starting within five minutes - anything not answered within 24 hours is marked expired and not charged. Then {2}, {3} (one JSON line per request) and {4}, each with {5}, and {6}. Each request is charged exactly as if it were sent on its own.',
+        ['POST /v1/messages/batches', '{"custom_id", "params"}', '/get', '/results', '/cancel', '{"id"}', '/list'])+'</p>'+
   '</div>'+
   /* FROM A TERMINAL. One file with nothing to install, handed over the way
      the bridge is - from this deployment, with this deployment's address
      written into it at download, so the only thing left to set is the key. */
-  '<div class="ss2"><h3>From a terminal</h3>'+
-    '<p class="ak-doc">One file, nothing to install - it needs Node 18 or newer. It downloads with this AMV\u2019s '+
-      'address already in it. Your key goes in an environment variable, never on the command line, where '+
-      'it would be saved in your shell history.</p>'+
+  '<div class="ss2"><h3>'+escH(T('From a terminal'))+'</h3>'+
+    '<p class="ak-doc">'+t('One file, nothing to install - it needs Node 18 or newer. It downloads with this AMV\u2019s address already in it. Your key goes in an environment variable, never on the command line, where it would be saved in your shell history.')+'</p>'+
     '<pre class="ak-code"><code>'+escH('export AMV_API_KEY=amv_sk_...\n'+
       'node amv-cli.mjs "Summarise this week\'s notes"\n'+
       'cat notes.txt | node amv-cli.mjs "Turn these into an email"\n'+
       'node amv-cli.mjs chat\n'+
       'node amv-cli.mjs code "make the tests pass"')+'</code></pre>'+
-    '<p class="ak-doc"><b>code</b> works on the files in the folder you start it in: it reads freely, but shows every '+
-      'change and every command and asks before each one, and offers to put everything back at the end.</p>'+
-    '<button class="btn bs" id="ak-cli" type="button">Download amv-cli.mjs</button>'+
+    '<p class="ak-doc">'+escH(T('{0} works on the files in the folder you start it in: it reads freely, but shows every change and every command and asks before each one, and offers to put everything back at the end.')).replace('{0}', '<code>code</code>')+'</p>'+
+    '<button class="btn bs" id="ak-cli" type="button">'+escH(T('Download {0}')).replace('{0}', 'amv-cli.mjs')+'</button>'+
   '</div>';
 }
 

@@ -80,7 +80,10 @@ section('Every plan line is something the server does');
     openPlanCompare('pro');
     const table = (document.querySelector('#ovr .pc-table') || {}).textContent || '';
     document.getElementById('pc-x')?.click();
-    return { all, table, ultraJobs: _autoMaxForPlan('ultra'), pro5h: PLAN_MESSAGES_5H.pro };
+    /* The custom plan has its own list, and "Priority speed" survived there
+       after it was taken out of the table. */
+    const custom = _cpInclFeatures(true).concat(_cpInclFeatures(false)).join(' | ');
+    return { all: all + ' || ' + custom, table, ultraJobs: _autoMaxForPlan('ultra'), pro5h: PLAN_MESSAGES_5H.pro };
   });
   /* Each of these was on a plan card or in the table, and none of them is a
      thing AMV does: the five-hour window allows Pro about one message every
@@ -89,7 +92,8 @@ section('Every plan line is something the server does');
      or early-release channel. */
   for (const [claim, re] of [['one every nine seconds', /nine seconds/i], ['the weekly cap comes "on top"', /on top/i],
                              ['Apex is first in the queue', /first in the queue/i], ['Ultra has the longest context', /longest context/i],
-                             ['faster hardware', /fastest hardware|priority speed/i], ['early access', /early access/i]])
+                             ['faster hardware', /fastest hardware|priority speed/i], ['early access', /early access/i],
+                             ['making images or video', /images, video|image generation|video generation/i]])
     ok(!re.test(r.all) && !re.test(r.table), 'no longer claims ' + claim, (r.all.match(re) || r.table.match(re) || [''])[0]);
   ok(r.all.includes(r.ultraJobs + ' scheduled'), 'Ultra’s real difference is said in the server’s own number', r.ultraJobs);
 }

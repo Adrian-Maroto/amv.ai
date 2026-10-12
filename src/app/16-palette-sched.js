@@ -185,7 +185,9 @@ function openShortcutSheet(){
       '<div class="ks-head"><div class="ks-title">Keyboard shortcuts</div>'+
         '<button class="art-x" id="ks-x" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>'+
       '<div class="ks-body">'+sections+'</div>'+
-      '<div class="ks-foot">Press <kbd class="ks-key">?</kbd> anytime to open this. <kbd class="ks-key">Esc</kbd> to close.</div>'+
+      /* One sentence with its keys in slots, so a language pack can match it -
+         "Press" + key + "anytime to open this." was three pieces. */
+      '<div class="ks-foot">'+escH(T('Press {0} anytime to open this. {1} to close.')).replace('{0}','<kbd class="ks-key">?</kbd>').replace('{1}','<kbd class="ks-key">Esc</kbd>')+'</div>'+
     '</div></div>');
   $('ks-x')?.addEventListener('click',closeShortcutSheet);
   onBackdrop($('ksheet-bg'),closeShortcutSheet);

@@ -1332,7 +1332,7 @@ function openCustomPlan(){
       '</div>'+
       '<div class="cp-note">Usage is metered as credits - faster models use fewer, the most powerful use more. Mix and match however you like; your pool is yours.</div>'+
       '<div class="cp-incl"><div class="cp-incl-h">Everything included</div>'+
-        '<div class="cp-incl-list" id="cp-incl-list">'+_cpInclFeatures(s.hasApex).map(f=>'<span>\u2713 '+f+'</span>').join('')+'</div></div>'+
+        '<div class="cp-incl-list" id="cp-incl-list">'+_cpInclFeatures(s.hasApex).map(f=>'<span>\u2713 '+escH(T(f))+'</span>').join('')+'</div></div>'+
       '<button class="btn bp cp-go" id="cp-buy">Get Custom - $'+price+'/mo</button>'+
       '<p class="cp-fine">Usage is capped at your plan size. The message window resets every '+USAGE_WINDOW_HOURS+' hours and the token allowance monthly; unused usage doesn\u2019t roll over. Cancel or resize anytime.</p>'+
     '</div></div>';
@@ -1346,7 +1346,7 @@ function openCustomPlan(){
       const g=r.querySelectorAll('.cp-stat-n');
       if(g.length>=4){ g[0].textContent=ps.monthlyTokens.toLocaleString(); g[1].textContent=ps.hasApex?ps.apexTokens.toLocaleString():('$'+CUSTOM_PLAN.APEX_MIN_PRICE+'+'); g[2].textContent='~'+ps.approxMessages.toLocaleString(); g[3].textContent=ps.dailyCap.toLocaleString(); }
       const gl=r.querySelectorAll('.cp-stat-l'); if(gl.length>=2) gl[1].textContent=ps.hasApex?'tokens on Apex':'unlocks top models';
-      const incl=$('cp-incl-list'); if(incl) incl.innerHTML=_cpInclFeatures(ps.hasApex).map(f=>'<span>✓ '+f+'</span>').join('');
+      const incl=$('cp-incl-list'); if(incl) incl.innerHTML=_cpInclFeatures(ps.hasApex).map(f=>'<span>✓ '+escH(T(f))+'</span>').join('');
       const buy=$('cp-buy'); if(buy) buy.textContent='Get Custom - $'+price+'/mo';
     });
     on($('cp-buy'),'click',()=>{
@@ -1373,7 +1373,8 @@ function _cpInclFeatures(hasApex){
        make one. */
     'Reads your files and images \u00b7 interactive 3D',
     'Build & ship apps',
-    'Priority speed',
+    /* NOT "Priority speed" either: there is no priority queue and no faster
+       hardware for any plan, so it was a promise the server never keeps. */
     'Hard cap - no overage charges'
   ];
 }

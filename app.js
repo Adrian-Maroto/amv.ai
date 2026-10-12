@@ -17376,7 +17376,7 @@ function openCustomPlan(){
       '</div>'+
       '<div class="cp-note">Usage is metered as credits - faster models use fewer, the most powerful use more. Mix and match however you like; your pool is yours.</div>'+
       '<div class="cp-incl"><div class="cp-incl-h">Everything included</div>'+
-        '<div class="cp-incl-list" id="cp-incl-list">'+_cpInclFeatures(s.hasApex).map(f=>'<span>\u2713 '+f+'</span>').join('')+'</div></div>'+
+        '<div class="cp-incl-list" id="cp-incl-list">'+_cpInclFeatures(s.hasApex).map(f=>'<span>\u2713 '+escH(T(f))+'</span>').join('')+'</div></div>'+
       '<button class="btn bp cp-go" id="cp-buy">Get Custom - $'+price+'/mo</button>'+
       '<p class="cp-fine">Usage is capped at your plan size. The message window resets every '+USAGE_WINDOW_HOURS+' hours and the token allowance monthly; unused usage doesn\u2019t roll over. Cancel or resize anytime.</p>'+
     '</div></div>';
@@ -17390,7 +17390,7 @@ function openCustomPlan(){
       const g=r.querySelectorAll('.cp-stat-n');
       if(g.length>=4){ g[0].textContent=ps.monthlyTokens.toLocaleString(); g[1].textContent=ps.hasApex?ps.apexTokens.toLocaleString():('$'+CUSTOM_PLAN.APEX_MIN_PRICE+'+'); g[2].textContent='~'+ps.approxMessages.toLocaleString(); g[3].textContent=ps.dailyCap.toLocaleString(); }
       const gl=r.querySelectorAll('.cp-stat-l'); if(gl.length>=2) gl[1].textContent=ps.hasApex?'tokens on Apex':'unlocks top models';
-      const incl=$('cp-incl-list'); if(incl) incl.innerHTML=_cpInclFeatures(ps.hasApex).map(f=>'<span>✓ '+f+'</span>').join('');
+      const incl=$('cp-incl-list'); if(incl) incl.innerHTML=_cpInclFeatures(ps.hasApex).map(f=>'<span>✓ '+escH(T(f))+'</span>').join('');
       const buy=$('cp-buy'); if(buy) buy.textContent='Get Custom - $'+price+'/mo';
     });
     on($('cp-buy'),'click',()=>{
@@ -17417,7 +17417,8 @@ function _cpInclFeatures(hasApex){
        make one. */
     'Reads your files and images \u00b7 interactive 3D',
     'Build & ship apps',
-    'Priority speed',
+    /* NOT "Priority speed" either: there is no priority queue and no faster
+       hardware for any plan, so it was a promise the server never keeps. */
     'Hard cap - no overage charges'
   ];
 }
@@ -29450,7 +29451,7 @@ function renderHandoffView(){
   vc.innerHTML=`<div class="sv fi"><div class="vi">
       <span class="eyebrow">Collaboration</span>
       <h2>Handoff</h2>
-      <p class="vsub">Don\u2019t describe the work - hand over the work itself. Pull in a conversation, a Studio design, a Dev project or Lab code, or paste anything at all; your teammate or a Crew agent picks it up <b>inside AMV</b> with full context, makes the change, and hands it back.</p>
+      <p class="vsub">Don\u2019t describe the work - hand over the work itself. Pull in a conversation, a Studio design, a Dev project or Lab code, or paste anything at all; your teammate or a Crew agent picks it up inside AMV with full context, makes the change, and hands it back.</p>
       <div class="ho-flow"><span class="ho-flow-step">You paste the work</span><span class="ho-flow-arrow">\u2192</span><span class="ho-flow-step">They pick up the baton</span><span class="ho-flow-arrow">\u2192</span><span class="ho-flow-step">Handed back</span></div>
 
       <div class="ss2">
@@ -32273,7 +32274,7 @@ function _renderSetPaneInner(only, into){
       '<details class="set-fold"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary>'+
         '<div class="lang-info set-merged">'+
           '<p>\u2022 <b>Auto-detect</b> replies in whatever language you write in.</p>'+
-          '<p>\u2022 Pick a language and every reply, comes back in it.</p>'+
+          '<p>\u2022 Pick a language and every reply comes back in it.</p>'+
           '<p>\u2022 Override anytime - e.g. \u201cmake me a poster, but in Chinese\u201d - and AMV follows that request just for that task.</p>'+
           '<p>\u2022 Not listed? AMV speaks 95+ languages - just write to it in yours and it responds in kind.</p>'+
         '</div>'+
@@ -32682,7 +32683,7 @@ function _renderSetPaneInner(only, into){
              A version number in two places is two version numbers. */
           '<div><div style="font-size:var(--t-lg);font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent-txt)">.</span>AI</div><div style="font-size:var(--t-xs);color:var(--mu);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
         '</div>'+
-        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, research and automation in one place.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openTerms">Terms of Service</button>'+
           '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openPrivacy">Privacy Policy</button>'+
@@ -40689,7 +40690,9 @@ function openShortcutSheet(){
       '<div class="ks-head"><div class="ks-title">Keyboard shortcuts</div>'+
         '<button class="art-x" id="ks-x" aria-label="Close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>'+
       '<div class="ks-body">'+sections+'</div>'+
-      '<div class="ks-foot">Press <kbd class="ks-key">?</kbd> anytime to open this. <kbd class="ks-key">Esc</kbd> to close.</div>'+
+      /* One sentence with its keys in slots, so a language pack can match it -
+         "Press" + key + "anytime to open this." was three pieces. */
+      '<div class="ks-foot">'+escH(T('Press {0} anytime to open this. {1} to close.')).replace('{0}','<kbd class="ks-key">?</kbd>').replace('{1}','<kbd class="ks-key">Esc</kbd>')+'</div>'+
     '</div></div>');
   $('ks-x')?.addEventListener('click',closeShortcutSheet);
   onBackdrop($('ksheet-bg'),closeShortcutSheet);

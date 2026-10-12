@@ -71,7 +71,7 @@ function renderHandoffView(){
   vc.innerHTML=`<div class="sv fi"><div class="vi">
       <span class="eyebrow">Collaboration</span>
       <h2>Handoff</h2>
-      <p class="vsub">Don\u2019t describe the work - hand over the work itself. Pull in a conversation, a Studio design, a Dev project or Lab code, or paste anything at all; your teammate or a Crew agent picks it up <b>inside AMV</b> with full context, makes the change, and hands it back.</p>
+      <p class="vsub">Don\u2019t describe the work - hand over the work itself. Pull in a conversation, a Studio design, a Dev project or Lab code, or paste anything at all; your teammate or a Crew agent picks it up inside AMV with full context, makes the change, and hands it back.</p>
       <div class="ho-flow"><span class="ho-flow-step">You paste the work</span><span class="ho-flow-arrow">\u2192</span><span class="ho-flow-step">They pick up the baton</span><span class="ho-flow-arrow">\u2192</span><span class="ho-flow-step">Handed back</span></div>
 
       <div class="ss2">
@@ -2894,7 +2894,7 @@ function _renderSetPaneInner(only, into){
       '<details class="set-fold"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary>'+
         '<div class="lang-info set-merged">'+
           '<p>\u2022 <b>Auto-detect</b> replies in whatever language you write in.</p>'+
-          '<p>\u2022 Pick a language and every reply, comes back in it.</p>'+
+          '<p>\u2022 Pick a language and every reply comes back in it.</p>'+
           '<p>\u2022 Override anytime - e.g. \u201cmake me a poster, but in Chinese\u201d - and AMV follows that request just for that task.</p>'+
           '<p>\u2022 Not listed? AMV speaks 95+ languages - just write to it in yours and it responds in kind.</p>'+
         '</div>'+
@@ -3303,7 +3303,7 @@ function _renderSetPaneInner(only, into){
              A version number in two places is two version numbers. */
           '<div><div style="font-size:var(--t-lg);font-weight:800;letter-spacing:-.4px">AMV<span style="color:var(--accent-txt)">.</span>AI</div><div style="font-size:var(--t-xs);color:var(--mu);margin-top:2px">Version '+escH(_latestVersion()||'2.0')+' &bull; '+new Date().getFullYear()+'</div></div>'+
         '</div>'+
-        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, images, video, and automation in one place.</p>'+
+        '<p style="font-size:var(--t-sm);color:var(--mu);line-height:1.65;margin-bottom:13px">Your AI workforce - it does the work, not just answers it. Chat, agents, builds, research and automation in one place.</p>'+
         '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
           '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openTerms">Terms of Service</button>'+
           '<button class="btn bs" style="font-size:var(--t-sm)" data-dact="openPrivacy">Privacy Policy</button>'+
