@@ -1522,7 +1522,7 @@ function _intLocalBannerHTML(){
   return '<button class="int-local" id="int-local" data-dact="openLocalConnect">'+
     '<span class="int-local-flag" id="int-local-flag" aria-hidden="true">'+(row ? row[2] : '\uD83C\uDF0D')+'</span>'+
     '<span class="int-local-b"><span class="int-local-t" id="int-local-t">'+
-      escH(row ? T('Popular in')+' '+row[1] : T('Popular where you are'))+'</span>'+
+      escH(row ? _cwSayPlace('Popular in {country}', row[1]) : T('Popular where you are'))+'</span>'+
       '<span class="int-local-s">'+escH(T('The mail, banks, job sites and shops people there use - and what AMV does with each.'))+'</span></span>'+
     '<span class="int-local-go">'+escH(T('See them'))+
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>'+
@@ -1534,7 +1534,7 @@ function _intLocalFill(){
   try{
     const t = $('int-local-t'), f = $('int-local-flag'); if(!t) return;
     const row = _cwCountryRow(_cwCountryGuess());
-    const words = row ? T('Popular in')+' '+row[1] : T('Popular where you are');
+    const words = row ? _cwSayPlace('Popular in {country}', row[1]) : T('Popular where you are');
     if(t.textContent !== words) t.textContent = words;
     if(f && row && f.textContent !== row[2]) f.textContent = row[2];
   }catch(e){}
@@ -1640,19 +1640,19 @@ async function openLocalConnect(code){
   if(!_cwCountryRow(cc)) cc = _cwCountryGuess() || 'US';
   const row = _cwCountryRow(cc);
   r.innerHTML = _ovShell({ id:'lc', wide:true, eyebrow:T('Where you are'),
-                           title:T('Popular in')+' '+(row ? row[1] : cc),
+                           title:row ? _cwSayPlace('Popular in {country}', row[1]) : T('Popular in')+' '+cc,
                            body:'<p class="mu">'+escH(T('Loading\u2026'))+'</p>' });
   _ovWire('lc');
   let d = null;
   if(window.AMV_API && AMV_API.live){ try{ d = await AMV_API.everyday(cc); }catch(e){ d = null; } }
   const b = $('lc-body'); if(!b) return;
   if(!d || typeof d !== 'object'){
-    b.innerHTML = '<div class="ml-err">'+escH(T('AMV’s servers cannot be reached right now, so the list for')+' '+(row ? row[1] : cc)+' '+T('cannot be shown. Try again in a moment.'))+'</div>';
+    b.innerHTML = '<div class="ml-err">'+escH(_cwSayPlace('AMV’s servers cannot be reached right now, so the list for {country} cannot be shown. Try again in a moment.', row ? row[1] : cc))+'</div>';
     return;
   }
   try{ if(d.facts && typeof d.facts === 'object') _cwFacts[cc] = d.facts; }catch(e){}
   b.innerHTML = _intLocalBody(cc, d);
-  const h = $('lc-h'); if(h && row) h.textContent = T('Popular in')+' '+row[1];
+  const h = $('lc-h'); if(h && row) h.textContent = _cwSayPlace('Popular in {country}', row[1]);
   on($('lc-c'), 'change', e => { openLocalConnect(e.target.value); });
   b.querySelectorAll('[data-lc-mail]').forEach(x => on(x, 'click', () => {
     if(_intNeedsAccount(_intName('mail'))) return;

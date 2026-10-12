@@ -210,15 +210,26 @@ function _cwWhereState(j){
 }
 function _cwWhereLabel(j){
   const st = _cwWhereState(j);
-  if(st === 'closed') return 'Runs with AMV closed';
-  if(st === 'open')   return 'Runs while AMV is open';
-  /* Name what is missing, so the sentence tells you what to do about it. */
+  if(st === 'closed') return T('Runs with AMV closed');
+  if(st === 'open')   return T('Runs while AMV is open');
+  /* Name what is missing, so the sentence tells you what to do about it.
+     Whole sentences with slots, one for one thing missing and one for two:
+     "X and Y is connected" was English that was also wrong, and a sentence
+     glued from English pieces is one no language pack can ever match. */
   let missing = [];
   try{ missing = (typeof _cwNeedsMissing === 'function') ? _cwNeedsMissing(j) : []; }catch(_e){}
-  const who = missing.length ? missing.slice(0, 2).join(' and ') : 'your account';
-  return 'Runs with AMV closed - once ' + who + ' is connected';
+  const a = T(missing[0] || 'your account'), b = missing[1] ? T(missing[1]) : '';
+  return (b ? T('Runs with AMV closed - once {a} and {b} are connected') : T('Runs with AMV closed - once {a} is connected'))
+    .replace('{a}', () => a).replace('{b}', () => b);
 }
-try{ window._cwWhereState=_cwWhereState; window._cwWhereLabel=_cwWhereLabel; }catch(e){}
+/* "Uses: Calendar, Email" names each thing in the reader's language; a mail
+   job names the actual app ("Gmail"), which is a name and stays one. */
+function _cwUsesLine(j, needs){
+  const list = String(needs == null ? (j && j.needs) || '' : needs).split(',').map(x => x.trim()).filter(Boolean)
+    .map(n => (n === 'Email' && j && j.mailName) ? j.mailName : T(n));
+  return T('Uses:') + ' ' + (list.length ? list.join(', ') : '-');
+}
+try{ window._cwWhereState=_cwWhereState; window._cwWhereLabel=_cwWhereLabel; window._cwUsesLine=_cwUsesLine; }catch(e){}
 /* A REQUIREMENT NOBODY RECOGNISES IS NOT A REQUIREMENT THAT IS MET.
 
    This read `CW_NEEDS_CHECK[n]` and, when the name was not in the table,
@@ -1674,7 +1685,7 @@ function _cwMadeForHTML(){
   if(st === 'ok' && !jobs.length) return '<section class="cw-made" id="cw-made" hidden></section>';
   const card = _cwMadeCard;
   return `<section class="cw-made" id="cw-made"${st === 'ok' ? '' : ' aria-busy="true"'}>
-    <div class="sec-head"><h3>${escH(T('Made for'))} <span class="cw-flag" aria-hidden="true">${row[2]}</span> <span class="cw-made-cn">${escH(row[1])}</span>${st === 'ok' ? ` <span class="cw-made-n">${jobs.length}</span>` : ''}</h3>
+    <div class="sec-head"><h3>${escH(T('Made for'))} <span class="cw-flag" aria-hidden="true">${row[2]}</span> <span class="cw-made-cn">${escH(_cwPlaceName(row[1]))}</span>${st === 'ok' ? ` <span class="cw-made-n">${jobs.length}</span>` : ''}</h3>
       <span class="sec-sub">${escH(T('Built on the services people there actually use.'))}</span></div>
     <div class="cw-made-row" data-hscroll role="list">${st === 'ok' ? jobs.map(j => `<div role="listitem" class="cw-made-it">${card(j)}</div>`).join('')
                                                      : '<div class="cw-made-ph" aria-hidden="true"></div>'.repeat(4)}</div>
@@ -1731,8 +1742,8 @@ function _cwLocText(id, cc){
   const hits = f ? keys.map(fact).filter(Boolean) : [];
   /* Said the same way whether the facts arrived or not, so a card never
      changes height when they do - only the words after the colon change. */
-  return hits.length ? T('In') + ' ' + row[1] + ': ' + hits.join(' · ')
-                     : T('Answers for') + ' ' + row[1];
+  return hits.length ? _cwSayPlace('In {country}:', row[1]) + ' ' + hits.join(' · ')
+                     : _cwSayPlace('Answers for {country}', row[1]);
 }
 const _cwLocJobs = {};
 function _cwLocJob(id){ return _cwLocJobs[id] || null; }
@@ -2459,6 +2470,27 @@ function _cwStartHereJobs(){
    the section does not arrive and then grow. With no country - or a server
    that cannot be reached - it is AMV's own five, as before, and says why. */
 function _cwCountryRow(cc){ return cc ? CW_WORLD_COUNTRIES.find(c => c[0] === cc) || null : null; }
+/* A COUNTRY IS NAMED IN THE READER'S LANGUAGE. "Not in United States?" was
+   English twice over in Spanish: the sentence and the name. The browser
+   already knows every region's name in every language it ships
+   (Intl.DisplayNames), so the name comes from there and the sentence is one
+   whole template with a {country} slot - prepositions and word order are the
+   language's own. English keeps "the United States", as it always read. */
+function _cwPlaceName(name){
+  const code = _lang();
+  if(code === 'en' || code === 'auto') return name;
+  try{
+    const row = CW_WORLD_COUNTRIES.find(c => c[1] === name);
+    const n = row && new Intl.DisplayNames([code], { type:'region' }).of(row[0]);
+    if(n && n !== row[0]) return n;
+  }catch(e){}
+  return name;
+}
+function _cwSayPlace(tpl, name, english){
+  const code = _lang(), en = code === 'en' || code === 'auto';
+  return T(tpl).replace('{country}', () => en ? (english == null ? name : english) : _cwPlaceName(name));
+}
+try{ window._cwPlaceName=_cwPlaceName; window._cwSayPlace=_cwSayPlace; }catch(e){}
 function _cwForYouHTML(){
   try{ setTimeout(_cwAskWhere, 0); }catch(e){}
   if(_cwHerePending()){
@@ -2490,7 +2522,7 @@ function _cwForYouHTML(){
       <ol class="cw-top10 cw-top5l" aria-hidden="true">${'<li class="cw-t10 cw-t10-ph"></li>'.repeat(5)}</ol>
     </section>`;
   }
-  if(st === 'offline') note = `<p class="cw-foryou-note">${escH(T('The jobs written for'))} ${escH(name)} ${escH(T('are on AMV’s servers, which cannot be reached right now - so these are AMV’s own five for anywhere.'))}</p>`;
+  if(st === 'offline') note = `<p class="cw-foryou-note">${escH(_cwSayPlace('The jobs written for {country} are on AMV’s servers, which cannot be reached right now - so these are AMV’s own five for anywhere.', name))}</p>`;
   if(jobs.length < 5){
     const seen = new Set(jobs.map(j => j.id));
     _cwStartHereJobs().forEach(j => { if(jobs.length < 5 && j && !seen.has(j.id)){ seen.add(j.id); jobs.push(j); } });
@@ -2508,11 +2540,11 @@ function _cwForYouHead(name, flag, n, ranked){
   /* Which order this is, said rather than implied: counted once enough people
      in the country have started jobs, researched until then. */
   const counted = !!ranked && _cwRankedHere(_cwCountryGuess());
-  const sub = counted ? 'Ordered by what people in ' + _cwThe(name) + ' switch on most.'
-                      : 'Picked for where you are, under the names things have there.';
-  return `<div class="sec-head"><h3>${escH(T(head))} <span class="cw-flag" aria-hidden="true">${flag}</span> ${escH(name)}</h3>
-    <span class="sec-sub">${escH(counted ? sub : T(sub))}
-      <button class="cw-link" data-dact="cwMoreCountries">${escH(T('Not in'))} ${escH(_cwThe(name))}?</button></span></div>`;
+  const sub = counted ? _cwSayPlace('Ordered by what people in {country} switch on most.', name, _cwThe(name))
+                      : T('Picked for where you are, under the names things have there.');
+  return `<div class="sec-head"><h3>${escH(T(head))} <span class="cw-flag" aria-hidden="true">${flag}</span> ${escH(_cwPlaceName(name))}</h3>
+    <span class="sec-sub">${escH(sub)}
+      <button class="cw-link" data-dact="cwMoreCountries">${escH(_cwSayPlace('Not in {country}?', name, _cwThe(name)))}</button></span></div>`;
 }
 /* THE COUNTED FIVE, WHEN THERE IS A COUNT. "Top 5 for you" took the top of
    the page, so the ranking of what people actually start across AMV sits
@@ -2605,7 +2637,7 @@ function _cwWhereBtnHTML(){
   if(_cwHerePending()) return `<span class="cw-where cw-where-ph" id="cw-where" aria-hidden="true"> </span>`;
   const row = _cwCountryRow(_cwCountryGuess());
   return row
-    ? `<button class="cw-where" id="cw-where" data-dact="cwMoreCountries"><span class="cw-flag" aria-hidden="true">${row[2]}</span> ${escH(T('Not in'))} ${escH(_cwThe(row[1]))}?</button>`
+    ? `<button class="cw-where" id="cw-where" data-dact="cwMoreCountries"><span class="cw-flag" aria-hidden="true">${row[2]}</span> ${escH(_cwSayPlace('Not in {country}?', row[1], _cwThe(row[1])))}</button>`
     : `<button class="cw-where" id="cw-where" data-dact="cwMoreCountries">${escH(T('Choose your country'))}</button>`;
 }
 function _cwWhereRepaint(){
@@ -2626,10 +2658,13 @@ function _cwCountriesPageHTML(){
   /* "Selected" only for a country somebody chose; a guess is labelled as
      what it is - where the network says they are. */
   const cur = _cwChosen() ? _cwCountryGuess() : '', here = _cwHere || (cur ? '' : _cwCountryGuess());
-  const btn = ([cc, name, flag]) => `<button class="cw-cpick${cc === cur ? ' on' : ''}" role="listitem" data-dact="cwBrowse" data-darg="${escH(cc)}" data-cname="${escH(String(name).toLowerCase())}"${cc === cur ? ' aria-current="true"' : ''}>
-      <span class="cw-cpick-f" aria-hidden="true">${flag}</span><span class="cw-cpick-n">${escH(name)}</span>
+  /* Listed, sorted and searched under the reader's own name for each place,
+     and still found by its English name - somebody may type either. */
+  const local = name => _cwPlaceName(name);
+  const btn = ([cc, name, flag]) => `<button class="cw-cpick${cc === cur ? ' on' : ''}" role="listitem" data-dact="cwBrowse" data-darg="${escH(cc)}" data-cname="${escH((local(name) + ' ' + name).toLowerCase())}"${cc === cur ? ' aria-current="true"' : ''}>
+      <span class="cw-cpick-f" aria-hidden="true">${flag}</span><span class="cw-cpick-n">${escH(local(name))}</span>
       ${cc === cur ? `<span class="cw-cpick-b">${escH(T('Selected'))}</span>` : cc === here ? `<span class="cw-cpick-b cw-cpick-here">${escH(T('Where you are'))}</span>` : ''}</button>`;
-  const all = CW_WORLD_COUNTRIES.slice().sort((a, b) => a[1].localeCompare(b[1]));
+  const lc = _lang(), all = CW_WORLD_COUNTRIES.slice().sort((a, b) => local(a[1]).localeCompare(local(b[1]), lc === 'auto' ? 'en' : lc));
   return `<div class="sv fi crew-view cw-cpage"><div class="vi cw-cp-vi">
     <div class="cw-cp-top"><button class="cdir-back cw-back" data-dact="cwBackMain">← ${escH(T('Back to Crew'))}</button></div>
     <span class="eyebrow">${escH(T('Crew · Your country'))}</span>
@@ -2737,7 +2772,7 @@ function _cwCpListHTML(cc){
     ? cats.map(c => group(c, list.filter(j => j.cat === c))).join('') + group('More', other)
     : group(_cwCpCat, list.filter(j => (CW_CATS.indexOf(_cwCpCat) >= 0 ? j.cat === _cwCpCat : CW_CATS.indexOf(j.cat) < 0)));
   const note = st === 'offline'
-    ? `<p class="cw-foryou-note">${escH(T('The jobs written for'))} ${escH(name)} ${escH(T('are on AMV’s servers, which cannot be reached right now - so these are the ones that run anywhere.'))}</p>`
+    ? `<p class="cw-foryou-note">${escH(_cwSayPlace('The jobs written for {country} are on AMV’s servers, which cannot be reached right now - so these are the ones that run anywhere.', name))}</p>`
     /* Said, not padded: a country whose hand-written pack is empty gets the
        everyday jobs, each told the country, under a sentence saying so -
        never a generated stand-in dressed as written for it. */
@@ -2776,7 +2811,7 @@ function _cwCpFactsHTML(cc){
   const row = _cwCountryRow(cc);
   if(!row || _cwLocalState[cc] !== 'ok') return '';
   const f = _ccFactsHTML(cc);
-  return f ? `<div class="sec-head"><h3>${escH(T('Where AMV looks in'))} ${escH(row[1])}</h3></div>${f}` : '';
+  return f ? `<div class="sec-head"><h3>${escH(_cwSayPlace('Where AMV looks in {country}', row[1]))}</h3></div>${f}` : '';
 }
 function _cwCountryPageHTML(){
   const cc = _cwCountryGuess(), row = _cwCountryRow(cc);
@@ -3754,7 +3789,7 @@ function _cwJobCard(j){
       <span class="cw-job-d">${escH(j.desc)}</span>
       ${_cwSampleLine(j)}
       ${_cwLocLine(j)}
-      <span class="cw-job-need">Uses: ${escH(j.mailName ? String(j.needs).replace(/\bEmail\b/, j.mailName) : j.needs)}
+      <span class="cw-job-need">${escH(_cwUsesLine(j))}
         <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
       </span>
       <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See the whole thing \u2192':'See what it does \u2192'}</span>
@@ -3774,7 +3809,7 @@ function _cwLockedCard(j){
       <span class="cw-job-d">${escH(j.desc)}</span>
       ${_cwSampleLine(j)}
       ${_cwLocLine(j)}
-      <span class="cw-job-need">Uses: ${escH(j.mailName ? String(j.needs).replace(/\bEmail\b/, j.mailName) : j.needs)}
+      <span class="cw-job-need">${escH(_cwUsesLine(j))}
         <span class="cw-job-where ${_cwWhereState(j)}">${escH(_cwWhereLabel(j))}</span>
       </span>
       <span class="cw-job-see">${Array.isArray(j.sample)&&j.sample.length?'See the whole thing →':'See what it does →'}</span>
@@ -4068,7 +4103,7 @@ function _mcAutonSchedRow(j){
   return `<div class="mc-sched-row">
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(j.title)}</div>
-      <div class="mc-sched-meta">${escH(j.desc||'Runs in the background')} · Uses: ${escH(j.needs||'-')}</div>
+      <div class="mc-sched-meta">${escH(j.desc||T('Runs in the background'))} · ${escH(_cwUsesLine(j, j.needs||''))}</div>
       <div class="mc-sched-mode-row"><span class="mc-sched-mode auto">Autonomous - emails you results automatically</span></div>
     </div>
     <div class="mc-sched-acts"><button class="btn mc-mini ghost" data-dact="cwToggle" data-darg="${j.id}">Turn off</button></div>
