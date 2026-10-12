@@ -17306,7 +17306,7 @@ function openPlanCompare(highlight){
     ['AMV Pulse (fast)', p=>'\u2713'],
     ['AMV Core (balanced)', p=>'\u2713'],
     ['AMV Forge (coding)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=1?'\u2713':'-')],
-    ['AMV Apex - flagship, priority queue', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'-')],
+    ['AMV Apex (flagship)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'-')],
     ['Autonomous agents & Crew', p=>p==='free'?'-':'\u2713'],
     ['Full-stack builder (frontend + backend + auth)', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':(p==='pro'?'Frontend':'-'))],
     ['One-click deploy to a live URL', p=>isC(p)?'\u2713':(PLAN_RANK[p]>=2?'\u2713':'-')],

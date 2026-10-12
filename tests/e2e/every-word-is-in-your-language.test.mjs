@@ -32,6 +32,11 @@ const SAME = new Set(JSON.parse(readFileSync(new URL('same-in-every-language.jso
 const BASE_URL = new URL('untranslated-baseline.json', FIX);
 const BASE = existsSync(BASE_URL) ? JSON.parse(readFileSync(BASE_URL, 'utf8')) : {};
 const WRITE = process.env.AMV_I18N_BASELINE === 'write';
+/* Some words are the same in Spanish on purpose ("Chat"). The pack says so:
+   a key whose Spanish value is the key itself was translated, and the
+   translation happens to match. */
+const ES_PACK = JSON.parse(readFileSync(new URL('../../i18n/es.json', import.meta.url), 'utf8'));
+const sameInSpanish = s => ES_PACK[s] === s;
 
 const app = await bootApp({ tab: 'chat', user: { name: 'Kim', email: 'kim@example.com', ini: 'K' } });
 const { page, errors } = app;
@@ -122,7 +127,7 @@ await page.evaluate(() => { saveStr('amv_lang', 'en'); try { _translateUI(); } c
 const now = {};
 for (const name of Object.keys(en)) {
   const spanish = new Set(es[name] || []);
-  now[name] = en[name].filter(s => spanish.has(s) && !SAME.has(s.replace(/^@\S+ /, ''))).sort();
+  now[name] = en[name].filter(s => { const t = s.replace(/^@\S+ /, ''); return spanish.has(s) && !SAME.has(t) && !sameInSpanish(t); }).sort();
 }
 
 section('Every screen was reached');
