@@ -329,7 +329,7 @@ function loginUser(acct) {
   const uc = loadUserConvs(acct.email);
   if (uc && uc.length) {
     S.convs = uc;
-    S.cur = S.convs[0].id;
+    S.cur = _openingChatId(S.convs);
   } else {
     S.convs = [newConvObj()];
     S.cur = S.convs[0].id;
@@ -2309,14 +2309,15 @@ function _autoSave(){
   /* Kept apart on purpose: a save that fails must not also stop the history
      list from reflecting what is on screen. */
   try{
-    setHistHeader(!!S.convs.length);
+    setHistHeader(_histHasRows());
   }catch(e){}
+  _rememberTabChat();
 }
 function newChat(){
   _leaveTempChats(null);
   const c=newConvObj();
   S.convs.unshift(c);
-  S.cur=c.id;
+  S.cur=c.id; _rememberTabChat();
   _autoSave();
   setTab('chat');
   renderHist();
@@ -2338,7 +2339,25 @@ function openFreshChat(){
   newChat();
 }
 try{ window.openFreshChat=openFreshChat; }catch(e){}
-function loadConv(id){ _leaveTempChats(id); S.cur=id; setTab('chat'); renderHist(); }
+function loadConv(id){ _leaveTempChats(id); S.cur=id; _rememberTabChat(); setTab('chat'); renderHist(); }
+/* WHICH CHAT AMV OPENS ON.
+
+   Opening AMV starts a new chat, the way the chat products people already use
+   do - the old ones are in Recents. A reload is different: somebody who
+   refreshes in the middle of a conversation expects to still be in it. The
+   difference is exactly what sessionStorage sees: it survives a reload of the
+   tab and nothing else, so the tab remembers its chat there and a new visit
+   finds nothing to remember. */
+function _rememberTabChat(){ try{ if(S.cur) sessionStorage.setItem('amv_tab_chat', S.cur); }catch(e){} }
+function _openingChatId(convs){
+  let want=''; try{ want=sessionStorage.getItem('amv_tab_chat')||''; }catch(e){}
+  if(want && convs.some(c=>c&&c.id===want)) return want;
+  /* A blank chat already saved is reused, so opening AMV ten times does not
+     leave ten empty chats behind. */
+  const blank=convs.find(c=>c && !(c.msgs||[]).length && !c.wsId && !c.temp);
+  if(blank) return blank.id;
+  const c=newConvObj(); convs.unshift(c); return c.id;
+}
 /* Delete moves a chat to Trash, where it stays restorable for 30 days.
    See _CONV_SHELF for why it is marked rather than removed. */
 function deleteConv(id){ _shelveConv(id, 'trashed'); }

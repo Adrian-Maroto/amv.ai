@@ -17147,3 +17147,13 @@ button.pl-app:hover{border-color:var(--accent);color:var(--accent-txt)}
    now, so for a signed-in person the line stood alone in empty space. It stays
    while Sign up / Log in are there to be separated from. */
 html:not(.boot-guest) #anav:not(:has(.hdr-mid > :not([hidden]))) .nav-r{ border-left:none!important; padding-left:0!important; }
+
+/* LAYER A320 - the Recents heading keeps its place; an opened chat is drawn,
+   not faded in.
+   The heading is hidden while there is nothing to list, but it keeps its
+   height: it starts hidden and is shown once the saved chats are read, and a
+   heading that took its space only then pushed the whole list down 48px on
+   every load for somebody who has chats. Hidden is now invisible, not gone. */
+body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:hidden; pointer-events:none; }
+/* Messages already in a chat when it is opened are not new. */
+.mr.mq{ animation:none; }

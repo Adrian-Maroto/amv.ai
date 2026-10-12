@@ -24,8 +24,21 @@ const browser = await chromium.launch(LAUNCH);
 const errors = [];
 /* On a laptop and on a phone: the phone has its own furniture (the bottom
    bar), which was drawn empty and grew by 48px on every load. */
-for (const [label, viewport, touch] of [['a laptop', { width: 1280, height: 860 }, false], ['a phone', { width: 390, height: 844 }, true]]) {
+/* And with chats saved: the Recents heading starts hidden and is shown only
+   when there is something to list, so somebody who HAS chats is the case where
+   it appears after the first draw - which must not move anything either. */
+for (const [label, viewport, touch, withChats] of [['a laptop', { width: 1280, height: 860 }, false, false], ['a phone', { width: 390, height: 844 }, true, false], ['a laptop, with chats saved', { width: 1280, height: 860 }, false, true]]) {
 const ctx = await browser.newContext({ viewport, hasTouch: touch, isMobile: touch });
+if (withChats) await ctx.addInitScript(() => {
+  try {
+    const now = Date.now();
+    /* Under the account's scope, the way load() reads it (_scopeKey). */
+    localStorage.setItem('u:kim@example.com|amv_cv_' + btoa('kim@example.com').replace(/=/g, ''), JSON.stringify([
+      { id: 'k1', title: 'Trip to Lisbon', msgs: [{ r: 'u', c: 'plan it' }, { r: 'a', c: 'Here is a plan' }], created: now - 9e5, updated: now - 6e4 },
+      { id: 'k2', title: 'Quarterly budget', msgs: [{ r: 'u', c: 'sum it' }], created: now - 9e6, updated: now - 3e6 },
+    ]));
+  } catch (e) {}
+});
 await ctx.addInitScript(() => {
   window.__shifts = []; window.__moving = []; window.__firstTab = null;
   try {
@@ -88,6 +101,28 @@ for (const [addr, want] of [['/', 'chat'], ['/#/crew', 'crew'], ['/#/settings', 
   }
   ok(r.cls < 0.001, 'nothing on the page moves after it is drawn', { cls: +r.cls.toFixed(4), shifts: r.shifts });
   ok(!r.back && r.stack === 0, 'and there is no back arrow to a screen that was never shown', r);
+  if (withChats && want === 'chat') {
+    const h = await page.evaluate(() => ({ rows: [...document.querySelectorAll('#hist .hi .hit')].map(e => e.textContent),
+      heading: !document.getElementById('hist-header').classList.contains('hh-off') }));
+    ok(h.heading && h.rows.length === 2, 'the saved chats are listed under their heading', h);
+  }
+}
+if (withChats) {
+  section('Opening AMV starts a new chat; a reload keeps the one you are in');
+  /* A new tab is a new visit: sessionStorage is per tab, so this is what
+     somebody opening AMV tomorrow gets. */
+  const fresh = await ctx.newPage();
+  await fresh.goto(url + '/', { waitUntil: 'load' }); await fresh.waitForTimeout(1200);
+  const o = await fresh.evaluate(() => ({ cur: S.cur, msgs: (getCurConv().msgs || []).length,
+    listed: [...document.querySelectorAll('#hist .hi')].map(e => e.dataset.id) }));
+  ok(o.msgs === 0 && o.cur !== 'k1' && o.cur !== 'k2', 'a new visit opens on a new, empty chat', o);
+  ok(o.listed.join() === 'k1,k2', 'with the saved chats in Recents and no blank row among them', o.listed);
+  await fresh.evaluate(() => loadConv('k2')); await fresh.waitForTimeout(300);
+  await fresh.reload({ waitUntil: 'load' }); await fresh.waitForTimeout(1200);
+  const r2 = await fresh.evaluate(() => ({ cur: S.cur, faded: [...document.querySelectorAll('#cm .mr')].filter(e => e.getAnimations().length).length }));
+  ok(r2.cur === 'k2', 'a reload in the middle of a chat stays in that chat', r2);
+  ok(r2.faded === 0, 'and its messages are drawn, not faded in', r2);
+  await fresh.close();
 }
 await ctx.close();
 }

@@ -119,9 +119,12 @@ section('The Recents heading can be hidden, which needed a class rather than a s
     S.convs = []; S.starFilter = false;
     if (Array.isArray(_SESSIONS)) _SESSIONS.length = 0;
     renderHist();
-    return getComputedStyle(document.getElementById('hist-header')).display;
+    /* Invisible, not removed: it keeps its height so that showing it once the
+       saved chats are read does not push the list down (LAYER A320). */
+    const cs = getComputedStyle(document.getElementById('hist-header'));
+    return cs.display === 'none' ? 'none' : cs.visibility;
   });
-  ok(hidden === 'none', 'with nothing to list, the heading goes away', hidden);
+  ok(hidden === 'none' || hidden === 'hidden', 'with nothing to list, the heading goes away', hidden);
   const shown = await page.evaluate(() => {
     S.convs = [{ id: 'a', title: 'One', starred: false, msgs: [{ r: 'u', c: 'hi' }], updated: 1 }];
     S.cur = 'a'; renderHist();

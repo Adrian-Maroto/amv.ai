@@ -3935,7 +3935,7 @@ function _completeIntroLogin(acct){
   accCk();
   const ck=document.getElementById('ck'); if(ck)ck.remove();
   const uc=loadUserConvs(acct.email);
-  if(uc&&uc.length){S.convs=uc;S.cur=S.convs[0].id;}
+  if(uc&&uc.length){S.convs=uc;S.cur=_openingChatId(S.convs);}
   else{S.convs=[newConvObj()];S.cur=S.convs[0].id;}
   
   document.getElementById('land')?.classList.add('hidden');
@@ -4263,7 +4263,7 @@ if(typeof _checkSharedArtifact==='function' && _checkSharedArtifact()){
   const acct=findAccount(S.user.email);
   if(acct){
     const uc=loadUserConvs(S.user.email);
-    if(uc&&uc.length){S.convs=uc;S.cur=S.convs[0].id;}
+    if(uc&&uc.length){S.convs=uc;S.cur=_openingChatId(S.convs);}
     else if(!S.convs.length){S.convs=[newConvObj()];S.cur=S.convs[0].id;}
     else if(!S.cur) S.cur=S.convs[0].id;
     try{ _loadSessions(); }catch(e){}

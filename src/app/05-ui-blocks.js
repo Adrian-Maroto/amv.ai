@@ -2549,9 +2549,14 @@ function _syncModelBtn(){
   const lab=b.querySelector('span:last-of-type'); if(lab && lab.textContent!==m.label) lab.textContent=m.label;
   const dot=b.querySelector('.inp-model-dot'); if(dot) dot.style.background=m.color;
 }
+/* The chat whose messages are on screen. A chat that has just been opened -
+   on a reload, or from Recents - is drawn as it is: its messages are not new,
+   so they do not fade in. Only a message that arrives while it is open does. */
+let _cmShownConv=null;
 function renderChatMsgs() {
   const cm=$('cm');
   if(!cm) return;
+  const _quiet = S.cur!==_cmShownConv; _cmShownConv=S.cur;
   try{ _syncModelBtn(); }catch(e){}
   const msgs=getMsgs();
   _announceChatTurn(msgs);
@@ -2751,7 +2756,7 @@ function renderChatMsgs() {
         '<button class="mact mact-react" data-action="react" data-idx="'+i+'" title="React"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg></button>'+
         (i===msgs.length-1?'<button class="mact" data-action="regen" title="Regenerate"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg></button>':'')+
       '</div>'+
-      _reactionsHTML(m,i));    return '<div class="mr '+(isU?'u':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
+      _reactionsHTML(m,i));    return '<div class="mr '+(isU?'u':'')+(_quiet?' mq':'')+'"><div class="mav '+(isU?'u':'ai')+'">'+(isU?ini:'A')+'</div>'+
       '<div class="mwrap">'+(mdlLabel?mdlLabel:'')+
       '<div class="mb '+(isU?'u':'ai')+(m.streaming&&typeof m.c==='string'&&m.c.length?' mb-streaming':'')+'">'+content+'</div>'+actions+'</div></div>';
   }).join('')+
@@ -3340,6 +3345,16 @@ function setHistHeader(show){
   try{ const h=$('hist-header'); if(h) h.classList.toggle('hh-off', !show); }catch(e){}
 }
 try{ window.setHistHeader=setHistHeader; }catch(e){}
+/* The chats Recents lists, and whether it has anything to list. ONE rule for
+   the three places that show the heading: when only one of them learned that a
+   blank chat is not a Recent, the heading appeared and vanished on every load
+   and the list jumped 48px under the person reading it. */
+function _recentConvs(){
+  return (Array.isArray(S.convs)?S.convs:[]).filter(c=>c && (c.msgs||[]).length);
+}
+function _histHasRows(){
+  return _recentConvs().length>0 || (Array.isArray(_SESSIONS) && _SESSIONS.length>0);
+}
 function renderHist(){
   const area=$('hist'); if(!area) return;
   const hdr=$('hist-header');
@@ -3348,7 +3363,7 @@ function renderHist(){
      a blank one every time, and listing it put an empty "New Conversation"
      row at the top of the list after every press - the chat products people
      already use add a chat to their history at its first message, not before. */
-  let convs=(Array.isArray(S.convs)?S.convs:[]).filter(c=>c && (c.msgs||[]).length);
+  let convs=_recentConvs();
   if(S.starFilter) convs=convs.filter(c=>c.starred);
   if(search) convs=convs.filter(c=>{
     const inTitle=(c.title||'').toLowerCase().includes(search);
@@ -3601,8 +3616,6 @@ function updateSbUser(){
     nav.style.background=''; nav.style.overflow='hidden';
     nav.innerHTML=_avatarInner(u&&u.email);
   }
-  // Show/hide hist header
-  setHistHeader(!!(S.convs&&S.convs.length>0));
   renderHist();
   _renderSbUsage();
 }
