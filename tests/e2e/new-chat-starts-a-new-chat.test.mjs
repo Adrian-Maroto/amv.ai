@@ -56,6 +56,24 @@ section('From another screen, New chat opens a fresh conversation, not the old o
   ok(top.length === 0, 'and there is no second New chat in the top bar', top);
 }
 
+section('A blank chat is not in Recents until something is said in it');
+{
+  const r = await page.evaluate(async () => {
+    openFreshChat(); await new Promise(x => setTimeout(x, 150));
+    const id = S.cur;
+    const listed = () => !!document.querySelector('#hist .hi[data-id="' + id + '"]');
+    const before = listed();
+    const blank = [...document.querySelectorAll('#hist .hi .hit')].filter(e => /^New Conversation$/.test(e.textContent.trim())).length;
+    setMsgs([{ r: 'u', c: 'plan a trip', d: 'plan a trip' }]); renderHist();
+    await new Promise(x => setTimeout(x, 100));
+    const after = listed();
+    setMsgs([]); renderHist();
+    return { before, blank, after };
+  });
+  ok(!r.before && r.blank === 0, 'pressing New chat does not add an empty row to Recents', r);
+  ok(r.after, 'and the chat appears there at its first message', r);
+}
+
 section('An old chat is opened from Recents');
 {
   await page.evaluate(() => loadConv(window.__old));

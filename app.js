@@ -10998,7 +10998,11 @@ function renderHist(){
   const area=$('hist'); if(!area) return;
   const hdr=$('hist-header');
   const search=($('hist-search')?.value||'').toLowerCase().trim();
-  let convs=Array.isArray(S.convs)?S.convs:[];
+  /* A chat joins Recents once something has been said in it. New chat opens
+     a blank one every time, and listing it put an empty "New Conversation"
+     row at the top of the list after every press - the chat products people
+     already use add a chat to their history at its first message, not before. */
+  let convs=(Array.isArray(S.convs)?S.convs:[]).filter(c=>c && (c.msgs||[]).length);
   if(S.starFilter) convs=convs.filter(c=>c.starred);
   if(search) convs=convs.filter(c=>{
     const inTitle=(c.title||'').toLowerCase().includes(search);
@@ -11009,7 +11013,7 @@ function renderHist(){
   // star filter is active (sessions aren't starrable).
   let sessions = (!S.starFilter && Array.isArray(_SESSIONS)) ? _SESSIONS.slice() : [];
   if(search) sessions = sessions.filter(s=>(s.title||'').toLowerCase().includes(search) || (SESSION_KINDS[s.kind]?.label||'').toLowerCase().includes(search));
-  if(hdr) setHistHeader(!(!search&&!S.starFilter&&!S.convs.length&&!sessions.length));
+  if(hdr) setHistHeader(!(!search&&!S.starFilter&&!convs.length&&!sessions.length));
   if(!convs.length && !sessions.length){
     area.innerHTML = search
       ? '<div class="nh">No results for &ldquo;'+escH(search)+'&rdquo;</div>'

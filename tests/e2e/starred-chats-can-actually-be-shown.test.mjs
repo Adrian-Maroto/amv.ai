@@ -46,6 +46,10 @@ const titles = () => page.evaluate(() =>
 
 section('There is a control, and it is reachable');
 {
+  /* With chats in the list. A blank chat is not a Recent any more, so with
+     none the heading - and the filter inside it - rightly stays hidden: there
+     is nothing to filter. */
+  await seed();
   const b = await page.$('#star-filter');
   ok(!!b, 'the starred filter exists on the page at all');
   const vis = await page.evaluate(() => {
