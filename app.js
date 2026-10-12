@@ -7464,7 +7464,7 @@ function _applyDir(){ try{ const code=_lang(); document.documentElement.dir=(RTL
      localStorage, so the whole site ends up in the chosen
      language without a hand-written entry for every string.
    ============================================================ */
-let _i18nBusy=false, _i18nApplying=false, _i18nObserver=null, _i18nRaf=0;
+let _i18nBusy=false, _i18nObserver=null, _i18nRaf=0;
 /* Every surface the UI translator must cover. Popups and the top-right profile
    menu are appended to document.body (OUTSIDE #app), and modals render into
    #ovr - so translating only #app left all of them stuck in English. */
@@ -7535,7 +7535,6 @@ function _translateUI(){
       _i18nLoadPack(want).then(ok => { if(ok && _lang() === want) _translateUI(); });
       return;
     } }
-  _i18nApplying=true;   // suppress the observer while we mutate, so we never self-loop
   try{
     _applyDir();
     const code=_lang();
@@ -7558,7 +7557,6 @@ function _translateUI(){
     if(code==='auto'||code==='en'){ _i18nRoots().forEach(r=>_restoreI18nDOM(r)); return; }
     _i18nRoots().forEach(r=>_autoTranslateDOM(code, r));
   }catch(e){ console.warn('_translateUI failed:', e); }
-  finally{ try{ requestAnimationFrame(()=>{ _i18nApplying=false; }); }catch(e){ _i18nApplying=false; } }
 }
 /* Auto-translate anything rendered AFTER a language is chosen - the profile
    menu (top-right), popups, modals in #ovr, a freshly switched tab - so the
@@ -7569,7 +7567,11 @@ function _initI18nObserver(){
   if(_i18nObserver || typeof MutationObserver==='undefined') return;
   const body=document.body; if(!body) return;
   _i18nObserver=new MutationObserver((muts)=>{
-    if(_i18nApplying) return;
+    /* No early return while a pass is applying. The lock stays held until the
+       next frame, and a screen drawn inside that frame - the Marketplace,
+       rendered right after setTab - was dropped whole and stayed English. A
+       pass never adds an ELEMENT (it rewrites text values and attributes), and
+       only added elements count below, so our own writes cannot re-trigger it. */
     const code=_lang(); if(code==='auto'||code==='en') return;
     let relevant=false;
     for(const m of muts){
