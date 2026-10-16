@@ -3368,7 +3368,14 @@ async function _amvRunTool(name, input, onStatus){
       const who = (typeof mcpToolIdentity === 'function') ? mcpToolIdentity(name) : null;
       onStatus && onStatus('Using ' + (who ? (who.name || who.id) + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '\u2026');
       const r = await runMcpTool(name, input);
-      return { text: String((r && r.text) || ''), render:null };
+      /* Whether it failed used to be dropped here, so the model read only the
+         text and could call a refused action done. And a success is the
+         connector's word, which AMV cannot read back - so it is labelled as
+         that, never as something AMV checked. */
+      const head = (r && r.ok)
+        ? '[The connector reports this. AMV has not checked it - say so if it matters.]\n'
+        : '[The connector reported a FAILURE. Do not say this was done.]\n';
+      return { text: head + String((r && r.text) || ''), render:null };
     }
     if(name==='run_command' || name==='read_file' || name==='write_file' || name==='list_dir'){
       const label = name==='run_command' ? ('Running: ' + String(input.command||'').slice(0,60))
