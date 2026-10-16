@@ -93,6 +93,10 @@ async function _libKeep(att){
           chars: _libBody(a).length, added: now, used: now });
   }
   if(!put.length) return false;
+  /* The new ones go to the account as well, in the background - the chat
+     never waits on it. A failure leaves the file on this device, which is
+     what the library then says. */
+  put.filter(p => !bySig.has(p.sig)).forEach(p => { _libCloudPut(p).catch(() => {}); });
   /* Over the bounds, the files used longest ago leave first. */
   const ids = new Set(put.map(p => p.id));
   const keep = put.concat(all.filter(f => !ids.has(f.id)));
@@ -121,6 +125,20 @@ function _libForget(){
   if(p) p.then(db => { try{ db && db.close(); }catch(e){} });
 }
 
+/* ── THE SAME FILES IN THE ACCOUNT ─────────────────────────────────────────
+   Kept on the server when the deployment has file storage switched on, so
+   another device signed in to the same account sees them. Each answer is
+   believed only as far as it goes: `configured:false` means this AMV keeps
+   files per device, and a failed request means "could not check", never
+   "you have none". */
+let _libCloudState = { configured: null, files: null, error: '' };
+function _libCloudOn(){ try{ return !!(window.AMV_API && AMV_API.live && AMV_API.token && _libWho()); }catch(e){ return false; } }
+async function _libCloudPut(f){
+  if(!_libCloudOn() || _libCloudState.configured === false) return null;
+  const body = _libBody(f); if(!body) return null;
+  return await AMV_API.libraryPut({ sig: f.sig, kind: f.kind, name: f.name, size: f.size || 0, format: f.format || '',
+    summary: f.summary || '', mime: f.mime || '', body });
+}
 /* A library entry back into the shape the chat sends. */
 function _libAsAtt(f){
   return f.kind === 'text'
@@ -150,66 +168,19 @@ function _attachMenu(anchor){
   try{ menu.querySelector('.ctxi').focus(); }catch(e){}
 }
 
-/* The library itself. With no `pick`, choosing a file attaches it to the
-   message being written; a project passes its own `pick` and `only:'text'`. */
-let _libOpts = {};
-function openFileLibrary(opts){
-  _libOpts = opts || {};
-  const r = $('ovr'); if(!r) return;
-  r.innerHTML = '<div class="ov" id="lib-bg"><div class="ob shelf-ob lib-ob" role="dialog" aria-modal="true" aria-labelledby="lib-h">'
-    + '<button class="oc" data-dact="closeOvr" aria-label="' + escH(T('Close')) + '">×</button>'
-    + '<h2 id="lib-h">' + escH(T('Your files')) + '</h2>'
-    + '<p class="ob-sub">' + escH(T('Everything you have sent AMV in a chat, kept on this device so you can use it again. Temporary chats add nothing here.')) + '</p>'
-    + '<input type="search" id="lib-q" class="lib-q" placeholder="' + escH(T('Search your files')) + '" aria-label="' + escH(T('Search your files')) + '">'
-    + '<div id="lib-body" aria-live="polite"><p class="shelf-empty">' + escH(T('Loading…')) + '</p></div></div></div>';
-  on($('lib-q'), 'input', () => _renderFileLibrary());
-  _renderFileLibrary();
+/* The library screen lives in library.js, fetched the first time it is
+   opened - most visits never open it, and the page ships to every one. */
+let _libScreenP = null;
+function _libScreenLoad(){
+  if(typeof window._libOpenNow === 'function') return Promise.resolve(true);
+  if(!_libScreenP) _libScreenP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'library.js';
+    sc.onload = () => res(typeof window._libOpenNow === 'function');
+    sc.onerror = () => { _libScreenP = null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
+  }).then(ok => { if(!ok) toast(T('That could not be loaded. Check your connection and try again.'), 'error', 6000); return ok; });
+  return _libScreenP;
 }
-let _libRenderSeq = 0;
-async function _renderFileLibrary(){
-  const seq = ++_libRenderSeq;
-  const all = await _libAll();
-  const body = $('lib-body'); if(!body || seq !== _libRenderSeq) return;
-  if(all === null){
-    body.innerHTML = '<p class="shelf-empty">' + escH(_libWho() ? T('This browser is not letting AMV keep files on this device (a private window can do that). Uploading from your device still works.') : T('Sign in to keep your files.')) + '</p>';
-    return;
-  }
-  const q = String(($('lib-q') || {}).value || '').trim().toLowerCase();
-  const only = _libOpts.only;
-  const list = all.filter(f => (!only || f.kind === only) && (!q || String(f.name).toLowerCase().includes(q)));
-  const day = ts => { try{ return new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' }); }catch(e){ return ''; } };
-  const label = f => [f.format && _FR_LABEL[f.format] ? T(_FR_LABEL[f.format]) : (f.kind === 'img' ? T('Picture') : f.kind === 'pdf' ? 'PDF' : T('Text')),
-    f.summary || '', f.size ? fmtSize(f.size) : '', T('Used') + ' ' + day(f.used)].filter(Boolean).join(' · ');
-  body.innerHTML = (list.length
-    ? list.map(f => '<div class="shelf-row"><div class="shelf-t"><div class="shelf-name">' + escH(f.name) + '</div>'
-        + '<div class="shelf-meta">' + escH(label(f)) + '</div></div>'
-        + '<div class="shelf-acts"><button type="button" class="btn mc-mini" data-lib-use="' + escH(f.id) + '">' + escH(_libOpts.pick ? T('Add') : T('Attach')) + '</button>'
-        + '<button type="button" class="btn mc-mini ghost" data-lib-rm="' + escH(f.id) + '" aria-label="' + escH(T('Delete') + ' ' + f.name) + '">' + escH(T('Delete')) + '</button></div></div>').join('')
-    : '<p class="shelf-empty">' + escH(q ? T('No file matches that.')
-        : only === 'text' ? T('No documents yet. Files you send in a chat appear here.')
-        : T('Nothing yet. Files you send in a chat appear here, ready to use again.')) + '</p>')
-    + (all.length && !q ? '<div class="lib-foot"><span class="pj-note">' + all.length + ' ' + escH(all.length === 1 ? T('file') : T('files')) + ' · '
-        + escH(T('kept on this device only')) + '</span><button type="button" class="btn mc-mini ghost" id="lib-clear">' + escH(T('Delete all')) + '</button></div>' : '');
-  body.querySelectorAll('[data-lib-use]').forEach(b => on(b, 'click', async () => {
-    const f = all.find(x => x.id === b.dataset.libUse); if(!f) return;
-    if(_libOpts.pick){ _libOpts.pick(f); return; }
-    S.att = _libAsAtt(f);
-    closeOvr();
-    try{ if(S.tab !== 'chat') setTab('chat'); }catch(e){}
-    showAttChip();
-    try{ const ta = $('mta'); if(ta) ta.focus(); }catch(e){}
-  }));
-  body.querySelectorAll('[data-lib-rm]').forEach(b => on(b, 'click', async () => {
-    if(!await _libRemove(b.dataset.libRm)) toast(T('That file could not be deleted. Try again.'), 'error', 6000);
-    _renderFileLibrary();
-  }));
-  /* The question replaces the library on screen, so the library comes back
-     whichever way it is answered. */
-  on($('lib-clear'), 'click', async () => {
-    const opts = _libOpts;
-    const yes = await _askDestructive(T('Delete every file?'), T('This removes all of your files from this device. Chats that already used them keep what was said.'), T('Delete all'));
-    if(yes && !await _libRemove(all.map(f => f.id))) toast(T('Your files could not be deleted. Try again.'), 'error', 6000);
-    openFileLibrary(opts);
-  });
-}
+function openFileLibrary(opts){ _libScreenLoad().then(ok => { if(ok) window._libOpenNow(opts); }); }
 try{ Object.assign(window, { openFileLibrary }); }catch(e){}

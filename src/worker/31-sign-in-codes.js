@@ -697,6 +697,9 @@ async function sessionsEnd(request, env) {
    ever with nothing able to reach it. The erasure check caught it, which is
    exactly what that check is for. */
 const PER_USER_KINDS = ['acct', 'ent', 'entitleitem', 'data', 'auto', 'crewjobs', 'mailcfg', 'telegram', 'school', 'kyc',
+  /* The list of their files kept in the account. The files themselves are in
+     object storage and are erased by their own phase in authDeleteAccount. */
+  'lib',
   /* The games somebody made. Every participant record lives inside the game
      record, so erasing the creator erases the people who played too - which is
      right: they have no account of their own to keep it under. */
@@ -1206,6 +1209,13 @@ async function authDeleteAccount(request, env) {
     _eraseFailed('team membership');
     try { await alertOnce(env, 'erase_team:' + email,
       'An account was deleted but could not be removed from its team, so a membership row may still name them. Remove it by hand.', 60); } catch (_) {}
+  }
+
+  /* Their files in object storage - every one, checked gone afterwards. */
+  try { await _libEraseAll(env, email); }
+  catch (e) {
+    audit(env, 'erase_library_failed', { email, error: String((e && e.message) || e).slice(0, 120) });
+    _eraseFailed('your files');
   }
 
   /* Their batches: the requests they sent, the answers, and the queue entry -

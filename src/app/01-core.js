@@ -1389,6 +1389,18 @@ const AMV_API = {
     return this._wrote('/v1/connect/act', { action, args: args || {} },
       'That could not be done on your connected account.');
   },
+  /* Your files, kept in the account (see src/worker/68-cloud-library.js).
+     `configured:false` is an answer, not an error: the deployment keeps files
+     on each device and the library says so. */
+  async libraryList(){ const r=await this._fetch('/v1/library'); return await r.json(); },
+  async libraryPut(f){ return this._wrote('/v1/library/put', f, 'That file could not be kept in your account.'); },
+  async libraryGet(id){
+    const r=await this._fetch('/v1/library/get?id='+encodeURIComponent(id));
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok || d.error){ const e=new Error(d.message||'That file could not be opened.'); e.status=r.status; throw e; }
+    return d;
+  },
+  async libraryDelete(ids){ return this._wrote('/v1/library/delete', { ids }, 'Those files could not be deleted.'); },
   async createHandoff(h){ return this._wrote('/api/handoff',h,'That handoff was not accepted.'); },
   async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },
   async actHandoff(id,action){ return this._wrote('/api/handoff/act',{id,action},'That could not be updated.'); },

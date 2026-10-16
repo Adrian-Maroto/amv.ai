@@ -139,6 +139,8 @@ function emitSandbox() {
   writeFileSync('team-projects.js', readFileSync('src/team/team-projects.js'));
   /* API keys and their docs, fetched when somebody opens Settings > API keys. */
   writeFileSync('api-keys.js', readFileSync('src/api/api-keys.js'));
+  /* The file library screen, fetched the first time it is opened. */
+  writeFileSync('library.js', readFileSync('src/library/library.js'));
 }
 
 function assembleJS() {
@@ -997,6 +999,7 @@ const PUBLISH = [
   'skills.js',             // skill editor + plugins: fetched when Skills is drawn or a plugin is installed
   'team-projects.js',      // projects a team edits together: fetched by team members
   'api-keys.js',           // the API keys pane and its docs, fetched when it is opened
+  'library.js',            // the file library screen, fetched when it is opened
 ];
 /* GOOGLE PLAY'S PROOF THAT THE ANDROID APP IS AMV'S (apps/android). Published
    only once the owner's signing fingerprint is in apps/android/config.json,

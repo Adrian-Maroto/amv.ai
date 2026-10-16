@@ -133,6 +133,18 @@ new_sqlite_classes = ["AMVCounter"]
 #                         AMV can cost you in a day across ALL users. This is
 #                         your protection against a runaway bill.
 
+# ── Your files, in the account (object storage) ──
+# Keeps the files people send in chat in their account, so every device they
+# sign in on sees the same library. Create the bucket once, then uncomment:
+#   npx wrangler r2 bucket create amv-files
+# Until then /v1/library answers "not switched on" and files stay on each
+# device, which the library says. Storage is about 1.5 US cents per GB a month;
+# each plan's limit is enforced on the server (src/worker/68-cloud-library.js).
+#
+# [[r2_buckets]]
+# binding = "AMV_FILES"
+# bucket_name = "amv-files"
+
 # ── AMV's cloud computer (cloud/) ──
 # A computer of their own in AMV's cloud, for Pro plans and above. It runs in a
 # Worker of its own (cloud/wrangler.toml, needs Workers Paid with Containers);

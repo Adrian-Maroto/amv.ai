@@ -560,6 +560,7 @@ async function _route(request, env, ctx) {
        for. Every one of them was then read and confirmed to write nothing. */
     '/v1/activity', '/v1/sessions', '/v1/engines', '/v1/google/picker', '/v1/computer/info', '/v1/credit', '/v1/referral', '/v1/usage', '/v1/stripe/invoices',
     '/api/approvals',
+    '/v1/library', '/v1/library/get',   // your files: the list, and one file's contents
     '/admin/users', '/admin/payouts', '/admin/digest', '/admin/reports',
     '/admin/abuse/list', '/admin/readiness', '/admin/backup/export',
     '/v1/admin/finance', '/v1/admin/stats', '/v1/admin/support',
@@ -642,6 +643,10 @@ async function _route(request, env, ctx) {
     case '/v1/connect/finish': return connFinish(request, env);
     case '/v1/connect/list':   return connList(request, env);
     case '/v1/connect/act':    return connAct(request, env);
+    case '/v1/library':        return libList(request, env);
+    case '/v1/library/put':    return libPut(request, env);
+    case '/v1/library/get':    return libGet(request, env);
+    case '/v1/library/delete': return libDelete(request, env);
     case '/v1/connect/remove': return connRemove(request, env);
     case '/v1/connect/api':    return connApi(request, env);
     case '/v1/remote/list':    return remoteList(request, env);
