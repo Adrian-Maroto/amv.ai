@@ -1,84 +1,3 @@
-  }
-  return json({ ok:true, item, emailReady,
-                // true only when they asked for email and cannot have it
-                deliveryDowngraded: notify === 'email' && !emailReady,
-                free: budget.free, shaped,
-                shapedWhy: shaped ? 'Free accounts run one automation a week, without live web search. Upgrade for daily or ten-minute runs and live research.' : '' });
-}
-
-/* ---- delete / pause an automation ---- */
-/* ── QUIET HOURS ───────────────────────────────────────────────────────────
-   THE HOUR NOBODY WANTS TO BE EMAILED AT.
-
-   The policy engine has understood quiet hours since it was written - it
-   refuses a rule breach with "It is your quiet hours, so I held this rather
-   than acting". Nothing has ever passed `in_quiet_hours: true`, so the branch
-   has never once been taken. A bound with no producer is the same defect as a
-   `scope` with no consumer, read from the other end.
-
-   It has to live HERE rather than only in the page, because the hour this
-   protects is exactly the hour AMV is closed. A quiet window enforced by the
-   browser is a window that does nothing on the night it was set for.
-
-   AN HOUR IS A LOCAL FACT. Storing the window in UTC would look right and
-   drift by an hour twice a year: 23:00 in London is 23:00 UTC in winter and
-   22:00 UTC in summer, so a person's quiet hours would silently move when the
-   clocks did. The zone is stored with the window and the hour is computed in
-   it, which is what makes daylight saving somebody else's problem. */
-const QUIET_MAX_TZ = 64;
-
-/* The hour, 0-23, as it reads on a clock in that zone right now. Returns null
-   when the zone is unusable rather than falling back to UTC - a wrong hour is
-   worse than no answer, because it would silence the wrong part of the day. */
-function _quietLocalHour(tz, atMs){
-  try{
-    const h = new Intl.DateTimeFormat('en-GB', {
-      timeZone: String(tz || 'UTC').slice(0, QUIET_MAX_TZ),
-      hour: 'numeric', hour12: false,
-    }).format(new Date(atMs));
-    const n = parseInt(h, 10);
-    return Number.isInteger(n) ? (n % 24) : null;
-  }catch(e){ return null; }
-}
-
-/* IS IT QUIET RIGHT NOW.
-
-   The window may cross midnight - 23 to 7 is the normal case and the one a
-   naive `h >= from && h < to` gets wrong by covering nothing at all. `from`
-   is inclusive and `to` is exclusive, so 23-7 is quiet at 23:00 and working
-   again at 07:00.
-
-   THE FALLBACK RUNS THE OTHER WAY FROM THE APPROVAL DEADLINE, deliberately.
-   An unreadable expiry refuses, because sending something of unknown age is
-   worse than a re-run. An unreadable quiet window does NOT silence, because a
-   job that stops running and says nothing is the failure this codebase keeps
-   finding, and it is much harder to notice than one email at an awkward hour.
-   Same principle both times: fall towards the mistake somebody can see. */
-function _quietNow(quiet, atMs){
-  const q = quiet || {};
-  const from = Number(q.from), to = Number(q.to);
-  if(!Number.isInteger(from) || !Number.isInteger(to)) return false;
-  if(from < 0 || from > 23 || to < 0 || to > 23) return false;
-  /* A zero-length window is no window. Reading it as "always quiet" would
-     switch somebody's automation off entirely from one mis-set field. */
-  if(from === to) return false;
-  const h = _quietLocalHour(q.tz, atMs);
-  if(h === null) return false;
-  return from < to ? (h >= from && h < to) : (h >= from || h < to);
-}
-
-/* When the window ends, walked hour by hour rather than computed by
-   arithmetic - so a clock change inside the window is handled by asking the
-   calendar again rather than by being clever about offsets. Bounded at 24, so
-   a window that somehow never ends still returns something. */
-function _quietEndsAt(quiet, atMs){
-  for(let i = 1; i <= 24; i++){
-    const t = atMs + i * 3600000;
-    if(!_quietNow(quiet, t)) return t;
-  }
-  return atMs + 3600000;
-}
-
 /* ══════════════════════════════════════════════════════════════════════
    A SCHEDULE IS A TIME ON SOMEBODY'S CLOCK, NOT AN INTERVAL.
 
@@ -749,3 +668,84 @@ function _investText(r){
 
    Everything above stores and guards tokens. Nothing called connUse, so a
    perfectly built, perfectly encrypted, perfectly revocable connection did
+   exactly nothing - the runner still only had the job's own text. That is the
+   failure this product keeps having in a new place: correct at both ends and
+   not joined in the middle.
+
+   Bounded on purpose. A digest needs the shape of the inbox, not the inbox: it
+   reads headers and snippets for a small number of recent messages, never full
+   bodies, never attachments. That keeps the prompt small, the cost predictable,
+   and the amount of somebody's private mail passing through a model as small as
+   the job can be done with.
+
+   And it NEVER silently degrades. If a capability was asked for and could not
+   be read - not connected, autonomy paused, token revoked - the run is told so
+   in the prompt, in words, and instructed to say it. An inbox digest that
+   quietly reports on nothing looks identical to an inbox with nothing in it,
+   which is how somebody misses a fortnight of mail believing AMV was watching. */
+/* READ-ONLY, EVERY ONE OF THEM. There is no send, no write and no payment in
+   this list, and that is the whole reason an unattended run is allowed to hold
+   an account at all.
+
+   `bank.read` is here because five jobs in the catalogue already said they
+   needed a bank connection - Morning money summary, Unusual transaction
+   alerts, Low balance warning, Budget pace, Credit watch - and the runner
+   handed them nothing. Their prompts are written around real balances and real
+   transactions, and each one honestly says "never state a balance you cannot
+   read", so they did not lie; they simply could not work. A requirement stated
+   in one layer with no data behind it in another is the failure this codebase
+   keeps finding, and this was the largest remaining instance of it.
+
+   It reads through the same aggregator token the investing check-in has read
+   unattended since it was written, so no new class of access is created here -
+   balances were already readable on a schedule, and this adds the transaction
+   list beside them. */
+const AUTO_USES_ALLOWED = ['mail.read', 'calendar.read', 'school.read', 'bank.read'];
+
+/* WHAT A JOB PLAINLY NEEDS, READ OFF WHAT IT SAYS IT DOES.
+
+   The permission gate already answers a question of this shape - it reads the
+   detail and decides whether the account can cover it - and the RUNNER answers
+   a different one, off `uses`. Two matchers for one question is how a job ends
+   up passing the gate and then reading nothing, which is exactly what happened
+   to every job created from chat.
+
+   Deliberately narrow. Each entry names a scope an unattended run may actually
+   hold (`AUTO_USES_ALLOWED`), so a detail about Drive derives nothing rather
+   than deriving a calendar it never asked for - the run then reports what it
+   could not see instead of quietly answering a different question. A suite
+   drives this and the gate over one table and requires them to agree.
+
+   BOTH APOSTROPHES. A phone autocorrects "what's on" to a curly one, so a
+   matcher that knows only the straight ASCII form fails for most of the people
+   typing it - and fails by deriving NOTHING, which is silent and is the exact
+   failure this table exists to stop. Found by a test case written for the
+   phrasing rather than for the regex. */
+const AUTO_USES_FROM_TEXT = [
+  [/\b(gmail|my e-?mails?|e-?mails? (?:i|from)|inbox|unread|mailbox|read (?:my )?(?:e-?mail|mail)|reply to)\b/i, 'mail.read'],
+  [/\b(calendar|meetings?|appointments?|my (?:day|week|schedule)|diary|what(?:['’]| i)?s on)\b/i, 'calendar.read'],
+  [/\b(canvas|classroom|assignments?|homework|coursework|my class(?:es)?|due (?:today|tomorrow|this week)|deadlines?)\b/i, 'school.read'],
+  /* DELIBERATELY NO ROW FOR `bank.read`.
+
+     Every other entry here is a phrase that can only mean one thing.
+     "Spending", "my money" and "subscriptions" are not like that: they are the
+     words people use for a question they expect answered from receipts as often
+     as from a statement. A row here would mean a sentence typed into chat
+     starts an unattended job that reads somebody's bank account, which is not
+     a thing to infer from wording.
+
+     So a bank read is only ever requested by a job that DECLARES it - the
+     catalogue's `needs:'Bank connection'`, which the person saw on the card
+     before they switched it on. Narrower than the others on purpose. */
+];
+function _autoUsesFromText(text){
+  const s = String(text || '');
+  const out = [];
+  for(const [re, use] of AUTO_USES_FROM_TEXT)
+    if(re.test(s) && AUTO_USES_ALLOWED.indexOf(use) >= 0 && out.indexOf(use) < 0) out.push(use);
+  return out;
+}
+const AUTO_MAIL_MAX = 25;          // headers, not bodies
+const AUTO_EVENTS_MAX = 20;
+const AUTO_SNIPPET_MAX = 180;
+

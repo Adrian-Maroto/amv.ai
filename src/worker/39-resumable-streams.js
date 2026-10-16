@@ -1,84 +1,3 @@
-  if(!SHARE_ID_RE.test(String(id||''))) return notFound('That link is not valid');
-  const rec = await DB.get(env, 'share', id);
-  if(!rec) return notFound('This conversation is no longer shared');
-  /* Anything created before this choice existed was created under a promise of
-     "not indexed". It keeps that promise: only an explicit true opts in. */
-  const listed = rec.listed === true;
-
-  const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
-  // Only offered when an address is actually configured - a Report link that
-  // goes nowhere is worse than none.
-  const reportTo = String(env.SUPPORT_EMAIL || '').trim();
-  const title = _shareEsc(rec.title || 'Shared conversation');
-  // The preview description is the opening question, which is what makes a
-  // shared link worth clicking.
-  const first = (rec.msgs.find(m => m.r === 'u') || rec.msgs[0] || {}).c || '';
-  const desc = _shareEsc(String(first).replace(/\s+/g, ' ').slice(0, 180));
-  const turns = rec.msgs.map(m =>
-    '<div class="m ' + (m.r === 'u' ? 'u' : 'a') + '">' +
-      '<div class="who">' + (m.r === 'u' ? 'Asked' : 'AMV') + '</div>' +
-      '<div class="t">' + _shareEsc(m.c) + '</div></div>').join('');
-
-  const html = '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<title>' + title + ' - AMV.AI</title>' +
-    '<meta name="description" content="' + desc + '">' +
-    (listed ? '' : '<meta name="robots" content="noindex,nofollow">') +
-    // The tags that make a pasted link render as a card instead of a bare URL.
-    '<meta property="og:type" content="article">' +
-    '<meta property="og:site_name" content="AMV.AI">' +
-    '<meta property="og:title" content="' + title + '">' +
-    '<meta property="og:description" content="' + desc + '">' +
-    '<meta property="og:url" content="' + _shareEsc(_publicOrigin(request) + '/c/' + id) + '">' +
-    '<meta name="twitter:card" content="summary_large_image">' +
-    '<meta name="twitter:title" content="' + title + '">' +
-    '<meta name="twitter:description" content="' + desc + '">' +
-    '<style>' +
-    ':root{color-scheme:light dark}' +
-    'body{font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;background:#0d0d0f;color:#e8e8ea}' +
-    '@media(prefers-color-scheme:light){body{background:#fbfbfc;color:#18181b}.m.a{background:#fff;border-color:#e6e6ea}.m .who{color:#666}}' +
-    '.wrap{max-width:720px;margin:0 auto;padding:28px 20px 64px}' +
-    '.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:28px;flex-wrap:wrap}' +
-    '.brand{font-weight:700;letter-spacing:-.02em}' +
-    '.cta{display:inline-block;padding:8px 18px;border-radius:999px;background:#5590ff;color:#fff;text-decoration:none;font-size:14px;font-weight:500}' +
-    'h1{font-size:23px;line-height:1.3;margin:0 0 22px}' +
-    '.m{margin:0 0 14px;padding:13px 16px;border:1px solid #26262b;border-radius:12px;background:#141418}' +
-    '.m.u{background:none;border-style:dashed}' +
-    '.who{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a8a92;margin-bottom:6px}' +
-    '.t{white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}' +
-    '.foot{margin-top:34px;padding-top:20px;border-top:1px solid #26262b;font-size:13.5px;color:#8a8a92}' +
-    '.foot a{color:#5590ff}' +
-    '</style></head><body><div class="wrap">' +
-    '<div class="top"><span class="brand">AMV.AI</span>' +
-    '<a class="cta" href="' + _shareEsc(base) + '">Try AMV free</a></div>' +
-    '<h1>' + title + '</h1>' + turns +
-    /* Two things this footer has to do. Sell AMV - and be straight about what
-       the page is. The transcript was uploaded by whoever made the link; AMV
-       cannot verify that it is unedited, so the page must not present it as
-       AMV vouching for the content, and there must be a way to report it. That
-       reporting route is what makes a takedown possible at all. */
-    '<div class="foot">Shared by an AMV user. AMV.AI hosts this page but does not verify or endorse its contents. ' +
-    '<a href="' + _shareEsc(base) + '">Try AMV free</a>' +
-    (reportTo ? ' &middot; <a href="mailto:' + _shareEsc(reportTo) +
-      '?subject=' + encodeURIComponent('Report shared page ' + id) + '">Report this page</a>' : '') +
-    '</div>' +
-    '</div></body></html>';
-
-  return new Response(html, { status: 200, headers: {
-    'Content-Type': 'text/html; charset=utf-8',
-    /* Short, and revalidated. A shared page is revoked from the privacy screen
-       the moment someone changes their mind, and a five-minute public cache
-       meant the link kept working after the app had told them it was dead.
-       Sixty seconds still absorbs the burst a link gets when it is posted. */
-    'Cache-Control': 'public, max-age=60, must-revalidate',
-    ...(listed ? {} : { 'X-Robots-Tag': 'noindex, nofollow' }),
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
-    // No scripts at all: this page renders text AMV produced, to strangers.
-    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-  }});
-}
-
 /* =====================================================================
    AMV-070: A DROPPED CONNECTION SHOULD NOT COST THE ANSWER.
 
@@ -421,3 +340,84 @@ function _estimateInputTokens(messages) {
       if (typeof m.content === 'string') chars += m.content.length;
       else if (Array.isArray(m.content)) for (const b of m.content) chars += (b.text || '').length + ((b.source && typeof b.source.data === 'string') ? b.source.data.length : 0);
     }
+    return Math.max(200, Math.ceil(chars / 4));
+  } catch { return 500; }
+}
+/* Reservation estimate for a full request - includes the client-supplied system
+   prompt so it is METERED and reserved rather than sent to the model for free
+   (AMV-020). Every token-bearing field must be counted here. */
+/* The smallest answer worth booking when a day's allowance is nearly spent.
+   Below it the request is refused as over the limit: an answer with no room
+   would spend the person's last tokens on the engine's thinking and show
+   them nothing. */
+const ANSWER_FLOOR_TOKENS = 2048;
+function _estimateReserveInput(body) {
+  const msgs = _estimateInputTokens((body && body.messages) || []);
+  const sys = Math.ceil(String((body && body.system) || '').length / 4);
+  return msgs + sys;
+}
+
+async function usageReport(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'sign in' }, 401);
+  const limits = effectiveLimits(user);
+  /* The same subject the limits are enforced against, or the screen would show
+     one number while the server refused on another (AMV-100). */
+  const subject = user.billingSubject || user.email;
+  const dUsed = (await counter(env, `usg:${subject}:${todayKey()}`, { op: 'get' })).value || 0;
+  const mUsed = (await counter(env, `usg:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
+  const mCost = (await counter(env, `cost:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
+  /* Read from the SAME counter the proxy reserves against, so the number on
+     the screen is the number that would refuse the next message rather than a
+     second tally that agrees with it most of the time. */
+  const msgUsed = (await counter(env, `msgs:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
+  /* The same keys the proxy reserves against, read at the same instant, so the
+     screen cannot show one window while a different one refuses. */
+  const nowMs = Date.now();
+  const win5Used = (await counter(env, `msgs5h:${subject}:${window5hKey(nowMs)}`, { op: 'get' })).value || 0;
+  const topUsed = (await counter(env, `msgtop:${subject}:${weekKey(nowMs)}`, { op: 'get' })).value || 0;
+  /* THE COST OF A MESSAGE, MEASURED RATHER THAN ASSUMED.
+
+     What a month of messages really costs decides whether a large cap is
+     generous or ruinous, and it turns almost entirely on how long the replies
+     are - long enough and the same count that earns a healthy margin loses
+     money instead. Nothing measured it, so every cap was set against somebody's
+     estimate. Two numbers already in hand divide into the answer. Null until
+     there is something to divide, because a made-up figure here would be worse
+     than none. */
+  const perMessageUSD = msgUsed > 0 ? +(mCost / msgUsed).toFixed(6) : null;
+  return json({
+    plan: user.plan,
+    day: { used: dUsed, limit: limits.dayTokens },
+    /* The unit the plan is sold in, so the app can show what was bought rather
+       than translating tokens for somebody who never asked about tokens. */
+    messages: { used: msgUsed, limit: limits.monthMessages || 0, perMessageUSD },
+    /* EACH WINDOW WITH THE TIME IT REOPENS, BECAUSE THAT IS THE ONLY PART
+       ANYBODY CARES ABOUT.
+
+       "You have used 812 of 1000" answers a question nobody asked. The
+       question is when they can carry on, and a window that cannot say so is
+       the same wall a monthly cap was - it just arrives sooner. Both reset
+       times are computed from the same absolute clock the counters are keyed
+       on, so the number on the screen is the moment the counter actually
+       rolls rather than an estimate of it. */
+    window5h: {
+      used: win5Used, limit: limits.messages5h || 0,
+      resetAt: (Math.floor(nowMs / WINDOW_5H_MS) + 1) * WINDOW_5H_MS,
+    },
+    topEngineWeek: {
+      used: topUsed, limit: limits.topMessagesWeek || 0,
+      resetAt: new Date(weekKey(nowMs) + 'T00:00:00Z').getTime() + 7 * 86400000,
+    },
+    // `bonus` is the referral capacity folded into the monthly limit above, sent
+    // separately so the app can say WHERE the extra allowance came from.
+    month: { used: mUsed, limit: limits.monthTokens, costUSD: +mCost.toFixed(4), bonus: limits.bonusTokens || 0 },
+    // Said plainly, because "used" meaning the whole team is a surprise otherwise.
+    /* Only when the counters really are pooled. Somebody on a team who kept
+       their own better plan is NOT sharing, and telling them they are would
+       have them chasing a teammate for usage that is entirely their own. */
+    shared: (user.billingSubject && user.billingSubject !== user.email)
+      ? { team: true, note: 'This allowance is shared with your team.' } : null,
+  });
+}
+

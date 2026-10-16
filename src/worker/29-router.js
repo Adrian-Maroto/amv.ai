@@ -1,84 +1,3 @@
-  label{display:block;font-size:12px;font-weight:600;color:#8b949e;
-        text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px}
-  input{width:100%;padding:12px 14px;border-radius:9px;border:1px solid #30363d;
-        background:#0d1117;color:#e6edf3;font-size:15px;outline:none;margin-bottom:16px}
-  input:focus{border-color:#4c8dff;box-shadow:0 0 0 3px rgba(76,141,255,.15)}
-  button{width:100%;padding:12px;border:none;border-radius:9px;background:#4c8dff;
-         color:#fff;font-size:15px;font-weight:600;cursor:pointer}
-  button:hover{filter:brightness(1.08)}
-  button:disabled{opacity:.6;cursor:default}
-  .msg{padding:11px 13px;border-radius:9px;font-size:13.5px;line-height:1.5;
-       margin-bottom:16px;display:none}
-  .msg.err{display:block;background:rgba(248,81,73,.12);color:#f85149;
-           border:1px solid rgba(248,81,73,.3)}
-  .msg.ok{display:block;background:rgba(63,185,80,.12);color:#3fb950;
-          border:1px solid rgba(63,185,80,.3)}
-  a{color:#4c8dff;text-decoration:none;font-size:13.5px}
-  .foot{text-align:center;margin-top:18px}
-</style></head>
-<body>
-  <div class="card">
-    <h1>Set a new password</h1>
-    <p class="sub">Choose a new password for your AMV account. This link can only be used once.</p>
-    <div id="msg" class="msg"></div>
-    <div id="form">
-      <label for="pw">New password</label>
-      <input id="pw" type="password" placeholder="At least 8 characters" autocomplete="new-password">
-      <label for="pw2">Confirm password</label>
-      <input id="pw2" type="password" placeholder="Type it again" autocomplete="new-password">
-      <button id="go">Set new password</button>
-    </div>
-    <div class="foot"><a href="${appUrl || '/'}">Back to AMV</a></div>
-  </div>
-<script>
-  var TOKEN = ${JSON.stringify(token)};
-  var APP   = ${JSON.stringify(appUrl)};
-  var msg = document.getElementById('msg');
-  var form = document.getElementById('form');
-  var btn = document.getElementById('go');
-
-  function show(text, kind){ msg.textContent = text; msg.className = 'msg ' + kind; }
-
-  if (!TOKEN) { show('This reset link is missing its token. Request a new one from the app.', 'err'); form.style.display='none'; }
-
-  btn.addEventListener('click', async function(){
-    var pw = document.getElementById('pw').value;
-    var pw2 = document.getElementById('pw2').value;
-    if (pw.length < 8) { show('Password must be at least 8 characters.', 'err'); return; }
-    if (pw !== pw2)    { show('Those passwords do not match.', 'err'); return; }
-    btn.disabled = true; btn.textContent = 'Setting\u2026';
-    try {
-      /* Relative to this page, so it reaches the server whether the page was
-         opened on the server's own host (/reset) or through the site (/api/reset). */
-      var r = await fetch('./auth/reset/confirm', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: TOKEN, password: pw })
-      });
-      var d = await r.json();
-      if (!r.ok || d.error) throw new Error(d.error || 'Could not reset the password.');
-      form.style.display = 'none';
-      show('Password updated. You can sign in with your new password now.', 'ok');
-      if (APP) setTimeout(function(){ location.href = APP; }, 2200);
-    } catch (e) {
-      show(e.message, 'err');
-      btn.disabled = false; btn.textContent = 'Set new password';
-    }
-  });
-</script>
-</body></html>`;
-
-  return new Response(html, {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store',
-      'X-Content-Type-Options': 'nosniff',
-      'Referrer-Policy': 'no-referrer'
-    }
-  });
-}
-
 export default {
   /* Cloudflare Cron trigger. THIS is what makes automations real: it runs on
      Cloudflare's schedule whether or not anyone has the app open.
@@ -832,3 +751,84 @@ async function _route(request, env, ctx) {
     case '/v1/stripe/webhook':  return stripeWebhook(request, env, ctx);
     case '/v1/credit':          return creditInfo(request, env);
     case '/v1/credit/checkout': return creditCheckout(request, env);
+    /* There is no /v1/paypal/create or /v1/paypal/capture. They backed a
+       ONE-TIME PayPal order, and a one-time order cannot pay for a monthly
+       plan: the capture granted an entitlement with no renewal to expire
+       it, no subscription behind it, and no event that would ever revoke
+       it. Fifteen dollars once bought Pro for ever, and any signed-in
+       account could do it with two curl calls long after the browser flow
+       that used them was removed. AMV sells subscriptions; that is what
+       the route below is for. */
+    case '/v1/paypal/subscribe': return paypalSubscribe(request, env);
+    case '/v1/paypal/webhook':  return paypalWebhook(request, env, ctx);
+    case '/v1/entitlement':     return getEntitlement(request, env);
+    case '/v1/account/export':  return accountExport(request, env);
+    // --- MARKETPLACE (community templates) ---
+    case '/v1/market/list':     return marketList(request, env);
+    case '/v1/market/publish':  return marketPublish(request, env);
+    case '/v1/market/install':  return marketInstall(request, env);
+    case '/v1/market/buy':      return marketBuy(request, env);
+    case '/v1/market/purchases': return marketPurchases(request, env);
+    case '/v1/market/mylistings': return marketMyListings(request, env);
+    case '/v1/market/unlist':   return marketUnlist(request, env);
+    case '/v1/market/earnings': return marketEarnings(request, env);
+    case '/v1/market/withdraw': return marketWithdraw(request, env);
+    case '/v1/market/status':   return marketSetStatus(request, env);
+    case '/v1/market/view':     return marketView(request, env);
+    case '/v1/market/rate':     return marketRate(request, env);
+    case '/v1/market/review':   return marketReview(request, env);
+    case '/v1/market/report':   return marketReport(request, env);
+    case '/v1/market/message':  return marketMessage(request, env);
+    case '/v1/market/threads':  return marketThreads(request, env);
+    case '/v1/market/thread/read': return marketThreadRead(request, env);
+    // --- FOUNDER ADMIN (token-gated) ---
+    case '/v1/admin/stats':     return adminStats(request, env);
+    case '/v1/admin/finance':   return adminFinance(request, env);
+    case '/v1/admin/kill':      return adminKill(request, env);
+    case '/v1/admin/waitlist/notify': return adminWaitlistNotify(request, env);
+    case '/v1/admin/user':      return adminUser(request, env);
+    // --- EMBEDDABLE WIDGET ---
+    // --- WHAT AMV CAN DO, PER COUNTRY (computed from the registries) ---
+    case '/v1/coverage':        return coverageMap(request, env);
+    // --- WHAT PEOPLE ALREADY DO EVERY WEEK, WHERE THEY LIVE ---
+    case '/v1/everyday':        return everydayJobs(request, env);
+    case '/v1/where':           return whereFrom(request);
+    case '/v1/connectors':      return connectorDirectory(request, env);
+    case '/v1/connector-logo': return connectorLogo(request, env);
+    // --- TELEGRAM (official Bot API; the messenger most of the world uses) ---
+    case '/v1/telegram/status':     return telegramStatus(request, env);
+    case '/v1/telegram/connect':    return telegramConnect(request, env);
+    case '/v1/telegram/disconnect': return telegramDisconnect(request, env);
+    case '/v1/telegram/send':       return telegramSend(request, env);
+    // --- GLOBAL JOB BOARDS (57 boards, 38 countries) ---
+    case '/v1/jobs/boards':     return jobBoards(request, env);
+    case '/v1/jobs/apply':      return jobApply(request, env);
+    // --- GLOBAL MAIL (IMAP/SMTP, the countries in MAIL_PROVIDERS) ---
+    case '/v1/mail/providers':  return mailProviders(request, env);
+    case '/v1/mail/status':     return mailStatus(request, env);
+    case '/v1/mail/connect':    return mailConnect(request, env);
+    case '/v1/mail/disconnect': return mailDisconnect(request, env);
+    case '/v1/mail/inbox':      return mailInbox(request, env);
+    case '/v1/mail/message':    return mailMessage(request, env);
+    case '/v1/mail/send':       return mailSend(request, env);
+    case '/v1/widget/config':   return widgetConfigGet(request, env);   // owner: read config
+    case '/v1/widget/config-public': return widgetConfigPublic(request, env); // public: display fields only
+    case '/v1/widget/save':     return widgetConfigSave(request, env);  // owner: create/update config
+    case '/v1/widget/chat':     return widgetChat(request, env, ctx);   // public: end-visitor chat (site-key gated)
+    case '/widget.js':          return widgetLoader(request, env);      // public: the <script> embed loader
+    default: {
+      // A browser hitting an unknown URL should get a friendly HTML page;
+      // an API client gets JSON. We tell them apart by the Accept header.
+      const accept = request.headers.get('Accept') || '';
+      if (accept.includes('text/html')) {
+        return new Response(
+          `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>404 - Not found</title><style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0e14;color:#e6e6e6;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}.b{text-align:center;padding:24px}.c{font-size:72px;font-weight:800;color:#4c7dff;line-height:1}.t{font-size:22px;margin:12px 0 6px}.s{color:#9aa4b2;margin-bottom:20px}a{display:inline-block;padding:10px 20px;background:#4c7dff;color:#fff;text-decoration:none;border-radius:9px;font-weight:600}</style></head><body><div class="b"><div class="c">404</div><div class="t">Page not found</div><div class="s">This page doesn't exist or may have moved.</div><a href="/">Go home</a></div></body></html>`,
+          { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
+        );
+      }
+      return json({ error: 'not found' }, 404);
+    }
+  }
+}
+
+/* ---------------- AUTH: issue a signed session token ---------------- */

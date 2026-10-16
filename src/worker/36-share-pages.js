@@ -1,84 +1,3 @@
-    const raw = await upstream.clone().text().catch(() => '');
-    if (/thinking|output_config|effort|cache_control|unexpected|unsupported|unrecognized/i.test(raw)) {
-      const plain = {
-        model: upstreamBody.model, max_tokens: upstreamBody.max_tokens, stream: true,
-        messages: (body.messages || []),                       // no cache markers
-      };
-      if (body.system) plain.system = String(body.system);      // no cache marker
-      if (upstreamBody.tools) plain.tools = upstreamBody.tools;
-      /* AMV-021: INSIDE THE CATCH THAT REFUNDS, LIKE THE FIRST CALL.
-
-         The first _callUpstream is wrapped in a try/catch that refunds the
-         caller's reservation when the provider cannot be reached. This retry
-         was not, so a network failure on the second attempt left the request
-         with the quota already taken and nothing to show for it. The customer
-         pays for an attempt that never produced an answer, and the only path
-         that reaches this line is one where something already went wrong. */
-      let retry = null;
-      try {
-        retry = await _callUpstream(plain);
-      } catch (netErr) {
-        await refundReservation();
-        try { await _workerError(env, 'aiProxy:retry-unreachable', netErr); } catch (_) {}
-        return json({ error: 'AMV could not reach the model just now. Nothing was charged - try again in a moment.',
-                      code: 'upstream_unreachable' }, 502);
-      }
-      if (retry.ok) {
-        audit(env, 'upstream_param_fallback', { key, reason: raw.slice(0, 120) });
-        try { await alertOnce(env, 'model_param_reject',
-          'AMV dropped an optional model parameter after a 400 and retried successfully. Chats still work, but tuning (thinking/effort/caching) is off for ' + key + '. Reason: ' + raw.slice(0, 160), 60); } catch (_) {}
-        upstream = retry;
-      }
-    }
-  }
-
-  if (!upstream.ok) {
-    // The model errored, so it produced nothing. Give the reservation back -
-    // otherwise an outage would quietly burn through everyone's daily quota.
-    await refundReservation();
-    const e = await upstream.json().catch(() => ({}));
-    try { await _workerError(env, 'aiProxy:upstream', new Error('upstream ' + upstream.status)); } catch (_) {}
-    // A 401/403 from the model means your API key is bad/expired/over-quota -
-    // that breaks the ENTIRE product for everyone, so alert loudly and fast.
-    if (upstream.status === 401 || upstream.status === 403) {
-      ctx.waitUntil(alertOnce(env, 'model_auth_fail', `🚨 Model API rejected our key (${upstream.status}): ${e?.error?.message || 'auth error'}. AI is DOWN for all users - check AMV_MODEL_KEY / billing.`, 10));
-    } else if (upstream.status >= 500) {
-      ctx.waitUntil(alertOnce(env, 'model_5xx', `⚠️ Model API erroring (${upstream.status}). AI responses may be failing.`, 15));
-    }
-    return json({ error: e?.error?.message || 'AI error', status: upstream.status }, upstream.status);
-  }
-
-  // 7) pass the stream to the client AND tally tokens/cost as it flows
-  const flow = _stopAwareStream(upstream.body, env, user && user.email, _reqId, ctx);
-  const toClient = flow.toClient;
-  /* The reservations are handed on so meterStream settles them instead of
-     charging again. Passed by value AFTER every early return, so anything that
-     refused above has already given them back and the numbers here are what is
-     genuinely still booked. */
-  ctx.waitUntil(meterStream(flow.toMeter, eng, { dName, mName, gName, costName, user, env, limits,
-    reqMessages: body.messages || [], reserved: reserve,
-    reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId, stopped: flow.stopped,
-    creditName: overflowWhy ? creditName : '', reservedCreditUSD: bookedCreditUSD }));
-
-  return new Response(toClient, {
-    status: 200,
-    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', ...CORS, ...SECURITY_HEADERS,
-      // Tell the client which engine actually ran. Without this, a routed turn
-      // would be labelled "AMV Auto", which says nothing.
-      'X-AMV-Engine': key,
-      'X-AMV-Effort': _effort || '',
-      'X-AMV-Speed': _speed,
-      'X-AMV-Engine-Why': routed ? routed.why : '' },
-  });
-}
-
-/* Read the SSE copy, extract usage, persist token + cost counters atomically.
-   Hardened for accuracy (auditor #3):
-   - Prices cache tiers correctly: cache READ ~0.1x input, cache WRITE ~1.25x.
-   - Survives interruptions: tracks the latest usage seen, so a disconnect
-     mid-stream still bills what was generated (never a free ride).
-   - Handles message_start / message_delta / message_stop usage shapes.
-   - Falls back to an output estimate if the stream yields no usage at all. */
 /* =====================================================================
    AMV-074: PUBLIC SHARE PAGES.
 
@@ -535,3 +454,84 @@ async function gamePage(request, env, id) {
 
 
 /* A SCHEDULED JOB THAT MAKES SOMETHING PLAYABLE.
+
+   Every other job kind ends by writing text somebody reads. This one ends by
+   creating a real game and handing back the link, which is the difference
+   between "Crew wrote you some questions" and "Crew set up Friday night".
+
+   Called from the run loop after the model has produced its lines, so the
+   questions are this week's rather than a fixed list. If game creation fails
+   the run is NOT failed: the questions are still worth having, and a job that
+   reports failure because a link could not be minted has thrown away the work
+   it did. The result says which happened.
+
+   The age gate reaches in here exactly as it does on the route, because people
+   answer these by link with no account and no birth year on record. A job whose
+   questions drift towards money produces no game and says so. */
+/* Turn a game job's questions into a real game and hand the link back with the
+   text, so it travels wherever the result travels - the in-app card, the email,
+   the digest - rather than living somewhere they have to go and find.
+
+   A no-op for every other kind, and called as a single folded expression at the
+   call site with NO comment above it. That is deliberate: `a-timer-cannot-act-
+   on-your-behalf` finds the delivery guard by searching 8000 characters forward
+   from `const level = ...`, and `codeOnly` blanks comments to whitespace of the
+   SAME LENGTH rather than removing them - so a comment sitting in that window
+   spends the budget exactly as code would. Five lines of explanation there cost
+   390 characters and pushed a safety check out of range.
+
+   A failure here does NOT fail the run. The questions are still worth having,
+   and a job that reports failure because a link could not be minted has thrown
+   away the work it did. */
+async function _autoAppendGame(env, email, item, out) {
+  if (item.kind !== 'game' || !out) return out;
+  try {
+    const made = await _autoMakeGame(env, email, item, out);
+    if (made && made.url) {
+      return out + '\n\nYour game is ready - send this to the group:\n' + made.url
+                 + '\n\nNobody sees the answers until you reveal them, in Crew.';
+    }
+    if (made && made.refused) return out + '\n\n' + made.refused;
+    return out;
+  } catch (e) {
+    audit(env, 'game_from_automation_failed', { email, error: String((e && e.message) || e) });
+    return out + '\n\n(The questions are above - AMV could not create the game link this time.)';
+  }
+}
+
+async function _autoMakeGame(env, email, item, text) {
+  const lines = String(text || '')
+    .split('\n')
+    .map(l => l.replace(/^[-*\d.)\s]+/, '').trim())
+    .filter(l => l.length > 3 && l.length <= 300 && /\?|most likely|would you|who/i.test(l))
+    .slice(0, 10);
+  if (!lines.length) return null;
+
+  const title = String(item.detail || 'Crew game').slice(0, 120);
+  const scan = title + ' ' + lines.join(' ');
+  if (GAME_FORBIDDEN.test(scan)) {
+    audit(env, 'game_money_refused', { email, via: 'automation' });
+    return { refused: 'A game cannot ask about money - these are answered by people with no account, so AMV cannot know how old they are.' };
+  }
+
+  const id = _gameId();
+  const rec = {
+    id, title, kind: 'crew',
+    prompts: lines.map((t, i) => ({ id: 'q' + i, text: _gameSafeText(t, 300), options: null })),
+    owner: String(email).toLowerCase(),
+    state: 'open', at: Date.now(), closesAt: null,
+    players: [], answers: [], results: null,
+  };
+  await _withKind(env, 'game', id, (fresh) => { Object.assign(fresh, rec); }, rec);
+  await _withKind(env, 'gameown', rec.owner, (r) => {
+    r.ids = [id].concat((r.ids || []).filter(x => x !== id)).slice(0, 200);
+  }, { ids: [] });
+  audit(env, 'game_created', { email, id, kind: 'crew', prompts: rec.prompts.length, via: 'automation' });
+
+  /* No request to read an address from. The game page is served by this
+     server, which the site reaches under API_MOUNT - the same address the page
+     itself is built to use - so APP_URL alone (the static host) would 404. */
+  const base = String(env.APP_URL || '').replace(/\/$/, '');
+  return { id, url: (base ? base + API_MOUNT : '') + '/g/' + id, count: rec.prompts.length };
+}
+

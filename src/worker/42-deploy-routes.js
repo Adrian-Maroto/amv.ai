@@ -1,84 +1,3 @@
-  return _cookieAuthOn(env) ? { 'Set-Cookie': _refreshCookie(env, '', 0) } : undefined;
-}
-
-async function issueTokens(env, email, name, sid) {
-  const epoch = await _tokenEpoch(env, email);
-  const base = { email, name: name || '' };
-  if (sid) base.sid = String(sid);
-  /* Tells the page that this is the operator, so it can show the owner's
-     screens without a personal address compiled into the app. It decides
-     nothing here: every owner route still checks OWNER_EMAIL itself. */
-  const owner = String(env.OWNER_EMAIL || '').toLowerCase().trim();
-  if (owner && String(email || '').toLowerCase().trim() === owner) base.own = 1;
-  const access = await signToken(base, env.JWT_SECRET, { typ: 'access', epoch });
-  const refresh = await signToken(base, env.JWT_SECRET, { typ: 'refresh', epoch });
-  return { token: access, refreshToken: refresh, email, name: name || '' };
-}
-
-/* Verify a JWT. Pins algorithm, checks exp/nbf/ver, constant-time signature.
-   When env is provided, also enforces the per-user revocation epoch.
-   expectedTyp defaults to 'access' so refresh tokens can't be used as access. */
-async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
-  try {
-    if (!token || typeof token !== 'string') return null;
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-    const [headerB64, payloadB64, sigB64] = parts;
-
-    // Pin the algorithm - reject 'none' / RS256 confusion attempts.
-    const header = JSON.parse(b64urlDecodeToString(headerB64));
-    if (!header || header.alg !== JWT_ALG || header.typ !== 'JWT') return null;
-
-    // Recompute signature and compare in constant time.
-    const key = await _hmacKey(secret);
-    const expectedMac = new Uint8Array(
-      await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${headerB64}.${payloadB64}`))
-    );
-    const givenMac = b64urlDecodeToBytes(sigB64);
-    if (!timingSafeEqual(expectedMac, givenMac)) return null;
-
-    const data = JSON.parse(b64urlDecodeToString(payloadB64));
-    const nowSec = Math.floor(Date.now() / 1000);
-    if (data.ver !== TOKEN_VER) return null;
-
-    /* AMV-054: A CLAIM THAT IS ONLY CHECKED WHEN PRESENT IS NOT A CHECK.
-
-       These read `if (data.exp && ...)` and `if (data.typ && ...)`, so a token
-       carrying neither passed every one of them. That is the wrong shape for a
-       verifier: what a token DOES NOT SAY is exactly what a verifier must not
-       be relaxed about.
-
-       What it bought, if a token without them ever existed: no `exp` is a
-       session that never ends - revocation still catches it through the epoch,
-       but nothing else does, and "valid for ever unless somebody notices" is
-       not a session. No `typ` is worse, because the refresh token and the
-       access token differ only in that field: without it the month-long refresh
-       token is accepted anywhere the fifteen-minute access token is, which
-       undoes the whole reason for having two.
-
-       signToken has always set all three, so this was not reachable today. It
-       was reachable by one future issuing path that forgot one field, and it
-       would have failed open and silently. Required now, so that path fails
-       closed and loudly instead. */
-    if (!data.typ || typeof data.typ !== 'string') return null;
-    if (expectedTyp && data.typ !== expectedTyp) return null;
-    if (!Number.isFinite(data.exp)) return null;
-    if (nowSec > data.exp) return null;                            // expired
-    if (!Number.isFinite(data.nbf)) return null;
-    if (nowSec < data.nbf - 60) return null;                       // not-yet-valid (60s skew)
-    if (env && data.email) {                                       // revocation check
-      const epoch = await _tokenEpoch(env, data.email);
-      if ((data.epoch || 0) !== epoch) return null;
-      /* A sign-in ended from the device list. Fresh tokens are spared while
-         their record may still be on its way to this location (SESS_FRESH_S). */
-      if (data.sid && nowSec - (data.iat || 0) > SESS_FRESH_S) {
-        if (!(await env.AMV_KV.get(_sessKey(data.email, data.sid)))) return null;
-      }
-    }
-    return data;
-  } catch { return null; }
-}
-
 /* =====================================================================
    DEPLOY
    1. npm i -g wrangler && wrangler login
@@ -86,3 +5,84 @@ async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
    3. Secrets:
         wrangler secret put AMV_MODEL_KEY
         wrangler secret put JWT_SECRET           (LONG random string - 32+ chars)
+
+        # OPTIONAL - connected accounts. CONNECT_KEY seals every stored
+        # provider token with AES-GCM; without it AMV refuses to connect an
+        # account rather than storing a token in the clear.
+        # To ROTATE it: put the new value in CONNECT_KEY, the old one in
+        # CONNECT_KEY_PREV, and leave both for as long as it takes every
+        # connection to be used once - each re-seals under the new key when it
+        # is. Then remove CONNECT_KEY_PREV. Rotating WITHOUT setting PREV makes
+        # every stored connection unreadable and every customer has to
+        # reconnect every account.
+        wrangler secret put CONNECT_KEY
+        wrangler secret put CONNECT_KEY_PREV     (only during a rotation)
+
+   4. wrangler.toml config:
+        [vars]
+        GLOBAL_DAILY_USD_CAP = "500"             (your hard ceiling)
+        ALERT_WEBHOOK = "https://hooks.slack..." (optional)
+
+        # Durable Object - ATOMIC rate limits & quotas (no race conditions)
+        [[durable_objects.bindings]]
+        name = "AMV_COUNTER"
+        class_name = "AMVCounter"
+
+        [[migrations]]
+        tag = "v1"
+        new_sqlite_classes = ["AMVCounter"]
+   5. wrangler deploy  → get https://amv-api.<you>.workers.dev
+   6. In AMV → Settings → Live/Backend, paste that URL.
+      Now: key is hidden, plans enforced, quotas + spend cap live & atomic.
+
+   NOTE: If AMV_COUNTER is not bound, the Worker still runs but falls back
+   to (non-atomic) KV counters. Bind the Durable Object for production -
+   it's what makes rate limits and quotas race-proof under parallel load.
+
+   PAYMENTS (real money) - set these secrets:
+     wrangler secret put STRIPE_SECRET_KEY        (sk_live_…)
+     wrangler secret put STRIPE_WEBHOOK_SECRET    (whsec_… from the webhook)
+     [vars] STRIPE_PRICE_PRO / STRIPE_PRICE_ELITE / STRIPE_PRICE_ULTRA
+            (Price IDs you create in the Stripe dashboard)
+     In Stripe → Developers → Webhooks, add endpoint:
+       https://<your-worker>/v1/stripe/webhook
+       events - ALL TEN. This list named four of them, and the other six are
+       handled here in code that would simply never run: an operator following
+       it subscribed to a quarter of what AMV listens for and had no way to
+       know. Each one is money moving in a direction somebody has to know about.
+         checkout.session.completed              a card paid, grant the plan
+         checkout.session.async_payment_succeeded a voucher or direct debit
+                                                  finally cleared - WITHOUT
+                                                  this, a customer who paid by
+                                                  OXXO or SEPA pays and is
+                                                  never granted anything
+         checkout.session.async_payment_failed    it did not clear; close it out
+         customer.subscription.updated            seats, plan or state changed
+         customer.subscription.deleted            it ended
+         invoice.paid                             a renewal went through
+         invoice.payment_failed                   a renewal was declined
+         charge.refunded                          money went back
+         refund.created                           the same, newer event shape
+         charge.dispute.created                   a chargeback was opened
+   PayPal (optional):
+     wrangler secret put PAYPAL_CLIENT_ID / PAYPAL_SECRET / PAYPAL_WEBHOOK_ID
+     [vars] PAYPAL_MODE = "live"  (or "sandbox")
+     Webhook endpoint: https://<your-worker>/v1/paypal/webhook
+
+   HOW ACCESS IS GRANTED: the plan is written to ent:<email> ONLY by a
+   signature-verified webhook from Stripe/PayPal. The browser can never
+   grant itself a paid plan - requireUser() reads ent:<email> on every call.
+
+   FOUNDER ADMIN (your private dashboard):
+     wrangler secret put ADMIN_TOKEN   (a long random string only YOU hold)
+     Then in AMV: open with ?owner=1, go to Settings -> Founder Dashboard,
+     paste the token to see platform spend / users / revenue / top spenders,
+     flip the kill switch, or override a user's plan. The token is never
+     stored in the browser. Endpoints: /v1/admin/stats, /v1/admin/kill,
+     /v1/admin/user - all 403 without the exact ADMIN_TOKEN.
+
+   KILL SWITCH (instant stop):
+     wrangler kv:key put --binding=AMV_KV GLOBAL_KILL 1     (halt)
+     wrangler kv:key delete --binding=AMV_KV GLOBAL_KILL    (resume)
+   ===================================================================== */
+

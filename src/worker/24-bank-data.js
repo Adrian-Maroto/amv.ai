@@ -1,84 +1,3 @@
-   recorded is "not known", never "adult" - the whole point is that the absence
-   of an answer is not a yes.
-
-   Returns null when allowed, or a {error, code} the caller can return as-is.
-   `age_required` is deliberately distinct from a refusal, because an existing
-   customer who has simply never been asked needs a prompt, not a wall. */
-async function _moneyAgeGate(env, email){
-  const rec = await DB.get(env, 'consent', String(email || '').toLowerCase());
-  const y = rec && +rec.birthYear;
-  if(!y) return { error:'Confirm your age before using anything that involves money.', code:'age_required' };
-  const age = new Date().getUTCFullYear() - y;
-  if(age < ADULT_AGE)
-    return { error:'Anything involving money is only available to people ' + ADULT_AGE + ' and over.', code:'age_blocked' };
-  return null;
-}
-
-/* ============================================================
-   CONSENT RECORD  (/v1/consent)
-
-   A record that only exists in the user's own browser proves nothing
-   in a dispute - they can clear it, and you cannot produce it. This
-   stores the accepted terms version, the timestamp, and the request
-   metadata server-side, which is the artifact that actually answers
-   "did this user agree to your terms, and when?".
-   ============================================================ */
-async function consentRecord(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'sign in first' }, 401);
-  const blocked = await guardAction(env, 'consent:' + user.email, 10, 100, 'consent updates');
-  if(blocked) return blocked;
-
-  const body = await request.json().catch(() => ({}));
-  const version = String(body.termsVersion || '').slice(0, 32);
-  if(!version) return json({ error:'termsVersion required' }, 400);
-
-  const entryIp = (request.headers.get('CF-Connecting-IP') || '').slice(0, 45);
-  const entryCountry = (request.cf && request.cf.country) || '';
-  const entryUa = (request.headers.get('User-Agent') || '').slice(0, 180);
-  const nowYear = new Date().getUTCFullYear();
-  let ageRecorded = null;
-  let entry = null;
-  /* AMV-033: THE BIRTH YEAR IS RECORDED ONCE, AND ONCE MEANS ONCE.
-
-     The check below is deliberately write-once - the comment says a limit
-     anyone can raise by retyping it is not a limit - and it was a read
-     followed by a write. Two requests arriving together both read a record with
-     no birth year, both decide they may set it, and the later one wins. So the
-     value that cannot be edited could be edited, by sending it twice.
-
-     Under the record lock the second request reads what the first stored and
-     declines, which is what the rule already said. */
-  await _withKind(env, 'consent', user.email, (prev) => {
-  /* Age, recorded HERE and not only in the browser. The client has always had
-     an age gate and it lives in localStorage, so clearing one key - or calling
-     the API directly with a key - walked straight through it. Under-13 handling
-     is strict liability and a minor's purchase comes back as a chargeback, so
-     the one place it has to hold is the side the money runs on.
-
-     A birth YEAR only: enough to gate correctly and the least personal thing
-     that does the job. Recorded once and not editable afterwards, because a
-     limit anyone can raise by retyping it is not a limit. */
-  if(body.birthYear != null && !prev.birthYear){
-    const y = Math.floor(+body.birthYear) || 0;
-    if(y >= 1900 && y <= nowYear){
-      prev.birthYear = y;
-      prev.ageSetAt = Date.now();
-      ageRecorded = { by: user.email, adult: (nowYear - y) >= ADULT_AGE };
-    }
-  }
-  entry = { version, at: Date.now(), ip: entryIp, country: entryCountry, ua: entryUa };
-  prev.current = entry;
-  prev.history = [entry, ...(prev.history || [])].slice(0, 20);   // every version ever accepted
-  }, { history: [] });
-  /* Audited outside the lock: it is a storage write of its own, and holding a
-     record lock across one is how a lease runs out mid-work. */
-  if (ageRecorded) audit(env, 'age_recorded', ageRecorded);
-  if (!entry) return json({ error: 'Could not record that just now. Please try again.' }, 503);
-  audit(env, 'consent_accepted', { by: user.email, version });
-  return json({ ok: true, version, at: entry.at });
-}
-
 /* ============================================================
    BANK DATA PROXY  (/v1/finance/*)
 
@@ -351,3 +270,84 @@ async function financeLinkStart(request, env){
   const reqBody = await request.clone().json().catch(() => ({}));
   const allowed = _finCountries(env);
   const cc = [String(reqBody.country || '').toUpperCase(), String((request.cf && request.cf.country) || '').toUpperCase()]
+    .find(c => allowed.indexOf(c) >= 0) || 'US';
+  const body = {
+    client_name: 'AMV', language: 'en', country_codes: [cc],
+    products: _finProductsFor(cc),
+    user: { client_user_id: await _finUserId(env, user.email) },
+    hosted_link: appUrl ? { completion_redirect_uri: appUrl + '/?finlink=done' } : {},
+  };
+  const r = await _finCall(env, '/link/token/create', body);
+  if(!r.ok || !r.data.hosted_link_url)
+    return json({ error: r.error || 'Could not start the link just now.', code:'provider_error' }, 502);
+
+  /* Held so the finish step can read the session result. Short-lived: an
+     abandoned link should not leave a usable handle lying about. */
+  await DB.put(env, 'finlink', user.email,
+    { token: r.data.link_token, at: Date.now() }, { expirationTtl: 6*3600 });
+  audit(env, 'finance_link_start', { by: user.email });
+  return json({ ok:true, url: r.data.hosted_link_url, expires: r.data.expiration || null });
+}
+
+async function financeLinkFinish(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first', code:'needs_auth' }, 401);
+  const blocked = await guardAction(env, 'finfin:' + user.email, 20, 900, 'link completions');
+  if(blocked) return blocked;
+  if(!_finReady(env)) return json({ error:'Bank linking is not switched on.', code:'needs_service' }, 503);
+
+  const rec = await DB.get(env, 'finlink', user.email);
+  if(!rec || !rec.token)
+    return json({ error:'Start the link first.', code:'no_session' }, 400);
+
+  const g = await _finCall(env, '/link/token/get', { link_token: rec.token });
+  if(!g.ok) return json({ error: g.error || 'Could not read the link session.', code:'provider_error' }, 502);
+
+  /* The public token appears on a COMPLETED session. An abandoned one simply
+     has none, which is a different answer from a failure and is told apart
+     here - otherwise closing the window would read as the provider being down. */
+  let publicToken = '';
+  for(const sess of (g.data.link_sessions || [])){
+    for(const add of ((sess.results && sess.results.item_add_results) || [])){
+      if(add && add.public_token) publicToken = add.public_token;
+    }
+  }
+  if(!publicToken)
+    return json({ ok:false, code:'not_finished', error:'That link was not completed. Start it again when you are ready.' }, 409);
+
+  const x = await _finCall(env, '/item/public_token/exchange', { public_token: publicToken });
+  if(!x.ok || !x.data.access_token)
+    return json({ error: x.error || 'Could not finish the link.', code:'provider_error' }, 502);
+
+  await _finPut(env, user.email,
+    { accessToken: x.data.access_token, itemId: x.data.item_id || '', linkedAt: Date.now() });
+  await DB.del(env, 'finlink', user.email);          // one use only
+  await _userEvent(env, request, user.email, 'finance_linked', {});
+  audit(env, 'finance_linked', { by: user.email }); // never the token
+  return json({ ok:true, linked:true });
+}
+
+async function financeUnlink(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first', code:'needs_auth' }, 401);
+  const blocked = await guardAction(env, 'finunlink:' + user.email, 10, 900, 'account unlinks');
+  if(blocked) return blocked;
+
+  const rec = await _finGet(env, user.email);
+  /* Told to the provider as well, so consent ends where the user ended it
+     rather than only in our copy of the record. Best effort: our record goes
+     either way, because a user who disconnects must not stay connected here
+     because a third party was unreachable. */
+  if(rec && rec.accessToken && _finReady(env)){
+    try{ await _finCall(env, '/item/remove', { access_token: rec.accessToken }); }catch(e){}
+  }
+  await DB.del(env, 'fin', user.email);
+  await DB.del(env, 'finlink', user.email);
+  /* The snapshot is derived from that account, so it goes too - otherwise
+     relinking later would compare today against a stranger's balance. */
+  await DB.del(env, 'invsnap', user.email);
+  await _userEvent(env, request, user.email, 'finance_unlinked', {});
+  audit(env, 'finance_unlinked', { by: user.email });
+  return json({ ok:true, unlinked:true });
+}
+

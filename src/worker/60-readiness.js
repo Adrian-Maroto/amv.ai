@@ -1,84 +1,3 @@
-  }, { tickets: [] });
-
-  /* Told to the operator NOW. A ticket that only exists until somebody thinks
-     to open an admin page is barely better than one in a browser. Not
-     alertOnce: every report is a different person, and collapsing them is how
-     the second one is never seen. */
-  let notified = false;
-  try {
-    await notify(env, `📮 ${kind} report from ${user.email}` + (ticket.plan ? ` (${ticket.plan})` : '')
-      + `:\n${text.slice(0, 500)}`);
-    notified = !!env.ALERT_WEBHOOK;
-  } catch (e) {}
-  audit(env, 'support_submitted', { email: user.email, kind, id: ticket.id });
-
-  /* What actually happened, so the screen cannot thank somebody for a delivery
-     that did not occur. Stored is true either way; reaching a person is not. */
-  return json({ ok: true, id: ticket.id, stored: true, notified,
-                support: env.SUPPORT_EMAIL || '' });
-}
-
-/* The operator's inbox. Behind the admin token like every other operator
-   surface - it contains other people's words about their own accounts. */
-async function supportInbox(request, env) {
-  /* AMV-052: through the SAME gate as every other admin route. This was a bare
-     token comparison with no rate limit, so three of the sixteen admin routes
-     were an unbounded channel for guessing the token while the other thirteen
-     were not - and an attacker only has to find the unbounded one. */
-  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
-  const { rows, truncated } = await scan(env, 'support', SUPPORT_SCAN_LIMIT, 'support inbox');
-  const out = [];
-  for (const row of rows) {
-    for (const t of ((row.value || {}).tickets || [])) out.push(Object.assign({ email: row.id }, t));
-  }
-  out.sort((a, b) => (b.at || 0) - (a.at || 0));
-  /* Two separate ways this list is not everything, and an unanswered customer
-     is the cost of either: more accounts than the scan read, and more tickets
-     than the page shows. Both are stated rather than implied by a short list. */
-  const shown = out.slice(0, 200);
-  return json({ ok: true, tickets: shown, accounts: rows.length,
-                truncated: truncated || out.length > shown.length,
-                totalTickets: out.length,
-                note: truncated
-                  ? 'More accounts have tickets than this scan read - there is unseen mail beyond this list.'
-                  : (out.length > shown.length
-                      ? 'Showing the ' + shown.length + ' newest of ' + out.length + ' tickets.' : null) });
-}
-
-/* Approval rate per engine, for the dashboard and the weekly digest. A rate
-   with almost no votes behind it is noise, so the count travels with it and
-   the rate is null until there is enough to mean anything. */
-async function _qualityReport(env) {
-  const mk = monthKey();
-  const MIN_VOTES = 10;
-  const out = { engines: [], features: [], reasons: [], month: mk };
-  for (const key of Object.keys(ENGINES)) {
-    const up = (await counter(env, `qual:${key}:up:${mk}`, { op: 'get' })).value || 0;
-    const down = (await counter(env, `qual:${key}:down:${mk}`, { op: 'get' })).value || 0;
-    const total = up + down;
-    out.engines.push({ engine: key, up, down, votes: total,
-      approvalPct: total >= MIN_VOTES ? +((up / total) * 100).toFixed(1) : null });
-  }
-  for (const feat of ['chat', 'research', 'code', 'agent', 'automation']) {
-    const up = (await counter(env, `qualfeat:${feat}:up:${mk}`, { op: 'get' })).value || 0;
-    const down = (await counter(env, `qualfeat:${feat}:down:${mk}`, { op: 'get' })).value || 0;
-    const total = up + down;
-    if (total) out.features.push({ feature: feat, up, down, votes: total,
-      approvalPct: total >= MIN_VOTES ? +((up / total) * 100).toFixed(1) : null });
-  }
-  for (const why of FEEDBACK_REASONS) {
-    const n = (await counter(env, `qualwhy:${why}:${mk}`, { op: 'get' })).value || 0;
-    if (n) out.reasons.push({ reason: why, count: n });
-  }
-  out.reasons.sort((a, b) => b.count - a.count);
-  const allUp = out.engines.reduce((n, e) => n + e.up, 0);
-  const allDown = out.engines.reduce((n, e) => n + e.down, 0);
-  out.votes = allUp + allDown;
-  out.approvalPct = out.votes >= MIN_VOTES ? +((allUp / out.votes) * 100).toFixed(1) : null;
-  out.minVotes = MIN_VOTES;
-  return out;
-}
-
 /* =====================================================================
    AMV-084  GO-LIVE READINESS - what is actually switched on
 
@@ -645,3 +564,84 @@ function _readinessReport(env, seen) {
    "The reset email never showed up" has four causes that look identical from
    the inbox: no key, a key the provider rejects, a sender on a domain it has
    not verified, or a message that was accepted and filtered as spam. Only the
+   provider's own answer tells them apart, and every ordinary send swallows it
+   (on purpose - a stranger must not learn whether an address exists). So the
+   operator, with the admin token, can send one test to OWNER_EMAIL (or an
+   address they type) and read the provider's status and message verbatim.
+   Never the key itself. Rate limited like every admin surface. */
+async function adminEmailTest(request, env) {
+  { const g = await _adminGate(request, env, 'emailtest', 3, 30); if (g) return g; }
+  const body = await request.json().catch(() => ({}));
+  const to = String(body.to || env.OWNER_EMAIL || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to))
+    return json({ ok: false, error: 'No address to send to: type one, or set OWNER_EMAIL.' }, 400);
+  if (!env.EMAIL_API_KEY) return json({ ok: false, step: 'key', error: 'EMAIL_API_KEY is not set on this Worker.' });
+  const from = env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT;
+  let status = 0, said = '';
+  try {
+    const r = await fetchDeadline('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + env.EMAIL_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [to], subject: 'AMV test email',
+        text: 'This is a test from AMV. If you are reading it, email from AMV reaches this inbox.',
+        html: _emailShell('Email works', '<p style="margin:0;font-size:14px;color:#333">This is a test from AMV. If you are reading it, email from AMV reaches this inbox.</p>', null, null, 'Test email.') }),
+    });
+    status = r.status;
+    said = String((await r.text().catch(() => '')) || '').slice(0, 400);
+  } catch (e) { said = 'The email provider could not be reached: ' + String(e && e.message || e).slice(0, 200); }
+  audit(env, 'admin_email_test', { to, status });
+  const ok = status >= 200 && status < 300;
+  /* The same record _sendEmail keeps: a test that goes through after the
+     domain is verified is what switches sign-in codes back on, straight away. */
+  try {
+    if (ok) await env.AMV_KV.delete('emailhealth:sender');
+    else if (/domain is not verified|verify (your )?domain|not verified/i.test(said))
+      await env.AMV_KV.put('emailhealth:sender', JSON.stringify({ at: Date.now(), said: said.slice(0, 300) }), { expirationTtl: 86400 });
+  } catch (e) {}
+  /* EVERY INBOX, NOT ONE. A verified domain is accepted by the provider, and
+     Gmail takes it - but Outlook, Hotmail and Yahoo also look for SPF, DKIM
+     and a DMARC policy on the sending domain, and file mail without them as
+     junk. Resend's verification adds the first two; DMARC is the one left out.
+     So the test reads all three, from public DNS, and names what is missing. */
+  const domain = ((/@([^>\s]+)/.exec(from) || [])[1] || '').toLowerCase();
+  const inboxes = domain ? await _mailDnsHealth(domain) : null;
+  const fixes = [];
+  if (inboxes) {
+    if (inboxes.dmarc === false) fixes.push('Add a TXT record named _dmarc with the value: v=DMARC1; p=none;  - Outlook, Hotmail and Yahoo junk mail from a domain without one.');
+    if (inboxes.dkim === false) fixes.push('The DKIM record (resend._domainkey) is missing - re-run "Verify DNS Records" in Resend.');
+    if (inboxes.spf === false) fixes.push('The SPF record on send.' + domain + ' is missing - re-run "Verify DNS Records" in Resend.');
+  }
+  let hint = '';
+  if (!ok && /domain/i.test(said)) hint = 'The sender\u2019s domain is not verified with the email provider. Verify it there, or set RESET_EMAIL_FROM to an address on a verified domain.';
+  else if (!ok && (status === 401 || status === 403) && /key|auth/i.test(said)) hint = 'The provider rejected EMAIL_API_KEY. Create a new key there and set it again.';
+  else if (ok) hint = 'Accepted by the provider. If it is not in the inbox within a minute, check spam - and the provider\u2019s log for that message.';
+  return json({ ok, status, from, to, provider: said, hint, domain, inboxes, fixes });
+}
+
+/* What the big inbox providers check on a sending domain, read from public
+   DNS (Cloudflare's DNS-over-HTTPS). true / false per record, or null for
+   "could not ask" - which is never reported as missing. */
+async function _dohTxt(name) {
+  try {
+    const r = await fetchDeadline('https://cloudflare-dns.com/dns-query?type=TXT&name=' + encodeURIComponent(name),
+      { headers: { accept: 'application/dns-json' } }, 5000);
+    if (!r.ok) return null;
+    const d = await r.json().catch(() => null);
+    if (!d || typeof d.Status !== 'number') return null;
+    return (d.Answer || []).filter(a => a && a.type === 16)
+      .map(a => String(a.data || '').replace(/"\s*"/g, '').replace(/^"|"$/g, ''));
+  } catch (e) { return null; }
+}
+async function _mailDnsHealth(domain) {
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return null;
+  const [dmarc, dkim, spf] = await Promise.all([
+    _dohTxt('_dmarc.' + domain), _dohTxt('resend._domainkey.' + domain), _dohTxt('send.' + domain)]);
+  const has = (list, re) => list == null ? null : list.some(t => re.test(t));
+  return { dmarc: has(dmarc, /^v=DMARC1/i), dkim: has(dkim, /p=/), spf: has(spf, /^v=spf1/i) };
+}
+
+async function adminReadiness(request, env) {
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
+  return json(Object.assign({ ok: true, checkedAt: Date.now() }, _readinessReport(env, { senderRefused: await _emailSenderRefused(env) })));
+}
+

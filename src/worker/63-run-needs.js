@@ -1,84 +1,3 @@
-  return json({ ok: true, account: _mailPublic({ provider, address, imap, smtp, connectedAt: Date.now() }) });
-}
-
-async function mailDisconnect(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  await DB.del(env, 'mailcfg', user.email);
-  audit(env, 'mail_disconnected', { by: user.email });
-  return json({ ok: true, connected: false });
-}
-
-/* Load a stored connection and put the password back together. Returns null
-   when there is nothing stored or the key can no longer read it - a rotated
-   MAIL_CRED_KEY makes every stored secret undecryptable, and that has to read
-   as "reconnect" rather than as "wrong password". */
-async function _mailCfgFor(env, email) {
-  const rec = await DB.get(env, 'mailcfg', email);
-  if (!rec || !rec.secret) return null;
-  const password = await _mailDecrypt(env, rec.secret);
-  if (!password) return null;
-  return { address: rec.address, password, imap: rec.imap, smtp: rec.smtp,
-           /* Records written before STARTTLS existed have neither field, and
-              465 implicit TLS is what they were connected with, so that is the
-              honest default rather than a guess. */
-           smtpPort: rec.smtpPort || MAIL_SMTP_PORT, smtpMode: rec.smtpMode || 'tls',
-           provider: rec.provider, rec };
-}
-
-async function _mailRun(request, env, work, what) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  const g = await guardAction(env, 'mail:' + user.email, 30, 300, what);
-  if (g) return g;
-  const cfg = await _mailCfgFor(env, user.email);
-  if (!cfg) return json({ error: 'No mailbox is connected to AMV yet.', code: 'mail_not_connected' }, 428);
-  try {
-    const out = await work(cfg, user);
-    try { await _withKV(env, 'mailcfg', user.email, (r) => { if (r) { r.lastOkAt = Date.now(); r.lastError = ''; } }); } catch (e) {}
-    return json(Object.assign({ ok: true }, out));
-  } catch (e) {
-    const kind = (e && e.kind) || (String(e && e.message) === 'mail_timeout' ? 'timeout' : 'net');
-    const fail = _mailFailure(kind, cfg.provider);
-    try { await _withKV(env, 'mailcfg', user.email, (r) => { if (r) r.lastError = fail.code; }); } catch (e2) {}
-    audit(env, 'mail_failed', { by: user.email, what, kind });
-    return json(fail, kind === 'auth' ? 401 : 502);
-  }
-}
-
-async function mailInbox(request, env) {
-  const body = await request.json().catch(() => ({}));
-  return _mailRun(request, env, (cfg) => _imapInbox(cfg, body.limit), 'inbox reads');
-}
-
-async function mailMessage(request, env) {
-  const body = await request.json().catch(() => ({}));
-  const uid = +body.uid;
-  if (!(uid > 0)) return json({ error: 'Which message?', code: 'bad_uid' }, 400);
-  return _mailRun(request, env, (cfg) => _imapMessage(cfg, uid), 'message reads');
-}
-
-async function mailSend(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  /* Sending mail as somebody is an outward-facing action, so an account on
-     hold does not get to do it. */
-  const held = await _accountHold(env, user, 'mail_send');
-  if (held) return held;
-  const body = await request.json().catch(() => ({}));
-  const to = (Array.isArray(body.to) ? body.to : [body.to])
-    .map((x) => String(x || '').trim()).filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)).slice(0, 20);
-  if (!to.length) return json({ error: 'Who should this go to?', code: 'bad_to' }, 400);
-  const subject = String(body.subject || '').slice(0, 300);
-  const text = String(body.text || '').slice(0, 100000);
-  if (!text.trim()) return json({ error: 'The message is empty.', code: 'bad_body' }, 400);
-  return _mailRun(request, env, async (cfg) => {
-    await _smtpSend(cfg, { to, subject, text });
-    audit(env, 'mail_sent', { by: user.email, to: to.length, provider: cfg.provider });
-    return { sent: true, to };
-  }, 'messages sent');
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
    WHAT THIS RUN NEEDS, ASKED BEFORE IT RUNS.
 
@@ -217,3 +136,84 @@ async function _autoConnected(env, email) {
      connect an account they had already connected - while the READER, which
      goes through `connUse` and the `conn:` record, could have read it perfectly.
      A permission gate consulting a store nothing writes is a gate that is
+     always shut.
+
+     `mailcfg:` and `school:` are still ORed in, because those stores are still
+     written - somebody whose mailbox is connected with an app password has a
+     real connection, and it is not this function's business to decide theirs
+     has stopped counting. `goauth:` is NOT, and that distinction is the whole
+     lesson: a fallback to a store nothing writes can never fire, so keeping it
+     does not make the function more forgiving, it makes it look like it has a
+     safety net it does not have. (The dead branch also read `g.refresh_token`
+     while the only other reader of that record writes `g.refreshToken` - two
+     spellings of a field nobody could have been reading.) The gate stage 'No
+     decision is read out of a store nothing writes' now refuses to let it
+     back. */
+  const byProvider = new Set();
+  const scopes = new Set();
+  for(const k of Object.keys(conns || {})){
+    const c = conns[k];
+    if(!c) continue;
+    if(c.provider) byProvider.add(String(c.provider));
+    if(Array.isArray(c.scopes)) c.scopes.forEach(s => scopes.add(String(s)));
+  }
+
+  return {
+    google: byProvider.has('google'),
+    mail:   scopes.has('mail.read')  || !!(mail && mail.secret),
+    school: scopes.has('school.read') || !!(school && school.token),
+    /* Asked of the record that actually holds the aggregator token, which is
+       the same record `_bankUse` opens. One store, one answer - the gate and
+       the runner cannot disagree about whether a bank is linked. */
+    bank:   !!(fin && fin.accessToken),
+    /* The exact grants, carried so a later, finer check can ask "does this
+       connection cover Drive" rather than only "is Google connected" - the
+       coarse answer is right for the remedy it prints ("connect your Google
+       account") and is not right for ever. */
+    scopes: [...scopes],
+  };
+}
+
+/* What THIS run is missing.
+
+   `extra` is how a run says what it worked out for itself: today's Canvas
+   assignment turning out to be an essay adds 'google', even though the job's
+   standing instruction never mentioned Drive. That is the whole reason this is
+   computed per run rather than once when the job was created. */
+function _autoNeedsFor(item, connected, extra) {
+  const text = String((item && item.detail) || '');
+  const asked = new Set((Array.isArray(extra) ? extra : []).map(String));
+  /* What the job DECLARED it opens, folded in through the one table. `boosts`
+     is deliberately not read: a source that only improves the answer is not a
+     reason to tell somebody their job cannot run. */
+  for(const u of (Array.isArray(item && item.uses) ? item.uses : [])){
+    const cap = AUTO_USE_TO_CAPABILITY[String(u)];
+    if(cap) asked.add(cap);
+  }
+  const missing = [];
+  for (const cap of AUTO_CAPABILITIES) {
+    if (!(asked.has(cap.id) || cap.match.test(text))) continue;
+    if (cap.has(connected || {}, item)) continue;
+    missing.push({ id: cap.id, label: cap.label, needs: cap.needs, where: cap.where,
+                   browserOnly: !!cap.browserOnly,
+                   why: asked.has(cap.id) ? 'discovered' : 'instruction' });
+  }
+  return { ready: missing.length === 0, missing };
+}
+
+/* The sentence somebody reads against the run that stopped.
+
+   Dated on purpose. A job that runs every night and only tonight needs
+   something new is unactionable as "I need access" - the person has to know it
+   is TODAY'S run, and which one. */
+function _autoNeedsMessage(item, missing, atMs) {
+  const when = new Date(atMs || Date.now()).toISOString().slice(0, 10);
+  const what = String((item && item.detail) || 'this job').slice(0, 140);
+  const lines = missing.map((m) => '  • ' + m.needs + '\n    (so AMV can ' + m.label + ' — add it in ' + m.where + ')');
+  return 'Important: AMV needs your permission before it can finish this.\n\n'
+       + 'Job: ' + what + '\nRun: ' + when + '\n\n'
+       + 'What it needs:\n' + lines.join('\n')
+       + '\n\nNothing was run and nothing was charged. Add ' + (missing.length > 1 ? 'these' : 'this')
+       + ' and it picks up on the next run.';
+}
+

@@ -1,84 +1,3 @@
-  }
-  const acct = acct0;
-  // FAIL CLOSED: only a real email-password account with a stored password hash
-  // may obtain a token here. A federated account (provider !== 'email', or no
-  // pwHash) has no password to check, so it must be rejected - never fall through
-  // to issueTokens. This closes both the provider-impersonation bypass and the
-  // "any password logs in a federated account" bypass.
-  if(acct.provider !== 'email' || !acct.pwHash){
-    await _noteAuthFail(env, rlKey);
-    audit(env,'auth_fail',{email:em,reason:'wrong_method'});
-    /* Same reason as above: this branch skipped the hashing entirely, so a
-       Google account and a password account were a stopwatch apart. */
-    await _hashPassword(password, acct.salt || 'absent-account-timing-salt', acct.pwIter || PBKDF2_ITERATIONS).catch(() => {});
-    return json(SAME_ANSWER, 401);   // generic - never reveal the account's provider
-  }
-  // verify using the iteration count the hash was MADE with (default 100k for
-  // pre-upgrade accounts), so raising the global count never locks anyone out
-  const usedIter = acct.pwIter || 100000;
-  const hash = await _hashPassword(password, acct.salt, usedIter);
-  // constant-time compare to avoid password-timing leaks
-  const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
-  if(!ok){
-    await _noteAuthFail(env, rlKey);
-    audit(env,'auth_fail',{email:em,reason:'bad_password'});
-    /* Shown to the account owner: a run of these is how someone finds out their
-       password is being guessed, which is the single most useful thing an
-       activity log can tell them. */
-    /* Coalesced to at most one entry per 15 minutes per account. Without that,
-       a distributed guessing run against one address is an unbounded write
-       amplifier on that account's log - the per-IP throttle above does not
-       bound it, because the attacker supplies the IPs. The user still sees a
-       run of entries across the hours an attack lasts, which is the signal
-       that matters; they do not need one line per guess. */
-    try{
-      const seen = `alogfail:${em}`;
-      if(!(await env.AMV_KV.get(seen))){
-        await env.AMV_KV.put(seen, '1', { expirationTtl: 900 });
-        await _userEvent(env, request, em, 'sign_in_failed', { reason: 'wrong password' });
-      }
-    }catch(e){ /* logging must never change the outcome of a sign-in */ }
-    return json(SAME_ANSWER, 401);
-  }
-  // success - clear the failure counter
-  try{ await env.AMV_KV.delete(rlKey); }catch(e){}
-  // transparent upgrade: if this account is below the current target, re-hash now
-  if(usedIter < PBKDF2_ITERATIONS){
-    try{
-      const newHash = await _hashPassword(password, acct.salt, PBKDF2_ITERATIONS);
-      /* AMV-196: under the record lock, re-reading inside it, and ONLY if the
-         stored hash is still the one this login verified against.
-
-         Writing the whole record back from a read taken at the top of the
-         request is how a password reset gets silently undone: somebody resets
-         because they think they are compromised, a login with the OLD password
-         is in flight, and it restores the old hash and salt. The reset reports
-         success, the new password does not work, and the old one still does.
-
-         An upgrade is a nice-to-have; losing a password change is not. If the
-         record moved underneath us, the upgrade is skipped - the next login
-         does it. */
-      await _withAcct(env, em, (fresh) => {
-        if (!fresh || fresh.pwHash !== acct.pwHash || fresh.salt !== acct.salt) return;
-        fresh.pwHash = newHash; fresh.pwIter = PBKDF2_ITERATIONS;
-      });
-    }catch(e){ /* non-fatal - login still succeeds */ }
-  }
-  /* THE PASSWORD IS ONE HALF. On a device this account has not proved itself
-     on, the other half is a code sent to the address - see _startSignInCode. */
-  let trust = null;
-  if (_codesOn(env)) {
-    trust = await _deviceTrustState(env, request, body, em);
-    if (!trust.trusted) { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin', null, trust.reason); if (c) return c; }
-  }
-  try{ await _markActive(env, em); }catch(e){}
-  await _userEvent(env, request, em, 'signed_in');
-  /* Trust is counted from the LAST sign-in, not the first code: somebody who
-     signs in every week should not be asked for a code every thirty days. */
-  if (trust && trust.trusted) return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, acct.name || name || '', await _sessOpen(env, request, em)));
-  return _tokenResponse(env, await issueTokens(env, em, acct.name || name || '', await _sessOpen(env, request, em)));
-}
-
 /* ============================================================
    SIGN-IN CODES - THE PASSWORD IS NOT THE WHOLE KEY
    ============================================================
@@ -1688,3 +1607,84 @@ async function authDeleteAccount(request, env) {
                         /* The throttle on this very endpoint. Confirming a deletion takes a
                            password, so it is rate limited like everything else that does -
                            and the counter keys carry the address. They expire on their own,
+                           but "it will be gone tomorrow" is not what erasure means, and
+                           there is nothing left to throttle once the account is gone. */
+                        `rl:act:delacct:${email}:`, `ctr:actday:delacct:${email}:`]) {
+    try {
+      let cursor;
+      do {
+        const page = await env.AMV_KV.list({ prefix, cursor, limit: 1000 });
+        for (const k of (page.keys || [])) { try { await env.AMV_KV.delete(k.name); deleted++; } catch { _eraseFailed('scanned per-user keys'); } }
+        cursor = page.list_complete ? undefined : page.cursor;
+      } while (cursor);
+    } catch { _eraseFailed('scanned per-user keys'); }
+  }
+
+  /* The waitlist puts the address at the END of the key (waitlist:<product>:
+     <email>), so there is no prefix that finds it - it takes a scan of the
+     whole list. Erasure is rare and this is somebody asking not to be on a
+     mailing list any more, which is the request it would be worst to ignore. */
+  try {
+    let cursor;
+    const suffix = ':' + email;
+    do {
+      const page = await env.AMV_KV.list({ prefix: 'waitlist:', cursor, limit: 1000 });
+      for (const k of (page.keys || [])) {
+        if (k.name.endsWith(suffix)) { try { await env.AMV_KV.delete(k.name); deleted++; } catch { _eraseFailed('waitlist entries'); } }
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+  } catch { _eraseFailed('waitlist entries'); }
+
+  // Revoke all tokens so existing sessions die immediately.
+  await _revokeOrSay(env, email, 'account_deleted');
+
+  /* What survived, said out loud in all three places it has to be said: to the
+     person who asked, in AMV's own record, and to somebody who can go and
+     finish it. The person leaving will not keep this reply - the audit line and
+     the page are what exist afterwards. */
+  if (eraseFailed.length) {
+    audit(env, 'account_delete_incomplete', { email, keysRemoved: deleted, failed: eraseFailed.join(',') });
+    try {
+      await alertOnce(env, 'erase_incomplete:' + email,
+        'AN ERASURE DID NOT COMPLETE. ' + email + ' asked to be deleted and these could not be removed: '
+        + eraseFailed.join(', ') + '. Everything else went. This is a legal obligation that is now part done, '
+        + 'and the person has been told it is incomplete - remove the rest by hand and confirm to them.', 60);
+    } catch (e) {}
+    return json({
+      ok: false,
+      incomplete: true,
+      deleted: false,
+      prefixesPurged: deleted,
+      failed: eraseFailed,
+      error: 'Some of your data could not be deleted (' + eraseFailed.join(', ') + '). '
+           + 'Everything else has been removed and our team has been alerted to finish it. '
+           + 'Contact support if you do not get confirmation.',
+    }, 500);
+  }
+  audit(env, 'account_deleted', { email, keysRemoved: deleted });
+  /* WHAT IS KEPT, AND WHY, SAID RATHER THAN LEFT TO BE DISCOVERED.
+
+     Erasure takes the wallet and its transaction history with everything else.
+     What it does NOT take is the payout ledger and the calendar-year totals -
+     deliberately, because a record of money actually sent has to outlive the
+     account under tax and anti-money-laundering rules, and both GDPR and the
+     CCPA say so in the same breath as the right to erasure. Keeping them
+     silently would be the wrong way to be right: somebody who asked to be
+     deleted is entitled to know what survived and on what grounds.
+
+     It is stated here whether or not this person was ever paid, because a
+     reply that only appears for sellers tells the reader something about the
+     account, and because the sentence is about AMV's policy rather than about
+     them. */
+  return json({ ok: true, deleted: true, prefixesPurged: deleted,
+    retained: {
+      what: 'Records of payouts actually sent to you, and the yearly totals built from them.',
+      why: 'Tax and anti-money-laundering law require these to be kept for a set period, '
+         + 'and the right to erasure does not override that. They hold what was paid and when. '
+         + 'Nothing about what you sold, to whom, or anything you wrote.',
+    },
+  });
+}
+
+/* Pull all of a user's synced data (or just keys changed since `since`). */

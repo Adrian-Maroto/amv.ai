@@ -1,84 +1,3 @@
-     read to a caller as "there was nothing there". */
-  if(!spec) return json({ error:'unknown_action', message:'AMV does not know that action.' }, 400);
-
-  /* Bounded, because every one of these is an outbound call to somebody else's
-     API on somebody else's quota. Writes are bounded harder: reading your
-     inbox forty times is a busy morning, sending forty mails is not. */
-  const blocked = spec.writes
-    ? await guardAction(env, 'connact:w:' + user.email, 10, 100, 'actions on your connected accounts')
-    : await guardAction(env, 'connact:r:' + user.email, 60, 1000, 'actions on your connected accounts');
-  if(blocked) return blocked;
-
-  const got = await connUse(env, user.email, spec.need, 'action:' + name, { attended: true });
-  if(!got.ok){
-    /* The capability is the refusal, and it names itself. "Not connected" and
-       "connected, but you did not grant that" are different problems with
-       different fixes, and telling somebody the first when it is the second
-       sends them to reconnect an account that is already fine. */
-    const msg = got.code === 'not_connected'
-        ? 'No connected account can do that yet. Connect one under Settings, Integrations, and tick the permission this needs.'
-      : got.code === 'refresh_failed' || got.code === 'expired_no_refresh'
-        ? 'That connection stopped working and needs reconnecting.'
-      : got.code === 'unreadable'
-        ? 'That connection could not be read on this deployment. Nothing has been disconnected.'
-        : 'That could not be done (' + got.code + ').';
-    return json({ error: got.code, need: spec.need, message: msg }, 409);
-  }
-
-  try{
-    const result = await spec.run(got.token, body.args || {});
-    /* VERIFY, THEN SAY IT HAPPENED.
-
-       Every write reads its own result back from the provider and reports
-       `verified`: true when the change is there, null when it could not be
-       checked, false when the provider said yes and the change is not there.
-       False is a failure, whatever the status code said - a provider that
-       answers 200 and does nothing must not come back to the person as done.
-       It is not "nothing was changed" either: AMV cannot know that, and saying
-       so would invite a second send. */
-    if(spec.writes){
-      const v = result && typeof result === 'object' ? result.verified : undefined;
-      if(v === undefined){
-        audit(env, 'conn_action_unverifiable', { by: user.email, action: name });
-        return json({ error:'not_verifiable', action: name,
-          message:'AMV has no way to check that, so it is not reporting it as done. Look in the account itself.' }, 500);
-      }
-      if(v === false){
-        audit(env, 'conn_action_not_confirmed', { by: user.email, action: name });
-        return json({ error:'not_confirmed', action: name, result,
-          message:'The account said yes, but when AMV checked, the change was not there. Look in the account before trying again, so it does not happen twice.' }, 502);
-      }
-    }
-    return json({ ok: true, action: name, result });
-  }catch(e){
-    /* The provider's own message is logged and NOT returned. It can carry a
-       quota name, an internal id, or a hint about the account, and none of that
-       belongs in an answer to a browser. */
-    audit(env, 'conn_action_failed', { by: user.email, action: name,
-      error: String((e && e.message) || e).slice(0, 120) });
-    /* AMV's OWN refusals - raised before any request, or naming a file that
-       was never handed over - are said as what they are. */
-    const why = String((e && e.message) || '');
-    const own = {
-      docs_not_chosen: 'AMV can only open Google files you chose for it, or ones it made. Choose the file first.',
-      sheets_not_chosen: 'AMV can only open Google files you chose for it, or ones it made. Choose the file first.',
-      bad_file: 'That is not a Google file AMV can open.',
-      bad_range: 'That is not a range in a sheet, like Sheet1!A1:C10.',
-      bad_values: 'The values to write must be rows of cells.',
-      too_many_cells: 'That is more than 10,000 cells at once. Write it in parts.',
-      bad_edit: 'Say what to find and what to replace it with, or what to add at the end.',
-    }[why];
-    if (own) return json({ error: why, action: name, message: own + ' Nothing was changed.' }, 400);
-    return json({ error:'action_failed', action: name,
-      message:'That did not work. Nothing was changed.' }, 502);
-  }
-}
-
-/* WHAT GOOGLE'S FILE PICKER NEEDS IN THE BROWSER (picker.html). All three
-   are public by design - a client id, a browser key limited by the site it is
-   used from, and a project number - which is why they are handed to the page
-   at all. Signed in only, so this is not a directory of the deployment's
-   settings for anyone who asks. */
 /* ══ AMV'S CLOUD COMPUTER ════════════════════════════════════════════════════
 
    A machine of the person's own, in AMV's cloud: one container each, running
@@ -105,3 +24,84 @@ function _computerOn(env){ return !!(env && env.AMV_COMPUTER && String(env.AMV_C
 function _computerCap(user){
   const rank = _planRankOf(user.plan, user.customCfg);
   return rank >= PLAN_RANK.ultra ? COMPUTER_MINUTES.ultra : rank >= PLAN_RANK.elite ? COMPUTER_MINUTES.elite
+       : rank >= PLAN_RANK.pro ? COMPUTER_MINUTES.pro : 0;
+}
+async function _computerName(email){
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-computer:' + String(email).toLowerCase()));
+  return 'u:' + [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 48);
+}
+async function _computerUsedSeconds(env, email){
+  return +((await counter(env, `cmin:${email}:${monthKey()}`, { op: 'get' })).value || 0);
+}
+/* AWAKE TIME, AS THE UNION OF WINDOWS. Each request keeps the machine up
+   until COMPUTER_AWAKE_S after it - so a request inside a window bills only
+   the extension, and one after a gap bills a fresh window. `cwake:` holds where
+   the billed time ends. An extension under 30 seconds is not written: the mark
+   stays put, so the next request bills it from there and nothing is lost -
+   and a burst of requests does not become a burst of writes to one key. */
+async function _computerBillAwake(env, email, atMs){
+  const key = `cwake:${email}`;
+  const billedTo = +(await env.AMV_KV.get(key).catch(() => null)) || 0;
+  const end = atMs + COMPUTER_AWAKE_S * 1000;
+  const add = Math.ceil((end - Math.max(billedTo, atMs)) / 1000);
+  if(add < 30) return 0;
+  await env.AMV_KV.put(key, String(end), { expirationTtl: 2 * 86400 });
+  await counter(env, `cmin:${email}:${monthKey()}`, { op: 'incr', amount: add, ttlMs: 40 * 86400000 });
+  return add;
+}
+async function computerInfo(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const cap = _computerCap(user);
+  return json({ ok: true, available: _computerOn(env), allowed: cap > 0, minPlan: COMPUTER_MIN_PLAN,
+                minutes: { used: Math.ceil((await _computerUsedSeconds(env, user.email)) / 60), cap } });
+}
+async function computerRoute(request, env, route){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  if(!_computerOn(env)) return json({ error: 'AMV’s cloud computer is not switched on for this deployment yet. You can still connect your own computer.', code: 'needs_service' }, 503);
+  const cap = _computerCap(user);
+  if(!cap) return json({ error: 'The cloud computer comes with Pro and above.', code: 'plan_required', minPlan: COMPUTER_MIN_PLAN }, 402);
+  const limited = await guardAction(env, 'computer:' + user.email, 120, 2000, 'requests to your cloud computer');
+  if(limited) return limited;
+  /* Spent: nothing more reaches the machine, because anything that reaches it
+     keeps it awake. Disconnecting still goes through - it stops what runs. */
+  if(route !== 'revoke'){
+    const used = await _computerUsedSeconds(env, user.email);
+    if(used >= cap * 60)
+      return json({ error: `You have used this month’s ${cap} minutes of cloud computer time. It starts again next month, or upgrade for more.`,
+                    code: 'computer_minutes', minutes: { used: Math.ceil(used / 60), cap } }, 429);
+  }
+  const raw = await request.text();
+  if(raw.length > 8 * 1024 * 1024) return json({ error: 'That is too large to send to the cloud computer.', code: 'too_large' }, 413);
+  let stub;
+  try{ stub = env.AMV_COMPUTER.get(env.AMV_COMPUTER.idFromName(await _computerName(user.email))); }
+  catch(e){ return json({ error: 'The cloud computer could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503); }
+  await _computerBillAwake(env, user.email, Date.now());
+  let r, text;
+  try{
+    r = await stub.fetch(new Request('http://amv-computer/amv-bridge/' + route, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY) }, body: raw || '{}' }));
+    text = await r.text();
+  }catch(e){
+    audit(env, 'computer_unavailable', { by: user.email, route });
+    return json({ error: 'The cloud computer did not start. Try again in a minute.', code: 'computer_unavailable' }, 503);
+  }
+  let d; try{ d = JSON.parse(text); }catch(e){ d = null; }
+  if(!d || typeof d !== 'object') return json({ error: 'The cloud computer answered with something AMV could not read.', code: 'computer_unavailable' }, 502);
+  /* The container refusing AMV's key means the two Workers hold different
+     keys - a deployment fault, not the person's session. Passed through as a
+     401 it would read as "signed out" and send them to sign in again. */
+  if(r.status === 401){
+    audit(env, 'computer_key_mismatch', { by: user.email, route });
+    return json({ error: 'The cloud computer is not set up correctly on this deployment. Nothing ran.', code: 'computer_unavailable' }, 503);
+  }
+  /* A long command kept it awake past the window billed when it started, so
+     the window is extended from when it finished. */
+  if(route === 'exec'){
+    await _computerBillAwake(env, user.email, Date.now());
+    if(r.ok) audit(env, 'computer_exec', { by: user.email, ms: +d.ms || 0, exit: d.exitCode });
+  }
+  return json(d, r.status);
+}
+

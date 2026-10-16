@@ -1,84 +1,3 @@
-   exactly nothing - the runner still only had the job's own text. That is the
-   failure this product keeps having in a new place: correct at both ends and
-   not joined in the middle.
-
-   Bounded on purpose. A digest needs the shape of the inbox, not the inbox: it
-   reads headers and snippets for a small number of recent messages, never full
-   bodies, never attachments. That keeps the prompt small, the cost predictable,
-   and the amount of somebody's private mail passing through a model as small as
-   the job can be done with.
-
-   And it NEVER silently degrades. If a capability was asked for and could not
-   be read - not connected, autonomy paused, token revoked - the run is told so
-   in the prompt, in words, and instructed to say it. An inbox digest that
-   quietly reports on nothing looks identical to an inbox with nothing in it,
-   which is how somebody misses a fortnight of mail believing AMV was watching. */
-/* READ-ONLY, EVERY ONE OF THEM. There is no send, no write and no payment in
-   this list, and that is the whole reason an unattended run is allowed to hold
-   an account at all.
-
-   `bank.read` is here because five jobs in the catalogue already said they
-   needed a bank connection - Morning money summary, Unusual transaction
-   alerts, Low balance warning, Budget pace, Credit watch - and the runner
-   handed them nothing. Their prompts are written around real balances and real
-   transactions, and each one honestly says "never state a balance you cannot
-   read", so they did not lie; they simply could not work. A requirement stated
-   in one layer with no data behind it in another is the failure this codebase
-   keeps finding, and this was the largest remaining instance of it.
-
-   It reads through the same aggregator token the investing check-in has read
-   unattended since it was written, so no new class of access is created here -
-   balances were already readable on a schedule, and this adds the transaction
-   list beside them. */
-const AUTO_USES_ALLOWED = ['mail.read', 'calendar.read', 'school.read', 'bank.read'];
-
-/* WHAT A JOB PLAINLY NEEDS, READ OFF WHAT IT SAYS IT DOES.
-
-   The permission gate already answers a question of this shape - it reads the
-   detail and decides whether the account can cover it - and the RUNNER answers
-   a different one, off `uses`. Two matchers for one question is how a job ends
-   up passing the gate and then reading nothing, which is exactly what happened
-   to every job created from chat.
-
-   Deliberately narrow. Each entry names a scope an unattended run may actually
-   hold (`AUTO_USES_ALLOWED`), so a detail about Drive derives nothing rather
-   than deriving a calendar it never asked for - the run then reports what it
-   could not see instead of quietly answering a different question. A suite
-   drives this and the gate over one table and requires them to agree.
-
-   BOTH APOSTROPHES. A phone autocorrects "what's on" to a curly one, so a
-   matcher that knows only the straight ASCII form fails for most of the people
-   typing it - and fails by deriving NOTHING, which is silent and is the exact
-   failure this table exists to stop. Found by a test case written for the
-   phrasing rather than for the regex. */
-const AUTO_USES_FROM_TEXT = [
-  [/\b(gmail|my e-?mails?|e-?mails? (?:i|from)|inbox|unread|mailbox|read (?:my )?(?:e-?mail|mail)|reply to)\b/i, 'mail.read'],
-  [/\b(calendar|meetings?|appointments?|my (?:day|week|schedule)|diary|what(?:['’]| i)?s on)\b/i, 'calendar.read'],
-  [/\b(canvas|classroom|assignments?|homework|coursework|my class(?:es)?|due (?:today|tomorrow|this week)|deadlines?)\b/i, 'school.read'],
-  /* DELIBERATELY NO ROW FOR `bank.read`.
-
-     Every other entry here is a phrase that can only mean one thing.
-     "Spending", "my money" and "subscriptions" are not like that: they are the
-     words people use for a question they expect answered from receipts as often
-     as from a statement. A row here would mean a sentence typed into chat
-     starts an unattended job that reads somebody's bank account, which is not
-     a thing to infer from wording.
-
-     So a bank read is only ever requested by a job that DECLARES it - the
-     catalogue's `needs:'Bank connection'`, which the person saw on the card
-     before they switched it on. Narrower than the others on purpose. */
-];
-function _autoUsesFromText(text){
-  const s = String(text || '');
-  const out = [];
-  for(const [re, use] of AUTO_USES_FROM_TEXT)
-    if(re.test(s) && AUTO_USES_ALLOWED.indexOf(use) >= 0 && out.indexOf(use) < 0) out.push(use);
-  return out;
-}
-const AUTO_MAIL_MAX = 25;          // headers, not bodies
-const AUTO_EVENTS_MAX = 20;
-const AUTO_SNIPPET_MAX = 180;
-
 /* ── WHAT IS RENEWING, AND WHAT IT COSTS ──────────────────────────────────
    READ BY RULE, NOT BY PROMPT.
 
@@ -954,3 +873,84 @@ async function _ingestRead(env, email){
 }
 
 async function _fetchGmailHeads(token, opts){
+  const o = opts || {};
+  const max = Math.max(1, Math.min(AUTO_MAIL_MAX, Number(o.max) || AUTO_MAIL_MAX));
+  let url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=' + max + '&labelIds=INBOX';
+  /* Two windows, and the second is what makes a missed batch recoverable.
+
+     `since` walks FORWARD from the cursor - ordinary "what is new". `until`
+     bounds the window from above, which is the only way to reach mail OLDER
+     than what has already been reported: Gmail answers newest-first and caps
+     the page, so a burst bigger than one page leaves a hole BELOW the newest
+     25 and `after:` alone will return that same newest 25 for ever. */
+  const since = Number(o.since) || 0;
+  const until = Number(o.until) || 0;
+  const q = [];
+  /* The overlap belongs to the FRONTIER fetch only. It exists so a message
+     landing either side of "now" is not lost between two runs - a real risk
+     at a moving edge. A backfill is bounded on both sides and its lower bound
+     is a cursor already trusted, so widening it there buys nothing and costs
+     real page slots: the window fills up with mail that was reported long ago,
+     and the walk crawls instead of converging. */
+  if(since > 0) q.push('after:' + Math.floor(Math.max(0, until > 0 ? since : since - INGEST_OVERLAP_MS) / 1000));
+  /* Ceil, so the boundary message itself is excluded rather than fetched again
+     on every backfill pass - the one direction where an off-by-one does not
+     just cost a duplicate, it stops the backfill making progress. */
+  if(until > 0) q.push('before:' + Math.ceil(until / 1000));
+  if(q.length) url += '&q=' + encodeURIComponent(q.join(' '));
+  const r = await fetchDeadline(url, { headers: { Authorization: 'Bearer ' + token } }, 15000);
+  if(!r.ok) throw new Error('gmail_' + r.status);
+  const d = await r.json().catch(()=>({}));
+  const ids = (d.messages || []).slice(0, max);
+  const out = [];
+  for(const m of ids){
+    const mr = await fetchDeadline(
+      'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + m.id +
+      '?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date',
+      { headers: { Authorization: 'Bearer ' + token } }, 10000).catch(()=>null);
+    if(!mr || !mr.ok) continue;
+    const md = await mr.json().catch(()=>({}));
+    const h = (md.payload && md.payload.headers) || [];
+    const g = n => (h.find(x => x.name === n) || {}).value || '';
+    out.push({ id: String(md.id || m.id || ''),
+               /* Gmail's own timestamp for the message, in ms. This is the
+                  fact's time; `Date:` is a header the sender wrote and can say
+                  anything at all. */
+               occurred_at: Number(md.internalDate) || 0,
+               from: g('From').slice(0,120), subject: g('Subject').slice(0,160),
+               date: g('Date').slice(0,40),
+               /* The snippet is Gmail's own one-line preview. Enough to judge
+                  whether something needs a reply; not the message. */
+               snippet: String(md.snippet || '').slice(0, AUTO_SNIPPET_MAX),
+               unread: Array.isArray(md.labelIds) && md.labelIds.indexOf('UNREAD') >= 0 });
+  }
+  /* A full page means Gmail had at least this many in the window and may have
+     had more. That is the only honest signal available without paging the
+     whole history, and paging somebody's inbox because we happen to hold a
+     token is exactly what the event model says not to do. */
+  return { items: out, capped: (d.messages || []).length >= max };
+}
+
+async function _fetchCalendar(token){
+  const now = new Date();
+  const end = new Date(Date.now() + 7 * 86400000);
+  const r = await fetchDeadline(
+    'https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime' +
+    '&maxResults=' + AUTO_EVENTS_MAX +
+    '&timeMin=' + encodeURIComponent(now.toISOString()) +
+    '&timeMax=' + encodeURIComponent(end.toISOString()),
+    { headers: { Authorization: 'Bearer ' + token } }, 15000);
+  if(!r.ok) throw new Error('calendar_' + r.status);
+  const d = await r.json().catch(()=>({}));
+  return (d.items || []).slice(0, AUTO_EVENTS_MAX).map(e => ({
+    title: String(e.summary || '(no title)').slice(0, 140),
+    start: (e.start && (e.start.dateTime || e.start.date)) || '',
+    end: (e.end && (e.end.dateTime || e.end.date)) || '',
+    where: String(e.location || '').slice(0, 100),
+    guests: Array.isArray(e.attendees) ? e.attendees.length : 0,
+  }));
+}
+
+const AUTO_COURSES_MAX = 12;
+const AUTO_WORK_PER_COURSE = 30;
+

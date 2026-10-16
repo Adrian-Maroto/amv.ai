@@ -1,84 +1,3 @@
-         incident, which is the worst hour to add one to. */
-      try{ const kind = String(key).split(':')[0]; if(kind) await _forgetKindEmpty(env, kind); }catch(_){}
-    restored++;
-  }
-  audit(env, 'backup_import', { mode, restored, skipped, refused, unrestorable,
-    lost: lost.join(',') || undefined, heldForward, from: snap.createdISO });
-  if (unrestorable) {
-    /* NOT ok. A restore that dropped part of the snapshot answered 200 and
-       ok:true with the count buried in the body, so a recovery script saw
-       success and an operator saw a number they had no reason to read. The
-       whole point of this endpoint is the one day somebody is relying on it.
-
-       Paged as well as returned, because the person running a restore is busy
-       with whatever caused it and is the least likely reader of a JSON body. */
-    try { await alertOnce(env, 'restore_incomplete',
-      'A backup restore finished with ' + unrestorable + ' record(s) that could NOT be written: '
-      + lost.slice(0, 5).join(', ') + (lost.length > 5 ? ' and more' : '')
-      + '. The store is NOT a complete copy of that snapshot.', 5); } catch (e) {}
-    return json({ ok:false, code:'restore_incomplete', mode, restored, skipped,
-      refused, unrestorable, lost, heldForward,
-      error: unrestorable + ' record(s) in this snapshot could not be restored, so the store is '
-        + 'NOT a complete copy of it. They are named in `lost`. This is reported as a failure '
-        + 'rather than a count, because a partial restore somebody believes was total is how a '
-        + 'recovery quietly loses data.',
-      snapshotFrom: snap.createdISO || null }, 422);
-  }
-  return json({ ok:true, mode, restored, skipped, refused, unrestorable: 0,
-    /* Said out loud. An operator restoring a snapshot needs to know that some
-       of it was deliberately not applied, and why - a silent partial restore is
-       one they will assume was total. */
-    heldForward,
-    note: heldForward
-      ? heldForward + ' record(s) were restored WITHOUT undoing a revocation, block or sign-out that happened after this snapshot was taken. Access that was taken away stays taken away.'
-      : null,
-    snapshotFrom: snap.createdISO || null });
-}
-
-
-/* Report an error that happened INSIDE the Worker itself. */
-async function _workerError(env, where, err, extra){
-  try{
-    const idx = (await DB.get(env, 'errors', 'index')) || { groups:{} };
-    /* SCRUBBED HERE TOO.
-
-       AMV-037 scrubbed the PUBLIC sink, because that text arrives out of
-       somebody's browser. It left this one - the SERVER's - reading raw, and
-       this is the sink that sees actual credentials: an outbound call that
-       fails quotes the URL it failed on, and some of those URLs carry the
-       secret in them by the provider's design. Telegram's bot token is in the
-       path; a signed provider URL carries its signature in the query.
-
-       Unscrubbed, one failed send wrote a working bot token into KV in plain
-       text, posted it to the operator's Slack through alertOnce, and forwarded
-       it to Sentry - while the same token sat encrypted at rest two functions
-       away. The stack matters as much as the message: a stack quotes whatever
-       was in scope at the frame that threw. */
-    const e = { kind:'worker', msg:_errScrub(String(err&&err.message||err), 300),
-                where:String(where).slice(0,120), stack:_errScrub(String(err&&err.stack||''), 1200),
-                tab:'server', ua:'worker', ver:'', at:Date.now(), ...(extra||{}) };
-    _forwardSentry(env, null, e);   // inert unless SENTRY_DSN is set
-
-
-    const fp = await _fingerprint(e);
-    const g = idx.groups[fp] || { fp, msg:e.msg, where:e.where, kind:'worker',
-                                  count:0, users:0, first:Date.now(), last:0, samples:[], userSet:[] };
-    const isNew = g.count === 0;
-    g.count++; g.last = Date.now(); g.msg = e.msg;
-    if(g.samples.length < ERR_MAX_SAMPLES) g.samples.push(e); else g.samples[ERR_MAX_SAMPLES-1] = e;
-    idx.groups[fp] = g;
-    await DB.put(env, 'errors', 'index', idx);
-    // Page the owner the FIRST time a given error appears, and again if it keeps
-    // happening (throttled). This is how you find out prod broke before users do.
-    if(isNew){
-      await alertOnce(env, 'err:'+fp, `⚠️ New server error in ${e.where}: ${e.msg} (${e.count||1}x)`, 30);
-    } else if(g.count === 25 || g.count === 250){
-      await alertOnce(env, 'err:'+fp+':'+g.count, `🔁 Recurring error in ${e.where} hit ${g.count}x: ${e.msg}`, 60);
-    }
-  }catch(e){ /* never let error reporting throw */ }
-}
-
-
 /* ==============================================================
    FORGOT PASSWORD - the flow people actually expect (the flow every product uses):
      1. Enter your email    -> POST /auth/reset/code
@@ -386,3 +305,84 @@ function resetPage(request, env){
         border-radius:16px;padding:32px}
   h1{font-size:21px;font-weight:650;margin-bottom:6px}
   p.sub{font-size:14px;color:#8b949e;line-height:1.6;margin-bottom:22px}
+  label{display:block;font-size:12px;font-weight:600;color:#8b949e;
+        text-transform:uppercase;letter-spacing:.04em;margin-bottom:7px}
+  input{width:100%;padding:12px 14px;border-radius:9px;border:1px solid #30363d;
+        background:#0d1117;color:#e6edf3;font-size:15px;outline:none;margin-bottom:16px}
+  input:focus{border-color:#4c8dff;box-shadow:0 0 0 3px rgba(76,141,255,.15)}
+  button{width:100%;padding:12px;border:none;border-radius:9px;background:#4c8dff;
+         color:#fff;font-size:15px;font-weight:600;cursor:pointer}
+  button:hover{filter:brightness(1.08)}
+  button:disabled{opacity:.6;cursor:default}
+  .msg{padding:11px 13px;border-radius:9px;font-size:13.5px;line-height:1.5;
+       margin-bottom:16px;display:none}
+  .msg.err{display:block;background:rgba(248,81,73,.12);color:#f85149;
+           border:1px solid rgba(248,81,73,.3)}
+  .msg.ok{display:block;background:rgba(63,185,80,.12);color:#3fb950;
+          border:1px solid rgba(63,185,80,.3)}
+  a{color:#4c8dff;text-decoration:none;font-size:13.5px}
+  .foot{text-align:center;margin-top:18px}
+</style></head>
+<body>
+  <div class="card">
+    <h1>Set a new password</h1>
+    <p class="sub">Choose a new password for your AMV account. This link can only be used once.</p>
+    <div id="msg" class="msg"></div>
+    <div id="form">
+      <label for="pw">New password</label>
+      <input id="pw" type="password" placeholder="At least 8 characters" autocomplete="new-password">
+      <label for="pw2">Confirm password</label>
+      <input id="pw2" type="password" placeholder="Type it again" autocomplete="new-password">
+      <button id="go">Set new password</button>
+    </div>
+    <div class="foot"><a href="${appUrl || '/'}">Back to AMV</a></div>
+  </div>
+<script>
+  var TOKEN = ${JSON.stringify(token)};
+  var APP   = ${JSON.stringify(appUrl)};
+  var msg = document.getElementById('msg');
+  var form = document.getElementById('form');
+  var btn = document.getElementById('go');
+
+  function show(text, kind){ msg.textContent = text; msg.className = 'msg ' + kind; }
+
+  if (!TOKEN) { show('This reset link is missing its token. Request a new one from the app.', 'err'); form.style.display='none'; }
+
+  btn.addEventListener('click', async function(){
+    var pw = document.getElementById('pw').value;
+    var pw2 = document.getElementById('pw2').value;
+    if (pw.length < 8) { show('Password must be at least 8 characters.', 'err'); return; }
+    if (pw !== pw2)    { show('Those passwords do not match.', 'err'); return; }
+    btn.disabled = true; btn.textContent = 'Setting\u2026';
+    try {
+      /* Relative to this page, so it reaches the server whether the page was
+         opened on the server's own host (/reset) or through the site (/api/reset). */
+      var r = await fetch('./auth/reset/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: TOKEN, password: pw })
+      });
+      var d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error || 'Could not reset the password.');
+      form.style.display = 'none';
+      show('Password updated. You can sign in with your new password now.', 'ok');
+      if (APP) setTimeout(function(){ location.href = APP; }, 2200);
+    } catch (e) {
+      show(e.message, 'err');
+      btn.disabled = false; btn.textContent = 'Set new password';
+    }
+  });
+</script>
+</body></html>`;
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'no-referrer'
+    }
+  });
+}
+

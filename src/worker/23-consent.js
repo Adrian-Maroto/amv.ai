@@ -1,65 +1,65 @@
-    }, { items: [] });
-  }
-  audit(env, 'link_accepted', { owner:user.email, grantee:inv.grantee, scopes:(inv.scopes||[]).join(',') });
+/* ============================================================
+   CONSENT RECORD  (/v1/consent)
 
-  /* A FAMILY invitation is the same consent flow with a different consequence.
+   A record that only exists in the user's own browser proves nothing
+   in a dispute - they can clear it, and you cannot produce it. This
+   stores the accepted terms version, the timestamp, and the request
+   metadata server-side, which is the artifact that actually answers
+   "did this user agree to your terms, and when?".
+   ============================================================ */
+async function consentRecord(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'sign in first' }, 401);
+  const blocked = await guardAction(env, 'consent:' + user.email, 10, 100, 'consent updates');
+  if(blocked) return blocked;
 
-     The code is generated on the server and emailed to the account being added,
-     and only that account can redeem it - so a parent cannot put somebody in
-     their family by typing an address. The child confirms, in their own inbox,
-     before a single limit applies to them. That property is why this reuses
-     the link flow rather than growing a second one beside it (AMV-102). */
-  if((inv.scopes||[]).includes('family')){
-    const parent = inv.grantee;                       // the one who sent the invitation
-    /* AMV-197: the "is the family full" check and the seat it grants are one
-       operation. Two children accepting the last invitation together both saw
-       room, and the family ended up over its limit - or one of them joined and
-       was written away by the other. */
-    let res;
-    try{
-      /* The family may not exist yet, and the helper's save only writes a
-         record that was already there - so the write happens inside the mutate,
-         which is still inside the lock. */
-      res = await _withRecord(env, 'fam', String(parent || '').toLowerCase(),
-        _loadFam,
-        async () => {},
-        async (fresh) => {
-          const fam = fresh || { id:'fam_'+crypto.randomUUID().replace(/-/g,''), parentEmail: parent, members:[{ email: parent, role:'parent', joinedAt: Date.now() }], createdAt: Date.now() };
-          if(!(fam.members||[]).some(m=>m.email===user.email)){
-            const kids = (fam.members||[]).filter(m=>m.role==='child');
-            if(kids.length >= FAMILY_MAX_CHILDREN){
-              return { error:'That family is full (' + FAMILY_MAX_CHILDREN + ' accounts).', status:402, code:'family_full' };
-            }
-            fam.members.push({ email:user.email, role:'child', joinedAt:Date.now(), limits: Object.assign({}, FAMILY_DEFAULTS) });
-          }
-          await DB.put(env, 'fam', parent, fam);
-          return { ok:true };
-        });
-    }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('family'); }
-    if(res && res.error) return json({ error: res.error, code: res.code }, res.status||400);
-    /* AMV-202: the marker every parental limit reads, written under the lock. */
-    await _withRecord(env, 'ent', String(user.email||'').toLowerCase(),
-      async (e, k) => (await DB.get(e, 'ent', k)) || { plan:'free' },
-      async (e, k, rec) => { await DB.put(e, 'ent', k, rec); },
-      (rec) => { rec.familyOf = parent; });
-    await _userEvent(env, request, user.email, 'family_joined', { parent });
-    audit(env, 'family_joined', { parent, child:user.email });
-    return json({ ok:true, link, family:{ parent, limits: FAMILY_DEFAULTS } });
+  const body = await request.json().catch(() => ({}));
+  const version = String(body.termsVersion || '').slice(0, 32);
+  if(!version) return json({ error:'termsVersion required' }, 400);
+
+  const entryIp = (request.headers.get('CF-Connecting-IP') || '').slice(0, 45);
+  const entryCountry = (request.cf && request.cf.country) || '';
+  const entryUa = (request.headers.get('User-Agent') || '').slice(0, 180);
+  const nowYear = new Date().getUTCFullYear();
+  let ageRecorded = null;
+  let entry = null;
+  /* AMV-033: THE BIRTH YEAR IS RECORDED ONCE, AND ONCE MEANS ONCE.
+
+     The check below is deliberately write-once - the comment says a limit
+     anyone can raise by retyping it is not a limit - and it was a read
+     followed by a write. Two requests arriving together both read a record with
+     no birth year, both decide they may set it, and the later one wins. So the
+     value that cannot be edited could be edited, by sending it twice.
+
+     Under the record lock the second request reads what the first stored and
+     declines, which is what the rule already said. */
+  await _withKind(env, 'consent', user.email, (prev) => {
+  /* Age, recorded HERE and not only in the browser. The client has always had
+     an age gate and it lives in localStorage, so clearing one key - or calling
+     the API directly with a key - walked straight through it. Under-13 handling
+     is strict liability and a minor's purchase comes back as a chargeback, so
+     the one place it has to hold is the side the money runs on.
+
+     A birth YEAR only: enough to gate correctly and the least personal thing
+     that does the job. Recorded once and not editable afterwards, because a
+     limit anyone can raise by retyping it is not a limit. */
+  if(body.birthYear != null && !prev.birthYear){
+    const y = Math.floor(+body.birthYear) || 0;
+    if(y >= 1900 && y <= nowYear){
+      prev.birthYear = y;
+      prev.ageSetAt = Date.now();
+      ageRecorded = { by: user.email, adult: (nowYear - y) >= ADULT_AGE };
+    }
   }
-  return json({ ok:true, link });
+  entry = { version, at: Date.now(), ip: entryIp, country: entryCountry, ua: entryUa };
+  prev.current = entry;
+  prev.history = [entry, ...(prev.history || [])].slice(0, 20);   // every version ever accepted
+  }, { history: [] });
+  /* Audited outside the lock: it is a storage write of its own, and holding a
+     record lock across one is how a lease runs out mid-work. */
+  if (ageRecorded) audit(env, 'age_recorded', ageRecorded);
+  if (!entry) return json({ error: 'Could not record that just now. Please try again.' }, 503);
+  audit(env, 'consent_accepted', { by: user.email, version });
+  return json({ ok: true, version, at: entry.at });
 }
 
-/* List / revoke links (/v1/link/list, /v1/link/revoke). Either side can end a
-   link with no negotiation, and it dies for both immediately. */
-/* NO LIST AND NO REVOKE FOR LINKS ANY MORE.
-
-   Both served the "access to someone else's account" screen, which the owner
-   removed as a security risk. Nothing in the product calls either, and a route
-   nothing asks for is a door somebody else finds first. A link record that is
-   left over grants nothing - no route ever consulted one to permit an action -
-   and is erased with the account like everything else. A family is ended with
-   /v1/family/remove or /v1/family/leave. */
-
-const ADULT_AGE = 18;
-
-/* Whether this account may touch money. Deny by default: an age nobody has

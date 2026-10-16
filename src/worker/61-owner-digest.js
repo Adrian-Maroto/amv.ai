@@ -1,84 +1,3 @@
-   provider's own answer tells them apart, and every ordinary send swallows it
-   (on purpose - a stranger must not learn whether an address exists). So the
-   operator, with the admin token, can send one test to OWNER_EMAIL (or an
-   address they type) and read the provider's status and message verbatim.
-   Never the key itself. Rate limited like every admin surface. */
-async function adminEmailTest(request, env) {
-  { const g = await _adminGate(request, env, 'emailtest', 3, 30); if (g) return g; }
-  const body = await request.json().catch(() => ({}));
-  const to = String(body.to || env.OWNER_EMAIL || '').trim().toLowerCase();
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to))
-    return json({ ok: false, error: 'No address to send to: type one, or set OWNER_EMAIL.' }, 400);
-  if (!env.EMAIL_API_KEY) return json({ ok: false, step: 'key', error: 'EMAIL_API_KEY is not set on this Worker.' });
-  const from = env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT;
-  let status = 0, said = '';
-  try {
-    const r = await fetchDeadline('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + env.EMAIL_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [to], subject: 'AMV test email',
-        text: 'This is a test from AMV. If you are reading it, email from AMV reaches this inbox.',
-        html: _emailShell('Email works', '<p style="margin:0;font-size:14px;color:#333">This is a test from AMV. If you are reading it, email from AMV reaches this inbox.</p>', null, null, 'Test email.') }),
-    });
-    status = r.status;
-    said = String((await r.text().catch(() => '')) || '').slice(0, 400);
-  } catch (e) { said = 'The email provider could not be reached: ' + String(e && e.message || e).slice(0, 200); }
-  audit(env, 'admin_email_test', { to, status });
-  const ok = status >= 200 && status < 300;
-  /* The same record _sendEmail keeps: a test that goes through after the
-     domain is verified is what switches sign-in codes back on, straight away. */
-  try {
-    if (ok) await env.AMV_KV.delete('emailhealth:sender');
-    else if (/domain is not verified|verify (your )?domain|not verified/i.test(said))
-      await env.AMV_KV.put('emailhealth:sender', JSON.stringify({ at: Date.now(), said: said.slice(0, 300) }), { expirationTtl: 86400 });
-  } catch (e) {}
-  /* EVERY INBOX, NOT ONE. A verified domain is accepted by the provider, and
-     Gmail takes it - but Outlook, Hotmail and Yahoo also look for SPF, DKIM
-     and a DMARC policy on the sending domain, and file mail without them as
-     junk. Resend's verification adds the first two; DMARC is the one left out.
-     So the test reads all three, from public DNS, and names what is missing. */
-  const domain = ((/@([^>\s]+)/.exec(from) || [])[1] || '').toLowerCase();
-  const inboxes = domain ? await _mailDnsHealth(domain) : null;
-  const fixes = [];
-  if (inboxes) {
-    if (inboxes.dmarc === false) fixes.push('Add a TXT record named _dmarc with the value: v=DMARC1; p=none;  - Outlook, Hotmail and Yahoo junk mail from a domain without one.');
-    if (inboxes.dkim === false) fixes.push('The DKIM record (resend._domainkey) is missing - re-run "Verify DNS Records" in Resend.');
-    if (inboxes.spf === false) fixes.push('The SPF record on send.' + domain + ' is missing - re-run "Verify DNS Records" in Resend.');
-  }
-  let hint = '';
-  if (!ok && /domain/i.test(said)) hint = 'The sender\u2019s domain is not verified with the email provider. Verify it there, or set RESET_EMAIL_FROM to an address on a verified domain.';
-  else if (!ok && (status === 401 || status === 403) && /key|auth/i.test(said)) hint = 'The provider rejected EMAIL_API_KEY. Create a new key there and set it again.';
-  else if (ok) hint = 'Accepted by the provider. If it is not in the inbox within a minute, check spam - and the provider\u2019s log for that message.';
-  return json({ ok, status, from, to, provider: said, hint, domain, inboxes, fixes });
-}
-
-/* What the big inbox providers check on a sending domain, read from public
-   DNS (Cloudflare's DNS-over-HTTPS). true / false per record, or null for
-   "could not ask" - which is never reported as missing. */
-async function _dohTxt(name) {
-  try {
-    const r = await fetchDeadline('https://cloudflare-dns.com/dns-query?type=TXT&name=' + encodeURIComponent(name),
-      { headers: { accept: 'application/dns-json' } }, 5000);
-    if (!r.ok) return null;
-    const d = await r.json().catch(() => null);
-    if (!d || typeof d.Status !== 'number') return null;
-    return (d.Answer || []).filter(a => a && a.type === 16)
-      .map(a => String(a.data || '').replace(/"\s*"/g, '').replace(/^"|"$/g, ''));
-  } catch (e) { return null; }
-}
-async function _mailDnsHealth(domain) {
-  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) return null;
-  const [dmarc, dkim, spf] = await Promise.all([
-    _dohTxt('_dmarc.' + domain), _dohTxt('resend._domainkey.' + domain), _dohTxt('send.' + domain)]);
-  const has = (list, re) => list == null ? null : list.some(t => re.test(t));
-  return { dmarc: has(dmarc, /^v=DMARC1/i), dkim: has(dkim, /p=/), spf: has(spf, /^v=spf1/i) };
-}
-
-async function adminReadiness(request, env) {
-  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
-  return json(Object.assign({ ok: true, checkedAt: Date.now() }, _readinessReport(env, { senderRefused: await _emailSenderRefused(env) })));
-}
-
 /* =====================================================================
    AMV-081  THE WEEKLY OWNER DIGEST
 
@@ -1022,3 +941,84 @@ async function _emailBudgetOk(env, cls, to) {
 const _sendEmail_security = (env, ...a) => _sendEmailAs(env, 'security', a);
 const _sendEmail_message  = (env, ...a) => _sendEmailAs(env, 'message',  a);
 const _sendEmail_task     = (env, ...a) => _sendEmailAs(env, 'task',     a);
+function _sendEmailAs(env, cls, [to, subject, html, text]) {
+  return _sendEmail(env, to, subject, html, text, cls);
+}
+
+/* CAN EMAIL REACH SOMEBODY WHO IS NOT THE OPERATOR?
+   A Resend key alone is not enough: the default sender (onboarding@resend.dev)
+   only delivers to the address that owns the Resend account, so for every
+   other person the send fails and nothing arrives (AMV-193). Anything that
+   PROMISES a person an email - Crew's "email me the result", "email me when
+   AMV is done" - asks this, not whether a key exists. */
+function _emailReaches(env) { return !!(env.EMAIL_API_KEY && env.RESET_EMAIL_FROM); }
+/* Configured AND not currently refused by the provider. What a screen asks
+   before promising someone an email: "set up" is not "will arrive" while the
+   provider is turning the sender away (an unverified domain), and a yes then
+   is a promise of mail that never comes. */
+async function _emailReachesNow(env) { return _emailReaches(env) && !(await _emailSenderRefused(env)); }
+
+async function _sendEmail(env, to, subject, html, text, cls) {
+  if (!env.EMAIL_API_KEY) return false;
+  if (!(await _emailBudgetOk(env, cls || 'other', to))) return false;
+  const from = env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT;
+  try {
+    const resp = await fetchDeadline('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + env.EMAIL_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [to], subject, html, text }),
+    });
+    /* A refusal of the SENDER (an unverified domain) is remembered, because it
+       is the same answer for everybody until the operator fixes it - see
+       _emailSenderRefused. Cleared by the first send that goes through. */
+    try {
+      if (resp.ok) { if (await env.AMV_KV.get('emailhealth:sender')) await env.AMV_KV.delete('emailhealth:sender'); }
+      else if (resp.status === 403 || resp.status === 422) {
+        const said = String((await resp.text().catch(() => '')) || '').slice(0, 300);
+        if (/domain is not verified|verify (your )?domain|not verified/i.test(said))
+          await env.AMV_KV.put('emailhealth:sender', JSON.stringify({ at: Date.now(), said }), { expirationTtl: 86400 });
+      }
+    } catch (e) {}
+    return resp.ok;
+  } catch (e) { return false; }
+}
+/* Whether the provider has said, in the last day, that it will not send from
+   this deployment's sender at all. A day, so a fix at the provider is noticed
+   by the next send that succeeds - which clears it - rather than never. */
+async function _emailSenderRefused(env) {
+  try { const r = await env.AMV_KV.get('emailhealth:sender'); return r ? JSON.parse(r) : null; }
+  catch (e) { return null; }
+}
+
+// minimal HTML escape for values interpolated into email markup
+function _escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+/* Shared branded email shell. body is trusted HTML; cta is {label,url} or null;
+   extra is trusted HTML after the CTA; footnote is plain text.
+   Inline styles only (clients strip <style>); table layout for compatibility. */
+function _emailShell(heading, body, cta, extra, footnote) {
+  const ctaHtml = cta ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 24px"><tr><td style="border-radius:10px;background:#7c6cff">
+    <a href="${cta.url}" style="display:inline-block;padding:13px 28px;font-size:14px;font-weight:600;color:#fff;text-decoration:none;border-radius:10px">${_escHtml(cta.label)}</a>
+  </td></tr></table>` : '';
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f7;padding:32px 0">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)">
+        <tr><td style="background:#15131f;padding:28px 32px;text-align:center">
+          <span style="display:inline-block;width:34px;height:34px;background:#7c6cff;border-radius:9px;color:#fff;font-weight:800;font-size:16px;line-height:34px;text-align:center">A</span>
+          <div style="color:#fff;font-size:17px;font-weight:700;margin-top:10px;letter-spacing:-.3px">AMV</div>
+        </td></tr>
+        <tr><td style="padding:32px">
+          <h1 style="margin:0 0 12px;font-size:20px;color:#15131f;letter-spacing:-.4px">${_escHtml(heading)}</h1>
+          ${body}
+          ${ctaHtml}
+          ${extra || ''}
+        </td></tr>
+        <tr><td style="padding:18px 32px;background:#fafafa;text-align:center">
+          <p style="margin:0;font-size:11px;color:#aaa">&copy; AMV &middot; ${_escHtml(footnote || '')}</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table></body></html>`;
+}
+

@@ -1,84 +1,3 @@
-  const f = COUNTRY_FACTS[cc]; if(!f) return '';
-  return Object.keys(FACT_LABELS).filter(k => f[k]).map(k => FACT_LABELS[k] + ': ' + f[k]).join('; ');
-}
-
-
-/* Everything AMV can do, per country, derived. */
-function _coverage() {
-  const mailGlobal = Object.values(MAIL_PROVIDERS).filter((p) => p.global);
-  const mailNational = {};
-  for (const p of Object.values(MAIL_PROVIDERS)) {
-    if (p.global || p.custom || !p.country) continue;
-    (mailNational[p.country] = mailNational[p.country] || []).push(p.name);
-  }
-  const boards = {};
-  /* Global boards belong to every country, not to a country called "".
-     Without this they collect under an empty code and appear as a country
-     with no name on no continent - which the coverage test already refuses,
-     and rightly. */
-  const boardsGlobal = [];
-  for (const [id, b] of Object.entries(JOB_BOARDS)) {
-    const row = { id, name: b.name, apply: b.apply };
-    if (b.global || !b.country) { boardsGlobal.push(row); continue; }
-    (boards[b.country] = boards[b.country] || []).push(row);
-  }
-
-  /* A country counts as reached if AMV does ANYTHING there, and the everyday
-     jobs are the thing most people would use. Deriving the list from mail and
-     boards alone would hide a country that has five jobs written for it behind
-     the fact that no national ISP there runs a mail service - while the global
-     mail providers and the worldwide boards serve it perfectly well. */
-  const codes = new Set([...Object.keys(mailNational), ...Object.keys(boards),
-                         ...Object.keys(EVERYDAY_BY_COUNTRY)]);
-  const countries = [...codes].map((c) => {
-    const jb = boards[c] || [];
-    return {
-      code: c,
-      name: COUNTRY_NAME[c] || c,
-      continent: CONTINENT_OF[c] || 'Other',
-      mail: { national: (mailNational[c] || []).length, global: mailGlobal.length,
-              names: (mailNational[c] || []).slice(0, 4) },
-      jobs: { boards: jb.length, global: boardsGlobal.length,
-              names: jb.slice(0, 4).map((x) => x.name),
-              /* The one fact that changes what somebody expects overnight. */
-              autoApply: jb.concat(boardsGlobal).some((x) => x.apply === 'email') },
-      /* And what somebody there actually does every week. */
-      everyday: (EVERYDAY_BY_COUNTRY[c] || []).length + EVERYDAY_UNIVERSAL.length,
-    };
-  })
-  /* BY NAME, not by code. Sorting the two-letter codes put Europe in the
-     order Austria, Belgium, Switzerland, Czechia, Germany, Denmark, Spain -
-     AT, BE, CH, CZ, DE, DK, ES - which is perfectly ordered and reads as
-     random to the one person this page exists for, who is scanning it for
-     their own country. localeCompare so accented names sort where a reader
-     expects rather than after Z. */
-  .sort((a, b) => a.name.localeCompare(b.name));
-
-  const byContinent = {};
-  for (const c of countries) (byContinent[c.continent] = byContinent[c.continent] || []).push(c);
-  return {
-    countries, byContinent,
-    totals: {
-      countries: countries.length,
-      continents: Object.keys(byContinent).length,
-      mailProviders: Object.keys(MAIL_PROVIDERS).length,
-      jobBoards: Object.keys(JOB_BOARDS).length,
-      jobBoardsGlobal: boardsGlobal.length,
-      everydayJobs: EVERYDAY_UNIVERSAL.length
-        + Object.values(EVERYDAY_BY_COUNTRY).reduce((n, l) => n + l.length, 0),
-      /* Said plainly: every country can use mail, because the global providers
-         work everywhere. It is the honest headline and it is also true. */
-      mailGlobal: mailGlobal.length,
-    },
-  };
-}
-
-async function coverageMap(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  return json(Object.assign({ ok: true }, _coverage()));
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
    TELEGRAM - one integration, and a large part of the world.
 
@@ -133,4 +52,88 @@ async function telegramConnect(request, env) {
   if (!/^-?\d{1,20}$/.test(chatId)) {
     return json({ error: 'AMV needs the chat id to send to. Message your bot once, then open api.telegram.org/bot<token>/getUpdates to find it.', code: 'bad_chat' }, 400);
   }
+
+  /* Proved before it is stored, like the mailbox: a token that fails at 7am
+     during a scheduled run is worse than an error while somebody is sitting
+     here able to fix it. */
+  let who = null;
+  try {
+    const r = await fetchDeadline(`${TELEGRAM_API}/bot${token}/getMe`, { method: 'GET' }, 10000);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) {
+      return json({ error: 'Telegram refused that token. Check you copied the whole thing from BotFather.', code: 'tg_auth' }, 401);
+    }
+    who = d.result || {};
+  } catch (e) {
+    return json({ error: 'AMV could not reach Telegram just now. Nothing was saved - try again in a moment.', code: 'tg_unreachable' }, 502);
+  }
+
+  const enc = await _mailEncrypt(env, token);
+  if (!enc) return json({ error: 'AMV could not encrypt that token, so it did not store it.', code: 'needs_service' }, 503);
+  await _withKV(env, 'telegram', user.email, (rec) => {
+    rec.secret = enc; rec.chatId = chatId;
+    rec.botName = String(who.username || '').slice(0, 60);
+    rec.connectedAt = Date.now();
+  }, {});
+  audit(env, 'telegram_connected', { by: user.email, bot: String(who.username || '').slice(0, 40) });
+  return json({ ok: true, bot: who.username || '', chatId });
+}
+
+async function telegramDisconnect(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  await DB.del(env, 'telegram', user.email);
+  audit(env, 'telegram_disconnected', { by: user.email });
+  return json({ ok: true, connected: false });
+}
+
+async function telegramStatus(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const rec = await DB.get(env, 'telegram', user.email);
+  /* The token never comes back, in any response. */
+  return json({ ok: true, connected: !!(rec && rec.secret),
+                bot: (rec && rec.botName) || '', chatId: (rec && rec.chatId) || '' });
+}
+
+/* Send, used by the route below and available to scheduled work. */
+async function _telegramSend(env, email, text) {
+  const rec = await DB.get(env, 'telegram', email);
+  if (!rec || !rec.secret) return { sent: false, reason: 'not_connected' };
+  const token = await _mailDecrypt(env, rec.secret);
+  if (!token) return { sent: false, reason: 'unreadable' };
+  /* Checked AGAIN on the way out. The connect proved this token before storing
+     it, but what is interpolated here came back from storage rather than from
+     the check, and a value that goes into a URL should be proved by the code
+     that builds the URL - not by a different function that ran days ago. */
+  if (!TELEGRAM_TOKEN_RE.test(token)) return { sent: false, reason: 'unreadable' };
+  const form = new URLSearchParams();
+  form.set('chat_id', rec.chatId);
+  form.set('text', String(text || '').slice(0, 4000));
+  form.set('disable_web_page_preview', 'true');
+  const r = await fetchDeadline(`${TELEGRAM_API}/bot${token}/sendMessage`,
+    { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() }, 10000);
+  const d = await r.json().catch(() => ({}));
+  return { sent: !!(r.ok && d.ok), reason: d.description || '' };
+}
+
+async function telegramSend(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const held = await _accountHold(env, user, 'telegram_send');
+  if (held) return held;
+  const g = await guardAction(env, 'tgsend:' + user.email, 30, 300, 'Telegram messages');
+  if (g) return g;
+  const body = await request.json().catch(() => ({}));
+  const text = String(body.text || '');
+  if (!text.trim()) return json({ error: 'The message is empty.', code: 'bad_body' }, 400);
+  let out;
+  try { out = await _telegramSend(env, user.email, text); }
+  catch (e) { return json({ error: 'AMV could not reach Telegram just now.', code: 'tg_unreachable' }, 502); }
+  if (!out.sent) {
+    if (out.reason === 'not_connected') return json({ error: 'No Telegram bot is connected yet.', code: 'tg_not_connected' }, 428);
+    return json({ error: 'Telegram did not accept that message. ' + (out.reason || ''), code: 'tg_failed' }, 502);
+  }
+  return json({ ok: true, sent: true });
+}
 

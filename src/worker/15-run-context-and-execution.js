@@ -1,84 +1,3 @@
-  const o = opts || {};
-  const max = Math.max(1, Math.min(AUTO_MAIL_MAX, Number(o.max) || AUTO_MAIL_MAX));
-  let url = 'https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=' + max + '&labelIds=INBOX';
-  /* Two windows, and the second is what makes a missed batch recoverable.
-
-     `since` walks FORWARD from the cursor - ordinary "what is new". `until`
-     bounds the window from above, which is the only way to reach mail OLDER
-     than what has already been reported: Gmail answers newest-first and caps
-     the page, so a burst bigger than one page leaves a hole BELOW the newest
-     25 and `after:` alone will return that same newest 25 for ever. */
-  const since = Number(o.since) || 0;
-  const until = Number(o.until) || 0;
-  const q = [];
-  /* The overlap belongs to the FRONTIER fetch only. It exists so a message
-     landing either side of "now" is not lost between two runs - a real risk
-     at a moving edge. A backfill is bounded on both sides and its lower bound
-     is a cursor already trusted, so widening it there buys nothing and costs
-     real page slots: the window fills up with mail that was reported long ago,
-     and the walk crawls instead of converging. */
-  if(since > 0) q.push('after:' + Math.floor(Math.max(0, until > 0 ? since : since - INGEST_OVERLAP_MS) / 1000));
-  /* Ceil, so the boundary message itself is excluded rather than fetched again
-     on every backfill pass - the one direction where an off-by-one does not
-     just cost a duplicate, it stops the backfill making progress. */
-  if(until > 0) q.push('before:' + Math.ceil(until / 1000));
-  if(q.length) url += '&q=' + encodeURIComponent(q.join(' '));
-  const r = await fetchDeadline(url, { headers: { Authorization: 'Bearer ' + token } }, 15000);
-  if(!r.ok) throw new Error('gmail_' + r.status);
-  const d = await r.json().catch(()=>({}));
-  const ids = (d.messages || []).slice(0, max);
-  const out = [];
-  for(const m of ids){
-    const mr = await fetchDeadline(
-      'https://gmail.googleapis.com/gmail/v1/users/me/messages/' + m.id +
-      '?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date',
-      { headers: { Authorization: 'Bearer ' + token } }, 10000).catch(()=>null);
-    if(!mr || !mr.ok) continue;
-    const md = await mr.json().catch(()=>({}));
-    const h = (md.payload && md.payload.headers) || [];
-    const g = n => (h.find(x => x.name === n) || {}).value || '';
-    out.push({ id: String(md.id || m.id || ''),
-               /* Gmail's own timestamp for the message, in ms. This is the
-                  fact's time; `Date:` is a header the sender wrote and can say
-                  anything at all. */
-               occurred_at: Number(md.internalDate) || 0,
-               from: g('From').slice(0,120), subject: g('Subject').slice(0,160),
-               date: g('Date').slice(0,40),
-               /* The snippet is Gmail's own one-line preview. Enough to judge
-                  whether something needs a reply; not the message. */
-               snippet: String(md.snippet || '').slice(0, AUTO_SNIPPET_MAX),
-               unread: Array.isArray(md.labelIds) && md.labelIds.indexOf('UNREAD') >= 0 });
-  }
-  /* A full page means Gmail had at least this many in the window and may have
-     had more. That is the only honest signal available without paging the
-     whole history, and paging somebody's inbox because we happen to hold a
-     token is exactly what the event model says not to do. */
-  return { items: out, capped: (d.messages || []).length >= max };
-}
-
-async function _fetchCalendar(token){
-  const now = new Date();
-  const end = new Date(Date.now() + 7 * 86400000);
-  const r = await fetchDeadline(
-    'https://www.googleapis.com/calendar/v3/calendars/primary/events?singleEvents=true&orderBy=startTime' +
-    '&maxResults=' + AUTO_EVENTS_MAX +
-    '&timeMin=' + encodeURIComponent(now.toISOString()) +
-    '&timeMax=' + encodeURIComponent(end.toISOString()),
-    { headers: { Authorization: 'Bearer ' + token } }, 15000);
-  if(!r.ok) throw new Error('calendar_' + r.status);
-  const d = await r.json().catch(()=>({}));
-  return (d.items || []).slice(0, AUTO_EVENTS_MAX).map(e => ({
-    title: String(e.summary || '(no title)').slice(0, 140),
-    start: (e.start && (e.start.dateTime || e.start.date)) || '',
-    end: (e.end && (e.end.dateTime || e.end.date)) || '',
-    where: String(e.location || '').slice(0, 100),
-    guests: Array.isArray(e.attendees) ? e.attendees.length : 0,
-  }));
-}
-
-const AUTO_COURSES_MAX = 12;
-const AUTO_WORK_PER_COURSE = 30;
-
 /* WHAT A STUDENT HAS BEEN SET, AND WHEN IT IS DUE.
 
    Returns { items, unread }. `unread` is the list of classes that could not be
@@ -1892,3 +1811,84 @@ async function runDueAutomations(env, atMs){
        what was hoped for.
 
        A refused send comes back FALSE, not as a throw. Dropping that leaves
+       somebody waiting on an email that is never coming, beside a job showing
+       green, so every job in the batch is told. The results themselves are
+       safe either way: they are in the app, and this only ever describes which
+       half arrived. */
+    if(mails.length){
+      let wentOut = false;
+      try{ wentOut = await _autoEmailBatch(env, email, mails); }catch(e){ wentOut = false; }
+      if(!wentOut){
+        const why = mails.length > 1
+          ? 'The results are here in AMV. The one email carrying them could not be delivered.'
+          : 'The result is here in AMV. The email could not be delivered.';
+        for(const m of mails) m.item.lastError = why;
+      }
+      changed = true;
+    }
+
+    /* AMV-205: the tick holds this record for the whole of a run, which can be
+       seconds, and used to write its whole stale copy back at the end. Anything
+       the person did meanwhile - pausing, adding a job, editing one, clearing
+       results - was silently undone, and the one that matters is pause: the job
+       they stopped carried on running and spending.
+
+       Only what the RUN produced is carried across, applied to the record as it
+       is inside the lock. Everything else on it belongs to the person, and is
+       left exactly as they left it. */
+    if(changed) {
+      const ran = new Map((rec.items||[]).map(i => [i.id, i]));
+      const produced = (rec.results||[]).slice(-AUTO_RESULTS_KEEP);
+      await _withAuto(env, email, (fresh) => {
+        for(const item of (fresh.items||[])){
+          const after = ran.get(item.id);
+          if(!after) continue;
+          for(const k of AUTO_CARRY_KEYS) item[k] = after[k];
+          /* A job the RUN switched off after five failures stays off. A job the
+             PERSON switched off stays off too - so this only ever turns one
+             off, never back on. */
+          if(after.active === false) item.active = false;
+        }
+        const known = new Set((fresh.results||[]).map(r => r && r.id).filter(Boolean));
+        const fresher = produced.filter(r => r && r.id && !known.has(r.id));
+        if(fresher.length) fresh.results = (fresh.results||[]).concat(fresher).slice(-AUTO_RESULTS_KEEP);
+      }, { items:[], results:[] });
+    }
+
+    /* ONLY NOW. The results are in the record the person reads them from, so
+       the mail they were built out of has genuinely been reported and the next
+       run should start after it.
+
+       Deliberately AFTER the write-back rather than inside it: these take a
+       lock on a different record, and taking a second lock while holding the
+       automation record is how a tick that already runs on a deadline acquires
+       a way to deadlock. It is also the only ordering that is honest - a
+       cursor that moved before the results were saved is a claim that has not
+       been earned yet.
+
+       Every failure mode here is a repeat, never a loss: if this does not run,
+       or runs and fails, the next run sees the same mail and reports it again. */
+    for(const fn of ingestCommits){
+      try{ await fn(); }
+      catch(e){ audit(env, 'ingest_commit_failed', { email, error: String((e && e.message) || e).slice(0,120) }); }
+    }
+  }
+
+  /* Running out of time once is a busy minute. Running out of time every tick
+     means the due work no longer fits in a tick, and the backlog grows without
+     anything failing - every individual run succeeds, and people's jobs still
+     arrive later and later. That is the state worth being told about, so it is
+     paged rather than logged. */
+  if(deferred > 0){
+    audit(env, 'auto_tick_deferred', { queued, processed, deferred, ran, failed });
+    try{
+      await alertOnce(env, 'auto_backlog',
+        'THE AUTONOMOUS TICK IS OUT OF TIME. ' + processed + ' of ' + queued + ' accounts with work due were '
+        + 'handled and ' + deferred + ' were left for the next run. They are first in line next time, so nothing '
+        + 'is lost - but if this keeps happening the due work no longer fits in one tick and people’s jobs are '
+        + 'arriving late. Raise the tick budget or spread the work.', 3 * 60);
+    }catch(e){}
+  }
+  return { scanned, ran, failed, queued, processed, deferred, truncated };
+}
+

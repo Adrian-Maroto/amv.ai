@@ -1,84 +1,3 @@
-  return new Response(js, {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/javascript; charset=utf-8',
-      'Cache-Control': 'public, max-age=600',
-      'Access-Control-Allow-Origin': '*',
-    },
-  });
-}
-
-function _widgetLoaderJS(key, appHost) {
-  // The loader is intentionally tiny and dependency-free. It creates a launcher
-  // button and an iframe (the actual chat UI lives in the AMV app at #embed).
-  const iframeSrc = appHost + '/#embed=1&k=' + encodeURIComponent(key);
-  return `(function(){
-  if(window.__AMV_WIDGET__) return; window.__AMV_WIDGET__=1;
-  var KEY=${JSON.stringify(key)}, SRC=${JSON.stringify(iframeSrc)};
-  var open=false, wrap, frame, btn;
-  function el(t,s){var e=document.createElement(t); if(s) e.setAttribute('style',s); return e;}
-  function build(){
-    btn=el('button','position:fixed;bottom:20px;right:20px;width:60px;height:60px;border-radius:50%;border:none;cursor:pointer;background:#4f7cff;color:#fff;box-shadow:0 6px 24px rgba(0,0,0,.25);z-index:2147483000;display:flex;align-items:center;justify-content:center;transition:transform .15s');
-    btn.setAttribute('aria-label','Open chat');
-    btn.innerHTML='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
-    btn.onmouseenter=function(){btn.style.transform='scale(1.06)';};
-    btn.onmouseleave=function(){btn.style.transform='scale(1)';};
-    wrap=el('div','position:fixed;bottom:92px;right:20px;width:390px;height:600px;max-width:calc(100vw - 32px);max-height:calc(100vh - 120px);border-radius:16px;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.32);z-index:2147483000;display:none;background:#fff');
-    frame=el('iframe','width:100%;height:100%;border:none;');
-    frame.setAttribute('title','AMV chat'); frame.setAttribute('allow','clipboard-write');
-    frame.src=SRC;
-    wrap.appendChild(frame);
-    btn.onclick=function(){ open=!open; wrap.style.display=open?'block':'none'; btn.style.transform='scale(1)'; };
-    document.body.appendChild(wrap); document.body.appendChild(btn);
-  }
-  /* AMV-044: THE X INSIDE THE PANEL, AND NOBODY ELSE.
-
-     This listened for a message and acted on it without asking where it came
-     from. The listener runs on the CUSTOMER'S OWN SITE - AMV's script, on
-     somebody else's page - so every frame on that page, and every window with a
-     handle to it, could send {__amvWidget:'close'} and be obeyed.
-
-     Closing a panel is a small thing to be able to do. The listener is not: it
-     is an open channel into a script running on a third party's site, and the
-     moment this protocol grows a second verb - open it, point it somewhere,
-     hand it a session - the same code obeys that from anywhere too. The cost of
-     checking is two comparisons.
-
-     Both checks, because either alone leaves a way in: the ORIGIN alone would
-     accept any frame served from the app host, including one an attacker
-     embedded themselves, and the SOURCE alone would accept a window that
-     happens to be the frame but is showing something else. */
-  var APP_ORIGIN=(function(){ try{ return new URL(SRC).origin; }catch(e){ return ''; } })();
-  window.addEventListener('message',function(e){
-    if(!e || !APP_ORIGIN || e.origin!==APP_ORIGIN) return;
-    if(!frame || e.source!==frame.contentWindow) return;
-    if(e.data && e.data.__amvWidget==='close'){ open=false; if(wrap) wrap.style.display='none'; }
-  });
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',build); else build();
-})();`;
-}
-
-/* ---------------- alerting (webhook) ------------------------------- */
-async function notify(env, msg) {
-  if (!env.ALERT_WEBHOOK) return;
-  try { await fetchDeadline(env.ALERT_WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '[AMV] ' + msg }) }); } catch {}
-}
-
-/* Throttled alert: fire at most once per `key` per `windowMin` minutes, so a
-   recurring failure pages you the FIRST time (when you can still act) without
-   burying you in thousands of duplicate messages. Critical money/security
-   events use a short window; noisy ones use a long one. Returns quietly if no
-   webhook is configured - alerting is opt-in via ALERT_WEBHOOK. */
-async function alertOnce(env, key, msg, windowMin = 30) {
-  if (!env.ALERT_WEBHOOK) return;
-  try {
-    const k = `alerted:${key}`;
-    if (await env.AMV_KV.get(k)) return;            // already alerted this window
-    await env.AMV_KV.put(k, '1', { expirationTtl: Math.max(60, windowMin * 60) });
-    await notify(env, msg);
-  } catch { /* alerting must never break the request */ }
-}
-
 /* =====================================================================
    SIGNED TOKENS - hardened HS256 JWT
    - Standards-compliant JWT (header.payload.signature), URL-safe base64
@@ -343,3 +262,84 @@ function _sessionHintCookie(maxAgeS) {
           'Max-Age=' + Math.max(0, Math.floor(maxAgeS))].join('; ');
 }
 function _clearRefreshCookie(env) {
+  return _cookieAuthOn(env) ? { 'Set-Cookie': _refreshCookie(env, '', 0) } : undefined;
+}
+
+async function issueTokens(env, email, name, sid) {
+  const epoch = await _tokenEpoch(env, email);
+  const base = { email, name: name || '' };
+  if (sid) base.sid = String(sid);
+  /* Tells the page that this is the operator, so it can show the owner's
+     screens without a personal address compiled into the app. It decides
+     nothing here: every owner route still checks OWNER_EMAIL itself. */
+  const owner = String(env.OWNER_EMAIL || '').toLowerCase().trim();
+  if (owner && String(email || '').toLowerCase().trim() === owner) base.own = 1;
+  const access = await signToken(base, env.JWT_SECRET, { typ: 'access', epoch });
+  const refresh = await signToken(base, env.JWT_SECRET, { typ: 'refresh', epoch });
+  return { token: access, refreshToken: refresh, email, name: name || '' };
+}
+
+/* Verify a JWT. Pins algorithm, checks exp/nbf/ver, constant-time signature.
+   When env is provided, also enforces the per-user revocation epoch.
+   expectedTyp defaults to 'access' so refresh tokens can't be used as access. */
+async function verifyToken(token, secret, env = null, expectedTyp = 'access') {
+  try {
+    if (!token || typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [headerB64, payloadB64, sigB64] = parts;
+
+    // Pin the algorithm - reject 'none' / RS256 confusion attempts.
+    const header = JSON.parse(b64urlDecodeToString(headerB64));
+    if (!header || header.alg !== JWT_ALG || header.typ !== 'JWT') return null;
+
+    // Recompute signature and compare in constant time.
+    const key = await _hmacKey(secret);
+    const expectedMac = new Uint8Array(
+      await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${headerB64}.${payloadB64}`))
+    );
+    const givenMac = b64urlDecodeToBytes(sigB64);
+    if (!timingSafeEqual(expectedMac, givenMac)) return null;
+
+    const data = JSON.parse(b64urlDecodeToString(payloadB64));
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (data.ver !== TOKEN_VER) return null;
+
+    /* AMV-054: A CLAIM THAT IS ONLY CHECKED WHEN PRESENT IS NOT A CHECK.
+
+       These read `if (data.exp && ...)` and `if (data.typ && ...)`, so a token
+       carrying neither passed every one of them. That is the wrong shape for a
+       verifier: what a token DOES NOT SAY is exactly what a verifier must not
+       be relaxed about.
+
+       What it bought, if a token without them ever existed: no `exp` is a
+       session that never ends - revocation still catches it through the epoch,
+       but nothing else does, and "valid for ever unless somebody notices" is
+       not a session. No `typ` is worse, because the refresh token and the
+       access token differ only in that field: without it the month-long refresh
+       token is accepted anywhere the fifteen-minute access token is, which
+       undoes the whole reason for having two.
+
+       signToken has always set all three, so this was not reachable today. It
+       was reachable by one future issuing path that forgot one field, and it
+       would have failed open and silently. Required now, so that path fails
+       closed and loudly instead. */
+    if (!data.typ || typeof data.typ !== 'string') return null;
+    if (expectedTyp && data.typ !== expectedTyp) return null;
+    if (!Number.isFinite(data.exp)) return null;
+    if (nowSec > data.exp) return null;                            // expired
+    if (!Number.isFinite(data.nbf)) return null;
+    if (nowSec < data.nbf - 60) return null;                       // not-yet-valid (60s skew)
+    if (env && data.email) {                                       // revocation check
+      const epoch = await _tokenEpoch(env, data.email);
+      if ((data.epoch || 0) !== epoch) return null;
+      /* A sign-in ended from the device list. Fresh tokens are spared while
+         their record may still be on its way to this location (SESS_FRESH_S). */
+      if (data.sid && nowSec - (data.iat || 0) > SESS_FRESH_S) {
+        if (!(await env.AMV_KV.get(_sessKey(data.email, data.sid)))) return null;
+      }
+    }
+    return data;
+  } catch { return null; }
+}
+

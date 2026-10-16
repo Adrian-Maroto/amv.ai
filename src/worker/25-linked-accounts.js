@@ -1,84 +1,3 @@
-    .find(c => allowed.indexOf(c) >= 0) || 'US';
-  const body = {
-    client_name: 'AMV', language: 'en', country_codes: [cc],
-    products: _finProductsFor(cc),
-    user: { client_user_id: await _finUserId(env, user.email) },
-    hosted_link: appUrl ? { completion_redirect_uri: appUrl + '/?finlink=done' } : {},
-  };
-  const r = await _finCall(env, '/link/token/create', body);
-  if(!r.ok || !r.data.hosted_link_url)
-    return json({ error: r.error || 'Could not start the link just now.', code:'provider_error' }, 502);
-
-  /* Held so the finish step can read the session result. Short-lived: an
-     abandoned link should not leave a usable handle lying about. */
-  await DB.put(env, 'finlink', user.email,
-    { token: r.data.link_token, at: Date.now() }, { expirationTtl: 6*3600 });
-  audit(env, 'finance_link_start', { by: user.email });
-  return json({ ok:true, url: r.data.hosted_link_url, expires: r.data.expiration || null });
-}
-
-async function financeLinkFinish(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'sign in first', code:'needs_auth' }, 401);
-  const blocked = await guardAction(env, 'finfin:' + user.email, 20, 900, 'link completions');
-  if(blocked) return blocked;
-  if(!_finReady(env)) return json({ error:'Bank linking is not switched on.', code:'needs_service' }, 503);
-
-  const rec = await DB.get(env, 'finlink', user.email);
-  if(!rec || !rec.token)
-    return json({ error:'Start the link first.', code:'no_session' }, 400);
-
-  const g = await _finCall(env, '/link/token/get', { link_token: rec.token });
-  if(!g.ok) return json({ error: g.error || 'Could not read the link session.', code:'provider_error' }, 502);
-
-  /* The public token appears on a COMPLETED session. An abandoned one simply
-     has none, which is a different answer from a failure and is told apart
-     here - otherwise closing the window would read as the provider being down. */
-  let publicToken = '';
-  for(const sess of (g.data.link_sessions || [])){
-    for(const add of ((sess.results && sess.results.item_add_results) || [])){
-      if(add && add.public_token) publicToken = add.public_token;
-    }
-  }
-  if(!publicToken)
-    return json({ ok:false, code:'not_finished', error:'That link was not completed. Start it again when you are ready.' }, 409);
-
-  const x = await _finCall(env, '/item/public_token/exchange', { public_token: publicToken });
-  if(!x.ok || !x.data.access_token)
-    return json({ error: x.error || 'Could not finish the link.', code:'provider_error' }, 502);
-
-  await _finPut(env, user.email,
-    { accessToken: x.data.access_token, itemId: x.data.item_id || '', linkedAt: Date.now() });
-  await DB.del(env, 'finlink', user.email);          // one use only
-  await _userEvent(env, request, user.email, 'finance_linked', {});
-  audit(env, 'finance_linked', { by: user.email }); // never the token
-  return json({ ok:true, linked:true });
-}
-
-async function financeUnlink(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'sign in first', code:'needs_auth' }, 401);
-  const blocked = await guardAction(env, 'finunlink:' + user.email, 10, 900, 'account unlinks');
-  if(blocked) return blocked;
-
-  const rec = await _finGet(env, user.email);
-  /* Told to the provider as well, so consent ends where the user ended it
-     rather than only in our copy of the record. Best effort: our record goes
-     either way, because a user who disconnects must not stay connected here
-     because a third party was unreachable. */
-  if(rec && rec.accessToken && _finReady(env)){
-    try{ await _finCall(env, '/item/remove', { access_token: rec.accessToken }); }catch(e){}
-  }
-  await DB.del(env, 'fin', user.email);
-  await DB.del(env, 'finlink', user.email);
-  /* The snapshot is derived from that account, so it goes too - otherwise
-     relinking later would compare today against a stranger's balance. */
-  await DB.del(env, 'invsnap', user.email);
-  await _userEvent(env, request, user.email, 'finance_unlinked', {});
-  audit(env, 'finance_unlinked', { by: user.email });
-  return json({ ok:true, unlinked:true });
-}
-
 /* ============================================================
    LINKED ACCOUNT INVITES  (/v1/link/invite)
 
@@ -1059,3 +978,84 @@ async function abuseList(request, env){
   }
   rows.sort((a,b)=> (b.blockedAt||0) - (a.blockedAt||0));
   /* Truncation travels with the list. An abuse screen that shows a subset while
+     looking like the whole is worse than one that shows nothing: the operator
+     concludes there is no more abuse. */
+  return json({ ok:true, flagged: rows, blockedCount: rows.filter(r=>r.blocked).length,
+                truncated, note: truncated
+                  ? 'This is not everything. More flagged accounts exist than this screen scanned.' : null });
+}
+
+/* POST /admin/abuse/clear - lift a flag (a genuine refund that got caught).
+   Admin-only. */
+async function abuseClear(request, env){
+  const body = await request.json().catch(()=>({}));
+  { const g = await _adminGate(request, env, 'abuse.clear', 60, 2000); if (g) return g; }
+  const email = String(body.email||'').toLowerCase();
+  if(!email) return json({ error:'email required' }, 400);
+  const rec = await DB.get(env, 'abuse', email);
+  if(!rec) return json({ error:'not found' }, 404);
+  /* Same mismatch: abuse records are written through DB, so clearing one has to
+     go through DB or the flag survives on D1 and the account stays marked. */
+  /* AMV-SP-07: THE FLAG THAT DOES THE BLOCKING IS ON THE OTHER RECORD.
+
+     Two things are true at once about a blocked account: an `abuse` record
+     saying why, and `ent.blocked`, which is the fast copy every request
+     actually reads. Clearing the flag propagated to both. DELETING the record
+     did not - it removed the abuse row and left ent.blocked exactly where it
+     was.
+
+     So the outcome of "remove" was the worst available: the account stays
+     refused everywhere, and the record that explained why is gone. The operator
+     is looking at a screen with nothing on it while the customer cannot use
+     anything, and there is no longer any evidence to work back from. Removing
+     is the STRONGER of the two operator actions, and it did less. */
+  let unblocked = true;
+  const liftEntBlock = async () => {
+    try {
+      await _withEnt(env, email, (e) => {
+        if (!e) return;
+        delete e.blocked; delete e.blockedReason; delete e.blockedAt;
+      });
+    } catch (e) {
+      unblocked = false;
+      audit(env, 'abuse_unblock_not_propagated', { email, error: String((e && e.message) || e) });
+    }
+  };
+
+  if(body.remove){
+    /* The entitlement first. If it fails, the abuse record is still there to
+       explain the block - which is the recoverable order to fail in. */
+    await liftEntBlock();
+    if(!unblocked){
+      return json({ error: 'AMV could not lift the block on that account, so it did not delete the record explaining it either. '
+                         + 'Nothing was changed - try again in a moment.',
+                    code: 'unblock_failed' }, 503);
+    }
+    await DB.del(env, 'abuse', email);
+  }
+  else {
+    /* UNDER THE LOCK EVERY OTHER WRITER TAKES.
+       A dispute arriving from Stripe writes this record through _withKind. An
+       operator clearing a flag read it, edited it and wrote it back raw - so a
+       chargeback landing in that window is erased by the clear, and the account
+       is unmarked with the dispute never recorded. That is money, and it is the
+       lock's whole purpose. Re-read inside it rather than trusting the copy
+       fetched above. */
+    await _withKind(env, 'abuse', email, (fresh) => {
+      if(!fresh) return;
+      fresh.blocked = false;
+      fresh.clearedAt = Date.now();
+    }, null);
+    /* And on the entitlement, or the account stays refused everywhere that
+       reads the fast copy while the operator is looking at a cleared flag. */
+    await liftEntBlock();
+  }
+  audit(env, 'abuse_cleared', { email, removed: !!body.remove, unblocked });
+  /* Said rather than assumed. An operator who has just cleared a flag needs to
+     know whether the person can actually use the product again, and a bare
+     ok:true answers a different question. */
+  return json({ ok:true, unblocked,
+    ...(unblocked ? {} : { warning: 'The abuse record was cleared, but the block on the account could not be lifted. '
+                                  + 'They are still refused - clear it again in a moment.' }) });
+}
+

@@ -1,84 +1,3 @@
-      const raw = await env.AMV_KV.get(k.name);
-      if (!raw) continue;
-      try {
-        const it = JSON.parse(raw);
-        if (!it.hidden && (!it.status || it.status === 'active')) items.push(_publicListing(it));
-      } catch (e) {}
-    }
-    cursor = page.list_complete ? undefined : page.cursor;
-    if (cursor && scanned >= MKT_SCAN_MAX) { truncated = true; break; }
-  } while (cursor);
-  /* Ranked across everything that was read, then cut - rather than cut in
-     arbitrary key order and ranked within that. */
-  items.sort((a, b) => (b.installs || 0) - (a.installs || 0));
-  return { items: items.slice(0, MARKET_LIST_MAX), scanned, truncated, at: Date.now() };
-}
-
-async function marketList(request, env) {
-  // public: active community listings, most installed first
-  let snap = null;
-  try {
-    const raw = await env.AMV_KV.get(MARKET_CACHE_KEY);
-    if (raw) snap = JSON.parse(raw);
-  } catch (e) { snap = null; }   // an unreadable cache is a miss, not a failure
-
-  const fresh = snap && Array.isArray(snap.items) && (Date.now() - (+snap.at || 0) < MARKET_CACHE_TTL_S * 1000);
-
-  if (!fresh) {
-    /* ONE REBUILD AT A TIME, AND NOBODY WAITS FOR IT.
-
-       The snapshot expiring is the busiest moment this route has: every
-       request in flight misses at once and every one of them rebuilds, so a
-       catalogue that costs one full read per minute costs one per CONCURRENT
-       VISITOR instead - and the worse the traffic, the worse the multiplier.
-       That is a thundering herd, and a cache is what caused it.
-
-       So the rebuild is claimed. Whoever gets the claim does the work; anybody
-       else serves the copy they already have, which is seconds stale on a
-       catalogue and not worth a full store read to avoid. Only a caller who
-       has NO copy at all - the very first request after a deploy - waits for a
-       build, because there is nothing honest to hand back.
-
-       The snapshot is now stored without a TTL and judged by its own
-       timestamp. Under a TTL there is no stale copy to serve at the exact
-       moment one is needed. */
-    const noCopy = !snap || !Array.isArray(snap.items);
-    /* CLAIMED WITHOUT AWAITING FIRST.
-
-       The first version asked _claimOnce before setting this, and every one of
-       eight simultaneous visitors passed the claim - because `await` yields,
-       so all eight got their answer before any of them had marked a build as
-       running. The guard has to be taken SYNCHRONOUSLY, in the same turn as
-       the check, or it is not a guard at all.
-
-       That is why the assignment below sits directly under the test with no
-       await between them. */
-    if (!_mktBuilding) {
-      _mktBuilding = (async () => {
-        const built = await _marketSnapshot(env);
-        try { await env.AMV_KV.put(MARKET_CACHE_KEY, JSON.stringify(built)); } catch (e) { /* uncached is slow, not broken */ }
-        return built;
-      })();
-      /* Cleared when it settles, not here - anybody arriving meanwhile should
-         join THIS build rather than start another. */
-      _mktBuilding.then(() => { _mktBuilding = null; }, () => { _mktBuilding = null; });
-    }
-    /* Somebody holding a stale copy serves it and does not wait: seconds of
-       staleness on a catalogue is not worth a full store read to avoid.
-       Somebody with nothing waits for the build already in flight. */
-    if (noCopy) { try { snap = await _mktBuilding; } catch (e) { snap = null; } }
-  }
-
-  return json({ ok: true, items: snap.items,
-    /* A catalogue that stopped short says so, in the answer, rather than
-       presenting a slice as the whole store. */
-    truncated: snap.truncated || undefined,
-    scanned: snap.truncated ? snap.scanned : undefined,
-    note: snap.truncated
-      ? 'There are more listings than this view reads in one pass, so this is the most installed of what it reached. Search to find a specific one.'
-      : undefined });
-}
-
 /* ══════════════════════════════════════════════════════════════
    MARKETPLACE TRUST & SAFETY
    Multi-layer automated review that runs server-side on every publish, so it
@@ -410,3 +329,84 @@ async function marketPublish(request, env) {
   }
   /* An assistant is its instructions: without them there is nothing to install. */
   if (kind === 'agent' && body.split(/\s+/).filter(Boolean).length < 8) {
+    return json({ error: 'An assistant must include its instructions - what it is for and how it answers, at least a couple of sentences.', code: 'empty_assistant' }, 400);
+  }
+  /* What makes it an assistant beyond its text: starter questions and an
+     engine. Bounded and plain - starters are shown as text, and the engine is
+     only ever a name the buyer's own plan is checked against. */
+  const assistant = kind === 'agent' && item.assistant && typeof item.assistant === 'object' ? {
+    starters: (Array.isArray(item.assistant.starters) ? item.assistant.starters : []).slice(0, 4)
+      .map(x => String(x == null ? '' : x).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 140)).filter(Boolean),
+    engine: /^[a-z][a-z0-9-]{0,31}$/.test(String(item.assistant.engine || '')) ? String(item.assistant.engine) : '',
+  } : undefined;
+  const clean = {
+    id: 'usr_' + crypto.randomUUID().replace(/-/g,''),
+    kind, title,
+    cat: String(item.cat || 'Community').slice(0, 40),
+    desc: String(item.desc || '').slice(0, 280),
+    text: body,
+    crew: Array.isArray(item.crew) ? item.crew.slice(0, 8) : undefined,
+    assistant,
+    plugin: pluginClean ? pluginClean.plugin : undefined,
+    files,
+    // icon is rendered unescaped on the client, so store an emoji/short-text
+    // only - reject any markup outright (never a truncated tag fragment).
+    icon: (function(ic){ ic = String(ic == null ? '\u2728' : ic); return ic.indexOf('<') >= 0 ? '\u2728' : (ic.slice(0, 8) || '\u2728'); })(),
+    price,
+    author: (user.name || user.email.split('@')[0]).slice(0, 40),
+    authorEmail: user.email,
+    installs: 0,
+    sales: 0,
+    views: 0,
+    status: screen.action === 'held_for_review' ? 'under_review' : 'active',
+    review: screen.action === 'held_for_review' ? { signals: screen.signals || [], at: Date.now() } : undefined,
+    createdAt: Date.now(),
+  };
+  await env.AMV_KV.put(`market:${clean.id}`, JSON.stringify(clean));
+  await _sellerIndexAdd(env, user.email, clean.id);
+  await _marketCacheBust(env);
+  if (screen.action === 'held_for_review') {
+    audit(env, 'market_held_for_review', { id: clean.id, by: user.email, signals: screen.signals });
+  }
+  audit(env, 'market_publish', { id: clean.id, by: user.email, price, files: files.length, status: clean.status });
+  return json({ ok: true, item: _publicListing(clean), review: screen.action === 'held_for_review' ? screen.reason : undefined });
+}
+
+/* Strip the deliverable (text/crew/file DATA) from a paid listing so it can't
+   be read for free from the public catalog. File NAMES stay as a teaser.
+   Free items keep their content inline. */
+function _publicListing(it) {
+  if (!it.price || it.price <= 0) return it;
+  const { text, crew, files, plugin, ...rest } = it;
+  const teaser = Array.isArray(files) ? files.map(f => ({ name: f.name, type: f.type, size: f.size })) : [];
+  return { ...rest, files: teaser, locked: true };
+}
+
+async function marketInstall(request, env) {
+  /* AMV-096: installs drive ranking, so an install has to cost something. It
+     used to be unauthenticated and limited only per IP, which means a rented
+     address pool could rank anything to the top of the marketplace. Now it
+     takes an account, and counts ONCE per account per listing - a number that
+     can be manufactured is not a ranking signal, it is an advertisement. */
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'sign in to install' }, 401);
+  const iip = _rlIp(request);
+  const irl = await limitAction(env, `mktinstall:${iip}`, 30, 300);
+  if (!irl.ok) return json({ ok: true, throttled: true });
+  const { id } = await request.json().catch(() => ({}));
+  if (!id || !/^[a-z0-9_]+$/i.test(id)) return json({ error: 'bad id' }, 400);
+  // Second and later installs by the same account are honoured, but not counted.
+  const first = await _claimOnce(env, 'mktinst', `${user.email}:${id}`, CLAIM_ONCE_TTL_S);
+  if (!first) return json({ ok: true, counted: false });
+  const raw = await env.AMV_KV.get(`market:${id}`);
+  if (raw) {
+    try {
+      JSON.parse(raw);                       // still a listing, not a stray key
+      await _withKV(env, 'market', id, (rec) => {
+        if (rec) rec.installs = (rec.installs || 0) + 1;
+      });
+    } catch {}
+  }
+  return json({ ok: true, counted: true });
+}
+

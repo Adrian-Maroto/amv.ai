@@ -1,84 +1,3 @@
-     always shut.
-
-     `mailcfg:` and `school:` are still ORed in, because those stores are still
-     written - somebody whose mailbox is connected with an app password has a
-     real connection, and it is not this function's business to decide theirs
-     has stopped counting. `goauth:` is NOT, and that distinction is the whole
-     lesson: a fallback to a store nothing writes can never fire, so keeping it
-     does not make the function more forgiving, it makes it look like it has a
-     safety net it does not have. (The dead branch also read `g.refresh_token`
-     while the only other reader of that record writes `g.refreshToken` - two
-     spellings of a field nobody could have been reading.) The gate stage 'No
-     decision is read out of a store nothing writes' now refuses to let it
-     back. */
-  const byProvider = new Set();
-  const scopes = new Set();
-  for(const k of Object.keys(conns || {})){
-    const c = conns[k];
-    if(!c) continue;
-    if(c.provider) byProvider.add(String(c.provider));
-    if(Array.isArray(c.scopes)) c.scopes.forEach(s => scopes.add(String(s)));
-  }
-
-  return {
-    google: byProvider.has('google'),
-    mail:   scopes.has('mail.read')  || !!(mail && mail.secret),
-    school: scopes.has('school.read') || !!(school && school.token),
-    /* Asked of the record that actually holds the aggregator token, which is
-       the same record `_bankUse` opens. One store, one answer - the gate and
-       the runner cannot disagree about whether a bank is linked. */
-    bank:   !!(fin && fin.accessToken),
-    /* The exact grants, carried so a later, finer check can ask "does this
-       connection cover Drive" rather than only "is Google connected" - the
-       coarse answer is right for the remedy it prints ("connect your Google
-       account") and is not right for ever. */
-    scopes: [...scopes],
-  };
-}
-
-/* What THIS run is missing.
-
-   `extra` is how a run says what it worked out for itself: today's Canvas
-   assignment turning out to be an essay adds 'google', even though the job's
-   standing instruction never mentioned Drive. That is the whole reason this is
-   computed per run rather than once when the job was created. */
-function _autoNeedsFor(item, connected, extra) {
-  const text = String((item && item.detail) || '');
-  const asked = new Set((Array.isArray(extra) ? extra : []).map(String));
-  /* What the job DECLARED it opens, folded in through the one table. `boosts`
-     is deliberately not read: a source that only improves the answer is not a
-     reason to tell somebody their job cannot run. */
-  for(const u of (Array.isArray(item && item.uses) ? item.uses : [])){
-    const cap = AUTO_USE_TO_CAPABILITY[String(u)];
-    if(cap) asked.add(cap);
-  }
-  const missing = [];
-  for (const cap of AUTO_CAPABILITIES) {
-    if (!(asked.has(cap.id) || cap.match.test(text))) continue;
-    if (cap.has(connected || {}, item)) continue;
-    missing.push({ id: cap.id, label: cap.label, needs: cap.needs, where: cap.where,
-                   browserOnly: !!cap.browserOnly,
-                   why: asked.has(cap.id) ? 'discovered' : 'instruction' });
-  }
-  return { ready: missing.length === 0, missing };
-}
-
-/* The sentence somebody reads against the run that stopped.
-
-   Dated on purpose. A job that runs every night and only tonight needs
-   something new is unactionable as "I need access" - the person has to know it
-   is TODAY'S run, and which one. */
-function _autoNeedsMessage(item, missing, atMs) {
-  const when = new Date(atMs || Date.now()).toISOString().slice(0, 10);
-  const what = String((item && item.detail) || 'this job').slice(0, 140);
-  const lines = missing.map((m) => '  • ' + m.needs + '\n    (so AMV can ' + m.label + ' — add it in ' + m.where + ')');
-  return 'Important: AMV needs your permission before it can finish this.\n\n'
-       + 'Job: ' + what + '\nRun: ' + when + '\n\n'
-       + 'What it needs:\n' + lines.join('\n')
-       + '\n\nNothing was run and nothing was charged. Add ' + (missing.length > 1 ? 'these' : 'this')
-       + ' and it picks up on the next run.';
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
    JOB BOARDS OUTSIDE AMERICA, AND AN APPLY THAT ACTUALLY SENDS.
 
@@ -366,4 +285,85 @@ async function jobBoards(request, env) {
    existed. The client decided `applied_email`, wrote it into the history, and
    nothing was sent - a feature reporting success for work that never happened,
    which is the one thing this product is not allowed to do.
+
+   It sends from the person's OWN mailbox rather than from AMV, for two reasons
+   that both matter to whether they get the job: an employer replying goes to
+   them, and a message from a stranger's automation is a message that lands in
+   spam. That is only possible at all because the mail connector exists, and it
+   works in every country it covers rather than only where Gmail is used. */
+async function jobApply(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  /* Sending mail as somebody, to strangers, is outward-facing. An account on
+     hold does not get to do it. */
+  const held = await _accountHold(env, user, 'job_apply');
+  if (held) return held;
+
+  const body = await request.json().catch(() => ({}));
+  const to = String(body.to || '').trim().slice(0, 200);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
+    return json({ error: 'That posting has no application address AMV can send to. It can prepare the application for you to submit instead.',
+                  code: 'no_apply_email' }, 400);
+  }
+  const subject = String(body.subject || '').trim().slice(0, 250);
+  const text = String(body.text || '').slice(0, 60000);
+  if (!subject || !text.trim()) return json({ error: 'The application is empty.', code: 'bad_body' }, 400);
+
+  const job = (body.job && typeof body.job === 'object') ? body.job : {};
+  const boardId = String(job.board || '');
+  const board = JOB_BOARDS[boardId] || null;
+
+  /* ONE A DAY IS A JOB HUNT. FIVE HUNDRED IS A SPAM RUN.
+
+     Counted atomically, before anything is sent, against the person rather
+     than the device - and the account that gets suspended for bulk sending
+     would be theirs, not AMV's, which is why this is a hard stop and not a
+     warning. */
+  let res = null;
+  try {
+    res = await counter(env, `jobapply:${user.email}:${todayKey()}`,
+                        { op: 'reserve', amount: 1, cap: JOB_APPLY_DAILY_CAP, ttlMs: 86400000 * 2 });
+  } catch (e) {
+    audit(env, 'job_apply_uncounted', { by: user.email, error: String((e && e.message) || e) });
+    return json({ error: 'AMV could not check how many applications you have sent today, so it has not sent this one.',
+                  code: 'not_ready' }, 503);
+  }
+  if (!res.allowed) {
+    return json({ error: `That is ${JOB_APPLY_DAILY_CAP} applications sent today, which is the daily limit. It resets tomorrow - the rest are prepared and waiting.`,
+                  code: 'apply_cap' }, 429);
+  }
+  const giveBack = async () => {
+    try { await counter(env, `jobapply:${user.email}:${todayKey()}`, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {}
+  };
+
+  const cfg = await _mailCfgFor(env, user.email);
+  if (!cfg) {
+    await giveBack();
+    return json({ error: 'AMV sends applications from your own mailbox, so an employer replies to you rather than to us. Connect your mailbox first.',
+                  code: 'mail_not_connected' }, 428);
+  }
+
+  try {
+    await _smtpSend(cfg, { to: [to], subject, text });
+  } catch (e) {
+    await giveBack();
+    const kind = (e && e.kind) || (String(e && e.message) === 'mail_timeout' ? 'timeout' : 'net');
+    audit(env, 'job_apply_failed', { by: user.email, board: boardId, kind });
+    const fail = _mailFailure(kind, cfg.provider);
+    /* Named as an application that did NOT go, because "could not send" on a
+       screen listing applications reads as a delivery note. */
+    return json({ error: 'This application was not sent. ' + fail.error, code: fail.code, sent: false },
+                kind === 'auth' ? 401 : 502);
+  }
+
+  /* Recorded because an application sent on somebody's behalf, to a named
+     employer, is exactly the kind of autonomous action that has to leave a
+     trail - without the letter itself, which is theirs. */
+  audit(env, 'job_applied', { by: user.email, board: boardId,
+                              country: board ? board.country : '',
+                              title: String(job.title || '').slice(0, 80) });
+  return json({ ok: true, sent: true, to, board: boardId,
+                remainingToday: Math.max(0, JOB_APPLY_DAILY_CAP - (res.value || 0)),
+                from: cfg.address });
+}
 

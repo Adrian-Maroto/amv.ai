@@ -214,3 +214,19 @@ function _autoBudget(ent, family){
   return { plan, ceiling, free, max, familyCapped: shared != null && shared < base };
 }
 
+/* ---- create an automation ---- */
+/* THE MOST-USED LIST, AND WHY IT IS ALLOWED TO BE EMPTY.
+
+   Returns catalogue ids and how many times each has been turned into a real
+   job, most first. It reads one aggregate record: counts and nothing else, no
+   email, no job text, nothing that could be traced to a person.
+
+   A MINIMUM BEFORE IT WILL RANK ANYTHING. With three jobs created in total, a
+   "top 10 most used" is a list of three coincidences presented as a trend, and
+   the first person to read it would be misled by their own data. Under the
+   floor it returns `enough:false` and the interface says there is not enough
+   yet - which is the honest answer and, at launch, the true one for a while.
+
+   Public on purpose: it is aggregate counts of a public catalogue, it makes the
+   catalogue better for somebody deciding what to try, and requiring a login to
+   read a leaderboard of your own product's features helps nobody. */

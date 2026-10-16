@@ -1,84 +1,3 @@
-    error:'Connect your school\u2019s Canvas first, in Settings \u2192 Connectors.', code:'not_connected' }, 400);
-
-  const courses = await _canvasGet(env, rec, 'courses?enrollment_state=active&per_page=20');
-  if(courses.error) return json({ error:courses.error, code:courses.code }, courses.status);
-  if(!Array.isArray(courses.data)) return json({ error:'Canvas did not return a course list.' }, 502);
-
-  /* AMV-050: TOGETHER, NOT ONE AFTER ANOTHER.
-
-     This was a `for` loop with an `await` in it: eight courses meant eight
-     round trips to a school's server end to end, each one waiting for the last.
-     On a school having a slow morning that is eight timeouts stacked into one
-     request, held open inside a Worker with a wall-clock limit - so the feature
-     failed hardest exactly when the student needed it, and it burned the
-     operator's request duration doing nothing but waiting.
-
-     The number of them is already bounded by SCHOOL_COURSE_MAX, so running them
-     at once is bounded too: the whole thing now costs about one round trip
-     instead of eight, and the ceiling on how many is unchanged. */
-  const picked = courses.data.slice(0, SCHOOL_COURSE_MAX);
-  const fetched = await Promise.all(picked.map(async (c) => {
-    const a = await _canvasGet(env, rec, 'courses/' + encodeURIComponent(c.id) + '/assignments?bucket=upcoming&per_page=10')
-      .catch(() => ({ error:'unreadable' }));
-    return { c, a };
-  }));
-
-  const out = [];
-  const missed = [];
-  for(const { c, a } of fetched){
-    /* A course whose assignments could not be read used to be skipped in
-       silence. A student then sees a homework list with an entire class simply
-       absent from it and no reason to doubt it, which is the worst way for this
-       to be wrong - so what is missing is named. */
-    if(a.error || !Array.isArray(a.data)){ missed.push(String(c.name || c.id)); continue; }
-    for(const it of a.data.slice(0, SCHOOL_ASSIGNMENT_MAX)){
-      out.push({
-        id: it.id, course: c.name, courseId: c.id,
-        name: it.name, dueAt: it.due_at || null,
-        url: it.html_url || '',
-        instructions: _assignmentText(it.description),
-        docs: _docLinksFrom(it.description),
-        submitted: !!it.has_submitted_submissions,
-      });
-    }
-  }
-  return json({ connected:true, work: out, count: out.length,
-    partial: missed.length > 0,
-    missedCourses: missed,
-    ...(missed.length ? { notice: 'AMV could not read ' + missed.join(', ')
-      + ', so anything due in ' + (missed.length === 1 ? 'it' : 'them') + ' is not in this list.' } : {}) });
-}
-
-/* Who to share it with. Read from the course rather than guessed, because a
-   guessed address is somebody else's inbox. */
-async function schoolTeachers(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'Please sign in.' }, 401);
-  const tg = await guardAction(env, `schoolteach:${user.email}`, 15, 300, 'looking up your teachers');
-  if(tg) return tg;
-  const rec = await _loadSchool(env, user.email);
-  if(!rec) return json({ error:'Connect your school\u2019s Canvas first.', code:'not_connected' }, 400);
-  const body = await request.json().catch(()=>({}));
-  const courseId = String(body.courseId || '').replace(/[^0-9a-zA-Z_-]/g, '').slice(0, 40);
-  if(!courseId) return json({ error:'Which course?' }, 400);
-
-  const r = await _canvasGet(env, rec, 'courses/' + encodeURIComponent(courseId) + '/users?enrollment_type=teacher&per_page=10');
-  if(r.error) return json({ error:r.error, code:r.code }, r.status);
-  const teachers = (Array.isArray(r.data) ? r.data : [])
-    .map(t => ({ name: t.name || '', email: t.email || t.login_id || '' }))
-    .filter(t => t.email);
-  /* An empty list is not an error and is not a reason to invent one: schools
-     often hide staff addresses, and the honest answer is to ask. */
-  return json({ ok:true, teachers, askUser: teachers.length === 0 });
-}
-
-/* Redact secrets before anything can reach a trace, a log or a response. */
-function _webRedact(text, secrets){
-  let t = String(text == null ? '' : text);
-  (secrets || []).forEach(v => { if(v && String(v).length > 2) t = t.split(String(v)).join('[redacted]'); });
-  return t;
-}
-
 /* ============================================================
    AMV-002: THE GATE RAN AFTER THE CONNECTION IT WAS GUARDING.
 
@@ -278,3 +197,84 @@ function _webTypePlan(el, opts) {
   if (bind.refuse === 'password_field') return { do: 'skip', why: 'password_field' };
   return { do: 'type', text: String(o.text == null ? '' : o.text) };
 }
+
+/* What the model is allowed to see of a page. Values the user supplied are
+   removed - a filled field reports its own value back through `label` and
+   through the page text, so without this a secret typed on step 2 is in the
+   prompt on step 3, in the provider's logs, and in any error that quotes it. */
+function _webForModel(obs, secrets) {
+  const red = (s) => _webRedact(s, secrets);
+  return {
+    url: red(obs && obs.url),
+    title: red(obs && obs.title),
+    text: red(obs && obs.text),
+    elements: ((obs && obs.elements) || []).map(el => ({
+      ref: el.ref, tag: el.tag, type: el.type, label: red(el.label),
+    })),
+  };
+}
+
+/* Validate a model-proposed action. The model can NEVER widen its own
+   permissions: unknown verbs refused, navigation SSRF-checked, and
+   consequential verbs require this run to be pre-approved by the user. */
+function _webValidateAction(act, opts){
+  if(!act || typeof act !== 'object') return { ok:false, why:'No action returned.' };
+  const verb = String(act.verb || '').toLowerCase();
+  if(WEB_ALLOWED_VERBS.indexOf(verb) < 0) return { ok:false, why:'Unsupported action "' + verb + '".' };
+  if(verb === 'goto'){
+    const g = _webHostAllowed(act.url);
+    if(!g.ok) return { ok:false, why:g.why };
+    act.url = g.url;
+  }
+  // Consequence check uses the verb AND the control's own label, so clicking
+  // "Place order" or "Delete account" needs approval just like submit does.
+  const label = (opts && opts.label) || act.label || '';
+  if(_webIsConsequential(verb, label, act.text)){
+    /* Matched against the action the ticket was issued for, not against a flag.
+       Approving "Place order" on one shop authorises that, and nothing else. */
+    const fp = _webActionFp(verb, label, (opts && opts.url) || '');
+    if(!opts || opts.approvedFp !== fp)
+      return { ok:false, needsApproval:true, fp,
+        why:'This step would ' + (label ? '"' + String(label).slice(0,40) + '"' : verb) + ' - it needs your approval first.' };
+  }
+  return { ok:true, verb, act };
+}
+
+/* Compact, sanitised observation of the page for the model.
+
+   The per-element identity attributes (name, id, autocomplete, aria-label,
+   placeholder) are collected for the SERVER, which uses them to decide which
+   field a user-supplied value belongs in. They are stripped again before the
+   observation reaches the model - see _webForModel - for two reasons: the model
+   does not need them, and every attribute a page controls that reaches a prompt
+   is vocabulary an injected page can write for itself. */
+const _WEB_OBSERVE = "(() => {" +
+  "const vis = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);" +
+  " return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };" +
+  "const at = (el,a) => (el.getAttribute(a) || '').replace(/\\s+/g,' ').trim().slice(0,60);" +
+  "const lbl = el => (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name') ||" +
+  " (el.labels && el.labels[0] && el.labels[0].textContent) || el.value || el.textContent || '').replace(/\\s+/g,' ').trim().slice(0,80);" +
+  "const out = []; let i = 0;" +
+  "document.querySelectorAll('a,button,input,select,textarea,[role=button],[contenteditable=true]').forEach(el => {" +
+  " if(i >= 60 || !vis(el)) return; el.setAttribute('data-amv-ref', String(++i));" +
+  " out.push({ ref:i, tag:el.tagName.toLowerCase(), type:el.type || '', label:lbl(el)," +
+  "  name:at(el,'name'), fid:at(el,'id'), autoc:at(el,'autocomplete')," +
+  "  aria:at(el,'aria-label'), ph:at(el,'placeholder') }); });" +
+  "const captcha = !!document.querySelector('iframe[src*=\"recaptcha\"],iframe[src*=\"hcaptcha\"],.g-recaptcha,[data-sitekey]');" +
+  "return { url:location.href, title:document.title," +
+  " text:(document.body ? document.body.innerText : '').replace(/\\s+/g,' ').slice(0,3000)," +
+  " elements:out, captcha };})()";
+
+/* Ask the model for exactly one next action - a single auditable decision point. */
+async function _webAskModel(env, sys, prompt){
+  try{
+    /* The cheapest tier by design: this is a routing decision, not the answer.
+       Read from ENGINES so it moves with the tier table. */
+    const r = await _modelFetch(env, { model: engineModel('amv-pulse'), max_tokens:400, system:sys,
+      messages:[{ role:'user', content:prompt }] });
+    const d = await r.json();
+    const txt = (d && d.content && d.content[0] && d.content[0].text) || '';
+    return JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
+  }catch(e){ return null; }
+}
+

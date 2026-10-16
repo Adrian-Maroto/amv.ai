@@ -1,84 +1,3 @@
-  if (!(await _ownsItem(env, user.email, id))) return json({ error: 'buy it before rating' }, 403);
-  /* AMV-043: the snapshot taken at purchase stands in for a listing the seller
-     has since taken down. Somebody who paid for a thing may say what they
-     thought of it, and whether the seller still offers it is not their
-     business - a rating that disappears when the seller withdraws the item is a
-     rating the seller controls. */
-  const it = (await _getListing(env, id))
-          || (await DB.get(env, 'mktsnap', `${user.email}:${id}`).catch(() => null));
-  if (!it) return json({ error: 'not found' }, 404);
-  /* PSEUDONYMOUS, LIKE THE REVIEWS RIGHT BELOW THIS.
-
-     This used to store map[user.email] = stars. The record is keyed by the
-     LISTING - somebody else's listing - so it is not in PER_USER_KINDS and it
-     could not be: erasing the rater's account cannot reach a record filed under
-     a seller's item. A rater's address therefore outlived their own deletion,
-     with nothing anywhere able to find it.
-
-     marketReview, the function immediately after this one, already stores a
-     one-way hash and says why in its own comment: never the raw email, so a
-     list can be shown publicly without leaking addresses. The same record, the
-     same reasoning, one function apart, and only one of them did it.
-
-     Existing maps are migrated in place. The keys ARE the addresses, and the
-     hash is a pure function of the address, so every old key can be converted
-     here without needing to know whose it is - and the average, which is all
-     anybody reads, does not move. */
-  /* AMV-042: THIS RECORD IS KEYED BY THE LISTING, SO ITS WRITERS ARE EVERY BUYER.
-
-     Read-modify-write on a record one person owns is a race between their own
-     tabs. On a record keyed by somebody else's LISTING it is a race between
-     strangers: two buyers rating the same item at the same moment both read the
-     map, both add themselves, and the later write drops the earlier rating.
-     Popular items - the ones with the most raters - are exactly where it
-     happens most, and the only symptom is a rating count that is quietly lower
-     than the number of people who rated.
-
-     The hashing and the migration move inside the lock with everything else.
-     They read the map and rewrite every key in it, which is the largest
-     read-modify-write in this function and was the one furthest from any lock. */
-  const IS_HASH = /^[0-9a-f]{16}$/;
-  const mine = await _errHash(user.email.toLowerCase());
-  /* The hashes are computed before the lock: the mutate below is synchronous,
-     and awaiting inside it would hold the lock across storage calls for every
-     existing rater. */
-  const preHashed = new Map();
-  {
-    let seed = {};
-    try { const raw = await env.AMV_KV.get(`mkrate:${id}`); if (raw) seed = JSON.parse(raw); } catch {}
-    for (const who of Object.keys(seed)) {
-      if (!IS_HASH.test(who)) preHashed.set(who, await _errHash(String(who).toLowerCase()));
-    }
-  }
-  let vals = [];
-  await _withKV(env, 'mkrate', id, (map) => {
-    const migrated = {};
-    for (const [who, val] of Object.entries(map)) {
-      /* A key that arrived between the pre-hash pass and the lock is left as it
-         is rather than dropped - it is somebody's rating, and the next writer
-         migrates it. Losing it to be tidy would be the defect this fixes. */
-      migrated[IS_HASH.test(who) ? who : (preHashed.get(who) || who)] = val;
-    }
-    for (const k of Object.keys(map)) delete map[k];
-    Object.assign(map, migrated);
-    map[mine] = s;
-    vals = Object.values(map);
-  }, {});
-  const rating = +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
-  /* AMV-204: the average goes onto the listing under the lock. Written from a
-     copy read before a sale or a status change landed, a rating put the old
-     record back - so an item that had just sold went back on sale because
-     somebody rated it. */
-  await _withKV(env, 'market', id, (rec) => {
-    if (!rec) return null;
-    rec.rating = rating;
-    rec.ratings = vals.length;
-  });
-  return json({ ok: true, rating, ratings: vals.length });
-}
-
-/* Buyer reviews a SELLER (person) with 1-5 stars + text. Gated: must have
-   bought at least one of that seller's listings. Stored under the seller. */
 /* ══════════════════════════════════════════════════════════════
    REPORTING A LISTING - THE THING THE POLICY SAID ALREADY HAPPENED.
 
@@ -510,3 +429,84 @@ async function marketThreadRead(request, env) {
    The key shape also cannot be narrowed by prefix, because the pair is sorted
    - somebody whose address sorts second appears in the middle of the key and
    no prefix reaches them. So it is an index, built on first use like the
+   seller one, for the same reason: the alternative is a migration, and the
+   old scan is already the correct answer, just once instead of every time. */
+async function _inboxIndexAdd(env, email, threadKey) {
+  const em = String(email || '').toLowerCase();
+  if (!em || !threadKey) return;
+  try {
+    await _withKV(env, 'mktinbox', em, (r) => {
+      r.ids = Array.isArray(r.ids) ? r.ids : [];
+      /* Moved to the end rather than skipped, so the most recent conversation
+         is the last to be dropped when the cap bites. */
+      r.ids = r.ids.filter(x => x !== threadKey).concat(threadKey);
+      if (r.ids.length > MKT_INDEX_MAX) r.ids = r.ids.slice(-MKT_INDEX_MAX);
+      r.built = r.built || Date.now();
+      return r;
+    }, { ids: [], built: 0 });
+  } catch (e) { audit(env, 'inbox_index_failed', { email: em, error: String((e && e.message) || e) }); }
+}
+
+async function _inboxThreadKeys(env, email) {
+  const me = String(email || '').toLowerCase();
+  try {
+    const raw = await env.AMV_KV.get(`mktinbox:${me}`);
+    if (raw) {
+      const r = JSON.parse(raw);
+      if (r && r.built) return { ids: Array.isArray(r.ids) ? r.ids : [], truncated: false };
+    }
+  } catch (e) { /* unreadable index: rebuild below rather than fail the inbox */ }
+
+  const ids = [];
+  let cursor, scanned = 0, truncated = false;
+  do {
+    const page = await env.AMV_KV.list({ prefix: 'mkthread:', cursor, limit: 1000 });
+    for (const k of (page.keys || [])) {
+      scanned++;
+      if (k.name.includes(me)) ids.push(k.name);
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+    if (cursor && scanned >= MKT_SCAN_MAX) { truncated = true; break; }
+  } while (cursor);
+
+  /* A partial backfill is not written as complete - somebody would lose the
+     conversations past the cap for good, which is worse than a slow page. */
+  if (!truncated) {
+    try { await env.AMV_KV.put(`mktinbox:${me}`, JSON.stringify({ ids: ids.slice(-MKT_INDEX_MAX), built: Date.now() })); } catch (e) {}
+  } else {
+    audit(env, 'inbox_index_partial', { email: me, scanned });
+  }
+  return { ids, truncated };
+}
+
+async function marketThreads(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const me = user.email.toLowerCase();
+  const out = [];
+  const idx = await _inboxThreadKeys(env, me);
+  for (const name of idx.ids) {
+    const raw = await env.AMV_KV.get(name);
+    if (!raw) continue;
+    /* Membership is re-checked against the RECORD, not taken from the index.
+       An index is a convenience; it is not an authorization, and a wrong entry
+       must not become a way to read somebody else's conversation. */
+    try { const t = JSON.parse(raw); if (t.a === me || t.b === me) out.push(t); } catch (e) {}
+  }
+  out.sort((x, y) => (y.msgs[y.msgs.length - 1]?.ts || 0) - (x.msgs[x.msgs.length - 1]?.ts || 0));
+  /* Unread computed HERE, from the record, so both devices and both people
+     agree. The client used to work it out from its own localStorage, which is
+     how one side could see a conversation the other had never received. */
+  const withUnread = out.map(t => {
+    const seen = (t.read && typeof t.read[me] === 'number') ? t.read[me] : 0;
+    const total = (t.msgs || []).length;
+    const last = (t.msgs || [])[total - 1];
+    /* Only messages from the OTHER person count as unread - your own reply is
+       not something waiting for you. */
+    const unread = (last && String(last.from || '').toLowerCase() !== me) ? Math.max(0, total - seen) : 0;
+    return Object.assign({}, t, { unread });
+  });
+  return json({ ok: true, threads: withUnread,
+                unreadTotal: withUnread.reduce((n, t) => n + (t.unread ? 1 : 0), 0) });
+}
+

@@ -1,84 +1,3 @@
-    return Math.max(200, Math.ceil(chars / 4));
-  } catch { return 500; }
-}
-/* Reservation estimate for a full request - includes the client-supplied system
-   prompt so it is METERED and reserved rather than sent to the model for free
-   (AMV-020). Every token-bearing field must be counted here. */
-/* The smallest answer worth booking when a day's allowance is nearly spent.
-   Below it the request is refused as over the limit: an answer with no room
-   would spend the person's last tokens on the engine's thinking and show
-   them nothing. */
-const ANSWER_FLOOR_TOKENS = 2048;
-function _estimateReserveInput(body) {
-  const msgs = _estimateInputTokens((body && body.messages) || []);
-  const sys = Math.ceil(String((body && body.system) || '').length / 4);
-  return msgs + sys;
-}
-
-async function usageReport(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'sign in' }, 401);
-  const limits = effectiveLimits(user);
-  /* The same subject the limits are enforced against, or the screen would show
-     one number while the server refused on another (AMV-100). */
-  const subject = user.billingSubject || user.email;
-  const dUsed = (await counter(env, `usg:${subject}:${todayKey()}`, { op: 'get' })).value || 0;
-  const mUsed = (await counter(env, `usg:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
-  const mCost = (await counter(env, `cost:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
-  /* Read from the SAME counter the proxy reserves against, so the number on
-     the screen is the number that would refuse the next message rather than a
-     second tally that agrees with it most of the time. */
-  const msgUsed = (await counter(env, `msgs:${subject}:${_periodKeyOf(user)}`, { op: 'get' })).value || 0;
-  /* The same keys the proxy reserves against, read at the same instant, so the
-     screen cannot show one window while a different one refuses. */
-  const nowMs = Date.now();
-  const win5Used = (await counter(env, `msgs5h:${subject}:${window5hKey(nowMs)}`, { op: 'get' })).value || 0;
-  const topUsed = (await counter(env, `msgtop:${subject}:${weekKey(nowMs)}`, { op: 'get' })).value || 0;
-  /* THE COST OF A MESSAGE, MEASURED RATHER THAN ASSUMED.
-
-     What a month of messages really costs decides whether a large cap is
-     generous or ruinous, and it turns almost entirely on how long the replies
-     are - long enough and the same count that earns a healthy margin loses
-     money instead. Nothing measured it, so every cap was set against somebody's
-     estimate. Two numbers already in hand divide into the answer. Null until
-     there is something to divide, because a made-up figure here would be worse
-     than none. */
-  const perMessageUSD = msgUsed > 0 ? +(mCost / msgUsed).toFixed(6) : null;
-  return json({
-    plan: user.plan,
-    day: { used: dUsed, limit: limits.dayTokens },
-    /* The unit the plan is sold in, so the app can show what was bought rather
-       than translating tokens for somebody who never asked about tokens. */
-    messages: { used: msgUsed, limit: limits.monthMessages || 0, perMessageUSD },
-    /* EACH WINDOW WITH THE TIME IT REOPENS, BECAUSE THAT IS THE ONLY PART
-       ANYBODY CARES ABOUT.
-
-       "You have used 812 of 1000" answers a question nobody asked. The
-       question is when they can carry on, and a window that cannot say so is
-       the same wall a monthly cap was - it just arrives sooner. Both reset
-       times are computed from the same absolute clock the counters are keyed
-       on, so the number on the screen is the moment the counter actually
-       rolls rather than an estimate of it. */
-    window5h: {
-      used: win5Used, limit: limits.messages5h || 0,
-      resetAt: (Math.floor(nowMs / WINDOW_5H_MS) + 1) * WINDOW_5H_MS,
-    },
-    topEngineWeek: {
-      used: topUsed, limit: limits.topMessagesWeek || 0,
-      resetAt: new Date(weekKey(nowMs) + 'T00:00:00Z').getTime() + 7 * 86400000,
-    },
-    // `bonus` is the referral capacity folded into the monthly limit above, sent
-    // separately so the app can say WHERE the extra allowance came from.
-    month: { used: mUsed, limit: limits.monthTokens, costUSD: +mCost.toFixed(4), bonus: limits.bonusTokens || 0 },
-    // Said plainly, because "used" meaning the whole team is a surprise otherwise.
-    /* Only when the counters really are pooled. Somebody on a team who kept
-       their own better plan is NOT sharing, and telling them they are would
-       have them chasing a teammate for usage that is entirely their own. */
-    shared: (user.billingSubject && user.billingSubject !== user.email)
-      ? { team: true, note: 'This allowance is shared with your team.' } : null,
-  });
-}
-
 /* =====================================================================
    EMBEDDABLE WIDGET  (the "add AMV chat to any website" feature)
    ---------------------------------------------------------------------
@@ -563,3 +482,84 @@ async function widgetLoader(request, env) {
   // this Worker's own origin (works when the app is served from the same place).
   const appHost = (url.searchParams.get('host') || env.APP_ORIGIN || env.APP_URL || url.origin).replace(/\/+$/, '');
   const js = _widgetLoaderJS(k, appHost);
+  return new Response(js, {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/javascript; charset=utf-8',
+      'Cache-Control': 'public, max-age=600',
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
+}
+
+function _widgetLoaderJS(key, appHost) {
+  // The loader is intentionally tiny and dependency-free. It creates a launcher
+  // button and an iframe (the actual chat UI lives in the AMV app at #embed).
+  const iframeSrc = appHost + '/#embed=1&k=' + encodeURIComponent(key);
+  return `(function(){
+  if(window.__AMV_WIDGET__) return; window.__AMV_WIDGET__=1;
+  var KEY=${JSON.stringify(key)}, SRC=${JSON.stringify(iframeSrc)};
+  var open=false, wrap, frame, btn;
+  function el(t,s){var e=document.createElement(t); if(s) e.setAttribute('style',s); return e;}
+  function build(){
+    btn=el('button','position:fixed;bottom:20px;right:20px;width:60px;height:60px;border-radius:50%;border:none;cursor:pointer;background:#4f7cff;color:#fff;box-shadow:0 6px 24px rgba(0,0,0,.25);z-index:2147483000;display:flex;align-items:center;justify-content:center;transition:transform .15s');
+    btn.setAttribute('aria-label','Open chat');
+    btn.innerHTML='<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+    btn.onmouseenter=function(){btn.style.transform='scale(1.06)';};
+    btn.onmouseleave=function(){btn.style.transform='scale(1)';};
+    wrap=el('div','position:fixed;bottom:92px;right:20px;width:390px;height:600px;max-width:calc(100vw - 32px);max-height:calc(100vh - 120px);border-radius:16px;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.32);z-index:2147483000;display:none;background:#fff');
+    frame=el('iframe','width:100%;height:100%;border:none;');
+    frame.setAttribute('title','AMV chat'); frame.setAttribute('allow','clipboard-write');
+    frame.src=SRC;
+    wrap.appendChild(frame);
+    btn.onclick=function(){ open=!open; wrap.style.display=open?'block':'none'; btn.style.transform='scale(1)'; };
+    document.body.appendChild(wrap); document.body.appendChild(btn);
+  }
+  /* AMV-044: THE X INSIDE THE PANEL, AND NOBODY ELSE.
+
+     This listened for a message and acted on it without asking where it came
+     from. The listener runs on the CUSTOMER'S OWN SITE - AMV's script, on
+     somebody else's page - so every frame on that page, and every window with a
+     handle to it, could send {__amvWidget:'close'} and be obeyed.
+
+     Closing a panel is a small thing to be able to do. The listener is not: it
+     is an open channel into a script running on a third party's site, and the
+     moment this protocol grows a second verb - open it, point it somewhere,
+     hand it a session - the same code obeys that from anywhere too. The cost of
+     checking is two comparisons.
+
+     Both checks, because either alone leaves a way in: the ORIGIN alone would
+     accept any frame served from the app host, including one an attacker
+     embedded themselves, and the SOURCE alone would accept a window that
+     happens to be the frame but is showing something else. */
+  var APP_ORIGIN=(function(){ try{ return new URL(SRC).origin; }catch(e){ return ''; } })();
+  window.addEventListener('message',function(e){
+    if(!e || !APP_ORIGIN || e.origin!==APP_ORIGIN) return;
+    if(!frame || e.source!==frame.contentWindow) return;
+    if(e.data && e.data.__amvWidget==='close'){ open=false; if(wrap) wrap.style.display='none'; }
+  });
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',build); else build();
+})();`;
+}
+
+/* ---------------- alerting (webhook) ------------------------------- */
+async function notify(env, msg) {
+  if (!env.ALERT_WEBHOOK) return;
+  try { await fetchDeadline(env.ALERT_WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '[AMV] ' + msg }) }); } catch {}
+}
+
+/* Throttled alert: fire at most once per `key` per `windowMin` minutes, so a
+   recurring failure pages you the FIRST time (when you can still act) without
+   burying you in thousands of duplicate messages. Critical money/security
+   events use a short window; noisy ones use a long one. Returns quietly if no
+   webhook is configured - alerting is opt-in via ALERT_WEBHOOK. */
+async function alertOnce(env, key, msg, windowMin = 30) {
+  if (!env.ALERT_WEBHOOK) return;
+  try {
+    const k = `alerted:${key}`;
+    if (await env.AMV_KV.get(k)) return;            // already alerted this window
+    await env.AMV_KV.put(k, '1', { expirationTtl: Math.max(60, windowMin * 60) });
+    await notify(env, msg);
+  } catch { /* alerting must never break the request */ }
+}
+

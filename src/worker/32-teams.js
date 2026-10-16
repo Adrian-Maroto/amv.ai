@@ -1,84 +1,3 @@
-                           but "it will be gone tomorrow" is not what erasure means, and
-                           there is nothing left to throttle once the account is gone. */
-                        `rl:act:delacct:${email}:`, `ctr:actday:delacct:${email}:`]) {
-    try {
-      let cursor;
-      do {
-        const page = await env.AMV_KV.list({ prefix, cursor, limit: 1000 });
-        for (const k of (page.keys || [])) { try { await env.AMV_KV.delete(k.name); deleted++; } catch { _eraseFailed('scanned per-user keys'); } }
-        cursor = page.list_complete ? undefined : page.cursor;
-      } while (cursor);
-    } catch { _eraseFailed('scanned per-user keys'); }
-  }
-
-  /* The waitlist puts the address at the END of the key (waitlist:<product>:
-     <email>), so there is no prefix that finds it - it takes a scan of the
-     whole list. Erasure is rare and this is somebody asking not to be on a
-     mailing list any more, which is the request it would be worst to ignore. */
-  try {
-    let cursor;
-    const suffix = ':' + email;
-    do {
-      const page = await env.AMV_KV.list({ prefix: 'waitlist:', cursor, limit: 1000 });
-      for (const k of (page.keys || [])) {
-        if (k.name.endsWith(suffix)) { try { await env.AMV_KV.delete(k.name); deleted++; } catch { _eraseFailed('waitlist entries'); } }
-      }
-      cursor = page.list_complete ? undefined : page.cursor;
-    } while (cursor);
-  } catch { _eraseFailed('waitlist entries'); }
-
-  // Revoke all tokens so existing sessions die immediately.
-  await _revokeOrSay(env, email, 'account_deleted');
-
-  /* What survived, said out loud in all three places it has to be said: to the
-     person who asked, in AMV's own record, and to somebody who can go and
-     finish it. The person leaving will not keep this reply - the audit line and
-     the page are what exist afterwards. */
-  if (eraseFailed.length) {
-    audit(env, 'account_delete_incomplete', { email, keysRemoved: deleted, failed: eraseFailed.join(',') });
-    try {
-      await alertOnce(env, 'erase_incomplete:' + email,
-        'AN ERASURE DID NOT COMPLETE. ' + email + ' asked to be deleted and these could not be removed: '
-        + eraseFailed.join(', ') + '. Everything else went. This is a legal obligation that is now part done, '
-        + 'and the person has been told it is incomplete - remove the rest by hand and confirm to them.', 60);
-    } catch (e) {}
-    return json({
-      ok: false,
-      incomplete: true,
-      deleted: false,
-      prefixesPurged: deleted,
-      failed: eraseFailed,
-      error: 'Some of your data could not be deleted (' + eraseFailed.join(', ') + '). '
-           + 'Everything else has been removed and our team has been alerted to finish it. '
-           + 'Contact support if you do not get confirmation.',
-    }, 500);
-  }
-  audit(env, 'account_deleted', { email, keysRemoved: deleted });
-  /* WHAT IS KEPT, AND WHY, SAID RATHER THAN LEFT TO BE DISCOVERED.
-
-     Erasure takes the wallet and its transaction history with everything else.
-     What it does NOT take is the payout ledger and the calendar-year totals -
-     deliberately, because a record of money actually sent has to outlive the
-     account under tax and anti-money-laundering rules, and both GDPR and the
-     CCPA say so in the same breath as the right to erasure. Keeping them
-     silently would be the wrong way to be right: somebody who asked to be
-     deleted is entitled to know what survived and on what grounds.
-
-     It is stated here whether or not this person was ever paid, because a
-     reply that only appears for sellers tells the reader something about the
-     account, and because the sentence is about AMV's policy rather than about
-     them. */
-  return json({ ok: true, deleted: true, prefixesPurged: deleted,
-    retained: {
-      what: 'Records of payouts actually sent to you, and the yearly totals built from them.',
-      why: 'Tax and anti-money-laundering law require these to be kept for a set period, '
-         + 'and the right to erasure does not override that. They hold what was paid and when. '
-         + 'Nothing about what you sold, to whom, or anything you wrote.',
-    },
-  });
-}
-
-/* Pull all of a user's synced data (or just keys changed since `since`). */
 /* ============================================================
    TEAM / WORKSPACE MODE - the B2B tier.
    A team has an owner, members with roles, and shared data (projects,
@@ -258,3 +177,84 @@ async function teamCreate(request, env){
 
   const id = 'team_' + crypto.randomUUID().replace(/-/g,'');
   const team = {
+    id, name: name||'My Team', ownerEmail: user.email,
+    members: [{ email:user.email, role:'owner', joinedAt:Date.now() }],
+    createdAt: Date.now(), data:{}
+  };
+  /* The owner's plan is cached on the team so a member's request costs ONE
+     extra read rather than two. Every billing event refreshes it, and the
+     lapse marker rides along so `_teamPlan` can honour a grace window that
+     expires with no write at all. */
+  const ownerEnt = (await DB.get(env, 'ent', user.email)) || { plan: 'free' };
+  team.plan = ownerEnt.plan || 'free';   /* sold: the lapse rides alongside and _teamPlan applies it at read */
+  /* The owner's renewal anniversary, cached with the plan it belongs to, so a
+     seat's allowance window is the one the team is actually billed on. */
+  team.renewedAt = +ownerEnt.renewedAt || 0;
+  if(ownerEnt.pastDueSince) team.pastDueSince = ownerEnt.pastDueSince;
+  team.customCfg = ownerEnt.custom || null;
+  /* AMV-034: the same three writes, and the same compensation. A team record
+     with no pointer at it is invisible to its own owner - they cannot open it,
+     and `teamCreate` will happily make them another - while the first one keeps
+     whatever plan was cached on it. Deleting it is safe here in a way it never
+     is later: it has exactly one member, who is the person standing in front of
+     this failure. */
+  await DB.put(env, 'team', id, team);
+  try {
+    await env.AMV_KV.put(`userteam:${user.email}`, id);
+    await _setUserTeam(env, user.email, id);
+  } catch (e) {
+    try { await DB.del(env, 'team', id); } catch (_) {}
+    audit(env, 'team_create_rolled_back', { team: id, email: user.email });
+    return json({ error: 'AMV could not finish creating the team. Nothing was changed - please try again.',
+                  code: 'create_incomplete' }, 503);
+  }
+  await _teamAudit(env, team, user.email, 'team_created', { name: team.name });
+  return json({ ok:true, team, seats: { used: 1, limit: _teamSeatLimit(_teamPlan(team), team.customCfg) } });
+}
+async function teamGet(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const tid = await env.AMV_KV.get(`userteam:${user.email}`);
+  if(!tid) return json({ ok:true, team:null });
+  const team = await DB.get(env, 'team', tid);
+  if(!team || !_role(team, user.email)) return json({ ok:true, team:null });
+  /* Seats travel with the team record so the app never has to guess which
+     members the plan is currently covering (AMV-100). */
+  const limit = _teamSeatLimit(_teamPlan(team), team.customCfg);
+  const seated = new Set(_teamSeated(team).map(m => m.email));
+  const out = Object.assign({}, team, {
+    members: (team.members||[]).map(m => Object.assign({}, m, { seated: seated.has(m.email) })),
+    seats: { used: (team.members||[]).length, limit, over: Math.max(0, (team.members||[]).length - limit) },
+  });
+  return json({ ok:true, team: out });
+}
+async function _teamOf(env, email){
+  const tid = await env.AMV_KV.get(`userteam:${email}`);
+  if(!tid) return null;
+  const team = await DB.get(env, 'team', tid);
+  // Membership is the source of truth. A stale or tampered userteam pointer must
+  // NOT grant access to a team the caller is no longer an active member of.
+  if(!team || !_role(team, email)) return null;
+  return team;
+}
+function _role(team, email){ const m=(team.members||[]).find(x=>x.email===email); return m?m.role:null; }
+/* Reject an oversized or too-deeply-nested JSON payload so a member can't amplify
+   storage or make a shared record fail to parse/write. Returns an error string or
+   null when the value is within bounds. */
+function _boundedJson(obj, maxBytes, maxDepth){
+  let s; try{ s = JSON.stringify(obj); }catch{ return 'invalid data'; }
+  if(s == null) return 'invalid data';
+  if(new TextEncoder().encode(s).length > maxBytes) return 'data too large';
+  const depth = (o, d)=>{
+    if(d > maxDepth) return d;
+    if(o && typeof o === 'object'){
+      let mx = d;
+      for(const k in o){ mx = Math.max(mx, depth(o[k], d+1)); if(mx > maxDepth) return mx; }
+      return mx;
+    }
+    return d;
+  };
+  if(depth(obj, 0) > maxDepth) return 'data nesting too deep';
+  return null;
+}
+

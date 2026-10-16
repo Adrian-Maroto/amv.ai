@@ -1,84 +1,3 @@
-  const feeds = Array.isArray(rec.feeds) ? rec.feeds : [];
-  if (feeds.length >= CAL_MAX_FEEDS) {
-    return json({ error: 'That is ' + CAL_MAX_FEEDS + ' calendars, which is as many as AMV reads. Remove one first.',
-                  code: 'too_many' }, 400);
-  }
-  let host = ''; try { host = new URL(url).host; } catch (e) {}
-  const id = 'cal_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-  feeds.push({ id, label: label || host, host, url: await _mailEncrypt(env, url), addedAt: Date.now() });
-  await DB.put(env, 'cal', user.email, { feeds });
-  await _userEvent(env, request, user.email, 'calendar_subscribed', { host });
-  audit(env, 'cal_feed_add', { by: user.email, host });
-  /* The host, never the URL. It is a secret and it does not need to come back
-     out of storage to be listed. */
-  return json({ ok: true, feed: { id, label: label || host, host } });
-}
-
-async function calFeedList(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'sign in first', code: 'needs_auth' }, 401);
-  const rec = (await DB.get(env, 'cal', user.email)) || { feeds: [] };
-  const feeds = (Array.isArray(rec.feeds) ? rec.feeds : [])
-    .map((f) => ({ id: f.id, label: f.label, host: f.host, addedAt: f.addedAt || 0 }));
-  return json({ ok: true, feeds, max: CAL_MAX_FEEDS, providers: CAL_FEED_PROVIDERS });
-}
-
-async function calFeedRemove(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'sign in first', code: 'needs_auth' }, 401);
-  const body = await request.json().catch(() => ({}));
-  const id = String(body.id || '');
-  const rec = (await DB.get(env, 'cal', user.email)) || { feeds: [] };
-  const feeds = (Array.isArray(rec.feeds) ? rec.feeds : []).filter((f) => f.id !== id);
-  await DB.put(env, 'cal', user.email, { feeds });
-  await _userEvent(env, request, user.email, 'calendar_unsubscribed', {});
-  return json({ ok: true, feeds: feeds.map((f) => ({ id: f.id, label: f.label, host: f.host })) });
-}
-
-async function calEvents(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'sign in first', code: 'needs_auth' }, 401);
-  const blocked = await guardAction(env, 'calread:' + user.email, 60, 300, 'calendar reads');
-  if (blocked) return blocked;
-
-  const body = await request.json().catch(() => ({}));
-  const days = Math.max(1, Math.min(90, Number(body.days) || 7));
-  const from = Date.now();
-  const to = from + days * 86400000;
-
-  const rec = (await DB.get(env, 'cal', user.email)) || { feeds: [] };
-  const feeds = Array.isArray(rec.feeds) ? rec.feeds : [];
-  if (!feeds.length) return json({ ok: true, events: [], feeds: 0 });
-
-  const events = [];
-  const failed = [];
-  for (const f of feeds) {
-    let url = '';
-    try { url = await _mailDecrypt(env, f.url); } catch (e) { url = ''; }
-    if (!url) { failed.push({ label: f.label, why: 'the stored link could not be read' }); continue; }
-    try {
-      /* fetchGuarded, not fetch: it re-checks the gate on EVERY hop, so a feed
-         that answers 302 to an internal address is stopped at the redirect
-         rather than at the first URL - which is the hole the browsing agent
-         already had and had to fix. */
-      const r = await fetchGuarded(url, { method: 'GET', headers: { 'Accept': 'text/calendar' } }, 12000);
-      if (r.blocked) { failed.push({ label: f.label, why: r.why }); continue; }
-      if (!r.response || !r.response.ok) {
-        failed.push({ label: f.label, why: 'the calendar answered ' + ((r.response && r.response.status) || 'nothing') });
-        continue;
-      }
-      const text = (await r.response.text()).slice(0, CAL_MAX_ICS_BYTES);
-      for (const e of _icsEvents(text, from, to, 200)) events.push(Object.assign({ calendar: f.label }, e));
-    } catch (e) {
-      failed.push({ label: f.label, why: 'it could not be reached just now' });
-    }
-  }
-  events.sort((a, b) => a.start - b.start);
-  /* `failed` is returned rather than swallowed. A week that is quietly missing
-     one calendar looks like a free week, and somebody plans against it. */
-  return json({ ok: true, events: events.slice(0, 500), feeds: feeds.length, failed });
-}
-
 /* ══════════════════════════════════════════════════════════════════════════
    PREDICTION MARKETS - READING THEM, AND PLACING A TRADE ON ONE.
 
@@ -675,3 +594,84 @@ async function _claimOnceDetail(env, kind, id, ttlSec){
            happens to be there when it gets around to it. Kept beside the
            request rather than returned, so all seventeen call sites keep their
            boolean and none of them can forget to carry it. */
+        if(r.claimed && r.owner) _CLAIM_OWNERS.set(kind + ':' + id, r.owner);
+        return { claimed: r.claimed };
+      }
+    }catch(e){ /* fall through to the next strategy */ }
+  }
+  if(env && env.DB && typeof env.DB.prepare === 'function'){
+    try{
+      await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?)')
+        .bind(kind, String(id), '1', Date.now()).run();
+      return { claimed: true };
+    }catch(e){
+      /* A PRIMARY KEY violation is "already claimed". Anything else is the
+         database not answering, which is not the same fact. */
+      return /UNIQUE|PRIMARY|constraint/i.test(String((e && e.message) || e))
+        ? { claimed: false } : { claimed: false, unavailable: true };
+    }
+  }
+  const k = `${kind}:${id}`;
+  if(await env.AMV_KV.get(k)) return { claimed: false };
+  await env.AMV_KV.put(k, '1', ttlSec ? { expirationTtl: ttlSec } : undefined);
+  return { claimed: true };
+}
+/* A CLAIM TAKEN BEFORE THE WORK MUST BE GIVEN BACK IF THE WORK DID NOT HAPPEN.
+
+   Making the exactly-once claims permanent closed the hole where a duplicate
+   webhook paid a seller twice. It opened the opposite one, which is worse:
+   the claim is taken FIRST, and if the credit then failed halfway - storage
+   refusing, the wallet lock unavailable - the retry would find the claim held
+   and return immediately. Not "paid twice" but "never paid", for ever, with
+   the buyer already holding the item. The thirty-second expiry had been
+   covering for that by accident, which is not a design.
+
+   The webhook handler one level up already does exactly this: it releases the
+   event claim in its catch so the provider's retry can reprocess a genuinely
+   failed event. This is that, made reusable, so the two places do not have to
+   agree by memory.
+
+   Rethrows deliberately. A caller that swallowed the error here would report
+   success for work that did not happen, and the retry it just re-enabled would
+   never be asked for. */
+async function _onceOrRetry(env, kind, id, ttlSec, work){
+  if(!(await _claimOnce(env, kind, id, ttlSec))) return { claimed: false };
+  try{
+    const value = await work();
+    return { claimed: true, value };
+  }catch(e){
+    try{ await _releaseClaim(env, kind, id); }catch(_){}
+    audit(env, 'claim_released_after_failure', { kind, id: String(id).slice(0, 120),
+                                                 error: String((e && e.message) || e).slice(0, 160) });
+    throw e;
+  }
+}
+
+async function _releaseClaim(env, kind, id){
+  try{
+    // release wherever it was claimed - the DO first, mirroring _claimOnce
+    if(env && env.AMV_COUNTER){
+      const mapKey = kind + ':' + id;
+      const owner = _CLAIM_OWNERS.get(mapKey) || '';
+      _CLAIM_OWNERS.delete(mapKey);
+      try{
+        const r = await counter(env, 'claim:' + kind + ':' + id, { op:'release', owner });
+        /* Refused means this holder's lease had already expired and somebody
+           else has the lock - so the work just finished ran outside it. That is
+           a real condition to know about: it is how two writers end up believing
+           they are alone, and it shows up under load rather than under attack. */
+        if(r && r.released === false && r.reason === 'not_owner'){
+          audit(env, 'lock_lease_expired', { kind, id: String(id).slice(0, 120) });
+          try{ await alertOnce(env, 'lock_lease_expired:' + kind,
+            'A lock on ' + kind + ' expired while the work it was protecting was still running, so another '
+            + 'writer took it. Two writers were briefly inside the same critical section. If this recurs, the '
+            + 'lease is too short for what it is guarding.', 60); }catch(_){}
+        }
+      }catch(e){}
+    }
+    if(env && env.DB && typeof env.DB.prepare === 'function'){
+      await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, String(id)).run();
+    } else { await env.AMV_KV.delete(`${kind}:${id}`); }
+  }catch(e){}
+}
+

@@ -1,84 +1,3 @@
-  let digits = d.replace(/^\+/, '');
-  if (!hasPlus) {
-    // assume US/Canada if 10 digits; if 11 starting with 1, keep as-is
-    if (digits.length === 10) digits = '1' + digits;
-  }
-  // E.164: 8-15 digits, leading digit 1-9 (no leading zero on country code)
-  if (digits.length < 8 || digits.length > 15) return '';
-  if (!/^[1-9]\d{7,14}$/.test(digits)) return '';
-  return '+' + digits;
-}
-
-/* Verify a Twilio webhook signature (HMAC-SHA1 over URL + sorted POST params,
-   base64-encoded). Constant-time compare. Returns true only if it matches. */
-async function verifyTwilioSignature(authToken, url, params, signature) {
-  try {
-    if (!signature) return false;
-    // Twilio concatenates the full URL, then each sorted param key+value.
-    const sortedKeys = Object.keys(params).sort();
-    let data = url;
-    for (const k of sortedKeys) data += k + params[k];
-    const key = await crypto.subtle.importKey(
-      'raw', new TextEncoder().encode(authToken),
-      { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
-    );
-    const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
-    // base64 (standard, not url-safe) - matches Twilio's encoding
-    let bin = ''; const bytes = new Uint8Array(mac);
-    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    const expected = btoa(bin);
-    // constant-time compare
-    if (expected.length !== signature.length) return false;
-    let diff = 0;
-    for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
-    return diff === 0;
-  } catch { return false; }
-}
-
-function twiml(message) {
-  const xml = '<?xml version="1.0" encoding="UTF-8"?><Response><Message>' +
-    String(message).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
-    '</Message></Response>';
-  return new Response(xml, { headers: { 'Content-Type': 'text/xml' } });
-}
-
-/* Waitlist - captures interest for not-yet-launched apps (Chrome, iOS, etc.).
-   Stored in KV so you have a real list to email when each product ships. */
-async function waitlistAdd(request, env) {
-  // AMV-060: rate-limit per IP so the public waitlist can't be used to spam
-  // third-party addresses or inflate signups.
-  /* PER PERSON WHEN WE KNOW THE PERSON.
-
-     Five a minute and fifty a day per IP was written for the anonymous form,
-     where the risk is somebody signing strangers up. A signed-in person tapping
-     "Notify me" down the Integrations list hit it on the sixth app - and a
-     school or an office shares one address, so fifty a day was the whole
-     building's allowance, on the counts that decide which apps get built.
-     Signed in, the limit is per account and the address is the account's own,
-     so it cannot be used to put anybody else on a list. */
-  const user = await requireUser(request, env).catch(() => null);
-  const wl = user
-    ? await limitAction(env, `waitlist:u:${user.email}`, 30, 600)
-    : await limitAction(env, `waitlist:${_rlIp(request)}`, 5, 50);
-  if (!wl.ok && wl.unavailable)
-    return json({ error: 'We could not add you to the list just now. Please try again in a moment.', code: 'limit_unavailable' }, 503);
-  if (!wl.ok) return json({ error: 'Too many requests. Please try again later.' }, 429);
-  const body = await request.json().catch(() => ({}));
-  const email = user ? String(user.email).toLowerCase() : String(body.email || '').toLowerCase().trim();
-  const product = String(body.product || 'general').replace(/[^a-z0-9_-]/gi, '').slice(0, 40);
-  if (!email || !/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(email))
-    return json({ error: 'That does not look like an email address. Check it and try again.' }, 400);
-  /* Shares the non-essential ceiling with telemetry. A waitlist entry is worth
-     having and is worth nothing at all compared to sign-up still working, so it
-     is refused before the storage budget is spent - and says so, rather than
-     pretending it was recorded. */
-  if (!await _nonEssentialWrite(env, 'a waitlist sign-up'))
-    return json({ error: 'We could not add you to the list just now. Please try again later.',
-                  code: 'needs_service' }, 503);
-  await env.AMV_KV.put(`waitlist:${product}:${email}`, JSON.stringify({ email, product, ts: Date.now() }));
-  return json({ ok: true });
-}
-
 /* =====================================================================
    PAYMENTS - real Stripe + PayPal with webhook-driven entitlement sync.
 
@@ -118,3 +37,84 @@ function _stripePriceId(env, plan, cycle) {
     pro:   env.STRIPE_PRICE_PRO,
     elite: env.STRIPE_PRICE_ELITE,
     ultra: env.STRIPE_PRICE_ULTRA,
+    /* A per-UNIT recurring price in Stripe. The seat count is the subscription
+       quantity, which means Stripe handles proration on every change and the
+       number of seats AMV honours is by definition the number being billed. */
+    team:  env.STRIPE_PRICE_TEAM_SEAT,
+  };
+  return map[plan] || null;
+}
+
+/* WHY A PLAN CANNOT BE BOUGHT, ANSWERED THE SAME WAY BY BOTH CHECKOUTS.
+
+   There are two live routes to buy the same thing: /v1/stripe/checkout hands
+   back a hosted Checkout URL, and /v1/subscribe takes a payment method inside
+   the app. Both ask "is there a price for this plan", both can be told no, and
+   they were answering it DIFFERENTLY - one said the price had not been set up
+   and that nothing was charged, the other said `unknown plan`.
+
+   `unknown plan` for pro, elite or ultra is the wrong answer to the customer's
+   face. They did not invent the plan, they clicked it on AMV's own pricing
+   page; what is missing is a secret on this deployment. The comment that used
+   to sit over that line said exactly this - that calling it an unknown plan
+   "would send them looking for a mistake they did not make" - and then the
+   code did it for the three plans that carry the revenue, handling only `team`
+   properly.
+
+   It is one function now, so the two routes cannot drift apart again, and it
+   keeps the distinction that matters: a plan AMV does not sell is a bad
+   request, and a plan AMV sells but this deployment has not priced is a
+   configuration gap that names the secret to set. */
+const SELLABLE_PLANS = new Set(['pro', 'elite', 'ultra', 'team']);
+const PLAN_PRICE_ENV = { pro: 'STRIPE_PRICE_PRO', elite: 'STRIPE_PRICE_ELITE',
+                         ultra: 'STRIPE_PRICE_ULTRA', team: 'STRIPE_PRICE_TEAM_SEAT' };
+function _planUnsellable(plan, cycle) {
+  const p = String(plan || '').toLowerCase();
+  /* Yearly is optional and monthly is not, so a missing yearly price is its own
+     answer: this deployment sells the plan, just not by the year. Saying
+     "unknown plan" there would send somebody looking for a mistake they did not
+     make - the same reasoning as the paragraph below, one field over. */
+  if (String(cycle || '') === 'year' && SELLABLE_PLANS.has(p)) {
+    const envName = p === 'team' ? 'STRIPE_PRICE_TEAM_SEAT_YEAR' : 'STRIPE_PRICE_' + p.toUpperCase() + '_YEAR';
+    return json({ error: 'Yearly billing is not switched on for this plan yet, so only monthly can be bought. Nothing has been charged.',
+                  code: 'not_configured', secret: envName, cycle: 'year' }, 503);
+  }
+  if (!SELLABLE_PLANS.has(p)) return json({ error: 'unknown plan', code: 'unknown_plan' }, 400);
+  if (p === 'team')
+    return json({ error: 'Teams checkout is not switched on yet. Set STRIPE_PRICE_TEAM_SEAT to a per-seat recurring price and it starts working with no other change.',
+                  code: 'not_configured' }, 503);
+  /* 503, not 400. The request was fine; the deployment is not finished. A 400
+     tells the browser the customer sent something wrong, which is the same
+     untruth in a status code. */
+  return json({ error: 'That plan cannot be bought on this deployment yet - its price has not been set up. Nothing has been charged.',
+                code: 'not_configured', missing: PLAN_PRICE_ENV[p] }, 503);
+}
+/* Price id -> plan, skipping the ones that are not configured.
+
+   The object-literal version of this had a hole that was invisible until a
+   fourth plan was added: an unset env var becomes the KEY "undefined", so every
+   unconfigured price collapsed onto the same entry and whichever plan was
+   written last won it. A webhook quoting a price id AMV does not know - or an
+   event with no price on it at all, which is most invoice events - then resolved
+   to a real plan and granted it. Nothing here may match unless it was actually
+   set, and an unknown price must resolve to nothing. */
+const PLAN_FROM_PRICE = (env) => {
+  const out = {};
+  const add = (id, plan) => { const k = String(id || '').trim(); if (k) out[k] = plan; };
+  add(env.STRIPE_PRICE_PRO, 'pro');
+  add(env.STRIPE_PRICE_ELITE, 'elite');
+  add(env.STRIPE_PRICE_ULTRA, 'ultra');
+  add(env.STRIPE_PRICE_TEAM_SEAT, 'team');
+  /* THE YEARLY PRICES GRANT THE SAME PLAN, and forgetting this half is how a
+     yearly subscriber pays and gets nothing: the webhook is the only thing
+     that turns money into access, and it recognises a subscription by its
+     PRICE ID. A price it does not know is a plan it cannot grant. */
+  add(env.STRIPE_PRICE_PRO_YEAR, 'pro');
+  add(env.STRIPE_PRICE_ELITE_YEAR, 'elite');
+  add(env.STRIPE_PRICE_ULTRA_YEAR, 'ultra');
+  add(env.STRIPE_PRICE_TEAM_SEAT_YEAR, 'team');
+  return out;
+};
+
+// Write a user's entitlement. This is the ONLY way a plan gets set on the
+// server, and it's only ever called from a verified webhook.

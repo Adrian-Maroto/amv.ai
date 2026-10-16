@@ -1,84 +1,3 @@
-    /* There is no /v1/paypal/create or /v1/paypal/capture. They backed a
-       ONE-TIME PayPal order, and a one-time order cannot pay for a monthly
-       plan: the capture granted an entitlement with no renewal to expire
-       it, no subscription behind it, and no event that would ever revoke
-       it. Fifteen dollars once bought Pro for ever, and any signed-in
-       account could do it with two curl calls long after the browser flow
-       that used them was removed. AMV sells subscriptions; that is what
-       the route below is for. */
-    case '/v1/paypal/subscribe': return paypalSubscribe(request, env);
-    case '/v1/paypal/webhook':  return paypalWebhook(request, env, ctx);
-    case '/v1/entitlement':     return getEntitlement(request, env);
-    case '/v1/account/export':  return accountExport(request, env);
-    // --- MARKETPLACE (community templates) ---
-    case '/v1/market/list':     return marketList(request, env);
-    case '/v1/market/publish':  return marketPublish(request, env);
-    case '/v1/market/install':  return marketInstall(request, env);
-    case '/v1/market/buy':      return marketBuy(request, env);
-    case '/v1/market/purchases': return marketPurchases(request, env);
-    case '/v1/market/mylistings': return marketMyListings(request, env);
-    case '/v1/market/unlist':   return marketUnlist(request, env);
-    case '/v1/market/earnings': return marketEarnings(request, env);
-    case '/v1/market/withdraw': return marketWithdraw(request, env);
-    case '/v1/market/status':   return marketSetStatus(request, env);
-    case '/v1/market/view':     return marketView(request, env);
-    case '/v1/market/rate':     return marketRate(request, env);
-    case '/v1/market/review':   return marketReview(request, env);
-    case '/v1/market/report':   return marketReport(request, env);
-    case '/v1/market/message':  return marketMessage(request, env);
-    case '/v1/market/threads':  return marketThreads(request, env);
-    case '/v1/market/thread/read': return marketThreadRead(request, env);
-    // --- FOUNDER ADMIN (token-gated) ---
-    case '/v1/admin/stats':     return adminStats(request, env);
-    case '/v1/admin/finance':   return adminFinance(request, env);
-    case '/v1/admin/kill':      return adminKill(request, env);
-    case '/v1/admin/waitlist/notify': return adminWaitlistNotify(request, env);
-    case '/v1/admin/user':      return adminUser(request, env);
-    // --- EMBEDDABLE WIDGET ---
-    // --- WHAT AMV CAN DO, PER COUNTRY (computed from the registries) ---
-    case '/v1/coverage':        return coverageMap(request, env);
-    // --- WHAT PEOPLE ALREADY DO EVERY WEEK, WHERE THEY LIVE ---
-    case '/v1/everyday':        return everydayJobs(request, env);
-    case '/v1/where':           return whereFrom(request);
-    case '/v1/connectors':      return connectorDirectory(request, env);
-    case '/v1/connector-logo': return connectorLogo(request, env);
-    // --- TELEGRAM (official Bot API; the messenger most of the world uses) ---
-    case '/v1/telegram/status':     return telegramStatus(request, env);
-    case '/v1/telegram/connect':    return telegramConnect(request, env);
-    case '/v1/telegram/disconnect': return telegramDisconnect(request, env);
-    case '/v1/telegram/send':       return telegramSend(request, env);
-    // --- GLOBAL JOB BOARDS (57 boards, 38 countries) ---
-    case '/v1/jobs/boards':     return jobBoards(request, env);
-    case '/v1/jobs/apply':      return jobApply(request, env);
-    // --- GLOBAL MAIL (IMAP/SMTP, the countries in MAIL_PROVIDERS) ---
-    case '/v1/mail/providers':  return mailProviders(request, env);
-    case '/v1/mail/status':     return mailStatus(request, env);
-    case '/v1/mail/connect':    return mailConnect(request, env);
-    case '/v1/mail/disconnect': return mailDisconnect(request, env);
-    case '/v1/mail/inbox':      return mailInbox(request, env);
-    case '/v1/mail/message':    return mailMessage(request, env);
-    case '/v1/mail/send':       return mailSend(request, env);
-    case '/v1/widget/config':   return widgetConfigGet(request, env);   // owner: read config
-    case '/v1/widget/config-public': return widgetConfigPublic(request, env); // public: display fields only
-    case '/v1/widget/save':     return widgetConfigSave(request, env);  // owner: create/update config
-    case '/v1/widget/chat':     return widgetChat(request, env, ctx);   // public: end-visitor chat (site-key gated)
-    case '/widget.js':          return widgetLoader(request, env);      // public: the <script> embed loader
-    default: {
-      // A browser hitting an unknown URL should get a friendly HTML page;
-      // an API client gets JSON. We tell them apart by the Accept header.
-      const accept = request.headers.get('Accept') || '';
-      if (accept.includes('text/html')) {
-        return new Response(
-          `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>404 - Not found</title><style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0e14;color:#e6e6e6;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}.b{text-align:center;padding:24px}.c{font-size:72px;font-weight:800;color:#4c7dff;line-height:1}.t{font-size:22px;margin:12px 0 6px}.s{color:#9aa4b2;margin-bottom:20px}a{display:inline-block;padding:10px 20px;background:#4c7dff;color:#fff;text-decoration:none;border-radius:9px;font-weight:600}</style></head><body><div class="b"><div class="c">404</div><div class="t">Page not found</div><div class="s">This page doesn't exist or may have moved.</div><a href="/">Go home</a></div></body></html>`,
-          { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } }
-        );
-      }
-      return json({ error: 'not found' }, 404);
-    }
-  }
-}
-
-/* ---------------- AUTH: issue a signed session token ---------------- */
 /* ============================================================
    SERVER-SIDE ACCOUNTS + DATA SYNC
    Accounts (with hashed passwords) and per-user data (chats, memory,
@@ -592,3 +511,84 @@ async function authLogin(request, env) {
        measured with a stopwatch instead of read off the screen. */
     await _hashPassword(password, 'absent-account-timing-salt', PBKDF2_ITERATIONS).catch(() => {});
     return json(SAME_ANSWER, 401);
+  }
+  const acct = acct0;
+  // FAIL CLOSED: only a real email-password account with a stored password hash
+  // may obtain a token here. A federated account (provider !== 'email', or no
+  // pwHash) has no password to check, so it must be rejected - never fall through
+  // to issueTokens. This closes both the provider-impersonation bypass and the
+  // "any password logs in a federated account" bypass.
+  if(acct.provider !== 'email' || !acct.pwHash){
+    await _noteAuthFail(env, rlKey);
+    audit(env,'auth_fail',{email:em,reason:'wrong_method'});
+    /* Same reason as above: this branch skipped the hashing entirely, so a
+       Google account and a password account were a stopwatch apart. */
+    await _hashPassword(password, acct.salt || 'absent-account-timing-salt', acct.pwIter || PBKDF2_ITERATIONS).catch(() => {});
+    return json(SAME_ANSWER, 401);   // generic - never reveal the account's provider
+  }
+  // verify using the iteration count the hash was MADE with (default 100k for
+  // pre-upgrade accounts), so raising the global count never locks anyone out
+  const usedIter = acct.pwIter || 100000;
+  const hash = await _hashPassword(password, acct.salt, usedIter);
+  // constant-time compare to avoid password-timing leaks
+  const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
+  if(!ok){
+    await _noteAuthFail(env, rlKey);
+    audit(env,'auth_fail',{email:em,reason:'bad_password'});
+    /* Shown to the account owner: a run of these is how someone finds out their
+       password is being guessed, which is the single most useful thing an
+       activity log can tell them. */
+    /* Coalesced to at most one entry per 15 minutes per account. Without that,
+       a distributed guessing run against one address is an unbounded write
+       amplifier on that account's log - the per-IP throttle above does not
+       bound it, because the attacker supplies the IPs. The user still sees a
+       run of entries across the hours an attack lasts, which is the signal
+       that matters; they do not need one line per guess. */
+    try{
+      const seen = `alogfail:${em}`;
+      if(!(await env.AMV_KV.get(seen))){
+        await env.AMV_KV.put(seen, '1', { expirationTtl: 900 });
+        await _userEvent(env, request, em, 'sign_in_failed', { reason: 'wrong password' });
+      }
+    }catch(e){ /* logging must never change the outcome of a sign-in */ }
+    return json(SAME_ANSWER, 401);
+  }
+  // success - clear the failure counter
+  try{ await env.AMV_KV.delete(rlKey); }catch(e){}
+  // transparent upgrade: if this account is below the current target, re-hash now
+  if(usedIter < PBKDF2_ITERATIONS){
+    try{
+      const newHash = await _hashPassword(password, acct.salt, PBKDF2_ITERATIONS);
+      /* AMV-196: under the record lock, re-reading inside it, and ONLY if the
+         stored hash is still the one this login verified against.
+
+         Writing the whole record back from a read taken at the top of the
+         request is how a password reset gets silently undone: somebody resets
+         because they think they are compromised, a login with the OLD password
+         is in flight, and it restores the old hash and salt. The reset reports
+         success, the new password does not work, and the old one still does.
+
+         An upgrade is a nice-to-have; losing a password change is not. If the
+         record moved underneath us, the upgrade is skipped - the next login
+         does it. */
+      await _withAcct(env, em, (fresh) => {
+        if (!fresh || fresh.pwHash !== acct.pwHash || fresh.salt !== acct.salt) return;
+        fresh.pwHash = newHash; fresh.pwIter = PBKDF2_ITERATIONS;
+      });
+    }catch(e){ /* non-fatal - login still succeeds */ }
+  }
+  /* THE PASSWORD IS ONE HALF. On a device this account has not proved itself
+     on, the other half is a code sent to the address - see _startSignInCode. */
+  let trust = null;
+  if (_codesOn(env)) {
+    trust = await _deviceTrustState(env, request, body, em);
+    if (!trust.trusted) { const c = await _startSignInCode(env, request, em, acct.name || name || '', 'signin', null, trust.reason); if (c) return c; }
+  }
+  try{ await _markActive(env, em); }catch(e){}
+  await _userEvent(env, request, em, 'signed_in');
+  /* Trust is counted from the LAST sign-in, not the first code: somebody who
+     signs in every week should not be asked for a code every thirty days. */
+  if (trust && trust.trusted) return _withDeviceTrust(env, em, _tokenResponse, await issueTokens(env, em, acct.name || name || '', await _sessOpen(env, request, em)));
+  return _tokenResponse(env, await issueTokens(env, em, acct.name || name || '', await _sessOpen(env, request, em)));
+}
+

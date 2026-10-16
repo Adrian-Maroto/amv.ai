@@ -1,84 +1,3 @@
-
-        # OPTIONAL - connected accounts. CONNECT_KEY seals every stored
-        # provider token with AES-GCM; without it AMV refuses to connect an
-        # account rather than storing a token in the clear.
-        # To ROTATE it: put the new value in CONNECT_KEY, the old one in
-        # CONNECT_KEY_PREV, and leave both for as long as it takes every
-        # connection to be used once - each re-seals under the new key when it
-        # is. Then remove CONNECT_KEY_PREV. Rotating WITHOUT setting PREV makes
-        # every stored connection unreadable and every customer has to
-        # reconnect every account.
-        wrangler secret put CONNECT_KEY
-        wrangler secret put CONNECT_KEY_PREV     (only during a rotation)
-
-   4. wrangler.toml config:
-        [vars]
-        GLOBAL_DAILY_USD_CAP = "500"             (your hard ceiling)
-        ALERT_WEBHOOK = "https://hooks.slack..." (optional)
-
-        # Durable Object - ATOMIC rate limits & quotas (no race conditions)
-        [[durable_objects.bindings]]
-        name = "AMV_COUNTER"
-        class_name = "AMVCounter"
-
-        [[migrations]]
-        tag = "v1"
-        new_sqlite_classes = ["AMVCounter"]
-   5. wrangler deploy  → get https://amv-api.<you>.workers.dev
-   6. In AMV → Settings → Live/Backend, paste that URL.
-      Now: key is hidden, plans enforced, quotas + spend cap live & atomic.
-
-   NOTE: If AMV_COUNTER is not bound, the Worker still runs but falls back
-   to (non-atomic) KV counters. Bind the Durable Object for production -
-   it's what makes rate limits and quotas race-proof under parallel load.
-
-   PAYMENTS (real money) - set these secrets:
-     wrangler secret put STRIPE_SECRET_KEY        (sk_live_…)
-     wrangler secret put STRIPE_WEBHOOK_SECRET    (whsec_… from the webhook)
-     [vars] STRIPE_PRICE_PRO / STRIPE_PRICE_ELITE / STRIPE_PRICE_ULTRA
-            (Price IDs you create in the Stripe dashboard)
-     In Stripe → Developers → Webhooks, add endpoint:
-       https://<your-worker>/v1/stripe/webhook
-       events - ALL TEN. This list named four of them, and the other six are
-       handled here in code that would simply never run: an operator following
-       it subscribed to a quarter of what AMV listens for and had no way to
-       know. Each one is money moving in a direction somebody has to know about.
-         checkout.session.completed              a card paid, grant the plan
-         checkout.session.async_payment_succeeded a voucher or direct debit
-                                                  finally cleared - WITHOUT
-                                                  this, a customer who paid by
-                                                  OXXO or SEPA pays and is
-                                                  never granted anything
-         checkout.session.async_payment_failed    it did not clear; close it out
-         customer.subscription.updated            seats, plan or state changed
-         customer.subscription.deleted            it ended
-         invoice.paid                             a renewal went through
-         invoice.payment_failed                   a renewal was declined
-         charge.refunded                          money went back
-         refund.created                           the same, newer event shape
-         charge.dispute.created                   a chargeback was opened
-   PayPal (optional):
-     wrangler secret put PAYPAL_CLIENT_ID / PAYPAL_SECRET / PAYPAL_WEBHOOK_ID
-     [vars] PAYPAL_MODE = "live"  (or "sandbox")
-     Webhook endpoint: https://<your-worker>/v1/paypal/webhook
-
-   HOW ACCESS IS GRANTED: the plan is written to ent:<email> ONLY by a
-   signature-verified webhook from Stripe/PayPal. The browser can never
-   grant itself a paid plan - requireUser() reads ent:<email> on every call.
-
-   FOUNDER ADMIN (your private dashboard):
-     wrangler secret put ADMIN_TOKEN   (a long random string only YOU hold)
-     Then in AMV: open with ?owner=1, go to Settings -> Founder Dashboard,
-     paste the token to see platform spend / users / revenue / top spenders,
-     flip the kill switch, or override a user's plan. The token is never
-     stored in the browser. Endpoints: /v1/admin/stats, /v1/admin/kill,
-     /v1/admin/user - all 403 without the exact ADMIN_TOKEN.
-
-   KILL SWITCH (instant stop):
-     wrangler kv:key put --binding=AMV_KV GLOBAL_KILL 1     (halt)
-     wrangler kv:key delete --binding=AMV_KV GLOBAL_KILL    (resume)
-   ===================================================================== */
-
 /* =====================================================================
    SMS / TEXT-MESSAGE AGENT  (Poke-style "run agents from your phone")
    ---------------------------------------------------------------------
@@ -447,3 +366,84 @@ function normalizePhone(p) {
   // collapse any '+' that isn't the leading char
   const hasPlus = d.startsWith('+');
   d = (hasPlus ? '+' : '') + d.replace(/\+/g, '');
+  let digits = d.replace(/^\+/, '');
+  if (!hasPlus) {
+    // assume US/Canada if 10 digits; if 11 starting with 1, keep as-is
+    if (digits.length === 10) digits = '1' + digits;
+  }
+  // E.164: 8-15 digits, leading digit 1-9 (no leading zero on country code)
+  if (digits.length < 8 || digits.length > 15) return '';
+  if (!/^[1-9]\d{7,14}$/.test(digits)) return '';
+  return '+' + digits;
+}
+
+/* Verify a Twilio webhook signature (HMAC-SHA1 over URL + sorted POST params,
+   base64-encoded). Constant-time compare. Returns true only if it matches. */
+async function verifyTwilioSignature(authToken, url, params, signature) {
+  try {
+    if (!signature) return false;
+    // Twilio concatenates the full URL, then each sorted param key+value.
+    const sortedKeys = Object.keys(params).sort();
+    let data = url;
+    for (const k of sortedKeys) data += k + params[k];
+    const key = await crypto.subtle.importKey(
+      'raw', new TextEncoder().encode(authToken),
+      { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
+    );
+    const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+    // base64 (standard, not url-safe) - matches Twilio's encoding
+    let bin = ''; const bytes = new Uint8Array(mac);
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    const expected = btoa(bin);
+    // constant-time compare
+    if (expected.length !== signature.length) return false;
+    let diff = 0;
+    for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
+    return diff === 0;
+  } catch { return false; }
+}
+
+function twiml(message) {
+  const xml = '<?xml version="1.0" encoding="UTF-8"?><Response><Message>' +
+    String(message).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+    '</Message></Response>';
+  return new Response(xml, { headers: { 'Content-Type': 'text/xml' } });
+}
+
+/* Waitlist - captures interest for not-yet-launched apps (Chrome, iOS, etc.).
+   Stored in KV so you have a real list to email when each product ships. */
+async function waitlistAdd(request, env) {
+  // AMV-060: rate-limit per IP so the public waitlist can't be used to spam
+  // third-party addresses or inflate signups.
+  /* PER PERSON WHEN WE KNOW THE PERSON.
+
+     Five a minute and fifty a day per IP was written for the anonymous form,
+     where the risk is somebody signing strangers up. A signed-in person tapping
+     "Notify me" down the Integrations list hit it on the sixth app - and a
+     school or an office shares one address, so fifty a day was the whole
+     building's allowance, on the counts that decide which apps get built.
+     Signed in, the limit is per account and the address is the account's own,
+     so it cannot be used to put anybody else on a list. */
+  const user = await requireUser(request, env).catch(() => null);
+  const wl = user
+    ? await limitAction(env, `waitlist:u:${user.email}`, 30, 600)
+    : await limitAction(env, `waitlist:${_rlIp(request)}`, 5, 50);
+  if (!wl.ok && wl.unavailable)
+    return json({ error: 'We could not add you to the list just now. Please try again in a moment.', code: 'limit_unavailable' }, 503);
+  if (!wl.ok) return json({ error: 'Too many requests. Please try again later.' }, 429);
+  const body = await request.json().catch(() => ({}));
+  const email = user ? String(user.email).toLowerCase() : String(body.email || '').toLowerCase().trim();
+  const product = String(body.product || 'general').replace(/[^a-z0-9_-]/gi, '').slice(0, 40);
+  if (!email || !/^[^\s@:]{1,64}@[^\s@:]+\.[^\s@:]{2,}$/.test(email))
+    return json({ error: 'That does not look like an email address. Check it and try again.' }, 400);
+  /* Shares the non-essential ceiling with telemetry. A waitlist entry is worth
+     having and is worth nothing at all compared to sign-up still working, so it
+     is refused before the storage budget is spent - and says so, rather than
+     pretending it was recorded. */
+  if (!await _nonEssentialWrite(env, 'a waitlist sign-up'))
+    return json({ error: 'We could not add you to the list just now. Please try again later.',
+                  code: 'needs_service' }, 503);
+  await env.AMV_KV.put(`waitlist:${product}:${email}`, JSON.stringify({ email, product, ts: Date.now() }));
+  return json({ ok: true });
+}
+

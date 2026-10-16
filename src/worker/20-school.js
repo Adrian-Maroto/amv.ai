@@ -1,84 +1,3 @@
-   them can reach across into another - which is the whole failure a prefix
-   comparison has. `https://amv.homes.evil.co` and `https://amv.homes@evil.co`
-   both start with `https://amv.homes` and neither is it.
-
-   A path is deliberately not part of the comparison: a callback lives at a path
-   under the origin, and that is the normal case. */
-function _sameOrigin(a, b){
-  try {
-    const x = new URL(String(a));
-    const y = new URL(String(b));
-    /* A URL carrying credentials is refused outright rather than compared. It
-       has no legitimate use in a redirect target and it exists in this shape
-       for exactly one reason. */
-    if (x.username || x.password) return false;
-    return x.origin === y.origin && x.origin !== 'null';
-  } catch (e) { return false; }
-}
-
-/* SSRF gate: only public http(s). Re-checked on every navigation, and on every
-   hop of a redirect chain - see fetchGuarded above. */
-function _webHostAllowed(raw){
-  let u; try{ u = new URL(String(raw)); }catch(e){ return { ok:false, why:'That is not a valid URL.' }; }
-  if(u.protocol !== 'http:' && u.protocol !== 'https:') return { ok:false, why:'Only http and https are allowed.' };
-  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g,'');
-  if(h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') || h.endsWith('.local'))
-    return { ok:false, why:'Internal hosts are not reachable from the agent.' };
-  if(h === 'metadata.google.internal') return { ok:false, why:'Blocked host.' };
-  /* The v4 ranges, factored out because IPv6 can carry an IPv4 address inside
-     it and has to reach exactly the same verdict. */
-  const v4Blocked = (a, b) =>
-    a === 10 || a === 127 || a === 0 ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 169 && b === 254) ||
-    (a === 100 && b >= 64 && b <= 127) ||
-    a >= 224;
-
-  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if(v4 && v4Blocked(+v4[1], +v4[2]))
-    return { ok:false, why:'That address range is blocked (internal network).' };
-
-  /* IPv6 CAN CARRY A BLOCKED IPv4 ADDRESS INSIDE IT.
-
-     The literal checks below catch ::1, fc00::/7 and fe80::/10, and the dotted
-     forms are normalised by `new URL` before they get here - it canonicalises
-     2130706433, 0177.0.0.1 and 127.1 all to 127.0.0.1, which is why those never
-     reached this far. What it does NOT do is flatten an IPv4-MAPPED address:
-
-         http://[::ffff:169.254.169.254]/   ->  hostname [::ffff:a9fe:a9fe]
-
-     That is the cloud metadata service, and it walked straight through - it is
-     not ::1, does not start with fc, fd or fe80, and is not a dotted quad. So
-     did [::] , which routes to the local host, and the NAT64 prefix 64:ff9b::,
-     which exists specifically to carry v4 addresses over v6.
-
-     The last 32 bits are pulled out of any address that embeds an IPv4 one and
-     run through the same table. */
-  if(h.includes(':')){
-    if(h === '::' || h === '::1') return { ok:false, why:'That address range is blocked (internal network).' };
-    if(h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80'))
-      return { ok:false, why:'That address range is blocked (internal network).' };
-    const embedsV4 = /^::ffff:/i.test(h) || /^64:ff9b:/i.test(h) || /^::/.test(h);
-    if(embedsV4){
-      /* Either tail form: ::ffff:127.0.0.1 or its canonical ::ffff:7f00:1 */
-      const dotted = h.match(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-      if(dotted && v4Blocked(+dotted[1], +dotted[2]))
-        return { ok:false, why:'That address range is blocked (internal network).' };
-      const hexTail = h.match(/([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
-      if(hexTail){
-        const hi = parseInt(hexTail[1], 16), lo = parseInt(hexTail[2], 16);
-        if(v4Blocked((hi >> 8) & 255, hi & 255)) 
-          return { ok:false, why:'That address range is blocked (internal network).' };
-        /* ::ffff:0:1 style, where the whole v4 sits in the low word. */
-        if(hi === 0 && v4Blocked((lo >> 8) & 255, lo & 255))
-          return { ok:false, why:'That address range is blocked (internal network).' };
-      }
-    }
-  }
-  return { ok:true, url:u.toString() };
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
    SCHOOL: READING CANVAS, AND THE DOC AN ASSIGNMENT IS ACTUALLY ABOUT.
 
@@ -326,3 +245,84 @@ async function schoolWork(request, env){
   if(wg) return wg;
   const rec = await _loadSchool(env, user.email);
   if(!rec) return json({ connected:false,
+    error:'Connect your school\u2019s Canvas first, in Settings \u2192 Connectors.', code:'not_connected' }, 400);
+
+  const courses = await _canvasGet(env, rec, 'courses?enrollment_state=active&per_page=20');
+  if(courses.error) return json({ error:courses.error, code:courses.code }, courses.status);
+  if(!Array.isArray(courses.data)) return json({ error:'Canvas did not return a course list.' }, 502);
+
+  /* AMV-050: TOGETHER, NOT ONE AFTER ANOTHER.
+
+     This was a `for` loop with an `await` in it: eight courses meant eight
+     round trips to a school's server end to end, each one waiting for the last.
+     On a school having a slow morning that is eight timeouts stacked into one
+     request, held open inside a Worker with a wall-clock limit - so the feature
+     failed hardest exactly when the student needed it, and it burned the
+     operator's request duration doing nothing but waiting.
+
+     The number of them is already bounded by SCHOOL_COURSE_MAX, so running them
+     at once is bounded too: the whole thing now costs about one round trip
+     instead of eight, and the ceiling on how many is unchanged. */
+  const picked = courses.data.slice(0, SCHOOL_COURSE_MAX);
+  const fetched = await Promise.all(picked.map(async (c) => {
+    const a = await _canvasGet(env, rec, 'courses/' + encodeURIComponent(c.id) + '/assignments?bucket=upcoming&per_page=10')
+      .catch(() => ({ error:'unreadable' }));
+    return { c, a };
+  }));
+
+  const out = [];
+  const missed = [];
+  for(const { c, a } of fetched){
+    /* A course whose assignments could not be read used to be skipped in
+       silence. A student then sees a homework list with an entire class simply
+       absent from it and no reason to doubt it, which is the worst way for this
+       to be wrong - so what is missing is named. */
+    if(a.error || !Array.isArray(a.data)){ missed.push(String(c.name || c.id)); continue; }
+    for(const it of a.data.slice(0, SCHOOL_ASSIGNMENT_MAX)){
+      out.push({
+        id: it.id, course: c.name, courseId: c.id,
+        name: it.name, dueAt: it.due_at || null,
+        url: it.html_url || '',
+        instructions: _assignmentText(it.description),
+        docs: _docLinksFrom(it.description),
+        submitted: !!it.has_submitted_submissions,
+      });
+    }
+  }
+  return json({ connected:true, work: out, count: out.length,
+    partial: missed.length > 0,
+    missedCourses: missed,
+    ...(missed.length ? { notice: 'AMV could not read ' + missed.join(', ')
+      + ', so anything due in ' + (missed.length === 1 ? 'it' : 'them') + ' is not in this list.' } : {}) });
+}
+
+/* Who to share it with. Read from the course rather than guessed, because a
+   guessed address is somebody else's inbox. */
+async function schoolTeachers(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'Please sign in.' }, 401);
+  const tg = await guardAction(env, `schoolteach:${user.email}`, 15, 300, 'looking up your teachers');
+  if(tg) return tg;
+  const rec = await _loadSchool(env, user.email);
+  if(!rec) return json({ error:'Connect your school\u2019s Canvas first.', code:'not_connected' }, 400);
+  const body = await request.json().catch(()=>({}));
+  const courseId = String(body.courseId || '').replace(/[^0-9a-zA-Z_-]/g, '').slice(0, 40);
+  if(!courseId) return json({ error:'Which course?' }, 400);
+
+  const r = await _canvasGet(env, rec, 'courses/' + encodeURIComponent(courseId) + '/users?enrollment_type=teacher&per_page=10');
+  if(r.error) return json({ error:r.error, code:r.code }, r.status);
+  const teachers = (Array.isArray(r.data) ? r.data : [])
+    .map(t => ({ name: t.name || '', email: t.email || t.login_id || '' }))
+    .filter(t => t.email);
+  /* An empty list is not an error and is not a reason to invent one: schools
+     often hide staff addresses, and the honest answer is to ask. */
+  return json({ ok:true, teachers, askUser: teachers.length === 0 });
+}
+
+/* Redact secrets before anything can reach a trace, a log or a response. */
+function _webRedact(text, secrets){
+  let t = String(text == null ? '' : text);
+  (secrets || []).forEach(v => { if(v && String(v).length > 2) t = t.split(String(v)).join('[redacted]'); });
+  return t;
+}
+

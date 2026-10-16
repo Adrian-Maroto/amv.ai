@@ -1,85 +1,3 @@
-/* POST /v1/keys/list */
-async function apiKeyList(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  const rec = (await DB.get(env, 'apikeys', user.email)) || { items: [] };
-  return json({ ok: true, keys: (rec.items || []).map(_apiKeyPublic), max: API_KEY_MAX_PER_USER });
-}
-
-/* POST /v1/keys/revoke { id } */
-async function apiKeyRevoke(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  const { id } = await request.json().catch(() => ({}));
-  /* AMV-210: the hot path stamps lastUsed on this same record once a minute
-     per key, so a revoke could be written back over. The KEY still stopped
-     working either way - the lookup row below is what the request path reads,
-     and deleting it is what revocation really is - but the record would show a
-     revoked key as active, which is a screen telling somebody the opposite of
-     the truth about a credential. */
-  let hash = '';
-  const found = await _withKind(env, 'apikeys', user.email, (rec) => {
-    const item = (rec.items || []).find(k => k.id === id);
-    if (!item) return false;
-    hash = item.hash || '';
-    if (!item.revoked) item.revoked = Date.now();
-    return true;
-  }, { items: [] });
-  if (!found) return json({ error: 'not found' }, 404);
-  /* Delete the lookup too - this is what the request path reads, and deleting
-     it is what revocation really is. Marking the record without removing this
-     would leave the key working. */
-  if (hash) { try { await env.AMV_KV.delete(`apikey:${hash}`); } catch (e) {} }
-  audit(env, 'apikey_revoked', { email: user.email, id });
-  await _userEvent(env, request, user.email, 'api_key_revoked');
-  return json({ ok: true, id, revoked: true });
-}
-
-/* Resolve `Authorization: Bearer amv_sk_...` to the account it belongs to, in
-   the same shape requireUser returns - so every quota, cost cap and plan check
-   downstream applies to an API call exactly as it does to a browser one. */
-async function _userFromApiKey(request, env) {
-  const raw = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
-           || request.headers.get('X-AMV-Key') || '';
-  if (!raw.startsWith(API_KEY_PREFIX)) return null;
-  let ref = null;
-  try { ref = JSON.parse(await env.AMV_KV.get(`apikey:${await _apiKeyHash(raw)}`) || 'null'); } catch (e) {}
-  if (!ref || !ref.email) return null;
-
-  const rec = (await DB.get(env, 'apikeys', ref.email)) || { items: [] };
-  const item = (rec.items || []).find(k => k.id === ref.id);
-  if (!item || item.revoked) return null;
-
-  /* The account still has to exist. Erasure now clears these, but a key that
-     authenticates on the strength of a lookup row alone is one orphaned record
-     away from being a credential belonging to nobody - and this is the check
-     that makes that impossible rather than merely tidy. */
-  const acct = await DB.get(env, 'acct', ref.email);
-  if (!acct) return null;
-
-  // Last use, so a customer can tell a live key from a forgotten one. Written
-  // at most once a minute: this is on the hot path of every API request.
-  const now = Date.now();
-  if (!item.lastUsed || now - item.lastUsed > 60000) {
-    /* Under the lock, and re-found inside it: this runs on every authenticated
-       API request, so it is the write most likely to be racing a revoke. */
-    try {
-      await _withKind(env, 'apikeys', ref.email, (rec2) => {
-        const cur = (rec2.items || []).find(k => k.id === ref.id);
-        if (!cur) return null;
-        cur.lastUsed = now;
-        cur.calls = (cur.calls || 0) + 1;
-      }, { items: [] });
-    } catch (e) {}
-    item.lastUsed = now;
-  }
-
-  /* The SAME principal a browser session gets. This used to return five fields
-     of its own and nothing else, so an API key carried no billing subject, no
-     block, and no family limit - see _principalOf. */
-  return await _principalOf(env, ref.email, null, { via: 'apikey', keyId: ref.id });
-}
-
 /* =====================================================================
    AMV-095  IS IT ANY GOOD?
 
@@ -153,3 +71,84 @@ const PUBLIC_CONFIG_KEYS = [
    Rate limited per IP because it is unauthenticated, and one visit per session
    is enforced by the browser rather than trusted from it - a caller who lies
    inflates a number that only they read. */
+async function recordVisit(request, env) {
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  if (ip) {
+    /* Generous: a person opening AMV in several tabs is normal. Bounded:
+       an unauthenticated counter is otherwise free to inflate. */
+    const r = await limitAction(env, `visit:${ip}`, 10, 200);
+    if (!r.ok) return json({ ok: true, counted: false });
+  }
+  try { await _recordGrowth(env, 'visit'); } catch (e) {}
+  return json({ ok: true, counted: true });
+}
+
+async function publicConfig(request, env) {
+  /* Unauthenticated by necessity - it is read before anybody has an account -
+     so it is bounded per IP like the other open endpoints. */
+  const ip = request.headers.get('CF-Connecting-IP') || 'anon';
+  const blocked = await guardAction(env, `pubcfg:${ip}`, 30, 2000, 'config reads');
+  if (blocked) return blocked;
+
+  const out = { ok: true };
+  /* WHICH PLANS CAN BE BOUGHT BY THE YEAR, so the page can offer the choice
+     only where it will work. A toggle that leads to "not configured" is a
+     toggle that should not have been drawn.
+
+     The plan NAMES, never the price ids: the client needs to know the option
+     exists, not what it is called at Stripe. */
+  try{
+    const yearly = [];
+    for (const p of ['pro', 'elite', 'ultra', 'team']) {
+      if (_stripePriceId(env, p, 'year')) yearly.push(p);
+    }
+    if (yearly.length) out.yearlyPlans = yearly;
+  }catch(e){}
+  for (const [field, secret] of PUBLIC_CONFIG_KEYS) {
+    const v = String((env && env[secret]) || '').trim();
+    if (v) out[field] = v;
+  }
+  /* WHETHER THE SESSION TRAVELS IN A COOKIE, said before anybody signs in.
+
+     The refresh token is set as a cookie on the API's own host, and a browser
+     keeps a cookie from a cross-origin response only if the request asked it
+     to (credentials: 'include'). The page cannot ask for that on a deployment
+     without the cookie - there the API answers `*`, and a credentialed request
+     to `*` is refused outright - so it has to know which kind this is BEFORE
+     the sign-in request, not from the sign-in response. Not a secret: it is
+     the same fact the CORS headers already state. */
+  if (_cookieAuthOn(env)) out.cookieSession = true;
+  /* Built directly rather than through json(), which takes only a body and a
+     status - a third argument would have been silently ignored and the cache
+     header would never have been sent. Five minutes is long enough to spare
+     the Worker a request per page load and short enough that rotating a client
+     id takes effect while you are still watching. */
+  return new Response(JSON.stringify(out), { status: 200, headers: {
+    'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300',
+    ...CORS, ...SECURITY_HEADERS } });
+}
+
+async function feedbackRecord(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  // Cheap to send and easy to spam, so it is bounded like anything else.
+  const blocked = await guardAction(env, `fb:${user.email}`, 30, 300, 'ratings');
+  if (blocked) return blocked;
+
+  const body = await request.json().catch(() => ({}));
+  const rating = body.rating === 'up' ? 'up' : (body.rating === 'down' ? 'down' : null);
+  if (!rating) return json({ error: 'rating must be up or down' }, 400);
+  const engine = ENGINES[body.engine] ? body.engine : (RAW_TO_KEY[body.engine] || 'unknown');
+  const feature = String(body.feature || 'chat').replace(/[^a-z_]/gi, '').slice(0, 24) || 'chat';
+  const reason = FEEDBACK_REASONS.has(body.reason) ? body.reason : '';
+
+  const mk = monthKey();
+  await counter(env, `qual:${engine}:${rating}:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 400 });
+  await counter(env, `qualfeat:${feature}:${rating}:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 400 });
+  if (rating === 'down' && reason) {
+    await counter(env, `qualwhy:${reason}:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 400 });
+  }
+  /* Deliberately not audited with any content. The event itself is the record. */
+  return json({ ok: true });
+}
+

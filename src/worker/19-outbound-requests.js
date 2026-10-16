@@ -1,84 +1,3 @@
-     what AMV may spend on their behalf, and the screen where they set it says
-     it resets on the 1st. Moving it onto their billing anniversary would make
-     their own control mean something they did not choose, to fix a problem
-     they do not have: this cap is theirs, and it is not sold by the month. */
-  return null;
-}
-
-const SPEND_MONTH_TTL_MS = 86400000 * 70;
-const _spendMonthKey = (email) => `spendmo:${email}:${monthKey()}`;
-
-/* BOOK the money, atomically, against the monthly cap.
-
-   Deliberately the CALENDAR month, unlike the plan allowance elsewhere. This is
-   not something anybody bought - it is the limit a person set on what AMV may
-   spend on their behalf, and the screen where they set it says it resets on the
-   1st. Moving it onto their billing anniversary would make their own control
-   mean something they did not choose, to fix a problem they do not have.
-
-   Returns { ok } or { refused }. The reservation is real money held: whoever
-   takes one owns releasing it. */
-async function _spendReserve(env, email, amount, clientLimit){
-  const amt = +amount || 0;
-  if(!(amt > 0)) return { ok:true, reserved:0 };
-  const refused = await _spendAllowed(env, email, amt, clientLimit);
-  if(refused) return { refused };
-
-  const L = await _spendLimits(env, email);
-  const cap = +L.monthlyCap || 0;
-  const r = await _reserveUSD(env, _spendMonthKey(email), amt, cap, SPEND_MONTH_TTL_MS);
-  if(r.allowed) return { ok:true, reserved: amt };
-
-  /* AMV-032: a counter that could not answer is not a counter that said yes.
-     Refusing to spend somebody's money because the ledger is unreachable is the
-     right way round to be wrong. */
-  if(r.unavailable)
-    return { refused:{ code:'spend_unavailable',
-      need:'AMV cannot check your spending limit right now, so it will not spend anything.',
-      message:'Try again in a moment - nothing was charged.' } };
-
-  const left = Math.max(0, cap - (r.value || 0));
-  return { refused:{ code:'over_monthly',
-    need:'This would take you past your $' + cap.toFixed(2) + ' monthly limit - $'
-      + left.toFixed(2) + ' is left this month.',
-    message:'The month resets on the 1st, or you can raise the limit in Settings.' } };
-}
-
-/* Give it back. A run that never reached a purchase must not have eaten the
-   month, and a run that failed to start must not have eaten anything. */
-async function _spendRelease(env, email, amount){
-  await _releaseUSD(env, _spendMonthKey(email), +amount || 0, SPEND_MONTH_TTL_MS);
-}
-
-/* Kept for the callers that spend outside a reservation. Inside browserRun the
-   money is reserved up front instead, because a check and a booking that are
-   two calls are two calls something can happen between. */
-async function _spendRecord(env, email, amount){
-  const amt = +amount || 0;
-  if(!(amt > 0)) return;
-  try{ await counter(env, _spendMonthKey(email), { op:'incr', amount: amt, ttlMs: SPEND_MONTH_TTL_MS }); }catch(e){}
-}
-
-const WEB_MAX_STEPS = 24;
-const WEB_MAX_MS = 90000;
-const WEB_ALLOWED_VERBS = ['goto','click','type','select','press','scroll','extract','submit','done','blocked'];
-// Verbs that are always irreversible.
-const WEB_CONSEQUENTIAL = ['submit'];
-// A click is USUALLY navigation, but "Place order" / "Delete account" / "Send"
-// are irreversible too. Approval is decided by what the control actually says,
-// not by the verb alone - otherwise the agent could buy or delete without asking.
-const WEB_CONSEQUENTIAL_LABEL = /\b(buy|purchase|order|pay|checkout|subscribe|confirm|submit|send|post|publish|apply|delete|remove|cancel|deactivate|transfer|withdraw|donate|bid|book|reserve|accept|agree|sign)\b/i;
-// Enter/Return in a focused field SUBMITS the form on most sites, so it is
-// exactly as irreversible as clicking Submit and must be approved the same way.
-// (Without this, the whole approval gate is bypassable with a keystroke.)
-const WEB_SUBMIT_KEYS = /^(enter|return|numpadenter)$/i;
-function _webIsConsequential(verb, label, text){
-  if(WEB_CONSEQUENTIAL.indexOf(verb) >= 0) return true;
-  if(verb === 'press' && WEB_SUBMIT_KEYS.test(String(text || 'Enter'))) return true;
-  if((verb === 'click' || verb === 'press') && label && WEB_CONSEQUENTIAL_LABEL.test(String(label))) return true;
-  return false;
-}
-
 /* ══════════════════════════════════════════════════════════════
    OUTBOUND REQUESTS: A DEADLINE, AND A GATE THAT SURVIVES A REDIRECT.
 
@@ -157,3 +76,84 @@ async function fetchGuarded(rawUrl, init, ms){
 /* Same ORIGIN, decided by parsing rather than by comparing strings.
 
    Scheme, host and port each become a field of their own, so nothing in one of
+   them can reach across into another - which is the whole failure a prefix
+   comparison has. `https://amv.homes.evil.co` and `https://amv.homes@evil.co`
+   both start with `https://amv.homes` and neither is it.
+
+   A path is deliberately not part of the comparison: a callback lives at a path
+   under the origin, and that is the normal case. */
+function _sameOrigin(a, b){
+  try {
+    const x = new URL(String(a));
+    const y = new URL(String(b));
+    /* A URL carrying credentials is refused outright rather than compared. It
+       has no legitimate use in a redirect target and it exists in this shape
+       for exactly one reason. */
+    if (x.username || x.password) return false;
+    return x.origin === y.origin && x.origin !== 'null';
+  } catch (e) { return false; }
+}
+
+/* SSRF gate: only public http(s). Re-checked on every navigation, and on every
+   hop of a redirect chain - see fetchGuarded above. */
+function _webHostAllowed(raw){
+  let u; try{ u = new URL(String(raw)); }catch(e){ return { ok:false, why:'That is not a valid URL.' }; }
+  if(u.protocol !== 'http:' && u.protocol !== 'https:') return { ok:false, why:'Only http and https are allowed.' };
+  const h = u.hostname.toLowerCase().replace(/^\[|\]$/g,'');
+  if(h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') || h.endsWith('.local'))
+    return { ok:false, why:'Internal hosts are not reachable from the agent.' };
+  if(h === 'metadata.google.internal') return { ok:false, why:'Blocked host.' };
+  /* The v4 ranges, factored out because IPv6 can carry an IPv4 address inside
+     it and has to reach exactly the same verdict. */
+  const v4Blocked = (a, b) =>
+    a === 10 || a === 127 || a === 0 ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 169 && b === 254) ||
+    (a === 100 && b >= 64 && b <= 127) ||
+    a >= 224;
+
+  const v4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if(v4 && v4Blocked(+v4[1], +v4[2]))
+    return { ok:false, why:'That address range is blocked (internal network).' };
+
+  /* IPv6 CAN CARRY A BLOCKED IPv4 ADDRESS INSIDE IT.
+
+     The literal checks below catch ::1, fc00::/7 and fe80::/10, and the dotted
+     forms are normalised by `new URL` before they get here - it canonicalises
+     2130706433, 0177.0.0.1 and 127.1 all to 127.0.0.1, which is why those never
+     reached this far. What it does NOT do is flatten an IPv4-MAPPED address:
+
+         http://[::ffff:169.254.169.254]/   ->  hostname [::ffff:a9fe:a9fe]
+
+     That is the cloud metadata service, and it walked straight through - it is
+     not ::1, does not start with fc, fd or fe80, and is not a dotted quad. So
+     did [::] , which routes to the local host, and the NAT64 prefix 64:ff9b::,
+     which exists specifically to carry v4 addresses over v6.
+
+     The last 32 bits are pulled out of any address that embeds an IPv4 one and
+     run through the same table. */
+  if(h.includes(':')){
+    if(h === '::' || h === '::1') return { ok:false, why:'That address range is blocked (internal network).' };
+    if(h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80'))
+      return { ok:false, why:'That address range is blocked (internal network).' };
+    const embedsV4 = /^::ffff:/i.test(h) || /^64:ff9b:/i.test(h) || /^::/.test(h);
+    if(embedsV4){
+      /* Either tail form: ::ffff:127.0.0.1 or its canonical ::ffff:7f00:1 */
+      const dotted = h.match(/(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+      if(dotted && v4Blocked(+dotted[1], +dotted[2]))
+        return { ok:false, why:'That address range is blocked (internal network).' };
+      const hexTail = h.match(/([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+      if(hexTail){
+        const hi = parseInt(hexTail[1], 16), lo = parseInt(hexTail[2], 16);
+        if(v4Blocked((hi >> 8) & 255, hi & 255)) 
+          return { ok:false, why:'That address range is blocked (internal network).' };
+        /* ::ffff:0:1 style, where the whole v4 sits in the low word. */
+        if(hi === 0 && v4Blocked((lo >> 8) & 255, lo & 255))
+          return { ok:false, why:'That address range is blocked (internal network).' };
+      }
+    }
+  }
+  return { ok:true, url:u.toString() };
+}
+

@@ -1,84 +1,3 @@
-
-   Every other job kind ends by writing text somebody reads. This one ends by
-   creating a real game and handing back the link, which is the difference
-   between "Crew wrote you some questions" and "Crew set up Friday night".
-
-   Called from the run loop after the model has produced its lines, so the
-   questions are this week's rather than a fixed list. If game creation fails
-   the run is NOT failed: the questions are still worth having, and a job that
-   reports failure because a link could not be minted has thrown away the work
-   it did. The result says which happened.
-
-   The age gate reaches in here exactly as it does on the route, because people
-   answer these by link with no account and no birth year on record. A job whose
-   questions drift towards money produces no game and says so. */
-/* Turn a game job's questions into a real game and hand the link back with the
-   text, so it travels wherever the result travels - the in-app card, the email,
-   the digest - rather than living somewhere they have to go and find.
-
-   A no-op for every other kind, and called as a single folded expression at the
-   call site with NO comment above it. That is deliberate: `a-timer-cannot-act-
-   on-your-behalf` finds the delivery guard by searching 8000 characters forward
-   from `const level = ...`, and `codeOnly` blanks comments to whitespace of the
-   SAME LENGTH rather than removing them - so a comment sitting in that window
-   spends the budget exactly as code would. Five lines of explanation there cost
-   390 characters and pushed a safety check out of range.
-
-   A failure here does NOT fail the run. The questions are still worth having,
-   and a job that reports failure because a link could not be minted has thrown
-   away the work it did. */
-async function _autoAppendGame(env, email, item, out) {
-  if (item.kind !== 'game' || !out) return out;
-  try {
-    const made = await _autoMakeGame(env, email, item, out);
-    if (made && made.url) {
-      return out + '\n\nYour game is ready - send this to the group:\n' + made.url
-                 + '\n\nNobody sees the answers until you reveal them, in Crew.';
-    }
-    if (made && made.refused) return out + '\n\n' + made.refused;
-    return out;
-  } catch (e) {
-    audit(env, 'game_from_automation_failed', { email, error: String((e && e.message) || e) });
-    return out + '\n\n(The questions are above - AMV could not create the game link this time.)';
-  }
-}
-
-async function _autoMakeGame(env, email, item, text) {
-  const lines = String(text || '')
-    .split('\n')
-    .map(l => l.replace(/^[-*\d.)\s]+/, '').trim())
-    .filter(l => l.length > 3 && l.length <= 300 && /\?|most likely|would you|who/i.test(l))
-    .slice(0, 10);
-  if (!lines.length) return null;
-
-  const title = String(item.detail || 'Crew game').slice(0, 120);
-  const scan = title + ' ' + lines.join(' ');
-  if (GAME_FORBIDDEN.test(scan)) {
-    audit(env, 'game_money_refused', { email, via: 'automation' });
-    return { refused: 'A game cannot ask about money - these are answered by people with no account, so AMV cannot know how old they are.' };
-  }
-
-  const id = _gameId();
-  const rec = {
-    id, title, kind: 'crew',
-    prompts: lines.map((t, i) => ({ id: 'q' + i, text: _gameSafeText(t, 300), options: null })),
-    owner: String(email).toLowerCase(),
-    state: 'open', at: Date.now(), closesAt: null,
-    players: [], answers: [], results: null,
-  };
-  await _withKind(env, 'game', id, (fresh) => { Object.assign(fresh, rec); }, rec);
-  await _withKind(env, 'gameown', rec.owner, (r) => {
-    r.ids = [id].concat((r.ids || []).filter(x => x !== id)).slice(0, 200);
-  }, { ids: [] });
-  audit(env, 'game_created', { email, id, kind: 'crew', prompts: rec.prompts.length, via: 'automation' });
-
-  /* No request to read an address from. The game page is served by this
-     server, which the site reaches under API_MOUNT - the same address the page
-     itself is built to use - so APP_URL alone (the static host) would 404. */
-  const base = String(env.APP_URL || '').replace(/\/$/, '');
-  return { id, url: (base ? base + API_MOUNT : '') + '/g/' + id, count: rec.prompts.length };
-}
-
 /* ══════════════════════════════════════════════════════════════════════════
    THE CONNECTOR DIRECTORY, AND WHY IT IS NOT A LIST IN THIS FILE.
 
@@ -108,3 +27,84 @@ async function _autoMakeGame(env, email, item, text) {
    browser error somebody has to interpret.
 
    Public, like /v1/everyday and /v1/market/list, and for the same reason: a
+   catalogue of what a product can do is the thing somebody reads BEFORE they
+   have an account. Nothing here is keyed to a caller and nothing is stored
+   against one. */
+const MCPREG_BASE   = 'https://registry.modelcontextprotocol.io/v0/servers';
+const MCPREG_TTL    = 6 * 3600;          // seconds a mapped page stays in KV
+const MCPREG_MAX    = 50;                // entries per answer
+const MCPREG_PAGES  = 6;                 // upstream pages read to fill one answer
+const MCPREG_TIMEOUT = 8000;
+/* What the bridge can actually start. `dnx` and anything else is left out
+   rather than guessed at - a command AMV cannot run has no business being
+   offered, and the filter is the whole reason this directory is trustworthy. */
+const MCPREG_RUNTIME = {
+  npm:  (id, ver) => ({ command: 'npx',    args: ['-y', ver ? id + '@' + ver : id] }),
+  pypi: (id, ver) => ({ command: 'uvx',    args: [ver ? id + '@' + ver : id] }),
+  oci:  (id)      => ({ command: 'docker', args: ['run', '-i', '--rm', id] }),
+};
+function _mcpRegText(v, max) {
+  /* Registry text is written by whoever published the server, so it is treated
+     as hostile input: printable characters only, then a hard length. It is
+     escaped again on the way into the page, and this is the other end of that. */
+  const src = String(v == null ? '' : v);
+  let out = '';
+  for (const ch of src) {
+    const c = ch.codePointAt(0);
+    if (c >= 32 && c !== 127) out += ch;
+    if (out.length >= max) break;
+  }
+  return out.trim();
+}
+/* One registry record to one thing AMV can offer, or null. Null is the normal
+   answer: most registered servers are remote HTTP endpoints, and AMV's
+   connector support runs a local program through the bridge. Offering a remote
+   one would be a button that cannot work. */
+function _mcpRegMap(rec) {
+  const s = (rec && rec.server) || {};
+  const pkgs = Array.isArray(s.packages) ? s.packages : [];
+  for (const p of pkgs) {
+    const t = (p && p.transport && p.transport.type) || 'stdio';
+    if (t !== 'stdio') continue;
+    const make = MCPREG_RUNTIME[String((p && p.registryType) || '').toLowerCase()];
+    if (!make) continue;
+    const id = _mcpRegText(p.identifier, 140);
+    if (!id) continue;
+    const run = make(id, _mcpRegText(p.version, 40));
+    /* Runtime arguments the publisher declared - `-y` and friends. Positional
+       values only: a named argument needs a value from the person, and this
+       screen does not ask for one, so a half-filled command is not offered. */
+    const extra = (Array.isArray(p.runtimeArguments) ? p.runtimeArguments : [])
+      .filter((a) => a && a.type === 'positional' && a.value)
+      .map((a) => _mcpRegText(a.value, 60))
+      .filter(Boolean)
+      .slice(0, 4);
+    const args = run.command === 'npx'
+      ? run.args                              // npx already carries -y
+      : extra.concat(run.args);
+    const env = (Array.isArray(p.environmentVariables) ? p.environmentVariables : [])
+      .filter((e) => e && e.name)
+      .slice(0, 8)
+      .map((e) => ({
+        name: _mcpRegText(e.name, 60),
+        required: !!e.isRequired,
+        secret: !!e.isSecret,
+        desc: _mcpRegText(e.description, 160),
+      }));
+    const full = _mcpRegText(s.name, 160);
+    return {
+      id: full,
+      /* A short name for the card. Registry ids are reverse-DNS
+         (`io.github.someone/thing`), and the half after the slash is the part a
+         person recognises. */
+      name: _mcpRegText(s.title, 80) || full.split('/').pop() || full,
+      by: full.split('/')[0] || '',
+      desc: _mcpRegText(s.description, 300),
+      version: _mcpRegText(s.version, 40),
+      command: run.command,
+      args,
+      env,
+    };
+  }
+  return null;
+}

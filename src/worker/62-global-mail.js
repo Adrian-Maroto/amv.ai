@@ -1,84 +1,3 @@
-function _sendEmailAs(env, cls, [to, subject, html, text]) {
-  return _sendEmail(env, to, subject, html, text, cls);
-}
-
-/* CAN EMAIL REACH SOMEBODY WHO IS NOT THE OPERATOR?
-   A Resend key alone is not enough: the default sender (onboarding@resend.dev)
-   only delivers to the address that owns the Resend account, so for every
-   other person the send fails and nothing arrives (AMV-193). Anything that
-   PROMISES a person an email - Crew's "email me the result", "email me when
-   AMV is done" - asks this, not whether a key exists. */
-function _emailReaches(env) { return !!(env.EMAIL_API_KEY && env.RESET_EMAIL_FROM); }
-/* Configured AND not currently refused by the provider. What a screen asks
-   before promising someone an email: "set up" is not "will arrive" while the
-   provider is turning the sender away (an unverified domain), and a yes then
-   is a promise of mail that never comes. */
-async function _emailReachesNow(env) { return _emailReaches(env) && !(await _emailSenderRefused(env)); }
-
-async function _sendEmail(env, to, subject, html, text, cls) {
-  if (!env.EMAIL_API_KEY) return false;
-  if (!(await _emailBudgetOk(env, cls || 'other', to))) return false;
-  const from = env.RESET_EMAIL_FROM || RESET_FROM_DEFAULT;
-  try {
-    const resp = await fetchDeadline('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + env.EMAIL_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [to], subject, html, text }),
-    });
-    /* A refusal of the SENDER (an unverified domain) is remembered, because it
-       is the same answer for everybody until the operator fixes it - see
-       _emailSenderRefused. Cleared by the first send that goes through. */
-    try {
-      if (resp.ok) { if (await env.AMV_KV.get('emailhealth:sender')) await env.AMV_KV.delete('emailhealth:sender'); }
-      else if (resp.status === 403 || resp.status === 422) {
-        const said = String((await resp.text().catch(() => '')) || '').slice(0, 300);
-        if (/domain is not verified|verify (your )?domain|not verified/i.test(said))
-          await env.AMV_KV.put('emailhealth:sender', JSON.stringify({ at: Date.now(), said }), { expirationTtl: 86400 });
-      }
-    } catch (e) {}
-    return resp.ok;
-  } catch (e) { return false; }
-}
-/* Whether the provider has said, in the last day, that it will not send from
-   this deployment's sender at all. A day, so a fix at the provider is noticed
-   by the next send that succeeds - which clears it - rather than never. */
-async function _emailSenderRefused(env) {
-  try { const r = await env.AMV_KV.get('emailhealth:sender'); return r ? JSON.parse(r) : null; }
-  catch (e) { return null; }
-}
-
-// minimal HTML escape for values interpolated into email markup
-function _escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-
-/* Shared branded email shell. body is trusted HTML; cta is {label,url} or null;
-   extra is trusted HTML after the CTA; footnote is plain text.
-   Inline styles only (clients strip <style>); table layout for compatibility. */
-function _emailShell(heading, body, cta, extra, footnote) {
-  const ctaHtml = cta ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 24px"><tr><td style="border-radius:10px;background:#7c6cff">
-    <a href="${cta.url}" style="display:inline-block;padding:13px 28px;font-size:14px;font-weight:600;color:#fff;text-decoration:none;border-radius:10px">${_escHtml(cta.label)}</a>
-  </td></tr></table>` : '';
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f7;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f7;padding:32px 0">
-    <tr><td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08)">
-        <tr><td style="background:#15131f;padding:28px 32px;text-align:center">
-          <span style="display:inline-block;width:34px;height:34px;background:#7c6cff;border-radius:9px;color:#fff;font-weight:800;font-size:16px;line-height:34px;text-align:center">A</span>
-          <div style="color:#fff;font-size:17px;font-weight:700;margin-top:10px;letter-spacing:-.3px">AMV</div>
-        </td></tr>
-        <tr><td style="padding:32px">
-          <h1 style="margin:0 0 12px;font-size:20px;color:#15131f;letter-spacing:-.4px">${_escHtml(heading)}</h1>
-          ${body}
-          ${ctaHtml}
-          ${extra || ''}
-        </td></tr>
-        <tr><td style="padding:18px 32px;background:#fafafa;text-align:center">
-          <p style="margin:0;font-size:11px;color:#aaa">&copy; AMV &middot; ${_escHtml(footnote || '')}</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table></body></html>`;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
    GLOBAL MAIL - every integration AMV shipped was American.
 
@@ -952,3 +871,84 @@ async function mailConnect(request, env) {
   }, {});
   /* The password is not in this line, and must never be. */
   audit(env, 'mail_connected', { by: user.email, provider, country: p.country });
+  return json({ ok: true, account: _mailPublic({ provider, address, imap, smtp, connectedAt: Date.now() }) });
+}
+
+async function mailDisconnect(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  await DB.del(env, 'mailcfg', user.email);
+  audit(env, 'mail_disconnected', { by: user.email });
+  return json({ ok: true, connected: false });
+}
+
+/* Load a stored connection and put the password back together. Returns null
+   when there is nothing stored or the key can no longer read it - a rotated
+   MAIL_CRED_KEY makes every stored secret undecryptable, and that has to read
+   as "reconnect" rather than as "wrong password". */
+async function _mailCfgFor(env, email) {
+  const rec = await DB.get(env, 'mailcfg', email);
+  if (!rec || !rec.secret) return null;
+  const password = await _mailDecrypt(env, rec.secret);
+  if (!password) return null;
+  return { address: rec.address, password, imap: rec.imap, smtp: rec.smtp,
+           /* Records written before STARTTLS existed have neither field, and
+              465 implicit TLS is what they were connected with, so that is the
+              honest default rather than a guess. */
+           smtpPort: rec.smtpPort || MAIL_SMTP_PORT, smtpMode: rec.smtpMode || 'tls',
+           provider: rec.provider, rec };
+}
+
+async function _mailRun(request, env, work, what) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const g = await guardAction(env, 'mail:' + user.email, 30, 300, what);
+  if (g) return g;
+  const cfg = await _mailCfgFor(env, user.email);
+  if (!cfg) return json({ error: 'No mailbox is connected to AMV yet.', code: 'mail_not_connected' }, 428);
+  try {
+    const out = await work(cfg, user);
+    try { await _withKV(env, 'mailcfg', user.email, (r) => { if (r) { r.lastOkAt = Date.now(); r.lastError = ''; } }); } catch (e) {}
+    return json(Object.assign({ ok: true }, out));
+  } catch (e) {
+    const kind = (e && e.kind) || (String(e && e.message) === 'mail_timeout' ? 'timeout' : 'net');
+    const fail = _mailFailure(kind, cfg.provider);
+    try { await _withKV(env, 'mailcfg', user.email, (r) => { if (r) r.lastError = fail.code; }); } catch (e2) {}
+    audit(env, 'mail_failed', { by: user.email, what, kind });
+    return json(fail, kind === 'auth' ? 401 : 502);
+  }
+}
+
+async function mailInbox(request, env) {
+  const body = await request.json().catch(() => ({}));
+  return _mailRun(request, env, (cfg) => _imapInbox(cfg, body.limit), 'inbox reads');
+}
+
+async function mailMessage(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const uid = +body.uid;
+  if (!(uid > 0)) return json({ error: 'Which message?', code: 'bad_uid' }, 400);
+  return _mailRun(request, env, (cfg) => _imapMessage(cfg, uid), 'message reads');
+}
+
+async function mailSend(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  /* Sending mail as somebody is an outward-facing action, so an account on
+     hold does not get to do it. */
+  const held = await _accountHold(env, user, 'mail_send');
+  if (held) return held;
+  const body = await request.json().catch(() => ({}));
+  const to = (Array.isArray(body.to) ? body.to : [body.to])
+    .map((x) => String(x || '').trim()).filter((x) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)).slice(0, 20);
+  if (!to.length) return json({ error: 'Who should this go to?', code: 'bad_to' }, 400);
+  const subject = String(body.subject || '').slice(0, 300);
+  const text = String(body.text || '').slice(0, 100000);
+  if (!text.trim()) return json({ error: 'The message is empty.', code: 'bad_body' }, 400);
+  return _mailRun(request, env, async (cfg) => {
+    await _smtpSend(cfg, { to, subject, text });
+    audit(env, 'mail_sent', { by: user.email, to: to.length, provider: cfg.provider });
+    return { sent: true, to };
+  }, 'messages sent');
+}
+

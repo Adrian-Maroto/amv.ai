@@ -1,84 +1,3 @@
-        if(r.claimed && r.owner) _CLAIM_OWNERS.set(kind + ':' + id, r.owner);
-        return { claimed: r.claimed };
-      }
-    }catch(e){ /* fall through to the next strategy */ }
-  }
-  if(env && env.DB && typeof env.DB.prepare === 'function'){
-    try{
-      await env.DB.prepare('INSERT INTO kv (kind,id,json,updated_at) VALUES (?,?,?,?)')
-        .bind(kind, String(id), '1', Date.now()).run();
-      return { claimed: true };
-    }catch(e){
-      /* A PRIMARY KEY violation is "already claimed". Anything else is the
-         database not answering, which is not the same fact. */
-      return /UNIQUE|PRIMARY|constraint/i.test(String((e && e.message) || e))
-        ? { claimed: false } : { claimed: false, unavailable: true };
-    }
-  }
-  const k = `${kind}:${id}`;
-  if(await env.AMV_KV.get(k)) return { claimed: false };
-  await env.AMV_KV.put(k, '1', ttlSec ? { expirationTtl: ttlSec } : undefined);
-  return { claimed: true };
-}
-/* A CLAIM TAKEN BEFORE THE WORK MUST BE GIVEN BACK IF THE WORK DID NOT HAPPEN.
-
-   Making the exactly-once claims permanent closed the hole where a duplicate
-   webhook paid a seller twice. It opened the opposite one, which is worse:
-   the claim is taken FIRST, and if the credit then failed halfway - storage
-   refusing, the wallet lock unavailable - the retry would find the claim held
-   and return immediately. Not "paid twice" but "never paid", for ever, with
-   the buyer already holding the item. The thirty-second expiry had been
-   covering for that by accident, which is not a design.
-
-   The webhook handler one level up already does exactly this: it releases the
-   event claim in its catch so the provider's retry can reprocess a genuinely
-   failed event. This is that, made reusable, so the two places do not have to
-   agree by memory.
-
-   Rethrows deliberately. A caller that swallowed the error here would report
-   success for work that did not happen, and the retry it just re-enabled would
-   never be asked for. */
-async function _onceOrRetry(env, kind, id, ttlSec, work){
-  if(!(await _claimOnce(env, kind, id, ttlSec))) return { claimed: false };
-  try{
-    const value = await work();
-    return { claimed: true, value };
-  }catch(e){
-    try{ await _releaseClaim(env, kind, id); }catch(_){}
-    audit(env, 'claim_released_after_failure', { kind, id: String(id).slice(0, 120),
-                                                 error: String((e && e.message) || e).slice(0, 160) });
-    throw e;
-  }
-}
-
-async function _releaseClaim(env, kind, id){
-  try{
-    // release wherever it was claimed - the DO first, mirroring _claimOnce
-    if(env && env.AMV_COUNTER){
-      const mapKey = kind + ':' + id;
-      const owner = _CLAIM_OWNERS.get(mapKey) || '';
-      _CLAIM_OWNERS.delete(mapKey);
-      try{
-        const r = await counter(env, 'claim:' + kind + ':' + id, { op:'release', owner });
-        /* Refused means this holder's lease had already expired and somebody
-           else has the lock - so the work just finished ran outside it. That is
-           a real condition to know about: it is how two writers end up believing
-           they are alone, and it shows up under load rather than under attack. */
-        if(r && r.released === false && r.reason === 'not_owner'){
-          audit(env, 'lock_lease_expired', { kind, id: String(id).slice(0, 120) });
-          try{ await alertOnce(env, 'lock_lease_expired:' + kind,
-            'A lock on ' + kind + ' expired while the work it was protecting was still running, so another '
-            + 'writer took it. Two writers were briefly inside the same critical section. If this recurs, the '
-            + 'lease is too short for what it is guarding.', 60); }catch(_){}
-        }
-      }catch(e){}
-    }
-    if(env && env.DB && typeof env.DB.prepare === 'function'){
-      await env.DB.prepare('DELETE FROM kv WHERE kind=? AND id=?').bind(kind, String(id)).run();
-    } else { await env.AMV_KV.delete(`${kind}:${id}`); }
-  }catch(e){}
-}
-
 /* ══ EXTRA USAGE: PREPAID CREDIT FOR WHEN A PLAN RUNS OUT ════════════════════
 
    A paying customer who reaches their plan's limit used to have two choices:
@@ -454,5 +373,93 @@ async function stripeWebhook(request, env, ctx) {
     return new Response('processing error', { status: 500 });
   }
   return json({ received: true });
+}
+
+/* AMV-063: bind a Stripe customer to an AMV account, BOTH ways.
+   Every webhook after the first payment (renewal, cancellation, chargeback,
+   refund) identifies the person only by customer id, so without the reverse
+   map they cannot be resolved and NOTHING happens: the cancelled subscriber
+   keeps their plan, the chargeback keeps their access, the refund keeps their
+   access. The forward map is what lets them reach the billing portal and their
+   invoices at all. Both writes must happen wherever a customer id is learned. */
+/* One account holds one plan, so one customer holds one subscription.
+
+   An upgrade is a NEW subscription at Stripe, not an edit of the old one. With
+   nothing cancelling the old one, the customer paid for both - $15 and $75 at
+   the same time - and only the newest was reachable from the billing portal, so
+   there was no way to stop the other from inside AMV. The person's remedy was a
+   chargeback, which then flags THEIR account for abuse.
+
+   Cancelled rather than left to expire: they are already paying for the plan
+   that replaced it. Only subscriptions on the same customer, only ones still
+   capable of charging, and never the one that was just created. Every
+   cancellation is audited, and a failure raises an alert, because a card still
+   being charged is the failure here that costs a real person real money. */
+const _SUB_STILL_BILLS = ['active', 'trialing', 'past_due', 'unpaid'];
+async function _cancelSupersededSubs(env, customerId, keepSubId, email) {
+  if (!customerId || !env.STRIPE_SECRET_KEY) return { cancelled: 0, failed: 0 };
+  const sk = { 'Authorization': 'Bearer ' + env.STRIPE_SECRET_KEY,
+               'Content-Type': 'application/x-www-form-urlencoded' };
+  let cancelled = 0, failed = 0;
+  try {
+    const ls = await fetchDeadline('https://api.stripe.com/v1/subscriptions?status=all&limit=100&customer=' +
+      encodeURIComponent(customerId), { headers: sk });
+    const ld = await ls.json().catch(() => ({}));
+    for (const sub of ((ld && ld.data) || [])) {
+      if (!sub || !sub.id || sub.id === keepSubId) continue;
+      if (_SUB_STILL_BILLS.indexOf(String(sub.status || '')) < 0) continue;
+      try {
+        const dr = await fetchDeadline('https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(sub.id),
+          { method: 'DELETE', headers: sk });
+        if (dr.ok) { cancelled++; audit(env, 'stripe_superseded_cancelled', { email, sub: sub.id, kept: keepSubId || '' }); }
+        else failed++;
+      } catch { failed++; }
+    }
+  } catch { failed++; }
+  if (failed) {
+    /* Audited as well as alerted: alertOnce is a no-op when no ALERT_WEBHOOK is
+       configured, and a card still being charged has to leave a trace either
+       way. */
+    audit(env, 'stripe_supersede_cancel_failed', { email, customer: customerId, failed });
+    try {
+      await alertOnce(env, 'supersede_cancel_fail_' + email,
+        'A superseded subscription could not be cancelled for ' + email +
+        '. Cancel it in Stripe now - this customer is being charged for two plans.', 1);
+    } catch {}
+  }
+  return { cancelled, failed };
+}
+
+async function _linkCustomer(env, email, customerId) {
+  const em = String(email || '').toLowerCase();
+  if (!em || !customerId) return;
+  try {
+    await env.AMV_KV.put(`stripecust:${em}`, customerId);
+    await env.AMV_KV.put(`custemail:${customerId}`, em);
+  } catch (e) { /* KV write failure is logged by the caller's audit trail */ }
+}
+
+// resolve email from a Stripe customer id (we store the reverse map at checkout)
+async function _emailFromCustomer(env, customerId) {
+  if (!customerId) return '';
+  // we stored stripecust:<email> = customerId; do a tiny reverse lookup via a cust->email key
+  const e = await env.AMV_KV.get(`custemail:${customerId}`);
+  if (e) return e.toLowerCase();
+  /* Fall back to asking Stripe. Customers created before the reverse map was
+     written - or if a KV write was lost - would otherwise be unresolvable
+     forever, which means their cancellations and chargebacks silently do
+     nothing. We set metadata.amv_user at creation, so Stripe itself can tell
+     us who this is. Back-fill KV so it is a one-time cost. */
+  if (!env.STRIPE_SECRET_KEY) return '';
+  try {
+    const r = await fetchDeadline('https://api.stripe.com/v1/customers/' + encodeURIComponent(customerId), {
+      headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` },
+    });
+    if (!r.ok) return '';
+    const c = await r.json();
+    const em = String((c.metadata && c.metadata.amv_user) || c.email || '').toLowerCase();
+    if (em) { await _linkCustomer(env, em, customerId); audit(env, 'customer_relinked', { email: em }); }
+    return em;
+  } catch (e) { return ''; }
 }
 

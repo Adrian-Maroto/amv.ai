@@ -1,84 +1,3 @@
-  if(i<0) return json({ error:'task not found' }, 404);
-  const me = (team.members||[]).find(m=>m.email===user.email);
-  const canManage = me && (me.role==='owner' || me.role==='admin');
-  const isAssignee = tasks[i].assignee === user.email;
-  const isCreator = tasks[i].createdBy === user.email;
-  // delete: only managers or the creator
-  if(del){
-    if(!canManage && !isCreator) return json({ error:'not allowed to delete this task' }, 403);
-    /* Re-found inside the lock. Splicing by an index read beforehand removes
-       whatever is at that position NOW, which after somebody else's create is a
-       different task entirely. */
-    const removed = tasks[i];
-    let out = tasks;
-    await _withKind(env, 'teamtasks', team.id, (list) => {
-      const j = list.findIndex(t => t && t.id === id);
-      if (j >= 0) list.splice(j, 1);
-      out = list.slice();
-    }, []);
-    await _teamAudit(env, team, user.email, 'task_deleted', { title: removed.title });
-    return json({ ok:true, tasks: out });
-  }
-  // status change: assignee, creator, or a manager
-  if(status){
-    if(!TASK_STATUSES.has(status)) return json({ error:'invalid status' }, 400);
-    if(!canManage && !isAssignee && !isCreator) return json({ error:'not allowed to update this task' }, 403);
-    tasks[i].status = status;
-  }
-  // reassign: managers only (or the creator)
-  if(assignee !== undefined){
-    if(!canManage && !isCreator) return json({ error:'only managers can reassign' }, 403);
-    const asg = (assignee||'').toLowerCase().trim();
-    if(asg && !(team.members||[]).some(m=>m.email===asg)) return json({ error:'assignee is not a team member' }, 400);
-    await _teamAudit(env, team, user.email, 'task_reassigned', { target: asg||'(unassigned)', title: tasks[i].title });
-    if (asg && asg !== user.email) await _notifyAssignee(env, team, user, asg, tasks[i]);
-  }
-  /* Applied inside the lock, to the task as it is at that moment. The
-     permission checks above are decided from the copy read beforehand, which is
-     correct - they are about this person's role and about who created or was
-     assigned the task, and none of those change under a concurrent write to a
-     DIFFERENT task. What must not come from that copy is the LIST. */
-  const wantStatus = status || null;
-  const wantAssignee = assignee !== undefined ? ((assignee||'').toLowerCase().trim() || null) : undefined;
-  let out = tasks;
-  await _withKind(env, 'teamtasks', team.id, (list) => {
-    const j = list.findIndex(t => t && t.id === id);
-    if (j < 0) { out = list.slice(); return; }
-    if (wantStatus) list[j].status = wantStatus;
-    if (wantAssignee !== undefined) list[j].assignee = wantAssignee;
-    list[j].updatedAt = Date.now();
-    out = list.slice();
-  }, []);
-  if(status) await _teamAudit(env, team, user.email, 'task_status', { title: tasks[i].title, to: status });
-  return json({ ok:true, tasks: out });
-}
-
-async function syncPull(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'unauthorized' }, 401);
-  const data = (await DB.get(env, 'data', user.email)) || {};
-  // rev is what a client echoes back on push to prove it saw this version.
-  return json({ ok:true, data, rev: data._rev || 0, serverTime: Date.now() });
-}
-/* Push the user's data up (last-write-wins per top-level key, with a merge). */
-const SYNC_ALLOWED_KEYS = new Set([
-  'chats','convs','memory','workspaces','prompts','settings','imgs','vids','custom_cfg','plan_since',
-  // Your actual WORK - Dev projects, Lab sessions, and everything in Recents.
-  // These used to live only in the browser, so switching device or clearing the
-  // cache destroyed them. They are the most valuable thing a user has.
-  'sessions','skills','handoffs','profile',
-  /* What AMV has learned about each of your projects by working in them -
-     which command runs the tests, where the source lives. Small, and the
-     thing that stops every session paying to rediscover the same facts.
-     Contains no paths: a project is keyed by a hash of its folder, so
-     somebody's home directory and real name never reach this record. */
-  'projects',
-  /* Installed plugins. A removed one is kept as a tombstone, so the merge
-     below lets a removal on one device win over an older copy on another. */
-  'plugins'
-]);
-const SYNC_MAX_BYTES = 4 * 1024 * 1024;   // 4MB hard ceiling (well under KV's 25MB, sane for D1)
-
 /* =====================================================================
    AMV-069: SYNC MUST NOT LOSE CHATS.
 
@@ -633,3 +552,84 @@ async function reconcilePayments(env) {
     seen++;
     const p = row.value || {};
     const age = now - (p.at || 0);
+    if (age < PEND_GRACE_MS) continue;             // the webhook may still be on its way
+    checked++;
+
+    if (age > PEND_GIVEUP_MS) { await _pendDone(env, row.id); dropped++; continue; }
+
+    try {
+      if (p.provider === 'paypal') {
+        const token = await _paypalToken(env);
+        if (!token) continue;                       // cannot ask right now; try next sweep
+        const r = await fetchDeadline(`${_paypalBase(env)}/v1/billing/subscriptions/${encodeURIComponent(row.id)}`, {
+          headers: { 'Authorization': `Bearer ${token}` } });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) continue;
+        if (d.status === 'ACTIVE') {
+          const tier = _paypalTierOf(env, d.plan_id, p.plan);
+          if (tier) {
+            await setEntitlement(env, p.email, tier, { source: 'paypal' });
+            rescued++;
+            audit(env, 'payment_reconciled', { provider: 'paypal', email: p.email, plan: tier });
+            await alertOnce(env, 'pay_reconciled',
+              'A PayPal subscription was ACTIVE but had never been granted - AMV has just granted it from the reconciliation sweep. '
+              + 'The webhook for it did not arrive or did not process. Check the PayPal webhook endpoint.', 60);
+          }
+          await _pendDone(env, row.id);
+        } else if (d.status === 'CANCELLED' || d.status === 'EXPIRED' || d.status === 'SUSPENDED') {
+          await _pendDone(env, row.id); dropped++;
+        }
+        continue;
+      }
+
+      /* Stripe: a checkout session, either a plan or a marketplace purchase. */
+      if (!env.STRIPE_SECRET_KEY) continue;
+      const r = await fetchDeadline(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(row.id)}`, {
+        headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` } });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) continue;
+
+      /* `d.payment_status === 'paid' || d.status === 'complete'` was the same
+         defect as the webhook's, in an or: a session paid by voucher or direct
+         debit is 'complete' the moment the customer chooses it and 'unpaid'
+         until the money actually arrives, so the second half of that condition
+         granted on the first half being false. The sweep exists to rescue
+         payments the webhook missed - it must not rescue payments that have not
+         happened. An unpaid row is left alone and asked about again next sweep,
+         which is exactly what it is for. */
+      if (_stripeSessionPaid(d)) {
+        if (p.kind === 'market') {
+          await _creditSale(env, { itemId: p.itemId, buyer: p.email, seller: p.seller,
+                                   amountCents: d.amount_total, ref: d.payment_intent || row.id });
+        } else if (p.kind === 'credit') {
+          await _creditGrant(env, { subject: p.subject || p.email, email: p.email,
+                                    usd: Math.round(+d.amount_total || 0) / 100, ref: d.payment_intent || row.id });
+        } else if (p.plan) {
+          await setEntitlement(env, p.email, p.plan, { source: 'stripe' });
+        }
+        rescued++;
+        audit(env, 'payment_reconciled', { provider: 'stripe', email: p.email, kind: p.kind || 'plan', plan: p.plan || '' });
+        await alertOnce(env, 'pay_reconciled',
+          'A Stripe payment had completed but was never applied - AMV has just applied it from the reconciliation sweep. '
+          + 'The webhook did not arrive or did not process, so check the Stripe webhook endpoint and its signing secret.', 60);
+        await _pendDone(env, row.id);
+      } else if (d.status === 'expired') {
+        await _pendDone(env, row.id); dropped++;
+      }
+    } catch (e) { /* a provider being unreachable is not a decision - try again next sweep */ }
+  }
+  if (checked) console.log('[cron] payments reconciled', JSON.stringify({ checked, rescued, dropped }));
+  return { checked, rescued, dropped };
+}
+
+/* ---------------- THE AI PROXY (the heart) -------------------------- */
+/* GET /v1/engines - what can answer right now: the primary engines, and the
+   partner engines whose models the partner confirms. AMV names only; a
+   partner's own model id never leaves the server. Public - it says what the
+   product offers, nothing about who is asking. */
+async function enginesList(request, env) {
+  const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan }));
+  const partners = (await _partnerEngines(env)).map(d => ({ key: d.key, label: d.label, minPlan: d.minPlan, partner: true }));
+  return json({ ok: true, engines: primary.concat(partners) });
+}
+

@@ -1,84 +1,3 @@
-   catalogue of what a product can do is the thing somebody reads BEFORE they
-   have an account. Nothing here is keyed to a caller and nothing is stored
-   against one. */
-const MCPREG_BASE   = 'https://registry.modelcontextprotocol.io/v0/servers';
-const MCPREG_TTL    = 6 * 3600;          // seconds a mapped page stays in KV
-const MCPREG_MAX    = 50;                // entries per answer
-const MCPREG_PAGES  = 6;                 // upstream pages read to fill one answer
-const MCPREG_TIMEOUT = 8000;
-/* What the bridge can actually start. `dnx` and anything else is left out
-   rather than guessed at - a command AMV cannot run has no business being
-   offered, and the filter is the whole reason this directory is trustworthy. */
-const MCPREG_RUNTIME = {
-  npm:  (id, ver) => ({ command: 'npx',    args: ['-y', ver ? id + '@' + ver : id] }),
-  pypi: (id, ver) => ({ command: 'uvx',    args: [ver ? id + '@' + ver : id] }),
-  oci:  (id)      => ({ command: 'docker', args: ['run', '-i', '--rm', id] }),
-};
-function _mcpRegText(v, max) {
-  /* Registry text is written by whoever published the server, so it is treated
-     as hostile input: printable characters only, then a hard length. It is
-     escaped again on the way into the page, and this is the other end of that. */
-  const src = String(v == null ? '' : v);
-  let out = '';
-  for (const ch of src) {
-    const c = ch.codePointAt(0);
-    if (c >= 32 && c !== 127) out += ch;
-    if (out.length >= max) break;
-  }
-  return out.trim();
-}
-/* One registry record to one thing AMV can offer, or null. Null is the normal
-   answer: most registered servers are remote HTTP endpoints, and AMV's
-   connector support runs a local program through the bridge. Offering a remote
-   one would be a button that cannot work. */
-function _mcpRegMap(rec) {
-  const s = (rec && rec.server) || {};
-  const pkgs = Array.isArray(s.packages) ? s.packages : [];
-  for (const p of pkgs) {
-    const t = (p && p.transport && p.transport.type) || 'stdio';
-    if (t !== 'stdio') continue;
-    const make = MCPREG_RUNTIME[String((p && p.registryType) || '').toLowerCase()];
-    if (!make) continue;
-    const id = _mcpRegText(p.identifier, 140);
-    if (!id) continue;
-    const run = make(id, _mcpRegText(p.version, 40));
-    /* Runtime arguments the publisher declared - `-y` and friends. Positional
-       values only: a named argument needs a value from the person, and this
-       screen does not ask for one, so a half-filled command is not offered. */
-    const extra = (Array.isArray(p.runtimeArguments) ? p.runtimeArguments : [])
-      .filter((a) => a && a.type === 'positional' && a.value)
-      .map((a) => _mcpRegText(a.value, 60))
-      .filter(Boolean)
-      .slice(0, 4);
-    const args = run.command === 'npx'
-      ? run.args                              // npx already carries -y
-      : extra.concat(run.args);
-    const env = (Array.isArray(p.environmentVariables) ? p.environmentVariables : [])
-      .filter((e) => e && e.name)
-      .slice(0, 8)
-      .map((e) => ({
-        name: _mcpRegText(e.name, 60),
-        required: !!e.isRequired,
-        secret: !!e.isSecret,
-        desc: _mcpRegText(e.description, 160),
-      }));
-    const full = _mcpRegText(s.name, 160);
-    return {
-      id: full,
-      /* A short name for the card. Registry ids are reverse-DNS
-         (`io.github.someone/thing`), and the half after the slash is the part a
-         person recognises. */
-      name: _mcpRegText(s.title, 80) || full.split('/').pop() || full,
-      by: full.split('/')[0] || '',
-      desc: _mcpRegText(s.description, 300),
-      version: _mcpRegText(s.version, 40),
-      command: run.command,
-      args,
-      env,
-    };
-  }
-  return null;
-}
 /* ══════════════════════════════════════════════════════════════════════════
    A CONNECTOR'S LOGO, FETCHED BY US AND NOT BY THE VISITOR'S BROWSER.
 
@@ -450,4 +369,85 @@ async function sharePage(request, env, id){
     '<h1 style="font-size:20px">' + _shareEsc(msg) + '</h1>' +
     '<p style="color:#666">This link may have been revoked by its owner.</p></div>',
     { status: 404, headers: { 'Content-Type':'text/html; charset=utf-8', 'X-Robots-Tag':'noindex, nofollow' } });
+
+  if(!SHARE_ID_RE.test(String(id||''))) return notFound('That link is not valid');
+  const rec = await DB.get(env, 'share', id);
+  if(!rec) return notFound('This conversation is no longer shared');
+  /* Anything created before this choice existed was created under a promise of
+     "not indexed". It keeps that promise: only an explicit true opts in. */
+  const listed = rec.listed === true;
+
+  const base = (env.APP_URL || '').replace(/\/$/, '') || new URL(request.url).origin;
+  // Only offered when an address is actually configured - a Report link that
+  // goes nowhere is worse than none.
+  const reportTo = String(env.SUPPORT_EMAIL || '').trim();
+  const title = _shareEsc(rec.title || 'Shared conversation');
+  // The preview description is the opening question, which is what makes a
+  // shared link worth clicking.
+  const first = (rec.msgs.find(m => m.r === 'u') || rec.msgs[0] || {}).c || '';
+  const desc = _shareEsc(String(first).replace(/\s+/g, ' ').slice(0, 180));
+  const turns = rec.msgs.map(m =>
+    '<div class="m ' + (m.r === 'u' ? 'u' : 'a') + '">' +
+      '<div class="who">' + (m.r === 'u' ? 'Asked' : 'AMV') + '</div>' +
+      '<div class="t">' + _shareEsc(m.c) + '</div></div>').join('');
+
+  const html = '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<title>' + title + ' - AMV.AI</title>' +
+    '<meta name="description" content="' + desc + '">' +
+    (listed ? '' : '<meta name="robots" content="noindex,nofollow">') +
+    // The tags that make a pasted link render as a card instead of a bare URL.
+    '<meta property="og:type" content="article">' +
+    '<meta property="og:site_name" content="AMV.AI">' +
+    '<meta property="og:title" content="' + title + '">' +
+    '<meta property="og:description" content="' + desc + '">' +
+    '<meta property="og:url" content="' + _shareEsc(_publicOrigin(request) + '/c/' + id) + '">' +
+    '<meta name="twitter:card" content="summary_large_image">' +
+    '<meta name="twitter:title" content="' + title + '">' +
+    '<meta name="twitter:description" content="' + desc + '">' +
+    '<style>' +
+    ':root{color-scheme:light dark}' +
+    'body{font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;background:#0d0d0f;color:#e8e8ea}' +
+    '@media(prefers-color-scheme:light){body{background:#fbfbfc;color:#18181b}.m.a{background:#fff;border-color:#e6e6ea}.m .who{color:#666}}' +
+    '.wrap{max-width:720px;margin:0 auto;padding:28px 20px 64px}' +
+    '.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:28px;flex-wrap:wrap}' +
+    '.brand{font-weight:700;letter-spacing:-.02em}' +
+    '.cta{display:inline-block;padding:8px 18px;border-radius:999px;background:#5590ff;color:#fff;text-decoration:none;font-size:14px;font-weight:500}' +
+    'h1{font-size:23px;line-height:1.3;margin:0 0 22px}' +
+    '.m{margin:0 0 14px;padding:13px 16px;border:1px solid #26262b;border-radius:12px;background:#141418}' +
+    '.m.u{background:none;border-style:dashed}' +
+    '.who{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a8a92;margin-bottom:6px}' +
+    '.t{white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}' +
+    '.foot{margin-top:34px;padding-top:20px;border-top:1px solid #26262b;font-size:13.5px;color:#8a8a92}' +
+    '.foot a{color:#5590ff}' +
+    '</style></head><body><div class="wrap">' +
+    '<div class="top"><span class="brand">AMV.AI</span>' +
+    '<a class="cta" href="' + _shareEsc(base) + '">Try AMV free</a></div>' +
+    '<h1>' + title + '</h1>' + turns +
+    /* Two things this footer has to do. Sell AMV - and be straight about what
+       the page is. The transcript was uploaded by whoever made the link; AMV
+       cannot verify that it is unedited, so the page must not present it as
+       AMV vouching for the content, and there must be a way to report it. That
+       reporting route is what makes a takedown possible at all. */
+    '<div class="foot">Shared by an AMV user. AMV.AI hosts this page but does not verify or endorse its contents. ' +
+    '<a href="' + _shareEsc(base) + '">Try AMV free</a>' +
+    (reportTo ? ' &middot; <a href="mailto:' + _shareEsc(reportTo) +
+      '?subject=' + encodeURIComponent('Report shared page ' + id) + '">Report this page</a>' : '') +
+    '</div>' +
+    '</div></body></html>';
+
+  return new Response(html, { status: 200, headers: {
+    'Content-Type': 'text/html; charset=utf-8',
+    /* Short, and revalidated. A shared page is revoked from the privacy screen
+       the moment someone changes their mind, and a five-minute public cache
+       meant the link kept working after the app had told them it was dead.
+       Sixty seconds still absorbs the burst a link gets when it is posted. */
+    'Cache-Control': 'public, max-age=60, must-revalidate',
+    ...(listed ? {} : { 'X-Robots-Tag': 'noindex, nofollow' }),
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    // No scripts at all: this page renders text AMV produced, to strangers.
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  }});
+}
 

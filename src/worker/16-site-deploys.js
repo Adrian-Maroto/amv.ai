@@ -1,84 +1,3 @@
-       somebody waiting on an email that is never coming, beside a job showing
-       green, so every job in the batch is told. The results themselves are
-       safe either way: they are in the app, and this only ever describes which
-       half arrived. */
-    if(mails.length){
-      let wentOut = false;
-      try{ wentOut = await _autoEmailBatch(env, email, mails); }catch(e){ wentOut = false; }
-      if(!wentOut){
-        const why = mails.length > 1
-          ? 'The results are here in AMV. The one email carrying them could not be delivered.'
-          : 'The result is here in AMV. The email could not be delivered.';
-        for(const m of mails) m.item.lastError = why;
-      }
-      changed = true;
-    }
-
-    /* AMV-205: the tick holds this record for the whole of a run, which can be
-       seconds, and used to write its whole stale copy back at the end. Anything
-       the person did meanwhile - pausing, adding a job, editing one, clearing
-       results - was silently undone, and the one that matters is pause: the job
-       they stopped carried on running and spending.
-
-       Only what the RUN produced is carried across, applied to the record as it
-       is inside the lock. Everything else on it belongs to the person, and is
-       left exactly as they left it. */
-    if(changed) {
-      const ran = new Map((rec.items||[]).map(i => [i.id, i]));
-      const produced = (rec.results||[]).slice(-AUTO_RESULTS_KEEP);
-      await _withAuto(env, email, (fresh) => {
-        for(const item of (fresh.items||[])){
-          const after = ran.get(item.id);
-          if(!after) continue;
-          for(const k of AUTO_CARRY_KEYS) item[k] = after[k];
-          /* A job the RUN switched off after five failures stays off. A job the
-             PERSON switched off stays off too - so this only ever turns one
-             off, never back on. */
-          if(after.active === false) item.active = false;
-        }
-        const known = new Set((fresh.results||[]).map(r => r && r.id).filter(Boolean));
-        const fresher = produced.filter(r => r && r.id && !known.has(r.id));
-        if(fresher.length) fresh.results = (fresh.results||[]).concat(fresher).slice(-AUTO_RESULTS_KEEP);
-      }, { items:[], results:[] });
-    }
-
-    /* ONLY NOW. The results are in the record the person reads them from, so
-       the mail they were built out of has genuinely been reported and the next
-       run should start after it.
-
-       Deliberately AFTER the write-back rather than inside it: these take a
-       lock on a different record, and taking a second lock while holding the
-       automation record is how a tick that already runs on a deadline acquires
-       a way to deadlock. It is also the only ordering that is honest - a
-       cursor that moved before the results were saved is a claim that has not
-       been earned yet.
-
-       Every failure mode here is a repeat, never a loss: if this does not run,
-       or runs and fails, the next run sees the same mail and reports it again. */
-    for(const fn of ingestCommits){
-      try{ await fn(); }
-      catch(e){ audit(env, 'ingest_commit_failed', { email, error: String((e && e.message) || e).slice(0,120) }); }
-    }
-  }
-
-  /* Running out of time once is a busy minute. Running out of time every tick
-     means the due work no longer fits in a tick, and the backlog grows without
-     anything failing - every individual run succeeds, and people's jobs still
-     arrive later and later. That is the state worth being told about, so it is
-     paged rather than logged. */
-  if(deferred > 0){
-    audit(env, 'auto_tick_deferred', { queued, processed, deferred, ran, failed });
-    try{
-      await alertOnce(env, 'auto_backlog',
-        'THE AUTONOMOUS TICK IS OUT OF TIME. ' + processed + ' of ' + queued + ' accounts with work due were '
-        + 'handled and ' + deferred + ' were left for the next run. They are first in line next time, so nothing '
-        + 'is lost - but if this keeps happening the due work no longer fits in one tick and people’s jobs are '
-        + 'arriving late. Raise the tick budget or spread the work.', 3 * 60);
-    }catch(e){}
-  }
-  return { scanned, ran, failed, queued, processed, deferred, truncated };
-}
-
 /* ══════════════════════════════════════════════════════════════
    REAL DEPLOYMENT  -  ship a live, public URL.
 
@@ -205,4 +124,89 @@ async function deploySite(request, env){
     return next;
   }, {});
   if (taken) return json({ error:'that name is taken' }, 409);
+
+  /* AMV-033: the other writer of this index, and the one deployDelete races.
+     Publishing two pages at once, or publishing one while taking another down,
+     both read the list and both write it back - so a page ends up either served
+     but unlisted, or listed after it was deleted. */
+  await _withKind(env, 'sites', owner, (rec) => {
+    rec.slugs = rec.slugs || [];
+    if (!rec.slugs.includes(slug)) rec.slugs.push(slug);
+  }, { slugs: [] });
+  return json({ ok:true, slug, url:_siteUrl(request, slug), updated:rec.updated });
+}
+
+/* ---- The user's live sites ---- */
+async function deployList(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const owner = String(user.email).toLowerCase();
+  const idx = (await DB.get(env, 'sites', owner)) || { slugs: [] };
+  const sites = [];
+  for(const slug of (idx.slugs||[])){
+    const rec = await DB.get(env, 'site', slug);
+    if(rec && rec.owner === owner){
+      sites.push({ slug, title:rec.title, url:_siteUrl(request,slug),
+                   updated:rec.updated, views:rec.views||0, bytes:(rec.html||'').length });
+    }
+  }
+  sites.sort((a,b)=>(b.updated||0)-(a.updated||0));
+  return json({ ok:true, sites });
+}
+
+/* ---- Take a site down ---- */
+async function deployDelete(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const owner = String(user.email).toLowerCase();
+  const body = await request.json().catch(()=>({}));
+  const slug = String(body.slug||'').toLowerCase();
+  const rec  = await DB.get(env, 'site', slug);
+  if(!rec || rec.owner !== owner) return json({ error:'not found' }, 404);
+
+  /* Through DB, not straight at KV. serveSite READS through DB, so on a
+     deployment backed by D1 this deleted a KV key that was never there and left
+     the D1 row untouched - the page carried on serving, publicly, after its
+     owner took it down. Undoing a publish has to actually unpublish. */
+  await DB.del(env, 'site', slug);
+  /* AMV-033: the owner's site index is written by publish as well as by this,
+     so deleting one page while another is being published loses whichever
+     write lands first - and the loss shows up as a page that is either missing
+     from the list while still served, or listed after being taken down. */
+  await _withKind(env, 'sites', owner, (idx) => {
+    idx.slugs = (idx.slugs||[]).filter(x=>x!==slug);
+  }, { slugs: [] });
+  return json({ ok:true });
+}
+
+/* ---- Serve the live page (public, no auth) ----
+   Served with CSP `sandbox`, which puts the page in a UNIQUE ORIGIN. It can run
+   its own scripts but cannot touch cookies, storage, or any AMV API on this
+   origin - so hosting user code can't be turned into an attack on AMV. */
+async function serveSite(request, env, slug){
+  if(!SLUG_RE.test(slug||'')) return new Response('Not found', { status:404 });
+  const rec = await DB.get(env, 'site', slug);
+  if(!rec || !rec.html) return new Response('Not found', { status:404 });
+
+  // AMV-030: count views in an ATOMIC counter instead of rewriting the whole
+  // site record on every read - that was write-amplification on a read-heavy
+  // public page AND a lost-update race between concurrent viewers.
+  try{ await counter(env, `siteviews:${slug}`, { op:'incr', amount:1, ttlMs: 86400000 * 400 }); }catch(e){}
+
+  return new Response(rec.html, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      // AMV-031: user content is untrusted. Sandbox it, forbid popups/modals and
+      // top-navigation, and keep it OUT of search indexes so the trusted hostname
+      // can't be used to host indexed phishing pages. (A fully separate untrusted
+      // domain, per the audit, remains the recommended production hardening.)
+      'Content-Security-Policy': "sandbox allow-scripts allow-forms",
+      'X-Content-Type-Options': 'nosniff',
+      'X-Robots-Tag': 'noindex, nofollow',
+      'Referrer-Policy': 'no-referrer',
+      'Cache-Control': 'public, max-age=60'
+    }
+  });
+}
 

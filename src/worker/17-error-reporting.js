@@ -1,62 +1,58 @@
-  /* AMV-033: the other writer of this index, and the one deployDelete races.
-     Publishing two pages at once, or publishing one while taking another down,
-     both read the list and both write it back - so a page ends up either served
-     but unlisted, or listed after it was deleted. */
-  await _withKind(env, 'sites', owner, (rec) => {
-    rec.slugs = rec.slugs || [];
-    if (!rec.slugs.includes(slug)) rec.slugs.push(slug);
-  }, { slugs: [] });
-  return json({ ok:true, slug, url:_siteUrl(request, slug), updated:rec.updated });
+/* ══════════════════════════════════════════════════════════════
+   ERROR REPORTING  -  so a bug your users hit actually reaches YOU.
+
+   Before this, errors went into a localStorage ring buffer and died there.
+   A paying user hit a crash, saw a toast, and left. You never found out.
+
+   Now: the client reports structured errors here. They're grouped by a
+   FINGERPRINT (message + location), so 500 users hitting one bug shows up as
+   one row with count=500, not 500 rows.
+
+   PRIVACY: we never accept message contents, prompts, or code. Only the error
+   itself, where it happened, and coarse environment. Emails are stored hashed.
+   ══════════════════════════════════════════════════════════════ */
+
+const ERR_MAX_GROUPS   = 500;      // distinct bugs tracked
+const ERR_MAX_SAMPLES  = 5;        // sample occurrences kept per bug
+const ERR_MAX_BATCH    = 20;       // events accepted per request
+const ERR_RETENTION_MS = 30 * 86400e3;
+/* WHEN A BUG IS AN OUTAGE.
+
+   Errors were collected and nothing ever said a word about them. A release
+   that breaks checkout for every visitor filled this index silently, and the
+   first anybody heard was a customer email - or nothing at all, because the
+   people it breaks for cannot use the product enough to complain.
+
+   The signal is DISTINCT PEOPLE in a short window, not raw count. One person
+   in a retry loop can produce a thousand events and is not an outage; five
+   different people hitting the same fingerprint inside a quarter of an hour
+   almost always is. Counting occurrences instead would page on the loop and
+   stay quiet on the outage - exactly backwards. */
+const ERR_BURST_MS     = 15 * 60e3;   // the window that counts as "at once"
+const ERR_BURST_PEOPLE = 5;           // this many different people is not a coincidence
+const ERR_BURST_KEEP   = 40;          // bounded: a burst list is not a user list
+
+async function _errHash(s){
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)));
+  return [...new Uint8Array(d)].slice(0,8).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-/* ---- The user's live sites ---- */
-async function deployList(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'unauthorized' }, 401);
-  const owner = String(user.email).toLowerCase();
-  const idx = (await DB.get(env, 'sites', owner)) || { slugs: [] };
-  const sites = [];
-  for(const slug of (idx.slugs||[])){
-    const rec = await DB.get(env, 'site', slug);
-    if(rec && rec.owner === owner){
-      sites.push({ slug, title:rec.title, url:_siteUrl(request,slug),
-                   updated:rec.updated, views:rec.views||0, bytes:(rec.html||'').length });
-    }
-  }
-  sites.sort((a,b)=>(b.updated||0)-(a.updated||0));
-  return json({ ok:true, sites });
+/* Group errors that are really the same bug. */
+async function _fingerprint(e){
+  // Normalise everything that varies between users but means the same bug.
+  // Without this, "Timeout after 3000ms" and "Timeout after 9500ms" become two
+  // separate rows and your dashboard fragments into noise.
+  const msg = String(e.msg||'')
+    .replace(/https?:\/\/\S+/g,'<url>')          // urls differ per user
+    .replace(/0x[0-9a-f]+/gi,'<hex>')             // addresses
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,'<uuid>')
+    .replace(/\d+(\.\d+)?/g,'<n>')              // ANY number - note: no \b, so it also catches '3000ms'
+    .replace(/'[^']*'|"[^"]*"/g,'<s>')            // quoted values (varying names)
+    .replace(/\s+/g,' ')
+    .trim()
+    .slice(0,180);
+  return _errHash(msg + '|' + String(e.where||'') + '|' + String(e.kind||''));
 }
 
-/* ---- Take a site down ---- */
-async function deployDelete(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'unauthorized' }, 401);
-  const owner = String(user.email).toLowerCase();
-  const body = await request.json().catch(()=>({}));
-  const slug = String(body.slug||'').toLowerCase();
-  const rec  = await DB.get(env, 'site', slug);
-  if(!rec || rec.owner !== owner) return json({ error:'not found' }, 404);
-
-  /* Through DB, not straight at KV. serveSite READS through DB, so on a
-     deployment backed by D1 this deleted a KV key that was never there and left
-     the D1 row untouched - the page carried on serving, publicly, after its
-     owner took it down. Undoing a publish has to actually unpublish. */
-  await DB.del(env, 'site', slug);
-  /* AMV-033: the owner's site index is written by publish as well as by this,
-     so deleting one page while another is being published loses whichever
-     write lands first - and the loss shows up as a page that is either missing
-     from the list while still served, or listed after being taken down. */
-  await _withKind(env, 'sites', owner, (idx) => {
-    idx.slugs = (idx.slugs||[]).filter(x=>x!==slug);
-  }, { slugs: [] });
-  return json({ ok:true });
-}
-
-/* ---- Serve the live page (public, no auth) ----
-   Served with CSP `sandbox`, which puts the page in a UNIQUE ORIGIN. It can run
-   its own scripts but cannot touch cookies, storage, or any AMV API on this
-   origin - so hosting user code can't be turned into an attack on AMV. */
-async function serveSite(request, env, slug){
-  if(!SLUG_RE.test(slug||'')) return new Response('Not found', { status:404 });
-  const rec = await DB.get(env, 'site', slug);
-  if(!rec || !rec.html) return new Response('Not found', { status:404 });
+/* POST /errors - the client reports a batch. No auth required (errors can
+   happen before/without login), but it is strictly bounded and sanitised. */

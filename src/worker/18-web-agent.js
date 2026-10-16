@@ -1,84 +1,3 @@
-
-  // AMV-030: count views in an ATOMIC counter instead of rewriting the whole
-  // site record on every read - that was write-amplification on a read-heavy
-  // public page AND a lost-update race between concurrent viewers.
-  try{ await counter(env, `siteviews:${slug}`, { op:'incr', amount:1, ttlMs: 86400000 * 400 }); }catch(e){}
-
-  return new Response(rec.html, {
-    status: 200,
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      // AMV-031: user content is untrusted. Sandbox it, forbid popups/modals and
-      // top-navigation, and keep it OUT of search indexes so the trusted hostname
-      // can't be used to host indexed phishing pages. (A fully separate untrusted
-      // domain, per the audit, remains the recommended production hardening.)
-      'Content-Security-Policy': "sandbox allow-scripts allow-forms",
-      'X-Content-Type-Options': 'nosniff',
-      'X-Robots-Tag': 'noindex, nofollow',
-      'Referrer-Policy': 'no-referrer',
-      'Cache-Control': 'public, max-age=60'
-    }
-  });
-}
-
-/* ══════════════════════════════════════════════════════════════
-   ERROR REPORTING  -  so a bug your users hit actually reaches YOU.
-
-   Before this, errors went into a localStorage ring buffer and died there.
-   A paying user hit a crash, saw a toast, and left. You never found out.
-
-   Now: the client reports structured errors here. They're grouped by a
-   FINGERPRINT (message + location), so 500 users hitting one bug shows up as
-   one row with count=500, not 500 rows.
-
-   PRIVACY: we never accept message contents, prompts, or code. Only the error
-   itself, where it happened, and coarse environment. Emails are stored hashed.
-   ══════════════════════════════════════════════════════════════ */
-
-const ERR_MAX_GROUPS   = 500;      // distinct bugs tracked
-const ERR_MAX_SAMPLES  = 5;        // sample occurrences kept per bug
-const ERR_MAX_BATCH    = 20;       // events accepted per request
-const ERR_RETENTION_MS = 30 * 86400e3;
-/* WHEN A BUG IS AN OUTAGE.
-
-   Errors were collected and nothing ever said a word about them. A release
-   that breaks checkout for every visitor filled this index silently, and the
-   first anybody heard was a customer email - or nothing at all, because the
-   people it breaks for cannot use the product enough to complain.
-
-   The signal is DISTINCT PEOPLE in a short window, not raw count. One person
-   in a retry loop can produce a thousand events and is not an outage; five
-   different people hitting the same fingerprint inside a quarter of an hour
-   almost always is. Counting occurrences instead would page on the loop and
-   stay quiet on the outage - exactly backwards. */
-const ERR_BURST_MS     = 15 * 60e3;   // the window that counts as "at once"
-const ERR_BURST_PEOPLE = 5;           // this many different people is not a coincidence
-const ERR_BURST_KEEP   = 40;          // bounded: a burst list is not a user list
-
-async function _errHash(s){
-  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)));
-  return [...new Uint8Array(d)].slice(0,8).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-
-/* Group errors that are really the same bug. */
-async function _fingerprint(e){
-  // Normalise everything that varies between users but means the same bug.
-  // Without this, "Timeout after 3000ms" and "Timeout after 9500ms" become two
-  // separate rows and your dashboard fragments into noise.
-  const msg = String(e.msg||'')
-    .replace(/https?:\/\/\S+/g,'<url>')          // urls differ per user
-    .replace(/0x[0-9a-f]+/gi,'<hex>')             // addresses
-    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,'<uuid>')
-    .replace(/\d+(\.\d+)?/g,'<n>')              // ANY number - note: no \b, so it also catches '3000ms'
-    .replace(/'[^']*'|"[^"]*"/g,'<s>')            // quoted values (varying names)
-    .replace(/\s+/g,' ')
-    .trim()
-    .slice(0,180);
-  return _errHash(msg + '|' + String(e.where||'') + '|' + String(e.kind||''));
-}
-
-/* POST /errors - the client reports a batch. No auth required (errors can
-   happen before/without login), but it is strictly bounded and sanitised. */
 /* ============================================================
    AMV WEB AGENT - operate ANY website, server-side.
 
@@ -263,3 +182,84 @@ async function _spendAllowed(env, email, amount, clientLimit){
   /* Deliberately the CALENDAR month, unlike the plan allowance above.
 
      This is not something anybody bought - it is the limit a person set on
+     what AMV may spend on their behalf, and the screen where they set it says
+     it resets on the 1st. Moving it onto their billing anniversary would make
+     their own control mean something they did not choose, to fix a problem
+     they do not have: this cap is theirs, and it is not sold by the month. */
+  return null;
+}
+
+const SPEND_MONTH_TTL_MS = 86400000 * 70;
+const _spendMonthKey = (email) => `spendmo:${email}:${monthKey()}`;
+
+/* BOOK the money, atomically, against the monthly cap.
+
+   Deliberately the CALENDAR month, unlike the plan allowance elsewhere. This is
+   not something anybody bought - it is the limit a person set on what AMV may
+   spend on their behalf, and the screen where they set it says it resets on the
+   1st. Moving it onto their billing anniversary would make their own control
+   mean something they did not choose, to fix a problem they do not have.
+
+   Returns { ok } or { refused }. The reservation is real money held: whoever
+   takes one owns releasing it. */
+async function _spendReserve(env, email, amount, clientLimit){
+  const amt = +amount || 0;
+  if(!(amt > 0)) return { ok:true, reserved:0 };
+  const refused = await _spendAllowed(env, email, amt, clientLimit);
+  if(refused) return { refused };
+
+  const L = await _spendLimits(env, email);
+  const cap = +L.monthlyCap || 0;
+  const r = await _reserveUSD(env, _spendMonthKey(email), amt, cap, SPEND_MONTH_TTL_MS);
+  if(r.allowed) return { ok:true, reserved: amt };
+
+  /* AMV-032: a counter that could not answer is not a counter that said yes.
+     Refusing to spend somebody's money because the ledger is unreachable is the
+     right way round to be wrong. */
+  if(r.unavailable)
+    return { refused:{ code:'spend_unavailable',
+      need:'AMV cannot check your spending limit right now, so it will not spend anything.',
+      message:'Try again in a moment - nothing was charged.' } };
+
+  const left = Math.max(0, cap - (r.value || 0));
+  return { refused:{ code:'over_monthly',
+    need:'This would take you past your $' + cap.toFixed(2) + ' monthly limit - $'
+      + left.toFixed(2) + ' is left this month.',
+    message:'The month resets on the 1st, or you can raise the limit in Settings.' } };
+}
+
+/* Give it back. A run that never reached a purchase must not have eaten the
+   month, and a run that failed to start must not have eaten anything. */
+async function _spendRelease(env, email, amount){
+  await _releaseUSD(env, _spendMonthKey(email), +amount || 0, SPEND_MONTH_TTL_MS);
+}
+
+/* Kept for the callers that spend outside a reservation. Inside browserRun the
+   money is reserved up front instead, because a check and a booking that are
+   two calls are two calls something can happen between. */
+async function _spendRecord(env, email, amount){
+  const amt = +amount || 0;
+  if(!(amt > 0)) return;
+  try{ await counter(env, _spendMonthKey(email), { op:'incr', amount: amt, ttlMs: SPEND_MONTH_TTL_MS }); }catch(e){}
+}
+
+const WEB_MAX_STEPS = 24;
+const WEB_MAX_MS = 90000;
+const WEB_ALLOWED_VERBS = ['goto','click','type','select','press','scroll','extract','submit','done','blocked'];
+// Verbs that are always irreversible.
+const WEB_CONSEQUENTIAL = ['submit'];
+// A click is USUALLY navigation, but "Place order" / "Delete account" / "Send"
+// are irreversible too. Approval is decided by what the control actually says,
+// not by the verb alone - otherwise the agent could buy or delete without asking.
+const WEB_CONSEQUENTIAL_LABEL = /\b(buy|purchase|order|pay|checkout|subscribe|confirm|submit|send|post|publish|apply|delete|remove|cancel|deactivate|transfer|withdraw|donate|bid|book|reserve|accept|agree|sign)\b/i;
+// Enter/Return in a focused field SUBMITS the form on most sites, so it is
+// exactly as irreversible as clicking Submit and must be approved the same way.
+// (Without this, the whole approval gate is bypassable with a keystroke.)
+const WEB_SUBMIT_KEYS = /^(enter|return|numpadenter)$/i;
+function _webIsConsequential(verb, label, text){
+  if(WEB_CONSEQUENTIAL.indexOf(verb) >= 0) return true;
+  if(verb === 'press' && WEB_SUBMIT_KEYS.test(String(text || 'Enter'))) return true;
+  if((verb === 'click' || verb === 'press') && label && WEB_CONSEQUENTIAL_LABEL.test(String(label))) return true;
+  return false;
+}
+

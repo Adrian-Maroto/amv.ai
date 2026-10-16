@@ -1,84 +1,3 @@
-   seller one, for the same reason: the alternative is a migration, and the
-   old scan is already the correct answer, just once instead of every time. */
-async function _inboxIndexAdd(env, email, threadKey) {
-  const em = String(email || '').toLowerCase();
-  if (!em || !threadKey) return;
-  try {
-    await _withKV(env, 'mktinbox', em, (r) => {
-      r.ids = Array.isArray(r.ids) ? r.ids : [];
-      /* Moved to the end rather than skipped, so the most recent conversation
-         is the last to be dropped when the cap bites. */
-      r.ids = r.ids.filter(x => x !== threadKey).concat(threadKey);
-      if (r.ids.length > MKT_INDEX_MAX) r.ids = r.ids.slice(-MKT_INDEX_MAX);
-      r.built = r.built || Date.now();
-      return r;
-    }, { ids: [], built: 0 });
-  } catch (e) { audit(env, 'inbox_index_failed', { email: em, error: String((e && e.message) || e) }); }
-}
-
-async function _inboxThreadKeys(env, email) {
-  const me = String(email || '').toLowerCase();
-  try {
-    const raw = await env.AMV_KV.get(`mktinbox:${me}`);
-    if (raw) {
-      const r = JSON.parse(raw);
-      if (r && r.built) return { ids: Array.isArray(r.ids) ? r.ids : [], truncated: false };
-    }
-  } catch (e) { /* unreadable index: rebuild below rather than fail the inbox */ }
-
-  const ids = [];
-  let cursor, scanned = 0, truncated = false;
-  do {
-    const page = await env.AMV_KV.list({ prefix: 'mkthread:', cursor, limit: 1000 });
-    for (const k of (page.keys || [])) {
-      scanned++;
-      if (k.name.includes(me)) ids.push(k.name);
-    }
-    cursor = page.list_complete ? undefined : page.cursor;
-    if (cursor && scanned >= MKT_SCAN_MAX) { truncated = true; break; }
-  } while (cursor);
-
-  /* A partial backfill is not written as complete - somebody would lose the
-     conversations past the cap for good, which is worse than a slow page. */
-  if (!truncated) {
-    try { await env.AMV_KV.put(`mktinbox:${me}`, JSON.stringify({ ids: ids.slice(-MKT_INDEX_MAX), built: Date.now() })); } catch (e) {}
-  } else {
-    audit(env, 'inbox_index_partial', { email: me, scanned });
-  }
-  return { ids, truncated };
-}
-
-async function marketThreads(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  const me = user.email.toLowerCase();
-  const out = [];
-  const idx = await _inboxThreadKeys(env, me);
-  for (const name of idx.ids) {
-    const raw = await env.AMV_KV.get(name);
-    if (!raw) continue;
-    /* Membership is re-checked against the RECORD, not taken from the index.
-       An index is a convenience; it is not an authorization, and a wrong entry
-       must not become a way to read somebody else's conversation. */
-    try { const t = JSON.parse(raw); if (t.a === me || t.b === me) out.push(t); } catch (e) {}
-  }
-  out.sort((x, y) => (y.msgs[y.msgs.length - 1]?.ts || 0) - (x.msgs[x.msgs.length - 1]?.ts || 0));
-  /* Unread computed HERE, from the record, so both devices and both people
-     agree. The client used to work it out from its own localStorage, which is
-     how one side could see a conversation the other had never received. */
-  const withUnread = out.map(t => {
-    const seen = (t.read && typeof t.read[me] === 'number') ? t.read[me] : 0;
-    const total = (t.msgs || []).length;
-    const last = (t.msgs || [])[total - 1];
-    /* Only messages from the OTHER person count as unread - your own reply is
-       not something waiting for you. */
-    const unread = (last && String(last.from || '').toLowerCase() !== me) ? Math.max(0, total - seen) : 0;
-    return Object.assign({}, t, { unread });
-  });
-  return json({ ok: true, threads: withUnread,
-                unreadTotal: withUnread.reduce((n, t) => n + (t.unread ? 1 : 0), 0) });
-}
-
 /* =====================================================================
    FOUNDER ADMIN - token-gated platform monitoring (auditor #10)
    Lets the operator see real platform-wide spend, users, and abuse signals,
@@ -423,3 +342,84 @@ async function adminStats(request, env) {
   const visits7 = visits30.slice(-7).reduce((n, d) => n + d.count, 0);
   const signupsToday = signups30.length ? signups30[signups30.length - 1].count : 0;
   const activeToday = active30.length ? active30[active30.length - 1].count : 0;
+  const referrals7 = referrals30.slice(-7).reduce((n, d) => n + d.count, 0);
+  const signups7 = signups30.slice(-7).reduce((n, d) => n + d.count, 0);
+  const signupsPrev7 = signups30.slice(-14, -7).reduce((n, d) => n + d.count, 0);
+  const wowGrowthPct = signupsPrev7 > 0 ? +(((signups7 - signupsPrev7) / signupsPrev7) * 100).toFixed(0) : null;
+
+  /* EVERY account, not every entitlement row.
+
+     This read `entRows.length`, and a free signup creates no entitlement row -
+     so the denominator was essentially the set of people who had already paid,
+     and conversion reported ~100% no matter what the funnel was really doing.
+     On a fixture of twenty free accounts and one payer it said 100% where the
+     truth was 4.8%: the single most decision-corrupting number the dashboard
+     could produce, because it says the funnel is perfect and there is nothing
+     to fix.
+
+     The maintained counter is exact at any size. It falls back to the scan on
+     a deployment that predates it, where the old wrong answer is still better
+     than none - and `basis` says which one this is, because a number whose
+     meaning changes silently is how the first version of this got believed. */
+  const popAccounts = (await counter(env, 'popaccounts', { op: 'get' })).value || 0;
+  const countedAccounts = popAccounts > 0 ? popAccounts : entRows.length;
+  const conversionBasis = popAccounts > 0 ? 'accounts' : 'entitlements';
+  const conversionPct = countedAccounts > 0 ? +((paying / countedAccounts) * 100).toFixed(1) : 0;
+  const arpu = paying > 0 ? +(mrr / paying).toFixed(2) : 0;
+  const appRequests = await _appRequestCounts(env);
+
+  return json({
+    ok: true,
+    generatedAt: Date.now(),
+    /* Which apps people pressed Notify me on, most asked-for first. The
+       Integrations page promises the most-asked-for are connected next; this
+       is the list that promise is kept from. */
+    appRequests,
+    spend: { today: +gSpend.toFixed(2), cap: gCap, pctOfCap: +(gSpend / gCap * 100).toFixed(1), killed },
+    users: { total: truncated ? popTotal : users.length, paying, byPlan: plans,
+             conversionPct, conversionBasis, accounts: countedAccounts, activeToday },
+    /* Say plainly whether the per-account lists below are everything or a
+       sample. The alternative is a number that is quietly wrong. */
+    scan: { rows: entRows.length, limit: SCAN_LIMIT, truncated,
+            note: truncated
+              ? 'More accounts than one page can read. Revenue and population come from maintained counters and are exact; the per-account lists are the first ' + entRows.length + '.'
+              : 'Every account was read.' },
+    growth: { signupsToday, signups7, signupsPrev7, wowGrowthPct, signups30, active30,
+              referrals7, referrals30, visits7, visits30,
+              /* Of the people who arrived, how many became accounts. Null
+                 rather than 0 when nothing has been counted yet, because "no
+                 visitors recorded" and "nobody converted" are different facts
+                 and showing 0% for the first is a lie about the product. */
+              visitToSignupPct: visits7 > 0 ? +((signups7 / visits7) * 100).toFixed(1) : null,
+              // What share of the last week's signups came through an invite.
+              referralSharePct: signups7 > 0 ? +((referrals7 / signups7) * 100).toFixed(1) : null },
+    /* Signup -> activated -> returned -> paid. The question every piece of
+       onboarding work is trying to move, and the only one that says whether it
+       did (AMV-101). */
+    funnel: await _funnelReport(env),
+    revenue: { estMRR: mrr, estARR: mrr * 12, arpu, pastDueAccounts: pastDue, mrrAtRisk: atRisk,
+               teamSeatsSold: seatsSold, teamSeatMRR: seatsSold * TEAM_SEAT_PRICE_USD },
+    margin: (() => {
+      const scanCost = +users.reduce((s, u) => s + u.monthCostUSD, 0).toFixed(2);
+      /* The maintained total is exact; the scanned sum is only exact when the
+         scan saw everything. Prefer the counter, and fall back to the sum if it
+         has not been populated yet (an existing deployment before this shipped). */
+      const totalCost = +(totalCost0 > 0 ? totalCost0 : scanCost).toFixed(2);
+      return {
+        estMonthlyCost: totalCost,
+        grossMargin: +(mrr - totalCost).toFixed(2),
+        grossMarginPct: mrr > 0 ? +(((mrr - totalCost) / mrr) * 100).toFixed(1) : null,
+        costPerPayingUser: paying > 0 ? +(totalCost / paying).toFixed(3) : 0,
+        freeUserCost: freeCost,
+        byPlan: byPlanEconomics,
+        featureCost,
+        cacheSavedUSD: cacheSaved,
+        unprofitableAccounts: unprofitable,
+      };
+    })(),
+    quality,
+    speed,
+    topSpenders,
+  });
+}
+

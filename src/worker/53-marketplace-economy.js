@@ -1,84 +1,3 @@
-    return json({ error: 'An assistant must include its instructions - what it is for and how it answers, at least a couple of sentences.', code: 'empty_assistant' }, 400);
-  }
-  /* What makes it an assistant beyond its text: starter questions and an
-     engine. Bounded and plain - starters are shown as text, and the engine is
-     only ever a name the buyer's own plan is checked against. */
-  const assistant = kind === 'agent' && item.assistant && typeof item.assistant === 'object' ? {
-    starters: (Array.isArray(item.assistant.starters) ? item.assistant.starters : []).slice(0, 4)
-      .map(x => String(x == null ? '' : x).replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 140)).filter(Boolean),
-    engine: /^[a-z][a-z0-9-]{0,31}$/.test(String(item.assistant.engine || '')) ? String(item.assistant.engine) : '',
-  } : undefined;
-  const clean = {
-    id: 'usr_' + crypto.randomUUID().replace(/-/g,''),
-    kind, title,
-    cat: String(item.cat || 'Community').slice(0, 40),
-    desc: String(item.desc || '').slice(0, 280),
-    text: body,
-    crew: Array.isArray(item.crew) ? item.crew.slice(0, 8) : undefined,
-    assistant,
-    plugin: pluginClean ? pluginClean.plugin : undefined,
-    files,
-    // icon is rendered unescaped on the client, so store an emoji/short-text
-    // only - reject any markup outright (never a truncated tag fragment).
-    icon: (function(ic){ ic = String(ic == null ? '\u2728' : ic); return ic.indexOf('<') >= 0 ? '\u2728' : (ic.slice(0, 8) || '\u2728'); })(),
-    price,
-    author: (user.name || user.email.split('@')[0]).slice(0, 40),
-    authorEmail: user.email,
-    installs: 0,
-    sales: 0,
-    views: 0,
-    status: screen.action === 'held_for_review' ? 'under_review' : 'active',
-    review: screen.action === 'held_for_review' ? { signals: screen.signals || [], at: Date.now() } : undefined,
-    createdAt: Date.now(),
-  };
-  await env.AMV_KV.put(`market:${clean.id}`, JSON.stringify(clean));
-  await _sellerIndexAdd(env, user.email, clean.id);
-  await _marketCacheBust(env);
-  if (screen.action === 'held_for_review') {
-    audit(env, 'market_held_for_review', { id: clean.id, by: user.email, signals: screen.signals });
-  }
-  audit(env, 'market_publish', { id: clean.id, by: user.email, price, files: files.length, status: clean.status });
-  return json({ ok: true, item: _publicListing(clean), review: screen.action === 'held_for_review' ? screen.reason : undefined });
-}
-
-/* Strip the deliverable (text/crew/file DATA) from a paid listing so it can't
-   be read for free from the public catalog. File NAMES stay as a teaser.
-   Free items keep their content inline. */
-function _publicListing(it) {
-  if (!it.price || it.price <= 0) return it;
-  const { text, crew, files, plugin, ...rest } = it;
-  const teaser = Array.isArray(files) ? files.map(f => ({ name: f.name, type: f.type, size: f.size })) : [];
-  return { ...rest, files: teaser, locked: true };
-}
-
-async function marketInstall(request, env) {
-  /* AMV-096: installs drive ranking, so an install has to cost something. It
-     used to be unauthenticated and limited only per IP, which means a rented
-     address pool could rank anything to the top of the marketplace. Now it
-     takes an account, and counts ONCE per account per listing - a number that
-     can be manufactured is not a ranking signal, it is an advertisement. */
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'sign in to install' }, 401);
-  const iip = _rlIp(request);
-  const irl = await limitAction(env, `mktinstall:${iip}`, 30, 300);
-  if (!irl.ok) return json({ ok: true, throttled: true });
-  const { id } = await request.json().catch(() => ({}));
-  if (!id || !/^[a-z0-9_]+$/i.test(id)) return json({ error: 'bad id' }, 400);
-  // Second and later installs by the same account are honoured, but not counted.
-  const first = await _claimOnce(env, 'mktinst', `${user.email}:${id}`, CLAIM_ONCE_TTL_S);
-  if (!first) return json({ ok: true, counted: false });
-  const raw = await env.AMV_KV.get(`market:${id}`);
-  if (raw) {
-    try {
-      JSON.parse(raw);                       // still a listing, not a stray key
-      await _withKV(env, 'market', id, (rec) => {
-        if (rec) rec.installs = (rec.installs || 0) + 1;
-      });
-    } catch {}
-  }
-  return json({ ok: true, counted: true });
-}
-
 /* =====================================================================
    MARKETPLACE ECONOMY - paid listings, 80/20 split, seller balance.
    ---------------------------------------------------------------------
@@ -1340,3 +1259,84 @@ async function marketWithdraw(request, env) {
        double-spent. `_reconcileStrandedPayouts` above puts it back if the
        record never appeared. */
     /* Take out only what left. This used to zero the whole balance, which was
+       right when everything was withdrawable and is silent theft now: money
+       still inside its clearing window would vanish along with the payout, and
+       the seller would never see it again. The holds are untouched - they are
+       still that seller's money, still on the books, still on their own clock. */
+    /* Under the SAME lock every other wallet change takes, re-reading inside
+       it. The wdlock above stops two withdrawals racing each other; this stops
+       a sale or a reversal landing in the middle of this one and writing back a
+       balance it read before the payout. */
+    await _withWallet(env, user.email, (ww) => {
+      /* A destination that just changed is one of the signals above, so the
+         change has to be recorded when it happens rather than inferred later. */
+      if (ww.lastDest && ww.lastDest !== dest) ww.destChangedAt = Date.now();
+      ww.lastDest = dest;
+      ww.balance = +((+ww.balance || 0) - amount).toFixed(2);
+      /* Debited, and owed. The marker is what tells a later attempt that this
+         money left for a payout, so it can be given back if the payout record
+         turns out never to have been written. */
+      ww.pendingOut = (Array.isArray(ww.pendingOut) ? ww.pendingOut : [])
+        .concat({ id: wid, amount, at: Date.now() }).slice(-20);
+      /* The cleared tranches have now genuinely left; anything still inside its
+         window stays, on its own clock. */
+      _pruneMaturedHolds(ww);
+    });
+    try {
+      await env.AMV_KV.put(`withdraw:${wid}`, JSON.stringify({
+        id: wid, seller: user.email, amount, destination: dest,
+        status, ts: Date.now(),
+        risk: { tier: risk.tier, score: risk.score, reasons: risk.reasons },
+        kycVerified: !!(risk.kyc && risk.kyc.verified),
+        approvedBy: risk.tier === 'auto' ? 'auto' : '',
+        approvedAt: risk.tier === 'auto' ? Date.now() : 0,
+      }));
+      /* It is unsettled from this moment. One of the two places that is true. */
+      await _openPayoutAdd(env, user.email, wid);
+    } catch (e) {
+      /* The record is what makes the payout real, so without it the debit was
+         for nothing and the money goes straight back. Told out loud: a balance
+         that moved down and up again with no payout to show for it is exactly
+         the kind of thing a seller writes in about. */
+      await _withWallet(env, user.email, (ww) => {
+        ww.balance = +((+ww.balance || 0) + amount).toFixed(2);
+        ww.pendingOut = (Array.isArray(ww.pendingOut) ? ww.pendingOut : []).filter((p) => p && p.id !== wid);
+      });
+      audit(env, 'withdraw_rolled_back', { seller: user.email, amount, id: wid,
+                                           error: String((e && e.message) || e).slice(0, 160) });
+      throw e;
+    }
+    /* The record exists and is now the authority on what is owed, so the marker
+       has done its job. */
+    await _withWallet(env, user.email, (ww) => {
+      ww.pendingOut = (Array.isArray(ww.pendingOut) ? ww.pendingOut : []).filter((p) => p && p.id !== wid);
+    });
+    await _pushWalletTx(env, user.email, { type: 'withdrawal', amount: -amount, status, id: wid, ts: Date.now() });
+    /* Counted for the velocity signal and the identity threshold, both of which
+       are about the pattern across payouts rather than this one. */
+    await _withWallet(env, user.email, (ww) => {
+      ww.payouts = (Array.isArray(ww.payouts) ? ww.payouts : []).concat({ at: Date.now(), amount }).slice(-20);
+      ww.paidOut = +(((+ww.paidOut) || 0) + amount).toFixed(2);
+    });
+    audit(env, 'market_withdraw', { seller: user.email, amount, id: wid, tier: risk.tier, score: risk.score });
+
+    /* An operator is told about the ones that need them, and NOT about the
+       ordinary ones - a notification for every payout is how the ones that
+       matter stop being read. */
+    if (risk.tier !== 'auto') {
+      await notify(env, `Payout needs review: $${amount.toFixed(2)} to ${user.email}`
+        + ` (${risk.tier}, score ${risk.score}) - ` + risk.reasons.join('; '));
+    }
+    return json({ ok: true, amount, id: wid, status,
+      /* The seller is told which of the two happened and why, because "pending"
+         with no explanation is how somebody decides the platform is stealing
+         from them. */
+      message: risk.tier === 'auto'
+        ? 'Approved. It will be sent on the next payout run.'
+        : 'This payout is being reviewed before it is sent. ' + (risk.reasons[0] || '') + '.',
+      reviewing: risk.tier !== 'auto' });
+  } finally {
+    await _releaseClaim(env, 'wdlock', user.email);
+  }
+}
+

@@ -1,84 +1,3 @@
-   It sends from the person's OWN mailbox rather than from AMV, for two reasons
-   that both matter to whether they get the job: an employer replying goes to
-   them, and a message from a stranger's automation is a message that lands in
-   spam. That is only possible at all because the mail connector exists, and it
-   works in every country it covers rather than only where Gmail is used. */
-async function jobApply(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  /* Sending mail as somebody, to strangers, is outward-facing. An account on
-     hold does not get to do it. */
-  const held = await _accountHold(env, user, 'job_apply');
-  if (held) return held;
-
-  const body = await request.json().catch(() => ({}));
-  const to = String(body.to || '').trim().slice(0, 200);
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
-    return json({ error: 'That posting has no application address AMV can send to. It can prepare the application for you to submit instead.',
-                  code: 'no_apply_email' }, 400);
-  }
-  const subject = String(body.subject || '').trim().slice(0, 250);
-  const text = String(body.text || '').slice(0, 60000);
-  if (!subject || !text.trim()) return json({ error: 'The application is empty.', code: 'bad_body' }, 400);
-
-  const job = (body.job && typeof body.job === 'object') ? body.job : {};
-  const boardId = String(job.board || '');
-  const board = JOB_BOARDS[boardId] || null;
-
-  /* ONE A DAY IS A JOB HUNT. FIVE HUNDRED IS A SPAM RUN.
-
-     Counted atomically, before anything is sent, against the person rather
-     than the device - and the account that gets suspended for bulk sending
-     would be theirs, not AMV's, which is why this is a hard stop and not a
-     warning. */
-  let res = null;
-  try {
-    res = await counter(env, `jobapply:${user.email}:${todayKey()}`,
-                        { op: 'reserve', amount: 1, cap: JOB_APPLY_DAILY_CAP, ttlMs: 86400000 * 2 });
-  } catch (e) {
-    audit(env, 'job_apply_uncounted', { by: user.email, error: String((e && e.message) || e) });
-    return json({ error: 'AMV could not check how many applications you have sent today, so it has not sent this one.',
-                  code: 'not_ready' }, 503);
-  }
-  if (!res.allowed) {
-    return json({ error: `That is ${JOB_APPLY_DAILY_CAP} applications sent today, which is the daily limit. It resets tomorrow - the rest are prepared and waiting.`,
-                  code: 'apply_cap' }, 429);
-  }
-  const giveBack = async () => {
-    try { await counter(env, `jobapply:${user.email}:${todayKey()}`, { op: 'incr', amount: -1, ttlMs: 86400000 * 2 }); } catch (e) {}
-  };
-
-  const cfg = await _mailCfgFor(env, user.email);
-  if (!cfg) {
-    await giveBack();
-    return json({ error: 'AMV sends applications from your own mailbox, so an employer replies to you rather than to us. Connect your mailbox first.',
-                  code: 'mail_not_connected' }, 428);
-  }
-
-  try {
-    await _smtpSend(cfg, { to: [to], subject, text });
-  } catch (e) {
-    await giveBack();
-    const kind = (e && e.kind) || (String(e && e.message) === 'mail_timeout' ? 'timeout' : 'net');
-    audit(env, 'job_apply_failed', { by: user.email, board: boardId, kind });
-    const fail = _mailFailure(kind, cfg.provider);
-    /* Named as an application that did NOT go, because "could not send" on a
-       screen listing applications reads as a delivery note. */
-    return json({ error: 'This application was not sent. ' + fail.error, code: fail.code, sent: false },
-                kind === 'auth' ? 401 : 502);
-  }
-
-  /* Recorded because an application sent on somebody's behalf, to a named
-     employer, is exactly the kind of autonomous action that has to leave a
-     trail - without the letter itself, which is theirs. */
-  audit(env, 'job_applied', { by: user.email, board: boardId,
-                              country: board ? board.country : '',
-                              title: String(job.title || '').slice(0, 80) });
-  return json({ ok: true, sent: true, to, board: boardId,
-                remainingToday: Math.max(0, JOB_APPLY_DAILY_CAP - (res.value || 0)),
-                from: cfg.address });
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
    WHAT AMV CAN DO WHERE.
 
@@ -358,3 +277,84 @@ function _countryRunNote(cc){
     + COUNTRY_NAME[cc] + ' before stating it, and name that source.';
 }
 function _countryFactsLine(cc){
+  const f = COUNTRY_FACTS[cc]; if(!f) return '';
+  return Object.keys(FACT_LABELS).filter(k => f[k]).map(k => FACT_LABELS[k] + ': ' + f[k]).join('; ');
+}
+
+
+/* Everything AMV can do, per country, derived. */
+function _coverage() {
+  const mailGlobal = Object.values(MAIL_PROVIDERS).filter((p) => p.global);
+  const mailNational = {};
+  for (const p of Object.values(MAIL_PROVIDERS)) {
+    if (p.global || p.custom || !p.country) continue;
+    (mailNational[p.country] = mailNational[p.country] || []).push(p.name);
+  }
+  const boards = {};
+  /* Global boards belong to every country, not to a country called "".
+     Without this they collect under an empty code and appear as a country
+     with no name on no continent - which the coverage test already refuses,
+     and rightly. */
+  const boardsGlobal = [];
+  for (const [id, b] of Object.entries(JOB_BOARDS)) {
+    const row = { id, name: b.name, apply: b.apply };
+    if (b.global || !b.country) { boardsGlobal.push(row); continue; }
+    (boards[b.country] = boards[b.country] || []).push(row);
+  }
+
+  /* A country counts as reached if AMV does ANYTHING there, and the everyday
+     jobs are the thing most people would use. Deriving the list from mail and
+     boards alone would hide a country that has five jobs written for it behind
+     the fact that no national ISP there runs a mail service - while the global
+     mail providers and the worldwide boards serve it perfectly well. */
+  const codes = new Set([...Object.keys(mailNational), ...Object.keys(boards),
+                         ...Object.keys(EVERYDAY_BY_COUNTRY)]);
+  const countries = [...codes].map((c) => {
+    const jb = boards[c] || [];
+    return {
+      code: c,
+      name: COUNTRY_NAME[c] || c,
+      continent: CONTINENT_OF[c] || 'Other',
+      mail: { national: (mailNational[c] || []).length, global: mailGlobal.length,
+              names: (mailNational[c] || []).slice(0, 4) },
+      jobs: { boards: jb.length, global: boardsGlobal.length,
+              names: jb.slice(0, 4).map((x) => x.name),
+              /* The one fact that changes what somebody expects overnight. */
+              autoApply: jb.concat(boardsGlobal).some((x) => x.apply === 'email') },
+      /* And what somebody there actually does every week. */
+      everyday: (EVERYDAY_BY_COUNTRY[c] || []).length + EVERYDAY_UNIVERSAL.length,
+    };
+  })
+  /* BY NAME, not by code. Sorting the two-letter codes put Europe in the
+     order Austria, Belgium, Switzerland, Czechia, Germany, Denmark, Spain -
+     AT, BE, CH, CZ, DE, DK, ES - which is perfectly ordered and reads as
+     random to the one person this page exists for, who is scanning it for
+     their own country. localeCompare so accented names sort where a reader
+     expects rather than after Z. */
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+  const byContinent = {};
+  for (const c of countries) (byContinent[c.continent] = byContinent[c.continent] || []).push(c);
+  return {
+    countries, byContinent,
+    totals: {
+      countries: countries.length,
+      continents: Object.keys(byContinent).length,
+      mailProviders: Object.keys(MAIL_PROVIDERS).length,
+      jobBoards: Object.keys(JOB_BOARDS).length,
+      jobBoardsGlobal: boardsGlobal.length,
+      everydayJobs: EVERYDAY_UNIVERSAL.length
+        + Object.values(EVERYDAY_BY_COUNTRY).reduce((n, l) => n + l.length, 0),
+      /* Said plainly: every country can use mail, because the global providers
+         work everywhere. It is the honest headline and it is also true. */
+      mailGlobal: mailGlobal.length,
+    },
+  };
+}
+
+async function coverageMap(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  return json(Object.assign({ ok: true }, _coverage()));
+}
+

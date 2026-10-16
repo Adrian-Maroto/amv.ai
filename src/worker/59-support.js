@@ -1,84 +1,3 @@
-async function recordVisit(request, env) {
-  const ip = request.headers.get('CF-Connecting-IP') || '';
-  if (ip) {
-    /* Generous: a person opening AMV in several tabs is normal. Bounded:
-       an unauthenticated counter is otherwise free to inflate. */
-    const r = await limitAction(env, `visit:${ip}`, 10, 200);
-    if (!r.ok) return json({ ok: true, counted: false });
-  }
-  try { await _recordGrowth(env, 'visit'); } catch (e) {}
-  return json({ ok: true, counted: true });
-}
-
-async function publicConfig(request, env) {
-  /* Unauthenticated by necessity - it is read before anybody has an account -
-     so it is bounded per IP like the other open endpoints. */
-  const ip = request.headers.get('CF-Connecting-IP') || 'anon';
-  const blocked = await guardAction(env, `pubcfg:${ip}`, 30, 2000, 'config reads');
-  if (blocked) return blocked;
-
-  const out = { ok: true };
-  /* WHICH PLANS CAN BE BOUGHT BY THE YEAR, so the page can offer the choice
-     only where it will work. A toggle that leads to "not configured" is a
-     toggle that should not have been drawn.
-
-     The plan NAMES, never the price ids: the client needs to know the option
-     exists, not what it is called at Stripe. */
-  try{
-    const yearly = [];
-    for (const p of ['pro', 'elite', 'ultra', 'team']) {
-      if (_stripePriceId(env, p, 'year')) yearly.push(p);
-    }
-    if (yearly.length) out.yearlyPlans = yearly;
-  }catch(e){}
-  for (const [field, secret] of PUBLIC_CONFIG_KEYS) {
-    const v = String((env && env[secret]) || '').trim();
-    if (v) out[field] = v;
-  }
-  /* WHETHER THE SESSION TRAVELS IN A COOKIE, said before anybody signs in.
-
-     The refresh token is set as a cookie on the API's own host, and a browser
-     keeps a cookie from a cross-origin response only if the request asked it
-     to (credentials: 'include'). The page cannot ask for that on a deployment
-     without the cookie - there the API answers `*`, and a credentialed request
-     to `*` is refused outright - so it has to know which kind this is BEFORE
-     the sign-in request, not from the sign-in response. Not a secret: it is
-     the same fact the CORS headers already state. */
-  if (_cookieAuthOn(env)) out.cookieSession = true;
-  /* Built directly rather than through json(), which takes only a body and a
-     status - a third argument would have been silently ignored and the cache
-     header would never have been sent. Five minutes is long enough to spare
-     the Worker a request per page load and short enough that rotating a client
-     id takes effect while you are still watching. */
-  return new Response(JSON.stringify(out), { status: 200, headers: {
-    'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=300',
-    ...CORS, ...SECURITY_HEADERS } });
-}
-
-async function feedbackRecord(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  // Cheap to send and easy to spam, so it is bounded like anything else.
-  const blocked = await guardAction(env, `fb:${user.email}`, 30, 300, 'ratings');
-  if (blocked) return blocked;
-
-  const body = await request.json().catch(() => ({}));
-  const rating = body.rating === 'up' ? 'up' : (body.rating === 'down' ? 'down' : null);
-  if (!rating) return json({ error: 'rating must be up or down' }, 400);
-  const engine = ENGINES[body.engine] ? body.engine : (RAW_TO_KEY[body.engine] || 'unknown');
-  const feature = String(body.feature || 'chat').replace(/[^a-z_]/gi, '').slice(0, 24) || 'chat';
-  const reason = FEEDBACK_REASONS.has(body.reason) ? body.reason : '';
-
-  const mk = monthKey();
-  await counter(env, `qual:${engine}:${rating}:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 400 });
-  await counter(env, `qualfeat:${feature}:${rating}:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 400 });
-  if (rating === 'down' && reason) {
-    await counter(env, `qualwhy:${reason}:${mk}`, { op: 'incr', amount: 1, ttlMs: 86400000 * 400 });
-  }
-  /* Deliberately not audited with any content. The event itself is the record. */
-  return json({ ok: true });
-}
-
 /* ══════════════════════════════════════════════════════════════════════
    SUPPORT - a bug report that reaches a person.
 
@@ -132,3 +51,84 @@ async function supportSubmit(request, env) {
   await _withKind(env, 'support', user.email, (rec) => {
     rec.tickets = [ticket].concat(Array.isArray(rec.tickets) ? rec.tickets : []).slice(0, SUPPORT_KEEP);
     rec.updatedAt = Date.now();
+  }, { tickets: [] });
+
+  /* Told to the operator NOW. A ticket that only exists until somebody thinks
+     to open an admin page is barely better than one in a browser. Not
+     alertOnce: every report is a different person, and collapsing them is how
+     the second one is never seen. */
+  let notified = false;
+  try {
+    await notify(env, `📮 ${kind} report from ${user.email}` + (ticket.plan ? ` (${ticket.plan})` : '')
+      + `:\n${text.slice(0, 500)}`);
+    notified = !!env.ALERT_WEBHOOK;
+  } catch (e) {}
+  audit(env, 'support_submitted', { email: user.email, kind, id: ticket.id });
+
+  /* What actually happened, so the screen cannot thank somebody for a delivery
+     that did not occur. Stored is true either way; reaching a person is not. */
+  return json({ ok: true, id: ticket.id, stored: true, notified,
+                support: env.SUPPORT_EMAIL || '' });
+}
+
+/* The operator's inbox. Behind the admin token like every other operator
+   surface - it contains other people's words about their own accounts. */
+async function supportInbox(request, env) {
+  /* AMV-052: through the SAME gate as every other admin route. This was a bare
+     token comparison with no rate limit, so three of the sixteen admin routes
+     were an unbounded channel for guessing the token while the other thirteen
+     were not - and an attacker only has to find the unbounded one. */
+  { const g = await _adminGate(request, env, 'read', 60, 2000); if (g) return g; }
+  const { rows, truncated } = await scan(env, 'support', SUPPORT_SCAN_LIMIT, 'support inbox');
+  const out = [];
+  for (const row of rows) {
+    for (const t of ((row.value || {}).tickets || [])) out.push(Object.assign({ email: row.id }, t));
+  }
+  out.sort((a, b) => (b.at || 0) - (a.at || 0));
+  /* Two separate ways this list is not everything, and an unanswered customer
+     is the cost of either: more accounts than the scan read, and more tickets
+     than the page shows. Both are stated rather than implied by a short list. */
+  const shown = out.slice(0, 200);
+  return json({ ok: true, tickets: shown, accounts: rows.length,
+                truncated: truncated || out.length > shown.length,
+                totalTickets: out.length,
+                note: truncated
+                  ? 'More accounts have tickets than this scan read - there is unseen mail beyond this list.'
+                  : (out.length > shown.length
+                      ? 'Showing the ' + shown.length + ' newest of ' + out.length + ' tickets.' : null) });
+}
+
+/* Approval rate per engine, for the dashboard and the weekly digest. A rate
+   with almost no votes behind it is noise, so the count travels with it and
+   the rate is null until there is enough to mean anything. */
+async function _qualityReport(env) {
+  const mk = monthKey();
+  const MIN_VOTES = 10;
+  const out = { engines: [], features: [], reasons: [], month: mk };
+  for (const key of Object.keys(ENGINES)) {
+    const up = (await counter(env, `qual:${key}:up:${mk}`, { op: 'get' })).value || 0;
+    const down = (await counter(env, `qual:${key}:down:${mk}`, { op: 'get' })).value || 0;
+    const total = up + down;
+    out.engines.push({ engine: key, up, down, votes: total,
+      approvalPct: total >= MIN_VOTES ? +((up / total) * 100).toFixed(1) : null });
+  }
+  for (const feat of ['chat', 'research', 'code', 'agent', 'automation']) {
+    const up = (await counter(env, `qualfeat:${feat}:up:${mk}`, { op: 'get' })).value || 0;
+    const down = (await counter(env, `qualfeat:${feat}:down:${mk}`, { op: 'get' })).value || 0;
+    const total = up + down;
+    if (total) out.features.push({ feature: feat, up, down, votes: total,
+      approvalPct: total >= MIN_VOTES ? +((up / total) * 100).toFixed(1) : null });
+  }
+  for (const why of FEEDBACK_REASONS) {
+    const n = (await counter(env, `qualwhy:${why}:${mk}`, { op: 'get' })).value || 0;
+    if (n) out.reasons.push({ reason: why, count: n });
+  }
+  out.reasons.sort((a, b) => b.count - a.count);
+  const allUp = out.engines.reduce((n, e) => n + e.up, 0);
+  const allDown = out.engines.reduce((n, e) => n + e.down, 0);
+  out.votes = allUp + allDown;
+  out.approvalPct = out.votes >= MIN_VOTES ? +((allUp / out.votes) * 100).toFixed(1) : null;
+  out.minVotes = MIN_VOTES;
+  return out;
+}
+

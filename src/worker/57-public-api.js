@@ -1,84 +1,3 @@
-  const referrals7 = referrals30.slice(-7).reduce((n, d) => n + d.count, 0);
-  const signups7 = signups30.slice(-7).reduce((n, d) => n + d.count, 0);
-  const signupsPrev7 = signups30.slice(-14, -7).reduce((n, d) => n + d.count, 0);
-  const wowGrowthPct = signupsPrev7 > 0 ? +(((signups7 - signupsPrev7) / signupsPrev7) * 100).toFixed(0) : null;
-
-  /* EVERY account, not every entitlement row.
-
-     This read `entRows.length`, and a free signup creates no entitlement row -
-     so the denominator was essentially the set of people who had already paid,
-     and conversion reported ~100% no matter what the funnel was really doing.
-     On a fixture of twenty free accounts and one payer it said 100% where the
-     truth was 4.8%: the single most decision-corrupting number the dashboard
-     could produce, because it says the funnel is perfect and there is nothing
-     to fix.
-
-     The maintained counter is exact at any size. It falls back to the scan on
-     a deployment that predates it, where the old wrong answer is still better
-     than none - and `basis` says which one this is, because a number whose
-     meaning changes silently is how the first version of this got believed. */
-  const popAccounts = (await counter(env, 'popaccounts', { op: 'get' })).value || 0;
-  const countedAccounts = popAccounts > 0 ? popAccounts : entRows.length;
-  const conversionBasis = popAccounts > 0 ? 'accounts' : 'entitlements';
-  const conversionPct = countedAccounts > 0 ? +((paying / countedAccounts) * 100).toFixed(1) : 0;
-  const arpu = paying > 0 ? +(mrr / paying).toFixed(2) : 0;
-  const appRequests = await _appRequestCounts(env);
-
-  return json({
-    ok: true,
-    generatedAt: Date.now(),
-    /* Which apps people pressed Notify me on, most asked-for first. The
-       Integrations page promises the most-asked-for are connected next; this
-       is the list that promise is kept from. */
-    appRequests,
-    spend: { today: +gSpend.toFixed(2), cap: gCap, pctOfCap: +(gSpend / gCap * 100).toFixed(1), killed },
-    users: { total: truncated ? popTotal : users.length, paying, byPlan: plans,
-             conversionPct, conversionBasis, accounts: countedAccounts, activeToday },
-    /* Say plainly whether the per-account lists below are everything or a
-       sample. The alternative is a number that is quietly wrong. */
-    scan: { rows: entRows.length, limit: SCAN_LIMIT, truncated,
-            note: truncated
-              ? 'More accounts than one page can read. Revenue and population come from maintained counters and are exact; the per-account lists are the first ' + entRows.length + '.'
-              : 'Every account was read.' },
-    growth: { signupsToday, signups7, signupsPrev7, wowGrowthPct, signups30, active30,
-              referrals7, referrals30, visits7, visits30,
-              /* Of the people who arrived, how many became accounts. Null
-                 rather than 0 when nothing has been counted yet, because "no
-                 visitors recorded" and "nobody converted" are different facts
-                 and showing 0% for the first is a lie about the product. */
-              visitToSignupPct: visits7 > 0 ? +((signups7 / visits7) * 100).toFixed(1) : null,
-              // What share of the last week's signups came through an invite.
-              referralSharePct: signups7 > 0 ? +((referrals7 / signups7) * 100).toFixed(1) : null },
-    /* Signup -> activated -> returned -> paid. The question every piece of
-       onboarding work is trying to move, and the only one that says whether it
-       did (AMV-101). */
-    funnel: await _funnelReport(env),
-    revenue: { estMRR: mrr, estARR: mrr * 12, arpu, pastDueAccounts: pastDue, mrrAtRisk: atRisk,
-               teamSeatsSold: seatsSold, teamSeatMRR: seatsSold * TEAM_SEAT_PRICE_USD },
-    margin: (() => {
-      const scanCost = +users.reduce((s, u) => s + u.monthCostUSD, 0).toFixed(2);
-      /* The maintained total is exact; the scanned sum is only exact when the
-         scan saw everything. Prefer the counter, and fall back to the sum if it
-         has not been populated yet (an existing deployment before this shipped). */
-      const totalCost = +(totalCost0 > 0 ? totalCost0 : scanCost).toFixed(2);
-      return {
-        estMonthlyCost: totalCost,
-        grossMargin: +(mrr - totalCost).toFixed(2),
-        grossMarginPct: mrr > 0 ? +(((mrr - totalCost) / mrr) * 100).toFixed(1) : null,
-        costPerPayingUser: paying > 0 ? +(totalCost / paying).toFixed(3) : 0,
-        freeUserCost: freeCost,
-        byPlan: byPlanEconomics,
-        featureCost,
-        cacheSavedUSD: cacheSaved,
-        unprofitableAccounts: unprofitable,
-      };
-    })(),
-    quality,
-    speed,
-    topSpenders,
-  });
-}
-
 /* =====================================================================
    AMV-097  THE API - selling AMV to programs, not only to people
 
@@ -182,5 +101,87 @@ async function apiKeyCreate(request, env) {
   /* The only time this value exists anywhere outside the caller's memory. */
   return json({ ok: true, key, item: _apiKeyPublic(item),
                 note: 'Copy this now. It is not stored and cannot be shown again.' });
+}
+
+/* POST /v1/keys/list */
+async function apiKeyList(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const rec = (await DB.get(env, 'apikeys', user.email)) || { items: [] };
+  return json({ ok: true, keys: (rec.items || []).map(_apiKeyPublic), max: API_KEY_MAX_PER_USER });
+}
+
+/* POST /v1/keys/revoke { id } */
+async function apiKeyRevoke(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const { id } = await request.json().catch(() => ({}));
+  /* AMV-210: the hot path stamps lastUsed on this same record once a minute
+     per key, so a revoke could be written back over. The KEY still stopped
+     working either way - the lookup row below is what the request path reads,
+     and deleting it is what revocation really is - but the record would show a
+     revoked key as active, which is a screen telling somebody the opposite of
+     the truth about a credential. */
+  let hash = '';
+  const found = await _withKind(env, 'apikeys', user.email, (rec) => {
+    const item = (rec.items || []).find(k => k.id === id);
+    if (!item) return false;
+    hash = item.hash || '';
+    if (!item.revoked) item.revoked = Date.now();
+    return true;
+  }, { items: [] });
+  if (!found) return json({ error: 'not found' }, 404);
+  /* Delete the lookup too - this is what the request path reads, and deleting
+     it is what revocation really is. Marking the record without removing this
+     would leave the key working. */
+  if (hash) { try { await env.AMV_KV.delete(`apikey:${hash}`); } catch (e) {} }
+  audit(env, 'apikey_revoked', { email: user.email, id });
+  await _userEvent(env, request, user.email, 'api_key_revoked');
+  return json({ ok: true, id, revoked: true });
+}
+
+/* Resolve `Authorization: Bearer amv_sk_...` to the account it belongs to, in
+   the same shape requireUser returns - so every quota, cost cap and plan check
+   downstream applies to an API call exactly as it does to a browser one. */
+async function _userFromApiKey(request, env) {
+  const raw = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '')
+           || request.headers.get('X-AMV-Key') || '';
+  if (!raw.startsWith(API_KEY_PREFIX)) return null;
+  let ref = null;
+  try { ref = JSON.parse(await env.AMV_KV.get(`apikey:${await _apiKeyHash(raw)}`) || 'null'); } catch (e) {}
+  if (!ref || !ref.email) return null;
+
+  const rec = (await DB.get(env, 'apikeys', ref.email)) || { items: [] };
+  const item = (rec.items || []).find(k => k.id === ref.id);
+  if (!item || item.revoked) return null;
+
+  /* The account still has to exist. Erasure now clears these, but a key that
+     authenticates on the strength of a lookup row alone is one orphaned record
+     away from being a credential belonging to nobody - and this is the check
+     that makes that impossible rather than merely tidy. */
+  const acct = await DB.get(env, 'acct', ref.email);
+  if (!acct) return null;
+
+  // Last use, so a customer can tell a live key from a forgotten one. Written
+  // at most once a minute: this is on the hot path of every API request.
+  const now = Date.now();
+  if (!item.lastUsed || now - item.lastUsed > 60000) {
+    /* Under the lock, and re-found inside it: this runs on every authenticated
+       API request, so it is the write most likely to be racing a revoke. */
+    try {
+      await _withKind(env, 'apikeys', ref.email, (rec2) => {
+        const cur = (rec2.items || []).find(k => k.id === ref.id);
+        if (!cur) return null;
+        cur.lastUsed = now;
+        cur.calls = (cur.calls || 0) + 1;
+      }, { items: [] });
+    } catch (e) {}
+    item.lastUsed = now;
+  }
+
+  /* The SAME principal a browser session gets. This used to return five fields
+     of its own and nothing else, so an API key carried no billing subject, no
+     block, and no family limit - see _principalOf. */
+  return await _principalOf(env, ref.email, null, { via: 'apikey', keyId: ref.id });
 }
 

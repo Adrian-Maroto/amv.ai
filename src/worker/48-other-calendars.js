@@ -1,84 +1,3 @@
-  form.set('metadata[plan]', plan);
-  if (plan === 'team') {
-    form.set('metadata[seats]', String(seats));
-    // let the customer change the seat count from Stripe's own portal too
-    form.set('subscription_data[metadata][email]', user.email);
-    form.set('subscription_data[metadata][plan]', 'team');
-  }
-
-  const r = await fetchDeadline('https://api.stripe.com/v1/checkout/sessions', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: form.toString(),
-  });
-  const d = await r.json();
-  if (!r.ok) {
-    // A customer just tried to PAY and Stripe refused. That's lost revenue you
-    // need to know about now, not from a support ticket. Throttled so a Stripe
-    // outage doesn't spam you.
-    await alertOnce(env, 'stripe_checkout_fail', `💳 Stripe checkout failing: ${d.error?.message || 'unknown'} - customers may be unable to subscribe.`, 15);
-    return json({ error: d.error?.message || 'stripe error' }, 502);
-  }
-  /* Remembered until the webhook grants the plan. A dropped delivery would
-     otherwise leave somebody who has paid sitting on the free tier with
-     nothing watching, so the sweep asks Stripe directly. */
-  await _pendStart(env, d.id, { provider:'stripe', kind:'plan', email:user.email, plan });
-  return json({ url: d.url, id: d.id });
-}
-
-// ---- Stripe: customer billing portal (manage/cancel subscription) ----
-async function stripePortal(request, env) {
-  const user = await requireUser(request, env);
-  if (!user) return json({ error: 'unauthorized' }, 401);
-  const sp = await guardAction(env, `stripepo:${user.email}`, 10, 100, 'billing portal sessions');
-  if (sp) return sp;
-  /* Same fact, same words as the checkout route above. */
-  if (!env.STRIPE_SECRET_KEY)
-    return json({ error: 'Payments are not connected on this deployment yet, so the billing portal cannot open.',
-                  code: 'needs_service' }, 503);
-  const custId = await env.AMV_KV.get(`stripecust:${user.email}`);
-  if (!custId) return json({ error: 'no subscription found' }, 404);
-  // AMV-025 / AMV-SP-09: the server-configured origin is authoritative for
-  // payment redirects, and there is no fallback to the request Origin.
-  const origin = _paymentReturnOrigin(env);
-  if (!origin) return _paymentOriginMissing();
-  const form = new URLSearchParams({ customer: custId, return_url: origin });
-  const r = await fetchDeadline('https://api.stripe.com/v1/billing_portal/sessions', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: form.toString(),
-  });
-  const d = await r.json();
-  if (!r.ok) return json({ error: d.error?.message || 'stripe error' }, 502);
-  return json({ url: d.url });
-}
-
-/* ---- Stripe: turn auto-renew off, or back on ----
-
-   A subscription renews by itself; that is what a subscription is. So "auto
-   renew" is really one question - does this one stop at the end of the period
-   it is already paid for - and Stripe answers it with a single field,
-   `cancel_at_period_end`. This route writes that field and nothing else.
-
-   WHY NOT JUST SEND THEM TO THE PORTAL. The billing portal is there and stays
-   there, but it is a page somewhere else that has to be configured in the
-   Stripe dashboard before it opens at all, and it cannot answer the question
-   on AMV's own screen. This can, and more importantly the result is READ BACK:
-   what gets written to the entitlement is what Stripe's response says the
-   subscription now is, not what was asked for. An action AMV cannot read back
-   is an action AMV cannot claim.
-
-   WHOSE SUBSCRIPTION. `subId` is put on the entitlement by the webhook for
-   this account, so it is this account's by construction - but "by
-   construction" is how an IDOR gets written. The customer on Stripe's response
-   is compared against the customer id stored for this email, and a mismatch is
-   refused and audited rather than quietly corrected. Nothing about the
-   subscription is taken from the request: the body carries one boolean.
-
-   NOTHING IS CHARGED OR REFUNDED HERE. Turning it off leaves the plan running
-   to the end of the period already paid for; turning it back on resumes the
-   schedule. That is why off is reversible right up to the last day, and the
-   response says when that day is. */
 /* ══════════════════════════════════════════════════════════════════════════
    CALENDARS THAT ARE NOT GOOGLE OR OUTLOOK.
 
@@ -218,3 +137,84 @@ async function calFeedAdd(request, env) {
   if (!gate.ok) return json({ error: gate.why, code: 'bad_url' }, 400);
 
   const rec = (await DB.get(env, 'cal', user.email)) || { feeds: [] };
+  const feeds = Array.isArray(rec.feeds) ? rec.feeds : [];
+  if (feeds.length >= CAL_MAX_FEEDS) {
+    return json({ error: 'That is ' + CAL_MAX_FEEDS + ' calendars, which is as many as AMV reads. Remove one first.',
+                  code: 'too_many' }, 400);
+  }
+  let host = ''; try { host = new URL(url).host; } catch (e) {}
+  const id = 'cal_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+  feeds.push({ id, label: label || host, host, url: await _mailEncrypt(env, url), addedAt: Date.now() });
+  await DB.put(env, 'cal', user.email, { feeds });
+  await _userEvent(env, request, user.email, 'calendar_subscribed', { host });
+  audit(env, 'cal_feed_add', { by: user.email, host });
+  /* The host, never the URL. It is a secret and it does not need to come back
+     out of storage to be listed. */
+  return json({ ok: true, feed: { id, label: label || host, host } });
+}
+
+async function calFeedList(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'sign in first', code: 'needs_auth' }, 401);
+  const rec = (await DB.get(env, 'cal', user.email)) || { feeds: [] };
+  const feeds = (Array.isArray(rec.feeds) ? rec.feeds : [])
+    .map((f) => ({ id: f.id, label: f.label, host: f.host, addedAt: f.addedAt || 0 }));
+  return json({ ok: true, feeds, max: CAL_MAX_FEEDS, providers: CAL_FEED_PROVIDERS });
+}
+
+async function calFeedRemove(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'sign in first', code: 'needs_auth' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const id = String(body.id || '');
+  const rec = (await DB.get(env, 'cal', user.email)) || { feeds: [] };
+  const feeds = (Array.isArray(rec.feeds) ? rec.feeds : []).filter((f) => f.id !== id);
+  await DB.put(env, 'cal', user.email, { feeds });
+  await _userEvent(env, request, user.email, 'calendar_unsubscribed', {});
+  return json({ ok: true, feeds: feeds.map((f) => ({ id: f.id, label: f.label, host: f.host })) });
+}
+
+async function calEvents(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'sign in first', code: 'needs_auth' }, 401);
+  const blocked = await guardAction(env, 'calread:' + user.email, 60, 300, 'calendar reads');
+  if (blocked) return blocked;
+
+  const body = await request.json().catch(() => ({}));
+  const days = Math.max(1, Math.min(90, Number(body.days) || 7));
+  const from = Date.now();
+  const to = from + days * 86400000;
+
+  const rec = (await DB.get(env, 'cal', user.email)) || { feeds: [] };
+  const feeds = Array.isArray(rec.feeds) ? rec.feeds : [];
+  if (!feeds.length) return json({ ok: true, events: [], feeds: 0 });
+
+  const events = [];
+  const failed = [];
+  for (const f of feeds) {
+    let url = '';
+    try { url = await _mailDecrypt(env, f.url); } catch (e) { url = ''; }
+    if (!url) { failed.push({ label: f.label, why: 'the stored link could not be read' }); continue; }
+    try {
+      /* fetchGuarded, not fetch: it re-checks the gate on EVERY hop, so a feed
+         that answers 302 to an internal address is stopped at the redirect
+         rather than at the first URL - which is the hole the browsing agent
+         already had and had to fix. */
+      const r = await fetchGuarded(url, { method: 'GET', headers: { 'Accept': 'text/calendar' } }, 12000);
+      if (r.blocked) { failed.push({ label: f.label, why: r.why }); continue; }
+      if (!r.response || !r.response.ok) {
+        failed.push({ label: f.label, why: 'the calendar answered ' + ((r.response && r.response.status) || 'nothing') });
+        continue;
+      }
+      const text = (await r.response.text()).slice(0, CAL_MAX_ICS_BYTES);
+      for (const e of _icsEvents(text, from, to, 200)) events.push(Object.assign({ calendar: f.label }, e));
+    } catch (e) {
+      failed.push({ label: f.label, why: 'it could not be reached just now' });
+    }
+  }
+  events.sort((a, b) => a.start - b.start);
+  /* `failed` is returned rather than swallowed. A week that is quietly missing
+     one calendar looks like a free week, and somebody plans against it. */
+  return json({ ok: true, events: events.slice(0, 500), feeds: feeds.length, failed });
+}
+

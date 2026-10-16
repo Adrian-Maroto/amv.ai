@@ -1,84 +1,3 @@
-    id, name: name||'My Team', ownerEmail: user.email,
-    members: [{ email:user.email, role:'owner', joinedAt:Date.now() }],
-    createdAt: Date.now(), data:{}
-  };
-  /* The owner's plan is cached on the team so a member's request costs ONE
-     extra read rather than two. Every billing event refreshes it, and the
-     lapse marker rides along so `_teamPlan` can honour a grace window that
-     expires with no write at all. */
-  const ownerEnt = (await DB.get(env, 'ent', user.email)) || { plan: 'free' };
-  team.plan = ownerEnt.plan || 'free';   /* sold: the lapse rides alongside and _teamPlan applies it at read */
-  /* The owner's renewal anniversary, cached with the plan it belongs to, so a
-     seat's allowance window is the one the team is actually billed on. */
-  team.renewedAt = +ownerEnt.renewedAt || 0;
-  if(ownerEnt.pastDueSince) team.pastDueSince = ownerEnt.pastDueSince;
-  team.customCfg = ownerEnt.custom || null;
-  /* AMV-034: the same three writes, and the same compensation. A team record
-     with no pointer at it is invisible to its own owner - they cannot open it,
-     and `teamCreate` will happily make them another - while the first one keeps
-     whatever plan was cached on it. Deleting it is safe here in a way it never
-     is later: it has exactly one member, who is the person standing in front of
-     this failure. */
-  await DB.put(env, 'team', id, team);
-  try {
-    await env.AMV_KV.put(`userteam:${user.email}`, id);
-    await _setUserTeam(env, user.email, id);
-  } catch (e) {
-    try { await DB.del(env, 'team', id); } catch (_) {}
-    audit(env, 'team_create_rolled_back', { team: id, email: user.email });
-    return json({ error: 'AMV could not finish creating the team. Nothing was changed - please try again.',
-                  code: 'create_incomplete' }, 503);
-  }
-  await _teamAudit(env, team, user.email, 'team_created', { name: team.name });
-  return json({ ok:true, team, seats: { used: 1, limit: _teamSeatLimit(_teamPlan(team), team.customCfg) } });
-}
-async function teamGet(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'unauthorized' }, 401);
-  const tid = await env.AMV_KV.get(`userteam:${user.email}`);
-  if(!tid) return json({ ok:true, team:null });
-  const team = await DB.get(env, 'team', tid);
-  if(!team || !_role(team, user.email)) return json({ ok:true, team:null });
-  /* Seats travel with the team record so the app never has to guess which
-     members the plan is currently covering (AMV-100). */
-  const limit = _teamSeatLimit(_teamPlan(team), team.customCfg);
-  const seated = new Set(_teamSeated(team).map(m => m.email));
-  const out = Object.assign({}, team, {
-    members: (team.members||[]).map(m => Object.assign({}, m, { seated: seated.has(m.email) })),
-    seats: { used: (team.members||[]).length, limit, over: Math.max(0, (team.members||[]).length - limit) },
-  });
-  return json({ ok:true, team: out });
-}
-async function _teamOf(env, email){
-  const tid = await env.AMV_KV.get(`userteam:${email}`);
-  if(!tid) return null;
-  const team = await DB.get(env, 'team', tid);
-  // Membership is the source of truth. A stale or tampered userteam pointer must
-  // NOT grant access to a team the caller is no longer an active member of.
-  if(!team || !_role(team, email)) return null;
-  return team;
-}
-function _role(team, email){ const m=(team.members||[]).find(x=>x.email===email); return m?m.role:null; }
-/* Reject an oversized or too-deeply-nested JSON payload so a member can't amplify
-   storage or make a shared record fail to parse/write. Returns an error string or
-   null when the value is within bounds. */
-function _boundedJson(obj, maxBytes, maxDepth){
-  let s; try{ s = JSON.stringify(obj); }catch{ return 'invalid data'; }
-  if(s == null) return 'invalid data';
-  if(new TextEncoder().encode(s).length > maxBytes) return 'data too large';
-  const depth = (o, d)=>{
-    if(d > maxDepth) return d;
-    if(o && typeof o === 'object'){
-      let mx = d;
-      for(const k in o){ mx = Math.max(mx, depth(o[k], d+1)); if(mx > maxDepth) return mx; }
-      return mx;
-    }
-    return d;
-  };
-  if(depth(obj, 0) > maxDepth) return 'data nesting too deep';
-  return null;
-}
-
 /* =====================================================================
    TEAM ROLES & PERMISSIONS (auditor #11)
    Three roles with an explicit capability matrix, so permissions are
@@ -855,3 +774,84 @@ async function teamTaskUpdate(request, env){
   const { id, status, assignee, del } = await request.json().catch(()=>({}));
   const tasks = await _teamTasks(env, team.id);
   const i = tasks.findIndex(t=>t.id===id);
+  if(i<0) return json({ error:'task not found' }, 404);
+  const me = (team.members||[]).find(m=>m.email===user.email);
+  const canManage = me && (me.role==='owner' || me.role==='admin');
+  const isAssignee = tasks[i].assignee === user.email;
+  const isCreator = tasks[i].createdBy === user.email;
+  // delete: only managers or the creator
+  if(del){
+    if(!canManage && !isCreator) return json({ error:'not allowed to delete this task' }, 403);
+    /* Re-found inside the lock. Splicing by an index read beforehand removes
+       whatever is at that position NOW, which after somebody else's create is a
+       different task entirely. */
+    const removed = tasks[i];
+    let out = tasks;
+    await _withKind(env, 'teamtasks', team.id, (list) => {
+      const j = list.findIndex(t => t && t.id === id);
+      if (j >= 0) list.splice(j, 1);
+      out = list.slice();
+    }, []);
+    await _teamAudit(env, team, user.email, 'task_deleted', { title: removed.title });
+    return json({ ok:true, tasks: out });
+  }
+  // status change: assignee, creator, or a manager
+  if(status){
+    if(!TASK_STATUSES.has(status)) return json({ error:'invalid status' }, 400);
+    if(!canManage && !isAssignee && !isCreator) return json({ error:'not allowed to update this task' }, 403);
+    tasks[i].status = status;
+  }
+  // reassign: managers only (or the creator)
+  if(assignee !== undefined){
+    if(!canManage && !isCreator) return json({ error:'only managers can reassign' }, 403);
+    const asg = (assignee||'').toLowerCase().trim();
+    if(asg && !(team.members||[]).some(m=>m.email===asg)) return json({ error:'assignee is not a team member' }, 400);
+    await _teamAudit(env, team, user.email, 'task_reassigned', { target: asg||'(unassigned)', title: tasks[i].title });
+    if (asg && asg !== user.email) await _notifyAssignee(env, team, user, asg, tasks[i]);
+  }
+  /* Applied inside the lock, to the task as it is at that moment. The
+     permission checks above are decided from the copy read beforehand, which is
+     correct - they are about this person's role and about who created or was
+     assigned the task, and none of those change under a concurrent write to a
+     DIFFERENT task. What must not come from that copy is the LIST. */
+  const wantStatus = status || null;
+  const wantAssignee = assignee !== undefined ? ((assignee||'').toLowerCase().trim() || null) : undefined;
+  let out = tasks;
+  await _withKind(env, 'teamtasks', team.id, (list) => {
+    const j = list.findIndex(t => t && t.id === id);
+    if (j < 0) { out = list.slice(); return; }
+    if (wantStatus) list[j].status = wantStatus;
+    if (wantAssignee !== undefined) list[j].assignee = wantAssignee;
+    list[j].updatedAt = Date.now();
+    out = list.slice();
+  }, []);
+  if(status) await _teamAudit(env, team, user.email, 'task_status', { title: tasks[i].title, to: status });
+  return json({ ok:true, tasks: out });
+}
+
+async function syncPull(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const data = (await DB.get(env, 'data', user.email)) || {};
+  // rev is what a client echoes back on push to prove it saw this version.
+  return json({ ok:true, data, rev: data._rev || 0, serverTime: Date.now() });
+}
+/* Push the user's data up (last-write-wins per top-level key, with a merge). */
+const SYNC_ALLOWED_KEYS = new Set([
+  'chats','convs','memory','workspaces','prompts','settings','imgs','vids','custom_cfg','plan_since',
+  // Your actual WORK - Dev projects, Lab sessions, and everything in Recents.
+  // These used to live only in the browser, so switching device or clearing the
+  // cache destroyed them. They are the most valuable thing a user has.
+  'sessions','skills','handoffs','profile',
+  /* What AMV has learned about each of your projects by working in them -
+     which command runs the tests, where the source lives. Small, and the
+     thing that stops every session paying to rediscover the same facts.
+     Contains no paths: a project is keyed by a hash of its folder, so
+     somebody's home directory and real name never reach this record. */
+  'projects',
+  /* Installed plugins. A removed one is kept as a tombstone, so the merge
+     below lets a removal on one device win over an older copy on another. */
+  'plugins'
+]);
+const SYNC_MAX_BYTES = 4 * 1024 * 1024;   // 4MB hard ceiling (well under KV's 25MB, sane for D1)
+

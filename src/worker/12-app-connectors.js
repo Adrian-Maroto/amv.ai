@@ -1,84 +1,3 @@
-    let joined;
-    try{
-      joined = await _withTeam(env, team.id, (fresh) => {
-        if(!fresh) return { error:'gone' };
-        fresh.members = fresh.members || [];
-        if(fresh.members.find(m => m.email === email)) return { already:true };
-        const limit = _teamSeatLimit(_teamPlan(fresh), fresh.customCfg);
-        if(fresh.members.length >= limit) return { error:'seat_limit' };
-        fresh.members.push({ email, role:'member', joinedAt: Date.now(), via:'sso' });
-        return { joined:true };
-      });
-    }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
-    if(joined && joined.error === 'seat_limit')
-      return json({ error:'Your company’s AMV team has no free seats. Ask whoever runs it to add one.', code:'seat_limit' }, 402);
-    if(joined && joined.error) return json({ error:'Your company no longer signs in this way.', code:'sso_off' }, 400);
-    try{
-      await env.AMV_KV.put('userteam:' + email, team.id);
-      await _setUserTeam(env, email, team.id);
-    }catch(e){
-      try{ await _withTeam(env, team.id, (fresh) => { if(fresh) fresh.members = (fresh.members || []).filter(m => m.email !== email); return true; }); }catch(_){}
-      return json({ error:'AMV could not finish signing you in. Nothing was changed - please try again.', code:'join_incomplete' }, 503);
-    }
-    if(joined && joined.joined) await _teamAudit(env, team, email, 'member_joined', { via:'sso' });
-  }
-  audit(env, 'sso_signed_in', { team: team.id });
-  await _userEvent(env, request, email, 'signed_in', { reason: 'company sign-in' });
-  const tokens = await issueTokens(env, email, acct.name || name, await _sessOpen(env, request, email));
-  return _tokenResponse(env, tokens, { email, name: acct.name || name, team: team.name || '' });
-}
-
-async function googlePickerConfig(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'unauthorized' }, 401);
-  const clientId = String(env.GOOGLE_CLIENT_ID || ''), apiKey = String(env.GOOGLE_PICKER_API_KEY || '');
-  const appId = String(env.GOOGLE_PROJECT_NUMBER || '').trim();
-  if(!clientId || !apiKey || !/^\d{6,20}$/.test(appId)) return json({ ok:true, configured:false });
-  return json({ ok:true, configured:true, clientId, apiKey, appId });
-}
-
-async function connRemove(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'unauthorized' }, 401);
-  /* This reaches a third party - the provider's revoke endpoint - so it is
-     bounded like everything else that does. Generous, because disconnecting is
-     something somebody should never feel discouraged from doing, and bounded,
-     because an unbounded outbound call is an unbounded outbound call even when
-     the intent behind it is good. */
-  const blocked = await guardAction(env, 'connrm:' + user.email, 20, 200, 'disconnections');
-  if(blocked) return blocked;
-
-  const body = await request.json().catch(()=>({}));
-  const id = String(body.id||'');
-  const all = (await DB.get(env, CONN_KV, user.email)) || {};
-  const c = all[id];
-  if(!c) return json({ error:'not_found' }, 404);
-  const p = CONN_PROVIDERS[c.provider] || {};
-
-  let revoked = false, why = '';
-  if(p.revoke){
-    try{
-      const tok = await connOpen(env, c.sealed);
-      const r = await _connRevokeRequest(env, p, tok);
-      revoked = r.ok;
-      if(!revoked) why = 'http_' + (r.status || 'no_response');
-    }catch(e){ why = String((e && e.message) || 'failed').slice(0, 60); }
-  }
-
-  /* Forgotten either way. Keeping a token AMV could not revoke would be holding
-     a credential the person has asked it to stop holding - the honest failure
-     is to drop it here and tell them to finish the job at the provider. */
-  await _connMerge(env, user.email, (rec) => { delete rec[id]; });
-  audit(env, 'conn_removed', { by:user.email, provider:c.provider, revoked, why });
-
-  return json({ ok:true, revoked,
-    message: revoked
-      ? 'Disconnected, and the grant was revoked at ' + (p.name||c.provider) + '.'
-      : (p.revoke
-          ? 'AMV forgot this account, but ' + (p.name||c.provider) + ' did not confirm the grant was revoked' + (why?' ('+why+')':'') + '. Remove it in your ' + (p.name||c.provider) + ' account to be certain.'
-          : 'AMV forgot this account and can no longer use it. ' + (p.revokeNote || (p.name||c.provider) + ' has no revoke endpoint, so end it there too if you want the grant gone.')) });
-}
-
 /* ══════════════════════════════════════════════════════════════════════════
    APP CONNECTORS: SIGNING IN TO AN APP'S OWN CONNECTOR.
 
@@ -1041,3 +960,84 @@ async function autoCreate(request, env){
       : json({ error:'Your plan runs '+budget.max+' background job'+(budget.max===1?'':'s')+
                      '. Remove one to add another, or upgrade for more.',
                code:'job_limit', have: budget.max }, 429);
+  }
+  return json({ ok:true, item, emailReady,
+                // true only when they asked for email and cannot have it
+                deliveryDowngraded: notify === 'email' && !emailReady,
+                free: budget.free, shaped,
+                shapedWhy: shaped ? 'Free accounts run one automation a week, without live web search. Upgrade for daily or ten-minute runs and live research.' : '' });
+}
+
+/* ---- delete / pause an automation ---- */
+/* ── QUIET HOURS ───────────────────────────────────────────────────────────
+   THE HOUR NOBODY WANTS TO BE EMAILED AT.
+
+   The policy engine has understood quiet hours since it was written - it
+   refuses a rule breach with "It is your quiet hours, so I held this rather
+   than acting". Nothing has ever passed `in_quiet_hours: true`, so the branch
+   has never once been taken. A bound with no producer is the same defect as a
+   `scope` with no consumer, read from the other end.
+
+   It has to live HERE rather than only in the page, because the hour this
+   protects is exactly the hour AMV is closed. A quiet window enforced by the
+   browser is a window that does nothing on the night it was set for.
+
+   AN HOUR IS A LOCAL FACT. Storing the window in UTC would look right and
+   drift by an hour twice a year: 23:00 in London is 23:00 UTC in winter and
+   22:00 UTC in summer, so a person's quiet hours would silently move when the
+   clocks did. The zone is stored with the window and the hour is computed in
+   it, which is what makes daylight saving somebody else's problem. */
+const QUIET_MAX_TZ = 64;
+
+/* The hour, 0-23, as it reads on a clock in that zone right now. Returns null
+   when the zone is unusable rather than falling back to UTC - a wrong hour is
+   worse than no answer, because it would silence the wrong part of the day. */
+function _quietLocalHour(tz, atMs){
+  try{
+    const h = new Intl.DateTimeFormat('en-GB', {
+      timeZone: String(tz || 'UTC').slice(0, QUIET_MAX_TZ),
+      hour: 'numeric', hour12: false,
+    }).format(new Date(atMs));
+    const n = parseInt(h, 10);
+    return Number.isInteger(n) ? (n % 24) : null;
+  }catch(e){ return null; }
+}
+
+/* IS IT QUIET RIGHT NOW.
+
+   The window may cross midnight - 23 to 7 is the normal case and the one a
+   naive `h >= from && h < to` gets wrong by covering nothing at all. `from`
+   is inclusive and `to` is exclusive, so 23-7 is quiet at 23:00 and working
+   again at 07:00.
+
+   THE FALLBACK RUNS THE OTHER WAY FROM THE APPROVAL DEADLINE, deliberately.
+   An unreadable expiry refuses, because sending something of unknown age is
+   worse than a re-run. An unreadable quiet window does NOT silence, because a
+   job that stops running and says nothing is the failure this codebase keeps
+   finding, and it is much harder to notice than one email at an awkward hour.
+   Same principle both times: fall towards the mistake somebody can see. */
+function _quietNow(quiet, atMs){
+  const q = quiet || {};
+  const from = Number(q.from), to = Number(q.to);
+  if(!Number.isInteger(from) || !Number.isInteger(to)) return false;
+  if(from < 0 || from > 23 || to < 0 || to > 23) return false;
+  /* A zero-length window is no window. Reading it as "always quiet" would
+     switch somebody's automation off entirely from one mis-set field. */
+  if(from === to) return false;
+  const h = _quietLocalHour(q.tz, atMs);
+  if(h === null) return false;
+  return from < to ? (h >= from && h < to) : (h >= from || h < to);
+}
+
+/* When the window ends, walked hour by hour rather than computed by
+   arithmetic - so a clock change inside the window is handled by asking the
+   calendar again rather than by being clever about offsets. Bounded at 24, so
+   a window that somehow never ends still returns something. */
+function _quietEndsAt(quiet, atMs){
+  for(let i = 1; i <= 24; i++){
+    const t = atMs + i * 3600000;
+    if(!_quietNow(quiet, t)) return t;
+  }
+  return atMs + 3600000;
+}
+

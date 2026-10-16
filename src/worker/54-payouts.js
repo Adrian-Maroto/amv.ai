@@ -1,84 +1,3 @@
-       right when everything was withdrawable and is silent theft now: money
-       still inside its clearing window would vanish along with the payout, and
-       the seller would never see it again. The holds are untouched - they are
-       still that seller's money, still on the books, still on their own clock. */
-    /* Under the SAME lock every other wallet change takes, re-reading inside
-       it. The wdlock above stops two withdrawals racing each other; this stops
-       a sale or a reversal landing in the middle of this one and writing back a
-       balance it read before the payout. */
-    await _withWallet(env, user.email, (ww) => {
-      /* A destination that just changed is one of the signals above, so the
-         change has to be recorded when it happens rather than inferred later. */
-      if (ww.lastDest && ww.lastDest !== dest) ww.destChangedAt = Date.now();
-      ww.lastDest = dest;
-      ww.balance = +((+ww.balance || 0) - amount).toFixed(2);
-      /* Debited, and owed. The marker is what tells a later attempt that this
-         money left for a payout, so it can be given back if the payout record
-         turns out never to have been written. */
-      ww.pendingOut = (Array.isArray(ww.pendingOut) ? ww.pendingOut : [])
-        .concat({ id: wid, amount, at: Date.now() }).slice(-20);
-      /* The cleared tranches have now genuinely left; anything still inside its
-         window stays, on its own clock. */
-      _pruneMaturedHolds(ww);
-    });
-    try {
-      await env.AMV_KV.put(`withdraw:${wid}`, JSON.stringify({
-        id: wid, seller: user.email, amount, destination: dest,
-        status, ts: Date.now(),
-        risk: { tier: risk.tier, score: risk.score, reasons: risk.reasons },
-        kycVerified: !!(risk.kyc && risk.kyc.verified),
-        approvedBy: risk.tier === 'auto' ? 'auto' : '',
-        approvedAt: risk.tier === 'auto' ? Date.now() : 0,
-      }));
-      /* It is unsettled from this moment. One of the two places that is true. */
-      await _openPayoutAdd(env, user.email, wid);
-    } catch (e) {
-      /* The record is what makes the payout real, so without it the debit was
-         for nothing and the money goes straight back. Told out loud: a balance
-         that moved down and up again with no payout to show for it is exactly
-         the kind of thing a seller writes in about. */
-      await _withWallet(env, user.email, (ww) => {
-        ww.balance = +((+ww.balance || 0) + amount).toFixed(2);
-        ww.pendingOut = (Array.isArray(ww.pendingOut) ? ww.pendingOut : []).filter((p) => p && p.id !== wid);
-      });
-      audit(env, 'withdraw_rolled_back', { seller: user.email, amount, id: wid,
-                                           error: String((e && e.message) || e).slice(0, 160) });
-      throw e;
-    }
-    /* The record exists and is now the authority on what is owed, so the marker
-       has done its job. */
-    await _withWallet(env, user.email, (ww) => {
-      ww.pendingOut = (Array.isArray(ww.pendingOut) ? ww.pendingOut : []).filter((p) => p && p.id !== wid);
-    });
-    await _pushWalletTx(env, user.email, { type: 'withdrawal', amount: -amount, status, id: wid, ts: Date.now() });
-    /* Counted for the velocity signal and the identity threshold, both of which
-       are about the pattern across payouts rather than this one. */
-    await _withWallet(env, user.email, (ww) => {
-      ww.payouts = (Array.isArray(ww.payouts) ? ww.payouts : []).concat({ at: Date.now(), amount }).slice(-20);
-      ww.paidOut = +(((+ww.paidOut) || 0) + amount).toFixed(2);
-    });
-    audit(env, 'market_withdraw', { seller: user.email, amount, id: wid, tier: risk.tier, score: risk.score });
-
-    /* An operator is told about the ones that need them, and NOT about the
-       ordinary ones - a notification for every payout is how the ones that
-       matter stop being read. */
-    if (risk.tier !== 'auto') {
-      await notify(env, `Payout needs review: $${amount.toFixed(2)} to ${user.email}`
-        + ` (${risk.tier}, score ${risk.score}) - ` + risk.reasons.join('; '));
-    }
-    return json({ ok: true, amount, id: wid, status,
-      /* The seller is told which of the two happened and why, because "pending"
-         with no explanation is how somebody decides the platform is stealing
-         from them. */
-      message: risk.tier === 'auto'
-        ? 'Approved. It will be sent on the next payout run.'
-        : 'This payout is being reviewed before it is sent. ' + (risk.reasons[0] || '') + '.',
-      reviewing: risk.tier !== 'auto' });
-  } finally {
-    await _releaseClaim(env, 'wdlock', user.email);
-  }
-}
-
 /* =====================================================================
    AMV-089  PAYOUTS - the money had nowhere to go
 
@@ -778,3 +697,84 @@ async function marketRate(request, env) {
   if (!user) return json({ error: 'unauthorized' }, 401);
   const { id, stars } = await request.json().catch(() => ({}));
   const s = Math.max(1, Math.min(5, Math.round(Number(stars) || 0)));
+  if (!(await _ownsItem(env, user.email, id))) return json({ error: 'buy it before rating' }, 403);
+  /* AMV-043: the snapshot taken at purchase stands in for a listing the seller
+     has since taken down. Somebody who paid for a thing may say what they
+     thought of it, and whether the seller still offers it is not their
+     business - a rating that disappears when the seller withdraws the item is a
+     rating the seller controls. */
+  const it = (await _getListing(env, id))
+          || (await DB.get(env, 'mktsnap', `${user.email}:${id}`).catch(() => null));
+  if (!it) return json({ error: 'not found' }, 404);
+  /* PSEUDONYMOUS, LIKE THE REVIEWS RIGHT BELOW THIS.
+
+     This used to store map[user.email] = stars. The record is keyed by the
+     LISTING - somebody else's listing - so it is not in PER_USER_KINDS and it
+     could not be: erasing the rater's account cannot reach a record filed under
+     a seller's item. A rater's address therefore outlived their own deletion,
+     with nothing anywhere able to find it.
+
+     marketReview, the function immediately after this one, already stores a
+     one-way hash and says why in its own comment: never the raw email, so a
+     list can be shown publicly without leaking addresses. The same record, the
+     same reasoning, one function apart, and only one of them did it.
+
+     Existing maps are migrated in place. The keys ARE the addresses, and the
+     hash is a pure function of the address, so every old key can be converted
+     here without needing to know whose it is - and the average, which is all
+     anybody reads, does not move. */
+  /* AMV-042: THIS RECORD IS KEYED BY THE LISTING, SO ITS WRITERS ARE EVERY BUYER.
+
+     Read-modify-write on a record one person owns is a race between their own
+     tabs. On a record keyed by somebody else's LISTING it is a race between
+     strangers: two buyers rating the same item at the same moment both read the
+     map, both add themselves, and the later write drops the earlier rating.
+     Popular items - the ones with the most raters - are exactly where it
+     happens most, and the only symptom is a rating count that is quietly lower
+     than the number of people who rated.
+
+     The hashing and the migration move inside the lock with everything else.
+     They read the map and rewrite every key in it, which is the largest
+     read-modify-write in this function and was the one furthest from any lock. */
+  const IS_HASH = /^[0-9a-f]{16}$/;
+  const mine = await _errHash(user.email.toLowerCase());
+  /* The hashes are computed before the lock: the mutate below is synchronous,
+     and awaiting inside it would hold the lock across storage calls for every
+     existing rater. */
+  const preHashed = new Map();
+  {
+    let seed = {};
+    try { const raw = await env.AMV_KV.get(`mkrate:${id}`); if (raw) seed = JSON.parse(raw); } catch {}
+    for (const who of Object.keys(seed)) {
+      if (!IS_HASH.test(who)) preHashed.set(who, await _errHash(String(who).toLowerCase()));
+    }
+  }
+  let vals = [];
+  await _withKV(env, 'mkrate', id, (map) => {
+    const migrated = {};
+    for (const [who, val] of Object.entries(map)) {
+      /* A key that arrived between the pre-hash pass and the lock is left as it
+         is rather than dropped - it is somebody's rating, and the next writer
+         migrates it. Losing it to be tidy would be the defect this fixes. */
+      migrated[IS_HASH.test(who) ? who : (preHashed.get(who) || who)] = val;
+    }
+    for (const k of Object.keys(map)) delete map[k];
+    Object.assign(map, migrated);
+    map[mine] = s;
+    vals = Object.values(map);
+  }, {});
+  const rating = +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
+  /* AMV-204: the average goes onto the listing under the lock. Written from a
+     copy read before a sale or a status change landed, a rating put the old
+     record back - so an item that had just sold went back on sale because
+     somebody rated it. */
+  await _withKV(env, 'market', id, (rec) => {
+    if (!rec) return null;
+    rec.rating = rating;
+    rec.ratings = vals.length;
+  });
+  return json({ ok: true, rating, ratings: vals.length });
+}
+
+/* Buyer reviews a SELLER (person) with 1-5 stars + text. Gated: must have
+   bought at least one of that seller's listings. Stored under the seller. */

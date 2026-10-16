@@ -1,84 +1,3 @@
-     nowhere, and the honest thing for them to do about a 500 is send it again,
-     which is how one lost handoff becomes two duplicates.
-
-     Delivery first. A failure there means nothing was written anywhere and the
-     error is true. */
-  await _withKind(env, 'handoff', toEmail, (theirs) => {
-    theirs.incoming = (theirs.incoming || []).concat(entry).slice(-100);
-  }, { incoming:[], sent:[] });
-
-  /* And the sender's own copy after, where a failure is survivable: the handoff
-     HAS arrived, and the only thing missing is a line in the sender's history.
-     Answering 500 here would be the worst of the options - it is not true, and
-     it would have them send it a second time. */
-  let recorded = true;
-  try {
-    await _withKind(env, 'handoff', user.email, (mine) => {
-      mine.sent = (mine.sent || []).concat(entry).slice(-100);
-    }, { incoming:[], sent:[] });
-  } catch (e) {
-    recorded = false;
-    audit(env, 'handoff_sender_copy_failed', { by: user.email, to: toEmail, id });
-  }
-  return json({ ok:true, id, recorded,
-    ...(recorded ? {} : { warning: 'It was delivered, but AMV could not add it to your own sent list. '
-                                 + 'Do not send it again - they have it.' }) });
-}
-
-async function handoffAct(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'unauthorized' }, 401);
-  /* This writes a status onto the SENDER's record too, so it is rate limited
-     exactly like handoffCreate, which is the other bounded cross-user write in
-     this feature. */
-  const blockedAct = await guardAction(env, `handoffact:${user.email}`, 30, 100, 'handoff updates');
-  if(blockedAct) return blockedAct;
-  const { id, action } = await request.json().catch(()=>({}));
-  if(!id) return json({ error:'id required' }, 400);
-  /* AMV-033: read and written under the lock, so a status set here cannot be
-     lost to a handoff arriving in the same inbox at the same moment. The entry
-     is found inside it too - deciding on a copy read beforehand is the same
-     race with an extra step. */
-  const status = action === 'done' ? 'done' : 'seen';
-  let entry = null;
-  await _withKind(env, 'handoff', user.email, (mine) => {
-    entry = (mine.incoming || []).find(h => h.id === id) || null;
-    if (!entry) return;
-    mine.incoming = (mine.incoming || []).map(h => h.id === id ? { ...h, status } : h);
-  }, { incoming:[], sent:[] });
-  if(!entry) return json({ error:'not found' }, 404);
-
-  /* And on the SENDER's copy. Only the recipient's own record was updated, so
-     the person who handed the work over went on seeing "waiting on them" for
-     ever - including after it was finished. A handoff is a thing between two
-     people; marking it done on one side only is half a feature, and the half
-     that is missing is the half the sender is watching. */
-  const from = String(entry.from_email || '').toLowerCase();
-  let notified = true;
-  if(from && from !== user.email){
-    try{
-      /* AMV-033: and this one is unambiguously somebody else's record - the
-         sender's, which every person they have ever handed work to writes a
-         status into. Read-append-write here loses one of two status updates
-         landing together, and the one lost reads as work still waiting. */
-      await _withKind(env, 'handoff', from, (theirs) => {
-        theirs.sent = (theirs.sent || []).map(h => (h.id === id ? { ...h, status } : h));
-      }, { incoming:[], sent:[] });
-    }catch(e){
-      /* AMV-SP-06: the recipient's own record IS already correct, which is why
-         this is not an error - but it is not nothing either. The sender is the
-         person watching this status, and the whole point of updating their copy
-         is that they stop waiting. Swallowed, it leaves them waiting for ever
-         with both sides reporting success. */
-      notified = false;
-      audit(env, 'handoff_status_not_propagated', { by: user.email, to: from, id, status });
-    }
-  }
-  return json({ ok:true, status, notified,
-    ...(notified ? {} : { warning: 'Your side is updated. AMV could not update theirs, so they may still see this as waiting - '
-                                 + 'tell them, or set it again in a moment.' }) });
-}
-
 /* ══════════════════════════════════════════════════════════════════════
    DATA SAFETY - backup & restore  (auditor #5)
 
@@ -739,3 +658,84 @@ async function backupImport(request, env){
          brings automations back while the marker still said the namespace was
          empty would leave them unscanned until the marker aged out. An hour of
          lateness rather than lost work, but a restore is run during an
+         incident, which is the worst hour to add one to. */
+      try{ const kind = String(key).split(':')[0]; if(kind) await _forgetKindEmpty(env, kind); }catch(_){}
+    restored++;
+  }
+  audit(env, 'backup_import', { mode, restored, skipped, refused, unrestorable,
+    lost: lost.join(',') || undefined, heldForward, from: snap.createdISO });
+  if (unrestorable) {
+    /* NOT ok. A restore that dropped part of the snapshot answered 200 and
+       ok:true with the count buried in the body, so a recovery script saw
+       success and an operator saw a number they had no reason to read. The
+       whole point of this endpoint is the one day somebody is relying on it.
+
+       Paged as well as returned, because the person running a restore is busy
+       with whatever caused it and is the least likely reader of a JSON body. */
+    try { await alertOnce(env, 'restore_incomplete',
+      'A backup restore finished with ' + unrestorable + ' record(s) that could NOT be written: '
+      + lost.slice(0, 5).join(', ') + (lost.length > 5 ? ' and more' : '')
+      + '. The store is NOT a complete copy of that snapshot.', 5); } catch (e) {}
+    return json({ ok:false, code:'restore_incomplete', mode, restored, skipped,
+      refused, unrestorable, lost, heldForward,
+      error: unrestorable + ' record(s) in this snapshot could not be restored, so the store is '
+        + 'NOT a complete copy of it. They are named in `lost`. This is reported as a failure '
+        + 'rather than a count, because a partial restore somebody believes was total is how a '
+        + 'recovery quietly loses data.',
+      snapshotFrom: snap.createdISO || null }, 422);
+  }
+  return json({ ok:true, mode, restored, skipped, refused, unrestorable: 0,
+    /* Said out loud. An operator restoring a snapshot needs to know that some
+       of it was deliberately not applied, and why - a silent partial restore is
+       one they will assume was total. */
+    heldForward,
+    note: heldForward
+      ? heldForward + ' record(s) were restored WITHOUT undoing a revocation, block or sign-out that happened after this snapshot was taken. Access that was taken away stays taken away.'
+      : null,
+    snapshotFrom: snap.createdISO || null });
+}
+
+
+/* Report an error that happened INSIDE the Worker itself. */
+async function _workerError(env, where, err, extra){
+  try{
+    const idx = (await DB.get(env, 'errors', 'index')) || { groups:{} };
+    /* SCRUBBED HERE TOO.
+
+       AMV-037 scrubbed the PUBLIC sink, because that text arrives out of
+       somebody's browser. It left this one - the SERVER's - reading raw, and
+       this is the sink that sees actual credentials: an outbound call that
+       fails quotes the URL it failed on, and some of those URLs carry the
+       secret in them by the provider's design. Telegram's bot token is in the
+       path; a signed provider URL carries its signature in the query.
+
+       Unscrubbed, one failed send wrote a working bot token into KV in plain
+       text, posted it to the operator's Slack through alertOnce, and forwarded
+       it to Sentry - while the same token sat encrypted at rest two functions
+       away. The stack matters as much as the message: a stack quotes whatever
+       was in scope at the frame that threw. */
+    const e = { kind:'worker', msg:_errScrub(String(err&&err.message||err), 300),
+                where:String(where).slice(0,120), stack:_errScrub(String(err&&err.stack||''), 1200),
+                tab:'server', ua:'worker', ver:'', at:Date.now(), ...(extra||{}) };
+    _forwardSentry(env, null, e);   // inert unless SENTRY_DSN is set
+
+
+    const fp = await _fingerprint(e);
+    const g = idx.groups[fp] || { fp, msg:e.msg, where:e.where, kind:'worker',
+                                  count:0, users:0, first:Date.now(), last:0, samples:[], userSet:[] };
+    const isNew = g.count === 0;
+    g.count++; g.last = Date.now(); g.msg = e.msg;
+    if(g.samples.length < ERR_MAX_SAMPLES) g.samples.push(e); else g.samples[ERR_MAX_SAMPLES-1] = e;
+    idx.groups[fp] = g;
+    await DB.put(env, 'errors', 'index', idx);
+    // Page the owner the FIRST time a given error appears, and again if it keeps
+    // happening (throttled). This is how you find out prod broke before users do.
+    if(isNew){
+      await alertOnce(env, 'err:'+fp, `⚠️ New server error in ${e.where}: ${e.msg} (${e.count||1}x)`, 30);
+    } else if(g.count === 25 || g.count === 250){
+      await alertOnce(env, 'err:'+fp+':'+g.count, `🔁 Recurring error in ${e.where} hit ${g.count}x: ${e.msg}`, 60);
+    }
+  }catch(e){ /* never let error reporting throw */ }
+}
+
+

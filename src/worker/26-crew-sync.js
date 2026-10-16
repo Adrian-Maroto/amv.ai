@@ -1,84 +1,3 @@
-     looking like the whole is worse than one that shows nothing: the operator
-     concludes there is no more abuse. */
-  return json({ ok:true, flagged: rows, blockedCount: rows.filter(r=>r.blocked).length,
-                truncated, note: truncated
-                  ? 'This is not everything. More flagged accounts exist than this screen scanned.' : null });
-}
-
-/* POST /admin/abuse/clear - lift a flag (a genuine refund that got caught).
-   Admin-only. */
-async function abuseClear(request, env){
-  const body = await request.json().catch(()=>({}));
-  { const g = await _adminGate(request, env, 'abuse.clear', 60, 2000); if (g) return g; }
-  const email = String(body.email||'').toLowerCase();
-  if(!email) return json({ error:'email required' }, 400);
-  const rec = await DB.get(env, 'abuse', email);
-  if(!rec) return json({ error:'not found' }, 404);
-  /* Same mismatch: abuse records are written through DB, so clearing one has to
-     go through DB or the flag survives on D1 and the account stays marked. */
-  /* AMV-SP-07: THE FLAG THAT DOES THE BLOCKING IS ON THE OTHER RECORD.
-
-     Two things are true at once about a blocked account: an `abuse` record
-     saying why, and `ent.blocked`, which is the fast copy every request
-     actually reads. Clearing the flag propagated to both. DELETING the record
-     did not - it removed the abuse row and left ent.blocked exactly where it
-     was.
-
-     So the outcome of "remove" was the worst available: the account stays
-     refused everywhere, and the record that explained why is gone. The operator
-     is looking at a screen with nothing on it while the customer cannot use
-     anything, and there is no longer any evidence to work back from. Removing
-     is the STRONGER of the two operator actions, and it did less. */
-  let unblocked = true;
-  const liftEntBlock = async () => {
-    try {
-      await _withEnt(env, email, (e) => {
-        if (!e) return;
-        delete e.blocked; delete e.blockedReason; delete e.blockedAt;
-      });
-    } catch (e) {
-      unblocked = false;
-      audit(env, 'abuse_unblock_not_propagated', { email, error: String((e && e.message) || e) });
-    }
-  };
-
-  if(body.remove){
-    /* The entitlement first. If it fails, the abuse record is still there to
-       explain the block - which is the recoverable order to fail in. */
-    await liftEntBlock();
-    if(!unblocked){
-      return json({ error: 'AMV could not lift the block on that account, so it did not delete the record explaining it either. '
-                         + 'Nothing was changed - try again in a moment.',
-                    code: 'unblock_failed' }, 503);
-    }
-    await DB.del(env, 'abuse', email);
-  }
-  else {
-    /* UNDER THE LOCK EVERY OTHER WRITER TAKES.
-       A dispute arriving from Stripe writes this record through _withKind. An
-       operator clearing a flag read it, edited it and wrote it back raw - so a
-       chargeback landing in that window is erased by the clear, and the account
-       is unmarked with the dispute never recorded. That is money, and it is the
-       lock's whole purpose. Re-read inside it rather than trusting the copy
-       fetched above. */
-    await _withKind(env, 'abuse', email, (fresh) => {
-      if(!fresh) return;
-      fresh.blocked = false;
-      fresh.clearedAt = Date.now();
-    }, null);
-    /* And on the entitlement, or the account stays refused everywhere that
-       reads the fast copy while the operator is looking at a cleared flag. */
-    await liftEntBlock();
-  }
-  audit(env, 'abuse_cleared', { email, removed: !!body.remove, unblocked });
-  /* Said rather than assumed. An operator who has just cleared a flag needs to
-     know whether the person can actually use the product again, and a bare
-     ok:true answers a different question. */
-  return json({ ok:true, unblocked,
-    ...(unblocked ? {} : { warning: 'The abuse record was cleared, but the block on the account could not be lifted. '
-                                  + 'They are still refused - clear it again in a moment.' }) });
-}
-
 /* ══════════════════════════════════════════════════════════════════════
    CREW JOBS · APPROVALS · HANDOFF - per-user sync
 
@@ -329,3 +248,84 @@ async function handoffCreate(request, env){
      inbox, then ok:true. If the second write failed the exception went to the
      top and the sender got a 500 - with their own "sent" list already saying
      they had sent it. So their screen shows a handoff that was delivered
+     nowhere, and the honest thing for them to do about a 500 is send it again,
+     which is how one lost handoff becomes two duplicates.
+
+     Delivery first. A failure there means nothing was written anywhere and the
+     error is true. */
+  await _withKind(env, 'handoff', toEmail, (theirs) => {
+    theirs.incoming = (theirs.incoming || []).concat(entry).slice(-100);
+  }, { incoming:[], sent:[] });
+
+  /* And the sender's own copy after, where a failure is survivable: the handoff
+     HAS arrived, and the only thing missing is a line in the sender's history.
+     Answering 500 here would be the worst of the options - it is not true, and
+     it would have them send it a second time. */
+  let recorded = true;
+  try {
+    await _withKind(env, 'handoff', user.email, (mine) => {
+      mine.sent = (mine.sent || []).concat(entry).slice(-100);
+    }, { incoming:[], sent:[] });
+  } catch (e) {
+    recorded = false;
+    audit(env, 'handoff_sender_copy_failed', { by: user.email, to: toEmail, id });
+  }
+  return json({ ok:true, id, recorded,
+    ...(recorded ? {} : { warning: 'It was delivered, but AMV could not add it to your own sent list. '
+                                 + 'Do not send it again - they have it.' }) });
+}
+
+async function handoffAct(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  /* This writes a status onto the SENDER's record too, so it is rate limited
+     exactly like handoffCreate, which is the other bounded cross-user write in
+     this feature. */
+  const blockedAct = await guardAction(env, `handoffact:${user.email}`, 30, 100, 'handoff updates');
+  if(blockedAct) return blockedAct;
+  const { id, action } = await request.json().catch(()=>({}));
+  if(!id) return json({ error:'id required' }, 400);
+  /* AMV-033: read and written under the lock, so a status set here cannot be
+     lost to a handoff arriving in the same inbox at the same moment. The entry
+     is found inside it too - deciding on a copy read beforehand is the same
+     race with an extra step. */
+  const status = action === 'done' ? 'done' : 'seen';
+  let entry = null;
+  await _withKind(env, 'handoff', user.email, (mine) => {
+    entry = (mine.incoming || []).find(h => h.id === id) || null;
+    if (!entry) return;
+    mine.incoming = (mine.incoming || []).map(h => h.id === id ? { ...h, status } : h);
+  }, { incoming:[], sent:[] });
+  if(!entry) return json({ error:'not found' }, 404);
+
+  /* And on the SENDER's copy. Only the recipient's own record was updated, so
+     the person who handed the work over went on seeing "waiting on them" for
+     ever - including after it was finished. A handoff is a thing between two
+     people; marking it done on one side only is half a feature, and the half
+     that is missing is the half the sender is watching. */
+  const from = String(entry.from_email || '').toLowerCase();
+  let notified = true;
+  if(from && from !== user.email){
+    try{
+      /* AMV-033: and this one is unambiguously somebody else's record - the
+         sender's, which every person they have ever handed work to writes a
+         status into. Read-append-write here loses one of two status updates
+         landing together, and the one lost reads as work still waiting. */
+      await _withKind(env, 'handoff', from, (theirs) => {
+        theirs.sent = (theirs.sent || []).map(h => (h.id === id ? { ...h, status } : h));
+      }, { incoming:[], sent:[] });
+    }catch(e){
+      /* AMV-SP-06: the recipient's own record IS already correct, which is why
+         this is not an error - but it is not nothing either. The sender is the
+         person watching this status, and the whole point of updating their copy
+         is that they stop waiting. Swallowed, it leaves them waiting for ever
+         with both sides reporting success. */
+      notified = false;
+      audit(env, 'handoff_status_not_propagated', { by: user.email, to: from, id, status });
+    }
+  }
+  return json({ ok:true, status, notified,
+    ...(notified ? {} : { warning: 'Your side is updated. AMV could not update theirs, so they may still see this as waiting - '
+                                 + 'tell them, or set it again in a moment.' }) });
+}
+

@@ -1,84 +1,3 @@
-
-/* What the model is allowed to see of a page. Values the user supplied are
-   removed - a filled field reports its own value back through `label` and
-   through the page text, so without this a secret typed on step 2 is in the
-   prompt on step 3, in the provider's logs, and in any error that quotes it. */
-function _webForModel(obs, secrets) {
-  const red = (s) => _webRedact(s, secrets);
-  return {
-    url: red(obs && obs.url),
-    title: red(obs && obs.title),
-    text: red(obs && obs.text),
-    elements: ((obs && obs.elements) || []).map(el => ({
-      ref: el.ref, tag: el.tag, type: el.type, label: red(el.label),
-    })),
-  };
-}
-
-/* Validate a model-proposed action. The model can NEVER widen its own
-   permissions: unknown verbs refused, navigation SSRF-checked, and
-   consequential verbs require this run to be pre-approved by the user. */
-function _webValidateAction(act, opts){
-  if(!act || typeof act !== 'object') return { ok:false, why:'No action returned.' };
-  const verb = String(act.verb || '').toLowerCase();
-  if(WEB_ALLOWED_VERBS.indexOf(verb) < 0) return { ok:false, why:'Unsupported action "' + verb + '".' };
-  if(verb === 'goto'){
-    const g = _webHostAllowed(act.url);
-    if(!g.ok) return { ok:false, why:g.why };
-    act.url = g.url;
-  }
-  // Consequence check uses the verb AND the control's own label, so clicking
-  // "Place order" or "Delete account" needs approval just like submit does.
-  const label = (opts && opts.label) || act.label || '';
-  if(_webIsConsequential(verb, label, act.text)){
-    /* Matched against the action the ticket was issued for, not against a flag.
-       Approving "Place order" on one shop authorises that, and nothing else. */
-    const fp = _webActionFp(verb, label, (opts && opts.url) || '');
-    if(!opts || opts.approvedFp !== fp)
-      return { ok:false, needsApproval:true, fp,
-        why:'This step would ' + (label ? '"' + String(label).slice(0,40) + '"' : verb) + ' - it needs your approval first.' };
-  }
-  return { ok:true, verb, act };
-}
-
-/* Compact, sanitised observation of the page for the model.
-
-   The per-element identity attributes (name, id, autocomplete, aria-label,
-   placeholder) are collected for the SERVER, which uses them to decide which
-   field a user-supplied value belongs in. They are stripped again before the
-   observation reaches the model - see _webForModel - for two reasons: the model
-   does not need them, and every attribute a page controls that reaches a prompt
-   is vocabulary an injected page can write for itself. */
-const _WEB_OBSERVE = "(() => {" +
-  "const vis = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);" +
-  " return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };" +
-  "const at = (el,a) => (el.getAttribute(a) || '').replace(/\\s+/g,' ').trim().slice(0,60);" +
-  "const lbl = el => (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('name') ||" +
-  " (el.labels && el.labels[0] && el.labels[0].textContent) || el.value || el.textContent || '').replace(/\\s+/g,' ').trim().slice(0,80);" +
-  "const out = []; let i = 0;" +
-  "document.querySelectorAll('a,button,input,select,textarea,[role=button],[contenteditable=true]').forEach(el => {" +
-  " if(i >= 60 || !vis(el)) return; el.setAttribute('data-amv-ref', String(++i));" +
-  " out.push({ ref:i, tag:el.tagName.toLowerCase(), type:el.type || '', label:lbl(el)," +
-  "  name:at(el,'name'), fid:at(el,'id'), autoc:at(el,'autocomplete')," +
-  "  aria:at(el,'aria-label'), ph:at(el,'placeholder') }); });" +
-  "const captcha = !!document.querySelector('iframe[src*=\"recaptcha\"],iframe[src*=\"hcaptcha\"],.g-recaptcha,[data-sitekey]');" +
-  "return { url:location.href, title:document.title," +
-  " text:(document.body ? document.body.innerText : '').replace(/\\s+/g,' ').slice(0,3000)," +
-  " elements:out, captcha };})()";
-
-/* Ask the model for exactly one next action - a single auditable decision point. */
-async function _webAskModel(env, sys, prompt){
-  try{
-    /* The cheapest tier by design: this is a routing decision, not the answer.
-       Read from ENGINES so it moves with the tier table. */
-    const r = await _modelFetch(env, { model: engineModel('amv-pulse'), max_tokens:400, system:sys,
-      messages:[{ role:'user', content:prompt }] });
-    const d = await r.json();
-    const txt = (d && d.content && d.content[0] && d.content[0].text) || '';
-    return JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
-  }catch(e){ return null; }
-}
-
 /* ============================================================
    SUBSCRIBE WITH A TOKENISED CARD  (/v1/subscribe)
 
@@ -250,3 +169,84 @@ async function linkAccept(request, env){
     await _withKind(env, 'links', who, (r) => {
       if (!r) return;
       r.items = [link, ...(r.items || [])].slice(0, 50);
+    }, { items: [] });
+  }
+  audit(env, 'link_accepted', { owner:user.email, grantee:inv.grantee, scopes:(inv.scopes||[]).join(',') });
+
+  /* A FAMILY invitation is the same consent flow with a different consequence.
+
+     The code is generated on the server and emailed to the account being added,
+     and only that account can redeem it - so a parent cannot put somebody in
+     their family by typing an address. The child confirms, in their own inbox,
+     before a single limit applies to them. That property is why this reuses
+     the link flow rather than growing a second one beside it (AMV-102). */
+  if((inv.scopes||[]).includes('family')){
+    const parent = inv.grantee;                       // the one who sent the invitation
+    /* AMV-197: the "is the family full" check and the seat it grants are one
+       operation. Two children accepting the last invitation together both saw
+       room, and the family ended up over its limit - or one of them joined and
+       was written away by the other. */
+    let res;
+    try{
+      /* The family may not exist yet, and the helper's save only writes a
+         record that was already there - so the write happens inside the mutate,
+         which is still inside the lock. */
+      res = await _withRecord(env, 'fam', String(parent || '').toLowerCase(),
+        _loadFam,
+        async () => {},
+        async (fresh) => {
+          const fam = fresh || { id:'fam_'+crypto.randomUUID().replace(/-/g,''), parentEmail: parent, members:[{ email: parent, role:'parent', joinedAt: Date.now() }], createdAt: Date.now() };
+          if(!(fam.members||[]).some(m=>m.email===user.email)){
+            const kids = (fam.members||[]).filter(m=>m.role==='child');
+            if(kids.length >= FAMILY_MAX_CHILDREN){
+              return { error:'That family is full (' + FAMILY_MAX_CHILDREN + ' accounts).', status:402, code:'family_full' };
+            }
+            fam.members.push({ email:user.email, role:'child', joinedAt:Date.now(), limits: Object.assign({}, FAMILY_DEFAULTS) });
+          }
+          await DB.put(env, 'fam', parent, fam);
+          return { ok:true };
+        });
+    }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('family'); }
+    if(res && res.error) return json({ error: res.error, code: res.code }, res.status||400);
+    /* AMV-202: the marker every parental limit reads, written under the lock. */
+    await _withRecord(env, 'ent', String(user.email||'').toLowerCase(),
+      async (e, k) => (await DB.get(e, 'ent', k)) || { plan:'free' },
+      async (e, k, rec) => { await DB.put(e, 'ent', k, rec); },
+      (rec) => { rec.familyOf = parent; });
+    await _userEvent(env, request, user.email, 'family_joined', { parent });
+    audit(env, 'family_joined', { parent, child:user.email });
+    return json({ ok:true, link, family:{ parent, limits: FAMILY_DEFAULTS } });
+  }
+  return json({ ok:true, link });
+}
+
+/* List / revoke links (/v1/link/list, /v1/link/revoke). Either side can end a
+   link with no negotiation, and it dies for both immediately. */
+/* NO LIST AND NO REVOKE FOR LINKS ANY MORE.
+
+   Both served the "access to someone else's account" screen, which the owner
+   removed as a security risk. Nothing in the product calls either, and a route
+   nothing asks for is a door somebody else finds first. A link record that is
+   left over grants nothing - no route ever consulted one to permit an action -
+   and is erased with the account like everything else. A family is ended with
+   /v1/family/remove or /v1/family/leave. */
+
+const ADULT_AGE = 18;
+
+/* Whether this account may touch money. Deny by default: an age nobody has
+   recorded is "not known", never "adult" - the whole point is that the absence
+   of an answer is not a yes.
+
+   Returns null when allowed, or a {error, code} the caller can return as-is.
+   `age_required` is deliberately distinct from a refusal, because an existing
+   customer who has simply never been asked needs a prompt, not a wall. */
+async function _moneyAgeGate(env, email){
+  const rec = await DB.get(env, 'consent', String(email || '').toLowerCase());
+  const y = rec && +rec.birthYear;
+  if(!y) return { error:'Confirm your age before using anything that involves money.', code:'age_required' };
+  const age = new Date().getUTCFullYear() - y;
+  if(age < ADULT_AGE)
+    return { error:'Anything involving money is only available to people ' + ADULT_AGE + ' and over.', code:'age_blocked' };
+  return null;
+}
+

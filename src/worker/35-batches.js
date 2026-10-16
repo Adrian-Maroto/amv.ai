@@ -1,84 +1,3 @@
-    if (age < PEND_GRACE_MS) continue;             // the webhook may still be on its way
-    checked++;
-
-    if (age > PEND_GIVEUP_MS) { await _pendDone(env, row.id); dropped++; continue; }
-
-    try {
-      if (p.provider === 'paypal') {
-        const token = await _paypalToken(env);
-        if (!token) continue;                       // cannot ask right now; try next sweep
-        const r = await fetchDeadline(`${_paypalBase(env)}/v1/billing/subscriptions/${encodeURIComponent(row.id)}`, {
-          headers: { 'Authorization': `Bearer ${token}` } });
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) continue;
-        if (d.status === 'ACTIVE') {
-          const tier = _paypalTierOf(env, d.plan_id, p.plan);
-          if (tier) {
-            await setEntitlement(env, p.email, tier, { source: 'paypal' });
-            rescued++;
-            audit(env, 'payment_reconciled', { provider: 'paypal', email: p.email, plan: tier });
-            await alertOnce(env, 'pay_reconciled',
-              'A PayPal subscription was ACTIVE but had never been granted - AMV has just granted it from the reconciliation sweep. '
-              + 'The webhook for it did not arrive or did not process. Check the PayPal webhook endpoint.', 60);
-          }
-          await _pendDone(env, row.id);
-        } else if (d.status === 'CANCELLED' || d.status === 'EXPIRED' || d.status === 'SUSPENDED') {
-          await _pendDone(env, row.id); dropped++;
-        }
-        continue;
-      }
-
-      /* Stripe: a checkout session, either a plan or a marketplace purchase. */
-      if (!env.STRIPE_SECRET_KEY) continue;
-      const r = await fetchDeadline(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(row.id)}`, {
-        headers: { 'Authorization': `Bearer ${env.STRIPE_SECRET_KEY}` } });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) continue;
-
-      /* `d.payment_status === 'paid' || d.status === 'complete'` was the same
-         defect as the webhook's, in an or: a session paid by voucher or direct
-         debit is 'complete' the moment the customer chooses it and 'unpaid'
-         until the money actually arrives, so the second half of that condition
-         granted on the first half being false. The sweep exists to rescue
-         payments the webhook missed - it must not rescue payments that have not
-         happened. An unpaid row is left alone and asked about again next sweep,
-         which is exactly what it is for. */
-      if (_stripeSessionPaid(d)) {
-        if (p.kind === 'market') {
-          await _creditSale(env, { itemId: p.itemId, buyer: p.email, seller: p.seller,
-                                   amountCents: d.amount_total, ref: d.payment_intent || row.id });
-        } else if (p.kind === 'credit') {
-          await _creditGrant(env, { subject: p.subject || p.email, email: p.email,
-                                    usd: Math.round(+d.amount_total || 0) / 100, ref: d.payment_intent || row.id });
-        } else if (p.plan) {
-          await setEntitlement(env, p.email, p.plan, { source: 'stripe' });
-        }
-        rescued++;
-        audit(env, 'payment_reconciled', { provider: 'stripe', email: p.email, kind: p.kind || 'plan', plan: p.plan || '' });
-        await alertOnce(env, 'pay_reconciled',
-          'A Stripe payment had completed but was never applied - AMV has just applied it from the reconciliation sweep. '
-          + 'The webhook did not arrive or did not process, so check the Stripe webhook endpoint and its signing secret.', 60);
-        await _pendDone(env, row.id);
-      } else if (d.status === 'expired') {
-        await _pendDone(env, row.id); dropped++;
-      }
-    } catch (e) { /* a provider being unreachable is not a decision - try again next sweep */ }
-  }
-  if (checked) console.log('[cron] payments reconciled', JSON.stringify({ checked, rescued, dropped }));
-  return { checked, rescued, dropped };
-}
-
-/* ---------------- THE AI PROXY (the heart) -------------------------- */
-/* GET /v1/engines - what can answer right now: the primary engines, and the
-   partner engines whose models the partner confirms. AMV names only; a
-   partner's own model id never leaves the server. Public - it says what the
-   product offers, nothing about who is asking. */
-async function enginesList(request, env) {
-  const primary = Object.entries(ENGINES).map(([key, e]) => ({ key, minPlan: e.minPlan }));
-  const partners = (await _partnerEngines(env)).map(d => ({ key: d.key, label: d.label, minPlan: d.minPlan, partner: true }));
-  return json({ ok: true, engines: primary.concat(partners) });
-}
-
 /* ══ BATCHES: MANY REQUESTS, ANSWERED IN THE BACKGROUND ══════════════════════
 
    A developer with a thousand documents to summarise should not have to hold
@@ -1052,3 +971,84 @@ async function aiProxy(request, env, ctx, principal) {
      product keeps working. A 400 about the messages themselves is a real
      client error and is NOT retried. */
   if (upstream.status === 400 && eng.provider !== 'partner') {
+    const raw = await upstream.clone().text().catch(() => '');
+    if (/thinking|output_config|effort|cache_control|unexpected|unsupported|unrecognized/i.test(raw)) {
+      const plain = {
+        model: upstreamBody.model, max_tokens: upstreamBody.max_tokens, stream: true,
+        messages: (body.messages || []),                       // no cache markers
+      };
+      if (body.system) plain.system = String(body.system);      // no cache marker
+      if (upstreamBody.tools) plain.tools = upstreamBody.tools;
+      /* AMV-021: INSIDE THE CATCH THAT REFUNDS, LIKE THE FIRST CALL.
+
+         The first _callUpstream is wrapped in a try/catch that refunds the
+         caller's reservation when the provider cannot be reached. This retry
+         was not, so a network failure on the second attempt left the request
+         with the quota already taken and nothing to show for it. The customer
+         pays for an attempt that never produced an answer, and the only path
+         that reaches this line is one where something already went wrong. */
+      let retry = null;
+      try {
+        retry = await _callUpstream(plain);
+      } catch (netErr) {
+        await refundReservation();
+        try { await _workerError(env, 'aiProxy:retry-unreachable', netErr); } catch (_) {}
+        return json({ error: 'AMV could not reach the model just now. Nothing was charged - try again in a moment.',
+                      code: 'upstream_unreachable' }, 502);
+      }
+      if (retry.ok) {
+        audit(env, 'upstream_param_fallback', { key, reason: raw.slice(0, 120) });
+        try { await alertOnce(env, 'model_param_reject',
+          'AMV dropped an optional model parameter after a 400 and retried successfully. Chats still work, but tuning (thinking/effort/caching) is off for ' + key + '. Reason: ' + raw.slice(0, 160), 60); } catch (_) {}
+        upstream = retry;
+      }
+    }
+  }
+
+  if (!upstream.ok) {
+    // The model errored, so it produced nothing. Give the reservation back -
+    // otherwise an outage would quietly burn through everyone's daily quota.
+    await refundReservation();
+    const e = await upstream.json().catch(() => ({}));
+    try { await _workerError(env, 'aiProxy:upstream', new Error('upstream ' + upstream.status)); } catch (_) {}
+    // A 401/403 from the model means your API key is bad/expired/over-quota -
+    // that breaks the ENTIRE product for everyone, so alert loudly and fast.
+    if (upstream.status === 401 || upstream.status === 403) {
+      ctx.waitUntil(alertOnce(env, 'model_auth_fail', `🚨 Model API rejected our key (${upstream.status}): ${e?.error?.message || 'auth error'}. AI is DOWN for all users - check AMV_MODEL_KEY / billing.`, 10));
+    } else if (upstream.status >= 500) {
+      ctx.waitUntil(alertOnce(env, 'model_5xx', `⚠️ Model API erroring (${upstream.status}). AI responses may be failing.`, 15));
+    }
+    return json({ error: e?.error?.message || 'AI error', status: upstream.status }, upstream.status);
+  }
+
+  // 7) pass the stream to the client AND tally tokens/cost as it flows
+  const flow = _stopAwareStream(upstream.body, env, user && user.email, _reqId, ctx);
+  const toClient = flow.toClient;
+  /* The reservations are handed on so meterStream settles them instead of
+     charging again. Passed by value AFTER every early return, so anything that
+     refused above has already given them back and the numbers here are what is
+     genuinely still booked. */
+  ctx.waitUntil(meterStream(flow.toMeter, eng, { dName, mName, gName, costName, user, env, limits,
+    reqMessages: body.messages || [], reserved: reserve,
+    reservedUSD: bookedUSD, reservedGlobalUSD: bookedGlobalUSD, reqId: _reqId, stopped: flow.stopped,
+    creditName: overflowWhy ? creditName : '', reservedCreditUSD: bookedCreditUSD }));
+
+  return new Response(toClient, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', ...CORS, ...SECURITY_HEADERS,
+      // Tell the client which engine actually ran. Without this, a routed turn
+      // would be labelled "AMV Auto", which says nothing.
+      'X-AMV-Engine': key,
+      'X-AMV-Effort': _effort || '',
+      'X-AMV-Speed': _speed,
+      'X-AMV-Engine-Why': routed ? routed.why : '' },
+  });
+}
+
+/* Read the SSE copy, extract usage, persist token + cost counters atomically.
+   Hardened for accuracy (auditor #3):
+   - Prices cache tiers correctly: cache READ ~0.1x input, cache WRITE ~1.25x.
+   - Survives interruptions: tracks the latest usage seen, so a disconnect
+     mid-stream still bills what was generated (never a free ride).
+   - Handles message_start / message_delta / message_stop usage shapes.
+   - Falls back to an output estimate if the stream yields no usage at all. */

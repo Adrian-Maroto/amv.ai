@@ -1,84 +1,3 @@
-       : rank >= PLAN_RANK.pro ? COMPUTER_MINUTES.pro : 0;
-}
-async function _computerName(email){
-  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-computer:' + String(email).toLowerCase()));
-  return 'u:' + [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 48);
-}
-async function _computerUsedSeconds(env, email){
-  return +((await counter(env, `cmin:${email}:${monthKey()}`, { op: 'get' })).value || 0);
-}
-/* AWAKE TIME, AS THE UNION OF WINDOWS. Each request keeps the machine up
-   until COMPUTER_AWAKE_S after it - so a request inside a window bills only
-   the extension, and one after a gap bills a fresh window. `cwake:` holds where
-   the billed time ends. An extension under 30 seconds is not written: the mark
-   stays put, so the next request bills it from there and nothing is lost -
-   and a burst of requests does not become a burst of writes to one key. */
-async function _computerBillAwake(env, email, atMs){
-  const key = `cwake:${email}`;
-  const billedTo = +(await env.AMV_KV.get(key).catch(() => null)) || 0;
-  const end = atMs + COMPUTER_AWAKE_S * 1000;
-  const add = Math.ceil((end - Math.max(billedTo, atMs)) / 1000);
-  if(add < 30) return 0;
-  await env.AMV_KV.put(key, String(end), { expirationTtl: 2 * 86400 });
-  await counter(env, `cmin:${email}:${monthKey()}`, { op: 'incr', amount: add, ttlMs: 40 * 86400000 });
-  return add;
-}
-async function computerInfo(request, env){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'unauthorized' }, 401);
-  const cap = _computerCap(user);
-  return json({ ok: true, available: _computerOn(env), allowed: cap > 0, minPlan: COMPUTER_MIN_PLAN,
-                minutes: { used: Math.ceil((await _computerUsedSeconds(env, user.email)) / 60), cap } });
-}
-async function computerRoute(request, env, route){
-  const user = await requireUser(request, env);
-  if(!user) return json({ error:'unauthorized' }, 401);
-  if(!_computerOn(env)) return json({ error: 'AMV’s cloud computer is not switched on for this deployment yet. You can still connect your own computer.', code: 'needs_service' }, 503);
-  const cap = _computerCap(user);
-  if(!cap) return json({ error: 'The cloud computer comes with Pro and above.', code: 'plan_required', minPlan: COMPUTER_MIN_PLAN }, 402);
-  const limited = await guardAction(env, 'computer:' + user.email, 120, 2000, 'requests to your cloud computer');
-  if(limited) return limited;
-  /* Spent: nothing more reaches the machine, because anything that reaches it
-     keeps it awake. Disconnecting still goes through - it stops what runs. */
-  if(route !== 'revoke'){
-    const used = await _computerUsedSeconds(env, user.email);
-    if(used >= cap * 60)
-      return json({ error: `You have used this month’s ${cap} minutes of cloud computer time. It starts again next month, or upgrade for more.`,
-                    code: 'computer_minutes', minutes: { used: Math.ceil(used / 60), cap } }, 429);
-  }
-  const raw = await request.text();
-  if(raw.length > 8 * 1024 * 1024) return json({ error: 'That is too large to send to the cloud computer.', code: 'too_large' }, 413);
-  let stub;
-  try{ stub = env.AMV_COMPUTER.get(env.AMV_COMPUTER.idFromName(await _computerName(user.email))); }
-  catch(e){ return json({ error: 'The cloud computer could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503); }
-  await _computerBillAwake(env, user.email, Date.now());
-  let r, text;
-  try{
-    r = await stub.fetch(new Request('http://amv-computer/amv-bridge/' + route, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-AMV-Bridge-Token': String(env.AMV_COMPUTER_KEY) }, body: raw || '{}' }));
-    text = await r.text();
-  }catch(e){
-    audit(env, 'computer_unavailable', { by: user.email, route });
-    return json({ error: 'The cloud computer did not start. Try again in a minute.', code: 'computer_unavailable' }, 503);
-  }
-  let d; try{ d = JSON.parse(text); }catch(e){ d = null; }
-  if(!d || typeof d !== 'object') return json({ error: 'The cloud computer answered with something AMV could not read.', code: 'computer_unavailable' }, 502);
-  /* The container refusing AMV's key means the two Workers hold different
-     keys - a deployment fault, not the person's session. Passed through as a
-     401 it would read as "signed out" and send them to sign in again. */
-  if(r.status === 401){
-    audit(env, 'computer_key_mismatch', { by: user.email, route });
-    return json({ error: 'The cloud computer is not set up correctly on this deployment. Nothing ran.', code: 'computer_unavailable' }, 503);
-  }
-  /* A long command kept it awake past the window billed when it started, so
-     the window is extended from when it finished. */
-  if(route === 'exec'){
-    await _computerBillAwake(env, user.email, Date.now());
-    if(r.ok) audit(env, 'computer_exec', { by: user.email, ms: +d.ms || 0, exit: d.exitCode });
-  }
-  return json(d, r.status);
-}
-
 /* ══ COMPANY SIGN-IN (single sign-on over OpenID Connect) ═══════════════════
 
    A team signs its people in through its own identity provider - Okta,
@@ -436,3 +355,84 @@ async function authSsoFinish(request, env){
      personal account: the company is paying for these, and somebody signing in
      with the company's provider expects the company's AMV. */
   if(!_role(team, email)){
+    let joined;
+    try{
+      joined = await _withTeam(env, team.id, (fresh) => {
+        if(!fresh) return { error:'gone' };
+        fresh.members = fresh.members || [];
+        if(fresh.members.find(m => m.email === email)) return { already:true };
+        const limit = _teamSeatLimit(_teamPlan(fresh), fresh.customCfg);
+        if(fresh.members.length >= limit) return { error:'seat_limit' };
+        fresh.members.push({ email, role:'member', joinedAt: Date.now(), via:'sso' });
+        return { joined:true };
+      });
+    }catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
+    if(joined && joined.error === 'seat_limit')
+      return json({ error:'Your company’s AMV team has no free seats. Ask whoever runs it to add one.', code:'seat_limit' }, 402);
+    if(joined && joined.error) return json({ error:'Your company no longer signs in this way.', code:'sso_off' }, 400);
+    try{
+      await env.AMV_KV.put('userteam:' + email, team.id);
+      await _setUserTeam(env, email, team.id);
+    }catch(e){
+      try{ await _withTeam(env, team.id, (fresh) => { if(fresh) fresh.members = (fresh.members || []).filter(m => m.email !== email); return true; }); }catch(_){}
+      return json({ error:'AMV could not finish signing you in. Nothing was changed - please try again.', code:'join_incomplete' }, 503);
+    }
+    if(joined && joined.joined) await _teamAudit(env, team, email, 'member_joined', { via:'sso' });
+  }
+  audit(env, 'sso_signed_in', { team: team.id });
+  await _userEvent(env, request, email, 'signed_in', { reason: 'company sign-in' });
+  const tokens = await issueTokens(env, email, acct.name || name, await _sessOpen(env, request, email));
+  return _tokenResponse(env, tokens, { email, name: acct.name || name, team: team.name || '' });
+}
+
+async function googlePickerConfig(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const clientId = String(env.GOOGLE_CLIENT_ID || ''), apiKey = String(env.GOOGLE_PICKER_API_KEY || '');
+  const appId = String(env.GOOGLE_PROJECT_NUMBER || '').trim();
+  if(!clientId || !apiKey || !/^\d{6,20}$/.test(appId)) return json({ ok:true, configured:false });
+  return json({ ok:true, configured:true, clientId, apiKey, appId });
+}
+
+async function connRemove(request, env){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  /* This reaches a third party - the provider's revoke endpoint - so it is
+     bounded like everything else that does. Generous, because disconnecting is
+     something somebody should never feel discouraged from doing, and bounded,
+     because an unbounded outbound call is an unbounded outbound call even when
+     the intent behind it is good. */
+  const blocked = await guardAction(env, 'connrm:' + user.email, 20, 200, 'disconnections');
+  if(blocked) return blocked;
+
+  const body = await request.json().catch(()=>({}));
+  const id = String(body.id||'');
+  const all = (await DB.get(env, CONN_KV, user.email)) || {};
+  const c = all[id];
+  if(!c) return json({ error:'not_found' }, 404);
+  const p = CONN_PROVIDERS[c.provider] || {};
+
+  let revoked = false, why = '';
+  if(p.revoke){
+    try{
+      const tok = await connOpen(env, c.sealed);
+      const r = await _connRevokeRequest(env, p, tok);
+      revoked = r.ok;
+      if(!revoked) why = 'http_' + (r.status || 'no_response');
+    }catch(e){ why = String((e && e.message) || 'failed').slice(0, 60); }
+  }
+
+  /* Forgotten either way. Keeping a token AMV could not revoke would be holding
+     a credential the person has asked it to stop holding - the honest failure
+     is to drop it here and tell them to finish the job at the provider. */
+  await _connMerge(env, user.email, (rec) => { delete rec[id]; });
+  audit(env, 'conn_removed', { by:user.email, provider:c.provider, revoked, why });
+
+  return json({ ok:true, revoked,
+    message: revoked
+      ? 'Disconnected, and the grant was revoked at ' + (p.name||c.provider) + '.'
+      : (p.revoke
+          ? 'AMV forgot this account, but ' + (p.name||c.provider) + ' did not confirm the grant was revoked' + (why?' ('+why+')':'') + '. Remove it in your ' + (p.name||c.provider) + ' account to be certain.'
+          : 'AMV forgot this account and can no longer use it. ' + (p.revokeNote || (p.name||c.provider) + ' has no revoke endpoint, so end it there too if you want the grant gone.')) });
+}
+
