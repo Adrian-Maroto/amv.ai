@@ -3857,7 +3857,10 @@ const CONN_ACTIONS = {
           body: JSON.stringify({ raw: b64 }) }, 20000);
       if(!r.ok) throw new Error('gmail_' + r.status);
       const d = await r.json().catch(()=>({}));
-      return { sent: true, id: d.id || '' };
+      /* The send permission cannot read the mailbox, so the read-back is
+         Gmail's own record of the message it created: an id, filed as SENT. */
+      const verified = !!d.id && Array.isArray(d.labelIds) && d.labelIds.includes('SENT');
+      return { sent: verified, id: d.id || '', verified };
     },
   },
   'calendar.list': {
@@ -3878,7 +3881,17 @@ const CONN_ACTIONS = {
           body: JSON.stringify(body) }, 20000);
       if(!r.ok) throw new Error('calendar_' + r.status);
       const d = await r.json().catch(()=>({}));
-      return { created: true, id: d.id || '', link: d.htmlLink || '' };
+      /* Read back from the calendar, not taken from the answer to the insert. */
+      let verified = false;
+      if(d.id){
+        try{
+          const g = await fetchDeadline('https://www.googleapis.com/calendar/v3/calendars/primary/events/' + encodeURIComponent(d.id),
+            { headers:{ Authorization:'Bearer ' + token } }, 15000);
+          if(g.status === 404) verified = false; else if(!g.ok) verified = null;
+          else { const e = await g.json().catch(()=>({})); verified = e.id === d.id && e.status !== 'cancelled'; }
+        }catch(e){ verified = null; }
+      }
+      return { created: verified !== false, id: d.id || '', link: d.htmlLink || '', verified };
     },
   },
   'drive.list': {
@@ -3915,7 +3928,16 @@ const CONN_ACTIONS = {
           body: JSON.stringify({ name: title }) }, 20000);
       if(!r.ok) throw new Error('drive_' + r.status);
       const d = await r.json().catch(()=>({}));
-      return { id: d.id || '', name: d.name || title, link: d.webViewLink || '' };
+      let verified = false;
+      if(d.id){
+        try{
+          const g = await fetchDeadline('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(d.id) + '?fields=id,trashed',
+            { headers:{ Authorization:'Bearer ' + token } }, 15000);
+          if(g.status === 404) verified = false; else if(!g.ok) verified = null;
+          else { const f = await g.json().catch(()=>({})); verified = f.id === d.id && !f.trashed; }
+        }catch(e){ verified = null; }
+      }
+      return { id: d.id || '', name: d.name || title, link: d.webViewLink || '', verified };
     },
   },
   /* Share the copy AMV made - never anything else. drive.file cannot reach a
@@ -3937,7 +3959,20 @@ const CONN_ACTIONS = {
         { method:'POST', headers:{ Authorization:'Bearer ' + token, 'Content-Type':'application/json' },
           body: JSON.stringify({ type:'user', role, emailAddress: to }) }, 20000);
       if(!r.ok) throw new Error('drive_' + r.status);
-      return { shared: true, role };
+      const p = await r.json().catch(()=>({}));
+      /* The permission as Drive now holds it: this person, this role. */
+      let verified = false;
+      if(p.id){
+        try{
+          const g = await fetchDeadline('https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId)
+            + '/permissions/' + encodeURIComponent(p.id) + '?fields=id,role,emailAddress',
+            { headers:{ Authorization:'Bearer ' + token } }, 15000);
+          if(g.status === 404) verified = false; else if(!g.ok) verified = null;
+          else { const q = await g.json().catch(()=>({}));
+                 verified = q.role === role && String(q.emailAddress || '').toLowerCase() === to.toLowerCase(); }
+        }catch(e){ verified = null; }
+      }
+      return { shared: verified !== false, role, verified };
     },
   },
   /* ── GOOGLE DOCS AND SHEETS, EDITED WHERE THEY ARE ─────────────────────────
@@ -4125,8 +4160,15 @@ const CONN_ACTIONS = {
       if(rr.status === 422) throw new Error('branch_exists');
       if(!rr.ok) throw new Error('github_ref_' + rr.status);
 
+      /* The branch as GitHub now has it, pointing at this commit. */
+      let verified = null;
+      try{
+        const g = await fetchDeadline(api + '/git/ref/heads/' + encodeURIComponent(branch), { headers: H }, 15000);
+        if(g.status === 404) verified = false;
+        else if(g.ok) verified = ((await g.json().catch(()=>({}))).object || {}).sha === commit.sha;
+      }catch(e){}
       return { repo, branch, base, files: files.length, commit: commit.sha.slice(0, 7),
-               url: 'https://github.com/' + repo + '/tree/' + branch };
+               url: 'https://github.com/' + repo + '/tree/' + branch, verified };
     },
   },
   /* The two the client already had tools for, and could never reach: both
@@ -4155,7 +4197,15 @@ const CONN_ACTIONS = {
           body: JSON.stringify({ title, body: String(args.body || '').slice(0, 8000) }) }, 20000);
       if(!r.ok) throw new Error('github_' + r.status);
       const d = await r.json().catch(()=>({}));
-      return { created:true, number: d.number || 0, url: d.html_url || '' };
+      let verified = false;
+      if(d.number){
+        try{
+          const g = await fetchDeadline('https://api.github.com/repos/' + repo + '/issues/' + d.number, { headers: _ghHeaders(token) }, 15000);
+          if(g.status === 404) verified = false; else if(!g.ok) verified = null;
+          else { const i = await g.json().catch(()=>({})); verified = i.number === d.number && i.title === title; }
+        }catch(e){ verified = null; }
+      }
+      return { created: verified !== false, number: d.number || 0, url: d.html_url || '', verified };
     },
   },
   'github.pr': {
@@ -4171,7 +4221,16 @@ const CONN_ACTIONS = {
           body: JSON.stringify({ title, head, base, body }) }, 20000);
       if(!r.ok) throw new Error('github_pr_' + r.status);
       const d = await r.json().catch(()=>({}));
-      return { number: d.number || 0, url: d.html_url || '' };
+      let verified = false;
+      if(d.number){
+        try{
+          const g = await fetchDeadline('https://api.github.com/repos/' + repo + '/pulls/' + d.number, { headers: _ghHeaders(token) }, 15000);
+          if(g.status === 404) verified = false; else if(!g.ok) verified = null;
+          else { const q = await g.json().catch(()=>({}));
+                 verified = q.number === d.number && q.state === 'open' && ((q.head || {}).ref === head); }
+        }catch(e){ verified = null; }
+      }
+      return { number: d.number || 0, url: d.html_url || '', verified };
     },
   },
 };
@@ -4218,6 +4277,28 @@ async function connAct(request, env){
 
   try{
     const result = await spec.run(got.token, body.args || {});
+    /* VERIFY, THEN SAY IT HAPPENED.
+
+       Every write reads its own result back from the provider and reports
+       `verified`: true when the change is there, null when it could not be
+       checked, false when the provider said yes and the change is not there.
+       False is a failure, whatever the status code said - a provider that
+       answers 200 and does nothing must not come back to the person as done.
+       It is not "nothing was changed" either: AMV cannot know that, and saying
+       so would invite a second send. */
+    if(spec.writes){
+      const v = result && typeof result === 'object' ? result.verified : undefined;
+      if(v === undefined){
+        audit(env, 'conn_action_unverifiable', { by: user.email, action: name });
+        return json({ error:'not_verifiable', action: name,
+          message:'AMV has no way to check that, so it is not reporting it as done. Look in the account itself.' }, 500);
+      }
+      if(v === false){
+        audit(env, 'conn_action_not_confirmed', { by: user.email, action: name });
+        return json({ error:'not_confirmed', action: name, result,
+          message:'The account said yes, but when AMV checked, the change was not there. Look in the account before trying again, so it does not happen twice.' }, 502);
+      }
+    }
     return json({ ok: true, action: name, result });
   }catch(e){
     /* The provider's own message is logged and NOT returned. It can carry a

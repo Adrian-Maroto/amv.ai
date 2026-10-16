@@ -39,7 +39,11 @@ async function _connActRun(action, args){
     throw new Error('AMV is not connected to its engine, so it cannot reach your accounts.');
   const d = await AMV_API.connectAct(action, args || {});
   if(d && d.error) throw new Error(d.message || d.error);
-  return d ? d.result : null;
+  const r = d ? d.result : null;
+  /* A write the server could not read back is not a write AMV can call done. */
+  if(r && typeof r === 'object' && r.verified === null)
+    r.note = 'AMV could not check this afterwards. Say it was requested, not that it is done, and suggest looking in the account.';
+  return r;
 }
 try{ window._connActRun=_connActRun; }catch(e){}
 

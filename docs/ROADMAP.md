@@ -105,6 +105,16 @@ from a status code.
 *Done when:* a provider that returns 200 and does nothing produces a failed
 action, not a completed one.
 
+**Done for connected accounts.** Every write on a connected account - Gmail
+send, calendar event, Drive copy and share, Docs and Sheets edits, GitHub push,
+issue and pull request - reads its own result back and reports `verified`.
+`/v1/connect/act` refuses to call a write done when the read-back found nothing
+(`not_confirmed`) or when an action gives no answer at all (`not_verifiable`),
+so a write added later without a read-back cannot report success.
+`a-write-is-read-back-before-it-is-done` holds it, and was checked by switching
+the rule off: three assertions went red. Still open: MCP connector tools, whose
+results are a third party's and cannot be read back by AMV.
+
 ## Milestone 5 — Bounded autonomy, in the product
 
 The engine supports rules today. The user cannot yet write one. Rule builder,
