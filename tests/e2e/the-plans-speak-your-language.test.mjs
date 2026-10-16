@@ -98,6 +98,23 @@ section('Every plan line is something the server does');
   ok(r.all.includes(r.ultraJobs + ' scheduled'), 'Ultra’s real difference is said in the server’s own number', r.ultraJobs);
 }
 
+section('How the limit works names the engines the plan really has');
+{
+  /* It told Pro that "Forge and Apex" are counted weekly - Pro has no Apex -
+     and that the monthly total is "one every nine seconds" on every plan. */
+  const band = await page.evaluate(() => {
+    const out = {};
+    for (const p of ['pro', 'elite', 'ultra']) { _setPlan(p); const d = document.createElement('div'); d.innerHTML = _usageShapeBand(); out[p] = d.textContent; }
+    _setPlan('free');
+    return out;
+  });
+  ok(!/Apex/.test(band.pro) && /Forge is the expensive one/.test(band.pro), 'Pro is told about Forge, the one it has', band.pro);
+  ok(/Forge and Apex/.test(band.elite) && /Forge and Apex/.test(band.ultra), 'Elite and Ultra about both', [band.elite.length, band.ultra.length]);
+  ok(/about 7 a minute/.test(band.pro) && /about 21 a minute/.test(band.elite) && /about 69 a minute/.test(band.ultra),
+     'and each monthly total in its own plan\'s numbers', [band.pro, band.elite, band.ultra].map(t => (t.match(/about \d+ a minute/) || [''])[0]));
+  ok(!/nine seconds/.test(Object.values(band).join(' ')), 'with no fixed figure left over');
+}
+
 section('In Spanish, the money screens are Spanish');
 {
   await switchTo('es');

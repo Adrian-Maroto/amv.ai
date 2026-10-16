@@ -847,8 +847,8 @@ function _integrationsCatalogHTML(opts){
       : '<p class="int-none">'+escH(T('Nothing here connects yet.'))+' '+escH(T('See all to ask for one.'))+'</p>';
     const more=(!only && list.length>Math.min(live.length, APP_ROWS_SHOWN))
       ? '<div class="int-more"><button class="int-seemore" data-app-more="'+escH(c.id)+'" aria-expanded="'+(open?'true':'false')+'"'
-          +' aria-label="'+escH((open ? T('Show fewer') : T('See all')+' '+list.length)+' '+String(c.t).replace(/&amp;/g,'and'))+'">'
-          +escH(open ? T('Show fewer') : (T('See all')+' '+list.length))
+          +' aria-label="'+escH(_seeAllLabel(open, list.length, String(c.t).replace(/&amp;/g,'&')))+'">'
+          +escH(open ? T('Show fewer') : T('See all {0}').replace('{0}', list.length))
           +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
           +(open ? '<path d="M6 15l6-6 6 6"/>' : '<path d="M5 12h14M13 6l6 6-6 6"/>')+'</svg></button></div>' : '';
     return cat(c.t, html, only?'':c.q, more);

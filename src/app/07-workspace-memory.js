@@ -281,7 +281,7 @@ function _mktBrowse(body){
         '<div class="mk-title">'+escH(it.title)+'</div>'+
         '<div class="mk-rating-row">'+_mktStars(it.rating,it.ratings)+'</div>'+
         '<div class="mk-desc">'+escH(it.desc||'')+'</div>'+
-        '<div class="mk-meta"><span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">by '+escH(it.author||'community')+'</span>'+
+        '<div class="mk-meta"><span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">'+escH(T('by {0}')).replace('{0}', escH(it.author||T('community')))+'</span>'+
           '<span class="mk-installs">'+(it.sales?(it.sales+' sold'):(it.installs?(it.installs+' installs'):'new'))+'</span></div>'+
         '<div class="mk-card-actions">'+previewBtn+btn+'</div>'+
         /* The way to say something is wrong with this. The policy screen has
@@ -1520,7 +1520,7 @@ function renderWsGrid(){
       '<div class="wsn">'+escH(ws.name)+'</div>'+
       '<div class="wsd">'+escH(ws.desc||'')+'</div>'+
       (preview?'<div style="margin:8px 0 4px">'+preview+(chats.length>3?'<div style="font-size:var(--t-xs);color:var(--dim);padding-top:2px">+'+(chats.length-3)+' more</div>':'')+'</div>':'<div class="wsc-empty">No chats yet - open to start one</div>')+
-      '<div class="wsm">'+chats.length+' chat'+(chats.length===1?'':'s')+' \u00b7 '+new Date(ws.created||Date.now()).toLocaleDateString()+'</div>'+
+      '<div class="wsm">'+escH(chats.length===1?T('1 chat'):T('{0} chats').replace('{0}',chats.length))+' \u00b7 '+escH(_dateIn(ws.created||Date.now()))+'</div>'+
     '</div>';
   }).join('')+'<button class="wsc wsc-add" data-dact="newProjectCTA"><div class="wsc-add-ic">+</div><div class="wsn">New project</div><div class="wsd">Start a fresh workspace</div></button>';
 }

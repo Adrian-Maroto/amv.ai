@@ -1364,7 +1364,12 @@ step('Page weight is under control', () => {
      its return (~1.5KB gzipped). Both are used before anything else could be
      fetched. The owner's half of company sign-in is NOT here: it is
      team-sso.js, fetched when an owner opens the team page. */
-  const CEILING = 610 * 1024;   // gzipped, which is what actually crosses the network
+  /* 610 -> 611, 2026-10-16, deliberately: the operator is named by the server
+     (the signed session's `own` mark, read by the page) instead of a personal
+     address compiled into every visitor's copy, and text boxes' hints and
+     line-broken prompt cards now reach the translator (~0.3KB gzipped). Both
+     run at boot, before anything could be fetched. */
+  const CEILING = 611 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

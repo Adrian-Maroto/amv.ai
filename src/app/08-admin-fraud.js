@@ -588,8 +588,7 @@ function renderBillingView(targetEl){
             ? _bfact('Usage', escH(_msgMonthLabel(plan)) + ' messages a month \u00b7 '
                 + escH(_msg5hLabel(plan)) + ' every ' + USAGE_WINDOW_HOURS + ' hours')
               + (_planMsgNum(PLAN_TOP_WEEK, plan)
-                  ? _bfact('Top engines', escH(_topWeekLabel(plan))
-                      + ' Forge &amp; Apex messages a week')
+                  ? _bfact('Top engines', escH(T('{0} top-engine messages a week').replace('{0}', _topWeekLabel(plan))))
                   : '')
               + (P.allowance ? _bfact('Token allowance', escH(P.allowance) + ' a month, the secondary cap') : '')
             : (P.allowance?_bfact('Usage', escH(P.allowance)+' tokens a month'):''))+
@@ -1259,7 +1258,7 @@ function openPlanCompare(highlight){
        want them. */
     ['Messages a month', p=>isC(p)?'You choose':_msgMonthLabel(p)],
     ['Messages every '+USAGE_WINDOW_HOURS+' hours (it resets)', p=>_msg5hLabel(isC(p)?'custom':p)],
-    ['Forge &amp; Apex messages a week', p=>{ const n=_planMsgNum(PLAN_TOP_WEEK,isC(p)?'custom':p); return n?n.toLocaleString():'-'; }],
+    ['Top-engine messages a week', p=>{ const n=_planMsgNum(PLAN_TOP_WEEK,isC(p)?'custom':p); return n?n.toLocaleString():'-'; }],
     ['Token allowance (the secondary cap)', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' a month')],
     ['AMV Pulse (fast)', p=>'\u2713'],
     ['AMV Core (balanced)', p=>'\u2713'],

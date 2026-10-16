@@ -2949,7 +2949,7 @@ function _cwJobsBody(jobs, jobCard){
   const rest=jobs.filter(j=>CW_CATS.indexOf(j.cat)<0);
   const preview=(list)=>{ let n=0; return list.filter(j=>j.on || n++ < CW_CAT_PREVIEW); };
   const seeAll=(c,n,shown)=>n>shown
-    ? `<div class="int-more cw-cat-more"><button class="int-seemore" data-dact="cwCatAll" data-darg="${escH(c)}" aria-label="${escH('See all '+n+' in '+c)}">See all ${n}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>`
+    ? `<div class="int-more cw-cat-more"><button class="int-seemore" data-dact="cwCatAll" data-darg="${escH(c)}" aria-label="${escH(_seeAllLabel(false, n, c))}">${escH(T('See all {0}').replace('{0}', n))}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>`
     : '';
   return cgroup + known.map(c=>{
       const all=jobs.filter(j=>j.cat===c), shown=preview(all);

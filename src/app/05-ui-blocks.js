@@ -1915,7 +1915,7 @@ function renderChatView() {
                 '<span>'+mdl.label+'</span>'+
                 '<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'+
               '</button>'+
-              '<button id="snd">'+
+              '<button id="snd" type="button" aria-label="'+escH(T(S.busy?'Stop generating':'Send message'))+'">'+
                 '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'+
               '</button>'+
             '</div>'+
@@ -2564,9 +2564,7 @@ function renderChatMsgs() {
 
   if(!msgs.length) {
     const fname=S.user?.name?.split(' ')[0]||'';
-    const hour=new Date().getHours();
-    const greet=hour<12?'Good morning':hour<17?'Good afternoon':'Good evening';
-    const title = fname ? (greet+', '+escH(fname)) : 'What should we build?';
+    const title = fname ? _greetHTML(fname) : escH(T('What should we build?'));
     cm.classList.add('cm-empty');
     const cv=$('cv'); if(cv) cv.classList.add('cv-home');
     // Greeting sits above the composer; the starter chips render BELOW it.
@@ -3652,7 +3650,7 @@ function renderDashboard(){
   vc.innerHTML=
     '<div class="sv fi"><div class="dash-wrap" style="max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:22px">'+
       '<div>'+
-        '<h2 style="font-size:var(--t-xl);font-weight:700;letter-spacing:-.4px;margin-bottom:3px">Good '+greeting()+', '+escH(S.user?.name?.split(' ')[0]||'there')+'.</h2>'+
+        '<h2 style="font-size:var(--t-xl);font-weight:700;letter-spacing:-.4px;margin-bottom:3px">'+_greetHTML(S.user?.name?.split(' ')[0]||'')+'</h2>'+
         '<p style="font-size:var(--t-base);color:var(--mu)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
       '</div>'+
       '<div class="dg">'+
@@ -3699,6 +3697,12 @@ function renderDashboard(){
   vc.querySelectorAll('[data-lcid]').forEach(el=>on(el,'click',()=>loadConv(el.dataset.lcid)));
 }
 function greeting(){ const h=new Date().getHours(); return h<12?'morning':h<17?'afternoon':'evening'; }
+/* "Good evening, Kim" as one translated sentence with the name in its slot;
+   without a name, the greeting on its own. Returns HTML. */
+function _greetHTML(name){
+  const g=greeting();
+  return name ? escH(T('Good '+g+', {name}')).replace('{name}', escH(name)) : escH(T('Good '+g));
+}
 
 /* ONE MODAL SHELL, BECAUSE THERE WERE ABOUT TO BE FIVE.
 

@@ -2954,8 +2954,8 @@ function _onBusyChange(now, was){
   try{
     const snd=document.getElementById('snd');
     if(snd){
-      if(now){ snd.classList.add('stop'); snd.title='Stop generating'; snd.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'; }
-      else { snd.classList.remove('stop'); snd.title='Send'; snd.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'; }
+      if(now){ snd.classList.add('stop'); snd.title=T('Stop generating'); snd.setAttribute('aria-label',T('Stop generating')); snd.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'; }
+      else { snd.classList.remove('stop'); snd.title=T('Send'); snd.setAttribute('aria-label',T('Send message')); snd.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'; }
     }
   }catch(e){}
   if(now && !was){ _busyStartedAt=Date.now(); _showWorkingPill(true); }
@@ -3569,21 +3569,38 @@ try{ window._budgetGuard = _budgetGuard; }catch(e){}
    the single source of truth: even with the ?owner=1 flag or the localStorage
    key set, owner mode is denied unless the logged-in account matches
    OWNER_EMAIL. This means a curious user setting the flag still gets nothing.
-   To transfer ownership to a new email, change OWNER_EMAIL below. When a live
+   To transfer ownership, change the OWNER_EMAIL secret on the Worker. When a live
    backend is connected, the server (OWNER_EMAIL env var / admin:true) is the
    authority; the browser flag never grants admin on production. */
-/* Operator email. Configurable for white-label/resale via a build-time global
-   (window.__AMV_OWNER_EMAIL__ injected at deploy), defaulting to the current
-   operator. NOTE: this is deliberately NOT read from user-settable localStorage
-   - allowing that would let anyone grant themselves owner in local/demo mode.
-   On a live backend the server (OWNER_EMAIL env / admin:true) is the real
-   authority; this client value only gates local UI affordances. */
+/* Operator email. NO PERSONAL ADDRESS IS COMPILED IN: this file ships to every
+   visitor, so the operator's own address used to be readable by anyone who
+   opened it. Who the operator is comes from the server - its OWNER_EMAIL
+   secret, carried as `own` in the signed session the server issued - or from
+   a build-time global for a deployment without a server. NOTE: still not read
+   from user-settable localStorage. On a live backend the server is the only
+   authority; this only decides which screens the page shows, and every owner
+   route checks OWNER_EMAIL itself. */
 const OWNER_EMAIL = (function(){
   try{ if(typeof window!=='undefined' && typeof window.__AMV_OWNER_EMAIL__==='string' && window.__AMV_OWNER_EMAIL__.includes('@')) return window.__AMV_OWNER_EMAIL__.trim().toLowerCase(); }catch(e){}
-  return 'kubikam@icloud.com';
+  return '';
 })();
+/* The server marks the operator's session `own:1`. Read from the token the
+   server signed, for the account signed in now - never from a stored flag. */
+function _sessionSaysOwner(email){
+  try{
+    const tok = (typeof AMV_API !== 'undefined' && AMV_API && AMV_API.token) || '';
+    const seg = String(tok).split('.')[1]; if(!seg) return false;
+    const b64 = seg.replace(/-/g,'+').replace(/_/g,'/');
+    const body = JSON.parse(decodeURIComponent(escape(atob(b64.padEnd(b64.length+(4-b64.length%4)%4,'=')))));
+    return body && body.own === 1 && String(body.email||'').toLowerCase() === String(email||'').trim().toLowerCase();
+  }catch(e){ return false; }
+}
 function _isOwnerEmail(email){
-  try{ return !!email && String(email).trim().toLowerCase() === OWNER_EMAIL.toLowerCase(); }catch(e){ return false; }
+  try{
+    if(!email) return false;
+    if(OWNER_EMAIL && String(email).trim().toLowerCase() === OWNER_EMAIL) return true;
+    return _sessionSaysOwner(email);
+  }catch(e){ return false; }
 }
 function isOwnerMode(){
   // The logged-in account MUST be the operator email. No exceptions in the UI.
@@ -7329,6 +7346,21 @@ const LANGS = {
   ko:{name:'Korean', native:'\ud55c\uad6d\uc5b4'},
   ta:{name:'Tamil', native:'\u0ba4\u0bae\u0bbf\u0bb4\u0bcd'},
 };
+/* "See all 32 in Bank & money" as one sentence, the topic named in the
+   reader's language - a screen reader announces this, not the arrow. */
+function _seeAllLabel(open, n, topic){
+  const t = T(topic);
+  return open ? T('Show fewer in {0}').replace('{0}', t)
+              : T('See all {0} in {1}').replace('{1}', t).replace('{0}', n);
+}
+/* A date written the way the chosen language writes one. The browser's own
+   format follows the BROWSER's language, so somebody who picked Spanish on an
+   English laptop read 10/16/2026. English keeps the browser's format. */
+function _dateIn(ts){
+  const d = new Date(ts);
+  try{ const c=_lang(); if(c && c!=='en' && c!=='auto') return d.toLocaleDateString(c); }catch(e){}
+  return d.toLocaleDateString();
+}
 function _lang(){
   let saved=loadStr('amv_lang');
   if(!saved){
@@ -7502,6 +7534,18 @@ function _collectI18nNodes(root){
       }
       else if(node.nodeType===1){
         const tag=node.tagName;
+        /* A text box's VALUE is the person's own words and is never touched,
+           but its hint and its screen-reader label are AMV's - skipping the
+           whole element left every textarea's placeholder in English. */
+        if(tag==='TEXTAREA' && !blocked && !(node.hasAttribute && node.hasAttribute('data-no-i18n'))){
+          const ph=node.getAttribute('placeholder');
+          if(ph&&ph.trim()&&(/[A-Za-z]/.test(ph)||node._i18nPhSrc!=null)) out.push({type:'ph',node});
+          for(const a of _I18N_ATTRS){
+            const v=node.getAttribute(a);
+            if(v&&v.trim()&&(/[A-Za-z]{2}/.test(v)||(node._i18nAttrSrc&&node._i18nAttrSrc[a]!=null))) out.push({type:'attr',node,attr:a});
+          }
+          continue;
+        }
         if(SKIP[tag]) continue;
         let b = blocked;
         if(node.hasAttribute){
@@ -7645,7 +7689,10 @@ async function _autoTranslateDOM(code, root){
        configured that is an unbounded translation loop billed by the token, and
        the text drifts further from what it started as on every lap. */
     const key=it.node._i18nKey; if(!key) continue;
-    const dict=T(key);
+    /* A prompt card keeps its line breaks ("...was wrong:\n\n[CODE]"), and
+       the dictionary holds the sentence the way it reads, one space apart. */
+    let dict=T(key);
+    if(dict===key && /\s\s|\n/.test(key)){ const flat=key.replace(/\s+/g,' '); const d2=T(flat); if(d2!==flat) dict=d2; }
     if(dict!==key){ _applyI18n(it,dict); continue; }
     const cached=cache[_i18nKey(code,key)];
     if(cached){ _applyI18n(it,cached); }
@@ -7678,7 +7725,7 @@ function _applyI18n(it,val){
       // replace using the remembered key so re-translation from a prior language works
       const key=it.node._i18nKey||(it.node._i18nSrc||'').trim();
       const orig=it.node._i18nSrc!=null?it.node._i18nSrc:it.node.nodeValue;
-      it.node.nodeValue = key ? orig.replace(key, val) : val;
+      it.node.nodeValue = key && orig.indexOf(key)>=0 ? orig.replace(key, val) : val;
     } else {
       it.node.setAttribute('placeholder', val);
     }
@@ -9638,7 +9685,7 @@ function renderChatView() {
                 '<span>'+mdl.label+'</span>'+
                 '<svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>'+
               '</button>'+
-              '<button id="snd">'+
+              '<button id="snd" type="button" aria-label="'+escH(T(S.busy?'Stop generating':'Send message'))+'">'+
                 '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'+
               '</button>'+
             '</div>'+
@@ -10287,9 +10334,7 @@ function renderChatMsgs() {
 
   if(!msgs.length) {
     const fname=S.user?.name?.split(' ')[0]||'';
-    const hour=new Date().getHours();
-    const greet=hour<12?'Good morning':hour<17?'Good afternoon':'Good evening';
-    const title = fname ? (greet+', '+escH(fname)) : 'What should we build?';
+    const title = fname ? _greetHTML(fname) : escH(T('What should we build?'));
     cm.classList.add('cm-empty');
     const cv=$('cv'); if(cv) cv.classList.add('cv-home');
     // Greeting sits above the composer; the starter chips render BELOW it.
@@ -11375,7 +11420,7 @@ function renderDashboard(){
   vc.innerHTML=
     '<div class="sv fi"><div class="dash-wrap" style="max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:22px">'+
       '<div>'+
-        '<h2 style="font-size:var(--t-xl);font-weight:700;letter-spacing:-.4px;margin-bottom:3px">Good '+greeting()+', '+escH(S.user?.name?.split(' ')[0]||'there')+'.</h2>'+
+        '<h2 style="font-size:var(--t-xl);font-weight:700;letter-spacing:-.4px;margin-bottom:3px">'+_greetHTML(S.user?.name?.split(' ')[0]||'')+'</h2>'+
         '<p style="font-size:var(--t-base);color:var(--mu)">Here&#39;s what&#39;s happening with your AMV.AI account.</p>'+
       '</div>'+
       '<div class="dg">'+
@@ -11422,6 +11467,12 @@ function renderDashboard(){
   vc.querySelectorAll('[data-lcid]').forEach(el=>on(el,'click',()=>loadConv(el.dataset.lcid)));
 }
 function greeting(){ const h=new Date().getHours(); return h<12?'morning':h<17?'afternoon':'evening'; }
+/* "Good evening, Kim" as one translated sentence with the name in its slot;
+   without a name, the greeting on its own. Returns HTML. */
+function _greetHTML(name){
+  const g=greeting();
+  return name ? escH(T('Good '+g+', {name}')).replace('{name}', escH(name)) : escH(T('Good '+g));
+}
 
 /* ONE MODAL SHELL, BECAUSE THERE WERE ABOUT TO BE FIVE.
 
@@ -12997,9 +13048,8 @@ function _renderTeamSettingsPane(pane){
       '<button class="btn bp" data-stab="team" style="font-size:var(--t-sm)">Open Team \u2192</button></div>')+
     '<div class="ss2"><h3>What a seat costs the team</h3>'+
       '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
-      'Everyone on a team draws on the same monthly allowance, so one person having a heavy week '+
-      'is felt by everybody. You can see how much is left in <b>Settings \u2192 Plan &amp; billing</b> at any time. '+
-      'Nobody can be charged individually - there is one subscription and one bill.</p>'+
+      escH(T('Everyone on a team draws on the same monthly allowance, so one person having a heavy week is felt by everybody. You can see how much is left in {0} at any time. Nobody can be charged individually - there is one subscription and one bill.'))
+        .replace('{0}', '<b>'+escH(T('Settings \u2192 Plan & billing'))+'</b>')+'</p>'+
     '</div>';
   /* Fetch the team ONCE if we do not have it, then draw again with the real
      numbers. Guarded on the cache being empty: re-rendering unconditionally
@@ -14277,7 +14327,7 @@ function _mktBrowse(body){
         '<div class="mk-title">'+escH(it.title)+'</div>'+
         '<div class="mk-rating-row">'+_mktStars(it.rating,it.ratings)+'</div>'+
         '<div class="mk-desc">'+escH(it.desc||'')+'</div>'+
-        '<div class="mk-meta"><span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">by '+escH(it.author||'community')+'</span>'+
+        '<div class="mk-meta"><span class="mkt-by" data-mk-seller="'+escH(it.authorEmail||'')+'" data-mk-sellername="'+escH(it.author||'')+'">'+escH(T('by {0}')).replace('{0}', escH(it.author||T('community')))+'</span>'+
           '<span class="mk-installs">'+(it.sales?(it.sales+' sold'):(it.installs?(it.installs+' installs'):'new'))+'</span></div>'+
         '<div class="mk-card-actions">'+previewBtn+btn+'</div>'+
         /* The way to say something is wrong with this. The policy screen has
@@ -15516,7 +15566,7 @@ function renderWsGrid(){
       '<div class="wsn">'+escH(ws.name)+'</div>'+
       '<div class="wsd">'+escH(ws.desc||'')+'</div>'+
       (preview?'<div style="margin:8px 0 4px">'+preview+(chats.length>3?'<div style="font-size:var(--t-xs);color:var(--dim);padding-top:2px">+'+(chats.length-3)+' more</div>':'')+'</div>':'<div class="wsc-empty">No chats yet - open to start one</div>')+
-      '<div class="wsm">'+chats.length+' chat'+(chats.length===1?'':'s')+' \u00b7 '+new Date(ws.created||Date.now()).toLocaleDateString()+'</div>'+
+      '<div class="wsm">'+escH(chats.length===1?T('1 chat'):T('{0} chats').replace('{0}',chats.length))+' \u00b7 '+escH(_dateIn(ws.created||Date.now()))+'</div>'+
     '</div>';
   }).join('')+'<button class="wsc wsc-add" data-dact="newProjectCTA"><div class="wsc-add-ic">+</div><div class="wsn">New project</div><div class="wsd">Start a fresh workspace</div></button>';
 }
@@ -16632,8 +16682,7 @@ function renderBillingView(targetEl){
             ? _bfact('Usage', escH(_msgMonthLabel(plan)) + ' messages a month \u00b7 '
                 + escH(_msg5hLabel(plan)) + ' every ' + USAGE_WINDOW_HOURS + ' hours')
               + (_planMsgNum(PLAN_TOP_WEEK, plan)
-                  ? _bfact('Top engines', escH(_topWeekLabel(plan))
-                      + ' Forge &amp; Apex messages a week')
+                  ? _bfact('Top engines', escH(T('{0} top-engine messages a week').replace('{0}', _topWeekLabel(plan))))
                   : '')
               + (P.allowance ? _bfact('Token allowance', escH(P.allowance) + ' a month, the secondary cap') : '')
             : (P.allowance?_bfact('Usage', escH(P.allowance)+' tokens a month'):''))+
@@ -17303,7 +17352,7 @@ function openPlanCompare(highlight){
        want them. */
     ['Messages a month', p=>isC(p)?'You choose':_msgMonthLabel(p)],
     ['Messages every '+USAGE_WINDOW_HOURS+' hours (it resets)', p=>_msg5hLabel(isC(p)?'custom':p)],
-    ['Forge &amp; Apex messages a week', p=>{ const n=_planMsgNum(PLAN_TOP_WEEK,isC(p)?'custom':p); return n?n.toLocaleString():'-'; }],
+    ['Top-engine messages a week', p=>{ const n=_planMsgNum(PLAN_TOP_WEEK,isC(p)?'custom':p); return n?n.toLocaleString():'-'; }],
     ['Token allowance (the secondary cap)', p=>isC(p)?'You choose':((PLANS[p].allowance||'')+' a month')],
     ['AMV Pulse (fast)', p=>'\u2713'],
     ['AMV Core (balanced)', p=>'\u2713'],
@@ -21878,7 +21927,7 @@ function _cwJobsBody(jobs, jobCard){
   const rest=jobs.filter(j=>CW_CATS.indexOf(j.cat)<0);
   const preview=(list)=>{ let n=0; return list.filter(j=>j.on || n++ < CW_CAT_PREVIEW); };
   const seeAll=(c,n,shown)=>n>shown
-    ? `<div class="int-more cw-cat-more"><button class="int-seemore" data-dact="cwCatAll" data-darg="${escH(c)}" aria-label="${escH('See all '+n+' in '+c)}">See all ${n}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>`
+    ? `<div class="int-more cw-cat-more"><button class="int-seemore" data-dact="cwCatAll" data-darg="${escH(c)}" aria-label="${escH(_seeAllLabel(false, n, c))}">${escH(T('See all {0}').replace('{0}', n))}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>`
     : '';
   return cgroup + known.map(c=>{
       const all=jobs.filter(j=>j.cat===c), shown=preview(all);
@@ -29479,7 +29528,7 @@ function renderHandoffView(){
               know to carry on.
             </div></div>
           <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">Hand off to</label>
-            <input id="ho-to" placeholder="teammate@email.com  - or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:var(--t-md)"></div>
+            <input id="ho-to" placeholder="teammate@email.com - or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:var(--t-md)"></div>
           <button class="btn bp" data-dact="hoSend" style="align-self:flex-start">Send handoff</button>
         </div>
       </div>
@@ -30033,31 +30082,39 @@ function renderView(){
      the price up and is therefore the number most worth being honest about;
 
      and the monthly total, which is sized so that a person cannot reach it -
-     Pro is one message every nine seconds, eight hours a day, every day.
+     Pro is about seven messages a minute, eight hours a day, every day.
 
    Written as three plain statements with the real figures in them. A page that
    explains its own limits sells the plan; a page that hides them sells one
    month. */
+function _planAllowsApex(p){
+  if(p==='custom') return true;
+  const t=PLAN_TIERS[p==='team'?'pro':p]; return !!(t && t.models.indexOf('smart')>=0);
+}
 function _usageShapeBand(){
   const plan=(typeof loadStr==='function' && loadStr('amv_plan')) || 'free';
   const shown=(plan==='free')?'pro':plan;
+  const pname=PLANS[shown]?PLANS[shown].name:'Pro';
+  const perMin=Math.max(1, Math.round(_planMsgNum(PLAN_MONTH_MESSAGES, shown)/(30*8*60)));
   const item=(t,d)=>'<div class="ushape-i"><div class="ushape-t">'+t+'</div>'+
                     '<div class="ushape-d">'+d+'</div></div>';
   return '<section class="ushape" aria-label="How your limit works">'+
     '<div class="ushape-h">How the limit actually works</div>'+
     '<div class="ushape-g">'+
-      item('It comes back every '+USAGE_WINDOW_HOURS+' hours',
-           'Not one monthly cliff. On '+escH(PLANS[shown]?PLANS[shown].name:'Pro')+' that is '+
-           escH(_msg5hLabel(shown))+' messages per window, and the window rolls - a hard afternoon '+
-           'does not cost you the evening.')+
-      item('The top engines have their own weekly number',
-           'Forge and Apex are the expensive ones, so they are counted separately: '+
-           escH(_topWeekLabel(shown))+' a week on '+escH(PLANS[shown]?PLANS[shown].name:'Pro')+
-           '. Everything else keeps running at full speed when that runs out, '+
-           'rather than the account stopping.')+
-      item('The monthly total is not meant to be reachable',
-           escH(_msgMonthLabel(shown))+' messages a month is one every nine seconds, eight hours a '+
-           'day, every day. It exists as an anti-abuse ceiling - not as the thing you ration.')+
+      item(escH(T('It comes back every {0} hours').replace('{0}', USAGE_WINDOW_HOURS)),
+           escH(T('Not one monthly cliff. On {plan} that is {0} messages per window, and the window rolls - a hard afternoon does not cost you the evening.')
+             .replace('{plan}', pname).replace('{0}', _msg5hLabel(shown))))+
+      item(escH(T('The top engines have their own weekly number')),
+           /* Pro has Forge and not Apex, so it is told about the one it has. */
+           escH(T(_planAllowsApex(shown)
+               ? 'Forge and Apex are the expensive ones, so they are counted separately: {0} a week on {plan}. Everything else keeps running at full speed when that runs out, rather than the account stopping.'
+               : 'Forge is the expensive one, so it is counted separately: {0} a week on {plan}. Everything else keeps running at full speed when that runs out, rather than the account stopping.')
+             .replace('{plan}', pname).replace('{0}', _topWeekLabel(shown))))+
+      item(escH(T('The monthly total is not meant to be reachable')),
+           /* Worked out from the plan's own number - "one every nine seconds"
+              was Pro's figure, printed for every plan. */
+           escH(T('{0} messages a month is about {1} a minute, eight hours a day, every day. It exists as an anti-abuse ceiling - not as the thing you ration.')
+             .replace('{1}', perMin.toLocaleString()).replace('{0}', _msgMonthLabel(shown))))+
     '</div>'+
     '<p class="ushape-f">Every one of these is checked on the server before a request runs, '+
       'and where you stand is always under Settings, Plan &amp; billing.</p>'+
@@ -31959,7 +32016,9 @@ function _renderSetPaneInner(only, into){
          is never final, and a "yes" can always be taken back. */
       '<div class="ss2"><h3>Notifications</h3>'+
         '<div class="prv-pref"><div><div class="prv-pref-t">Email me when AMV is done</div>'+
-          '<div class="prv-pref-s">When an answer takes a while and you have gone to do something else, AMV emails '+escH((S.user&&S.user.email)||'your account')+' as soon as it is ready. Only then - never about something you watched finish.</div></div>'+
+          '<div class="prv-pref-s">'+((S.user&&S.user.email)
+            ? escH(T('When an answer takes a while and you have gone to do something else, AMV emails {email} as soon as it is ready. Only then - never about something you watched finish.')).replace('{email}', escH(S.user.email))
+            : escH(T('When an answer takes a while and you have gone to do something else, AMV emails your account address as soon as it is ready. Only then - never about something you watched finish.')))+'</div></div>'+
           '<label class="sw"><input type="checkbox" id="acct-done-mail" aria-label="Email me when AMV is done" '+(loadStr('amv_done_mail')==='1'?'checked':'')+'><span class="sw-sl"></span></label></div>'+
         '<div class="set-sub" id="acct-done-msg" role="status" aria-live="polite" style="margin:6px 0 0"></div>'+
       '</div>'+
@@ -32044,7 +32103,9 @@ function _renderSetPaneInner(only, into){
       (S.user&&S.user.provider==='google'?
         '<div class="ss2"><p style="font-size:var(--t-base);color:var(--mu)">Signed in with Google. Manage your password at <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent-txt)">myaccount.google.com</a>.</p></div>':
         '<div class="ss2"><h3>Password</h3>'+
-          '<div class="br2"><div><div class="opt-name">Reset your password</div><div class="opt-desc">We\u2019ll send a secure reset link to '+escH((S.user&&S.user.email)||'your email')+'. No need to remember your current one.</div></div>'+
+          '<div class="br2"><div><div class="opt-name">Reset your password</div><div class="opt-desc">'+((S.user&&S.user.email)
+            ? escH(T('We\u2019ll send a secure reset link to {email}. No need to remember your current one.')).replace('{email}', escH(S.user.email))
+            : escH(T('We\u2019ll send a secure reset link to your email. No need to remember your current one.')))+'</div></div>'+
           '<button class="btn bp" id="reset-pw-btn" style="font-size:var(--t-sm);white-space:nowrap">Send reset link</button></div>'+
           '<div id="pw-msg" style="display:none;font-size:var(--t-sm);padding:9px 12px;border-radius:var(--r-sm);margin-top:12px"></div>'+
         '</div>')+
@@ -32054,7 +32115,8 @@ function _renderSetPaneInner(only, into){
         /* Naming the screen the control is on. "Sign out everywhere" lives in
            Account, and telling somebody to do it without saying where is how a
            worried person ends up hunting for it. */
-        '<div class="set-hint">Where and when this account has been used. If something here was not you: send yourself a reset link above, then use <b>Sign out everywhere</b> under Settings &rarr; Account to end every session.</div>'+
+        '<div class="set-hint">'+escH(T('Where and when this account has been used. If something here was not you: send yourself a reset link above, then use {0} under {1} to end every session.'))
+          .replace('{0}', '<b>'+escH(T('Sign out everywhere'))+'</b>').replace('{1}', escH(T('Settings \u2192 Account')))+'</div>'+
         '<div id="act-block"></div>'+
       '</div>'+
       '<div class="ss2"><h3>This device</h3>'+
@@ -32248,18 +32310,12 @@ function _renderSetPaneInner(only, into){
     pane.innerHTML=
       '<h2 class="set-title">Language</h2>'+
       '<div class="set-sub">Choose the language for AMV\u2019s responses and everything it writes - chat replies, documents, code and 3D models will all use it. You can still ask for any other language inside a message.</div>'+
-      /* The app's own text is translated too, but that half needs the engine.
-         Without it a handful of common labels come from a built-in dictionary
-         and the rest stays English - which is what somebody switching language
-         actually sees, so it is said here rather than discovered. */
-      (_aiBackendReady()
-        ? '<div class="ss2"><h3>The app itself</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
-          'Every screen - chat, Crew, Studio, Dev, Lab, the marketplace, settings - switches with it. '+
-          'The first screen you open in a new language takes a moment to come across, then it is remembered.</p></div>'
-        : '<div class="ss2"><h3>The app itself</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
-          'AMV\u2019s replies will be in your language straight away. Translating <b>the app\u2019s own screens</b> '+
-          'needs the AMV engine connected - until then the common labels change and the rest stays in English '+
-          'rather than being half-translated into something confusing.</p></div>')+
+      /* Every screen ships with its translation in all of these languages
+         (the build refuses an entry missing any of them), so the app switches
+         with or without the engine - this used to say the opposite, which had
+         stopped being true. */
+      '<div class="ss2"><h3>'+escH(T('The app itself'))+'</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
+        escH(T('Every screen - chat, Crew, Studio, Dev, Lab, the marketplace, settings - switches with it straight away. What you type, and the names of people and apps, stay exactly as they are.'))+'</p></div>'+
       '<div class="ss2"><h3>Response language</h3>'+
         '<div class="lang-grid">'+
           Object.entries(LANGS).map(([code,l])=>
@@ -34998,8 +35054,8 @@ function _integrationsCatalogHTML(opts){
       : '<p class="int-none">'+escH(T('Nothing here connects yet.'))+' '+escH(T('See all to ask for one.'))+'</p>';
     const more=(!only && list.length>Math.min(live.length, APP_ROWS_SHOWN))
       ? '<div class="int-more"><button class="int-seemore" data-app-more="'+escH(c.id)+'" aria-expanded="'+(open?'true':'false')+'"'
-          +' aria-label="'+escH((open ? T('Show fewer') : T('See all')+' '+list.length)+' '+String(c.t).replace(/&amp;/g,'and'))+'">'
-          +escH(open ? T('Show fewer') : (T('See all')+' '+list.length))
+          +' aria-label="'+escH(_seeAllLabel(open, list.length, String(c.t).replace(/&amp;/g,'&')))+'">'
+          +escH(open ? T('Show fewer') : T('See all {0}').replace('{0}', list.length))
           +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
           +(open ? '<path d="M6 15l6-6 6 6"/>' : '<path d="M5 12h14M13 6l6 6-6 6"/>')+'</svg></button></div>' : '';
     return cat(c.t, html, only?'':c.q, more);

@@ -354,9 +354,8 @@ function _renderTeamSettingsPane(pane){
       '<button class="btn bp" data-stab="team" style="font-size:var(--t-sm)">Open Team \u2192</button></div>')+
     '<div class="ss2"><h3>What a seat costs the team</h3>'+
       '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
-      'Everyone on a team draws on the same monthly allowance, so one person having a heavy week '+
-      'is felt by everybody. You can see how much is left in <b>Settings \u2192 Plan &amp; billing</b> at any time. '+
-      'Nobody can be charged individually - there is one subscription and one bill.</p>'+
+      escH(T('Everyone on a team draws on the same monthly allowance, so one person having a heavy week is felt by everybody. You can see how much is left in {0} at any time. Nobody can be charged individually - there is one subscription and one bill.'))
+        .replace('{0}', '<b>'+escH(T('Settings \u2192 Plan & billing'))+'</b>')+'</p>'+
     '</div>';
   /* Fetch the team ONCE if we do not have it, then draw again with the real
      numbers. Guarded on the cache being empty: re-rendering unconditionally

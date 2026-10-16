@@ -85,6 +85,25 @@ section('AMV-034: no hardcoded owner-email fallback');
   ok(r.status === 200, 'the configured OWNER_EMAIL grants owner access', r.status);
 }
 
+section('The page learns who the operator is from the session, not from its own source');
+{
+  /* The client used to carry the operator's address as a literal so it could
+     show the owner screens - readable by anyone who opened the page. The server
+     now marks the operator's signed session `own:1` instead. It is a label for
+     the page, never a permission: the route above checks OWNER_EMAIL itself. */
+  const claims = (t) => JSON.parse(Buffer.from(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+  const OWN = 'operator@example.com';
+  const env = mkEnv({ OWNER_EMAIL: OWN });
+  const mine = await W.issueTokens(env, OWN, 'Op');
+  ok(claims(mine.token).own === 1 && claims(mine.refreshToken).own === 1, 'the operator\'s access and refresh tokens say so', claims(mine.token));
+  const other = await W.issueTokens(env, 'someone@example.com', 'S');
+  ok(claims(other.token).own === undefined, 'anyone else\'s token does not', claims(other.token));
+  const none = await W.issueTokens(mkEnv({}), OWN, 'Op');
+  ok(claims(none.token).own === undefined, 'and with no OWNER_EMAIL configured nobody is marked', claims(none.token));
+  const page = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  ok(!/kubikam@|amarotovaleria@/.test(page), 'no personal address is compiled into the page');
+}
+
 section('The limit in front of the admin door is a real limit');
 {
   /* THE GUARD THAT ONLY MATTERS ONCE THE TOKEN IS ALREADY LOST.

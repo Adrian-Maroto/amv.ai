@@ -99,7 +99,7 @@ function renderHandoffView(){
               know to carry on.
             </div></div>
           <div><label class="lbl" style="font-size:var(--t-xs);color:var(--mu)">Hand off to</label>
-            <input id="ho-to" placeholder="teammate@email.com  - or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:var(--t-md)"></div>
+            <input id="ho-to" placeholder="teammate@email.com - or type: crew" style="width:100%;background:var(--glass);border:1px solid var(--glass-bd);border-radius:var(--r-md);padding:12px;color:var(--tx);font-family:var(--fn);font-size:var(--t-md)"></div>
           <button class="btn bp" data-dact="hoSend" style="align-self:flex-start">Send handoff</button>
         </div>
       </div>
@@ -653,31 +653,39 @@ function renderView(){
      the price up and is therefore the number most worth being honest about;
 
      and the monthly total, which is sized so that a person cannot reach it -
-     Pro is one message every nine seconds, eight hours a day, every day.
+     Pro is about seven messages a minute, eight hours a day, every day.
 
    Written as three plain statements with the real figures in them. A page that
    explains its own limits sells the plan; a page that hides them sells one
    month. */
+function _planAllowsApex(p){
+  if(p==='custom') return true;
+  const t=PLAN_TIERS[p==='team'?'pro':p]; return !!(t && t.models.indexOf('smart')>=0);
+}
 function _usageShapeBand(){
   const plan=(typeof loadStr==='function' && loadStr('amv_plan')) || 'free';
   const shown=(plan==='free')?'pro':plan;
+  const pname=PLANS[shown]?PLANS[shown].name:'Pro';
+  const perMin=Math.max(1, Math.round(_planMsgNum(PLAN_MONTH_MESSAGES, shown)/(30*8*60)));
   const item=(t,d)=>'<div class="ushape-i"><div class="ushape-t">'+t+'</div>'+
                     '<div class="ushape-d">'+d+'</div></div>';
   return '<section class="ushape" aria-label="How your limit works">'+
     '<div class="ushape-h">How the limit actually works</div>'+
     '<div class="ushape-g">'+
-      item('It comes back every '+USAGE_WINDOW_HOURS+' hours',
-           'Not one monthly cliff. On '+escH(PLANS[shown]?PLANS[shown].name:'Pro')+' that is '+
-           escH(_msg5hLabel(shown))+' messages per window, and the window rolls - a hard afternoon '+
-           'does not cost you the evening.')+
-      item('The top engines have their own weekly number',
-           'Forge and Apex are the expensive ones, so they are counted separately: '+
-           escH(_topWeekLabel(shown))+' a week on '+escH(PLANS[shown]?PLANS[shown].name:'Pro')+
-           '. Everything else keeps running at full speed when that runs out, '+
-           'rather than the account stopping.')+
-      item('The monthly total is not meant to be reachable',
-           escH(_msgMonthLabel(shown))+' messages a month is one every nine seconds, eight hours a '+
-           'day, every day. It exists as an anti-abuse ceiling - not as the thing you ration.')+
+      item(escH(T('It comes back every {0} hours').replace('{0}', USAGE_WINDOW_HOURS)),
+           escH(T('Not one monthly cliff. On {plan} that is {0} messages per window, and the window rolls - a hard afternoon does not cost you the evening.')
+             .replace('{plan}', pname).replace('{0}', _msg5hLabel(shown))))+
+      item(escH(T('The top engines have their own weekly number')),
+           /* Pro has Forge and not Apex, so it is told about the one it has. */
+           escH(T(_planAllowsApex(shown)
+               ? 'Forge and Apex are the expensive ones, so they are counted separately: {0} a week on {plan}. Everything else keeps running at full speed when that runs out, rather than the account stopping.'
+               : 'Forge is the expensive one, so it is counted separately: {0} a week on {plan}. Everything else keeps running at full speed when that runs out, rather than the account stopping.')
+             .replace('{plan}', pname).replace('{0}', _topWeekLabel(shown))))+
+      item(escH(T('The monthly total is not meant to be reachable')),
+           /* Worked out from the plan's own number - "one every nine seconds"
+              was Pro's figure, printed for every plan. */
+           escH(T('{0} messages a month is about {1} a minute, eight hours a day, every day. It exists as an anti-abuse ceiling - not as the thing you ration.')
+             .replace('{1}', perMin.toLocaleString()).replace('{0}', _msgMonthLabel(shown))))+
     '</div>'+
     '<p class="ushape-f">Every one of these is checked on the server before a request runs, '+
       'and where you stand is always under Settings, Plan &amp; billing.</p>'+
@@ -2579,7 +2587,9 @@ function _renderSetPaneInner(only, into){
          is never final, and a "yes" can always be taken back. */
       '<div class="ss2"><h3>Notifications</h3>'+
         '<div class="prv-pref"><div><div class="prv-pref-t">Email me when AMV is done</div>'+
-          '<div class="prv-pref-s">When an answer takes a while and you have gone to do something else, AMV emails '+escH((S.user&&S.user.email)||'your account')+' as soon as it is ready. Only then - never about something you watched finish.</div></div>'+
+          '<div class="prv-pref-s">'+((S.user&&S.user.email)
+            ? escH(T('When an answer takes a while and you have gone to do something else, AMV emails {email} as soon as it is ready. Only then - never about something you watched finish.')).replace('{email}', escH(S.user.email))
+            : escH(T('When an answer takes a while and you have gone to do something else, AMV emails your account address as soon as it is ready. Only then - never about something you watched finish.')))+'</div></div>'+
           '<label class="sw"><input type="checkbox" id="acct-done-mail" aria-label="Email me when AMV is done" '+(loadStr('amv_done_mail')==='1'?'checked':'')+'><span class="sw-sl"></span></label></div>'+
         '<div class="set-sub" id="acct-done-msg" role="status" aria-live="polite" style="margin:6px 0 0"></div>'+
       '</div>'+
@@ -2664,7 +2674,9 @@ function _renderSetPaneInner(only, into){
       (S.user&&S.user.provider==='google'?
         '<div class="ss2"><p style="font-size:var(--t-base);color:var(--mu)">Signed in with Google. Manage your password at <a href="https://myaccount.google.com" target="_blank" rel="noopener noreferrer" style="color:var(--accent-txt)">myaccount.google.com</a>.</p></div>':
         '<div class="ss2"><h3>Password</h3>'+
-          '<div class="br2"><div><div class="opt-name">Reset your password</div><div class="opt-desc">We\u2019ll send a secure reset link to '+escH((S.user&&S.user.email)||'your email')+'. No need to remember your current one.</div></div>'+
+          '<div class="br2"><div><div class="opt-name">Reset your password</div><div class="opt-desc">'+((S.user&&S.user.email)
+            ? escH(T('We\u2019ll send a secure reset link to {email}. No need to remember your current one.')).replace('{email}', escH(S.user.email))
+            : escH(T('We\u2019ll send a secure reset link to your email. No need to remember your current one.')))+'</div></div>'+
           '<button class="btn bp" id="reset-pw-btn" style="font-size:var(--t-sm);white-space:nowrap">Send reset link</button></div>'+
           '<div id="pw-msg" style="display:none;font-size:var(--t-sm);padding:9px 12px;border-radius:var(--r-sm);margin-top:12px"></div>'+
         '</div>')+
@@ -2674,7 +2686,8 @@ function _renderSetPaneInner(only, into){
         /* Naming the screen the control is on. "Sign out everywhere" lives in
            Account, and telling somebody to do it without saying where is how a
            worried person ends up hunting for it. */
-        '<div class="set-hint">Where and when this account has been used. If something here was not you: send yourself a reset link above, then use <b>Sign out everywhere</b> under Settings &rarr; Account to end every session.</div>'+
+        '<div class="set-hint">'+escH(T('Where and when this account has been used. If something here was not you: send yourself a reset link above, then use {0} under {1} to end every session.'))
+          .replace('{0}', '<b>'+escH(T('Sign out everywhere'))+'</b>').replace('{1}', escH(T('Settings \u2192 Account')))+'</div>'+
         '<div id="act-block"></div>'+
       '</div>'+
       '<div class="ss2"><h3>This device</h3>'+
@@ -2868,18 +2881,12 @@ function _renderSetPaneInner(only, into){
     pane.innerHTML=
       '<h2 class="set-title">Language</h2>'+
       '<div class="set-sub">Choose the language for AMV\u2019s responses and everything it writes - chat replies, documents, code and 3D models will all use it. You can still ask for any other language inside a message.</div>'+
-      /* The app's own text is translated too, but that half needs the engine.
-         Without it a handful of common labels come from a built-in dictionary
-         and the rest stays English - which is what somebody switching language
-         actually sees, so it is said here rather than discovered. */
-      (_aiBackendReady()
-        ? '<div class="ss2"><h3>The app itself</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
-          'Every screen - chat, Crew, Studio, Dev, Lab, the marketplace, settings - switches with it. '+
-          'The first screen you open in a new language takes a moment to come across, then it is remembered.</p></div>'
-        : '<div class="ss2"><h3>The app itself</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
-          'AMV\u2019s replies will be in your language straight away. Translating <b>the app\u2019s own screens</b> '+
-          'needs the AMV engine connected - until then the common labels change and the rest stays in English '+
-          'rather than being half-translated into something confusing.</p></div>')+
+      /* Every screen ships with its translation in all of these languages
+         (the build refuses an entry missing any of them), so the app switches
+         with or without the engine - this used to say the opposite, which had
+         stopped being true. */
+      '<div class="ss2"><h3>'+escH(T('The app itself'))+'</h3><p style="font-size:var(--t-base);color:var(--mu);line-height:1.65;margin:0">'+
+        escH(T('Every screen - chat, Crew, Studio, Dev, Lab, the marketplace, settings - switches with it straight away. What you type, and the names of people and apps, stay exactly as they are.'))+'</p></div>'+
       '<div class="ss2"><h3>Response language</h3>'+
         '<div class="lang-grid">'+
           Object.entries(LANGS).map(([code,l])=>

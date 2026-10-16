@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
-const app = await bootApp({ tab: 'crew', user: { name: 'Adrian Maroto', email: 'kubikam@icloud.com', ini: 'A' } });
+const app = await bootApp({ tab: 'crew', user: { name: 'Adrian Maroto', email: 'owner@amv.test', ini: 'A' } });
 const { page, errors } = app;
 await page.setViewportSize({ width: 1280, height: 900 });
 await page.evaluate(() => setTab('crew'));

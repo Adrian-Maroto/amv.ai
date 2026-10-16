@@ -22213,6 +22213,11 @@ async function issueTokens(env, email, name, sid) {
   const epoch = await _tokenEpoch(env, email);
   const base = { email, name: name || '' };
   if (sid) base.sid = String(sid);
+  /* Tells the page that this is the operator, so it can show the owner's
+     screens without a personal address compiled into the app. It decides
+     nothing here: every owner route still checks OWNER_EMAIL itself. */
+  const owner = String(env.OWNER_EMAIL || '').toLowerCase().trim();
+  if (owner && String(email || '').toLowerCase().trim() === owner) base.own = 1;
   const access = await signToken(base, env.JWT_SECRET, { typ: 'access', epoch });
   const refresh = await signToken(base, env.JWT_SECRET, { typ: 'refresh', epoch });
   return { token: access, refreshToken: refresh, email, name: name || '' };

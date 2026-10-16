@@ -279,6 +279,13 @@ export async function bootApp(opts = {}) {
 
   await armGeom(page);
 
+  /* WHO THE OPERATOR IS, STATED HERE TOO. The page no longer has a personal
+     address compiled in - a deployment names its operator, and a signed-in
+     session from the server says so. A suite that needs the owner's screens
+     signs in as OWNER_EMAIL, which is this test address. */
+  const ownerEmail = opts.ownerEmail === undefined ? 'owner@amv.test' : opts.ownerEmail;
+  if (ownerEmail) await page.addInitScript((e) => { window.__AMV_OWNER_EMAIL__ = e; }, ownerEmail);
+
   /* opts.query lets a suite arrive at a URL the app is really sent to from
      outside - a provider's OAuth return being the one that matters, because the
      handler for it runs once at boot and cannot be reached any other way. */

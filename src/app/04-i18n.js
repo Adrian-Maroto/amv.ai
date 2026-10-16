@@ -251,6 +251,21 @@ const LANGS = {
   ko:{name:'Korean', native:'\ud55c\uad6d\uc5b4'},
   ta:{name:'Tamil', native:'\u0ba4\u0bae\u0bbf\u0bb4\u0bcd'},
 };
+/* "See all 32 in Bank & money" as one sentence, the topic named in the
+   reader's language - a screen reader announces this, not the arrow. */
+function _seeAllLabel(open, n, topic){
+  const t = T(topic);
+  return open ? T('Show fewer in {0}').replace('{0}', t)
+              : T('See all {0} in {1}').replace('{1}', t).replace('{0}', n);
+}
+/* A date written the way the chosen language writes one. The browser's own
+   format follows the BROWSER's language, so somebody who picked Spanish on an
+   English laptop read 10/16/2026. English keeps the browser's format. */
+function _dateIn(ts){
+  const d = new Date(ts);
+  try{ const c=_lang(); if(c && c!=='en' && c!=='auto') return d.toLocaleDateString(c); }catch(e){}
+  return d.toLocaleDateString();
+}
 function _lang(){
   let saved=loadStr('amv_lang');
   if(!saved){
@@ -804,6 +819,18 @@ function _collectI18nNodes(root){
       }
       else if(node.nodeType===1){
         const tag=node.tagName;
+        /* A text box's VALUE is the person's own words and is never touched,
+           but its hint and its screen-reader label are AMV's - skipping the
+           whole element left every textarea's placeholder in English. */
+        if(tag==='TEXTAREA' && !blocked && !(node.hasAttribute && node.hasAttribute('data-no-i18n'))){
+          const ph=node.getAttribute('placeholder');
+          if(ph&&ph.trim()&&(/[A-Za-z]/.test(ph)||node._i18nPhSrc!=null)) out.push({type:'ph',node});
+          for(const a of _I18N_ATTRS){
+            const v=node.getAttribute(a);
+            if(v&&v.trim()&&(/[A-Za-z]{2}/.test(v)||(node._i18nAttrSrc&&node._i18nAttrSrc[a]!=null))) out.push({type:'attr',node,attr:a});
+          }
+          continue;
+        }
         if(SKIP[tag]) continue;
         let b = blocked;
         if(node.hasAttribute){
@@ -947,7 +974,10 @@ async function _autoTranslateDOM(code, root){
        configured that is an unbounded translation loop billed by the token, and
        the text drifts further from what it started as on every lap. */
     const key=it.node._i18nKey; if(!key) continue;
-    const dict=T(key);
+    /* A prompt card keeps its line breaks ("...was wrong:\n\n[CODE]"), and
+       the dictionary holds the sentence the way it reads, one space apart. */
+    let dict=T(key);
+    if(dict===key && /\s\s|\n/.test(key)){ const flat=key.replace(/\s+/g,' '); const d2=T(flat); if(d2!==flat) dict=d2; }
     if(dict!==key){ _applyI18n(it,dict); continue; }
     const cached=cache[_i18nKey(code,key)];
     if(cached){ _applyI18n(it,cached); }
@@ -980,7 +1010,7 @@ function _applyI18n(it,val){
       // replace using the remembered key so re-translation from a prior language works
       const key=it.node._i18nKey||(it.node._i18nSrc||'').trim();
       const orig=it.node._i18nSrc!=null?it.node._i18nSrc:it.node.nodeValue;
-      it.node.nodeValue = key ? orig.replace(key, val) : val;
+      it.node.nodeValue = key && orig.indexOf(key)>=0 ? orig.replace(key, val) : val;
     } else {
       it.node.setAttribute('placeholder', val);
     }

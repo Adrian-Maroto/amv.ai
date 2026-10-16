@@ -83,8 +83,8 @@ function _onBusyChange(now, was){
   try{
     const snd=document.getElementById('snd');
     if(snd){
-      if(now){ snd.classList.add('stop'); snd.title='Stop generating'; snd.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'; }
-      else { snd.classList.remove('stop'); snd.title='Send'; snd.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'; }
+      if(now){ snd.classList.add('stop'); snd.title=T('Stop generating'); snd.setAttribute('aria-label',T('Stop generating')); snd.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'; }
+      else { snd.classList.remove('stop'); snd.title=T('Send'); snd.setAttribute('aria-label',T('Send message')); snd.innerHTML='<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>'; }
     }
   }catch(e){}
   if(now && !was){ _busyStartedAt=Date.now(); _showWorkingPill(true); }
@@ -698,21 +698,38 @@ try{ window._budgetGuard = _budgetGuard; }catch(e){}
    the single source of truth: even with the ?owner=1 flag or the localStorage
    key set, owner mode is denied unless the logged-in account matches
    OWNER_EMAIL. This means a curious user setting the flag still gets nothing.
-   To transfer ownership to a new email, change OWNER_EMAIL below. When a live
+   To transfer ownership, change the OWNER_EMAIL secret on the Worker. When a live
    backend is connected, the server (OWNER_EMAIL env var / admin:true) is the
    authority; the browser flag never grants admin on production. */
-/* Operator email. Configurable for white-label/resale via a build-time global
-   (window.__AMV_OWNER_EMAIL__ injected at deploy), defaulting to the current
-   operator. NOTE: this is deliberately NOT read from user-settable localStorage
-   - allowing that would let anyone grant themselves owner in local/demo mode.
-   On a live backend the server (OWNER_EMAIL env / admin:true) is the real
-   authority; this client value only gates local UI affordances. */
+/* Operator email. NO PERSONAL ADDRESS IS COMPILED IN: this file ships to every
+   visitor, so the operator's own address used to be readable by anyone who
+   opened it. Who the operator is comes from the server - its OWNER_EMAIL
+   secret, carried as `own` in the signed session the server issued - or from
+   a build-time global for a deployment without a server. NOTE: still not read
+   from user-settable localStorage. On a live backend the server is the only
+   authority; this only decides which screens the page shows, and every owner
+   route checks OWNER_EMAIL itself. */
 const OWNER_EMAIL = (function(){
   try{ if(typeof window!=='undefined' && typeof window.__AMV_OWNER_EMAIL__==='string' && window.__AMV_OWNER_EMAIL__.includes('@')) return window.__AMV_OWNER_EMAIL__.trim().toLowerCase(); }catch(e){}
-  return 'kubikam@icloud.com';
+  return '';
 })();
+/* The server marks the operator's session `own:1`. Read from the token the
+   server signed, for the account signed in now - never from a stored flag. */
+function _sessionSaysOwner(email){
+  try{
+    const tok = (typeof AMV_API !== 'undefined' && AMV_API && AMV_API.token) || '';
+    const seg = String(tok).split('.')[1]; if(!seg) return false;
+    const b64 = seg.replace(/-/g,'+').replace(/_/g,'/');
+    const body = JSON.parse(decodeURIComponent(escape(atob(b64.padEnd(b64.length+(4-b64.length%4)%4,'=')))));
+    return body && body.own === 1 && String(body.email||'').toLowerCase() === String(email||'').trim().toLowerCase();
+  }catch(e){ return false; }
+}
 function _isOwnerEmail(email){
-  try{ return !!email && String(email).trim().toLowerCase() === OWNER_EMAIL.toLowerCase(); }catch(e){ return false; }
+  try{
+    if(!email) return false;
+    if(OWNER_EMAIL && String(email).trim().toLowerCase() === OWNER_EMAIL) return true;
+    return _sessionSaysOwner(email);
+  }catch(e){ return false; }
 }
 function isOwnerMode(){
   // The logged-in account MUST be the operator email. No exceptions in the UI.
