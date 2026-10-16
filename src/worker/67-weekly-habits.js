@@ -1,0 +1,2191 @@
+  /* Proved before it is stored, like the mailbox: a token that fails at 7am
+     during a scheduled run is worse than an error while somebody is sitting
+     here able to fix it. */
+  let who = null;
+  try {
+    const r = await fetchDeadline(`${TELEGRAM_API}/bot${token}/getMe`, { method: 'GET' }, 10000);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok) {
+      return json({ error: 'Telegram refused that token. Check you copied the whole thing from BotFather.', code: 'tg_auth' }, 401);
+    }
+    who = d.result || {};
+  } catch (e) {
+    return json({ error: 'AMV could not reach Telegram just now. Nothing was saved - try again in a moment.', code: 'tg_unreachable' }, 502);
+  }
+
+  const enc = await _mailEncrypt(env, token);
+  if (!enc) return json({ error: 'AMV could not encrypt that token, so it did not store it.', code: 'needs_service' }, 503);
+  await _withKV(env, 'telegram', user.email, (rec) => {
+    rec.secret = enc; rec.chatId = chatId;
+    rec.botName = String(who.username || '').slice(0, 60);
+    rec.connectedAt = Date.now();
+  }, {});
+  audit(env, 'telegram_connected', { by: user.email, bot: String(who.username || '').slice(0, 40) });
+  return json({ ok: true, bot: who.username || '', chatId });
+}
+
+async function telegramDisconnect(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  await DB.del(env, 'telegram', user.email);
+  audit(env, 'telegram_disconnected', { by: user.email });
+  return json({ ok: true, connected: false });
+}
+
+async function telegramStatus(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const rec = await DB.get(env, 'telegram', user.email);
+  /* The token never comes back, in any response. */
+  return json({ ok: true, connected: !!(rec && rec.secret),
+                bot: (rec && rec.botName) || '', chatId: (rec && rec.chatId) || '' });
+}
+
+/* Send, used by the route below and available to scheduled work. */
+async function _telegramSend(env, email, text) {
+  const rec = await DB.get(env, 'telegram', email);
+  if (!rec || !rec.secret) return { sent: false, reason: 'not_connected' };
+  const token = await _mailDecrypt(env, rec.secret);
+  if (!token) return { sent: false, reason: 'unreadable' };
+  /* Checked AGAIN on the way out. The connect proved this token before storing
+     it, but what is interpolated here came back from storage rather than from
+     the check, and a value that goes into a URL should be proved by the code
+     that builds the URL - not by a different function that ran days ago. */
+  if (!TELEGRAM_TOKEN_RE.test(token)) return { sent: false, reason: 'unreadable' };
+  const form = new URLSearchParams();
+  form.set('chat_id', rec.chatId);
+  form.set('text', String(text || '').slice(0, 4000));
+  form.set('disable_web_page_preview', 'true');
+  const r = await fetchDeadline(`${TELEGRAM_API}/bot${token}/sendMessage`,
+    { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() }, 10000);
+  const d = await r.json().catch(() => ({}));
+  return { sent: !!(r.ok && d.ok), reason: d.description || '' };
+}
+
+async function telegramSend(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'unauthorized' }, 401);
+  const held = await _accountHold(env, user, 'telegram_send');
+  if (held) return held;
+  const g = await guardAction(env, 'tgsend:' + user.email, 30, 300, 'Telegram messages');
+  if (g) return g;
+  const body = await request.json().catch(() => ({}));
+  const text = String(body.text || '');
+  if (!text.trim()) return json({ error: 'The message is empty.', code: 'bad_body' }, 400);
+  let out;
+  try { out = await _telegramSend(env, user.email, text); }
+  catch (e) { return json({ error: 'AMV could not reach Telegram just now.', code: 'tg_unreachable' }, 502); }
+  if (!out.sent) {
+    if (out.reason === 'not_connected') return json({ error: 'No Telegram bot is connected yet.', code: 'tg_not_connected' }, 428);
+    return json({ error: 'Telegram did not accept that message. ' + (out.reason || ''), code: 'tg_failed' }, 502);
+  }
+  return json({ ok: true, sent: true });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   WHAT PEOPLE ALREADY DO, EVERY WEEK, IN THE COUNTRY THEY LIVE IN.
+
+   The Crew catalogue was built around work: inboxes, competitors, reports.
+   That is a good product for somebody with a desk job in an English-speaking
+   country, and it is not most people's week. Most people's week is a bill
+   with a date on it, a renewal that lapses quietly, a fine with a discount
+   window, a document somebody official is waiting for.
+
+   Every one of these is a thing the person ALREADY does. AMV does not do it
+   for them - it watches for it, works out the date, and says so in time.
+
+   ON THE SERVER, NOT IN THE BUNDLE. index.html is what every visitor
+   downloads and it has a hard gzipped ceiling; a hundred and ten templates
+   would spend most of the remaining headroom on content that is wrong for
+   nineteen countries out of twenty. Fetched per country, the way the mail
+   providers and the job boards already are.
+
+   HONEST ABOUT WHAT IT CAN REACH. AMV has mail over IMAP, calendar, the
+   live web, and somewhere to send a message. It has no bank connection and
+   no government login, so nothing here says it will pay, file or renew
+   anything. Each one watches, dates, warns and drafts - and the pre-flight
+   asks for the access it needs before the day it needs it.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* The ten that are true everywhere. A bill has a due date in every country;
+   only the name of the biller changes. */
+const EVERYDAY_UNIVERSAL = [
+  { id: 'ev_bills_due', icon: '📄', title: 'Bills due this week', needs: 'Email',
+    desc: 'Every bill sitting in your mail with a date on it, in one list, before the date rather than after it.',
+    prompt: 'Read recent mail for bills, invoices and payment requests. List every one with a due date still ahead: who it is from, the amount, the exact due date, and how many days that is from today. Put the closest deadline first, and flag anything due within three days. Say plainly if a bill has no clear amount or date rather than guessing one. Never report a bill you cannot point at an actual email for.' },
+
+  { id: 'ev_renewals', icon: '🪪', title: 'Renewals and expiry dates', needs: 'Email',
+    desc: 'Passport, licence, insurance, visa, registration, tenancy. The things that cost a great deal of trouble when they lapse and give no warning when they do.',
+    prompt: 'Scan mail for documents, policies and registrations that expire: passports, identity cards, driving licences, visas and residence permits, insurance policies, vehicle registration, tenancy agreements, professional memberships and certifications. For each: what it is, the expiry date, days remaining, and what the renewal normally requires. Order by soonest. Say which ones typically need to be started well before the date, and how long before. Only report an expiry you have seen evidence of.' },
+
+  { id: 'ev_trials', icon: '⏳', title: 'Free trials about to charge', needs: 'Email',
+    desc: 'A trial that is about to become a payment, while there is still time to decide.',
+    prompt: 'Find trial confirmations, introductory offers and discounted first periods in recent mail. For each, work out when the trial or intro price ends and what the ongoing charge becomes. Report only ones that have not yet converted: the service, what it becomes, the date it changes, and days remaining. Include the cancellation route where the email states it. Do not invent a cancellation link that was not given.' },
+
+  { id: 'ev_deliveries', icon: '📦', title: 'Parcels: what is coming and what is late', needs: 'Email',
+    desc: 'Everything in transit in one place, and specifically the ones that have stopped moving.',
+    prompt: 'Read shipping confirmations and dispatch notices in recent mail. List what is in transit: item, seller, carrier, tracking reference and the expected date. Separately and first, name anything whose expected date has PASSED or that has not updated in several days, because those are the ones that need somebody to act. Say which orders were confirmed but never dispatched. Do not claim a delivery status you have not seen.' },
+
+  { id: 'ev_returns', icon: '↩️', title: 'Return and warranty windows closing', needs: 'Email',
+    desc: 'The last day you can send something back or claim on it, which is never mentioned again after the receipt.',
+    prompt: 'Go through recent purchase receipts and order confirmations. For each item, work out the return window and any stated warranty or guarantee period from the retailer terms in the email. Report items whose return window is still open, with the exact last day and days remaining, closest first. Note separately any item still under warranty that the user has mentioned a problem with. Where the email does not state the window, say so rather than assuming a standard one.' },
+
+  { id: 'ev_official', icon: '🏛️', title: 'Official letters you have not answered', needs: 'Email',
+    desc: 'Anything from a tax office, council, ministry, court, bank or school that asked for something and has not had a reply.',
+    prompt: 'Find mail from government departments, tax authorities, local councils, courts, banks, insurers, schools and utilities that requires a response or an action. For each: who sent it, what they are asking for, the stated deadline, and whether the user appears to have replied. List unanswered ones first with days remaining. Be explicit that a missed deadline here usually carries a penalty, and say what the email states that penalty is. Never state a legal consequence the letter did not state.' },
+
+  { id: 'ev_utility_spike', icon: '⚡', title: 'Is my bill higher than usual?', needs: 'Email',
+    desc: 'Compares this month against the months before it, so a quiet price rise or a broken meter does not go unnoticed for a year.',
+    prompt: 'Collect utility and telecom bills from mail across as many past months as are available: electricity, gas, water, internet, mobile. For each supplier, compare the newest bill against the previous months. Report any increase, giving the old amount, the new amount, the percentage change, and whether the bill states a tariff change, a usage change or an estimated reading. Say clearly which increases are explained by the bill itself and which are not, because an unexplained jump is the one worth chasing.' },
+
+  { id: 'ev_trip', icon: '✈️', title: 'My next trip, in one place', needs: 'Email, Calendar',
+    desc: 'Flights, hotel, transfers, check-in windows and what expires before you go, assembled from the confirmations scattered across your mail.',
+    prompt: 'Assemble the user next trip from booking confirmations in mail and entries in their calendar. Give the full itinerary in time order: flights with times and references, accommodation with check-in and check-out, transfers and car hire. Then the things that need doing before departure: online check-in opening time, any visa or authorisation the destination requires, and whether their passport expiry leaves enough validity for that destination. Flag any gap where a connection looks too tight or a night has no accommodation booked.' },
+
+  { id: 'ev_school_week', icon: '🎒', title: 'School and study week ahead', needs: 'Email, Calendar',
+    desc: 'Deadlines, forms, payments and dates from school or university mail, before the week starts rather than the night before.',
+    prompt: 'Read school, college and university mail and calendar entries for the week ahead. List: assignment and coursework deadlines with the exact date, exams and tests, forms or permissions that need signing and by when, payments due, and events that need somebody to attend or to bring something. Put anything that requires action from a parent or the student first. Say which deadlines are final and which the message describes as provisional.' },
+
+  { id: 'ev_week_ahead', icon: '🗓️', title: 'My week, before it starts', needs: 'Email, Calendar',
+    every: 'weekly',
+    desc: 'One message before the week begins: what is scheduled, what is due, what is waiting on you, and where the week is over-committed.',
+    prompt: 'Build the user week ahead from their calendar and recent mail. Give: what is scheduled day by day with times, what falls due this week with dates, what other people are waiting on them for and how long they have waited, and anything that has to be prepared in advance of a commitment. Then say the honest thing about the shape of the week: which day is over-committed, where two commitments collide, and which single item is most likely to be the one that slips. Never invent a commitment that is not in the calendar or the mail.' },
+];
+
+/* Five per country, and they are not translations of each other. What
+   somebody in Lagos has to keep track of is not what somebody in Osaka has
+   to keep track of, and a product that pretends otherwise is an American
+   product with the labels changed. */
+const EVERYDAY_BY_COUNTRY = {
+  US: [
+    { id: 'us_eob', icon: '🏥', title: 'Medical bills against what insurance said', needs: 'Email',
+      desc: 'Providers bill and insurers explain, and the two disagree more often than anybody expects. This puts them side by side.',
+      prompt: 'Find Explanation of Benefits statements from insurers and the corresponding bills from providers in mail. Match each EOB to its provider bill and compare what the insurer said the patient owes against what the provider is charging. Report every mismatch with both figures, the date of service and the provider, because a provider bill higher than the EOB patient responsibility is the single most common billing error. Also list any bill with no matching EOB yet, since paying before the insurer has processed it is how people overpay. Never state that a charge is wrong - state that the two documents disagree and by how much.' },
+    { id: 'us_tax_docs', icon: '🧾', title: 'Tax document checklist before filing', needs: 'Email',
+      desc: 'W-2, 1099s, 1098, brokerage and retirement statements arrive over two months from a dozen senders. This tracks which have arrived and which have not.',
+      prompt: 'Track tax documents arriving in mail for the current filing season: W-2 forms, all 1099 variants, 1098 mortgage and student loan interest, brokerage consolidated statements, retirement account forms and HSA statements. List what has arrived with the issuer and date. Then, from the employers, banks, brokerages and platforms visible in the user mail across the year, name which issuers would be expected to send a form that has NOT yet arrived. Give the filing deadline and days remaining. Do not give tax advice - report documents and dates only.' },
+    { id: 'us_dmv', icon: '🚗', title: 'Vehicle, registration and toll notices', needs: 'Email',
+      desc: 'Registration renewal, inspection, toll accounts and citations - each with its own deadline and its own escalating fee.',
+      prompt: 'Scan mail for vehicle registration renewals, emissions or safety inspection notices, toll account statements and low balance warnings, parking and traffic citations, and insurance renewals. For each: what it is, the deadline, the amount, and what the notice states happens after the deadline. Citations first, because those escalate. Include any toll account running low, since an unpaid toll typically becomes a much larger administrative fee.' },
+    { id: 'us_card_fees', icon: '💳', title: 'Annual fees and rewards about to lapse', needs: 'Email',
+      desc: 'The month a card annual fee posts is the month to decide whether to keep it, and it is never announced loudly.',
+      prompt: 'From card statements and issuer mail, identify annual fees and when each posts, sign-up bonus requirements with their spending deadline, and points or miles with a stated expiry. For each card: the fee, the month it posts, and the benefits the statements show actually being used against it. Report any sign-up bonus whose spending window is still open with the amount remaining and days left, and any rewards balance with an expiry date approaching. State plainly which fees are approaching a decision point rather than recommending whether to keep a card.' },
+    { id: 'us_contract_creep', icon: '📈', title: 'Internet, phone and utility price creep', needs: 'Email',
+      desc: 'Promotional pricing ends silently and the bill simply goes up. This finds the month it happened and by how much.',
+      prompt: 'Compare internet, mobile, cable and utility bills across all available months. Identify where a promotional or introductory rate has ended, where a rate increase was applied, and where equipment or service fees were added. For each: the provider, the old amount, the new amount, the month it changed, and whether the provider notified the user in advance in any email you can see. Total the annual cost of the increases. Note any contract end date stated in the mail, because that is when leaving carries no penalty.' },
+  ],
+
+  CA: [
+    { id: 'ca_cra', icon: '🍁', title: 'CRA correspondence and tax slips', needs: 'Email',
+      desc: 'T4, T5, RRSP receipts and anything from Revenue Canada, tracked as it arrives rather than hunted for in April.',
+      prompt: 'Track Canada Revenue Agency correspondence and tax slips in mail: T4, T4A, T5, T3, RRSP contribution receipts, tuition T2202, medical and donation receipts, and notices of assessment. List what has arrived and from whom. Name which slips would be expected from the employers, banks and institutions visible in the mail but have not yet arrived. Give the filing deadline and the RRSP contribution deadline with days remaining. Flag any CRA letter that requests a response, with its stated deadline. Report documents and dates - do not give tax advice.' },
+    { id: 'ca_renewals', icon: '🪪', title: 'Health card, licence and plate renewals', needs: 'Email',
+      desc: 'Provincial renewals that lapse quietly and are a great deal of trouble to restore.',
+      prompt: 'Find provincial health card, driver licence, licence plate sticker and vehicle registration renewals in mail, along with passport and any permanent residence or work permit documents. For each: what it is, the expiry date, days remaining, and what the notice says the renewal requires. Note where a renewal has a grace period and where it does not, since driving on an expired sticker carries a fine in most provinces.' },
+    { id: 'ca_benefits', icon: '💵', title: 'Benefit and credit payment dates', needs: 'Email',
+      desc: 'GST/HST credit, Canada Child Benefit, provincial credits: when each lands and whether anything is required to keep it.',
+      prompt: 'From government correspondence in mail, list benefit and credit entitlements: GST/HST credit, Canada Child Benefit, provincial credits, and any other stated payment. For each: the amount if stated, the payment schedule, the next payment date, and whether the letter requires anything from the user to continue receiving it, such as filing a return or confirming eligibility. Flag anything that states a payment will stop unless something is done, with the deadline.' },
+    { id: 'ca_insurance', icon: '🏠', title: 'Home, auto and tenant insurance renewal window', needs: 'Email',
+      desc: 'Renewal quotes arrive weeks before they take effect, which is the only window in which the price is negotiable.',
+      prompt: 'Find home, tenant, auto and life insurance renewal notices in mail. For each: the insurer, the current premium, the renewing premium, the percentage change, and the date the new term begins. Report the increase explicitly, because renewal increases are frequently applied without the customer noticing. State the last date on which the policy can be changed or cancelled without penalty where the notice gives it. Do not recommend an insurer.' },
+    { id: 'ca_customs', icon: '📦', title: 'Cross-border duties and customs charges', needs: 'Email',
+      desc: 'A parcel from abroad can arrive with a bill attached, and the charge often exceeds what people expect.',
+      prompt: 'Find cross-border shipments, customs notices and brokerage or duty invoices in mail. For each: the seller, the carrier, the item value, the duty, tax and brokerage fee charged, and the total added to the purchase price. Flag any shipment held pending payment with its deadline, since held parcels are returned after a stated period. Where a carrier has charged a brokerage fee, state it separately from the actual duty and tax, because the two are commonly conflated.' },
+  ],
+
+  MX: [
+    { id: 'mx_cfdi', icon: '🧾', title: 'Facturas (CFDI) for your deductions', needs: 'Email',
+      desc: 'Every deductible peso needs its CFDI, and they arrive scattered across the month from every supplier.',
+      prompt: 'Collect CFDI facturas from mail for the current fiscal period. List each: issuer, RFC if stated, date, amount, IVA, and what it was for. Total them by month. Then identify purchases and payments visible in the mail that have NO factura attached, since those cannot be deducted, and name the supplier that would need to issue one. Note the deadline for requesting a factura from each supplier where the email states it, because most will not issue one after the month closes. Report documents only - do not give fiscal advice.' },
+    { id: 'mx_cfe', icon: '⚡', title: 'CFE bill and unusual consumption', needs: 'Email',
+      desc: 'The CFE bill is bimonthly, so a jump is not noticed for two months and the tariff can change beneath it.',
+      prompt: 'Track CFE electricity bills in mail across all available periods. For each: the period, the consumption in kWh, the amount, and the tariff applied. Compare each period against the previous ones and report any significant increase in consumption or amount, stating whether the bill attributes it to usage, to a tariff change, or to an estimated reading. Flag explicitly if consumption has crossed into a higher tariff bracket, since that raises the price of every unit. Give the payment due date and days remaining.' },
+    { id: 'mx_vehicular', icon: '🚗', title: 'Verificación, tenencia and vehicle deadlines', needs: 'Email, Web research',
+      desc: 'Verificación runs on a calendar set by your plate, and missing the window is a fine plus a wait.',
+      prompt: 'From vehicle documents and correspondence in mail, identify the vehicle plate, state of registration and any renewal notices. Then determine the verificación vehicular schedule that applies to that plate in that state, the tenencia or refrendo deadline, and any licence renewal. For each: what is due, the window in which it must be done, and what the penalty is for missing it. Report any traffic fines found in mail with their amount and whether an early payment discount applies and until when.' },
+    { id: 'mx_imss', icon: '🏥', title: 'IMSS and INFONAVIT statements', needs: 'Email',
+      desc: 'Contributions, weeks accrued and housing credit balances, checked rather than assumed.',
+      prompt: 'Find IMSS and INFONAVIT correspondence and statements in mail. Report: contribution periods recorded, semanas cotizadas if stated, any gap in contributions visible between periods, and the INFONAVIT credit balance and monthly discount if present. Flag any period where an employer contribution appears to be missing, because those gaps affect pension eligibility and are far easier to correct near the time. State only what the documents show.' },
+    { id: 'mx_oxxo_spei', icon: '🏪', title: 'OXXO and SPEI payment references expiring', needs: 'Email',
+      desc: 'A cash payment reference has a short life, and after it lapses the whole order usually has to be redone.',
+      prompt: 'Find OXXO payment vouchers, SPEI transfer instructions and any other cash or bank reference in mail. For each: the merchant, the amount, the reference, and the exact date and time the reference expires. Put the soonest expiry first and flag anything expiring within 24 hours. Confirm separately which references have a matching payment confirmation in the mail and which do not, since an unpaid expired reference means the order was cancelled.' },
+  ],
+
+  BR: [
+    { id: 'br_boletos', icon: '🧾', title: 'Boletos and PIX due this week', needs: 'Email',
+      desc: 'A boleto past its date gains juros and multa, and after the vencimento many can no longer be paid at all.',
+      prompt: 'Find boletos, faturas and PIX payment requests in recent mail. For each: the biller, the amount, the vencimento date, and days remaining. Soonest first, flagging anything due within three days. State where a boleto is past its vencimento, since many can no longer be paid at a bank after that date and require a second via to be issued. Confirm which have a matching payment or PIX confirmation in the mail and which do not.' },
+    { id: 'br_ipva_iptu', icon: '🚗', title: 'IPVA, IPTU and licenciamento deadlines', needs: 'Email, Web research',
+      desc: 'Annual taxes with a discount for paying early and a fine for paying late, on a calendar set by your plate or your address.',
+      prompt: 'From vehicle and property documents in mail, identify the vehicle plate, the state, and the property address. Determine the IPVA calendar for that plate in that state, the IPTU schedule for that municipality, and the licenciamento deadline. For each: the payment window, whether a discount applies for paying in a single instalment and by when, the instalment option, and the penalty after the deadline. Report any multas de trânsito found in mail with the amount and whether the discount for not contesting still applies.' },
+    { id: 'br_notas_ir', icon: '📑', title: 'Notas and documents for the imposto de renda', needs: 'Email',
+      desc: 'Informes de rendimentos, medical and education receipts, all arriving separately over two months.',
+      prompt: 'Track documents for the annual imposto de renda declaration in mail: informes de rendimentos from employers and banks, comprovantes for medical, dental and education expenses, private pension statements and rental receipts. List what has arrived with the issuer and date. Name which informes would be expected from the employers, banks and institutions visible in the mail but have not arrived. Give the declaration deadline and days remaining. Report documents only - do not advise on what is deductible.' },
+    { id: 'br_fgts_inss', icon: '🏦', title: 'FGTS and INSS statements', needs: 'Email',
+      desc: 'Deposits that should be there monthly, and are worth noticing when they are not.',
+      prompt: 'Find FGTS and INSS statements and correspondence in mail. Report the deposits and contributions recorded by period, and identify any month where an expected deposit or contribution appears to be missing. State the balances where the documents give them. A missing FGTS deposit is far easier to raise with an employer close to the time, so put any gap first and give its month.' },
+    { id: 'br_contas', icon: '💡', title: 'Conta de luz and água, and bandeira changes', needs: 'Email',
+      desc: 'The tariff flag changes the price of every unit, and the bill rarely explains why it jumped.',
+      prompt: 'Track electricity and water bills in mail across all available months. For each: the period, consumption, amount, and the bandeira tarifária stated on the electricity bill. Compare month against month and report increases, stating whether the bill attributes the change to consumption, to the bandeira, or to a tariff revision. Flag an unexplained jump separately, since that can indicate a metering problem. Give the vencimento and days remaining for anything unpaid.' },
+  ],
+
+  AR: [
+    { id: 'ar_afip', icon: '🧾', title: 'ARCA notices and monotributo dates', needs: 'Email',
+      desc: 'Monthly obligations and the recategorisation windows that quietly change what you owe.',
+      prompt: 'Find AFIP and ARCA correspondence in mail: monotributo payments, recategorisation notices, declaraciones juradas and any intimation. For each: what is required, the amount if stated, the deadline, and days remaining. Flag any recategorisation window, since missing it leaves the wrong category applied for months. Report any notice that states a consequence for non-compliance, with the consequence exactly as the letter states it. Report documents and dates - do not give fiscal advice.' },
+    { id: 'ar_servicios', icon: '💡', title: 'Servicios and how much they moved', needs: 'Email',
+      desc: 'With prices moving as fast as they do, the useful question is not what the bill is but how much it changed.',
+      prompt: 'Track utility and service bills in mail across every available month: electricity, gas, water, internet, mobile, expensas. For each supplier report the amount by month, the change from the previous month in both pesos and percent, and the cumulative change across the whole period available. State whether each bill attributes its increase to a tariff revision, to consumption, or gives no reason. Give the vencimiento and days remaining for anything unpaid, and flag where a second vencimiento with a surcharge applies.' },
+    { id: 'ar_alquiler', icon: '🏠', title: 'Rent adjustment and contract dates', needs: 'Email',
+      desc: 'The adjustment date and the index applied are the two facts that decide the next period, and both are easy to lose track of.',
+      prompt: 'From tenancy correspondence and contracts in mail, identify the rental agreement: start date, duration, the adjustment period, the index or mechanism stated, and the next adjustment date. Report the rent by period as visible in the mail and the change at each adjustment. Give days until the next adjustment and until the contract ends, since both are points at which terms are negotiated. State only what the contract and correspondence say.' },
+    { id: 'ar_salud', icon: '🏥', title: 'Obra social and prepaga increases', needs: 'Email',
+      desc: 'Health cover increases arrive by email and take effect the following month whether or not anyone read it.',
+      prompt: 'Find obra social and prepaga correspondence in mail. Report the monthly cuota by month across everything available, each increase with its percentage and the month it took effect, and any notice of a future increase with its date. State whether each notice gives a reason or a regulatory reference. Flag any change to coverage, copagos or plan terms stated in the correspondence, since those are often announced in the same letter as the price.' },
+    { id: 'ar_tarjeta', icon: '💳', title: 'Card closing dates and cuotas outstanding', needs: 'Email',
+      desc: 'The closing date decides which month a purchase lands in, and cuotas continue long after the purchase is forgotten.',
+      prompt: 'From card statements in mail, report for each card: the closing date, the payment due date, the total due, and the minimum. Then list purchases in cuotas still outstanding: the merchant, the total number of instalments, how many remain, and the monthly amount. Sum the committed monthly total across all remaining cuotas, since that is the figure that determines how much of next month is already spent. Give days until the next closing and payment dates.' },
+  ],
+
+  DE: [
+    { id: 'de_kuendigung', icon: '✂️', title: 'Kündigungsfristen before they auto-renew', needs: 'Email',
+      desc: 'A contract that is not cancelled inside its notice period renews for another full term. This finds the last day.',
+      prompt: 'Find contracts and subscriptions in mail: mobile, internet, electricity, gas, gym, insurance, streaming and memberships. For each: the provider, the contract start, the minimum term, the notice period stated, the automatic renewal term, and therefore the LAST DAY on which notice can be given. Order by that last day, soonest first, and flag anything inside the next six weeks. State the required form of notice where the contract gives it. This is the single date that matters, so give it explicitly for each contract rather than describing the period.' },
+    { id: 'de_nebenkosten', icon: '🏠', title: 'Nebenkostenabrechnung and rent changes', needs: 'Email',
+      desc: 'The annual settlement can be a refund or a demand, and both have a window in which they can be questioned.',
+      prompt: 'Find Nebenkostenabrechnung statements, Mieterhöhung notices and rental correspondence in mail. For the settlement: the period, the total costs, the advance payments made, the resulting refund or additional demand, and the payment deadline. State the period within which the statement can be objected to where the document gives it, and note that a statement issued after the statutory deadline may not be enforceable - without asserting whether that applies here. For any rent increase: the old and new rent, the percentage, the effective date, and the justification given.' },
+    { id: 'de_behoerden', icon: '🏛️', title: 'Krankenkasse, Rundfunkbeitrag and official post', needs: 'Email',
+      desc: 'Letters from institutions that assume you read them and act on a schedule of their own.',
+      prompt: 'Find correspondence from Krankenkasse, Rundfunkbeitrag, Finanzamt, Rentenversicherung, Bürgeramt and insurers in mail. For each: who sent it, what it requires, the deadline, and what the letter states happens if the deadline passes. Unanswered items requiring action first. Report any change to contribution rates or premiums with the old and new figures and the effective date. Never state a legal consequence the letter itself did not state.' },
+    { id: 'de_steuer', icon: '🧾', title: 'Steuererklärung document collection', needs: 'Email',
+      desc: 'Lohnsteuerbescheinigung, receipts and statements gathered as they arrive rather than searched for at the deadline.',
+      prompt: 'Track documents for the annual Steuererklärung in mail: Lohnsteuerbescheinigung, Spendenquittungen, Handwerkerrechnungen, Vorsorgeaufwendungen, Fortbildungskosten and any Bescheinigung from banks or insurers. List what has arrived with issuer and date. Name which documents would be expected from the employers and institutions visible in the mail but have not arrived. Give the filing deadline that applies and days remaining. Report documents and dates only - do not advise on deductibility.' },
+    { id: 'de_termin', icon: '📅', title: 'Appointments and booking windows', needs: 'Email, Web research',
+      desc: 'Bürgeramt, Anmeldung, visa and medical appointments where the wait is the constraint, not the paperwork.',
+      prompt: 'From mail and calendar, identify any appointment already booked with an authority, clinic or service, and any process the correspondence shows is pending that will require one: Anmeldung, residence permit, passport, driving licence, or a medical referral. For each booked appointment: the date, what to bring as stated in the confirmation, and how far ahead it was booked. For each pending process: what appointment it will need and the deadline it must happen before. State where a document required for the appointment expires before the appointment date, since that is the failure that wastes the slot.' },
+  ],
+
+  GB: [
+    { id: 'gb_council_energy', icon: '🏠', title: 'Council tax, TV licence and energy changes', needs: 'Email',
+      desc: 'Household charges that change annually in April and are otherwise never mentioned.',
+      prompt: 'Find council tax, TV licence, water and energy correspondence in mail. For each: the provider or authority, the current amount, any announced change with its effective date, and the payment schedule. Report standing charge and unit rate changes on energy bills separately from usage, since a bill can rise with no change in consumption. Give the instalment dates for council tax and flag any missed instalment, because those can trigger a demand for the full annual balance.' },
+    { id: 'gb_hmrc', icon: '🧾', title: 'HMRC letters and Self Assessment documents', needs: 'Email',
+      desc: 'P60, P45, P11D, interest statements and anything from HMRC, tracked against the January deadline.',
+      prompt: 'Track HMRC correspondence and tax documents in mail: P60, P45, P11D, bank and building society interest statements, dividend vouchers, pension contribution statements and rental records. List what has arrived. Name which documents would be expected from the employers and institutions visible in the mail but have not. Give the Self Assessment filing and payment deadlines with days remaining, and flag any HMRC letter requiring a response with its deadline. Report documents and dates only - do not give tax advice.' },
+    { id: 'gb_vehicle', icon: '🚗', title: 'MOT, road tax and insurance renewal', needs: 'Email',
+      desc: 'Three separate dates, each with its own penalty, and none of them share a reminder.',
+      prompt: 'Find vehicle correspondence in mail: MOT test certificates and reminders, vehicle tax, and motor insurance renewals. For each: the date it expires, days remaining, and the current cost. State the renewal premium against the previous premium where both are visible, since motor insurance renewal increases are routinely applied to existing customers. Flag anything expiring within thirty days. Note that driving without valid MOT, tax or insurance carries separate penalties, and give the dates rather than the advice.' },
+    { id: 'gb_tariff', icon: '⚡', title: 'Fixed energy tariff ending', needs: 'Email',
+      desc: 'When a fix ends the account moves to the standard variable rate, usually at a materially higher price.',
+      prompt: 'From energy correspondence in mail, identify the current tariff: the supplier, whether it is fixed or variable, the unit rates and standing charge, and the date any fixed term ends. Give days remaining. Where the supplier has written about what happens at the end of the fix, state the rate the account would move to and the difference. Identify the window in which the tariff can be changed without an exit fee, and any exit fee stated. Report the figures - do not recommend a supplier.' },
+    { id: 'gb_nhs', icon: '🏥', title: 'NHS appointments, referrals and prescriptions', needs: 'Email, Calendar',
+      desc: 'Referrals, appointment letters and repeat prescriptions, which are easy to lose between systems.',
+      prompt: 'From mail and calendar, list NHS and private healthcare items: booked appointments with date, time and location, referrals made and whether an appointment has followed, repeat prescriptions and when the next is due, and any screening invitation with its response deadline. Put referrals with no resulting appointment first, since those are the ones that stall silently. State what each appointment letter says to bring or to do beforehand.' },
+  ],
+
+  FR: [
+    { id: 'fr_impots', icon: '🧾', title: 'Impôts: déclaration and prélèvements', needs: 'Email',
+      desc: 'The declaration window, the avis, and the monthly prélèvement that changes when the rate does.',
+      prompt: 'Find correspondence from the impôts in mail: déclaration de revenus reminders, avis d imposition, taux de prélèvement à la source changes and taxe foncière or taxe d habitation notices. For each: what it is, the amount, the deadline, and days remaining. State any change to the prélèvement rate with the old and new rate and the month it takes effect. Flag any notice requiring a response with its deadline. Report documents and dates only - do not give fiscal advice.' },
+    { id: 'fr_caf_secu', icon: '🏛️', title: 'CAF, Sécurité sociale and mutuelle', needs: 'Email',
+      desc: 'Benefit and health correspondence where a missed declaration suspends a payment.',
+      prompt: 'Find CAF, Assurance Maladie, Sécurité sociale and mutuelle correspondence in mail. For each: who sent it, what it asks for, the deadline, and what the letter states happens if it is not done. Put anything requiring a declaration or a document first, since these commonly suspend payment when late. Report any change to a benefit amount or a mutuelle premium with the old and new figures and the effective date, and any remboursement stated as pending.' },
+    { id: 'fr_vehicule', icon: '🚗', title: 'Contrôle technique, assurance and carte grise', needs: 'Email',
+      desc: 'Vehicle obligations with separate dates and separate penalties.',
+      prompt: 'Find vehicle correspondence in mail: contrôle technique, assurance auto renewal, carte grise and any amendes. For each: the date due or the expiry, days remaining, and the amount. For amendes, state whether the minoré early payment amount still applies and until when, since that discount period is short. Give the assurance renewal premium against the previous one where both are visible.' },
+    { id: 'fr_resiliation', icon: '✂️', title: 'Résiliation windows before renewal', needs: 'Email',
+      desc: 'Contracts renew tacitly, and the window to stop that is short and rarely advertised.',
+      prompt: 'Find contracts and abonnements in mail: assurance, mutuelle, téléphonie, internet, salle de sport and subscriptions. For each: the provider, the anniversary or renewal date, the notice period stated, and therefore the last date on which résiliation can be given. Order by that last date. State where the provider is required to notify the customer of the renewal window and whether such a notice appears in the mail, since a missing notice can extend the right to cancel - without asserting that it does here.' },
+    { id: 'fr_energie', icon: '⚡', title: 'Facture de régularisation and tariff changes', needs: 'Email',
+      desc: 'Monthly estimates settle once a year, and the settlement can be large in either direction.',
+      prompt: 'Track electricity and gas correspondence in mail. Report the monthly mensualité, any change to it, and the facture de régularisation with the period covered, the estimated amounts paid, the actual consumption, and the resulting balance or refund. State any tariff change with the old and new rates and the effective date. Where the régularisation is a demand, give the payment deadline and any instalment option stated.' },
+  ],
+
+  IT: [
+    { id: 'it_veicolo', icon: '🚗', title: 'Bollo, revisione and assicurazione', needs: 'Email, Web research',
+      desc: 'Three vehicle deadlines on three different cycles, none of which send a reminder.',
+      prompt: 'From vehicle documents in mail, identify the vehicle, its registration date and region. Determine the bollo auto deadline for that region, the revisione schedule based on first registration, and the assicurazione renewal date. For each: the date, days remaining, and the amount if stated. Report any multe found with the amount and whether the reduced payment period still applies and until when. State the penalty for late bollo payment as the correspondence or the regional rule gives it.' },
+    { id: 'it_fisco', icon: '🧾', title: 'Documents for the 730 or Redditi', needs: 'Email',
+      desc: 'CU, spese sanitarie, interessi and receipts, collected as they arrive.',
+      prompt: 'Track documents for the annual tax declaration in mail: Certificazione Unica, spese sanitarie receipts, interessi passivi on a mortgage, spese di istruzione, contributi and any oneri detraibili. List what has arrived with issuer and date. Name which would be expected from the employers and institutions visible in the mail but have not arrived. Give the declaration deadline and days remaining, and flag any Agenzia delle Entrate letter requiring a response. Report documents and dates only.' },
+    { id: 'it_bollette', icon: '💡', title: 'Bollette and conguaglio', needs: 'Email',
+      desc: 'Estimated readings settle into a conguaglio that can be several times a normal bill.',
+      prompt: 'Track luce, gas and acqua bills in mail across all available periods. For each: the period, whether the reading was actual or estimated, the consumption and the amount. Identify any conguaglio, giving the period it settles, the estimated amounts already paid and the balance now due. Report tariff changes with old and new rates. Flag a run of estimated readings, since that is what produces a large conguaglio later. Give the scadenza and days remaining for anything unpaid.' },
+    { id: 'it_imu_tari', icon: '🏠', title: 'IMU and TARI deadlines', needs: 'Email',
+      desc: 'Property taxes paid in instalments on dates set by the comune.',
+      prompt: 'Find IMU, TARI and other comune correspondence in mail. For each: the property, the amount, the instalment schedule with each date, and days until the next. State which instalments the mail shows as paid and which do not appear to have been. Report any change in the rate applied by the comune with the old and new figures, and any letter requiring a response with its deadline.' },
+    { id: 'it_pec_spid', icon: '📮', title: 'PEC and official notices', needs: 'Email',
+      desc: 'A PEC is legally delivered whether or not it was read, which makes an unread one expensive.',
+      prompt: 'Find PEC messages and official notices in mail from public administration, Agenzia delle Entrate, INPS, comune, courts and utilities. For each: who sent it, what it requires, the stated deadline, and whether a reply appears to have been sent. Unanswered first with days remaining. State clearly that a PEC counts as delivered on receipt, so the deadline runs from the date received rather than the date read - and give that date for each. Never state a consequence the notice did not state.' },
+  ],
+
+  RU: [
+    { id: 'ru_shtrafy', icon: '🚗', title: 'Штрафы and the discount window', needs: 'Email, Web research',
+      desc: 'Most traffic fines cost less if paid within a short window after they are issued - the notice states how much less and until when.',
+      prompt: 'Find traffic fines and ГИБДД correspondence in mail. For each: the date of the offence, the date the fine was issued, the amount, and whether the reduced payment period still applies, the reduced amount, and on exactly which date it ends - the rate and the window as the notice or Gosuslugi states them, since they have changed and differ by violation. Put the ones whose discount window is closing first. State the deadline after which enforcement begins as the notice gives it. Also report vehicle document expiries: ОСАГО, техосмотр and driving licence, with days remaining.' },
+    { id: 'ru_zhkh', icon: '🏠', title: 'ЖКХ receipts and meter readings', needs: 'Email',
+      desc: 'Readings submitted after the window are estimated, and the estimate is usually higher.',
+      prompt: 'Track ЖКХ and utility receipts in mail across all available months. For each: the period, the amount, the consumption where given, and whether the charge was based on a submitted reading or a norm. State the window each month in which readings must be submitted where the receipt gives it, and flag any month that appears to have been charged by norm rather than by reading. Report increases with old and new amounts and whether a tariff change is stated. Give the payment deadline and days remaining, and note any пеня already applied.' },
+    { id: 'ru_nalogi', icon: '🧾', title: 'ФНС notices and tax deadlines', needs: 'Email',
+      desc: 'Property, transport and land taxes arrive once a year with a single deadline.',
+      prompt: 'Find ФНС correspondence and налоговые уведомления in mail. For each: the tax, the period, the amount, and the payment deadline with days remaining. Report any требование or notice requiring a response separately and first, with its deadline and the consequence the letter states. List any declaration obligation visible in the correspondence. Report documents and dates only - do not give tax advice.' },
+    { id: 'ru_bank', icon: '💳', title: 'Bank statements, charges and card expiry', needs: 'Email',
+      desc: 'Service fees, insurance attached to a loan, and cards that expire without a replacement arriving.',
+      prompt: 'From bank correspondence and statements in mail, report: recurring service fees and their annual total, any charge whose description changed or that appeared for the first time, loan or credit payment dates and amounts outstanding, and card expiry dates. Flag any insurance or additional service attached to an account or loan with its cost, since those are frequently added at signing and rarely reviewed. Give the next payment date and days remaining for any credit obligation.' },
+    { id: 'ru_dokumenty', icon: '🪪', title: 'Documents and visas expiring', needs: 'Email',
+      desc: 'Passports, permits and visas, where the lead time to replace matters more than the expiry itself.',
+      prompt: 'Scan mail for documents with expiry dates: internal and foreign passports, visas, residence and work permits, driving licence, and insurance policies. For each: the document, the expiry date, days remaining, and the usual lead time to renew where the correspondence indicates it. Order by expiry. Flag specifically any foreign passport with less than six months validity, since many destinations refuse entry on that basis - state it as a common requirement rather than a certainty for a particular country.' },
+  ],
+
+  CN: [
+    { id: 'cn_shebao', icon: '🏥', title: '社保和公积金 statements', needs: 'Email',
+      desc: 'Contributions that should arrive monthly, and gaps that affect entitlements later.',
+      prompt: 'Find 社保 and 住房公积金 statements and correspondence in mail. Report contributions by month with the base and the amount, the accumulated balance where stated, and any month where an expected contribution appears to be missing. A contribution gap affects eligibility for housing purchase, schooling and residence points in many cities, so put any gap first with its month. State only what the statements show.' },
+    { id: 'cn_fapiao', icon: '🧾', title: '发票 collection for reimbursement', needs: 'Email',
+      desc: 'Reimbursement needs the fapiao, and the window to request one from a vendor is short.',
+      prompt: 'Collect 发票 from mail for the current period. List each: issuer, date, amount, tax amount and what it was for, and total them. Then identify payments and purchases visible in the mail with NO matching fapiao, naming the vendor that would need to issue one, since those cannot be reimbursed or deducted. Note any stated deadline for requesting a fapiao. Report any company reimbursement deadline found in the mail with days remaining.' },
+    { id: 'cn_zhangdan', icon: '💳', title: '信用卡账单 and instalments due', needs: 'Email',
+      desc: 'Statement date, repayment date and the instalments still running from months ago.',
+      prompt: 'From card and payment platform statements in mail, report for each: the 账单日, the 还款日, the total due and the minimum. List instalment plans still running with the merchant, the total number of periods, how many remain and the monthly amount, and sum the committed monthly total. Report any 手续费 or instalment fee separately from the principal, since the advertised rate frequently excludes it. Give days until the next repayment date.' },
+    { id: 'cn_shuidian', icon: '⚡', title: '水电燃气 bills and unusual usage', needs: 'Email',
+      desc: 'Utility charges compared across months, so a leak or a tariff change is visible.',
+      prompt: 'Track 水费, 电费 and 燃气费 in mail across all available periods. For each: the period, the consumption, the amount, and the tariff tier applied where stated. Compare each period against the previous and report significant changes, stating whether the bill attributes it to usage or to a tariff change. Flag where consumption has crossed into a higher tier, since that raises the rate on the units above it. Give payment deadlines and days remaining.' },
+    { id: 'cn_zhengjian', icon: '🪪', title: '证件 renewals and residence documents', needs: 'Email',
+      desc: 'Documents whose renewal has a lead time and whose lapse is disproportionately disruptive.',
+      prompt: 'Scan mail for documents with expiry or renewal dates: 身份证, 护照, 港澳台通行证 and 签注, 居住证, driving licence, and any work or study permit. For each: the document, the expiry, days remaining, and what the renewal requires where the correspondence states it. Order by expiry. Flag specifically any 居住证 renewal, since these commonly require continuous contribution records and application within a fixed window before expiry.' },
+  ],
+
+  IN: [
+    { id: 'in_gst', icon: '🧾', title: 'GST filing dates and invoices', needs: 'Email',
+      desc: 'Monthly and quarterly returns with late fees that accrue daily.',
+      prompt: 'Find GST correspondence, invoices and return reminders in mail. Report the returns due with their period and deadline, days remaining, and the late fee the notice states accrues after it. Collect purchase invoices from the period with supplier, GSTIN if stated, taxable value and tax, and total them. Identify payments visible in the mail with no matching tax invoice, naming the supplier, since input credit depends on it. Report documents and dates only - do not give tax advice.' },
+    { id: 'in_epf_itr', icon: '🏦', title: 'EPF, Form 16 and ITR documents', needs: 'Email',
+      desc: 'Provident fund contributions and the documents needed to file, tracked as they arrive.',
+      prompt: 'Track EPF statements, Form 16, Form 16A, interest certificates, investment proofs and insurance premium receipts in mail. Report EPF contributions by month with employee and employer shares, and flag any month where a contribution appears missing, since those are far easier to raise with an employer near the time. List which filing documents have arrived and which would be expected from the employers and institutions visible in the mail. Give the ITR deadline and days remaining.' },
+    { id: 'in_recharge', icon: '📱', title: 'Recharges, plans and bills expiring', needs: 'Email',
+      desc: 'Prepaid validity, DTH, broadband and electricity, each with a date that stops the service.',
+      prompt: 'Find mobile recharge confirmations, DTH, broadband and electricity bills in mail. For each: the provider, the plan or amount, the validity or due date, and days remaining. Flag anything expiring within three days, since prepaid validity lapsing interrupts the service immediately. Report any plan price change with the old and new amounts. State which bills show as paid and which do not.' },
+    { id: 'in_insurance', icon: '🛡️', title: 'Premiums due and policies at risk of lapsing', needs: 'Email',
+      desc: 'A lapsed policy can be far more expensive to restore than to maintain, and the grace period is finite.',
+      prompt: 'Find insurance correspondence in mail: life, health, motor and any other policy. For each: the insurer, the policy, the premium, the due date, days remaining, and the grace period stated. Put anything inside or approaching its grace period first, since a lapsed life or health policy usually requires fresh underwriting to restore. Report premium increases with old and new figures, and any change to coverage stated in the renewal notice.' },
+    { id: 'in_kyc', icon: '🪪', title: 'KYC, Aadhaar, PAN and document renewals', needs: 'Email',
+      desc: 'KYC deadlines freeze accounts when missed, and document renewals have long lead times.',
+      prompt: 'Scan mail for KYC requests from banks, brokers and payment platforms, and for documents with expiry: passport, driving licence, vehicle registration and any permit. For each KYC request: who is asking, what is required, the deadline, and what the notice states happens if it passes, since accounts are commonly frozen rather than merely flagged. For each document: the expiry and days remaining. Put anything that would freeze an account first.' },
+  ],
+
+  JP: [
+    { id: 'jp_nenmatsu', icon: '🧾', title: '年末調整 and 確定申告 documents', needs: 'Email',
+      desc: 'Certificates and receipts that arrive across the autumn and are needed on one date.',
+      prompt: 'Track documents for 年末調整 and 確定申告 in mail: 源泉徴収票, 保険料控除証明書, 住宅ローン控除 documents, medical receipts and ふるさと納税 certificates. List what has arrived with issuer and date. Name which would be expected from the employers and institutions visible in the mail but have not. Give the submission deadline and days remaining. Report documents and dates only - do not advise on deductions.' },
+    { id: 'jp_zeikin', icon: '🏛️', title: '住民税 and 国民健康保険 payment slips', needs: 'Email',
+      desc: 'Payment slips arrive in instalments with separate dates and late charges.',
+      prompt: 'Find 住民税, 国民健康保険 and 国民年金 correspondence in mail. For each: the period, the total, the instalment schedule with every date, and the amount per instalment. State which instalments the mail shows as paid. Give days until the next, and report any 延滞金 stated. Report any change to the assessed amount with the old and new figures and the reason the notice gives.' },
+    { id: 'jp_koushin', icon: '🪪', title: '更新: licence, passport and residence card', needs: 'Email',
+      desc: 'Renewals with fixed windows, where the window opens before the expiry and closes at it.',
+      prompt: 'Scan mail for documents requiring 更新: 運転免許証, パスポート, 在留カード and any visa or permit. For each: the expiry date, days remaining, the window in which renewal is accepted where stated, and what the renewal requires. Order by expiry. Flag 在留カード renewal specifically, since the application window opens a set period before expiry and overstaying carries serious consequences - state the dates rather than the advice.' },
+    { id: 'jp_koukyou', icon: '⚡', title: '公共料金 and unusual usage', needs: 'Email',
+      desc: 'Electricity, gas and water compared month against month.',
+      prompt: 'Track 電気, ガス and 水道 bills in mail across all available months. For each: the period, the usage, the amount, and the unit rate or 燃料費調整 where stated. Compare against previous months and report changes, distinguishing a usage change from a rate change. Flag an unexplained increase separately. Give the payment deadline and days remaining for anything unpaid.' },
+    { id: 'jp_furusato', icon: '🎁', title: 'ふるさと納税 limit and deadline', needs: 'Email',
+      desc: 'An annual limit and a hard year-end date, where exceeding the limit simply loses the benefit.',
+      prompt: 'From income documents and ふるさと納税 confirmations in mail, report donations made this year with the recipient municipality, the amount and the date, and the running total. State the year-end deadline and days remaining. Where 源泉徴収票 or salary records give the income, note that the deductible limit depends on income and household circumstances, and say what information would be needed to establish it rather than calculating a limit from incomplete data. Report the ワンストップ特例 application deadline where the confirmations mention it, since that is separate and earlier.' },
+  ],
+
+  KR: [
+    { id: 'kr_yeonmal', icon: '🧾', title: '연말정산 document checklist', needs: 'Email',
+      desc: 'Deduction certificates gathered before the settlement window rather than during it.',
+      prompt: 'Track 연말정산 documents in mail: 소득공제 증명서류, insurance and pension certificates, medical and education receipts, 기부금 영수증 and housing loan interest statements. List what has arrived with issuer and date. Name which would be expected from the institutions visible in the mail but have not arrived. Give the submission deadline to the employer and days remaining. Report documents and dates only - do not advise on deductions.' },
+    { id: 'kr_boheom', icon: '🏥', title: '4대보험 and 건강보험 statements', needs: 'Email',
+      desc: 'Contributions and any month where one is missing.',
+      prompt: 'Find 국민연금, 건강보험, 고용보험 and 산재보험 correspondence and statements in mail. Report contributions by month with the base and amount, and flag any month where an expected contribution appears missing. Report any change to the contribution rate or the assessed base with the old and new figures and the effective date. Give payment deadlines and days remaining for anything outstanding.' },
+    { id: 'kr_gwanribi', icon: '🏠', title: '관리비 and utility changes', needs: 'Email',
+      desc: 'The maintenance fee bundles several charges, so an increase can hide inside it.',
+      prompt: 'Track 관리비 and utility bills in mail across all available months. Break the 관리비 into its stated components and compare each component month against month, since an increase in one line is invisible in the total. Report electricity, gas and water separately with usage and amount. Flag any component that rose without an explanation in the notice. Give the payment deadline and days remaining, and note any late charge stated.' },
+    { id: 'kr_chadungnok', icon: '🚗', title: '자동차 검사, 보험 and 과태료', needs: 'Email',
+      desc: 'Inspection, insurance and fines, each on its own schedule.',
+      prompt: 'Find vehicle correspondence in mail: 정기검사 notices, 자동차보험 renewal, 자동차세 and any 과태료 or 범칙금. For each: the date due, days remaining and the amount. For fines, state whether the early payment reduction still applies and until when. Report the insurance renewal premium against the previous one where both are visible. State the penalty for a missed 정기검사 as the notice gives it, since it escalates with time.' },
+    { id: 'kr_tongsin', icon: '📱', title: '통신비 and subscription changes', needs: 'Email',
+      desc: 'Discount periods that end, contract terms that complete, and subscriptions that renew.',
+      prompt: 'From mobile, internet and subscription correspondence in mail, report for each: the provider, the monthly charge, and any change with the month it took effect. Identify where a 약정 discount period has ended or is ending, with the date and the resulting price change, since that is the most common cause of a bill rising with no change in service. State the contract end date where given, because that is when leaving carries no 위약금. List subscriptions with their renewal dates.' },
+  ],
+
+  ID: [
+    { id: 'id_bpjs', icon: '🏥', title: 'BPJS Kesehatan and Ketenagakerjaan', needs: 'Email',
+      desc: 'Monthly contributions where a lapse suspends cover and arrears must be cleared to restore it.',
+      prompt: 'Find BPJS Kesehatan and BPJS Ketenagakerjaan correspondence in mail. Report contributions by month with the amount and the class where stated, the balance owing if any, and any month that appears unpaid. State that unpaid contributions suspend the benefit and that arrears are normally required before it resumes - as the correspondence states it. Give the payment deadline and days remaining, and report any denda stated.' },
+    { id: 'id_pajak_kendaraan', icon: '🚗', title: 'STNK, pajak kendaraan and PBB', needs: 'Email, Web research',
+      desc: 'Annual and five-yearly vehicle deadlines plus the property tax, all with escalating penalties.',
+      prompt: 'From vehicle and property documents in mail, identify the vehicle, its plate and region, and the property. Report the annual pajak kendaraan date, the five-yearly STNK and plate replacement date, and the PBB deadline for that region. For each: the date, days remaining and the amount if stated. State the denda that applies after each deadline as the notice or the regional rule gives it, since vehicle tax penalties accumulate monthly.' },
+    { id: 'id_listrik', icon: '⚡', title: 'PLN token and tagihan', needs: 'Email',
+      desc: 'Prepaid tokens run out without warning and postpaid bills carry a cut-off date.',
+      prompt: 'Track PLN correspondence in mail. For a postpaid account: the period, usage, amount, due date and days remaining, and the date after which disconnection is stated to apply. For a prepaid account: token purchases with date and amount, and the rate of consumption implied by the interval between purchases, so the next top-up can be anticipated. Compare amounts across months and report any increase, stating whether a tariff change is mentioned.' },
+    { id: 'id_spt', icon: '🧾', title: 'SPT tahunan and e-Faktur documents', needs: 'Email',
+      desc: 'Annual return documents collected as they arrive.',
+      prompt: 'Track documents for the SPT tahunan in mail: bukti potong from employers, e-Faktur, interest and investment statements, and receipts for anything the correspondence indicates is claimable. List what has arrived with issuer and date. Name which bukti potong would be expected from the employers visible in the mail but have not arrived. Give the SPT deadline and days remaining, and the denda stated for late filing. Report documents and dates only.' },
+    { id: 'id_paylater', icon: '💳', title: 'Paylater and cicilan due', needs: 'Email',
+      desc: 'Several small instalment commitments across several apps add up to a fixed monthly obligation.',
+      prompt: 'From paylater and instalment correspondence in mail across all providers, report for each: the merchant or platform, the total amount, the number of instalments, how many remain, the monthly amount and the due date. Sum the committed monthly total across every provider, since that is the figure people underestimate when the commitments sit in separate apps. State the denda keterlambatan for each where given, and flag anything due within three days.' },
+  ],
+
+  SA: [
+    { id: 'sa_absher', icon: '🪪', title: 'Iqama, licence and vehicle renewals', needs: 'Email',
+      desc: 'Renewals where an expiry carries a fine and can block other services entirely.',
+      prompt: 'Scan mail for iqama and residence permit renewals, driving licence, istimara vehicle registration, passport and exit or re-entry visas. For each: the expiry date, days remaining, and the fee where stated. Order by expiry and flag anything within thirty days. State that an expired iqama or istimara carries a fine and can block dependent services as the correspondence states it, and give the dates rather than the advice. Include dependants where the correspondence covers them, since those expire separately.' },
+    { id: 'sa_sadad', icon: '🧾', title: 'Sadad bills and references due', needs: 'Email',
+      desc: 'Payment references with expiry, across government and utility billers.',
+      prompt: 'Find Sadad payment references, bills and invoices in mail. For each: the biller, the reference, the amount, the due date and days remaining, and where the reference itself expires, that date. Soonest first. Confirm which have a matching payment confirmation in mail and which do not. Flag any government fee whose reference has expired, since those usually require the request to be raised again.' },
+    { id: 'sa_gosi', icon: '🏦', title: 'GOSI statements and contributions', needs: 'Email',
+      desc: 'Contribution records and any period that is missing one.',
+      prompt: 'Find GOSI correspondence and statements in mail. Report contributions by period with the wage base and the amount, the total months recorded where stated, and any period where an expected contribution appears missing. A gap affects entitlement and is easier to correct near the time, so put it first with the period. Report any change to the contribution base with the old and new figures.' },
+    { id: 'sa_sec', icon: '⚡', title: 'Electricity and water bills', needs: 'Email',
+      desc: 'Consumption compared across months, with the tariff bracket made visible.',
+      prompt: 'Track electricity and water bills in mail across all available periods. For each: the period, consumption, amount, and the tariff bracket where stated. Compare against previous periods and report increases, distinguishing a consumption change from a tariff change. Flag where consumption has crossed into a higher bracket. Give the due date, days remaining, and any late fee or disconnection notice stated.' },
+    { id: 'sa_insurance', icon: '🚗', title: 'Motor and medical insurance renewal', needs: 'Email',
+      desc: 'Cover that is legally required and whose renewal price moves each year.',
+      prompt: 'Find motor and medical insurance correspondence in mail. For each: the insurer, the current premium, the renewing premium, the change, and the date the new term begins with days remaining. Report the increase explicitly. State where cover is required for a vehicle registration renewal, since the two deadlines interact and an expired policy blocks the istimara. Do not recommend an insurer.' },
+  ],
+
+  NG: [
+    { id: 'ng_disco', icon: '⚡', title: 'DisCo bills, tokens and estimated billing', needs: 'Email',
+      desc: 'Prepaid tokens and postpaid estimates, where an estimate is worth challenging with evidence.',
+      prompt: 'Track electricity correspondence in mail. For prepaid: token purchases with date, amount and units, and the consumption rate implied by the interval, so the next purchase can be anticipated. For postpaid: the period, whether the reading was actual or estimated, the amount, and the due date with days remaining. Flag every month billed on estimate rather than a reading, and compare those amounts against any month with an actual reading, since that difference is the basis on which an estimated bill is disputed. Report the band and any tariff change stated.' },
+    { id: 'ng_bank', icon: '🏦', title: 'Bank alerts, charges and unusual debits', needs: 'Email',
+      desc: 'Small recurring charges and debits that are easy to miss one at a time and material over a year.',
+      prompt: 'From bank alerts and statements in mail, report recurring charges by type: maintenance, SMS alert, card, transfer and stamp duty, with the monthly and annual total of each. List any debit that does not correspond to a purchase or transfer visible elsewhere in the mail, since an unrecognised debit is the one to query while it is still recent. Report any charge that appeared for the first time or changed amount, with the month. Give balances only as the alerts state them.' },
+    { id: 'ng_documents', icon: '🪪', title: 'NIN, BVN, passport and licence', needs: 'Email',
+      desc: 'Identity and licence renewals with long processing times and services that block without them.',
+      prompt: 'Scan mail for identity and licence documents: NIN, BVN verification requests, international passport, driver licence, vehicle papers and any permit. For each: the expiry or the deadline, days remaining, and what the correspondence says the renewal requires. Put any verification request that could restrict a bank account first, since those are commonly enforced by freezing access. Note where processing time is stated, because that is the number that decides when to start.' },
+    { id: 'ng_school_fees', icon: '🎓', title: 'School fees and term deadlines', needs: 'Email',
+      desc: 'Fees, deadlines and the discounts or penalties attached to when they are paid.',
+      prompt: 'Find school, college and university correspondence in mail. Report for each institution: the term or session, the fees due, the payment deadline with days remaining, and any early payment discount or late penalty stated. List separately anything that must be submitted rather than paid: forms, documents, registration confirmations, with their deadlines. Put anything whose deadline is inside two weeks first.' },
+    { id: 'ng_subscriptions', icon: '📱', title: 'Data, airtime and auto-renewals', needs: 'Email',
+      desc: 'Auto-renewing data and content subscriptions that continue quietly across several providers.',
+      prompt: 'From telecom and subscription correspondence in mail, list every recurring charge: data plans, content and value added services, streaming, and any subscription confirmed by SMS receipt in the mail. For each: the provider, the amount, the frequency, the renewal date and the annual cost. Flag value added services the user did not obviously sign up for, since those are commonly activated inadvertently and renew silently. Total the monthly and annual spend, and give the opt-out route where the message states it.' },
+  ],
+
+  ZA: [
+    { id: 'za_municipal', icon: '🏠', title: 'Municipal bill: rates, water and electricity', needs: 'Email',
+      desc: 'A single account covering several services, where an increase in one is hidden in the total.',
+      prompt: 'Track municipal accounts in mail across all available months. Break each bill into its components - rates, refuse, sewerage, water and electricity - and compare each component month against month, since an increase in one line disappears into the total. State whether readings were actual or estimated. Report the annual tariff increase with the old and new figures and the month it applied. Give the due date, days remaining, and any interest or disconnection notice stated.' },
+    { id: 'za_sassa', icon: '💰', title: 'SASSA grant payment dates and amounts', needs: 'Web research',
+      desc: 'The days SASSA pays each grant this month, the current amounts, and any change announced - about 26 million people receive one.',
+      prompt: 'Ask, or establish from the conversation, which SASSA grant or grants the user or their household receives: older persons, disability, child support, foster child, care dependency, war veterans, grant-in-aid or the R370 Social Relief of Distress grant. Research the payment dates SASSA has published for this month and next for those grants, and the current amount of each. Report any change announced by SASSA or National Treasury - a new amount and the month it takes effect, a change to the payment method, or an extension or end date for the SRD grant - with its source and date. Only what SASSA, the Department of Social Development or Treasury has published; never ask for an ID number, never check an application status, and never infer a date.' },
+    { id: 'za_sars', icon: '🧾', title: 'SARS correspondence and tax season', needs: 'Email',
+      desc: 'IRP5, certificates and anything from SARS, tracked against the filing window.',
+      prompt: 'Track SARS correspondence and tax documents in mail: IRP5, IT3(b) and IT3(c) certificates, medical aid tax certificates, retirement annuity certificates and logbook records. List what has arrived with issuer and date. Name which would be expected from the employers and institutions visible in the mail but have not. Give the filing deadline for the relevant taxpayer category and days remaining. Flag any SARS letter requiring a response, with its deadline and the stated consequence. Report documents and dates only.' },
+    { id: 'za_vehicle', icon: '🚗', title: 'Licence disc, fines and insurance', needs: 'Email',
+      desc: 'Vehicle obligations with separate dates, and fines that escalate if left.',
+      prompt: 'Find vehicle correspondence in mail: licence disc renewal, driving licence, traffic fines and insurance. For each: the date due or expiry, days remaining and the amount. For fines, state whether a discounted period applies and until when, and whether the notice indicates escalation to a summons. Report the insurance renewal premium against the previous one where both are visible, since annual increases are applied by default.' },
+    { id: 'za_medical_aid', icon: '🏥', title: 'Medical aid and insurance increases', needs: 'Email',
+      desc: 'Annual increases and benefit changes, which are announced once and take effect quietly.',
+      prompt: 'Find medical aid, gap cover and insurance correspondence in mail. For each: the current contribution, the new contribution, the percentage increase and the effective date. Report any change to benefits, limits, savings allocation or network restrictions stated in the same notice, since those change what the cover is worth as much as the price does. State the window in which the plan can be changed where the notice gives it, because that window is usually short and annual.' },
+  ],
+
+  EG: [
+    { id: 'eg_fawateer', icon: '⚡', title: 'Electricity, water and gas bills', needs: 'Email',
+      desc: 'Consumption compared across months with the tariff bracket made visible.',
+      prompt: 'Track electricity, water and gas bills in mail across all available periods. For each: the period, the reading and whether it was actual or estimated, the consumption, the amount, and the tariff bracket where stated. Compare against previous periods and report increases, distinguishing a consumption change from a tariff change, and flag where consumption has crossed into a higher bracket since that raises the rate on the units above it. Give the due date, days remaining, and any late fee or disconnection warning stated.' },
+    { id: 'eg_eta', icon: '🧾', title: 'Tax authority e-invoices and returns', needs: 'Email',
+      desc: 'Electronic invoices and filing dates, collected rather than reconstructed.',
+      prompt: 'Find Egyptian Tax Authority correspondence and electronic invoices in mail. Report returns due with the period, the deadline and days remaining, and the penalty stated for late filing. Collect e-invoices with issuer, tax registration number where stated, date and amount, and total them. Identify payments visible in the mail with no matching invoice, naming the supplier. Report documents and dates only - do not give tax advice.' },
+    { id: 'eg_mokhalafat', icon: '🚗', title: 'Traffic fines and licence renewal', needs: 'Email',
+      desc: 'Fines that accumulate against the vehicle and block renewal until settled.',
+      prompt: 'Find traffic fines and vehicle correspondence in mail. Report each fine with its date, the amount, and whether a reduced payment period applies and until when. Report the driving licence and vehicle licence expiry with days remaining. State where outstanding fines must be settled before a licence can be renewed, as the correspondence states it, since that connection is what turns a small fine into a blocked renewal.' },
+    { id: 'eg_school', icon: '🎓', title: 'School and university fees and dates', needs: 'Email',
+      desc: 'Instalments, registration windows and the documents each requires.',
+      prompt: 'Find school and university correspondence in mail. Report for each institution: the term or year, the fees, the instalment schedule with every date, and days until the next. List registration and enrolment windows with their opening and closing dates, and the documents each requires. Put anything whose deadline is inside two weeks first, and state any late fee or penalty the correspondence gives.' },
+    { id: 'eg_baqat', icon: '📱', title: 'Mobile and internet packages renewing', needs: 'Email',
+      desc: 'Packages that renew on a date and change price without a separate announcement.',
+      prompt: 'From telecom correspondence in mail, list mobile and internet packages: the provider, the package, the monthly amount, the renewal date and days remaining. Report any price change with the old and new amounts and the month it applied. List additional services and content subscriptions charged to the line separately, with their cost and renewal date, since those are commonly activated without a clear sign-up. Total the monthly and annual spend.' },
+  ],
+
+  AU: [
+    { id: 'au_mygov', icon: '🏛️', title: 'myGov, ATO and tax-time documents', needs: 'Email',
+      desc: 'Correspondence from government services and the documents needed at tax time.',
+      prompt: 'Track myGov, ATO, Centrelink and Medicare correspondence in mail. For each message: who sent it, what it requires, the deadline and days remaining. Then track tax documents: payment summaries, interest and dividend statements, private health insurance statements and deduction receipts. List what has arrived and name what would be expected from the employers and institutions visible in the mail but has not. Give the lodgement deadline and days remaining. Report documents and dates only - do not give tax advice.' },
+    { id: 'au_health', icon: '🏥', title: 'Private health cover and the April increase', needs: 'Email',
+      desc: 'Premiums rise on a set date each year, and the notice arrives well before it.',
+      prompt: 'Find private health insurance correspondence in mail. Report the current premium, the new premium, the percentage increase and the date it takes effect. Report any change to benefits, excess, waiting periods or the hospital tier stated in the same notice, since those change the value of the cover as much as the price. Note where the notice states that paying ahead of the increase date locks in the current rate, and give the last date on which that applies. Do not recommend an insurer.' },
+    { id: 'au_vehicle', icon: '🚗', title: 'Rego, CTP and licence renewal', needs: 'Email',
+      desc: 'Registration, compulsory insurance and licence, each with its own date.',
+      prompt: 'Find vehicle correspondence in mail: registration renewal, CTP or greenslip, comprehensive insurance, driving licence and any inspection requirement. For each: the date due, days remaining and the amount. State where an inspection is required before registration can be renewed and how long the certificate is valid, since that sequencing is what causes a late renewal. Report the insurance renewal premium against the previous one where both are visible, and any infringement notices with their due date and amount.' },
+    { id: 'au_energy', icon: '⚡', title: 'Energy benefit period ending', needs: 'Email',
+      desc: 'Discounts run for a fixed period, after which the same plan costs more.',
+      prompt: 'From energy correspondence in mail, identify the current plan: the retailer, the rates, any discount or benefit and the date that benefit period ends. Give days remaining. Retailers are required to notify customers when a benefit period ends and to advise a better offer where one exists - report any such notice found and what it stated. Compare bills across all available periods, separating a change in usage from a change in rate. Give the due date for anything unpaid.' },
+    { id: 'au_tolls', icon: '🛣️', title: 'Toll accounts and infringements', needs: 'Email',
+      desc: 'A low toll balance becomes an unpaid toll, and an unpaid toll becomes a much larger fine.',
+      prompt: 'Find toll account statements and infringement notices in mail. Report the toll account balance and any low balance or top up warning with its date, since an unpaid toll typically escalates into an administrative fee many times its size. List any toll notice or infringement with the amount, the due date, days remaining, and what the notice states happens after it. Put anything with a due date inside two weeks first, and state where an infringement can still be paid at the lower amount and until when.' },
+  ],
+
+  /* ── AND THE TWENTY-FIVE MORE AMV ALREADY REACHES ────────────────────────
+     The coverage board said AMV worked in forty-five countries and had
+     everyday jobs for twenty of them. For the other twenty-five it was
+     telling somebody the product reached their country while the half of it
+     that matters every week was empty.
+
+     None of these is the previous list with a name swapped. Portugal has to
+     validate its faturas in e-Fatura by a February deadline or the deduction
+     is simply gone. The Netherlands has one annual window to change health
+     insurer and toeslagen that must be corrected the moment income moves.
+     Switzerland's is the 30 November premium deadline. Taiwan has a receipt
+     lottery. Czechia and Denmark deliver official post to a mailbox where it
+     counts as served whether or not anybody opened it. */
+
+  AT: [
+    { id: 'at_vignette', icon: '🚗', title: 'Pickerl, Vignette and Kfz deadlines', needs: 'Email',
+      desc: 'The §57a inspection, the motorway sticker and the insurance, each on its own clock.',
+      prompt: 'Find vehicle correspondence in mail: the §57a Pickerl inspection, Vignette purchase, Kfz-Versicherung renewal, motorbezogene Versicherungssteuer and any Strafe. For each: the date due or expiry, days remaining and the amount. State that the Pickerl has a tolerance window around its month and give the exact last date the notice allows. For fines, say whether an early payment amount still applies and until when.' },
+    { id: 'at_finanzamt', icon: '🧾', title: 'Arbeitnehmerveranlagung documents', needs: 'Email',
+      desc: 'The annual assessment is often a refund rather than a bill, and the paperwork arrives across months.',
+      prompt: 'Track documents for the Arbeitnehmerveranlagung in mail: Lohnzettel, Spendenbestätigungen, Sonderausgaben, Werbungskosten receipts and any Bescheid from the Finanzamt. List what has arrived with issuer and date, and name which would be expected from the employers and institutions visible in the mail but have not. Give the submission window and days remaining, and flag any Finanzamt letter requiring a reply with its deadline. Report documents and dates only.' },
+    { id: 'at_oegk', icon: '🏥', title: 'ÖGK, e-card and Sozialversicherung', needs: 'Email',
+      desc: 'Contributions, the service fee, and anything the insurer is waiting on.',
+      prompt: 'Find ÖGK and Sozialversicherung correspondence in mail. Report contributions by period, the e-card Serviceentgelt and when it is charged, and any letter requesting a document or a response with its deadline. Flag any month where an expected contribution appears missing, since gaps affect entitlement and are easier to correct near the time. Report any change to the contribution base with old and new figures.' },
+    { id: 'at_orf', icon: '📺', title: 'ORF-Beitrag, Betriebskosten and rent', needs: 'Email',
+      desc: 'Household charges that change annually and settle once a year.',
+      prompt: 'Find ORF-Beitrag, Betriebskostenabrechnung, Mietzins and utility correspondence in mail. For the settlement: the period, the total costs, the advance payments and the resulting credit or demand, with the payment deadline. For rent: any increase, the index applied, the old and new amount and the effective date. Report the ORF-Beitrag amount and schedule, and any change to it.' },
+    { id: 'at_kuendigung', icon: '✂️', title: 'Contracts renewing themselves', needs: 'Email',
+      desc: 'Mobile, energy, gym and insurance that continue for another term unless notice lands in time.',
+      prompt: 'Find contracts and subscriptions in mail: Handy, Internet, Strom, Gas, Fitness, Versicherung and memberships. For each: the provider, the minimum term, the notice period, the automatic renewal term, and therefore the LAST DAY notice can be given. Order by that day, soonest first, and flag anything inside six weeks. State the required form of notice where the contract gives it. Give the date explicitly rather than describing the period.' },
+  ],
+
+  BE: [
+    { id: 'be_belasting', icon: '🧾', title: 'Tax-on-web documents and deadlines', needs: 'Email',
+      desc: 'The declaration has different deadlines depending on how it is filed, and the papers arrive separately.',
+      prompt: 'Track tax documents in mail: fiches from employers, bank and insurance certificates, pension savings attestations, childcare and mortgage certificates. List what has arrived with issuer and date, and name what would be expected from the employers and institutions visible in the mail but has not. Give the declaration deadline that applies, noting that paper and online filing carry different dates, and days remaining. Flag any letter from the tax authority requiring a reply. Report documents and dates only.' },
+    { id: 'be_mutualite', icon: '🏥', title: 'Mutualité and reimbursements pending', needs: 'Email',
+      desc: 'Contributions, cover, and the refunds that quietly never arrive.',
+      prompt: 'Find mutualité or ziekenfonds correspondence in mail. Report the contribution, any change with its effective date, and reimbursements: what was claimed, what was paid and what appears still outstanding. Put unpaid claims first with how long they have been pending, since those are the ones that need chasing. Report any change to cover or supplementary insurance stated in the same notice.' },
+    { id: 'be_keuring', icon: '🚗', title: 'Autokeuring, verkeersbelasting and insurance', needs: 'Email',
+      desc: 'Inspection, road tax and cover, on three separate schedules.',
+      prompt: 'Find vehicle correspondence in mail: autokeuring or contrôle technique, verkeersbelasting, insurance renewal and any boete. For each: the date due, days remaining and the amount. State where the inspection must be passed before the tax or registration can proceed. For fines, give whether a reduced amount still applies and until when. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'be_energie', icon: '⚡', title: 'Energy contract and the annual afrekening', needs: 'Email',
+      desc: 'Monthly instalments settle once a year, and a fixed contract ending changes the price silently.',
+      prompt: 'From energy correspondence in mail, report the monthly instalment, any change to it, and the annual afrekening: the period, the estimated payments made, the actual consumption and the resulting balance or refund with its deadline. State the contract type, whether fixed or variable, and the date any fixed term ends with days remaining. Report tariff changes with old and new rates.' },
+    { id: 'be_gemeente', icon: '🪪', title: 'eID, licence and residence documents', needs: 'Email',
+      desc: 'Municipal documents with appointment waits longer than the paperwork.',
+      prompt: 'Scan mail for documents with expiry: eID or identity card, driving licence, passport, residence permit and any municipal registration. For each: the expiry, days remaining, and what the renewal requires where the correspondence states it. Note where an appointment at the gemeente or commune is needed and how far ahead they are being given, since the wait is usually the constraint rather than the document.' },
+  ],
+
+  CZ: [
+    { id: 'cz_datovka', icon: '📮', title: 'Datová schránka: delivered whether or not you read it', needs: 'Email',
+      desc: 'A message in the data box counts as served after ten days even if nobody opened it.',
+      prompt: 'Find datová schránka notifications and official correspondence in mail from úřady, finanční úřad, soud, ČSSZ and zdravotní pojišťovna. For each: who sent it, what it requires, the date it was delivered and the stated deadline. State clearly that a message in the data box is considered delivered after ten days whether or not it was opened, so the deadline runs from delivery rather than from reading, and give that delivery date for each. Unanswered items first. Never state a consequence the notice did not state.' },
+    { id: 'cz_dane', icon: '🧾', title: 'Daňové přiznání documents', needs: 'Email',
+      desc: 'Certificates and receipts collected as they arrive rather than hunted in March.',
+      prompt: 'Track tax documents in mail: potvrzení o zdanitelných příjmech, mortgage interest confirmations, pension and life insurance certificates, donation receipts and any letter from the finanční úřad. List what has arrived with issuer and date, and name what would be expected from the employers and institutions visible in the mail but has not. Give the filing deadline that applies and days remaining, noting that filing through an advisor extends it. Report documents and dates only.' },
+    { id: 'cz_pojisteni', icon: '🏥', title: 'Zdravotní and sociální pojištění', needs: 'Email',
+      desc: 'Monthly obligations where a missed month accrues penalty interest quietly.',
+      prompt: 'Find zdravotní pojišťovna and ČSSZ correspondence in mail. Report contributions by month with the base and amount, and flag any month where an expected payment appears missing, since penalties accrue daily and are rarely announced. Report any change to the minimum contribution with the old and new figures and the month it applies from. Give payment deadlines and days remaining for anything outstanding.' },
+    { id: 'cz_stk', icon: '🚗', title: 'STK, povinné ručení and dálniční známka', needs: 'Email',
+      desc: 'Vehicle obligations with separate dates and separate penalties.',
+      prompt: 'Find vehicle correspondence in mail: STK technical inspection, emise, povinné ručení, havarijní pojištění, dálniční známka and any pokuta. For each: the date due or expiry, days remaining and the amount. State the penalty for driving without valid STK or povinné ručení as the notice or the rule gives it. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'cz_energie', icon: '⚡', title: 'Zálohy and the annual vyúčtování', needs: 'Email',
+      desc: 'Advance payments settle once a year, and the settlement can be large in either direction.',
+      prompt: 'Track energy and utility correspondence in mail. Report the monthly záloha, any change to it, and the annual vyúčtování: the period, the advances paid, the actual consumption and the resulting refund or demand with its deadline. State any tariff change with old and new rates and the date it applied. Flag where the záloha looks materially below actual consumption, since that is what produces a large demand later.' },
+  ],
+
+  DK: [
+    { id: 'dk_eboks', icon: '📮', title: 'Digital Post you have not answered', needs: 'Email',
+      desc: 'Official letters arrive digitally and are legally delivered on arrival.',
+      prompt: 'Find e-Boks and Digital Post notifications in mail from offentlige myndigheder, Skattestyrelsen, kommune, Udbetaling Danmark and pension providers. For each: who sent it, what it requires, the date it arrived and the stated deadline. State that digital post is legally delivered on arrival, so the deadline runs from that date. Unanswered items first with days remaining. Never state a consequence the letter did not state.' },
+    { id: 'dk_skat', icon: '🧾', title: 'Forskudsopgørelse and årsopgørelse', needs: 'Email',
+      desc: 'The preliminary assessment decides monthly tax, and correcting it early avoids a bill later.',
+      prompt: 'Find Skat correspondence in mail. Report the forskudsopgørelse: the income assumed, the deductions applied and the resulting monthly tax, and the årsopgørelse with the resulting refund or amount owed and its payment date. Flag where the assumed income differs from what pay records in the mail actually show, since that difference becomes a bill or a refund at year end. Give any deadline for changes and days remaining. Report figures and dates only - do not give tax advice.' },
+    { id: 'dk_bil', icon: '🚗', title: 'Bilsyn, ejerafgift and insurance', needs: 'Email',
+      desc: 'Inspection, ownership tax and cover, none of which remind each other.',
+      prompt: 'Find vehicle correspondence in mail: bilsyn, grøn ejerafgift or vægtafgift, forsikring and any bøde. For each: the date due, days remaining and the amount. State the interval at which bilsyn is required for this vehicle where the notice gives it, and that ejerafgift is charged per period rather than annually. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'dk_akasse', icon: '🏦', title: 'A-kasse, fagforening and required declarations', needs: 'Email',
+      desc: 'Membership only pays out if the declarations are filed, and they are monthly.',
+      prompt: 'Find a-kasse and fagforening correspondence in mail. Report the monthly contribution, any change, and every declaration or confirmation the a-kasse requires with its deadline, since dagpenge depend on those being filed on time. Put anything outstanding first with days remaining and what the letter says happens if it is missed. Report any change to membership terms stated in the same notice.' },
+    { id: 'dk_varme', icon: '🔥', title: 'Varme, el and the annual settlement', needs: 'Email',
+      desc: 'Heating is paid on account and settled once a year.',
+      prompt: 'Track heating, electricity and water correspondence in mail. Report the monthly aconto amount, any change to it, and the annual afregning: the period, the amounts paid on account, the actual consumption and the resulting refund or demand with its deadline. Compare consumption against previous periods and report changes, distinguishing usage from a tariff change. Flag an unexplained jump separately.' },
+  ],
+
+  FI: [
+    { id: 'fi_vero', icon: '🧾', title: 'Veroilmoitus and verokortti', needs: 'Email',
+      desc: 'The pre-filled return only needs correcting, and the tax card decides what is withheld.',
+      prompt: 'Find Vero correspondence in mail. Report the esitäytetty veroilmoitus: what it assumes and the date by which corrections must be made, and the verokortti with the withholding rate and income ceiling. Flag where earnings visible in the mail look likely to exceed the ceiling on the tax card, since that raises withholding sharply for the rest of the year. Report any jäännösvero or veronpalautus with its date. Report figures and dates only.' },
+    { id: 'fi_kela', icon: '🏛️', title: 'Kela decisions and declarations due', needs: 'Email',
+      desc: 'Benefits stop when a declaration is late rather than when eligibility ends.',
+      prompt: 'Find Kela correspondence in mail. For each: what it is, the decision or amount, and anything Kela is waiting on with its deadline. Put outstanding declarations and document requests first, since payment is commonly suspended rather than merely delayed when they are late. Report any change to an entitlement with the old and new figures and the effective date, and what the letter states can be appealed and by when.' },
+    { id: 'fi_katsastus', icon: '🚗', title: 'Katsastus, ajoneuvovero and vakuutus', needs: 'Email',
+      desc: 'Inspection has a fixed window and driving outside it is an offence.',
+      prompt: 'Find vehicle correspondence in mail: katsastus, ajoneuvovero, liikennevakuutus and any sakko. For each: the date due, days remaining and the amount. State the katsastus window that applies to this vehicle where the notice gives it, and that driving after it lapses is an offence separate from the fine. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'fi_sahko', icon: '⚡', title: 'Electricity contract and spot price exposure', needs: 'Email',
+      desc: 'A spot contract moves with the market and a fixed one ends on a date.',
+      prompt: 'From electricity correspondence in mail, identify the contract: the supplier, whether the price is fixed or spot, the current rate, the nettomaksu or transfer charge separately, and the date any fixed term ends with days remaining. Compare bills across all available months, separating consumption changes from price changes, and state how much of the bill is transfer and tax rather than energy. Report any notice of a price change with the date it applies.' },
+    { id: 'fi_taloyhtio', icon: '🏠', title: 'Vastike, taloyhtiö notices and official post', needs: 'Email',
+      desc: 'Maintenance charges, planned works and anything the housing company has decided.',
+      prompt: 'Find taloyhtiö and Suomi.fi correspondence in mail. Report the hoitovastike and rahoitusvastike separately with any change and its effective date, since the two move for different reasons. List planned works, remontti decisions and their stated cost or effect on the vastike. Report any official Suomi.fi message requiring a response with its deadline, noting that electronic delivery counts as delivery.' },
+  ],
+
+  IE: [
+    { id: 'ie_revenue', icon: '🧾', title: 'Revenue correspondence and tax credits', needs: 'Email',
+      desc: 'Credits and reliefs are only applied if claimed, and there is a four-year limit.',
+      prompt: 'Find Revenue correspondence in mail: Statements of Liability, tax credit certificates, Form 11 or 12 reminders, and any letter requiring a response. Report the tax credits currently applied and any change with the year it applies to. From medical, tuition and rent expenses visible in the mail, name reliefs that appear claimable and the year they relate to, noting that claims can generally be made for four prior years. Give any filing deadline and days remaining. Report documents and dates only.' },
+    { id: 'ie_nct', icon: '🚗', title: 'NCT, motor tax and insurance', needs: 'Email',
+      desc: 'Three renewals with three dates, and driving without any of them is an offence.',
+      prompt: 'Find vehicle correspondence in mail: NCT test, motor tax, insurance renewal and any fixed charge notice. For each: the date due or expiry, days remaining and the amount. State that motor tax cannot be renewed without valid insurance and NCT where applicable, since that sequencing is what causes a late renewal. For fixed charge notices, give whether the lower amount still applies and until when. Report the insurance renewal premium against the previous one.' },
+    { id: 'ie_lpt', icon: '🏠', title: 'Local Property Tax and household charges', needs: 'Email',
+      desc: 'Annual charges with a payment method chosen once and then forgotten.',
+      prompt: 'Find Local Property Tax, refuse, water and management company correspondence in mail. For each: the amount, the payment method in place, the schedule and the next date with days remaining. Report any revaluation or rate change with the old and new figures and the year it applies from. Flag anything where the notice states a surcharge or interest applies after a date.' },
+    { id: 'ie_energy', icon: '⚡', title: 'Energy discount ending and standing charges', needs: 'Email',
+      desc: 'New-customer discounts run twelve months and then simply stop.',
+      prompt: 'From energy correspondence in mail, identify the supplier, the unit rate, the standing charge and any discount with the date it ends, since new-customer discounts are typically twelve months and are not renewed automatically. Give days remaining. Compare bills across all available periods, separating consumption from rate changes and reporting the standing charge separately since it is payable regardless of usage. Report any price change notice with its effective date.' },
+    { id: 'ie_health', icon: '🏥', title: 'Health insurance renewal and community rating', needs: 'Email',
+      desc: 'Premiums rise with age after a threshold, and the renewal notice is the moment to act.',
+      prompt: 'Find health insurance correspondence in mail. Report the current premium, the renewing premium, the percentage change and the renewal date with days remaining. Report any change to cover, excess or waiting periods stated in the same notice, since those change what the policy is worth as much as the price. Note where the notice states loadings that apply from a given age, and the date by which a change of plan must be made. Do not recommend an insurer.' },
+  ],
+
+  NL: [
+    { id: 'nl_toeslagen', icon: '🏛️', title: 'Toeslagen: correct them the moment income moves', needs: 'Email',
+      desc: 'Allowances are paid on an estimate and reclaimed later if the estimate was wrong.',
+      prompt: 'Find Belastingdienst toeslagen correspondence in mail: huurtoeslag, zorgtoeslag, kinderopvangtoeslag and kindgebonden budget. For each: the amount being paid, the income it assumes and the period. Compare the assumed income against what pay and income records in the mail actually show, and report any difference, because toeslagen are paid on an estimate and any overpayment is reclaimed in full afterwards. State that a change in income or household must be reported promptly, and give the deadline for any definitive calculation with days remaining.' },
+    { id: 'nl_zorg', icon: '🏥', title: 'The one window to change health insurer', needs: 'Email',
+      desc: 'Cover can be cancelled until 31 December and a new policy taken until 31 January, and not otherwise.',
+      prompt: 'Find zorgverzekering correspondence in mail. Report the current premium, the announced premium for next year, the percentage change, the eigen risico and any change to cover or contracted providers. State the two dates plainly: the last day the existing policy can be cancelled and the last day a new one can be taken out, with days remaining for each, since outside that window the policy simply continues for the year. Do not recommend an insurer.' },
+    { id: 'nl_apk', icon: '🚗', title: 'APK, wegenbelasting and insurance', needs: 'Email',
+      desc: 'Inspection, road tax and cover, each enforced separately by registration.',
+      prompt: 'Find vehicle correspondence in mail: APK, wegenbelasting, autoverzekering and any boete. For each: the date due or expiry, days remaining and the amount. State that road tax and insurance are checked against the registration automatically, so a lapse is detected rather than discovered. For fines, report the amount and the date after which it increases. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'nl_energie', icon: '⚡', title: 'Termijnbedrag and the jaarafrekening', needs: 'Email',
+      desc: 'A monthly amount set once a year, and a settlement that can be several hundred either way.',
+      prompt: 'From energy correspondence in mail, report the termijnbedrag, any change to it, and the jaarafrekening: the period, the amounts paid, the actual consumption in kWh and m3, and the resulting refund or demand with its payment date. State the contract type and the date any fixed term ends with days remaining, and any opzegvergoeding stated. Flag where the termijnbedrag looks materially below actual consumption, since that is what produces a large bill later.' },
+    { id: 'nl_berichtenbox', icon: '📮', title: 'MijnOverheid Berichtenbox and documents', needs: 'Email',
+      desc: 'Government post arrives digitally, and documents expire on their own schedule.',
+      prompt: 'Find MijnOverheid, DigiD and gemeente notifications in mail, and any document with an expiry: identity card, passport, driving licence, residence permit. For official messages: who sent it, what it requires and the deadline, unanswered first. For documents: the expiry, days remaining, and whether an appointment is required and how far ahead they are being given. State that digital government post is considered delivered on arrival.' },
+  ],
+
+  NO: [
+    { id: 'no_skatt', icon: '🧾', title: 'Skattemelding and skattetrekk', needs: 'Email',
+      desc: 'The deduction card decides what is withheld all year, and it is based on an estimate.',
+      prompt: 'Find Skatteetaten correspondence in mail. Report the skattetrekksmelding: the income assumed, the deduction percentage and the resulting withholding, and the skattemelding with the resulting refund or amount owed and its date. Flag where the assumed income differs from what pay records in the mail show, since that difference becomes restskatt or a refund. Give the deadline for corrections and days remaining. Report figures and dates only - do not give tax advice.' },
+    { id: 'no_eukontroll', icon: '🚗', title: 'EU-kontroll, trafikkforsikringsavgift and insurance', needs: 'Email',
+      desc: 'Inspection has a deadline, and the road charge is now collected through the insurer.',
+      prompt: 'Find vehicle correspondence in mail: EU-kontroll or PKK, trafikkforsikringsavgift, forsikring and any bot. For each: the date due, days remaining and the amount. State that the annual road charge is collected through the insurance and that a lapse in insurance therefore has a separate daily charge, as the correspondence states it. Give the date after which the vehicle is deregistered if the EU-kontroll is not done, where the notice gives it.' },
+    { id: 'no_strom', icon: '⚡', title: 'Strøm: spot price, nettleie and støtte', needs: 'Email',
+      desc: 'The bill is energy, grid rent and tax, and only one of the three moves with the market.',
+      prompt: 'From electricity correspondence in mail, report each bill split into its parts: the energy price and whether it is spot, a fixed contract or Norgespris (the state fixed price of 40 øre per kWh before VAT, available since 1 October 2025 and binding until 31 December 2026), the nettleie, taxes, and any strømstøtte deducted - Norgespris and strømstøtte do not combine. Where the bills show the months and consumption, state what the period would have cost on the other of the two, from the published spot prices, so the choice for next year can be made on the numbers. Compare across all available months, separating consumption from price. State the nettleie separately since it is payable regardless of supplier and cannot be switched. Report any contract change notice with its effective date and any exit fee stated.' },
+    { id: 'no_helfo', icon: '🏥', title: 'Egenandel towards the frikort threshold', needs: 'Email',
+      desc: 'Past a yearly total, health costs stop, and the card arrives on its own.',
+      prompt: 'Find Helfo and healthcare correspondence in mail. Report egenandel payments recorded this year with dates and amounts, and the running total against the frikort threshold. State how much remains before the threshold is reached, since past it the costs stop for the rest of the year. Report any frikort already issued with its validity period, and any refund Helfo states is due.' },
+    { id: 'no_felleskostnader', icon: '🏠', title: 'Felleskostnader and housing notices', needs: 'Email',
+      desc: 'Shared costs, planned work, and the debt attached to the flat rather than the owner.',
+      prompt: 'Find borettslag or sameie correspondence in mail. Report the monthly felleskostnader broken into its stated components, any change with the effective date, and the fellesgjeld attached to the property where given, since that is a debt that moves with the flat. List planned works and their stated cost or effect on the monthly charge. Report anything requiring a vote or a response with its deadline.' },
+  ],
+
+  PL: [
+    { id: 'pl_pit', icon: '🧾', title: 'PIT documents and the filing window', needs: 'Email',
+      desc: 'PIT-11 forms arrive from every employer, and the return is pre-filled but still yours to check.',
+      prompt: 'Track tax documents in mail: PIT-11 from each employer, PIT-8C, mortgage interest and donation confirmations, and any letter from the urząd skarbowy. List what has arrived with issuer and date, and name which employers visible in the mail have not yet sent one. Give the filing window and deadline with days remaining, and note that the pre-filled return is accepted automatically if nothing is done. Flag any letter requiring a response. Report documents and dates only.' },
+    { id: 'pl_zus', icon: '🏦', title: 'ZUS składki and contributions', needs: 'Email',
+      desc: 'Monthly contributions where a missed month carries interest and can suspend sick pay.',
+      prompt: 'Find ZUS correspondence in mail. Report contributions by month with the base and amount, and flag any month where an expected payment appears missing, since arrears accrue interest and can suspend entitlement to zasiłek. Report any change to the contribution base or the minimum with old and new figures and the month it applies from. Give payment deadlines and days remaining.' },
+    { id: 'pl_przeglad', icon: '🚗', title: 'Przegląd, OC and mandaty', needs: 'Email',
+      desc: 'Compulsory insurance renews itself unless cancelled, and a gap is penalised heavily.',
+      prompt: 'Find vehicle correspondence in mail: przegląd techniczny, OC, AC and any mandat. For each: the date due, days remaining and the amount. State that OC renews automatically unless cancelled in writing before it expires, and that a gap in cover carries a separate penalty from the fine, as the correspondence states it. For mandaty, give the payment deadline and whether points apply. Report the OC renewal premium against the previous one where both are visible.' },
+    { id: 'pl_czynsz', icon: '🏠', title: 'Czynsz, media and the waste declaration', needs: 'Email',
+      desc: 'The rent covers several charges, and the waste fee depends on a declaration that must be updated.',
+      prompt: 'Find czynsz, spółdzielnia or wspólnota and utility correspondence in mail. Break the monthly charge into its stated components and compare each month against month, since an increase in one line disappears into the total. Report the opłata za śmieci and the declaration it is based on, noting that a change in household size requires a new declaration. Report any planned works or fundusz remontowy change with its effect on the charge.' },
+    { id: 'pl_urzad', icon: '📮', title: 'Official letters and documents expiring', needs: 'Email',
+      desc: 'Correspondence from offices, and identity documents with long renewal queues.',
+      prompt: 'Find correspondence from urzędy, ePUAP and mObywatel notifications in mail, and any document with an expiry: dowód osobisty, paszport, prawo jazdy, karta pobytu. For letters: who sent it, what it requires and the deadline, unanswered first. For documents: the expiry, days remaining and whether an appointment is needed and how far ahead they are being given, since the wait is usually the constraint.' },
+  ],
+
+  PT: [
+    { id: 'pt_efatura', icon: '🧾', title: 'Validate your faturas before the deduction is lost', needs: 'Email',
+      desc: 'Invoices sit in e-Fatura waiting to be classified, and after a date in February they simply stop counting.',
+      prompt: 'Collect faturas and receipts from mail for the tax year: the merchant, the NIF, the date, the amount and the category of expense. Total them by category, since deductions for health, education, housing and general family expenses are capped separately. State plainly that invoices must be validated in e-Fatura by the stated February deadline or the deduction is lost entirely, and give that deadline with days remaining. Identify purchases visible in the mail with no fatura issued to a NIF, since those cannot count at all.' },
+    { id: 'pt_iuc', icon: '🚗', title: 'IUC in the car’s registration month, IPO and seguro', needs: 'Email',
+      desc: 'The vehicle tax falls in the month the car was registered, which nobody remembers.',
+      prompt: 'From vehicle documents in mail, identify the vehicle and its first registration date. Report the IUC deadline, which falls in the anniversary month of registration, the IPO inspection schedule based on the vehicle age, the seguro renewal and any multa. For each: the date, days remaining and the amount. State the penalty for late IUC as the rule or notice gives it. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'pt_seguranca', icon: '🏦', title: 'Segurança Social contributions', needs: 'Email',
+      desc: 'Monthly contributions and the quarterly declaration for the self-employed.',
+      prompt: 'Find Segurança Social correspondence in mail. Report contributions by month with the base and amount, and flag any month where an expected payment appears missing. For the self-employed, report the quarterly declaração trimestral and its deadline, since the contribution base is recalculated from it. Report any change to the base with old and new figures and the period it applies to. Give payment deadlines and days remaining.' },
+    { id: 'pt_imi', icon: '🏠', title: 'IMI instalments and property charges', needs: 'Email',
+      desc: 'Property tax is paid in one, two or three instalments depending on the amount.',
+      prompt: 'Find IMI, condomínio and property correspondence in mail. Report the IMI amount, the instalment schedule with every date and how many instalments apply, and days until the next. Report the condomínio charge, any change and any obras approved with their cost. State any letter from the Autoridade Tributária requiring a response with its deadline.' },
+    { id: 'pt_energia', icon: '⚡', title: 'Luz, água and tariff changes', needs: 'Email',
+      desc: 'Regulated and market tariffs move on different schedules, and the bill rarely explains which applies.',
+      prompt: 'Track electricity, gas and water bills in mail across all available periods. For each: the period, the consumption, the amount, the contracted power where stated and whether the reading was actual or estimated. Compare month against month and report increases, stating whether the bill attributes them to consumption, to a tariff revision or to the contracted power. Flag a run of estimated readings, since that produces an acerto later. Give the payment date and days remaining.' },
+  ],
+
+  ES: [
+    { id: 'es_renta', icon: '🧾', title: 'Renta: borrador, certificates and the deadline', needs: 'Email',
+      desc: 'The draft is usually accepted unchecked, and it does not know about everything.',
+      prompt: 'Track documents for the declaración de la renta in mail: certificado de retenciones from each employer, bank and investment certificates, mortgage and rental documents, pension contributions and donation receipts. List what has arrived with issuer and date, and name what would be expected from the employers and institutions visible in the mail but has not. Give the campaign dates and the filing deadline with days remaining, and note the earlier deadline where the result is a payment by direct debit. Report documents and dates only.' },
+    { id: 'es_autonomo', icon: '🏦', title: 'Cuota de autónomo and the income brackets', needs: 'Email',
+      desc: 'The contribution now follows real income, and the bracket has to be kept current.',
+      prompt: 'Find Seguridad Social correspondence in mail. Report the monthly cuota, the tramo or bracket it is based on, and any change with the month it applies from. Compare the income the bracket assumes against what invoices and income visible in the mail actually show, and report any difference, since the contribution is regularised against real income afterwards. State the windows in which the bracket can be changed during the year. Give payment dates and flag any month that appears unpaid.' },
+    { id: 'es_itv', icon: '🚗', title: 'ITV, IVTM and multas with pronto pago', needs: 'Email',
+      desc: 'A fine is half price for a short period, and then it is not.',
+      prompt: 'Find vehicle correspondence in mail: ITV, impuesto de circulación (IVTM), seguro and any multa. For each: the date due, days remaining and the amount. For fines, state whether the pronto pago reduction still applies and the exact date it ends, since that window is short and halves the amount. Report the IVTM payment period set by the ayuntamiento and any domiciliación in place. Report the insurance renewal premium against the previous one.' },
+    { id: 'es_suministros', icon: '⚡', title: 'Luz, agua and comunidad charges', needs: 'Email',
+      desc: 'The regulated tariff moves hourly and a fixed one does not, and the bill is mostly fixed costs either way.',
+      prompt: 'Track electricity, gas, water and comunidad correspondence in mail. For each energy bill: the period, the consumption, the potencia contratada and its cost separately from the energy, the tariff type and the total. Compare across months, separating consumption from tariff changes, and state how much of the bill is fixed cost payable regardless of usage. Report the comunidad charge, any derrama approved with its amount and schedule, and the payment dates.' },
+    { id: 'es_documentos', icon: '🪪', title: 'DNI, NIE, TIE and appointment waits', needs: 'Email',
+      desc: 'The document is quick and the cita previa is not.',
+      prompt: 'Scan mail for documents with expiry: DNI, NIE or TIE, passport, permiso de conducir and any residence authorisation. For each: the expiry, days remaining and what the renewal requires. State where a cita previa is needed and how far ahead appointments are being given, since the appointment wait is usually longer than the process and is what causes a document to lapse. Put anything expiring within ninety days first.' },
+  ],
+
+  SE: [
+    { id: 'se_deklaration', icon: '🧾', title: 'Deklaration and the documents behind it', needs: 'Email',
+      desc: 'The return is pre-filled, and everything it does not know about is yours to add.',
+      prompt: 'Track tax documents in mail: kontrolluppgifter, bank and investment statements, K4 or K5 material for sales, mortgage interest and any letter from Skatteverket. List what has arrived with issuer and date, and name what would be expected from the institutions visible in the mail but has not. Give the filing deadline with days remaining and the earlier date for an unchanged digital submission. Flag any Skatteverket letter requiring a response. Report documents and dates only.' },
+    { id: 'se_besiktning', icon: '🚗', title: 'Besiktning, fordonsskatt and försäkring', needs: 'Email',
+      desc: 'Inspection has a window set by the registration number, and a lapse bans the vehicle from use.',
+      prompt: 'Find vehicle correspondence in mail: besiktning, fordonsskatt, försäkring and any parkeringsanmärkning or fine. For each: the date due, days remaining and the amount. State that a vehicle whose besiktning has lapsed carries a use ban, which is a separate consequence from the fine, as the notice states it. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'se_kivra', icon: '📮', title: 'Digital post and official letters', needs: 'Email',
+      desc: 'Authorities deliver digitally, and delivery counts on arrival.',
+      prompt: 'Find Kivra and digital mailbox notifications in mail from myndigheter, Skatteverket, Försäkringskassan, kommun and Kronofogden. For each: who sent it, what it requires, the arrival date and the stated deadline. State that digital delivery counts on arrival, so deadlines run from that date. Unanswered items first with days remaining. Never state a consequence the letter did not state.' },
+    { id: 'se_el', icon: '⚡', title: 'Elavtal, elområde and the price you actually pay', needs: 'Email',
+      desc: 'Price depends on which of the four zones you are in, and the grid fee is not switchable.',
+      prompt: 'From electricity correspondence in mail, report the contract: the supplier, whether the price is rörligt or fast, the rate, the elområde where stated, and the elnätsavgift separately since it is payable regardless of supplier and cannot be switched. Give the date any fixed term ends with days remaining and any exit fee. Compare bills across all available months, separating consumption from price, and report any price change notice with its effective date.' },
+    { id: 'se_avgift', icon: '🏠', title: 'Bostadsrätt avgift, a-kassa and memberships', needs: 'Email',
+      desc: 'Monthly charges that rise with interest rates and planned works.',
+      prompt: 'Find bostadsrättsförening, a-kassa and membership correspondence in mail. Report the månadsavgift, any change with its effective date and the reason the notice gives, since these rise with the association borrowing costs. List planned works and stated costs. Report the a-kassa contribution and any declaration or condition required to keep entitlement, with its deadline.' },
+  ],
+
+  CH: [
+    { id: 'ch_krankenkasse', icon: '🏥', title: 'The 30 November premium deadline', needs: 'Email',
+      desc: 'Premiums are announced in autumn and there is one short window to change insurer.',
+      prompt: 'Find Krankenkasse correspondence in mail. Report the current premium, the announced premium for next year, the percentage change, the Franchise and the model. State plainly the date by which notice must be given to change insurer, with days remaining, since outside that window the policy continues for the whole year at the new price. Report any change to the model or to accident cover stated in the same notice. Do not recommend an insurer.' },
+    { id: 'ch_steuern', icon: '🧾', title: 'Steuererklärung and the provisional bill', needs: 'Email',
+      desc: 'Tax is billed provisionally during the year and settled afterwards, at cantonal dates.',
+      prompt: 'Find tax correspondence in mail. Report the provisorische Rechnung with its instalments and dates, the definitive assessment where issued with the resulting balance, and the filing deadline with days remaining, noting that an extension is normally available on request and by when. Track supporting documents: Lohnausweis, bank and pension statements, Säule 3a certificates and deduction receipts, listing what has arrived and what is missing from the institutions visible in the mail. Report documents and dates only.' },
+    { id: 'ch_mfk', icon: '🚗', title: 'MFK, Autosteuer and Versicherung', needs: 'Email',
+      desc: 'The inspection is called by the canton and the tax is set by it too.',
+      prompt: 'Find vehicle correspondence in mail: the MFK inspection invitation, cantonal Autosteuer, Versicherung and any Busse. For each: the date due, days remaining and the amount. State that the MFK is called by the canton rather than requested, so the invitation date is the deadline. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'ch_serafe', icon: '📺', title: 'Serafe, Nebenkosten and household charges', needs: 'Email',
+      desc: 'Per-household charges and the annual settlement of what was paid on account.',
+      prompt: 'Find Serafe, Nebenkosten and utility correspondence in mail. Report the Serafe charge and its schedule. For the Nebenkostenabrechnung: the period, the total costs, the Akonto payments made and the resulting credit or demand with its deadline. Report any rent change with the old and new amount, the effective date and the justification given, and the period within which it can be contested where the notice states it.' },
+    { id: 'ch_bewilligung', icon: '🪪', title: 'Permit, ID and residence renewals', needs: 'Email',
+      desc: 'Permits are renewed on a fixed cycle and the application window opens before expiry.',
+      prompt: 'Scan mail for documents with expiry: Aufenthaltsbewilligung or Niederlassungsbewilligung, identity card, passport and driving licence. For each: the expiry, days remaining, and what the renewal requires where the correspondence states it. State where the application must be made a set period before expiry rather than after, since that window is what people miss. Put anything expiring within ninety days first.' },
+  ],
+
+  TR: [
+    { id: 'tr_edevlet', icon: '📮', title: 'e-Devlet notices and official documents', needs: 'Email',
+      desc: 'Official correspondence arrives in one place and expires on its own schedule.',
+      prompt: 'Find e-Devlet, resmi kurum and belediye notifications in mail. For each: who sent it, what it requires, the deadline and days remaining, unanswered first. Then list documents with expiry: kimlik, pasaport, ehliyet and any permit, with the expiry and days remaining. State what each notice says happens after its deadline, exactly as written. Never state a consequence the notice did not state.' },
+    { id: 'tr_mtv', icon: '🚗', title: 'MTV in two instalments, muayene and sigorta', needs: 'Email',
+      desc: 'The vehicle tax is paid twice a year, in January and July.',
+      prompt: 'Find vehicle correspondence in mail: motorlu taşıtlar vergisi, TÜVTÜRK muayene, trafik sigortası, kasko and any trafik cezası. Report the MTV with both instalment dates and amounts and which have been paid. For each other item: the date due, days remaining and the amount. For fines, state whether an early payment discount applies and until when. Report the sigorta renewal premium against the previous one where both are visible.' },
+    { id: 'tr_faturalar', icon: '⚡', title: 'Faturalar and tariff changes', needs: 'Email',
+      desc: 'With tariffs moving often, what matters is how much the bill changed and why.',
+      prompt: 'Track elektrik, doğalgaz, su and internet bills in mail across every available month. For each: the period, the consumption, the amount, and the change from the previous month in both currency and percent. State whether each bill attributes its increase to a tariff revision, to consumption, or gives no reason, and flag where consumption has crossed into a higher tariff step. Give the son ödeme tarihi and days remaining, and any gecikme zammı stated.' },
+    { id: 'tr_sgk', icon: '🏥', title: 'SGK primleri and health entitlement', needs: 'Email',
+      desc: 'Contributions and the gaps that interrupt cover.',
+      prompt: 'Find SGK correspondence and statements in mail. Report contributions by month with the base and the amount, and flag any month where an expected premium appears missing, since a gap can interrupt health entitlement rather than merely reduce a pension. Report any change to the contribution base with old and new figures. Give payment deadlines and days remaining for anything outstanding.' },
+    { id: 'tr_vergi', icon: '🧾', title: 'Gelir vergisi and declarations due', needs: 'Email',
+      desc: 'Declarations and instalments with dates set by the tax calendar.',
+      prompt: 'Find tax authority correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule with each date and amount. Collect invoices and receipts from the period with issuer, tax number where stated and amount, and total them. Flag any notice requiring a response with its deadline and the consequence it states. Report documents and dates only - do not give tax advice.' },
+  ],
+
+  UA: [
+    { id: 'ua_diia', icon: '📮', title: 'Дія notices and documents', needs: 'Email',
+      desc: 'Official notifications and the documents that expire behind them.',
+      prompt: 'Find Дія and official correspondence in mail from державні органи, податкова and місцева влада. For each: who sent it, what it requires, the deadline and days remaining, unanswered first. List documents with expiry: паспорт, закордонний паспорт, посвідчення водія and any permit, with the expiry, days remaining and what the renewal requires. Never state a consequence the notice did not state.' },
+    { id: 'ua_komunalka', icon: '🏠', title: 'Комунальні платежі and subsidies', needs: 'Email',
+      desc: 'Utility charges, meter readings and whether the subsidy still applies.',
+      prompt: 'Track комунальні bills in mail across all available months: електроенергія, газ, вода, опалення. For each: the period, the consumption, the amount and whether it was based on a submitted reading or a norm. Report the window each month for submitting readings where stated, and flag any month charged by norm. Report any субсидія: the amount, the period it covers and anything required to keep it with its deadline. Give payment dates and any пеня stated.' },
+    { id: 'ua_fop', icon: '🧾', title: 'ФОП: єдиний податок and ЄСВ', needs: 'Email',
+      desc: 'Quarterly and monthly obligations where a late payment carries a penalty.',
+      prompt: 'Find податкова correspondence in mail. Report the єдиний податок and ЄСВ obligations: the group, the amount, the payment schedule with each date and days until the next. Report declarations due with their period and deadline. Flag any month where an expected payment appears missing, and any notice stating a penalty with the amount exactly as written. Report documents and dates only - do not give tax advice.' },
+    { id: 'ua_avto', icon: '🚗', title: 'Техогляд, ОСЦПВ and штрафи', needs: 'Email',
+      desc: 'Vehicle obligations and fines with a discount window.',
+      prompt: 'Find vehicle correspondence in mail: техогляд where required for the vehicle type, ОСЦПВ insurance, and any штраф. For each: the date due or expiry, days remaining and the amount. For fines, state whether the reduced payment period still applies and the date it ends, since that halves the amount in many cases. Report the ОСЦПВ renewal premium against the previous one where both are visible.' },
+    { id: 'ua_bank', icon: '💳', title: 'Bank charges, cards and payments due', needs: 'Email',
+      desc: 'Service charges, card expiry and instalments still running.',
+      prompt: 'From bank correspondence and statements in mail, report recurring service charges with their monthly and annual total, card expiry dates, and any credit or instalment obligation with the payment date, the amount and how many periods remain. Sum the committed monthly total across all obligations. Flag any charge that appeared for the first time or changed amount, with the month.' },
+  ],
+
+  HK: [
+    { id: 'hk_ird', icon: '🧾', title: 'IRD return and provisional tax', needs: 'Email',
+      desc: 'Tax is billed with a provisional amount for next year attached, which surprises people.',
+      prompt: 'Find Inland Revenue correspondence in mail. Report the tax return with its filing deadline and days remaining, and any assessment: the tax for the year, the provisional tax for the next year charged alongside it, and the two instalment dates with amounts. State the provisional element separately, since the bill is commonly far larger than the year assessed because of it. Report any application to hold over provisional tax and its deadline where mentioned. Report figures and dates only.' },
+    { id: 'hk_mpf', icon: '🏦', title: 'MPF contributions and statements', needs: 'Email',
+      desc: 'Monthly contributions from both sides, and any month one is missing.',
+      prompt: 'Find MPF correspondence and statements in mail. Report contributions by month with the employee and employer portions and the scheme, and flag any month where an expected contribution appears missing, since those are easier to raise with an employer near the time. Report the account balance and fund changes where stated, and any notice requiring a response with its deadline.' },
+    { id: 'hk_vehicle', icon: '🚗', title: 'Licence, examination and third-party insurance', needs: 'Email',
+      desc: 'Registration, annual examination and cover, each renewed separately.',
+      prompt: 'Find vehicle correspondence in mail: vehicle licence renewal, annual examination where the vehicle age requires it, third-party insurance and any fixed penalty notice. For each: the date due, days remaining and the amount. State that the licence cannot be renewed without valid insurance and, where required, a passed examination, since that sequencing causes late renewals. For penalties, give the date after which the amount increases.' },
+    { id: 'hk_rates', icon: '🏠', title: 'Rates, government rent and utilities', needs: 'Email',
+      desc: 'Quarterly charges and the bills that move with consumption.',
+      prompt: 'Find rates, government rent, management fee and utility correspondence in mail. Report the quarterly rates and government rent with each demand date and amount, and any rebate or concession applied. Track electricity, water and gas across all available periods with consumption and amount, comparing month against month and reporting increases with whether a tariff change is stated. Give payment dates and days remaining.' },
+    { id: 'hk_documents', icon: '🪪', title: 'HKID, passport and visa renewals', needs: 'Email',
+      desc: 'Documents with appointment waits and permits with fixed windows.',
+      prompt: 'Scan mail for documents with expiry: HKID, HKSAR passport, visas, and any employment or dependant permit. For each: the expiry, days remaining, and what the renewal requires where the correspondence states it. State where an appointment is needed and how far ahead they are being given. Flag any permit whose extension must be applied for within a fixed period before expiry.' },
+  ],
+
+  IL: [
+    { id: 'il_arnona', icon: '🏠', title: 'ארנונה, discounts and municipal charges', needs: 'Email',
+      desc: 'Municipal tax with discounts that must be applied for, and a yearly discount for paying up front.',
+      prompt: 'Find ארנונה and municipal correspondence in mail. Report the charge, the payment schedule with each date, and any discount applied or offered, including a reduction for paying the year in advance and the date by which it must be taken. State that eligibility discounts are generally granted on application rather than automatically, and report any that the correspondence mentions with its deadline. Report any rate change with old and new figures.' },
+    { id: 'il_bituach', icon: '🏥', title: 'ביטוח לאומי and health fund', needs: 'Email',
+      desc: 'Contributions, entitlements and anything the institute is waiting for.',
+      prompt: 'Find ביטוח לאומי and קופת חולים correspondence in mail. Report contributions by month with the base and amount, flagging any month that appears unpaid, since a gap affects entitlement. Report the health fund contribution and any השתתפות עצמית or supplementary cover with its cost. Put anything the institute is waiting on first, with its deadline and what the letter states happens if it is missed.' },
+    { id: 'il_test', icon: '🚗', title: 'טסט, אגרת רישוי and ביטוח חובה', needs: 'Email',
+      desc: 'The annual test, the licence fee and compulsory cover, all on the same renewal but paid separately.',
+      prompt: 'Find vehicle correspondence in mail: the annual טסט, אגרת רישוי, ביטוח חובה, comprehensive insurance and any דוח. For each: the date due, days remaining and the amount. State that the licence cannot be renewed without valid compulsory insurance and a passed test. For fines, give the payment deadline and the date after which the amount increases. Report the insurance renewal premium against the previous one.' },
+    { id: 'il_mas', icon: '🧾', title: 'מס הכנסה documents and returns', needs: 'Email',
+      desc: 'Forms from employers, banks and funds, collected as they arrive.',
+      prompt: 'Track tax documents in mail: טופס 106 from each employer, bank and investment certificates, pension and study fund statements, and donation receipts. List what has arrived with issuer and date, and name what would be expected from the employers and institutions visible in the mail but has not. Give any filing deadline with days remaining, and flag any letter from מס הכנסה requiring a response. Report documents and dates only.' },
+    { id: 'il_hashmal', icon: '⚡', title: 'חשמל, מים and tariff changes', needs: 'Email',
+      desc: 'Bills compared across periods so a rate change is visible rather than assumed.',
+      prompt: 'Track electricity, water and gas bills in mail across all available periods. For each: the period, the consumption, the amount, and whether the reading was actual or estimated. Compare against previous periods and report increases, stating whether the bill attributes them to consumption or to a tariff change. Flag a run of estimated readings, since that produces a correction later. Give the payment date and days remaining.' },
+  ],
+
+  MY: [
+    { id: 'my_lhdn', icon: '🧾', title: 'e-Filing documents and relief receipts', needs: 'Email',
+      desc: 'Reliefs are only claimed if the receipts were kept, and they are capped separately.',
+      prompt: 'Track tax documents in mail: EA form from each employer, dividend and interest statements, and receipts for reliefs such as lifestyle, medical, education, insurance and SSPN. List what has arrived with issuer and date, and total the receipts by relief category, since each is capped separately. Name which employers visible in the mail have not yet issued an EA form. Give the e-Filing deadline with days remaining. Report documents and dates only.' },
+    { id: 'my_epf', icon: '🏦', title: 'EPF and SOCSO contributions', needs: 'Email',
+      desc: 'Monthly contributions from both sides, and any month one did not arrive.',
+      prompt: 'Find EPF or KWSP and SOCSO correspondence and statements in mail. Report contributions by month with the employee and employer portions, and flag any month where an expected contribution appears missing, since those are easier to raise with an employer near the time. Report the account balances and any dividend credited where stated, and any notice requiring a response.' },
+    { id: 'my_roadtax', icon: '🚗', title: 'Road tax, Puspakom and insurance', needs: 'Email',
+      desc: 'Cover has to be in place before the road tax can be renewed.',
+      prompt: 'Find vehicle correspondence in mail: road tax renewal, Puspakom inspection where required, motor insurance and any saman. For each: the date due, days remaining and the amount. State that insurance must be active before road tax can be renewed. For saman, state whether a discount period applies and until when, since those are commonly time limited. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'my_bills', icon: '⚡', title: 'TNB, water and the tariff blocks', needs: 'Email',
+      desc: 'Electricity is charged in blocks, so a small rise in usage can cost more than expected.',
+      prompt: 'Track TNB electricity, water and Indah Water bills in mail across all available months. For each: the period, the consumption, the amount and the tariff block reached where stated. Compare month against month and report increases, flagging where consumption crossed into a higher block since that raises the rate on the units above it. Report any ICPT or surcharge line separately. Give the payment date and days remaining.' },
+    { id: 'my_documents', icon: '🪪', title: 'MyKad, passport and permits', needs: 'Email',
+      desc: 'Documents with processing times that decide when to start rather than when it is due.',
+      prompt: 'Scan mail for documents with expiry: MyKad matters, passport, driving licence and any work or residence permit. For each: the expiry, days remaining and what the renewal requires. Note where processing time is stated, since that is the figure that decides when to begin. Put anything expiring within ninety days first, and flag any permit tied to employment, since a lapse there affects more than the document.' },
+  ],
+
+  PH: [
+    { id: 'ph_bir', icon: '🧾', title: 'BIR forms and filing deadlines', needs: 'Email',
+      desc: 'Certificates from employers and the return that depends on them.',
+      prompt: 'Track tax documents in mail: BIR Form 2316 from each employer, 2307 certificates, official receipts and any BIR notice. List what has arrived with issuer and date, and name which employers visible in the mail have not yet issued a 2316. Give the filing deadline with days remaining and any quarterly obligations with their dates. Flag any BIR letter requiring a response with its deadline and the penalty it states. Report documents and dates only.' },
+    { id: 'ph_contributions', icon: '🏦', title: 'SSS, PhilHealth and Pag-IBIG', needs: 'Email',
+      desc: 'Three separate contributions, and a gap in any of them affects a different benefit.',
+      prompt: 'Find SSS, PhilHealth and Pag-IBIG correspondence and statements in mail. Report contributions by month for each, with the amount and whether employee or employer, and flag any month where an expected contribution appears missing, naming which of the three it is, since each affects a different entitlement. Report any change to the contribution rate or base with the effective month. Give payment deadlines for voluntary or self-employed members.' },
+    { id: 'ph_lto', icon: '🚗', title: 'LTO registration by plate ending and insurance', needs: 'Email',
+      desc: 'Registration renewal falls in a month decided by the plate number.',
+      prompt: 'From vehicle documents in mail, identify the plate number. Report the LTO registration renewal schedule, which is set by the last digit of the plate, the smoke emission test, compulsory third-party liability and comprehensive insurance, and any violation. For each: the window or date, days remaining and the amount. State the penalty for late registration as the rule or notice gives it, since it increases with delay.' },
+    { id: 'ph_bills', icon: '⚡', title: 'Meralco, water and unusual usage', needs: 'Email',
+      desc: 'Bills compared across months so a jump is visible rather than absorbed.',
+      prompt: 'Track electricity, water and internet bills in mail across all available months. For each: the period, the consumption, the amount and the rate per unit where stated. Compare month against month and report increases, separating a consumption change from a rate change, and flag any unexplained jump since that can indicate a metering fault. Give the due date, days remaining and the disconnection date where the bill states one.' },
+    { id: 'ph_documents', icon: '🪪', title: 'Passport, PhilID and permits', needs: 'Email',
+      desc: 'Appointment slots are the constraint, not the paperwork.',
+      prompt: 'Scan mail for documents with expiry: passport, drivers licence, PhilID matters, NBI clearance and any permit or visa. For each: the expiry, days remaining and what the renewal requires. State where an appointment is required and how far ahead slots are being released, since the appointment is usually harder to get than the document is to renew. Put anything expiring within six months first, since passport appointments are commonly booked that far out.' },
+  ],
+
+  SG: [
+    { id: 'sg_iras', icon: '🧾', title: 'IRAS assessment and instalments', needs: 'Email',
+      desc: 'The notice of assessment sets what is owed and how it will be collected.',
+      prompt: 'Find IRAS correspondence in mail. Report the Notice of Assessment: the assessable income, the tax payable, and the payment arrangement, whether a lump sum or GIRO instalments with each date and amount. Give the filing deadline with days remaining. State the period within which an objection can be filed where the notice gives it, since that window is short. Report any relief applied and any letter requiring a response. Report figures and dates only.' },
+    { id: 'sg_cpf', icon: '🏦', title: 'CPF contributions and account movements', needs: 'Email',
+      desc: 'Contributions split across accounts, and any month one did not arrive.',
+      prompt: 'Find CPF correspondence and statements in mail. Report contributions by month with the employee and employer portions and the allocation across Ordinary, Special and MediSave where stated, and flag any month where an expected contribution appears missing. Report interest credited, any voluntary contribution or top up made, and any deadline the correspondence gives for a contribution to count towards the current year.' },
+    { id: 'sg_vehicle', icon: '🚗', title: 'Road tax, inspection and COE', needs: 'Email',
+      desc: 'The certificate of entitlement is the expensive one, and it has a hard end date.',
+      prompt: 'Find vehicle correspondence in mail: road tax, inspection where the vehicle age requires it, insurance, COE and any traffic offence notice. For each: the date due or expiry, days remaining and the amount. Report the COE expiry date prominently with days remaining, since it is the largest single cost and the vehicle cannot be used after it without renewal or deregistration. State that road tax requires valid insurance and inspection first.' },
+    { id: 'sg_utilities', icon: '⚡', title: 'Utilities, conservancy and service charges', needs: 'Email',
+      desc: 'Household charges compared across months, including the open electricity market plan.',
+      prompt: 'Track SP Group utility bills, conservancy or service and maintenance charges in mail across all available months. For utilities: the period, the consumption for electricity, water and gas, and the amount, comparing month against month and separating consumption from tariff changes. Report the electricity plan where the account is on a retailer contract, with the rate and the date any fixed term ends. Give payment dates and days remaining.' },
+    { id: 'sg_singpass', icon: '🪪', title: 'Passes, passport and official notices', needs: 'Email',
+      desc: 'Work and residence passes have fixed renewal windows and a lapse affects employment.',
+      prompt: 'Find SingPass, ICA and MOM correspondence in mail, and any document with an expiry: passport, employment or dependant pass, long term visit pass and driving licence. For each: the expiry, days remaining, and the window in which renewal must be applied for, since passes are commonly renewable only within a set period before expiry. Report any official notice requiring a response with its deadline. Put anything affecting the right to work first.' },
+  ],
+
+  TW: [
+    { id: 'tw_fapiao', icon: '🎟️', title: '統一發票 receipt lottery and prizes', needs: 'Email',
+      desc: 'Ordinary receipts are lottery tickets, drawn every two months, with a deadline to claim.',
+      prompt: 'Collect 統一發票 receipts from mail for the current and previous draw periods, listing the merchant, the date and the invoice number. State the draw date for each period and the deadline by which a winning receipt must be claimed, since unclaimed prizes expire. Where receipts are registered to a carrier, note that prizes are credited automatically and no claim is needed. Report the totals by period, and say plainly if no receipts were found rather than implying there were none.' },
+    { id: 'tw_tax', icon: '🧾', title: '綜合所得稅 documents and filing', needs: 'Email',
+      desc: 'Withholding statements and deduction receipts, gathered before the May window.',
+      prompt: 'Track tax documents in mail: 扣繳憑單 from each employer or payer, insurance premium receipts, medical and education receipts, donation receipts and mortgage interest statements. List what has arrived with issuer and date, and name what would be expected from the employers and institutions visible in the mail but has not. Give the filing period and deadline with days remaining. Report documents and dates only.' },
+    { id: 'tw_labor', icon: '🏦', title: '勞保, 健保 and contributions', needs: 'Email',
+      desc: 'Insurance contributions and any month one is missing.',
+      prompt: 'Find 勞保, 勞退 and 健保 correspondence and statements in mail. Report contributions by month with the insured salary bracket and the amount, and flag any month where an expected contribution appears missing or where the insured bracket looks lower than actual pay records in the mail suggest, since the bracket determines what is eventually paid out. Report any change to the bracket with the effective month.' },
+    { id: 'tw_vehicle', icon: '🚗', title: '牌照稅, 燃料稅, 檢驗 and 強制險', needs: 'Email',
+      desc: 'Two separate vehicle taxes, an inspection and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: 牌照稅, 燃料使用費, 定期檢驗 where the vehicle age requires it, 強制汽車責任保險 and any 罰單. For each: the date due, days remaining and the amount. State the two taxes separately since they fall at different times of year. For fines, give the payment deadline and the date after which the amount increases. Report the insurance renewal premium against the previous one.' },
+    { id: 'tw_utilities', icon: '⚡', title: '水電瓦斯 and the tier you reached', needs: 'Email',
+      desc: 'Electricity is tiered and summer rates differ, so the same usage costs more in July.',
+      prompt: 'Track 電費, 水費 and 瓦斯費 bills in mail across all available periods. For each: the period, the consumption, the amount and the tier reached where stated. Compare period against period and report increases, flagging where consumption crossed into a higher tier and where summer pricing applies, since both raise the rate rather than only the total. Give the payment deadline and days remaining.' },
+  ],
+
+  TH: [
+    { id: 'th_tax', icon: '🧾', title: 'ภ.ง.ด. filing and withholding certificates', needs: 'Email',
+      desc: 'Withholding certificates from every payer, and deductions that must be evidenced.',
+      prompt: 'Track tax documents in mail: หนังสือรับรองการหักภาษี ณ ที่จ่าย (50 ทวิ) from each payer, insurance and provident fund certificates, investment fund confirmations and donation receipts. List what has arrived with issuer and date, and name what would be expected from the employers and institutions visible in the mail but has not. Give the filing deadline with days remaining, noting that online filing usually has a later date. Report documents and dates only.' },
+    { id: 'th_social', icon: '🏥', title: 'ประกันสังคม contributions and entitlement', needs: 'Email',
+      desc: 'Monthly contributions that entitle you to treatment at a registered hospital.',
+      prompt: 'Find ประกันสังคม correspondence and statements in mail. Report contributions by month with the amount and section, and flag any month where an expected contribution appears missing, since entitlement depends on a contribution history rather than current employment alone. Report the registered hospital where stated and any window to change it. Report any change to the contribution rate with its effective month.' },
+    { id: 'th_vehicle', icon: '🚗', title: 'พ.ร.บ., ต่อภาษี and ตรวจสภาพ', needs: 'Email',
+      desc: 'Compulsory insurance must be current before the tax sticker can be renewed.',
+      prompt: 'Find vehicle correspondence in mail: พ.ร.บ. compulsory insurance, the annual tax renewal, ตรวจสภาพ inspection where the vehicle age requires it, voluntary insurance and any ใบสั่ง. For each: the date due, days remaining and the amount. State that the compulsory policy must be valid before the tax can be renewed, and that inspection is required once the vehicle passes a stated age. For fines, give the payment deadline.' },
+    { id: 'th_bills', icon: '⚡', title: 'ค่าไฟ ค่าน้ำ and unusual usage', needs: 'Email',
+      desc: 'Bills compared month to month, so a jump is noticed rather than paid.',
+      prompt: 'Track electricity, water and internet bills in mail across all available months. For each: the period, the consumption, the amount and the rate where stated. Compare month against month and report increases, separating consumption from tariff changes, and flag any unexplained jump since that can indicate a fault or a leak. Give the due date, days remaining and any disconnection date the bill states.' },
+    { id: 'th_immigration', icon: '🪪', title: 'Visa, work permit and 90-day reporting', needs: 'Email',
+      desc: 'For anyone on a long-stay visa, the reporting deadline is separate from the visa itself.',
+      prompt: 'Scan mail for immigration and identity documents: visa, extension of stay, work permit, re-entry permit, driving licence and passport. For each: the expiry, days remaining and what the renewal requires. Report the 90-day reporting obligation separately with its next due date and the window in which it can be filed, since it is a separate requirement from the visa and is commonly missed. Note that a re-entry permit is needed to leave without voiding an extension, where the correspondence mentions travel.' },
+  ],
+
+  AE: [
+    { id: 'ae_emirates_id', icon: '🪪', title: 'Emirates ID, visa and passport', needs: 'Email',
+      desc: 'Residence documents where a lapse carries a daily fine and blocks other services.',
+      prompt: 'Scan mail for Emirates ID, residence visa, passport and any labour card or permit, including dependants where the correspondence covers them since those expire separately. For each: the expiry, days remaining and what the renewal requires. State that an expired residence visa or Emirates ID carries a fine that accrues per day and can block banking and other services, as the correspondence states it. Put anything within thirty days first.' },
+    { id: 'ae_vehicle', icon: '🚗', title: 'Mulkiya, inspection, insurance and Salik', needs: 'Email',
+      desc: 'Registration needs a passed test and valid cover, and the toll account runs down quietly.',
+      prompt: 'Find vehicle correspondence in mail: registration or mulkiya renewal, the vehicle test, insurance, Salik balance and any traffic fine. For each: the date due, days remaining and the amount. State that registration cannot be renewed without a passed test, valid insurance and settled fines. Report the Salik balance and any low balance warning, since an unpaid toll becomes a much larger penalty. For fines, state whether a discount period applies and until when.' },
+    { id: 'ae_ejari', icon: '🏠', title: 'Ejari, rent increase and notice periods', needs: 'Email',
+      desc: 'A rent rise is only valid with the right notice, and the notice period is long.',
+      prompt: 'Find tenancy correspondence in mail: the contract, Ejari registration, renewal notices and any rent increase. Report the contract start and end dates, the current rent, and any proposed increase with the amount, the percentage and the date it would take effect. State the notice period a landlord is required to give before a rent increase or non-renewal, and whether the notice in the mail meets it, as the correspondence states it. Give days remaining until the contract ends, since that is the negotiating point.' },
+    { id: 'ae_dewa', icon: '⚡', title: 'DEWA and utility bills', needs: 'Email',
+      desc: 'Consumption compared across months, with the housing fee shown separately.',
+      prompt: 'Track utility bills in mail across all available months. For each: the period, the electricity and water consumption, the amount, and any housing fee or municipality charge shown separately since it is calculated on rent rather than usage. Compare month against month and report increases, separating consumption from a tariff or fee change. Give the due date, days remaining and any disconnection warning stated.' },
+    { id: 'ae_bank', icon: '💳', title: 'Bank charges, cards and instalments', needs: 'Email',
+      desc: 'Annual fees, minimum balance charges and instalment plans still running.',
+      prompt: 'From bank correspondence and statements in mail, report recurring charges: annual card fees, minimum balance charges and service fees, with their monthly and annual totals. List credit card statements with the statement date, the payment date, the total and the minimum, and any instalment plan with the merchant, the remaining periods and the monthly amount. Sum the committed monthly total. Flag any charge that is new or changed, with the month.' },
+  ],
+
+  VN: [
+    { id: 'vn_thue', icon: '🧾', title: 'Quyết toán thuế documents', needs: 'Email',
+      desc: 'Withholding certificates and dependant registrations that decide the final settlement.',
+      prompt: 'Track tax documents in mail: chứng từ khấu trừ thuế from each payer, dependant registration confirmations, insurance and charitable contribution receipts. List what has arrived with issuer and date, and name what would be expected from the employers visible in the mail but has not. Report registered dependants and the deduction each carries, since an unregistered dependant is a deduction lost. Give the settlement deadline with days remaining. Report documents and dates only.' },
+    { id: 'vn_bhxh', icon: '🏥', title: 'BHXH and BHYT contributions', needs: 'Email',
+      desc: 'Social and health insurance, where a gap interrupts cover rather than just a balance.',
+      prompt: 'Find BHXH and BHYT correspondence and statements in mail. Report contributions by month with the salary base and the amount, and flag any month where an expected contribution appears missing, since a gap interrupts health cover and affects entitlement. Report the BHYT card validity period and its expiry with days remaining. Report any change to the contribution base with the effective month.' },
+    { id: 'vn_dangkiem', icon: '🚗', title: 'Đăng kiểm, phí đường bộ and insurance', needs: 'Email',
+      desc: 'Inspection, road fee and compulsory cover, on three schedules.',
+      prompt: 'Find vehicle correspondence in mail: đăng kiểm inspection, phí bảo trì đường bộ, bảo hiểm bắt buộc, voluntary insurance and any phạt nguội. For each: the date due, days remaining and the amount. State the inspection interval that applies to this vehicle age and type where the notice gives it, and that a lapsed inspection is an offence separate from the fine. For fines, give the payment deadline.' },
+    { id: 'vn_dien', icon: '⚡', title: 'Tiền điện and the bậc thang tariff', needs: 'Email',
+      desc: 'Electricity is charged in rising steps, so a hot month costs more than proportionally.',
+      prompt: 'Track điện and nước bills in mail across all available months. For each: the period, the consumption in kWh, the amount and the bậc or step reached where stated. Compare month against month and report increases, flagging where consumption crossed into a higher step, since that raises the price of the units above it rather than the whole bill evenly. Give the payment date and days remaining, and any disconnection warning stated.' },
+    { id: 'vn_giayto', icon: '🪪', title: 'Căn cước, hộ chiếu and residence', needs: 'Email',
+      desc: 'Identity documents and registrations with their own renewal cycles.',
+      prompt: 'Scan mail for documents with expiry: căn cước công dân, hộ chiếu, giấy phép lái xe, tạm trú registration and any work permit or visa. For each: the expiry, days remaining and what the renewal requires where the correspondence states it. Note where a registration must be renewed on moving rather than on a date. Put anything expiring within ninety days first, and anything affecting the right to work above that.' },
+  ],
+
+  KE: [
+    { id: 'ke_kra', icon: '🧾', title: 'KRA returns and the June deadline', needs: 'Email',
+      desc: 'A return is required even with no income, and the penalty for not filing is fixed.',
+      prompt: 'Find KRA correspondence and tax documents in mail: P9 forms from each employer, withholding certificates, and any iTax notice. List what has arrived with issuer and date, and name which employers visible in the mail have not yet issued a P9. Give the filing deadline with days remaining, and state that a nil return is still required where there was no income and that the penalty for late filing is fixed rather than proportional, as the notice states it. Report documents and dates only.' },
+    { id: 'ke_nssf', icon: '🏦', title: 'NSSF, health and statutory deductions', needs: 'Email',
+      desc: 'Statutory contributions, and any month where one did not reach the fund.',
+      prompt: 'Find NSSF, health insurance and statutory deduction correspondence and statements in mail. Report contributions by month with the amount and the fund, and flag any month where a deduction appears on a payslip in the mail but no corresponding contribution appears in the fund statement, since that gap is the one worth raising immediately. Report any change to the contribution rate with the effective month.' },
+    { id: 'ke_kplc', icon: '⚡', title: 'KPLC tokens, bills and estimated readings', needs: 'Email',
+      desc: 'Prepaid tokens and postpaid estimates, where an estimate is worth disputing with evidence.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: token purchases with date, amount and units, and the consumption rate implied by the interval so the next purchase can be anticipated. For postpaid: the period, whether the reading was actual or estimated, the amount and the due date with days remaining. Flag every month billed on an estimate and compare those amounts against any month with an actual reading, since that difference is the basis for a dispute. Report any tariff or levy change stated.' },
+    { id: 'ke_vehicle', icon: '🚗', title: 'Inspection, insurance and road licence', needs: 'Email',
+      desc: 'Cover and inspection are enforced separately and both are required to be on the road.',
+      prompt: 'Find vehicle correspondence in mail: inspection where the vehicle class requires it, motor insurance, road licence and any traffic fine. For each: the date due or expiry, days remaining and the amount. State that driving without valid insurance carries a penalty separate from any other, as the correspondence states it. Report the insurance renewal premium against the previous one where both are visible, and any fine with its payment deadline.' },
+    { id: 'ke_school', icon: '🎓', title: 'School fees, terms and documents', needs: 'Email',
+      desc: 'Fees by term with penalties, and the documents that gate everything else.',
+      prompt: 'Find school and college correspondence in mail. Report for each institution: the term, the fees due, the payment deadline with days remaining, and any penalty or discount stated. List separately anything that must be submitted rather than paid, with deadlines. Then list identity documents with expiry: national ID matters, passport and driving licence, with days remaining and what the renewal requires, since processing times decide when to start.' },
+  ],
+
+  /* ── SOUTH AND CENTRAL ASIA, AND THE GULF ────────────────────────────────
+     Pakistan and Bangladesh alone are four hundred million people, and AMV
+     had nothing for either. What follows is what a week actually contains
+     there: a filer status that changes the tax on your own bank withdrawal,
+     a prepaid meter that dies at midnight, an iqama that blocks everything
+     else when it lapses. */
+
+  PK: [
+    { id: 'pk_filer', icon: '🧾', title: 'Filer status and the tax it changes', needs: 'Email',
+      desc: 'Being on the active taxpayer list changes the rate charged on banking, vehicles and property. Falling off it is expensive and quiet.',
+      prompt: 'Find FBR correspondence, tax returns and withholding certificates in mail. Report whether the return for the latest tax year has been filed and the deadline with days remaining, since active taxpayer status depends on it. From bank and vehicle documents in the mail, report withholding tax deducted at the filer or non-filer rate and the difference that status made in actual money. List any FBR notice requiring a response with its deadline. Report documents and figures only - do not give tax advice.' },
+    { id: 'pk_bijli', icon: '⚡', title: 'Electricity bill, slabs and protected status', needs: 'Email',
+      desc: 'The unit rate jumps between slabs, and staying inside the protected band is worth real money.',
+      prompt: 'Track electricity bills in mail across all available months. For each: the units consumed, the slab reached, the amount, and the fuel adjustment and taxes shown separately from the energy. Compare month against month and flag where consumption crossed into a higher slab, since the rate rises for the units above it and can also lose protected-consumer status. Report the due date, days remaining, and the amount payable after the due date where the bill states both.' },
+    { id: 'pk_vehicle', icon: '🚗', title: 'Token tax, registration and insurance', needs: 'Email',
+      desc: 'Annual token tax, transfer papers and cover, each enforced separately.',
+      prompt: 'Find vehicle correspondence in mail: annual token tax, registration and transfer documents, insurance and any challan. For each: the date due, days remaining and the amount. State where the token tax rate depends on filer status, since that difference is substantial. For challans, give the payment deadline and what the notice says follows it. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'pk_nadra', icon: '🪪', title: 'CNIC, passport and family documents', needs: 'Email',
+      desc: 'Identity documents that gate banking, SIMs, travel and school admission.',
+      prompt: 'Scan mail for CNIC or NICOP, passport, driving licence and child registration documents. For each: the expiry, days remaining, and what the renewal requires where the correspondence states it. State where an expired CNIC blocks banking and mobile services rather than merely being out of date, as the correspondence states it. Note stated processing times, since normal and urgent categories differ substantially and that decides when to start.' },
+    { id: 'pk_fees', icon: '🎓', title: 'School fees, terms and admission dates', needs: 'Email',
+      desc: 'Fees by term with late charges, and admission windows that do not reopen.',
+      prompt: 'Find school, college and university correspondence in mail. Report for each institution: the term, the fee, the due date with days remaining, and any late charge or early payment discount stated. List admission and registration windows with their opening and closing dates and the documents each requires, since those windows do not reopen. Put anything closing within two weeks first.' },
+  ],
+
+  BD: [
+    { id: 'bd_nbr', icon: '🧾', title: 'e-TIN, return and the proof of submission', needs: 'Email',
+      desc: 'A return receipt is now required for a long list of ordinary services.',
+      prompt: 'Find NBR correspondence and tax documents in mail: salary certificates, TIN documents, withholding certificates and any notice. Report whether the return for the latest year has been filed, the deadline with days remaining, and whether a proof of submission receipt has been issued, since that receipt is required for many ordinary services. List what supporting documents have arrived and which would be expected from the employers visible in the mail but have not. Report documents and dates only.' },
+    { id: 'bd_bidyut', icon: '⚡', title: 'Prepaid meter balance and postpaid bills', needs: 'Email',
+      desc: 'A prepaid meter simply stops, usually at the least convenient time.',
+      prompt: 'Track electricity, gas and water correspondence in mail. For prepaid meters: recharges with date, amount and units, and the consumption rate implied by the interval so the next top-up can be anticipated before the balance runs out. For postpaid: the period, the units, the amount, the due date with days remaining and the surcharge stated after it. Compare months and report increases, separating consumption from a tariff change.' },
+    { id: 'bd_brta', icon: '🚗', title: 'Fitness, tax token and driving licence', needs: 'Email',
+      desc: 'Fitness certificate, tax token and licence, all renewed separately and all checked on the road.',
+      prompt: 'Find vehicle correspondence in mail: BRTA fitness certificate, tax token, registration, driving licence and insurance. For each: the date due or expiry, days remaining and the fee where stated. State that fitness and tax token are separate renewals and both are checked, and give the penalty for lapse as the notice states it. Note stated processing or appointment times since those decide when to begin.' },
+    { id: 'bd_nid', icon: '🪪', title: 'NID, passport and corrections', needs: 'Email',
+      desc: 'Identity records that gate banking and travel, where a correction takes longer than a renewal.',
+      prompt: 'Scan mail for NID, passport, birth registration and any permit. For each: the expiry or the status of any pending application, days remaining, and what the process requires. Put any correction request first, since corrections to name, date of birth or address typically take far longer than a straightforward renewal and block passport and banking applications while pending. Note stated processing times for each category.' },
+    { id: 'bd_mfs', icon: '📱', title: 'Mobile money charges and limits', needs: 'Email',
+      desc: 'Cash-out charges and monthly limits that are easy to hit without noticing.',
+      prompt: 'From mobile financial service and bank messages in mail, report transactions by type with their charges: cash out, send money, bill pay and merchant payment, and total the charges for each month, since they are small individually and material over a year. Report any monthly or transaction limit stated and how close the account is to it. Flag any charge that is new or has changed, with the month it changed.' },
+  ],
+
+  LK: [
+    { id: 'lk_tax', icon: '🧾', title: 'IRD returns and withholding certificates', needs: 'Email',
+      desc: 'Registration and filing obligations that changed recently and catch people out.',
+      prompt: 'Find Inland Revenue correspondence and tax documents in mail: withholding certificates, salary statements, bank interest certificates and any notice. Report the return due with its period, the deadline and days remaining, and any instalment schedule with each date. List what documents have arrived and what would be expected from the employers and banks visible in the mail. Flag any notice requiring a response with its deadline. Report documents and dates only.' },
+    { id: 'lk_ceb', icon: '⚡', title: 'Electricity and water bills by block', needs: 'Email',
+      desc: 'Charges rise in blocks, so a small increase in use costs more than it looks.',
+      prompt: 'Track electricity and water bills in mail across all available months. For each: the period, the units, the amount and the block reached where stated. Compare month against month and report increases, flagging where consumption crossed into a higher block since that raises the rate on the units above it. Report any fixed charge separately from consumption. Give the due date, days remaining and any disconnection warning.' },
+    { id: 'lk_vehicle', icon: '🚗', title: 'Revenue licence, insurance and emission test', needs: 'Email',
+      desc: 'The revenue licence needs both insurance and an emission certificate first.',
+      prompt: 'Find vehicle correspondence in mail: revenue licence, insurance, emission test certificate and any fine. For each: the date due or expiry, days remaining and the amount. State that the revenue licence cannot be issued without valid insurance and a current emission certificate, since that sequencing is what causes a late renewal. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'lk_epf', icon: '🏦', title: 'EPF and ETF contributions', needs: 'Email',
+      desc: 'Contributions from both sides, and any month one did not arrive.',
+      prompt: 'Find EPF and ETF correspondence and statements in mail. Report contributions by month with the employee and employer portions and the salary base, and flag any month where an expected contribution appears missing, since those are far easier to raise with an employer near the time. Report the balance and any interest credited where stated, and any notice requiring a response.' },
+    { id: 'lk_school', icon: '🎓', title: 'School and exam dates', needs: 'Email',
+      desc: 'Terms, fees, and the examination deadlines that do not move.',
+      prompt: 'Find school, university and examination correspondence in mail. Report term dates, fees due with deadlines and days remaining, and examination registration windows with their closing dates and the documents each requires. Put examination registration first, since those windows are firm and missing one costs a full cycle. List anything requiring a parent signature or an in-person visit with its date.' },
+  ],
+
+  NP: [
+    { id: 'np_tax', icon: '🧾', title: 'PAN, tax return and the Nepali fiscal year', needs: 'Email',
+      desc: 'The year ends in Ashad, not December, which is what people miss.',
+      prompt: 'Find Inland Revenue Department correspondence and tax documents in mail. Report the return due with its fiscal year, the deadline and days remaining, noting that the Nepali fiscal year ends in Ashad rather than in December so the deadline does not follow the Gregorian calendar. List salary and withholding certificates that have arrived and which employers visible in the mail have not sent one. Report any notice requiring a response with its deadline. Report documents and dates only.' },
+    { id: 'np_bijuli', icon: '⚡', title: 'Electricity, water and the due date penalty', needs: 'Email',
+      desc: 'Paying inside the discount window costs less than paying after it.',
+      prompt: 'Track electricity and water bills in mail across all available months. For each: the period, the units, the amount, and both the discounted amount for early payment and the penalty amount after the due date where the bill states them, since the difference is real money. Compare months and report increases, separating consumption from a tariff change. Give days remaining until the discount window closes.' },
+    { id: 'np_vehicle', icon: '🚗', title: 'Bluebook renewal, tax and insurance', needs: 'Email',
+      desc: 'The vehicle tax and the bluebook renewal are the same visit and separate charges.',
+      prompt: 'Find vehicle correspondence in mail: bluebook renewal, vehicle tax, insurance, pollution certificate and any fine. For each: the date due, days remaining and the amount. State the penalty for late vehicle tax as the notice or rule gives it, since it increases with delay rather than being fixed. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'np_documents', icon: '🪪', title: 'Citizenship, passport and permits', needs: 'Email',
+      desc: 'Documents with queues, and the ones needed for work abroad.',
+      prompt: 'Scan mail for citizenship documents, passport, driving licence, national ID and any labour or travel permit. For each: the expiry or application status, days remaining and what the process requires. Note stated appointment or processing times, since those decide when to start rather than the expiry does. Put anything required for employment abroad first, since those have their own deadlines attached to a contract.' },
+    { id: 'np_school', icon: '🎓', title: 'School fees and exam registration', needs: 'Email',
+      desc: 'Fees by term and the board examination dates that govern the year.',
+      prompt: 'Find school, college and examination board correspondence in mail. Report fees due with deadlines and days remaining and any late charge, term dates, and examination registration windows with closing dates and required documents. Put examination registration first since those windows are firm. List anything requiring an in-person visit or a signature with its date.' },
+  ],
+
+  KZ: [
+    { id: 'kz_egov', icon: '📮', title: 'eGov notices and official documents', needs: 'Email',
+      desc: 'Official correspondence in one place, and documents that expire behind it.',
+      prompt: 'Find eGov and state body correspondence in mail. For each: who sent it, what it requires, the deadline and days remaining, unanswered first. List documents with expiry: удостоверение личности, паспорт, водительское удостоверение and any permit, with days remaining and what the renewal requires. State what each notice says happens after its deadline, exactly as written.' },
+    { id: 'kz_nalog', icon: '🧾', title: 'Tax declarations and pension contributions', needs: 'Email',
+      desc: 'Declarations, and the pension deductions that should appear every month.',
+      prompt: 'Find tax authority correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule. Report pension and social contributions by month with the base and amount, flagging any month where an expected contribution appears missing. Report any notice with the consequence it states. Report documents and dates only - do not give tax advice.' },
+    { id: 'kz_kommunal', icon: '⚡', title: 'Communal charges and meter readings', needs: 'Email',
+      desc: 'Readings submitted late are estimated, and the estimate is rarely in your favour.',
+      prompt: 'Track communal bills in mail across all available months: электроэнергия, газ, вода, отопление and КСК charges. For each: the period, the consumption, the amount and whether it was based on a reading or a norm. State the monthly window for submitting readings where given, and flag any month charged by norm. Report increases with old and new amounts and any stated tariff change. Give payment dates and any пеня applied.' },
+    { id: 'kz_avto', icon: '🚗', title: 'Vehicle tax, technical inspection and insurance', needs: 'Email',
+      desc: 'Annual tax, inspection and compulsory cover on separate clocks.',
+      prompt: 'Find vehicle correspondence in mail: transport tax, technical inspection where required for the vehicle type, compulsory insurance and any штраф. For each: the date due, days remaining and the amount. For fines, state whether a reduced payment period applies and until when. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'kz_bank', icon: '💳', title: 'Bank charges, loans and card expiry', needs: 'Email',
+      desc: 'Service charges and loan instalments that accumulate quietly.',
+      prompt: 'From bank correspondence and statements in mail, report recurring service charges with monthly and annual totals, card expiry dates, and any loan or instalment obligation with the payment date, amount and periods remaining. Sum the committed monthly total across all obligations. Flag any charge that is new or changed, and any insurance attached to a loan with its cost, since those are added at signing and rarely reviewed.' },
+  ],
+
+  UZ: [
+    { id: 'uz_soliq', icon: '🧾', title: 'Tax declarations and contributions', needs: 'Email',
+      desc: 'Declarations with deadlines and contributions that should appear monthly.',
+      prompt: 'Find tax authority correspondence in mail. Report declarations due with the period, deadline and days remaining, any instalment schedule, and pension and social contributions by month with the base and amount. Flag any month where an expected contribution appears missing. Report any notice requiring a response with the consequence it states. Report documents and dates only - do not give tax advice.' },
+    { id: 'uz_kommunal', icon: '⚡', title: 'Utility bills and meter readings', needs: 'Email',
+      desc: 'Gas, electricity and water compared across months so a jump is visible.',
+      prompt: 'Track utility bills in mail across all available months: электр, газ, сув. For each: the period, the consumption, the amount and whether the charge was based on a reading or a norm. Report the window for submitting readings where stated and flag any month charged by norm. Compare months and report increases, separating consumption from a tariff change. Give payment dates and days remaining.' },
+    { id: 'uz_avto', icon: '🚗', title: 'Vehicle registration, inspection and insurance', needs: 'Email',
+      desc: 'Registration, technical inspection and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: registration, technical inspection, compulsory insurance and any fine. For each: the date due or expiry, days remaining and the amount. For fines, state the payment deadline and whether an early payment reduction applies. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'uz_hujjat', icon: '🪪', title: 'ID, passport and residence documents', needs: 'Email',
+      desc: 'Documents with processing times that decide when to start.',
+      prompt: 'Scan mail for identity documents: ID card, passport, driving licence, propiska or residence registration and any permit. For each: the expiry or application status, days remaining and what the process requires. Note stated processing times and any requirement to apply a set period before expiry. Put anything needed for travel or employment first.' },
+    { id: 'uz_school', icon: '🎓', title: 'School and university dates', needs: 'Email',
+      desc: 'Fees, terms and the entrance examination calendar.',
+      prompt: 'Find school and university correspondence in mail. Report fees due with deadlines and days remaining, term dates, and entrance or state examination registration windows with their closing dates and required documents. Put registration windows first since they do not reopen. List anything requiring an in-person visit with its date.' },
+  ],
+
+  KH: [
+    { id: 'kh_tax', icon: '🧾', title: 'Tax obligations and monthly filings', needs: 'Email',
+      desc: 'Monthly returns for the self-employed and annual ones for everyone else.',
+      prompt: 'Find General Department of Taxation correspondence in mail. Report returns due with the period, the deadline and days remaining, noting that monthly filings carry their own dates separate from the annual return. Report withholding and salary certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice with the penalty it states. Report documents and dates only.' },
+    { id: 'kh_utility', icon: '⚡', title: 'Electricity and water bills', needs: 'Email',
+      desc: 'Consumption compared month to month, with the tariff step made visible.',
+      prompt: 'Track electricity and water bills in mail across all available months. For each: the period, the consumption, the amount and the tariff step where stated. Compare month against month and report increases, separating consumption from a rate change, and flag where consumption crossed a step. Give the due date, days remaining and any disconnection warning the bill states.' },
+    { id: 'kh_vehicle', icon: '🚗', title: 'Road tax, registration and insurance', needs: 'Email',
+      desc: 'Annual road tax with a payment window, plus cover and plates.',
+      prompt: 'Find vehicle correspondence in mail: annual road tax, registration, technical inspection where required and insurance. For each: the date due, days remaining and the amount. State the road tax payment window and the penalty after it as the notice gives it. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'kh_nssf', icon: '🏦', title: 'NSSF contributions and health cover', needs: 'Email',
+      desc: 'Contributions that carry health and injury cover rather than only a balance.',
+      prompt: 'Find NSSF correspondence and statements in mail. Report contributions by month with the base and amount, and flag any month where an expected contribution appears missing, since cover depends on the contribution rather than on employment alone. Report any change to the contribution rate with its effective month, and any notice requiring a response.' },
+    { id: 'kh_documents', icon: '🪪', title: 'ID, passport and work documents', needs: 'Email',
+      desc: 'Identity and work permits with their own renewal cycles.',
+      prompt: 'Scan mail for identity documents: national ID, passport, driving licence, and any work permit or visa. For each: the expiry, days remaining and what the renewal requires. Note stated processing times. Put anything affecting the right to work or to remain first, since a lapse there affects more than the document itself.' },
+  ],
+
+  MM: [
+    { id: 'mm_tax', icon: '🧾', title: 'Income tax and the fiscal year', needs: 'Email',
+      desc: 'Filing dates set by a fiscal year that does not follow the calendar.',
+      prompt: 'Find Internal Revenue Department correspondence and tax documents in mail. Report returns due with the fiscal year they cover, the deadline and days remaining, noting that the fiscal year does not follow the Gregorian calendar. List salary and withholding certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with its deadline. Report documents and dates only.' },
+    { id: 'mm_electric', icon: '⚡', title: 'Electricity and water bills', needs: 'Email',
+      desc: 'Consumption and the tariff band, compared across months.',
+      prompt: 'Track electricity and water bills in mail across all available months. For each: the period, the units, the amount and the tariff band reached where stated. Compare month against month and report increases, separating consumption from a rate change and flagging where consumption crossed a band. Give the due date, days remaining and any disconnection notice stated.' },
+    { id: 'mm_vehicle', icon: '🚗', title: 'Wheel tax, licence and insurance', needs: 'Email',
+      desc: 'Annual charges and the inspection that gates them.',
+      prompt: 'Find vehicle correspondence in mail: wheel tax, registration, inspection and insurance. For each: the date due, days remaining and the amount. State where inspection must be passed before other renewals proceed. Report the insurance renewal premium against the previous one where both are visible, and any fine with its payment deadline.' },
+    { id: 'mm_ssb', icon: '🏦', title: 'Social security contributions', needs: 'Email',
+      desc: 'Contributions that carry medical benefit rather than only a balance.',
+      prompt: 'Find social security board correspondence and statements in mail. Report contributions by month with the base and amount, and flag any month where an expected contribution appears missing, since medical benefit depends on a contribution record. Report any change to the rate with its effective month, and any notice requiring a response.' },
+    { id: 'mm_documents', icon: '🪪', title: 'NRC, passport and permits', needs: 'Email',
+      desc: 'Documents with long processing times and services that need them.',
+      prompt: 'Scan mail for identity documents: NRC matters, passport, driving licence and any permit. For each: the expiry or application status, days remaining and what the process requires. Note stated processing times, since those are usually the constraint. Put anything required for travel or employment first.' },
+  ],
+
+  IQ: [
+    { id: 'iq_salary', icon: '🏦', title: 'Salary, pension and social security', needs: 'Email',
+      desc: 'Payments and deductions, and any month one did not arrive.',
+      prompt: 'Find employer, pension and social security correspondence in mail. Report salary payments and deductions by month, pension and social security contributions with the base and amount, and flag any month where an expected payment or contribution appears missing. Report any change to the deduction rate with its effective month, and any letter requiring a document or a response with its deadline.' },
+    { id: 'iq_electric', icon: '⚡', title: 'Electricity, generator share and water', needs: 'Email',
+      desc: 'The national supply and the neighbourhood generator are two bills for the same lights.',
+      prompt: 'Track electricity, generator subscription and water charges in mail across all available months. Report each separately with the period, the amperage or consumption where stated and the amount, since the national supply and a private generator subscription are billed independently and both are needed. Compare months and report increases, stating any rate change given. Give payment dates and days remaining.' },
+    { id: 'iq_vehicle', icon: '🚗', title: 'Registration, inspection and insurance', needs: 'Email',
+      desc: 'Vehicle paperwork with separate renewal dates.',
+      prompt: 'Find vehicle correspondence in mail: registration, annual inspection, insurance and any fine. For each: the date due or expiry, days remaining and the amount. State where inspection must be passed before registration can be renewed. Report the insurance renewal premium against the previous one where both are visible, and any fine with its payment deadline.' },
+    { id: 'iq_documents', icon: '🪪', title: 'ID, passport and civil records', needs: 'Email',
+      desc: 'Civil documents that gate everything from banking to school.',
+      prompt: 'Scan mail for identity and civil documents: national ID, nationality certificate, passport, residence card and driving licence. For each: the expiry or application status, days remaining and what the process requires. Note stated processing times and appointment requirements, since those are usually the constraint. Put anything that gates banking, school registration or travel first.' },
+    { id: 'iq_school', icon: '🎓', title: 'School fees and examination dates', needs: 'Email',
+      desc: 'Terms, fees and the ministerial examination calendar.',
+      prompt: 'Find school and university correspondence in mail. Report fees due with deadlines and days remaining, term dates, and examination registration windows with closing dates and required documents. Put registration windows first since those do not reopen. List anything requiring an in-person visit or an original document with its date.' },
+  ],
+
+  JO: [
+    { id: 'jo_tax', icon: '🧾', title: 'Income tax return and the national number', needs: 'Email',
+      desc: 'Filing obligations and the certificates that support them.',
+      prompt: 'Find Income and Sales Tax Department correspondence in mail. Report returns due with the period, the deadline and days remaining, and any instalment schedule. List salary and withholding certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with its deadline and the penalty it states. Report documents and dates only.' },
+    { id: 'jo_ssc', icon: '🏦', title: 'Social Security contributions', needs: 'Email',
+      desc: 'Contributions that build entitlement, and the months that go missing.',
+      prompt: 'Find Social Security Corporation correspondence and statements in mail. Report contributions by month with the base and the employee and employer portions, and flag any month where an expected contribution appears missing, since entitlement is built from the record and gaps are easier to correct near the time. Report any change to the base with old and new figures and the effective month.' },
+    { id: 'jo_utility', icon: '⚡', title: 'Electricity, water and the tariff slabs', needs: 'Email',
+      desc: 'Charges rise in slabs, so a small increase costs disproportionately.',
+      prompt: 'Track electricity and water bills in mail across all available months. For each: the period, the consumption, the amount and the slab reached where stated. Compare month against month and report increases, flagging where consumption crossed into a higher slab since that raises the rate on the units above it. Give the due date, days remaining and any disconnection warning.' },
+    { id: 'jo_vehicle', icon: '🚗', title: 'Licence renewal, inspection and insurance', needs: 'Email',
+      desc: 'The annual renewal bundles inspection, insurance and unpaid fines.',
+      prompt: 'Find vehicle correspondence in mail: annual licence renewal, inspection, insurance and any traffic fine. For each: the date due, days remaining and the amount. State that outstanding fines and valid insurance are normally required before the licence can be renewed, since that is what turns a small fine into a blocked renewal. Report the insurance renewal premium against the previous one.' },
+    { id: 'jo_documents', icon: '🪪', title: 'ID, passport and residence permits', needs: 'Email',
+      desc: 'Documents with fixed renewal windows and services that stop without them.',
+      prompt: 'Scan mail for identity documents: national ID, passport, driving licence, residence or work permit. For each: the expiry, days remaining and what the renewal requires. State where a permit must be renewed within a set period before expiry rather than after. Put anything affecting the right to work or remain first, and note stated processing times.' },
+  ],
+
+  QA: [
+    { id: 'qa_id', icon: '🪪', title: 'QID, visa and passport renewals', needs: 'Email',
+      desc: 'Residence documents where a lapse carries a daily fine and blocks services.',
+      prompt: 'Scan mail for Qatar ID, residence permit, passport and any work permit, including dependants since those expire separately. For each: the expiry, days remaining and what the renewal requires. State that an expired QID carries a fine accruing per day and can block banking and other services, as the correspondence states it. Put anything within thirty days first, and note the window in which renewal must be applied for.' },
+    { id: 'qa_vehicle', icon: '🚗', title: 'Istimara, inspection, insurance and fines', needs: 'Email',
+      desc: 'Registration needs a passed inspection, valid cover and settled fines.',
+      prompt: 'Find vehicle correspondence in mail: istimara registration, technical inspection, insurance and any traffic violation. For each: the date due, days remaining and the amount. State that registration cannot be renewed without a passed inspection, valid insurance and settled fines. For violations, state whether a discount period applies and until when. Report the insurance renewal premium against the previous one.' },
+    { id: 'qa_kahramaa', icon: '⚡', title: 'Kahramaa bills and consumption', needs: 'Email',
+      desc: 'Electricity and water compared across months so a leak or a rate change is visible.',
+      prompt: 'Track utility bills in mail across all available months. For each: the period, the electricity and water consumption, the amount and any fixed charge shown separately. Compare month against month and report increases, separating consumption from a tariff change and flagging an unexplained jump since that can indicate a leak. Give the due date, days remaining and any disconnection warning stated.' },
+    { id: 'qa_bank', icon: '💳', title: 'Bank charges, cards and instalments', needs: 'Email',
+      desc: 'Annual fees, minimum balance charges and plans still running.',
+      prompt: 'From bank correspondence and statements in mail, report recurring charges: annual card fees, minimum balance charges and service fees with monthly and annual totals. List credit card statements with the statement date, payment date, total and minimum, and any instalment plan with the merchant, remaining periods and monthly amount. Sum the committed monthly total. Flag any new or changed charge with the month.' },
+    { id: 'qa_tenancy', icon: '🏠', title: 'Tenancy, attestation and renewal notice', needs: 'Email',
+      desc: 'The contract has to be attested, and the renewal terms are set well in advance.',
+      prompt: 'Find tenancy correspondence in mail. Report the contract start and end dates, the rent, whether it is attested or registered where the correspondence states it, and any proposed change with the amount and effective date. State the notice period required before a change or non-renewal as the correspondence states it, and give days remaining until the contract ends since that is the point at which terms are negotiated.' },
+  ],
+
+  KW: [
+    { id: 'kw_civilid', icon: '🪪', title: 'Civil ID, residence and passport', needs: 'Email',
+      desc: 'The civil ID gates almost every other service and expires with the residence.',
+      prompt: 'Scan mail for Civil ID, residence permit, passport and any work permit, including dependants since those expire separately. For each: the expiry, days remaining and what the renewal requires. State that an expired Civil ID or residence carries a fine accruing per day and blocks other services, as the correspondence states it. Put anything within thirty days first and note the renewal window.' },
+    { id: 'kw_vehicle', icon: '🚗', title: 'Registration, inspection, insurance and fines', needs: 'Email',
+      desc: 'Renewal needs cover, inspection and a clean fine record.',
+      prompt: 'Find vehicle correspondence in mail: registration renewal, technical inspection, insurance and any traffic fine. For each: the date due, days remaining and the amount. State that registration cannot be renewed without valid insurance, a passed inspection and settled fines. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'kw_utility', icon: '⚡', title: 'Electricity and water bills', needs: 'Email',
+      desc: 'Consumption compared across months, with fixed charges separated out.',
+      prompt: 'Track utility bills in mail across all available months. For each: the period, the electricity and water consumption, the amount and any fixed charge separately. Compare month against month and report increases, separating consumption from a tariff change and flagging an unexplained jump. Give the due date, days remaining and any disconnection warning, and note where an unpaid balance blocks a residence renewal.' },
+    { id: 'kw_bank', icon: '💳', title: 'Bank charges, loans and instalments', needs: 'Email',
+      desc: 'Loan instalments and card fees, summed so the monthly commitment is visible.',
+      prompt: 'From bank correspondence and statements in mail, report recurring charges with monthly and annual totals, credit card statements with the payment date, total and minimum, and any loan or instalment obligation with the payment date, amount and periods remaining. Sum the committed monthly total across all obligations. Flag any charge that is new or changed, and any insurance attached to a loan with its cost.' },
+    { id: 'kw_tenancy', icon: '🏠', title: 'Tenancy and household charges', needs: 'Email',
+      desc: 'Rent, the contract dates and the utilities attached to the property.',
+      prompt: 'Find tenancy and household correspondence in mail. Report the contract start and end dates, the rent, any proposed change with the amount and effective date, and the notice period required. Report utility accounts tied to the property and any outstanding balance, since those commonly transfer with the tenancy. Give days remaining until the contract ends.' },
+  ],
+
+  OM: [
+    { id: 'om_id', icon: '🪪', title: 'Resident card, visa and passport', needs: 'Email',
+      desc: 'Residence documents with fixed renewal windows and daily fines after them.',
+      prompt: 'Scan mail for resident card, employment visa, passport and any permit, including dependants since those expire separately. For each: the expiry, days remaining and what the renewal requires. State where a lapse carries a fine that accrues per day and can block other services, as the correspondence states it. Put anything within thirty days first and note the renewal window.' },
+    { id: 'om_vehicle', icon: '🚗', title: 'Mulkiya, inspection and insurance', needs: 'Email',
+      desc: 'Registration renewal gated by inspection, cover and outstanding fines.',
+      prompt: 'Find vehicle correspondence in mail: mulkiya registration, inspection, insurance and any traffic fine. For each: the date due, days remaining and the amount. State that registration cannot be renewed without valid insurance, a passed inspection and settled fines. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'om_utility', icon: '⚡', title: 'Electricity and water bills', needs: 'Email',
+      desc: 'Consumption compared across months, with the tariff and any subsidy shown.',
+      prompt: 'Track utility bills in mail across all available months. For each: the period, the consumption, the amount, the tariff applied and any subsidy shown separately. Compare month against month and report increases, separating consumption from a tariff change and flagging an unexplained jump. Give the due date, days remaining and any disconnection warning stated.' },
+    { id: 'om_pasi', icon: '🏦', title: 'Social insurance contributions', needs: 'Email',
+      desc: 'Contributions that build entitlement, and the months that are missing.',
+      prompt: 'Find social insurance correspondence and statements in mail. Report contributions by month with the base and amount, and flag any month where an expected contribution appears missing, since entitlement is built from the record. Report any change to the base or rate with old and new figures and the effective month, and any notice requiring a response.' },
+    { id: 'om_bank', icon: '💳', title: 'Bank charges, cards and instalments', needs: 'Email',
+      desc: 'Recurring charges and the instalments still running.',
+      prompt: 'From bank correspondence and statements in mail, report recurring charges with monthly and annual totals, card expiry dates, credit card statements with the payment date, total and minimum, and any loan or instalment obligation with periods remaining. Sum the committed monthly total. Flag any new or changed charge with the month it changed.' },
+  ],
+
+  BH: [
+    { id: 'bh_cpr', icon: '🪪', title: 'CPR, residence and passport', needs: 'Email',
+      desc: 'The CPR gates services and expires alongside the residence permit.',
+      prompt: 'Scan mail for CPR, residence permit, passport and any work permit, including dependants since those expire separately. For each: the expiry, days remaining and what the renewal requires. State where a lapse carries a fine or blocks other services as the correspondence states it. Put anything within thirty days first and note the renewal window.' },
+    { id: 'bh_vehicle', icon: '🚗', title: 'Registration, inspection and insurance', needs: 'Email',
+      desc: 'Renewal needs a passed test, valid cover and settled fines.',
+      prompt: 'Find vehicle correspondence in mail: registration renewal, inspection, insurance and any traffic fine. For each: the date due, days remaining and the amount. State that registration cannot be renewed without valid insurance, a passed inspection and settled fines. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'bh_ewa', icon: '⚡', title: 'Electricity and water, and the rate band', needs: 'Email',
+      desc: 'Rates differ by band and by whether the property is a first residence.',
+      prompt: 'Track utility bills in mail across all available months. For each: the period, the electricity and water consumption, the amount and the band or rate applied where stated. Compare month against month and report increases, flagging where consumption crossed a band since that raises the rate on the units above it. Give the due date, days remaining and any disconnection warning.' },
+    { id: 'bh_gosi', icon: '🏦', title: 'Social insurance contributions', needs: 'Email',
+      desc: 'Contributions and the months that go missing without notice.',
+      prompt: 'Find social insurance correspondence and statements in mail. Report contributions by month with the base and amount, and flag any month where an expected contribution appears missing, since entitlement depends on the record. Report any change to the base with old and new figures and the effective month, and any notice requiring a response.' },
+    { id: 'bh_tenancy', icon: '🏠', title: 'Tenancy, EWA account and household charges', needs: 'Email',
+      desc: 'The contract dates, and the utility account attached to the property.',
+      prompt: 'Find tenancy and household correspondence in mail. Report the contract start and end dates, the rent, any proposed change with its amount and effective date, and the notice period required. Report the utility account tied to the property and any outstanding balance, since those commonly transfer with the tenancy. Give days remaining until the contract ends.' },
+  ],
+
+  LB: [
+    { id: 'lb_electric', icon: '⚡', title: 'State supply and the generator subscription', needs: 'Email',
+      desc: 'Two bills for the same lights, and the private one is usually the larger.',
+      prompt: 'Track electricity correspondence in mail: the state supply bill and any private generator subscription, reported separately with the period, the amperage or consumption, and the amount, since both are needed and they are billed independently. Compare each across months and report increases, stating the currency each is billed in and any change to the rate. Include water and other utility charges with their due dates and days remaining.' },
+    { id: 'lb_bank', icon: '🏦', title: 'Bank accounts, currency and charges', needs: 'Email',
+      desc: 'Accounts held in different currencies with different rules and charges.',
+      prompt: 'From bank correspondence and statements in mail, report each account separately with its currency, the balance as stated, and any restriction on withdrawal or transfer the correspondence mentions. List recurring charges with their currency and monthly total. Flag any change to terms, limits or charges with the date it took effect. Report only what the statements and letters say, and never infer an exchange rate that was not stated.' },
+    { id: 'lb_vehicle', icon: '🚗', title: 'Mécanique, registration and insurance', needs: 'Email',
+      desc: 'The annual inspection and the registration fee, plus cover.',
+      prompt: 'Find vehicle correspondence in mail: the annual mécanique inspection, registration or vignette, insurance and any fine. For each: the date due, days remaining and the amount with its currency. State where the inspection must be passed before registration proceeds. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'lb_documents', icon: '🪪', title: 'ID, passport and civil records', needs: 'Email',
+      desc: 'Documents with appointment queues that decide when to start.',
+      prompt: 'Scan mail for identity and civil documents: national ID, passport, driving licence, residence permit and civil register extracts. For each: the expiry or application status, days remaining and what the process requires. Note stated appointment or processing times, since those are usually the constraint rather than the paperwork. Put anything needed for travel or employment first.' },
+    { id: 'lb_school', icon: '🎓', title: 'School fees, currency and terms', needs: 'Email',
+      desc: 'Fees that may be set in one currency and collected in another.',
+      prompt: 'Find school and university correspondence in mail. Report fees due with the currency stated, the instalment schedule with each date, days remaining, and any change to the fee or the currency it is charged in with the date it took effect. Report term dates and registration windows with their closing dates. State only the figures and currencies the correspondence gives.' },
+  ],
+
+  AZ: [
+    { id: 'az_tax', icon: '🧾', title: 'Tax declarations and social contributions', needs: 'Email',
+      desc: 'Declarations with deadlines and contributions that should appear monthly.',
+      prompt: 'Find tax authority correspondence in mail. Report declarations due with the period, the deadline and days remaining, and social and pension contributions by month with the base and amount, flagging any month where an expected contribution appears missing. Report any notice requiring a response with the consequence it states. Report documents and dates only - do not give tax advice.' },
+    { id: 'az_kommunal', icon: '⚡', title: 'Utility bills and meter readings', needs: 'Email',
+      desc: 'Gas, electricity and water compared across months.',
+      prompt: 'Track utility bills in mail across all available months. For each: the period, the consumption, the amount and whether the charge was based on a reading or a norm. Report the window for submitting readings where stated and flag any month charged by norm. Compare months and report increases, separating consumption from a tariff change. Give payment dates and days remaining.' },
+    { id: 'az_vehicle', icon: '🚗', title: 'Technical inspection, insurance and fines', needs: 'Email',
+      desc: 'Inspection, compulsory cover and penalties with their own dates.',
+      prompt: 'Find vehicle correspondence in mail: technical inspection, compulsory insurance, road tax where applicable and any fine. For each: the date due, days remaining and the amount. For fines, state whether an early payment reduction applies and until when. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'az_documents', icon: '🪪', title: 'ID, passport and residence', needs: 'Email',
+      desc: 'Documents with renewal windows and processing times.',
+      prompt: 'Scan mail for identity documents: ID card, passport, driving licence, residence registration and any permit. For each: the expiry, days remaining and what the renewal requires. Note stated processing times and any requirement to apply before expiry rather than after. Put anything needed for travel or employment first.' },
+    { id: 'az_bank', icon: '💳', title: 'Bank charges, loans and cards', needs: 'Email',
+      desc: 'Service charges and loan instalments summed into a monthly commitment.',
+      prompt: 'From bank correspondence and statements in mail, report recurring service charges with monthly and annual totals, card expiry dates, and any loan or instalment obligation with the payment date, amount and periods remaining. Sum the committed monthly total. Flag any new or changed charge, and any insurance attached to a loan with its cost.' },
+  ],
+
+  GE: [
+    { id: 'ge_tax', icon: '🧾', title: 'RS.ge declarations and small business status', needs: 'Email',
+      desc: 'Monthly declarations for the self-employed, and a status that changes the rate.',
+      prompt: 'Find Revenue Service correspondence in mail. Report declarations due with the period, the deadline and days remaining, noting that monthly filings carry their own dates. Where the correspondence indicates small business or individual entrepreneur status, report the turnover recorded against any threshold stated, since exceeding it changes the rate. Flag any notice requiring a response with its deadline. Report documents and dates only.' },
+    { id: 'ge_utility', icon: '⚡', title: 'Utility bills and meter readings', needs: 'Email',
+      desc: 'Electricity, gas and water compared across months.',
+      prompt: 'Track utility bills in mail across all available months. For each: the period, the consumption, the amount and whether the charge was based on a reading or an estimate. Compare month against month and report increases, separating consumption from a tariff change. Give payment dates, days remaining and any late charge or disconnection warning stated.' },
+    { id: 'ge_vehicle', icon: '🚗', title: 'Inspection, insurance and fines', needs: 'Email',
+      desc: 'Periodic inspection and the fines that accumulate against the plate.',
+      prompt: 'Find vehicle correspondence in mail: periodic technical inspection, insurance and any fine. For each: the date due, days remaining and the amount. State the inspection interval that applies to this vehicle where the notice gives it. For fines, give the payment deadline and the date after which the amount increases. Report the insurance renewal premium against the previous one.' },
+    { id: 'ge_documents', icon: '🪪', title: 'ID, passport and residence permits', needs: 'Email',
+      desc: 'Documents and permits with fixed application windows.',
+      prompt: 'Scan mail for identity documents: ID card, passport, driving licence, residence permit and any visa. For each: the expiry, days remaining and what the renewal requires. State where a residence permit must be applied for a set period before expiry rather than after. Put anything affecting the right to remain or work first, and note stated processing times.' },
+    { id: 'ge_bank', icon: '💳', title: 'Bank charges, loans and currency', needs: 'Email',
+      desc: 'Charges, instalments and accounts held in more than one currency.',
+      prompt: 'From bank correspondence and statements in mail, report each account with its currency, recurring service charges with monthly and annual totals, card expiry dates, and any loan or instalment obligation with the payment date, amount, currency and periods remaining. Sum the committed monthly total per currency. Flag any new or changed charge with the month.' },
+  ],
+
+  AM: [
+    { id: 'am_tax', icon: '🧾', title: 'Tax declarations and social payments', needs: 'Email',
+      desc: 'Declarations and the contributions that should appear each month.',
+      prompt: 'Find tax authority correspondence in mail. Report declarations due with the period, the deadline and days remaining, and income tax and social payments by month with the base and amount, flagging any month where an expected payment appears missing. Report any notice requiring a response with the consequence it states. Report documents and dates only - do not give tax advice.' },
+    { id: 'am_utility', icon: '⚡', title: 'Utility bills and readings', needs: 'Email',
+      desc: 'Gas, electricity and water compared across months.',
+      prompt: 'Track utility bills in mail across all available months. For each: the period, the consumption, the amount and whether the charge was based on a reading or an estimate. Compare month against month and report increases, separating consumption from a tariff change. Give payment dates, days remaining and any late charge stated.' },
+    { id: 'am_vehicle', icon: '🚗', title: 'Inspection, insurance and fines', needs: 'Email',
+      desc: 'Technical inspection, compulsory cover and penalties.',
+      prompt: 'Find vehicle correspondence in mail: technical inspection, compulsory insurance and any fine. For each: the date due, days remaining and the amount. For fines, state whether a reduced payment period applies and until when. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'am_documents', icon: '🪪', title: 'ID, passport and residence', needs: 'Email',
+      desc: 'Documents with renewal windows and processing times.',
+      prompt: 'Scan mail for identity documents: ID card, passport, driving licence, residence permit and any visa. For each: the expiry, days remaining and what the renewal requires. Note stated processing times and any requirement to apply before expiry. Put anything needed for travel or employment first.' },
+    { id: 'am_school', icon: '🎓', title: 'School fees, terms and examinations', needs: 'Email',
+      desc: 'Fees, term dates and the examination calendar.',
+      prompt: 'Find school and university correspondence in mail. Report fees due with deadlines and days remaining, term dates, and examination or admission registration windows with closing dates and required documents. Put registration windows first since those do not reopen. List anything requiring an in-person visit with its date.' },
+  ],
+
+  MN: [
+    { id: 'mn_tax', icon: '🧾', title: 'Tax return and social insurance', needs: 'Email',
+      desc: 'The annual return and the monthly contributions behind it.',
+      prompt: 'Find tax authority and social insurance correspondence in mail. Report the return due with its period, the deadline and days remaining, and social insurance contributions by month with the base and amount, flagging any month where an expected contribution appears missing. Report any refund or credit stated and any notice requiring a response. Report documents and dates only.' },
+    { id: 'mn_heating', icon: '🔥', title: 'Heating, electricity and the winter bill', needs: 'Email',
+      desc: 'Heating dominates the year and the winter bill is a different order of magnitude.',
+      prompt: 'Track heating, electricity and water bills in mail across all available months. For each: the period, the consumption, the amount and the tariff where stated. Compare month against month and against the same month in any earlier year available, since heating makes winter and summer bills incomparable. Report increases with whether a tariff change is stated. Give payment dates and days remaining.' },
+    { id: 'mn_vehicle', icon: '🚗', title: 'Inspection, tax and insurance', needs: 'Email',
+      desc: 'Annual inspection, vehicle tax and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: technical inspection, vehicle and air pollution tax, compulsory insurance and any fine. For each: the date due, days remaining and the amount. State where inspection must be passed before the tax can be paid. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'mn_documents', icon: '🪪', title: 'ID, passport and registration', needs: 'Email',
+      desc: 'Documents and the residence registration behind them.',
+      prompt: 'Scan mail for identity documents: national ID, passport, driving licence and residence registration. For each: the expiry or status, days remaining and what the renewal requires. Note where a change of address requires re-registration within a stated period. Put anything needed for travel or employment first.' },
+    { id: 'mn_school', icon: '🎓', title: 'School fees and term dates', needs: 'Email',
+      desc: 'Fees, terms and the examination calendar.',
+      prompt: 'Find school and university correspondence in mail. Report fees due with deadlines and days remaining, term dates, and registration or examination windows with closing dates and required documents. Put anything closing within two weeks first, and list what each requires.' },
+  ],
+
+  /* ── AFRICA ──────────────────────────────────────────────────────────────
+     Prepaid meters, mobile money and school fees are the spine of a week
+     across most of this continent, and each behaves differently by country:
+     a token that dies at midnight, a cash-out charge that is small once and
+     large over a year, a term fee with a penalty date. Estimated billing is
+     given its own job in several of these because it is worth disputing and
+     almost nobody keeps the evidence to do it. */
+
+  NZ: [
+    { id: 'nz_ird', icon: '🧾', title: 'IRD assessment and the tax year to March', needs: 'Email',
+      desc: 'The year ends in March, and most people are assessed automatically whether or not they check it.',
+      prompt: 'Find Inland Revenue correspondence in mail. Report the income tax assessment with the resulting refund or amount owed and its date, noting that the tax year ends on 31 March rather than in December. Report the tax code applied and compare it against what income records in the mail actually show, since a wrong code produces a bill or an over-deduction across the whole year. Report any Working for Families or student loan obligation with its dates. Report figures and dates only.' },
+    { id: 'nz_kiwisaver', icon: '🏦', title: 'KiwiSaver contributions and the employer match', needs: 'Email',
+      desc: 'The employer contribution and the annual government top-up both depend on your own paying in.',
+      prompt: 'Find KiwiSaver correspondence and statements in mail. Report contributions by month with the employee rate, the employer contribution and any government contribution, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report the total contributed in the KiwiSaver year (1 July to 30 June) against $1,042.86, the amount that earns the full government contribution - 25 cents per dollar, at most $260.72 a year since 1 July 2025, and none for income over $180,000 - since falling short of it forfeits money that has no other way of being claimed. From 1 April 2026 the default employee and employer rate is 3.5% (4% from 1 April 2028): flag any payslip after that date still deducting or matching at 3% without a recorded temporary rate reduction.' },
+    { id: 'nz_wof', icon: '🚗', title: 'WoF, rego and insurance', needs: 'Email',
+      desc: 'Warrant of fitness, registration and cover, on three different clocks.',
+      prompt: 'Find vehicle correspondence in mail: warrant of fitness, registration or rego, road user charges where the vehicle requires them, insurance and any infringement. For each: the date due or expiry, days remaining and the amount. State that rego cannot be renewed without a current WoF, and that road user charges are bought in advance by distance rather than by date. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'nz_power', icon: '⚡', title: 'Power, and the discount that ends', needs: 'Email',
+      desc: 'Prompt payment discounts and fixed terms that expire without anyone saying so.',
+      prompt: 'Track power, gas and water correspondence in mail across all available months. For each: the period, the consumption, the amount, the daily fixed charge separately from the usage, and any prompt payment discount with the date by which it must be paid to apply. Report the contract type and the date any fixed term or discount period ends with days remaining, since the price rises when it does. Compare months, separating consumption from a rate change.' },
+    { id: 'nz_rates', icon: '🏠', title: 'Council rates and household charges', needs: 'Email',
+      desc: 'Rates are billed in quarterly instalments with a penalty for each one missed.',
+      prompt: 'Find council rates and household correspondence in mail. Report the annual rates, the instalment schedule with every date and amount, which appear paid, and days until the next, since a penalty is applied per missed instalment rather than once. Report any rates revaluation with old and new figures and the year it applies from. Report body corporate or insurance charges with any increase and its effective date.' },
+  ],
+
+  ET: [
+    { id: 'et_tax', icon: '🧾', title: 'Tax declarations and business licence', needs: 'Email',
+      desc: 'Declarations by category, and the annual licence renewal that stops trade without it.',
+      prompt: 'Find tax authority correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule. Report the annual business licence renewal where the correspondence mentions one, with its window and what it requires, since trading on a lapsed licence carries a penalty separate from tax. Flag any notice requiring a response with its deadline. Report documents and dates only.' },
+    { id: 'et_power', icon: '⚡', title: 'Electricity, prepaid tokens and water', needs: 'Email',
+      desc: 'Prepaid balances that run out and postpaid bills that arrive estimated.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: purchases with date, amount and units, and the consumption rate implied by the interval so the next purchase can be anticipated. For postpaid: the period, whether the reading was actual or estimated, the amount and the due date with days remaining. Flag every month billed on an estimate and compare against any month with a real reading, since that difference is the basis for a dispute.' },
+    { id: 'et_vehicle', icon: '🚗', title: 'Annual inspection, road fund and insurance', needs: 'Email',
+      desc: 'Inspection, road fund and third-party cover, each with its own date.',
+      prompt: 'Find vehicle correspondence in mail: annual inspection, road fund contribution, third-party insurance and any fine. For each: the date due, days remaining and the amount. State where inspection must be passed before other renewals proceed. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'et_school', icon: '🎓', title: 'School fees and registration dates', needs: 'Email',
+      desc: 'Fees by term and the registration windows that gate the year.',
+      prompt: 'Find school and university correspondence in mail. Report fees due with deadlines and days remaining and any penalty or discount stated, term dates, and registration windows with closing dates and required documents. Put registration first since those windows do not reopen. List anything requiring an in-person visit or an original document.' },
+    { id: 'et_documents', icon: '🪪', title: 'ID, passport and permits', needs: 'Email',
+      desc: 'Documents with long queues where the wait decides when to start.',
+      prompt: 'Scan mail for identity documents: national ID, passport, driving licence and any permit or visa. For each: the expiry or application status, days remaining and what the process requires. Note stated appointment or processing times, since those are usually the constraint rather than the paperwork. Put anything needed for travel or employment first.' },
+  ],
+
+  TZ: [
+    { id: 'tz_tra', icon: '🧾', title: 'TRA returns and TIN obligations', needs: 'Email',
+      desc: 'Returns by period and the receipts that support them.',
+      prompt: 'Find Tanzania Revenue Authority correspondence in mail. Report returns due with the period, the deadline and days remaining, and any instalment schedule. Collect EFD receipts and invoices from the period with the issuer, TIN where stated and amount, and total them, identifying payments visible in the mail with no receipt since those cannot be claimed. Flag any notice with the penalty it states. Report documents and dates only.' },
+    { id: 'tz_luku', icon: '⚡', title: 'LUKU tokens and water bills', needs: 'Email',
+      desc: 'Prepaid electricity that stops without warning, and the rate at which it goes.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid LUKU: purchases with date, amount and units, and the consumption rate implied by the interval between purchases so the next top-up can be anticipated before the meter runs out. For water and any postpaid account: the period, the reading basis, the amount and the due date with days remaining. Report any tariff or levy change stated.' },
+    { id: 'tz_vehicle', icon: '🚗', title: 'Road licence, inspection and insurance', needs: 'Email',
+      desc: 'Annual charges and the cover that is checked at the roadside.',
+      prompt: 'Find vehicle correspondence in mail: road licence, inspection where the vehicle class requires it, third-party insurance and any fine. For each: the date due, days remaining and the amount. State the penalty for driving without valid insurance as the correspondence gives it. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'tz_nssf', icon: '🏦', title: 'Social security and statutory deductions', needs: 'Email',
+      desc: 'Deductions on a payslip that must actually reach the fund.',
+      prompt: 'Find social security and statutory deduction correspondence and statements in mail. Report contributions by month with the amount and the fund, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the fund statement, since that gap is the one worth raising immediately. Report any change to the rate with its effective month.' },
+    { id: 'tz_school', icon: '🎓', title: 'School fees and term dates', needs: 'Email',
+      desc: 'Fees by term with penalties, and what has to be brought.',
+      prompt: 'Find school and college correspondence in mail. Report fees due with deadlines and days remaining, any penalty or discount stated, and term dates. List separately anything that must be submitted or brought rather than paid, with its deadline. Put anything due inside two weeks first.' },
+  ],
+
+  UG: [
+    { id: 'ug_ura', icon: '🧾', title: 'URA returns and TIN obligations', needs: 'Email',
+      desc: 'Returns by period and the penalties for filing late.',
+      prompt: 'Find Uganda Revenue Authority correspondence in mail. Report returns due with the period, the deadline and days remaining, and any assessment or instalment schedule. Collect invoices and receipts from the period with issuer, TIN where stated and amount, and total them. Flag any notice requiring a response with its deadline and the penalty it states. Report documents and dates only.' },
+    { id: 'ug_yaka', icon: '⚡', title: 'Yaka tokens and water bills', needs: 'Email',
+      desc: 'Prepaid units that run down at a rate worth knowing in advance.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid Yaka: purchases with date, amount and units, and the consumption rate implied by the interval so the next top-up can be anticipated. For water and postpaid accounts: the period, the reading basis, the amount and the due date with days remaining. Flag any month billed on an estimate and report any tariff change stated.' },
+    { id: 'ug_vehicle', icon: '🚗', title: 'Road licence, inspection and insurance', needs: 'Email',
+      desc: 'Annual charges and third-party cover checked at the roadside.',
+      prompt: 'Find vehicle correspondence in mail: road licence, inspection where required, third-party insurance and any fine. For each: the date due, days remaining and the amount. State the penalty for driving without valid insurance as the correspondence gives it. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'ug_nssf', icon: '🏦', title: 'NSSF contributions and statements', needs: 'Email',
+      desc: 'Contributions from both sides and the months that never arrive.',
+      prompt: 'Find NSSF correspondence and statements in mail. Report contributions by month with the employee and employer portions, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the fund statement. Report the balance and any interest credited where stated, and any notice requiring a response.' },
+    { id: 'ug_school', icon: '🎓', title: 'School fees, terms and requirements', needs: 'Email',
+      desc: 'Fees by term and the list of what has to be brought with them.',
+      prompt: 'Find school and college correspondence in mail. Report fees due with deadlines and days remaining, any penalty stated, and term dates. List separately the requirements each term brings - documents, items, forms - with their deadlines, since those are commonly buried in the same letter as the fee. Put anything due inside two weeks first.' },
+  ],
+
+  GH: [
+    { id: 'gh_gra', icon: '🧾', title: 'GRA returns and TIN obligations', needs: 'Email',
+      desc: 'Returns by period, and the receipts that make a claim possible.',
+      prompt: 'Find Ghana Revenue Authority correspondence in mail. Report returns due with the period, the deadline and days remaining, and any assessment or instalment schedule. Collect invoices and receipts from the period with issuer, TIN where stated and amount, and total them. Flag any notice requiring a response with its deadline and the penalty it states. Report documents and dates only.' },
+    { id: 'gh_ecg', icon: '⚡', title: 'ECG prepaid credit and water bills', needs: 'Email',
+      desc: 'Prepaid credit and the rate it disappears at, plus the water account.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: purchases with date, amount and units, and the consumption rate implied by the interval so the next purchase can be anticipated. For postpaid: the period, the reading basis, the amount and the due date with days remaining. Flag any month billed on an estimate and compare against a month with a real reading. Report any tariff or levy change stated.' },
+    { id: 'gh_vehicle', icon: '🚗', title: 'Roadworthiness, licence and insurance', needs: 'Email',
+      desc: 'Roadworthiness certificate, registration and cover, checked separately.',
+      prompt: 'Find vehicle correspondence in mail: roadworthiness certificate, vehicle registration or licence, insurance and any fine. For each: the date due or expiry, days remaining and the amount. State that driving without valid insurance carries a penalty separate from any other, as the correspondence gives it. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'gh_ssnit', icon: '🏦', title: 'SSNIT contributions and tier statements', needs: 'Email',
+      desc: 'Contributions across tiers, and any month that did not reach the fund.',
+      prompt: 'Find SSNIT and pension scheme correspondence and statements in mail. Report contributions by month with the tier and the employee and employer portions, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report the balance where stated and any notice requiring a response.' },
+    { id: 'gh_momo', icon: '📱', title: 'Mobile money charges, and any E-Levy still taken', needs: 'Email',
+      desc: 'Transfer charges that are small once and material over a year - and any E-Levy deducted after it was abolished, to claim back.',
+      prompt: 'From mobile money and bank messages in mail, report transactions by type with their charges, and total the charges for each month, since they are trivial individually and substantial over a year. The 1% E-Levy was abolished from 2 April 2025 by the Electronic Transfer Levy (Repeal) Act, 2025 (Act 1128), and providers were told to refund any taken after that date: list every E-Levy deduction dated on or after 2 April 2025 with the date, the provider and the amount, as money to ask the provider to refund. Report any daily or monthly limit stated and how close the account is to it. Flag any charge that is new or has changed, with the month it changed.' },
+  ],
+
+  MA: [
+    { id: 'ma_impots', icon: '🧾', title: 'Impôts, IR and déclarations', needs: 'Email',
+      desc: 'Declarations with fixed dates and the certificates behind them.',
+      prompt: 'Find Direction Générale des Impôts correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule. List salary and withholding certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with its deadline and the penalty it states. Report documents and dates only.' },
+    { id: 'ma_cnss', icon: '🏦', title: 'CNSS and AMO contributions', needs: 'Email',
+      desc: 'Contributions that carry health cover, not only a pension balance.',
+      prompt: 'Find CNSS and AMO correspondence and statements in mail. Report contributions by month with the base and amount, and flag any month where an expected contribution appears missing, since health cover depends on the contribution record rather than on employment alone. Report any change to the base or rate with old and new figures and the effective month.' },
+    { id: 'ma_lydec', icon: '⚡', title: 'Électricité, eau and the tranches', needs: 'Email',
+      desc: 'Charges rise in bands, so a small increase in use costs more than proportionally.',
+      prompt: 'Track electricity and water bills in mail across all available months. For each: the period, the consumption, the amount and the tranche reached where stated. Compare month against month and report increases, flagging where consumption crossed into a higher tranche since that raises the rate on the units above it. Give the due date, days remaining and any disconnection warning stated.' },
+    { id: 'ma_vehicle', icon: '🚗', title: 'Vignette, visite technique and assurance', needs: 'Email',
+      desc: 'The annual vignette has a short payment window and a penalty after it.',
+      prompt: 'Find vehicle correspondence in mail: the vignette or taxe spéciale annuelle, visite technique, assurance and any amende. Report the vignette payment window with its dates and the penalty after it, since that window is short and fixed each year. For each other item: the date due, days remaining and the amount. Report the assurance renewal premium against the previous one where both are visible.' },
+    { id: 'ma_documents', icon: '🪪', title: 'CIN, passport and residence', needs: 'Email',
+      desc: 'Documents with appointment queues and services that need them.',
+      prompt: 'Scan mail for identity documents: carte nationale, passport, permis de conduire, carte de séjour and any permit. For each: the expiry, days remaining and what the renewal requires. Note stated appointment or processing times, since those decide when to start. Put anything needed for travel or employment first.' },
+  ],
+
+  DZ: [
+    { id: 'dz_impots', icon: '🧾', title: 'Impôts and déclarations', needs: 'Email',
+      desc: 'Declarations, instalments and the certificates that support them.',
+      prompt: 'Find tax administration correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule with each date. List salary and withholding certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'dz_cnas', icon: '🏦', title: 'CNAS and social contributions', needs: 'Email',
+      desc: 'Contributions that carry health cover and build a pension record.',
+      prompt: 'Find CNAS or CASNOS correspondence and statements in mail. Report contributions by month with the base and amount, and flag any month where an expected contribution appears missing, since cover and entitlement depend on the record. Report any change to the base or rate with old and new figures and the effective month.' },
+    { id: 'dz_sonelgaz', icon: '⚡', title: 'Électricité, gaz and eau', needs: 'Email',
+      desc: 'Bills compared across periods, with the tranche made visible.',
+      prompt: 'Track electricity, gas and water bills in mail across all available periods. For each: the period, the consumption, the amount and the tranche where stated. Compare period against period and report increases, flagging where consumption crossed a tranche. State whether the reading was actual or estimated, and flag a run of estimates since that produces a correction later. Give the due date and days remaining.' },
+    { id: 'dz_vehicle', icon: '🚗', title: 'Vignette, contrôle technique and assurance', needs: 'Email',
+      desc: 'The annual vignette window, the inspection and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: the vignette with its payment window and the penalty after it, contrôle technique, assurance and any amende. For each: the date due, days remaining and the amount. State where the inspection must be passed before other renewals proceed. Report the assurance renewal premium against the previous one where both are visible.' },
+    { id: 'dz_documents', icon: '🪪', title: 'Carte nationale, passport and records', needs: 'Email',
+      desc: 'Civil documents with queues and the papers each one needs.',
+      prompt: 'Scan mail for identity and civil documents: carte nationale, passport, permis de conduire and civil register extracts. For each: the expiry or application status, days remaining and what the process requires, including any supporting document with its own validity period since those expire while the main application is pending. Note stated processing times. Put anything needed for travel first.' },
+  ],
+
+  TN: [
+    { id: 'tn_impots', icon: '🧾', title: 'Déclarations and the tax calendar', needs: 'Email',
+      desc: 'Monthly and annual obligations with separate dates.',
+      prompt: 'Find tax administration correspondence in mail. Report declarations due with the period, the deadline and days remaining, noting that monthly filings carry their own dates separate from the annual return. List certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'tn_cnss', icon: '🏦', title: 'CNSS contributions and cover', needs: 'Email',
+      desc: 'Contributions that carry health cover as well as a pension record.',
+      prompt: 'Find CNSS correspondence and statements in mail. Report contributions by quarter or month with the base and amount, and flag any period where an expected contribution appears missing, since cover depends on the record. Report any change to the base or rate with old and new figures and the effective period.' },
+    { id: 'tn_steg', icon: '⚡', title: 'STEG electricity, gas and water', needs: 'Email',
+      desc: 'Bills by tranche, and the estimated readings that build up a correction.',
+      prompt: 'Track electricity, gas and water bills in mail across all available periods. For each: the period, the consumption, the amount, the tranche where stated and whether the reading was actual or estimated. Compare period against period and report increases, flagging where consumption crossed a tranche and where a run of estimates will produce a correction later. Give the due date and days remaining.' },
+    { id: 'tn_vehicle', icon: '🚗', title: 'Vignette, visite technique and assurance', needs: 'Email',
+      desc: 'The vignette window and the inspection that gates other renewals.',
+      prompt: 'Find vehicle correspondence in mail: the vignette with its payment window and the penalty after it, visite technique, assurance and any amende. For each: the date due, days remaining and the amount. State where inspection must be passed before other renewals proceed. Report the assurance renewal premium against the previous one where both are visible.' },
+    { id: 'tn_documents', icon: '🪪', title: 'CIN, passport and civil records', needs: 'Email',
+      desc: 'Documents whose supporting papers expire while the application waits.',
+      prompt: 'Scan mail for identity and civil documents: carte identité, passport, permis de conduire and civil register extracts. For each: the expiry or application status, days remaining and what the process requires, including any supporting document with its own validity since those commonly expire mid-application. Note stated processing times. Put anything needed for travel first.' },
+  ],
+
+  SN: [
+    { id: 'sn_impots', icon: '🧾', title: 'Impôts and déclarations', needs: 'Email',
+      desc: 'Declarations by period and the certificates behind them.',
+      prompt: 'Find tax administration correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule. List salary and withholding certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'sn_senelec', icon: '⚡', title: 'Senelec, eau and the tranches', needs: 'Email',
+      desc: 'Prepaid and postpaid supply, with rates rising by band.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: purchases with date, amount and units and the consumption rate implied by the interval so the next purchase can be anticipated. For postpaid: the period, the consumption, the amount, the tranche where stated and the reading basis. Compare periods and report increases, flagging where consumption crossed a tranche. Give the due date and days remaining.' },
+    { id: 'sn_vehicle', icon: '🚗', title: 'Visite technique, vignette and assurance', needs: 'Email',
+      desc: 'Inspection, the annual sticker and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: visite technique, vignette, assurance and any amende. For each: the date due, days remaining and the amount. State where inspection must be passed before other renewals proceed, and the penalty for driving without valid insurance as the correspondence gives it. Report the assurance renewal premium against the previous one.' },
+    { id: 'sn_ipres', icon: '🏦', title: 'IPRES, CSS and social contributions', needs: 'Email',
+      desc: 'Contributions that build entitlement and the months that go missing.',
+      prompt: 'Find IPRES and Caisse de Sécurité Sociale correspondence and statements in mail. Report contributions by period with the base and amount, and flag any period where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report any change to the base with old and new figures and the effective period.' },
+    { id: 'sn_momo', icon: '📱', title: 'Mobile money charges and transfers', needs: 'Email',
+      desc: 'Transfer and withdrawal charges summed across a year.',
+      prompt: 'From mobile money and bank messages in mail, report transactions by type with their charges, and total the charges for each month, since they are small individually and material over a year. Report any daily or monthly limit stated and how close the account is to it. Flag any charge that is new or has changed, with the month.' },
+  ],
+
+  CI: [
+    { id: 'ci_impots', icon: '🧾', title: 'Impôts and déclarations', needs: 'Email',
+      desc: 'Declarations by period with penalties for filing late.',
+      prompt: 'Find tax administration correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule. List certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'ci_cie', icon: '⚡', title: 'CIE electricity and water bills', needs: 'Email',
+      desc: 'Bills by band with readings that are sometimes estimated.',
+      prompt: 'Track electricity and water bills in mail across all available periods. For each: the period, the consumption, the amount, the tranche where stated and whether the reading was actual or estimated. Compare period against period and report increases, flagging where consumption crossed a tranche and where a run of estimates will produce a correction. Give the due date, days remaining and any disconnection warning.' },
+    { id: 'ci_vehicle', icon: '🚗', title: 'Visite technique, vignette and assurance', needs: 'Email',
+      desc: 'Inspection, the annual sticker and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: visite technique, vignette, assurance and any amende. For each: the date due, days remaining and the amount. State where inspection must be passed before other renewals proceed. Report the assurance renewal premium against the previous one where both are visible.' },
+    { id: 'ci_cnps', icon: '🏦', title: 'CNPS contributions and statements', needs: 'Email',
+      desc: 'Contributions that build entitlement, and any that never arrived.',
+      prompt: 'Find CNPS correspondence and statements in mail. Report contributions by period with the base and amount, and flag any period where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report any change to the base or rate with old and new figures and the effective period.' },
+    { id: 'ci_school', icon: '🎓', title: 'School fees and registration', needs: 'Email',
+      desc: 'Fees by term and the registration windows that gate the year.',
+      prompt: 'Find school and university correspondence in mail. Report fees due with deadlines and days remaining and any penalty stated, term dates, and registration windows with closing dates and required documents. Put registration first since those do not reopen. List anything requiring an in-person visit or an original document.' },
+  ],
+
+  CM: [
+    { id: 'cm_impots', icon: '🧾', title: 'Impôts and déclarations', needs: 'Email',
+      desc: 'Monthly and annual obligations with separate dates.',
+      prompt: 'Find tax administration correspondence in mail. Report declarations due with the period, the deadline and days remaining, noting that monthly filings carry their own dates. List certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'cm_eneo', icon: '⚡', title: 'Eneo electricity and water bills', needs: 'Email',
+      desc: 'Prepaid and postpaid supply, with estimated readings worth challenging.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: purchases with date, amount and units and the consumption rate implied by the interval. For postpaid: the period, the consumption, the amount and whether the reading was actual or estimated. Flag every month billed on an estimate and compare against a month with a real reading, since that difference is the basis for a dispute. Give the due date and days remaining.' },
+    { id: 'cm_vehicle', icon: '🚗', title: 'Visite technique, vignette and assurance', needs: 'Email',
+      desc: 'Inspection, the annual sticker and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: visite technique, vignette, assurance and any amende. For each: the date due, days remaining and the amount. State where inspection must be passed before other renewals proceed. Report the assurance renewal premium against the previous one where both are visible.' },
+    { id: 'cm_cnps', icon: '🏦', title: 'CNPS contributions and statements', needs: 'Email',
+      desc: 'Contributions and the months that never reached the fund.',
+      prompt: 'Find CNPS correspondence and statements in mail. Report contributions by period with the base and amount, and flag any period where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report any change to the base with old and new figures and the effective period.' },
+    { id: 'cm_school', icon: '🎓', title: 'School fees and term requirements', needs: 'Email',
+      desc: 'Fees by term and everything that must arrive with them.',
+      prompt: 'Find school and university correspondence in mail. Report fees due with deadlines and days remaining and any penalty stated, term dates, and registration windows with closing dates. List separately the documents and items each term requires, since those are commonly buried in the same letter as the fee. Put anything due inside two weeks first.' },
+  ],
+
+  ZM: [
+    { id: 'zm_zra', icon: '🧾', title: 'ZRA returns and TPIN obligations', needs: 'Email',
+      desc: 'Returns by period and the receipts behind a claim.',
+      prompt: 'Find Zambia Revenue Authority correspondence in mail. Report returns due with the period, the deadline and days remaining, and any assessment or instalment schedule. Collect invoices and receipts from the period with issuer, TPIN where stated and amount, and total them. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'zm_zesco', icon: '⚡', title: 'ZESCO units, load management and water', needs: 'Email',
+      desc: 'Prepaid units that run out, and the schedule that decides when they are used.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: purchases with date, amount and units, and the consumption rate implied by the interval so the next purchase can be anticipated. For postpaid: the period, the reading basis, the amount and the due date with days remaining. Report any tariff change stated with the old and new rate and the date it applied.' },
+    { id: 'zm_vehicle', icon: '🚗', title: 'Road tax, fitness and insurance', needs: 'Email',
+      desc: 'Road tax, fitness certificate and third-party cover.',
+      prompt: 'Find vehicle correspondence in mail: road tax, fitness certificate, third-party insurance and any fine. For each: the date due, days remaining and the amount. State where a fitness certificate is required before road tax can be paid. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'zm_napsa', icon: '🏦', title: 'NAPSA contributions and statements', needs: 'Email',
+      desc: 'Contributions and any month where a deduction did not reach the fund.',
+      prompt: 'Find NAPSA correspondence and statements in mail. Report contributions by month with the employee and employer portions, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report the balance where stated and any notice requiring a response.' },
+    { id: 'zm_school', icon: '🎓', title: 'School fees and term dates', needs: 'Email',
+      desc: 'Fees by term with penalties, and the requirements attached.',
+      prompt: 'Find school and college correspondence in mail. Report fees due with deadlines and days remaining and any penalty or discount stated, and term dates. List separately anything that must be submitted or brought rather than paid, with its deadline. Put anything due inside two weeks first.' },
+  ],
+
+  ZW: [
+    { id: 'zw_zimra', icon: '🧾', title: 'ZIMRA returns and currency of assessment', needs: 'Email',
+      desc: 'Obligations that may be assessed in more than one currency.',
+      prompt: 'Find ZIMRA correspondence in mail. Report returns due with the period, the deadline and days remaining, and any assessment with the currency it is stated in, since obligations may be denominated in more than one. Collect invoices and receipts with issuer, BP number where stated, currency and amount. Flag any notice requiring a response with the penalty it states. Report only the currencies and figures the documents give.' },
+    { id: 'zw_zesa', icon: '⚡', title: 'ZESA tokens and water charges', needs: 'Email',
+      desc: 'Prepaid units and the rate at which they are consumed.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: purchases with date, amount, currency and units, and the consumption rate implied by the interval so the next purchase can be anticipated. For postpaid and water: the period, the reading basis, the amount with its currency and the due date. Report any tariff change stated. Never infer an exchange rate that was not stated.' },
+    { id: 'zw_vehicle', icon: '🚗', title: 'Licence, radio fee, inspection and insurance', needs: 'Email',
+      desc: 'Vehicle licensing bundles several charges into one renewal.',
+      prompt: 'Find vehicle correspondence in mail: vehicle licence, radio licence where charged with it, inspection, insurance and any fine. For each: the date due, days remaining and the amount with its currency. State where insurance is required before the licence can be issued. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'zw_nssa', icon: '🏦', title: 'NSSA contributions and statements', needs: 'Email',
+      desc: 'Contributions and the months that did not reach the fund.',
+      prompt: 'Find NSSA correspondence and statements in mail. Report contributions by month with the base and the employee and employer portions, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report any change to the base with old and new figures and the effective month.' },
+    { id: 'zw_school', icon: '🎓', title: 'School fees, currency and terms', needs: 'Email',
+      desc: 'Fees that may be set in one currency and collected in another.',
+      prompt: 'Find school and college correspondence in mail. Report fees due with the currency stated, the instalment schedule with each date, days remaining, and any change to the fee or to the currency it is charged in with the date it took effect. Report term dates and any registration window. State only the figures and currencies the correspondence gives.' },
+  ],
+
+  RW: [
+    { id: 'rw_rra', icon: '🧾', title: 'RRA declarations and EBM receipts', needs: 'Email',
+      desc: 'Declarations by period, and the electronic receipts that support a claim.',
+      prompt: 'Find Rwanda Revenue Authority correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule. Collect EBM receipts and invoices with issuer, TIN where stated and amount, and total them, identifying payments visible in the mail with no receipt. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'rw_reg', icon: '⚡', title: 'Electricity tokens and water bills', needs: 'Email',
+      desc: 'Prepaid units and the rate they are consumed at.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: purchases with date, amount and units, and the consumption rate implied by the interval so the next purchase can be anticipated. For postpaid: the period, the reading basis, the amount and the due date with days remaining. Report any tariff change stated with old and new rates.' },
+    { id: 'rw_vehicle', icon: '🚗', title: 'Inspection, road tax and insurance', needs: 'Email',
+      desc: 'Inspection, annual tax and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: technical inspection, road tax, insurance and any fine. For each: the date due, days remaining and the amount. State where inspection must be passed before other renewals proceed. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'rw_rssb', icon: '🏦', title: 'RSSB contributions and medical cover', needs: 'Email',
+      desc: 'Contributions that carry medical cover as well as a pension record.',
+      prompt: 'Find RSSB correspondence and statements in mail. Report contributions by month with the base and the employee and employer portions, and flag any month where an expected contribution appears missing, since medical cover depends on the record. Report any change to the rate with its effective month, and any notice requiring a response.' },
+    { id: 'rw_school', icon: '🎓', title: 'School fees and term dates', needs: 'Email',
+      desc: 'Fees by term with penalties, and what each term requires.',
+      prompt: 'Find school and university correspondence in mail. Report fees due with deadlines and days remaining and any penalty stated, and term dates. List separately anything that must be submitted or brought rather than paid, with its deadline. Put anything due inside two weeks first.' },
+  ],
+
+  MZ: [
+    { id: 'mz_at', icon: '🧾', title: 'Declarações and the tax calendar', needs: 'Email',
+      desc: 'Declarations by period with their own deadlines.',
+      prompt: 'Find Autoridade Tributária correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule. List certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'mz_edm', icon: '⚡', title: 'EDM credit and water charges', needs: 'Email',
+      desc: 'Prepaid electricity and the rate it runs down at.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: purchases with date, amount and units, and the consumption rate implied by the interval so the next purchase can be anticipated. For postpaid: the period, the reading basis, the amount and the due date with days remaining. Report any tariff change stated with old and new rates.' },
+    { id: 'mz_vehicle', icon: '🚗', title: 'Inspecção, imposto and seguro', needs: 'Email',
+      desc: 'Inspection, vehicle tax and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: inspecção, imposto sobre veículos, seguro and any multa. For each: the date due, days remaining and the amount. State where inspection must be passed before other renewals proceed. Report the seguro renewal premium against the previous one where both are visible.' },
+    { id: 'mz_inss', icon: '🏦', title: 'INSS contributions and statements', needs: 'Email',
+      desc: 'Contributions and the months that did not reach the institute.',
+      prompt: 'Find INSS correspondence and statements in mail. Report contributions by month with the base and the employee and employer portions, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report any change to the base with old and new figures.' },
+    { id: 'mz_school', icon: '🎓', title: 'School fees and term dates', needs: 'Email',
+      desc: 'Fees by term and the requirements attached to each.',
+      prompt: 'Find school and university correspondence in mail. Report fees due with deadlines and days remaining and any penalty or discount stated, term dates, and registration windows with their closing dates and the documents each requires. Put registration windows first since those do not reopen, then anything payable inside two weeks. List separately whatever must be submitted or brought rather than paid, with its own deadline, since those are commonly buried in the same letter as the fee.' },
+  ],
+
+  AO: [
+    { id: 'ao_agt', icon: '🧾', title: 'AGT declarações and obligations', needs: 'Email',
+      desc: 'Declarations by period and the certificates behind them.',
+      prompt: 'Find Administração Geral Tributária correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule. List certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'ao_ende', icon: '⚡', title: 'Electricity credit and water charges', needs: 'Email',
+      desc: 'Prepaid supply and the rate at which it is consumed.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: purchases with date, amount and units, and the consumption rate implied by the interval so the next purchase can be anticipated. For postpaid: the period, the reading basis, the amount and the due date with days remaining. Report any tariff change stated with old and new rates.' },
+    { id: 'ao_vehicle', icon: '🚗', title: 'Inspecção, imposto and seguro', needs: 'Email',
+      desc: 'Inspection, vehicle tax and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: inspecção, imposto de circulação, seguro and any multa. For each: the date due, days remaining and the amount. State where inspection must be passed before other renewals proceed. Report the seguro renewal premium against the previous one where both are visible.' },
+    { id: 'ao_inss', icon: '🏦', title: 'INSS contributions and records', needs: 'Email',
+      desc: 'Contributions and the months missing from the record.',
+      prompt: 'Find INSS correspondence and statements in mail. Report contributions by month with the base and the employee and employer portions, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report any change to the base with old and new figures.' },
+    { id: 'ao_school', icon: '🎓', title: 'School fees and registration', needs: 'Email',
+      desc: 'Fees by term and the registration windows that gate the year.',
+      prompt: 'Find school and university correspondence in mail. Report fees due with deadlines and days remaining and any penalty stated, term dates, and registration windows with closing dates and required documents. Put registration first since those windows do not reopen.' },
+  ],
+
+  BW: [
+    { id: 'bw_burs', icon: '🧾', title: 'BURS returns and tax certificates', needs: 'Email',
+      desc: 'Returns by year and the certificates that support them.',
+      prompt: 'Find Botswana Unified Revenue Service correspondence in mail. Report returns due with the tax year, the deadline and days remaining, and any assessment or instalment schedule. List tax certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'bw_bpc', icon: '⚡', title: 'Electricity, prepaid units and water', needs: 'Email',
+      desc: 'Prepaid units and the rate they are used at.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: purchases with date, amount and units, and the consumption rate implied by the interval so the next purchase can be anticipated. For postpaid: the period, the reading basis, the amount and the due date with days remaining. Report any tariff change stated with old and new rates.' },
+    { id: 'bw_vehicle', icon: '🚗', title: 'Licence disc, roadworthy and insurance', needs: 'Email',
+      desc: 'Licensing, roadworthiness and cover on separate dates.',
+      prompt: 'Find vehicle correspondence in mail: licence disc, roadworthiness certificate, insurance and any fine. For each: the date due or expiry, days remaining and the amount. State where a roadworthy certificate is required before licensing proceeds. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'bw_pension', icon: '🏦', title: 'Pension and medical aid contributions', needs: 'Email',
+      desc: 'Contributions and the annual increases that are announced once.',
+      prompt: 'Find pension fund and medical aid correspondence in mail. Report contributions by month with the employee and employer portions, and flag any month where an expected contribution appears missing. Report any premium or contribution increase with the old and new figures, the percentage and the effective date, and any change to benefits stated in the same notice.' },
+    { id: 'bw_school', icon: '🎓', title: 'School fees and term dates', needs: 'Email',
+      desc: 'Fees by term and the requirements attached.',
+      prompt: 'Find school and college correspondence in mail. Report fees due with deadlines and days remaining and any penalty or discount stated, and term dates. List separately anything that must be submitted or brought rather than paid, with its deadline. Put anything due inside two weeks first.' },
+  ],
+
+  NA: [
+    { id: 'na_namra', icon: '🧾', title: 'NamRA returns and tax certificates', needs: 'Email',
+      desc: 'Returns by year and the certificates that support them.',
+      prompt: 'Find Namibia Revenue Agency correspondence in mail. Report returns due with the tax year, the deadline and days remaining, and any assessment or instalment schedule. List tax certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'na_power', icon: '⚡', title: 'Electricity, prepaid credit and water', needs: 'Email',
+      desc: 'Prepaid units and the municipal water account.',
+      prompt: 'Track electricity and water correspondence in mail. For prepaid: purchases with date, amount and units, and the consumption rate implied by the interval so the next purchase can be anticipated. For municipal accounts: the period, the components charged, the amount and the due date with days remaining. Compare months and report increases, separating consumption from a tariff change.' },
+    { id: 'na_vehicle', icon: '🚗', title: 'Licence disc, roadworthy and insurance', needs: 'Email',
+      desc: 'Licensing, roadworthiness and cover on separate dates.',
+      prompt: 'Find vehicle correspondence in mail: licence disc, roadworthiness certificate, insurance and any fine. For each: the date due or expiry, days remaining and the amount. State where a roadworthy certificate is required before licensing proceeds. Report the insurance renewal premium against the previous one where both are visible.' },
+    { id: 'na_ssc', icon: '🏦', title: 'Social security and medical aid', needs: 'Email',
+      desc: 'Contributions and the annual increases announced once a year.',
+      prompt: 'Find social security and medical aid correspondence in mail. Report contributions by month with the employee and employer portions, and flag any month where an expected contribution appears missing. Report any premium increase with old and new figures, the percentage and the effective date, and any change to benefits stated in the same notice.' },
+    { id: 'na_school', icon: '🎓', title: 'School fees and term dates', needs: 'Email',
+      desc: 'Fees by term and what each term requires.',
+      prompt: 'Find school and college correspondence in mail. Report fees due with deadlines and days remaining and any penalty stated, and term dates. List separately anything that must be submitted or brought rather than paid, with its deadline. Put anything due inside two weeks first.' },
+  ],
+
+  /* ── THE AMERICAS ────────────────────────────────────────────────────────
+     Spanish-speaking Latin America is not one market with one set of rules.
+     Colombia has a health and pension contribution the self-employed pay
+     themselves through a planilla; Chile has an inflation-indexed unit that
+     rents and fees are quoted in; Uruguay gives VAT back on card payments.
+     A single translated list would be wrong in each of them. */
+
+  CO: [
+    { id: 'co_dian', icon: '🧾', title: 'DIAN: declaración and the calendar by NIT', needs: 'Email',
+      desc: 'The filing date depends on the last digits of your NIT, so no two people share it.',
+      prompt: 'Find DIAN correspondence and tax documents in mail. Report the declaración due with its period and the deadline, noting that the date is set by the last digits of the NIT so it differs per taxpayer, and give days remaining. List certificados de ingresos y retenciones and bank certificates that have arrived and what would be expected from the employers and banks visible in the mail. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'co_planilla', icon: '🏦', title: 'Salud, pensión and the monthly planilla', needs: 'Email',
+      desc: 'Independent workers pay their own contributions monthly, and a gap suspends cover.',
+      prompt: 'Find EPS, pension fund and PILA planilla correspondence in mail. Report contributions by month with the base income declared and the amount for salud, pensión and ARL separately, and flag any month where an expected payment appears missing, since health cover is suspended rather than merely reduced. Report any change to the base or the rate with the effective month, and the payment deadline which depends on the identification number.' },
+    { id: 'co_servicios', icon: '⚡', title: 'Servicios públicos and the estrato', needs: 'Email',
+      desc: 'The rate depends on the socioeconomic stratum of the address, and it can be reclassified.',
+      prompt: 'Track servicios públicos bills in mail across all available months: energía, gas, agua, aseo and internet. For each: the period, the consumption, the amount and the estrato shown, since the tariff and any subsidy depend on it. Compare month against month and report increases, separating consumption from a tariff change or a change of estrato. Give the due date, days remaining and any suspension warning stated.' },
+    { id: 'co_vehicle', icon: '🚗', title: 'SOAT, tecnomecánica and impuesto', needs: 'Email',
+      desc: 'Compulsory cover, the technical inspection and the annual tax, all separate.',
+      prompt: 'Find vehicle correspondence in mail: SOAT, revisión tecnomecánica, impuesto vehicular and any comparendo. For each: the date due or expiry, days remaining and the amount. State that driving without SOAT carries an immobilisation as well as a fine, as the correspondence gives it. For comparendos, state whether a discount for prompt payment or a course still applies and until when. Report the SOAT premium against the previous one.' },
+    { id: 'co_documents', icon: '🪪', title: 'Cédula, passport and licence', needs: 'Email',
+      desc: 'Documents with appointment queues and licences that need a medical.',
+      prompt: 'Scan mail for identity documents: cédula, pasaporte, licencia de conducción and any permit. For each: the expiry, days remaining and what the renewal requires, including any medical examination that must be completed first and its own validity. Note stated appointment or processing times. Put anything needed for travel or driving first.' },
+  ],
+
+  PE: [
+    { id: 'pe_sunat', icon: '🧾', title: 'SUNAT: declaración and the cronograma', needs: 'Email',
+      desc: 'Filing dates are set by the last digit of the RUC, so everyone has a different one.',
+      prompt: 'Find SUNAT correspondence and tax documents in mail. Report declarations due with the period and the deadline, noting the cronograma is set by the last digit of the RUC so the date differs per taxpayer, and give days remaining. Collect comprobantes electrónicos with issuer, RUC and amount and total them. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'pe_afp', icon: '🏦', title: 'AFP, ONP and EsSalud contributions', needs: 'Email',
+      desc: 'Pension and health contributions, and the months that never arrive.',
+      prompt: 'Find AFP, ONP and EsSalud correspondence and statements in mail. Report contributions by month with the base and amount and which fund, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report the balance and commission structure where stated, and any change to the rate with its effective month.' },
+    { id: 'pe_recibos', icon: '⚡', title: 'Luz, agua and the tariff changes', needs: 'Email',
+      desc: 'Bills compared across months so a rate change is visible rather than absorbed.',
+      prompt: 'Track luz, agua and gas bills in mail across all available months. For each: the period, the consumption, the amount and whether the reading was actual or estimated. Compare month against month and report increases, separating consumption from a tariff revision, and flag a run of estimated readings since that produces a correction later. Give the due date, days remaining and any corte warning stated.' },
+    { id: 'pe_vehicle', icon: '🚗', title: 'SOAT, revisión técnica and impuesto', needs: 'Email',
+      desc: 'Compulsory cover, inspection and the vehicle tax.',
+      prompt: 'Find vehicle correspondence in mail: SOAT, revisión técnica, impuesto vehicular and any papeleta. For each: the date due or expiry, days remaining and the amount. State that driving without SOAT carries a penalty separate from any other. For papeletas, state whether a prompt payment discount applies and until when. Report the SOAT premium against the previous one where both are visible.' },
+    { id: 'pe_documents', icon: '🪪', title: 'DNI, passport and licence', needs: 'Email',
+      desc: 'Documents with appointment queues and a licence that needs a medical.',
+      prompt: 'Scan mail for identity documents: DNI, pasaporte, licencia de conducir and any carné de extranjería. For each: the expiry, days remaining and what the renewal requires, including any medical certificate with its own validity. Note stated appointment or processing times, since those decide when to start. Put anything needed for travel or voting obligations first.' },
+  ],
+
+  CL: [
+    { id: 'cl_sii', icon: '🧾', title: 'SII: operación renta and boletas', needs: 'Email',
+      desc: 'The proposal is usually accepted unchecked, and boletas decide what it says.',
+      prompt: 'Find SII correspondence and tax documents in mail. Report the declaración de renta window with its dates and days remaining, and any propuesta with the figures it assumes. Collect boletas and facturas issued or received with the counterparty, RUT and amount and total them, since these determine the assessment. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'cl_uf', icon: '📈', title: 'Charges quoted in UF that move every month', needs: 'Email',
+      desc: 'Rent, insurance, school fees and loans are often denominated in an indexed unit, so the peso amount changes without anyone changing the contract.',
+      prompt: 'From correspondence in mail, identify every obligation quoted in UF rather than in pesos: rent, insurance premiums, school fees, mortgage instalments and any subscription. For each, report the amount in UF as stated in the contract or invoice, and the peso amount actually charged in each month available. State plainly that the peso figure rises with the index even though the contract has not changed, and show the movement across the months available. Never calculate a UF value that was not stated in a document.' },
+    { id: 'cl_prevision', icon: '🏦', title: 'AFP, isapre or Fonasa contributions', needs: 'Email',
+      desc: 'Pension and health, where the health plan is also priced in UF.',
+      prompt: 'Find AFP and health fund correspondence and statements in mail. Report contributions by month with the base and amount and which institution, and flag any month where a deduction appears on a payslip but no matching contribution appears in the statement. For an isapre plan, report the plan price in UF and the peso amount charged, and any annual adjustment notice with its effective date and the window in which the plan can be changed.' },
+    { id: 'cl_vehicle', icon: '🚗', title: 'Permiso de circulación, revisión and seguro', needs: 'Email',
+      desc: 'The annual permit has a fixed month and needs the inspection and cover first.',
+      prompt: 'Find vehicle correspondence in mail: permiso de circulación, revisión técnica, seguro obligatorio and any parte. For each: the date due, days remaining and the amount. State that the permiso cannot be obtained without a current revisión técnica and seguro obligatorio, and give the month in which the permiso falls. Report the seguro premium against the previous one where both are visible.' },
+    { id: 'cl_cuentas', icon: '⚡', title: 'Luz, agua, gas and contribuciones', needs: 'Email',
+      desc: 'Household bills and the property tax paid in four instalments.',
+      prompt: 'Track luz, agua and gas bills in mail across all available months with the period, the consumption and the amount, comparing month against month and separating consumption from a tariff change. Report contribuciones with the four instalment dates and amounts and which have been paid. Give due dates, days remaining and any corte warning stated.' },
+  ],
+
+  EC: [
+    { id: 'ec_sri', icon: '🧾', title: 'SRI: declaración by the ninth digit', needs: 'Email',
+      desc: 'The filing date is set by the ninth digit of the RUC or cédula.',
+      prompt: 'Find SRI correspondence and tax documents in mail. Report declarations due with the period and the deadline, noting the date is set by the ninth digit of the identification so it differs per taxpayer, and give days remaining. Collect comprobantes electrónicos with issuer, RUC and amount, total them, and report gastos personales by category since those are deductible up to separate limits. Flag any notice with the penalty it states. Report documents and dates only.' },
+    { id: 'ec_iess', icon: '🏦', title: 'IESS contributions and cover', needs: 'Email',
+      desc: 'Contributions that carry health cover as well as a pension record.',
+      prompt: 'Find IESS correspondence and statements in mail. Report contributions by month with the base and amount, and flag any month where an expected contribution appears missing, since health cover depends on a continuous record rather than on employment alone. Report any change to the base or rate with the effective month, and any notice requiring a response.' },
+    { id: 'ec_servicios', icon: '⚡', title: 'Luz, agua and municipal charges', needs: 'Email',
+      desc: 'Utility bills that often carry municipal charges alongside them.',
+      prompt: 'Track luz, agua and municipal bills in mail across all available months. For each: the period, the consumption, the amount and any municipal or fire service charge collected alongside it, shown separately since it is not consumption. Compare month against month and report increases, separating consumption from a tariff change. Give the due date, days remaining and any corte warning.' },
+    { id: 'ec_vehicle', icon: '🚗', title: 'Matrícula, revisión and SPPAT', needs: 'Email',
+      desc: 'The annual matrícula falls in a month set by the plate.',
+      prompt: 'From vehicle documents in mail, identify the plate. Report the matrícula deadline, which falls in a month set by the last digit of the plate, the revisión técnica vehicular, insurance and any multa. For each: the date, days remaining and the amount. State that outstanding fines and a passed revisión are normally required before the matrícula can be issued. Report the insurance premium against the previous one.' },
+    { id: 'ec_documents', icon: '🪪', title: 'Cédula, passport and licence', needs: 'Email',
+      desc: 'Documents with appointment queues and a licence needing a medical.',
+      prompt: 'Scan mail for identity documents: cédula, pasaporte, licencia de conducir and any permit. For each: the expiry, days remaining and what the renewal requires, including any medical or psychometric test with its own validity. Note stated appointment times, since those decide when to begin. Put anything needed for travel first.' },
+  ],
+
+  BO: [
+    { id: 'bo_impuestos', icon: '🧾', title: 'Impuestos, NIT and the vencimiento by digit', needs: 'Email',
+      desc: 'Filing dates are set by the last digit of the NIT.',
+      prompt: 'Find Servicio de Impuestos correspondence in mail. Report declarations due with the period and the deadline, noting the date is set by the last digit of the NIT so it differs per taxpayer, and give days remaining. Collect facturas with issuer, NIT and amount and total them, since these support the claim. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'bo_gestora', icon: '🏦', title: 'Pension and health contributions', needs: 'Email',
+      desc: 'Contributions that build entitlement, and the months that go missing.',
+      prompt: 'Find pension fund and health insurance correspondence and statements in mail. Report contributions by month with the base and amount, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report any change to the base or rate with the effective month.' },
+    { id: 'bo_servicios', icon: '⚡', title: 'Luz, agua and gas bills', needs: 'Email',
+      desc: 'Bills compared across months so a rate change is visible.',
+      prompt: 'Track luz, agua and gas bills in mail across all available months. For each: the period, the consumption, the amount and whether the reading was actual or estimated. Compare month against month and report increases, separating consumption from a tariff change, and flag a run of estimates. Give the due date, days remaining and any corte warning stated.' },
+    { id: 'bo_vehicle', icon: '🚗', title: 'Impuesto, inspección and SOAT', needs: 'Email',
+      desc: 'Annual vehicle tax, inspection and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: impuesto a la propiedad de vehículos, inspección técnica, SOAT and any multa. For each: the date due, days remaining and the amount. State where the SOAT must be current before other renewals proceed. Report the SOAT premium against the previous one where both are visible.' },
+    { id: 'bo_documents', icon: '🪪', title: 'Carnet, passport and licence', needs: 'Email',
+      desc: 'Documents with queues and licences needing supporting certificates.',
+      prompt: 'Scan mail for identity documents: carnet de identidad, pasaporte, licencia de conducir and any permit. For each: the expiry, days remaining and what the renewal requires, including any supporting certificate with its own validity. Note stated processing times. Put anything needed for travel first.' },
+  ],
+
+  VE: [
+    { id: 've_seniat', icon: '🧾', title: 'SENIAT declarations and RIF', needs: 'Email',
+      desc: 'Declarations by period, and units of account that are revised.',
+      prompt: 'Find SENIAT correspondence in mail. Report declarations due with the period, the deadline and days remaining. Where amounts are expressed in a unit of account rather than a currency figure, report the unit exactly as the document states it and the currency amount only if the document gives one, since these are revised and an inferred figure would be wrong. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 've_servicios', icon: '⚡', title: 'Electricidad, agua and gas', needs: 'Email',
+      desc: 'Bills across months, reported in the currency each was actually issued in.',
+      prompt: 'Track electricity, water and gas bills in mail across all available months. For each: the period, the consumption where stated, the amount and the currency the bill was issued in, since these can differ between periods. Compare consumption across months and report changes. Never convert between currencies or infer a rate that was not stated in the document. Give the due date and days remaining.' },
+    { id: 've_vehicle', icon: '🚗', title: 'Vehicle documents and insurance', needs: 'Email',
+      desc: 'Registration, inspection and cover, with their own dates.',
+      prompt: 'Find vehicle correspondence in mail: registration, inspection, insurance and any multa. For each: the date due or expiry, days remaining and the amount with the currency stated. Report the insurance premium against the previous one where both are visible and in the same currency. State only what the documents give.' },
+    { id: 've_documents', icon: '🪪', title: 'Cédula, passport and permits', needs: 'Email',
+      desc: 'Documents with long processing times and appointment queues.',
+      prompt: 'Scan mail for identity documents: cédula, pasaporte, licencia and any permit. For each: the expiry or application status, days remaining and what the process requires. Note stated processing and appointment times, since those are usually the constraint. Put anything needed for travel first, and any prórroga or extension already granted with its own expiry.' },
+    { id: 've_remesas', icon: '💱', title: 'Transfers received and their charges', needs: 'Email',
+      desc: 'Money arriving from abroad, and what the transfer actually cost.',
+      prompt: 'From bank and transfer service messages in mail, report incoming transfers with the date, the amount sent where stated, the amount received, the currency of each and the charge or spread the message discloses. Total the charges by month. Report only figures the messages state and never infer an exchange rate that was not given, since inferring one would misstate what a transfer actually cost.' },
+  ],
+
+  GT: [
+    { id: 'gt_sat', icon: '🧾', title: 'SAT declarations and facturas', needs: 'Email',
+      desc: 'Declarations by period and the invoices that support a claim.',
+      prompt: 'Find Superintendencia de Administración Tributaria correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule. Collect facturas electrónicas with issuer, NIT and amount and total them. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'gt_igss', icon: '🏦', title: 'IGSS contributions and cover', needs: 'Email',
+      desc: 'Contributions that carry medical cover as well as a pension record.',
+      prompt: 'Find IGSS correspondence and statements in mail. Report contributions by month with the base and the employee and employer portions, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement, since cover depends on the record. Report any change to the rate with its effective month.' },
+    { id: 'gt_servicios', icon: '⚡', title: 'Luz, agua and municipal charges', needs: 'Email',
+      desc: 'Bills compared across months with municipal charges shown separately.',
+      prompt: 'Track luz, agua and municipal bills in mail across all available months. For each: the period, the consumption, the amount and any municipal charge collected alongside it, shown separately. Compare month against month and report increases, separating consumption from a tariff change. Give the due date, days remaining and any corte warning stated.' },
+    { id: 'gt_vehicle', icon: '🚗', title: 'Calcomanía, seguro and multas', needs: 'Email',
+      desc: 'The annual sticker has a window and a penalty after it.',
+      prompt: 'Find vehicle correspondence in mail: the annual calcomanía or circulation sticker with its payment window and the penalty after it, seguro and any multa. For each: the date due, days remaining and the amount. Report the seguro premium against the previous one where both are visible, and any fine with its payment deadline.' },
+    { id: 'gt_documents', icon: '🪪', title: 'DPI, passport and licence', needs: 'Email',
+      desc: 'Documents with queues and licences that expire by category.',
+      prompt: 'Scan mail for identity documents: DPI, pasaporte, licencia de conducir and any permit. For each: the expiry, days remaining and what the renewal requires. Note that licence validity differs by category and the renewal period chosen. Note stated processing times. Put anything needed for travel first.' },
+  ],
+
+  DO: [
+    { id: 'do_dgii', icon: '🧾', title: 'DGII declarations and NCF', needs: 'Email',
+      desc: 'Declarations by period and the fiscal receipts that support them.',
+      prompt: 'Find DGII correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule. Collect comprobantes fiscales with issuer, RNC, NCF and amount and total them, identifying payments visible in the mail with no comprobante since those cannot be claimed. Flag any notice with the penalty it states. Report documents and dates only.' },
+    { id: 'do_tss', icon: '🏦', title: 'TSS, AFP and ARS contributions', needs: 'Email',
+      desc: 'Pension and health contributions, and the months that never arrive.',
+      prompt: 'Find TSS, AFP and ARS correspondence and statements in mail. Report contributions by month with the base and the amounts to each, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement, since health cover depends on the record. Report any change to the base or rate with its effective month.' },
+    { id: 'do_servicios', icon: '⚡', title: 'Luz, agua and the tariff blocks', needs: 'Email',
+      desc: 'Electricity charged in blocks, so a small increase costs more than proportionally.',
+      prompt: 'Track luz and agua bills in mail across all available months. For each: the period, the consumption, the amount and the block reached where stated. Compare month against month and report increases, flagging where consumption crossed into a higher block. Give the due date, days remaining and any corte warning stated.' },
+    { id: 'do_vehicle', icon: '🚗', title: 'Marbete, seguro and multas', needs: 'Email',
+      desc: 'The annual marbete has a fixed window and a penalty after it.',
+      prompt: 'Find vehicle correspondence in mail: the marbete with its payment window and the penalty after it, revisión where required, seguro and any multa. For each: the date due, days remaining and the amount. State that outstanding fines are normally required to be settled before the marbete can be issued. Report the seguro premium against the previous one.' },
+    { id: 'do_documents', icon: '🪪', title: 'Cédula, passport and licence', needs: 'Email',
+      desc: 'Documents with appointment queues that decide when to start.',
+      prompt: 'Scan mail for identity documents: cédula, pasaporte, licencia de conducir and any permit. For each: the expiry, days remaining and what the renewal requires, including any medical certificate with its own validity. Note stated appointment or processing times. Put anything needed for travel first.' },
+  ],
+
+  CR: [
+    { id: 'cr_hacienda', icon: '🧾', title: 'Hacienda declarations and facturas', needs: 'Email',
+      desc: 'Monthly and annual obligations with separate dates.',
+      prompt: 'Find Ministerio de Hacienda correspondence in mail. Report declarations due with the period, the deadline and days remaining, noting that monthly filings carry their own dates. Collect facturas electrónicas with issuer, cédula jurídica and amount and total them. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'cr_ccss', icon: '🏦', title: 'CCSS contributions and cover', needs: 'Email',
+      desc: 'Contributions that carry health cover, where a gap suspends it.',
+      prompt: 'Find CCSS correspondence and statements in mail. Report contributions by month with the base and amount, and flag any month where an expected contribution appears missing, since health cover is suspended rather than merely reduced when contributions lapse. Report any change to the base or rate with its effective month.' },
+    { id: 'cr_marchamo', icon: '🚗', title: 'Marchamo, RTV and seguro', needs: 'Email',
+      desc: 'The marchamo falls in December and bundles several charges into one.',
+      prompt: 'Find vehicle correspondence in mail: the marchamo with its payment window and the penalty after it, RTV inspection, insurance and any parte. Report the marchamo broken into its stated components, since it bundles tax, insurance and other charges into one payment. For each other item: the date due, days remaining and the amount. Report any fine with its payment deadline.' },
+    { id: 'cr_servicios', icon: '⚡', title: 'Luz, agua and the tariff blocks', needs: 'Email',
+      desc: 'Electricity charged in blocks, so usage growth costs more than proportionally.',
+      prompt: 'Track luz and agua bills in mail across all available months. For each: the period, the consumption, the amount and the block reached where stated. Compare month against month and report increases, flagging where consumption crossed a block. Give the due date, days remaining and any corte warning stated.' },
+    { id: 'cr_documents', icon: '🪪', title: 'Cédula, passport and licence', needs: 'Email',
+      desc: 'Documents with appointment queues and licences needing a medical.',
+      prompt: 'Scan mail for identity documents: cédula, pasaporte, licencia de conducir, DIMEX and any permit. For each: the expiry, days remaining and what the renewal requires, including any medical examination with its own validity. Note stated appointment times, since those decide when to begin. Put anything needed for travel or the right to remain first.' },
+  ],
+
+  PA: [
+    { id: 'pa_dgi', icon: '🧾', title: 'DGI declarations and facturas', needs: 'Email',
+      desc: 'Declarations by period and the invoices behind them.',
+      prompt: 'Find Dirección General de Ingresos correspondence in mail. Report declarations due with the period, the deadline and days remaining, and any instalment schedule. Collect facturas with issuer, RUC and amount and total them. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'pa_css', icon: '🏦', title: 'CSS contributions and cover', needs: 'Email',
+      desc: 'Contributions that carry medical cover as well as a pension record.',
+      prompt: 'Find Caja de Seguro Social correspondence and statements in mail. Report contributions by month with the base and the employee and employer portions, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement, since cover depends on the record. Report any change to the rate with its effective month.' },
+    { id: 'pa_servicios', icon: '⚡', title: 'Luz, agua and household bills', needs: 'Email',
+      desc: 'Bills compared across months, with any subsidy shown separately.',
+      prompt: 'Track luz and agua bills in mail across all available months. For each: the period, the consumption, the amount and any subsidy applied, shown separately since it can be withdrawn. Compare month against month and report increases, separating consumption from a tariff change. Give the due date, days remaining and any corte warning stated.' },
+    { id: 'pa_vehicle', icon: '🚗', title: 'Revisado, placa and seguro', needs: 'Email',
+      desc: 'Inspection, the annual plate renewal and compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: revisado vehicular, the annual placa or registration renewal, seguro and any multa. For each: the date due, days remaining and the amount. State where a passed revisado and valid insurance are required before the registration can be renewed. Report the seguro premium against the previous one where both are visible.' },
+    { id: 'pa_documents', icon: '🪪', title: 'Cédula, passport and licence', needs: 'Email',
+      desc: 'Documents with queues and licences needing supporting tests.',
+      prompt: 'Scan mail for identity documents: cédula, pasaporte, licencia de conducir, carné de residente and any permit. For each: the expiry, days remaining and what the renewal requires, including any medical or sight test with its own validity. Note stated appointment times. Put anything needed for travel or the right to remain first.' },
+  ],
+
+  UY: [
+    { id: 'uy_dgi', icon: '🧾', title: 'DGI declarations and the IVA refund on cards', needs: 'Email',
+      desc: 'Card payments carry a VAT reduction that is credited rather than shown on the bill.',
+      prompt: 'Find DGI correspondence in mail. Report declarations due with the period, the deadline and days remaining. From card statements in the mail, report the IVA reduction credited on eligible card payments by month and the total, since it is applied as a credit rather than shown on the purchase and is easy to overlook. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'uy_bps', icon: '🏦', title: 'BPS contributions and cover', needs: 'Email',
+      desc: 'Contributions that carry health cover as well as a pension record.',
+      prompt: 'Find BPS correspondence and statements in mail. Report contributions by month with the base and the employee and employer portions, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement. Report any change to the base or rate with its effective month, and any notice requiring a response.' },
+    { id: 'uy_ute', icon: '⚡', title: 'UTE, OSE and the tariff plan', needs: 'Email',
+      desc: 'Electricity plans differ by time of day, so the plan matters as much as the usage.',
+      prompt: 'Track electricity, water and gas bills in mail across all available months. For each: the period, the consumption, the amount and the tariff plan where stated, since time-of-day plans change what the same usage costs. Compare month against month and report increases, separating consumption from a tariff change. Give the due date, days remaining and any corte warning stated.' },
+    { id: 'uy_vehicle', icon: '🚗', title: 'Patente, SUCIVE and seguro', needs: 'Email',
+      desc: 'The vehicle tax is collected on a national schedule in instalments.',
+      prompt: 'Find vehicle correspondence in mail: patente de rodados through SUCIVE with its instalment schedule and each date, inspection where required, seguro and any multa. For each: the date due, days remaining and the amount. State which instalments appear paid. Report the seguro premium against the previous one where both are visible.' },
+    { id: 'uy_documents', icon: '🪪', title: 'Cédula, passport and licence', needs: 'Email',
+      desc: 'Documents with appointment queues and licences issued by the municipality.',
+      prompt: 'Scan mail for identity documents: cédula de identidad, pasaporte, licencia de conducir and any permit. For each: the expiry, days remaining and what the renewal requires, noting that the driving licence is issued by the municipality and its requirements vary by department. Note stated appointment times. Put anything needed for travel first.' },
+  ],
+
+  PY: [
+    { id: 'py_set', icon: '🧾', title: 'SET declarations and the calendar by RUC', needs: 'Email',
+      desc: 'Filing dates are set by the last digit of the RUC.',
+      prompt: 'Find Subsecretaría de Estado de Tributación correspondence in mail. Report declarations due with the period and the deadline, noting the date is set by the last digit of the RUC so it differs per taxpayer, and give days remaining. Collect facturas with issuer, RUC and amount and total them. Flag any notice requiring a response with the penalty it states. Report documents and dates only.' },
+    { id: 'py_ips', icon: '🏦', title: 'IPS contributions and cover', needs: 'Email',
+      desc: 'Contributions that carry medical cover as well as a pension record.',
+      prompt: 'Find IPS correspondence and statements in mail. Report contributions by month with the base and the employee and employer portions, and flag any month where a deduction appears on a payslip in the mail but no matching contribution appears in the statement, since cover depends on the record. Report any change to the rate with its effective month.' },
+    { id: 'py_ande', icon: '⚡', title: 'ANDE, ESSAP and household bills', needs: 'Email',
+      desc: 'Bills compared across months so a rate change is visible.',
+      prompt: 'Track electricity and water bills in mail across all available months. For each: the period, the consumption, the amount and whether the reading was actual or estimated. Compare month against month and report increases, separating consumption from a tariff change, and flag a run of estimates. Give the due date, days remaining and any corte warning stated.' },
+    { id: 'py_vehicle', icon: '🚗', title: 'Patente, habilitación and seguro', needs: 'Email',
+      desc: 'The municipal patente and the annual roadworthiness certificate.',
+      prompt: 'Find vehicle correspondence in mail: the municipal patente with its payment window and any discount for early payment, habilitación vehicular, seguro and any multa. For each: the date due, days remaining and the amount. State any early payment discount and the date it ends, since that is real money. Report the seguro premium against the previous one where both are visible.' },
+    { id: 'py_documents', icon: '🪪', title: 'Cédula, passport and licence', needs: 'Email',
+      desc: 'Documents with queues and municipal licences with their own rules.',
+      prompt: 'Scan mail for identity documents: cédula, pasaporte, licencia de conducir and any permit. For each: the expiry, days remaining and what the renewal requires, noting that the driving licence is issued municipally and its requirements vary. Note stated processing times. Put anything needed for travel first.' },
+  ],
+
+  /* ── THE REST OF EUROPE ──────────────────────────────────────────────────
+     Smaller countries, and each with something the others do not have: a
+     Romanian tax form that also handles social contributions, a Greek
+     objective-cost tax on the household, a Hungarian scheme that exempts
+     young workers from income tax entirely. */
+
+  RO: [
+    { id: 'ro_anaf', icon: '🧾', title: 'ANAF: declarația unică and contributions', needs: 'Email',
+      desc: 'One form covers income tax, health and pension for anyone earning outside employment.',
+      prompt: 'Find ANAF correspondence in mail. Report the declarația unică due with its period, the deadline and days remaining, noting that it covers income tax and the health and pension contributions together rather than separately. Report any income visible in the mail from outside employment, since crossing a threshold triggers contributions that would not otherwise apply. List certificates that have arrived and what is expected from the employers visible in the mail. Report documents and dates only.' },
+    { id: 'ro_rca', icon: '🚗', title: 'RCA, ITP and rovinieta', needs: 'Email',
+      desc: 'Compulsory cover, inspection and the road vignette, all separate.',
+      prompt: 'Find vehicle correspondence in mail: RCA insurance, ITP inspection, rovinieta and any amendă. For each: the date due or expiry, days remaining and the amount. State that driving without RCA or a valid rovinieta carries separate penalties. For fines, state whether paying within a short period halves the amount and until when. Report the RCA premium against the previous one where both are visible.' },
+    { id: 'ro_utilitati', icon: '⚡', title: 'Utilities, întreținere and index readings', needs: 'Email',
+      desc: 'Building maintenance and utility bills where readings are submitted monthly.',
+      prompt: 'Track utility and întreținere bills in mail across all available months. Break întreținere into its stated components and compare each month against month, since an increase in one line disappears into the total. For utilities: the period, the consumption, the amount and whether the reading was submitted or estimated, with the monthly window for submitting readings where stated. Give payment dates, days remaining and any penalitate stated.' },
+    { id: 'ro_sanatate', icon: '🏥', title: 'Health contributions and cover', needs: 'Email',
+      desc: 'Cover depends on contributions being current, not on being employed.',
+      prompt: 'Find health insurance and pension correspondence in mail. Report contributions by month with the base and amount, and flag any month where an expected contribution appears missing, since cover depends on a current record rather than employment alone. Report any change to the base or rate with its effective month, and any notice requiring a response.' },
+    { id: 'ro_documents', icon: '🪪', title: 'Buletin, passport and permits', needs: 'Email',
+      desc: 'Documents with appointment queues and their own renewal windows.',
+      prompt: 'Scan mail for identity documents: carte de identitate, pașaport, permis de conducere and any residence permit. For each: the expiry, days remaining and what the renewal requires. Note stated appointment or processing times, since those decide when to begin. Put anything needed for travel or the right to remain first.' },
+  ],
+
+  GR: [
+    { id: 'gr_aade', icon: '🧾', title: 'AADE: E1 and the receipts requirement', needs: 'Email',
+      desc: 'A share of income has to be spent by card or the shortfall is taxed.',
+      prompt: 'Find AADE correspondence and tax documents in mail. Report the declaration due with its period, the deadline and days remaining. From card statements in the mail, total electronic payments for the year against income, since a required proportion of income must be spent electronically and any shortfall is taxed at a stated rate. Report that shortfall in figures rather than in general terms. List certificates that have arrived and what is expected. Report documents and dates only.' },
+    { id: 'gr_efka', icon: '🏦', title: 'EFKA contributions and cover', needs: 'Email',
+      desc: 'Contributions that carry health cover as well as a pension record.',
+      prompt: 'Find EFKA correspondence and statements in mail. Report contributions by month with the class or base and the amount, and flag any month where an expected contribution appears missing, since health cover depends on a contribution record. Report any change to the class or rate with its effective month, and any notice requiring a response with its deadline.' },
+    { id: 'gr_enfia', icon: '🏠', title: 'ENFIA and property charges', needs: 'Email',
+      desc: 'Property tax in instalments, plus charges collected through the electricity bill.',
+      prompt: 'Find ENFIA and property correspondence in mail. Report the ENFIA amount, the instalment schedule with every date and which appear paid, and days until the next. Report charges collected through the electricity bill separately from consumption, since municipal and television charges are billed there rather than separately. Report any revaluation with old and new figures.' },
+    { id: 'gr_vehicle', icon: '🚗', title: 'Τέλη κυκλοφορίας, ΚΤΕΟ and insurance', needs: 'Email',
+      desc: 'Road tax has a hard year-end deadline and a steep penalty.',
+      prompt: 'Find vehicle correspondence in mail: τέλη κυκλοφορίας with its deadline and the penalty after it, ΚΤΕΟ inspection, insurance and any fine. For each: the date due, days remaining and the amount. State the penalty for late road tax as the rule or notice gives it, since it is a multiple rather than a small surcharge. Report the insurance premium against the previous one.' },
+    { id: 'gr_utilities', icon: '⚡', title: 'ΔΕΗ, water and the bundled charges', needs: 'Email',
+      desc: 'The electricity bill carries municipal charges and a television fee alongside the energy.',
+      prompt: 'Track electricity, water and gas bills in mail across all available months. For the electricity bill, separate the energy charge from the network charge, municipal charges and the television fee, since only one of those moves with consumption. Compare month against month and report increases, stating which component changed. Give the due date, days remaining and any disconnection warning.' },
+  ],
+
+  HU: [
+    { id: 'hu_nav', icon: '🧾', title: 'NAV: the draft return and what it misses', needs: 'Email',
+      desc: 'The return is prepared for you and accepted automatically if nothing is done.',
+      prompt: 'Find NAV correspondence and tax documents in mail. Report the draft return with the deadline by which it must be checked or amended and days remaining, noting that it is accepted automatically if nothing is done. List certificates that have arrived and what would be expected from the employers and institutions visible in the mail. Report any allowance the correspondence mentions with its conditions. Report documents and dates only.' },
+    { id: 'hu_tb', icon: '🏦', title: 'Health and pension contributions', needs: 'Email',
+      desc: 'Cover depends on contributions being current rather than on employment.',
+      prompt: 'Find social insurance correspondence and statements in mail. Report contributions by month with the base and amount, and flag any month where an expected contribution appears missing, since health entitlement depends on a current record and arrears accrue. Report any change to the base or the minimum with old and new figures and the effective month.' },
+    { id: 'hu_rezsi', icon: '⚡', title: 'Utilities and the capped consumption limit', needs: 'Email',
+      desc: 'A reduced price applies up to a limit, and above it the rate is far higher.',
+      prompt: 'Track electricity, gas and water bills in mail across all available months. For each: the period, the consumption, the amount and the rate applied. Where a reduced price applies up to an annual or monthly limit, report the consumption against that limit and how much headroom remains, since the price above it is substantially higher. Compare months and report increases, separating consumption from a rate change. Give payment dates and days remaining.' },
+    { id: 'hu_vehicle', icon: '🚗', title: 'Műszaki, súlyadó and biztosítás', needs: 'Email',
+      desc: 'The insurance switching window is short and once a year.',
+      prompt: 'Find vehicle correspondence in mail: műszaki vizsga, gépjárműadó, kötelező biztosítás and any bírság. For each: the date due, days remaining and the amount. State the window in which compulsory insurance can be changed and the last date to give notice, since outside it the policy continues for the year. Report the premium against the previous one where both are visible.' },
+    { id: 'hu_documents', icon: '🪪', title: 'ID, passport and permits', needs: 'Email',
+      desc: 'Documents with appointment queues and their own windows.',
+      prompt: 'Scan mail for identity documents: személyi igazolvány, útlevél, vezetői engedély and any residence permit. For each: the expiry, days remaining and what the renewal requires. Note stated appointment or processing times. Put anything needed for travel or the right to remain first.' },
+  ],
+
+  BG: [
+    { id: 'bg_nap', icon: '🧾', title: 'NAP declarations and contributions', needs: 'Email',
+      desc: 'The annual return, and the health contributions that must not lapse.',
+      prompt: 'Find National Revenue Agency correspondence in mail. Report the declaration due with its period, the deadline and days remaining, and any discount for early electronic filing with the date it ends. Report health and social contributions by month with the base and amount, flagging any month missing, since health cover lapses after a stated number of unpaid months. Report documents and dates only.' },
+    { id: 'bg_health', icon: '🏥', title: 'Health contributions and interrupted cover', needs: 'Email',
+      desc: 'Cover stops after a set number of unpaid months and is restored only by clearing them.',
+      prompt: 'Find health insurance correspondence and statements in mail. Report contributions by month with the base and amount, and count consecutive unpaid months, since cover is interrupted after a stated number of them and is restored only when the arrears are cleared. State the number of unpaid months found and what the correspondence says the consequence is. Report any change to the minimum base with its effective month.' },
+    { id: 'bg_vehicle', icon: '🚗', title: 'Технически преглед, данък and винетка', needs: 'Email',
+      desc: 'Inspection, the local vehicle tax and the road vignette.',
+      prompt: 'Find vehicle correspondence in mail: технически преглед, vehicle tax, гражданска отговорност insurance, винетка and any глоба. For each: the date due or expiry, days remaining and the amount. State any discount for paying the vehicle tax early and the date it ends. Report the insurance premium against the previous one where both are visible.' },
+    { id: 'bg_utilities', icon: '⚡', title: 'Utilities and building charges', needs: 'Email',
+      desc: 'Energy, water and the building fund, compared across months.',
+      prompt: 'Track electricity, water, heating and building fund charges in mail across all available months. For each: the period, the consumption, the amount and whether the reading was actual or estimated. Compare month against month and report increases, separating consumption from a tariff change. Report the building charges broken into their stated components. Give payment dates and any лихва stated.' },
+    { id: 'bg_documents', icon: '🪪', title: 'ID, passport and permits', needs: 'Email',
+      desc: 'Documents with queues and their own renewal windows.',
+      prompt: 'Scan mail for identity documents: лична карта, паспорт, свидетелство за управление and any residence permit. For each: the expiry, days remaining and what the renewal requires. Note stated appointment or processing times. Put anything needed for travel or the right to remain first.' },
+  ],
+
+  RS: [
+    { id: 'rs_poreska', icon: '🧾', title: 'Tax declarations and contributions', needs: 'Email',
+      desc: 'Declarations by period and the contributions that carry health cover.',
+      prompt: 'Find tax administration correspondence in mail. Report declarations due with the period, the deadline and days remaining, and contributions by month with the base and amount, flagging any month where an expected payment appears missing since health cover depends on the record. Report any change to the base with old and new figures. Report documents and dates only.' },
+    { id: 'rs_racuni', icon: '⚡', title: 'Utilities, infostan and readings', needs: 'Email',
+      desc: 'Household charges bundled into one bill, so a rise in one line hides.',
+      prompt: 'Track utility and combined household bills in mail across all available months. Break each bill into its stated components and compare each month against month, since an increase in one line disappears into the total. Report the consumption and reading basis for energy and water. Give payment dates, days remaining and any kamata stated.' },
+    { id: 'rs_vehicle', icon: '🚗', title: 'Registracija, tehnički and osiguranje', needs: 'Email',
+      desc: 'The annual registration bundles inspection, cover and taxes into one visit.',
+      prompt: 'Find vehicle correspondence in mail: annual registration, tehnički pregled, obavezno osiguranje and any kazna. For each: the date due, days remaining and the amount. State that registration requires a passed inspection and valid insurance, since the three are done together and a failure in one blocks the rest. Report the insurance premium against the previous one where both are visible.' },
+    { id: 'rs_zdravstvo', icon: '🏥', title: 'Health card validation and cover', needs: 'Email',
+      desc: 'The health card is validated periodically and stops working when it is not.',
+      prompt: 'Find health insurance correspondence in mail. Report the health card validation period and the date it must next be validated, with days remaining, since the card stops being accepted when it lapses. Report contributions by month and flag any month missing. Report any change to the contribution base with the effective month.' },
+    { id: 'rs_documents', icon: '🪪', title: 'ID, passport and permits', needs: 'Email',
+      desc: 'Documents with queues and their own renewal windows.',
+      prompt: 'Scan mail for identity documents: lična karta, pasoš, vozačka dozvola and any residence permit. For each: the expiry, days remaining and what the renewal requires. Note stated appointment or processing times. Put anything needed for travel or the right to remain first.' },
+  ],
+
+  HR: [
+    { id: 'hr_porezna', icon: '🧾', title: 'Tax return and the automatic assessment', needs: 'Email',
+      desc: 'Most people are assessed automatically, and the ones who are not have a deadline.',
+      prompt: 'Find Porezna uprava correspondence in mail. Report any assessment received with the resulting refund or amount owed and its date, and any return that must be filed with its deadline and days remaining. List certificates that have arrived and what would be expected from the employers visible in the mail. Flag any notice requiring a response. Report documents and dates only.' },
+    { id: 'hr_hzzo', icon: '🏥', title: 'Health contributions and supplementary cover', needs: 'Email',
+      desc: 'Basic cover leaves a participation charge that supplementary insurance removes.',
+      prompt: 'Find health insurance correspondence in mail. Report contributions by month with the base and amount, flagging any month missing. Report any supplementary or dopunsko policy with its premium, what it covers and its renewal date, since without it a participation charge applies to most treatment. Report any change to the premium with old and new figures and the effective date.' },
+    { id: 'hr_vehicle', icon: '🚗', title: 'Tehnički pregled, registracija and osiguranje', needs: 'Email',
+      desc: 'The annual registration bundles inspection, cover and fees into one visit.',
+      prompt: 'Find vehicle correspondence in mail: tehnički pregled, annual registration, obvezno osiguranje and any kazna. For each: the date due, days remaining and the amount. State that registration requires a passed inspection and valid insurance. For fines, state whether paying promptly reduces the amount and until when. Report the insurance premium against the previous one.' },
+    { id: 'hr_rezije', icon: '⚡', title: 'Utilities, pričuva and readings', needs: 'Email',
+      desc: 'Energy, water and the building reserve, compared month to month.',
+      prompt: 'Track utility and building charges in mail across all available months. For each: the period, the consumption, the amount and whether the reading was submitted or estimated, with the monthly reading window where stated. Report the building pričuva separately with any change. Compare months and report increases, separating consumption from a tariff change. Give payment dates and days remaining.' },
+    { id: 'hr_documents', icon: '🪪', title: 'ID, passport and permits', needs: 'Email',
+      desc: 'Documents with queues and their own renewal windows.',
+      prompt: 'Scan mail for identity documents: osobna iskaznica, putovnica, vozačka dozvola and any residence permit. For each: the expiry, days remaining and what the renewal requires. Note stated appointment or processing times. Put anything needed for travel or the right to remain first.' },
+  ],
+
+  SK: [
+    { id: 'sk_dane', icon: '🧾', title: 'Tax return and the annual reconciliation', needs: 'Email',
+      desc: 'An employer can do the reconciliation, but only if asked by a deadline.',
+      prompt: 'Find tax administration correspondence in mail. Report the return due with its period, the deadline and days remaining, and any employer annual reconciliation with the date by which it must be requested, since that request is what removes the need to file. List certificates that have arrived and what would be expected from the employers visible in the mail. Report documents and dates only.' },
+    { id: 'sk_poistenie', icon: '🏥', title: 'Health and social insurance contributions', needs: 'Email',
+      desc: 'Contributions that carry cover, and the annual settlement that follows them.',
+      prompt: 'Find health and social insurance correspondence and statements in mail. Report contributions by month with the base and amount, flagging any month missing, and any annual settlement with the resulting refund or amount owed and its payment date. Report any change to the minimum base with old and new figures and the effective month.' },
+    { id: 'sk_vehicle', icon: '🚗', title: 'STK, emisná and poistenie', needs: 'Email',
+      desc: 'Two separate inspections plus compulsory cover.',
+      prompt: 'Find vehicle correspondence in mail: STK technical inspection, emisná kontrola, povinné zmluvné poistenie and any pokuta. For each: the date due, days remaining and the amount. State that the technical and emissions inspections are separate and both are required. Report the insurance premium against the previous one where both are visible.' },
+    { id: 'sk_energie', icon: '⚡', title: 'Zálohy and the annual vyúčtovanie', needs: 'Email',
+      desc: 'Advance payments settle once a year and the settlement can be substantial.',
+      prompt: 'Track energy and utility correspondence in mail. Report the monthly záloha, any change to it, and the annual vyúčtovanie: the period, the advances paid, the actual consumption and the resulting refund or demand with its deadline. Flag where the záloha looks materially below actual consumption, since that produces a large demand later. Report any tariff change with old and new rates.' },
+    { id: 'sk_documents', icon: '🪪', title: 'ID, passport and permits', needs: 'Email',
+      desc: 'Documents with queues and their own renewal windows.',
+      prompt: 'Scan mail for identity documents: občiansky preukaz, pas, vodičský preukaz and any residence permit. For each: the expiry, days remaining and what the renewal requires. Note stated appointment or processing times. Put anything needed for travel or the right to remain first.' },
+  ],
+
+  SI: [
+    { id: 'si_furs', icon: '🧾', title: 'FURS: informativni izračun and objections', needs: 'Email',
+      desc: 'The assessment arrives calculated, and there is a short window to object.',
+      prompt: 'Find FURS correspondence in mail. Report any informativni izračun with the figures it assumes, the resulting refund or amount owed, and the period within which an objection must be lodged with days remaining, since that window is short and the assessment becomes final after it. List certificates that have arrived and what would be expected from the employers visible in the mail. Report documents and dates only.' },
+    { id: 'si_prispevki', icon: '🏦', title: 'Contributions and cover', needs: 'Email',
+      desc: 'Monthly contributions that carry health entitlement.',
+      prompt: 'Find health and pension contribution correspondence and statements in mail. Report contributions by month with the base and amount, flagging any month where an expected payment appears missing since cover depends on the record. Report any change to the base with old and new figures and the effective month, and any notice requiring a response.' },
+    { id: 'si_vehicle', icon: '🚗', title: 'Tehnični pregled, registracija and zavarovanje', needs: 'Email',
+      desc: 'The annual registration requires the inspection and cover together.',
+      prompt: 'Find vehicle correspondence in mail: tehnični pregled, annual registration, obvezno zavarovanje and any globa. For each: the date due, days remaining and the amount. State that registration requires a passed inspection and valid insurance. For fines, state whether paying promptly reduces the amount and until when. Report the insurance premium against the previous one.' },
+    { id: 'si_polozice', icon: '⚡', title: 'Utilities and building charges', needs: 'Email',
+      desc: 'Energy, water and the building reserve compared across months.',
+      prompt: 'Track utility and building charges in mail across all available months. For each: the period, the consumption, the amount and whether the reading was submitted or estimated. Report building charges broken into their stated components. Compare months and report increases, separating consumption from a tariff change. Give payment dates and days remaining.' },
+    { id: 'si_documents', icon: '🪪', title: 'ID, passport and permits', needs: 'Email',
+      desc: 'Documents with queues and their own renewal windows.',
+      prompt: 'Scan mail for identity documents: osebna izkaznica, potni list, vozniško dovoljenje and any residence permit. For each: the expiry, days remaining and what the renewal requires. Note stated appointment or processing times. Put anything needed for travel or the right to remain first.' },
+  ],
+
+  LT: [
+    { id: 'lt_vmi', icon: '🧾', title: 'VMI declaration and the refund', needs: 'Email',
+      desc: 'The pre-filled declaration decides a refund most people are entitled to.',
+      prompt: 'Find VMI correspondence in mail. Report the declaration due with its period, the deadline and days remaining, and any pre-filled figures with the resulting refund or amount owed. Report reliefs the correspondence mentions, such as pension contributions or life insurance, with their conditions. List certificates that have arrived and what is expected from the employers visible in the mail. Report documents and dates only.' },
+    { id: 'lt_sodra', icon: '🏦', title: 'Sodra contributions and entitlement', needs: 'Email',
+      desc: 'Contributions that carry health cover and build a pension record.',
+      prompt: 'Find Sodra correspondence and statements in mail. Report contributions by month with the base and amount, flagging any month where an expected contribution appears missing since cover depends on the record. Report any change to the base or rate with its effective month, and any notice requiring a response with its deadline.' },
+    { id: 'lt_vehicle', icon: '🚗', title: 'Techninė apžiūra, draudimas and fines', needs: 'Email',
+      desc: 'Inspection and compulsory cover, both checked automatically.',
+      prompt: 'Find vehicle correspondence in mail: techninė apžiūra, civilinės atsakomybės draudimas and any bauda. For each: the date due or expiry, days remaining and the amount. State that insurance and inspection are checked against the registration automatically, so a lapse is detected rather than discovered. For fines, state whether prompt payment reduces the amount and until when.' },
+    { id: 'lt_utilities', icon: '⚡', title: 'Utilities and building charges', needs: 'Email',
+      desc: 'Energy, heating and the building fund, compared across months.',
+      prompt: 'Track utility and building charges in mail across all available months. For each: the period, the consumption, the amount and the reading basis. Report heating separately, since it dominates the winter bill and makes months incomparable. Compare against the same month in earlier years where available. Give payment dates and days remaining.' },
+    { id: 'lt_documents', icon: '🪪', title: 'ID, passport and permits', needs: 'Email',
+      desc: 'Documents with queues and their own renewal windows.',
+      prompt: 'Scan mail for identity documents: asmens tapatybės kortelė, pasas, vairuotojo pažymėjimas and any residence permit. For each: the expiry, days remaining and what the renewal requires. Note stated appointment or processing times. Put anything needed for travel or the right to remain first.' },
+  ],
+
+  LV: [
+    { id: 'lv_vid', icon: '🧾', title: 'VID declaration and justified expenses', needs: 'Email',
+      desc: 'Medical and education spending is refundable, and claims reach back several years.',
+      prompt: 'Find VID correspondence in mail. Report the declaration due with its period, the deadline and days remaining. Collect medical, dental and education receipts from the mail with the provider, date and amount, and total them, since these are refundable up to a limit and claims can generally be made for earlier years too. Report which year each receipt belongs to. Report documents and dates only.' },
+    { id: 'lv_vsaoi', icon: '🏦', title: 'Social contributions and entitlement', needs: 'Email',
+      desc: 'Contributions that build entitlement and the months that go missing.',
+      prompt: 'Find social insurance correspondence and statements in mail. Report contributions by month with the base and amount, flagging any month where an expected contribution appears missing. Report any change to the base or rate with its effective month, and any notice requiring a response with its deadline.' },
+    { id: 'lv_vehicle', icon: '🚗', title: 'Tehniskā apskate, OCTA and road tax', needs: 'Email',
+      desc: 'Inspection, compulsory cover and the annual vehicle tax.',
+      prompt: 'Find vehicle correspondence in mail: tehniskā apskate, OCTA insurance, the annual vehicle tax and any sods. For each: the date due or expiry, days remaining and the amount. State that the vehicle tax must be paid before the inspection can be passed, since that sequencing causes late renewals. Report the OCTA premium against the previous one where both are visible.' },
+    { id: 'lv_utilities', icon: '⚡', title: 'Utilities and heating', needs: 'Email',
+      desc: 'Heating dominates winter and makes months incomparable without care.',
+      prompt: 'Track utility and building charges in mail across all available months. For each: the period, the consumption, the amount and the reading basis. Report heating separately and compare it against the same month in earlier years where available rather than against the previous month. Give payment dates, days remaining and any late charge stated.' },
+    { id: 'lv_documents', icon: '🪪', title: 'ID, passport and permits', needs: 'Email',
+      desc: 'Documents with queues and their own renewal windows.',
+      prompt: 'Scan mail for identity documents: personas apliecība, pase, vadītāja apliecība and any residence permit. For each: the expiry, days remaining and what the renewal requires. Note stated appointment or processing times. Put anything needed for travel or the right to remain first.' },
+  ],
+
+  EE: [
+    { id: 'ee_emta', icon: '🧾', title: 'Tax return and the €700 basic exemption', needs: 'Email',
+      desc: 'From 2026 everyone gets the same €700 a month tax-free - if it is applied at the right employer, and only once.',
+      prompt: 'Find tax and customs board (EMTA) correspondence in mail. Report the declaration due with its period, the deadline and days remaining, and the resulting refund or amount owed with its payment date. For income from 2026 on, the basic exemption is a flat €700 a month (€8,400 a year; €9,312 for those of pension age) whatever the income: check from payslips and the pre-filled return whether it was applied, applied at more than one payer at once (which produces a bill), or not applied at all (which produces a refund). For the 2025 tax year, filed in 2026, the old rule still applies - the exemption shrank above €14,400 of annual income and disappeared above €25,200 - so compare what was applied with what the year\'s income implies. Report documents and dates only.' },
+    { id: 'ee_social', icon: '🏦', title: 'Social tax, pension pillar and cover', needs: 'Email',
+      desc: 'Contributions that carry health cover, and a pension pillar choice with windows.',
+      prompt: 'Find social tax and pension correspondence and statements in mail. Report contributions by month with the base and amount, flagging any month where an expected contribution appears missing since health cover depends on the record. Report any pension pillar contribution and any window in which the rate or participation can be changed, with its dates.' },
+    { id: 'ee_vehicle', icon: '🚗', title: 'Inspection, insurance and vehicle tax', needs: 'Email',
+      desc: 'Inspection and compulsory cover, both checked against the register.',
+      prompt: 'Find vehicle correspondence in mail: technical inspection, compulsory insurance, any vehicle tax and any fine. For each: the date due or expiry, days remaining and the amount. State that insurance and inspection are checked against the register automatically, so a lapse is detected rather than discovered. Report the insurance premium against the previous one where both are visible.' },
+    { id: 'ee_utilities', icon: '⚡', title: 'Utilities, heating and the building', needs: 'Email',
+      desc: 'Heating and building charges that dominate the winter bill.',
+      prompt: 'Track utility and building charges in mail across all available months. For each: the period, the consumption, the amount and the reading basis. Report heating and building charges separately and compare against the same month in earlier years where available. Report any electricity contract with its type and the date any fixed term ends. Give payment dates and days remaining.' },
+    { id: 'ee_documents', icon: '🪪', title: 'ID card, passport and permits', needs: 'Email',
+      desc: 'The ID card is also the login to almost everything, so its expiry is not cosmetic.',
+      prompt: 'Scan mail for identity documents: ID card, passport, driving licence, digital identity and any residence permit. For each: the expiry, days remaining and what the renewal requires. State where an expired ID card also removes access to digital services and signing, since that consequence is larger than the document itself. Note stated processing times. Put anything needed for travel or the right to remain first.' },
+  ],
+};
+
+/* Only what this person's country needs, plus the ten that are true
+   everywhere. The whole registry is well over a hundred templates and a
+   hundred and five of them are wrong for any given reader. */
+/* THE COUNTRY A VISITOR IS IN, FROM THE NETWORK, NOT FROM THEIR BROWSER.
+
+   Crew guessed the country from the browser's language, so somebody in Madrid
+   with an English (US) browser was shown work for the United States. The edge
+   already knows the country each request comes from - it is how prediction
+   markets are offered or withheld - so it is asked here. Country level only:
+   no coordinates, no permission prompt, nothing stored, nothing read. Not
+   cached, because the answer is per visitor, which is also why it is not a
+   field on /v1/everyday - that one is cached at the edge and served to
+   everybody, and would hand one visitor's country to the next. */
+function whereFrom(request) {
+  const cc = String((request.cf && request.cf.country) || '').toUpperCase();
+  /* XX and T1 are the edge's "unknown" and "Tor"; neither is a country. */
+  const country = /^[A-Z]{2}$/.test(cc) && cc !== 'XX' && cc !== 'T1' ? cc : '';
+  return json({ ok: true, country, name: country ? (COUNTRY_NAME[country] || '') : '' }, 200,
+              { 'Cache-Control': 'private, no-store' });
+}
+
+async function everydayJobs(request, env) {
+  /* PUBLIC, ON PURPOSE, AND SIGNED OFF BY THE OWNER.
+
+     This used to require an account, and the person it exists for is the one
+     who does not have one yet. "Does this do anything where I live" is a
+     question somebody asks BEFORE signing up, and answering it with a login
+     wall answers a different question instead: whether they trust AMV enough
+     to hand over an email to find out. Most will not, and the ones who would
+     were already convinced.
+
+     Safe because there is nothing here to leak. The response is three
+     constants - the ten universal jobs, the five for the country asked about,
+     and the country names for the picker. Nothing is read from any account,
+     nothing is keyed to one, and the only input is two characters of country
+     code. /v1/market/list is already public for the same reason: a catalogue
+     of what a product does is marketing, not data.
+
+     GET as well as POST, and cacheable, which is what makes opening it cheap
+     rather than expensive. The answer for a country is identical for everyone
+     who asks, so the edge can serve it and somebody clicking through five
+     countries costs five cached reads instead of five invocations. POST stays
+     for callers that already send one. */
+  let asked = '';
+  if (request.method === 'GET') {
+    asked = new URL(request.url).searchParams.get('country') || '';
+  } else {
+    const body = await request.json().catch(() => ({}));
+    asked = body.country || '';
+  }
+  const code = String(asked).trim().toUpperCase().slice(0, 2);
+  const local = EVERYDAY_BY_COUNTRY[code] || [];
+  /* What people in this country have actually switched on, once there is
+     enough of it to mean something. Read here, with the rest of the country,
+     so the page knows the order before it draws - a ranking that arrived a
+     moment later would reshuffle rows somebody is already reading. Cached at
+     the edge with everything else for an hour, which is fresh enough for a
+     count and keeps this one read per country per hour. */
+  let ranked = { enough:false, total:0, need: CREW_POPULAR_MIN, counts:{} };
+  if(code && Object.prototype.hasOwnProperty.call(COUNTRY_NAME, code)){
+    try{
+      const c = await _jobuseRead(env, code);
+      const total = c.total;
+      ranked = total >= CREW_POPULAR_MIN
+        ? { enough:true, total, need: CREW_POPULAR_MIN, counts: (c && c.counts) || {} }
+        : { enough:false, total, need: CREW_POPULAR_MIN, counts:{} };
+    }catch(_e){}
+  }
+  return json({
+    ok: true, country: code, name: COUNTRY_NAME[code] || '',
+    /* What the common jobs mean HERE - the tax office, the banks, the job
+       sites - so every catalogue card can say where it will look, and the
+       integrations page can show what people in this country connect. */
+    facts: Object.prototype.hasOwnProperty.call(COUNTRY_FACTS, code) ? COUNTRY_FACTS[code] : {},
+    /* The mailboxes AMV really connects that are FROM this country - names and
+       ids only, the same entries the signed-in picker lists. Public for the
+       reason the rest of this is: which providers exist is a fact about the
+       product, not about anybody's account. */
+    /* The mailboxes people there use, most-used first, and whether a bank can
+       be linked there - the two facts the top five are built on. */
+    inbox: code ? _countryMail(code) : [],
+    bank: _finCountries(env).indexOf(code) >= 0,
+    classroom: COUNTRY_CLASSROOM.indexOf(code) >= 0,
+    ranked,
+    bankElsewhere: Object.prototype.hasOwnProperty.call(BANK_ELSEWHERE, code) ? BANK_ELSEWHERE[code] : '',
+    work: code ? (Object.prototype.hasOwnProperty.call(WORK_APPS, code) ? WORK_APPS[code] : WORK_APPS_DEFAULT) : '',
+    mail: code ? Object.keys(MAIL_PROVIDERS).filter(id => MAIL_PROVIDERS[id].country === code)
+                   .map(id => ({ id, name: MAIL_PROVIDERS[id].name })) : [],
+    /* Named separately so the interface can say which of these exist because
+       of where somebody lives, which is the entire point of them. */
+    local, universal: EVERYDAY_UNIVERSAL,
+    /* Names, not codes. A picker listing forty-five two-letter codes asks the
+       reader to know that Nigeria is NG, and the one person this page exists
+       for is the one who should not have to. */
+    countries: Object.keys(EVERYDAY_BY_COUNTRY)
+      .map((c) => ({ code: c, name: COUNTRY_NAME[c] || c }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  }, 200, { 'Cache-Control': 'public, max-age=3600' });
+}

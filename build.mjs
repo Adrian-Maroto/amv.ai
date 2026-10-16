@@ -37,6 +37,43 @@ const MINIFY = !args.includes('--no-minify');
 // modules and rebuild (the build overwrites app.js from them).
 const APP_SRC_DIR = 'src/app';
 
+/* THE WORKER IS MODULAR THE SAME WAY.
+
+   amv-backend.js grew past 35,000 lines in one file, and a file that size is
+   where every change collides with every other. Its SOURCE is now
+   src/worker/NN-name.js, one file per area (accounts, payments, connectors,
+   marketplace...), concatenated in name order - the same rule as the app, with
+   no wrappers, so it is still one module with one scope and the output is
+   byte for byte what the single file was. amv-backend.js stays committed
+   because wrangler deploys it and three hundred suites read it.
+
+   Edit src/worker/*.js, never amv-backend.js: the build rewrites it. A hand
+   edit is not dropped silently - it is saved beside it first (see below), and
+   the gate refuses a backend that does not match its sources. */
+const WORKER_SRC_DIR = 'src/worker';
+const WORKER_OUT = 'amv-backend.js';
+function workerFromSource() {
+  const files = readdirSync(WORKER_SRC_DIR).filter(f => /\.js$/.test(f)).sort();
+  if (!files.length) throw new Error(`no source modules found in ${WORKER_SRC_DIR}/`);
+  return files.map(f => readFileSync(`${WORKER_SRC_DIR}/${f}`, 'utf8')).join('');
+}
+function assembleWorker() {
+  const full = workerFromSource();
+  const prior = existsSync(WORKER_OUT) ? readFileSync(WORKER_OUT, 'utf8') : '';
+  const sha = (t) => createHash('sha256').update(Buffer.from(t, 'utf8')).digest('hex');
+  const stamp = readStamp();
+  if (prior && prior !== full && stamp && stamp.worker && sha(prior) !== stamp.worker) {
+    try { writeFileSync('.discarded-amv-backend.js', prior); } catch (e) {}
+    console.warn('');
+    console.warn('  !! amv-backend.js was edited by hand. It is rebuilt from src/worker/*.js,');
+    console.warn('     so the edit is about to be replaced. The old file was saved to');
+    console.warn('     .discarded-amv-backend.js - move the change into src/worker and rebuild.');
+    console.warn('');
+  }
+  if (prior !== full) writeFileSync(WORKER_OUT, full);
+  return sha(full);
+}
+
 /* THE BRIDGE IS SERVED BESIDE THE PAGE, NOT INSIDE IT.
 
    The daemon that lets AMV work on somebody's own computer is a file in this
@@ -362,6 +399,7 @@ function warnIfHandEdited(html) {
 async function rebuild() {
   let html = readFileSync('index.html', 'utf8');
   warnIfHandEdited(html);
+  const workerSha = assembleWorker();
   const source = assembleJS();
   /* The copy that crosses the network, without the essays. styles.css on disk
      is untouched: that is the one people edit, grep and review, exactly as
@@ -522,7 +560,7 @@ async function rebuild() {
     const emittedJs = (html.match(/<!-- BUILD:JS:START -->([\s\S]*?)<!-- BUILD:JS:END -->/) || [, ''])[1];
     const sha = (t) => createHash('sha256').update(Buffer.from(t, 'utf8')).digest('hex');
     writeFileSync(STAMP, JSON.stringify({
-      css: sha(emittedCss), js: sha(emittedJs), at: new Date().toISOString(),
+      css: sha(emittedCss), js: sha(emittedJs), worker: workerSha, at: new Date().toISOString(),
     }, null, 2) + '\n');
   } catch (e) { /* a missing stamp only costs the warning, never the build */ }
 
@@ -1026,4 +1064,4 @@ if (RUN_DIRECTLY) {
   }
 }
 
-export { allowApiOrigin, splitI18n, mergeI18n };
+export { allowApiOrigin, splitI18n, mergeI18n, workerFromSource };

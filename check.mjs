@@ -252,6 +252,16 @@ step('Worker loads as an ES module', () => {
 
 /* ── 3. Fresh build + not stale ──────────────────────────────────────────── */
 step('Build is fresh (index.html reflects source)', () => {
+  /* The Worker is built from src/worker. Compared BEFORE the build rewrites
+     it, so a hand edit to amv-backend.js - or a source change nobody rebuilt -
+     fails here by name instead of being overwritten or shipped stale. */
+  {
+    const files = readdirSync(R('src/worker')).filter(f => /\.js$/.test(f)).sort();
+    const want = files.map(f => readFileSync(R('src/worker/' + f), 'utf8')).join('');
+    const have = existsSync(R('amv-backend.js')) ? readFileSync(R('amv-backend.js'), 'utf8') : '';
+    if (want !== have)
+      throw new Error('amv-backend.js does not match src/worker/*.js. Edit src/worker, never amv-backend.js, then run node build.mjs.');
+  }
   sh('node build.mjs');
   const html = existsSync(R('index.html')) ? readFileSync(R('index.html'), 'utf8') : '';
   const app = existsSync(R('app.js')) ? readFileSync(R('app.js'), 'utf8') : '';

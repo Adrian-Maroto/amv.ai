@@ -92,9 +92,16 @@ Companion docs (do not duplicate them here - read them):
   read that, could not check it from inside the repository, and asked about it
   one more time. Being unable to verify something is not a reason to keep
   asking - the owner already answered, and the answer is the record.
+- **The Worker's SOURCE is modular too:** `src/worker/NN-name.js` (01-config,
+  ... 29-router, ... 67-weekly-habits), one file per area, concatenated in name
+  order into `amv-backend.js` by `node build.mjs` - byte for byte, no wrappers,
+  one module scope. **Edit `src/worker/*.js`, NOT `amv-backend.js`.** The
+  generated file stays committed because wrangler deploys it and the suites
+  read it. The gate fails if it does not match its sources, and the build saves
+  a hand edit to `.discarded-amv-backend.js` before replacing it.
 - Vanilla JS. There is NO React, Next.js, Vue, Tailwind, or bundler. Do not add
   one. Framework-specific tools and advice do not apply here.
-- Backend: a Cloudflare Worker (`amv-backend.js`) + KV + a Durable Object
+- Backend: a Cloudflare Worker (`amv-backend.js`, built from `src/worker/`) + KV + a Durable Object
   (atomic usage counter) + cron. The server is always the authority on money,
   limits, auth, and content. Client checks are defense-in-depth only.
 - **The AI proxy only ever STREAMS.** `/v1/messages` writes `stream:true` into

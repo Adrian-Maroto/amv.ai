@@ -27,6 +27,7 @@ tests/e2e/.build/
 # until its first build - which the guard already treats as "nothing to compare".
 .buildstamp.json
 .discarded-index-*.txt
+.discarded-amv-backend.js
 .test-run.lock
 .gate.lock
 
