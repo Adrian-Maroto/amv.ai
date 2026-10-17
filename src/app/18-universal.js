@@ -219,7 +219,8 @@ AMVConnectors.register({
            the page into a panel with Stop (web-live.js). If the panel cannot
            load, the run still happens, the plain way. */
         const view = await _webLiveLoad().then(ok => ok ? window._webLiveOpen(args.goal) : null);
-        const r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run' + (view ? '?live=1' : ''), {
+        let r;
+        try{ r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run' + (view ? '?live=1' : ''), {
           method: 'POST', stream: !!view, signal: view ? view.signal : undefined,
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
           body: JSON.stringify({
@@ -244,7 +245,14 @@ AMVConnectors.register({
             spendAmount: spend || undefined,
             spendLimit: (typeof AMVSpend !== 'undefined' ? (AMVSpend.cfg().perPurchase || undefined) : undefined)
           })
-        }, 240000);   // a real browser session is slow, but it is not infinite
+        }, 240000); }   // a real browser session is slow, but it is not infinite
+        catch(err){
+          /* Stop pressed before the first step arrived: that is the person's
+             answer, not a failure, and it is said as one. */
+          if(view && view.signal.aborted){ const e = new Error(T('Stopped. Nothing more was done on the page.')); e.code = 'stopped'; throw e; }
+          if(view) view.close();
+          throw err;
+        }
         const streamed = !!view && /event-stream/.test(r.headers.get('Content-Type') || '');
         if(view && !streamed) view.close();
         const d = streamed ? await view.read(r) : await r.json().catch(() => ({}));

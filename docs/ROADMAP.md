@@ -447,3 +447,24 @@ mutations, every one caught.
 a realtime supplier and a WebSocket path through the Worker; who speaks when in
 a meeting (diarization) depends on the supplier offering it. Both are the
 owner's choice of supplier first.
+
+## Cloud browser, step one — every run paid for, and watched (done; the browser itself is the owner's switch)
+
+The web agent's runs were counted nowhere: up to 24 model decisions and 90
+seconds of hosted browser each, against no allowance, family limit, hold or
+daily ceiling. Each run now reserves its most through `_spendGate` and settles
+at its real tokens and browser seconds. Live mode streams every step with a
+picture of the page to a panel (`web-live.js`, fetched on demand) with Hide and
+Stop; a run nobody is watching ends at its next step. The team screen moved to
+`team-projects.js` to make room. `a-web-run-is-watched-and-paid-for` (the first
+end-to-end suite of a run), `watch-amv-use-a-website`; six mutations caught.
+
+*Owner's switch:* Cloudflare Browser Rendering (Workers Paid; $0.09 per browser
+hour after 10 included, $2 a month per concurrent browser beyond 10). Turning
+the binding on without the paid plan breaks every deploy, so it is not
+uncommented here.
+
+*Next:* take over the browser to sign in or solve a captcha, typed by the
+person into the real site, nothing kept when the run ends. Runs that stay
+signed in between visits stay off the table: a store of live sessions is the
+vault LESSONS 537 refuses.

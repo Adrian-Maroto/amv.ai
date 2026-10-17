@@ -16,7 +16,7 @@
 /* Its styles travel with it rather than in styles.css: only somebody watching
    a run ever needs them, and the page is at its weight ceiling. Same tokens as
    everything else, added once. */
-const _WLV_CSS = '.wlv{ position:fixed; right:var(--sp-4); bottom:var(--sp-4); z-index:900; width:min(420px, calc(100vw - 2*var(--sp-4)));\n' +
+const _WLV_CSS = '.wlv{ position:fixed; right:var(--sp-4); top:calc(var(--nav-h, 56px) + var(--sp-3)); z-index:900; width:min(360px, calc(100vw - 2*var(--sp-4)));\n' +
   '  background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-lg); box-shadow:var(--sh-lg); padding:var(--sp-3);\n' +
   '  display:flex; flex-direction:column; gap:var(--sp-2); }\n' +
   '.wlv-h{ display:flex; align-items:center; gap:var(--sp-2); }\n' +
@@ -29,8 +29,9 @@ const _WLV_CSS = '.wlv{ position:fixed; right:var(--sp-4); bottom:var(--sp-4); z
   '.wlv-pic img{ width:100%; height:100%; object-fit:contain; display:block; }\n' +
   '.wlv-wait{ margin:0; font-size:var(--t-sm); color:var(--mu); }\n' +
   '.wlv-now{ margin:0; font-size:var(--t-sm); color:var(--tx); line-height:1.45; min-height:1.45em; overflow-wrap:anywhere; }\n' +
+  '.wlv.min .wlv-goal, .wlv.min .wlv-pic, .wlv.min .wlv-now{ display:none; }\n' +
   '@media (max-width:560px){\n' +
-  '  .wlv{ right:0; left:0; bottom:0; width:auto; border-radius:var(--r-lg) var(--r-lg) 0 0; border-bottom:0; }\n' +
+  '  .wlv{ right:0; left:0; top:auto; bottom:0; width:auto; border-radius:var(--r-lg) var(--r-lg) 0 0; border-bottom:0; }\n' +
   '}';
 function _webLiveOpen(goal){
   if(!document.getElementById('wlv-css')){
@@ -45,6 +46,7 @@ function _webLiveOpen(goal){
   el.innerHTML =
     '<div class="wlv-h"><span class="wlv-dot" aria-hidden="true"></span>'
     + '<div class="wlv-tt"><b>' + escH(T('AMV’s browser')) + '</b><span class="wlv-host" id="wlv-host"></span></div>'
+    + '<button class="btn bs" id="wlv-min" type="button" aria-expanded="true">' + escH(T('Hide')) + '</button>'
     + '<button class="btn bs wlv-stop" id="wlv-stop" type="button">' + escH(T('Stop')) + '</button></div>'
     + '<div class="wlv-goal">' + escH(String(goal || '').slice(0, 160)) + '</div>'
     + '<div class="wlv-pic"><img id="wlv-img" alt="" hidden><p class="wlv-wait" id="wlv-wait">' + escH(T('Opening the page…')) + '</p></div>'
@@ -67,6 +69,14 @@ function _webLiveOpen(goal){
   const SAY = { open: 'Opened the page', click: 'Clicked', type: 'Typed', filled: 'Filled in a saved detail', select: 'Chose an option',
                 press: 'Pressed a key', scroll: 'Scrolled', submit: 'Submitted', blocked: 'Stopped', skipped: 'Skipped a box', extract: 'Read the page' };
   const close = () => { try{ if(url) URL.revokeObjectURL(url); }catch(e){} url = ''; el.remove(); };
+  /* Hidden, not stopped: the run carries on and the bar stays, so the
+     message box and everything else on the page can be used meanwhile. */
+  const minBtn = el.querySelector('#wlv-min');
+  minBtn.addEventListener('click', () => {
+    const min = el.classList.toggle('min');
+    minBtn.textContent = min ? T('Show') : T('Hide');
+    minBtn.setAttribute('aria-expanded', min ? 'false' : 'true');
+  });
   const stopBtn = el.querySelector('#wlv-stop');
   stopBtn.addEventListener('click', () => {
     if(stopBtn.dataset.done === '1'){ close(); return; }
