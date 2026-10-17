@@ -390,7 +390,7 @@ async function _webSpendApproval(env, id){
 }
 
 /* The agent loop. Real browser, real actions, full trace. */
-async function browserRun(request, env, ctx){
+async function browserRun(request, env, ctx, emit){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in to use web automation' }, 401);
 
@@ -478,22 +478,42 @@ async function browserRun(request, env, ctx){
     if(heldSpend > 0){ const h = heldSpend; heldSpend = 0; await _spendRelease(env, user.email, h); }
   };
 
+  /* THE RUN ITSELF IS PAID FOR. See WEB_STEP_EST_IN_TOK. After every refusal
+     above, so a run that never starts never holds anything. */
+  const runEng = ENGINES['amv-pulse'];
+  const runReserveUSD = WEB_MAX_STEPS * ((WEB_STEP_EST_IN_TOK / 1e6) * runEng.inCost + (WEB_STEP_MAX_OUT_TOK / 1e6) * runEng.outCost)
+                      + (WEB_MAX_MS / 3600000) * WEB_BROWSER_USD_PER_HOUR;
+  const runBook = {};
+  const runRefused = await _spendGate(env, user, 'webagent', runReserveUSD, runBook, { fallbackCeilingUSD: FREE_AUTO_CEILING_USD });
+  if(runRefused){ await releaseHeld(); return runRefused; }
+  const meter = { input: 0, output: 0, browserFrom: 0 };
+
   const started = Date.now();
   const trace = [];
   let spentHere = false;
   let browser = null;
   try{
-    let puppeteer;
-    try{
-      const mod = await import('@cloudflare/puppeteer');
-      puppeteer = mod.default || mod;
-    }catch(impErr){
+    try{ browser = await _webLaunch(env); }
+    catch(impErr){
+      if(!impErr || impErr.code !== 'driver_missing') throw impErr;
       // The browser driver is not bundled in this deploy. Say so plainly
       // rather than surfacing a module-resolution error to the user.
       return json({ error:'The browser driver is not installed in this deployment. Run npm install and redeploy to enable web automation.', code:'needs_service' }, 503);
     }
-    browser = await puppeteer.launch(env.BROWSER);
+    meter.browserFrom = Date.now();
     const page = await browser.newPage();
+    /* THE LIVE VIEW. In live mode every step is shown as it happens: what was
+       done, where, and a picture of the page. Sent only to the person running
+       it, never stored, never shown to the model (which reads the page as
+       text), and scrubbed of saved details like everything else that leaves. */
+    const shot = async (step, verb, why) => {
+      if(!emit) return;
+      let img = '', here = '';
+      try{ img = await page.screenshot({ type:'jpeg', quality:45, encoding:'base64' }); }catch(e){ img = ''; }
+      try{ here = await page.url(); }catch(e){ here = ''; }
+      await emit({ type:'step', step, verb, why:_webRedact(String(why || ''), secrets).slice(0, 300),
+                   url:_webRedact(String(here || ''), secrets).slice(0, 500), shot: img.length <= WEB_SHOT_MAX ? img : '' });
+    };
     await page.setViewport({ width:1280, height:900 });
 
     /* AMV-002: BEFORE the first goto, because the first goto is one of the
@@ -561,8 +581,13 @@ async function browserRun(request, env, ctx){
         error:'That address sent AMV somewhere it is not allowed to go, so the run stopped. ' + _bad0.why }, 400);
     }
 
+    await shot(0, 'open', 'opened the page');
+    let viewerGone = false;
     for(let step = 0; step < WEB_MAX_STEPS; step++){
       if(Date.now() - started > WEB_MAX_MS){ trace.push({ step, verb:'blocked', why:'time cap reached' }); break; }
+      /* Nobody is watching any more - the tab was closed or Stop pressed. A
+         run nobody can see is not left spending: it ends here. */
+      if(emit && emit.gone()){ viewerGone = true; trace.push({ step, verb:'blocked', why:'stopped by you' }); break; }
       const _bad = await _landedSomewhereBlocked();
       if(_bad){
         await browser.close();
@@ -615,7 +640,7 @@ async function browserRun(request, env, ctx){
         + '\n\n<PAGE untrusted="true">\n' + JSON.stringify(_webForModel(obs, secrets))
         + '\n</PAGE>\n\nHistory: ' + trace.map(t => t.verb + (t.why ? '(' + t.why + ')' : '')).join(' -> ');
 
-      const decision = await _webAskModel(env, sys, prompt);
+      const decision = await _webAskModel(env, sys, prompt, meter);
       // Resolve the label of the element the model chose, from OUR observation
       // (not from the model), so the consequence check cannot be talked around.
       const target = (decision && decision.ref)
@@ -736,9 +761,14 @@ async function browserRun(request, env, ctx){
       else if(v.verb === 'press') await page.keyboard.press(String(a.text || 'Enter')).catch(() => {});
       else if(v.verb === 'scroll') await page.evaluate('window.scrollBy(0, 800)').catch(() => {});
       else if(v.verb === 'submit' && sel) await page.click(sel).catch(() => {});
-      await new Promise(r => setTimeout(r, 700));
+      await new Promise(r => setTimeout(r, WEB_SETTLE_MS));
+      { const last = trace[trace.length - 1] || {}; await shot(step + 1, last.verb || v.verb, last.why || ''); }
     }
     await browser.close();
+    if(viewerGone){
+      audit(env, 'web_agent_stopped', { by:user.email });
+      return json({ ok:false, code:'stopped', trace, error:'Stopped. Nothing more was done on the page.' });
+    }
     audit(env, 'web_agent_capped', { by:user.email, steps:WEB_MAX_STEPS });
     return json({ ok:false, code:'step_cap', need:'the task needed more steps than the safety cap allows', trace });
   }catch(e){
@@ -754,7 +784,60 @@ async function browserRun(request, env, ctx){
       try{ await releaseHeld(); }
       catch(relErr){ audit(env, 'web_agent_spend_release_failed', { by:user.email, amount:heldSpend }); }
     }
+    /* And the run itself, settled at what it really used: every decision's
+       tokens and every second the browser was open. Nothing used, nothing
+       charged - the reservation goes back. */
+    const browserMs = meter.browserFrom ? Math.max(0, Date.now() - meter.browserFrom) : 0;
+    const runUSD = (meter.input / 1e6) * runEng.inCost + (meter.output / 1e6) * runEng.outCost
+                 + (browserMs / 3600000) * WEB_BROWSER_USD_PER_HOUR;
+    await _recordSpend(env, user.billingSubject || user.email, runUSD, 'webagent', runBook.period, runBook);
   }
+}
+
+/* The one place a browser is started. A deployment's BROWSER binding is a
+   Cloudflare service binding, which has no `launch` of its own; a suite hands
+   in an object that does, and that is the only way one gets one. */
+async function _webLaunch(env){
+  if(env.BROWSER && typeof env.BROWSER.launch === 'function') return env.BROWSER.launch();
+  let puppeteer;
+  try{ const mod = await import('@cloudflare/puppeteer'); puppeteer = mod.default || mod; }
+  catch(e){ const err = new Error('driver missing'); err.code = 'driver_missing'; throw err; }
+  return puppeteer.launch(env.BROWSER);
+}
+
+/* LIVE MODE: the same run, streamed. `?live=1` answers with server-sent events
+   - one `step` per step with a picture of the page, then one `end` carrying
+   exactly what the plain call would have returned, status included. If the
+   person stops reading (tab closed, Stop pressed), the run sees it at its next
+   step and ends. */
+async function browserRunRoute(request, env, ctx){
+  let live = false;
+  try{ live = new URL(request.url).searchParams.get('live') === '1'; }catch(e){}
+  if(!live) return browserRun(request, env, ctx, null);
+  /* Signed in before a stream is opened, so a stranger is answered with a
+     plain 401 rather than a stream that ends in one. browserRun checks again:
+     it is the authority, this is only the door. */
+  if(!(await requireUser(request.clone(), env))) return json({ error:'sign in to use web automation' }, 401);
+  const { readable, writable } = new TransformStream();
+  const w = writable.getWriter();
+  const enc = new TextEncoder();
+  let gone = false;
+  const emit = async (e) => {
+    if(gone) return;
+    try{ await w.write(enc.encode('data: ' + JSON.stringify(e) + '\n\n')); }catch(err){ gone = true; }
+  };
+  emit.gone = () => gone;
+  const run = (async () => {
+    let res;
+    try{ res = await browserRun(request, env, ctx, emit); }
+    catch(e){ res = json({ error:'The web run failed.' }, 500); }
+    let body = {};
+    try{ body = await res.json(); }catch(e){}
+    await emit(Object.assign({}, body, { type:'end', status: res.status }));
+    try{ await w.close(); }catch(e){}
+  })();
+  if(ctx && ctx.waitUntil) ctx.waitUntil(run);
+  return new Response(readable, { status: 200, headers: { 'Content-Type':'text/event-stream', 'Cache-Control':'no-store' } });
 }
 
 /* Take the credentials out of text somebody's browser assembled by accident.

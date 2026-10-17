@@ -245,6 +245,24 @@ async function _spendRecord(env, email, amount){
 
 const WEB_MAX_STEPS = 24;
 const WEB_MAX_MS = 90000;
+/* WHAT A RUN COSTS, AND WHO PAYS FOR IT.
+
+   A run is up to WEB_MAX_STEPS model decisions and up to WEB_MAX_MS of a
+   hosted browser, and until now neither was counted anywhere: not against the
+   account's allowance, not a family's limit, not an account on hold, not the
+   day's ceiling - only a rate limit on how many runs a day. Every run now
+   reserves its most through `_spendGate` before a browser starts and settles
+   at what it really used. A decision is a page summary in and a short JSON
+   answer out; the estimate is generous so the reservation is a ceiling.
+   The browser's price is the provider's published rate per browser hour. */
+const WEB_STEP_EST_IN_TOK = 6000;
+const WEB_STEP_MAX_OUT_TOK = 400;
+const WEB_BROWSER_USD_PER_HOUR = 0.09;
+/* A step's picture in the live view: JPEG at the page's own size, and never
+   more than this (base64) - a page that renders enormous is shown without one
+   rather than sent at any size. */
+const WEB_SHOT_MAX = 400000;
+const WEB_SETTLE_MS = 700;
 const WEB_ALLOWED_VERBS = ['goto','click','type','select','press','scroll','extract','submit','done','blocked'];
 // Verbs that are always irreversible.
 const WEB_CONSEQUENTIAL = ['submit'];

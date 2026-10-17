@@ -42280,6 +42280,20 @@ try{
   }
 }catch(e){}
 
+/* The live panel lives in web-live.js, fetched when a web run first starts. */
+let _webLiveP = null;
+function _webLiveLoad(){
+  if(typeof window._webLiveOpen === 'function') return Promise.resolve(true);
+  if(!_webLiveP) _webLiveP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'web-live.js';
+    sc.onload = () => res(typeof window._webLiveOpen === 'function');
+    sc.onerror = () => { _webLiveP = null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
+  });
+  return _webLiveP;
+}
+
 /* Browser channel: for sites with NO API. Real automation runs server-side
    (a headless browser the Worker drives) - it can never run in this tab.
    Until that service is configured this reports exactly what is missing
@@ -42322,8 +42336,12 @@ AMVConnectors.register({
           e.code = 'needs_service'; throw e;
         }
         const tok = (window.AMV_API && AMV_API.token) || '';
-        const r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run', {
-          method: 'POST',
+        /* WATCHED, when it can be: the run streams each step with a picture of
+           the page into a panel with Stop (web-live.js). If the panel cannot
+           load, the run still happens, the plain way. */
+        const view = await _webLiveLoad().then(ok => ok ? window._webLiveOpen(args.goal) : null);
+        const r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run' + (view ? '?live=1' : ''), {
+          method: 'POST', stream: !!view, signal: view ? view.signal : undefined,
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
           body: JSON.stringify({
             url: args.url, goal: args.goal,
@@ -42348,7 +42366,10 @@ AMVConnectors.register({
             spendLimit: (typeof AMVSpend !== 'undefined' ? (AMVSpend.cfg().perPurchase || undefined) : undefined)
           })
         }, 240000);   // a real browser session is slow, but it is not infinite
-        const d = await r.json().catch(() => ({}));
+        const streamed = !!view && /event-stream/.test(r.headers.get('Content-Type') || '');
+        if(view && !streamed) view.close();
+        const d = streamed ? await view.read(r) : await r.json().catch(() => ({}));
+        const okStatus = streamed ? (d.status >= 200 && d.status < 300) : r.ok;
         // Surface the agent's structured stopping points as real blockers so the
         // UI can say exactly what is needed and resume when it is provided.
         if(d && d.code){
@@ -42360,7 +42381,7 @@ AMVConnectors.register({
           e.approvalTicket = d.approvalTicket || '';
           throw e;
         }
-        if(!r.ok || d.error) throw new Error(d.error || 'Web automation failed.');
+        if(!okStatus || d.error) throw new Error(d.error || 'Web automation failed.');
         return d;
       }
     }

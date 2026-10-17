@@ -266,13 +266,19 @@ const _WEB_OBSERVE = "(() => {" +
   " elements:out, captcha };})()";
 
 /* Ask the model for exactly one next action - a single auditable decision point. */
-async function _webAskModel(env, sys, prompt){
+/* `meter` adds up what each decision cost, so the run can be charged for it.
+   These calls used to be counted nowhere - see WEB_STEP_EST_IN_TOK. */
+async function _webAskModel(env, sys, prompt, meter){
   try{
     /* The cheapest tier by design: this is a routing decision, not the answer.
        Read from ENGINES so it moves with the tier table. */
     const r = await _modelFetch(env, { model: engineModel('amv-pulse'), max_tokens:400, system:sys,
       messages:[{ role:'user', content:prompt }] });
     const d = await r.json();
+    if(meter && d && d.usage){
+      meter.input += Math.max(0, +d.usage.input_tokens || 0) + Math.max(0, +d.usage.cache_creation_input_tokens || 0) + Math.max(0, +d.usage.cache_read_input_tokens || 0);
+      meter.output += Math.max(0, +d.usage.output_tokens || 0);
+    }
     const txt = (d && d.content && d.content[0] && d.content[0].text) || '';
     return JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));
   }catch(e){ return null; }

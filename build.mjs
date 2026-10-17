@@ -149,6 +149,7 @@ function emitSandbox() {
   writeFileSync('help-faqs.js', readFileSync('src/help/faqs.js'));
   writeFileSync('widget-form.js', readFileSync('src/settings/widget-form.js'));
   writeFileSync('live-voice.js', readFileSync('src/voice/live-voice.js'));
+  writeFileSync('web-live.js', readFileSync('src/web/web-live.js'));
 }
 
 function assembleJS() {
@@ -1013,6 +1014,7 @@ const PUBLISH = [
   'help-faqs.js',          // the Help center's questions, fetched when Help is opened
   'widget-form.js',        // the website widget's settings form, fetched when that pane is opened
   'live-voice.js',         // the live voice conversation, fetched when voice mode starts with server speech
+  'web-live.js',           // the panel that shows a web run as it happens, fetched when one starts
 ];
 /* GOOGLE PLAY'S PROOF THAT THE ANDROID APP IS AMV'S (apps/android). Published
    only once the owner's signing fingerprint is in apps/android/config.json,
