@@ -117,7 +117,7 @@ const AMV_TOOLS = [
      all at once or not at all (_autoCreateSteps). */
   {
     name:'crew_steps',
-    description:'Start a task that runs in STEPS on AMV\'s servers, in the background, starting within a few minutes and carrying on with their computer off and AMV closed. Each step can wait for an earlier one and is handed what it produced: "research these three suppliers, then compare them, then draft the email to the best one". Use when they want something multi-stage done in the background or "while I am away", or the work is too long to wait for now. 2-5 steps; the first starts without waiting. Each step counts as one of their plan\'s background jobs until it finishes. Each step is unattended: it can search the web and write, and cannot send, buy, book or touch an account - the result of the last step waits for them. Not for work you can just do now in this answer, and not for something on a schedule (use crew_add).',
+    description:'Start a task that runs in STEPS on AMV\'s servers, in the background, starting within about a minute and carrying on with their computer off and AMV closed. Each step can wait for an earlier one and is handed what it produced: "research these three suppliers, then compare them, then draft the email to the best one". Use when they want something multi-stage done in the background or "while I am away", or the work is too long to wait for now. 2-5 steps; the first starts without waiting. Each step counts as one of their plan\'s background jobs until it finishes. Each step is unattended: it can search the web and write, and cannot send, buy, book or touch an account - the result of the last step waits for them. Not for work you can just do now in this answer, and not for something on a schedule (use crew_add).',
     input_schema:{ type:'object', properties:{
       steps:{ type:'array', minItems:2, maxItems:5, items:{ type:'object', properties:{
         title:{type:'string', description:'A few words naming the step, shown to the person.'},
@@ -548,7 +548,7 @@ async function _confirmModelTool(name, input){
     detail = st.map((s, i) => (i + 1) + '. ' + String((s && s.title) || '').slice(0, 80)
                + (s && Number.isInteger(s.after) ? ' (after step ' + (s.after + 1) + ')' : '')
                + '\n   ' + String((s && s.detail) || '').slice(0, 300)).join('\n')
-           + '\n\nIt starts within a few minutes and keeps going with AMV closed. Each step uses one of your background jobs until it finishes.'
+           + '\n\nIt starts within about a minute and keeps going with AMV closed. Each step uses one of your background jobs until it finishes.'
            + (String(input.approval || 'require') === 'auto'
                ? ' The final result goes straight to you without review.'
                : ' The final result waits for your approval before anything is sent.');

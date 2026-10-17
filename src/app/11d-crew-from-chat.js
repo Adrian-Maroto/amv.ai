@@ -212,7 +212,7 @@ async function _crewTool(name, input){
     _crewSynced();
     const made = d.items || [];
     return { text:'Started. ' + made.length + ' steps are in their Crew tab, running on AMV\u2019s servers: the first starts within about '
-      + (d.startsWithinMin || 5) + ' minutes, and each later step starts when the step it waits for has finished, building on its result. '
+      + ((d.startsWithinMin || 1) === 1 ? 'a minute' : d.startsWithinMin + ' minutes') + ', and each later step starts when the step it waits for has finished, building on its result. '
       + 'It keeps going with their computer off and AMV closed. '
       + (approval === 'auto' ? 'The final result is delivered without review. ' : 'The final result waits for their approval. ')
       + 'If a step fails, the steps after it do not run, and Crew says which one stopped it. Do NOT say it has finished or describe results - nothing has run yet.',

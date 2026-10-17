@@ -1279,7 +1279,14 @@ const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'attempts', 'lastError', 'las
                             result it builds on (`prior`). See _autoSettleSteps. */
                          'waiting', 'prior', 'onceAt'];
 
-async function runDueAutomations(env, atMs){
+/* `quick` is the every-minute tick (see `scheduled` in 29-router.js). It only
+   ever takes the cheap path: accounts the due-work index names, and nothing
+   else. An empty or unreadable index means "nothing to do this minute", NOT
+   "scan everybody" - the five-minute tick still never believes an empty index
+   and still runs the hourly full sweep, so the floor under every job is
+   exactly what it was. The quick tick only makes booked work start sooner. */
+async function runDueAutomations(env, atMs, opts){
+  const quick = !!(opts && opts.quick);
   const now = +atMs || Date.now();
   const started = Date.now();
   let scanned = 0, ran = 0, failed = 0, deferred = 0;
@@ -1293,13 +1300,16 @@ async function runDueAutomations(env, atMs){
      of every hour regardless. So the index can only ever make a tick cheaper;
      it can never be the reason a job does not run. */
   let allUsers = [], truncated = false, viaIndex = false;
-  const sweepDue = new Date(now).getUTCMinutes() < 5;
+  const sweepDue = !quick && new Date(now).getUTCMinutes() < 5;
   /* Checked BEFORE the buckets, because reading the index to learn that an
      empty namespace has nothing due is 48 reads spent on a foregone
      conclusion. Never consulted on the hourly sweep: that sweep is the thing
      that bounds a stale marker's cost to one hour, so it has to ignore it. */
   const idle = !sweepDue && await _kindKnownEmpty(env, 'auto');
   const candidates = (sweepDue || idle) ? null : await _autoDueCandidates(env, now);
+  if (quick && !idle && (!candidates || candidates.size === 0)) {
+    return { scanned: 0, ran: 0, failed: 0, queued: 0, processed: 0, deferred: 0, truncated: false, quick: true };
+  }
   if (idle) {
     /* Nothing has ever been scheduled here, established by a scan that walked
        the whole namespace, and no automation has been written since. There is

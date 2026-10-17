@@ -80,7 +80,7 @@ section('All the steps are created together, and the later ones wait');
   ok(a.group && a.group === b.group && b.group === c.group && c.step.n === 3 && c.step.of === 3, 'and they are one task, numbered', c && c.step);
   ok(a.approval === 'auto' && a.notify === 'app' && b.approval === 'auto' && c.approval === 'require',
     'the steps in between are working material; only the last waits for approval as asked', [a.approval, b.approval, c.approval]);
-  ok(r.d.startsWithinMin === 5, 'and the reply says it starts within minutes, not instantly', r.d.startsWithinMin);
+  ok(r.d.startsWithinMin === 1, 'and the reply says it starts within about a minute, not instantly', r.d.startsWithinMin);
 }
 
 section('Each step runs only after the one it waits for, and is handed its result');
@@ -168,6 +168,56 @@ section('Resuming a waiting step keeps it waiting; a step cannot be made to repe
   ok(b2.active && b2.waiting && b2.next === b.next, 'resumed, it is still waiting for its step - not on a clock of its own', { active: b2.active, waiting: b2.waiting });
   const e = await post('/auto/update', { id: b.id, action: 'edit', repeat: 'daily' });
   ok(e.status === 409 && e.d.code === 'step_once', 'and making it repeat is refused, saying why', e.status + ' ' + e.d.code);
+}
+
+section('The every-minute tick starts booked work, and never scans everybody');
+{
+  put({ items: [], results: [] });
+  const r0 = await post('/auto/create', { steps: STEPS.slice(0, 2), approval: 'auto' });
+  const [a] = r0.d.items;
+  /* Created at :07 past the hour, so neither the hourly sweep nor a
+     five-minute tick is involved: only the quick path. */
+  const at = Math.max(a.next + 30e3, Date.now() + 30e3);
+  prompts = [];
+  await W.runDueAutomations(env, at, { quick: true });
+  ok(prompts.length === 2, 'a quick tick runs the first step from the index, and the second when it is released', prompts.length);
+
+  /* An empty index: the quick tick does nothing at all - no list of every
+     account - while the five-minute tick still reads properly. */
+  put({ items: [], results: [] });
+  const r1 = await post('/auto/create', { steps: STEPS.slice(0, 2), approval: 'auto' });
+  for (const k of [...store.keys()]) if (k.startsWith('duehour:')) store.delete(k);
+  let lists = 0; const realList = env.AMV_KV.list;
+  env.AMV_KV.list = async (o) => { lists++; return realList(o); };
+  prompts = [];
+  const t = new Date(r1.d.items[0].next + 60e3); t.setUTCMinutes(7);
+  const q = await W.runDueAutomations(env, +t + 3600e3, { quick: true });
+  ok(prompts.length === 0 && lists === 0 && q.quick, 'with nothing booked, the quick tick reads no account and runs nothing', { prompts: prompts.length, lists });
+  await W.runDueAutomations(env, +t + 3600e3);
+  ok(prompts.length >= 1 && lists > 0, 'and the five-minute tick still scans properly, so nothing is missed', { prompts: prompts.length, lists });
+  env.AMV_KV.list = realList;
+}
+
+section('The schedule: every minute for background work, standing aside on the five-minute marks');
+{
+  const toml = readFileSync(join(ROOT, 'wrangler.toml'), 'utf8');
+  ok(/crons\s*=\s*\[\s*"\*\/5 \* \* \* \*"\s*,\s*"\* \* \* \* \*"\s*\]/.test(toml), 'both schedules are configured', (toml.match(/crons.*$/m) || [''])[0]);
+  const fire = async (minute) => {
+    put({ items: [], results: [] });
+    await post('/auto/create', { steps: STEPS.slice(0, 2), approval: 'auto' });
+    prompts = [];
+    const d = new Date(Date.now() + 120e3); d.setUTCMinutes(minute, 0, 0);
+    if (+d < Date.now()) d.setUTCHours(d.getUTCHours() + 1);
+    const pending = [];
+    await W.default.scheduled({ cron: '* * * * *', scheduledTime: +d }, env, { waitUntil: (p) => pending.push(p), passThroughOnException(){} });
+    await Promise.all(pending);
+    return prompts.length;
+  };
+  ok(await fire(1) >= 1, 'at one minute past, the minute tick runs the waiting work');
+  ok(await fire(5) === 0, 'at five past it stands aside - the five-minute tick has that minute');
+  store.set('GLOBAL_KILL', '1');
+  ok(await fire(2) === 0, 'and the kill switch stops it like everything else');
+  store.delete('GLOBAL_KILL');
 }
 
 section('All or nothing, and only what makes sense');

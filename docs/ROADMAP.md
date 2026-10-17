@@ -420,12 +420,13 @@ assertions, eight mutations each caught) and a section of
 `say-it-in-chat-and-it-happens`.
 
 *Not yet, and why:*
-- **Starting in seconds.** A step starts at the next run of the server's
-  five-minute schedule. Running it inside the request was tried on paper and
-  refused: a request may keep working only ~30 seconds after it answers, a
-  research step can take longer, and a run cut off mid-way holds its lease for
-  three days - a step that silently never runs. Faster means a more frequent
-  schedule or a Durable Object alarm: infrastructure and cost, so the owner's.
+- **Starting in about a minute (done), not in seconds.** A second schedule
+  runs every minute and only starts work the due-work index already names;
+  every other duty, and the hourly full sweep, stays on the five-minute one.
+  Running a step inside the request was refused: a request may keep working
+  only ~30 seconds after it answers, and a run cut off mid-way holds its lease
+  for three days - a step that silently never runs. Seconds would need a
+  Durable Object alarm per account; not worth it for background work.
 - **Steps that use tools.** A step searches the web and writes, as every
   unattended run does. Acting on accounts unattended is the Milestone 6
   decision and is unchanged.

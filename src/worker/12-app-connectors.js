@@ -979,8 +979,8 @@ async function autoCreate(request, env){
 
    A step waits for at most one earlier step of the same task (`after` is its
    index), so the steps form a tree and a cycle cannot be written. Steps with
-   nothing to wait for start at the next run of the server's schedule - within
-   a few minutes, not instantly, and the reply says so. Only the steps nothing
+   nothing to wait for start at the next run of the server's every-minute
+   schedule - within about a minute, not instantly, and the reply says so. Only the steps nothing
    waits on are delivered the way the person chose; the ones in between are
    working material, kept in the Crew history and never sent anywhere. */
 async function _autoCreateSteps(request, env, user, body){
@@ -1048,7 +1048,7 @@ async function _autoCreateSteps(request, env, user, body){
   }
   audit(env, 'auto_steps_created', { email: user.email, group, steps: items.length });
   return json({ ok:true, group, items, approval, notify,
-                startsWithinMin: 5 });
+                startsWithinMin: 1 });
 }
 
 /* ---- delete / pause an automation ---- */

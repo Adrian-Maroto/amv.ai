@@ -436,7 +436,7 @@ section('A task in steps is set up on the server, and Crew shows each step waiti
   const consent = await say('look into the climbing gyms in Leeds and then compare them while I am out');
   ok(consent.seen > 0, 'they were asked first, because it spends money with nobody watching', consent.seen);
   ok(/1\. Research/.test(consent.body) && /2\. Compare \(after step 1\)/.test(consent.body), 'and shown every step and which waits for which', consent.body.slice(0, 300));
-  ok(/within a few minutes/.test(consent.body) && /waits for your approval/.test(consent.body), 'and when it starts and what happens to the result', consent.body.slice(-200));
+  ok(/within about a minute/.test(consent.body) && /waits for your approval/.test(consent.body), 'and when it starts and what happens to the result', consent.body.slice(-200));
 
   const items = (await jobs()).slice(before);
   ok(items.length === 2 && items[0].group && items[0].group === items[1].group, 'two steps of one task now exist on the server', items.length);

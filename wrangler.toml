@@ -54,7 +54,10 @@ persist = true
 invocation_logs = true
 
 [triggers]
-crons = ["*/5 * * * *"]
+# Two schedules. Every five minutes: all the scheduled duties. Every minute:
+# only background jobs already booked as due, so they start within a minute
+# (see `scheduled` in src/worker/29-router.js).
+crons = ["*/5 * * * *", "* * * * *"]
 
 [[kv_namespaces]]
 binding = "AMV_KV"

@@ -7,6 +7,32 @@ export default {
   */
   async scheduled(event, env, ctx) {
     _liveCtx = ctx;   // AMV-046: the tick logs too, and its events matter most
+    /* THE EVERY-MINUTE TICK: background work starts within a minute.
+
+       A second schedule, "* * * * *", that does ONE thing - runs jobs the
+       due-work index already names (runDueAutomations with `quick`). Every
+       other duty below (payments, renewals, digest, batches, the hourly full
+       sweep) stays on the five-minute schedule it was written for. On the
+       minutes both schedules fire, this one stands aside, so the two never
+       race for the same jobs; if they did, the per-run lease would still let
+       only one of them run each job. The kill switch stops it like the rest. */
+    if (event && event.cron === '* * * * *') {
+      const at = Number(event.scheduledTime) || Date.now();
+      if (new Date(at).getUTCMinutes() % 5 === 0) return;
+      ctx.waitUntil((async()=>{
+        let killed = false;
+        try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }catch(e){ killed = true; }
+        if(killed) return;
+        try{
+          const r = await runDueAutomations(env, 0, { quick: true });
+          if(r.ran || r.failed || r.deferred) console.log('[cron:minute] automations', JSON.stringify(r));
+        }catch(e){
+          console.error('[cron:minute] failed', e && e.message);
+          try{ await _workerError(env, 'cron.minute', e); }catch(_){}
+        }
+      })());
+      return;
+    }
     ctx.waitUntil((async()=>{
       /* THE KILL SWITCH HAS TO REACH THE CRON, OR IT DOES NOT STOP SPENDING.
 

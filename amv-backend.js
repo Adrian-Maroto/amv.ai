@@ -5855,8 +5855,8 @@ async function autoCreate(request, env){
 
    A step waits for at most one earlier step of the same task (`after` is its
    index), so the steps form a tree and a cycle cannot be written. Steps with
-   nothing to wait for start at the next run of the server's schedule - within
-   a few minutes, not instantly, and the reply says so. Only the steps nothing
+   nothing to wait for start at the next run of the server's every-minute
+   schedule - within about a minute, not instantly, and the reply says so. Only the steps nothing
    waits on are delivered the way the person chose; the ones in between are
    working material, kept in the Crew history and never sent anywhere. */
 async function _autoCreateSteps(request, env, user, body){
@@ -5924,7 +5924,7 @@ async function _autoCreateSteps(request, env, user, body){
   }
   audit(env, 'auto_steps_created', { email: user.email, group, steps: items.length });
   return json({ ok:true, group, items, approval, notify,
-                startsWithinMin: 5 });
+                startsWithinMin: 1 });
 }
 
 /* ---- delete / pause an automation ---- */
@@ -9047,7 +9047,14 @@ const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'attempts', 'lastError', 'las
                             result it builds on (`prior`). See _autoSettleSteps. */
                          'waiting', 'prior', 'onceAt'];
 
-async function runDueAutomations(env, atMs){
+/* `quick` is the every-minute tick (see `scheduled` in 29-router.js). It only
+   ever takes the cheap path: accounts the due-work index names, and nothing
+   else. An empty or unreadable index means "nothing to do this minute", NOT
+   "scan everybody" - the five-minute tick still never believes an empty index
+   and still runs the hourly full sweep, so the floor under every job is
+   exactly what it was. The quick tick only makes booked work start sooner. */
+async function runDueAutomations(env, atMs, opts){
+  const quick = !!(opts && opts.quick);
   const now = +atMs || Date.now();
   const started = Date.now();
   let scanned = 0, ran = 0, failed = 0, deferred = 0;
@@ -9061,13 +9068,16 @@ async function runDueAutomations(env, atMs){
      of every hour regardless. So the index can only ever make a tick cheaper;
      it can never be the reason a job does not run. */
   let allUsers = [], truncated = false, viaIndex = false;
-  const sweepDue = new Date(now).getUTCMinutes() < 5;
+  const sweepDue = !quick && new Date(now).getUTCMinutes() < 5;
   /* Checked BEFORE the buckets, because reading the index to learn that an
      empty namespace has nothing due is 48 reads spent on a foregone
      conclusion. Never consulted on the hourly sweep: that sweep is the thing
      that bounds a stale marker's cost to one hour, so it has to ignore it. */
   const idle = !sweepDue && await _kindKnownEmpty(env, 'auto');
   const candidates = (sweepDue || idle) ? null : await _autoDueCandidates(env, now);
+  if (quick && !idle && (!candidates || candidates.size === 0)) {
+    return { scanned: 0, ran: 0, failed: 0, queued: 0, processed: 0, deferred: 0, truncated: false, quick: true };
+  }
   if (idle) {
     /* Nothing has ever been scheduled here, established by a scan that walked
        the whole namespace, and no automation has been written since. There is
@@ -14202,6 +14212,32 @@ export default {
   */
   async scheduled(event, env, ctx) {
     _liveCtx = ctx;   // AMV-046: the tick logs too, and its events matter most
+    /* THE EVERY-MINUTE TICK: background work starts within a minute.
+
+       A second schedule, "* * * * *", that does ONE thing - runs jobs the
+       due-work index already names (runDueAutomations with `quick`). Every
+       other duty below (payments, renewals, digest, batches, the hourly full
+       sweep) stays on the five-minute schedule it was written for. On the
+       minutes both schedules fire, this one stands aside, so the two never
+       race for the same jobs; if they did, the per-run lease would still let
+       only one of them run each job. The kill switch stops it like the rest. */
+    if (event && event.cron === '* * * * *') {
+      const at = Number(event.scheduledTime) || Date.now();
+      if (new Date(at).getUTCMinutes() % 5 === 0) return;
+      ctx.waitUntil((async()=>{
+        let killed = false;
+        try{ killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1'; }catch(e){ killed = true; }
+        if(killed) return;
+        try{
+          const r = await runDueAutomations(env, 0, { quick: true });
+          if(r.ran || r.failed || r.deferred) console.log('[cron:minute] automations', JSON.stringify(r));
+        }catch(e){
+          console.error('[cron:minute] failed', e && e.message);
+          try{ await _workerError(env, 'cron.minute', e); }catch(_){}
+        }
+      })());
+      return;
+    }
     ctx.waitUntil((async()=>{
       /* THE KILL SWITCH HAS TO REACH THE CRON, OR IT DOES NOT STOP SPENDING.
 
