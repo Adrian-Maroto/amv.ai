@@ -19,6 +19,7 @@
    One list now, two presentations of it, and a check that what it documents is
    what actually fires. */
 import { readFileSync } from 'fs';
+import { appModule } from '../lib/source.mjs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
@@ -83,7 +84,7 @@ section('Nothing in the client listens for Ctrl without Cmd');
                                 .replace(/(^|[^:])\/\/[^\n]*/g, (m, p) => p);
   const bad = [];
   for (const f of files) {
-    stripComments(readFileSync(join(ROOT, 'src', 'app', f), 'utf8')).split('\n').forEach((l, i) => {
+    stripComments(appModule(f)).split('\n').forEach((l, i) => {
       if (!/\bctrlKey\b/.test(l)) return;
       if (/metaKey/.test(l)) return;
       if (/function _mod/.test(l)) return;

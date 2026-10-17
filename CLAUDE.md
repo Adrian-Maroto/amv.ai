@@ -54,6 +54,11 @@ Companion docs (do not duplicate them here - read them):
     concatenation - the build overwrites it from the modules every run, so any
     hand-edit to `app.js` is lost. It stays committed only so `check.mjs`,
     `preflight`, and grep keep working against the whole bundle.
+  - The largest modules are split along their own headings into siblings
+    that sort right after them (`10-mission-control.js`, `10a-`, `10b-`...),
+    so the bundle is byte for byte the same. A test that reads "a module" by
+    name uses `appModule('12-handoff.js')` from `tests/lib/source.mjs`, which
+    returns it with its split parts - never a bare readFileSync of one file.
   - It is still ONE runtime script (shared global scope) - the modules are
     organization only, concatenated with no wrappers. Order across module
     boundaries is preserved, so top-level order dependencies still hold.

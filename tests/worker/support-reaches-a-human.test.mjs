@@ -18,6 +18,7 @@
    stored under the reporter's email rather than a ticket id. And reaching a
    human is worth money, which makes it worth abusing. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { appModule } from '../lib/source.mjs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
@@ -197,7 +198,7 @@ section('The old dead end is gone from the product');
 {
   const client = readFileSync(join(ROOT, 'src', 'app', '01-core.js'), 'utf8');
   ok(/'\/v1\/support'/.test(client), 'the app has a method that posts a report', true);
-  const ui = readFileSync(join(ROOT, 'src', 'app', '12-handoff.js'), 'utf8');
+  const ui = appModule('12-handoff.js');
   ok(/AMV_API\.support\(/.test(ui), 'and the Send feedback button calls it', true);
   /* And still only claims what the answer says. */
   ok(/sent\.notified/.test(ui),

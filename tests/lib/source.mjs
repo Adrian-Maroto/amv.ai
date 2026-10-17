@@ -307,3 +307,23 @@ export function functionSource(src, name) {
   const body = functionBody(src, name);
   return body ? src.slice(m.index, src.indexOf('{', m.index + m[0].length)) + body : '';
 }
+
+/* ONE APP MODULE, WITH THE PARTS IT WAS SPLIT INTO.
+
+   The largest modules were split along their own section headings into
+   siblings that sort right after them - 12-handoff.js, then 12a-, 12b-... -
+   so the bundle is byte for byte what it was. A check that reads "the
+   handoff module" means all of that text, wherever a heading now puts it.
+   `appModule('12-handoff.js')` returns 12-handoff.js followed by every
+   12[a-z]-*.js, in build order. */
+import { readFileSync as _rfs, readdirSync as _rds } from 'fs';
+import { join as _join, dirname as _dirname } from 'path';
+import { fileURLToPath as _f2p } from 'url';
+const _APP = _join(_dirname(_f2p(import.meta.url)), '..', '..', 'src', 'app');
+export function appModule(file) {
+  const m = String(file).match(/^(\d+)-/);
+  if (!m) throw new Error('appModule: not an NN-name.js module: ' + file);
+  const siblings = _rds(_APP).filter(f => f === file || new RegExp('^' + m[1] + '[a-z]-.*\\.js$').test(f)).sort();
+  if (!siblings.includes(file)) throw new Error('appModule: no such module: ' + file);
+  return siblings.map(f => _rfs(_join(_APP, f), 'utf8')).join('');
+}

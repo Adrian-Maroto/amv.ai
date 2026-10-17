@@ -16,6 +16,7 @@
    conversation, not a setting - which is what makes it reset for free, and why
    it is stored there rather than in localStorage. */
 import { readFileSync } from 'fs';
+import { appModule } from '../lib/source.mjs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
@@ -69,7 +70,7 @@ section('Every surface that calls a model carries it');
   /* Source-level, because the failure was a system prompt built without it -
      something no amount of driving the page can see. Each of these is a `const
      sys=` handed to aiComplete on a different surface. */
-  const design = readFileSync(join(ROOT, 'src/app/11-design-code.js'), 'utf8');
+  const design = appModule('11-design-code.js');
   const engine = readFileSync(join(ROOT, 'src/app/14-engine.js'), 'utf8');
   const chat = readFileSync(join(ROOT, 'src/app/05-ui-blocks.js'), 'utf8');
 
@@ -92,7 +93,7 @@ section('The context meter is not counting something that never ships');
   /* It counted _profileContext() before that context was actually being sent
      from this surface. Now that it is, the number is true - so this asserts the
      pairing rather than the presence. */
-  const design = readFileSync(join(ROOT, 'src/app/11-design-code.js'), 'utf8');
+  const design = appModule('11-design-code.js');
   const counts = /_tok\(_profileContext\(\)\)/.test(design);
   const sends = /_userStyle\(\)/.test(design);
   ok(!counts || sends,

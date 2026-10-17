@@ -18,6 +18,7 @@
    ORDERING, because that is the whole bug: open must happen before the promise
    settles, not after. */
 import { readFileSync } from 'fs';
+import { appModule } from '../lib/source.mjs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
@@ -216,7 +217,7 @@ section('And nothing else opens a window after an await');
   for (const f of ['06-team-market.js', '08-admin-fraud.js', '22-finance.js',
                    '09-checkout-plans.js', '07-workspace-memory.js', '03-sessions.js',
                    '12-handoff.js', '11-design-code.js']) {
-    const lines = lateOpens(readFileSync(join(ROOT, 'src', 'app', f), 'utf8'));
+    const lines = lateOpens(appModule(f));
     lines.forEach(n => bad.push(`${f}:${n}`));
   }
   ok(bad.length === 0,

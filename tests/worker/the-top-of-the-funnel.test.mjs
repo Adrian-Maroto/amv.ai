@@ -22,7 +22,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ok, section, report, done } from '../lib/assert.mjs';
-import { functionBody } from '../lib/source.mjs';
+import { functionBody, appModule } from '../lib/source.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
@@ -152,7 +152,7 @@ section('The owner can see visitors and the rate that matters');
 
 section('The browser counts one arrival per visit, not per render');
 {
-  const client = readFileSync(join(ROOT, 'src', 'app', '12-handoff.js'), 'utf8');
+  const client = appModule('12-handoff.js');
   const fn = functionBody(client, '_countVisit');
   ok(/sessionStorage/.test(fn),
      'one per session, so a funnel means arrivals and not redraws', true);

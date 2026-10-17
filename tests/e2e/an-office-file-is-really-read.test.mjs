@@ -9,6 +9,7 @@
    checked at the two places that matter: what the person sees on the chip or
    in the error, and what the model is actually sent. */
 import { bootApp } from '../lib/harness.mjs';
+import { appModule } from '../lib/source.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 import { docx, xlsx, pptx, zip } from '../lib/office-fixtures.mjs';
 import { readFileSync } from 'fs';
@@ -189,7 +190,7 @@ section('Nothing on screen promises an Office file AMV cannot make');
      claim to download one is allowed exactly when the exporter that makes it
      exists. Pivots are still not built, so they may not be claimed. */
   const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-  const copy = ['src/app/13c-app-catalog.js', 'src/app/12-handoff.js'].map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
+  const copy = [readFileSync(join(ROOT, 'src/app/13c-app-catalog.js'), 'utf8'), appModule('12-handoff.js')].join('\n');
   const exporter = readFileSync(join(ROOT, 'src/office/office.js'), 'utf8');
   const makes = { docx: /function amvDocx\(/.test(exporter), xlsx: /function amvXlsx\(/.test(exporter), pptx: /function amvPptx\(/.test(exporter) };
   const claims = (copy.match(/(?:export|download)[^'"\n]{0,40}\.(pptx|docx|xlsx)|\.(pptx|docx|xlsx)[^'"\n]{0,40}(?:export|download)|downloads as a deck/gi) || [])

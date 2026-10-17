@@ -21,6 +21,7 @@
    address the build shipped. This file holds the line - nothing outside core
    reads the raw key again. */
 import { readFileSync } from 'fs';
+import { appModule } from '../lib/source.mjs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readdirSync } from 'fs';
@@ -77,7 +78,7 @@ section('The controls that went dead now ask the resolver');
      missing. Anchoring a check on where something happens to sit in a minified
      file is the defect this project keeps rediscovering; a function has a name,
      so use it. */
-  const read = (f) => readFileSync(join(SRC, f), 'utf8');
+  const read = (f) => /^\d+-[^/]*\.js$/.test(f) ? appModule(f) : readFileSync(join(SRC, f), 'utf8');
   const bodyOf = (text, needle) => {
     const i = text.indexOf(needle);
     return i < 0 ? '' : text.slice(i, i + 1600);
