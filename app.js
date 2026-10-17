@@ -23120,9 +23120,15 @@ function _mcServerSchedRow(x){
   const auto = x.approval === 'auto';
   /* A one-time job reads as one: when it runs, then that it ran - never as
      "Paused", which is what an inactive job looked like before. */
-  const when = x.done ? ('Ran once' + (x.doneAt ? ', ' + _dayLabel(x.doneAt) : '') + ' · finished')
+  /* A step of a task says which step it is, and a step that never ran says
+     so - "Ran once · finished" about a step that was cancelled would be the
+     row lying about the one thing somebody opened it to check. */
+  const stepOf = x.step ? T('Step {0} of {1}').replace('{0}', x.step.n).replace('{1}', x.step.of) + ' · ' : '';
+  const when = stepOf + (x.done && /^did not run/.test(String(x.lastError||'')) ? T('Did not run') + ' - ' + String(x.lastError).replace(/^did not run - /, '')
+    : x.waiting ? T('Waits for the step before it to finish')
+    : x.done ? ('Ran once' + (x.doneAt ? ', ' + _dayLabel(x.doneAt) : '') + ' · finished')
     : x.repeat === 'once' ? ('Runs once' + (x.next ? ', ' + _onceWhen(x.next) + ' (' + _mcWhen(x.next) + ')' : ''))
-    : paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : ''));
+    : paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : '')));
   return `<div class="mc-sched-row${paused?' paused':''}">
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(String(x.detail||'Background job').slice(0,180))}</div>
@@ -28216,6 +28222,22 @@ const AMV_TOOLS = [
       approval:{type:'string', enum:['suggest','require','auto'], description:'How far it may go alone. "require" (default) does the work and waits for them before anything goes out. "auto" delivers on its own - only for jobs that purely produce information. "suggest" does not run the job at all, it just tells them it is due, which costs nothing.'}
     }, required:['detail'] }
   },
+  /* A TASK IN STEPS, ON THE SERVER. Each step is a one-time Crew job that
+     waits for the step before it and is handed what that step produced, so a
+     task that takes several stages keeps going with the laptop shut. Created
+     all at once or not at all (_autoCreateSteps). */
+  {
+    name:'crew_steps',
+    description:'Start a task that runs in STEPS on AMV\'s servers, in the background, starting within a few minutes and carrying on with their computer off and AMV closed. Each step can wait for an earlier one and is handed what it produced: "research these three suppliers, then compare them, then draft the email to the best one". Use when they want something multi-stage done in the background or "while I am away", or the work is too long to wait for now. 2-5 steps; the first starts without waiting. Each step counts as one of their plan\'s background jobs until it finishes. Each step is unattended: it can search the web and write, and cannot send, buy, book or touch an account - the result of the last step waits for them. Not for work you can just do now in this answer, and not for something on a schedule (use crew_add).',
+    input_schema:{ type:'object', properties:{
+      steps:{ type:'array', minItems:2, maxItems:5, items:{ type:'object', properties:{
+        title:{type:'string', description:'A few words naming the step, shown to the person.'},
+        detail:{type:'string', description:'Exactly what this step does, as an instruction to whoever runs it. It sees this and the result of the step it waits for, nothing else - include everything else it needs.'},
+        after:{type:'integer', minimum:0, description:'Which earlier step (0 is the first) it waits for and builds on. Leave out for a step that starts straight away.'}
+      }, required:['title','detail'] } },
+      approval:{type:'string', enum:['require','auto'], description:'For the LAST step\'s result: "require" (default) waits for them before anything goes out; "auto" delivers it on its own.'}
+    }, required:['steps'] }
+  },
   {
     name:'crew_update',
     description:'Change what an existing background job does, or how often it runs. Call crew_list first to get the id.',
@@ -28304,7 +28326,7 @@ function _toolsFor(surface){
      your background jobs and not being able to change one of them from there
      is the gap this whole path exists to close. */
   if(surface==='crew') return [by('run_code'), by('build_app'), by('deploy_site'),
-                               by('crew_list'), by('crew_add'), by('crew_update'), by('crew_pause'),
+                               by('crew_list'), by('crew_add'), by('crew_steps'), by('crew_update'), by('crew_pause'),
                                by('crew_resume'), by('crew_remove'), by('crew_standing'), by('crew_ceiling'),
                                by('connect_account')].filter(Boolean);
   return AMV_TOOLS;   // chat gets everything
@@ -28452,7 +28474,7 @@ async function _delegateRun(input, onStatus){
 try{ window._delegateRun = _delegateRun; }catch(e){}
 
 const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true,
-                        crew_add:true, crew_update:true, crew_resume:true,
+                        crew_add:true, crew_steps:true, crew_update:true, crew_resume:true,
                         crew_remove:true, crew_standing:true, crew_ceiling:true,
                         /* A memory is appended to EVERY future request, so writing
                            one is writing a small permanent instruction - the same
@@ -28588,6 +28610,7 @@ async function _confirmModelTool(name, input){
     run_code:'run '+String(input.lang||'code')+' on your device',
     fix_code:'run and edit '+String(input.lang||'code')+' on your device',
     crew_add:'set up a job that runs on its own, on a schedule',
+    crew_steps:'start a task that runs in steps in the background, on AMV\u2019s servers',
     crew_update:'change one of your background jobs',
     crew_resume:'start one of your background jobs running again',
     crew_remove:'permanently delete one of your background jobs',
@@ -28631,6 +28654,16 @@ async function _confirmModelTool(name, input){
            + (String(input.approval||'require')==='auto'
                ? '\n\nResults go straight to you without review.'
                : '\n\nEach result waits for your approval before anything is sent.');
+  else if(name==='crew_steps'){
+    const st = Array.isArray(input.steps) ? input.steps.slice(0, 5) : [];
+    detail = st.map((s, i) => (i + 1) + '. ' + String((s && s.title) || '').slice(0, 80)
+               + (s && Number.isInteger(s.after) ? ' (after step ' + (s.after + 1) + ')' : '')
+               + '\n   ' + String((s && s.detail) || '').slice(0, 300)).join('\n')
+           + '\n\nIt starts within a few minutes and keeps going with AMV closed. Each step uses one of your background jobs until it finishes.'
+           + (String(input.approval || 'require') === 'auto'
+               ? ' The final result goes straight to you without review.'
+               : ' The final result waits for your approval before anything is sent.');
+  }
   else if(name==='crew_update')
     detail = [ input.detail ? 'New instruction:\n' + String(input.detail).slice(0,500) : '',
                input.repeat ? 'New frequency: ' + (_CREW_EVERY[String(input.repeat)]||input.repeat) : ''
@@ -28942,7 +28975,9 @@ function _crewWhen(x){
 try{ window._crewSchedOf=_crewSchedOf; window._crewWhen=_crewWhen; }catch(e){}
 function _crewLine(x){
   const every = _crewWhen(x);
-  return '- [' + x.id + '] ' + (x.done ? 'FINISHED - a one-time job that has already run' : x.active === false ? 'PAUSED' : 'running ' + every)
+  return '- [' + x.id + '] ' + (x.step ? 'step ' + x.step.n + ' of ' + x.step.of + ' of a task, ' : '')
+       + (x.done ? (/^did not run/.test(String(x.lastError||'')) ? 'DID NOT RUN - ' + x.lastError : 'FINISHED - a one-time job that has already run')
+          : x.waiting ? 'WAITING for an earlier step to finish' : x.active === false ? 'PAUSED' : 'running ' + every)
        + ({ auto:', results delivered automatically',
             suggest:', suggest only - it does not run until asked',
             require:', each result waits for approval' }[String(x.approval||'require')] || '')
@@ -28955,6 +28990,21 @@ function _crewSynced(){
   try{ if(typeof _autoRefresh === 'function') _autoRefresh(); }catch(e){}
   try{ if(S.tab === 'crew' && typeof renderCrewView === 'function') renderCrewView(); }catch(e){}
   try{ if(S.tab === 'tasks' && typeof renderTasksView === 'function') renderTasksView(); }catch(e){}
+}
+
+/* The steps as they were set up, in the conversation: what each does and
+   which it waits for. Their progress lives in Crew, which reads the server. */
+function _crewStepsCard(items){
+  if(!items || !items.length) return null;
+  const byId = new Map(items.map(x => [x.id, x]));
+  return '<div class="chat-run dlg dlg-steps"><div class="chat-run-h">' + escH(T('Task in {0} steps, running in the background').replace('{0}', items.length)) + '</div><ul class="dlg-list">'
+    + items.map(x => {
+        const prev = x.after && byId.get(x.after);
+        return '<li class="dlg-i"><span class="dlg-st" aria-hidden="true">' + escH(String((x.step && x.step.n) || '')) + '</span>'
+          + '<span class="dlg-t">' + escH((x.step && x.step.title) || String(x.detail || '').slice(0, 60))
+          + (prev ? ' <span class="dlg-after">' + escH(T('after {0}').replace('{0}', (prev.step && prev.step.title) || '')) + '</span>' : '') + '</span></li>';
+      }).join('')
+    + '</ul><div class="dlg-foot"><button class="btn bs" type="button" data-dact="setTab" data-darg="crew">' + escH(T('Open Crew')) + '</button></div></div>';
 }
 
 async function _crewTool(name, input){
@@ -29021,6 +29071,26 @@ async function _crewTool(name, input){
            require:' Each result waits for their approval.' }[String(made.approval||'require')] || '')
       + (shaped ? ' IMPORTANT - tell the user this part: ' + (d.shapedWhy || 'their plan runs it ' + (_CREW_EVERY[gotRepeat]||'less often') + ' rather than what was asked for.') : ''),
       render:null };
+  }
+
+  if(name === 'crew_steps'){
+    const raw = Array.isArray(input.steps) ? input.steps : [];
+    const steps = raw.map(s => ({ title: String((s && s.title) || '').trim().slice(0, 80), detail: String((s && s.detail) || '').trim(),
+                                  ...(s && Number.isInteger(s.after) ? { after: s.after } : {}) }));
+    if(steps.length < 2 || steps.length > 5 || steps.some(s => !s.detail))
+      return { text:'A task in steps needs two to five steps, each saying what it does. For one step, use crew_add or just do it now.', render:null };
+    const approval = input.approval === 'auto' ? 'auto' : 'require';
+    let d;
+    try{ d = await _autoApi('/auto/create', { steps, approval, notify:'app' }); }
+    catch(e){ return { text: _crewErr(e), render:null }; }
+    _crewSynced();
+    const made = d.items || [];
+    return { text:'Started. ' + made.length + ' steps are in their Crew tab, running on AMV\u2019s servers: the first starts within about '
+      + (d.startsWithinMin || 5) + ' minutes, and each later step starts when the step it waits for has finished, building on its result. '
+      + 'It keeps going with their computer off and AMV closed. '
+      + (approval === 'auto' ? 'The final result is delivered without review. ' : 'The final result waits for their approval. ')
+      + 'If a step fails, the steps after it do not run, and Crew says which one stopped it. Do NOT say it has finished or describe results - nothing has run yet.',
+      render: _crewStepsCard(made) };
   }
 
   if(name === 'crew_ceiling'){
@@ -31074,121 +31144,22 @@ function _renderWidgetPane(pane){
     }catch(e){}
     if(!cfg){ body.innerHTML='<div class="wb">Couldn\u2019t load the widget config. Make sure your backend is deployed with the latest code, then reload.</div>'; return; }
     _WIDGET_CFG=cfg;
-    _paintWidgetForm(body, cfg, base);
+    if(!(await _widgetFormLoad())){ body.innerHTML='<div class="wb">'+escH(T('The widget settings could not be loaded. Check your connection and try again.'))+'</div>'; return; }
+    window._paintWidgetForm(body, cfg, base);
   })();
 }
-function _widgetSnippet(cfg, base){
-  const host=(base||'').replace(/\/+$/,'');
-  // Prefer an explicit app origin if the operator serves the app separately;
-  // default to same-origin as the Worker (works for combined deploys).
-  const appOrigin=location.origin;
-  return '<script src="'+host+'/widget.js?k='+cfg.key+'&host='+encodeURIComponent(appOrigin)+'" async><\/script>';
-}
-function _paintWidgetForm(body, cfg, base){
-  const snippet=_widgetSnippet(cfg, base);
-  const modelOpts=[['amv-pulse','Fast (cheapest)'],['amv-core','Balanced (recommended)'],['amv-swift','Fastest top engine'],['amv-forge','Advanced'],['amv-apex','Most capable']]
-    .map(m=>'<option value="'+m[0]+'"'+(cfg.model===m[0]?' selected':'')+'>'+m[1]+'</option>').join('');
-  body.innerHTML=
-    '<div class="ss2"><h3>Your embed code</h3>'+
-      '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:10px;line-height:1.6">Paste this once, just before <code>&lt;/body&gt;</code> on any page. The chat bubble appears in the corner. Changes you save here apply everywhere instantly - no need to re-paste.</p>'+
-      '<div style="position:relative"><pre id="wg-snippet" style="background:var(--surface);border:1px solid var(--hair);border-radius:var(--r-sm);padding:12px 12px;font-size:var(--t-sm);overflow:auto;margin:0;white-space:pre-wrap;word-break:break-all"><code>'+escH(snippet)+'</code></pre></div>'+
-      '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">'+
-        '<button class="btn bp" id="wg-copy" style="font-size:var(--t-sm)">Copy code</button>'+
-        '<button class="btn" id="wg-preview" style="font-size:var(--t-sm)">Preview widget</button>'+
-        '<span style="font-size:var(--t-xs);color:var(--mu);align-self:center">Site key: <code>'+escH(cfg.key)+'</code></span>'+
-      '</div>'+
-    '</div>'+
-    '<div class="ss2"><h3>Appearance</h3>'+
-      '<div class="sf">'+
-        '<div><label class="lbl">Header title</label><input type="text" id="wg-title" value="'+escH(cfg.title||'')+'" maxlength="60" placeholder="Chat with us"></div>'+
-        '<div><label class="lbl">Greeting message</label><input type="text" id="wg-greeting" value="'+escH(cfg.greeting||'')+'" maxlength="300" placeholder="Hi! How can I help you today?"></div>'+
-        '<div><label class="lbl">Accent color</label><input type="color" id="wg-accent" value="'+escH(cfg.accent||'#4f7cff')+'" style="width:60px;height:36px;padding:2px;cursor:pointer"></div>'+
-      '</div>'+
-    '</div>'+
-    '<div class="ss2"><h3>Behavior</h3>'+
-      '<div class="sf">'+
-        '<div><label class="lbl">AI model</label><select id="wg-model" class="inp">'+modelOpts+'</select></div>'+
-        '<div><label class="lbl">Instructions (system prompt) - tells the AI how to behave and what it knows</label><textarea id="wg-sys" rows="4" style="font-family:inherit;font-size:var(--t-base)" placeholder="You are a helpful assistant for [your company]\u2026">'+escH(cfg.systemPrompt||'')+'</textarea></div>'+
-      '</div>'+
-    '</div>'+
-    '<div class="ss2"><h3>Allowed domains <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(recommended)</span></h3>'+
-      '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:10px;line-height:1.6">Lock the widget to your own sites so nobody can embed it elsewhere and use your quota. One domain per line (e.g. <code>example.com</code>). Leave empty to allow any site '+(!(cfg.origins&&cfg.origins.length)?'- <b style="color:var(--red-txt)">currently unrestricted</b>':'')+'.</p>'+
-      '<textarea id="wg-origins" rows="3" style="font-family:var(--mn);font-size:var(--t-sm)" placeholder="example.com&#10;www.example.com">'+escH((cfg.origins||[]).join('\n'))+'</textarea>'+
-    '</div>'+
-    /* ZERO MEANS UNLIMITED, AND THE LABELS SAID "MAX".
-       The server reads 0 on either of these as "no ceiling" - `dailyMsgCap > 0`
-       and `dailySpendCapUSD > 0` are what gate the counters. The fields said
-       "Max messages per day" with a minimum of 0 and nothing else, so the
-       obvious reading of typing 0 is "none", and what it actually does is
-       remove the only per-widget limit on the owner's bill. Said plainly here,
-       and warned about live, because a money control that means the opposite of
-       how it reads is not a control. */
-    '<div class="ss2"><h3>Safety limits <span style="font-weight:400;color:var(--mu);font-size:var(--t-xs)">(protect your costs)</span></h3>'+
-      '<div class="sf">'+
-        '<div><label class="lbl">Max messages per day <span class="wg-hint">0 = no limit</span></label><input type="number" id="wg-msgcap" value="'+(cfg.dailyMsgCap||0)+'" min="0" max="100000"></div>'+
-        '<div><label class="lbl">Max spend per day (USD) <span class="wg-hint">0 = no limit</span></label><input type="number" id="wg-spendcap" value="'+(cfg.dailySpendCapUSD||0)+'" min="0" max="1000" step="0.5"></div>'+
-        '<div><label class="lbl">Max reply length (tokens)</label><input type="number" id="wg-maxout" value="'+(cfg.maxOut||1024)+'" min="128" max="4000" step="128"></div>'+
-      '</div>'+
-      '<div class="wg-capwarn" id="wg-capwarn" role="status" aria-live="polite"></div>'+
-    '</div>'+
-    '<div class="ss2"><div style="display:flex;align-items:center;justify-content:space-between">'+
-        '<div><div style="font-size:var(--t-base);font-weight:600">Widget enabled</div><div style="font-size:var(--t-xs);color:var(--mu)">Turn the widget on or off across all your sites instantly.</div></div>'+
-        '<label class="sw"><input type="checkbox" id="wg-enabled" '+(cfg.enabled?'checked':'')+'><span class="sw-sl"></span></label>'+
-      '</div></div>'+
-    '<div style="display:flex;gap:8px"><button class="btn bp" id="wg-save" style="font-size:var(--t-base)">Save changes</button><span id="wg-saved" style="font-size:var(--t-sm);color:var(--green);align-self:center"></span></div>';
-
-  /* What the current settings actually expose, recomputed as they are typed
-     rather than discovered on a bill. An uncapped widget on an unrestricted
-     origin list is the combination that costs real money: anybody who reads the
-     site key out of the page can embed it on their own site and spend against
-     the owner's account until the platform-wide ceiling stops it. */
-  const capWarn=()=>{
-    const el=$('wg-capwarn'); if(!el) return;
-    const msgs=parseInt(($('wg-msgcap')||{}).value||'0',10);
-    const spend=parseFloat(($('wg-spendcap')||{}).value||'0');
-    const origins=(($('wg-origins')||{}).value||'').split('\n').map(s=>s.trim()).filter(Boolean);
-    const open=[];
-    if(!(msgs>0)) open.push('no daily message limit');
-    if(!(spend>0)) open.push('no daily spend limit');
-    if(!open.length){ el.className='wg-capwarn'; el.textContent=''; return; }
-    el.className='wg-capwarn on';
-    el.textContent='This widget has '+open.join(' and ')+'. '+
-      (origins.length
-        ? 'It is locked to your own domains, so only your sites can spend against it - but a busy day still has no ceiling.'
-        : 'It is also not locked to any domain, so anybody who reads the site key out of your page can embed it on their own site and spend against your account.')+
-      ' Only the platform-wide daily cap would stop it.';
-  };
-  ['wg-msgcap','wg-spendcap','wg-origins'].forEach(id=>on($(id),'input',capWarn));
-  capWarn();
-
-  on($('wg-copy'),'click',()=>{
-    const s=_widgetSnippet(_WIDGET_CFG, base);
-    try{ navigator.clipboard.writeText(s); toast('Embed code copied','success'); }
-    catch(e){ const ta=document.createElement('textarea'); ta.value=s; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy'); toast('Embed code copied','success');}catch(_){ toast('Copy failed - select the code manually','error'); } ta.remove(); }
+/* The form lives in widget-form.js, fetched when this pane is first opened. */
+let _widgetFormP = null;
+function _widgetFormLoad(){
+  if(typeof window._paintWidgetForm === 'function') return Promise.resolve(true);
+  if(!_widgetFormP) _widgetFormP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'widget-form.js';
+    sc.onload = () => res(typeof window._paintWidgetForm === 'function');
+    sc.onerror = () => { _widgetFormP = null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
   });
-  on($('wg-preview'),'click',()=>{
-    const appOrigin=location.origin;
-    window.open(appOrigin+'/#embed=1&k='+encodeURIComponent(_WIDGET_CFG.key),'amv_widget_preview','width=420,height=640');
-  });
-  on($('wg-save'),'click',async()=>{
-    const origins=($('wg-origins').value||'').split('\n').map(s=>s.trim()).filter(Boolean);
-    const payload={
-      title:$('wg-title').value, greeting:$('wg-greeting').value, accent:$('wg-accent').value,
-      model:$('wg-model').value, systemPrompt:$('wg-sys').value, origins,
-      dailyMsgCap:parseInt($('wg-msgcap').value||'0',10),
-      dailySpendCapUSD:parseFloat($('wg-spendcap').value||'0'),
-      maxOut:parseInt($('wg-maxout').value||'1024',10),
-      enabled:$('wg-enabled').checked
-    };
-    const btn=$('wg-save'); btn.disabled=true; btn.textContent='Saving\u2026';
-    try{
-      const r=await AMV_API._fetch('/v1/widget/save',{method:'POST',body:JSON.stringify(payload)});
-      const d=await r.json();
-      if(d&&d.config){ _WIDGET_CFG=d.config; const s=$('wg-saved'); if(s){ s.textContent='Saved \u2713'; setTimeout(()=>{s.textContent='';},2500); } toast('Widget updated','success'); }
-      else toast(d&&d.error?d.error:'Save failed','error');
-    }catch(e){ toast('Save failed - check your connection','error'); }
-    btn.disabled=false; btn.textContent='Save changes';
-  });
+  return _widgetFormP;
 }
 
 /* Ask the server what is configured. Needs the admin token, because the shape

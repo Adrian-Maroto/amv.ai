@@ -115,6 +115,55 @@ function _autoNextAfter(item, now, how){
   return due + Math.ceil((now - due + 1) / iv) * iv;
 }
 
+/* A TASK IN STEPS: ONE-TIME JOBS THAT WAIT ON EACH OTHER.
+
+   "Research these three suppliers, then compare them, then draft the email" is
+   three runs where the second needs what the first found. Each step is an
+   ordinary one-time job - the same runner, budget, lease, ceiling and history
+   as every other job - created together (`_autoCreateSteps`) and joined by
+   `after`, the id of the step it waits for. A waiting step is never due: it
+   sits `waiting` with a far `next` until its step finishes.
+
+   When a step finishes, this decides what happens to the ones waiting on it,
+   and it is the only place that does:
+     - it produced a result: each waiting step is released - due now, carrying
+       that result as `prior`, which its run reads as material to build on;
+     - it did not (it failed for good, was set to suggest only, waited past its
+       window, or was deleted): each waiting step is cancelled and says why,
+       and so is everything waiting on THOSE. Nothing is left waiting for a
+       result that is never coming, and nothing runs without what it needed. */
+const AUTO_STEP_WAIT_MS = 3 * 86400e3;
+const AUTO_STEP_PRIOR_MAX = 6000;
+const AUTO_STEPS_MAX = 5;
+function _autoStepTitle(item){
+  return String((item && item.step && item.step.title) || (item && item.detail) || 'the step before').slice(0, 80);
+}
+function _autoSettleSteps(rec, item, ok, out, now, why){
+  if(!rec || !item || !item.id) return 0;
+  let n = 0;
+  const items = rec.items || [];
+  const title = _autoStepTitle(item);
+  for(const d of items){
+    if(!d || d.after !== item.id || !d.waiting) continue;
+    n++;
+    if(ok){
+      d.waiting = false; d.next = now; d.onceAt = now;
+      d.prior = { title, out: String(out || '').slice(0, AUTO_STEP_PRIOR_MAX), at: now };
+      continue;
+    }
+    d.waiting = false; d.active = false; d.done = true; d.doneAt = now; d.next = 0;
+    d.lastError = 'did not run - the step it waits for ("' + title + '") did not finish' + (why ? ': ' + why : '');
+    if(Array.isArray(rec.results)){
+      rec.results.push({ id: _resultId(now), autoId: d.id, detail: d.detail, at: now, read: false,
+        kind: 'failed', approval: d.approval, outcome: 'failed', costUSD: 0,
+        out: 'This step did not run, so nothing was spent on it. It was waiting for "' + title
+           + '", which did not finish' + (why ? ' (' + why + ')' : '') + '. Set the task up again to try once more.' });
+    }
+    n += _autoSettleSteps(rec, d, false, '', now, 'an earlier step did not finish');
+  }
+  return n;
+}
+
 /* Long enough for a real standing instruction, short enough that it cannot
    become a second prompt smuggled into every unattended run. */
 const AUTO_STANDING_MAX = 1200;
@@ -317,8 +366,16 @@ async function autoUpdate(request, env){
   const i = items.findIndex(x=>x.id===id);
   if(i < 0) return json({ error:'not found' }, 404);
 
-  if(body.action === 'delete') items.splice(i,1);
+  if(body.action === 'delete'){
+    const gone = items.splice(i,1)[0];
+    /* Whatever was waiting on it can never be released now. Cancelled here,
+       in the same write, rather than left to wait out its window. */
+    _autoSettleSteps({ items }, gone, false, '', Date.now(), 'it was deleted');
+  }
   else if(body.action === 'pause')  items[i].active = false;
+  /* A step still waiting goes back to waiting, not onto a clock of its own -
+     it runs when the step before it finishes, and not before. */
+  else if(body.action === 'resume' && items[i].waiting) items[i].active = true;
   else if(body.action === 'resume' && items[i].done)
     return json({ error:'That one-time job has already run. Set up a new one for another time.', code:'once_done' }, 409);
   else if(body.action === 'resume'){ items[i].active = true;
@@ -341,6 +398,8 @@ async function autoUpdate(request, env){
      recreating would lose the run history and the claim keys that stop a job
      double-firing, so it is edited in place. */
   else if(body.action === 'edit'){
+    if(items[i].group && (body.repeat || body.sched))
+      return json({ error:'A step of a task runs once, when the step before it finishes. Change what it does, or delete it.', code:'step_once' }, 409);
     if(typeof body.detail === 'string'){
       const detail = body.detail.trim();
       if(!detail) return json({ error:'detail required' }, 400);

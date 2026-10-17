@@ -111,6 +111,22 @@ const AMV_TOOLS = [
       approval:{type:'string', enum:['suggest','require','auto'], description:'How far it may go alone. "require" (default) does the work and waits for them before anything goes out. "auto" delivers on its own - only for jobs that purely produce information. "suggest" does not run the job at all, it just tells them it is due, which costs nothing.'}
     }, required:['detail'] }
   },
+  /* A TASK IN STEPS, ON THE SERVER. Each step is a one-time Crew job that
+     waits for the step before it and is handed what that step produced, so a
+     task that takes several stages keeps going with the laptop shut. Created
+     all at once or not at all (_autoCreateSteps). */
+  {
+    name:'crew_steps',
+    description:'Start a task that runs in STEPS on AMV\'s servers, in the background, starting within a few minutes and carrying on with their computer off and AMV closed. Each step can wait for an earlier one and is handed what it produced: "research these three suppliers, then compare them, then draft the email to the best one". Use when they want something multi-stage done in the background or "while I am away", or the work is too long to wait for now. 2-5 steps; the first starts without waiting. Each step counts as one of their plan\'s background jobs until it finishes. Each step is unattended: it can search the web and write, and cannot send, buy, book or touch an account - the result of the last step waits for them. Not for work you can just do now in this answer, and not for something on a schedule (use crew_add).',
+    input_schema:{ type:'object', properties:{
+      steps:{ type:'array', minItems:2, maxItems:5, items:{ type:'object', properties:{
+        title:{type:'string', description:'A few words naming the step, shown to the person.'},
+        detail:{type:'string', description:'Exactly what this step does, as an instruction to whoever runs it. It sees this and the result of the step it waits for, nothing else - include everything else it needs.'},
+        after:{type:'integer', minimum:0, description:'Which earlier step (0 is the first) it waits for and builds on. Leave out for a step that starts straight away.'}
+      }, required:['title','detail'] } },
+      approval:{type:'string', enum:['require','auto'], description:'For the LAST step\'s result: "require" (default) waits for them before anything goes out; "auto" delivers it on its own.'}
+    }, required:['steps'] }
+  },
   {
     name:'crew_update',
     description:'Change what an existing background job does, or how often it runs. Call crew_list first to get the id.',
@@ -199,7 +215,7 @@ function _toolsFor(surface){
      your background jobs and not being able to change one of them from there
      is the gap this whole path exists to close. */
   if(surface==='crew') return [by('run_code'), by('build_app'), by('deploy_site'),
-                               by('crew_list'), by('crew_add'), by('crew_update'), by('crew_pause'),
+                               by('crew_list'), by('crew_add'), by('crew_steps'), by('crew_update'), by('crew_pause'),
                                by('crew_resume'), by('crew_remove'), by('crew_standing'), by('crew_ceiling'),
                                by('connect_account')].filter(Boolean);
   return AMV_TOOLS;   // chat gets everything
@@ -347,7 +363,7 @@ async function _delegateRun(input, onStatus){
 try{ window._delegateRun = _delegateRun; }catch(e){}
 
 const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true,
-                        crew_add:true, crew_update:true, crew_resume:true,
+                        crew_add:true, crew_steps:true, crew_update:true, crew_resume:true,
                         crew_remove:true, crew_standing:true, crew_ceiling:true,
                         /* A memory is appended to EVERY future request, so writing
                            one is writing a small permanent instruction - the same
@@ -483,6 +499,7 @@ async function _confirmModelTool(name, input){
     run_code:'run '+String(input.lang||'code')+' on your device',
     fix_code:'run and edit '+String(input.lang||'code')+' on your device',
     crew_add:'set up a job that runs on its own, on a schedule',
+    crew_steps:'start a task that runs in steps in the background, on AMV\u2019s servers',
     crew_update:'change one of your background jobs',
     crew_resume:'start one of your background jobs running again',
     crew_remove:'permanently delete one of your background jobs',
@@ -526,6 +543,16 @@ async function _confirmModelTool(name, input){
            + (String(input.approval||'require')==='auto'
                ? '\n\nResults go straight to you without review.'
                : '\n\nEach result waits for your approval before anything is sent.');
+  else if(name==='crew_steps'){
+    const st = Array.isArray(input.steps) ? input.steps.slice(0, 5) : [];
+    detail = st.map((s, i) => (i + 1) + '. ' + String((s && s.title) || '').slice(0, 80)
+               + (s && Number.isInteger(s.after) ? ' (after step ' + (s.after + 1) + ')' : '')
+               + '\n   ' + String((s && s.detail) || '').slice(0, 300)).join('\n')
+           + '\n\nIt starts within a few minutes and keeps going with AMV closed. Each step uses one of your background jobs until it finishes.'
+           + (String(input.approval || 'require') === 'auto'
+               ? ' The final result goes straight to you without review.'
+               : ' The final result waits for your approval before anything is sent.');
+  }
   else if(name==='crew_update')
     detail = [ input.detail ? 'New instruction:\n' + String(input.detail).slice(0,500) : '',
                input.repeat ? 'New frequency: ' + (_CREW_EVERY[String(input.repeat)]||input.repeat) : ''

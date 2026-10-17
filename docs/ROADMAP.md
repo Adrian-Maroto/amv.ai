@@ -402,3 +402,32 @@ answers them. What can be built without those answers is already built.
 Autonomous money movement, trading, tax filing, legal submission, medical
 decisions, unrestricted browser control. R4 exists in the taxonomy so the engine
 can refuse it. See `AUTONOMY.md`.
+
+## Agent runtime, step one — a task in steps that keeps going without you (done)
+
+Built on the Crew runner rather than beside it, so every step inherits the
+budget reservation, the per-run lease, the account and daily ceilings, quiet
+hours, retries and the history that runner already has. `crew_steps` in chat
+creates two to five one-time jobs in ONE locked write (all or nothing against
+the plan's job limit); a step can wait for one earlier step (`after`), is
+released with that step's result when it finishes, and reads it fenced as
+material, never as instructions. A step whose step fails for good, is deleted,
+is set to suggest only, or waits three days is cancelled with the reason, and
+so is everything after it - nothing runs without its input and nothing waits
+for ever. Only the last step is delivered the way the person chose; the steps
+in between stay in Crew. `a-task-in-steps-keeps-going-without-you` (36
+assertions, eight mutations each caught) and a section of
+`say-it-in-chat-and-it-happens`.
+
+*Not yet, and why:*
+- **Starting in seconds.** A step starts at the next run of the server's
+  five-minute schedule. Running it inside the request was tried on paper and
+  refused: a request may keep working only ~30 seconds after it answers, a
+  research step can take longer, and a run cut off mid-way holds its lease for
+  three days - a step that silently never runs. Faster means a more frequent
+  schedule or a Durable Object alarm: infrastructure and cost, so the owner's.
+- **Steps that use tools.** A step searches the web and writes, as every
+  unattended run does. Acting on accounts unattended is the Milestone 6
+  decision and is unchanged.
+- **A step waiting for several.** One parent each keeps cycles impossible by
+  construction; joining several results is the next step if it is asked for.

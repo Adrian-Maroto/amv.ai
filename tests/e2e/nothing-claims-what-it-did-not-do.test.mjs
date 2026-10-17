@@ -164,8 +164,9 @@ section('A Slack post that Slack refuses is not "posted"');
 
 section('The widget says that 0 means no limit');
 {
-  const r = await page.evaluate(() => {
-    const src = String(_paintWidgetForm);
+  const r = await page.evaluate(async () => {
+    await _widgetFormLoad();
+    const src = String(window._paintWidgetForm);
     return { hint: /0 = no limit/.test(src), warn: /wg-capwarn/.test(src) };
   });
   ok(r.hint, 'the label says it, next to the field', r.hint);

@@ -728,6 +728,7 @@ async function autoCreate(request, env){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
   const body = await request.json().catch(()=>({}));
+  if(Array.isArray(body.steps)) return _autoCreateSteps(request, env, user, body);
   const detail = String(body.detail||'').trim();
   const repeat = String(body.repeat||'daily').toLowerCase();
   const kind = (body.kind === 'research' || body.kind === 'invest') ? body.kind : 'task';
@@ -966,6 +967,88 @@ async function autoCreate(request, env){
                 deliveryDowngraded: notify === 'email' && !emailReady,
                 free: budget.free, shaped,
                 shapedWhy: shaped ? 'Free accounts run one automation a week, without live web search. Upgrade for daily or ten-minute runs and live research.' : '' });
+}
+
+/* A TASK IN STEPS, created all at once or not at all.
+
+   Every step is an ordinary one-time job (see _autoSettleSteps for how they
+   wait on each other). Written in ONE locked append, with the plan's job limit
+   checked inside the lock against all of them together: creating them one by
+   one from the page would leave the first steps of a task running when the
+   third was refused, which is half a task, paid for, that nobody asked for.
+
+   A step waits for at most one earlier step of the same task (`after` is its
+   index), so the steps form a tree and a cycle cannot be written. Steps with
+   nothing to wait for start at the next run of the server's schedule - within
+   a few minutes, not instantly, and the reply says so. Only the steps nothing
+   waits on are delivered the way the person chose; the ones in between are
+   working material, kept in the Crew history and never sent anywhere. */
+async function _autoCreateSteps(request, env, user, body){
+  const raw = body.steps.slice(0, AUTO_STEPS_MAX + 1);
+  if(raw.length < 2) return json({ error:'A task in steps needs at least two steps.', code:'steps_too_few' }, 400);
+  if(raw.length > AUTO_STEPS_MAX) return json({ error:'A task can have at most ' + AUTO_STEPS_MAX + ' steps.', code:'steps_too_many' }, 400);
+  const steps = [];
+  for(let n = 0; n < raw.length; n++){
+    const s = raw[n] || {};
+    const detail = String(s.detail || '').trim();
+    const title = String(s.title || '').trim().slice(0, 80) || detail.slice(0, 60);
+    if(!detail) return json({ error:'Step ' + (n + 1) + ' does not say what to do.', code:'step_empty' }, 400);
+    if(detail.length > CREW_DETAIL_MAX) return _crewDetailTooLong();
+    const sec = _detailSecrets(detail + '\n' + title);
+    if(sec.length) return json({ error:'credentials_in_detail', kinds: sec,
+      message:'AMV does not store passwords, card numbers or security codes. Nothing was saved. Connect the account instead, or describe the task without the credential.' }, 400);
+    let after = -1;
+    if(s.after != null && s.after !== ''){
+      after = Number(s.after);
+      if(!Number.isInteger(after) || after < 0 || after >= n)
+        return json({ error:'Step ' + (n + 1) + ' can only wait for a step that comes before it.', code:'step_after' }, 400);
+    }
+    steps.push({ detail, title, after, kind: s.kind === 'research' ? 'research' : 'task' });
+  }
+  if(steps.every(s => s.after >= 0)) return json({ error:'At least one step has to start without waiting.', code:'step_after' }, 400);
+
+  const budget = await _budgetFor(env, user);
+  if(_planRankOf(budget.plan, user.customCfg) < _planRankOf(AUTO_MIN_PLAN)){
+    return json({ error: 'Running work in the background is part of Pro. Upgrade and AMV starts doing this on its own.',
+                  code: 'plan_required', requires: AUTO_MIN_PLAN, jobs: AUTO_MAX_BY_PLAN[AUTO_MIN_PLAN] }, 402);
+  }
+  const approval = _autoApprovalOf(body.approval, 'require');
+  const notify = (body.notify === 'email' && await _emailReachesNow(env)) ? 'email' : 'app';
+  const country = _jobCountry(body.country, request);
+  const now = Date.now();
+  const group = 'g' + now.toString(36) + Math.random().toString(36).slice(2, 7);
+  const ids = steps.map((_, n) => 'a' + now.toString(36) + Math.random().toString(36).slice(2, 7) + n);
+  const waitedOn = new Set(steps.map(s => s.after).filter(a => a >= 0));
+  const items = steps.map((s, n) => {
+    const waits = s.after >= 0;
+    const at = waits ? now + AUTO_STEP_WAIT_MS : now;
+    const last = !waitedOn.has(n);
+    return {
+      id: ids[n], detail: s.detail, repeat: 'once', interval: AUTO_INTERVALS.daily, next: at, onceAt: at,
+      kind: s.kind,
+      /* In between: working material, never sent. Last: as the person chose. */
+      notify: last ? notify : 'app', approval: last ? approval : 'auto', scope: null,
+      uses: _autoUsesFromText(s.detail).slice(0, 4), boosts: [], country, tier: 'paid',
+      created: now, runs: 0, lastError: null, active: true,
+      group, step: { n: n + 1, of: steps.length, title: s.title },
+      ...(waits ? { after: ids[s.after], waiting: true } : {}),
+    };
+  });
+  const key = _autoKey(user.email);
+  let over = false;
+  await _withAuto(env, key, (fresh) => {
+    if(!fresh) return;
+    if(_autoLiveCount(fresh.items) + items.length > budget.max){ over = true; return; }
+    fresh.items = (fresh.items || []).concat(items);
+  }, { items:[], results:[] });
+  if(over){
+    return json({ error:'This task has ' + items.length + ' steps and each one runs as a background job. Your plan runs '
+                  + budget.max + ' at once, so there is not room for all of them. Nothing was set up. Remove a job, use fewer steps, or upgrade for more.',
+                  code:'job_limit', have: budget.max, need: items.length }, 429);
+  }
+  audit(env, 'auto_steps_created', { email: user.email, group, steps: items.length });
+  return json({ ok:true, group, items, approval, notify,
+                startsWithinMin: 5 });
 }
 
 /* ---- delete / pause an automation ---- */

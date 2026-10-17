@@ -889,9 +889,15 @@ function _mcServerSchedRow(x){
   const auto = x.approval === 'auto';
   /* A one-time job reads as one: when it runs, then that it ran - never as
      "Paused", which is what an inactive job looked like before. */
-  const when = x.done ? ('Ran once' + (x.doneAt ? ', ' + _dayLabel(x.doneAt) : '') + ' · finished')
+  /* A step of a task says which step it is, and a step that never ran says
+     so - "Ran once · finished" about a step that was cancelled would be the
+     row lying about the one thing somebody opened it to check. */
+  const stepOf = x.step ? T('Step {0} of {1}').replace('{0}', x.step.n).replace('{1}', x.step.of) + ' · ' : '';
+  const when = stepOf + (x.done && /^did not run/.test(String(x.lastError||'')) ? T('Did not run') + ' - ' + String(x.lastError).replace(/^did not run - /, '')
+    : x.waiting ? T('Waits for the step before it to finish')
+    : x.done ? ('Ran once' + (x.doneAt ? ', ' + _dayLabel(x.doneAt) : '') + ' · finished')
     : x.repeat === 'once' ? ('Runs once' + (x.next ? ', ' + _onceWhen(x.next) + ' (' + _mcWhen(x.next) + ')' : ''))
-    : paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : ''));
+    : paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : '')));
   return `<div class="mc-sched-row${paused?' paused':''}">
     <div class="mc-sched-b">
       <div class="mc-sched-goal">${escH(String(x.detail||'Background job').slice(0,180))}</div>

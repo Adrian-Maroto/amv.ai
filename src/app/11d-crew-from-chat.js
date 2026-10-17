@@ -101,7 +101,9 @@ function _crewWhen(x){
 try{ window._crewSchedOf=_crewSchedOf; window._crewWhen=_crewWhen; }catch(e){}
 function _crewLine(x){
   const every = _crewWhen(x);
-  return '- [' + x.id + '] ' + (x.done ? 'FINISHED - a one-time job that has already run' : x.active === false ? 'PAUSED' : 'running ' + every)
+  return '- [' + x.id + '] ' + (x.step ? 'step ' + x.step.n + ' of ' + x.step.of + ' of a task, ' : '')
+       + (x.done ? (/^did not run/.test(String(x.lastError||'')) ? 'DID NOT RUN - ' + x.lastError : 'FINISHED - a one-time job that has already run')
+          : x.waiting ? 'WAITING for an earlier step to finish' : x.active === false ? 'PAUSED' : 'running ' + every)
        + ({ auto:', results delivered automatically',
             suggest:', suggest only - it does not run until asked',
             require:', each result waits for approval' }[String(x.approval||'require')] || '')
@@ -114,6 +116,21 @@ function _crewSynced(){
   try{ if(typeof _autoRefresh === 'function') _autoRefresh(); }catch(e){}
   try{ if(S.tab === 'crew' && typeof renderCrewView === 'function') renderCrewView(); }catch(e){}
   try{ if(S.tab === 'tasks' && typeof renderTasksView === 'function') renderTasksView(); }catch(e){}
+}
+
+/* The steps as they were set up, in the conversation: what each does and
+   which it waits for. Their progress lives in Crew, which reads the server. */
+function _crewStepsCard(items){
+  if(!items || !items.length) return null;
+  const byId = new Map(items.map(x => [x.id, x]));
+  return '<div class="chat-run dlg dlg-steps"><div class="chat-run-h">' + escH(T('Task in {0} steps, running in the background').replace('{0}', items.length)) + '</div><ul class="dlg-list">'
+    + items.map(x => {
+        const prev = x.after && byId.get(x.after);
+        return '<li class="dlg-i"><span class="dlg-st" aria-hidden="true">' + escH(String((x.step && x.step.n) || '')) + '</span>'
+          + '<span class="dlg-t">' + escH((x.step && x.step.title) || String(x.detail || '').slice(0, 60))
+          + (prev ? ' <span class="dlg-after">' + escH(T('after {0}').replace('{0}', (prev.step && prev.step.title) || '')) + '</span>' : '') + '</span></li>';
+      }).join('')
+    + '</ul><div class="dlg-foot"><button class="btn bs" type="button" data-dact="setTab" data-darg="crew">' + escH(T('Open Crew')) + '</button></div></div>';
 }
 
 async function _crewTool(name, input){
@@ -180,6 +197,26 @@ async function _crewTool(name, input){
            require:' Each result waits for their approval.' }[String(made.approval||'require')] || '')
       + (shaped ? ' IMPORTANT - tell the user this part: ' + (d.shapedWhy || 'their plan runs it ' + (_CREW_EVERY[gotRepeat]||'less often') + ' rather than what was asked for.') : ''),
       render:null };
+  }
+
+  if(name === 'crew_steps'){
+    const raw = Array.isArray(input.steps) ? input.steps : [];
+    const steps = raw.map(s => ({ title: String((s && s.title) || '').trim().slice(0, 80), detail: String((s && s.detail) || '').trim(),
+                                  ...(s && Number.isInteger(s.after) ? { after: s.after } : {}) }));
+    if(steps.length < 2 || steps.length > 5 || steps.some(s => !s.detail))
+      return { text:'A task in steps needs two to five steps, each saying what it does. For one step, use crew_add or just do it now.', render:null };
+    const approval = input.approval === 'auto' ? 'auto' : 'require';
+    let d;
+    try{ d = await _autoApi('/auto/create', { steps, approval, notify:'app' }); }
+    catch(e){ return { text: _crewErr(e), render:null }; }
+    _crewSynced();
+    const made = d.items || [];
+    return { text:'Started. ' + made.length + ' steps are in their Crew tab, running on AMV\u2019s servers: the first starts within about '
+      + (d.startsWithinMin || 5) + ' minutes, and each later step starts when the step it waits for has finished, building on its result. '
+      + 'It keeps going with their computer off and AMV closed. '
+      + (approval === 'auto' ? 'The final result is delivered without review. ' : 'The final result waits for their approval. ')
+      + 'If a step fails, the steps after it do not run, and Crew says which one stopped it. Do NOT say it has finished or describe results - nothing has run yet.',
+      render: _crewStepsCard(made) };
   }
 
   if(name === 'crew_ceiling'){

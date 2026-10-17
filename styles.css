@@ -17207,3 +17207,11 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
   .int-req .int-act{ width:auto; }
   .int-req .int-act .btn{ width:auto; }
 }
+
+/* ═══ LAYER A324 - a task in steps, as set up in the conversation ═══
+   The delegate card's list (A322), with the step number as its mark, which
+   step it waits for in muted text, and the way to its progress in Crew. */
+.dlg-after{ color:var(--mu); font-size:var(--t-xs); }
+/* A number, not a tick: nothing in this card has run yet. */
+.dlg-steps .dlg-st{ color:var(--mu); }
+.dlg-foot{ padding:0 var(--sp-3) var(--sp-3); }

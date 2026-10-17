@@ -423,6 +423,38 @@ section('A command on the never-run list is refused in chat before anyone is ask
   await page.evaluate(() => { neverRunSave(''); BRIDGE.connected = false; });
 }
 
+section('A task in steps is set up on the server, and Crew shows each step waiting its turn');
+{
+  const before = (await jobs()).length;
+  nextTurns = [
+    toolUseStream('crew_steps', { steps: [
+      { title: 'Research', detail: 'Find the prices and opening hours of the three biggest climbing gyms in Leeds.' },
+      { title: 'Compare', detail: 'Compare the gyms side by side and recommend one for a beginner.', after: 0 },
+    ], approval: 'require' }, ''),
+    textStream('Started - it runs in the background.'),
+  ];
+  const consent = await say('look into the climbing gyms in Leeds and then compare them while I am out');
+  ok(consent.seen > 0, 'they were asked first, because it spends money with nobody watching', consent.seen);
+  ok(/1\. Research/.test(consent.body) && /2\. Compare \(after step 1\)/.test(consent.body), 'and shown every step and which waits for which', consent.body.slice(0, 300));
+  ok(/within a few minutes/.test(consent.body) && /waits for your approval/.test(consent.body), 'and when it starts and what happens to the result', consent.body.slice(-200));
+
+  const items = (await jobs()).slice(before);
+  ok(items.length === 2 && items[0].group && items[0].group === items[1].group, 'two steps of one task now exist on the server', items.length);
+  ok(items[1].waiting === true && items[1].after === items[0].id, 'and the second waits for the first', [items[1].waiting, items[1].after === items[0].id]);
+  ok(L.hit(/\/auto\/create/).length >= 2, 'created through the same route as every other job', L.hit(/\/auto\/create/).length);
+
+  const shown = await page.evaluate(async () => {
+    const card = [...document.querySelectorAll('.chat-run.dlg')].pop();
+    const inChat = card ? card.textContent.replace(/\s+/g, ' ') : '';
+    if (typeof window._autoRefresh === 'function') { try { await window._autoRefresh(); } catch (e) {} }
+    setTab('crew');
+    await new Promise(x => setTimeout(x, 1000));
+    return { inChat, crew: (document.getElementById('vc').textContent || '').replace(/\s+/g, ' ') };
+  });
+  ok(/Task in 2 steps/.test(shown.inChat) && /after Research/.test(shown.inChat), 'the conversation shows the steps as set up', shown.inChat.slice(0, 160));
+  ok(/Step 2 of 2/.test(shown.crew) && /Waits for the step before it to finish/.test(shown.crew), 'and Crew shows the second step waiting its turn', shown.crew.slice(0, 400));
+}
+
 section('Nothing about this is a second copy of the Crew');
 {
   /* Every write went through the routes the screen uses. If chat ever grows
