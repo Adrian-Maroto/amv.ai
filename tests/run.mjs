@@ -157,6 +157,12 @@ const JOBS = (() => {
   if (flags.includes('--serial')) return 1;
   const j = flags.find(f => f.startsWith('--jobs='));
   if (j) return Math.max(1, Math.min(16, parseInt(j.slice(7), 10) || 1));
+  /* AMV_TEST_JOBS does the same from the environment, so the gate can be run
+     with fewer browsers at once on a machine short of CPU while its own call
+     to this runner stays the bare, unfiltered one the shortcut suite checks.
+     It changes how many run together, never which. */
+  const e = parseInt(process.env.AMV_TEST_JOBS || '', 10);
+  if (e > 0) return Math.max(1, Math.min(16, e));
   return Math.max(1, Math.min(4, cpus().length || 1));
 })();
 
