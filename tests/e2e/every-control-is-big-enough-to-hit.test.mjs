@@ -254,6 +254,10 @@ section('And the floor does not stop at the edge of a dialog');
       if (typeof window[name] !== 'function') return { missing: true };
       try { window[name].apply(null, argv); } catch (e) { return { threw: String(e && e.message).slice(0, 120) }; }
       await new Promise(x => setTimeout(x, 420));
+      /* A dialog opens with a short scale-in. Under the full gate's load the
+         fixed wait above ended mid-animation and measured a 44px close button
+         at 43, so the size is read once the page's animations have finished. */
+      await Promise.race([Promise.all(document.getAnimations().map(a => a.finished.catch(() => {}))), new Promise(x => setTimeout(x, 3000))]);
       if (!o.firstElementChild) return { drew: false };
       const els = [...o.querySelectorAll(
         'button, a[href], [role="button"], summary, input:not([type="hidden"]), select, textarea')];

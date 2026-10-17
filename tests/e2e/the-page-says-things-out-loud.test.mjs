@@ -52,14 +52,27 @@ section('A toast is spoken, and saying the same thing twice still speaks');
 {
   const r = await page.evaluate(async () => {
     const live = document.getElementById('sr-live');
+    /* What a screen reader hears is a CHANGE to the region, so count the
+       changes that put the words in, not what the region holds at one moment.
+       Waits for them rather than sleeping a fixed 140ms, which a loaded
+       machine overran. */
+    let writes = 0, cleared = 0;
+    const mo = new MutationObserver(() => {
+      if (live.textContent.includes('Saved your changes')) writes++;
+      else if (writes >= 1 && live.textContent === '') cleared++;
+    });
+    mo.observe(live, { childList: true, characterData: true, subtree: true });
+    const until = async (n) => { for (let i = 0; i < 100 && writes < n; i++) await new Promise(s => setTimeout(s, 20)); };
     toast('Saved your changes', 'success');
-    await new Promise(s => setTimeout(s, 140));
+    await until(1);
     const first = live.textContent;
     /* Assigning an identical string is not a DOM change, so a repeated message
-       announces once and then goes quiet forever. The helper clears first. */
+       announces once and then goes quiet forever. The helper clears first, so
+       the same words are written - and heard - a second time. */
     toast('Saved your changes', 'success');
-    await new Promise(s => setTimeout(s, 140));
-    return { first, second: live.textContent };
+    await until(2);
+    mo.disconnect();
+    return { first, second: writes >= 2 && cleared >= 1 ? live.textContent : '', writes, cleared };
   });
   ok(r.first.includes('Saved your changes'), 'a toast reaches the region', r.first);
   ok(r.second.includes('Saved your changes'), 'and the same toast again still reaches it', r.second);
