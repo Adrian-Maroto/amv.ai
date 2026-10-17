@@ -180,12 +180,18 @@ section('A password is a secret, not a workload');
   await read(await W.authSignup(post('/auth/signup', { email: 'victim@example.com', name: 'V', password: PW }), env));
 
   const huge = 'x'.repeat(5 * 1024 * 1024);
-  const t = Date.now();
-  const r = await read(await W.authLogin(post('/auth/login', { email: 'victim@example.com', password: huge }), env));
-  const took = Date.now() - t;
+  /* Counted, not timed: a stopwatch here measured the machine (reading five
+     megabytes of JSON overran 300ms under the gate's load) rather than
+     whether the password was hashed. */
+  const subtle = globalThis.crypto.subtle, realDerive = subtle.deriveBits;
+  let derived = 0;
+  subtle.deriveBits = function (...a) { derived++; return realDerive.apply(this, a); };
+  let r;
+  try { r = await read(await W.authLogin(post('/auth/login', { email: 'victim@example.com', password: huge }), env)); }
+  finally { subtle.deriveBits = realDerive; }
   ok(r.status === 400, 'an enormous password is refused', r.status);
   ok(r.body.code === 'password_too_long', 'for being enormous', r.body.code);
-  ok(took < 300, 'without hashing it first', took);
+  ok(derived === 0, 'without hashing it first', derived);
 
   ok(W._passwordTooLong('y'.repeat(W.PASSWORD_MAX)) === null,
      'exactly at the ceiling is still a password', W.PASSWORD_MAX);
