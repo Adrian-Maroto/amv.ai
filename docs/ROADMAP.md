@@ -432,3 +432,18 @@ assertions, eight mutations each caught) and a section of
   decision and is unchanged.
 - **A step waiting for several.** One parent each keeps cycles impossible by
   construction; joining several results is the next step if it is asked for.
+
+## Live voice, step one — heard on the server, spoken as it is written (done)
+
+`69-speech.js` puts a speech supplier behind the one money gate (each half on
+only with its price), recordings attached in chat become transcripts with the
+time of every line, and voice mode (`src/voice/live-voice.js`, fetched on
+demand) hears each turn on the server, speaks each sentence as soon as it is
+written, and stops when talked over. `what-amv-hears-and-says-is-paid-for`,
+`a-recording-becomes-a-transcript`, `talk-to-amv-and-interrupt-it`; nineteen
+mutations, every one caught.
+
+*Not yet:* speech-to-speech in one model (lower latency, tone of voice) needs
+a realtime supplier and a WebSocket path through the Worker; who speaks when in
+a meeting (diarization) depends on the supplier offering it. Both are the
+owner's choice of supplier first.

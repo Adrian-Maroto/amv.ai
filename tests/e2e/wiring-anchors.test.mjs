@@ -30,7 +30,7 @@ import { functionBody } from '../lib/source.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /* The page and the parts of it fetched on first use - an id one of them
    creates is an id that exists. */
-const src = ['app.js', 'market-sell.js', 'team-sso.js', 'credit.js', 'memory-io.js', 'skills.js', 'team-projects.js', 'api-keys.js', 'library.js', 'help-faqs.js', 'widget-form.js'].map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
+const src = ['app.js', 'market-sell.js', 'team-sso.js', 'credit.js', 'memory-io.js', 'skills.js', 'team-projects.js', 'api-keys.js', 'library.js', 'help-faqs.js', 'widget-form.js', 'live-voice.js'].map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
 
 const app = await bootApp({ tab: 'chat', user: { name: 'Owner', email: 'owner@x.com', ini: 'O' } });
 const { page, errors } = app;

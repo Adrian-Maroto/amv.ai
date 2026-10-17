@@ -3014,7 +3014,31 @@ function _voiceSetState(state, transcript){
 function _showVoiceOverlay(){ const el=_voiceOverlay(); requestAnimationFrame(()=>el.classList.add('on')); _voiceSetState('listening',''); }
 function _hideVoiceOverlay(){ const el=document.getElementById('voice-ov'); if(el) el.classList.remove('on'); }
 
+/* LIVE VOICE lives in live-voice.js, fetched the first time somebody starts
+   voice mode on a deployment whose server can listen. It hears on the server,
+   speaks each sentence as it is written, and stops when talked over. Without
+   server hearing, the browser's own loop below is what there is. */
+let _liveVoiceP = null;
+function _liveVoiceLoad(){
+  if(typeof window._liveVoiceStart === 'function') return Promise.resolve(true);
+  if(!_liveVoiceP) _liveVoiceP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'live-voice.js';
+    sc.onload = () => res(typeof window._liveVoiceStart === 'function');
+    sc.onerror = () => { _liveVoiceP = null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
+  });
+  return _liveVoiceP;
+}
 function toggleVoiceMode(){
+  if(typeof window._liveVoiceOn === 'function' && window._liveVoiceOn()){ window._liveVoiceStop(); return; }
+  if(!_voiceMode && _SPEECH.listen && typeof AMV_API !== 'undefined' && AMV_API.hasSession){
+    _liveVoiceLoad().then(ok => {
+      if(ok) window._liveVoiceStart();
+      else toast(T('Voice could not be loaded. Check your connection and try again.'), 'error', 6000);
+    });
+    return;
+  }
   if(!AMVSpeech.supported() || (!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window))){
     toast('Voice mode needs Chrome (speech recognition + synthesis).','error',5000); return;
   }
