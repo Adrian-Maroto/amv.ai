@@ -103,6 +103,10 @@ async function device(name) {
 
 section('The device is really signed in to a real server');
 const A = await device('A');
+/* Wait for the pull itself, not for a number of milliseconds: the sign-in
+   starts it, and on a slower machine it lands after any fixed sleep (CI saw
+   pulls=0 after 400ms on a commit that changed nothing the page runs). */
+for (let i = 0; i < 100 && !(state.pulls > 0); i++) await new Promise(r => setTimeout(r, 100));
 {
   const r = await A.page.evaluate(() => ({
     live: AMV_API.live, hasSession: AMV_API.hasSession,
