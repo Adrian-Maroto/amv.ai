@@ -1,0 +1,79 @@
+/* THE HELP CENTER'S QUESTIONS AND ANSWERS - fetched the first time Help is
+   opened (_faqsLoad in 12a-view-router-help.js). About ten kilobytes of prose
+   most visits never read, so it does not ride in the page. A classic script:
+   it uses the page's own plan figures (PLANS, _msgMonthLabel...) as it loads,
+   so the answers always quote the numbers the server enforces. */
+const FAQS=[
+  {c:'start', q:'How do I start with AMV?', a:'Click “New chat” at the top of the sidebar and type anything - an essay, code, a 3D model, deep research, or a question about a photo you upload. AMV figures out what you need and does the work. On mobile, tap the menu icon for the full sidebar.'},
+  {c:'start', q:'Where are Settings, Team and my account?', a:'Click your avatar at the top right. That one menu has Upgrade, Manage Subscription, Settings, Team, Help, What\u2019s New and the ways to sign out. Settings opens in the middle of the screen over whatever you were doing - search at the top of its list finds a setting by what it does (try \u201cpassword\u201d or \u201clanguage\u201d), and X or Esc puts you back where you were.'},
+  {c:'start', q:'What can AMV actually do?', a:'One place for everything: chat and deep research, reading the files and images you upload, interactive 3D, a design canvas (Studio), an app builder (Dev), and autonomous agents (Crew) that complete multi-step work for you and bring back a finished result to approve. AMV reads an image you give it; it does not generate one.'},
+  {c:'auto', q:'What is Crew and Mission Control?', a:'Crew is AMV working autonomously in the background. Mission Control (the Crew tab) is your overview of everything it’s doing - what needs your approval, what’s running now, what’s scheduled, and what’s finished. Give it an outcome and it plans the steps, does the work, and stops before anything consequential to wait for you.'},
+  {c:'auto', q:'How do approvals work - Preview &amp; Approve?', a:'When AMV finishes something that would send, publish, or change anything, it waits in “Needs your approval.” Press Preview to open the full workspace: the finished result, a timeline of what happened, the agents involved, and a plain-language summary of exactly what will happen. Then Approve, Edit, or Reject.'},
+  {c:'auto', q:'What is Auto Approve?', a:'When you trust a recurring task, turn on Auto Approve while setting it up. AMV then completes and performs the final action on its own - scoped to every run or just the first, capped by risk level, with an optional end date. High-risk actions still stop and ask unless you allow them. You can pause all autonomous work anytime from Mission Control.'},
+  {c:'auto', q:'How do I schedule recurring autonomous work?', a:'Start an autonomous task (Crew → Autonomous task) and pick a schedule - once, daily, weekly, or monthly. Manage everything under Scheduled: next run, last run, approval mode, and per-task pause or cancel. Connect the backend for true 24/7 runs even with AMV closed.'},
+  {c:'create', q:'How do I create interactive 3D models?', a:'Just ask in chat - e.g. “create a 3D model of a human heart.” It renders live with drag-to-rotate, scroll-to-zoom, and pan controls.'},
+  {c:'create', q:'What is Studio (AMV Design)?', a:'Studio is a live design canvas. Describe a landing page, UI mockup, poster, or graphic and watch it build, then refine by chatting (“make it darker,” “add a pricing section”). Set a reusable Design DNA once and everything follows your colors, fonts, and style.'},
+  {c:'build', q:'Can AMV build and run real apps?', a:'Yes - Dev writes the code, runs it in a live sandbox, and shows you the result. Lab lets you paste or upload existing code (any size) to run, find and fix bugs, review, refactor, or add tests. On higher plans you can deploy to a live URL.'},
+  {c:'chat', q:'How do I upload files for analysis?', a:'Click the paperclip in the chat input or drag &amp; drop. AMV reads PDFs, pictures, Word, Excel, PowerPoint, CSV and code. An older .doc, .xls or .ppt needs saving in the newer format first, and audio and video are not read. It can also work across a whole folder for autonomous tasks.'},
+  {c:'connect', q:'How do I connect Gmail, Calendar, and files?', a:'Go to Settings → Connectors (or Integrations). Connect Google to let AMV read email, manage your calendar, and work with Drive files. Everything an agent wants to send still waits for your approval first.'},
+  {c:'connect', q:'What is Handoff?', a:'Handoff lets you pass a task - with its full context - to a teammate inside AMV, or receive one from them, so work moves between people without losing the thread.'},
+  {c:'connect', q:'How does Team work?', a:'Team is the plan for organisations: $'+PLANS.team.price+' per person a month, from '+TEAM_SEAT_MIN+' people, billed monthly or yearly. Everyone signs in with their own account and gets AMV\u2019s top models; each person adds their own full allowance to one shared pool, and you get one bill. Owners and admins manage who is in. Teammates see only what somebody shares into the team library - never anyone\u2019s chats. Start one from Team in the avatar menu.'},
+  {c:'connect', q:'What is the Marketplace?', a:'Browse and install prompts, crews, and integrations - free ones add to your Prompt Library or Crew instantly. Click any seller’s name to see their listings and reviews or message them. You can publish your own and keep 80% of every sale. Paid items always go through secure checkout.'},
+  /* Priced from PLANS. Written out, this answer quoted three figures that
+     nothing kept in step with the cards or with checkout, so changing a price
+     left the Help Center stating the old one to the person who came here to
+     ask what it costs. */
+  /* WAS: "the cheapest paid plan gets the same model as the most expensive
+     one". Not true, and it was the kind of not-true that reads as a rounding.
+     Forge and Apex are distinct engines; what is true - and what the engine
+     ladder is built to hold - is that they bill the SAME per token, so paying
+     more buys more of the best rather than access to a better one. Those are
+     different promises and only the second one survives somebody checking. */
+  {c:'billing', q:'How do plans and limits work?', a:'Free is '+_msgMonthLabel('free')+' messages a month on the balanced engine, up to '+_msg5hLabel('free')+' every '+USAGE_WINDOW_HOURS+' hours. Pro ($'+PLANS.pro.price+'/mo) runs AMV Forge, a frontier engine, on the cheapest paid plan there is - '+_msgMonthLabel('pro')+' messages a month, '+_msg5hLabel('pro')+' every '+USAGE_WINDOW_HOURS+' hours, and '+_topWeekLabel('pro')+' Forge or Apex messages a week on top - and unlocks autonomous agents, Mission Control, the app builder and connected accounts. Elite ($'+PLANS.elite.price+'/mo) adds Apex and one-click deploy, with '+_msgMonthLabel('elite')+' messages a month and '+_topWeekLabel('elite')+' top-engine messages a week. Ultra ($'+PLANS.ultra.price+'/mo) is '+_msgMonthLabel('ultra')+' a month, '+_topWeekLabel('ultra')+' top-engine a week, the highest throughput AMV offers and team workspaces. Custom lets you set your own hard-capped budget. The engines above Core bill the same per token as each other, so a higher plan buys MORE of the best engine rather than a better one.'},
+  {c:'privacy', q:'What is AI Memory?', a:'Memory lets AMV remember facts about you - your role, preferences, and context - and apply them automatically in every conversation. Add or edit them under Memory in the sidebar.'},
+  {c:'chat', q:'Can AMV email me when it is done?', a:'Yes. When an answer or a build has been running a while, AMV asks once whether you want an email when it is done. Say yes and, whenever long work finishes while you are away from the tab, AMV emails your account address - only then, never about something you watched finish, and never after you press Stop. Turn it on or off any time in Settings \u2192 Account \u2192 Notifications.'},
+  {c:'chat', q:'How do I use voice input?', a:'Click the microphone in the chat input (best in Chrome and Edge), speak, and your words appear in the box. Press Enter to send.'},
+  {c:'chat', q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
+  {c:'chat', q:'Can I export my conversations?', a:'Yes - right-click any chat and choose “Export as Markdown” to download a .md file for Notion, Obsidian, or any editor.'},
+  {c:'privacy', q:'How is my data protected?', a:'Your data is stored in your browser and, when you connect the backend, encrypted in transit (256-bit TLS). Passwords are hashed with PBKDF2. Card details go straight to Stripe - AMV never sees them. Export or delete everything anytime.'}
+]
+
+/* A real 404 for unknown routes - instead of silently showing chat, tell the
+   user the page wasn't found and give them a clear way back. */
+function render404View(){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi nf-wrap">'+
+      '<div class="nf-code">404</div>'+
+      '<h2 class="nf-title">Page not found</h2>'+
+      '<p class="nf-sub">The page you\u2019re looking for doesn\u2019t exist or may have moved.</p>'+
+      '<div class="nf-actions">'+
+        '<button class="btn bp" data-stab="chat">Go to chat</button>'+
+        '<button class="btn bs" data-stab="dashboard">Home</button>'+
+      '</div>'+
+    '</div></div>';
+}
+try{ window.render404View=render404View; }catch(e){}
+
+/* THE ONLY WAY IN WAS TO ALREADY KNOW THE WORD (AMV-D056).
+
+   Twenty questions in one flat accordion under a search box. Search is a good
+   second route and a poor first one: somebody who does not yet know what AMV
+   calls a thing cannot search for it, and scanning twenty rows to find out is
+   the work the page exists to save.
+
+   The questions are unchanged. They are grouped now, each group is a filter
+   chip, and search still runs across every answer regardless of the chip - so
+   the two routes do not fight. A group with nothing left after a search hides
+   its heading too, which is the bug this kind of filtering usually ships with. */
+const FAQ_CATS=[
+  ['start','Getting started'],
+  ['chat','Chat and results'],
+  ['create','Design and 3D'],
+  ['build','Building apps'],
+  ['auto','Automations and approvals'],
+  ['connect','Connections, teamwork and marketplace'],
+  ['billing','Plans and billing'],
+  ['privacy','Memory, data and privacy']
+];
+try{ window._FAQS = FAQS; }catch(e){}

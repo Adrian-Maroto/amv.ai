@@ -488,6 +488,10 @@ function md(text) {  if(!text) return '';
   t = t.replace(/```calc\n?([\s\S]*?)```/gi, (match, body) => {
     try{ return _guiCalc(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
   });
+  // form: several fields at once; Send puts every answer in the next message (05g)
+  t = t.replace(/```form\n?([\s\S]*?)```/gi, (match, body) => {
+    try{ return _guiForm(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
+  });
   // choices: {"prompt":"Pick one","options":["A","B","C"]} - tappable, sends a follow-up
   t = t.replace(/```choices\n?([\s\S]*?)```/gi, (match, body) => {
     try{ return _guiChoices(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
@@ -2644,6 +2648,9 @@ function renderChatMsgs() {
   (typeof _awayCardHTML==='function' ? _awayCardHTML() : '')+_tempBannerHTML()+_projectBannerHTML()+_studyBannerHTML()+
   msgs.map((m,i)=>{
     const isU=m.r==='u';
+    /* A form in an answer the person has already replied to is history:
+       drawn answered and locked, so a redraw cannot offer it to send again. */
+    _formAnswered = !isU && msgs.slice(i+1).some(x => x && x.r==='u');
     const rawText=m.d||(typeof m.c==='string'?m.c:'');
     let content;
     if(!isU && m._quota){

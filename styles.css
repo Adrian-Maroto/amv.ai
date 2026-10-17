@@ -17157,3 +17157,27 @@ html:not(.boot-guest) #anav:not(:has(.hdr-mid > :not([hidden]))) .nav-r{ border-
 body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:hidden; pointer-events:none; }
 /* Messages already in a chat when it is opened are not new. */
 .mr.mq{ animation:none; }
+
+/* ═══ LAYER A321 - a form in an answer (05g-answer-form.js) ═══
+   Built on the calculator's block: the same card, grid, labels and controls,
+   so an answer's form reads as part of the same family. Only what a form adds
+   is styled here - text, longer text and date fields, the required mark, the
+   help line, a group of several choices, the error line and Send. */
+.gui-form .gui-calc-in input[type=text], .gui-form .gui-calc-in input[type=date], .gui-form .gui-calc-in textarea{
+  min-height:44px; padding:var(--sp-2) var(--sp-3); border:1px solid var(--bd); border-radius:var(--r-sm);
+  background:var(--s2); color:var(--tx); font:inherit; font-size:var(--t-md); width:100%; box-sizing:border-box; }
+.gui-form .gui-calc-in textarea{ resize:vertical; line-height:1.5; }
+.gui-form .gui-calc-in input:focus-visible, .gui-form .gui-calc-in textarea:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+.gui-form-wide{ grid-column:1 / -1; }
+.gui-form-req{ color:var(--red); margin-left:2px; }
+.gui-form-help{ font-size:var(--t-xs); color:var(--dim); line-height:1.4; }
+.gui-form-multi{ border:0; margin:0; padding:0; grid-column:1 / -1; }
+.gui-form-multi legend{ padding:0; margin-bottom:var(--sp-1); }
+.gui-form-opt{ display:inline-flex; align-items:center; gap:var(--sp-2); min-height:44px; margin-right:var(--sp-4); font-size:var(--t-md); }
+.gui-form-opt input{ width:20px; height:20px; accent-color:var(--accent); }
+.gui-form-err{ margin:var(--sp-3) 0 0; min-height:0; font-size:var(--t-sm); color:var(--red); }
+.gui-form-err:empty{ display:none; }
+.gui-form-act{ display:flex; justify-content:flex-end; margin-top:var(--sp-3); }
+.gui-form-send{ min-height:44px; min-width:96px; }
+.gui-form[data-sent="1"]{ opacity:.75; }
+@media (pointer:coarse){ .gui-form .gui-calc-in input[type=text], .gui-form .gui-calc-in input[type=date], .gui-form .gui-calc-in textarea{ font-size:var(--t-lg); } }

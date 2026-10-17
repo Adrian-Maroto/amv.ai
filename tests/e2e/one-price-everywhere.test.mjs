@@ -136,8 +136,9 @@ section('Change the price and every one of them follows');
 
 section('The Help Center quotes the same figure');
 {
-  const r = await page.evaluate(() => {
-    const faq = FAQS.find(f => /how do plans and limits work/i.test(f.q));
+  const r = await page.evaluate(async () => {
+    await _faqsLoad();
+    const faq = window._FAQS.find(f => /how do plans and limits work/i.test(f.q));
     return { a: (faq || {}).a || '', pro: PLANS.pro.price, elite: PLANS.elite.price, ultra: PLANS.ultra.price };
   });
   ok(r.a.includes('$' + r.pro + '/mo'), 'Pro is quoted at the real price', r.a.slice(0, 120));

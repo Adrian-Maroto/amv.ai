@@ -145,6 +145,8 @@ function emitSandbox() {
   writeFileSync('api-keys.js', readFileSync('src/api/api-keys.js'));
   /* The file library screen, fetched the first time it is opened. */
   writeFileSync('library.js', readFileSync('src/library/library.js'));
+  /* The Help center's questions, fetched when Help is opened. */
+  writeFileSync('help-faqs.js', readFileSync('src/help/faqs.js'));
 }
 
 function assembleJS() {
@@ -1006,6 +1008,7 @@ const PUBLISH = [
   'team-projects.js',      // projects a team edits together: fetched by team members
   'api-keys.js',           // the API keys pane and its docs, fetched when it is opened
   'library.js',            // the file library screen, fetched when it is opened
+  'help-faqs.js',          // the Help center's questions, fetched when Help is opened
 ];
 /* GOOGLE PLAY'S PROOF THAT THE ANDROID APP IS AMV'S (apps/android). Published
    only once the owner's signing fingerprint is in apps/android/config.json,
