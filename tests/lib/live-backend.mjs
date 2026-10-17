@@ -210,7 +210,10 @@ export async function bootLive(opts = {}) {
     const req = route.request();
     const url = req.url();
     let body = null;
-    try { body = req.postData(); } catch (e) {}
+    /* Bytes, not a string: postData() decodes the body as text, which turns
+       an uploaded recording or file into something else on the way through,
+       and a binary test would then pass or fail for the wrong reason. */
+    try { body = req.postDataBuffer(); } catch (e) {}
     const wreq = new Request(url, {
       method: req.method(),
       headers: req.headers(),
@@ -226,7 +229,7 @@ export async function bootLive(opts = {}) {
                             body: JSON.stringify({ error: 'worker threw: ' + String(e && e.message) }) });
       return;
     }
-    const text = await res.text();
+    const text = Buffer.from(await res.arrayBuffer());
     const headers = {};
     res.headers.forEach((v, k) => { headers[k] = v; });
     served.push({ url, status: res.status, path: new URL(url).pathname });
@@ -256,12 +259,12 @@ export async function bootLive(opts = {}) {
       const c2 = await browser.newContext();
       await c2.route(BACKEND + '/**', async (route) => {
         const req = route.request();
-        let b = null; try { b = req.postData(); } catch (e) {}
+        let b = null; try { b = req.postDataBuffer(); } catch (e) {}
         const wr = new Request(req.url(), { method: req.method(), headers: req.headers(),
           body: (req.method() === 'GET' || req.method() === 'HEAD') ? undefined : b });
         const rs = await worker.fetch(wr, env, { waitUntil: (p) => { pending.push(Promise.resolve(p).catch(() => {})); },
                                                  passThroughOnException() {} });
-        const t = await rs.text();
+        const t = Buffer.from(await rs.arrayBuffer());
         const h = {}; rs.headers.forEach((v, k) => { h[k] = v; });
         await route.fulfill({ status: rs.status, headers: h, body: t });
       });

@@ -124,9 +124,9 @@ section('What cannot be read is refused by name, and nothing is attached');
   const cases = [
     { f: { name: 'report.doc', buffer: Buffer.concat([Buffer.from([0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1]), Buffer.alloc(600)]) }, re: /older Office format.*\.docx/, why: 'an old .doc says to save it as .docx' },
     { f: { name: 'locked.xlsx', buffer: Buffer.concat([Buffer.from([0xD0,0xCF,0x11,0xE0,0xA1,0xB1,0x1A,0xE1]), Buffer.alloc(600)]) }, re: /password-protected/, why: 'a password-protected workbook says so' },
-    { f: { name: 'memo.m4a', mime: 'audio/mp4', buffer: Buffer.concat([Buffer.from([0,0,0,0x20]), Buffer.from('ftypM4A '), Buffer.alloc(200)]) }, re: /can’t listen to audio/, why: 'an audio recording is not passed off as text' },
-    { f: { name: 'song.mp3', buffer: Buffer.concat([Buffer.from('ID3'), Buffer.alloc(300, 7)]) }, re: /can’t listen to audio/, why: 'nor an MP3' },
-    { f: { name: 'clip.mp4', mime: 'video/mp4', buffer: Buffer.concat([Buffer.from([0,0,0,0x18]), Buffer.from('ftypisom'), Buffer.alloc(200)]) }, re: /can’t watch video/, why: 'a video is refused' },
+    { f: { name: 'memo.m4a', mime: 'audio/mp4', buffer: Buffer.concat([Buffer.from([0,0,0,0x20]), Buffer.from('ftypM4A '), Buffer.alloc(200)]) }, re: /not set up to listen to recordings yet/, why: 'an audio recording is not passed off as text' },
+    { f: { name: 'song.mp3', buffer: Buffer.concat([Buffer.from('ID3'), Buffer.alloc(300, 7)]) }, re: /not set up to listen to recordings yet/, why: 'nor an MP3' },
+    { f: { name: 'clip.mp4', mime: 'video/mp4', buffer: Buffer.concat([Buffer.from([0,0,0,0x18]), Buffer.from('ftypisom'), Buffer.alloc(200)]) }, re: /not set up to listen to recordings yet/, why: 'a video is refused' },
     { f: { name: 'broken.docx', buffer: Buffer.from('this was never a document') }, re: /looks damaged/, why: 'a .docx that is not one is called damaged, not read as text' },
     { f: { name: 'scan.pdf', buffer: Buffer.from('hello, I am not a PDF') }, re: /named like a PDF, but it isn’t one/, why: 'a fake PDF is not sent to the engine as a PDF' },
     { f: { name: 'data.bin', buffer: Buffer.from([1,2,3,0,0,0,9,8,7,0,255,254,0,1]) }, re: /AMV can’t read “data\.bin”/, why: 'unknown binary is refused rather than decoded into noise' },
@@ -162,7 +162,7 @@ section('Several files at once: read together, and nothing dropped silently');
   ok(/=== notes\.csv ===\na,b/.test(d), 'beside the CSV');
   const said = r.toasts.join(' ');
   ok(/pic\.png/.test(said) && /one picture or PDF/.test(said), 'the picture that could not ride along is named, not folded in as "[binary]"', said.slice(0, 200));
-  ok(/song\.mp3/.test(said) && /audio/.test(said), 'and the audio file is refused by name');
+  ok(/song\.mp3/.test(said) && /listen to recordings/.test(said), 'and the audio file is refused by name, with the reason');
 
   const two = await attach([{ name: 'a.png', mime: 'image/png', buffer: png }, { name: 'b.png', mime: 'image/png', buffer: png }]);
   ok(two.att && two.att.kind === 'img', 'two pictures: one is attached (this used to attach nothing at all)', two.att && two.att.kind);

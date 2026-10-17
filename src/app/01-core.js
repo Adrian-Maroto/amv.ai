@@ -479,6 +479,9 @@ let _publicConfigFail = '';
    read, and empty forever on a deployment that sells monthly only - which is
    the state every deployment starts in. */
 let _YEARLY_PLANS = [];
+/* Server speech, as /v1/public-config describes it. Both false until it says
+   otherwise, so nothing is offered that the server has not confirmed. */
+let _SPEECH = { listen: false, speak: false };
 function _yearlyAvailable(plan){
   try{ return _YEARLY_PLANS.indexOf(String(plan)) >= 0; }catch(e){ return false; }
 }
@@ -552,6 +555,9 @@ async function _loadPublicConfigOnce(){
        toggle that should not have been there, and offering a cheaper-looking
        option that cannot be bought is the worst version of that. */
     try{ _YEARLY_PLANS = Array.isArray(d.yearlyPlans) ? d.yearlyPlans.slice(0,8).map(String) : []; }catch(e){}
+    /* Which halves of server speech this deployment has. In memory, like the
+       yearly plans: a fact about the server, re-read on every load. */
+    try{ _SPEECH = { listen: !!(d.speech && d.speech.listen), speak: !!(d.speech && d.speech.speak) }; }catch(e){}
 
     /* Google's library is initialised at load with whatever id existed then,
        which was nothing on a first visit. Re-run it now one has arrived. */
@@ -1401,6 +1407,23 @@ const AMV_API = {
     return d;
   },
   async libraryDelete(ids){ return this._wrote('/v1/library/delete', { ids }, 'Those files could not be deleted.'); },
+  /* SERVER SPEECH (69-speech.js). Both spend, so neither is ever retried: a
+     recording sent twice is heard - and charged - twice. A long recording is
+     a long upload, so the deadline is the server's own two minutes plus room. */
+  async transcribeAudio(blob, seconds, lang){
+    const q = '?seconds=' + encodeURIComponent(Math.max(0.1, Math.min(1800, +seconds || 0)).toFixed(1))
+            + (/^[a-z]{2}$/.test(String(lang||'')) ? '&lang=' + lang : '');
+    const r = await this._fetch('/v1/audio/transcribe' + q, { method:'POST', body: blob, noRetry: true,
+      headers: { 'Content-Type': String(blob.type || 'audio/webm').split(';')[0] }, timeout: 180000, bodyTimeout: 60000 });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || d.error){ const e = new Error(d.error || 'AMV could not hear that recording.'); e.status = r.status; e.code = d.code || ''; throw e; }
+    return d;
+  },
+  async speakText(text, signal){
+    const r = await this._fetch('/v1/audio/speak', { method:'POST', body: JSON.stringify({ text }), noRetry: true, stream: true, signal, timeout: 30000 });
+    if(!r.ok){ const d = await r.json().catch(()=>({})); const e = new Error(d.error || 'AMV could not speak that.'); e.status = r.status; e.code = d.code || ''; throw e; }
+    return r;
+  },
   async createHandoff(h){ return this._wrote('/api/handoff',h,'That handoff was not accepted.'); },
   async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },
   async actHandoff(id,action){ return this._wrote('/api/handoff/act',{id,action},'That could not be updated.'); },

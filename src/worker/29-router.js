@@ -673,6 +673,8 @@ async function _route(request, env, ctx) {
     case '/v1/library/put':    return libPut(request, env);
     case '/v1/library/get':    return libGet(request, env);
     case '/v1/library/delete': return libDelete(request, env);
+    case '/v1/audio/transcribe': return speechTranscribe(request, env);
+    case '/v1/audio/speak':      return speechSpeak(request, env);
     case '/v1/connect/remove': return connRemove(request, env);
     case '/v1/connect/api':    return connApi(request, env);
     case '/v1/remote/list':    return remoteList(request, env);

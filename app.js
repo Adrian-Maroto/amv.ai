@@ -479,6 +479,9 @@ let _publicConfigFail = '';
    read, and empty forever on a deployment that sells monthly only - which is
    the state every deployment starts in. */
 let _YEARLY_PLANS = [];
+/* Server speech, as /v1/public-config describes it. Both false until it says
+   otherwise, so nothing is offered that the server has not confirmed. */
+let _SPEECH = { listen: false, speak: false };
 function _yearlyAvailable(plan){
   try{ return _YEARLY_PLANS.indexOf(String(plan)) >= 0; }catch(e){ return false; }
 }
@@ -552,6 +555,9 @@ async function _loadPublicConfigOnce(){
        toggle that should not have been there, and offering a cheaper-looking
        option that cannot be bought is the worst version of that. */
     try{ _YEARLY_PLANS = Array.isArray(d.yearlyPlans) ? d.yearlyPlans.slice(0,8).map(String) : []; }catch(e){}
+    /* Which halves of server speech this deployment has. In memory, like the
+       yearly plans: a fact about the server, re-read on every load. */
+    try{ _SPEECH = { listen: !!(d.speech && d.speech.listen), speak: !!(d.speech && d.speech.speak) }; }catch(e){}
 
     /* Google's library is initialised at load with whatever id existed then,
        which was nothing on a first visit. Re-run it now one has arrived. */
@@ -1401,6 +1407,23 @@ const AMV_API = {
     return d;
   },
   async libraryDelete(ids){ return this._wrote('/v1/library/delete', { ids }, 'Those files could not be deleted.'); },
+  /* SERVER SPEECH (69-speech.js). Both spend, so neither is ever retried: a
+     recording sent twice is heard - and charged - twice. A long recording is
+     a long upload, so the deadline is the server's own two minutes plus room. */
+  async transcribeAudio(blob, seconds, lang){
+    const q = '?seconds=' + encodeURIComponent(Math.max(0.1, Math.min(1800, +seconds || 0)).toFixed(1))
+            + (/^[a-z]{2}$/.test(String(lang||'')) ? '&lang=' + lang : '');
+    const r = await this._fetch('/v1/audio/transcribe' + q, { method:'POST', body: blob, noRetry: true,
+      headers: { 'Content-Type': String(blob.type || 'audio/webm').split(';')[0] }, timeout: 180000, bodyTimeout: 60000 });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || d.error){ const e = new Error(d.error || 'AMV could not hear that recording.'); e.status = r.status; e.code = d.code || ''; throw e; }
+    return d;
+  },
+  async speakText(text, signal){
+    const r = await this._fetch('/v1/audio/speak', { method:'POST', body: JSON.stringify({ text }), noRetry: true, stream: true, signal, timeout: 30000 });
+    if(!r.ok){ const d = await r.json().catch(()=>({})); const e = new Error(d.error || 'AMV could not speak that.'); e.status = r.status; e.code = d.code || ''; throw e; }
+    return r;
+  },
   async createHandoff(h){ return this._wrote('/api/handoff',h,'That handoff was not accepted.'); },
   async listHandoff(){ const r=await this._fetch('/api/handoff'); return await r.json(); },
   async actHandoff(id,action){ return this._wrote('/api/handoff/act',{id,action},'That could not be updated.'); },
@@ -11719,8 +11742,10 @@ function _frReason(code, name, extra){
     case 'legacy':    return n + ' ' + T('is in the older Office format (.doc, .xls or .ppt), which AMV doesn’t read. Open it and save it as') + ' ' + (extra || '.docx, .xlsx or .pptx') + ', ' + T('then attach that.');
     case 'odf':       return n + ' ' + T('is an OpenDocument file, which AMV doesn’t read. Save it as .docx, .xlsx or .pptx and attach that.');
     case 'archive':   return n + ' ' + T('is an archive. AMV doesn’t open archives - unzip it and attach the files inside.');
-    case 'audio':     return T('AMV can’t listen to audio files, so') + ' ' + n + ' ' + T('was not attached. Paste a transcript instead.');
-    case 'video':     return T('AMV can’t watch video files, so') + ' ' + n + ' ' + T('was not attached.');
+    case 'audio':     return T('This AMV is not set up to listen to recordings yet, so') + ' ' + n + ' ' + T('was not attached. Paste a transcript instead.');
+    case 'video':     return T('This AMV is not set up to listen to recordings yet, so') + ' ' + n + ' ' + T('was not attached.');
+    case 'listen_signin': return T('Sign in to have AMV listen to') + ' ' + n + '.';
+    case 'listen_failed': return T('AMV could not listen to') + ' ' + n + (extra ? ': ' + extra : '.');
     case 'program':   return n + ' ' + T('is a program, not a document. AMV doesn’t open programs.');
     case 'image':     return n + ' ' + T('is a picture AMV can’t read. Save it as JPEG or PNG and attach that.');
     case 'not_image': return n + ' ' + T('is named like a picture, but it isn’t one. Nothing was attached.');
@@ -11729,6 +11754,61 @@ function _frReason(code, name, extra){
     case 'damaged':   return n + ' ' + T('looks damaged, so AMV couldn’t read it. Open it, save a fresh copy, and attach that.');
     default:          return T('AMV can’t read') + ' ' + n + (extra ? ' (' + extra + ')' : '') + '. ' + T('Attach a document, spreadsheet, slide deck, PDF, picture or text file.');
   }
+}
+
+/* ── A recording: heard on the server, attached as its transcript ─────────
+   Audio, or the sound of a video (a meeting recording is usually a video
+   file). Sent as it is to /v1/audio/transcribe when this deployment has
+   server speech and somebody is signed in; what comes back is attached as
+   text, each part with the time it was said, so "what did she say about
+   pricing" can be answered with where. Without server speech it is refused,
+   saying why - never read as text and never guessed at. */
+const _FR_LISTEN_MAX = 25 * 1024 * 1024;
+function _frClock(s){
+  s = Math.max(0, Math.floor(+s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0');
+}
+/* How long a recording is, from the browser's own decoder - or, when it cannot
+   tell (some recorders write no length), an estimate on the long side. The
+   server charges what its supplier really heard either way. */
+function _frDuration(file){
+  return new Promise(res => {
+    let url = '', done = false;
+    const end = (v) => { if(done) return; done = true; try{ URL.revokeObjectURL(url); }catch(e){} res(v); };
+    try{
+      const el = document.createElement(String(file.type || '').startsWith('video/') ? 'video' : 'audio');
+      el.preload = 'metadata';
+      el.onloadedmetadata = () => end(Number.isFinite(el.duration) && el.duration > 0 ? el.duration : 0);
+      el.onerror = () => end(0);
+      url = URL.createObjectURL(file); el.src = url;
+      setTimeout(() => end(0), 8000);
+    }catch(e){ end(0); }
+  });
+}
+async function _frListen(file, name, size, sig, refuse){
+  if(!(typeof _SPEECH !== 'undefined' && _SPEECH.listen)) return refuse(sig);
+  if(!(typeof AMV_API !== 'undefined' && AMV_API.hasSession)) return refuse('listen_signin');
+  if(size > _FR_LISTEN_MAX) return refuse('listen_failed', T('it is larger than 25 MB. Split it into shorter parts.'));
+  let seconds = await _frDuration(file);
+  if(!seconds) seconds = Math.min(1800, Math.max(1, size / 4000));
+  if(seconds > 1800) return refuse('listen_failed', T('it is longer than 30 minutes. Split it into shorter parts.'));
+  let d;
+  try{
+    /* No language hint: the recording's language is not the screen's, and a
+       wrong hint makes the supplier hear English as Spanish. It detects it. */
+    d = await AMV_API.transcribeAudio(file.type ? file : new Blob([file], { type: sig === 'video' ? 'video/mp4' : 'audio/mpeg' }), seconds, '');
+  }catch(e){
+    return refuse('listen_failed', String((e && e.message) || '').slice(0, 200));
+  }
+  const segs = Array.isArray(d.segments) ? d.segments : [];
+  const body = segs.length ? segs.map(s => '[' + _frClock(s.start) + '] ' + s.text).join('\n') : String(d.text || '');
+  if(!body.trim()) return refuse('listen_failed', T('nothing was said in it that AMV could make out.'));
+  const length = _frClock(d.seconds || seconds);
+  return { kind: 'text', name, size, format: 'transcript',
+           summary: T('Transcript') + ', ' + length,
+           data: T('Transcript of the recording') + ' "' + name + '" (' + length + (d.language ? ', ' + d.language : '') + '). '
+               + T('Times are from the start of the recording.') + '\n\n' + body };
 }
 
 /* ── Signatures ─────────────────────────────────────────────────────────── */
@@ -12218,14 +12298,15 @@ async function amvReadFile(file){
       if(/^(docx|docm|xlsx|xlsm|pptx|pptm)$/.test(ext)) return refuse('locked');
       return refuse('legacy', ext === 'xls' ? '.xlsx' : ext === 'ppt' ? '.pptx' : ext === 'doc' ? '.docx' : '');
     }
-    if(sig === 'audio' || sig === 'video' || sig === 'archive' || sig === 'program') return refuse(sig);
+    if(sig === 'audio' || sig === 'video') return await _frListen(file, name, size, sig, refuse);
+    if(sig === 'archive' || sig === 'program') return refuse(sig);
     if(/^(docx|xlsx|pptx|docm|xlsm|pptm)$/.test(ext)) return refuse('damaged');
     /* The type the system reports is only consulted once the bytes are known
        not to be text: a TypeScript file arrives as video/mp2t on most systems. */
     const text = _frDecodeText(bytes);
     if(text == null){
-      if(mime.startsWith('audio/')) return refuse('audio');
-      if(mime.startsWith('video/')) return refuse('video');
+      if(mime.startsWith('audio/')) return await _frListen(file, name, size, 'audio', refuse);
+      if(mime.startsWith('video/')) return await _frListen(file, name, size, 'video', refuse);
       return refuse('unknown', T('not a text file'));
     }
     if(text.length > _FR_TEXT_MAX) return refuse('too_long');

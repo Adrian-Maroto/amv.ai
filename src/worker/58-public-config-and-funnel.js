@@ -118,6 +118,10 @@ async function publicConfig(request, env) {
      the sign-in request, not from the sign-in response. Not a secret: it is
      the same fact the CORS headers already state. */
   if (_cookieAuthOn(env)) out.cookieSession = true;
+  /* Which halves of server speech are switched on, so the page offers
+     transcription and spoken answers only where they will work, and keeps the
+     browser's own voice where they will not. Never the supplier or a price. */
+  if (_speechListenOn(env) || _speechSpeakOn(env)) out.speech = { listen: _speechListenOn(env), speak: _speechSpeakOn(env) };
   /* Built directly rather than through json(), which takes only a body and a
      status - a third argument would have been silently ignored and the cache
      header would never have been sent. Five minutes is long enough to spare
