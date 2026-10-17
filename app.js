@@ -28301,6 +28301,24 @@ const AMV_TOOLS = [
     input_schema:{ type:'object', properties:{
       standing:{type:'string', description:'The instruction, in the person\'s own terms. Replaces any previous one, so include anything from before that still applies.'}
     }, required:['standing'] }
+  },
+  /* SEVERAL WORKERS AT ONCE, ON ONE TASK.
+
+     "Compare these four laptops", "draft the intro, the method and the
+     summary", "review this for security, speed and readability": parts that do
+     not depend on each other, done one after another in one long answer. This
+     hands each part to a worker of its own, runs up to three at a time, and
+     brings every result back here to be combined - the main answer stays in
+     charge and writes the final word. */
+  {
+    name:'delegate',
+    description:'Split a task into 2-5 INDEPENDENT parts and have a separate AMV worker do each one at the same time, then combine their results yourself. Use only when the parts genuinely do not depend on each other (compare several options, draft several sections, review from several angles). Each worker sees ONLY its own brief - put everything it needs in the brief. Workers cannot browse, run code or use any tool; they think and write. Each worker counts against the plan like any request, so never use it for something one answer does as well.',
+    input_schema:{ type:'object', properties:{
+      tasks:{ type:'array', minItems:2, maxItems:5, items:{ type:'object', properties:{
+        title:{type:'string', description:'A few words naming this part, shown to the person.'},
+        brief:{type:'string', description:'Everything this worker needs: the question, the material, the format to answer in.'}
+      }, required:['title','brief'] } }
+    }, required:['tasks'] }
   }
 ];
 
@@ -28412,6 +28430,56 @@ try{ window.runAgentic = runAgentic; }catch(e){}
    crew_list and crew_pause do not. Reading their own jobs is not a side effect,
    and pausing STOPS the spending - putting a dialog in front of "stop doing
    that" is the one place a confirmation makes things worse. */
+/* THE WORKERS. Bounded on every side: two to five of them, three at a time
+   (the free plan allows eight requests a minute, and the main answer needs
+   one), a brief of at most 6,000 characters, a short answer each. Pressing
+   Stop stops all of them - they ride on this turn's own stop. A worker that
+   fails is reported as failed, by name; the others still come back, and the
+   main answer is told plainly which part is missing, never handed a gap to
+   fill in from nothing. */
+const DELEGATE_MAX = 5, DELEGATE_AT_ONCE = 3, DELEGATE_BRIEF_MAX = 6000;
+async function _delegateRun(input, onStatus){
+  const tasks = (Array.isArray(input && input.tasks) ? input.tasks : [])
+    .map(t => ({ title: String((t && t.title) || '').trim().slice(0, 80), brief: String((t && t.brief) || '').trim() }))
+    .filter(t => t.title && t.brief);
+  if(tasks.length < 2) return { text: 'Not delegated: give at least two independent parts, each with a title and a brief. For one part, just answer it.', render: null };
+  if(tasks.length > DELEGATE_MAX) return { text: 'Not delegated: at most ' + DELEGATE_MAX + ' parts at once. Combine some, or do it in two rounds.', render: null };
+  const long = tasks.find(t => t.brief.length > DELEGATE_BRIEF_MAX);
+  if(long) return { text: 'Not delegated: the brief for "' + long.title + '" is longer than ' + DELEGATE_BRIEF_MAX + ' characters. Shorten it to what that worker needs.', render: null };
+
+  const signal = (typeof _activeStreamCtrl !== 'undefined' && _activeStreamCtrl) ? _activeStreamCtrl.signal : undefined;
+  const sys = 'You are one of several AMV workers, each given one part of a larger task; another AMV combines the parts. '
+    + 'Do ONLY the part in your brief, completely, as the brief asks. Do not refer to other workers or the larger task. '
+    + 'You have no tools and cannot browse: say plainly when something would need current information you do not have, rather than guessing.';
+  const res = tasks.map(t => ({ title: t.title, ok: false, out: '' }));
+  let done = 0, next = 0;
+  const say = () => { onStatus && onStatus(T('{0} of {1} workers finished').replace('{0}', done).replace('{1}', tasks.length) + '\u2026'); };
+  say();
+  const worker = async () => {
+    while(next < tasks.length){
+      const i = next++;
+      if(signal && signal.aborted){ res[i].out = 'Stopped before it started.'; continue; }
+      try{
+        const out = await aiComplete(tasks[i].brief, sys, { max_tokens: 1500, signal });
+        res[i].ok = !!String(out || '').trim();
+        res[i].out = res[i].ok ? String(out) : 'The worker returned nothing.';
+      }catch(e){
+        res[i].out = (signal && signal.aborted) ? 'Stopped.' : 'Failed: ' + String((e && e.message) || 'no answer');
+      }
+      done++; say();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(DELEGATE_AT_ONCE, tasks.length) }, worker));
+  const failed = res.filter(r => !r.ok).map(r => r.title);
+  const text = res.map((r, i) => '### Worker ' + (i + 1) + ' - ' + r.title + (r.ok ? '' : ' (DID NOT FINISH)') + '\n' + r.out.slice(0, 8000)).join('\n\n')
+    + (failed.length ? '\n\nThese parts did not come back: ' + failed.join(', ') + '. Say so to the person; do not write those parts yourself as if a worker had.' : '');
+  const render = '<div class="chat-run dlg"><div class="chat-run-h">' + escH(T('{0} workers').replace('{0}', tasks.length)) + '</div><ul class="dlg-list">'
+    + res.map(r => '<li class="dlg-i' + (r.ok ? '' : ' bad') + '"><span class="dlg-st" aria-hidden="true">' + (r.ok ? '\u2713' : '\u2715') + '</span>'
+      + '<span class="dlg-t">' + escH(r.title) + '</span><span class="sr-only">' + escH(r.ok ? T('finished') : T('did not finish')) + '</span></li>').join('') + '</ul></div>';
+  return { text, render };
+}
+try{ window._delegateRun = _delegateRun; }catch(e){}
+
 const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true,
                         crew_add:true, crew_update:true, crew_resume:true,
                         crew_remove:true, crew_standing:true, crew_ceiling:true,
@@ -28671,6 +28739,8 @@ async function _amvRunTool(name, input, onStatus){
     /* generate_image and generate_video were handled here. Removed with the
        feature: a tool the model can call and the product cannot honour is the
        worst of both - it promises, then fails at the last step. */
+
+    if(name==='delegate') return await _delegateRun(input, onStatus);
 
     if(name==='run_code'){
       onStatus && onStatus('Running the code\u2026');

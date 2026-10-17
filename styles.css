@@ -17181,3 +17181,12 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .gui-form-send{ min-height:44px; min-width:96px; }
 .gui-form[data-sent="1"]{ opacity:.75; }
 @media (pointer:coarse){ .gui-form .gui-calc-in input[type=text], .gui-form .gui-calc-in input[type=date], .gui-form .gui-calc-in textarea{ font-size:var(--t-lg); } }
+
+/* ═══ LAYER A322 - the workers a delegated task was split across ═══
+   On the chat-run card the other tool results use; one row per part, its
+   state as a mark and, for screen readers, a word. */
+.dlg-list{ list-style:none; margin:0; padding:var(--sp-2) var(--sp-3); display:flex; flex-direction:column; gap:var(--sp-1); }
+.dlg-i{ display:flex; align-items:center; gap:var(--sp-2); font-size:var(--t-sm); color:var(--tx); min-width:0; }
+.dlg-st{ flex:none; width:1.2em; text-align:center; color:var(--grn); font-weight:600; }
+.dlg-i.bad .dlg-st{ color:var(--red); }
+.dlg-t{ min-width:0; overflow-wrap:anywhere; }

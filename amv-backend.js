@@ -18587,6 +18587,9 @@ const AMV_CLIENT_TOOLS = new Set([
   'crew_ceiling',
   'memory_list', 'memory_add', 'memory_forget',
   'approvals_list', 'approval_act', 'account_status',
+  /* Several workers on one task (11c-agentic-chat.js): runs in the browser,
+     each worker a normal metered request. */
+  'delegate',
   /* THE BRIDGE'S TOOLS, AND THE SAME MISTAKE ONE FLOOR UP.
 
      The bridge was built end to end - a daemon on somebody's machine, a

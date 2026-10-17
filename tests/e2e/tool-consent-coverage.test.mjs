@@ -118,6 +118,11 @@ section('And every tool has been classified either way');
        pressing one is the consent, and each opens the same sign-in, setup or
        add-connector review the directory's own button opens. */
     connect_account: 'shows a card of ways to connect; nothing is connected, sent or recorded until the person presses a button',
+    /* Workers that can only think and write: no tools, nothing sent, saved or
+       changed. They spend - at most five metered requests on the person's own
+       plan, like a long answer does - and a question before each one would be
+       the dialog people learn to click through. */
+    delegate:       'splits a task across at most five workers with no tools; nothing is sent, saved or changed',
   };
   const unclassified = toolNames
     .filter(n => !consented.has(n) && !(n in SAFE_WITHOUT_ASKING))
