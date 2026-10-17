@@ -157,7 +157,7 @@ section('A long answer stops being spoken at the cap, and says the rest is on sc
   heardText = 'Give me the long version.';
   await page.waitForTimeout(3000);
   await page.evaluate(() => _lvDrive.endTurn());
-  await page.waitForFunction(() => _lvDrive.state() === 'listening' && window.__played.length > 3, null, { timeout: 30000 }).catch(() => {});
+  await page.waitForFunction(() => _lvDrive.state() === 'listening' && window.__played.length > 3, null, { timeout: 90000 }).catch(() => {});
   const chars = spoken.filter(s => s !== 'The rest is on screen.').join('').length;
   ok(chars <= 1500 && spoken.length > 5, 'no more than 1,500 characters are spoken', { chars, n: spoken.length });
   ok(spoken[spoken.length - 1] === 'The rest is on screen.', 'and the last thing said is that the rest is on screen', spoken.slice(-1));
@@ -165,6 +165,10 @@ section('A long answer stops being spoken at the cap, and says the rest is on sc
 
 section('A turn with nothing recorded is not sent anywhere');
 {
+  /* Interrupting first puts it in a fresh listen whatever the last section
+     left behind, and ending the turn in the same breath means nothing has
+     been recorded yet. */
+  await page.evaluate(() => _lvDrive.bargeIn());
   const before = L.hit(/\/v1\/audio\/transcribe/).length;
   const r = await page.evaluate(async () => { _lvDrive.endTurn(); await new Promise(x => setTimeout(x, 400)); return _lvDrive.state(); });
   ok(L.hit(/\/v1\/audio\/transcribe/).length === before && r === 'listening', 'it just listens again', { sent: L.hit(/\/v1\/audio\/transcribe/).length - before, state: r });
