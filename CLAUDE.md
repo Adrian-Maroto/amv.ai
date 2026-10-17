@@ -72,7 +72,9 @@ Companion docs (do not duplicate them here - read them):
 - **What the static host publishes is `public/`.** The build writes it: the
   built `index.html`, `sw.js`, `manifest.webmanifest`, the two icons,
   `amv-bridge.mjs`, `amv-cli.mjs` (the command-line tool, from `cli/`; the API keys
-  pane writes the deployment's address into it at download), the code sandbox (`sandbox.html` + `sandbox.js`), the
+  pane writes the deployment's address into it at download), `amv-vscode.json` +
+  `amv-vscode.js` (the VS Code extension, from `vscode/`; the same pane packs them
+  into `amv.vsix` in the browser with the address filled in), the code sandbox (`sandbox.html` + `sandbox.js`), the
   language packs in `i18n/`, and files fetched on first use - `office.js`
   (Word/Excel/PowerPoint export), `sheet.js` (the spreadsheet editor),
   `admin.js` (the owner console), `crew-data.js` (the Crew catalogue),

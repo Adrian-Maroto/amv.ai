@@ -106,6 +106,10 @@ function emitBridge() {
   /* The command-line tool, downloaded from Settings -> API keys - the page
      writes this deployment's address into it at download time. */
   writeFileSync('amv-cli.mjs', readFileSync('cli/amv-cli.mjs'));
+  /* The VS Code extension's two files, packed into a .vsix by the API keys
+     pane with this deployment's address in it (see _vsixDownload). */
+  writeFileSync('amv-vscode.json', readFileSync('vscode/package.json'));
+  writeFileSync('amv-vscode.js', readFileSync('vscode/extension.js'));
   emitSandbox();
 }
 /* THE CODE SANDBOX is its own page (src/sandbox/): the app frames it with
@@ -984,6 +988,8 @@ const PUBLISH = [
   'icon-512.png',          // the manifest's large and maskable icon
   'amv-bridge.mjs',        // fetched by the connect card's Download button
   'amv-cli.mjs',           // fetched by the API keys pane's Download button
+  'amv-vscode.json',       // the VS Code extension's manifest, packed into amv.vsix by the API keys pane
+  'amv-vscode.js',         // and its code
   'sandbox.html',          // the frame programs run in (opaque origin, its own policy)
   'sandbox.js',            // what that frame runs
   'picker.html',           // Google's file picker, opened as its own window

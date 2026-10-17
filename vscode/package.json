@@ -1,0 +1,36 @@
+{
+  "name": "amv",
+  "displayName": "AMV",
+  "description": "Ask AMV about your code, and let it change code you select - shown as a diff, applied only when you say so.",
+  "version": "1.0.0",
+  "publisher": "amv",
+  "license": "UNLICENSED",
+  "engines": { "vscode": "^1.80.0" },
+  "categories": ["Programming Languages", "Other"],
+  "main": "./extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      { "command": "amv.ask", "title": "AMV: Ask" },
+      { "command": "amv.askSelection", "title": "AMV: Ask about the selection" },
+      { "command": "amv.editSelection", "title": "AMV: Change the selection" },
+      { "command": "amv.explainProblems", "title": "AMV: Explain the problems in this file" },
+      { "command": "amv.setKey", "title": "AMV: Set API key" },
+      { "command": "amv.signOut", "title": "AMV: Forget API key" }
+    ],
+    "menus": {
+      "editor/context": [
+        { "command": "amv.askSelection", "when": "editorHasSelection", "group": "amv@1" },
+        { "command": "amv.editSelection", "when": "editorHasSelection && !editorReadonly", "group": "amv@2" }
+      ]
+    },
+    "configuration": {
+      "title": "AMV",
+      "properties": {
+        "amv.server": { "type": "string", "default": "__AMV_API__", "description": "Your AMV server's address (https)." },
+        "amv.model": { "type": "string", "default": "auto", "enum": ["auto", "amv-pulse", "amv-core", "amv-swift", "amv-forge", "amv-apex"], "description": "Which AMV engine answers." },
+        "amv.maxTokens": { "type": "number", "default": 4096, "minimum": 256, "maximum": 32000, "description": "Longest answer, in tokens." }
+      }
+    }
+  }
+}

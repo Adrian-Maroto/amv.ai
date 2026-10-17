@@ -31,6 +31,8 @@ function _renderApiKeysPane(pane){
     _apiDocsHTML();
   const cli = document.getElementById('ak-cli');
   if(cli) on(cli, 'click', async () => { cli.disabled = true; try{ await _cliDownload(); } finally{ cli.disabled = false; } });
+  const vsx = document.getElementById('ak-vsix');
+  if(vsx) on(vsx, 'click', async () => { vsx.disabled = true; try{ await _vsixDownload(); } finally{ vsx.disabled = false; } });
 
   const body = document.getElementById('api-body');
   if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
@@ -194,7 +196,97 @@ function _apiDocsHTML(){
       'node amv-cli.mjs code "make the tests pass"')+'</code></pre>'+
     '<p class="ak-doc">'+escH(T('{0} works on the files in the folder you start it in: it reads freely, but shows every change and every command and asks before each one, and offers to put everything back at the end.')).replace('{0}', '<code>code</code>')+'</p>'+
     '<button class="btn bs" id="ak-cli" type="button">'+escH(T('Download {0}')).replace('{0}', 'amv-cli.mjs')+'</button>'+
+  '</div>'+
+  /* IN VS CODE. The same handover: packed here, in this browser, with this
+     deployment's address in it, so the only thing to set is the key - which
+     the extension keeps in the system keychain, not in settings.json. */
+  '<div class="ss2"><h3>'+escH(T('In VS Code'))+'</h3>'+
+    '<p class="ak-doc">'+escH(T('Ask about the code you have open, or select lines and have AMV change them. Every change is shown as a diff first and applied only when you press Apply.'))+'</p>'+
+    '<p class="ak-doc">'+escH(T('In VS Code open Extensions, choose {0} from its menu, pick the file, then run {1} and paste a key.'))
+      .replace('{0}', '<b>'+escH(T('Install from VSIX'))+'</b>').replace('{1}', '<code>AMV: Set API key</code>')+'</p>'+
+    '<button class="btn bs" id="ak-vsix" type="button">'+escH(T('Download {0}')).replace('{0}', 'amv.vsix')+'</button>'+
   '</div>';
+}
+
+/* ── A VS CODE EXTENSION, PACKED IN THE BROWSER ───────────────────────────
+   A .vsix is a zip: the extension's own files under extension/, a manifest,
+   and a content-types list. Written here, uncompressed, with a CRC for each
+   file - VS Code checks them - so the address can be filled in without a
+   build step on the server. */
+const VSIX_SRC = { pkg: 'amv-vscode.json', js: 'amv-vscode.js' };
+function _crc32(bytes){
+  let t = _crc32.t;
+  if(!t){ t = _crc32.t = new Uint32Array(256); for(let n = 0; n < 256; n++){ let c = n; for(let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } }
+  let c = 0xFFFFFFFF;
+  for(let i = 0; i < bytes.length; i++) c = t[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function _zipStored(files){
+  const enc = new TextEncoder(), parts = [], central = [];
+  let off = 0;
+  for(const f of files){
+    const name = enc.encode(f.name), data = typeof f.data === 'string' ? enc.encode(f.data) : f.data, crc = _crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true);
+    parts.push(new Uint8Array(h.buffer), name, data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+    c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true);
+    c.setUint32(42, off, true);
+    central.push(new Uint8Array(c.buffer), name);
+    off += 30 + name.length + data.length;
+  }
+  const size = central.reduce((n, p) => n + p.length, 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, size, true); e.setUint32(16, off, true);
+  return new Blob(parts.concat(central, [new Uint8Array(e.buffer)]), { type: 'application/zip' });
+}
+async function _vsixFiles(base){
+  const get = async (f) => { const r = await fetchDeadline(f, { cache: 'no-store' }, 15000); if(!r.ok) throw new Error('http_' + r.status); return await r.text(); };
+  const [pkgText, js] = await Promise.all([get(VSIX_SRC.pkg), get(VSIX_SRC.js)]);
+  const pkg = JSON.parse(pkgText);
+  if(pkg.name !== 'amv' || js.indexOf("require('vscode')") < 0) throw new Error('not_the_extension');
+  pkg.contributes.configuration.properties['amv.server'].default = base;
+  const x = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const manifest = '<?xml version="1.0" encoding="utf-8"?>\n'
+    + '<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">'
+    + '<Metadata><Identity Language="en-US" Id="' + x(pkg.name) + '" Version="' + x(pkg.version) + '" Publisher="' + x(pkg.publisher) + '"/>'
+    + '<DisplayName>' + x(pkg.displayName) + '</DisplayName><Description xml:space="preserve">' + x(pkg.description) + '</Description>'
+    + '<Categories>' + x(pkg.categories.join(',')) + '</Categories>'
+    + '<Properties><Property Id="Microsoft.VisualStudio.Code.Engine" Value="' + x(pkg.engines.vscode) + '"/></Properties></Metadata>'
+    + '<Installation><InstallationTarget Id="Microsoft.VisualStudio.Code"/></Installation><Dependencies/>'
+    + '<Assets><Asset Type="Microsoft.VisualStudio.Code.Manifest" Path="extension/package.json" Addressable="true"/></Assets></PackageManifest>';
+  const types = '<?xml version="1.0" encoding="utf-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    + '<Default Extension=".json" ContentType="application/json"/><Default Extension=".js" ContentType="application/javascript"/>'
+    + '<Default Extension=".vsixmanifest" ContentType="text/xml"/></Types>';
+  return [
+    { name: '[Content_Types].xml', data: types },
+    { name: 'extension.vsixmanifest', data: manifest },
+    { name: 'extension/package.json', data: JSON.stringify(pkg, null, 2) },
+    { name: 'extension/extension.js', data: js },
+  ];
+}
+async function _vsixDownload(){
+  const base = String(apiBase() || '').replace(/\/$/, '');
+  if(!/^https:\/\/[^\s"'\\]+$/.test(base)){
+    try{ toast(T('This copy of AMV is not connected to its server, so the extension would have nowhere to send questions.'), 'error', 7000); }catch(e){}
+    return false;
+  }
+  let blob;
+  try{ blob = _zipStored(await _vsixFiles(base)); }
+  catch(e){
+    try{ toast(T('AMV could not fetch the VS Code extension from this deployment. Try again in a moment.'), 'error', 7000); }catch(x){}
+    return false;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'amv.vsix';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => { try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
+  try{ toast(T('Saved amv.vsix. In VS Code: Extensions, Install from VSIX, then run AMV: Set API key.'), 'success', 8000); }catch(e){}
+  return true;
 }
 
 const CLI_FILE = 'amv-cli.mjs';
@@ -226,4 +318,4 @@ async function _cliDownload(){
   try{ toast('Saved amv-cli.mjs. Set AMV_API_KEY to one of your keys, then run: node amv-cli.mjs "your question"', 'success', 8000); }catch(e){}
   return true;
 }
-try{ window._renderApiKeysPane=_renderApiKeysPane; window._apiLoad=_apiLoad; window._cliDownload=_cliDownload; }catch(e){}
+try{ window._renderApiKeysPane=_renderApiKeysPane; window._apiLoad=_apiLoad; window._cliDownload=_cliDownload; window._vsixDownload=_vsixDownload; }catch(e){}
