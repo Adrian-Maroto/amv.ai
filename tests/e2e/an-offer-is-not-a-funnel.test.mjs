@@ -24,9 +24,12 @@ const show = (offer) => page.evaluate(([o]) => {
   saveStr('amv_plan', 'pro');
   AMV_API.base = 'https://backend.test'; AMV_API.token = 't';
   window._autoApi = async () => ({ items: [], results: [], offer: o });
-  return _autoRefresh().then(() => {
+  return _autoRefresh().then(async () => {
     renderCrewView();
-    const el = document.querySelector('.mc-offer');
+    /* Crew's catalogue loads on first open, so the screen can finish drawing
+       after renderCrewView returns - wait for the offer rather than read at once. */
+    let el = null;
+    for (let i = 0; i < 100 && !(el = document.querySelector('.mc-offer')); i++) await new Promise(s => setTimeout(s, 100));
     if(!el) return { shown: false };
     const btns = [...el.querySelectorAll('.mc-offer-go')];
     return {

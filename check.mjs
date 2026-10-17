@@ -348,7 +348,12 @@ function _failureReport(fullOutput) {
 if (!FAST) step('All test suites', () => {
   let out;
   try {
-    out = sh('node tests/run.mjs');
+    /* AMV_TEST_JOBS runs fewer suites at once on a machine that is short of
+       CPU: the same suites, the same assertions, fewer browsers fighting for
+       the clock. A gate on a contended box otherwise fails a different timing
+       check on every run, which says nothing about the code. */
+    const jobs = parseInt(process.env.AMV_TEST_JOBS || '', 10);
+    out = sh('node tests/run.mjs' + (jobs > 0 ? ' --jobs=' + jobs : ''));
   } catch (e) {
     throw new Error(_failureReport(String((e && e.message) || '')));
   }
