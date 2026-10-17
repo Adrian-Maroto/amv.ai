@@ -70,8 +70,15 @@ for (const f of files) {
   }
 }
 
+/* A module split along its own headings (12-handoff.js, 12a-, 12b-...) is
+   still one module: the parts were one file, and the rule is about the same
+   behaviour written in two different places, not about where a file was cut.
+   Only these three were cut from one file; 05b-, 05c- and the like were always
+   modules of their own, so they keep being compared as such. */
+const SPLIT_FROM_ONE = new Set(['10', '11', '12']);
+const moduleOf = (where) => { const f = where.split(':')[0]; const m = f.match(/^(\d+)[a-z]?-/); return m && SPLIT_FROM_ONE.has(m[1]) ? m[1] : f; };
 const crossModule = [...seen.values()]
-  .filter(w => new Set(w.map(x => x.where.split(':')[0])).size > 1);
+  .filter(w => new Set(w.map(x => moduleOf(x.where))).size > 1);
 
 section('Both halves of the codebase were actually read');
 {
