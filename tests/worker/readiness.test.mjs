@@ -131,6 +131,10 @@ section('It NEVER returns a secret, in any form');
     /* The cloud computer: its binding and a key of real length. */
     AMV_FILES: { put() {}, get() {} },
     AMV_COMPUTER: {}, AMV_COMPUTER_KEY: 'computer-key-SUPERSECRET-0123456789abcdef',
+    /* Voice: a supplier, its key, and both halves with their prices. */
+    AMV_SPEECH_URL: 'https://speech.example/v1', AMV_SPEECH_KEY: 'speech-key-SUPERSECRET-0123456789abcdef',
+    AMV_SPEECH_LISTEN_MODEL: 'hear-1', AMV_SPEECH_LISTEN_USD_PER_MIN: '0.006',
+    AMV_SPEECH_VOICE_MODEL: 'speak-1', AMV_SPEECH_VOICE: 'calm', AMV_SPEECH_VOICE_USD_PER_1K_CHARS: '0.015',
   });
   const body = await (await W.adminReadiness(req(env), env)).text();
   ok(!body.includes('SUPERSECRET'), 'no secret value appears anywhere in the response');

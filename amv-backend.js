@@ -36276,8 +36276,8 @@ async function speechTranscribe(request, env){
   if(/^[a-z]{2}$/.test(lang)) form.append('language', lang);
   let r, d = null;
   try{
-    r = await fetch(_speechBase(env) + '/audio/transcriptions', { method:'POST',
-      headers: { Authorization: 'Bearer ' + env.AMV_SPEECH_KEY }, body: form, signal: AbortSignal.timeout(SPEECH_DEADLINE_MS) });
+    r = await fetchDeadline(_speechBase(env) + '/audio/transcriptions', { method:'POST',
+      headers: { Authorization: 'Bearer ' + env.AMV_SPEECH_KEY }, body: form }, SPEECH_DEADLINE_MS);
     d = await r.json().catch(() => null);
   }catch(e){ r = null; }
   if(!r || !r.ok || !d || typeof d.text !== 'string'){
@@ -36318,10 +36318,10 @@ async function speechSpeak(request, env){
   if(refused) return refused;
   let r;
   try{
-    r = await fetch(_speechBase(env) + '/audio/speech', { method:'POST',
+    r = await fetchDeadline(_speechBase(env) + '/audio/speech', { method:'POST',
       headers: { Authorization: 'Bearer ' + env.AMV_SPEECH_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: String(env.AMV_SPEECH_VOICE_MODEL), voice: String(env.AMV_SPEECH_VOICE), input: text, response_format: 'mp3' }),
-      signal: AbortSignal.timeout(SPEECH_DEADLINE_MS) });
+      body: JSON.stringify({ model: String(env.AMV_SPEECH_VOICE_MODEL), voice: String(env.AMV_SPEECH_VOICE), input: text, response_format: 'mp3' }) },
+      SPEECH_DEADLINE_MS);
   }catch(e){ r = null; }
   if(!r || !r.ok || !r.body){
     await _releaseSpendGate(env, book);
