@@ -30,7 +30,7 @@ const _FR_FORMULAS   = 2000;                /* listed per sheet; the rest are co
 const _FR_TEXT_MAX   = (typeof LONG_MSG_PART !== 'undefined' && typeof LONG_MSG_MAX_PARTS !== 'undefined')
   ? LONG_MSG_PART * LONG_MSG_MAX_PARTS : 7200000;
 
-const _FR_LABEL = { docx: 'Word document', xlsx: 'Excel workbook', pptx: 'PowerPoint deck' };
+const _FR_LABEL = { docx: 'Word document', xlsx: 'Excel workbook', pptx: 'PowerPoint deck', transcript: 'Transcript' };
 
 class _FrRefusal extends Error { constructor(code, extra){ super(code); this.code = code; this.extra = extra || ''; } }
 
@@ -109,7 +109,9 @@ async function _frListen(file, name, size, sig, refuse){
   if(!body.trim()) return refuse('listen_failed', T('nothing was said in it that AMV could make out.'));
   const length = _frClock(d.seconds || seconds);
   return { kind: 'text', name, size, format: 'transcript',
-           summary: T('Transcript') + ', ' + length,
+           /* The chip already says "Transcript" from the format, so the
+              summary is just the length. */
+           summary: length,
            data: T('Transcript of the recording') + ' "' + name + '" (' + length + (d.language ? ', ' + d.language : '') + '). '
                + T('Times are from the start of the recording.') + '\n\n' + body };
 }
