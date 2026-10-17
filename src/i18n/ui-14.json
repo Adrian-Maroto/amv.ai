@@ -417,25 +417,6 @@
   "ko": "아직 사용자 스킬이 없습니다 - 아래에서 만들거나 스킬 파일을 가져오세요.",
   "ta": "இன்னும் தனிப்பயன் திறன்கள் இல்லை - கீழே ஒன்றை உருவாக்குங்கள், அல்லது திறன் கோப்பை இறக்குமதி செய்யுங்கள்."
  },
- "No editor extension yet. AMV works in your project folder through your connected computer, with an Undo for every change.": {
-  "es": "Aún no hay extensión para editores. AMV trabaja en la carpeta de tu proyecto a través de tu ordenador conectado, con un Deshacer para cada cambio.",
-  "zh": "暂无编辑器扩展。AMV 通过你连接的电脑在项目文件夹中工作,每次更改都可撤销。",
-  "hi": "अभी कोई एडिटर एक्सटेंशन नहीं। AMV आपके जुड़े कंप्यूटर के ज़रिए आपके प्रोजेक्ट फ़ोल्डर में काम करता है, हर बदलाव के लिए पूर्ववत करें के साथ।",
-  "ar": "لا توجد إضافة للمحرّر بعد. يعمل AMV في مجلد مشروعك عبر حاسوبك المتصل، مع إمكانية التراجع عن كل تغيير.",
-  "pt": "Ainda não há extensão para editores. A AMV trabalha na pasta do seu projeto pelo computador conectado, com Desfazer para cada alteração.",
-  "fr": "Pas encore d’extension pour éditeur. AMV travaille dans le dossier de votre projet via votre ordinateur connecté, avec une annulation pour chaque modification.",
-  "de": "Noch keine Editor-Erweiterung. AMV arbeitet über Ihren verbundenen Computer in Ihrem Projektordner, mit Rückgängig für jede Änderung.",
-  "ja": "エディター拡張機能はまだありません。AMV は接続したコンピューターを通じてプロジェクトフォルダで作業し、すべての変更を元に戻せます。",
-  "ru": "Расширения для редактора пока нет. AMV работает в папке проекта через подключённый компьютер, и каждое изменение можно отменить.",
-  "id": "Belum ada ekstensi editor. AMV bekerja di folder proyek Anda melalui komputer yang terhubung, dengan Urungkan untuk setiap perubahan.",
-  "bn": "এখনো কোনো এডিটর এক্সটেনশন নেই। AMV আপনার যুক্ত কম্পিউটারের মাধ্যমে প্রজেক্ট ফোল্ডারে কাজ করে, প্রতিটি পরিবর্তনের জন্য পূর্বাবস্থা সহ।",
-  "ur": "ابھی کوئی ایڈیٹر ایکسٹینشن نہیں۔ AMV آپ کے جڑے کمپیوٹر کے ذریعے پروجیکٹ فولڈر میں کام کرتا ہے، ہر تبدیلی کے لیے واپس کریں کے ساتھ۔",
-  "tr": "Henüz düzenleyici uzantısı yok. AMV bağlı bilgisayarınız üzerinden proje klasörünüzde çalışır, her değişiklik için Geri Al vardır.",
-  "vi": "Chưa có tiện ích cho trình soạn thảo. AMV làm việc trong thư mục dự án qua máy tính đã kết nối, mỗi thay đổi đều có thể Hoàn tác.",
-  "it": "Ancora nessuna estensione per editor. AMV lavora nella cartella del progetto tramite il computer collegato, con un Annulla per ogni modifica.",
-  "ko": "아직 에디터 확장 프로그램은 없습니다. AMV는 연결된 컴퓨터를 통해 프로젝트 폴더에서 작업하며, 모든 변경을 실행 취소할 수 있습니다.",
-  "ta": "இன்னும் எடிட்டர் நீட்டிப்பு இல்லை. இணைக்கப்பட்ட கணினி வழியாக AMV உங்கள் திட்டக் கோப்புறையில் வேலை செய்யும், ஒவ்வொரு மாற்றத்துக்கும் செயல்தவிர் உண்டு."
- },
  "No invoices yet. Your first payment will show up here.": {
   "es": "Aún no hay facturas. Tu primer pago aparecerá aquí.",
   "zh": "还没有发票。你的第一笔付款会显示在这里。",

@@ -60,7 +60,7 @@ section('A deployment without a cloud computer offers nothing');
 {
   await serve({ [INFO]: { status: 200, body: { ok: true, available: false, allowed: true, minPlan: 'pro', minutes: { used: 0, cap: 300 } } } });
   const c = await mountCard();
-  ok(c.hidden === true && !c.go && !/cloud computer/i.test(c.text), 'no row, no button, no mention', c);
+  ok(c.hidden === true && !c.go && !/cloud (computer|workspace)/i.test(c.text), 'no row, no button, no mention', c);
 }
 
 section('A plan without it is told which plan has it');
@@ -74,7 +74,7 @@ section('A machine that will not start: said as that, and nothing is connected')
 {
   await serve({
     [INFO]: { status: 200, body: { ok: true, available: true, allowed: true, minPlan: 'pro', minutes: { used: 12, cap: 300 } } },
-    '/v1/computer/status': { status: 503, body: { error: 'The cloud computer did not start. Try again in a minute.', code: 'computer_unavailable' } },
+    '/v1/computer/status': { status: 503, body: { error: 'The cloud workspace did not start. Try again in a minute.', code: 'computer_unavailable' } },
   });
   const c = await mountCard();
   ok(c.go && /12 of 300 minutes/.test(c.text), 'the row offers it, with the minutes used', c.text.slice(0, 300));
@@ -95,7 +95,7 @@ section('Using it: asked first, then connected - and the card says what it is');
   const cs = await calls();
   ok(cs.some(x => x.path === '/v1/computer/status' && x.method === 'POST'), 'the machine was asked before "connected" was said');
   const c = await mountCard();
-  ok(/cloud computer is connected/.test(c.text) && /cleared when it sleeps/.test(c.text) && /After 5 minutes/.test(c.text) && /including the 5 minutes/.test(c.text),
+  ok(/cloud workspace is connected/.test(c.text) && /cleared when it sleeps/.test(c.text) && /After 5 minutes/.test(c.text) && /including the 5 minutes/.test(c.text),
      'the card says it is cleared when it sleeps', c.text.slice(0, 500));
   ok(/Connectors, sign-ins and the screen need your own computer/.test(c.text), 'and what needs your own computer');
   ok(/12 of 300 minutes/.test(c.text), 'and the minutes used', c.text);
@@ -133,7 +133,7 @@ section('The person’s never-run list still applies here');
 
 section('The server’s refusals in its words, and they do not disconnect');
 {
-  await setAnswer('/v1/computer/exec', 429, { error: 'You have used this month’s 300 minutes of cloud computer time. It starts again next month, or upgrade for more.', code: 'computer_minutes', minutes: { used: 300, cap: 300 } });
+  await setAnswer('/v1/computer/exec', 429, { error: 'You have used this month’s 300 minutes of cloud workspace time. It starts again next month, or upgrade for more.', code: 'computer_minutes', minutes: { used: 300, cap: 300 } });
   const r = await page.evaluate(async () => { try { await bridgeExec('echo again'); return null; } catch (e) { return { m: e.message, code: e.code, still: BRIDGE.connected }; } });
   ok(r && r.code === 'computer_minutes' && /300 minutes/.test(r.m) && r.still === true, 'minutes spent: said, and still connected', r);
   await setAnswer('/v1/computer/exec', 403, { error: 'refused', reason: 'a recursive delete' });
@@ -166,7 +166,7 @@ section('It survives a reload of the tab');
     _bridgeRestore();
     return { connected: BRIDGE.connected, cloud: BRIDGE.cloud, token: BRIDGE.token, folder: BRIDGE.folder };
   });
-  ok(r.connected && r.cloud && r.token === '' && /cloud computer/.test(r.folder), 'restored as the cloud computer', r);
+  ok(r.connected && r.cloud && r.token === '' && /cloud workspace/.test(r.folder), 'restored as the cloud computer', r);
 }
 
 section('Disconnect stops what runs there, and forgets it');

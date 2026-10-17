@@ -4390,24 +4390,24 @@ async function computerInfo(request, env){
 async function computerRoute(request, env, route){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'unauthorized' }, 401);
-  if(!_computerOn(env)) return json({ error: 'AMV’s cloud computer is not switched on for this deployment yet. You can still connect your own computer.', code: 'needs_service' }, 503);
+  if(!_computerOn(env)) return json({ error: 'AMV’s cloud workspace is not switched on for this deployment yet. You can still connect your own computer.', code: 'needs_service' }, 503);
   const cap = _computerCap(user);
-  if(!cap) return json({ error: 'The cloud computer comes with Pro and above.', code: 'plan_required', minPlan: COMPUTER_MIN_PLAN }, 402);
-  const limited = await guardAction(env, 'computer:' + user.email, 120, 2000, 'requests to your cloud computer');
+  if(!cap) return json({ error: 'The cloud workspace comes with Pro and above.', code: 'plan_required', minPlan: COMPUTER_MIN_PLAN }, 402);
+  const limited = await guardAction(env, 'computer:' + user.email, 120, 2000, 'requests to your cloud workspace');
   if(limited) return limited;
   /* Spent: nothing more reaches the machine, because anything that reaches it
      keeps it awake. Disconnecting still goes through - it stops what runs. */
   if(route !== 'revoke'){
     const used = await _computerUsedSeconds(env, user.email);
     if(used >= cap * 60)
-      return json({ error: `You have used this month’s ${cap} minutes of cloud computer time. It starts again next month, or upgrade for more.`,
+      return json({ error: `You have used this month’s ${cap} minutes of cloud workspace time. It starts again next month, or upgrade for more.`,
                     code: 'computer_minutes', minutes: { used: Math.ceil(used / 60), cap } }, 429);
   }
   const raw = await request.text();
-  if(raw.length > 8 * 1024 * 1024) return json({ error: 'That is too large to send to the cloud computer.', code: 'too_large' }, 413);
+  if(raw.length > 8 * 1024 * 1024) return json({ error: 'That is too large to send to the cloud workspace.', code: 'too_large' }, 413);
   let stub;
   try{ stub = env.AMV_COMPUTER.get(env.AMV_COMPUTER.idFromName(await _computerName(user.email))); }
-  catch(e){ return json({ error: 'The cloud computer could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503); }
+  catch(e){ return json({ error: 'The cloud workspace could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503); }
   await _computerBillAwake(env, user.email, Date.now());
   let r, text;
   try{
@@ -4416,16 +4416,16 @@ async function computerRoute(request, env, route){
     text = await r.text();
   }catch(e){
     audit(env, 'computer_unavailable', { by: user.email, route });
-    return json({ error: 'The cloud computer did not start. Try again in a minute.', code: 'computer_unavailable' }, 503);
+    return json({ error: 'The cloud workspace did not start. Try again in a minute.', code: 'computer_unavailable' }, 503);
   }
   let d; try{ d = JSON.parse(text); }catch(e){ d = null; }
-  if(!d || typeof d !== 'object') return json({ error: 'The cloud computer answered with something AMV could not read.', code: 'computer_unavailable' }, 502);
+  if(!d || typeof d !== 'object') return json({ error: 'The cloud workspace answered with something AMV could not read.', code: 'computer_unavailable' }, 502);
   /* The container refusing AMV's key means the two Workers hold different
      keys - a deployment fault, not the person's session. Passed through as a
      401 it would read as "signed out" and send them to sign in again. */
   if(r.status === 401){
     audit(env, 'computer_key_mismatch', { by: user.email, route });
-    return json({ error: 'The cloud computer is not set up correctly on this deployment. Nothing ran.', code: 'computer_unavailable' }, 503);
+    return json({ error: 'The cloud workspace is not set up correctly on this deployment. Nothing ran.', code: 'computer_unavailable' }, 503);
   }
   /* A long command kept it awake past the window billed when it started, so
      the window is extended from when it finished. */
@@ -30042,7 +30042,7 @@ function _readinessReport(env, seen) {
       on: _has(env, 'GOOGLE_CLIENT_ID') && _has(env, 'GOOGLE_PICKER_API_KEY') && /^\d{6,20}$/.test(String(env.GOOGLE_PROJECT_NUMBER || '').trim()),
       turnsOn: 'Google\u2019s own file picker, so somebody can hand AMV one Doc or Sheet to read and edit - and only that one. Until then AMV edits only the Google files it made itself.',
       how: put('GOOGLE_PICKER_API_KEY') + ' (a browser key with the Picker API, limited to your site) and ' + put('GOOGLE_PROJECT_NUMBER') + ' (the number of the same Google Cloud project as GOOGLE_CLIENT_ID)' },
-    { id: 'cloudComputer', name: 'AMV\u2019s cloud computer', blocking: false,
+    { id: 'cloudComputer', name: 'AMV\u2019s cloud workspace', blocking: false,
       on: _computerOn(env),
       turnsOn: 'A computer of their own in AMV\u2019s cloud for Pro plans and above - the same commands and files as connecting their own, without installing anything. One container each, asleep after five idle minutes and cleared when it sleeps; the minutes it is awake count against the plan (Pro 600, Elite 3,000, Ultra 6,000 a month).',
       how: 'deploy the cloud/ folder (needs Workers Paid with Containers), then ' + put('AMV_COMPUTER_KEY') + ' (32+ random characters, the same in both Workers) and uncomment the AMV_COMPUTER binding in wrangler.toml' },

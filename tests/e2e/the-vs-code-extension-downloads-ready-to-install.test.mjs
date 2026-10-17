@@ -61,6 +61,17 @@ section('Settings > API keys offers it, and a copy with no server says so');
   ok(r, 'the button is on the API keys screen', r);
 }
 
+section('The VS Code card in Integrations hands over the same file');
+{
+  const [dl] = await Promise.all([
+    page.waitForEvent('download', { timeout: 15000 }),
+    page.evaluate(() => { _devConnectVSCode(); document.getElementById('vsc-get').click(); }),
+  ]);
+  ok(dl.suggestedFilename() === 'amv.vsix', 'Download the extension saves amv.vsix', dl.suggestedFilename());
+  const closed = await page.waitForFunction(() => !document.getElementById('vsc-bg'), null, { timeout: 5000 }).then(() => true, () => false);
+  ok(closed, 'and the dialog closes once it is saved', closed);
+}
+
 ok(errors.length === 0, 'no JavaScript errors', errors.slice(0, 3));
 await app.close();
 

@@ -14,9 +14,13 @@
      · A named mailbox row opens the picker on that mailbox.
      · Settings lists a sign-in once, however many rows it lights.
      · Nothing tells anybody to install a package AMV does not own. */
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import { bootApp } from '../lib/harness.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const app = await bootApp({ tab: 'integrations', user: { name: 'Alex', email: 'alex@x.com', ini: 'A' } });
 const { page, errors } = app;
 await page.evaluate(() => { document.getElementById('cookie-consent-banner')?.remove(); setTab('integrations'); });
@@ -217,12 +221,16 @@ section('Nobody is told to install a package AMV does not own');
   const r = await page.evaluate(() => {
     _devConnectVSCode();
     const t = (document.getElementById('ovr') || {}).textContent || '';
-    const go = !!document.getElementById('vsc-go');
+    const go = !!document.getElementById('vsc-go') && !!document.getElementById('vsc-get');
     document.getElementById('ovr').innerHTML = '';
     return { t, go, src: String(_devConnectVSCode) + String(connectIntegration) };
   });
   ok(!/@amv\/cli|npm install|amv code \./.test(r.t) && !/@amv\/cli/.test(r.src), 'no install command for a package that does not exist', r.t.slice(0, 120));
-  ok(/no AMV extension for VS Code yet/i.test(r.t) && r.go, 'it says there is no extension, and offers the connection that works', r.t.slice(0, 120));
+  ok(/Download the extension/.test(r.t) && r.go, 'it offers the real extension, and the connection to a whole folder', r.t.slice(0, 160));
+  /* The extension exists (amv.vsix, the-vs-code-extension-downloads-ready-to-
+     install), so no screen anywhere may still say it does not. */
+  const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  ok(!/no AMV extension for VS Code|No editor extension yet|Notify me about the extension/i.test(bundle), 'and nothing in AMV still says there is no extension', true);
 }
 
 section('Nothing threw');

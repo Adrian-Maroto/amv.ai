@@ -156,7 +156,7 @@ function _readinessReport(env, seen) {
       on: _has(env, 'GOOGLE_CLIENT_ID') && _has(env, 'GOOGLE_PICKER_API_KEY') && /^\d{6,20}$/.test(String(env.GOOGLE_PROJECT_NUMBER || '').trim()),
       turnsOn: 'Google\u2019s own file picker, so somebody can hand AMV one Doc or Sheet to read and edit - and only that one. Until then AMV edits only the Google files it made itself.',
       how: put('GOOGLE_PICKER_API_KEY') + ' (a browser key with the Picker API, limited to your site) and ' + put('GOOGLE_PROJECT_NUMBER') + ' (the number of the same Google Cloud project as GOOGLE_CLIENT_ID)' },
-    { id: 'cloudComputer', name: 'AMV\u2019s cloud computer', blocking: false,
+    { id: 'cloudComputer', name: 'AMV\u2019s cloud workspace', blocking: false,
       on: _computerOn(env),
       turnsOn: 'A computer of their own in AMV\u2019s cloud for Pro plans and above - the same commands and files as connecting their own, without installing anything. One container each, asleep after five idle minutes and cleared when it sleeps; the minutes it is awake count against the plan (Pro 600, Elite 3,000, Ultra 6,000 a month).',
       how: 'deploy the cloud/ folder (needs Workers Paid with Containers), then ' + put('AMV_COMPUTER_KEY') + ' (32+ random characters, the same in both Workers) and uncomment the AMV_COMPUTER binding in wrangler.toml' },

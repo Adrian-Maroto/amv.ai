@@ -336,44 +336,49 @@ function renderCodeView(){
   else if(_DEV.curCode) _devShowResult(_DEV.curCode,_DEV.curLang,_DEV.curRun);
 }
 let _LAB_HANDOFF='';
-/* THERE IS NO AMV EXTENSION FOR VS CODE, AND THIS USED TO SAY THERE WAS.
+/* AMV IN VS CODE: THE EXTENSION, AND THE FOLDER.
 
-   It told people to run `npm install -g @amv/cli` and then `amv code .`.
-   No such package exists - not in this repository, not published by AMV - so
-   the best case was an error, and the worst case is the one that matters: a
-   name nobody owns is a name anybody can register, and AMV was sending its
-   own users to install whatever that turned out to be, globally, with their
-   permissions. An instruction to run a command is a trust decision made on the
-   reader's behalf.
+   There is a real extension now - packed in the browser from this deployment
+   (Settings - API keys, `_vsixDownload` in api-keys.js) with its address
+   already filled in, so the only thing to set in VS Code is a key. This used
+   to say there was no extension, and before that it told people to install
+   `@amv/cli` from npm: a package AMV never owned, so a name anybody could
+   register. Neither may come back - the-apps-people-use-connect-first checks.
 
-   What does work today is the bridge: AMV reads, edits and runs the project on
-   the person's own computer, every change measured from the disk with an Undo.
-   So this says that, sends them to it, and offers Notify me for a real
-   extension - through the same recorded waitlist as every other app. */
+   The second road stays: connect your computer and AMV reads, edits and runs
+   the whole project folder, every change measured from the disk with an Undo.
+   The extension works on the file in front of you; the computer on the folder. */
 function _devConnectVSCode(){
   const r=$('ovr'); if(!r) return;
-  const asked=(typeof _appNotifiedSet==='function') && _appNotifiedSet().has('vs-code-extension');
   r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" role="dialog" aria-modal="true" aria-labelledby="vsc-t" style="max-width:480px">'+
-    '<button class="dna-x" id="vsc-x" aria-label="Close" style="position:absolute;top:14px;right:14px">\u2715</button>'+
-    '<h2 id="vsc-t" style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">AMV in your code</h2>'+
-    '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 12px">There is no AMV extension for VS Code yet. AMV can already work in your project, though: connect your computer and it reads, edits and runs the code in the folder you choose, with an Undo for every change it makes.</p>'+
-    '<p style="font-size:var(--t-sm);color:var(--dim);line-height:1.5;margin:0 0 18px">Your code stays on your computer. Keep it open in VS Code while AMV works - you see each change as it lands.</p>'+
+    '<button class="dna-x" id="vsc-x" aria-label="'+escH(T('Close'))+'" style="position:absolute;top:14px;right:14px">\u2715</button>'+
+    '<h2 id="vsc-t" style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">'+escH(T('AMV in VS Code'))+'</h2>'+
+    '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 12px">'+escH(T('Download the AMV extension and install it in VS Code. Ask about the code you have open, or select lines and have AMV change them - every change is shown as a diff and applied only when you press Apply.'))+'</p>'+
+    '<p style="font-size:var(--t-sm);color:var(--dim);line-height:1.5;margin:0 0 18px">'+escH(T('It needs an API key, made under Settings - API keys. To have AMV work across a whole project folder instead, connect your computer.'))+'</p>'+
+    '<p class="gui-form-err" id="vsc-err" role="alert" style="margin:0 0 12px"></p>'+
     '<div style="display:flex;gap:var(--sp-2);flex-wrap:wrap">'+
-      '<button class="btn bp" id="vsc-go">Connect your computer</button>'+
-      (asked ? '<span class="int-onlist">\u2713 On the list for the extension</span>'
-             : '<button class="btn bs" id="vsc-notify" data-app-notify="vs-code-extension" data-app-name="the VS Code extension">Notify me about the extension</button>')+
+      '<button class="btn bp" id="vsc-get">'+escH(T('Download the extension'))+'</button>'+
+      '<button class="btn bs" id="vsc-keys">'+escH(T('Make an API key'))+'</button>'+
+      '<button class="btn bs" id="vsc-go">'+escH(T('Connect your computer'))+'</button>'+
     '</div>'+
   '</div></div>';
   const close=()=>{ r.innerHTML=''; };
   onBackdrop($('vsc-bg'),close); on($('vsc-x'),'click',close);
+  on($('vsc-get'),'click',async()=>{
+    const b=$('vsc-get'); b.disabled=true;
+    try{
+      const ok=await _apiKeysLoad();
+      if(!ok){ $('vsc-err').textContent=T('The extension could not be loaded. Check your connection and try again.'); return; }
+      if(await window._vsixDownload()) close();
+    } finally { if(b.isConnected) b.disabled=false; }
+  });
+  on($('vsc-keys'),'click',()=>{ close(); goSettings('api'); });
   on($('vsc-go'),'click',()=>{
     close();
     try{ _connMachineOpen=true; }catch(e){}
     try{ setTab('integrations'); }catch(e){}
     try{ const d=document.querySelector('details.conn-machine'); if(d){ d.open=true; d.scrollIntoView({block:'start'}); } }catch(e){}
   });
-  const n=$('vsc-notify');
-  if(n) on(n,'click',async()=>{ if(typeof _appNotify==='function'){ await _appNotify(n); if(_appNotifiedSet().has('vs-code-extension')) close(); } });
 }
 const _DEV={ log:[], lang:'js', busy:false, curCode:'', curLang:'', curRun:null,
   // multi-file project: files keyed by path. activePath = file shown in Code pane.

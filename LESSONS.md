@@ -15004,3 +15004,19 @@ understands the code (the parser, or `node --check` on each resulting part,
 which is what the module split did and why it held), then diff the names each
 side defines against what it used to. A text search for a closing token is a
 guess about formatting.
+
+## 589. A test that asserts "not yet" outlives the day it becomes untrue
+
+The VS Code extension shipped (amv.vsix, packed in the browser), and three
+screens went on saying "There is no AMV extension for VS Code yet" - the code
+workspace dialog, the Settings fallback and the integrations catalog - with a
+"Notify me" button for the thing you could already download. An outside audit
+found it, not the gate, because the gate was guarding the old sentence: one
+suite asserted the dialog said there was no extension. It was right when
+written, and it kept the wrong copy pinned in place the day the feature landed.
+
+Rule: when a feature ships, grep for every place that says it does not exist
+yet - copy, catalog rows, waitlist keys, translations, and the tests that
+expect the absence - and turn the absence test into a test of the real path.
+The guard is now the other way round: the dialog's button must produce
+amv.vsix, and nothing in the bundle may still say there is no extension.

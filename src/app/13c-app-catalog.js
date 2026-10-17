@@ -99,7 +99,7 @@ const AMV_APP_CATS = [
   ]},
   { id:'dev', t:'Developer tools', q:'developer', apps:[
     'GitHub|gh|Reviews PRs, opens issues, reads repos and ships fixes you approve.',
-    'VS Code|vscode|No editor extension yet. AMV works in your project folder through your connected computer, with an Undo for every change.',
+    'VS Code|vscode|The AMV extension: ask about your code, or have AMV change it with a diff you approve.',
     'GitLab|r:gitlab|Code, CI and issues.', 'Bitbucket||Git hosting for teams.', 'Linear|r:linear|Issue tracking.', 'Jira|r:atlassian|Issues and projects.',
     'Vercel|r:vercel|Deploy web apps.', 'Netlify||Deploy web sites.', 'Supabase|r:supabase|Postgres, auth and storage.', 'Firebase||Backend for apps.',
     'Postman|r:postman|Build and test APIs.', 'Stack Overflow||Questions and answers for developers.', 'Docker Hub||Container images.',

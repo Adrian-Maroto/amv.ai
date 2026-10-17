@@ -107,12 +107,12 @@ async function connectIntegration(id){
   }
   // SMS uses the phone link flow
   if(id==='sms'){ return connectSms(); }
-  // VS Code: it runs through the AMV CLI/extension, not a web OAuth. Show the
-  // setup instructions rather than trying to force a protocol navigation
+  // VS Code: the extension is a download from Settings - API keys, not a web
+  // OAuth. Show how to get it rather than forcing a protocol navigation
   // (which can blank the page if the handler isn't installed).
   if(id==='vscode'){
     if(typeof _devConnectVSCode==='function'){ _devConnectVSCode(); return; }
-    toast('There is no AMV extension for VS Code yet. Connect your computer under Integrations and AMV works in your project folder there.','info',7000);
+    goSettings('api');
     return;
   }
   // Generic OAuth providers: open the provider's approval window if configured

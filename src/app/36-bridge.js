@@ -41,7 +41,7 @@ try{ window.BRIDGE = BRIDGE; }catch(e){}
    nothing else to it - so everything that opens something the person sees, or
    holds their credentials, asks for this rather than "connected". */
 function bridgeLocal(){ return !!(BRIDGE.connected && !BRIDGE.cloud); }
-const BRIDGE_CLOUD_LOCAL_ONLY = 'Connectors, sign-ins and the screen run on your own computer, and AMV is using its cloud computer right now. '
+const BRIDGE_CLOUD_LOCAL_ONLY = 'Connectors, sign-ins and the screen run on your own computer, and AMV is using its cloud workspace right now. '
   + 'Disconnect it under Integrations \u203a Your computer, then connect this one.';
 try{ window.bridgeLocal = bridgeLocal; }catch(e){}
 
@@ -221,7 +221,7 @@ function _bridgeAnswer(status, d){
   d = d || {};
   if(status === 403 && d.error === 'refused'){
     throw new Error('The bridge refused that command: it looks like ' + d.reason + '. '
-      + (BRIDGE.cloud ? 'The cloud computer refuses it for everybody.' : 'That rule lives on your machine, not in AMV.'));
+      + (BRIDGE.cloud ? 'The cloud workspace refuses it for everybody.' : 'That rule lives on your machine, not in AMV.'));
   }
   if(status === 429 && d.error === 'busy'){
     const e = new Error('Your computer is already running ' + (d.running || 'several') + ' commands, which is as many as the bridge runs at once. Wait for one to finish, then try again.');
@@ -268,7 +268,7 @@ const BRIDGE_CLOUD_PATHS = {
   'status': '/v1/computer/status', 'revoke': '/v1/computer/revoke',
 };
 function _bridgeCloudState(){
-  return { cloud: true, port: 0, token: '', folder: 'AMV\u2019s cloud computer', root: 'amv-cloud:/work',
+  return { cloud: true, port: 0, token: '', folder: 'AMV\u2019s cloud workspace', root: 'amv-cloud:/work',
            sharesEnv: false, fence: 'cloud', computer: null };
 }
 async function _bridgeCloudCall(route, body, timeoutMs){
@@ -283,7 +283,7 @@ async function _bridgeCloudCall(route, body, timeoutMs){
                                                            timeout: timeoutMs || 130000, bodyTimeout: 30000 });
   const d = await r.json().catch(()=>({}));
   if(!r.ok && d && d.code){
-    const err = new Error(String(d.error || 'AMV\u2019s cloud computer could not do that.'));
+    const err = new Error(String(d.error || 'AMV\u2019s cloud workspace could not do that.'));
     err.code = String(d.code); err.status = r.status;
     if(d.minutes) err.minutes = d.minutes;
     throw err;
@@ -636,7 +636,7 @@ function _bridgeCardHTML(){
   if(BRIDGE.connected && BRIDGE.cloud){
     return '<div class="brg brg-on brg-cloud-on">'
       + '<div class="brg-h"><span class="brg-dot" aria-hidden="true"></span>'
-        + '<b>AMV\u2019s cloud computer is connected</b></div>'
+        + '<b>AMV\u2019s cloud workspace is connected</b></div>'
       + '<p class="brg-p">A private Linux machine in AMV\u2019s cloud, for your account only. AMV can install '
         + 'packages, run code and tests, and use git there - in chat it asks before each command, in Build once '
         + 'for the whole request. Nothing on this device is reachable from it.</p>'
@@ -836,14 +836,14 @@ try{ window._neverRunHTML = _neverRunHTML; window._neverRunWire = _neverRunWire;
 function _bridgeCloudRowHTML(info){
   const mins = info.cap ? (info.used + ' of ' + info.cap + ' minutes used this month.') : '';
   if(!info.allowed){
-    return '<div class="brg-cloud-t"><b>No computer to hand?</b> AMV\u2019s cloud computer runs your project on a '
+    return '<div class="brg-cloud-t"><b>No computer to hand?</b> AMV\u2019s cloud workspace runs your project on a '
       + 'private machine in AMV\u2019s cloud. It comes with ' + escH((PLANS[info.minPlan] && PLANS[info.minPlan].name) || 'Pro') + ' and above.</div>'
       + '<button class="btn bs" id="brg-cloud-up" type="button">See plans</button>';
   }
-  return '<div class="brg-cloud-t"><b>No computer to hand?</b> Use AMV\u2019s cloud computer: a private machine in '
+  return '<div class="brg-cloud-t"><b>No computer to hand?</b> Use AMV\u2019s cloud workspace: a private machine in '
     + 'AMV\u2019s cloud that runs commands and keeps files while you work. ' + escH(mins) + '</div>'
     + '<button class="btn bp" id="brg-cloud-go" type="button"'
-      + (info.cap && info.used >= info.cap ? ' disabled' : '') + '>Use the cloud computer</button>';
+      + (info.cap && info.used >= info.cap ? ' disabled' : '') + '>Use the cloud workspace</button>';
 }
 async function _bridgeCloudWire(root){
   const slot = root.querySelector('#brg-cloud');
@@ -862,16 +862,16 @@ async function _bridgeCloudWire(root){
     const m = root.querySelector('#brg-msg');
     const say = (t, bad) => { if(m){ m.textContent = t; m.className = 'brg-msg' + (bad ? ' brg-bad' : ''); } };
     go.disabled = true;
-    say('Starting your cloud computer. The first time can take up to a minute\u2026');
+    say('Starting your cloud workspace. The first time can take up to a minute\u2026');
     try{
       await bridgeCloudConnect();
       say('');
-      try{ toast('Connected to AMV\u2019s cloud computer. AMV can run your project there now.', 'success', 5000); }catch(e){}
+      try{ toast('Connected to AMV\u2019s cloud workspace. AMV can run your project there now.', 'success', 5000); }catch(e){}
       try{ _refreshIntegrationsUI(); }catch(e){}
       try{ _devRenderProject(); }catch(e){}
     }catch(e){
       go.disabled = false;
-      say(e.message || 'The cloud computer could not be started.', true);
+      say(e.message || 'The cloud workspace could not be started.', true);
     }
   });
 }
@@ -906,8 +906,8 @@ function _bridgeWireCard(root){
       if(r.cloud){
         const s = r.stopped || {};
         toast(r.revoked
-          ? 'Disconnected from the cloud computer.' + (s.jobs ? ' ' + s.jobs + ' command' + (s.jobs === 1 ? '' : 's') + ' stopped.' : '')
-          : 'Disconnected here. AMV could not confirm the cloud computer stopped what it was running'
+          ? 'Disconnected from the cloud workspace.' + (s.jobs ? ' ' + s.jobs + ' command' + (s.jobs === 1 ? '' : 's') + ' stopped.' : '')
+          : 'Disconnected here. AMV could not confirm the cloud workspace stopped what it was running'
             + (r.why ? ' (' + r.why + ')' : '') + '; it stops on its own after 5 minutes.', r.revoked ? 'info' : 'warn', 7000);
       } else if(r.revoked){
         const s = r.stopped || {};

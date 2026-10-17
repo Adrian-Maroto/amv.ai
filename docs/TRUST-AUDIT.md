@@ -1186,13 +1186,13 @@ so everything around it is the real code.
 
 Nine for nine.
 
-**AMV-AUD-015 confirmed in a real browser, and still open.** The last section
-serves a stand-in that compiles WebAssembly as the real runtime does first, and
-the page's shipped policy refuses it: Python cannot start on AMV today. The
-person is now told so in words. The fix the audit recommends - allowing
-`wasm-unsafe-eval` only inside a separate execution origin - is AMV-AUD-001's
-isolated environment, which is the owner's decision. Adding it to the main
-page's policy was deliberately NOT done.
+**AMV-AUD-015 confirmed in a real browser at the time - CLOSED in round
+thirty-three.** When this round ran, the last section served a stand-in that
+compiles WebAssembly as the real runtime does first, and the page's policy
+refused it: Python could not start. Round thirty-three moved programs into the
+code sandbox (`sandbox.html`, an opaque-origin frame with its own policy, the
+only one in AMV that allows WebAssembly), and Python runs there today. The
+main page's policy still refuses WebAssembly, on purpose.
 
 ## Round twenty-four - the cache holds only what is public (AMV-AUD-026, AMV-AUD-024)
 
