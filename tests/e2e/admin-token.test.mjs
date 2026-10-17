@@ -114,9 +114,22 @@ section('A rejected token says so, and is not retried');
   ok(/rejected/i.test(await bodyText()), 'the operator is told the token was refused');
   ok(await page.evaluate(() => _adminToken() === ''), 'and it is dropped, so nothing retries a credential already refused');
 
-  const before = (await reqs()).length;
+  /* Requests the first draw started while the token was still set can land
+     after the refusal is shown; they were already in flight, not caused by
+     a re-render. Count from when the page has gone quiet, so the claim below
+     is about the re-render alone - and name anything extra if it fails. */
+  let before = (await reqs()).length;
+  for (let quiet = 0, i = 0; quiet < 3 && i < 50; i++) {
+    await page.waitForTimeout(100);
+    const n = (await reqs()).length;
+    quiet = n === before ? quiet + 1 : 0; before = n;
+  }
   await openAdmin();
-  ok((await reqs()).length === before, 'a re-render makes no further doomed request', (await reqs()).length - before);
+  /* Only admin requests can be doomed by a refused admin token. The page also
+     refreshes the person's own Crew list (/auto/list) on its own clock, with
+     their own sign-in - which is what made this assertion flaky under load. */
+  const extra = (await reqs()).slice(before).map(r => r.url.replace(/^https?:\/\/[^/]+/, '')).filter(u => /\/admin\//.test(u));
+  ok(extra.length === 0, 'a re-render makes no further doomed request', extra);
 }
 
 section('It works on a phone');
