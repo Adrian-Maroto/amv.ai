@@ -42,7 +42,7 @@ const VERIFIERS = [...src.matchAll(/function\s+(verify[A-Za-z]*(?:Signature|Webh
    here as newly unauthenticated. Recognising a name is only safe if the name
    really does the check, so that is asserted below rather than assumed. */
 const AUTH = new RegExp(
-  ['requireUser\\(', '_adminTokenOK\\(', '_adminOk\\(', '_adminGate\\(', '_mailRun\\(']
+  ['requireUser\\(', '_adminTokenOK\\(', '_adminOk\\(', '_adminGate\\(', '_mailRun\\(', '_libUser\\(']
     .concat(VERIFIERS.map(v => v + '\\(')).join('|'));
 
 /* Public on purpose, each with the reason it has to be. */
@@ -205,6 +205,15 @@ section('Each name this check accepts as "authenticates" actually does');
   ok(/unavailable/.test(limiter), 'the limiter is the one that relaxes on an outage', true);
   ok(!/_adminTokenOK|requireUser/.test(limiter),
      'and it never decides who is calling, so it cannot let anybody through', true);
+}
+
+section('The file library\u2019s one door really is a door');
+{
+  /* Its four routes authenticate through _libUser, so it must do what the
+     name is trusted for: a session, refused when absent, and never a key. */
+  const lib = codeOnly(bodyOf('_libUser'));
+  ok(/requireUser\(/.test(lib) && /401/.test(lib), '_libUser authenticates and refuses nobody-there', lib.slice(0, 160));
+  ok(/_refuseApiKey\(/.test(lib), 'and turns away an API key', true);
 }
 
 section('Every route authenticates, or is listed as public with a reason');

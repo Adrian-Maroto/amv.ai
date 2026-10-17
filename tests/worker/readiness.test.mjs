@@ -129,6 +129,7 @@ section('It NEVER returns a secret, in any form');
     // the point of the assertion below.
     DB: { prepare(){} }, AMV_COUNTER: {}, BROWSER: {},
     /* The cloud computer: its binding and a key of real length. */
+    AMV_FILES: { put() {}, get() {} },
     AMV_COMPUTER: {}, AMV_COMPUTER_KEY: 'computer-key-SUPERSECRET-0123456789abcdef',
   });
   const body = await (await W.adminReadiness(req(env), env)).text();
