@@ -65,7 +65,7 @@ section('The VS Code card in Integrations hands over the same file');
 {
   const [dl] = await Promise.all([
     page.waitForEvent('download', { timeout: 15000 }),
-    page.evaluate(() => { _devConnectVSCode(); document.getElementById('vsc-get').click(); }),
+    page.evaluate(async () => { await _devConnectVSCode(); document.getElementById('vsc-get').click(); }),
   ]);
   ok(dl.suggestedFilename() === 'amv.vsix', 'Download the extension saves amv.vsix', dl.suggestedFilename());
   const closed = await page.waitForFunction(() => !document.getElementById('vsc-bg'), null, { timeout: 5000 }).then(() => true, () => false);

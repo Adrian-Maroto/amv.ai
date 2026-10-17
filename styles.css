@@ -17190,3 +17190,20 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .dlg-st{ flex:none; width:1.2em; text-align:center; color:var(--grn); font-weight:600; }
 .dlg-i.bad .dlg-st{ color:var(--red); }
 .dlg-t{ min-width:0; overflow-wrap:anywhere; }
+
+/* ═══ LAYER A323 - integrations AMV cannot connect yet, asked for apart ═══
+   Under a topic's real rows, under its own heading: a compact list, no card,
+   no hover lift, so it never carries the weight of a row that connects. */
+.int-req{ margin-top:var(--sp-4); padding-top:var(--sp-3); border-top:1px solid var(--bd); }
+.int-req-h{ margin:0; font-size:var(--t-md); font-weight:600; color:var(--tx); }
+.int-req-s{ margin:2px 0 var(--sp-2); font-size:var(--t-sm); color:var(--mu); line-height:1.5; }
+.int-req .int-list{ gap:0 var(--sp-4); grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); }
+.int-req .int-card{ background:none; border:0; border-bottom:1px solid var(--bdl); border-radius:0; padding:var(--sp-2) 0; align-items:center; gap:var(--sp-3); }
+.int-req .int-card:hover{ transform:none; border-color:var(--bdl); }
+.int-req .int-ic{ width:28px; height:28px; min-width:28px; }
+.int-req .int-desc{ font-size:var(--t-xs); color:var(--dim); }
+@media(max-width:560px){
+  .int-req .int-card{ flex-wrap:nowrap; }
+  .int-req .int-act{ width:auto; }
+  .int-req .int-act .btn{ width:auto; }
+}

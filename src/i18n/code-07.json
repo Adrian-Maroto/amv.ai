@@ -226,5 +226,43 @@
   "it": "Collega il tuo computer",
   "ko": "컴퓨터 연결",
   "ta": "உங்கள் கணினியை இணை"
+ },
+ "Request an integration": {
+  "es": "Solicitar una integración",
+  "zh": "申请集成",
+  "hi": "इंटीग्रेशन का अनुरोध करें",
+  "ar": "اطلب تكاملًا",
+  "pt": "Pedir uma integração",
+  "fr": "Demander une intégration",
+  "de": "Integration anfragen",
+  "ja": "連携をリクエスト",
+  "ru": "Запросить интеграцию",
+  "id": "Minta integrasi",
+  "bn": "ইন্টিগ্রেশনের অনুরোধ করুন",
+  "ur": "انٹیگریشن کی درخواست کریں",
+  "tr": "Entegrasyon iste",
+  "vi": "Yêu cầu tích hợp",
+  "it": "Richiedi un’integrazione",
+  "ko": "통합 요청",
+  "ta": "ஒருங்கிணைப்பைக் கோருங்கள்"
+ },
+ "AMV cannot connect these yet. Ask for one and you will be told when it can.": {
+  "es": "AMV aún no puede conectarse a estas. Pide una y te avisaremos cuando pueda.",
+  "zh": "AMV 目前还无法连接这些。提出申请,能连接时会通知你。",
+  "hi": "AMV अभी इनसे कनेक्ट नहीं कर सकता। अनुरोध करें, और जब यह संभव होगा तो आपको बताया जाएगा।",
+  "ar": "لا يستطيع AMV الاتصال بهذه بعد. اطلب واحدًا وسنخبرك عندما يصبح ذلك ممكنًا.",
+  "pt": "O AMV ainda não consegue se conectar a estas. Peça uma e você será avisado quando for possível.",
+  "fr": "AMV ne peut pas encore s’y connecter. Demandez-en une et vous serez prévenu dès que ce sera possible.",
+  "de": "AMV kann sich mit diesen noch nicht verbinden. Fragen Sie danach, und Sie erfahren, sobald es geht.",
+  "ja": "AMV はまだこれらに接続できません。リクエストすると、接続できるようになったときにお知らせします。",
+  "ru": "AMV пока не может подключиться к ним. Запросите нужную — и вам сообщат, когда это станет возможно.",
+  "id": "AMV belum bisa terhubung ke ini. Minta salah satunya dan Anda akan diberi tahu saat sudah bisa.",
+  "bn": "AMV এখনও এগুলোর সঙ্গে সংযোগ করতে পারে না। অনুরোধ করুন, সম্ভব হলে আপনাকে জানানো হবে।",
+  "ur": "AMV ابھی ان سے منسلک نہیں ہو سکتا۔ درخواست کریں، اور جب ممکن ہو گا آپ کو بتا دیا جائے گا۔",
+  "tr": "AMV bunlara henüz bağlanamıyor. Birini isteyin, mümkün olduğunda size haber verilir.",
+  "vi": "AMV chưa thể kết nối với những ứng dụng này. Hãy yêu cầu và bạn sẽ được báo khi có thể.",
+  "it": "AMV non può ancora collegarsi a queste. Chiedine una e ti avviseremo quando sarà possibile.",
+  "ko": "AMV는 아직 이 앱들에 연결할 수 없습니다. 요청하시면 연결할 수 있을 때 알려 드립니다.",
+  "ta": "AMV இவற்றுடன் இன்னும் இணைய முடியாது. கோரிக்கை விடுங்கள்; முடியும்போது உங்களுக்குத் தெரிவிக்கப்படும்."
  }
 }

@@ -318,4 +318,50 @@ async function _cliDownload(){
   try{ toast('Saved amv-cli.mjs. Set AMV_API_KEY to one of your keys, then run: node amv-cli.mjs "your question"', 'success', 8000); }catch(e){}
   return true;
 }
-try{ window._renderApiKeysPane=_renderApiKeysPane; window._apiLoad=_apiLoad; window._cliDownload=_cliDownload; window._vsixDownload=_vsixDownload; }catch(e){}
+/* AMV IN VS CODE: THE EXTENSION, AND THE FOLDER.
+
+   There is a real extension now - packed in the browser from this deployment
+   (Settings - API keys, `_vsixDownload` in api-keys.js) with its address
+   already filled in, so the only thing to set in VS Code is a key. This used
+   to say there was no extension, and before that it told people to install
+   `@amv/cli` from npm: a package AMV never owned, so a name anybody could
+   register. Neither may come back - the-apps-people-use-connect-first checks.
+
+   The second road stays: connect your computer and AMV reads, edits and runs
+   the whole project folder, every change measured from the disk with an Undo.
+   The extension works on the file in front of you; the computer on the folder.
+   Opened by `_devConnectVSCode` in 11b-code-workspace.js. */
+function _vscDialog(){
+  const r=$('ovr'); if(!r) return;
+  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" role="dialog" aria-modal="true" aria-labelledby="vsc-t" style="max-width:480px">'+
+    '<button class="dna-x" id="vsc-x" aria-label="'+escH(T('Close'))+'" style="position:absolute;top:14px;right:14px">\u2715</button>'+
+    '<h2 id="vsc-t" style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">'+escH(T('AMV in VS Code'))+'</h2>'+
+    '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 12px">'+escH(T('Download the AMV extension and install it in VS Code. Ask about the code you have open, or select lines and have AMV change them - every change is shown as a diff and applied only when you press Apply.'))+'</p>'+
+    '<p style="font-size:var(--t-sm);color:var(--dim);line-height:1.5;margin:0 0 18px">'+escH(T('It needs an API key, made under Settings - API keys. To have AMV work across a whole project folder instead, connect your computer.'))+'</p>'+
+    '<p class="gui-form-err" id="vsc-err" role="alert" style="margin:0 0 12px"></p>'+
+    '<div style="display:flex;gap:var(--sp-2);flex-wrap:wrap">'+
+      '<button class="btn bp" id="vsc-get">'+escH(T('Download the extension'))+'</button>'+
+      '<button class="btn bs" id="vsc-keys">'+escH(T('Make an API key'))+'</button>'+
+      '<button class="btn bs" id="vsc-go">'+escH(T('Connect your computer'))+'</button>'+
+    '</div>'+
+  '</div></div>';
+  const close=()=>{ r.innerHTML=''; };
+  onBackdrop($('vsc-bg'),close); on($('vsc-x'),'click',close);
+  on($('vsc-get'),'click',async()=>{
+    const b=$('vsc-get'); b.disabled=true;
+    try{
+      const ok=await _apiKeysLoad();
+      if(!ok){ $('vsc-err').textContent=T('The extension could not be loaded. Check your connection and try again.'); return; }
+      if(await window._vsixDownload()) close();
+    } finally { if(b.isConnected) b.disabled=false; }
+  });
+  on($('vsc-keys'),'click',()=>{ close(); goSettings('api'); });
+  on($('vsc-go'),'click',()=>{
+    close();
+    try{ _connMachineOpen=true; }catch(e){}
+    try{ setTab('integrations'); }catch(e){}
+    try{ const d=document.querySelector('details.conn-machine'); if(d){ d.open=true; d.scrollIntoView({block:'start'}); } }catch(e){}
+  });
+}
+
+try{ window._renderApiKeysPane=_renderApiKeysPane; window._apiLoad=_apiLoad; window._cliDownload=_cliDownload; window._vsixDownload=_vsixDownload; window._vscDialog=_vscDialog; }catch(e){}

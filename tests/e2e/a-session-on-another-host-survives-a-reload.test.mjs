@@ -226,7 +226,10 @@ const signInOn = async (pg) => {
     type('#a-email', 'kim@example.com'); type('#a-pass', 'A-real-Passw0rd!');
     document.getElementById('auth-submit').click();
   });
-  await until('the session', () => pg.evaluate(() => !!(S.user && AMV_API.token && !document.getElementById('auth-bg'))));
+  /* A sign-in hashes the password on the server, which is the slowest step
+     here; with four suites sharing the machine the third one in this file
+     once took longer than 20s. Still a wait for the session itself. */
+  await until('the session', () => pg.evaluate(() => !!(S.user && AMV_API.token && !document.getElementById('auth-bg'))), 45000);
 };
 const slackShown = (pg, scope) => pg.evaluate((sc) =>
   [...document.querySelectorAll(sc + ' .int-card')].some(c => /Slack/.test(c.textContent) && c.querySelector('.int-ok')), scope);

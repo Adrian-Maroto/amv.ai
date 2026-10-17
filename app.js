@@ -27015,48 +27015,14 @@ function renderCodeView(){
   else if(_DEV.curCode) _devShowResult(_DEV.curCode,_DEV.curLang,_DEV.curRun);
 }
 let _LAB_HANDOFF='';
-/* AMV IN VS CODE: THE EXTENSION, AND THE FOLDER.
-
-   There is a real extension now - packed in the browser from this deployment
-   (Settings - API keys, `_vsixDownload` in api-keys.js) with its address
-   already filled in, so the only thing to set in VS Code is a key. This used
-   to say there was no extension, and before that it told people to install
-   `@amv/cli` from npm: a package AMV never owned, so a name anybody could
-   register. Neither may come back - the-apps-people-use-connect-first checks.
-
-   The second road stays: connect your computer and AMV reads, edits and runs
-   the whole project folder, every change measured from the disk with an Undo.
-   The extension works on the file in front of you; the computer on the folder. */
+/* AMV IN VS CODE. The dialog lives in api-keys.js beside the download it
+   offers (`_vscDialog`), fetched the first time somebody asks - most people
+   never do, so the page does not carry it. */
 function _devConnectVSCode(){
-  const r=$('ovr'); if(!r) return;
-  r.innerHTML='<div class="ov" id="vsc-bg"><div class="tp-modal" role="dialog" aria-modal="true" aria-labelledby="vsc-t" style="max-width:480px">'+
-    '<button class="dna-x" id="vsc-x" aria-label="'+escH(T('Close'))+'" style="position:absolute;top:14px;right:14px">\u2715</button>'+
-    '<h2 id="vsc-t" style="font-family:var(--fdisplay);font-weight:500;font-size:var(--t-xl);margin:0 0 6px">'+escH(T('AMV in VS Code'))+'</h2>'+
-    '<p style="font-size:var(--t-base);color:var(--mu);line-height:1.6;margin:0 0 12px">'+escH(T('Download the AMV extension and install it in VS Code. Ask about the code you have open, or select lines and have AMV change them - every change is shown as a diff and applied only when you press Apply.'))+'</p>'+
-    '<p style="font-size:var(--t-sm);color:var(--dim);line-height:1.5;margin:0 0 18px">'+escH(T('It needs an API key, made under Settings - API keys. To have AMV work across a whole project folder instead, connect your computer.'))+'</p>'+
-    '<p class="gui-form-err" id="vsc-err" role="alert" style="margin:0 0 12px"></p>'+
-    '<div style="display:flex;gap:var(--sp-2);flex-wrap:wrap">'+
-      '<button class="btn bp" id="vsc-get">'+escH(T('Download the extension'))+'</button>'+
-      '<button class="btn bs" id="vsc-keys">'+escH(T('Make an API key'))+'</button>'+
-      '<button class="btn bs" id="vsc-go">'+escH(T('Connect your computer'))+'</button>'+
-    '</div>'+
-  '</div></div>';
-  const close=()=>{ r.innerHTML=''; };
-  onBackdrop($('vsc-bg'),close); on($('vsc-x'),'click',close);
-  on($('vsc-get'),'click',async()=>{
-    const b=$('vsc-get'); b.disabled=true;
-    try{
-      const ok=await _apiKeysLoad();
-      if(!ok){ $('vsc-err').textContent=T('The extension could not be loaded. Check your connection and try again.'); return; }
-      if(await window._vsixDownload()) close();
-    } finally { if(b.isConnected) b.disabled=false; }
-  });
-  on($('vsc-keys'),'click',()=>{ close(); goSettings('api'); });
-  on($('vsc-go'),'click',()=>{
-    close();
-    try{ _connMachineOpen=true; }catch(e){}
-    try{ setTab('integrations'); }catch(e){}
-    try{ const d=document.querySelector('details.conn-machine'); if(d){ d.open=true; d.scrollIntoView({block:'start'}); } }catch(e){}
+  return _apiKeysLoad().then(ok => {
+    if(ok && typeof window._vscDialog === 'function'){ window._vscDialog(); return true; }
+    toast(T('The extension could not be loaded. Check your connection and try again.'), 'error', 6000);
+    return false;
   });
 }
 const _DEV={ log:[], lang:'js', busy:false, curCode:'', curLang:'', curRun:null,
@@ -35275,16 +35241,27 @@ function _integrationsCatalogHTML(opts){
        Notify me on the rest. A topic where nothing connects yet says so in one
        line rather than six cards. */
     const live=list.filter(r=>r.o);
-    const shown=open ? list : live.slice(0, APP_ROWS_SHOWN);
-    const html=shown.length ? shown.map(r=>r.o ? intRow(r.o) : notifyRow(r.a)).join('')
-      : '<p class="int-none">'+escH(T('Nothing here connects yet.'))+' '+escH(T('See all to ask for one.'))+'</p>';
+    /* THREE STATES, NOT TWO KINDS OF CARD. Opened, a topic used to list its
+       Notify me rows as cards the same size as the ones that connect, so the
+       page still read as half "not yet". Connected and connectable rows stay
+       cards; what AMV cannot connect goes underneath, under its own heading,
+       as a compact list whose one action is to ask for it. */
+    const shown=open ? live : live.slice(0, APP_ROWS_SHOWN);
+    const asks=open ? list.filter(r=>!r.o) : [];
+    const req=asks.length
+      ? '<div class="int-req"><h4 class="int-req-h">'+escH(T('Request an integration'))+'</h4>'
+          +'<p class="int-req-s">'+escH(T('AMV cannot connect these yet. Ask for one and you will be told when it can.'))+'</p>'
+          +'<div class="int-list">'+asks.map(r=>notifyRow(r.a)).join('')+'</div></div>'
+      : '';
+    const html=shown.length ? shown.map(r=>intRow(r.o)).join('')
+      : (req ? '' : '<p class="int-none">'+escH(T('Nothing here connects yet.'))+' '+escH(T('See all to ask for one.'))+'</p>');
     const more=(!only && list.length>Math.min(live.length, APP_ROWS_SHOWN))
       ? '<div class="int-more"><button class="int-seemore" data-app-more="'+escH(c.id)+'" aria-expanded="'+(open?'true':'false')+'"'
           +' aria-label="'+escH(_seeAllLabel(open, list.length, String(c.t).replace(/&amp;/g,'&')))+'">'
           +escH(open ? T('Show fewer') : T('See all {0}').replace('{0}', list.length))
           +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
           +(open ? '<path d="M6 15l6-6 6 6"/>' : '<path d="M5 12h14M13 6l6 6-6 6"/>')+'</svg></button></div>' : '';
-    return cat(c.t, html, only?'':c.q, more);
+    return cat(c.t, html, only?'':c.q, req+more);
   }).join('');
   return ''+
     (guest && !only

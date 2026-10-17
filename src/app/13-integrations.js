@@ -846,16 +846,27 @@ function _integrationsCatalogHTML(opts){
        Notify me on the rest. A topic where nothing connects yet says so in one
        line rather than six cards. */
     const live=list.filter(r=>r.o);
-    const shown=open ? list : live.slice(0, APP_ROWS_SHOWN);
-    const html=shown.length ? shown.map(r=>r.o ? intRow(r.o) : notifyRow(r.a)).join('')
-      : '<p class="int-none">'+escH(T('Nothing here connects yet.'))+' '+escH(T('See all to ask for one.'))+'</p>';
+    /* THREE STATES, NOT TWO KINDS OF CARD. Opened, a topic used to list its
+       Notify me rows as cards the same size as the ones that connect, so the
+       page still read as half "not yet". Connected and connectable rows stay
+       cards; what AMV cannot connect goes underneath, under its own heading,
+       as a compact list whose one action is to ask for it. */
+    const shown=open ? live : live.slice(0, APP_ROWS_SHOWN);
+    const asks=open ? list.filter(r=>!r.o) : [];
+    const req=asks.length
+      ? '<div class="int-req"><h4 class="int-req-h">'+escH(T('Request an integration'))+'</h4>'
+          +'<p class="int-req-s">'+escH(T('AMV cannot connect these yet. Ask for one and you will be told when it can.'))+'</p>'
+          +'<div class="int-list">'+asks.map(r=>notifyRow(r.a)).join('')+'</div></div>'
+      : '';
+    const html=shown.length ? shown.map(r=>intRow(r.o)).join('')
+      : (req ? '' : '<p class="int-none">'+escH(T('Nothing here connects yet.'))+' '+escH(T('See all to ask for one.'))+'</p>');
     const more=(!only && list.length>Math.min(live.length, APP_ROWS_SHOWN))
       ? '<div class="int-more"><button class="int-seemore" data-app-more="'+escH(c.id)+'" aria-expanded="'+(open?'true':'false')+'"'
           +' aria-label="'+escH(_seeAllLabel(open, list.length, String(c.t).replace(/&amp;/g,'&')))+'">'
           +escH(open ? T('Show fewer') : T('See all {0}').replace('{0}', list.length))
           +'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
           +(open ? '<path d="M6 15l6-6 6 6"/>' : '<path d="M5 12h14M13 6l6 6-6 6"/>')+'</svg></button></div>' : '';
-    return cat(c.t, html, only?'':c.q, more);
+    return cat(c.t, html, only?'':c.q, req+more);
   }).join('');
   return ''+
     (guest && !only

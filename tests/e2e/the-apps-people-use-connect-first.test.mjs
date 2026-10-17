@@ -96,13 +96,20 @@ section('Connect only where AMV really connects, and those come first');
       const kinds = [...s.querySelectorAll('.int-card')].map(c => c.classList.contains('int-notify') ? 'n' : 'c').join('');
       return { t: s.querySelector('h3').textContent, ok: !/n+c/.test(kinds) };
     });
-    return { conn, use, order,
+    /* Asked-for apps are apart from the ones that connect: every Notify me
+       row is under Request an integration, and nothing that connects is. */
+    const notify = rows.filter(c => c.classList.contains('int-notify'));
+    const apart = notify.length > 0 && notify.every(c => c.closest('.int-req'))
+      && !rows.some(c => !c.classList.contains('int-notify') && c.closest('.int-req'))
+      && [...document.querySelectorAll('#int-catalog .int-req .int-req-h')].every(h => /Request an integration/.test(h.textContent));
+    return { conn, use, order, apart, notifyN: notify.length,
       temu: notifyOf('Amazon'), netflix: notifyOf('Netflix'), capcut: notifyOf('CapCut'),
       slackConn: !!(byName('Slack') && byName('Slack').querySelector('[data-int-conn="prov"]')),
       canva: (byName('Canva') || {}).querySelector && byName('Canva').querySelector('[data-int-conn="rmcp"]') ? true : false,
       notion: (byName('Notion') || {}).querySelector && byName('Notion').querySelector('[data-int-conn="rmcp"]') ? true : false,
       firstTopic: document.querySelector('#int-catalog > .ss2 h3').textContent };
   });
+  ok(r.apart, 'what AMV cannot connect yet is listed apart, under Request an integration', r.notifyN);
   ok(r.conn.length >= 8 && r.conn.every(c => CONNECTS.includes(c)), 'every Connect button opens a flow that exists', [...new Set(r.conn)]);
   ok(r.use.every(u => USES.includes(u)), 'and every other action goes somewhere real', [...new Set(r.use)]);
   /* Slack and Discord publish no official connector, so they are Notify me -
@@ -218,18 +225,18 @@ section('Settings lists a sign-in once');
 
 section('Nobody is told to install a package AMV does not own');
 {
-  const r = await page.evaluate(() => {
-    _devConnectVSCode();
+  const r = await page.evaluate(async () => {
+    await _devConnectVSCode();
     const t = (document.getElementById('ovr') || {}).textContent || '';
     const go = !!document.getElementById('vsc-go') && !!document.getElementById('vsc-get');
     document.getElementById('ovr').innerHTML = '';
-    return { t, go, src: String(_devConnectVSCode) + String(connectIntegration) };
+    return { t, go, src: String(_devConnectVSCode) + String(window._vscDialog) + String(connectIntegration) };
   });
   ok(!/@amv\/cli|npm install|amv code \./.test(r.t) && !/@amv\/cli/.test(r.src), 'no install command for a package that does not exist', r.t.slice(0, 120));
   ok(/Download the extension/.test(r.t) && r.go, 'it offers the real extension, and the connection to a whole folder', r.t.slice(0, 160));
   /* The extension exists (amv.vsix, the-vs-code-extension-downloads-ready-to-
      install), so no screen anywhere may still say it does not. */
-  const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  const bundle = readFileSync(join(ROOT, 'app.js'), 'utf8') + readFileSync(join(ROOT, 'src', 'api', 'api-keys.js'), 'utf8');
   ok(!/no AMV extension for VS Code|No editor extension yet|Notify me about the extension/i.test(bundle), 'and nothing in AMV still says there is no extension', true);
 }
 
