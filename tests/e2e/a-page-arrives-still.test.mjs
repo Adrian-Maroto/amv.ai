@@ -70,7 +70,10 @@ await ctx.addInitScript(() => {
         if (moves) window.__moving.push((a.animationName || 'anim') + ' on ' + (t.id ? '#' + t.id : (typeof t.className === 'string' ? '.' + t.className.split(' ')[0] : t.nodeName)));
       }
     } catch (e) {}
-    if (performance.now() < 3000) requestAnimationFrame(poll);
+    /* Three seconds of watching for movement - and, for the first screen,
+       however long the bundle takes: on a loaded machine it was not ready
+       inside three seconds, so the first screen was recorded as null. */
+    if (performance.now() < 3000 || (window.__firstTab === null && performance.now() < 15000)) requestAnimationFrame(poll);
   };
   requestAnimationFrame(poll);
   try {
@@ -87,6 +90,7 @@ for (const [addr, want] of [['/', 'chat'], ['/#/crew', 'crew'], ['/#/settings', 
   await page.goto(url + addr, { waitUntil: 'load' });
   await page.reload({ waitUntil: 'load' });
   await page.waitForTimeout(2600);
+  await page.waitForFunction(() => window.__firstTab !== null, null, { timeout: 15000 }).catch(() => {});
   const r = await page.evaluate(() => ({
     tab: S.tab, first: window.__firstTab, moving: window.__moving.slice(0, 6),
     cls: window.__shifts.reduce((a, s) => a + s.v, 0), shifts: window.__shifts.slice(0, 3),
