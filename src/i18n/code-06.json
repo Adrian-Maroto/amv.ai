@@ -169,5 +169,24 @@
   "it": "Risposto",
   "ko": "답변함",
   "ta": "பதிலளிக்கப்பட்டது"
+ },
+ "The questions could not be loaded. Check your connection and try again.": {
+  "es": "No se pudieron cargar las preguntas. Revisa tu conexión e inténtalo de nuevo.",
+  "zh": "无法加载问题。请检查网络连接后重试。",
+  "hi": "सवाल लोड नहीं हो सके। अपना कनेक्शन जाँचें और फिर कोशिश करें।",
+  "ar": "تعذّر تحميل الأسئلة. تحقّق من اتصالك وحاول مرة أخرى.",
+  "pt": "Não foi possível carregar as perguntas. Verifique sua conexão e tente de novo.",
+  "fr": "Les questions n’ont pas pu être chargées. Vérifiez votre connexion et réessayez.",
+  "de": "Die Fragen konnten nicht geladen werden. Prüf deine Verbindung und versuch es noch einmal.",
+  "ja": "質問を読み込めませんでした。接続を確認してもう一度お試しください。",
+  "ru": "Не удалось загрузить вопросы. Проверьте подключение и попробуйте снова.",
+  "id": "Pertanyaan tidak dapat dimuat. Periksa koneksi Anda dan coba lagi.",
+  "bn": "প্রশ্নগুলো লোড করা যায়নি। আপনার সংযোগ দেখে আবার চেষ্টা করুন।",
+  "ur": "سوالات لوڈ نہیں ہو سکے۔ اپنا کنکشن چیک کریں اور دوبارہ کوشش کریں۔",
+  "tr": "Sorular yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.",
+  "vi": "Không tải được câu hỏi. Hãy kiểm tra kết nối rồi thử lại.",
+  "it": "Non è stato possibile caricare le domande. Controlla la connessione e riprova.",
+  "ko": "질문을 불러오지 못했습니다. 연결을 확인하고 다시 시도하세요.",
+  "ta": "கேள்விகளை ஏற்ற முடியவில்லை. உங்கள் இணைப்பைச் சரிபார்த்து மீண்டும் முயலுங்கள்."
  }
 }

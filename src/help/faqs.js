@@ -36,44 +36,5 @@ const FAQS=[
   {c:'chat', q:'How do I rename, star, or delete chats?', a:'Hover a chat in the sidebar for quick actions, or right-click for the full menu including Export and Share.'},
   {c:'chat', q:'Can I export my conversations?', a:'Yes - right-click any chat and choose “Export as Markdown” to download a .md file for Notion, Obsidian, or any editor.'},
   {c:'privacy', q:'How is my data protected?', a:'Your data is stored in your browser and, when you connect the backend, encrypted in transit (256-bit TLS). Passwords are hashed with PBKDF2. Card details go straight to Stripe - AMV never sees them. Export or delete everything anytime.'}
-]
-
-/* A real 404 for unknown routes - instead of silently showing chat, tell the
-   user the page wasn't found and give them a clear way back. */
-function render404View(){
-  const vc=$('vc'); if(!vc) return;
-  vc.innerHTML=
-    '<div class="sv fi"><div class="vi nf-wrap">'+
-      '<div class="nf-code">404</div>'+
-      '<h2 class="nf-title">Page not found</h2>'+
-      '<p class="nf-sub">The page you\u2019re looking for doesn\u2019t exist or may have moved.</p>'+
-      '<div class="nf-actions">'+
-        '<button class="btn bp" data-stab="chat">Go to chat</button>'+
-        '<button class="btn bs" data-stab="dashboard">Home</button>'+
-      '</div>'+
-    '</div></div>';
-}
-try{ window.render404View=render404View; }catch(e){}
-
-/* THE ONLY WAY IN WAS TO ALREADY KNOW THE WORD (AMV-D056).
-
-   Twenty questions in one flat accordion under a search box. Search is a good
-   second route and a poor first one: somebody who does not yet know what AMV
-   calls a thing cannot search for it, and scanning twenty rows to find out is
-   the work the page exists to save.
-
-   The questions are unchanged. They are grouped now, each group is a filter
-   chip, and search still runs across every answer regardless of the chip - so
-   the two routes do not fight. A group with nothing left after a search hides
-   its heading too, which is the bug this kind of filtering usually ships with. */
-const FAQ_CATS=[
-  ['start','Getting started'],
-  ['chat','Chat and results'],
-  ['create','Design and 3D'],
-  ['build','Building apps'],
-  ['auto','Automations and approvals'],
-  ['connect','Connections, teamwork and marketplace'],
-  ['billing','Plans and billing'],
-  ['privacy','Memory, data and privacy']
 ];
 try{ window._FAQS = FAQS; }catch(e){}

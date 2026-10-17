@@ -30281,6 +30281,45 @@ function _usageShapeBand(){
 try{ window._usageShapeBand=_usageShapeBand; }catch(e){}
 
 /* === HELP CENTER === */
+/* A real 404 for unknown routes - instead of silently showing chat, tell the
+   user the page wasn't found and give them a clear way back. */
+function render404View(){
+  const vc=$('vc'); if(!vc) return;
+  vc.innerHTML=
+    '<div class="sv fi"><div class="vi nf-wrap">'+
+      '<div class="nf-code">404</div>'+
+      '<h2 class="nf-title">Page not found</h2>'+
+      '<p class="nf-sub">The page you\u2019re looking for doesn\u2019t exist or may have moved.</p>'+
+      '<div class="nf-actions">'+
+        '<button class="btn bp" data-stab="chat">Go to chat</button>'+
+        '<button class="btn bs" data-stab="dashboard">Home</button>'+
+      '</div>'+
+    '</div></div>';
+}
+try{ window.render404View=render404View; }catch(e){}
+
+/* THE ONLY WAY IN WAS TO ALREADY KNOW THE WORD (AMV-D056).
+
+   Twenty questions in one flat accordion under a search box. Search is a good
+   second route and a poor first one: somebody who does not yet know what AMV
+   calls a thing cannot search for it, and scanning twenty rows to find out is
+   the work the page exists to save.
+
+   The questions are unchanged. They are grouped now, each group is a filter
+   chip, and search still runs across every answer regardless of the chip - so
+   the two routes do not fight. A group with nothing left after a search hides
+   its heading too, which is the bug this kind of filtering usually ships with. */
+const FAQ_CATS=[
+  ['start','Getting started'],
+  ['chat','Chat and results'],
+  ['create','Design and 3D'],
+  ['build','Building apps'],
+  ['auto','Automations and approvals'],
+  ['connect','Connections, teamwork and marketplace'],
+  ['billing','Plans and billing'],
+  ['privacy','Memory, data and privacy']
+];
+
 /* The questions themselves live in help-faqs.js, fetched when Help opens. */
 let _faqsP = null;
 function _faqsLoad(){
@@ -30296,17 +30335,16 @@ function _faqsLoad(){
 }
 function renderHelpView(){
   const vc=$('vc'); if(!vc) return;
-  if(!Array.isArray(window._FAQS)){
-    const shell=(msg,live)=>'<div class="sv fi"><div class="vi vi-help"><span class="eyebrow">Help</span><h2>Help Center</h2><p class="vsub"'+(live?' aria-live="polite"':'')+'>'+escH(msg)+'</p></div></div>';
-    vc.innerHTML=shell(T('Loading…'),true);
-    _faqsLoad().then(ok=>{
-      if(S.tab!=='help') return;
-      if(ok){ renderHelpView(); return; }
-      const v=$('vc'); if(v) v.innerHTML=shell(T('That could not be loaded. Check your connection and try again.'),true);
-    });
-    return;
-  }
-  const FAQS=window._FAQS;
+  /* The questions arrive from help-faqs.js the first time; everything else on
+     this screen is drawn at once, and the questions fill in when they land. */
+  const _faqsHere=Array.isArray(window._FAQS);
+  if(!_faqsHere) _faqsLoad().then(ok=>{
+    if(S.tab!=='help') return;
+    if(ok){ renderHelpView(); return; }
+    const n=document.getElementById('faq-loading');
+    if(n) n.textContent=T('The questions could not be loaded. Check your connection and try again.');
+  });
+  const FAQS=_faqsHere?window._FAQS:[];
   const chips='<div class="hc-chips" role="group" aria-label="Filter help by topic">'+
     '<button class="hc-chip on" data-hcc="all">All</button>'+
     FAQ_CATS.map(c=>'<button class="hc-chip" data-hcc="'+c[0]+'">'+escH(c[1])+'</button>').join('')+
@@ -30331,7 +30369,7 @@ function renderHelpView(){
       '<div class="ss2">'+
         '<input type="search" id="faq-search" placeholder="Search help…" aria-label="Search help" style="font-size:var(--t-lg);margin-bottom:13px">'+
         chips+
-        '<div id="faq-list">'+groups+'</div>'+
+        '<div id="faq-list">'+(_faqsHere?groups:'<p class="vsub" id="faq-loading" role="status">'+escH(T('Loading…'))+'</p>')+'</div>'+
         '<p id="faq-none" class="hc-none" hidden>No answer matches that. Try a different word, or ask AMV below - it can answer from the product itself.</p>'+
       '</div>'+
       _appsCardHTML()+

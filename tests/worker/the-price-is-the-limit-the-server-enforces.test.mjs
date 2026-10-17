@@ -43,7 +43,9 @@ import { codeOnly } from '../lib/source.mjs';
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..', '..');
 const server = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
-const client = readFileSync(join(ROOT, 'app.js'), 'utf8');
+/* The page and the Help center's answers, which load when Help is opened -
+   a claim about the plans counts wherever a customer reads it. */
+const client = readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'help-faqs.js'), 'utf8');
 
 /* PLAN_LIMITS is nested, so it cannot be read with the flat matcher the other
    mirror tests use. Imported instead: the Worker is a module, and importing it

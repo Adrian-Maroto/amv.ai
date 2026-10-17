@@ -14988,3 +14988,19 @@ rewritten before main moved. A reference the owner uses to describe what they
 want is a brief, not a sentence for the product: comments say "the way the
 products people already use do it", commits describe AMV's own behaviour, and
 the comparison stays in the conversation it came from.
+
+## 588. Cut code where the parser says a thing ends, never at the next "];"
+
+Moving the Help center's questions into a file of their own, the cut looked
+for the first `];` after `const FAQS=[`. The array ended with a bare `]` on
+its own line, so the first `];` was the END OF THE NEXT ARRAY - and the cut
+took the not-found screen and the topic list with it. Every unknown address
+then threw "render404View is not defined", which the full gate caught in four
+suites. The same session had already miscut the Worker split by trusting line
+numbers an earlier edit had moved.
+
+Rule: when moving code between files, find the boundary with something that
+understands the code (the parser, or `node --check` on each resulting part,
+which is what the module split did and why it held), then diff the names each
+side defines against what it used to. A text search for a closing token is a
+guess about formatting.
