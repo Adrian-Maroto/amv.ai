@@ -63,6 +63,15 @@ async function startMacBridge(home, extraEnv, extraArgs) {
   const hello = await (await fetch(base + '/amv-bridge/hello', { headers: { Origin: ORIGIN } })).json().catch(() => ({}));
   return { child, banner: () => banner, paired, call, hello };
 }
+/* Stopped the way a person stops it. The bridge on a Mac restarts itself
+   inside the sandbox, and SIGTERM is passed on to that inner one; SIGKILL
+   cannot be, so killing the outer one that way left the inner bridge running
+   after every gate. SIGKILL only if it has not gone by then. */
+async function stopBridge(child) {
+  try { child.kill('SIGTERM'); } catch (e) {}
+  for (let i = 0; i < 30 && child.exitCode === null && child.signalCode === null; i++) await new Promise(r => setTimeout(r, 100));
+  try { child.kill('SIGKILL'); } catch (e) {}
+}
 const FAKES = /SSH-PRIVATE-KEY-FAKE|NPM-FAKE-TOKEN|KEYCHAIN-FAKE/;
 const READ_ALL = 'cat ~/.ssh/id_ed25519 ~/.npmrc ~/Library/Keychains/login.keychain-db 2>&1; true';
 
@@ -114,7 +123,7 @@ if (process.platform === 'linux' && hasBwrap) {
   {
     const x = await startMacBridge(home, { FAKE_SBX_MODE: 'ignore' });
     ok(x.hello.fence === 'failed' && /can read every file you can/.test(x.banner()), 'failed, and the terminal warns', { fence: x.hello.fence });
-    x.child.kill('SIGKILL');
+    await stopBridge(x.child);
   }
 
   section('A sandbox that will not start: the bridge runs, unfenced, and says so');
@@ -123,7 +132,7 @@ if (process.platform === 'linux' && hasBwrap) {
     const r = await x.call('exec', { command: 'echo still-works', timeout: 15000 });
     ok(x.hello.fence === 'failed' && /would not start on this computer/.test(x.banner()), 'failed, said in the terminal', { fence: x.hello.fence });
     ok(/still-works/.test(r.d.stdout || ''), 'and the bridge still works', r.d);
-    x.child.kill('SIGKILL');
+    await stopBridge(x.child);
   }
 
   section('--no-fence on a Mac: no sandbox, and said so');
@@ -131,7 +140,7 @@ if (process.platform === 'linux' && hasBwrap) {
     const log2 = join(home, 'profile2.sb');
     const x = await startMacBridge(home, { FAKE_SBX_LOG: log2 }, ['--no-fence']);
     ok(x.hello.fence === 'off' && !existsSync(log2), 'off, and the sandbox was never asked for', { fence: x.hello.fence });
-    x.child.kill('SIGKILL');
+    await stopBridge(x.child);
   }
 }
 
