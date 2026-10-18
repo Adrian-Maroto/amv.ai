@@ -123,6 +123,10 @@ section('And every tool has been classified either way');
        plan, like a long answer does - and a question before each one would be
        the dialog people learn to click through. */
     delegate:       'splits a task across at most five workers with no tools; nothing is sent, saved or changed',
+    /* It makes a new copy of a file the person attached, in this tab. Their
+       original is never overwritten, nothing leaves the device, and nothing
+       is saved until they press Download on the card - which is the consent. */
+    office_edit:    'makes an edited copy of an attached file in this tab; the original is untouched and nothing is saved or sent until the person downloads it',
   };
   const unclassified = toolNames
     .filter(n => !consented.has(n) && !(n in SAFE_WITHOUT_ASKING))
