@@ -110,9 +110,9 @@ section('Signed in once, still signed in next time - kept on this device, sealed
   const first = await P.evaluate(async () => {
     const d = await AMVConnectors.run('browser.do', { url: 'https://gyms.example.com/', goal: 'Sign in and check my membership.' });
     document.getElementById('wlv-stop').click();
-    return { hasCookies: 'cookies' in d, json: JSON.stringify(d) };
+    return { hasCookies: 'cookies' in d, said: JSON.stringify(d) };
   });
-  ok(!first.hasCookies && !first.json.includes('SESSION-SECRET-9c1d'), 'the answer handed on carries no sign-in - nothing the chat or the model can see', first.json.slice(0, 120));
+  ok(!first.hasCookies && !first.said.includes('SESSION-SECRET-9c1d'), 'the answer handed on carries no sign-in - nothing the chat or the model can see', first.said.slice(0, 120));
   const kept = await P.evaluate(async () => {
     const db = await new Promise(r => { const q = indexedDB.open('amv-webjar', 1); q.onsuccess = () => r(q.result); });
     const all = await new Promise(r => { const out = []; const c = db.transaction('kv').objectStore('kv').openCursor();
