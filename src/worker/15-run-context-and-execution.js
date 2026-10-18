@@ -274,6 +274,8 @@ async function _autoAccountContext(env, item, email, never){
      detection happens once, below, over whatever arrived. */
   let mailRows = null;
   let bankTxns = null;
+  /* What a trigger's check found: how much was new, and how much matched. */
+  let trigger = null;
   /* THE LETTERS THE PERSON CAN ACTUALLY SEND, carried out of the run as data
      rather than left inside the prompt.
 
@@ -331,6 +333,14 @@ async function _autoAccountContext(env, item, email, never){
       continue;
     }
     try{
+      if(need === 'mail.read' && got.imap && item.when){
+        /* A trigger has to know what is NEW, and a mailbox read by app password
+           gives AMV the latest messages with no cursor to say which it has
+           already acted on - so it would fire on the same mail every check.
+           Said, rather than watched badly. */
+        missing.push({ need, why: 'watching for new mail needs a Google mailbox connected for now' });
+        continue;
+      }
       if(need === 'mail.read' && got.imap){
         const box = await _mailboxRead(email, got.imap);
         const name = (MAIL_PROVIDERS[got.imap.provider] && MAIL_PROVIDERS[got.imap.provider].name) || 'their mailbox';
@@ -341,7 +351,11 @@ async function _autoAccountContext(env, item, email, never){
                          : '(no messages in the inbox)'));
       } else if(need === 'mail.read'){
         const state = await _ingestRead(env, email);
-        const st = (state.src && state.src[INGEST_SRC_MAIL]) || {};
+        /* A trigger keeps its own place in the inbox. Sharing the account's
+           would let a digest and a trigger each mark mail as handled that the
+           other has not seen. */
+        const srcKey = item.when ? INGEST_SRC_MAIL + ':' + jobId : INGEST_SRC_MAIL;
+        const st = (state.src && state.src[srcKey]) || {};
         const cursor = Number(st.cursor) || 0;
         const seen = new Set(Array.isArray(st.seen) ? st.seen : []);
         const oldGap = st.gap && Number(st.gap.to) ? st.gap : null;
@@ -413,9 +427,36 @@ async function _autoAccountContext(env, item, email, never){
           }
         }
 
-        const all = fresh.concat(backfilled);
+        let all = fresh.concat(backfilled);
+        /* THE TRIGGER'S CONDITION, BY RULE. Its first look only learns where
+           the inbox is - mail that was already there when it was set up is not
+           "new" and must not fire it. After that, only what matches goes on. */
+        if(item.when){
+          const first = cursor === 0;
+          const matched = first ? [] : all.filter(m => _whenMatch(item.when, m));
+          trigger = { checked: all.length, matched: matched.length, first };
+          if(first) gap = null;
+          const reported = all;
+          all = matched;
+          if(reported.length || first){
+            const idsAll = reported.map(m => m.id);
+            const highAll = reported.reduce((a, m) => Math.max(a, Number(m.occurred_at) || 0), first ? Date.now() - 60000 : cursor);
+            commits.push(async () => {
+              await _withKind(env, 'ingest', String(email || '').toLowerCase(), (rec) => {
+                if(!rec.src) rec.src = {};
+                const b = (rec.src[srcKey] = rec.src[srcKey] || {});
+                b.cursor = Math.max(Number(b.cursor) || 0, highAll);
+                b.seen = (Array.isArray(b.seen) ? b.seen : []).concat(idsAll).slice(-INGEST_SEEN_MAX);
+                b.gap = null;
+                b.at = Date.now();
+              }, _ingestEmpty());
+            });
+          }
+        }
         mailRows = all;
-        const head = cursor > 0
+        const head = item.when
+          ? 'NEW MAIL THAT MATCHED WHAT THEY ASKED AMV TO WATCH FOR (' + all.length + ', headers and one-line previews only - you do not have the message bodies). Act on these and only these:'
+          : cursor > 0
           ? 'REAL INBOX - NEW SINCE AMV LAST LOOKED (' + all.length + ', headers and one-line previews only - you do not have the message bodies):'
           : 'REAL INBOX (' + all.length + ' most recent, headers and one-line previews only - you do not have the message bodies):';
 
@@ -438,7 +479,7 @@ async function _autoAccountContext(env, item, email, never){
            about and then failing to tell them is the one outcome this whole
            record exists to prevent. */
         const gapChanged = JSON.stringify(gap && { from: gap.from, to: gap.to }) !== JSON.stringify(oldGap && { from: oldGap.from, to: oldGap.to });
-        if(all.length || gapChanged){
+        if(!item.when && (all.length || gapChanged)){
           const ids = all.map(m => m.id);
           const high = all.reduce((a, m) => Math.max(a, Number(m.occurred_at) || 0), cursor);
           const nextGap = gap;
@@ -641,7 +682,7 @@ async function _autoAccountContext(env, item, email, never){
   }
 
   return {
-    text: parts.join('\n\n'), missing, soft, drafts,
+    text: parts.join('\n\n'), missing, soft, drafts, trigger,
     /* Run this only once the person can actually read the result. It is
        deliberately safe to never call: nothing is lost, the next run simply
        reports the same mail again. */
@@ -736,6 +777,16 @@ async function _autoExecute(env, item, budget, email, standing, never){
      told to pass that on: "AMV could not see your inbox" and "your inbox was
      quiet" must never come back looking the same. */
   const acct = await _autoAccountContext(env, item, email, never);
+  /* A trigger whose check found nothing to act on stops here: no model, no
+     cost, no result - only the time it looked, so its row can say so. */
+  /* And one that could not look at all - disconnected, or a mailbox it cannot
+     watch - says why on its row instead of paying a model every ten minutes
+     to say it could not see anything. */
+  if(item.when && !(acct.trigger && acct.trigger.matched)){
+    return { text: '', quiet: true, checked: acct.trigger ? acct.trigger.checked : 0,
+             blocked: acct.missing.length ? acct.missing.map(m => m.why).join('; ') : '',
+             usage: { input: 0, output: 0, webSearches: 0 }, commitIngest: acct.commit };
+  }
   let userTurn = item.detail;
   /* WHERE THEY ARE, AND WHAT THAT MEANS FOR THIS JOB.
 
@@ -1277,7 +1328,9 @@ const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'attempts', 'lastError', 'las
                          /* And so is what a finished step hands the next one:
                             released (`waiting`, `next`, `onceAt`) with the
                             result it builds on (`prior`). See _autoSettleSteps. */
-                         'waiting', 'prior', 'onceAt'];
+                         'waiting', 'prior', 'onceAt',
+                         /* A trigger's last look, which found nothing to do. */
+                         'lastCheckAt', 'lastCheckSaw'];
 
 /* `quick` is the every-minute tick (see `scheduled` in 29-router.js). It only
    ever takes the cheap path: accounts the due-work index names, and nothing
@@ -1616,6 +1669,14 @@ async function runDueAutomations(env, atMs, opts){
          level - it is a delivery preference with a different label. So the due
          job produces a note that it is due and what it would do, spends no
          tokens, sends nothing, and waits to be asked. */
+      /* A trigger set to suggest only would post "this is due" every ten
+         minutes, for ever. It stands down instead and its row says why - the
+         person changes the level, or the account's ceiling, to have it watch. */
+      if(level === 'suggest' && item.when){
+        item.lastError = 'not watching - set to suggest only, which never runs on its own';
+        item.next = _autoNextAfter(item, now, 'ran');
+        changed = true; await releaseItem(); continue;
+      }
       if(level === 'suggest'){
         rec.results = (rec.results||[]).concat({
           id: _resultId(),
@@ -1708,6 +1769,13 @@ async function runDueAutomations(env, atMs, opts){
                                               _neverList(rec), started + AUTO_TICK_BUDGET_MS);
         const exec = tried.exec;
         item.attempts = (Number(item.attempts) || 0) + tried.attempts;
+        if(exec && exec.quiet){
+          if(typeof exec.commitIngest === 'function') ingestCommits.push(exec.commitIngest);
+          item.lastCheckAt = now; item.lastCheckSaw = Number(exec.checked) || 0;
+          item.lastError = exec.blocked ? ('not watching - ' + exec.blocked) : null; item.runs = (item.runs || 0) + 1;
+          await releaseItem();
+          throw { __quiet: true };
+        }
         const out = await _autoAppendGame(env, email, item, (exec && exec.text) || '');
         stepOut = out;
         /* DID THIS RUN SAY ANYTHING NEW.
@@ -1808,6 +1876,7 @@ async function runDueAutomations(env, atMs, opts){
           mails.push({ item, out });
         }
       }catch(e){
+        if(e && e.__quiet){ item.next = _autoNextAfter(item, now, 'ran'); changed = true; continue; }
         runFailed = true;
         const why = String(e.message||e).slice(0,200);
         item.lastError = why;

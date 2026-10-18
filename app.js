@@ -23040,6 +23040,8 @@ function _mcServerSchedRow(x){
   const stepOf = x.step ? T('Step {0} of {1}').replace('{0}', x.step.n).replace('{1}', x.step.of) + ' · ' : '';
   const when = stepOf + (x.done && /^did not run/.test(String(x.lastError||'')) ? T('Did not run') + ' - ' + String(x.lastError).replace(/^did not run - /, '')
     : x.waiting ? T('Waits for the step before it to finish')
+    : (x.when && x.active !== false) ? (/^not watching/.test(String(x.lastError || '')) ? T('Not watching') + ' - ' + String(x.lastError).replace(/^not watching - /, '')
+        : T('Watching for {0}').replace('{0}', _whenSay(x.when)) + (x.lastCheckAt ? ' \u00b7 ' + T('last checked {0}').replace('{0}', _agoLabel(x.lastCheckAt)) : ''))
     : x.done ? ('Ran once' + (x.doneAt ? ', ' + _dayLabel(x.doneAt) : '') + ' · finished')
     : x.repeat === 'once' ? ('Runs once' + (x.next ? ', ' + _onceWhen(x.next) + ' (' + _mcWhen(x.next) + ')' : ''))
     : paused ? 'Paused' : ('Runs ' + every + (x.next ? ' · next ' + _mcWhen(x.next) : '')));
@@ -28152,6 +28154,20 @@ const AMV_TOOLS = [
       approval:{type:'string', enum:['require','auto'], description:'For the LAST step\'s result: "require" (default) waits for them before anything goes out; "auto" delivers it on its own.'}
     }, required:['steps'] }
   },
+  /* A TRIGGER: watch the mailbox, and act when something matching arrives.
+     The condition is checked by rule on AMV's servers every ten minutes; the
+     instruction runs - and is paid for - only when something matched. */
+  {
+    name:'crew_watch',
+    description:'Set up a background job that WATCHES their mail and acts only WHEN a matching email arrives - "when my landlord emails, summarise what she wants", "if anything from the school about trips comes in, tell me the date and cost", "when an invoice arrives, pull out the amount and due date". Checked every ten minutes on AMV\'s servers with their computer off; a check that finds nothing matching costs nothing and posts nothing. Give at least one of from / subject / words. Not for a regular digest of everything (use crew_add) and not for something to do now.',
+    input_schema:{ type:'object', properties:{
+      detail:{type:'string', description:'What to do with each matching email, as an instruction. It sees the matching emails\' sender, subject and preview.'},
+      from:{type:'array', items:{type:'string'}, maxItems:5, description:'Any of these in the sender\'s name or address, e.g. an address, a domain ("@school.org"), or a name.'},
+      subject:{type:'array', items:{type:'string'}, maxItems:5, description:'Any of these words in the subject.'},
+      words:{type:'array', items:{type:'string'}, maxItems:5, description:'Any of these words in the subject or the start of the message.'},
+      approval:{type:'string', enum:['require','auto'], description:'"auto" (default for this) delivers the result on its own - it is information. "require" holds each result for them first.'}
+    }, required:['detail'] }
+  },
   {
     name:'crew_update',
     description:'Change what an existing background job does, or how often it runs. Call crew_list first to get the id.',
@@ -28240,7 +28256,7 @@ function _toolsFor(surface){
      your background jobs and not being able to change one of them from there
      is the gap this whole path exists to close. */
   if(surface==='crew') return [by('run_code'), by('build_app'), by('deploy_site'),
-                               by('crew_list'), by('crew_add'), by('crew_steps'), by('crew_update'), by('crew_pause'),
+                               by('crew_list'), by('crew_add'), by('crew_steps'), by('crew_watch'), by('crew_update'), by('crew_pause'),
                                by('crew_resume'), by('crew_remove'), by('crew_standing'), by('crew_ceiling'),
                                by('connect_account')].filter(Boolean);
   return AMV_TOOLS;   // chat gets everything
@@ -28388,7 +28404,7 @@ async function _delegateRun(input, onStatus){
 try{ window._delegateRun = _delegateRun; }catch(e){}
 
 const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true,
-                        crew_add:true, crew_steps:true, crew_update:true, crew_resume:true,
+                        crew_add:true, crew_steps:true, crew_watch:true, crew_update:true, crew_resume:true,
                         crew_remove:true, crew_standing:true, crew_ceiling:true,
                         /* A memory is appended to EVERY future request, so writing
                            one is writing a small permanent instruction - the same
@@ -28525,6 +28541,7 @@ async function _confirmModelTool(name, input){
     fix_code:'run and edit '+String(input.lang||'code')+' on your device',
     crew_add:'set up a job that runs on its own, on a schedule',
     crew_steps:'start a task that runs in steps in the background, on AMV\u2019s servers',
+    crew_watch:'watch your mail and act when something matching arrives',
     crew_update:'change one of your background jobs',
     crew_resume:'start one of your background jobs running again',
     crew_remove:'permanently delete one of your background jobs',
@@ -28577,6 +28594,15 @@ async function _confirmModelTool(name, input){
            + (String(input.approval || 'require') === 'auto'
                ? ' The final result goes straight to you without review.'
                : ' The final result waits for your approval before anything is sent.');
+  }
+  else if(name==='crew_watch'){
+    const L = (v) => (Array.isArray(v) ? v : []).map(x => String(x||'').trim()).filter(Boolean).slice(0,5).join(', ');
+    detail = 'It will check your new mail every ten minutes for anything'
+           + (L(input.from) ? ' from: ' + L(input.from) : '')
+           + (L(input.subject) ? (L(input.from) ? ',' : '') + ' with the subject containing: ' + L(input.subject) : '')
+           + (L(input.words) ? ((L(input.from)||L(input.subject)) ? ',' : '') + ' mentioning: ' + L(input.words) : '')
+           + '.\n\nWhen something matches, it will:\n' + String(input.detail||'').slice(0,500)
+           + '\n\nChecks that find nothing cost nothing. It reads your mail; it never sends or replies.';
   }
   else if(name==='crew_update')
     detail = [ input.detail ? 'New instruction:\n' + String(input.detail).slice(0,500) : '',
@@ -28891,7 +28917,8 @@ function _crewLine(x){
   const every = _crewWhen(x);
   return '- [' + x.id + '] ' + (x.step ? 'step ' + x.step.n + ' of ' + x.step.of + ' of a task, ' : '')
        + (x.done ? (/^did not run/.test(String(x.lastError||'')) ? 'DID NOT RUN - ' + x.lastError : 'FINISHED - a one-time job that has already run')
-          : x.waiting ? 'WAITING for an earlier step to finish' : x.active === false ? 'PAUSED' : 'running ' + every)
+          : x.waiting ? 'WAITING for an earlier step to finish' : x.active === false ? 'PAUSED'
+          : x.when ? 'WATCHING their mail for ' + _whenSay(x.when) + (x.lastError ? ' (' + x.lastError + ')' : '') : 'running ' + every)
        + ({ auto:', results delivered automatically',
             suggest:', suggest only - it does not run until asked',
             require:', each result waits for approval' }[String(x.approval||'require')] || '')
@@ -28920,6 +28947,15 @@ function _crewStepsCard(items){
       }).join('')
     + '</ul><div class="dlg-foot"><button class="btn bs" type="button" data-dact="setTab" data-darg="crew">' + escH(T('Open Crew')) + '</button></div></div>';
 }
+
+/* What a trigger watches for, in words. */
+function _whenSay(w){
+  const j = (a) => (a || []).join(' or ');
+  return [ (w.from || []).length ? T('mail from {0}').replace('{0}', j(w.from)) : '',
+           (w.subject || []).length ? T('a subject with {0}').replace('{0}', j(w.subject)) : '',
+           (w.words || []).length ? T('mentions of {0}').replace('{0}', j(w.words)) : '' ].filter(Boolean).join(', ');
+}
+try{ window._whenSay = _whenSay; }catch(e){}
 
 async function _crewTool(name, input){
   input = input || {};
@@ -29005,6 +29041,22 @@ async function _crewTool(name, input){
       + (approval === 'auto' ? 'The final result is delivered without review. ' : 'The final result waits for their approval. ')
       + 'If a step fails, the steps after it do not run, and Crew says which one stopped it. Do NOT say it has finished or describe results - nothing has run yet.',
       render: _crewStepsCard(made) };
+  }
+
+  if(name === 'crew_watch'){
+    const detail = String(input.detail || '').trim();
+    const L = (v) => (Array.isArray(v) ? v : []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 5);
+    const when = { from: L(input.from), subject: L(input.subject), words: L(input.words) };
+    if(!detail) return { text:'A watch needs to say what to do when something matches. Ask the user.', render:null };
+    if(!when.from.length && !when.subject.length && !when.words.length)
+      return { text:'A watch needs something to watch for - a sender, words in the subject, or words in the message. Ask the user which.', render:null };
+    let d;
+    try{ d = await _autoApi('/auto/create', { detail, repeat:'10min', when, kind:'task', notify:'app', approval: input.approval === 'require' ? 'require' : 'auto' }); }
+    catch(e){ return { text: _crewErr(e), render:null }; }
+    _crewSynced();
+    return { text:'Set up. It is in their Crew tab and checks their new mail every ten minutes on AMV\u2019s servers, with their computer off. '
+      + 'Its first check only notes where the inbox is, so mail that is already there will not set it off - only mail that arrives from now on. '
+      + 'Checks that find nothing matching cost nothing and post nothing. It needs their Google mail connected to watch. Do not say anything has matched yet.', render:null };
   }
 
   if(name === 'crew_ceiling'){

@@ -115,6 +115,37 @@ function _autoNextAfter(item, now, how){
   return due + Math.ceil((now - due + 1) / iv) * iv;
 }
 
+/* WHEN SOMETHING ARRIVES: A TRIGGER, A CONDITION AND AN ACTION.
+
+   "When an email from my landlord comes in, summarise it and tell me what it
+   asks for." The trigger is new mail; the condition is who it is from, what
+   its subject says, or a word in it; the action is the job's instruction,
+   run on the messages that matched and nothing else.
+
+   The condition is decided HERE, by rule, before any model is asked: a check
+   that finds nothing costs nothing, sends nothing and writes nothing but the
+   time it looked. That is what makes "watch my inbox every ten minutes"
+   affordable - the model is paid for on the runs that have something to do.
+
+   Each list is any-of; the lists together are all-of. A list left empty does
+   not constrain. Matching is a case-insensitive contains on the sender (name
+   and address), the subject, and - for words - the subject and preview. */
+const WHEN_LIST_MAX = 5;
+const WHEN_TERM_MAX = 60;
+function _whenClean(raw){
+  if(!raw || typeof raw !== 'object') return null;
+  const list = (v) => (Array.isArray(v) ? v : (v == null ? [] : [v])).map(x => String(x || '').trim().toLowerCase().slice(0, WHEN_TERM_MAX)).filter(Boolean).slice(0, WHEN_LIST_MAX);
+  const w = { source: 'mail', from: list(raw.from), subject: list(raw.subject), words: list(raw.words) };
+  return (w.from.length || w.subject.length || w.words.length) ? w : null;
+}
+function _whenMatch(when, m){
+  if(!when || !m) return false;
+  const from = String(m.from || '').toLowerCase(), subj = String(m.subject || '').toLowerCase();
+  const text = subj + ' ' + String(m.snippet || '').toLowerCase();
+  const any = (terms, hay) => !terms.length || terms.some(t => hay.indexOf(t) >= 0);
+  return any(when.from || [], from) && any(when.subject || [], subj) && any(when.words || [], text);
+}
+
 /* A TASK IN STEPS: ONE-TIME JOBS THAT WAIT ON EACH OTHER.
 
    "Research these three suppliers, then compare them, then draft the email" is

@@ -103,7 +103,8 @@ function _crewLine(x){
   const every = _crewWhen(x);
   return '- [' + x.id + '] ' + (x.step ? 'step ' + x.step.n + ' of ' + x.step.of + ' of a task, ' : '')
        + (x.done ? (/^did not run/.test(String(x.lastError||'')) ? 'DID NOT RUN - ' + x.lastError : 'FINISHED - a one-time job that has already run')
-          : x.waiting ? 'WAITING for an earlier step to finish' : x.active === false ? 'PAUSED' : 'running ' + every)
+          : x.waiting ? 'WAITING for an earlier step to finish' : x.active === false ? 'PAUSED'
+          : x.when ? 'WATCHING their mail for ' + _whenSay(x.when) + (x.lastError ? ' (' + x.lastError + ')' : '') : 'running ' + every)
        + ({ auto:', results delivered automatically',
             suggest:', suggest only - it does not run until asked',
             require:', each result waits for approval' }[String(x.approval||'require')] || '')
@@ -132,6 +133,15 @@ function _crewStepsCard(items){
       }).join('')
     + '</ul><div class="dlg-foot"><button class="btn bs" type="button" data-dact="setTab" data-darg="crew">' + escH(T('Open Crew')) + '</button></div></div>';
 }
+
+/* What a trigger watches for, in words. */
+function _whenSay(w){
+  const j = (a) => (a || []).join(' or ');
+  return [ (w.from || []).length ? T('mail from {0}').replace('{0}', j(w.from)) : '',
+           (w.subject || []).length ? T('a subject with {0}').replace('{0}', j(w.subject)) : '',
+           (w.words || []).length ? T('mentions of {0}').replace('{0}', j(w.words)) : '' ].filter(Boolean).join(', ');
+}
+try{ window._whenSay = _whenSay; }catch(e){}
 
 async function _crewTool(name, input){
   input = input || {};
@@ -217,6 +227,22 @@ async function _crewTool(name, input){
       + (approval === 'auto' ? 'The final result is delivered without review. ' : 'The final result waits for their approval. ')
       + 'If a step fails, the steps after it do not run, and Crew says which one stopped it. Do NOT say it has finished or describe results - nothing has run yet.',
       render: _crewStepsCard(made) };
+  }
+
+  if(name === 'crew_watch'){
+    const detail = String(input.detail || '').trim();
+    const L = (v) => (Array.isArray(v) ? v : []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 5);
+    const when = { from: L(input.from), subject: L(input.subject), words: L(input.words) };
+    if(!detail) return { text:'A watch needs to say what to do when something matches. Ask the user.', render:null };
+    if(!when.from.length && !when.subject.length && !when.words.length)
+      return { text:'A watch needs something to watch for - a sender, words in the subject, or words in the message. Ask the user which.', render:null };
+    let d;
+    try{ d = await _autoApi('/auto/create', { detail, repeat:'10min', when, kind:'task', notify:'app', approval: input.approval === 'require' ? 'require' : 'auto' }); }
+    catch(e){ return { text: _crewErr(e), render:null }; }
+    _crewSynced();
+    return { text:'Set up. It is in their Crew tab and checks their new mail every ten minutes on AMV\u2019s servers, with their computer off. '
+      + 'Its first check only notes where the inbox is, so mail that is already there will not set it off - only mail that arrives from now on. '
+      + 'Checks that find nothing matching cost nothing and post nothing. It needs their Google mail connected to watch. Do not say anything has matched yet.', render:null };
   }
 
   if(name === 'crew_ceiling'){

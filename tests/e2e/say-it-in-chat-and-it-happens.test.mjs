@@ -455,6 +455,28 @@ section('A task in steps is set up on the server, and Crew shows each step waiti
   ok(/Step 2 of 2/.test(shown.crew) && /Waits for the step before it to finish/.test(shown.crew), 'and Crew shows the second step waiting its turn', shown.crew.slice(0, 400));
 }
 
+section('"When my landlord emails, tell me what she wants" sets up a real watch');
+{
+  const before = (await jobs()).length;
+  nextTurns = [
+    toolUseStream('crew_watch', { detail: 'Summarise what my landlord is asking for and by when.', from: ['landlord@homes.example'], words: ['rent', 'meter'] }, ''),
+    textStream('Watching for it now.'),
+  ];
+  const consent = await say('when my landlord emails about the rent or the meter, tell me what she wants');
+  ok(consent.seen > 0, 'they were asked first', consent.seen);
+  ok(/from: landlord@homes\.example/.test(consent.body) && /mentioning: rent, meter/.test(consent.body) && /cost nothing/.test(consent.body),
+     'and shown exactly what it watches for, and that empty checks cost nothing', consent.body.slice(0, 260));
+  const made = (await jobs()).slice(before);
+  ok(made.length === 1 && made[0].when && made[0].when.from[0] === 'landlord@homes.example' && made[0].repeat === '10min' && made[0].uses.includes('mail.read'),
+     'a watch now exists on the server, every ten minutes, reading the mailbox', made[0]);
+  const crew = await page.evaluate(async () => {
+    if (typeof window._autoRefresh === 'function') { try { await window._autoRefresh(); } catch (e) {} }
+    setTab('crew'); await new Promise(x => setTimeout(x, 1000));
+    return (document.getElementById('vc').textContent || '').replace(/\s+/g, ' ');
+  });
+  ok(/Watching for mail from landlord@homes\.example, mentions of rent or meter/.test(crew), 'and Crew says what it is watching for', crew.slice(0, 300));
+}
+
 section('Nothing about this is a second copy of the Crew');
 {
   /* Every write went through the routes the screen uses. If chat ever grows

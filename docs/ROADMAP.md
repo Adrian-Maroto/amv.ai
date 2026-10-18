@@ -475,3 +475,18 @@ vault LESSONS 537 refuses. The trade: a background run while the device is off
 cannot use them; a per-site opt-in for that is the owner's call.
 
 *Next:* take over the browser to sign in or solve a captcha yourself.
+
+## Event triggers, step one — when matching mail arrives, AMV acts (done)
+
+A trigger is a Crew job with a condition (`when`: sender, subject words, words
+in the message; any-of within a list, all-of across lists). Checked every ten
+minutes against the mailbox through its OWN cursor - created at "now", so mail
+already there never fires it, and a digest of the same inbox is unaffected. The
+condition is decided by rule before any model is asked: a check with nothing
+matching makes no model call, costs nothing and posts nothing, only the time it
+looked; a trigger that cannot look says so on its row instead of paying a model
+to say it. `crew_watch` in chat; `when-it-arrives-amv-acts` (24 assertions, five
+mutations caught) and a section of `say-it-in-chat-and-it-happens`.
+
+*Next sources:* calendar changes, a web page changing, a payment arriving. Mail
+read by app password cannot be watched yet (no cursor), and says so.

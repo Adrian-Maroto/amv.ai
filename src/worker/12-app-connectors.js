@@ -785,7 +785,12 @@ async function autoCreate(request, env){
      scope the connection does not carry, so deriving one cannot conjure access
      nobody granted. */
   const derived = _autoUsesFromText(detail);
-  const uses = [...new Set(asked.concat(derived))].slice(0, 4);
+  /* A TRIGGER, if this job is one: what to watch for (_whenClean). It reads
+     the mailbox by definition, so it needs that whatever the words said. */
+  const when = _whenClean(body.when);
+  if(body.when != null && !when)
+    return json({ error:'Say what to watch for: who it is from, words in the subject, or words in the message.', code:'when_empty' }, 400);
+  const uses = [...new Set(asked.concat(derived).concat(when ? ['mail.read'] : []))].slice(0, 4);
   /* WHAT WOULD MAKE THE ANSWER BETTER, kept apart from what it needs.
 
      Same allow-list, same filter, and never derived from text - a boost that a
@@ -924,6 +929,7 @@ async function autoCreate(request, env){
        Empty for the overwhelming majority of jobs, which are web research and
        need nobody's mailbox. */
     uses,
+    ...(when ? { when } : {}),
     /* And which it would be BETTER with. Stored beside `uses` rather than
        folded into it, because a missing one of these is a note about the
        evidence and a missing `use` is a broken job. */

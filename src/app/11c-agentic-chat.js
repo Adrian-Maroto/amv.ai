@@ -127,6 +127,20 @@ const AMV_TOOLS = [
       approval:{type:'string', enum:['require','auto'], description:'For the LAST step\'s result: "require" (default) waits for them before anything goes out; "auto" delivers it on its own.'}
     }, required:['steps'] }
   },
+  /* A TRIGGER: watch the mailbox, and act when something matching arrives.
+     The condition is checked by rule on AMV's servers every ten minutes; the
+     instruction runs - and is paid for - only when something matched. */
+  {
+    name:'crew_watch',
+    description:'Set up a background job that WATCHES their mail and acts only WHEN a matching email arrives - "when my landlord emails, summarise what she wants", "if anything from the school about trips comes in, tell me the date and cost", "when an invoice arrives, pull out the amount and due date". Checked every ten minutes on AMV\'s servers with their computer off; a check that finds nothing matching costs nothing and posts nothing. Give at least one of from / subject / words. Not for a regular digest of everything (use crew_add) and not for something to do now.',
+    input_schema:{ type:'object', properties:{
+      detail:{type:'string', description:'What to do with each matching email, as an instruction. It sees the matching emails\' sender, subject and preview.'},
+      from:{type:'array', items:{type:'string'}, maxItems:5, description:'Any of these in the sender\'s name or address, e.g. an address, a domain ("@school.org"), or a name.'},
+      subject:{type:'array', items:{type:'string'}, maxItems:5, description:'Any of these words in the subject.'},
+      words:{type:'array', items:{type:'string'}, maxItems:5, description:'Any of these words in the subject or the start of the message.'},
+      approval:{type:'string', enum:['require','auto'], description:'"auto" (default for this) delivers the result on its own - it is information. "require" holds each result for them first.'}
+    }, required:['detail'] }
+  },
   {
     name:'crew_update',
     description:'Change what an existing background job does, or how often it runs. Call crew_list first to get the id.',
@@ -215,7 +229,7 @@ function _toolsFor(surface){
      your background jobs and not being able to change one of them from there
      is the gap this whole path exists to close. */
   if(surface==='crew') return [by('run_code'), by('build_app'), by('deploy_site'),
-                               by('crew_list'), by('crew_add'), by('crew_steps'), by('crew_update'), by('crew_pause'),
+                               by('crew_list'), by('crew_add'), by('crew_steps'), by('crew_watch'), by('crew_update'), by('crew_pause'),
                                by('crew_resume'), by('crew_remove'), by('crew_standing'), by('crew_ceiling'),
                                by('connect_account')].filter(Boolean);
   return AMV_TOOLS;   // chat gets everything
@@ -363,7 +377,7 @@ async function _delegateRun(input, onStatus){
 try{ window._delegateRun = _delegateRun; }catch(e){}
 
 const _TOOL_CONSENT = { deploy_site:true, run_code:true, fix_code:true,
-                        crew_add:true, crew_steps:true, crew_update:true, crew_resume:true,
+                        crew_add:true, crew_steps:true, crew_watch:true, crew_update:true, crew_resume:true,
                         crew_remove:true, crew_standing:true, crew_ceiling:true,
                         /* A memory is appended to EVERY future request, so writing
                            one is writing a small permanent instruction - the same
@@ -500,6 +514,7 @@ async function _confirmModelTool(name, input){
     fix_code:'run and edit '+String(input.lang||'code')+' on your device',
     crew_add:'set up a job that runs on its own, on a schedule',
     crew_steps:'start a task that runs in steps in the background, on AMV\u2019s servers',
+    crew_watch:'watch your mail and act when something matching arrives',
     crew_update:'change one of your background jobs',
     crew_resume:'start one of your background jobs running again',
     crew_remove:'permanently delete one of your background jobs',
@@ -552,6 +567,15 @@ async function _confirmModelTool(name, input){
            + (String(input.approval || 'require') === 'auto'
                ? ' The final result goes straight to you without review.'
                : ' The final result waits for your approval before anything is sent.');
+  }
+  else if(name==='crew_watch'){
+    const L = (v) => (Array.isArray(v) ? v : []).map(x => String(x||'').trim()).filter(Boolean).slice(0,5).join(', ');
+    detail = 'It will check your new mail every ten minutes for anything'
+           + (L(input.from) ? ' from: ' + L(input.from) : '')
+           + (L(input.subject) ? (L(input.from) ? ',' : '') + ' with the subject containing: ' + L(input.subject) : '')
+           + (L(input.words) ? ((L(input.from)||L(input.subject)) ? ',' : '') + ' mentioning: ' + L(input.words) : '')
+           + '.\n\nWhen something matches, it will:\n' + String(input.detail||'').slice(0,500)
+           + '\n\nChecks that find nothing cost nothing. It reads your mail; it never sends or replies.';
   }
   else if(name==='crew_update')
     detail = [ input.detail ? 'New instruction:\n' + String(input.detail).slice(0,500) : '',
