@@ -202,6 +202,15 @@ Companion docs (do not duplicate them here - read them):
   makes a project marked `third`, whose instructions reach the engine labelled
   as a third party's that cannot loosen AMV's rules or approve anything. Its
   engine is used only when `_planAllowsModel` and `_teamAllowsModel` say so.
+- **Every write on a connected account goes through the action protocol**
+  (`src/worker/09a-action-protocol.js`): it reads its own result back
+  (`verified`), and declares either an `undo` (a compensation that is itself
+  read back, refused when the thing changed since) or an `irreversible`
+  sentence saying why not. A write with neither stops the Worker starting. The
+  receipt's undo ticket is signed, bound to the account and ended by signing
+  out everywhere; the person uses it from the notice, the model never sees it.
+  A field on a result starting with `_` is for the server only - every answer,
+  failures included, goes through `_actShown`.
 - **Any tool the client can send must be in `AMV_CLIENT_TOOLS` on the server**,
   or `_safeTools` drops it by name at the last hop before the model and the
   feature silently does not exist. LESSONS 310; covered by

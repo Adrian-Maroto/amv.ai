@@ -15020,3 +15020,17 @@ yet - copy, catalog rows, waitlist keys, translations, and the tests that
 expect the absence - and turn the absence test into a test of the real path.
 The guard is now the other way round: the dialog's button must produce
 amv.vsix, and nothing in the bundle may still say there is no extension.
+
+## 590. The answer nobody reads is the one that leaks
+
+The undo for a sheet needs the cells as they were, so the write keeps them on
+its result under `_prior`, and the success answer strips `_` fields before it
+goes to the browser. The failure answer - "the account said yes and the cells
+are not there" - returned the result as it was. The earlier cells, which can be
+somebody's salary column, went to the page on the one path a happy-path test
+never takes. It was found because the suite made the provider deaf on purpose.
+
+Rule: data that exists for the server's own later use gets ONE function that
+decides what leaves (`_actShown`), and every return path goes through it -
+the error returns included. Test it by forcing the failure path, not by
+reading the success one.

@@ -1011,6 +1011,16 @@ function _docText(d){
   return out.join('');
 }
 
+/* Close an issue or a pull request AMV opened, and read it back closed. */
+async function _ghClose(token, ref){
+  const u = 'https://api.github.com/repos/' + _ghRepo(ref.repo) + '/' + (ref.kind === 'pulls' ? 'pulls' : 'issues') + '/' + (+ref.number || 0);
+  const r = await fetchDeadline(u, { method:'PATCH', headers: _ghHeaders(token), body: JSON.stringify({ state: 'closed' }) }, 20000);
+  if (!r.ok) throw new Error('github_' + r.status);
+  const g = await fetchDeadline(u, { headers: _ghHeaders(token) }, 15000);
+  if (!g.ok) return null;
+  return (await g.json().catch(()=>({}))).state === 'closed';
+}
+
 const CONN_ACTIONS = {
   'gmail.unread': {
     need: 'mail.read', writes: false,
@@ -1056,6 +1066,7 @@ const CONN_ACTIONS = {
       const verified = !!d.id && Array.isArray(d.labelIds) && d.labelIds.includes('SENT');
       return { sent: verified, id: d.id || '', verified };
     },
+    irreversible: 'Sent mail cannot be called back. If it went to the wrong person, write to them.',
   },
   'calendar.list': {
     need: 'calendar.read', writes: false,
@@ -1087,6 +1098,17 @@ const CONN_ACTIONS = {
       }
       return { created: verified !== false, id: d.id || '', link: d.htmlLink || '', verified };
     },
+    undo: { label: 'Delete the event',
+      ref: (out) => out && out.id ? { id: out.id } : null,
+      async run(token, ref){
+        const u = 'https://www.googleapis.com/calendar/v3/calendars/primary/events/' + encodeURIComponent(ref.id);
+        const r = await fetchDeadline(u + '?sendUpdates=none', { method:'DELETE', headers:{ Authorization:'Bearer ' + token } }, 20000);
+        if(!r.ok && r.status !== 404 && r.status !== 410) throw new Error('calendar_' + r.status);
+        const g = await fetchDeadline(u, { headers:{ Authorization:'Bearer ' + token } }, 15000);
+        if(g.status === 404 || g.status === 410) return true;
+        if(!g.ok) return null;
+        return (await g.json().catch(()=>({}))).status === 'cancelled';
+      } },
   },
   'drive.list': {
     need: 'drive.read', writes: false,
@@ -1133,6 +1155,20 @@ const CONN_ACTIONS = {
       }
       return { id: d.id || '', name: d.name || title, link: d.webViewLink || '', verified };
     },
+    /* To the bin, not deleted: Drive keeps it thirty days, so taking back the
+       copy cannot itself become the thing nobody can take back. */
+    undo: { label: 'Move the copy to the bin',
+      ref: (out) => out && out.id ? { id: out.id } : null,
+      async run(token, ref){
+        const u = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(ref.id);
+        const r = await fetchDeadline(u, { method:'PATCH', headers:{ Authorization:'Bearer ' + token, 'Content-Type':'application/json' },
+          body: JSON.stringify({ trashed: true }) }, 20000);
+        if(!r.ok && r.status !== 404) throw new Error('drive_' + r.status);
+        const g = await fetchDeadline(u + '?fields=id,trashed', { headers:{ Authorization:'Bearer ' + token } }, 15000);
+        if(g.status === 404) return true;
+        if(!g.ok) return null;
+        return (await g.json().catch(()=>({}))).trashed === true;
+      } },
   },
   /* Share the copy AMV made - never anything else. drive.file cannot reach a
      file this app did not create, so the permission this grants is bounded by
@@ -1166,8 +1202,20 @@ const CONN_ACTIONS = {
                  verified = q.role === role && String(q.emailAddress || '').toLowerCase() === to.toLowerCase(); }
         }catch(e){ verified = null; }
       }
-      return { shared: verified !== false, role, verified };
+      return { shared: verified !== false, role, verified, fileId, permissionId: p.id || '' };
     },
+    /* Their access goes; the email Drive already sent them does not, and the
+       label does not pretend otherwise. */
+    undo: { label: 'Remove their access',
+      ref: (out) => out && out.fileId && out.permissionId ? { fileId: out.fileId, permissionId: out.permissionId } : null,
+      async run(token, ref){
+        const u = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(ref.fileId) + '/permissions/' + encodeURIComponent(ref.permissionId);
+        const r = await fetchDeadline(u, { method:'DELETE', headers:{ Authorization:'Bearer ' + token } }, 20000);
+        if(!r.ok && r.status !== 404) throw new Error('drive_' + r.status);
+        const g = await fetchDeadline(u + '?fields=id', { headers:{ Authorization:'Bearer ' + token } }, 15000);
+        if(g.status === 404) return true;
+        return g.ok ? false : null;
+      } },
   },
   /* ── GOOGLE DOCS AND SHEETS, EDITED WHERE THEY ARE ─────────────────────────
 
@@ -1216,6 +1264,10 @@ const CONN_ACTIONS = {
       return { id, replaced: counts, appended: !!append, verified,
                link: 'https://docs.google.com/document/d/' + id + '/edit' };
     },
+    /* A find-and-replace cannot be run backwards: if "Tuesday" became
+       "Wednesday", every Wednesday that was already there would turn into a
+       Tuesday too. Google keeps every version, and that is the undo. */
+    irreversible: 'To go back, open the document and use File, Version history - Google keeps the version from before this change.',
   },
   'sheets.read': {
     need: 'drive.write', writes: false,
@@ -1244,6 +1296,17 @@ const CONN_ACTIONS = {
         return String(c == null ? '' : c).slice(0, 50000);
       }));
       if (cells > 10000) throw new Error('too_many_cells');
+      /* What the range held before, so the change can be taken back - read
+         only when it is small enough to carry, and as entered (formulas as
+         formulas), so putting it back restores a formula, not its last value. */
+      let prior = null;
+      if (cells <= 500) {
+        try{
+          const was = await _gJson(token, 'https://sheets.googleapis.com/v4/spreadsheets/' + id + '/values/'
+            + encodeURIComponent(range) + '?valueRenderOption=FORMULA', 'sheets');
+          prior = (was.values || []).map(r => (r || []).map(c => typeof c === 'number' || typeof c === 'boolean' ? c : String(c == null ? '' : c)));
+        }catch(e){ prior = null; }
+      }
       const res = await _gJson(token, 'https://sheets.googleapis.com/v4/spreadsheets/' + id + '/values/' + encodeURIComponent(range)
         + '?valueInputOption=USER_ENTERED', 'sheets',
         { method: 'PUT', body: JSON.stringify({ range, majorDimension: 'ROWS', values: clean }) });
@@ -1259,8 +1322,33 @@ const CONN_ACTIONS = {
         }));
       }catch(e){}
       return { id, range: res.updatedRange || range, updatedCells: +res.updatedCells || 0, verified,
-               link: 'https://docs.google.com/spreadsheets/d/' + id + '/edit' };
+               link: 'https://docs.google.com/spreadsheets/d/' + id + '/edit', _prior: prior, _wrote: clean };
     },
+    undo: { label: 'Put the earlier values back',
+      none: 'This was too many cells to take back from AMV. Use File, Version history in the sheet - Google keeps the version from before.',
+      tooBig: 'This was too large to take back from AMV. Use File, Version history in the sheet - Google keeps the version from before.',
+      ref: (out) => out && out._prior && out.range ? { id: out.id, range: out.range, prior: out._prior, wrote: out._wrote } : null,
+      async run(token, ref){
+        const id = _gFileId({ fileId: ref.id });
+        const range = _gRange(ref.range);
+        const wrote = Array.isArray(ref.wrote) ? ref.wrote : [];
+        const same = (want, got) => want.every((r, i) => r.every((c, j) => {
+          const g = (got[i] || [])[j];
+          return String(c) === '' ? (g == null || String(g) === '') : String(g) === String(c);
+        }));
+        const read = async () => (await _gJson(token, 'https://sheets.googleapis.com/v4/spreadsheets/' + id + '/values/'
+          + encodeURIComponent(range) + '?valueRenderOption=FORMULA', 'sheets')).values || [];
+        /* Only if it still says what AMV wrote. Anything else is somebody's
+           later work, and putting AMV's "before" over it would lose it. */
+        if (!same(wrote, await read())) return 'moved';
+        const back = wrote.map((r, i) => r.map((c, j) => {
+          const p = ((ref.prior || [])[i] || [])[j];
+          return p == null ? '' : p;
+        }));
+        await _gJson(token, 'https://sheets.googleapis.com/v4/spreadsheets/' + id + '/values/' + encodeURIComponent(range)
+          + '?valueInputOption=USER_ENTERED', 'sheets', { method: 'PUT', body: JSON.stringify({ range, majorDimension: 'ROWS', values: back }) });
+        try{ return same(back, await read()); }catch(e){ return null; }
+      } },
   },
   /* ── GITHUB ────────────────────────────────────────────────────────────────
      GitHub was in the provider table with two capability names and NO actions,
@@ -1362,8 +1450,25 @@ const CONN_ACTIONS = {
         else if(g.ok) verified = ((await g.json().catch(()=>({}))).object || {}).sha === commit.sha;
       }catch(e){}
       return { repo, branch, base, files: files.length, commit: commit.sha.slice(0, 7),
-               url: 'https://github.com/' + repo + '/tree/' + branch, verified };
+               url: 'https://github.com/' + repo + '/tree/' + branch, verified, _sha: commit.sha };
     },
+    /* The branch AMV made, and only while it still points at AMV's commit.
+       If anybody pushed to it since, it is theirs too, and it stays. */
+    undo: { label: 'Delete the branch',
+      ref: (out) => out && out._sha && out.branch ? { repo: out.repo, branch: out.branch, sha: out._sha } : null,
+      async run(token, ref){
+        const repo = _ghRepo(ref.repo), branch = _ghBranch(ref.branch);
+        const u = 'https://api.github.com/repos/' + repo + '/git/ref/heads/' + encodeURIComponent(branch);
+        const g = await fetchDeadline(u, { headers: _ghHeaders(token) }, 15000);
+        if (g.status === 404) return true;
+        if (!g.ok) throw new Error('github_' + g.status);
+        if (((await g.json().catch(()=>({}))).object || {}).sha !== ref.sha) return 'moved';
+        const d = await fetchDeadline('https://api.github.com/repos/' + repo + '/git/refs/heads/' + encodeURIComponent(branch),
+          { method:'DELETE', headers: _ghHeaders(token) }, 20000);
+        if (!d.ok && d.status !== 422 && d.status !== 404) throw new Error('github_' + d.status);
+        const after = await fetchDeadline(u, { headers: _ghHeaders(token) }, 15000);
+        return after.status === 404 ? true : after.ok ? false : null;
+      } },
   },
   /* The two the client already had tools for, and could never reach: both
      read a token out of localStorage under a key no flow has ever written, so
@@ -1399,8 +1504,13 @@ const CONN_ACTIONS = {
           else { const i = await g.json().catch(()=>({})); verified = i.number === d.number && i.title === title; }
         }catch(e){ verified = null; }
       }
-      return { created: verified !== false, number: d.number || 0, url: d.html_url || '', verified };
+      return { created: verified !== false, number: d.number || 0, url: d.html_url || '', verified, repo };
     },
+    /* GitHub does not let an issue be deleted by the person who opened it, so
+       taking it back is closing it - and the label says close, not delete. */
+    undo: { label: 'Close the issue',
+      ref: (out) => out && out.number ? { repo: out.repo, number: out.number, kind: 'issues' } : null,
+      run: (token, ref) => _ghClose(token, ref) },
   },
   'github.pr': {
     need: 'code.write', writes: true,
@@ -1424,8 +1534,11 @@ const CONN_ACTIONS = {
                  verified = q.number === d.number && q.state === 'open' && ((q.head || {}).ref === head); }
         }catch(e){ verified = null; }
       }
-      return { number: d.number || 0, url: d.html_url || '', verified };
+      return { number: d.number || 0, url: d.html_url || '', verified, repo };
     },
+    undo: { label: 'Close the pull request',
+      ref: (out) => out && out.number ? { repo: out.repo, number: out.number, kind: 'pulls' } : null,
+      run: (token, ref) => _ghClose(token, ref) },
   },
 };
 
@@ -1489,11 +1602,16 @@ async function connAct(request, env){
       }
       if(v === false){
         audit(env, 'conn_action_not_confirmed', { by: user.email, action: name });
-        return json({ error:'not_confirmed', action: name, result,
+        return json({ error:'not_confirmed', action: name, result: _actShown(result),
           message:'The account said yes, but when AMV checked, the change was not there. Look in the account before trying again, so it does not happen twice.' }, 502);
       }
     }
-    return json({ ok: true, action: name, result });
+    if(!spec.writes) return json({ ok: true, action: name, result });
+    const receipt = await _actReceipt(env, user.email, name, spec, body.args || {}, result);
+    audit(env, 'action_receipt', { by: user.email, action: name, status: receipt.status, undo: !!receipt.undo });
+    /* What only the server needed (an earlier copy of the cells, a full commit
+       id) stays here; the receipt's ticket carries what the undo needs. */
+    return json({ ok: true, action: name, result: _actShown(result), receipt });
   }catch(e){
     /* The provider's own message is logged and NOT returned. It can carry a
        quota name, an internal id, or a hint about the account, and none of that

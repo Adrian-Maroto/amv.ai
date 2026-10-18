@@ -669,6 +669,7 @@ async function _route(request, env, ctx) {
     case '/v1/connect/finish': return connFinish(request, env);
     case '/v1/connect/list':   return connList(request, env);
     case '/v1/connect/act':    return connAct(request, env);
+    case '/v1/connect/undo':   return connUndo(request, env);
     case '/v1/library':        return libList(request, env);
     case '/v1/library/put':    return libPut(request, env);
     case '/v1/library/get':    return libGet(request, env);

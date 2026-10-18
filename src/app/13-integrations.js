@@ -43,9 +43,41 @@ async function _connActRun(action, args){
   /* A write the server could not read back is not a write AMV can call done. */
   if(r && typeof r === 'object' && r.verified === null)
     r.note = 'AMV could not check this afterwards. Say it was requested, not that it is done, and suggest looking in the account.';
+  /* The receipt: the person gets the way back, the model gets the truth about
+     it. The ticket itself never goes to the model - taking something back is
+     the person's click, not a tool call. */
+  const rc = d && d.receipt;
+  if(r && typeof r === 'object' && rc){
+    r.undo = rc.undo ? 'The person can undo this from the notice on their screen (' + rc.undo.label + ').'
+                     : 'This cannot be undone from AMV. ' + (rc.irreversible || '');
+    if(rc.undo) _actOfferUndo(action, rc.undo);
+  }
   return r;
 }
 try{ window._connActRun=_connActRun; }catch(e){}
+
+/* What was just done, said back with the one way to take it back. Long enough
+   to read on a phone; the server's ticket outlives it, the notice does not
+   need to. */
+const _ACT_DONE = {
+  'calendar.create': () => T('Event added to your calendar'),
+  'drive.copy': () => T('Copy made in your Drive'),
+  'drive.share': () => T('File shared'),
+  'sheets.write': () => T('Sheet updated'),
+  'github.push': () => T('Branch pushed'),
+  'github.issue.create': () => T('Issue opened'),
+  'github.pr': () => T('Pull request opened'),
+};
+function _actOfferUndo(action, undo){
+  try{
+    toastAction(_ACT_DONE[action] ? _ACT_DONE[action]() : T('Done'), T('Undo'), async () => {
+      try{
+        const d = await AMV_API.connectUndo(undo.token);
+        toast(d && d.verified ? T('Undone') : T('Asked to undo it, but AMV could not check. Look in the account.'), d && d.verified ? 'success' : 'info', 6000);
+      }catch(e){ toast(e.message || T('That could not be undone.'), 'error', 8000); }
+    }, 30000);
+  }catch(e){}
+}
 
 /* ONE GOOGLE FILE, CHOSEN BY THE PERSON IN GOOGLE'S OWN PICKER.
 

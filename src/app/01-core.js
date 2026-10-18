@@ -1395,6 +1395,10 @@ const AMV_API = {
     return this._wrote('/v1/connect/act', { action, args: args || {} },
       'That could not be done on your connected account.');
   },
+  /* Take back one thing AMV did, with the signed ticket its receipt carried. */
+  async connectUndo(token){
+    return this._wrote('/v1/connect/undo', { token }, 'That could not be undone.');
+  },
   /* Your files, kept in the account (see src/worker/68-cloud-library.js).
      `configured:false` is an answer, not an error: the deployment keeps files
      on each device and the library says so. */

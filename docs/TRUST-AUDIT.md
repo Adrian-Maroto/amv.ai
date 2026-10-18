@@ -1924,3 +1924,33 @@ reads.
 **Not measured:** throughput. Batches are worked on the five-minute cron, four
 at a time; under heavy use that is the bottleneck, and the honest fix is a
 queue service - an infrastructure decision that is the owner's.
+
+## Round forty-four - what AMV did can be taken back, or AMV says why not
+
+The action protocol (`src/worker/09a-action-protocol.js`): every write on a
+connected account comes back with a receipt, and either a signed undo ticket
+(bound to the account, the action and the one thing made, 24 hours, ended by
+signing out everywhere) or the sentence saying why it cannot be undone. A
+write that declares neither stops the Worker starting. Taking back is read
+back, and refused when the thing was changed since AMV made it.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 263 | the start-up check for an undo (or its reason) removed | 1 assertion |
+| 264 | an undo ticket accepted from another account | 2 assertions |
+| 265 | a sheet put back over cells somebody changed since | 1 assertion |
+| 266 | a branch deleted after somebody else pushed to it | 2 assertions |
+| 267 | the cells kept for the undo returned in a failure answer | 1 assertion |
+| 268 | an undo the provider did not do reported as undone | 1 assertion |
+| 269 | a ticket minted without the account's sign-in generation | 1 assertion |
+| 270 | a write's answer sent without its receipt | 1 assertion |
+
+**Found while writing it:** the failure answer (`not_confirmed`) returned the
+result as it was, so the earlier copy of somebody's cells kept for the undo
+went to the browser on exactly the path nobody reads. Every path now goes
+through `_actShown`.
+
+**Not yet covered by the protocol:** writes outside `/v1/connect/act` - Slack
+posts, background-job deliveries, site deploys, the cloud browser and
+connectors somebody else wrote. A connector's own action cannot be read back by
+AMV at all and is already labelled as the connector's word, not AMV's.
