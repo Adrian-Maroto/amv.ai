@@ -31,6 +31,8 @@ function _renderApiKeysPane(pane){
     _apiDocsHTML();
   const cli = document.getElementById('ak-cli');
   if(cli) on(cli, 'click', async () => { cli.disabled = true; try{ await _cliDownload(); } finally{ cli.disabled = false; } });
+  const sdk = document.getElementById('ak-sdk');
+  if(sdk) on(sdk, 'click', async () => { sdk.disabled = true; try{ await _sdkDownload(); } finally{ sdk.disabled = false; } });
   const vsx = document.getElementById('ak-vsix');
   if(vsx) on(vsx, 'click', async () => { vsx.disabled = true; try{ await _vsixDownload(); } finally{ vsx.disabled = false; } });
   const crx = document.getElementById('ak-chrome');
@@ -199,6 +201,23 @@ function _apiDocsHTML(){
     '<p class="ak-doc">'+escH(T('{0} works on the files in the folder you start it in: it reads freely, but shows every change and every command and asks before each one, and offers to put everything back at the end.')).replace('{0}', '<code>code</code>')+'</p>'+
     '<button class="btn bs" id="ak-cli" type="button">'+escH(T('Download {0}')).replace('{0}', 'amv-cli.mjs')+'</button>'+
   '</div>'+
+  /* FROM YOUR OWN CODE. The SDK, handed over the same way: one file, this
+     deployment's address in it, the key from the environment. */
+  '<div class="ss2"><h3>'+escH(T('From your own code'))+'</h3>'+
+    '<p class="ak-doc">'+t('One file to import, nothing to install - Node 18 or newer, Deno or Bun, on your server. It answers whole or as it is written, runs batches, and runs an agent: AMV decides which of your tools to call, and your code runs them, in your process.')+'</p>'+
+    '<pre class="ak-code"><code>'+escH("import { AMV } from './amv-sdk.mjs';\n"+
+      "const amv = new AMV();   // the key from AMV_API_KEY\n\n"+
+      "const msg = await amv.messages.create({ messages: [{ role: 'user', content: 'Hello' }] });\n"+
+      "console.log(AMV.text(msg));\n\n"+
+      "const run = await amv.runAgent({\n"+
+      "  messages: [{ role: 'user', content: 'Is it raining in Lisbon?' }],\n"+
+      "  tools: [{ name: 'weather', description: 'Weather for a city',\n"+
+      "    input_schema: { type: 'object', properties: { city: { type: 'string' } } },\n"+
+      "    run: async ({ city }) => getWeather(city) }],\n"+
+      "});")+'</code></pre>'+
+    '<p class="ak-doc">'+escH(T('It will not start in a web page, where anybody could read the key.'))+'</p>'+
+    '<button class="btn bs" id="ak-sdk" type="button">'+escH(T('Download {0}')).replace('{0}', 'amv-sdk.mjs')+'</button>'+
+  '</div>'+
   /* IN VS CODE. The same handover: packed here, in this browser, with this
      deployment's address in it, so the only thing to set is the key - which
      the extension keeps in the system keychain, not in settings.json. */
@@ -342,30 +361,41 @@ const CLI_FILE = 'amv-cli.mjs';
 /* Fetched from this deployment, checked to be the tool, and saved with the
    address filled in. A copy of AMV with no server has nothing to give it,
    and says so rather than handing over a tool that cannot work. */
-async function _cliDownload(){
+/* A one-file tool from this deployment, with this deployment's address
+   written into it - the command-line tool and the SDK, the same way. */
+async function _oneFileDownload(file, looksRight, saved){
   const base = String(apiBase() || '').replace(/\/$/, '');
   if(!/^https:\/\/[^\s"'\\]+$/.test(base)){
-    try{ toast('This copy of AMV is not connected to its server, so the tool would have nowhere to send questions.', 'error', 7000); }catch(e){}
+    try{ toast('This copy of AMV is not connected to its server, so the file would have nowhere to send questions.', 'error', 7000); }catch(e){}
     return false;
   }
   let text;
   try{
-    const r = await fetchDeadline(CLI_FILE, { cache: 'no-store' }, 15000);
+    const r = await fetchDeadline(file, { cache: 'no-store' }, 15000);
     if(!r.ok) throw new Error('http_' + r.status);
     text = await r.text();
-    if(!/^#!\/usr\/bin\/env node/.test(text) || text.indexOf("'__AMV_API__'") < 0) throw new Error('not_the_cli');
+    if(!looksRight(text) || text.indexOf("'__AMV_API__'") < 0) throw new Error('not_the_file');
   }catch(e){
-    try{ toast('AMV could not fetch the command-line tool from this deployment. Try again in a moment.', 'error', 7000); }catch(x){}
+    try{ toast('AMV could not fetch ' + file + ' from this deployment. Try again in a moment.', 'error', 7000); }catch(x){}
     return false;
   }
   text = text.replace("'__AMV_API__'", JSON.stringify(base));
   const url = URL.createObjectURL(new Blob([text], { type: 'text/javascript' }));
   const a = document.createElement('a');
-  a.href = url; a.download = CLI_FILE;
+  a.href = url; a.download = file;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => { try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
-  try{ toast('Saved amv-cli.mjs. Set AMV_API_KEY to one of your keys, then run: node amv-cli.mjs "your question"', 'success', 8000); }catch(e){}
+  try{ toast(saved, 'success', 8000); }catch(e){}
   return true;
+}
+function _cliDownload(){
+  return _oneFileDownload(CLI_FILE, t => /^#!\/usr\/bin\/env node/.test(t),
+    'Saved amv-cli.mjs. Set AMV_API_KEY to one of your keys, then run: node amv-cli.mjs "your question"');
+}
+const SDK_FILE = 'amv-sdk.mjs';
+function _sdkDownload(){
+  return _oneFileDownload(SDK_FILE, t => /export class AMV\b/.test(t),
+    'Saved amv-sdk.mjs. Set AMV_API_KEY to one of your keys, then import { AMV } from it in your code.');
 }
 /* AMV IN VS CODE: THE EXTENSION, AND THE FOLDER.
 

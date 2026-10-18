@@ -15047,3 +15047,16 @@ guard; the route that moves money never asked.
 Rule: a decision that takes something off sale is enforced where the money
 moves, not only where things are listed. "Can this be bought" is one positive
 check (it is active and not hidden), never a list of the states that cannot.
+
+## 592. An API that accepted tools and kept none
+
+The public API took a `tools` array, and the server filtered it through the
+list of AMV's own tool names. For the app that list is a wiring check; for a
+developer it meant every tool they defined was dropped without a word, and
+the model answered as though none had been sent. The command-line tool hid
+it, because its tools happen to share names with AMV's.
+
+Rule: an allowlist built for one caller is not a policy for every caller.
+When a filter drops something a caller sent, either the caller is told or the
+filter is scoped to the callers it was built for. Here API keys now bring
+their own tools, admitted by shape, with every size bound still applied.

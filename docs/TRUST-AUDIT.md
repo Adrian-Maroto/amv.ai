@@ -2072,3 +2072,20 @@ before it was withheld stay there until the person removes it - the server
 cannot reach into a device. Instructions written to evade the patterns (a
 paraphrase of "ignore your rules") are not caught by a pattern; the third-party
 label on installed plugins (`third`) is what limits what such text can do.
+
+## Round forty-nine - the SDK, and a caller's own tools
+
+`sdk/amv-sdk.mjs` is the API from somebody's own code: messages, streaming,
+token counts, batches, and `runAgent`, which runs the caller's tools in the
+caller's process. The server now forwards an API key's own tools by shape.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 301 | an API key's own tools dropped by name (the old behaviour) | 1 assertion |
+| 302 | the app's requests admitted unknown tool names too | 1 assertion |
+| 303 | a tool call with unreadable input run anyway | 1 assertion |
+| 304 | a declined tool call run anyway | 1 assertion |
+| 305 | the SDK starting in a web page | 1 assertion |
+
+**Found while writing it:** the public API silently dropped every tool a
+developer defined (LESSONS 592).

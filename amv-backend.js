@@ -19776,7 +19776,16 @@ const TOOLS_TOTAL_MAX    = 240000;  // characters of description + schema across
 const TOOL_DESC_MAX      = 1200;    // a description, not a second prompt
 const TOOL_SCHEMA_MAX    = 4000;    // a schema, not a payload
 
-function _safeTools(list) {
+/* A CALLER'S OWN TOOLS. Somebody building on the API (the SDK's runAgent, or
+   their own code) defines tools AMV has never heard of and runs them in their
+   own process. Dropped by name, they vanished without a word: the request was
+   answered as though no tools had been sent, which is a parse error in
+   somebody else's agent with nothing to say why. With an API key, a tool is
+   admitted by the shape of its name; every size bound below still applies,
+   so the cost surface is the same. The app's own requests keep the name list,
+   where a name AMV does not know means one of AMV's features is unwired. */
+const CALLER_TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+function _safeTools(list, { callerTools = false } = {}) {
   const out = [];
   let total = 0;
   for (const t of list) {
@@ -19819,7 +19828,7 @@ function _safeTools(list) {
        possible for names known at build time, so it keeps applying to
        those, and a shape check applies to the ones that cannot be. */
     const isMcp = /^mcp__[a-z0-9_-]{1,40}__[A-Za-z0-9_-]{1,60}$/.test(name);
-    if (!isMcp && !AMV_CLIENT_TOOLS.has(name)) continue;
+    if (!isMcp && !AMV_CLIENT_TOOLS.has(name) && !(callerTools && CALLER_TOOL_NAME.test(name))) continue;
     const schema = (t.input_schema && typeof t.input_schema === 'object') ? t.input_schema : { type: 'object', properties: {} };
     let schemaStr = '';
     try { schemaStr = JSON.stringify(schema); } catch (e) { continue; }
@@ -20388,7 +20397,7 @@ async function aiCountTokens(request, env){
   if (!key && !partner) return json({ error: 'That engine is not available. Choose one of AMV’s engines.', code: 'engine_unavailable' }, 400);
 
   const system = _systemWithIdentity(body.system);
-  const tools = Array.isArray(body.tools) ? _safeTools(body.tools) : [];
+  const tools = Array.isArray(body.tools) ? _safeTools(body.tools, { callerTools: user.via === 'apikey' }) : [];
   if (partner) {
     const est = _estimateReserveInput(Object.assign({}, body, { system }));
     return json({ input_tokens: est, engine: partner.key, estimate: true });
@@ -20946,7 +20955,7 @@ async function aiProxy(request, env, ctx, principal) {
   if (_effort) upstreamBody.output_config = { effort: _effort };
   if (eng.speed) upstreamBody.speed = eng.speed;
   if (body.tools && Array.isArray(body.tools)) {
-    const safe = _safeTools(body.tools);
+    const safe = _safeTools(body.tools, { callerTools: user.via === 'apikey' });
     if (safe.length) upstreamBody.tools = safe;
   }
 

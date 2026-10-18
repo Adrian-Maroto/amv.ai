@@ -337,7 +337,7 @@ async function aiCountTokens(request, env){
   if (!key && !partner) return json({ error: 'That engine is not available. Choose one of AMV’s engines.', code: 'engine_unavailable' }, 400);
 
   const system = _systemWithIdentity(body.system);
-  const tools = Array.isArray(body.tools) ? _safeTools(body.tools) : [];
+  const tools = Array.isArray(body.tools) ? _safeTools(body.tools, { callerTools: user.via === 'apikey' }) : [];
   if (partner) {
     const est = _estimateReserveInput(Object.assign({}, body, { system }));
     return json({ input_tokens: est, engine: partner.key, estimate: true });
@@ -895,7 +895,7 @@ async function aiProxy(request, env, ctx, principal) {
   if (_effort) upstreamBody.output_config = { effort: _effort };
   if (eng.speed) upstreamBody.speed = eng.speed;
   if (body.tools && Array.isArray(body.tools)) {
-    const safe = _safeTools(body.tools);
+    const safe = _safeTools(body.tools, { callerTools: user.via === 'apikey' });
     if (safe.length) upstreamBody.tools = safe;
   }
 
