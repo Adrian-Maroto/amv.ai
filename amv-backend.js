@@ -19737,6 +19737,9 @@ const AMV_CLIENT_TOOLS = new Set([
   /* Several workers on one task (11c-agentic-chat.js): runs in the browser,
      each worker a normal metered request. */
   'delegate',
+  /* An attached Word, Excel or PowerPoint file changed in place, in the
+     browser, and offered back as the same file (office.js, amvOfficeEdit). */
+  'office_edit',
   /* THE BRIDGE'S TOOLS, AND THE SAME MISTAKE ONE FLOOR UP.
 
      The bridge was built end to end - a daemon on somebody's machine, a

@@ -286,6 +286,444 @@ function amvPptx(md, title){
   return _zipStore(files);
 }
 
+/* ── EDITING THE FILE SOMEBODY GAVE YOU ─────────────────────────────────────
+
+   The round trip. A Word document, a workbook or a deck comes in; the person
+   asks for a change; the SAME file goes back with only that change in it -
+   its styles, pictures, headers, comments, charts and everything else AMV
+   did not touch copied across as the original's own bytes. Exporting an
+   answer (above) makes a new file from text; this keeps theirs.
+
+   Word and PowerPoint change by text: "find" must be text in one paragraph
+   (or one slide's paragraph) and, unless every copy is meant, appear exactly
+   once - an edit that might land in the wrong place is refused and the reason
+   given, never guessed. The new text takes the formatting of the text it
+   replaces. A new paragraph is a copy of the one it follows, so it has that
+   paragraph's style, without its pictures, notes, bookmarks or fields.
+   Excel changes by cell: numbers stay numbers, "=..." is a formula, and the
+   cell keeps its format. A cell that starts a shared formula, sits under a
+   merge or names a table's column is refused by name rather than producing a
+   file Excel has to repair.
+
+   Nothing is called done until the new file is opened again, by the same
+   reader that read the original, and each change is found in it. */
+const _OE_MAX_CHANGES = 200, _OE_MAX_TEXT = 5000;
+const _OE_CTRL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g;
+const _XMLNS = 'http://www.w3.org/XML/1998/namespace';
+class _OeStop extends Error {}
+
+async function _oeDeflate(bytes){
+  if(typeof CompressionStream === 'undefined') return null;
+  try{ return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer()); }
+  catch(e){ return null; }
+}
+/* A new package: every part that did not change is copied as the original's
+   own compressed bytes, with its own checksum - not re-encoded - so "nothing
+   else changed" is true to the byte. */
+async function _oeRepack(z, changed, drop){
+  const enc = new TextEncoder(), src = new DataView(z.buf), parts = [], central = [];
+  let off = 0, count = 0;
+  for(const [key, e] of z.entries){
+    if(drop.has(key)) continue;
+    let data, method, crc, usize;
+    if(changed.has(key)){
+      const raw = changed.get(key);
+      crc = _crc32(raw); usize = raw.length;
+      const d = await _oeDeflate(raw);
+      if(d && d.length < raw.length){ data = d; method = 8; } else { data = raw; method = 0; }
+    } else {
+      if(e.flags & 1) throw new _OeStop('This file is locked with a password, so AMV cannot change it.');
+      if((e.method !== 0 && e.method !== 8) || e.off + 30 > z.buf.byteLength || src.getUint32(e.off, true) !== 0x04034b50)
+        throw new _OeStop('Part of this file is stored in a way AMV cannot copy, so nothing was changed.');
+      const start = e.off + 30 + src.getUint16(e.off + 26, true) + src.getUint16(e.off + 28, true);
+      if(start + e.csize > z.buf.byteLength) throw new _OeStop('This file is damaged, so nothing was changed.');
+      data = new Uint8Array(z.buf, start, e.csize); method = e.method; crc = e.crc; usize = e.usize;
+    }
+    const nm = enc.encode(e.name);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, method, true);
+    h.setUint16(12, 0x21, true); h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, usize, true); h.setUint16(26, nm.length, true);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, method, true);
+    c.setUint16(14, 0x21, true); c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, usize, true); c.setUint16(28, nm.length, true);
+    c.setUint32(42, off, true);
+    parts.push(new Uint8Array(h.buffer), nm, data); central.push(new Uint8Array(c.buffer), nm);
+    off += 30 + nm.length + data.length; count++;
+  }
+  const cdLen = central.reduce((n, p) => n + p.length, 0), e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, count, true); e.setUint16(10, count, true);
+  e.setUint32(12, cdLen, true); e.setUint32(16, off, true);
+  return await new Blob(parts.concat(central, [new Uint8Array(e.buffer)])).arrayBuffer();
+}
+const _oeSer = doc => new TextEncoder().encode(_XH + new XMLSerializer().serializeToString(doc).replace(/^<\?xml[^>]*\?>\s*/, ''));
+
+/* ── Word and PowerPoint: paragraphs as text, mapped back to their runs ── */
+const _OE_FIXED_W = { tab: '\t', br: '\n', cr: '\n', noBreakHyphen: '-' };
+const _OE_SKIP_W = new Set(['p', 'del', 'moveFrom', 'delText', 'instrText', 'rPr', 'pPr']);
+const _OE_SKIP_A = new Set(['p', 'pPr', 'rPr', 'endParaRPr']);
+/* The paragraph's text as the reader shows it, piece by piece. A piece is a
+   text element that can change, or something fixed (a tab, a line break, a
+   field's result) that an edit may sit beside but not cut through. */
+function _oePieces(p, word){
+  const out = [];
+  const walk = (node, fixed) => {
+    for(const c of Array.from(node.children)){
+      const ln = c.localName;
+      if(ln === 't'){ out.push({ node: c, text: c.textContent, fixed }); continue; }
+      if(word && _OE_FIXED_W[ln] != null){ out.push({ node: null, text: _OE_FIXED_W[ln], fixed: true }); continue; }
+      if(!word && ln === 'br'){ out.push({ node: null, text: '\n', fixed: true }); continue; }
+      if((word ? _OE_SKIP_W : _OE_SKIP_A).has(ln)) continue;
+      walk(c, fixed || ln === 'fldSimple' || ln === 'fld');
+    }
+  };
+  walk(p, false);
+  return out;
+}
+const _oeJoin = pieces => pieces.map(x => x.text).join('');
+/* The paragraphs that can be changed. Word writes a text box twice - once for
+   itself and once as a fallback for old readers - and only the first counts,
+   or every edit inside one would read as appearing twice. */
+function _oeParas(doc, word){
+  return _xAll(doc, 'p').filter(p => (word ? true : /drawingml/.test(p.namespaceURI || ''))
+    && !(function up(n){ for(; n; n = n.parentNode) if(n.localName === 'Fallback') return true; return false; })(p.parentNode));
+}
+function _oeSetText(piece, text, word){
+  piece.node.textContent = text; piece.text = text;
+  if(word) piece.node.setAttributeNS(_XMLNS, 'xml:space', 'preserve');
+}
+/* Replace [s, e) in a paragraph, or insert at s when the range is empty.
+   False when the range cuts something fixed. */
+function _oeSplice(pieces, s, e, text, word){
+  let pos = 0;
+  const spans = pieces.map(x => { const a = pos; pos += x.text.length; return { x, a, b: pos }; });
+  const can = h => !h.x.fixed && h.x.node;
+  if(s === e){
+    /* Pure insertion: into the text before it, so it reads in that text's style. */
+    const h = spans.find(h => can(h) && s > h.a && s <= h.b) || spans.find(h => can(h) && s >= h.a && s < h.b);
+    if(!h) return false;
+    _oeSetText(h.x, h.x.text.slice(0, s - h.a) + text + h.x.text.slice(s - h.a), word);
+    return true;
+  }
+  const hit = spans.filter(h => h.b > s && h.a < e);
+  if(!hit.length || hit.some(h => !can(h))) return false;
+  const first = hit[0], last = hit[hit.length - 1];
+  const tail = last.x.text.slice(e - last.a);
+  if(first === last){ _oeSetText(first.x, first.x.text.slice(0, s - first.a) + text + tail, word); return true; }
+  _oeSetText(first.x, first.x.text.slice(0, s - first.a) + text, word);
+  for(const h of hit.slice(1, -1)) _oeSetText(h.x, '', word);
+  _oeSetText(last.x, tail, word);
+  return true;
+}
+/* Only what differs is replaced: "monthly by the 5th" to "monthly by the 1st"
+   changes the 5, so "monthly" keeps its bold and nothing new takes it on. */
+function _oeTrim(find, rep){
+  let p = 0; const max = Math.min(find.length, rep.length);
+  while(p < max && find[p] === rep[p]) p++;
+  let q = 0;
+  while(q < max - p && find[find.length - 1 - q] === rep[rep.length - 1 - q]) q++;
+  const hi = c => c >= 0xD800 && c <= 0xDBFF;
+  if(p && hi(find.charCodeAt(p - 1))) p--;
+  if(q && hi(find.charCodeAt(find.length - q - 1))) q--;
+  return { p, q, text: rep.slice(p, rep.length - q) };
+}
+function _oeCount(hay, needle){ let n = 0, i = 0; if(!needle) return 0; while((i = hay.indexOf(needle, i)) >= 0){ n++; i += needle.length; } return n; }
+/* A new paragraph after `p`, with p's look and none of what must stay single:
+   pictures, notes, comments, bookmarks, fields, section breaks, ids. */
+const _OE_CLONE_DROP = new Set(['bookmarkStart', 'bookmarkEnd', 'commentRangeStart', 'commentRangeEnd', 'commentReference',
+  'footnoteReference', 'endnoteReference', 'drawing', 'pict', 'object', 'fldSimple', 'fldChar', 'instrText', 'tab', 'br', 'cr',
+  'AlternateContent', 'sectPr', 'fld', 'proofErr', 'permStart', 'permEnd']);
+function _oeParaAfter(p, text, word){
+  const np = p.cloneNode(true);
+  for(const el of Array.from(np.getElementsByTagName('*'))){ if(_OE_CLONE_DROP.has(el.localName) && el.parentNode) el.parentNode.removeChild(el); }
+  for(const a of Array.from(np.attributes)){ if(a.localName === 'paraId' || a.localName === 'textId') np.removeAttributeNode(a); }
+  const pieces = _oePieces(np, word).filter(x => !x.fixed && x.node);
+  if(pieces.length){ _oeSetText(pieces[0], text, word); for(const x of pieces.slice(1)) _oeSetText(x, '', word); }
+  else {
+    const ns = np.namespaceURI, r = np.ownerDocument.createElementNS(ns, (np.prefix ? np.prefix + ':' : '') + 'r');
+    const t = np.ownerDocument.createElementNS(ns, (np.prefix ? np.prefix + ':' : '') + 't');
+    t.textContent = text; if(word) t.setAttributeNS(_XMLNS, 'xml:space', 'preserve');
+    r.appendChild(t);
+    const end = _xKid(np, 'endParaRPr');
+    np.insertBefore(r, end || null);
+  }
+  p.parentNode.insertBefore(np, p.nextSibling);
+  return np;
+}
+
+/* The parts that hold the text: Word's main document; every slide of a deck,
+   in order. Notes, headers and footers are not changed yet - said, not hidden. */
+async function _oeTextParts(z, main, format){
+  if(format === 'docx') return [main];
+  const pres = await _zipXml(z, main), rels = await _zipRels(z, main), out = [];
+  for(const sid of _xAll(pres, 'sldId')){ const r = rels.get(_xRid(sid)); if(r) out.push(r.path); }
+  return out;
+}
+async function _oeEditText(z, main, format, changes, applied, refused){
+  const word = format === 'docx';
+  const paths = await _oeTextParts(z, main, format);
+  const docs = [];
+  for(const path of paths){ const doc = await _zipXml(z, path); if(doc) docs.push({ path, doc }); }
+  const all = () => { const out = []; for(const d of docs) for(const p of _oeParas(d.doc, word)) out.push({ d, p }); return out; };
+  const touched = new Set();
+  const where = word ? 'the document' : 'the slides';
+  for(const ch of changes){
+    if(ch.after != null){
+      const after = String(ch.after), lines = String(ch.insert == null ? '' : ch.insert).split('\n').map(l => l.replace(_OE_CTRL, '')).filter(l => l.trim());
+      if(!after.trim() || !lines.length){ refused.push({ change: ch, why: 'An insert needs "after" (text from the paragraph it follows) and "insert" (the new text).' }); continue; }
+      const hits = all().filter(x => _oeJoin(_oePieces(x.p, word)).includes(after));
+      if(hits.length !== 1){ refused.push({ change: ch, why: hits.length ? '"' + after.slice(0, 80) + '" is in ' + hits.length + ' paragraphs; quote more of the one meant.' : '"' + after.slice(0, 80) + '" is not in ' + where + '.' }); continue; }
+      let at = hits[0].p;
+      for(const line of lines) at = _oeParaAfter(at, line, word);
+      touched.add(hits[0].d);
+      applied.push({ kind: 'insert', after, insert: lines.join('\n') });
+      continue;
+    }
+    const find = String(ch.find == null ? '' : ch.find), rep = String(ch.with == null ? '' : ch.with).replace(_OE_CTRL, '');
+    if(!find){ refused.push({ change: ch, why: 'Say which text to change ("find").' }); continue; }
+    if(find === rep){ refused.push({ change: ch, why: '"' + find.slice(0, 80) + '" would be replaced by the same text.' }); continue; }
+    if(/\n/.test(rep)){ refused.push({ change: ch, why: 'The new text has a line break; change one paragraph at a time, or add paragraphs with "after" and "insert".' }); continue; }
+    const paras = all().map(x => ({ x, text: _oeJoin(_oePieces(x.p, word)) }));
+    const n = paras.reduce((k, q) => k + _oeCount(q.text, find), 0);
+    if(!n){ refused.push({ change: ch, why: '"' + find.slice(0, 80) + '" is not in ' + where + ' as one piece of text' + (word ? ' (footnotes, comments, headers and footers cannot be changed yet)' : ' (speaker notes cannot be changed yet)') + '.' }); continue; }
+    if(n > 1 && !ch.all){ refused.push({ change: ch, why: '"' + find.slice(0, 80) + '" appears ' + n + ' times; quote more of the one meant, or say every copy is meant.' }); continue; }
+    let done = 0, blocked = 0;
+    const cut = _oeTrim(find, rep);
+    for(const q of paras){
+      if(!q.text.includes(find)) continue;
+      const starts = []; for(let i = q.text.indexOf(find); i >= 0; i = q.text.indexOf(find, i + find.length)) starts.push(i);
+      for(const s of starts.reverse()){
+        const pieces = _oePieces(q.x.p, word);
+        if(_oeSplice(pieces, s + cut.p, s + find.length - cut.q, cut.text, word)){ done++; touched.add(q.x.d); } else blocked++;
+      }
+    }
+    if(!done){ refused.push({ change: ch, why: '"' + find.slice(0, 80) + '" runs across a tab, a line break or a field; change the text on either side of it.' }); continue; }
+    applied.push({ kind: 'replace', find, with: rep, count: done, blocked, before: n });
+  }
+  const out = new Map();
+  for(const d of touched) out.set(d.path.toLowerCase(), _oeSer(d.doc));
+  return out;
+}
+
+/* ── Excel: cells ───────────────────────────────────────────────────────── */
+const _OE_REF = /^([A-Z]{1,3})([1-9][0-9]{0,6})$/;
+const _oeNum = /^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?$/;
+function _oeRange(ref){
+  const [a, b] = String(ref || '').toUpperCase().split(':'); const m1 = _OE_REF.exec(a || ''), m2 = _OE_REF.exec(b || a || '');
+  if(!m1 || !m2) return null;
+  return { c1: _xlsxColIndex(a), r1: +m1[2], c2: _xlsxColIndex(b || a), r2: +m2[2] };
+}
+/* Rows and cells may leave out their own address; given them, so a new one
+   can be put in its place. The addresses are the ones they already had. */
+function _oeNumber(sheetData){
+  let nextR = 1;
+  for(const row of _xKids(sheetData, 'row')){
+    const r = +(_xAttr(row, 'r') || nextR); nextR = r + 1;
+    if(!row.getAttribute('r')) row.setAttribute('r', String(r));
+    let nextC = 0;
+    for(const c of _xKids(row, 'c')){
+      const ref = c.getAttribute('r'); const ci = ref ? _xlsxColIndex(ref) : nextC; nextC = ci + 1;
+      if(!ref) c.setAttribute('r', _xlsxColName(ci) + r);
+    }
+  }
+}
+function _oeCell(doc, sheetData, ref, r, ci){
+  const ns = doc.documentElement.namespaceURI, mk = n => doc.createElementNS(ns, n);
+  let row = _xKids(sheetData, 'row').find(x => +x.getAttribute('r') === r);
+  if(!row){
+    row = mk('row'); row.setAttribute('r', String(r));
+    sheetData.insertBefore(row, _xKids(sheetData, 'row').find(x => +x.getAttribute('r') > r) || null);
+  }
+  let c = _xKids(row, 'c').find(x => x.getAttribute('r') === ref);
+  if(!c){
+    c = mk('c'); c.setAttribute('r', ref);
+    row.insertBefore(c, _xKids(row, 'c').find(x => _xlsxColIndex(x.getAttribute('r')) > ci) || _xKid(row, 'extLst') || null);
+  }
+  return c;
+}
+/* What a value means in a cell, decided once and used both to write it and to
+   check it was written. */
+function _oeMeaning(value){
+  if(value == null || value === '') return { kind: 'empty' };
+  if(typeof value === 'boolean') return { kind: 'bool', v: value ? '1' : '0' };
+  if(typeof value === 'number') return isFinite(value) ? { kind: 'num', v: String(value) } : null;
+  const s = String(value).replace(_OE_CTRL, '');
+  if(s.length > 1 && s[0] === '=') return s.length > 8192 ? null : { kind: 'formula', v: s.slice(1) };
+  if(_oeNum.test(s.trim())) return { kind: 'num', v: String(Number(s.trim())) };
+  const text = s[0] === "'" ? s.slice(1) : s;
+  return text.length > 32767 ? null : { kind: 'text', v: text };
+}
+function _oeWrite(doc, c, m){
+  const ns = doc.documentElement.namespaceURI, mk = n => doc.createElementNS(ns, n);
+  for(const k of Array.from(c.children)) if(k.localName !== 'extLst') c.removeChild(k);
+  c.removeAttribute('t');
+  const ext = _xKid(c, 'extLst'), put = el => c.insertBefore(el, ext || null);
+  if(m.kind === 'empty') return;
+  if(m.kind === 'formula'){ const f = mk('f'); f.textContent = m.v; put(f); return; }
+  if(m.kind === 'text'){ c.setAttribute('t', 'inlineStr'); const is = mk('is'), t = mk('t'); t.textContent = m.v; t.setAttributeNS(_XMLNS, 'xml:space', 'preserve'); is.appendChild(t); put(is); return; }
+  if(m.kind === 'bool') c.setAttribute('t', 'b');
+  const v = mk('v'); v.textContent = m.v; put(v);
+}
+function _oeRead(c){
+  if(!c) return { kind: 'empty' };
+  const f = _xKid(c, 'f'), v = _xKid(c, 'v'), t = c.getAttribute('t');
+  if(f) return { kind: 'formula', v: f.textContent };
+  if(t === 'inlineStr') return { kind: 'text', v: _xAll(_xKid(c, 'is'), 't').map(x => x.textContent).join('') };
+  if(!v) return { kind: 'empty' };
+  return { kind: t === 'b' ? 'bool' : 'num', v: v.textContent };
+}
+async function _oeSheets(z, main){
+  const wb = await _zipXml(z, main), rels = await _zipRels(z, main), out = [];
+  for(const sh of _xAll(wb, 'sheet')){ const rel = rels.get(_xRid(sh)); if(rel && /\/worksheet$/.test(rel.type)) out.push({ name: _xAttr(sh, 'name') || '', path: rel.path }); }
+  return { wb, rels, sheets: out };
+}
+async function _oeEditCells(z, main, changes, applied, refused){
+  const { wb, rels, sheets } = await _oeSheets(z, main);
+  if(!sheets.length) throw new _OeStop('This workbook has no sheet with cells AMV can change.');
+  const out = new Map(), open = new Map();
+  const sheetOf = async (name) => {
+    const s = name == null || name === '' ? sheets[0] : sheets.find(x => x.name.toLowerCase() === String(name).trim().toLowerCase());
+    if(!s) return null;
+    if(!open.has(s.path)){
+      const doc = await _zipXml(z, s.path), data = doc && _xAll(doc, 'sheetData')[0];
+      if(!data) return null;
+      _oeNumber(data);
+      const merges = _xAll(doc, 'mergeCell').map(m => _oeRange(_xAttr(m, 'ref'))).filter(Boolean);
+      const heads = [];
+      const sRels = await _zipRels(z, s.path);
+      for(const v of sRels.values()){
+        if(!/\/table$/.test(v.type)) continue;
+        const t = await _zipXml(z, v.path), tbl = t && t.documentElement, rg = tbl && _oeRange(_xAttr(tbl, 'ref'));
+        if(rg && (_xAttr(tbl, 'headerRowCount') || '1') !== '0') heads.push(Object.assign({}, rg, { r2: rg.r1 }));
+      }
+      open.set(s.path, { s, doc, data, merges, heads, touched: false });
+    }
+    return open.get(s.path);
+  };
+  const inside = (g, ci, r) => ci >= g.c1 && ci <= g.c2 && r >= g.r1 && r <= g.r2;
+  for(const ch of changes){
+    const ref = String(ch.cell || '').trim().toUpperCase().replace(/\$/g, ''), m = _OE_REF.exec(ref);
+    const sh = await sheetOf(ch.sheet);
+    if(!sh){ refused.push({ change: ch, why: 'There is no sheet called "' + String(ch.sheet).slice(0, 60) + '". The sheets are: ' + sheets.map(x => x.name).join(', ') + '.' }); continue; }
+    if(!m){ refused.push({ change: ch, why: '"' + String(ch.cell || '').slice(0, 20) + '" is not a cell address like B4.' }); continue; }
+    const r = +m[2], ci = _xlsxColIndex(ref);
+    if(ci > 16383 || r > 1048576){ refused.push({ change: ch, why: ref + ' is past the edge of a sheet.' }); continue; }
+    const mean = _oeMeaning(ch.value);
+    if(!mean){ refused.push({ change: ch, why: 'That value is too long for a cell, or is not a number Excel can hold.' }); continue; }
+    const merge = sh.merges.find(g => inside(g, ci, r) && !(g.c1 === ci && g.r1 === r));
+    if(merge){ refused.push({ change: ch, why: ref + ' is hidden under merged cells; write to ' + _xlsxColName(merge.c1) + merge.r1 + ' instead.' }); continue; }
+    if(sh.heads.some(g => inside(g, ci, r))){ refused.push({ change: ch, why: ref + ' is the name of a table column; renaming it has to be done in Excel itself.' }); continue; }
+    const c = _oeCell(sh.doc, sh.data, ref, r, ci);
+    const f = _xKid(c, 'f');
+    if(f && (f.getAttribute('ref') || f.getAttribute('t') === 'array')){ refused.push({ change: ch, why: ref + ' starts a formula other cells share; change it in Excel itself.' }); continue; }
+    _oeWrite(sh.doc, c, mean);
+    sh.touched = true;
+    applied.push({ kind: 'cell', sheet: sh.s.name, cell: ref, mean });
+  }
+  /* EVERY FORMULA'S SAVED RESULT GOES, IN EVERY SHEET.
+
+     A formula cell carries the answer it had when the file was last saved.
+     Excel works it out again when told to (below); LibreOffice, measured,
+     does not - it showed the old total beside the new rent, and a new tax
+     line worked out from that stale total. A wrong number in somebody's
+     budget is worse than an empty one, so no reader is left anything to
+     trust but the formula. Any sheet can point at the changed one. */
+  if(applied.length){
+    for(const s of sheets){
+      const sh = await sheetOf(s.name);
+      if(!sh) continue;
+      for(const c of _xAll(sh.doc, 'c')){
+        if(!_xKid(c, 'f')) continue;
+        const v = _xKid(c, 'v');
+        if(v){ c.removeChild(v); c.removeAttribute('t'); sh.touched = true; }
+      }
+    }
+  }
+  let any = false;
+  for(const sh of open.values()) if(sh.touched){ out.set(sh.s.path.toLowerCase(), _oeSer(sh.doc)); any = true; }
+  const drop = new Set();
+  if(any){
+    /* Excel works the formulas out again when it opens the file, and the list
+       of which cells hold formulas is dropped - it is rebuilt, and a stale one
+       is what makes Excel offer to "repair" a file. */
+    const chain = _relOf(rels, 'calcChain');
+    if(chain){
+      drop.add(chain.toLowerCase());
+      const relPath = main.replace(/[^/]*$/, '_rels/') + main.split('/').pop() + '.rels';
+      const rd = await _zipXml(z, relPath);
+      if(rd){ for(const x of _xAll(rd, 'Relationship')) if(/\/calcChain$/.test(x.getAttribute('Type') || '')) x.parentNode.removeChild(x); out.set(relPath.toLowerCase(), _oeSer(rd)); }
+      const ct = await _zipXml(z, '[Content_Types].xml');
+      if(ct){ for(const o of _xAll(ct, 'Override')) if((o.getAttribute('PartName') || '').replace(/^\/+/, '').toLowerCase() === chain.toLowerCase()) o.parentNode.removeChild(o); out.set('[content_types].xml', _oeSer(ct)); }
+    }
+    const root = wb.documentElement;
+    let calc = _xKid(root, 'calcPr');
+    if(!calc){
+      calc = wb.createElementNS(root.namespaceURI, 'calcPr');
+      const later = ['oleSize', 'customWorkbookViews', 'pivotCaches', 'smartTagPr', 'smartTagTypes', 'webPublishing', 'fileRecoveryPr', 'webPublishObjects', 'extLst'];
+      root.insertBefore(calc, Array.from(root.children).find(k => later.includes(k.localName)) || null);
+    }
+    calc.setAttribute('fullCalcOnLoad', '1');
+    out.set(main.toLowerCase(), _oeSer(wb));
+  }
+  return { out, drop };
+}
+
+/* ── Reading the result back ────────────────────────────────────────────── */
+async function _oeCheck(buf, format, main, applied){
+  try{ await _readOoxml(buf.slice(0), 'check'); }catch(e){ return 'the new file did not open again'; }
+  const z = _zipOpen(buf);
+  if(format === 'xlsx'){
+    const { sheets } = await _oeSheets(z, main);
+    for(const a of applied){
+      const s = sheets.find(x => x.name === a.sheet), doc = s && await _zipXml(z, s.path);
+      const c = doc && _xAll(doc, 'c').find(x => x.getAttribute('r') === a.cell);
+      const got = _oeRead(c);
+      if(got.kind !== a.mean.kind || (a.mean.kind !== 'empty' && got.v !== a.mean.v)) return a.cell + ' does not hold what was written';
+    }
+    return '';
+  }
+  const word = format === 'docx', texts = [];
+  for(const path of await _oeTextParts(z, main, format)){ const d = await _zipXml(z, path); if(d) for(const p of _oeParas(d, word)) texts.push(_oeJoin(_oePieces(p, word))); }
+  const all = texts.join('\n');
+  for(const a of applied){
+    if(a.kind === 'insert'){ for(const l of a.insert.split('\n')) if(!texts.includes(l)) return 'the new paragraph "' + l.slice(0, 40) + '" is not in it'; }
+    else if(a.with && !all.includes(a.with)) return '"' + a.with.slice(0, 40) + '" is not in it';
+    else if(!a.with.includes(a.find) && _oeCount(all, a.find) !== a.before - a.count) return '"' + a.find.slice(0, 40) + '" is still in it';
+  }
+  return '';
+}
+
+/* amvOfficeEdit(buffer, format, { changes, cells }) -> { buf?, applied, refused, verified, why? } */
+async function amvOfficeEdit(buf, format, input){
+  const applied = [], refused = [];
+  try{
+    const changes = (Array.isArray(input && input.changes) ? input.changes : []).slice(0, _OE_MAX_CHANGES);
+    const cells = (Array.isArray(input && input.cells) ? input.cells : []).slice(0, _OE_MAX_CHANGES);
+    for(const c of changes.concat(cells)) for(const k of ['find', 'with', 'after', 'insert']) if(c && typeof c[k] === 'string' && c[k].length > _OE_MAX_TEXT) throw new _OeStop('One change is longer than AMV makes in one go; split it into smaller changes.');
+    const z = _zipOpen(buf.slice(0));
+    const root = await _zipRels(z, '');
+    let main = null; for(const v of root.values()) if(/\/officeDocument$/.test(v.type)){ main = v.path; break; }
+    if(!main) throw new _OeStop('This file is not one AMV can change.');
+    let changed = new Map(), drop = new Set();
+    if(format === 'xlsx'){
+      for(const c of changes) refused.push({ change: c, why: 'A workbook changes cell by cell; use "cells".' });
+      if(cells.length){ const r = await _oeEditCells(z, main, cells, applied, refused); changed = r.out; drop = r.drop; }
+    } else {
+      for(const c of cells) refused.push({ change: c, why: 'Only a workbook has cells; change this file by its text.' });
+      if(changes.length) changed = await _oeEditText(z, main, format, changes, applied, refused);
+    }
+    if(!applied.length) return { applied, refused, verified: false, why: refused.length ? '' : 'No change was asked for.' };
+    const out = await _oeRepack(z, changed, drop);
+    const bad = await _oeCheck(out, format, main, applied);
+    if(bad) return { applied: [], refused, verified: false, why: 'The edited file was checked and ' + bad + ', so it was not offered.' };
+    return { buf: out, applied, refused, verified: true };
+  }catch(e){
+    if(e instanceof _OeStop) return { applied: [], refused, verified: false, why: e.message };
+    if(typeof _FrRefusal !== 'undefined' && e instanceof _FrRefusal) return { applied: [], refused, verified: false, why: _frReason(e.code, 'This file', e.extra) };
+    try{ console.warn('[AMV] office edit failed', e); }catch(_){}
+    return { applied: [], refused, verified: false, why: 'The file could not be changed. Nothing was altered.' };
+  }
+}
+
 /* ── From a message, to a download ──────────────────────────────────────── */
 function _exportName(text, ext){
   const first = (String(text || '').match(/^#{1,3}\s+(.+)$/m) || [])[1] || String(text || '').split('\n').find(l => l.trim()) || 'AMV';
@@ -322,6 +760,7 @@ function _exportMenu(idx, anchor){
   const close = e => { if(!menu.contains(e.target)){ menu.remove(); document.removeEventListener('click', close); } };
   setTimeout(() => document.addEventListener('click', close), 30);
 }
+window.amvOfficeEdit = amvOfficeEdit;
 window.amvDocx = amvDocx; window.amvXlsx = amvXlsx; window.amvPptx = amvPptx;
 window.amvXlsxRows = _xlsx; window.amvHasTable = amvHasTable; window.amvExportMsgAs = exportMsgAs; window._amvExportMenu = _exportMenu;
 })();

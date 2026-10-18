@@ -214,6 +214,16 @@ Companion docs (do not duplicate them here - read them):
   makes a project marked `third`, whose instructions reach the engine labelled
   as a third party's that cannot loosen AMV's rules or approve anything. Its
   engine is used only when `_planAllowsModel` and `_teamAllowsModel` say so.
+- **An attached Office file is edited IN PLACE** (`office_edit`, `amvOfficeEdit` in
+  `src/office/office.js`): the original bytes are held for the tab only
+  (`_officeKeep`, 05b-file-reader.js - never saved, never sent), the tool is
+  offered only while one is held, and the result is the SAME package with every
+  untouched part copied as its original compressed bytes. Word/PowerPoint change
+  by text within a paragraph (only the differing characters, so formatting
+  holds; ambiguous finds change nothing); Excel by cell, refusing merges, shared
+  formula masters and table headers, dropping `calcChain` and every formula's
+  cached result so no reader shows a stale total. Nothing is offered until the
+  new file is reopened and each change read back.
 - **Every write on a connected account goes through the action protocol**
   (`src/worker/09a-action-protocol.js`): it reads its own result back
   (`verified`), and declares either an `undo` (a compensation that is itself

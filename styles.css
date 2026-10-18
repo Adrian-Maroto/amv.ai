@@ -17235,3 +17235,10 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .gui-view-tab[aria-selected="true"]{ color:var(--tx); border-bottom-color:var(--accent); }
 .gui-view-tab:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; border-radius:var(--r-sm); }
 @media(max-width:560px){ .gui-view{ padding:var(--sp-3); } }
+
+/* ═══ LAYER A326 - an Office file changed in place ═══
+   The card under the answer that edited someone's own file: what changed,
+   one line each, and the download. */
+.oe-card .oe-list{ margin:var(--sp-2) 0 var(--sp-3); padding-left:var(--sp-5); font-size:var(--t-sm); color:var(--tx); }
+.oe-card .oe-list li{ margin:var(--sp-1) 0; overflow-wrap:anywhere; }
+.oe-card .pj-note{ margin:0 0 var(--sp-3); }

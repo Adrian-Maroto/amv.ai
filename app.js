@@ -8971,6 +8971,8 @@ async function _callAITurn(msgs, _opts) {
     try{ if(BRIDGE.connected && Array.isArray(BRIDGE_TOOLS)) tools = tools.concat(bridgeToolsOffered()); }catch(e){}
     /* The screen, when the bridge was started to allow it (36b-computer.js). */
     try{ tools = tools.concat(computerToolsOffered()); }catch(e){}
+    /* An Office file somebody attached, while this tab holds it (office_edit). */
+    try{ tools = tools.concat(officeToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(bridgeLocal() && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
@@ -11855,7 +11857,8 @@ function _zipOpen(buf){
     const name = dec.decode(new Uint8Array(buf, p + 46, nl)).replace(/^\/+/, '');
     /* Part names in an Office file are case-insensitive, so they are looked up that way. */
     entries.set(name.toLowerCase(), { name, flags: dv.getUint16(p + 8, true), method: dv.getUint16(p + 10, true),
-                                      csize: dv.getUint32(p + 20, true), off: dv.getUint32(p + 42, true) });
+                                      crc: dv.getUint32(p + 16, true), csize: dv.getUint32(p + 20, true),
+                                      usize: dv.getUint32(p + 24, true), off: dv.getUint32(p + 42, true) });
     p += 46 + nl + el + cl;
   }
   return { buf, entries, spent: 0 };
@@ -12224,6 +12227,33 @@ async function _readOoxml(buf, name){
   return Object.assign({ format: kind }, r);
 }
 
+/* ── THE FILE ITSELF, KEPT WHILE THIS TAB IS OPEN ─────────────────────────
+
+   The model reads an Office file as text, but an edit has to go back into
+   the file - its styles, pictures and layout - or it is a different file with
+   the same words (office_edit, amvOfficeEdit in office.js). So the original
+   bytes are held here, by name, for this tab only: never in the saved chat,
+   never in the library, never sent anywhere. Each edit is a new version on
+   top of the last, so a second change builds on the first. Bounded, oldest
+   file out first. */
+const _OFFICE_FILES = new Map();
+const _OFFICE_KEEP_FILES = 8, _OFFICE_KEEP_BYTES = 120 * 1024 * 1024;
+function _officeKeep(name, buf, format, note){
+  if(!/^(docx|xlsx|pptx)$/.test(format || '')) return null;
+  const key = String(name || '').toLowerCase();
+  const held = _OFFICE_FILES.get(key) || { name: String(name || 'file'), format, versions: [] };
+  held.versions.push({ id: 'of' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), buf, note: note || '', at: Date.now() });
+  _OFFICE_FILES.delete(key); _OFFICE_FILES.set(key, held);
+  const size = () => { let n = 0; for(const h of _OFFICE_FILES.values()) for(const v of h.versions) n += v.buf.byteLength; return n; };
+  while(_OFFICE_FILES.size > 1 && (_OFFICE_FILES.size > _OFFICE_KEEP_FILES || size() > _OFFICE_KEEP_BYTES)) _OFFICE_FILES.delete(_OFFICE_FILES.keys().next().value);
+  while(held.versions.length > 2 && size() > _OFFICE_KEEP_BYTES) held.versions.splice(1, 1);   /* the original and the newest stay */
+  return held.versions[held.versions.length - 1];
+}
+function _officeHeld(name){
+  if(name == null) return _OFFICE_FILES.size > 0;
+  return _OFFICE_FILES.get(String(name).toLowerCase()) || null;
+}
+
 /* ── Plain text, in whatever encoding it arrived ───────────────────────── */
 function _frDecodeText(bytes){
   if(_frStarts(bytes, [0xFF,0xFE])) return new TextDecoder('utf-16le').decode(bytes.subarray(2));
@@ -12290,6 +12320,7 @@ async function amvReadFile(file){
     if(ext === 'pdf' || mime === 'application/pdf') return refuse('not_pdf');
     if(sig === 'zip'){
       const r = await _readOoxml(buf, name);
+      _officeKeep(name, buf, r.format);
       return { kind: 'text', name, size, data: r.text, format: r.format, summary: r.summary };
     }
     if(sig === 'ole'){
@@ -28375,6 +28406,82 @@ const AMV_TOOLS = [
   }
 ];
 
+/* AN OFFICE FILE, CHANGED IN PLACE (amvOfficeEdit in office.js).
+
+   Offered only while a Word, Excel or PowerPoint file somebody attached is
+   held in this tab (_officeKeep, 05b-file-reader.js) - a tool for a file that
+   is not there would only teach the model to fail. The names it can take are
+   the files that are there, so it cannot be pointed at anything else. */
+const OFFICE_TOOLS = [
+  {
+    name:'office_edit',
+    description:'Change a Word, Excel or PowerPoint file the person attached and give them back THE SAME FILE with the change in it, its formatting, pictures and everything else kept. Use it whenever they ask to edit, fix, fill in or update part of an attached Office file, instead of pasting new text. Word and PowerPoint, "changes": {find, with} replaces text exactly as it appears within one paragraph (quote enough to be unique, or all:true for every copy; with:"" deletes); {after, insert} adds paragraphs after the one containing "after", styled like it, one per line. Excel, "cells": {sheet, cell, value}; numbers stay numbers, "=SUM(B2:B9)" is a formula, "" empties the cell. The result lists what changed and what was refused and why: tell the person exactly that, and that the edited file is ready to download below. Never claim a change the result does not list.',
+    input_schema:{ type:'object', properties:{
+      file:{ type:'string', description:'The attached file, by its name.' },
+      changes:{ type:'array', maxItems:200, items:{ type:'object', properties:{
+        find:{type:'string'}, with:{type:'string'}, all:{type:'boolean'}, after:{type:'string'}, insert:{type:'string'} } } },
+      cells:{ type:'array', maxItems:200, items:{ type:'object', properties:{
+        sheet:{type:'string', description:'Leave out for the first sheet.'}, cell:{type:'string', description:'Like B4.'},
+        value:{ type:['string','number','boolean'] } }, required:['cell','value'] } }
+    }, required:['file'] }
+  }
+];
+function officeToolsOffered(){
+  if(!_officeHeld()) return [];
+  const names = [..._OFFICE_FILES.values()].map(h => h.name);
+  return OFFICE_TOOLS.map(t => Object.assign({}, t, { input_schema: Object.assign({}, t.input_schema, {
+    properties: Object.assign({}, t.input_schema.properties, { file: { type:'string', enum: names, description:'The attached file, by its name.' } }) }) }));
+}
+function _officeEditName(name, n){
+  const dot = name.lastIndexOf('.'), base = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
+  return base + ' (' + T('edited') + (n > 1 ? ' ' + n : '') + ')' + ext;
+}
+function _officeSays(a){
+  if(a.kind === 'cell') return (a.sheet ? a.sheet + '!' : '') + a.cell + ' = ' + (a.mean.kind === 'empty' ? '(empty)' : a.mean.kind === 'formula' ? '=' + a.mean.v : a.mean.v);
+  if(a.kind === 'insert') return 'new paragraph after "' + a.after.slice(0, 60) + '": "' + a.insert.slice(0, 120) + '"';
+  return '"' + a.find.slice(0, 80) + '" -> "' + a.with.slice(0, 80) + '"' + (a.count > 1 ? ' (' + a.count + ' places)' : '') + (a.blocked ? ' (' + a.blocked + ' more left alone: they run across a tab, line break or field)' : '');
+}
+async function _officeEditTool(input){
+  const held = _officeHeld(String((input && input.file) || ''));
+  if(!held){
+    const open = [..._OFFICE_FILES.values()].map(h => '"' + h.name + '"');
+    return { text:'No file called "' + String((input && input.file) || '').slice(0, 80) + '" is open in this tab. ' + (open.length ? 'Open: ' + open.join(', ') + '.' : 'Ask the person to attach the file itself again - a copy from their library is text only.') + ' Nothing was changed.', render:null };
+  }
+  if(!(await _loadOffice()) || typeof window.amvOfficeEdit !== 'function')
+    return { text:'The file editor could not be loaded (the connection dropped). Nothing was changed - tell the person to try again.', render:null };
+  const cur = held.versions[held.versions.length - 1];
+  const r = await window.amvOfficeEdit(cur.buf, held.format, input || {});
+  const refusedText = r.refused.map(x => '- ' + x.why).join('\n');
+  if(!r.buf){
+    return { text:'NOTHING was changed in ' + held.name + '. ' + (r.why || '') + (refusedText ? '\nRefused:\n' + refusedText : '') + '\nTell the person what was refused and why; do not say the file was edited.',
+      render:'<div class="chat-run bad"><div class="chat-run-h">' + escH(T('{0} was not changed').replace('{0}', held.name)) + '</div><pre>' + escH([r.why || ''].concat(r.refused.map(x => x.why)).filter(Boolean).join('\n')) + '</pre></div>' };
+  }
+  const v = _officeKeep(held.name, r.buf, held.format);
+  v.file = _officeEditName(held.name, held.versions.length - 1);
+  const said = r.applied.map(_officeSays);
+  return {
+    text:'Edited ' + held.name + ' and checked it by opening the new file again. Changed:\n' + said.map(x => '- ' + x).join('\n')
+      + (refusedText ? '\nNOT changed (refused):\n' + refusedText : '')
+      + (held.format === 'xlsx' ? '\nEvery formula in the workbook is worked out again when it is opened in Excel, Google Sheets, Numbers or LibreOffice; a preview that does not calculate shows formula cells empty.' : '')
+      + '\nThe edited file is ready to download below as "' + v.file + '". A further change builds on this version.',
+    render:'<div class="chat-run oe-card"><div class="chat-run-h">' + escH(v.file) + '</div>'
+      + '<ul class="oe-list">' + said.map(x => '<li>' + escH(x) + '</li>').join('') + '</ul>'
+      + (r.refused.length ? '<p class="pj-note">' + escH(T('Not changed:')) + ' ' + escH(r.refused.map(x => x.why).join(' ')) + '</p>' : '')
+      + '<button type="button" class="btn mc-mini" data-dact="amvOfficeSave" data-darg="' + escH(v.id) + '">' + escH(T('Download')) + '</button></div>'
+  };
+}
+/* The download, from the version kept in this tab. A card from an earlier
+   visit has nothing behind it any more, and says so. */
+function amvOfficeSave(id){
+  for(const h of _OFFICE_FILES.values()){
+    const v = h.versions.find(x => x.id === id);
+    if(v){ _saveBlob(new Blob([v.buf], { type: 'application/octet-stream' }), v.file || h.name); return true; }
+  }
+  toast(T('That edited file was made in an earlier visit and is not kept. Attach the file again and ask for the change.'), 'error', 8000);
+  return false;
+}
+try{ window.amvOfficeSave = amvOfficeSave; }catch(e){}
+
 /* Which tools a given surface gets. Chat gets everything; Dev and Lab get the
    ones that make sense where they are. Before this, ONLY chat had tools at all
    - Dev couldn't ship what it built, Lab couldn't publish a fix. */
@@ -28903,6 +29010,7 @@ async function _amvRunTool(name, input, onStatus){
        worst of both - it promises, then fails at the last step. */
 
     if(name==='delegate') return await _delegateRun(input, onStatus);
+    if(name==='office_edit'){ onStatus && onStatus('Changing the file\u2026'); return await _officeEditTool(input); }
 
     if(name==='run_code'){
       onStatus && onStatus('Running the code\u2026');

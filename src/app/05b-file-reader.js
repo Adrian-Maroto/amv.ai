@@ -160,7 +160,8 @@ function _zipOpen(buf){
     const name = dec.decode(new Uint8Array(buf, p + 46, nl)).replace(/^\/+/, '');
     /* Part names in an Office file are case-insensitive, so they are looked up that way. */
     entries.set(name.toLowerCase(), { name, flags: dv.getUint16(p + 8, true), method: dv.getUint16(p + 10, true),
-                                      csize: dv.getUint32(p + 20, true), off: dv.getUint32(p + 42, true) });
+                                      crc: dv.getUint32(p + 16, true), csize: dv.getUint32(p + 20, true),
+                                      usize: dv.getUint32(p + 24, true), off: dv.getUint32(p + 42, true) });
     p += 46 + nl + el + cl;
   }
   return { buf, entries, spent: 0 };
@@ -529,6 +530,33 @@ async function _readOoxml(buf, name){
   return Object.assign({ format: kind }, r);
 }
 
+/* ── THE FILE ITSELF, KEPT WHILE THIS TAB IS OPEN ─────────────────────────
+
+   The model reads an Office file as text, but an edit has to go back into
+   the file - its styles, pictures and layout - or it is a different file with
+   the same words (office_edit, amvOfficeEdit in office.js). So the original
+   bytes are held here, by name, for this tab only: never in the saved chat,
+   never in the library, never sent anywhere. Each edit is a new version on
+   top of the last, so a second change builds on the first. Bounded, oldest
+   file out first. */
+const _OFFICE_FILES = new Map();
+const _OFFICE_KEEP_FILES = 8, _OFFICE_KEEP_BYTES = 120 * 1024 * 1024;
+function _officeKeep(name, buf, format, note){
+  if(!/^(docx|xlsx|pptx)$/.test(format || '')) return null;
+  const key = String(name || '').toLowerCase();
+  const held = _OFFICE_FILES.get(key) || { name: String(name || 'file'), format, versions: [] };
+  held.versions.push({ id: 'of' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), buf, note: note || '', at: Date.now() });
+  _OFFICE_FILES.delete(key); _OFFICE_FILES.set(key, held);
+  const size = () => { let n = 0; for(const h of _OFFICE_FILES.values()) for(const v of h.versions) n += v.buf.byteLength; return n; };
+  while(_OFFICE_FILES.size > 1 && (_OFFICE_FILES.size > _OFFICE_KEEP_FILES || size() > _OFFICE_KEEP_BYTES)) _OFFICE_FILES.delete(_OFFICE_FILES.keys().next().value);
+  while(held.versions.length > 2 && size() > _OFFICE_KEEP_BYTES) held.versions.splice(1, 1);   /* the original and the newest stay */
+  return held.versions[held.versions.length - 1];
+}
+function _officeHeld(name){
+  if(name == null) return _OFFICE_FILES.size > 0;
+  return _OFFICE_FILES.get(String(name).toLowerCase()) || null;
+}
+
 /* ── Plain text, in whatever encoding it arrived ───────────────────────── */
 function _frDecodeText(bytes){
   if(_frStarts(bytes, [0xFF,0xFE])) return new TextDecoder('utf-16le').decode(bytes.subarray(2));
@@ -595,6 +623,7 @@ async function amvReadFile(file){
     if(ext === 'pdf' || mime === 'application/pdf') return refuse('not_pdf');
     if(sig === 'zip'){
       const r = await _readOoxml(buf, name);
+      _officeKeep(name, buf, r.format);
       return { kind: 'text', name, size, data: r.text, format: r.format, summary: r.summary };
     }
     if(sig === 'ole'){

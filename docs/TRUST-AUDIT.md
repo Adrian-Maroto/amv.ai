@@ -2017,3 +2017,31 @@ back before saying how many moved.
 device whenever it had one, so a file moved on the phone stayed in its old
 folder on the laptop for ever. Where the account has the file, the account's
 folder is now the answer.
+
+## Round forty-seven - an Office file changed in place
+
+`office_edit` changes a Word, Excel or PowerPoint file somebody attached and
+offers the same file back. Measured against files written by independent
+Office software, with LibreOffice as a second reader where it is installed.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 285 | a replacement rewritten whole instead of only what differs (a bold word's style spread) | 1 assertion |
+| 286 | an ambiguous find applied instead of refused | 2 assertions |
+| 287 | formulas' saved results left in the file | 3 assertions |
+| 288 | the read-back skipped | 1 assertion |
+| 289 | the tool offered with no file attached | 1 assertion |
+| 290 | a cell under a merge written | 2 assertions |
+| 291 | a shared formula's first cell overwritten | 3 assertions |
+| 292 | a table's column name changed in the sheet only | 2 assertions |
+| 293 | Excel's list of formula cells left stale | 1 assertion |
+
+**Found while writing it:** after a rent was changed, LibreOffice showed the
+old total beside it and worked a new tax line out from that stale total -
+Excel's "recalculate on open" flag is not honoured there. Every formula's
+saved result is now removed when a workbook changes, so no reader is left a
+wrong number to show.
+
+**Not measured yet:** a new paragraph copied from one holding a picture,
+note or bookmark (the copy drops them; no fixture has them), and an edit
+across a tab or field inside Word (refused by rule; no fixture has one).
