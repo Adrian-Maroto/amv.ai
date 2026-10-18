@@ -637,6 +637,7 @@ async function _route(request, env, ctx) {
     case '/v1/engines':      return enginesList(request, env);
     case '/v1/google/picker': return googlePickerConfig(request, env);
     case '/v1/computer/info': return computerInfo(request, env);
+    case '/v1/computer/checkout': return computerCheckout(request, env);
     case '/v1/computer/exec': case '/v1/computer/exec/cancel': case '/v1/computer/read':
     case '/v1/computer/write': case '/v1/computer/list': case '/v1/computer/delete':
     case '/v1/computer/revoke': case '/v1/computer/status':

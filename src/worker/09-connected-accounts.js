@@ -955,6 +955,11 @@ function _ghHeaders(token){
 function _ghRepo(v){
   const s = String(v || '').trim();
   if(!/^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}$/.test(s)) throw new Error('bad_repo');
+  /* "." and ".." fit the characters and are not names: in a URL they are
+     steps. "../etc" would turn api.github.com/repos/../etc/issues into
+     api.github.com/etc/issues - another part of GitHub's API, still asked
+     with the person's key. */
+  if(s.split('/').some(x => x === '.' || x === '..')) throw new Error('bad_repo');
   return s;
 }
 function _ghBranch(v){
@@ -1435,11 +1440,23 @@ const CONN_ACTIONS = {
       const branch = _ghBranch(args.branch);
       const message = String(args.message || 'Changes from AMV').slice(0, 500);
       const files = Array.isArray(args.files) ? args.files : [];
-      if(!files.length) throw new Error('no_files');
+      /* Files the change removes, by path. Only with a fixed starting commit
+         (below): a deletion measured against one version of the repository
+         must not be applied to another. */
+      const deletes = (Array.isArray(args.deletes) ? args.deletes : []).map(d => _ghPath(d));
+      if(!files.length && !deletes.length) throw new Error('no_files');
+      if(deletes.length > GH_MAX_FILES) throw new Error('too_many_files');
+      /* THE COMMIT THE WORK STARTED FROM, when there is one (a repository
+         opened in the cloud workspace records it). Building on it rather than
+         on wherever the base branch is now means a file somebody else changed
+         in the meantime is not quietly put back to the old version - GitHub
+         shows the clash in the pull request instead. */
+      const baseSha = /^[0-9a-f]{40}$/.test(String(args.baseSha || '')) ? String(args.baseSha) : '';
+      if(deletes.length && !baseSha) throw new Error('deletes_need_base');
       /* Bounded before anything leaves. Each file is a separate outbound call
          to somebody else's API, and the body of one is unbounded unless it is
          bounded here. */
-      if(files.length > GH_MAX_FILES) throw new Error('too_many_files');
+      if(files.length + deletes.length > GH_MAX_FILES) throw new Error('too_many_files');
       let total = 0;
       for(const f of files){
         const path = _ghPath(f && f.path);
@@ -1455,10 +1472,13 @@ const CONN_ACTIONS = {
          files one at a time. The contents endpoint would be fewer lines and
          would produce one commit PER FILE, which turns a single change into a
          wall of noise in somebody's history. */
-      const rBase = await fetchDeadline(api + '/git/ref/heads/' + encodeURIComponent(base), { headers: H }, 15000);
-      if(!rBase.ok) throw new Error('github_base_' + rBase.status);
-      const baseSha = ((await rBase.json().catch(()=>({}))).object || {}).sha;
-      if(!baseSha) throw new Error('github_base_missing');
+      let startSha = baseSha;
+      if(!startSha){
+        const rBase = await fetchDeadline(api + '/git/ref/heads/' + encodeURIComponent(base), { headers: H }, 15000);
+        if(!rBase.ok) throw new Error('github_base_' + rBase.status);
+        startSha = ((await rBase.json().catch(()=>({}))).object || {}).sha;
+        if(!startSha) throw new Error('github_base_missing');
+      }
 
       const tree = [];
       for(const f of files){
@@ -1469,14 +1489,15 @@ const CONN_ACTIONS = {
         if(!sha) throw new Error('github_blob_missing');
         tree.push({ path: f._path, mode: '100644', type: 'blob', sha });
       }
+      for(const d of deletes) tree.push({ path: d, mode: '100644', type: 'blob', sha: null });
       const rt = await fetchDeadline(api + '/git/trees', { method:'POST', headers: H,
-        body: JSON.stringify({ base_tree: baseSha, tree }) }, 20000);
+        body: JSON.stringify({ base_tree: startSha, tree }) }, 20000);
       if(!rt.ok) throw new Error('github_tree_' + rt.status);
       const treeSha = (await rt.json().catch(()=>({}))).sha;
       if(!treeSha) throw new Error('github_tree_missing');
 
       const rc = await fetchDeadline(api + '/git/commits', { method:'POST', headers: H,
-        body: JSON.stringify({ message, tree: treeSha, parents: [baseSha] }) }, 20000);
+        body: JSON.stringify({ message, tree: treeSha, parents: [startSha] }) }, 20000);
       if(!rc.ok) throw new Error('github_commit_' + rc.status);
       const commit = await rc.json().catch(()=>({}));
       if(!commit.sha) throw new Error('github_commit_missing');
@@ -1497,7 +1518,7 @@ const CONN_ACTIONS = {
         if(g.status === 404) verified = false;
         else if(g.ok) verified = ((await g.json().catch(()=>({}))).object || {}).sha === commit.sha;
       }catch(e){}
-      return { repo, branch, base, files: files.length, commit: commit.sha.slice(0, 7),
+      return { repo, branch, base, files: files.length, deleted: deletes.length, from: startSha.slice(0, 7), commit: commit.sha.slice(0, 7),
                url: 'https://github.com/' + repo + '/tree/' + branch, verified, _sha: commit.sha };
     },
     /* The branch AMV made, and only while it still points at AMV's commit.
@@ -1677,6 +1698,7 @@ async function connAct(request, env){
       bad_values: 'The values to write must be rows of cells.',
       too_many_cells: 'That is more than 10,000 cells at once. Write it in parts.',
       bad_edit: 'Say what to find and what to replace it with, or what to add at the end.',
+      deletes_need_base: 'Removing files needs the commit the work started from, so AMV does not remove a file somebody else has changed since.',
       no_channel: 'Say which Slack channel to post in; there is no default.',
       no_text: 'There was no message to post.',
     }[why];

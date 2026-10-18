@@ -693,7 +693,7 @@ function _ghModal(title, innerHTML, wire){
 /* Which repository. A list somebody scans, not a box they have to type an
    exact "owner/name" into from memory. Resolves null if they close it, so the
    caller can tell "cancelled" from "chose". */
-function _devPickRepo(repos){
+function _devPickRepo(repos, title){
   return new Promise((resolve) => {
     let settled = false;
     const finish = (v) => { if(settled) return; settled = true; resolve(v); };
@@ -702,7 +702,7 @@ function _devPickRepo(repos){
       + '<span class="ghr-n">' + escH(r.full) + '</span>'
       + (r.private ? '<span class="ghr-p">private</span>' : '')
       + '<span class="ghr-b">' + escH(r.branch) + '</span></button>').join('');
-    _ghModal('Push to which repository?',
+    _ghModal(title || 'Push to which repository?',
       '<p class="ob-sub">Only repositories you can write to are listed.</p>'
       + '<div class="ghr-l">' + rows + '</div>',
       (root) => {

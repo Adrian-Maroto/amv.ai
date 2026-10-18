@@ -45,15 +45,22 @@ let failStart = false, commandTakes = 0;
 /* The clock the Worker reads, moved forward by a "long" command or a gap. */
 const realNow = Date.now.bind(Date); let skew = 0;
 Date.now = () => realNow() + skew;
-async function machine(name) {
-  if (machines.has(name)) return machines.get(name);
+/* One start per name, even when two requests arrive together: the map holds
+   the starting promise, as the real runtime holds one container per name.
+   Without this, two first requests started two machines and a file written
+   by one was missing from the other. */
+function machine(name) {
+  if (!machines.has(name)) machines.set(name, startMachine(name));
+  return machines.get(name);
+}
+async function startMachine(name) {
   const box = mkdtempSync(join(tmpdir(), 'amv-cc-')); const port = await freePort();
   const c = spawn(process.execPath, [join(ROOT, 'bridge', 'amv-bridge.mjs'), box, '--cloud'], {
     stdio: ['ignore', 'pipe', 'pipe'], env: Object.assign({}, process.env, { AMV_CLOUD_KEY: KEY, PORT: String(port) }) });
   running.push(c);
   let out = ''; c.stdout.on('data', b => { out += b; });
   for (let i = 0; i < 80 && !/ready on port/.test(out); i++) await new Promise(r => setTimeout(r, 100));
-  const m = { port, box }; machines.set(name, m); return m;
+  return { port, box };
 }
 const NS = {
   idFromName: (name) => ({ name }),

@@ -644,7 +644,9 @@ function _bridgeCardHTML(){
         + 'and its files go with it. Download or push anything you want to keep.</p>'
       + '<p class="brg-p">Connectors, sign-ins and the screen need your own computer.</p>'
       + '<p class="brg-p brg-cloud-min" id="brg-cloud-min" aria-live="polite"></p>'
+      + '<div class="brg-repo" id="brg-repo" aria-live="polite">' + _cloudRepoHTML() + '</div>'
       + '<div class="brg-acts">'
+        + '<button class="btn bs" id="brg-gh-open" type="button">' + escH(T('Open a GitHub repository')) + '</button>'
         + '<button class="btn bs" id="brg-off" type="button">Disconnect</button>'
       + '</div></div>';
   }
@@ -888,6 +890,7 @@ function _bridgeWireCard(root){
       }
     } finally { dl.disabled = false; }
   });
+  _cloudRepoWire(root);
   const off = root.querySelector('#brg-off');
   if(off) on(off, 'click', async () => {
     off.disabled = true;

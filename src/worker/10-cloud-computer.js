@@ -56,27 +56,37 @@ async function computerInfo(request, env){
   return json({ ok: true, available: _computerOn(env), allowed: cap > 0, minPlan: COMPUTER_MIN_PLAN,
                 minutes: { used: Math.ceil((await _computerUsedSeconds(env, user.email)) / 60), cap } });
 }
-async function computerRoute(request, env, route){
+/* Everything a request must pass before it reaches somebody's machine: signed
+   in, switched on, a plan that has it, not hammering it, minutes left. Shared
+   by every route that reaches the container, so none of them can skip one.
+   Returns { user, stub } or { res } - the refusal to send back. */
+async function _computerOpen(request, env, route){
   const user = await requireUser(request, env);
-  if(!user) return json({ error:'unauthorized' }, 401);
-  if(!_computerOn(env)) return json({ error: 'AMV’s cloud workspace is not switched on for this deployment yet. You can still connect your own computer.', code: 'needs_service' }, 503);
+  if(!user) return { res: json({ error:'unauthorized' }, 401) };
+  if(!_computerOn(env)) return { res: json({ error: 'AMV’s cloud workspace is not switched on for this deployment yet. You can still connect your own computer.', code: 'needs_service' }, 503) };
   const cap = _computerCap(user);
-  if(!cap) return json({ error: 'The cloud workspace comes with Pro and above.', code: 'plan_required', minPlan: COMPUTER_MIN_PLAN }, 402);
+  if(!cap) return { res: json({ error: 'The cloud workspace comes with Pro and above.', code: 'plan_required', minPlan: COMPUTER_MIN_PLAN }, 402) };
   const limited = await guardAction(env, 'computer:' + user.email, 120, 2000, 'requests to your cloud workspace');
-  if(limited) return limited;
+  if(limited) return { res: limited };
   /* Spent: nothing more reaches the machine, because anything that reaches it
      keeps it awake. Disconnecting still goes through - it stops what runs. */
   if(route !== 'revoke'){
     const used = await _computerUsedSeconds(env, user.email);
     if(used >= cap * 60)
-      return json({ error: `You have used this month’s ${cap} minutes of cloud workspace time. It starts again next month, or upgrade for more.`,
-                    code: 'computer_minutes', minutes: { used: Math.ceil(used / 60), cap } }, 429);
+      return { res: json({ error: `You have used this month’s ${cap} minutes of cloud workspace time. It starts again next month, or upgrade for more.`,
+                    code: 'computer_minutes', minutes: { used: Math.ceil(used / 60), cap } }, 429) };
   }
-  const raw = await request.text();
-  if(raw.length > 8 * 1024 * 1024) return json({ error: 'That is too large to send to the cloud workspace.', code: 'too_large' }, 413);
   let stub;
   try{ stub = env.AMV_COMPUTER.get(env.AMV_COMPUTER.idFromName(await _computerName(user.email))); }
-  catch(e){ return json({ error: 'The cloud workspace could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503); }
+  catch(e){ return { res: json({ error: 'The cloud workspace could not be reached. Try again in a minute.', code: 'computer_unavailable' }, 503) }; }
+  return { user, stub };
+}
+async function computerRoute(request, env, route){
+  const open = await _computerOpen(request, env, route);
+  if(open.res) return open.res;
+  const { user, stub } = open;
+  const raw = await request.text();
+  if(raw.length > 8 * 1024 * 1024) return json({ error: 'That is too large to send to the cloud workspace.', code: 'too_large' }, 413);
   await _computerBillAwake(env, user.email, Date.now());
   let r, text;
   try{
