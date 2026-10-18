@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AMV in JetBrains IDEs (IntelliJ IDEA, PyCharm, WebStorm, GoLand, Rider and
+     the rest): three entries for the editor's right-click menu, Tools -> AMV.
+     Each runs AMV's command-line tool, amv-cli.mjs, saved in your home folder,
+     with your key from AMV_API_KEY - nothing here holds a key or an address.
+     Save this file as AMV.xml in the IDE's settings folder, under "tools",
+     and restart the IDE (Settings -> API keys in AMV says where that is). -->
+<toolSet name="AMV">
+  <tool name="Ask AMV about the selection" description="Ask AMV a question about the selected lines" showInMainMenu="true" showInEditor="true" showInProject="false" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="true" showConsoleOnStdErr="true" synchronizeAfterRun="false">
+    <exec>
+      <option name="COMMAND" value="node" />
+      <option name="PARAMETERS" value="&quot;$UserHome$/amv-cli.mjs&quot; --file &quot;$FilePath$&quot; --lines $SelectionStartLine$-$SelectionEndLine$ &quot;$Prompt$&quot;" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+  </tool>
+  <tool name="Ask AMV about this file" description="Ask AMV a question about the open file" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="true" showConsoleOnStdErr="true" synchronizeAfterRun="false">
+    <exec>
+      <option name="COMMAND" value="node" />
+      <option name="PARAMETERS" value="&quot;$UserHome$/amv-cli.mjs&quot; --file &quot;$FilePath$&quot; &quot;$Prompt$&quot;" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+  </tool>
+  <tool name="AMV, work on this project" description="AMV works in the project folder; it asks before every change and every command, in the console below" showInMainMenu="true" showInEditor="true" showInProject="true" showInSearchPopup="true" disabled="false" useConsole="true" showConsoleOnStdOut="true" showConsoleOnStdErr="true" synchronizeAfterRun="true">
+    <exec>
+      <option name="COMMAND" value="node" />
+      <option name="PARAMETERS" value="&quot;$UserHome$/amv-cli.mjs&quot; code &quot;$Prompt$&quot;" />
+      <option name="WORKING_DIRECTORY" value="$ProjectFileDir$" />
+    </exec>
+  </tool>
+</toolSet>

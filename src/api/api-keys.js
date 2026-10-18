@@ -33,6 +33,8 @@ function _renderApiKeysPane(pane){
   if(cli) on(cli, 'click', async () => { cli.disabled = true; try{ await _cliDownload(); } finally{ cli.disabled = false; } });
   const sdk = document.getElementById('ak-sdk');
   if(sdk) on(sdk, 'click', async () => { sdk.disabled = true; try{ await _sdkDownload(); } finally{ sdk.disabled = false; } });
+  const jb = document.getElementById('ak-jb');
+  if(jb) on(jb, 'click', async () => { jb.disabled = true; try{ await _jetbrainsDownload(); } finally{ jb.disabled = false; } });
   const vsx = document.getElementById('ak-vsix');
   if(vsx) on(vsx, 'click', async () => { vsx.disabled = true; try{ await _vsixDownload(); } finally{ vsx.disabled = false; } });
   const crx = document.getElementById('ak-chrome');
@@ -218,6 +220,20 @@ function _apiDocsHTML(){
     '<p class="ak-doc">'+escH(T('It will not start in a web page, where anybody could read the key.'))+'</p>'+
     '<button class="btn bs" id="ak-sdk" type="button">'+escH(T('Download {0}')).replace('{0}', 'amv-sdk.mjs')+'</button>'+
   '</div>'+
+  /* IN JETBRAINS IDEs. No plugin to install: the IDE's own External Tools
+     run the command-line tool above, with the selection or the file handed
+     to it. The file holds no key and no address - those stay in the
+     command-line tool and the environment. */
+  '<div class="ss2"><h3>'+escH(T('In JetBrains IDEs'))+'</h3>'+
+    '<p class="ak-doc">'+t('IntelliJ IDEA, PyCharm, WebStorm, GoLand, Rider and the rest: ask about the selection or the file from the right-click menu, or let AMV work on the project - asking before every change and every command, in the IDE’s console.')+'</p>'+
+    '<ol class="ak-doc">'+
+      '<li>'+t('Download {0} above and save it in your home folder.', ['amv-cli.mjs'])+'</li>'+
+      '<li>'+t('Download {0} and save it in the IDE’s settings folder, in a folder named {1} - on Windows {2}, on a Mac {3}, on Linux {4}.',
+        ['AMV.xml', 'tools', '%APPDATA%\\JetBrains\\<IDE><version>', '~/Library/Application Support/JetBrains/<IDE><version>', '~/.config/JetBrains/<IDE><version>'])+'</li>'+
+      '<li>'+t('Set {0} to one of your keys where the IDE can see it, and restart the IDE. Then right-click in the editor: AMV.', ['AMV_API_KEY'])+'</li>'+
+    '</ol>'+
+    '<button class="btn bs" id="ak-jb" type="button">'+escH(T('Download {0}')).replace('{0}', 'AMV.xml')+'</button>'+
+  '</div>'+
   /* IN VS CODE. The same handover: packed here, in this browser, with this
      deployment's address in it, so the only thing to set is the key - which
      the extension keeps in the system keychain, not in settings.json. */
@@ -391,6 +407,23 @@ async function _oneFileDownload(file, looksRight, saved){
 function _cliDownload(){
   return _oneFileDownload(CLI_FILE, t => /^#!\/usr\/bin\/env node/.test(t),
     'Saved amv-cli.mjs. Set AMV_API_KEY to one of your keys, then run: node amv-cli.mjs "your question"');
+}
+/* The JetBrains tool set: no address to write in, so it is handed over as
+   it is published, under the name the IDE looks for. */
+async function _jetbrainsDownload(){
+  let text;
+  try{
+    const r = await fetchDeadline('amv-jetbrains.xml', { cache: 'no-store' }, 15000);
+    if(!r.ok) throw new Error('http_' + r.status);
+    text = await r.text();
+    if(!/<toolSet name="AMV">/.test(text)) throw new Error('not_the_file');
+  }catch(e){
+    try{ toast('AMV could not fetch the JetBrains tool set from this deployment. Try again in a moment.', 'error', 7000); }catch(x){}
+    return false;
+  }
+  _saveBlob(new Blob([text], { type: 'application/xml' }), 'AMV.xml');
+  try{ toast('Saved AMV.xml. Put it in the IDE’s settings folder under tools, and restart the IDE.', 'success', 8000); }catch(e){}
+  return true;
 }
 const SDK_FILE = 'amv-sdk.mjs';
 function _sdkDownload(){

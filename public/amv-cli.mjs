@@ -44,6 +44,9 @@ Options
   -t, --max-tokens N   longest answer, in tokens (default 4096)
       --json           print one JSON object when done: text, model, usage, stop_reason
       --count          print how many input tokens the request would use, and send nothing
+      --with TEXT      text to send along with the question, as if piped in
+      --file PATH      a file to send along with the question
+      --lines A-B      only those lines of each --file
       --api URL        a different AMV server (or set AMV_API_URL)
   -h, --help           this text
   -v, --version
@@ -53,7 +56,7 @@ Usage counts against that account's plan.`;
 
 /* ── arguments ─────────────────────────────────────────────────────────── */
 function parseArgs(argv) {
-  const o = { model: 'auto', system: '', maxTokens: 4096, json: false, api: '', words: [], chat: false };
+  const o = { model: 'auto', system: '', maxTokens: 4096, json: false, api: '', words: [], chat: false, withText: [], files: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const val = () => {
@@ -68,6 +71,18 @@ function parseArgs(argv) {
     else if (a === '--json') o.json = true;
     else if (a === '--count') o.count = true;
     else if (a === '--api') o.api = val();
+    /* Material to go with the question, the way piping it in would: for an
+       editor that can put the selection or the file's path in a command line
+       but not on stdin (the JetBrains tool set, amv-jetbrains.xml). */
+    else if (a === '--with') o.withText.push(val());
+    else if (a === '--file') o.files.push(val());
+    /* Only these lines of each --file: an editor's selection, handed over as
+       line numbers rather than as text it would have to quote. */
+    else if (a === '--lines') {
+      const m = /^(\d{1,7})(?:-(\d{1,7}))?$/.exec(val());
+      if (!m || +m[1] < 1 || (m[2] && +m[2] < +m[1])) throw usage('--lines takes a line or a range, like 12 or 12-30');
+      o.lines = [+m[1], +(m[2] || m[1])];
+    }
     else if (/^--?(key|api-key|token)(=|$)/.test(a)) throw usage('the key is never taken on the command line, where it would be saved in your shell history. Set AMV_API_KEY instead.');
     else if (a === '--') { o.words.push(...argv.slice(i + 1)); break; }
     else if (/^-/.test(a) && a !== '-') throw usage('unknown option ' + a);
@@ -231,8 +246,19 @@ export async function main(argv, { env = process.env, stdin = process.stdin, std
     if (o.code) return await code(o, base, key, stdin, stdout, stderr, ctrl);
     if (o.batch) return await batch(o, base, key, stdout, stderr);
 
-    const piped = await readStdin(stdin);
+    let piped = await readStdin(stdin);
+    for (const t of o.withText) if (String(t).trim()) piped += (piped ? '\n\n' : '') + t;
+    for (const p of o.files) {
+      const { readFileSync, statSync } = await import('node:fs');
+      let st; try { st = statSync(p); } catch (e) { stderr.write('amv: could not read ' + p + '\n'); return 2; }
+      if (!st.isFile()) { stderr.write('amv: ' + p + ' is not a file\n'); return 2; }
+      if (st.size > PIPED_MAX) { stderr.write('amv: ' + p + ' is over ' + PIPED_MAX + ' characters; send a smaller part.\n'); return 2; }
+      let text = readFileSync(p, 'utf8'), label = p.split(/[\\/]/).pop();
+      if (o.lines) { text = text.split(/\r?\n/).slice(o.lines[0] - 1, o.lines[1]).join('\n'); label += ', lines ' + o.lines[0] + '-' + o.lines[1]; }
+      piped += (piped ? '\n\n' : '') + '=== ' + label + ' ===\n' + text;
+    }
     if (piped.length > PIPED_MAX) { stderr.write('amv: what was piped in is over ' + PIPED_MAX + ' characters; send a smaller part.\n'); return 2; }
+    if (o.lines && !o.files.length) { stderr.write('amv: --lines picks lines of a --file; name the file too.\n'); return 2; }
     const q = o.words.join(' ').trim();
     if (!q && !piped.trim()) { stderr.write('amv: nothing to ask. Try: amv "your question"   (or amv --help)\n'); return 2; }
     const content = piped.trim() ? (q ? q + '\n\n' + piped : piped) : q;

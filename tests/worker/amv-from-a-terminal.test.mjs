@@ -282,6 +282,42 @@ section('amv batch: many requests handed over, and collected later');
   ok(bad.code === 2 && /which batch/.test(bad.err), 'a malformed id is refused before anything is sent', bad.err);
 }
 
+section('The JetBrains tool set runs, as the IDE would run it');
+{
+  /* The file somebody saves as AMV.xml, read as written: each entry's
+     command, its macros filled the way the IDE fills them, run against this
+     server. Nothing is retyped here, so an entry that drifts from the tool's
+     options fails. */
+  const { mkdtempSync, writeFileSync: wf } = await import('fs');
+  const { tmpdir } = await import('os');
+  const xml = readFileSync(join(ROOT, 'jetbrains', 'amv-jetbrains.xml'), 'utf8');
+  const tools = [...xml.matchAll(/<tool name="([^"]+)"[\s\S]*?<option name="PARAMETERS" value="([^"]*)"[\s\S]*?<\/tool>/g)].map(m => ({ name: m[1], params: m[2].replace(/&quot;/g, '"') }));
+  ok(tools.length === 3 && !/amv_sk_|https?:\/\//.test(xml), 'three entries, and the file holds no key and no address', tools.map(t => t.name));
+  const proj = mkdtempSync(join(tmpdir(), 'amv-jb-'));
+  const file = join(proj, 'app.js');
+  wf(file, 'line one\nconst price = "9.99";\nline three\nline four\n');
+  const fill = (p) => p.replace('$FilePath$', file).replace('$SelectionStartLine$', '2').replace('$SelectionEndLine$', '3')
+    .replace('$ProjectFileDir$', proj).replace('$Prompt$', 'What does this do?');
+  const argv = (p) => [...fill(p).matchAll(/"([^"]*)"|(\S+)/g)].map(m => m[1] != null ? m[1] : m[2]);
+  for (const t of tools) {
+    const args = argv(t.params);
+    ok(args[0] === '$UserHome$/amv-cli.mjs', t.name + ': runs the tool saved in the home folder', args[0]);
+    sent.length = 0;
+    const r = await run(args.slice(1), { extraEnv: { AMV_API_URL: API } });
+    const asked = JSON.stringify((sent[0] || {}).messages || '');
+    if (/selection/.test(t.name)) ok(r.code === 0 && /What does this do\?/.test(asked) && /const price = \\"9.99\\";\\nline three/.test(asked) && !/line one|line four/.test(asked),
+      t.name + ': the selected lines go with the question - quotes in the code included - and nothing else', asked.slice(0, 240));
+    else if (/this file/.test(t.name)) ok(r.code === 0 && /=== app.js ===/.test(asked) && /line one/.test(asked) && /line four/.test(asked), t.name + ': the whole file goes with the question', asked.slice(0, 200));
+    else ok(r.code === 0 && sent.length >= 1, t.name + ': AMV works in the project; with no one to answer, it changes nothing', [r.code, r.err.slice(0, 200)]);
+  }
+  const bad = await run(['--lines', '5-2', '--file', file, 'x'], { extraEnv: { AMV_API_URL: API } });
+  ok(bad.code === 2 && /--lines takes/.test(bad.err), 'a backwards range is refused with the form it takes', bad.err);
+  const none = await run(['--lines', '2', 'x'], { extraEnv: { AMV_API_URL: API } });
+  ok(none.code === 2 && /name the file too/.test(none.err), '--lines without a file says so', none.err);
+  const dir = await run(['--file', proj, 'x'], { extraEnv: { AMV_API_URL: API } });
+  ok(dir.code === 2 && /is not a file/.test(dir.err), 'a folder is not read as a file', dir.err);
+}
+
 section('Refusals say what to do');
 {
   const bad = await run(['--api', API, '-m', 'gpt', 'hi']);
@@ -301,6 +337,8 @@ section('The site serves the same file that was tested');
   const served = readFileSync(join(ROOT, 'public', 'amv-cli.mjs'), 'utf8');
   ok(served === readFileSync(CLI, 'utf8'), 'public/amv-cli.mjs is byte-identical to cli/amv-cli.mjs');
   ok(served.includes("'__AMV_API__'"), 'with the placeholder the page fills with this deployment’s address');
+  ok(readFileSync(join(ROOT, 'public', 'amv-jetbrains.xml'), 'utf8') === readFileSync(join(ROOT, 'jetbrains', 'amv-jetbrains.xml'), 'utf8'),
+     'and the JetBrains tool set it serves is the one run here');
 }
 
 server.close();

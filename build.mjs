@@ -107,6 +107,7 @@ function emitBridge() {
      writes this deployment's address into it at download time. */
   writeFileSync('amv-cli.mjs', readFileSync('cli/amv-cli.mjs'));
   writeFileSync('amv-sdk.mjs', readFileSync('sdk/amv-sdk.mjs'));
+  writeFileSync('amv-jetbrains.xml', readFileSync('jetbrains/amv-jetbrains.xml'));
   /* The VS Code extension's two files, packed into a .vsix by the API keys
      pane with this deployment's address in it (see _vsixDownload). */
   writeFileSync('amv-vscode.json', readFileSync('vscode/package.json'));
@@ -1057,6 +1058,7 @@ const PUBLISH = [
   'amv-bridge.mjs',        // fetched by the connect card's Download button
   'amv-cli.mjs',           // fetched by the API keys pane's Download button
   'amv-sdk.mjs',           // the SDK, fetched by the same pane's Download button
+  'amv-jetbrains.xml',     // the JetBrains tool set, downloaded from the same pane
   'amv-vscode.json',       // the VS Code extension's manifest, packed into amv.vsix by the API keys pane
   'amv-vscode.js',         // and its code
   'amv-chrome.json',       // the Chrome extension's manifest, packed into amv-chrome.zip by the API keys pane
