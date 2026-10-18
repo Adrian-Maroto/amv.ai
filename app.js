@@ -27160,7 +27160,23 @@ function _devDownloadProject(){
    and it had already happened here with the reasoning written down next to the
    half that got it. One definition now. */
 async function _deployApi(path, body){
-  return _autoApi(path, body);
+  const d = await _autoApi(path, body);
+  /* A first publish comes back with a way to take it down again, from every
+     surface that publishes - the code workspace, Dev's own tools and chat all
+     come through here. An update says it cannot be, and offers nothing. */
+  const u = path === '/deploy' && d && d.receipt && d.receipt.undo;
+  if(u && u.slug){
+    try{
+      toastAction(T('Page published'), T('Undo'), async () => {
+        try{
+          await _autoApi('/deploy/delete', { slug: u.slug });
+          if(_DEV && _DEV.deploySlug === u.slug) _DEV.deploySlug = null;
+          toast(T('Page taken down'), 'success', 5000);
+        }catch(e){ toast(e.message || T('That could not be undone.'), 'error', 8000); }
+      }, 30000);
+    }catch(e){}
+  }
+  return d;
 }
 
 /* THE MOMENT SOMEBODY MOST WANTS TO PAY.
@@ -34445,6 +34461,7 @@ const _ACT_DONE = {
   'github.push': () => T('Branch pushed'),
   'github.issue.create': () => T('Issue opened'),
   'github.pr': () => T('Pull request opened'),
+  'slack.post': () => T('Message posted to Slack'),
 };
 function _actOfferUndo(action, undo){
   try{
@@ -34617,20 +34634,14 @@ const INTEGRATION_ACTIONS = {
      to the whole company that nobody named. */
   slack_post: { risk:'high', riskLabel:'post a Slack message',
     desc:'Post a message to a Slack channel. Args: {channel, text}. Name the channel; there is no default.', needs:'slack',
+    /* An action on the server like the others: posted, read back from Slack's
+       own record of the message, and offered back to the person to delete. */
     async run(args){
-      if(!(window.AMV_API && AMV_API.live))
-        throw new Error('AMV is not connected to its engine, so it cannot reach Slack.');
       const channel=String((args&&args.channel)||'').trim();
       const text=String((args&&(args.text||args.message))||'');
       if(!channel) throw new Error('Say which Slack channel to post in. Nothing was posted.');
       if(!text.trim()) throw new Error('There was no message to post. Nothing was posted.');
-      const d=await AMV_API.connectApi('slack','POST','chat.postMessage',undefined,{channel, text});
-      /* Slack answers a refusal with HTTP 200 and {ok:false} - a channel that
-         does not exist, a token that lost its scope. Only ok:true is posted. */
-      let b=null; try{ b=JSON.parse((d&&d.body)||''); }catch(e){}
-      if(!b || b.ok!==true)
-        throw new Error('Slack refused the message ('+String((b&&b.error)||('HTTP '+((d&&d.status)||'?'))).slice(0,80)+'). Nothing was posted.');
-      return {posted:true, ts:b.ts, channel:b.channel};
+      return await _connActRun('slack.post', { channel, text });
     }
   },
 };

@@ -555,7 +555,23 @@ function _devDownloadProject(){
    and it had already happened here with the reasoning written down next to the
    half that got it. One definition now. */
 async function _deployApi(path, body){
-  return _autoApi(path, body);
+  const d = await _autoApi(path, body);
+  /* A first publish comes back with a way to take it down again, from every
+     surface that publishes - the code workspace, Dev's own tools and chat all
+     come through here. An update says it cannot be, and offers nothing. */
+  const u = path === '/deploy' && d && d.receipt && d.receipt.undo;
+  if(u && u.slug){
+    try{
+      toastAction(T('Page published'), T('Undo'), async () => {
+        try{
+          await _autoApi('/deploy/delete', { slug: u.slug });
+          if(_DEV && _DEV.deploySlug === u.slug) _DEV.deploySlug = null;
+          toast(T('Page taken down'), 'success', 5000);
+        }catch(e){ toast(e.message || T('That could not be undone.'), 'error', 8000); }
+      }, 30000);
+    }catch(e){}
+  }
+  return d;
 }
 
 /* THE MOMENT SOMEBODY MOST WANTS TO PAY.

@@ -57,6 +57,8 @@ globalThis.fetch = async (url, init) => {
   if (/\/issues\/5$/.test(u)) return honest ? J({ number: 5, title: 'A bug' }) : J({ message: 'Not Found' }, 404);
   if (/\/pulls$/.test(u) && m === 'POST') return J({ number: 9, html_url: 'https://github.com/o/r/pull/9' });
   if (/\/pulls\/9$/.test(u)) return honest ? J({ number: 9, state: 'open', head: { ref: 'amv-change' } }) : J({ number: 9, state: 'closed', head: { ref: 'amv-change' } });
+  if (/slack\.com\/api\/chat\.postMessage$/.test(u)) return J({ ok: true, ts: '1.2', channel: 'C1' });
+  if (/slack\.com\/api\/chat\.getPermalink/.test(u)) return J(honest ? { ok: true, permalink: 'https://x.slack.com/p12' } : { ok: false, error: 'message_not_found' });
   return J({});
 };
 
@@ -68,6 +70,7 @@ const ARGS = {
   'github.push': { repo: 'o/r', base: 'main', branch: 'amv-change', message: 'm', files: [{ path: 'a.txt', content: 'x' }] },
   'github.issue.create': { repo: 'o/r', title: 'A bug', body: '' },
   'github.pr': { repo: 'o/r', head: 'amv-change', base: 'main', title: 't' },
+  'slack.post': { channel: '#team', text: 'hello' },
 };
 /* docs.edit and sheets.write read back already and have a suite of their own
    (a-google-doc-is-edited-where-it-is); they are held to the same route rule. */

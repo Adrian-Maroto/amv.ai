@@ -55,6 +55,33 @@ section('Sent mail offers no Undo, and the model is told it cannot be called bac
   ok(/cannot be undone/.test(x.r.undo || '') && /called back/.test(x.r.undo), 'and the model has the reason to pass on', x.r.undo);
 }
 
+section('A page published for the first time can be taken down from the notice; an update offers nothing');
+{
+  const x = await page.evaluate(async () => {
+    const real = window._autoApi, calls = [];
+    window._autoApi = async (path, body) => { calls.push([path, body]);
+      if (path === '/deploy') return body.slug === 'old-page'
+        ? { ok: true, slug: 'old-page', url: 'https://x/s/old-page', verified: true, receipt: { status: 'done', undo: null, irreversible: 'The earlier version of this page is not kept.' } }
+        : { ok: true, slug: 'new-page', url: 'https://x/s/new-page', verified: true, receipt: { status: 'done', undo: { label: 'Take the page down', slug: 'new-page' } } };
+      return { ok: true }; };
+    const toasts = () => [...document.querySelectorAll('#toast-wrap .toast')].map(t => t.textContent);
+    try{
+      document.querySelectorAll('#toast-wrap .toast').forEach(t => t.remove());
+      await _deployApi('/deploy', { html: '<p>u</p>', title: 'Old', slug: 'old-page' });
+      const afterUpdate = toasts();
+      await _deployApi('/deploy', { html: '<p>n</p>', title: 'New' });
+      const afterNew = toasts();
+      document.querySelector('#toast-wrap .toast-btn').click();
+      await new Promise(r => setTimeout(r, 300));
+      return { afterUpdate, afterNew, calls, end: toasts() };
+    } finally { window._autoApi = real; }
+  });
+  ok(!x.afterUpdate.some(t => /Undo/.test(t)), 'an update shows no Undo', x.afterUpdate);
+  ok(x.afterNew.some(t => /Page published/.test(t) && /Undo/.test(t)), 'a first publish does', x.afterNew);
+  ok(x.calls.some(c => c[0] === '/deploy/delete' && c[1].slug === 'new-page'), 'and Undo takes that page down, by its own name', x.calls);
+  ok(x.end.some(t => /Page taken down/.test(t)), 'and says so', x.end);
+}
+
 ok(errors.length === 0, 'no JavaScript errors', errors.slice(0, 3));
 await app.close();
 if (report('a-done-thing-can-be-undone-from-the-screen') > 0) process.exitCode = 1;

@@ -1950,7 +1950,24 @@ result as it was, so the earlier copy of somebody's cells kept for the undo
 went to the browser on exactly the path nobody reads. Every path now goes
 through `_actShown`.
 
-**Not yet covered by the protocol:** writes outside `/v1/connect/act` - Slack
-posts, background-job deliveries, site deploys, the cloud browser and
-connectors somebody else wrote. A connector's own action cannot be read back by
-AMV at all and is already labelled as the connector's word, not AMV's.
+**Then brought under it:** AMV's own Slack post (`slack.post`: read back from
+Slack's record of the message, deleted on undo, Slack's refusal passed on in
+Slack's words) and publishing a page (read back from where visitors are
+served; a first publish can be taken down from the notice, an update says the
+earlier version is not kept).
+
+| # | what was broken | caught by |
+|---|---|---|
+| 271 | a Slack post called confirmed without finding it again | 1 assertion |
+| 272 | a Slack delete called undone while Slack still has it | 1 assertion |
+| 273 | Slack's refusal not checked before calling it posted | 1 assertion |
+| 274 | a page called live that the live address does not have | 1 assertion |
+| 275 | an update offered a take-down that would delete the site | 1 assertion |
+
+**Checked and not applicable:** background jobs write nothing to anybody's
+account on the server - what they produce goes to the person, and anything
+outward waits for their own approval. **Not covered, by design:** the generic
+pass-through to a connected app's API (`/v1/connect/api`) and connectors
+somebody else wrote - neither has a fixed action AMV could read back, and
+both are labelled as the app's word, not AMV's. The cloud browser's actions
+are on a site AMV cannot read the state of beyond the page it shows.

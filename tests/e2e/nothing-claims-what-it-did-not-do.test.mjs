@@ -132,23 +132,26 @@ section('The three outcomes are told apart on screen');
 
 section('A Slack post that Slack refuses is not "posted"');
 {
-  /* Slack answers most refusals with HTTP 200 and {ok:false}. The post goes
-     through the server now, and the server passes Slack's body back - so the
-     page must read ok out of that body rather than trust the status. */
+  /* Slack answers most refusals with HTTP 200 and {ok:false}. The post is an
+     action on the server now, which reads ok out of Slack's body and refuses
+     with Slack's own word for why - so the page must surface that refusal,
+     and a real post comes back with the server's receipt. */
   const r = await page.evaluate(async () => {
-    const real = AMV_API.connectApi;
+    const real = AMV_API.connectAct;
     const realLive = Object.getOwnPropertyDescriptor(AMV_API, 'live');
     const out = { calls: [] };
     Object.defineProperty(AMV_API, 'live', { configurable: true, get: () => true });
-    AMV_API.connectApi = async (...a) => { out.calls.push(a); return { ok: true, status: 200, body: '{"ok":false,"error":"channel_not_found"}' }; };
+    AMV_API.connectAct = async (...a) => { out.calls.push(a); throw new Error('Slack refused the message (channel_not_found). Nothing was posted.'); };
     try { out.refused = await INTEGRATION_ACTIONS.slack_post.run({ channel: '#nope', text: 'hello' }); }
     catch (e) { out.refusedErr = e.message; }
     try { out.noChannel = await INTEGRATION_ACTIONS.slack_post.run({ text: 'hello' }); }
     catch (e) { out.noChannelErr = e.message; }
-    AMV_API.connectApi = async (...a) => { out.calls.push(a); return { ok: true, status: 200, body: '{"ok":true,"ts":"1.2","channel":"C1"}' }; };
+    AMV_API.connectAct = async (...a) => { out.calls.push(a); return { ok: true, action: 'slack.post',
+      result: { posted: true, ts: '1.2', channel: 'C1', link: 'https://x.slack.com/p', verified: true },
+      receipt: { status: 'done', undo: { token: 't', label: 'Delete the message' } } }; };
     try { out.sent = await INTEGRATION_ACTIONS.slack_post.run({ channel: '#team', text: 'hello' }); }
     catch (e) { out.sentErr = e.message; }
-    AMV_API.connectApi = real; Object.defineProperty(AMV_API, 'live', realLive);
+    AMV_API.connectAct = real; Object.defineProperty(AMV_API, 'live', realLive);
     return out;
   });
   ok(!r.refused, 'a refused post does not come back as posted', r.refused);
@@ -157,9 +160,9 @@ section('A Slack post that Slack refuses is not "posted"');
   ok(!r.noChannel && /which Slack channel/i.test(r.noChannelErr || ''),
      'no channel named, nothing posted - there is no #general default', r.noChannelErr);
   ok(r.calls.length === 2, 'the unnamed-channel post never reached the server', r.calls.length);
-  ok(r.calls[0] && r.calls[0][0] === 'slack' && r.calls[0][1] === 'POST' && r.calls[0][2] === 'chat.postMessage',
-     'it goes through the server as a Slack API call', r.calls[0]);
-  ok(r.sent && r.sent.posted === true && r.sent.ts === '1.2', 'while a real post still reports posted', r.sent);
+  ok(r.calls[0] && r.calls[0][0] === 'slack.post' && r.calls[0][1].channel === '#nope',
+     'it goes through the server as AMV\'s own Slack action', r.calls[0]);
+  ok(r.sent && r.sent.posted === true && r.sent.ts === '1.2' && /undo/.test(r.sent.undo || ''), 'while a real post still reports posted, with its way back', r.sent);
 }
 
 section('The widget says that 0 means no limit');

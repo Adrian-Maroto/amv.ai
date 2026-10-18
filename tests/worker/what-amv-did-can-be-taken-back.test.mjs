@@ -22,7 +22,7 @@ writeFileSync(harness, SRC + '\nexport { CONN_ACTIONS, CONN_KV, DB, connSeal, re
 const W = await import(harness + '?t=' + Date.now());
 
 /* ── The provider ─────────────────────────────────────────────────────── */
-const events = new Map(), refs = new Map(), cells = new Map(), issues = new Map();
+const events = new Map(), refs = new Map(), cells = new Map(), issues = new Map(), slack = new Map();
 let stubborn = false;                      // accepts a delete and keeps the thing
 let deafSheet = false;                     // accepts cells and keeps the old ones
 const sent = [];
@@ -54,6 +54,13 @@ globalThis.fetch = async (url, init) => {
     if (m === 'PATCH') i.state = body.state;
     return J(i);
   }
+  if (/slack\.com\/api\/chat\.postMessage$/.test(u)) {
+    if (body.channel === '#nope') return J({ ok: false, error: 'channel_not_found' });
+    slack.set('C1:9.9', body.text); return J({ ok: true, ts: '9.9', channel: 'C1' });
+  }
+  if (/slack\.com\/api\/chat\.delete$/.test(u)) { if (!stubborn) slack.delete(body.channel + ':' + body.ts); return J({ ok: true }); }
+  if ((x = u.match(/slack\.com\/api\/chat\.getPermalink\?channel=([^&]+)&message_ts=(.+)$/)))
+    return J(slack.has(decodeURIComponent(x[1]) + ':' + decodeURIComponent(x[2])) ? { ok: true, permalink: 'https://x.slack.com/p' } : { ok: false, error: 'message_not_found' });
   if ((x = u.match(/v4\/spreadsheets\/([^/]+)\/values\/([^?]+)/))) {
     const k = decodeURIComponent(x[2]);
     if (m === 'PUT' && deafSheet) return J({ updatedRange: k, updatedCells: body.values.flat().length });
@@ -90,7 +97,7 @@ async function account(email) {
   const tok = (await jsonOf(await req(env, '/auth/signup', { email, name: 'Me', password: 'A-real-Passw0rd!' }))).token;
   const sealed = await W.connSeal(env, { access: 'provider-token', exp: Date.now() + 3600e3 });
   await W.DB.put(env, W.CONN_KV, email, { c1: { provider: 'google', sealed, unattended: false,
-    scopes: ['mail.send', 'calendar.write', 'drive.write', 'code.write', 'issues.write'] } });
+    scopes: ['mail.send', 'calendar.write', 'drive.write', 'code.write', 'issues.write', 'slack.write'] } });
   return tok;
 }
 const ME = 'me@example.com', OTHER = 'other@example.com';
@@ -165,6 +172,22 @@ section('An issue AMV opened is closed - the label says close, because that is w
   ok(r.d.receipt.undo && r.d.receipt.undo.label === 'Close the issue', 'the label says close', r.d.receipt.undo);
   const u = await undo(r.d.receipt.undo.token);
   ok(u.status === 200 && u.d.verified === true && issues.get(5).state === 'closed', 'closed, and read back closed', [u.status, u.d, issues.get(5)]);
+}
+
+section('A Slack message is posted, found again, and can be deleted - or Slack\'s refusal is said in Slack\'s words');
+{
+  let r = await act('slack.post', { channel: '#team', text: 'Release notes' });
+  ok(r.status === 200 && r.d.receipt.status === 'done' && r.d.result.link && r.d.receipt.undo && r.d.receipt.undo.label === 'Delete the message',
+     'posted, with its link read back, and a way to delete it', [r.status, r.d.result, r.d.receipt && r.d.receipt.undo && r.d.receipt.undo.label]);
+  let u = await undo(r.d.receipt.undo.token);
+  ok(u.status === 200 && u.d.verified === true && !slack.has('C1:9.9'), 'deleted, and Slack no longer has it', [u.status, u.d]);
+  r = await act('slack.post', { channel: '#team', text: 'Again' });
+  stubborn = true; u = await undo(r.d.receipt.undo.token); stubborn = false;
+  ok(u.status === 502 && u.d.error === 'not_confirmed', 'a delete Slack accepted and did not do is not "undone"', [u.status, u.d]);
+  r = await act('slack.post', { channel: '#nope', text: 'Hello' });
+  ok(r.status === 502 && /channel_not_found/.test(r.d.message || '') && /Nothing was posted/.test(r.d.message || ''), 'a refusal names Slack\'s reason and says nothing went out', r.d);
+  r = await act('slack.post', { text: 'Hello' });
+  ok(r.status === 400 && /which Slack channel/.test(r.d.message || ''), 'and no channel is never a guessed one', r.d);
 }
 
 section('A sheet goes back to what it said - unless somebody has written in it since');

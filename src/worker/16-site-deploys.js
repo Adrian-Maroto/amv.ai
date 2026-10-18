@@ -106,12 +106,13 @@ async function deploySite(request, env){
      another's - and the check that exists to prevent exactly that passed for
      both of them. Re-checked inside the lock, which is the only place the
      answer is still true when the write happens. */
-  let taken = false;
+  let taken = false, wasNew = true;
   const rec = await _withKind(env, 'site', slug, (cur) => {
     /* A record that does not exist loads as an empty object, so "no owner" is
        not "somebody else's owner" - checking only `!==` claimed every free name
        was taken. */
     if (cur && cur.owner && cur.owner !== owner) { taken = true; return null; }
+    if (cur && cur.owner) wasNew = false;
     const next = {
       slug, owner, title, html,
       created: (cur && cur.created) || Date.now(),
@@ -133,7 +134,27 @@ async function deploySite(request, env){
     rec.slugs = rec.slugs || [];
     if (!rec.slugs.includes(slug)) rec.slugs.push(slug);
   }, { slugs: [] });
-  return json({ ok:true, slug, url:_siteUrl(request, slug), updated:rec.updated });
+
+  /* THE ACTION PROTOCOL, FOR A PAGE (see 09a-action-protocol.js).
+
+     Read back through the same store the public address serves from - not the
+     record the write returned - so "it is live" is said only about a page a
+     visitor would actually get. A first publish can be taken back by taking it
+     down; an update cannot, because the earlier version is not kept, and the
+     receipt says so rather than offering a button that would delete the site. */
+  let back = null;
+  try { back = await DB.get(env, 'site', slug); } catch (e) { back = undefined; }
+  const verified = back === undefined ? null : !!(back && back.owner === owner && back.html === html);
+  if (verified === false) {
+    audit(env, 'deploy_not_confirmed', { by: owner, slug });
+    return json({ error: 'not_confirmed', slug,
+      message: 'AMV saved the page, but when it checked, the live address did not have it. Open My sites before publishing again.' }, 502);
+  }
+  const receipt = { action: 'deploy', status: verified ? 'done' : 'unconfirmed', at: Date.now(),
+    undo: wasNew ? { label: 'Take the page down', slug } : null,
+    irreversible: wasNew ? null : 'The earlier version of this page is not kept, so an update cannot be taken back from AMV. Publish the earlier version again to restore it.' };
+  audit(env, 'action_receipt', { by: owner, action: 'deploy', status: receipt.status, undo: !!receipt.undo });
+  return json({ ok:true, slug, url:_siteUrl(request, slug), updated:rec.updated, verified, receipt });
 }
 
 /* ---- The user's live sites ---- */

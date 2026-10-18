@@ -1012,6 +1012,23 @@ function _docText(d){
 }
 
 /* Close an issue or a pull request AMV opened, and read it back closed. */
+/* Slack's own record of one message: its permalink exists while the message
+   does. It needs no permission beyond the one that posted it, which is why it
+   is the read-back rather than reading the channel's history. */
+async function _slackHas(token, channel, ts){
+  const r = await fetchDeadline('https://slack.com/api/chat.getPermalink?channel=' + encodeURIComponent(channel)
+    + '&message_ts=' + encodeURIComponent(ts), { headers: { Authorization: 'Bearer ' + token } }, 15000);
+  if (!r.ok) return null;
+  const d = await r.json().catch(() => ({}));
+  if (d.ok === true && d.permalink) return d.permalink;
+  return d.error === 'message_not_found' || d.error === 'channel_not_found' ? false : null;
+}
+/* Slack answers a refusal with HTTP 200 and {ok:false, error}. The code is
+   Slack's own word for it (channel_not_found, not_in_channel) and is passed
+   on, bounded to the shape Slack uses, because "it did not work" sends
+   somebody looking in the wrong place. */
+function _slackRefused(d){ const c = String((d && d.error) || ''); return 'slack_refused:' + (/^[a-z_]{1,40}$/.test(c) ? c : 'unknown'); }
+
 async function _ghClose(token, ref){
   const u = 'https://api.github.com/repos/' + _ghRepo(ref.repo) + '/' + (ref.kind === 'pulls' ? 'pulls' : 'issues') + '/' + (+ref.number || 0);
   const r = await fetchDeadline(u, { method:'PATCH', headers: _ghHeaders(token), body: JSON.stringify({ state: 'closed' }) }, 20000);
@@ -1362,6 +1379,37 @@ const CONN_ACTIONS = {
      has no argument that could name an existing branch to overwrite, and the
      ref call below only ever CREATES. A tool that can move somebody's main
      branch is a tool that will eventually move somebody's main branch. */
+  'slack.post': {
+    need: 'slack.write', writes: true,
+    async run(token, args){
+      const channel = String(args.channel || '').trim().slice(0, 100);
+      if (!channel) throw new Error('no_channel');
+      const text = String(args.text || args.message || '');
+      if (!text.trim()) throw new Error('no_text');
+      const r = await fetchDeadline('https://slack.com/api/chat.postMessage',
+        { method:'POST', headers:{ Authorization:'Bearer ' + token, 'Content-Type':'application/json; charset=utf-8' },
+          body: JSON.stringify({ channel, text: text.slice(0, 12000) }) }, 20000);
+      if (!r.ok) throw new Error('slack_' + r.status);
+      const d = await r.json().catch(() => ({}));
+      if (d.ok !== true || !d.ts) throw new Error(_slackRefused(d));
+      let link = null;
+      try { link = await _slackHas(token, d.channel || channel, d.ts); } catch (e) { link = null; }
+      return { posted: true, ts: d.ts, channel: d.channel || channel, link: typeof link === 'string' ? link : '',
+               verified: typeof link === 'string' ? true : link };
+    },
+    undo: { label: 'Delete the message',
+      ref: (out) => out && out.ts && out.channel ? { channel: out.channel, ts: out.ts } : null,
+      async run(token, ref){
+        const r = await fetchDeadline('https://slack.com/api/chat.delete',
+          { method:'POST', headers:{ Authorization:'Bearer ' + token, 'Content-Type':'application/json; charset=utf-8' },
+            body: JSON.stringify({ channel: ref.channel, ts: ref.ts }) }, 20000);
+        if (!r.ok) throw new Error('slack_' + r.status);
+        const d = await r.json().catch(() => ({}));
+        if (d.ok !== true && d.error !== 'message_not_found') throw new Error(_slackRefused(d));
+        const still = await _slackHas(token, ref.channel, ref.ts);
+        return still === false ? true : still === null ? null : false;
+      } },
+  },
   'github.repos': {
     need: 'repo.read', writes: false,
     async run(token){
@@ -1629,8 +1677,12 @@ async function connAct(request, env){
       bad_values: 'The values to write must be rows of cells.',
       too_many_cells: 'That is more than 10,000 cells at once. Write it in parts.',
       bad_edit: 'Say what to find and what to replace it with, or what to add at the end.',
+      no_channel: 'Say which Slack channel to post in; there is no default.',
+      no_text: 'There was no message to post.',
     }[why];
     if (own) return json({ error: why, action: name, message: own + ' Nothing was changed.' }, 400);
+    if (why.startsWith('slack_refused:'))
+      return json({ error: 'slack_refused', action: name, message: 'Slack refused the message (' + why.slice(14) + '). Nothing was posted.' }, 502);
     return json({ error:'action_failed', action: name,
       message:'That did not work. Nothing was changed.' }, 502);
   }

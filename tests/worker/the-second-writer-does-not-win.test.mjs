@@ -281,6 +281,20 @@ section('An ordinary write is still just a write');
   ok(r.status === 200, 'deploying a page works', r.status + ' ' + ((r.body || {}).error || ''));
   const again = await post(env, '/deploy', { slug: 'my-page', title: 'Mine v2', html: '<p>hi2</p>' }, tok);
   ok(again.status === 200, 'and updating your own page works', again.status + ' ' + ((again.body || {}).error || ''));
+  /* The action protocol, for a page: read back from where visitors are served,
+     a first publish offered back as a take-down, an update said not to be. */
+  const rc = (r.body || {}).receipt || {}, rc2 = (again.body || {}).receipt || {};
+  ok(r.body.verified === true && rc.status === 'done' && rc.undo && rc.undo.slug === 'my-page',
+     'a first publish is checked live, and can be taken down again', r.body);
+  ok(again.body.verified === true && rc2.undo === null && /not kept/.test(rc2.irreversible || ''),
+     'an update cannot be taken back, and says so instead of offering a take-down', rc2);
+  const realGet = W.DB.get;
+  W.DB.get = async (e, kind, key) => (kind === 'site' && key === 'ghost-page') ? null : realGet.call(W.DB, e, kind, key);
+  let ghost;
+  try { ghost = await post(env, '/deploy', { slug: 'ghost-page', title: 'Ghost', html: '<p>boo</p>' }, tok); }
+  finally { W.DB.get = realGet; }
+  ok(ghost.status === 502 && (ghost.body || {}).error === 'not_confirmed' && (ghost.body || {}).ok !== true,
+     'a page the live address does not have is not called live', ghost.status + ' ' + JSON.stringify(ghost.body));
 }
 
 section('Different people do not queue behind each other');
