@@ -33,11 +33,12 @@ function _nextStepFirstDone(){ try{ return loadStr(_NEXT_FIRST_KEY)==='1'; }catc
 function _nextStepFirstSeen(){ try{ saveStr(_NEXT_FIRST_KEY,'1'); }catch(e){} }
 try{ window._nextStepFirstDone=_nextStepFirstDone; window._nextStepFirstSeen=_nextStepFirstSeen; }catch(e){}
 
-/* `stats`, `compare`, `steps`, `choices` and `chart` are fenced blocks that
-   render as interactive components, not code. Counting them as code offered to
-   "open this in Dev" on a comparison table, and would then have written that
-   table into a project as a source file. */
-const _NEXT_NOT_CODE = ['stats','compare','steps','choices','chart','text',''];
+/* The fenced blocks that render as interactive components are not code.
+   Counting them as code offered to "open this in Dev" on a comparison table,
+   and would then have written that table into a project as a source file.
+   Read from the registry (05h), not listed here: the hand-written list missed
+   cards, calc and form when those were added. */
+const _NEXT_NOT_CODE = ['text',''].concat(Object.keys(AMV_UI));
 const _NEXT_EXT = { js:'js', javascript:'js', jsx:'jsx', ts:'ts', typescript:'ts', tsx:'tsx',
   py:'py', python:'py', html:'html', css:'css', json:'json', sh:'sh', bash:'sh', shell:'sh',
   sql:'sql', md:'md', markdown:'md', java:'java', go:'go', rs:'rs', rust:'rs',

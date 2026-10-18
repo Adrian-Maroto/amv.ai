@@ -7357,6 +7357,7 @@ const SYS = [
   "- Tables: write ordinary markdown tables for tabular data - the person can sort, copy and open them as a spreadsheet.",
   "- form (when you need several answers before you can do the work - a trip, a plan, a brief): ```form\\n{\\\"title\\\":\\\"Your trip\\\",\\\"fields\\\":[{\\\"id\\\":\\\"where\\\",\\\"label\\\":\\\"Where to\\\",\\\"required\\\":true},{\\\"id\\\":\\\"nights\\\",\\\"label\\\":\\\"Nights\\\",\\\"type\\\":\\\"number\\\",\\\"min\\\":1},{\\\"id\\\":\\\"likes\\\",\\\"label\\\":\\\"Likes\\\",\\\"type\\\":\\\"multi\\\",\\\"options\\\":[\\\"Food\\\",\\\"Museums\\\"]}]}\\n``` - field types: text, longtext, number, select, multi, range (needs min and max), toggle, date. The answers come back as their next message. Use it instead of asking several questions in prose; never for one question (use choices) and never to collect passwords, card numbers or ID numbers.",
   "- choices (ask the user to pick): ```choices\\n{\\\"prompt\\\":\\\"Which do you want?\\\",\\\"options\\\":[\\\"Option A\\\",\\\"Option B\\\"]}\\n``` - tappable; the pick is sent back as their next message. Use when you need the user to choose a direction, NOT for information.",
+  "- view (one answer made of several of the above - a plan, a review, a dashboard): ```view\\n{\\\"title\\\":\\\"Lisbon in 4 days\\\",\\\"layout\\\":\\\"tabs\\\",\\\"parts\\\":[{\\\"kind\\\":\\\"stats\\\",\\\"label\\\":\\\"Budget\\\",\\\"items\\\":[{\\\"value\\\":\\\"€1,200\\\",\\\"label\\\":\\\"Total\\\"}]},{\\\"kind\\\":\\\"steps\\\",\\\"label\\\":\\\"Days\\\",\\\"steps\\\":[{\\\"title\\\":\\\"Day 1\\\",\\\"detail\\\":\\\"Alfama\\\"}]}]}\\n``` - layout stack, grid or tabs; each part is any block above with its kind and a short label; up to 6 parts, at most one form, no view inside a view. Use it only when the parts belong together.",
   "- Always add a sentence of context around these blocks. Don't overuse them - reach for one only when it genuinely communicates better than prose."
 ].join("\n");
 
@@ -7836,7 +7837,7 @@ function _guiCompare(spec){
   const hi = Number.isInteger(spec.highlight)?spec.highlight:-1;
   const title=spec.title?'<div class="gui-cmp-title">'+escH(spec.title)+'</div>':'';
   let head='<div class="gui-cmp-row gui-cmp-head"><div class="gui-cmp-c gui-cmp-lbl"></div>'+
-    cols.map((c,i)=>'<div class="gui-cmp-c'+(i===hi?' gui-cmp-hi':'')+'">'+escH(''+c)+(i===hi?'<span class="gui-cmp-badge">Best</span>':'')+'</div>').join('')+'</div>';
+    cols.map((c,i)=>'<div class="gui-cmp-c'+(i===hi?' gui-cmp-hi':'')+'">'+escH(''+c)+(i===hi?'<span class="gui-cmp-badge">'+escH(T('Best'))+'</span>':'')+'</div>').join('')+'</div>';
   let bodyRows=rows.map(r=>{
     const vals=Array.isArray(r.values)?r.values:[];
     return '<div class="gui-cmp-row"><div class="gui-cmp-c gui-cmp-lbl">'+escH(''+(r.label??''))+'</div>'+
@@ -8269,48 +8270,12 @@ function md(text) {  if(!text) return '';
     return match;
   });
 
-  // Chart blocks: ```chart {"type":"bar","title":"..","data":[{"label":"A","value":10}]}```
-  t = t.replace(/```chart\n?([\s\S]*?)```/gi, (match, body) => {
-    try{
-      const raw=body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim();
-      const spec=JSON.parse(raw);
-      return renderChartSVG(spec);
-    }catch(e){ return match; }
-  });
-
-  // ── Generative UI blocks ──────────────────────────────────
-  // Rendered as rich interactive blocks unless the user turned them off in
-  // Settings → Capabilities (then they fall back to plain code blocks).
-  if(typeof loadStr==='function' && loadStr('amv_cap_suggestions')!=='0'){
-  // stats: {"items":[{"value":"$2.4M","label":"Revenue","trend":"+12%"}]}
-  t = t.replace(/```stats\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiStats(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
-  });
-  // compare: {"title":"..","columns":["A","B"],"rows":[{"label":"Price","values":["$9","$19"]}]}
-  t = t.replace(/```compare\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiCompare(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
-  });
-  // steps: {"title":"..","steps":[{"title":"..","detail":".."}]}
-  t = t.replace(/```steps\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiSteps(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
-  });
-  // cards: {"title":"..","items":[{"title":"..","subtitle":"..","facts":[{"label":"Price","value":"$9"}],"body":"..","url":"https://.."}]}
-  t = t.replace(/```cards\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiCards(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
-  });
-  // calc: inputs and formula outputs that follow the inputs as somebody types (05f)
-  t = t.replace(/```calc\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiCalc(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
-  });
-  // form: several fields at once; Send puts every answer in the next message (05g)
-  t = t.replace(/```form\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiForm(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
-  });
-  // choices: {"prompt":"Pick one","options":["A","B","C"]} - tappable, sends a follow-up
-  t = t.replace(/```choices\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiChoices(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
-  });
-  }
+  /* Every interactive piece - chart, stats, compare, steps, cards, calc,
+     form, choices and the view that composes them - through one registry
+     (05h-answer-view.js). Charts always; the rest unless the person turned
+     interactive answers off in Settings, Capabilities, when they read as the
+     blocks they are. */
+  t = _uiBlocks(t, !(typeof loadStr==='function' && loadStr('amv_cap_suggestions')==='0'));
 
   // Code blocks. Substantial ones (long code, full HTML pages, documents)
   // become an ARTIFACT CARD that opens in the side panel; short snippets stay
@@ -12977,6 +12942,142 @@ try{
   });
 }catch(e){}
 try{ window._guiForm = _guiForm; window._formSpec = _formSpec; }catch(e){}
+/* ══════════════════════════════════════════════════════════════════════
+   ONE RUNTIME FOR INTERACTIVE ANSWERS.
+
+   Every interactive piece an answer can contain - chart, stats, compare,
+   steps, cards, calc, form, choices, and the view that composes them - is one
+   entry here. The renderer (md), the list of fenced blocks that are not code
+   (26-nextstep) and the drift suite all read this table, so a piece cannot be
+   drawn by one and treated as source code by another. That had happened:
+   cards, calc and form were drawn as components and still offered to "open
+   in Dev" as a source file, because the second list was written by hand.
+
+   The contract is the same for every piece. The model writes DATA; `draw`
+   checks it against fixed shapes and bounds and returns markup built only
+   from escaped text and the page's own controls, or null. Null means the
+   reader sees the block as written - never a component that silently shows
+   nothing, which an empty stats block used to do.
+
+   `always` pieces are drawn even when interactive answers are switched off in
+   Settings, because without them the answer is a wall of JSON (a chart).
+   ══════════════════════════════════════════════════════════════════════ */
+const AMV_UI = {
+  chart:   { draw: (s) => renderChartSVG(s), always: true },
+  stats:   { draw: (s) => _guiStats(s) },
+  compare: { draw: (s) => _guiCompare(s) },
+  steps:   { draw: (s) => _guiSteps(s) },
+  cards:   { draw: (s) => _guiCards(s) },
+  calc:    { draw: (s) => _guiCalc(s) },
+  form:    { draw: (s) => _guiForm(s) },
+  choices: { draw: (s) => _guiChoices(s) },
+  view:    { draw: (s) => _guiView(s) },
+};
+try{ window.AMV_UI = AMV_UI; }catch(e){}
+
+/* One piece from its parsed data, or null. A renderer that throws is the same
+   as one that refuses: the reader gets the block as written. */
+function _uiDraw(kind, spec){
+  const k = AMV_UI[kind];
+  if(!k || !spec || typeof spec !== 'object') return null;
+  try{
+    const html = k.draw(spec);
+    return typeof html === 'string' && html.trim() ? html : null;
+  }catch(e){ return null; }
+}
+
+/* The fenced blocks of an answer that are components, as md() sees them
+   (already HTML-escaped). Run before the generic code-block pass. */
+function _uiBlocks(t, interactive){
+  const kinds = Object.keys(AMV_UI).filter(k => interactive || AMV_UI[k].always);
+  if(!kinds.length) return t;
+  const re = new RegExp('```(' + kinds.join('|') + ')\\n?([\\s\\S]*?)```', 'gi');
+  return t.replace(re, (match, kind, body) => {
+    let spec;
+    try{ spec = JSON.parse(body.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim()); }
+    catch(e){ return match; }
+    return _uiDraw(kind.toLowerCase(), spec) || match;
+  });
+}
+
+/* ── view: several pieces as one answer ─────────────────────────────────
+   A trip plan is a budget calculator, a day-by-day timeline and three places
+   to stay; a review of a quarter is the numbers, a chart and what to do next.
+   A view puts them under one title, as a stack, a grid, or tabs.
+
+   Bounded so it stays an answer and not a page: up to six parts, no view
+   inside a view, at most one form (two Send buttons in one answer would each
+   send half of what was asked). Every part must draw - a view with a part that
+   does not is not drawn, rather than drawn with a hole in it. */
+const UI_VIEW_MAX = 6;
+const UI_VIEW_LAYOUTS = ['stack', 'grid', 'tabs'];
+let _uiViewSeq = 0;
+function _guiView(spec){
+  const parts = Array.isArray(spec.parts) ? spec.parts : [];
+  if(!parts.length || parts.length > UI_VIEW_MAX) return null;
+  const layout = UI_VIEW_LAYOUTS.includes(spec.layout) ? spec.layout : 'stack';
+  let forms = 0;
+  const drawn = [];
+  for(const p of parts){
+    if(!p || typeof p !== 'object') return null;
+    const kind = String(p.kind || '').toLowerCase();
+    if(kind === 'view' || !AMV_UI[kind]) return null;
+    if(kind === 'form' && ++forms > 1) return null;
+    /* The part's own data is the part itself, without the two keys that
+       belong to the view. */
+    const own = Object.assign({}, p); delete own.kind; delete own.label;
+    const html = _uiDraw(kind, own);
+    if(!html) return null;
+    drawn.push({ label: String(p.label || own.title || '').slice(0, 40), html });
+  }
+  const id = 'gv' + (++_uiViewSeq);
+  const head = spec.title ? '<div class="gui-view-title">' + escH(String(spec.title).slice(0, 120)) + '</div>' : '';
+  if(layout !== 'tabs')
+    return '<div class="gui-view gui-view-' + layout + '">' + head + '<div class="gui-view-body">'
+      + drawn.map(d => '<section class="gui-view-part">'
+          + (d.label && layout === 'grid' ? '<div class="gui-view-h">' + escH(d.label) + '</div>' : '') + d.html + '</section>').join('')
+      + '</div></div>';
+  /* Tabs, as the pattern says: a tablist of buttons that each control one
+     panel, the chosen one in the tab order and the rest reached by arrows. */
+  const tabs = drawn.map((d, i) => '<button type="button" role="tab" class="gui-view-tab" id="' + id + '-t' + i + '" aria-controls="' + id + '-p' + i
+      + '" aria-selected="' + (i === 0) + '" tabindex="' + (i === 0 ? 0 : -1) + '" data-guitab="' + i + '">'
+      + escH(d.label || T('Part {0}').replace('{0}', i + 1)) + '</button>').join('');
+  const panels = drawn.map((d, i) => '<section role="tabpanel" class="gui-view-panel" id="' + id + '-p' + i + '" aria-labelledby="' + id + '-t' + i + '"'
+      + (i === 0 ? '' : ' hidden') + '>' + d.html + '</section>').join('');
+  return '<div class="gui-view gui-view-tabs">' + head + '<div role="tablist" class="gui-view-tablist"'
+    + (spec.title ? ' aria-label="' + escH(String(spec.title).slice(0, 120)) + '"' : '') + '>' + tabs + '</div>' + panels + '</div>';
+}
+
+function _uiTabPick(tab, focus){
+  const list = tab && tab.closest('[role="tablist"]'), view = list && list.parentNode;
+  if(!view) return;
+  list.querySelectorAll('[role="tab"]').forEach(t => {
+    const on = t === tab;
+    t.setAttribute('aria-selected', String(on));
+    t.tabIndex = on ? 0 : -1;
+    const panel = view.querySelector('#' + CSS.escape(t.getAttribute('aria-controls') || ''));
+    if(panel) panel.hidden = !on;
+  });
+  if(focus) tab.focus();
+}
+document.addEventListener('click', e => {
+  const tab = e.target && e.target.closest && e.target.closest('.gui-view-tab');
+  if(tab) _uiTabPick(tab, false);
+});
+document.addEventListener('keydown', e => {
+  const tab = e.target && e.target.closest && e.target.closest('.gui-view-tab');
+  if(!tab) return;
+  const all = [...tab.parentNode.querySelectorAll('[role="tab"]')], i = all.indexOf(tab);
+  const rtl = getComputedStyle(tab).direction === 'rtl';
+  const next = { ArrowRight: rtl ? -1 : 1, ArrowLeft: rtl ? 1 : -1 }[e.key];
+  let to = null;
+  if(next) to = all[(i + next + all.length) % all.length];
+  else if(e.key === 'Home') to = all[0];
+  else if(e.key === 'End') to = all[all.length - 1];
+  if(!to) return;
+  e.preventDefault();
+  _uiTabPick(to, true);
+});
 /* ============================================================
    TEAM / WORKSPACE MODE (frontend) - the B2B tier.
    Create a team, invite members with roles, share projects & prompts.
@@ -43795,234 +43896,28 @@ function _wireInvDone(pane){
   });
 }
 
+/* The pane itself lives in invest.js (src/finance/invest.js), fetched the
+   first time it is opened. */
+let _investP = null;
+function _investLoad(){
+  if(typeof window._renderInvestPaneNow === 'function') return Promise.resolve(true);
+  if(!_investP) _investP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'invest.js';
+    sc.onload = () => res(typeof window._renderInvestPaneNow === 'function');
+    sc.onerror = () => { _investP = null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
+  });
+  return _investP;
+}
 function _renderInvestPane(pane){
-  const linked=(typeof AMVFinance!=='undefined') && AMVFinance.linked();
-  const backend=(()=>{ try{ return !!apiBase(); }catch(e){ return false; } })();
-  /* Ask the server what is actually true, then redraw only if it disagrees with
-     what was just drawn. Without this the pane would keep showing whatever the
-     last cached answer was - including on another device, where the cache is
-     empty and a linked account would look unlinked. Guarded on a change so this
-     cannot become a render loop. */
-  try{
-    if(backend && typeof AMVFinance!=='undefined' && !pane._invChecked){
-      pane._invChecked=1;
-      AMVFinance.refresh().then(st=>{
-        if(!!st.linked !== !!linked) _renderInvestPane(pane);
-      }).catch(()=>{});
-    }
-  }catch(e){}
-  const when=_invWhen();
-
-  pane.innerHTML=
-    '<h2 class="set-title">Investing</h2>'+
-    '<div class="set-sub">Link an investment account and AMV tells you how it is doing, as often as you like.</div>'+
-    /* Folded: the four promises are there for whoever wants them, not stacked
-       above the one button somebody came here to press. */
-    '<details class="set-fold set-what"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary><div class="set-merged">'+
-      '<p>A check-in, not a dashboard. Each one records where your investments stand and tells you what '+
-      'changed since the last one - the amount and the percentage, broken down by account.</p>'+
-      '<ul class="mf-what-l">'+
-        '<li><b>It can only look.</b> AMV reads balances. It cannot buy, sell, or move anything, and there '+
-          'is no setting that would let it.</li>'+
-        '<li><b>Your login never touches AMV.</b> You sign in with your institution through their own flow; '+
-          'AMV only ever holds a read token, and it stays on the server.</li>'+
-        '<li><b>Investment accounts only.</b> A current account swinging with payday and rent is noise in '+
-          'the question of how your investments are doing.</li>'+
-        '<li><b>No number is ever guessed.</b> If your institution cannot be reached, this says so instead '+
-          'of showing you the last figure it happened to have.</li>'+
-      '</ul>'+
-    '</div></details>'+
-    (!backend
-      ? '<div class="ss2"><h3>Not connected yet</h3><p class="fam-p fam-quiet">Bank data is read through your '+
-        'AMV backend so your tokens never reach the browser. Connect it and this starts working.</p></div>'
-      : !linked
-      ? '<div class="ss2"><h3>Link an account</h3>'+
-        '<p class="fam-p fam-quiet">You will sign in with your institution directly. AMV never sees your '+
-        'username or password.</p>'+
-        '<button class="btn bp" id="inv-link" style="font-size:var(--t-sm)">Link an investment account</button>'+
-        '<div class="fam-say" id="inv-link-say" role="status" aria-live="polite"></div></div>'
-      : '<div class="ss2"><h3>How it is doing</h3>'+
-        '<div id="inv-out"><p class="fam-p fam-quiet">Check now to see where you stand.</p></div>'+
-        '<button class="btn bp" id="inv-now" style="font-size:var(--t-sm)">Check now</button> '+
-        /* Connecting a bank must be as easy to undo as it was to do. */
-        '<button class="btn bs" id="inv-unlink" style="font-size:var(--t-sm)">Disconnect</button>'+
-        '<div class="fam-say" id="inv-say" role="status" aria-live="polite"></div></div>'+
-        '<div class="ss2"><h3>Tell me automatically</h3>'+
-          '<p class="fam-p fam-quiet">AMV runs the check on its own and brings you the answer. '+
-          'You can change or stop this at any time.</p>'+
-          '<div class="inv-when">'+
-            INVEST_WHEN.map(w=>'<button class="btn '+(when===w.k?'bp':'bs')+' inv-when-b" data-inv-when="'+w.k+'">'+
-              escH(w.label)+'</button>').join('')+
-            (when?'<button class="btn bs inv-when-b" data-inv-when="" style="color:var(--red-txt);border-color:var(--red-txt)">Stop</button>':'')+
-          '</div>'+
-          '<div class="fam-say" id="inv-when-say" role="status" aria-live="polite">'+
-            (when?escH('AMV checks '+((INVEST_WHEN.find(w=>w.k===when)||{}).detail||when)+' and tells you.'):'')+
-          '</div>'+
-        '</div>');
-
-  on($('inv-link'),'click',async()=>{
-    const say=$('inv-link-say');
-    const btn=$('inv-link');
-    if(btn) btn.disabled=true;
-    if(say) say.textContent='Opening your institution\u2019s secure sign-in\u2026';
-    /* Opened during the click. Awaiting linkStart first spends the user
-       activation, and a blocked window here means somebody cannot connect a
-       bank account at all - see _preopenPay. */
-    const pre=(typeof _preopenPay==='function')?_preopenPay():null;
-    try{
-      const url=await AMVFinance.linkStart();
-      /* Remembered so the return can be recognised even if they come back in a
-         new tab, or the redirect drops the query string. */
-      try{ saveStr('amv_fin_pending','1'); }catch(e){}
-      if(say) say.textContent='Continue in the window that opened. Come back here when you are done.';
-      _openExternalPay(url,null,'finance',pre);
-      /* Replaced rather than renamed. Changing the id left THIS handler still
-         bound to the same element, so the next click - the one labelled "I have
-         finished linking" - started a second link and opened another sign-in
-         window at the institution, on top of finishing the first. A fresh node
-         carries no listeners. */
-      if(btn && btn.parentNode){
-        const done=btn.cloneNode(false);
-        done.disabled=false; done.textContent='I have finished linking'; done.id='inv-link-done';
-        btn.parentNode.replaceChild(done, btn);
-      }
-      _wireInvDone(pane);
-    }catch(e){
-      if(typeof _closePay==='function') _closePay(pre);
-      if(btn) btn.disabled=false;
-      /* needs_service is the operator not having switched it on, which is a
-         different thing from a failure and is said as itself. */
-      if(say) say.textContent = (e&&e.code==='needs_service')
-        ? 'Account linking is not switched on for this deployment yet, so nothing was started.'
-        : ((e&&e.message)||'Could not start the link.')+' Nothing was linked.';
-    }
+  if(typeof window._renderInvestPaneNow === 'function') return window._renderInvestPaneNow(pane);
+  if(!pane) return;
+  pane.innerHTML = '<div style="color:var(--mu);font-size:var(--t-sm)">' + escH(T('Loading…')) + '</div>';
+  _investLoad().then(ok => {
+    if(ok) window._renderInvestPaneNow(pane);
+    else pane.innerHTML = '<div style="color:var(--mu);font-size:var(--t-sm)">' + escH(T('That could not be loaded. Check your connection and try again.')) + '</div>';
   });
-  _wireInvDone(pane);
-
-  on($('inv-unlink'),'click',async()=>{
-    const say=$('inv-say');
-    if(!await _askDestructive('Disconnect this account?',
-        'AMV stops reading it, and the history it compares against is deleted. This cannot be undone.',
-        'Disconnect')) return;
-    try{
-      await AMVFinance.unlink();
-      _renderInvestPane(pane);
-      const s=$('inv-link-say'); if(s) s.textContent='Disconnected. AMV can no longer read that account.';
-    }catch(e){
-      if(say) say.textContent=((e&&e.message)||'Could not disconnect.')+' The account is still connected.';
-    }
-  });
-
-  on($('inv-now'),'click',async()=>{
-    const btn=$('inv-now'), say=$('inv-say'), out=$('inv-out');
-    if(btn){ btn.disabled=true; btn.textContent='Checking\u2026'; }
-    if(say) say.textContent='';
-    try{
-      const d=await AMVFinance.checkin();
-      if(out) out.innerHTML=_invResultHTML(d);
-      _INV_LAST_OK=Date.now();
-    }catch(e){
-      if(say) say.textContent=(e&&e.message)||'Could not reach your institution, so there is nothing to show.';
-      /* Figures already on screen are from an earlier check, and leaving them
-         sitting there unlabelled next to an error makes them indistinguishable
-         from current ones - which on a screen about somebody's savings is the
-         same as showing a wrong number. They stay, because losing them helps
-         nobody, but they are stamped with when they were actually taken. */
-      const res=out&&out.querySelector('.inv-res');
-      if(res && !res.querySelector('.inv-stale')){
-        /* Stamped with when the figures were actually taken, not with now. It
-           used to format the CURRENT time and then say "earlier today", so a
-           check-in from three days ago was labelled as today's - a false
-           statement about somebody's savings, which is the one thing the top of
-           this file says it will not do. */
-        let when='';
-        try{ if(_INV_LAST_OK) when=new Date(_INV_LAST_OK).toLocaleString(undefined,
-          { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }); }catch(_){}
-        res.insertAdjacentHTML('afterbegin',
-          '<div class="inv-stale">These figures are from the last successful check'+
-          (when?' on '+escH(when):'')+', not from now.</div>');
-      }
-    }finally{ if(btn){ btn.disabled=false; btn.textContent='Check again'; } }
-  });
-
-  pane.querySelectorAll('[data-inv-when]').forEach(b=>on(b,'click',async()=>{
-    const k=b.dataset.invWhen;
-    const say=$('inv-when-say');
-    /* The job that is already running, if any. Without this, picking a new
-       frequency left the old one running and you got two check-ins, and "Stop"
-       cleared a setting on this device while the server kept checking - the
-       screen would have said stopped and been wrong. */
-    const prev=loadStr('amv_inv_auto')||'';
-    let stillRunning=!!prev;
-    const dropPrev=async()=>{
-      if(!prev) return;
-      /* Read the answer before declaring it stopped. `_fetch` resolves for
-         every status except 401, so awaiting and moving on set stillRunning to
-         false over a refusal - and the comment above is precisely about not
-         doing that: the server would have carried on checking somebody's bank
-         account while the screen said it had stopped. Throwing here is what
-         the caller's catch is already written for. */
-      const r=await AMV_API._fetch('/auto/update',{method:'POST',
-        body:JSON.stringify({id:prev,action:'delete'})});
-      const d=await r.json().catch(()=>({}));
-      if(!r.ok || d.error) throw new Error(d.error||'the server would not stop it');
-      stillRunning=false;
-      try{ saveStr('amv_inv_auto',''); }catch(e){}
-    };
-
-    if(!k){
-      if(say) say.textContent='Stopping\u2026';
-      try{
-        await dropPrev();
-        try{ saveStr('amv_inv_when',''); }catch(e){}
-        _renderInvestPane(pane);
-        const s0=$('inv-when-say');
-        if(s0) s0.textContent='Stopped. AMV will not check on its own.';
-      }catch(e){
-        /* Still scheduled, so the screen must keep saying so. */
-        _renderInvestPane(pane);
-        const s0=$('inv-when-say');
-        if(s0) s0.textContent=((e&&e.message)?e.message+' ':'')+'It is still scheduled - try again.';
-      }
-      return;
-    }
-
-    const w=INVEST_WHEN.find(x=>x.k===k)||{};
-    if(say) say.textContent='Setting this up\u2026';
-    try{
-      /* Replace rather than add, so the buttons show one choice and one job
-         exists to match it. */
-      await dropPrev();
-      /* A real scheduled job on the server, so it runs whether or not AMV is
-         open - the whole point of being told automatically.
-
-         kind:'invest' is what makes this real. The server runs the check-in
-         itself and reports the institution's own numbers; it does not hand the
-         wording below to a model, which could not read an account and would
-         have to guess. The text is the job's description in the list. */
-      const r=await AMV_API._fetch('/auto/create',{method:'POST',body:JSON.stringify({
-        detail:'Check my investment accounts and report how they changed since the last check - the amount and the percentage, per account.',
-        repeat:(k==='weekly'||k==='monthly')?'weekly':'daily', kind:'invest', notify:'app' })});
-      const d=await r.json().catch(()=>({}));
-      /* Without the id there is nothing to delete later, so a following change
-         of frequency would leave this one running alongside the new one. */
-      const item=(d&&d.item)||null;
-      try{ saveStr('amv_inv_when',k); saveStr('amv_inv_auto',(item&&item.id)||''); }catch(e){}
-      if(say) say.textContent='Done. AMV checks '+w.detail+', and the result waits for you in Tasks.';
-    }catch(e){
-      /* Clear the remembered choice, redraw so the buttons show the truth, and
-         write the message AFTER - the redraw replaces the element the message
-         would have been in, so setting it first said nothing at all. */
-      /* Only claim nothing is scheduled when nothing is. If removing the
-         previous job is what failed, that one is still running and saying
-         otherwise would be the same lie in the opposite direction. */
-      try{ saveStr('amv_inv_when', stillRunning?(loadStr('amv_inv_when')||''):''); }catch(_){ }
-      _renderInvestPane(pane);
-      const s2=$('inv-when-say');
-      if(s2) s2.textContent=((e&&e.message)?e.message+' ':'')
-        +(stillRunning?'Your existing check-in is still running and was not changed.':'Nothing is scheduled.');
-    }
-  }));
 }
 try{ window._renderInvestPane=_renderInvestPane; }catch(e){}
 
@@ -45632,11 +45527,12 @@ function _nextStepFirstDone(){ try{ return loadStr(_NEXT_FIRST_KEY)==='1'; }catc
 function _nextStepFirstSeen(){ try{ saveStr(_NEXT_FIRST_KEY,'1'); }catch(e){} }
 try{ window._nextStepFirstDone=_nextStepFirstDone; window._nextStepFirstSeen=_nextStepFirstSeen; }catch(e){}
 
-/* `stats`, `compare`, `steps`, `choices` and `chart` are fenced blocks that
-   render as interactive components, not code. Counting them as code offered to
-   "open this in Dev" on a comparison table, and would then have written that
-   table into a project as a source file. */
-const _NEXT_NOT_CODE = ['stats','compare','steps','choices','chart','text',''];
+/* The fenced blocks that render as interactive components are not code.
+   Counting them as code offered to "open this in Dev" on a comparison table,
+   and would then have written that table into a project as a source file.
+   Read from the registry (05h), not listed here: the hand-written list missed
+   cards, calc and form when those were added. */
+const _NEXT_NOT_CODE = ['text',''].concat(Object.keys(AMV_UI));
 const _NEXT_EXT = { js:'js', javascript:'js', jsx:'jsx', ts:'ts', typescript:'ts', tsx:'tsx',
   py:'py', python:'py', html:'html', css:'css', json:'json', sh:'sh', bash:'sh', shell:'sh',
   sql:'sql', md:'md', markdown:'md', java:'java', go:'go', rs:'rs', rust:'rs',

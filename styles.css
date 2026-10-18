@@ -17215,3 +17215,23 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 /* A number, not a tick: nothing in this card has run yet. */
 .dlg-steps .dlg-st{ color:var(--mu); }
 .dlg-foot{ padding:0 var(--sp-3) var(--sp-3); }
+
+/* ═══ LAYER A325 - several interactive pieces as one answer ═══
+   A view (05h-answer-view.js): one title over a stack, a grid or tabs of the
+   pieces an answer can already draw. The pieces keep their own styling; the
+   view only lays them out, and inside it their outer margins collapse so the
+   gaps are the view's. */
+.gui-view{ margin:var(--sp-3) 0; border:1px solid var(--bd); border-radius:var(--r-lg); background:var(--s1); padding:var(--sp-4); }
+.gui-view-title{ font-family:var(--fdisplay); font-size:var(--t-lg); font-weight:600; color:var(--tx); margin-bottom:var(--sp-3); }
+.gui-view-body{ display:flex; flex-direction:column; gap:var(--sp-4); }
+.gui-view-grid .gui-view-body{ display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); align-items:start; }
+.gui-view-part, .gui-view-panel{ min-width:0; }
+.gui-view-part > *, .gui-view-panel > *{ margin-top:0; margin-bottom:0; }
+.gui-view-h{ font-size:var(--t-sm); font-weight:600; color:var(--mu); margin-bottom:var(--sp-2); }
+.gui-view-tablist{ display:flex; gap:var(--sp-1); overflow-x:auto; border-bottom:1px solid var(--bd); margin-bottom:var(--sp-4); scrollbar-width:thin; }
+.gui-view-tab{ flex:0 0 auto; min-height:44px; padding:0 var(--sp-4); background:none; border:0; border-bottom:2px solid transparent; margin-bottom:-1px;
+  color:var(--mu); font:inherit; font-size:var(--t-base); font-weight:500; cursor:pointer; }
+.gui-view-tab:hover{ color:var(--tx); }
+.gui-view-tab[aria-selected="true"]{ color:var(--tx); border-bottom-color:var(--accent); }
+.gui-view-tab:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; border-radius:var(--r-sm); }
+@media(max-width:560px){ .gui-view{ padding:var(--sp-3); } }

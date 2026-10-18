@@ -22,7 +22,7 @@ function _guiCompare(spec){
   const hi = Number.isInteger(spec.highlight)?spec.highlight:-1;
   const title=spec.title?'<div class="gui-cmp-title">'+escH(spec.title)+'</div>':'';
   let head='<div class="gui-cmp-row gui-cmp-head"><div class="gui-cmp-c gui-cmp-lbl"></div>'+
-    cols.map((c,i)=>'<div class="gui-cmp-c'+(i===hi?' gui-cmp-hi':'')+'">'+escH(''+c)+(i===hi?'<span class="gui-cmp-badge">Best</span>':'')+'</div>').join('')+'</div>';
+    cols.map((c,i)=>'<div class="gui-cmp-c'+(i===hi?' gui-cmp-hi':'')+'">'+escH(''+c)+(i===hi?'<span class="gui-cmp-badge">'+escH(T('Best'))+'</span>':'')+'</div>').join('')+'</div>';
   let bodyRows=rows.map(r=>{
     const vals=Array.isArray(r.values)?r.values:[];
     return '<div class="gui-cmp-row"><div class="gui-cmp-c gui-cmp-lbl">'+escH(''+(r.label??''))+'</div>'+
@@ -455,48 +455,12 @@ function md(text) {  if(!text) return '';
     return match;
   });
 
-  // Chart blocks: ```chart {"type":"bar","title":"..","data":[{"label":"A","value":10}]}```
-  t = t.replace(/```chart\n?([\s\S]*?)```/gi, (match, body) => {
-    try{
-      const raw=body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim();
-      const spec=JSON.parse(raw);
-      return renderChartSVG(spec);
-    }catch(e){ return match; }
-  });
-
-  // ── Generative UI blocks ──────────────────────────────────
-  // Rendered as rich interactive blocks unless the user turned them off in
-  // Settings → Capabilities (then they fall back to plain code blocks).
-  if(typeof loadStr==='function' && loadStr('amv_cap_suggestions')!=='0'){
-  // stats: {"items":[{"value":"$2.4M","label":"Revenue","trend":"+12%"}]}
-  t = t.replace(/```stats\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiStats(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
-  });
-  // compare: {"title":"..","columns":["A","B"],"rows":[{"label":"Price","values":["$9","$19"]}]}
-  t = t.replace(/```compare\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiCompare(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
-  });
-  // steps: {"title":"..","steps":[{"title":"..","detail":".."}]}
-  t = t.replace(/```steps\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiSteps(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
-  });
-  // cards: {"title":"..","items":[{"title":"..","subtitle":"..","facts":[{"label":"Price","value":"$9"}],"body":"..","url":"https://.."}]}
-  t = t.replace(/```cards\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiCards(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
-  });
-  // calc: inputs and formula outputs that follow the inputs as somebody types (05f)
-  t = t.replace(/```calc\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiCalc(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
-  });
-  // form: several fields at once; Send puts every answer in the next message (05g)
-  t = t.replace(/```form\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiForm(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())) || match; }catch(e){ return match; }
-  });
-  // choices: {"prompt":"Pick one","options":["A","B","C"]} - tappable, sends a follow-up
-  t = t.replace(/```choices\n?([\s\S]*?)```/gi, (match, body) => {
-    try{ return _guiChoices(JSON.parse(body.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').trim())); }catch(e){ return match; }
-  });
-  }
+  /* Every interactive piece - chart, stats, compare, steps, cards, calc,
+     form, choices and the view that composes them - through one registry
+     (05h-answer-view.js). Charts always; the rest unless the person turned
+     interactive answers off in Settings, Capabilities, when they read as the
+     blocks they are. */
+  t = _uiBlocks(t, !(typeof loadStr==='function' && loadStr('amv_cap_suggestions')==='0'));
 
   // Code blocks. Substantial ones (long code, full HTML pages, documents)
   // become an ARTIFACT CARD that opens in the side panel; short snippets stay
