@@ -33,6 +33,8 @@ function _renderApiKeysPane(pane){
   if(cli) on(cli, 'click', async () => { cli.disabled = true; try{ await _cliDownload(); } finally{ cli.disabled = false; } });
   const vsx = document.getElementById('ak-vsix');
   if(vsx) on(vsx, 'click', async () => { vsx.disabled = true; try{ await _vsixDownload(); } finally{ vsx.disabled = false; } });
+  const crx = document.getElementById('ak-chrome');
+  if(crx) on(crx, 'click', async () => { crx.disabled = true; try{ await _chromeDownload(); } finally{ crx.disabled = false; } });
 
   const body = document.getElementById('api-body');
   if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
@@ -205,6 +207,12 @@ function _apiDocsHTML(){
     '<p class="ak-doc">'+escH(T('In VS Code open Extensions, choose {0} from its menu, pick the file, then run {1} and paste a key.'))
       .replace('{0}', '<b>'+escH(T('Install from VSIX'))+'</b>').replace('{1}', '<code>AMV: Set API key</code>')+'</p>'+
     '<button class="btn bs" id="ak-vsix" type="button">'+escH(T('Download {0}')).replace('{0}', 'amv.vsix')+'</button>'+
+  '</div>'+
+  /* IN CHROME. Needs no key at all: it only opens AMV with what you chose. */
+  '<div class="ss2"><h3>'+escH(T('In Chrome'))+'</h3>'+
+    '<p class="ak-doc">'+escH(T('Ask AMV about a page, a selection or a link from the right-click menu or the toolbar. It opens AMV with it in a new chat and sends nothing on its own. It needs no key and can read a page only when you press it there.'))+'</p>'+
+    '<p class="ak-doc">'+escH(T('Until it is in the Chrome Web Store, add it yourself: unzip it, open chrome://extensions, turn on Developer mode, then Load unpacked.'))+'</p>'+
+    '<button class="btn bs" id="ak-chrome" type="button">'+escH(T('Download {0}')).replace('{0}', 'amv-chrome.zip')+'</button>'+
   '</div>';
 }
 
@@ -289,6 +297,47 @@ async function _vsixDownload(){
   return true;
 }
 
+/* ── AMV FOR CHROME, PACKED IN THE BROWSER ───────────────────────────────
+   A zip of the extension's folder with THIS app's own address written in -
+   the page's origin, not the API's, because the extension opens AMV itself
+   and its one script may run on AMV and nowhere else. It holds no key. */
+const CHROME_SRC = { manifest: 'amv-chrome.json', bg: 'amv-chrome.js', share: 'amv-chrome-share.js', icon: 'icon-192.png' };
+async function _chromeFiles(origin){
+  const get = async (f, bin) => { const r = await fetchDeadline(f, { cache: 'no-store' }, 15000); if(!r.ok) throw new Error('http_' + r.status); return bin ? new Uint8Array(await r.arrayBuffer()) : await r.text(); };
+  const [man, bg, share, icon] = await Promise.all([get(CHROME_SRC.manifest), get(CHROME_SRC.bg), get(CHROME_SRC.share), get(CHROME_SRC.icon, true)]);
+  const m = JSON.parse(man);
+  if(m.manifest_version !== 3 || bg.indexOf("const AMV = '__AMV_ORIGIN__'") < 0 || share.indexOf('amvExtShare') < 0) throw new Error('not_the_extension');
+  m.content_scripts[0].matches = [origin + '/*'];
+  return [
+    { name: 'amv-chrome/manifest.json', data: JSON.stringify(m, null, 2) },
+    { name: 'amv-chrome/background.js', data: bg.replace("const AMV = '__AMV_ORIGIN__'", 'const AMV = ' + JSON.stringify(origin)) },
+    { name: 'amv-chrome/share.js', data: share },
+    { name: 'amv-chrome/icon.png', data: icon },
+  ];
+}
+async function _chromeDownload(){
+  const origin = String(location.origin || '');
+  /* A match pattern names a scheme and a host, and an extension pointed at a
+     local copy would stop working the moment that copy moves. */
+  if(!/^https:\/\/[A-Za-z0-9.-]+$/.test(origin)){
+    try{ toast(T('The Chrome extension is made for AMV at its own https address, and this copy is not at one.'), 'error', 7000); }catch(e){}
+    return false;
+  }
+  let blob;
+  try{ blob = _zipStored(await _chromeFiles(origin)); }
+  catch(e){
+    try{ toast(T('AMV could not fetch the Chrome extension from this deployment. Try again in a moment.'), 'error', 7000); }catch(x){}
+    return false;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'amv-chrome.zip';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => { try{ URL.revokeObjectURL(url); }catch(e){} }, 4000);
+  try{ toast(T('Saved amv-chrome.zip. Unzip it, open chrome://extensions, turn on Developer mode, choose Load unpacked and pick the folder.'), 'success', 10000); }catch(e){}
+  return true;
+}
+
 const CLI_FILE = 'amv-cli.mjs';
 /* Fetched from this deployment, checked to be the tool, and saved with the
    address filled in. A copy of AMV with no server has nothing to give it,
@@ -364,4 +413,4 @@ function _vscDialog(){
   });
 }
 
-try{ window._renderApiKeysPane=_renderApiKeysPane; window._apiLoad=_apiLoad; window._cliDownload=_cliDownload; window._vsixDownload=_vsixDownload; window._vscDialog=_vscDialog; }catch(e){}
+try{ window._renderApiKeysPane=_renderApiKeysPane; window._apiLoad=_apiLoad; window._cliDownload=_cliDownload; window._vsixDownload=_vsixDownload; window._chromeDownload=_chromeDownload; window._chromeFiles=_chromeFiles; window._vscDialog=_vscDialog; }catch(e){}

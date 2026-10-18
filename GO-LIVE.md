@@ -681,3 +681,14 @@ In order, because each one catches a different way the day goes wrong:
 **What's already done for you:** every feature checks `AMV_API.live` and uses
 the real endpoints when connected, falling back to honest local/demo behavior
 when not. There is no code change needed to go live - only the config above.
+
+## AMV for Chrome in the Chrome Web Store (optional, the owner's)
+
+Settings, API keys, In Chrome downloads `amv-chrome.zip` with this deployment's
+address in it, which anyone can add with Developer mode. A Web Store listing
+removes that step and is the owner's to make: a Chrome Web Store developer
+account (a one-time fee), the zip from that pane, the listing text and a
+privacy note. The privacy note is short and true: the extension holds no key,
+reads a page only when the person presses it there (`activeTab`), keeps what
+they chose in session memory until the AMV tab it opened collects it, and makes
+no network request of its own.

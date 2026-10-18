@@ -110,6 +110,11 @@ function emitBridge() {
      pane with this deployment's address in it (see _vsixDownload). */
   writeFileSync('amv-vscode.json', readFileSync('vscode/package.json'));
   writeFileSync('amv-vscode.js', readFileSync('vscode/extension.js'));
+  /* The Chrome extension's three files, packed into amv-chrome.zip by the API
+     keys pane with this deployment's own address written in (_chromeDownload). */
+  writeFileSync('amv-chrome.json', readFileSync('chrome/manifest.json'));
+  writeFileSync('amv-chrome.js', readFileSync('chrome/background.js'));
+  writeFileSync('amv-chrome-share.js', readFileSync('chrome/share.js'));
   emitSandbox();
 }
 /* THE CODE SANDBOX is its own page (src/sandbox/): the app frames it with
@@ -997,6 +1002,9 @@ const PUBLISH = [
   'amv-cli.mjs',           // fetched by the API keys pane's Download button
   'amv-vscode.json',       // the VS Code extension's manifest, packed into amv.vsix by the API keys pane
   'amv-vscode.js',         // and its code
+  'amv-chrome.json',       // the Chrome extension's manifest, packed into amv-chrome.zip by the API keys pane
+  'amv-chrome.js',         // its background script
+  'amv-chrome-share.js',   // and the one script it runs, on AMV's own address
   'sandbox.html',          // the frame programs run in (opaque origin, its own policy)
   'sandbox.js',            // what that frame runs
   'picker.html',           // Google's file picker, opened as its own window

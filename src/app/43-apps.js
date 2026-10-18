@@ -60,6 +60,25 @@ try{ window._launchIntent = _launchIntent; }catch(e){}
   }catch(e){}
 })();
 
+/* FROM AMV FOR CHROME. The extension opens AMV with ?amvext=1 and its one
+   script on this page posts what the person chose - a selection, a page, a
+   link - straight to this window. Accepted only from this window itself,
+   only in a tab the extension opened, and only as material: it becomes the
+   same new-chat-with-it-in-the-box as a share from the phone, never a send. */
+window.addEventListener('message', (e) => {
+  const d = e && e.data;
+  if(e.source !== window || e.origin !== location.origin || !d || d.amvExtShare !== 1) return;
+  let q;
+  try{ q = new URLSearchParams(location.search); }catch(err){ return; }
+  if(q.get('amvext') !== '1') return;
+  q.delete('amvext');
+  try{ history.replaceState(history.state, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); }catch(err){}
+  const it = _launchIntent('?' + new URLSearchParams({ title: String(d.title || ''), text: String(d.text || ''), url: String(d.url || '') }));
+  if(!it || it.kind !== 'share') return;
+  try{ sessionStorage.setItem('amv_launch', JSON.stringify(it)); }catch(err){ return; }
+  try{ if(S.user && S.user.email) _applyLaunchIntent(); }catch(err){}
+});
+
 /* Called once the app is open. */
 function _applyLaunchIntent(){
   /* Only into an account. The app starts once before anybody is signed in

@@ -79,7 +79,10 @@ Companion docs (do not duplicate them here - read them):
   `amv-bridge.mjs`, `amv-cli.mjs` (the command-line tool, from `cli/`; the API keys
   pane writes the deployment's address into it at download), `amv-vscode.json` +
   `amv-vscode.js` (the VS Code extension, from `vscode/`; the same pane packs them
-  into `amv.vsix` in the browser with the address filled in), the code sandbox (`sandbox.html` + `sandbox.js`), the
+  into `amv.vsix` in the browser with the address filled in), `amv-chrome.json` +
+  `amv-chrome.js` + `amv-chrome-share.js` (AMV for Chrome, from `chrome/`; the same pane
+  packs them into `amv-chrome.zip` with this app's origin - no key, `activeTab` only,
+  its one script on AMV's own address), the code sandbox (`sandbox.html` + `sandbox.js`), the
   language packs in `i18n/`, and files fetched on first use - `office.js`
   (Word/Excel/PowerPoint export), `sheet.js` (the spreadsheet editor),
   `admin.js` (the owner console), `crew-data.js` (the Crew catalogue),

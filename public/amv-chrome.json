@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "AMV",
+  "version": "1.0.0",
+  "description": "Ask AMV about a page, a selection or a link. Opens AMV with it in a new chat - nothing is sent until you send it.",
+  "permissions": ["activeTab", "contextMenus", "scripting", "storage"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Ask AMV about this page", "default_icon": { "128": "icon.png" } },
+  "icons": { "128": "icon.png" },
+  "content_scripts": [{ "matches": ["__AMV_ORIGIN__/*"], "js": ["share.js"], "run_at": "document_idle" }]
+}
