@@ -173,6 +173,13 @@ try{ window._renderSkillsPane=_renderSkillsPane; }catch(e){}
    simply absent comes back from the next device to sync, and a tombstone
    newer than the copy wins the merge. */
 const PL_MAX = 12, PL_SKILLS = 10, PL_PROMPTS = 20, PL_APPS = 8, PL_TEXT_MAX = 4000, PL_TOMBS = 50;
+/* Background jobs a plugin can carry. Offered, never scheduled: each one is
+   set up by the person's own press, through the same route as a job made in
+   Crew, and every result waits for their approval. Daily at the most often -
+   a package somebody else wrote does not get to decide that AMV works (and
+   spends) every ten minutes. */
+const PL_JOBS = 5, PL_JOB_TEXT = 1000, PL_JOB_REPEATS = ['daily', 'weekly', 'monthly'];
+const PL_DOW = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const PL_APP_RE = /^[\p{L}\p{N}][\p{L}\p{N} .&+'’-]{0,39}$/u;
 
 function _plClean(s, n){ return String(s == null ? '' : s).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').trim().slice(0, n); }
@@ -186,6 +193,8 @@ function _plNormalize(o){
   const name = _plClean(o.name, 60);
   if(!name) return bad(T('That plugin has no name.'));
   const rs = Array.isArray(o.skills) ? o.skills : [], rp = Array.isArray(o.prompts) ? o.prompts : [], ra = Array.isArray(o.apps) ? o.apps : [];
+  const rj = Array.isArray(o.jobs) ? o.jobs : [];
+  if(rj.length > PL_JOBS) return bad(T('A plugin can carry at most') + ' ' + PL_JOBS + ' ' + T('background jobs.'));
   if(rs.length > PL_SKILLS) return bad(T('A plugin can carry at most') + ' ' + PL_SKILLS + ' ' + T('skills.'));
   if(rp.length > PL_PROMPTS) return bad(T('A plugin can carry at most') + ' ' + PL_PROMPTS + ' ' + T('prompts.'));
   if(ra.length > PL_APPS) return bad(T('A plugin can name at most') + ' ' + PL_APPS + ' ' + T('apps.'));
@@ -208,8 +217,17 @@ function _plNormalize(o){
     if(!PL_APP_RE.test(n)) return bad(T('One of the apps it names is not a plain app name.'));
     if(apps.indexOf(n) < 0) apps.push(n);
   }
-  if(!skills.length && !prompts.length) return bad(T('That plugin has nothing in it - no skills and no prompts.'));
-  return { plugin: { name, desc: _plClean(o.desc, 280), v: Math.max(1, Math.min(9999, parseInt(o.v, 10) || 1)), skills, prompts, apps } };
+  const jobs = [];
+  for(const j of rj){
+    if(!j || typeof j.title !== 'string' || typeof j.detail !== 'string' || !j.title.trim() || !j.detail.trim()) return bad(T('One of its background jobs is missing its title or what it does.'));
+    if(j.detail.length > PL_JOB_TEXT) return bad(T('One of its background jobs is longer than AMV accepts') + ' (' + PL_JOB_TEXT.toLocaleString() + ' ' + T('characters') + ').');
+    if(PL_JOB_REPEATS.indexOf(j.repeat) < 0) return bad(T('A background job in a plugin runs daily, weekly or monthly.'));
+    const time = /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(j.time || '').trim()) ? String(j.time).trim() : '';
+    const days = (Array.isArray(j.days) ? j.days : []).map(d => String(d).slice(0, 3).toLowerCase()).filter(d => PL_DOW.indexOf(d) >= 0).slice(0, 7);
+    jobs.push({ title: _plClean(j.title, 80), detail: _plClean(j.detail, PL_JOB_TEXT), repeat: j.repeat, time, days });
+  }
+  if(!skills.length && !prompts.length && !jobs.length) return bad(T('That plugin has nothing in it - no skills, prompts or jobs.'));
+  return { plugin: { name, desc: _plClean(o.desc, 280), v: Math.max(1, Math.min(9999, parseInt(o.v, 10) || 1)), skills, prompts, apps, jobs } };
 }
 
 /* Made by AMV, so they are told to the engine as AMV's own. Each is written
@@ -278,6 +296,9 @@ function _plAsk(pkg, meta){
       + pkg.skills.map(s => '<details class="pl-item" open><summary><b>' + escH(s.name) + '</b> <span class="pl-mode">' + escH(mode(s)) + '</span></summary><pre class="skill-hist-t">' + escH(s.instr) + '</pre></details>').join('') : '')
     + (pkg.prompts.length ? '<h3 class="pl-h">' + escH(pkg.prompts.length + ' ' + T(pkg.prompts.length === 1 ? 'starter prompt' : 'starter prompts')) + '</h3>'
       + pkg.prompts.map(p => '<details class="pl-item"><summary>' + escH(p.title) + '</summary><pre class="skill-hist-t">' + escH(p.text) + '</pre></details>').join('') : '')
+    + (pkg.jobs.length ? '<h3 class="pl-h">' + escH(pkg.jobs.length + ' ' + T(pkg.jobs.length === 1 ? 'background job you can set up' : 'background jobs you can set up')) + '</h3>'
+      + pkg.jobs.map(j => '<details class="pl-item"><summary>' + escH(j.title) + ' <span class="pl-mode">' + escH(_plJobWhen(j)) + '</span></summary><pre class="skill-hist-t">' + escH(j.detail) + '</pre></details>').join('')
+      + '<p class="pl-note">' + escH(T('Nothing is scheduled by adding the plugin. Each job starts only when you press Set up on it, and every result waits for your approval.')) + '</p>' : '')
     + (pkg.apps.length ? '<h3 class="pl-h">' + escH(T('Works with')) + '</h3><div class="pl-apps">' + pkg.apps.map(a => '<span class="pl-app">' + escH(a) + '</span>').join('') + '</div>'
       + '<p class="pl-note">' + escH(T('You connect these yourself, under Connectors. A plugin cannot connect anything.')) + '</p>' : '')
     + '<p class="pl-note">' + escH(T('A plugin’s instructions shape how AMV answers. They cannot change AMV’s rules, approve anything for you, or ask for a password or payment. Turn it off or remove it whenever you like.')) + '</p>'
@@ -313,7 +334,8 @@ async function _pluginAdd(raw, meta){
   if(!(await _plAsk(pkg, m))) return null;
   const now = Date.now();
   const rec = Object.assign({ id: was ? was.id : 'pl_' + now.toString(36) + Math.random().toString(36).slice(2, 6) }, pkg,
-    { on: was ? was.on !== false : true, third: m.third, author: m.author, listing: m.listing, preset: m.preset, added: was ? was.added : now, updated: now });
+    { on: was ? was.on !== false : true, third: m.third, author: m.author, listing: m.listing, preset: m.preset, added: was ? was.added : now, updated: now,
+      setUp: was && was.setUp && typeof was.setUp === 'object' ? was.setUp : {} });
   _plSave(_plAll().filter(a => a.id !== rec.id).concat([rec]));
   toast((was ? T('Updated') : T('Added')) + ' “' + rec.name + '”. ' + T('Its skills are on in every chat.'), 'success', 5000);
   return rec;
@@ -324,7 +346,8 @@ function _pluginSetOn(id, onOff){
 }
 async function _pluginRemove(id){
   const p = _plLive().find(a => a.id === id); if(!p) return false;
-  const yes = await _askDestructive(T('Remove this plugin?'), '“' + p.name + '” ' + T('and everything it added - its skills and prompts - are removed. Apps you connected stay connected.'), T('Remove'));
+  const yes = await _askDestructive(T('Remove this plugin?'), '“' + p.name + '” ' + T('and everything it added - its skills and prompts - are removed. Apps you connected stay connected.')
+    + (p.setUp && Object.keys(p.setUp).length ? ' ' + T('Background jobs you set up from it are yours and stay in Crew, where you can stop them.') : ''), T('Remove'));
   if(!yes) return false;
   _plSave(_plAll().filter(a => a.id !== id).concat([{ id, removed: true, updated: Date.now() }]));
   return true;
@@ -332,7 +355,8 @@ async function _pluginRemove(id){
 function _plPackage(p){
   return { format: 'amv-plugin', name: p.name, desc: p.desc || '', v: p.v || 1,
     skills: (p.skills || []).map(s => ({ name: s.name, when: s.when || '', instr: s.instr, mode: s.mode })),
-    prompts: (p.prompts || []).map(x => ({ title: x.title, text: x.text })), apps: (p.apps || []).slice() };
+    prompts: (p.prompts || []).map(x => ({ title: x.title, text: x.text })), apps: (p.apps || []).slice(),
+    jobs: (p.jobs || []).map(j => ({ title: j.title, detail: j.detail, repeat: j.repeat, time: j.time || '', days: (j.days || []).slice() })) };
 }
 function _plDownload(pkg){
   const base = String(pkg.name).replace(/[^\p{L}\p{N} _-]+/gu, '').trim().replace(/\s+/g, '-').slice(0, 50) || 'plugin';
@@ -341,8 +365,34 @@ function _plDownload(pkg){
 /* From the marketplace: the listing's plugin, by its seller. */
 function _pluginFromListing(item){
   const p = item && item.plugin && typeof item.plugin === 'object' ? item.plugin : {};
-  return _pluginAdd({ format: 'amv-plugin', name: item.title, desc: item.desc, skills: p.skills, prompts: p.prompts, apps: p.apps },
+  return _pluginAdd({ format: 'amv-plugin', name: item.title, desc: item.desc, skills: p.skills, prompts: p.prompts, apps: p.apps, jobs: p.jobs },
     { listing: item.id, author: item.author || '', third: true });
+}
+/* How often a plugin's job runs, in words. */
+function _plJobWhen(j){
+  const t = j.time, days = j.days && j.days.length ? ' (' + j.days.join(', ') + ')' : '';
+  if(j.repeat === 'weekly') return (t ? T('Weekly at {0}').replace('{0}', t) : T('Weekly')) + days;
+  if(j.repeat === 'monthly') return t ? T('Monthly at {0}').replace('{0}', t) : T('Monthly');
+  return t ? T('Daily at {0}').replace('{0}', t) : T('Daily');
+}
+/* Set one up: the person pressed it, so it is theirs, made through the same
+   route as any job in Crew - and its results always wait for approval,
+   whatever the package would have liked. */
+async function _plJobSetup(id, i){
+  const list = _plAll(), p = list.find(a => a.id === id && !a.removed), j = p && (p.jobs || [])[i];
+  if(!j) return false;
+  const sched = typeof _crewSchedOf === 'function' ? _crewSchedOf(j.repeat, { time: j.time, days: j.days }) : null;
+  const repeat = j.repeat === 'monthly' ? 'weekly' : j.repeat;
+  let d;
+  try{ d = await _autoApi('/auto/create', Object.assign({ detail: j.detail, repeat, kind: 'task', approval: 'require', notify: 'app' }, sched ? { sched } : {})); }
+  catch(e){ toast((e && e.message) || T('That job could not be set up.'), 'error', 7000); return false; }
+  const jid = d && d.item && d.item.id;
+  if(!jid){ toast(T('That job could not be set up.'), 'error', 7000); return false; }
+  p.setUp = Object.assign({}, p.setUp || {}, { [i]: jid }); p.updated = Date.now();
+  _plSave(list);
+  try{ if(typeof _crewSynced === 'function') _crewSynced(); }catch(e){}
+  toast(T('Set up in Crew. Each result waits for your approval.'), 'success', 6000);
+  return true;
 }
 function _plUse(text){
   try{ closeOvr(); }catch(e){}
@@ -362,12 +412,16 @@ function _pluginsPane(host){
   const mode = s => s.mode === 'auto' ? T('When relevant') : T('Always on');
   const row = p => '<div class="pl-row" data-pl="' + escH(p.id) + '">'
     + '<div class="pl-row-h"><div class="skill-info"><div class="skill-name">' + escH(p.name) + (p.on !== false ? ' <span class="skill-on">' + escH(T('On')) + '</span>' : '') + '</div>'
-      + '<div class="skill-desc">' + escH((p.third ? T('By') + ' ' + (p.author || T('someone else')) : T('By AMV')) + ' · ' + p.skills.length + ' ' + T(p.skills.length === 1 ? 'skill' : 'skills') + ' · ' + p.prompts.length + ' ' + T(p.prompts.length === 1 ? 'prompt' : 'prompts')) + '</div></div>'
+      + '<div class="skill-desc">' + escH((p.third ? T('By') + ' ' + (p.author || T('someone else')) : T('By AMV')) + ' · ' + p.skills.length + ' ' + T(p.skills.length === 1 ? 'skill' : 'skills') + ' · ' + p.prompts.length + ' ' + T(p.prompts.length === 1 ? 'prompt' : 'prompts')
+        + ((p.jobs || []).length ? ' · ' + p.jobs.length + ' ' + T(p.jobs.length === 1 ? 'job' : 'jobs') : '')) + '</div></div>'
       + '<label class="sw"><input type="checkbox" data-pl-on="' + escH(p.id) + '" aria-label="' + escH(p.name) + '"' + (p.on !== false ? ' checked' : '') + '><span class="sw-sl"></span></label></div>'
     + '<details class="pl-in"><summary>' + escH(T('What is in it')) + '</summary>'
       + (p.desc ? '<p class="skill-desc">' + escH(p.desc) + '</p>' : '')
       + p.skills.map(s => '<div class="skill-hist"><div class="skill-hist-h">' + escH(s.name) + ' · ' + escH(mode(s)) + (s.mode === 'auto' ? ': ' + escH(s.when) : '') + '</div><pre class="skill-hist-t">' + escH(s.instr) + '</pre></div>').join('')
       + p.prompts.map((x, i) => '<div class="pl-pr"><span>' + escH(x.title) + '</span><button type="button" class="skill-link" data-pl-use="' + escH(p.id) + '" data-i="' + i + '">' + escH(T('Use')) + '</button></div>').join('')
+      + (p.jobs || []).map((j, i) => '<div class="pl-pr"><span>' + escH(j.title) + ' <span class="pl-mode">' + escH(_plJobWhen(j)) + '</span></span>'
+          + (p.setUp && p.setUp[i] ? '<button type="button" class="skill-link" data-dact="setTab" data-darg="crew">' + escH(T('Set up - see it in Crew')) + '</button>'
+             : '<button type="button" class="skill-link" data-pl-job="' + escH(p.id) + '" data-i="' + i + '">' + escH(T('Set up')) + '</button>') + '</div>').join('')
       + (p.apps.length ? '<div class="pl-apps">' + p.apps.map(a => '<button type="button" class="pl-app" data-pl-find="' + escH(a) + '" title="' + escH(T('Find it in Connectors')) + '">' + escH(a) + '</button>').join('') + '</div>' : '')
       + '<div class="skill-tools"><button type="button" class="skill-link" data-pl-exp="' + escH(p.id) + '">' + escH(T('Download file')) + '</button>'
       + '<button type="button" class="skill-link pl-del" data-pl-del="' + escH(p.id) + '">' + escH(T('Remove')) + '</button></div>'
@@ -377,7 +431,7 @@ function _pluginsPane(host){
   const myPrompts = (S.prompts || []).filter(p => p && p.custom);
   host.innerHTML = '<h3>' + escH(T('Plugins')) + ' <button type="button" class="btn mc-mini ghost" id="pl-import">' + escH(T('Import')) + '</button></h3>'
     + '<input type="file" id="pl-file" accept=".json,application/json" hidden>'
-    + '<div class="set-sub">' + escH(T('A plugin is a package of skills, starter prompts and the apps they work with - added in one step, removed in one step.')) + '</div>'
+    + '<div class="set-sub">' + escH(T('A plugin is a package of skills, starter prompts, background jobs you can set up, and the apps they work with - added in one step, removed in one step.')) + '</div>'
     + (live.length ? '<div class="skill-list">' + live.map(row).join('') + '</div>' : '<div class="skill-empty">' + escH(T('No plugins yet - add a ready-made one below, import a plugin file, or install one from the marketplace.')) + '</div>')
     + (presets.length ? '<div class="pl-pre-h">' + escH(T('Ready-made')) + '</div><div class="skill-list">' + presets.map(x => '<div class="skill-row"><div class="skill-info"><div class="skill-name">' + escH(x.name) + '</div><div class="skill-desc">' + escH(x.desc) + '</div></div>'
         + '<div class="skill-acts"><button type="button" class="btn mc-mini" data-pl-preset="' + escH(x.preset) + '">' + escH(T('Add')) + '</button></div></div>').join('') + '</div>' : '')
@@ -400,6 +454,10 @@ function _pluginsPane(host){
   host.querySelectorAll('[data-pl-del]').forEach(b => on(b, 'click', async () => { await _pluginRemove(b.getAttribute('data-pl-del')); goSettings('skills'); }));
   host.querySelectorAll('[data-pl-exp]').forEach(b => on(b, 'click', () => { const p = _plLive().find(a => a.id === b.getAttribute('data-pl-exp')); if(p) _plDownload(_plPackage(p)); }));
   host.querySelectorAll('[data-pl-use]').forEach(b => on(b, 'click', () => { const p = _plLive().find(a => a.id === b.getAttribute('data-pl-use')); const x = p && p.prompts[+b.getAttribute('data-i')]; if(x) _plUse(x.text); }));
+  host.querySelectorAll('[data-pl-job]').forEach(b => on(b, 'click', async () => {
+    b.disabled = true;
+    if(await _plJobSetup(b.getAttribute('data-pl-job'), +b.getAttribute('data-i'))) redraw(); else b.disabled = false;
+  }));
   host.querySelectorAll('[data-pl-find]').forEach(b => on(b, 'click', () => _plFind(b.getAttribute('data-pl-find'))));
   host.querySelectorAll('[data-pl-preset]').forEach(b => on(b, 'click', async () => {
     const x = PL_PRESETS.find(p => p.preset === b.getAttribute('data-pl-preset')); if(!x) return;
@@ -445,7 +503,7 @@ function _pluginsPane(host){
     if(btn) btn.disabled = false;
   });
 }
-try{ Object.assign(window, { _pluginsPane, _pluginAdd, _pluginFromListing, _pluginRemove, _pluginSetOn, _plNormalize }); }catch(e){}
+try{ Object.assign(window, { _pluginsPane, _pluginAdd, _pluginFromListing, _pluginRemove, _pluginSetOn, _plNormalize, _plJobSetup }); }catch(e){}
 
 /* ── RULES FOR YOUR COMPUTER: the editor ─────────────────────────────────────
    The rules themselves are enforced in the page (_agentRules in

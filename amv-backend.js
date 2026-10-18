@@ -27041,7 +27041,8 @@ function _safeHttpUrl(u) {
    Returns { plugin, text } - `text` is every word it carries, so the content
    screen and the AMV-only rule read the instructions buyers actually get, not
    just the listing's description. */
-const MKT_PLUGIN = { skills: 10, prompts: 20, apps: 8, text: 4000 };
+const MKT_PLUGIN = { skills: 10, prompts: 20, apps: 8, jobs: 5, jobText: 1000, text: 4000 };
+const MKT_PLUGIN_REPEATS = ['daily', 'weekly', 'monthly'];
 const MKT_PLUGIN_APP_RE = /^[\p{L}\p{N}][\p{L}\p{N} .&+'’-]{0,39}$/u;
 function _mktPluginClean(p){
   const no = (error) => ({ error });
@@ -27068,9 +27069,23 @@ function _mktPluginClean(p){
     if(!MKT_PLUGIN_APP_RE.test(n)) return no('An app a plugin works with is named in plain words, nothing else.');
     if(apps.indexOf(n) < 0) apps.push(n);
   }
-  if(!skills.length && !prompts.length) return no('A plugin listing needs its plugin - at least one skill or prompt.');
-  const text = skills.map(s => s.name + ' ' + s.when + ' ' + s.instr).concat(prompts.map(x => x.title + ' ' + x.text), apps).join(' ');
-  return { plugin: { skills, prompts, apps }, text };
+  /* Jobs a buyer can set up. Text and a schedule, nothing that runs: the
+     buyer's own press creates the job, through the same route as any other. */
+  const rj = Array.isArray(p.jobs) ? p.jobs : [];
+  if(rj.length > MKT_PLUGIN.jobs) return no(`A plugin carries at most ${MKT_PLUGIN.jobs} background jobs.`);
+  const jobs = [];
+  for(const j of rj){
+    if(!j || typeof j.title !== 'string' || typeof j.detail !== 'string' || !j.title.trim() || !j.detail.trim()) return no('Every background job in a plugin needs a title and what it does.');
+    if(j.detail.length > MKT_PLUGIN.jobText) return no(`A background job is limited to ${MKT_PLUGIN.jobText} characters.`);
+    if(!MKT_PLUGIN_REPEATS.includes(j.repeat)) return no('A background job in a plugin runs daily, weekly or monthly.');
+    const time = /^([01]?\d|2[0-3]):[0-5]\d$/.test(String(j.time || '').trim()) ? String(j.time).trim() : '';
+    const days = (Array.isArray(j.days) ? j.days : []).map(d => String(d).slice(0, 3).toLowerCase())
+      .filter(d => ['sun','mon','tue','wed','thu','fri','sat'].includes(d)).slice(0, 7);
+    jobs.push({ title: str(j.title, 80), detail: str(j.detail, MKT_PLUGIN.jobText), repeat: j.repeat, time, days });
+  }
+  if(!skills.length && !prompts.length && !jobs.length) return no('A plugin listing needs its plugin - at least one skill, prompt or job.');
+  const text = skills.map(s => s.name + ' ' + s.when + ' ' + s.instr).concat(prompts.map(x => x.title + ' ' + x.text), jobs.map(j => j.title + ' ' + j.detail), apps).join(' ');
+  return { plugin: { skills, prompts, apps, jobs }, text };
 }
 
 async function marketPublish(request, env) {

@@ -15113,7 +15113,8 @@ const _MKT_RISK=['hack','exploit','crack','bypass','scrape','scraper','bot farm'
 function _mktPluginText(p){
   if(!p || typeof p!=='object') return '';
   return [].concat((Array.isArray(p.skills)?p.skills:[]).map(s=>s?[s.name,s.when,s.instr].join(' '):''),
-    (Array.isArray(p.prompts)?p.prompts:[]).map(x=>x?[x.title,x.text].join(' '):''), Array.isArray(p.apps)?p.apps:[]).join(' ');
+    (Array.isArray(p.prompts)?p.prompts:[]).map(x=>x?[x.title,x.text].join(' '):''),
+    (Array.isArray(p.jobs)?p.jobs:[]).map(j=>j?[j.title,j.detail].join(' '):''), Array.isArray(p.apps)?p.apps:[]).join(' ');
 }
 function _mktScreen(item, verifiedFor){
   const raw=[item.title,item.desc,item.cat,item.text,(item.files||[]).map(f=>f&&f.name).join(' '),_mktPluginText(item.plugin)].map(x=>String(x||'')).join(' ');

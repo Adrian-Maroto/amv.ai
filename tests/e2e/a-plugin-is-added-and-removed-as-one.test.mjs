@@ -188,6 +188,46 @@ section('Plugins travel with the account');
   ok(Array.isArray(c.plugins) && c.plugins.some(p => p.listing === 'usr_mk1'), 'they are in what sync uploads');
 }
 
+section('A plugin can carry background jobs: shown first, scheduled only when you set one up, and always held for approval');
+{
+  await page.evaluate(() => {
+    window.__created = [];
+    window.__realAutoApi = window._autoApi;
+    window._autoApi = async (path, body) => { if (path === '/auto/create') { window.__created.push(body); return { ok: true, item: { id: 'job_' + window.__created.length } }; } return window.__realAutoApi(path, body); };
+  });
+  await openSkills();
+  const pkg = { format: 'amv-plugin', name: 'Weekly money', desc: 'A look at the week',
+    prompts: [{ title: 'Budget', text: 'Make a budget' }],
+    jobs: [{ title: 'Monday review', detail: 'Summarise last week\'s spending and flag anything unusual.', repeat: 'weekly', time: '08:00', days: ['mon'] },
+           { title: 'Daily total', detail: 'Tell me what I spent yesterday.', repeat: 'daily' }] };
+  await page.setInputFiles('#pl-file', file(pkg));
+  await page.waitForSelector('#pla-yes');
+  const shown = await page.evaluate(() => document.querySelector('.pl-ask').innerText);
+  ok(/2 background jobs you can set up/.test(shown) && /Monday review/.test(shown) && /Weekly at 08:00 \(mon\)/.test(shown) && /Nothing is scheduled by adding the plugin/.test(shown),
+     'the jobs are shown before it is added, with when they would run and that nothing is scheduled yet', shown.slice(0, 500));
+  await yes();
+  ok((await page.evaluate(() => window.__created.length)) === 0, 'adding the plugin scheduled nothing', await page.evaluate(() => window.__created));
+  await openSkills();
+  const pl = (await live()).find(p => p.name === 'Weekly money');
+  await page.evaluate((id) => { document.querySelector('[data-pl="' + id + '"] .pl-in').open = true; }, pl.id);
+  await page.click(`[data-pl-job="${pl.id}"][data-i="0"]`);
+  await page.waitForFunction((id) => !!document.querySelector('[data-pl="' + id + '"] [data-darg="crew"]'), pl.id, { timeout: 5000 }).catch(() => {});
+  const made = await page.evaluate(() => window.__created);
+  ok(made.length === 1 && made[0].approval === 'require' && made[0].repeat === 'weekly' && made[0].sched && made[0].sched.hour === 8 && made[0].sched.days[0] === 1,
+     'Set up makes one job, weekly on Monday at 8, held for approval', made);
+  const after = await page.evaluate((id) => ({ setUp: (load('amv_plugins') || []).find(p => p.id === id).setUp,
+    btn: !!document.querySelector('[data-pl="' + id + '"] [data-darg="crew"]'), other: !!document.querySelector('[data-pl-job="' + id + '"][data-i="1"]') }), pl.id);
+  ok(after.setUp && after.setUp[0] === 'job_1' && after.btn && after.other, 'the one set up says so and leads to Crew; the other is still only offered', after);
+
+  const refused = await page.evaluate(() => [
+    _plNormalize({ format: 'amv-plugin', name: 'Busy', jobs: [{ title: 'x', detail: 'y', repeat: '10min' }] }).error,
+    _plNormalize({ format: 'amv-plugin', name: 'Many', jobs: Array(6).fill({ title: 'x', detail: 'y', repeat: 'daily' }) }).error,
+    _plNormalize({ format: 'amv-plugin', name: 'Long', jobs: [{ title: 'x', detail: 'y'.repeat(1001), repeat: 'daily' }] }).error,
+  ]);
+  ok(refused.every(Boolean) && /daily, weekly or monthly/.test(refused[0]), 'a job more often than daily, more than five, or too long is refused', refused);
+  await page.evaluate(() => { window._autoApi = window.__realAutoApi; });
+}
+
 section('No JavaScript errors');
 ok(errors.length === 0, 'zero uncaught page errors', errors.slice(0, 3));
 
