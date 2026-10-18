@@ -307,17 +307,21 @@ section('7. Billing says the plan once, and Help promises nothing removed');
     const boxed = [...document.querySelectorAll('#vc .ss2')]
       .filter(e => getComputedStyle(e).borderTopWidth !== '0px'
                 && getComputedStyle(e).backgroundColor !== 'rgba(0, 0, 0, 0)').length;
-    setTab('help'); await new Promise(x => setTimeout(x, 600));
+    /* The questions arrive from help-faqs.js; without waiting for them, "Help
+       promises nothing removed" would pass on a Help screen with no answers. */
+    setTab('help');
+    for (let i = 0; i < 100 && !Array.isArray(window._FAQS); i++) await new Promise(x => setTimeout(x, 50));
+    await new Promise(x => setTimeout(x, 600));
     const h = ((document.getElementById('set-modal') || document.getElementById('vc')).textContent || '').replace(/\s+/g, ' ');
     return { dup: (t.match(/\$15/g) || []).length, manage: /Manage billing/.test(t),
              dash: /Started -|Renews -/.test(t), cards, boxed,
-             promises: /image and video generation|Images, video/i.test(h) };
+             promises: /image and video generation|Images, video/i.test(h), faqs: document.querySelectorAll('.faq-q').length };
   });
   ok(r.manage, 'billing offers the one action that matters');
   ok(r.dup <= 1, 'and states the price once rather than twice', String(r.dup));
   ok(!r.dash, 'with no bare dash where a date should be', r.dash);
   ok(r.boxed <= 1, 'one surface, not a stack of boxes', r.boxed + ' of ' + r.cards);
-  ok(!r.promises, 'Help no longer offers a feature AMV removed', r.promises);
+  ok(r.faqs > 0 && !r.promises, 'Help, with its answers loaded, no longer offers a feature AMV removed', [r.faqs, r.promises]);
 }
 
 section('9. The round after that one');
