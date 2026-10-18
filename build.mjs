@@ -160,6 +160,7 @@ function emitSandbox() {
   writeFileSync('invest.js', readFileSync('src/finance/invest.js'));
   writeFileSync('spending.js', readFileSync('src/finance/spending.js'));
   writeFileSync('family.js', readFileSync('src/finance/family.js'));
+  writeFileSync('health.js', readFileSync('src/health/health.js'));
 }
 
 function assembleJS() {
@@ -1087,6 +1088,7 @@ const PUBLISH = [
   'invest.js',             // the Invest settings pane, fetched the first time it is opened
   'spending.js',           // the spending limits pane, fetched the first time it is opened
   'family.js',             // the Family settings pane, fetched the first time it is opened
+  'health.js',             // reads an Apple Health export, fetched when a .zip is attached
 ];
 /* GOOGLE PLAY'S PROOF THAT THE ANDROID APP IS AMV'S (apps/android). Published
    only once the owner's signing fingerprint is in apps/android/config.json,

@@ -2089,3 +2089,27 @@ caller's process. The server now forwards an API key's own tools by shape.
 
 **Found while writing it:** the public API silently dropped every tool a
 developer defined (LESSONS 592).
+
+## Round fifty - an Apple Health export, read on the device
+
+`health.js` reads Health's export.zip in the browser - streamed from disk, ZIP64
+included - and attaches a daily summary; the file is never uploaded and AMV
+keeps none of it. Measured on exports built in the suite, each number exact.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 306 | an iPhone's and a Watch's steps added together | 3 assertions |
+| 307 | time in bed counted as sleep | 1 assertion |
+| 308 | the size limit checked before the export | 1 assertion |
+| 309 | ZIP64 not read | 1 assertion |
+| 310 | an export.xml that is not Health data read as one | 1 assertion |
+| 311 | a tag split between two pieces of the file lost | 1 assertion |
+
+**Found while writing it:** two of these first survived - the suite's
+non-Health file was small enough for a later check to catch, and the records a
+split loses fell on days no assertion read. The suite now uses a larger file
+and counts every record.
+
+**Not measured yet:** a real export from an iPhone (the fixtures follow the
+format Health writes, built here), and the time a multi-gigabyte export takes
+on a phone.

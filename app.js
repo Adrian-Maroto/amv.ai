@@ -11727,7 +11727,7 @@ const _FR_FORMULAS   = 2000;                /* listed per sheet; the rest are co
 const _FR_TEXT_MAX   = (typeof LONG_MSG_PART !== 'undefined' && typeof LONG_MSG_MAX_PARTS !== 'undefined')
   ? LONG_MSG_PART * LONG_MSG_MAX_PARTS : 7200000;
 
-const _FR_LABEL = { docx: 'Word document', xlsx: 'Excel workbook', pptx: 'PowerPoint deck', transcript: 'Transcript' };
+const _FR_LABEL = { docx: 'Word document', xlsx: 'Excel workbook', pptx: 'PowerPoint deck', transcript: 'Transcript', health: 'Apple Health export' };
 
 class _FrRefusal extends Error { constructor(code, extra){ super(code); this.code = code; this.extra = extra || ''; } }
 
@@ -11752,6 +11752,8 @@ function _frReason(code, name, extra){
     case 'not_pdf':   return n + ' ' + T('is named like a PDF, but it isn’t one. Nothing was attached.');
     case 'old_browser': return T('This browser can’t unpack') + ' ' + n + '. ' + T('Update it, or use a current Chrome, Safari, Edge or Firefox.');
     case 'damaged':   return n + ' ' + T('looks damaged, so AMV couldn’t read it. Open it, save a fresh copy, and attach that.');
+    case 'health_empty': return n + ' ' + T('is an Apple Health export with no steps, sleep, heart rate, weight or workouts in it that AMV reads.');
+    case 'health_load': return T('AMV could not load the part that reads Apple Health exports. Check your connection and attach it again.');
     default:          return T('AMV can’t read') + ' ' + n + (extra ? ' (' + extra + ')' : '') + '. ' + T('Attach a document, spreadsheet, slide deck, PDF, picture or text file.');
   }
 }
@@ -12291,6 +12293,31 @@ const _frB64 = (bytes) => {
   return btoa(s);
 };
 
+/* AN APPLE HEALTH EXPORT, read on this device by health.js - fetched only
+   when a .zip is attached, because nothing else needs it. An export is far
+   larger than any attachment, so it is checked BEFORE the size limit; health.js
+   streams the one part it needs from disk rather than loading the file. null
+   means "not a Health export": the ordinary path decides what it is. */
+let _healthP = null;
+function _healthLoad(){
+  if(typeof window.amvHealthRead === 'function') return Promise.resolve(true);
+  if(!_healthP) _healthP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'health.js';
+    sc.onload = () => res(typeof window.amvHealthRead === 'function');
+    sc.onerror = () => { _healthP = null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
+  });
+  return _healthP;
+}
+async function _healthTry(file){
+  if(!/\.zip$/i.test(String((file && file.name) || ''))) return null;
+  if(!(await _healthLoad())) return { refuse: 'health_load' };
+  let shown = false;
+  const progress = (f) => { if(!shown){ shown = true; try{ toast(T('Reading your Apple Health export on this device…'), 'info', 4000); }catch(e){} } };
+  return window.amvHealthRead(file, progress);
+}
+
 /* Read one file into an attachment, or a refusal that says why.
      { kind:'img', name, size, b64, mime }
      { kind:'pdf', name, size, b64, mime }
@@ -12301,6 +12328,9 @@ async function amvReadFile(file){
   const size = (file && file.size) || 0;
   const refuse = (code, extra) => ({ kind: 'refused', name, code, reason: _frReason(code, name, extra) });
   try{
+    const health = await _healthTry(file);
+    if(health && health.refuse) return refuse(health.refuse);
+    if(health) return { kind: 'text', name, size, data: health.text, format: 'health', summary: health.summary };
     if(size > _FR_FILE_MAX) return refuse('too_big');
     const buf = await file.arrayBuffer();
     const bytes = new Uint8Array(buf);
@@ -37996,9 +38026,9 @@ const AMV_APP_CATS = [
     'Google Drive|g|Finds and reads your files. Writes only to copies AMV makes.',
     'Google Docs|g|Read through your Google connection.', 'Google Sheets|g|Read through your Google connection.',
     'Google Slides|g|Read through your Google connection.',
-    'Excel and CSV|file|Attach a workbook - AMV reads every sheet, values and formulas. Any table it answers with downloads as .xlsx.',
-    'Word|file|Attach a .docx and AMV reads it, comments included. Any answer downloads as a .docx.',
-    'PowerPoint|file|Attach a .pptx and AMV reads every slide and note. Any answer downloads as a deck.',
+    'Excel and CSV|file|Attach a workbook - AMV reads every sheet, values and formulas, and can hand back the same workbook with the cells changed.',
+    'Word|file|Attach a .docx and AMV reads it, comments included - and can hand back the same document with your changes in it.',
+    'PowerPoint|file|Attach a .pptx and AMV reads every slide and note - and can hand back the same deck with the text changed.',
     'Dropbox|p:dropbox|Cloud storage and sharing.', 'OneDrive|ms|Microsoft’s cloud storage.', 'Box|p:box|Cloud content for business.',
     'iCloud Drive||Apple’s cloud storage.', 'Evernote||Notes and web clips.', 'OneNote||Microsoft’s notebook.',
     'Adobe Acrobat||PDFs: read, sign and edit.', 'Google Keep||Quick notes and lists.', 'Apple Notes||Notes on Apple devices.',
@@ -38114,7 +38144,7 @@ const AMV_APP_CATS = [
     'Talabat||Delivery in the Middle East.', 'OpenTable||Restaurant bookings.', 'Yelp||Local reviews.',
   ]},
   { id:'health', t:'Health &amp; fitness', q:'health', apps:[
-    'Apple Health||Health data on iPhone.', 'Health Connect||Health data on Android.', 'Strava|p:strava|Running and cycling.', 'Fitbit||Activity and sleep.',
+    'Apple Health|file|In the Health app, export all health data and attach the export.zip. AMV reads it on your device and keeps none of it.', 'Health Connect||Health data on Android.', 'Strava|p:strava|Running and cycling.', 'Fitbit||Activity and sleep.',
     'Garmin Connect||Training and activity.', 'Oura||Sleep and readiness.', 'WHOOP||Strain and recovery.', 'MyFitnessPal||Food and calories.',
     'Samsung Health||Health on Galaxy devices.', 'Withings||Scales and health devices.', 'Peloton||Workouts.', 'Nike Run Club||Running.',
     'Headspace||Meditation.', 'Calm||Sleep and meditation.', 'Flo||Cycle tracking.', 'Clue||Cycle tracking.', 'Zwift||Indoor cycling.',
