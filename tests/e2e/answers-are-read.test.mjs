@@ -96,7 +96,9 @@ section('The real handler is written the same way');
 
 section('Stopping a scheduled bank check-in checks that it stopped');
 {
-  const src = readFileSync(join(ROOT, 'app.js'), 'utf8');
+  /* The Invest pane is fetched on demand (invest.js), so it is read from there
+     as well as from the page. */
+  const src = readFileSync(join(ROOT, 'app.js'), 'utf8') + '\n' + readFileSync(join(ROOT, 'invest.js'), 'utf8');
   const at = src.indexOf('const dropPrev=async()=>{');
   /* Wide enough to contain the whole helper. A window that stops mid-statement
      makes an assertion fail for the wrong reason - or worse, pass. */
