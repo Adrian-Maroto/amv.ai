@@ -105,11 +105,24 @@ const { page } = L;
 async function say(t) {
   for (let attempt = 0; attempt < 3; attempt++) {
     await page.waitForTimeout(attempt ? 9000 : 3000);
-    await page.evaluate(async (t) => {
+    /* The test browser can lose its handle on the page's scripts in the middle
+       of this step with the page itself untouched (measured: the document's
+       start time is the same before and after), here and in CI. When it does,
+       whether the message went out is read from the model's side - what the
+       stand-in model received - and it is sent again only if it did not, so
+       nothing is sent twice and nothing is assumed. */
+    const asked = modelSaw.length;
+    const send = () => page.evaluate(async (t) => {
       setTab('chat'); await new Promise(x => setTimeout(x, 200));
       const box = document.getElementById('mta'); box.value = t;
       box.dispatchEvent(new Event('input', { bubbles: true })); sendMsg();
     }, t);
+    try { await send(); }
+    catch (e) {
+      if (!/context was destroyed/.test(String(e && e.message))) throw e;
+      await page.waitForTimeout(2000);
+      if (modelSaw.length === asked) await send();
+    }
     await page.waitForFunction(() => typeof S !== 'undefined' && S.busy === true, null, { timeout: 8000 }).catch(() => {});
     await page.waitForFunction(() => typeof S !== 'undefined' && S.busy === false, null, { timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(400); await L.settle();
