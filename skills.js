@@ -364,6 +364,12 @@ function _plDownload(pkg){
 }
 /* From the marketplace: the listing's plugin, by its seller. */
 function _pluginFromListing(item){
+  /* Withheld by the server: it fails a safety rule that came after it was
+     published. Said, not installed empty. */
+  if(item && item.pluginWithheld){
+    toast(T('This plugin is withheld: it no longer passes AMV’s safety checks, so nothing from it was installed.'), 'error', 9000);
+    return null;
+  }
   const p = item && item.plugin && typeof item.plugin === 'object' ? item.plugin : {};
   return _pluginAdd({ format: 'amv-plugin', name: item.title, desc: item.desc, skills: p.skills, prompts: p.prompts, apps: p.apps, jobs: p.jobs },
     { listing: item.id, author: item.author || '', third: true });

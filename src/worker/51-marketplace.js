@@ -60,7 +60,7 @@ async function _marketSnapshot(env) {
       if (!raw) continue;
       try {
         const it = JSON.parse(raw);
-        if (!it.hidden && (!it.status || it.status === 'active')) items.push(_publicListing(it));
+        if (!it.hidden && (!it.status || it.status === 'active') && !(it.plugin && _mktPluginScan(it.plugin).refuse)) items.push(_publicListing(it));
       } catch (e) {}
     }
     cursor = page.list_complete ? undefined : page.cursor;

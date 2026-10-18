@@ -528,6 +528,13 @@ async function marketBuy(request, env) {
   const it = await _getListing(env, id);
   if (!it) return json({ error: 'item not found' }, 404);
   if (/^usr_/.test(id) && it.status === 'sold') return json({ error: 'Sorry - this just sold. Message the seller to ask for another.' }, 409);
+  /* ONLY WHAT IS ON SALE CAN BE BOUGHT. This checked "sold" and nothing
+     else, so a listing moderation had removed, one held for review, one its
+     seller had taken down or one hidden after reports could still be paid for
+     by anybody holding its id or an old link - a scam taken down went on
+     taking money from everybody who already had the link. */
+  if ((it.status && it.status !== 'active') || it.hidden || (it.plugin && _mktPluginScan(it.plugin).refuse))
+    return json({ error: 'This listing is not on sale right now, so it cannot be bought. Nothing has been charged.', code: 'not_on_sale' }, 409);
 
   if (!it.price || it.price <= 0) return json({ error: 'this item is free - just install it' }, 400);
   if (it.authorEmail === user.email) return json({ error: 'you cannot buy your own listing' }, 400);
@@ -1018,9 +1025,9 @@ async function marketPurchases(request, env) {
     // full access to what they paid for even if the seller later edited or
     // deleted the listing. Fall back to the live listing for legacy purchases.
     const snap = await DB.get(env, 'mktsnap', `${user.email}:${p.id}`);
-    if (snap) { items.push({ ...snap, _purchasedAt: p.ts }); continue; }
+    if (snap) { items.push(_mktWithheld({ ...snap, _purchasedAt: p.ts })); continue; }
     const it = await _getListing(env, p.id);
-    if (it) items.push({ ...it, _purchasedAt: p.ts });
+    if (it) items.push(_mktWithheld({ ...it, _purchasedAt: p.ts }));
     else items.push({ ...p, _removed: true });
   }
   return json({ ok: true, items });

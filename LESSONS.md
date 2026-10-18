@@ -15034,3 +15034,16 @@ Rule: data that exists for the server's own later use gets ONE function that
 decides what leaves (`_actShown`), and every return path goes through it -
 the error returns included. Test it by forcing the failure path, not by
 reading the success one.
+
+## 591. A sale that moderation stopped went on taking money
+
+Removing a listing took it out of the catalogue, and the buy route checked one
+status: "sold". Removed by moderation, held for review, taken down by its
+seller or hidden after reports - all of them could still be paid for by
+anybody holding the id, which is exactly what a scam's existing links hold. The
+catalogue was the guard everybody could see, so it looked like the whole
+guard; the route that moves money never asked.
+
+Rule: a decision that takes something off sale is enforced where the money
+moves, not only where things are listed. "Can this be bought" is one positive
+check (it is active and not hidden), never a list of the states that cannot.

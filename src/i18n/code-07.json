@@ -3722,5 +3722,24 @@
   "it": "Un file condiviso oltre i 50 MB è stato escluso. Allega una copia più piccola.",
   "ko": "50MB가 넘는 공유 파일은 제외되었습니다. 더 작은 사본을 첨부하세요.",
   "ta": "50 MB-க்கு மேற்பட்ட பகிரப்பட்ட கோப்பு விடப்பட்டது. சிறிய நகலை இணைக்கவும்."
+ },
+ "This plugin is withheld: it no longer passes AMV’s safety checks, so nothing from it was installed.": {
+  "es": "Este complemento está retenido: ya no supera las comprobaciones de seguridad de AMV, así que no se instaló nada de él.",
+  "zh": "此插件已被暂扣：它不再通过 AMV 的安全检查，因此未安装其中任何内容。",
+  "hi": "यह प्लगइन रोका गया है: यह अब AMV की सुरक्षा जाँच पास नहीं करता, इसलिए इससे कुछ भी इंस्टॉल नहीं हुआ।",
+  "ar": "هذه الإضافة محجوبة: لم تعد تجتاز فحوص الأمان في AMV، لذلك لم يُثبَّت منها شيء.",
+  "pt": "Este plugin está retido: ele não passa mais nas verificações de segurança do AMV, então nada dele foi instalado.",
+  "fr": "Ce module est retenu : il ne passe plus les contrôles de sécurité d’AMV, donc rien n’en a été installé.",
+  "de": "Dieses Plugin wird zurückgehalten: Es besteht die Sicherheitsprüfungen von AMV nicht mehr, daher wurde nichts daraus installiert.",
+  "ja": "このプラグインは保留されています。AMV の安全チェックを通過しなくなったため、何もインストールされていません。",
+  "ru": "Этот плагин удержан: он больше не проходит проверки безопасности AMV, поэтому из него ничего не установлено.",
+  "id": "Plugin ini ditahan: tidak lagi lolos pemeriksaan keamanan AMV, jadi tidak ada yang dipasang darinya.",
+  "bn": "এই প্লাগইনটি আটকে রাখা হয়েছে: এটি আর AMV-এর নিরাপত্তা পরীক্ষায় উত্তীর্ণ হয় না, তাই এর কিছুই ইনস্টল করা হয়নি।",
+  "ur": "یہ پلگ ان روک لیا گیا ہے: یہ اب AMV کی حفاظتی جانچ پاس نہیں کرتا، اس لیے اس سے کچھ بھی انسٹال نہیں ہوا۔",
+  "tr": "Bu eklenti bekletiliyor: artık AMV’nin güvenlik denetimlerini geçmiyor, bu yüzden ondan hiçbir şey yüklenmedi.",
+  "vi": "Plugin này đang bị giữ lại: nó không còn vượt qua các kiểm tra an toàn của AMV, nên không có gì từ nó được cài đặt.",
+  "it": "Questo plugin è trattenuto: non supera più i controlli di sicurezza di AMV, quindi non è stato installato nulla.",
+  "ko": "이 플러그인은 보류되었습니다. 더 이상 AMV의 안전 검사를 통과하지 못해 아무것도 설치되지 않았습니다.",
+  "ta": "இந்தச் செருகுநிரல் நிறுத்திவைக்கப்பட்டுள்ளது: அது AMV-இன் பாதுகாப்புச் சோதனைகளில் இனி தேறவில்லை, எனவே அதிலிருந்து எதுவும் நிறுவப்படவில்லை."
  }
 }

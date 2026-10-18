@@ -2045,3 +2045,30 @@ wrong number to show.
 **Not measured yet:** a new paragraph copied from one holding a picture,
 note or bookmark (the copy drops them; no fixture has them), and an edit
 across a tab or field inside Word (refused by rule; no fixture has one).
+
+## Round forty-eight - what a plugin would make AMV do
+
+A plugin's skills and jobs reach the engine on the buyer's account, so they are
+now read for what they would make AMV do, at publish, at re-activation and when
+served (`_mktPluginScan`).
+
+| # | what was broken | caught by |
+|---|---|---|
+| 294 | invisible characters (tag characters, direction overrides) accepted | 3 assertions |
+| 295 | buying a listing that is not on sale | 3 assertions |
+| 296 | an old plugin that fails today's rules left in the catalogue | 1 assertion |
+| 297 | an old plugin that fails today's rules handed to its buyer | 1 assertion |
+| 298 | a listing put back on sale without the plugin scan | 1 assertion |
+| 299 | full-width letters read as different words | 1 assertion |
+| 300 | "send their data to this address" accepted | 3 assertions |
+
+**Found while writing it:** the buy route checked only "sold", so a listing
+removed by moderation, held for review, taken down or hidden after reports
+could still be paid for by anybody with its id (LESSONS 591). And a listing
+held for review told its seller it was "live" while the catalogue hid it.
+
+**Not measured yet:** copies of a plugin already installed on a buyer's device
+before it was withheld stay there until the person removes it - the server
+cannot reach into a device. Instructions written to evade the patterns (a
+paraphrase of "ignore your rules") are not caught by a pattern; the third-party
+label on installed plugins (`third`) is what limits what such text can do.

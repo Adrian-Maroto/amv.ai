@@ -593,7 +593,13 @@ async function marketSetStatus(request, env) {
   }
   // Re-screen on any activation, in case the stored content is prohibited.
   if (status === 'active') {
-    const screen = _marketScreen(it, ((await DB.get(env, 'seller', user.email)) || {}).verifiedFor);
+    /* A plugin's instructions are screened with it, and scanned for what they
+       would make AMV do - a listing put back on sale meets today's rules. */
+    let screen = _marketScreen(it.plugin ? { ...it, text: String(it.text || '') + ' ' + _mktPluginText(it.plugin) } : it,
+                                 ((await DB.get(env, 'seller', user.email)) || {}).verifiedFor);
+    const ps = it.plugin ? _mktPluginScan(it.plugin) : { ok: true };
+    if (ps.refuse) screen = { ok: false, action: 'blocked', reason: ps.refuse };
+    else if (screen.ok && ps.hold) screen = { ok: true, action: 'held_for_review', signals: ps.hold };
     if (!screen.ok) {
       await _withKV(env, 'market', id, (rec) => { if (rec) rec.status = 'removed'; });
       /* Cleared straight away rather than left to expire. A minute of

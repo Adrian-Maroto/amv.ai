@@ -27011,7 +27011,7 @@ async function _marketSnapshot(env) {
       if (!raw) continue;
       try {
         const it = JSON.parse(raw);
-        if (!it.hidden && (!it.status || it.status === 'active')) items.push(_publicListing(it));
+        if (!it.hidden && (!it.status || it.status === 'active') && !(it.plugin && _mktPluginScan(it.plugin).refuse)) items.push(_publicListing(it));
       } catch (e) {}
     }
     cursor = page.list_complete ? undefined : page.cursor;
@@ -27240,7 +27240,7 @@ function _marketScreen(item, sellerVerifiedFor) {
   for (const term of MKT_RISK_SIGNALS) { if (hit(term)) signals.push(term); }
   if (signals.length) {
     return { ok: true, action: 'held_for_review', signals: signals.slice(0, 5),
-      reason: 'Your listing is live but flagged for review. If it complies with the rules it stays up; if not, it will be removed.' };
+      reason: 'Your listing is held for review, so it is not visible yet. If it complies with the rules it goes up; if not, it is removed.' };
   }
   return { ok: true, action: 'approved' };
 }
@@ -27313,6 +27313,87 @@ function _mktPluginClean(p){
   return { plugin: { skills, prompts, apps, jobs }, text };
 }
 
+/* ══ WHAT A PLUGIN TELLS AMV TO DO ══════════════════════════════════════════
+
+   A plugin's skills and jobs are instructions that reach the engine on
+   somebody else's account. The content screen above reads them for what is
+   SOLD; this reads them for what they would make AMV DO, which no category
+   list covers:
+
+   REFUSED - the listing does not go up:
+   - invisible characters (tag characters, direction overrides, zero-width
+     marks), which can carry instructions the buyer cannot see on screen;
+   - an instruction to set AMV's own rules aside;
+   - an instruction to send somebody's private things - passwords, keys,
+     chats, files - to an outside address it names.
+   HELD for a person to read before it is live:
+   - "act without asking" and "do not tell the person" - each has an honest
+     use (a tutor that does not give the answer away), so a person decides;
+   - an outside address or link in the instructions AMV follows. A prompt the
+     buyer reads and sends themselves is not held for one.
+
+   Run at publish, again when a listing is put back on sale, and again when
+   it is served - so a plugin published before a rule existed is held to it
+   too. */
+const _PL_INVISIBLE = /[\u{E0000}-\u{E007F}‪-‮⁦-⁩​-‏⁠-⁤﻿]/u;
+const _PL_OVERRIDE = [
+  /\b(ignore|disregard|forget|override|bypass)\s+(all\s+|any\s+|every\s+|the\s+|your\s+|its\s+)*(previous|prior|above|earlier|other|system|amv'?s?|safety|original|built[- ]in)?\s*(instructions|rules|guidelines|policies|restrictions|safeguards|prompt)\b/i,
+  /\b(you\s+are|you'?re)\s+no\s+longer\s+(bound|restricted|amv|limited)/i,
+  /\b(developer|god|dan|jailbreak)\s+mode\b/i,
+  /\b(reveal|print|show|repeat|output)\s+(your|the|amv'?s)\s+(system\s+prompt|hidden\s+instructions|instructions\s+above)\b/i,
+];
+const _PL_SECRET = /\b(passwords?|pass\s?codes?|api\s+keys?|keys?|tokens?|credentials|log\s?ins?|card\s+numbers?|bank\s+details|conversations?|chat\s+history|chats|messages|emails|memor(y|ies)|files|documents|contacts|personal\s+(data|information|details))\b/i;
+const _PL_SEND = /\b(send|forward|e-?mail|post|upload|transmit|share|copy|submit|leak|exfiltrate|report)\b/i;
+const _PL_DEST = /(https?:\/\/|www\.|\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b|\bwebhook\b|\b(?:\d{1,3}\.){3}\d{1,3}\b)/i;
+const _PL_HOLD = [
+  [/\bwithout\s+(asking|checking|confirm(ing|ation)|(the\s+(user|person)'?s?\s+|their\s+)?(permission|consent|approval))\b/i, 'acts without asking'],
+  [/\b(auto-?approve|approve\s+(it\s+|them\s+|everything\s+)?automatically|skip\s+(the\s+)?(approval|confirmation|consent))\b/i, 'acts without asking'],
+  [/\b(do\s+not|don'?t|never)\s+(tell|mention|reveal|show|inform|let)\s+(the\s+(user|person|buyer)|them|anyone|him|her)\b/i, 'keeps something from the person'],
+];
+function _mktPluginScan(raw){
+  const parts = [];
+  const add = (where, s, runs) => { if(typeof s === 'string' && s) parts.push({ where, s, runs }); };
+  const p = raw && typeof raw === 'object' ? raw : {};
+  for(const x of (Array.isArray(p.skills) ? p.skills : [])) if(x){ add('skill', x.name, false); add('skill', x.when, true); add('skill', x.instr, true); }
+  for(const x of (Array.isArray(p.prompts) ? p.prompts : [])) if(x){ add('prompt', x.title, false); add('prompt', x.text, false); }
+  for(const x of (Array.isArray(p.jobs) ? p.jobs : [])) if(x){ add('job', x.title, false); add('job', x.detail, true); }
+  for(const x of (Array.isArray(p.apps) ? p.apps : [])) add('app', x, false);
+  const hold = [];
+  for(const { where, s, runs } of parts){
+    if(_PL_INVISIBLE.test(s))
+      return { refuse: 'This plugin contains invisible characters, which can hide instructions from the people who install it. Remove them and publish again.', rule: 'invisible' };
+    const flat = s.normalize('NFKC').replace(/\s+/g, ' ');
+    if(_PL_OVERRIDE.some(re => re.test(flat)))
+      return { refuse: 'A ' + where + ' in this plugin tells AMV to set its own rules aside. Plugins work within AMV’s rules; take that out and publish again.', rule: 'override' };
+    for(const sentence of flat.split(/(?<=[.!?;\n])\s+/)){
+      if(_PL_SEND.test(sentence) && _PL_SECRET.test(sentence) && _PL_DEST.test(sentence))
+        return { refuse: 'A ' + where + ' in this plugin tells AMV to send people’s private things to an outside address. That cannot be published.', rule: 'exfiltrate' };
+    }
+    if(!runs) continue;
+    for(const [re, why] of _PL_HOLD) if(re.test(flat) && !hold.includes(why)) hold.push(why);
+    if(_PL_DEST.test(flat) && !hold.includes('names an outside address')) hold.push('names an outside address');
+  }
+  return hold.length ? { hold } : { ok: true };
+}
+
+/* A plugin bought before a rule existed is still held to it when it is
+   handed over: the instructions are withheld, and the buyer is told why
+   rather than given an empty plugin. */
+function _mktWithheld(it){
+  if(!it || !it.plugin) return it;
+  const ps = _mktPluginScan(it.plugin);
+  if(!ps.refuse) return it;
+  const { plugin, ...rest } = it;
+  return { ...rest, pluginWithheld: ps.refuse };
+}
+/* The words of a stored plugin, for screening it again. */
+function _mktPluginText(p){
+  if(!p || typeof p !== 'object') return '';
+  const a = x => Array.isArray(x) ? x : [];
+  return a(p.skills).map(s => [s && s.name, s && s.when, s && s.instr].join(' '))
+    .concat(a(p.prompts).map(x => [x && x.title, x && x.text].join(' ')), a(p.jobs).map(j => [j && j.title, j && j.detail].join(' ')), a(p.apps)).join(' ');
+}
+
 async function marketPublish(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'sign in to publish' }, 401);
@@ -27335,10 +27416,22 @@ async function marketPublish(request, env) {
   if (item.kind === 'plugin') {
     pluginClean = _mktPluginClean(item.plugin);
     if (pluginClean.error) return json({ error: pluginClean.error, code: 'bad_plugin' }, 400);
+    /* Read as sent, before cleaning: cleaning is for storing, and what was
+       sent is what the seller meant. */
+    const ps = _mktPluginScan(item.plugin);
+    if (ps.refuse) {
+      audit(env, 'market_plugin_refused', { by: user.email, rule: ps.rule });
+      return json({ error: ps.refuse, code: 'plugin_unsafe' }, 422);
+    }
+    pluginClean.hold = ps.hold || [];
   }
 
   // ── Automated content review (server-side = cannot be bypassed) ──
-  const screen = _marketScreen(pluginClean ? { ...item, text: String(item.text || '') + ' ' + pluginClean.text } : item, standing.verifiedFor);
+  let screen = _marketScreen(pluginClean ? { ...item, text: String(item.text || '') + ' ' + pluginClean.text } : item, standing.verifiedFor);
+  if (screen.ok && pluginClean && pluginClean.hold.length) {
+    screen = { ok: true, action: 'held_for_review', signals: (screen.signals || []).concat(pluginClean.hold.map(h => 'plugin ' + h)).slice(0, 5),
+      reason: 'Your plugin is held until a person has read it, because it ' + pluginClean.hold.join(' and ') + '. It is not visible until then.' };
+  }
   if (!screen.ok) {
     if (screen.action === 'blocked') {
       /* Under the lock: moderation writes this record too, and a strike lost
@@ -28045,6 +28138,13 @@ async function marketBuy(request, env) {
   const it = await _getListing(env, id);
   if (!it) return json({ error: 'item not found' }, 404);
   if (/^usr_/.test(id) && it.status === 'sold') return json({ error: 'Sorry - this just sold. Message the seller to ask for another.' }, 409);
+  /* ONLY WHAT IS ON SALE CAN BE BOUGHT. This checked "sold" and nothing
+     else, so a listing moderation had removed, one held for review, one its
+     seller had taken down or one hidden after reports could still be paid for
+     by anybody holding its id or an old link - a scam taken down went on
+     taking money from everybody who already had the link. */
+  if ((it.status && it.status !== 'active') || it.hidden || (it.plugin && _mktPluginScan(it.plugin).refuse))
+    return json({ error: 'This listing is not on sale right now, so it cannot be bought. Nothing has been charged.', code: 'not_on_sale' }, 409);
 
   if (!it.price || it.price <= 0) return json({ error: 'this item is free - just install it' }, 400);
   if (it.authorEmail === user.email) return json({ error: 'you cannot buy your own listing' }, 400);
@@ -28535,9 +28635,9 @@ async function marketPurchases(request, env) {
     // full access to what they paid for even if the seller later edited or
     // deleted the listing. Fall back to the live listing for legacy purchases.
     const snap = await DB.get(env, 'mktsnap', `${user.email}:${p.id}`);
-    if (snap) { items.push({ ...snap, _purchasedAt: p.ts }); continue; }
+    if (snap) { items.push(_mktWithheld({ ...snap, _purchasedAt: p.ts })); continue; }
     const it = await _getListing(env, p.id);
-    if (it) items.push({ ...it, _purchasedAt: p.ts });
+    if (it) items.push(_mktWithheld({ ...it, _purchasedAt: p.ts }));
     else items.push({ ...p, _removed: true });
   }
   return json({ ok: true, items });
@@ -29452,7 +29552,13 @@ async function marketSetStatus(request, env) {
   }
   // Re-screen on any activation, in case the stored content is prohibited.
   if (status === 'active') {
-    const screen = _marketScreen(it, ((await DB.get(env, 'seller', user.email)) || {}).verifiedFor);
+    /* A plugin's instructions are screened with it, and scanned for what they
+       would make AMV do - a listing put back on sale meets today's rules. */
+    let screen = _marketScreen(it.plugin ? { ...it, text: String(it.text || '') + ' ' + _mktPluginText(it.plugin) } : it,
+                                 ((await DB.get(env, 'seller', user.email)) || {}).verifiedFor);
+    const ps = it.plugin ? _mktPluginScan(it.plugin) : { ok: true };
+    if (ps.refuse) screen = { ok: false, action: 'blocked', reason: ps.refuse };
+    else if (screen.ok && ps.hold) screen = { ok: true, action: 'held_for_review', signals: ps.hold };
     if (!screen.ok) {
       await _withKV(env, 'market', id, (rec) => { if (rec) rec.status = 'removed'; });
       /* Cleared straight away rather than left to expire. A minute of
