@@ -329,6 +329,26 @@ const results = new Array(suites.length);
   flush();
 }
 
+/* ONCE MORE, ALONE - ONLY WHEN ASKED (AMV_TEST_RETRY_ALONE=1).
+
+   On a small machine a browser suite sharing the CPU with three others can
+   miss a wait that it makes with room to spare on its own, and the failure
+   says nothing about the product. Every such failure in one night passed when
+   run again by itself. So a failure in the pool may be run once more with
+   nothing else in flight; one that fails again fails, and one that passes is
+   NAMED in the summary as having failed under load, never silently forgiven.
+
+   Off by default, and CI does not set it: the gate that decides whether code
+   ships stays the strict one. This is for iterating on a machine that cannot
+   give four browsers a core each. */
+const retried = [];
+if (process.env.AMV_TEST_RETRY_ALONE === '1') {
+  for (let i = 0; i < results.length; i++) {
+    if (!results[i] || results[i].code === 0) continue;
+    const again = await run(suites[i]);
+    if (again.code === 0) { retried.push(results[i].name); results[i] = Object.assign({}, again, { retried: true }); }
+  }
+}
 const failed = results.filter(r => r.code !== 0);
 sayLine('\n\x1b[1m════════ SUMMARY ════════\x1b[0m');
 results.forEach(r => {
@@ -340,7 +360,9 @@ results.forEach(r => {
 if (failed.length) {
   /* Written synchronously: this line is immediately followed by an exit, and
      it is the line check.mjs reads to say WHICH suites failed. */
+  if (retried.length) sayLine(`\n\x1b[33mFailed beside other suites and passed alone (AMV_TEST_RETRY_ALONE): ${retried.join(', ')}\x1b[0m`);
   sayLine(`\n\x1b[31m${failed.length} suite(s) FAILED\x1b[0m`);
   process.exit(1);
 }
+if (retried.length) sayLine(`\n\x1b[33mFailed beside other suites and passed alone (AMV_TEST_RETRY_ALONE): ${retried.join(', ')}\x1b[0m`);
 sayLine(`\n\x1b[32mAll ${results.length} suites passed\x1b[0m`);

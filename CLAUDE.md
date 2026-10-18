@@ -251,6 +251,10 @@ Companion docs (do not duplicate them here - read them):
   suite early in the list holds back the printing of everything behind it, which
   is what the `[n/401]` counter on stderr is for (it counts whatever was
   selected, so the number moves as suites are added).
+  `AMV_TEST_RETRY_ALONE=1` runs a suite that failed in the pool once more with
+  the machine to itself and NAMES it in the summary if it then passes - for a
+  small machine where four browsers starve each other. CI does not set it, so
+  the gate that ships code stays strict; a suite that fails alone still fails.
   Both harnesses ask the kernel for a free port - `serveApp` in
   `tests/lib/harness.mjs` and `serveArtifact` in `tests/lib/live-backend.mjs`,
   which was left on hand-picked numbers until a collision showed up as
