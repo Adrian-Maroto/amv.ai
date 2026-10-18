@@ -241,6 +241,8 @@ section('Settings answers "what is spending", before asking for numbers');
 {
   const r = await page.evaluate(async () => {
     S.settingsPane = 'spending'; S.tab = 'settings'; setTab('settings');
+    /* The limits pane arrives from spending.js the first time. */
+    for (let i = 0; i < 100 && typeof window._renderSpendingPaneNow !== 'function'; i++) await new Promise(r => setTimeout(r, 50));
     await new Promise(r => setTimeout(r, 300));
     return (document.getElementById('set-modal') || document.getElementById('vc')).textContent;
   });

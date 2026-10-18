@@ -68,11 +68,16 @@ await page.evaluate(() => {
 const audit = sel => page.evaluate(s => window.__a11y(s ? document.querySelector(s) : document), sel || null);
 
 section('Spending pane');
-await page.evaluate(() => {
+await page.evaluate(async () => {
   AMVCompliance.accept(); AMVCompliance.setBirthYear(1990);
   AMVSpend.record(12, { item: 'Book', merchant: 'Shop' });
   S.settingsPane = 'spending'; renderSetPane();
+  /* The pane arrives from spending.js the first time; auditing before it does
+     would audit the loading line and pass on nothing. */
+  for (let i = 0; i < 100 && typeof window._renderSpendingPaneNow !== 'function'; i++) await new Promise(r => setTimeout(r, 50));
+  await new Promise(r => setTimeout(r, 100));
 });
+ok(await page.evaluate(() => !!document.getElementById('mf-auto') || !!document.getElementById('mf-accept-terms')), 'the real pane is drawn, not its loading line');
 const spend = await audit('.set-pane');
 ok(spend.unnamed.length === 0, 'every button has an accessible name', spend.unnamed);
 ok(spend.unlabelled.length === 0, 'every field has a label', spend.unlabelled);

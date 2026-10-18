@@ -67,6 +67,11 @@ async function openTab(tab) {
 async function openPane(pane) {
   await page.evaluate(p => { S.tab = 'settings'; setTab('settings'); S.settingsPane = p; renderSetPane(); }, pane);
   await page.waitForTimeout(90);
+  /* Several panes are fetched the first time they open (spending.js,
+     api-keys.js, skills.js). Measuring before they land would measure a
+     loading line and pass on nothing, so the sweep waits them out. */
+  await page.waitForFunction(() => { const el = document.querySelector('.set-pane'); return !el || !/^\s*Loading/i.test(el.textContent || ''); },
+    null, { timeout: 8000 }).catch(() => {});
 }
 
 await page.setViewportSize(PHONE);

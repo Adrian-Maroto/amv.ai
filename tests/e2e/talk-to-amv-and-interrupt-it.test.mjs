@@ -171,9 +171,10 @@ section('A turn with nothing recorded is not sent anywhere');
   /* Interrupting first puts it in a fresh listen whatever the last section
      left behind, and ending the turn in the same breath means nothing has
      been recorded yet. */
-  await page.evaluate(() => _lvDrive.bargeIn());
+  /* In ONE evaluate, as the comment says: as two, a loaded machine let the
+     recorder's first 250ms slice land in between, and a real turn was sent. */
   const before = L.hit(/\/v1\/audio\/transcribe/).length;
-  const r = await page.evaluate(async () => { _lvDrive.endTurn(); await new Promise(x => setTimeout(x, 400)); return _lvDrive.state(); });
+  const r = await page.evaluate(async () => { _lvDrive.bargeIn(); _lvDrive.endTurn(); await new Promise(x => setTimeout(x, 400)); return _lvDrive.state(); });
   ok(L.hit(/\/v1\/audio\/transcribe/).length === before && r === 'listening', 'it just listens again', { sent: L.hit(/\/v1\/audio\/transcribe/).length - before, state: r });
 }
 

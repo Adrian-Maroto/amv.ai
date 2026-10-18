@@ -51,7 +51,8 @@ section('A closed drawer on a phone casts no shadow onto the page');
 
 section('Spending: the explainer and the consent card are two boxes, not one');
 {
-  await page.evaluate(() => setTab('spend'));
+  /* The limits pane arrives from spending.js the first time. */
+  await page.evaluate(async () => { setTab('spend'); for (let i = 0; i < 100 && typeof window._renderSpendingPaneNow !== 'function'; i++) await new Promise(r => setTimeout(r, 50)); });
   await page.waitForTimeout(500);
   const gap = await page.evaluate(() => {
     const fold = document.querySelector('.mf-what'), gate = document.querySelector('.mf-gate');
