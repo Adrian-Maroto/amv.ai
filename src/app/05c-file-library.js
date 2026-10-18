@@ -156,7 +156,7 @@ async function _libCloudPut(f){
   if(!_libCloudOn() || _libCloudState.configured === false) return null;
   const body = _libBody(f); if(!body) return null;
   return await AMV_API.libraryPut({ sig: f.sig, kind: f.kind, name: f.name, size: f.size || 0, format: f.format || '',
-    summary: f.summary || '', mime: f.mime || '', body });
+    summary: f.summary || '', mime: f.mime || '', folder: f.folder || '', body });
 }
 /* A library entry back into the shape the chat sends. */
 function _libAsAtt(f){

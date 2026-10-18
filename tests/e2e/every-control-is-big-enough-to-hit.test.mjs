@@ -180,6 +180,9 @@ section('The Family controls, which the tab sweep never reaches');
      The sweep does not land on a Family with a child in it, so the pane is
      drawn directly with one child and one invitation - the point is to
      measure these at all. The state is put back afterwards. */
+  /* The pane arrives from family.js the first time; drawn before it lands, it
+     would measure a loading line and find no switches. */
+  await page.evaluate(() => _familyLoad());
   const r = await page.evaluate((min) => {
     const host = document.getElementById('vc') || document.getElementById('app');
     const probe = document.createElement('div');

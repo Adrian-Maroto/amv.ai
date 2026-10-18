@@ -44,6 +44,20 @@ const LIB_LIMITS = {
 const LIB_FILE_MAX = 30 * LIB_MB;
 const LIB_KINDS = new Set(['text', 'img', 'pdf']);
 
+/* A FOLDER is a path of up to three names, each up to forty characters -
+   "Taxes/2026". Plain text only: a name that is not one is refused rather than
+   cleaned into something the person did not type. '' is no folder. The page
+   applies the same rule (_libFolderClean), and this is the one that holds. */
+const LIB_FOLDER_DEPTH = 3, LIB_FOLDER_NAME = 40;
+function _libFolder(v){
+  const raw = String(v == null ? '' : v).trim();
+  if(!raw) return '';
+  const parts = raw.split('/').map(x => x.trim()).filter(Boolean);
+  if(!parts.length || parts.length > LIB_FOLDER_DEPTH) return null;
+  if(parts.some(x => x.length > LIB_FOLDER_NAME || x === '.' || x === '..' || /[\u0000-\u001f\u007f\\<>]/.test(x))) return null;
+  return parts.join('/');
+}
+
 function libConfigured(env){
   return !!(env && env.AMV_FILES && typeof env.AMV_FILES.put === 'function' && typeof env.AMV_FILES.get === 'function');
 }
@@ -58,7 +72,7 @@ async function _libPrefix(email){
 }
 function _libMeta(f){
   return { id: f.id, sig: f.sig, kind: f.kind, name: f.name, size: f.size || 0, format: f.format || '',
-           summary: f.summary || '', mime: f.mime || '', chars: f.chars || 0, added: f.added || 0, used: f.used || 0 };
+           summary: f.summary || '', mime: f.mime || '', chars: f.chars || 0, added: f.added || 0, used: f.used || 0, folder: f.folder || '' };
 }
 function _libUsage(rec){
   const files = (rec && Array.isArray(rec.files)) ? rec.files : [];
@@ -105,13 +119,15 @@ async function libPut(request, env){
   if (body.length > LIB_FILE_MAX)
     return json({ error: 'too_large', message: 'That file is too large to keep in your account (' + Math.round(LIB_FILE_MAX / LIB_MB) + ' MB at most). It is still kept on this device.' }, 413);
 
+  const folder = _libFolder(b.folder);
+  if (folder === null) return json({ error: 'bad_folder', message: 'A folder is up to three names, like Taxes/2026, each up to 40 characters.' }, 400);
   const limit = _libLimitsFor(user.plan);
   const prefix = await _libPrefix(user.email);
   const now = Date.now();
   const id = 'lf' + now.toString(36) + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
   const meta = { id, sig, kind, name, size: Math.max(0, +b.size || 0), format: String(b.format || '').slice(0, 40),
                  summary: String(b.summary || '').slice(0, 300), mime: String(b.mime || '').slice(0, 100),
-                 chars: body.length, added: now, used: now };
+                 chars: body.length, added: now, used: now, folder };
 
   /* The same file sent twice is one entry. Decided under the lock, with the
      limit, so two tabs uploading at once cannot both pass the last check. */
@@ -200,6 +216,29 @@ async function libDelete(request, env){
     return json({ error: 'delete_incomplete', deleted: ids.size - left, message: 'Some of those files could not be removed from storage. Try again.' }, 502);
   }
   return json({ ok: true, deleted: ids.size });
+}
+
+/* POST /v1/library/move { ids: [], folder } - into a folder, or out of all of
+   them with ''. Read back: "moved" counts the files that are in it now. */
+async function libMove(request, env){
+  if (!libConfigured(env)) return _libOff();
+  const { user, res } = await _libUser(request, env, true); if (res) return res;
+  let b = {}; try { b = await request.json(); } catch (e) {}
+  const ids = new Set((Array.isArray(b.ids) ? b.ids : []).map(String).slice(0, 1000));
+  if (!ids.size) return json({ error: 'bad_request', message: 'Say which files to move.' }, 400);
+  const folder = _libFolder(b.folder);
+  if (folder === null) return json({ error: 'bad_folder', message: 'A folder is up to three names, like Taxes/2026, each up to 40 characters.' }, 400);
+  try {
+    await _withKind(env, LIB_KIND, user.email, (rec) => {
+      for (const f of (rec.files || [])) if (ids.has(f.id) && !f.pending) f.folder = folder;
+    }, { files: [] });
+  } catch (e) {
+    return json({ error: 'busy', message: 'Your files are being changed somewhere else. Nothing was moved - try again in a moment.' }, 503);
+  }
+  const after = (await DB.get(env, LIB_KIND, user.email)) || { files: [] };
+  const moved = (after.files || []).filter(f => ids.has(f.id) && (f.folder || '') === folder).length;
+  if (!moved) return json({ error: 'not_found', message: 'Those files are not in your account any more.' }, 404);
+  return json({ ok: true, moved, folder, verified: moved === ids.size });
 }
 
 /* Everything under one account, for erasure. Throws on failure - the caller

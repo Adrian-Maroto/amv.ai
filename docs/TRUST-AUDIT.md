@@ -1997,3 +1997,23 @@ production yet (GO-LIVE 2c2). This is driven against a real bridge in
 `--cloud` mode behind a stand-in for the container runtime - whose own race
 (two first requests starting two machines) was fixed in both suites that use
 it.
+
+## Round forty-six - library folders
+
+A file in the library can be put in a folder (`Taxes/2026`, up to three names
+of up to forty characters). The folder is part of the account's record, so it
+is the same on every device; `/v1/library/move` changes it and reads the list
+back before saying how many moved.
+
+| # | what was broken | caught by |
+|---|---|---|
+| 280 | the device's copy moved before the account's (a refused move left two folders) | 1 assertion |
+| 281 | this device's older folder shown over a move made on another device | 1 assertion |
+| 282 | the move's count taken from the request instead of the stored list | 2 assertions |
+| 283 | `.` and `..` accepted as folder names | 4 assertions |
+| 284 | a move applied to every file in the account, not the ones named | 2 assertions |
+
+**Found while writing it:** the screen first showed a file's folder from this
+device whenever it had one, so a file moved on the phone stayed in its old
+folder on the laptop for ever. Where the account has the file, the account's
+folder is now the answer.

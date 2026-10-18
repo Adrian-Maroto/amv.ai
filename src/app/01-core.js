@@ -1411,6 +1411,7 @@ const AMV_API = {
     return d;
   },
   async libraryDelete(ids){ return this._wrote('/v1/library/delete', { ids }, 'Those files could not be deleted.'); },
+  async libraryMove(ids, folder){ return this._wrote('/v1/library/move', { ids, folder }, 'Those files could not be moved.'); },
   /* SERVER SPEECH (69-speech.js). Both spend, so neither is ever retried: a
      recording sent twice is heard - and charged - twice. A long recording is
      a long upload, so the deadline is the server's own two minutes plus room. */

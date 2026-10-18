@@ -9,7 +9,9 @@
      a file is "kept" only after it is read back from storage;
      the plan's limit is enforced on the server, before a byte is stored;
      nobody can open somebody else's file by guessing its id;
-     deleting a file, or the account, removes the bytes - checked in storage. */
+     deleting a file, or the account, removes the bytes - checked in storage;
+     a folder is checked on the server and a move is read back before it is
+     called done. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -146,6 +148,49 @@ section('Deleting removes the bytes, and so does deleting the account');
   const left = [...r2._m.values()];
   ok(left.length === 1 && left[0] === 'c', 'every object of that account is gone, and nobody else’s', left);
   ok(!(await W.DB.get(env, 'lib', 'gone@example.com')), 'and so is the list', true);
+}
+
+section('Folders: checked on the server, and a move is read back');
+{
+  const r2 = mkR2(), env = mkEnv(r2);
+  const tok = await signup(env, 'folders@example.com');
+  const other = await signup(env, 'neighbour@example.com');
+  const bad = await req(env, '/v1/library/put', { ...file('x.txt', 'x'), folder: 'a/b/c/d' }, tok);
+  ok(bad.status === 400 && (await jsonOf(bad)).error === 'bad_folder' && r2._m.size === 0,
+     'a folder four names deep is refused before anything is stored', [bad.status, r2._m.size]);
+  for (const f of ['../up', 'a/./b', 'x'.repeat(41), 'a\\b', '<b>']) {
+    const r = await req(env, '/v1/library/put', { ...file('y.txt', 'y'), folder: f }, tok);
+    ok(r.status === 400, 'and so is ' + JSON.stringify(f.slice(0, 12)), r.status);
+  }
+  const kept = await jsonOf(await req(env, '/v1/library/put', { ...file('tax.txt', 'tax'), folder: ' Taxes / 2026 ' }, tok));
+  ok(kept.file && kept.file.folder === 'Taxes/2026', 'a file can arrive in a folder, written the same way every time', kept.file);
+  const two = await jsonOf(await req(env, '/v1/library/put', file('notes.txt', 'notes'), tok));
+  let list = (await jsonOf(await req(env, '/v1/library', undefined, tok))).files || [];
+  ok(list.find(f => f.id === kept.file.id)?.folder === 'Taxes/2026' && !list.find(f => f.id === two.file.id)?.folder,
+     'the list says which folder each file is in', list.map(f => f.folder));
+
+  const mv = await req(env, '/v1/library/move', { ids: [two.file.id], folder: 'Taxes/2026' }, tok);
+  const md = await jsonOf(mv);
+  list = (await W.DB.get(env, 'lib', 'folders@example.com')).files;
+  ok(mv.status === 200 && md.ok && md.moved === 1 && md.verified === true && list.find(f => f.id === two.file.id).folder === 'Taxes/2026',
+     'a move is in the stored list, not only in the answer', [mv.status, md]);
+  const out = await jsonOf(await req(env, '/v1/library/move', { ids: [kept.file.id], folder: '' }, tok));
+  list = (await W.DB.get(env, 'lib', 'folders@example.com')).files;
+  ok(out.ok && out.folder === '' && !list.find(f => f.id === kept.file.id).folder, 'and a file can be taken out of its folder', out);
+
+  const badMv = await req(env, '/v1/library/move', { ids: [two.file.id], folder: '..' }, tok);
+  list = (await W.DB.get(env, 'lib', 'folders@example.com')).files;
+  ok(badMv.status === 400 && list.find(f => f.id === two.file.id).folder === 'Taxes/2026', 'a bad folder moves nothing', badMv.status);
+  const none = await req(env, '/v1/library/move', { ids: [], folder: 'A' }, tok);
+  ok(none.status === 400, 'a move that names no file is refused', none.status);
+  const theirs = await req(env, '/v1/library/move', { ids: [two.file.id], folder: 'Mine' }, other);
+  list = (await W.DB.get(env, 'lib', 'folders@example.com')).files;
+  ok(theirs.status === 404 && list.find(f => f.id === two.file.id).folder === 'Taxes/2026',
+     'another account cannot move somebody else’s file by its id', theirs.status);
+  const partial = await jsonOf(await req(env, '/v1/library/move', { ids: [two.file.id, 'no-such-id'], folder: 'Work' }, tok));
+  ok(partial.ok && partial.moved === 1 && partial.verified === false, 'a move of some of what was named says so instead of calling it all done', partial);
+  const anon = await req(env, '/v1/library/move', { ids: [two.file.id], folder: 'A' }, null);
+  ok(anon.status === 401, 'signed out, nothing moves', anon.status);
 }
 
 if (report('your-files-are-in-your-account') > 0) process.exitCode = 1;

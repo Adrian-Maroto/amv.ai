@@ -33,7 +33,7 @@ const DIR = join(ROOT, 'src/app');
 /* The page's modules, and the ones split out of it to load on first use -
    duplication does not stop being duplication because half of it moved. */
 const files = readdirSync(DIR).filter(f => /\.js$/.test(f)).sort()
-  .concat(['../market/sell.js', '../team/team-sso.js', '../billing/credit.js', '../memory/memory-io.js', '../skills/skills.js', '../team/team-projects.js', '../api/api-keys.js', '../library/library.js', '../help/faqs.js', '../settings/widget-form.js', '../voice/live-voice.js', '../web/web-live.js', '../finance/invest.js', '../finance/spending.js']);
+  .concat(['../market/sell.js', '../team/team-sso.js', '../billing/credit.js', '../memory/memory-io.js', '../skills/skills.js', '../team/team-projects.js', '../api/api-keys.js', '../library/library.js', '../help/faqs.js', '../settings/widget-form.js', '../voice/live-voice.js', '../web/web-live.js', '../finance/invest.js', '../finance/spending.js', '../finance/family.js']);
 
 /* Compare code, not spelling. Comments go, whitespace goes, and string
    CONTENTS collapse - so two copies that differ only by a label or a quote
