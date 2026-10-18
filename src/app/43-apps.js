@@ -52,10 +52,12 @@ try{ window._launchIntent = _launchIntent; }catch(e){}
 (function _stashLaunchIntent(){
   try{
     const it = _launchIntent(location.search);
-    if(!it) return;
-    sessionStorage.setItem('amv_launch', JSON.stringify(it));
     const q = new URLSearchParams(location.search);
-    ['title', 'text', 'url', 'new'].forEach(k => q.delete(k));
+    /* ?open=1 is the address a file opened from the computer arrives on;
+       the file itself comes through launchQueue, below. */
+    if(!it && !q.has('open')) return;
+    if(it) sessionStorage.setItem('amv_launch', JSON.stringify(it));
+    ['title', 'text', 'url', 'new', 'open'].forEach(k => q.delete(k));
     history.replaceState(history.state, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
   }catch(e){}
 })();
@@ -79,6 +81,40 @@ window.addEventListener('message', (e) => {
   try{ if(S.user && S.user.email) _applyLaunchIntent(); }catch(err){}
 });
 
+/* OPEN WITH AMV. The installed app is offered by the computer for the files
+   AMV reads (manifest file_handlers); the browser hands the opened files to
+   launchQueue. They become a new chat with the file attached, through the
+   same door as the paperclip - read, refused by name, a Word file held for
+   editing - and NEVER sent by themselves. Before sign-in they wait for it,
+   in this tab's memory only. */
+let _launchFiles = null;
+try{
+  if(window.launchQueue && typeof window.launchQueue.setConsumer === 'function'){
+    window.launchQueue.setConsumer(async (params) => {
+      const handles = Array.from((params && params.files) || []).slice(0, 10);
+      if(!handles.length) return;
+      const files = [];
+      for(const h of handles){ try{ if(h && h.kind !== 'directory' && typeof h.getFile === 'function') files.push(await h.getFile()); }catch(e){} }
+      if(!files.length){ toast(T('The file you opened could not be read. Attach it from inside AMV instead.'), 'error', 8000); return; }
+      _launchFiles = files;
+      let signedIn = false;
+      try{ signedIn = !!(S.user && S.user.email); }catch(e){}
+      if(signedIn) _applyLaunchFiles();
+      else toast(T('Sign in and the file you opened will be waiting in a new chat.'), 'info', 8000);
+    });
+  }
+}catch(e){}
+function _applyLaunchFiles(){
+  if(!_launchFiles) return false;
+  try{ if(!(S.user && S.user.email)) return false; }catch(e){ return false; }
+  const files = _launchFiles; _launchFiles = null;
+  newChat();
+  handleFiles(files);
+  toast(T('Opened in a new chat. Say what you want done with it, then send.'), 'info', 6000);
+  return true;
+}
+try{ window._applyLaunchFiles = _applyLaunchFiles; }catch(e){}
+
 /* Called once the app is open. */
 function _applyLaunchIntent(){
   /* Only into an account. The app starts once before anybody is signed in
@@ -87,6 +123,9 @@ function _applyLaunchIntent(){
   try{ if(!(S.user && S.user.email)) return; }catch(e){ return; }
   let it = null;
   try{ it = JSON.parse(sessionStorage.getItem('amv_launch') || 'null'); sessionStorage.removeItem('amv_launch'); }catch(e){}
+  /* A file opened from the computer is the more specific ask; the address
+     it arrived on (?open=1) carries nothing else. */
+  if(_applyLaunchFiles()) return;
   if(!it) return;
   newChat();
   if(it.kind !== 'share') return;
@@ -138,6 +177,8 @@ function _appsCardHTML(){
       '<li>' + escH(T('Opens in its own window, without the browser around it.')) + '</li>' +
       '<li>' + escH(T('Share a page, message or link from another app into AMV.')) + '</li>' +
       '<li>' + escH(T('Hold the icon to start a new chat or open Crew.')) + '</li>' +
+      /* Only where the installed app is offered "Open with" - Chrome and Edge on a computer. */
+      (p === 'desktop' ? '<li>' + escH(T('On a computer, open a Word, Excel, PowerPoint, PDF or text file with AMV and it arrives in a new chat.')) + '</li>' : '') +
     '</ul>' + (stores ? '<div class="apps-stores">' + stores + '</div>' : '') + '</div>';
 }
 function _appsCardWire(){

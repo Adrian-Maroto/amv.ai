@@ -83,5 +83,34 @@
       "text": "text",
       "url": "url"
     }
-  }
+  },
+  "file_handlers": [
+    {
+      "action": "/?open=1",
+      "launch_type": "single-client",
+      "accept": {
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
+          ".docx"
+        ],
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [
+          ".xlsx"
+        ],
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation": [
+          ".pptx"
+        ],
+        "application/pdf": [
+          ".pdf"
+        ],
+        "text/csv": [
+          ".csv"
+        ],
+        "text/plain": [
+          ".txt"
+        ],
+        "text/markdown": [
+          ".md"
+        ]
+      }
+    }
+  ]
 }

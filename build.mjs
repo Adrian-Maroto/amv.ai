@@ -915,6 +915,18 @@ self.addEventListener('fetch', e => {
     /* In the phone's share sheet. Arrives as a new chat with it in the box,
        never sent by itself (_launchIntent). */
     share_target: { action: '/', method: 'GET', params: { title: 'title', text: 'text', url: 'url' } },
+    /* "Open with AMV" on the computer, for the files AMV reads (and edits, for
+       Word, Excel and PowerPoint). Arrives as a new chat with the file
+       attached - never sent by itself (launchQueue in 43-apps.js). */
+    file_handlers: [{ action: '/?open=1', launch_type: 'single-client', accept: {
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
+      'application/pdf': ['.pdf'],
+      'text/csv': ['.csv'],
+      'text/plain': ['.txt'],
+      'text/markdown': ['.md'],
+    } }],
   };
   writeFileSync('manifest.webmanifest', JSON.stringify(manifest, null, 2));
 
