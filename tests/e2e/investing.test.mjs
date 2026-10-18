@@ -17,8 +17,11 @@ import { overflowingElement } from '../lib/layout.mjs';
 const app = await bootApp({ tab: 'chat', user: { name: 'U', email: 'u@x.com', ini: 'U' } });
 const { page, errors } = app;
 
+/* The pane is fetched the first time it is opened (invest.js), so the first
+   look waits for the pane itself rather than for a fixed moment. */
 const open = () => page.evaluate(async () => {
   S.settingsPane = 'investing'; S.tab = 'settings'; setTab('settings');
+  for (let i = 0; i < 100 && typeof window._renderInvestPaneNow !== 'function'; i++) await new Promise(r => setTimeout(r, 50));
   await new Promise(r => setTimeout(r, 180));
   return document.getElementById('vc').textContent;
 });
