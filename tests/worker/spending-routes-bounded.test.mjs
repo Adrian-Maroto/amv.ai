@@ -57,7 +57,7 @@ const SPENDS = /_modelFetch\(|_finCall\(|_vidCall\(|fetchGuarded\(|fetchDeadline
 
    A counter is a bound when it is used as one: rateCheck refuses, reserve
    holds budget. Counting is not limiting. */
-const BOUNDED = /guardAction\(|limitAction\(|checkCap|_spendAllowed\(|_budgetFor\(|effectiveLimits\(|op:\s*'rateCheck'|op:\s*'reserve'/;
+const BOUNDED = /guardAction\(|limitAction\(|checkCap|_spendAllowed\(|_budgetFor\(|effectiveLimits\(|op:\s*'rateCheck'|op:\s*'reserve'|_computerOpen\(/;
 
 /* Spends, but does not need its own bound - each with the reason. */
 const EXEMPT = {
@@ -90,6 +90,15 @@ section('Each one is bounded, or exempt for a stated reason');
     .map(r => r.path + ' -> ' + r.fn);
   ok(loose.length === 0,
      'nothing calls a third party as often as somebody likes', loose);
+}
+
+section('The cloud workspace\u2019s door is a bound, not just a name');
+{
+  /* Recognised above as a bound only because it really is one: the rate limit
+     and the monthly minutes are both in it, ahead of the machine. */
+  const cc = bodyOf('_computerOpen');
+  ok(/guardAction\(/.test(cc) && /_computerUsedSeconds\(/.test(cc), '_computerOpen limits how often and how long', true);
+  ok(cc.indexOf('guardAction(') < cc.indexOf('AMV_COMPUTER.get('), 'before it reaches for a machine', true);
 }
 
 section('The exemptions have not gone stale');
