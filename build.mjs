@@ -151,6 +151,7 @@ function emitSandbox() {
   writeFileSync('live-voice.js', readFileSync('src/voice/live-voice.js'));
   writeFileSync('web-live.js', readFileSync('src/web/web-live.js'));
   writeFileSync('invest.js', readFileSync('src/finance/invest.js'));
+  writeFileSync('spending.js', readFileSync('src/finance/spending.js'));
 }
 
 function assembleJS() {
@@ -1017,6 +1018,7 @@ const PUBLISH = [
   'live-voice.js',         // the live voice conversation, fetched when voice mode starts with server speech
   'web-live.js',           // the panel that shows a web run as it happens, fetched when one starts
   'invest.js',             // the Invest settings pane, fetched the first time it is opened
+  'spending.js',           // the spending limits pane, fetched the first time it is opened
 ];
 /* GOOGLE PLAY'S PROOF THAT THE ANDROID APP IS AMV'S (apps/android). Published
    only once the owner's signing fingerprint is in apps/android/config.json,

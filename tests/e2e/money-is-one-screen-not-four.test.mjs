@@ -57,6 +57,8 @@ await page.waitForTimeout(300);
 const open = async (plan) => page.evaluate(async (p) => {
   if (p) saveStr('amv_plan', p);
   setTab('spend');
+  /* The limits pane arrives from spending.js the first time. */
+  for (let i = 0; i < 100 && typeof window._renderSpendingPaneNow !== 'function'; i++) await new Promise(r => setTimeout(r, 50));
   await new Promise(r => setTimeout(r, 700));
   const t = (id) => { const e = document.getElementById(id); return (e && e.innerText) || ''; };
   return {

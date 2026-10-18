@@ -2145,5 +2145,24 @@
   "it": "Un plugin è un pacchetto di abilità, prompt iniziali, attività in background da configurare e app con cui funzionano: si aggiunge in un passo e si rimuove in un passo.",
   "ko": "플러그인은 스킬, 시작 프롬프트, 설정 가능한 백그라운드 작업, 함께 쓰는 앱을 묶은 패키지입니다. 한 번에 추가하고 한 번에 제거합니다.",
   "ta": "செருகுநிரல் என்பது திறன்கள், தொடக்கத் தூண்டல்கள், அமைக்கக்கூடிய பின்னணி வேலைகள் மற்றும் அவை இணையும் செயலிகளின் தொகுப்பு - ஒரே படியில் சேர்க்க, ஒரே படியில் நீக்க."
+ },
+ "did not run": {
+  "es": "no se ejecutó",
+  "zh": "未运行",
+  "hi": "नहीं चला",
+  "ar": "لم يعمل",
+  "pt": "não foi executado",
+  "fr": "n’a pas été lancé",
+  "de": "wurde nicht ausgeführt",
+  "ja": "実行されませんでした",
+  "ru": "не запускалась",
+  "id": "tidak dijalankan",
+  "bn": "চালানো হয়নি",
+  "ur": "نہیں چلا",
+  "tr": "çalıştırılmadı",
+  "vi": "không chạy",
+  "it": "non eseguito",
+  "ko": "실행되지 않음",
+  "ta": "இயக்கப்படவில்லை"
  }
 }

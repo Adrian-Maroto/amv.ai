@@ -28352,21 +28352,23 @@ const AMV_TOOLS = [
       standing:{type:'string', description:'The instruction, in the person\'s own terms. Replaces any previous one, so include anything from before that still applies.'}
     }, required:['standing'] }
   },
-  /* SEVERAL WORKERS AT ONCE, ON ONE TASK.
+  /* SEVERAL WORKERS ON ONE TASK, IN THE ORDER IT NEEDS.
 
      "Compare these four laptops", "draft the intro, the method and the
      summary", "review this for security, speed and readability": parts that do
-     not depend on each other, done one after another in one long answer. This
-     hands each part to a worker of its own, runs up to three at a time, and
-     brings every result back here to be combined - the main answer stays in
-     charge and writes the final word. */
+     not depend on each other run at the same time. A part can also wait for
+     others and build on what they found - research two options, then compare
+     them - so the order the work needs is the order it runs in. Every result
+     comes back here to be combined; the main answer writes the final word. */
   {
     name:'delegate',
-    description:'Split a task into 2-5 INDEPENDENT parts and have a separate AMV worker do each one at the same time, then combine their results yourself. Use only when the parts genuinely do not depend on each other (compare several options, draft several sections, review from several angles). Each worker sees ONLY its own brief - put everything it needs in the brief. Workers cannot browse, run code or use any tool; they think and write. Each worker counts against the plan like any request, so never use it for something one answer does as well.',
+    description:'Split a task into 2-6 parts and have a separate AMV worker do each one, then combine their results yourself. Parts with no "after" run at the same time; a part with "after" waits for those parts and is given their results to build on (research A and B, then compare them). Use only when splitting genuinely helps (several options, sections, angles, or research then synthesis). Each worker sees ONLY its own brief plus the results of the parts it waits for - put everything else it needs in the brief. Workers cannot run code or use any tool except, when "search" is true, searching the web (only if the person has web search on). Each worker counts against the plan like any request, so never use it for something one answer does as well.',
     input_schema:{ type:'object', properties:{
-      tasks:{ type:'array', minItems:2, maxItems:5, items:{ type:'object', properties:{
-        title:{type:'string', description:'A few words naming this part, shown to the person.'},
-        brief:{type:'string', description:'Everything this worker needs: the question, the material, the format to answer in.'}
+      tasks:{ type:'array', minItems:2, maxItems:6, items:{ type:'object', properties:{
+        title:{type:'string', description:'A few words naming this part, shown to the person. Unique within the task.'},
+        brief:{type:'string', description:'Everything this worker needs: the question, the material, the format to answer in.'},
+        after:{type:'array', items:{type:'string'}, maxItems:5, description:'Titles of the parts this one must wait for; their results are added to its brief. Leave out for parts that can start at once.'},
+        search:{type:'boolean', description:'True if this part needs current information from the web.'}
       }, required:['title','brief'] } }
     }, required:['tasks'] }
   }
@@ -28480,52 +28482,128 @@ try{ window.runAgentic = runAgentic; }catch(e){}
    crew_list and crew_pause do not. Reading their own jobs is not a side effect,
    and pausing STOPS the spending - putting a dialog in front of "stop doing
    that" is the one place a confirmation makes things worse. */
-/* THE WORKERS. Bounded on every side: two to five of them, three at a time
+/* THE WORKERS. Bounded on every side: two to six of them, three at a time
    (the free plan allows eight requests a minute, and the main answer needs
-   one), a brief of at most 6,000 characters, a short answer each. Pressing
-   Stop stops all of them - they ride on this turn's own stop. A worker that
-   fails is reported as failed, by name; the others still come back, and the
-   main answer is told plainly which part is missing, never handed a gap to
+   one), a brief of at most 6,000 characters, a short answer each, at most
+   three searches each. Pressing Stop stops all of them - they ride on this
+   turn's own stop.
+
+   THE ORDER IS CHECKED BEFORE ANYTHING RUNS. A part that waits for a title
+   that is not there, waits for itself, or sits in a loop with others is
+   refused with the reason - a loop is a task that would never finish, and
+   finding that out after paying for half of it is the wrong time.
+
+   A worker that fails is reported as failed, by name; the parts that waited
+   for it do not run at all, and say which part they were waiting for. The
+   main answer is told plainly which parts are missing, never handed a gap to
    fill in from nothing. */
-const DELEGATE_MAX = 5, DELEGATE_AT_ONCE = 3, DELEGATE_BRIEF_MAX = 6000;
+const DELEGATE_MAX = 6, DELEGATE_AT_ONCE = 3, DELEGATE_BRIEF_MAX = 6000, DELEGATE_FED_MAX = 4000, DELEGATE_SEARCHES = 3;
+/* The order, or the reason there is none. Kahn's algorithm: repeatedly take
+   the parts nothing unfinished is holding up; whatever is left is a loop. */
+function _delegatePlan(tasks){
+  const at = new Map(tasks.map((t, i) => [t.title.toLowerCase(), i]));
+  if(at.size !== tasks.length) return { error: 'two parts share a title - give each part its own' };
+  const needs = tasks.map(() => []);
+  for(let i = 0; i < tasks.length; i++){
+    for(const a of tasks[i].after){
+      const j = at.get(String(a).trim().toLowerCase());
+      if(j === undefined) return { error: '"' + tasks[i].title + '" waits for "' + String(a).slice(0, 80) + '", which is not one of the parts' };
+      if(j === i) return { error: '"' + tasks[i].title + '" waits for itself' };
+      if(needs[i].indexOf(j) < 0) needs[i].push(j);
+    }
+  }
+  const left = needs.map(n => n.length), order = [], q = [];
+  left.forEach((n, i) => { if(!n) q.push(i); });
+  while(q.length){
+    const i = q.shift(); order.push(i);
+    needs.forEach((n, k) => { if(n.indexOf(i) >= 0 && --left[k] === 0) q.push(k); });
+  }
+  if(order.length < tasks.length)
+    return { error: 'these parts wait for each other in a loop, so none of them could start: ' + tasks.filter((_, i) => order.indexOf(i) < 0).map(t => '"' + t.title + '"').join(', ') };
+  return { needs };
+}
 async function _delegateRun(input, onStatus){
   const tasks = (Array.isArray(input && input.tasks) ? input.tasks : [])
-    .map(t => ({ title: String((t && t.title) || '').trim().slice(0, 80), brief: String((t && t.brief) || '').trim() }))
+    .map(t => ({ title: String((t && t.title) || '').trim().slice(0, 80), brief: String((t && t.brief) || '').trim(),
+                 after: (Array.isArray(t && t.after) ? t.after : []).slice(0, 5).map(a => String(a || '').trim()).filter(Boolean),
+                 search: !!(t && t.search === true) }))
     .filter(t => t.title && t.brief);
-  if(tasks.length < 2) return { text: 'Not delegated: give at least two independent parts, each with a title and a brief. For one part, just answer it.', render: null };
+  if(tasks.length < 2) return { text: 'Not delegated: give at least two parts, each with a title and a brief. For one part, just answer it.', render: null };
   if(tasks.length > DELEGATE_MAX) return { text: 'Not delegated: at most ' + DELEGATE_MAX + ' parts at once. Combine some, or do it in two rounds.', render: null };
   const long = tasks.find(t => t.brief.length > DELEGATE_BRIEF_MAX);
   if(long) return { text: 'Not delegated: the brief for "' + long.title + '" is longer than ' + DELEGATE_BRIEF_MAX + ' characters. Shorten it to what that worker needs.', render: null };
+  const plan = _delegatePlan(tasks);
+  if(plan.error) return { text: 'Not delegated: ' + plan.error + '. Fix the order and try again.', render: null };
 
   const signal = (typeof _activeStreamCtrl !== 'undefined' && _activeStreamCtrl) ? _activeStreamCtrl.signal : undefined;
-  const sys = 'You are one of several AMV workers, each given one part of a larger task; another AMV combines the parts. '
+  const webOn = loadStr('amv_cap_websearch') !== '0';
+  const sysFor = (t) => 'You are one of several AMV workers, each given one part of a larger task; another AMV combines the parts. '
     + 'Do ONLY the part in your brief, completely, as the brief asks. Do not refer to other workers or the larger task. '
-    + 'You have no tools and cannot browse: say plainly when something would need current information you do not have, rather than guessing.';
-  const res = tasks.map(t => ({ title: t.title, ok: false, out: '' }));
-  let done = 0, next = 0;
+    + (t.search && webOn
+        ? 'You may search the web for current information; say where each fact came from, and say plainly when you could not find something rather than guessing.'
+        : 'You have no tools and cannot browse: say plainly when something would need current information you do not have, rather than guessing.')
+    + (t.after.length ? ' Results from the parts you build on are at the end of your brief, marked as such: use them, and say if they leave a gap.' : '');
+  /* state: 'wait' | 'run' | 'ok' | 'bad' | 'skip' */
+  const res = tasks.map(t => ({ title: t.title, state: 'wait', out: '', after: t.after }));
+  const ended = i => ['ok', 'bad', 'skip'].indexOf(res[i].state) >= 0;
+  let done = 0;
   const say = () => { onStatus && onStatus(T('{0} of {1} workers finished').replace('{0}', done).replace('{1}', tasks.length) + '\u2026'); };
   say();
-  const worker = async () => {
-    while(next < tasks.length){
-      const i = next++;
-      if(signal && signal.aborted){ res[i].out = 'Stopped before it started.'; continue; }
-      try{
-        const out = await aiComplete(tasks[i].brief, sys, { max_tokens: 1500, signal });
-        res[i].ok = !!String(out || '').trim();
-        res[i].out = res[i].ok ? String(out) : 'The worker returned nothing.';
-      }catch(e){
-        res[i].out = (signal && signal.aborted) ? 'Stopped.' : 'Failed: ' + String((e && e.message) || 'no answer');
-      }
-      done++; say();
+  /* A part whose inputs failed does not run - transitively, so nothing waits
+     on a part that will never come. */
+  const settle = () => {
+    let changed = true;
+    while(changed){
+      changed = false;
+      res.forEach((r, i) => {
+        if(r.state !== 'wait') return;
+        const dead = plan.needs[i].find(j => res[j].state === 'bad' || res[j].state === 'skip');
+        if(dead !== undefined){ r.state = 'skip'; r.out = 'Did not run: it needed "' + tasks[dead].title + '", which did not finish.'; done++; changed = true; }
+      });
     }
   };
-  await Promise.all(Array.from({ length: Math.min(DELEGATE_AT_ONCE, tasks.length) }, worker));
-  const failed = res.filter(r => !r.ok).map(r => r.title);
-  const text = res.map((r, i) => '### Worker ' + (i + 1) + ' - ' + r.title + (r.ok ? '' : ' (DID NOT FINISH)') + '\n' + r.out.slice(0, 8000)).join('\n\n')
+  const ready = () => res.findIndex((r, i) => r.state === 'wait' && plan.needs[i].every(j => res[j].state === 'ok'));
+  await new Promise(resolveAll => {
+    let running = 0;
+    const pump = () => {
+      settle();
+      if(res.every((r, i) => ended(i))){ resolveAll(); return; }
+      let i;
+      while(running < DELEGATE_AT_ONCE && (i = ready()) >= 0){
+        const t = tasks[i], r = res[i];
+        r.state = 'run'; running++;
+        (async () => {
+          if(signal && signal.aborted){ r.state = 'bad'; r.out = 'Stopped before it started.'; return; }
+          const fed = plan.needs[i].map(j => '### ' + tasks[j].title + '\n' + res[j].out.slice(0, DELEGATE_FED_MAX)).join('\n\n');
+          const brief = t.brief + (fed ? '\n\n--- Results from the parts this one builds on ---\n\n' + fed : '');
+          try{
+            const out = await aiComplete(brief, sysFor(t), { max_tokens: 1500, signal, webSearch: t.search ? DELEGATE_SEARCHES : 0 });
+            r.state = String(out || '').trim() ? 'ok' : 'bad';
+            r.out = r.state === 'ok' ? String(out) : 'The worker returned nothing.';
+          }catch(e){
+            r.state = 'bad';
+            r.out = (signal && signal.aborted) ? 'Stopped.' : 'Failed: ' + String((e && e.message) || 'no answer');
+          }
+        })().finally(() => { running--; done++; say(); pump(); });
+      }
+      /* Nothing running and nothing can start: only possible if a loop slipped
+         past the plan. Ended rather than left waiting for ever. */
+      if(!running && ready() < 0 && !res.every((r, k) => ended(k))){
+        res.forEach(r => { if(r.state === 'wait'){ r.state = 'skip'; r.out = 'Did not run: what it waited for never finished.'; } });
+        resolveAll();
+      }
+    };
+    pump();
+  });
+  const okOf = r => r.state === 'ok';
+  const failed = res.filter(r => !okOf(r)).map(r => r.title);
+  const text = res.map((r, i) => '### Worker ' + (i + 1) + ' - ' + r.title + (okOf(r) ? '' : ' (DID NOT FINISH)') + '\n' + r.out.slice(0, 8000)).join('\n\n')
     + (failed.length ? '\n\nThese parts did not come back: ' + failed.join(', ') + '. Say so to the person; do not write those parts yourself as if a worker had.' : '');
   const render = '<div class="chat-run dlg"><div class="chat-run-h">' + escH(T('{0} workers').replace('{0}', tasks.length)) + '</div><ul class="dlg-list">'
-    + res.map(r => '<li class="dlg-i' + (r.ok ? '' : ' bad') + '"><span class="dlg-st" aria-hidden="true">' + (r.ok ? '\u2713' : '\u2715') + '</span>'
-      + '<span class="dlg-t">' + escH(r.title) + '</span><span class="sr-only">' + escH(r.ok ? T('finished') : T('did not finish')) + '</span></li>').join('') + '</ul></div>';
+    + res.map(r => '<li class="dlg-i' + (okOf(r) ? '' : ' bad') + '"><span class="dlg-st" aria-hidden="true">' + (okOf(r) ? '\u2713' : '\u2715') + '</span>'
+      + '<span class="dlg-t">' + escH(r.title)
+      + (r.after.length ? ' <span class="dlg-after">' + escH(T('after {0}').replace('{0}', r.after.join(', '))) + '</span>' : '') + '</span>'
+      + '<span class="sr-only">' + escH(okOf(r) ? T('finished') : r.state === 'skip' ? T('did not run') : T('did not finish')) + '</span></li>').join('') + '</ul></div>';
   return { text, render };
 }
 try{ window._delegateRun = _delegateRun; }catch(e){}
@@ -38848,6 +38926,11 @@ async function aiComplete(prompt, system, opts){
   if(system) body.system = system + (opts.noLang?'':_langInstruction());
   else if(!opts.noLang) body.system = _langInstruction();
   if(opts.effort) body.effort = opts.effort;
+  /* Web search, when a caller asks for it and the person has not switched it
+     off: a tool the server runs and meters like any other, read-only, so it
+     needs no consent of its own. A handful of searches, never open-ended. */
+  if(opts.webSearch && loadStr('amv_cap_websearch') !== '0')
+    body.tools = [{ type:'web_search_20250305', name:'web_search', max_uses: Math.max(1, Math.min(5, opts.webSearch | 0)) }];
   const link = _aiStopLink(opts.signal);
   let res, data;
   try{
@@ -45006,192 +45089,28 @@ let _SPEND_PULLED = false, _SPEND_BUSY = false;
 
    So the caller says how to redraw itself. Settings passes nothing and keeps
    the behaviour it had. */
+/* The pane itself lives in spending.js (src/finance/spending.js), fetched the
+   first time it is opened. */
+let _spendingP = null;
+function _spendingLoad(){
+  if(typeof window._renderSpendingPaneNow === 'function') return Promise.resolve(true);
+  if(!_spendingP) _spendingP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'spending.js';
+    sc.onload = () => res(typeof window._renderSpendingPaneNow === 'function');
+    sc.onerror = () => { _spendingP = null; sc.remove(); res(false); };
+    document.head.appendChild(sc);
+  });
+  return _spendingP;
+}
 function _renderSpendingPane(pane, redraw){
-  const _again = (typeof redraw === 'function') ? redraw
-               : function(){ try{ renderSetPane(); }catch(e){} };
-  if(typeof AMVSpend === 'undefined'){ pane.innerHTML = '<h2 class="set-title">Spending</h2>'; return; }
-  const c = AMVSpend.cfg();
-  const spent = AMVSpend.spentThisMonth();
-  const cap = +c.monthlyCap || 0;
-  const pct = cap ? Math.min(100, Math.round((spent / cap) * 100)) : 0;
-  const comp = (typeof AMVCompliance !== 'undefined') ? AMVCompliance : null;
-  const accepted = comp ? comp.accepted() : true;
-  const ageKnown = comp ? comp.ageKnown() : true;
-  const adult = comp ? comp.isAdult() : true;
-  const hist = AMVSpend.history(25);
-
-  // What is standing between the user and being able to spend at all. Said up
-  // front, because the alternative is a purchase failing for a reason that is
-  // only explained after they have tried.
-  let gate = '';
-  if(comp && !accepted){
-    gate = '<div class="mf-gate" role="group" aria-labelledby="mf-gate-h">'+
-      '<h3 id="mf-gate-h">Before AMV can spend anything</h3>'+
-      '<p>Read what AMV can and cannot do with money, then accept. You can withdraw this at any time by turning spending off.</p>'+
-      '<ul class="mf-terms">'+ (comp.SUMMARY||[]).map(s => '<li>'+escH(s)+'</li>').join('') +'</ul>'+
-      '<button class="btn bp" id="mf-accept-terms" type="button">I accept these terms</button></div>';
-  } else if(comp && !ageKnown){
-    gate = '<div class="mf-gate" role="group" aria-labelledby="mf-age-h">'+
-      '<h3 id="mf-age-h">Confirm your age</h3>'+
-      '<p id="mf-age-why">Money features are for people ' + comp.ADULT_AGE + ' and over. We ask for the year only.</p>'+
-      '<label class="lbl" for="mf-birth">Year you were born</label>'+
-      '<input class="inp" id="mf-birth" type="number" inputmode="numeric" min="1900" max="'+(new Date().getFullYear())+'" '+
-        'placeholder="1998" autocomplete="bday-year" aria-describedby="mf-age-why mf-age-say">'+
-      '<div class="mf-say" id="mf-age-say" role="status" aria-live="polite"></div>'+
-      '<button class="btn bp" id="mf-save-birth" type="button">Confirm</button></div>';
-  } else if(comp && !adult){
-    gate = '<div class="mf-gate warn" role="note">'+
-      '<h3>Money features are ' + comp.ADULT_AGE + '+</h3>'+
-      '<p>Everything else in AMV keeps working. An adult can add you to their '+
-      '<b>Family</b> and set what AMV may spend for you.</p></div>';
-  }
-
-  const canConfigure = !gate;
-
-  pane.innerHTML =
-    '<h2 class="set-title">What AMV may spend for you</h2>'+
-    '<div class="set-sub">Off until you turn it on. Nothing is bought outside these limits.</div>'+
-    /* What this IS, before what it is set to.
-
-       The pane opened straight into three number fields. Somebody who has never
-       heard of AMV spending money on their behalf met "Buy without asking,
-       under" with no idea what would be bought, by what, or why they would want
-       it - which is the worst possible first impression for the one screen
-       about money. */
-    /* Folded behind one line. The consent gate below is NOT - agreeing to it
-       is the decision, and a decision is never hidden behind a tap. */
-    '<details class="set-fold mf-what"><summary class="set-fold-s">'+escH(T('How this works'))+'</summary><div class="set-merged">'+
-      '<p>When AMV is doing a job for you and that job needs something bought - a domain for a site '+
-      'it is deploying, an API key, a stock photo, a paid data source - this is what decides whether '+
-      'it may buy it, and how much it may spend without stopping to ask you.</p>'+
-      '<p><b>It is off until you turn it on.</b> With it off, AMV will never pay for anything, however '+
-      'it is asked - it stops and tells you what it needs instead.</p>'+
-      '<ul class="mf-what-l">'+
-        '<li><b>What it buys</b> - only things a job you started actually needs. Never a subscription, '+
-          'never anything recurring, and never on a site you have not approved.</li>'+
-        '<li><b>What it never does</b> - it does not move money between your accounts, does not send '+
-          'money to people, and cannot spend anything after you switch this off.</li>'+
-        '<li><b>Why the limits matter</b> - the three numbers below are hard stops, checked before '+
-          'every purchase. The monthly ceiling is the one that decides the most you can lose in a bad '+
-          'month, so set it to a number you would not mind losing.</li>'+
-        '<li><b>Everything is written down</b> - every purchase appears below with what it was, where, '+
-          'and how much, and it is only visible to you.</li>'+
-      '</ul>'+
-    '</div></details>'+
-    gate +
-    (canConfigure ?
-    '<div class="ss2"><h3>Limits</h3>'+
-      '<div class="prv-pref"><div><div class="prv-pref-t">Let AMV spend money for me</div>'+
-        '<div class="prv-pref-s">Off means AMV will never pay for anything, however it is asked.</div></div>'+
-        '<label class="sw"><input type="checkbox" id="mf-enabled" '+(c.enabled?'checked':'')+
-        ' aria-label="Let AMV spend money for me"><span class="sw-sl"></span></label></div>'+
-      '<div class="mf-grid">'+
-        '<div><label class="lbl" for="mf-auto">Buy without asking, under</label>'+
-          '<input class="inp" id="mf-auto" type="number" inputmode="decimal" min="0" step="1" value="'+escH(String(c.autoUnder))+'" '+
-          'aria-describedby="mf-auto-h"><div class="mf-hint" id="mf-auto-h">Anything above this needs one tap from you.</div></div>'+
-        '<div><label class="lbl" for="mf-per">Never spend more than, in one go</label>'+
-          '<input class="inp" id="mf-per" type="number" inputmode="decimal" min="0" step="1" value="'+escH(String(c.perPurchase))+'" '+
-          'aria-describedby="mf-per-h"><div class="mf-hint" id="mf-per-h">A hard stop for a single purchase.</div></div>'+
-        '<div><label class="lbl" for="mf-cap">Monthly ceiling</label>'+
-          '<input class="inp" id="mf-cap" type="number" inputmode="decimal" min="0" step="1" value="'+escH(String(c.monthlyCap))+'" '+
-          'aria-describedby="mf-cap-h"><div class="mf-hint" id="mf-cap-h">Across everything. Resets on the first of the month.</div></div>'+
-      '</div>'+
-      '<div class="mf-say" id="mf-limits-say" role="status" aria-live="polite"></div>'+
-      '<button class="btn bp" id="mf-save-limits" type="button">Save limits</button>'+
-      /* Where the ceiling is actually held. Without a backend these numbers are
-         a preference on this device, and saying otherwise would be the exact
-         false reassurance this screen exists to avoid. */
-      '<p class="mf-hint mf-where">'+ (AMVSpend.serverBacked()
-        ? 'These limits are held on your account, so they apply on every device and cannot be raised from this browser.'
-        : 'AMV is not connected to a backend yet, so these limits are kept on this device only. Once it is connected they move to your account and apply everywhere.') +'</p>'+
-    '</div>'+
-    '<div class="ss2"><h3>This month</h3>'+
-      '<div class="mf-bar" role="img" aria-label="'+escH(_mfMoney(spent))+' spent of '+escH(_mfMoney(cap))+'">'+
-        '<span style="width:'+pct+'%"></span></div>'+
-      '<div class="mf-bar-l">'+escH(_mfMoney(spent))+' spent · '+escH(_mfMoney(AMVSpend.remaining()))+' left of '+escH(_mfMoney(cap))+'</div>'+
-    '</div>' : '')+
-    '<div class="ss2"><h3>Purchases</h3>'+
-      (hist.length ?
-        '<table class="mf-tbl"><caption class="mf-cap">Everything AMV has bought for you</caption>'+
-        '<thead><tr><th scope="col">When</th><th scope="col">Item</th><th scope="col">Where</th><th scope="col">Amount</th></tr></thead><tbody>'+
-        hist.map(h => '<tr><td>'+escH(_mfWhen(h.at))+'</td><td>'+escH(h.item||'-')+'</td>'+
-          '<td>'+escH(h.merchant||'-')+'</td><td>'+escH(_mfMoney(h.amount))+'</td></tr>').join('')+
-        '</tbody></table>'
-        : '<p class="mf-empty">AMV has not bought anything for you. When it does, every purchase is listed here with the rule that allowed it.</p>')+
-    '</div>'+
-    '<details class="set-fold"><summary class="set-fold-s">'+escH(T('Your responsibility'))+'</summary><div class="set-merged"><p class="mf-legal">'+escH(AMVSpend.TERMS)+'</p></div></details>';
-
-  on($('mf-accept-terms'),'click',function(){
-    try{ AMVCompliance.accept(); toast('Terms accepted','success',2500); _again(); }
-    catch(e){ toast(e.message||'Could not save that','error'); }
+  if(typeof window._renderSpendingPaneNow === 'function') return window._renderSpendingPaneNow(pane, redraw);
+  if(!pane) return;
+  pane.innerHTML = '<div style="color:var(--mu);font-size:var(--t-sm)">' + escH(T('Loading\u2026')) + '</div>';
+  _spendingLoad().then(ok => {
+    if(ok) window._renderSpendingPaneNow(pane, redraw);
+    else pane.innerHTML = '<div style="color:var(--mu);font-size:var(--t-sm)">' + escH(T('That could not be loaded. Check your connection and try again.')) + '</div>';
   });
-  on($('mf-save-birth'),'click',function(){
-    const v = ($('mf-birth')||{}).value;
-    try{
-      AMVCompliance.setBirthYear(v);
-      toast('Thanks - that is saved','success',2500); _again();
-    }catch(e){ _mfSay('mf-age-say', e.message || 'That year does not look right.', 'err'); $('mf-birth')?.focus(); }
-  });
-  on($('mf-enabled'),'change',async function(){
-    const want = this.checked, box = this;
-    box.disabled = true;
-    try{
-      const cur = AMVSpend.cfg();
-      await AMVSpend.push({ autoUnder:cur.autoUnder, perPurchase:cur.perPurchase,
-                            monthlyCap:cur.monthlyCap, enabled:want });
-      _mfSay('mf-limits-say', want ? 'AMV can now spend within your limits.' : 'Spending is off. AMV will not pay for anything.', 'ok');
-    }catch(e){
-      /* Leaving the switch showing "off" while the account still allows spending
-         is the one outcome worth reverting the control for. */
-      box.checked = !want;
-      _mfSay('mf-limits-say', (e && e.message) || 'Could not change that on your account. It is unchanged.', 'err');
-    }finally{ box.disabled = false; }
-  });
-  on($('mf-save-limits'),'click',async function(){
-    const auto = +($('mf-auto')||{}).value, per = +($('mf-per')||{}).value, capv = +($('mf-cap')||{}).value;
-    // Limits that contradict each other are worse than no limits, because the
-    // user believes they are protected by a number that can never apply.
-    if(![auto,per,capv].every(n => isFinite(n) && n >= 0)){
-      _mfSay('mf-limits-say','Enter a number in each box.','err'); $('mf-auto')?.focus(); return;
-    }
-    if(auto > per){ _mfSay('mf-limits-say','The auto-buy limit cannot be higher than your single-purchase limit.','err'); $('mf-auto')?.focus(); return; }
-    if(per > capv){ _mfSay('mf-limits-say','A single purchase cannot be larger than your whole monthly ceiling.','err'); $('mf-per')?.focus(); return; }
-    const btn = this;
-    btn.disabled = true; _mfSay('mf-limits-say','Saving to your account...','');
-    try{
-      /* What the server stored is what gets read back - it may have pulled a
-         number down to its own ceiling, and the confirmation has to say the
-         number that will really apply, not the one that was typed. */
-      const r = await AMVSpend.push({ autoUnder:auto, perPurchase:per, monthlyCap:capv });
-      const L = r.limits;
-      if($('mf-auto')) $('mf-auto').value = String(L.autoUnder);
-      if($('mf-per')) $('mf-per').value = String(L.perPurchase);
-      if($('mf-cap')) $('mf-cap').value = String(L.monthlyCap);
-      const changed = (L.autoUnder !== auto || L.perPurchase !== per || L.monthlyCap !== capv);
-      _mfSay('mf-limits-say',
-        (changed ? 'Saved, adjusted to the highest AMV allows. ' : 'Saved. ')+
-        'AMV buys under '+_mfMoney(L.autoUnder)+' on its own, asks up to '+_mfMoney(L.perPurchase)+
-        ', and never passes '+_mfMoney(L.monthlyCap)+' a month.', 'ok');
-    }catch(e){
-      /* Saying "Saved" when the write failed would leave somebody believing a
-         lower ceiling is in force while the old, higher one still is. */
-      _mfSay('mf-limits-say', (e && e.message) || 'Could not save those limits. Your previous limits are still in force.', 'err');
-    }finally{ btn.disabled = false; }
-  });
-
-  /* Adopt the server's numbers, then redraw once. */
-  if(canConfigure && AMVSpend.serverBacked() && !_SPEND_PULLED && !_SPEND_BUSY){
-    _SPEND_BUSY = true;
-    AMVSpend.pull().then(function(){
-      _SPEND_PULLED = true; _SPEND_BUSY = false;
-      try{ if(document.getElementById('mf-save-limits')) _again(); }catch(e){}
-    }).catch(function(){
-      /* Not fatal - the local mirror still renders. Marked pulled so a failed
-         read does not retry on every redraw. */
-      _SPEND_PULLED = true; _SPEND_BUSY = false;
-      _mfSay('mf-limits-say','Could not check these against your account just now. These are this device\'s copy.','err');
-    });
-  }
 }
 try{ window._renderSpendingPane = _renderSpendingPane; }catch(e){}
 

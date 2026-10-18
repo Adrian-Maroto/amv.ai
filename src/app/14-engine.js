@@ -552,6 +552,11 @@ async function aiComplete(prompt, system, opts){
   if(system) body.system = system + (opts.noLang?'':_langInstruction());
   else if(!opts.noLang) body.system = _langInstruction();
   if(opts.effort) body.effort = opts.effort;
+  /* Web search, when a caller asks for it and the person has not switched it
+     off: a tool the server runs and meters like any other, read-only, so it
+     needs no consent of its own. A handful of searches, never open-ended. */
+  if(opts.webSearch && loadStr('amv_cap_websearch') !== '0')
+    body.tools = [{ type:'web_search_20250305', name:'web_search', max_uses: Math.max(1, Math.min(5, opts.webSearch | 0)) }];
   const link = _aiStopLink(opts.signal);
   let res, data;
   try{

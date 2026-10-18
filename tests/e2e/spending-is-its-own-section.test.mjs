@@ -64,6 +64,8 @@ section('Spending is its own tab, and is only Spending');
 {
   const v = await page.evaluate(async () => {
     setTab('spend');
+    /* The limits pane arrives from spending.js the first time. */
+    for (let i = 0; i < 100 && typeof window._renderSpendingPaneNow !== 'function'; i++) await new Promise(r => setTimeout(r, 50));
     await new Promise(r => setTimeout(r, 500));
     const vc = document.getElementById('vc');
     const t = vc.innerText;

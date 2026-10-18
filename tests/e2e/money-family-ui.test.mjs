@@ -10,7 +10,15 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 const app = await bootApp({ tab: 'settings', user: { name: 'Alice', email: 'alice@x.com', ini: 'A' } });
 const { page, errors } = app;
 
-const openPane = pane => page.evaluate(p => { S.settingsPane = p; renderSetPane(); }, pane);
+/* The spending pane is fetched the first time it is opened (spending.js), so
+   opening it waits for the pane itself. */
+const openPane = pane => page.evaluate(async p => {
+  S.settingsPane = p; renderSetPane();
+  if (p === 'spending') {
+    for (let i = 0; i < 100 && typeof window._renderSpendingPaneNow !== 'function'; i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 50));
+  }
+}, pane);
 
 section('Family is a Settings section of its own; Spending has its own tab');
 /* The six-section Settings the owner chose: Family is one of the six, and

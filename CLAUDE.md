@@ -84,7 +84,7 @@ Companion docs (do not duplicate them here - read them):
   (Word/Excel/PowerPoint export), `sheet.js` (the spreadsheet editor),
   `admin.js` (the owner console), `crew-data.js` (the Crew catalogue),
   `team-sso.js` (a team owner's company sign-in settings), `api-keys.js` (the API keys pane), `library.js`
-  (the file library screen), `help-faqs.js` (the Help center's questions), `widget-form.js` (the website widget's settings form), `live-voice.js` (the live voice conversation), `web-live.js` (the live view of AMV's browser at work), `invest.js` (the Invest settings pane) and `market-sell.js` (the marketplace sell form) - byte-identical copies and nothing else.
+  (the file library screen), `help-faqs.js` (the Help center's questions), `widget-form.js` (the website widget's settings form), `live-voice.js` (the live voice conversation), `web-live.js` (the live view of AMV's browser at work), `invest.js` (the Invest settings pane), `spending.js` (the spending limits pane) and `market-sell.js` (the marketplace sell form) - byte-identical copies and nothing else.
   Code only some visitors use goes in such a file, not in the page. It exists because
   the site is one file at the ROOT of this repository, so a host pointed at the
   repository serves `amv-backend.js`, `wrangler.toml` and `SECURITY-SCAMS.md`
