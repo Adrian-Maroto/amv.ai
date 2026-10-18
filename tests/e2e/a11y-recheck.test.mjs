@@ -96,7 +96,11 @@ ok(spendLive.heads.length >= 3, 'the pane has real headings to navigate by', spe
 ok(spendLive.barNamed, 'the spend bar is not a mute graphic - it carries the numbers');
 
 section('Family pane');
-await page.evaluate(() => { S.settingsPane = 'family'; renderSetPane(); });
+/* The Family pane is fetched on first use (family.js): audit it once it is
+   drawn, never its loading line. */
+await page.evaluate(async () => { await _familyLoad(); S.settingsPane = 'family'; renderSetPane();
+  for(let i = 0; i < 100 && !document.getElementById('fam-inv-email'); i++) await new Promise(r => setTimeout(r, 50)); });
+ok(await page.evaluate(() => !!document.getElementById('fam-inv-email')), 'the real Family pane is drawn, not its loading line');
 const fam = await audit('.set-pane');
 ok(fam.unnamed.length === 0, 'every button has an accessible name', fam.unnamed);
 ok(fam.unlabelled.length === 0, 'every field has a label', fam.unlabelled);

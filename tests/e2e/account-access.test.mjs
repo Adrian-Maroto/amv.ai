@@ -38,6 +38,7 @@ const openPane = (serveSrc) => page.evaluate(async (src) => {
     return { ok: !out.error, status: out.error ? 400 : 200, json: async () => out };
   };
   _FAM_STATE = null; _FAM_PENDING = null; _FAM_UI.email = ''; _FAM_UI.say = '';
+  await _familyLoad();   // the pane is fetched on first use (family.js)
   S.settingsPane = 'family'; setTab('settings'); renderSetPane();
   await new Promise(r => setTimeout(r, 400));
   /* The Family pane itself, or nothing - reading whatever screen happens to be
