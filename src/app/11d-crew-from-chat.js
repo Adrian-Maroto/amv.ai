@@ -104,7 +104,7 @@ function _crewLine(x){
   return '- [' + x.id + '] ' + (x.step ? 'step ' + x.step.n + ' of ' + x.step.of + ' of a task, ' : '')
        + (x.done ? (/^did not run/.test(String(x.lastError||'')) ? 'DID NOT RUN - ' + x.lastError : 'FINISHED - a one-time job that has already run')
           : x.waiting ? 'WAITING for an earlier step to finish' : x.active === false ? 'PAUSED'
-          : x.when ? 'WATCHING their mail for ' + _whenSay(x.when) + (x.lastError ? ' (' + x.lastError + ')' : '') : 'running ' + every)
+          : x.when ? 'WATCHING ' + ({ page:'a web page', calendar:'their calendar' }[x.when.source] || 'their mail') + ' for ' + _whenSay(x.when) + (x.lastError ? ' (' + x.lastError + ')' : '') : 'running ' + every)
        + ({ auto:', results delivered automatically',
             suggest:', suggest only - it does not run until asked',
             require:', each result waits for approval' }[String(x.approval||'require')] || '')
@@ -137,6 +137,12 @@ function _crewStepsCard(items){
 /* What a trigger watches for, in words. */
 function _whenSay(w){
   const j = (a) => (a || []).join(' or ');
+  if(w.source === 'page'){
+    let host = ''; try{ host = new URL(w.url).hostname; }catch(e){ host = String(w.url || ''); }
+    return [ (w.appears || []).length ? T('{0} saying {1}').replace('{0}', host).replace('{1}', j(w.appears)) : '',
+             (w.disappears || []).length ? T('{0} no longer saying {1}').replace('{0}', host).replace('{1}', j(w.disappears)) : '' ].filter(Boolean).join(', ');
+  }
+  if(w.source === 'calendar') return T('new events with {0}').replace('{0}', j(w.words));
   return [ (w.from || []).length ? T('mail from {0}').replace('{0}', j(w.from)) : '',
            (w.subject || []).length ? T('a subject with {0}').replace('{0}', j(w.subject)) : '',
            (w.words || []).length ? T('mentions of {0}').replace('{0}', j(w.words)) : '' ].filter(Boolean).join(', ');
@@ -232,17 +238,31 @@ async function _crewTool(name, input){
   if(name === 'crew_watch'){
     const detail = String(input.detail || '').trim();
     const L = (v) => (Array.isArray(v) ? v : []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 5);
-    const when = { from: L(input.from), subject: L(input.subject), words: L(input.words) };
+    const src = ['calendar', 'page'].includes(input.source) ? input.source : 'mail';
+    const when = src === 'page' ? { source: src, url: String(input.url || '').trim(), appears: L(input.appears), disappears: L(input.disappears) }
+               : src === 'calendar' ? { source: src, words: L(input.words) }
+               : { from: L(input.from), subject: L(input.subject), words: L(input.words) };
     if(!detail) return { text:'A watch needs to say what to do when something matches. Ask the user.', render:null };
-    if(!when.from.length && !when.subject.length && !when.words.length)
+    if(src === 'page' && !/^https:\/\//i.test(when.url))
+      return { text:'A page watch needs the page\u2019s full https address. Ask the user for it.', render:null };
+    if(src === 'page' && !when.appears.length && !when.disappears.length)
+      return { text:'A page watch needs words to look for - appearing on the page, or disappearing from it. Ask the user which.', render:null };
+    if(src === 'calendar' && !when.words.length)
+      return { text:'A calendar watch needs words to look for in new events. Ask the user which.', render:null };
+    if(src === 'mail' && !when.from.length && !when.subject.length && !when.words.length)
       return { text:'A watch needs something to watch for - a sender, words in the subject, or words in the message. Ask the user which.', render:null };
     let d;
     try{ d = await _autoApi('/auto/create', { detail, repeat:'10min', when, kind:'task', notify:'app', approval: input.approval === 'require' ? 'require' : 'auto' }); }
     catch(e){ return { text: _crewErr(e), render:null }; }
     _crewSynced();
-    return { text:'Set up. It is in their Crew tab and checks their new mail every ten minutes on AMV\u2019s servers, with their computer off. '
-      + 'Its first check only notes where the inbox is, so mail that is already there will not set it off - only mail that arrives from now on. '
-      + 'Checks that find nothing matching cost nothing and post nothing. It needs their Google mail connected to watch. Do not say anything has matched yet.', render:null };
+    const where = { mail:'checks their new mail', calendar:'checks their calendar for new events', page:'looks at that page' }[src];
+    const first = { mail:'Its first check only notes where the inbox is, so mail that is already there will not set it off - only mail that arrives from now on. ',
+                    calendar:'Its first check only notes the events already there, so only events added from now on can set it off. ',
+                    page:'Its first look only records what the page says now, so words already on it will not set it off - only a change from now on. ' }[src];
+    const needs = { mail:' It needs their Google mail connected to watch.', calendar:' It needs their Google calendar connected to watch.',
+                    page:' It reads only the public page; it cannot see anything behind a sign-in.' }[src];
+    return { text:'Set up. It is in their Crew tab and ' + where + ' every ten minutes on AMV\u2019s servers, with their computer off. '
+      + first + 'Checks that find nothing cost nothing and post nothing.' + needs + ' Do not say anything has matched yet.', render:null };
   }
 
   if(name === 'crew_ceiling'){

@@ -132,11 +132,64 @@ function _autoNextAfter(item, now, how){
    and address), the subject, and - for words - the subject and preview. */
 const WHEN_LIST_MAX = 5;
 const WHEN_TERM_MAX = 60;
+/* Three sources so far, each with its own condition:
+     mail      from / subject / words, on mail that is new since it last looked;
+     calendar  words in the title or place, on events that are new to it
+               (an empty list means any new event);
+     page      words that APPEAR on a public page, or DISAPPEAR from it - not
+               "any change", because nearly every page changes on every load
+               (a clock, an advert) and that trigger would fire, and be paid
+               for, every ten minutes. */
 function _whenClean(raw){
   if(!raw || typeof raw !== 'object') return null;
   const list = (v) => (Array.isArray(v) ? v : (v == null ? [] : [v])).map(x => String(x || '').trim().toLowerCase().slice(0, WHEN_TERM_MAX)).filter(Boolean).slice(0, WHEN_LIST_MAX);
-  const w = { source: 'mail', from: list(raw.from), subject: list(raw.subject), words: list(raw.words) };
+  const source = ['mail', 'calendar', 'page'].includes(raw.source) ? raw.source : 'mail';
+  if(source === 'calendar') return { source, words: list(raw.words) };
+  if(source === 'page'){
+    const g = _webHostAllowed(String(raw.url || ''));
+    if(!g.ok) return null;
+    const w = { source, url: g.url, appears: list(raw.appears), disappears: list(raw.disappears) };
+    return (w.appears.length || w.disappears.length) ? w : null;
+  }
+  const w = { source, from: list(raw.from), subject: list(raw.subject), words: list(raw.words) };
   return (w.from.length || w.subject.length || w.words.length) ? w : null;
+}
+const _whenSrc = (w) => (w && w.source) || 'mail';
+/* A public page as plain words, for matching: scripts, styles and tags gone,
+   the commonest entities decoded, white space collapsed. Bounded both ways. */
+function _pageText(html){
+  return String(html || '').slice(0, 1000000)
+    .replace(/<(script|style|noscript|template)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&quot;/gi, '"').replace(/&#0?39;|&apos;/gi, "'").replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ').trim();
+}
+/* Look at the page once. Which watched words are on it now, against which
+   were last time; the first look only records. Nothing here asks a model. */
+async function _whenPageCheck(item){
+  const w = item.when, prev = (item.watch && item.watch.present) || null;
+  let got;
+  try{ got = await fetchGuarded(w.url, { headers: { 'User-Agent': 'AMV page watch (+https://amv.homes)', Accept: 'text/html,text/plain' } }, 15000); }
+  catch(e){ return { note: 'could not reach the page on the last check' }; }
+  if(got.blocked) return { blocked: 'that address is not one AMV may visit (' + got.why + ')' };
+  const r = got.response;
+  if(!r.ok) return { note: 'the page answered ' + r.status + ' on the last check' };
+  const text = _pageText(await r.text().catch(() => ''));
+  const low = text.toLowerCase();
+  const present = {};
+  for(const t of w.appears.concat(w.disappears)) present[t] = low.indexOf(t) >= 0;
+  const watch = { present, at: Date.now() };
+  if(!prev) return { watch, checked: true, first: true };
+  const appeared = w.appears.filter(t => present[t] && !prev[t]);
+  const gone = w.disappears.filter(t => !present[t] && prev[t]);
+  return { watch, checked: true, appeared, gone, fired: appeared.length + gone.length > 0,
+           excerpt: text.slice(0, 6000) };
+}
+function _whenMatchEvent(when, ev){
+  const words = (when && when.words) || [];
+  if(!words.length) return true;
+  const hay = (String(ev.title || '') + ' ' + String(ev.where || '')).toLowerCase();
+  return words.some(t => hay.indexOf(t) >= 0);
 }
 function _whenMatch(when, m){
   if(!when || !m) return false;

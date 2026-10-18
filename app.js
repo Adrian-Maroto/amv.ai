@@ -28154,17 +28154,22 @@ const AMV_TOOLS = [
       approval:{type:'string', enum:['require','auto'], description:'For the LAST step\'s result: "require" (default) waits for them before anything goes out; "auto" delivers it on its own.'}
     }, required:['steps'] }
   },
-  /* A TRIGGER: watch the mailbox, and act when something matching arrives.
-     The condition is checked by rule on AMV's servers every ten minutes; the
-     instruction runs - and is paid for - only when something matched. */
+  /* A TRIGGER: watch the mailbox, the calendar or a public web page, and act
+     when something matching appears. The condition is checked by rule on AMV's
+     servers every ten minutes; the instruction runs - and is paid for - only
+     when something matched. */
   {
     name:'crew_watch',
-    description:'Set up a background job that WATCHES their mail and acts only WHEN a matching email arrives - "when my landlord emails, summarise what she wants", "if anything from the school about trips comes in, tell me the date and cost", "when an invoice arrives, pull out the amount and due date". Checked every ten minutes on AMV\'s servers with their computer off; a check that finds nothing matching costs nothing and posts nothing. Give at least one of from / subject / words. Not for a regular digest of everything (use crew_add) and not for something to do now.',
+    description:'Set up a background job that WATCHES something and acts only WHEN a match appears. source "mail" (default): "when my landlord emails, summarise what she wants", "when an invoice arrives, pull out the amount and due date" - give at least one of from / subject / words. source "calendar": "when a new meeting with the board is added, prepare a brief" - give words. source "page": a public web page - "tell me when tickets go on sale at <url>", "when the price page stops saying sold out" - give url and appears and/or disappears. Checked every ten minutes on AMV\'s servers with their computer off; a check that finds nothing costs nothing and posts nothing. Its first look only records what is already there. Not for a regular digest of everything (use crew_add), not for pages behind a sign-in, and not for something to do now.',
     input_schema:{ type:'object', properties:{
-      detail:{type:'string', description:'What to do with each matching email, as an instruction. It sees the matching emails\' sender, subject and preview.'},
-      from:{type:'array', items:{type:'string'}, maxItems:5, description:'Any of these in the sender\'s name or address, e.g. an address, a domain ("@school.org"), or a name.'},
-      subject:{type:'array', items:{type:'string'}, maxItems:5, description:'Any of these words in the subject.'},
-      words:{type:'array', items:{type:'string'}, maxItems:5, description:'Any of these words in the subject or the start of the message.'},
+      detail:{type:'string', description:'What to do when it matches, as an instruction. It sees the matching emails\' sender, subject and preview, the new events, or the page as it now reads.'},
+      source:{type:'string', enum:['mail','calendar','page'], description:'What to watch. Default mail.'},
+      from:{type:'array', items:{type:'string'}, maxItems:5, description:'Mail only: any of these in the sender\'s name or address, e.g. an address, a domain ("@school.org"), or a name.'},
+      subject:{type:'array', items:{type:'string'}, maxItems:5, description:'Mail only: any of these words in the subject.'},
+      words:{type:'array', items:{type:'string'}, maxItems:5, description:'Mail: any of these in the subject or the start of the message. Calendar: any of these in a new event\'s title, place or description.'},
+      url:{type:'string', description:'Page only: the full https address of a public page.'},
+      appears:{type:'array', items:{type:'string'}, maxItems:5, description:'Page only: fire when any of these words appears on the page.'},
+      disappears:{type:'array', items:{type:'string'}, maxItems:5, description:'Page only: fire when any of these words is no longer on the page (e.g. "sold out").'},
       approval:{type:'string', enum:['require','auto'], description:'"auto" (default for this) delivers the result on its own - it is information. "require" holds each result for them first.'}
     }, required:['detail'] }
   },
@@ -28541,7 +28546,7 @@ async function _confirmModelTool(name, input){
     fix_code:'run and edit '+String(input.lang||'code')+' on your device',
     crew_add:'set up a job that runs on its own, on a schedule',
     crew_steps:'start a task that runs in steps in the background, on AMV\u2019s servers',
-    crew_watch:'watch your mail and act when something matching arrives',
+    crew_watch:'watch something and act when a match appears',
     crew_update:'change one of your background jobs',
     crew_resume:'start one of your background jobs running again',
     crew_remove:'permanently delete one of your background jobs',
@@ -28597,7 +28602,19 @@ async function _confirmModelTool(name, input){
   }
   else if(name==='crew_watch'){
     const L = (v) => (Array.isArray(v) ? v : []).map(x => String(x||'').trim()).filter(Boolean).slice(0,5).join(', ');
-    detail = 'It will check your new mail every ten minutes for anything'
+    const src = String(input.source || 'mail');
+    if(src === 'page')
+      detail = 'It will look at ' + String(input.url || '').slice(0, 200) + ' every ten minutes for the page'
+             + (L(input.appears) ? ' starting to say: ' + L(input.appears) : '')
+             + (L(input.disappears) ? (L(input.appears) ? ', or' : '') + ' no longer saying: ' + L(input.disappears) : '')
+             + '.\n\nWhen that happens, it will:\n' + String(input.detail||'').slice(0,500)
+             + '\n\nChecks that find no change cost nothing. It only reads the public page; it never signs in or fills anything in.';
+    else if(src === 'calendar')
+      detail = 'It will check your calendar every ten minutes for new events mentioning: ' + L(input.words)
+             + '.\n\nWhen one is added, it will:\n' + String(input.detail||'').slice(0,500)
+             + '\n\nChecks that find nothing cost nothing. It reads your calendar; it never changes it.';
+    else
+      detail = 'It will check your new mail every ten minutes for anything'
            + (L(input.from) ? ' from: ' + L(input.from) : '')
            + (L(input.subject) ? (L(input.from) ? ',' : '') + ' with the subject containing: ' + L(input.subject) : '')
            + (L(input.words) ? ((L(input.from)||L(input.subject)) ? ',' : '') + ' mentioning: ' + L(input.words) : '')
@@ -28918,7 +28935,7 @@ function _crewLine(x){
   return '- [' + x.id + '] ' + (x.step ? 'step ' + x.step.n + ' of ' + x.step.of + ' of a task, ' : '')
        + (x.done ? (/^did not run/.test(String(x.lastError||'')) ? 'DID NOT RUN - ' + x.lastError : 'FINISHED - a one-time job that has already run')
           : x.waiting ? 'WAITING for an earlier step to finish' : x.active === false ? 'PAUSED'
-          : x.when ? 'WATCHING their mail for ' + _whenSay(x.when) + (x.lastError ? ' (' + x.lastError + ')' : '') : 'running ' + every)
+          : x.when ? 'WATCHING ' + ({ page:'a web page', calendar:'their calendar' }[x.when.source] || 'their mail') + ' for ' + _whenSay(x.when) + (x.lastError ? ' (' + x.lastError + ')' : '') : 'running ' + every)
        + ({ auto:', results delivered automatically',
             suggest:', suggest only - it does not run until asked',
             require:', each result waits for approval' }[String(x.approval||'require')] || '')
@@ -28951,6 +28968,12 @@ function _crewStepsCard(items){
 /* What a trigger watches for, in words. */
 function _whenSay(w){
   const j = (a) => (a || []).join(' or ');
+  if(w.source === 'page'){
+    let host = ''; try{ host = new URL(w.url).hostname; }catch(e){ host = String(w.url || ''); }
+    return [ (w.appears || []).length ? T('{0} saying {1}').replace('{0}', host).replace('{1}', j(w.appears)) : '',
+             (w.disappears || []).length ? T('{0} no longer saying {1}').replace('{0}', host).replace('{1}', j(w.disappears)) : '' ].filter(Boolean).join(', ');
+  }
+  if(w.source === 'calendar') return T('new events with {0}').replace('{0}', j(w.words));
   return [ (w.from || []).length ? T('mail from {0}').replace('{0}', j(w.from)) : '',
            (w.subject || []).length ? T('a subject with {0}').replace('{0}', j(w.subject)) : '',
            (w.words || []).length ? T('mentions of {0}').replace('{0}', j(w.words)) : '' ].filter(Boolean).join(', ');
@@ -29046,17 +29069,31 @@ async function _crewTool(name, input){
   if(name === 'crew_watch'){
     const detail = String(input.detail || '').trim();
     const L = (v) => (Array.isArray(v) ? v : []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 5);
-    const when = { from: L(input.from), subject: L(input.subject), words: L(input.words) };
+    const src = ['calendar', 'page'].includes(input.source) ? input.source : 'mail';
+    const when = src === 'page' ? { source: src, url: String(input.url || '').trim(), appears: L(input.appears), disappears: L(input.disappears) }
+               : src === 'calendar' ? { source: src, words: L(input.words) }
+               : { from: L(input.from), subject: L(input.subject), words: L(input.words) };
     if(!detail) return { text:'A watch needs to say what to do when something matches. Ask the user.', render:null };
-    if(!when.from.length && !when.subject.length && !when.words.length)
+    if(src === 'page' && !/^https:\/\//i.test(when.url))
+      return { text:'A page watch needs the page\u2019s full https address. Ask the user for it.', render:null };
+    if(src === 'page' && !when.appears.length && !when.disappears.length)
+      return { text:'A page watch needs words to look for - appearing on the page, or disappearing from it. Ask the user which.', render:null };
+    if(src === 'calendar' && !when.words.length)
+      return { text:'A calendar watch needs words to look for in new events. Ask the user which.', render:null };
+    if(src === 'mail' && !when.from.length && !when.subject.length && !when.words.length)
       return { text:'A watch needs something to watch for - a sender, words in the subject, or words in the message. Ask the user which.', render:null };
     let d;
     try{ d = await _autoApi('/auto/create', { detail, repeat:'10min', when, kind:'task', notify:'app', approval: input.approval === 'require' ? 'require' : 'auto' }); }
     catch(e){ return { text: _crewErr(e), render:null }; }
     _crewSynced();
-    return { text:'Set up. It is in their Crew tab and checks their new mail every ten minutes on AMV\u2019s servers, with their computer off. '
-      + 'Its first check only notes where the inbox is, so mail that is already there will not set it off - only mail that arrives from now on. '
-      + 'Checks that find nothing matching cost nothing and post nothing. It needs their Google mail connected to watch. Do not say anything has matched yet.', render:null };
+    const where = { mail:'checks their new mail', calendar:'checks their calendar for new events', page:'looks at that page' }[src];
+    const first = { mail:'Its first check only notes where the inbox is, so mail that is already there will not set it off - only mail that arrives from now on. ',
+                    calendar:'Its first check only notes the events already there, so only events added from now on can set it off. ',
+                    page:'Its first look only records what the page says now, so words already on it will not set it off - only a change from now on. ' }[src];
+    const needs = { mail:' It needs their Google mail connected to watch.', calendar:' It needs their Google calendar connected to watch.',
+                    page:' It reads only the public page; it cannot see anything behind a sign-in.' }[src];
+    return { text:'Set up. It is in their Crew tab and ' + where + ' every ten minutes on AMV\u2019s servers, with their computer off. '
+      + first + 'Checks that find nothing cost nothing and post nothing.' + needs + ' Do not say anything has matched yet.', render:null };
   }
 
   if(name === 'crew_ceiling'){

@@ -943,6 +943,7 @@ async function _fetchCalendar(token){
   if(!r.ok) throw new Error('calendar_' + r.status);
   const d = await r.json().catch(()=>({}));
   return (d.items || []).slice(0, AUTO_EVENTS_MAX).map(e => ({
+    id: String(e.id || '').slice(0, 200),
     title: String(e.summary || '(no title)').slice(0, 140),
     start: (e.start && (e.start.dateTime || e.start.date)) || '',
     end: (e.end && (e.end.dateTime || e.end.date)) || '',

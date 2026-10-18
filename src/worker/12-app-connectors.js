@@ -789,8 +789,11 @@ async function autoCreate(request, env){
      the mailbox by definition, so it needs that whatever the words said. */
   const when = _whenClean(body.when);
   if(body.when != null && !when)
-    return json({ error:'Say what to watch for: who it is from, words in the subject, or words in the message.', code:'when_empty' }, 400);
-  const uses = [...new Set(asked.concat(derived).concat(when ? ['mail.read'] : []))].slice(0, 4);
+    return json({ error: (body.when && body.when.source === 'page')
+      ? 'Give a public page address, and the words to watch for appearing or disappearing on it.'
+      : 'Say what to watch for: who it is from, words in the subject, or words in the message.', code:'when_empty' }, 400);
+  const whenUse = !when ? [] : _whenSrc(when) === 'calendar' ? ['calendar.read'] : _whenSrc(when) === 'page' ? [] : ['mail.read'];
+  const uses = [...new Set(asked.concat(derived).concat(whenUse))].slice(0, 4);
   /* WHAT WOULD MAKE THE ANSWER BETTER, kept apart from what it needs.
 
      Same allow-list, same filter, and never derived from text - a boost that a

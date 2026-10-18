@@ -477,6 +477,28 @@ section('"When my landlord emails, tell me what she wants" sets up a real watch'
   ok(/Watching for mail from landlord@homes\.example, mentions of rent or meter/.test(crew), 'and Crew says what it is watching for', crew.slice(0, 300));
 }
 
+section('"Tell me when tickets go on sale at this page" watches the page, needing no account');
+{
+  const before = (await jobs()).length;
+  nextTurns = [
+    toolUseStream('crew_watch', { detail: 'Tell me the prices and how to buy.', source: 'page', url: 'https://tickets.example.com/show', appears: ['on sale'], disappears: ['sold out'] }, ''),
+    textStream('Watching the page now.'),
+  ];
+  const consent = await say('tell me when tickets go on sale at https://tickets.example.com/show');
+  ok(consent.seen > 0, 'they were asked first', consent.seen);
+  ok(/tickets\.example\.com\/show/.test(consent.body) && /starting to say: on sale/.test(consent.body) && /no longer saying: sold out/.test(consent.body) && /never signs in/.test(consent.body),
+     'and shown which page, which words, and that it only reads it', consent.body.slice(0, 300));
+  const made = (await jobs()).slice(before);
+  ok(made.length === 1 && made[0].when && made[0].when.source === 'page' && made[0].when.appears[0] === 'on sale' && made[0].uses.length === 0,
+     'a page watch now exists on the server, using no account', made[0]);
+  const crew = await page.evaluate(async () => {
+    if (typeof window._autoRefresh === 'function') { try { await window._autoRefresh(); } catch (e) {} }
+    setTab('crew'); await new Promise(x => setTimeout(x, 1000));
+    return (document.getElementById('vc').textContent || '').replace(/\s+/g, ' ');
+  });
+  ok(/Watching for tickets\.example\.com saying on sale, tickets\.example\.com no longer saying sold out/.test(crew), 'and Crew says what it is watching for', crew.slice(0, 400));
+}
+
 section('Nothing about this is a second copy of the Crew');
 {
   /* Every write went through the routes the screen uses. If chat ever grows
