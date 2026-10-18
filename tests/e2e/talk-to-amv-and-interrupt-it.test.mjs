@@ -115,7 +115,10 @@ section('A turn is heard on the server, sent, and answered aloud sentence by sen
   await page.evaluate(() => { try { AMVUsage.status = () => ({ remaining: 9999, resetsAt: Date.now() + 3600e3 }); } catch (e) {} setTab('chat'); });
   ok(await page.evaluate(() => _SPEECH.listen && _SPEECH.speak), 'the page knows the server can hear and speak');
   await page.evaluate(() => toggleVoiceMode());
-  await page.waitForFunction(() => window._lvDrive && _lvDrive.state() === 'listening', null, { timeout: 8000 });
+  /* The overlay is switched on in the next animation frame, so its fade can
+     run - on a loaded machine that frame comes after "listening". Waited for,
+     not raced (it failed once in CI exactly this way). */
+  await page.waitForFunction(() => window._lvDrive && _lvDrive.state() === 'listening' && !!document.querySelector('#voice-ov.on'), null, { timeout: 8000 }).catch(() => {});
   ok(await page.evaluate(() => _liveVoiceOn() && !!document.querySelector('#voice-ov.on')), 'voice mode is on, listening');
 
   replies = ['Pack light layers. Bring good shoes. Lisbon is hilly.'];
