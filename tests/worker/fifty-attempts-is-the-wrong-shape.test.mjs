@@ -80,7 +80,9 @@ section('A dropped connection costs seconds, not a day');
   ok(calls === 2, 'it tried again', String(calls));
   ok(r.exec.text === 'the brief', 'and the second attempt is the answer');
   ok(r.attempts === 2, 'the count is what actually happened', String(r.attempts));
-  ok(Date.now() - t0 >= W.AUTO_RETRY_BACKOFF_MS[0], 'it waited before retrying rather than hammering');
+  /* A timer may fire a millisecond early by the wall clock, so two milliseconds
+     of slack - against a backoff hundreds of times that, which is the claim. */
+  ok(Date.now() - t0 >= W.AUTO_RETRY_BACKOFF_MS[0] - 2, 'it waited before retrying rather than hammering', Date.now() - t0);
 }
 
 section('A refusal is not tried again, however many attempts are allowed');
