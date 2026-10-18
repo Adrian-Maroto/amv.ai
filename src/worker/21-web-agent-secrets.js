@@ -284,3 +284,57 @@ async function _webAskModel(env, sys, prompt, meter){
   }catch(e){ return null; }
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   STAYING SIGNED IN, WITHOUT AMV HOLDING ANYBODY'S SESSIONS.
+
+   A hosted browser that forgets every sign-in when a run ends makes the
+   person sign in again every time - which is no use. A hosted browser that
+   KEEPS everybody's sign-ins on AMV's servers is one breach away from every
+   customer's mail, bank and shops at once.
+
+   So the sign-in lives on the person's device. At the end of a run the
+   cookies of the sites it visited go back to the page, which encrypts them
+   with a key that cannot leave that browser (web-live.js). On the next run
+   from that site the page sends them back; they are put in the browser for
+   that run and gone when it closes. Nothing here stores, logs or traces a
+   cookie, and the model never sees one - it reads the page as text.
+
+   A cookie is accepted only in a shape a browser would accept, at most a few
+   hundred of them, and never for an address the run could not visit anyway
+   (_webHostAllowed): a cookie for an internal name would be a way to aim the
+   browser somewhere it must not go. */
+const WEB_JAR_MAX = 300;
+const WEB_JAR_VALUE_MAX = 4096;
+function _webCookieShape(c){
+  if(!c || typeof c !== 'object') return null;
+  const name = String(c.name || ''), value = String(c.value == null ? '' : c.value);
+  const domain = String(c.domain || '').trim().toLowerCase();
+  if(!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,256}$/.test(name)) return null;
+  if(value.length > WEB_JAR_VALUE_MAX || /[\x00-\x1f\x7f;]/.test(value)) return null;
+  const bare = domain.replace(/^\./, '');
+  if(!/^[a-z0-9.-]{3,253}$/.test(bare) || bare.indexOf('.') < 0) return null;
+  if(!_webHostAllowed('https://' + bare + '/').ok) return null;
+  const path = String(c.path || '/');
+  const o = { name, value, domain, path: /^\/[!-~]{0,255}$/.test(path) ? path : '/', secure: !!c.secure, httpOnly: !!c.httpOnly };
+  if(['Strict', 'Lax', 'None'].includes(c.sameSite)) o.sameSite = c.sameSite;
+  const exp = +c.expires;
+  if(Number.isFinite(exp) && exp > 0) o.expires = exp;
+  return o;
+}
+/* What the device sent, made safe to put in the browser. */
+function _webJarIn(raw){
+  if(!Array.isArray(raw)) return [];
+  const out = [];
+  for(const c of raw.slice(0, WEB_JAR_MAX)){ const o = _webCookieShape(c); if(o) out.push(o); }
+  return out;
+}
+/* What goes back: the cookies of the sites this run was on, and nothing else. */
+async function _webJarOut(page, visited){
+  const urls = [...visited].filter(u => /^https?:\/\//.test(u)).slice(0, 20);
+  if(!urls.length || !page || typeof page.cookies !== 'function') return [];
+  let got = [];
+  try{ got = await page.cookies(...urls); }catch(e){ return []; }
+  const out = [];
+  for(const c of (Array.isArray(got) ? got : []).slice(0, WEB_JAR_MAX)){ const o = _webCookieShape(c); if(o) out.push(o); }
+  return out;
+}

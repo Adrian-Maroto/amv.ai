@@ -249,7 +249,7 @@ section('The run loop uses the decision rather than making its own');
   /* The approved list is decided from the REQUEST, before a browser exists, so
      nothing the run then sees can widen it. */
   const iOrigins = run.indexOf('_webApprovedOrigins(gate.url');
-  const iLaunch = run.indexOf('puppeteer.launch');
+  const iLaunch = run.indexOf('_webLaunch(env)');   // every browser starts through _webLaunch
   ok(iOrigins > -1 && iOrigins < iLaunch,
      'and where they may be used is settled before anything is loaded', { origins: iOrigins, launch: iLaunch });
 

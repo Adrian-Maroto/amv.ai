@@ -1078,6 +1078,11 @@ function _renderSetPaneInner(only, into){
     });
 
     if(!only){ _setAppendSection(pane, 'capabilities'); _setAppendSection(pane, 'security', null, 'Password & security'); }
+    /* Where AMV's browser is signed in, kept on this device (web-live.js). */
+    if(AMV_API.hasSession){
+      const wj = document.createElement('div'); wj.className = 'ss2'; wj.id = 'wj-sites'; pane.appendChild(wj);
+      _webLiveLoad().then(ok => { if(ok && wj.isConnected) window._webJarPane(wj); else wj.remove(); });
+    }
   } else if(sp==='appearance'){
     const isDark=!document.body.classList.contains('light');
     const curFs=parseInt(loadStr('amv_fs')||'14',10);

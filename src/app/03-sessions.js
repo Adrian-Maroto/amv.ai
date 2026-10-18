@@ -2061,6 +2061,10 @@ function eraseDeviceData(email){
   let removed = 0;
   /* Your files are in their own database, not in localStorage. */
   try{ _libErase(who); }catch(e){}
+  /* And so are the sign-ins AMV's browser kept for you (web-live.js). The
+     key goes first - without it what is left can never be read - then every
+     record of this account's. Other accounts on the device keep theirs. */
+  try{ _webJarErase(who); }catch(e){}
   try{
     for(let i = localStorage.length - 1; i >= 0; i--){
       const k = localStorage.key(i);

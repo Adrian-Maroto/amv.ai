@@ -219,6 +219,10 @@ AMVConnectors.register({
            the page into a panel with Stop (web-live.js). If the panel cannot
            load, the run still happens, the plain way. */
         const view = await _webLiveLoad().then(ok => ok ? window._webLiveOpen(args.goal) : null);
+        /* Signed in from last time: this device's own sign-ins for the site
+           the run starts on (web-live.js), sent for this run only. */
+        const site = view ? window._wjSite(args.url) : '';
+        const jar = site ? await window._webJarLoad(site) : [];
         let r;
         try{ r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run' + (view ? '?live=1' : ''), {
           method: 'POST', stream: !!view, signal: view ? view.signal : undefined,
@@ -241,6 +245,7 @@ AMVConnectors.register({
                stopped on; this is that id going back. Sending nothing, or
                anything made up, approves nothing. */
             approvalTicket: args.approvalTicket || undefined,
+            cookies: jar.length ? jar : undefined,
             // the server enforces its own ceiling on these, independently
             spendAmount: spend || undefined,
             spendLimit: (typeof AMVSpend !== 'undefined' ? (AMVSpend.cfg().perPurchase || undefined) : undefined)
@@ -257,6 +262,11 @@ AMVConnectors.register({
         if(view && !streamed) view.close();
         const d = streamed ? await view.read(r) : await r.json().catch(() => ({}));
         const okStatus = streamed ? (d.status >= 200 && d.status < 300) : r.ok;
+        /* Kept for next time, however the run ended - a sign-in that worked
+           before a later step stopped is still a sign-in. Then dropped from
+           the answer, which goes on to places that must not hold it. */
+        if(site && d && Array.isArray(d.cookies)){ await window._webJarSave(site, d.cookies); }
+        if(d) delete d.cookies;
         // Surface the agent's structured stopping points as real blockers so the
         // UI can say exactly what is needed and resume when it is provided.
         if(d && d.code){

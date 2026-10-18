@@ -6312,6 +6312,10 @@ function eraseDeviceData(email){
   let removed = 0;
   /* Your files are in their own database, not in localStorage. */
   try{ _libErase(who); }catch(e){}
+  /* And so are the sign-ins AMV's browser kept for you (web-live.js). The
+     key goes first - without it what is left can never be read - then every
+     record of this account's. Other accounts on the device keep theirs. */
+  try{ _webJarErase(who); }catch(e){}
   try{
     for(let i = localStorage.length - 1; i >= 0; i--){
       const k = localStorage.key(i);
@@ -12464,6 +12468,25 @@ function _libErase(who){
   who = String(who || '').toLowerCase(); if(!who || typeof indexedDB === 'undefined') return;
   if(_libDbWho === who) _libForget();
   try{ indexedDB.deleteDatabase(_libDbName(who)); }catch(e){}
+}
+/* The browser sign-ins of one account, erased from this device. Named the way
+   web-live.js names them, so this works whether or not that file was loaded. */
+async function _webJarErase(who){
+  if(!who || typeof indexedDB === 'undefined' || !(window.crypto && crypto.subtle)) return;
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-webjar:' + who));
+  const acct = [...new Uint8Array(h)].slice(0, 12).map(b => b.toString(16).padStart(2, '0')).join('');
+  const req = indexedDB.open('amv-webjar', 1);
+  req.onupgradeneeded = () => req.result.createObjectStore('kv');
+  req.onsuccess = () => {
+    const db = req.result;
+    try{
+      const st = db.transaction('kv', 'readwrite').objectStore('kv');
+      st.delete('key:' + acct); st.delete('sites:' + acct);
+      const cur = st.openCursor();
+      cur.onsuccess = () => { const c = cur.result; if(!c) return; if(String(c.key).indexOf('jar:' + acct + ':') === 0) c.delete(); c.continue(); };
+      st.transaction.oncomplete = () => db.close();
+    }catch(e){ db.close(); }
+  };
 }
 /* Signing out closes the door; the files stay in that account's database. */
 function _libForget(){
@@ -32279,6 +32302,11 @@ function _renderSetPaneInner(only, into){
     });
 
     if(!only){ _setAppendSection(pane, 'capabilities'); _setAppendSection(pane, 'security', null, 'Password & security'); }
+    /* Where AMV's browser is signed in, kept on this device (web-live.js). */
+    if(AMV_API.hasSession){
+      const wj = document.createElement('div'); wj.className = 'ss2'; wj.id = 'wj-sites'; pane.appendChild(wj);
+      _webLiveLoad().then(ok => { if(ok && wj.isConnected) window._webJarPane(wj); else wj.remove(); });
+    }
   } else if(sp==='appearance'){
     const isDark=!document.body.classList.contains('light');
     const curFs=parseInt(loadStr('amv_fs')||'14',10);
@@ -42124,6 +42152,10 @@ AMVConnectors.register({
            the page into a panel with Stop (web-live.js). If the panel cannot
            load, the run still happens, the plain way. */
         const view = await _webLiveLoad().then(ok => ok ? window._webLiveOpen(args.goal) : null);
+        /* Signed in from last time: this device's own sign-ins for the site
+           the run starts on (web-live.js), sent for this run only. */
+        const site = view ? window._wjSite(args.url) : '';
+        const jar = site ? await window._webJarLoad(site) : [];
         let r;
         try{ r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run' + (view ? '?live=1' : ''), {
           method: 'POST', stream: !!view, signal: view ? view.signal : undefined,
@@ -42146,6 +42178,7 @@ AMVConnectors.register({
                stopped on; this is that id going back. Sending nothing, or
                anything made up, approves nothing. */
             approvalTicket: args.approvalTicket || undefined,
+            cookies: jar.length ? jar : undefined,
             // the server enforces its own ceiling on these, independently
             spendAmount: spend || undefined,
             spendLimit: (typeof AMVSpend !== 'undefined' ? (AMVSpend.cfg().perPurchase || undefined) : undefined)
@@ -42162,6 +42195,11 @@ AMVConnectors.register({
         if(view && !streamed) view.close();
         const d = streamed ? await view.read(r) : await r.json().catch(() => ({}));
         const okStatus = streamed ? (d.status >= 200 && d.status < 300) : r.ok;
+        /* Kept for next time, however the run ended - a sign-in that worked
+           before a later step stopped is still a sign-in. Then dropped from
+           the answer, which goes on to places that must not hold it. */
+        if(site && d && Array.isArray(d.cookies)){ await window._webJarSave(site, d.cookies); }
+        if(d) delete d.cookies;
         // Surface the agent's structured stopping points as real blockers so the
         // UI can say exactly what is needed and resume when it is provided.
         if(d && d.code){

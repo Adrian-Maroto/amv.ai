@@ -57,21 +57,26 @@ const pair = await W.issueTokens(env, ME, 'Surfer');
 /* The browser: a page with two things on it, and a record of what happened. */
 let B;
 function fakeBrowser() {
-  const s = { launched: 0, closed: 0, gotos: [], clicks: [], shots: 0 };
+  const s = { launched: 0, closed: 0, gotos: [], clicks: [], shots: 0, setBeforeGoto: null, set: [], jar: [] };
   const page = { u: 'about:blank',
     async setViewport(){}, async setRequestInterception(){}, on(){},
-    async goto(u){ s.gotos.push(u); this.u = u; }, async url(){ return this.u; },
+    async goto(u){ if (s.setBeforeGoto === null) s.setBeforeGoto = s.set.length; s.gotos.push(u); this.u = u; }, async url(){ return this.u; },
+    async setCookie(...cs){ s.set.push(...cs); },
+    async cookies(...urls){ s.cookieUrls = urls; return s.jar; },
     async evaluate(x){ if (typeof x === 'string' && /getBoundingClientRect/.test(x)) return { url: this.u, title: 'Gym prices', text: 'Monthly prices for the city gyms.', captcha: false,
       elements: [{ ref: 1, tag: 'a', type: '', label: 'Prices' }, { ref: 2, tag: 'button', type: 'button', label: 'Show more' }] }; },
-    async click(sel){ s.clicks.push(sel); }, async type(){}, async select(){}, keyboard: { async press(){} },
+    async click(sel){ s.clicks.push(sel); if (sel.includes('"1"')) s.jar = [
+      { name: 'sid', value: 'SESSION-SECRET-7f3a', domain: '.gyms.example.com', path: '/', httpOnly: true, secure: true, sameSite: 'Lax', expires: -1 },
+      { name: 'bad name', value: 'x', domain: '.gyms.example.com', path: '/' }]; }, async type(){}, async select(){}, keyboard: { async press(){} },
     async screenshot(){ s.shots++; return Buffer.from('jpeg-of-step-' + s.shots).toString('base64'); } };
   B = s;
   return { async launch(){ s.launched++; return { async newPage(){ return page; }, async close(){ s.closed++; } }; } };
 }
 /* The model: click, then done - or click for ever, for the run that is stopped. */
-let decisions = [], modelCalls = 0;
-globalThis.fetch = async () => {
+let decisions = [], modelCalls = 0, prompts = [];
+globalThis.fetch = async (u, init) => {
   modelCalls++;
+  prompts.push(String((init && init.body) || ''));
   const d = decisions.length ? decisions.shift() : { verb: 'click', ref: 2, why: 'show more' };
   return new Response(JSON.stringify({ content: [{ type: 'text', text: JSON.stringify(d) }], stop_reason: 'end_turn',
     usage: { input_tokens: 3000, output_tokens: 60 } }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -139,6 +144,49 @@ section('Live: every step with a picture of the page, then the same answer');
   ok(steps.length >= 2 && steps[0].verb === 'open' && steps[1].verb === 'click', 'the page as it opened, then the click', steps.map(s => s.verb));
   ok(steps.every(s => Buffer.from(s.shot, 'base64').toString().startsWith('jpeg-of-step-')) && steps[1].url === 'https://gyms.example.com/', 'each with a picture of the page and where it was', steps.map(s => s.url));
   ok(end && end.type === 'end' && end.status === 200 && end.ok === true && /29 a month/.test(end.result), 'ending with exactly what the plain call returns', end);
+}
+
+section('Signed in once, signed in the next time - the sign-in going back to the person, nowhere else');
+{
+  vals.clear();
+  const logs = []; const realLog = console.log; console.log = (...a) => logs.push(a.map(String).join(' '));
+  env.BROWSER = fakeBrowser();
+  decisions = [{ verb: 'click', ref: 1, why: 'sign in' }, { verb: 'done', why: 'Signed in and found it.' }];
+  prompts = [];
+  const r = await run(GOAL);
+  const d = await r.json();
+  console.log = realLog;
+  const sid = (d.cookies || []).find(c => c.name === 'sid');
+  ok(sid && sid.value === 'SESSION-SECRET-7f3a' && sid.domain === '.gyms.example.com' && sid.httpOnly === true, 'the run hands back the site’s sign-in', d.cookies);
+  ok((d.cookies || []).every(c => c.name !== 'bad name'), 'and only cookies a browser would accept', (d.cookies || []).map(c => c.name));
+  ok((B.cookieUrls || []).includes('https://gyms.example.com/'), 'asked for the sites the run was actually on', B.cookieUrls);
+  const elsewhere = JSON.stringify(d.trace || []) + logs.join('\n') + prompts.join('\n') + [...store.values()].join('\n');
+  ok(!elsewhere.includes('SESSION-SECRET-7f3a'), 'it is in no trace, no log line, no stored record, and nothing the model read', elsewhere.length);
+
+  env.BROWSER = fakeBrowser();
+  decisions = [{ verb: 'done', why: 'Already signed in.' }];
+  const sent = [sid,
+    { name: 'pivot', value: 'x', domain: '.internal', path: '/' },
+    { name: 'meta', value: 'x', domain: '169.254.169.254', path: '/' },
+    { name: 'inj', value: 'a;b', domain: '.gyms.example.com', path: '/' }];
+  const r2 = await run(Object.assign({ cookies: sent }, GOAL));
+  await r2.json();
+  ok(B.set.length === 1 && B.set[0].name === 'sid' && B.set[0].value === 'SESSION-SECRET-7f3a', 'next time the sign-in is put back in the browser', B.set.map(c => c.name));
+  ok(B.setBeforeGoto === 1, 'before the first page loads, so the site sees it from the start', B.setBeforeGoto);
+  ok(!B.set.some(c => /internal|169\.254/.test(c.domain) || c.name === 'inj'), 'and a cookie for an internal address, or one a browser would refuse, is never set', B.set.map(c => c.domain));
+}
+
+section('Live mode carries the sign-in back too');
+{
+  env.BROWSER = fakeBrowser();
+  decisions = [{ verb: 'click', ref: 1, why: 'sign in' }, { verb: 'done', why: 'Done.' }];
+  const r = await run(GOAL, '?live=1');
+  const text = await r.text();
+  await Promise.all(pending.splice(0));
+  const end = text.split('\n\n').filter(Boolean).map(b => JSON.parse(b.replace(/^data: /, ''))).pop();
+  ok(end.type === 'end' && (end.cookies || []).some(c => c.name === 'sid'), 'in the final answer of the stream', end.cookies);
+  const steps = text.split('\n\n').filter(Boolean).map(b => JSON.parse(b.replace(/^data: /, ''))).filter(e => e.type === 'step');
+  ok(!JSON.stringify(steps).includes('SESSION-SECRET-7f3a'), 'and never in a step on the way', steps.length);
 }
 
 section('Signed out, live mode is a plain refusal, not a stream');

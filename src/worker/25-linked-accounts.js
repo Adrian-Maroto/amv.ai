@@ -390,7 +390,7 @@ async function _webSpendApproval(env, id){
 }
 
 /* The agent loop. Real browser, real actions, full trace. */
-async function browserRun(request, env, ctx, emit){
+async function browserRun(request, env, ctx, emit, out){
   const user = await requireUser(request, env);
   if(!user) return json({ error:'sign in to use web automation' }, 401);
 
@@ -409,6 +409,8 @@ async function browserRun(request, env, ctx, emit){
      object value used to become the string "[object Object]" and then be typed
      into somebody's login form. */
   const vault = _webSecrets(body.data);
+  /* The person's own sign-ins, sent from their device for this run only. */
+  const jarIn = _webJarIn(body.cookies);
   const vaultKeys = Object.keys(vault);
   const secrets = vaultKeys.map(k => vault[k]);
   if(!goal) return json({ error:'goal required' }, 400);
@@ -540,6 +542,9 @@ async function browserRun(request, env, ctx, emit){
         + 'Update the browser driver and it works again.', code:'needs_service' }, 503);
     }
 
+    const visited = new Set([gate.url]);
+    if(out) out.collect = async () => { const here = await page.url().catch(() => ''); if(here) visited.add(here); out.cookies = await _webJarOut(page, visited); };
+    if(jarIn.length && typeof page.setCookie === 'function') await page.setCookie(...jarIn).catch(() => {});
     await page.goto(gate.url, { waitUntil:'domcontentloaded', timeout:20000 })
       .catch((e) => {
         /* A goto that fails because the isolation aborted it is not an error to
@@ -581,6 +586,7 @@ async function browserRun(request, env, ctx, emit){
         error:'That address sent AMV somewhere it is not allowed to go, so the run stopped. ' + _bad0.why }, 400);
     }
 
+    if(out) await out.collect();
     await shot(0, 'open', 'opened the page');
     let viewerGone = false;
     for(let step = 0; step < WEB_MAX_STEPS; step++){
@@ -762,6 +768,7 @@ async function browserRun(request, env, ctx, emit){
       else if(v.verb === 'scroll') await page.evaluate('window.scrollBy(0, 800)').catch(() => {});
       else if(v.verb === 'submit' && sel) await page.click(sel).catch(() => {});
       await new Promise(r => setTimeout(r, WEB_SETTLE_MS));
+      if(out) await out.collect();
       { const last = trace[trace.length - 1] || {}; await shot(step + 1, last.verb || v.verb, last.why || ''); }
     }
     await browser.close();
@@ -813,7 +820,15 @@ async function _webLaunch(env){
 async function browserRunRoute(request, env, ctx){
   let live = false;
   try{ live = new URL(request.url).searchParams.get('live') === '1'; }catch(e){}
-  if(!live) return browserRun(request, env, ctx, null);
+  /* The sign-ins the run ended with go back with its answer - see
+     _webJarIn. Added here, once, rather than at each of the run's exits. */
+  const jar = {};
+  const withJar = async (res) => {
+    if(!jar.cookies || !jar.cookies.length) return res;
+    let body; try{ body = await res.clone().json(); }catch(e){ return res; }
+    return json(Object.assign({}, body, { cookies: jar.cookies }), res.status);
+  };
+  if(!live) return withJar(await browserRun(request, env, ctx, null, jar));
   /* Signed in before a stream is opened, so a stranger is answered with a
      plain 401 rather than a stream that ends in one. browserRun checks again:
      it is the authority, this is only the door. */
@@ -829,7 +844,7 @@ async function browserRunRoute(request, env, ctx){
   emit.gone = () => gone;
   const run = (async () => {
     let res;
-    try{ res = await browserRun(request, env, ctx, emit); }
+    try{ res = await withJar(await browserRun(request, env, ctx, emit, jar)); }
     catch(e){ res = json({ error:'The web run failed.' }, 500); }
     let body = {};
     try{ body = await res.json(); }catch(e){}

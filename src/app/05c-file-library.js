@@ -119,6 +119,25 @@ function _libErase(who){
   if(_libDbWho === who) _libForget();
   try{ indexedDB.deleteDatabase(_libDbName(who)); }catch(e){}
 }
+/* The browser sign-ins of one account, erased from this device. Named the way
+   web-live.js names them, so this works whether or not that file was loaded. */
+async function _webJarErase(who){
+  if(!who || typeof indexedDB === 'undefined' || !(window.crypto && crypto.subtle)) return;
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('amv-webjar:' + who));
+  const acct = [...new Uint8Array(h)].slice(0, 12).map(b => b.toString(16).padStart(2, '0')).join('');
+  const req = indexedDB.open('amv-webjar', 1);
+  req.onupgradeneeded = () => req.result.createObjectStore('kv');
+  req.onsuccess = () => {
+    const db = req.result;
+    try{
+      const st = db.transaction('kv', 'readwrite').objectStore('kv');
+      st.delete('key:' + acct); st.delete('sites:' + acct);
+      const cur = st.openCursor();
+      cur.onsuccess = () => { const c = cur.result; if(!c) return; if(String(c.key).indexOf('jar:' + acct + ':') === 0) c.delete(); c.continue(); };
+      st.transaction.oncomplete = () => db.close();
+    }catch(e){ db.close(); }
+  };
+}
 /* Signing out closes the door; the files stay in that account's database. */
 function _libForget(){
   const p = _libDbP; _libDbP = null; _libDbWho = '';

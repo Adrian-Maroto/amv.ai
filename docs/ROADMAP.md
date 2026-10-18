@@ -464,7 +464,14 @@ hour after 10 included, $2 a month per concurrent browser beyond 10). Turning
 the binding on without the paid plan breaks every deploy, so it is not
 uncommented here.
 
-*Next:* take over the browser to sign in or solve a captcha, typed by the
-person into the real site, nothing kept when the run ends. Runs that stay
-signed in between visits stay off the table: a store of live sessions is the
-vault LESSONS 537 refuses.
+*Staying signed in (done), on the owner's call that a browser which forgets
+every sign-in is no use.* The sign-ins come back to the person's device at the
+end of a run and are kept there, sealed with a key that cannot leave that
+browser, one store per starting site and per account; the next run from that
+site sends them for that run only. AMV's servers never hold them, nothing logs
+them, the model never sees them, and erasing the device erases them. What
+stays off the table is a server-side store of everybody's live sessions - the
+vault LESSONS 537 refuses. The trade: a background run while the device is off
+cannot use them; a per-site opt-in for that is the owner's call.
+
+*Next:* take over the browser to sign in or solve a captcha yourself.
