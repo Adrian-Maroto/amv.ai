@@ -25,8 +25,8 @@ const manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.webmanifest'), 'ut
 section('The manifest makes AMV a share target, and its icon has a menu');
 {
   const st = manifest.share_target || {};
-  ok(st.action === '/' && st.method === 'GET' && st.params && st.params.text === 'text' && st.params.url === 'url' && st.params.title === 'title',
-     'shared text, links and titles come to the app', st);
+  ok(st.action === '/share' && st.method === 'POST' && st.enctype === 'multipart/form-data' && st.params && st.params.text === 'text' && st.params.url === 'url' && st.params.title === 'title',
+     'shared text, links and titles come to the app (and files: a-file-shared-from-another-app-arrives-in-amv)', st);
   const urls = (manifest.shortcuts || []).map(s => s.url);
   ok(urls.includes('/?new=1') && urls.includes('/#/crew') && urls.includes('/#/integrations'), 'New chat, Crew and Connectors', urls);
   ok(manifest.id === '/' && (manifest.icons || []).some(i => i.purpose === 'maskable'), 'with a stable id and a maskable icon');

@@ -76,12 +76,31 @@
     }
   ],
   "share_target": {
-    "action": "/",
-    "method": "GET",
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
     "params": {
       "title": "title",
       "text": "text",
-      "url": "url"
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": [
+            "application/pdf",
+            "image/*",
+            "text/*",
+            ".csv",
+            ".md",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".docx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".xlsx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            ".pptx"
+          ]
+        }
+      ]
     }
   },
   "file_handlers": [

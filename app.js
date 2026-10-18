@@ -28432,43 +28432,12 @@ function officeToolsOffered(){
   return OFFICE_TOOLS.map(t => Object.assign({}, t, { input_schema: Object.assign({}, t.input_schema, {
     properties: Object.assign({}, t.input_schema.properties, { file: { type:'string', enum: names, description:'The attached file, by its name.' } }) }) }));
 }
-function _officeEditName(name, n){
-  const dot = name.lastIndexOf('.'), base = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : '';
-  return base + ' (' + T('edited') + (n > 1 ? ' ' + n : '') + ')' + ext;
-}
-function _officeSays(a){
-  if(a.kind === 'cell') return (a.sheet ? a.sheet + '!' : '') + a.cell + ' = ' + (a.mean.kind === 'empty' ? '(empty)' : a.mean.kind === 'formula' ? '=' + a.mean.v : a.mean.v);
-  if(a.kind === 'insert') return 'new paragraph after "' + a.after.slice(0, 60) + '": "' + a.insert.slice(0, 120) + '"';
-  return '"' + a.find.slice(0, 80) + '" -> "' + a.with.slice(0, 80) + '"' + (a.count > 1 ? ' (' + a.count + ' places)' : '') + (a.blocked ? ' (' + a.blocked + ' more left alone: they run across a tab, line break or field)' : '');
-}
+/* The handler itself is in office.js (amvOfficeEditTool), which an edit
+   needs anyway: loaded on the first one. */
 async function _officeEditTool(input){
-  const held = _officeHeld(String((input && input.file) || ''));
-  if(!held){
-    const open = [..._OFFICE_FILES.values()].map(h => '"' + h.name + '"');
-    return { text:'No file called "' + String((input && input.file) || '').slice(0, 80) + '" is open in this tab. ' + (open.length ? 'Open: ' + open.join(', ') + '.' : 'Ask the person to attach the file itself again - a copy from their library is text only.') + ' Nothing was changed.', render:null };
-  }
-  if(!(await _loadOffice()) || typeof window.amvOfficeEdit !== 'function')
+  if(!(await _loadOffice()) || typeof window.amvOfficeEditTool !== 'function')
     return { text:'The file editor could not be loaded (the connection dropped). Nothing was changed - tell the person to try again.', render:null };
-  const cur = held.versions[held.versions.length - 1];
-  const r = await window.amvOfficeEdit(cur.buf, held.format, input || {});
-  const refusedText = r.refused.map(x => '- ' + x.why).join('\n');
-  if(!r.buf){
-    return { text:'NOTHING was changed in ' + held.name + '. ' + (r.why || '') + (refusedText ? '\nRefused:\n' + refusedText : '') + '\nTell the person what was refused and why; do not say the file was edited.',
-      render:'<div class="chat-run bad"><div class="chat-run-h">' + escH(T('{0} was not changed').replace('{0}', held.name)) + '</div><pre>' + escH([r.why || ''].concat(r.refused.map(x => x.why)).filter(Boolean).join('\n')) + '</pre></div>' };
-  }
-  const v = _officeKeep(held.name, r.buf, held.format);
-  v.file = _officeEditName(held.name, held.versions.length - 1);
-  const said = r.applied.map(_officeSays);
-  return {
-    text:'Edited ' + held.name + ' and checked it by opening the new file again. Changed:\n' + said.map(x => '- ' + x).join('\n')
-      + (refusedText ? '\nNOT changed (refused):\n' + refusedText : '')
-      + (held.format === 'xlsx' ? '\nEvery formula in the workbook is worked out again when it is opened in Excel, Google Sheets, Numbers or LibreOffice; a preview that does not calculate shows formula cells empty.' : '')
-      + '\nThe edited file is ready to download below as "' + v.file + '". A further change builds on this version.',
-    render:'<div class="chat-run oe-card"><div class="chat-run-h">' + escH(v.file) + '</div>'
-      + '<ul class="oe-list">' + said.map(x => '<li>' + escH(x) + '</li>').join('') + '</ul>'
-      + (r.refused.length ? '<p class="pj-note">' + escH(T('Not changed:')) + ' ' + escH(r.refused.map(x => x.why).join(' ')) + '</p>' : '')
-      + '<button type="button" class="btn mc-mini" data-dact="amvOfficeSave" data-darg="' + escH(v.id) + '">' + escH(T('Download')) + '</button></div>'
-  };
+  return window.amvOfficeEditTool(input);
 }
 /* The download, from the version kept in this tab. A card from an earlier
    visit has nothing behind it any more, and says so. */
@@ -51863,10 +51832,43 @@ function _launchIntent(search){
       for(let i = kept.length - 1; i >= 0; i--) if(p.includes(kept[i])) kept.splice(i, 1);
       kept.push(p);
     }
-    return { kind: 'share', text: kept.join('\n\n').slice(0, 20000) };
+    const it = { kind: 'share', text: kept.join('\n\n').slice(0, 20000) };
+    return Object.assign(it, _sharedParts(q));
   }
+  /* Files shared with no words: the service worker's inbox number, or why
+     there is nothing in it. */
+  const files = _sharedParts(q);
+  if(files.shared || files.over || files.failed) return Object.assign({ kind: 'share', text: '' }, files);
   if(q.get('new') === '1') return { kind: 'new' };
   return null;
+}
+function _sharedParts(q){
+  const out = {};
+  const id = String(q.get('shared') || '');
+  if(/^[a-z0-9]{6,24}$/.test(id)) out.shared = id;
+  const over = parseInt(q.get('sharedover') || '0', 10);
+  if(over > 0 && over <= 10) out.over = over;
+  if(q.get('sharedfail') === '1') out.failed = true;
+  return out;
+}
+/* The files the service worker parked for this share, as files - and the
+   inbox emptied, whatever was in it, so nothing shared waits on the device
+   after the app has opened. */
+async function _sharedFilesTake(id){
+  const out = [];
+  try{
+    if(!window.caches) return out;
+    const box = await caches.open('amvshare-inbox');
+    for(const req of await box.keys()){
+      const m = /^\/__shared\/([a-z0-9]+)\/\d+$/.exec(new URL(req.url).pathname);
+      if(m && m[1] === id){
+        const res = await box.match(req);
+        if(res){ const blob = await res.blob(); out.push(new File([blob], decodeURIComponent(res.headers.get('X-Name') || 'file'), { type: blob.type })); }
+      }
+      await box.delete(req);
+    }
+  }catch(e){}
+  return out;
 }
 try{ window._launchIntent = _launchIntent; }catch(e){}
 
@@ -51882,7 +51884,7 @@ try{ window._launchIntent = _launchIntent; }catch(e){}
        the file itself comes through launchQueue, below. */
     if(!it && !q.has('open')) return;
     if(it) sessionStorage.setItem('amv_launch', JSON.stringify(it));
-    ['title', 'text', 'url', 'new', 'open'].forEach(k => q.delete(k));
+    ['title', 'text', 'url', 'new', 'open', 'shared', 'sharedover', 'sharedfail'].forEach(k => q.delete(k));
     history.replaceState(history.state, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
   }catch(e){}
 })();
@@ -51941,27 +51943,36 @@ function _applyLaunchFiles(){
 try{ window._applyLaunchFiles = _applyLaunchFiles; }catch(e){}
 
 /* Called once the app is open. */
-function _applyLaunchIntent(){
-  /* Only into an account. The app starts once before anybody is signed in
-     and again after - applied on the first start, the chat it made was left
-     behind by the second. Held until there is someone to give it to. */
-  try{ if(!(S.user && S.user.email)) return; }catch(e){ return; }
-  let it = null;
-  try{ it = JSON.parse(sessionStorage.getItem('amv_launch') || 'null'); sessionStorage.removeItem('amv_launch'); }catch(e){}
-  /* A file opened from the computer is the more specific ask; the address
-     it arrived on (?open=1) carries nothing else. */
-  if(_applyLaunchFiles()) return;
-  if(!it) return;
-  newChat();
-  if(it.kind !== 'share') return;
-  const box = $('mta'); if(!box) return;
-  box.value = String(it.text || '');
-  box.dispatchEvent(new Event('input', { bubbles: true }));
-  /* Saved as this chat's draft too, so the screen being drawn again on the way
-     in - which start-up does - puts it back rather than emptying the box. */
-  try{ _draftSave(box.value); }catch(e){}
-  try{ box.focus(); }catch(e){}
-  toast(T('Shared into a new chat. Say what you want done with it, then send.'), 'info', 6000);
+async function _applyLaunchIntent(){
+  try{
+    /* Only into an account. The app starts once before anybody is signed in
+       and again after - applied on the first start, the chat it made was left
+       behind by the second. Held until there is someone to give it to. */
+    try{ if(!(S.user && S.user.email)) return; }catch(e){ return; }
+    let it = null;
+    try{ it = JSON.parse(sessionStorage.getItem('amv_launch') || 'null'); sessionStorage.removeItem('amv_launch'); }catch(e){}
+    /* Files shared from another app join the words they came with, in the
+       same new chat; files opened from the computer arrive the same way. */
+    if(it && it.shared){
+      const got = await _sharedFilesTake(it.shared);
+      if(got.length) _launchFiles = (_launchFiles || []).concat(got);
+      else toast(T('The file you shared could not be read. Attach it from inside AMV instead.'), 'error', 8000);
+    }
+    if(it && it.failed) toast(T('The file you shared could not be read. Attach it from inside AMV instead.'), 'error', 8000);
+    if(it && it.over) toast(T('A shared file over 50 MB was left out. Attach a smaller copy.'), 'error', 8000);
+    const hadFiles = _applyLaunchFiles();
+    if(!it) return;
+    if(!hadFiles) newChat();
+    if(it.kind !== 'share' || !it.text) return;
+    const box = $('mta'); if(!box) return;
+    box.value = String(it.text || '');
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    /* Saved as this chat's draft too, so the screen being drawn again on the way
+       in - which start-up does - puts it back rather than emptying the box. */
+    try{ _draftSave(box.value); }catch(e){}
+    try{ box.focus(); }catch(e){}
+    if(!hadFiles) toast(T('Shared into a new chat. Say what you want done with it, then send.'), 'info', 6000);
+  }catch(e){ try{ _logErr('applyLaunchIntent', e); }catch(_){} }
 }
 try{ window._applyLaunchIntent = _applyLaunchIntent; }catch(e){}
 

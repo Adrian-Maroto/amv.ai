@@ -786,6 +786,40 @@ self.addEventListener('activate', e => {
   })());
 });
 
+/* SOMETHING SHARED INTO AMV FROM ANOTHER APP (manifest share_target).
+   The words go on in the address, as they always have; files are parked in
+   an inbox on this device - not in AMV's own caches, which are retired on
+   every update - for the page to take out, and the page empties it the
+   moment it does (_sharedFilesTake). Nothing here is sent anywhere. */
+const SHARE_INBOX = 'amvshare-inbox';
+const SHARE_FILE_MAX = 50 * 1024 * 1024;
+self.addEventListener('fetch', e => {
+  const req = e.request;
+  const u = new URL(req.url);
+  if (req.method !== 'POST' || u.origin !== self.location.origin || u.pathname !== '/share') return;
+  e.respondWith((async () => {
+    const q = new URLSearchParams();
+    try {
+      const form = await req.formData();
+      for (const k of ['title', 'text', 'url']) { const v = form.get(k); if (typeof v === 'string' && v.trim()) q.set(k, v.slice(0, 20000)); }
+      const files = form.getAll('files').filter(f => f && typeof f === 'object' && typeof f.arrayBuffer === 'function' && f.size > 0).slice(0, 10);
+      if (files.length) {
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        const box = await caches.open(SHARE_INBOX);
+        let n = 0, over = 0;
+        for (const f of files) {
+          if (f.size > SHARE_FILE_MAX) { over++; continue; }
+          await box.put('/__shared/' + id + '/' + (n++), new Response(f, { headers: {
+            'Content-Type': f.type || 'application/octet-stream', 'X-Name': encodeURIComponent(String(f.name || 'file').slice(0, 200)) } }));
+        }
+        if (n) q.set('shared', id);
+        if (over) q.set('sharedover', String(over));
+      }
+    } catch (err) { q.set('sharedfail', '1'); }
+    return Response.redirect('/?' + q.toString(), 303);
+  })());
+});
+
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
@@ -914,7 +948,15 @@ self.addEventListener('fetch', e => {
     ],
     /* In the phone's share sheet. Arrives as a new chat with it in the box,
        never sent by itself (_launchIntent). */
-    share_target: { action: '/', method: 'GET', params: { title: 'title', text: 'text', url: 'url' } },
+    /* Files as well as words: a PDF, a photo or a Word file shared from
+       another app is parked by the service worker and handed to the page
+       (sw.js, '/share'; _sharedFilesTake in 43-apps.js). */
+    share_target: { action: '/share', method: 'POST', enctype: 'multipart/form-data',
+      params: { title: 'title', text: 'text', url: 'url', files: [{ name: 'files', accept: [
+        'application/pdf', 'image/*', 'text/*', '.csv', '.md',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx'] }] } },
     /* "Open with AMV" on the computer, for the files AMV reads (and edits, for
        Word, Excel and PowerPoint). Arrives as a new chat with the file
        attached - never sent by itself (launchQueue in 43-apps.js). */

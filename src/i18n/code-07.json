@@ -3684,5 +3684,43 @@
   "it": "Sul computer, apri un file Word, Excel, PowerPoint, PDF o di testo con AMV e arriva in una nuova chat.",
   "ko": "컴퓨터에서 Word, Excel, PowerPoint, PDF 또는 텍스트 파일을 AMV로 열면 새 채팅으로 들어옵니다.",
   "ta": "கணினியில் Word, Excel, PowerPoint, PDF அல்லது உரைக் கோப்பை AMV மூலம் திறந்தால் அது புதிய அரட்டைக்கு வரும்."
+ },
+ "The file you shared could not be read. Attach it from inside AMV instead.": {
+  "es": "No se pudo leer el archivo que compartiste. Adjúntalo desde AMV.",
+  "zh": "无法读取你分享的文件。请在 AMV 内附加它。",
+  "hi": "आपकी साझा की गई फ़ाइल पढ़ी नहीं जा सकी। इसे AMV के अंदर से संलग्न करें।",
+  "ar": "تعذّرت قراءة الملف الذي شاركته. أرفقه من داخل AMV بدلًا من ذلك.",
+  "pt": "Não foi possível ler o arquivo que você compartilhou. Anexe-o de dentro do AMV.",
+  "fr": "Le fichier partagé n’a pas pu être lu. Joignez-le depuis AMV.",
+  "de": "Die geteilte Datei konnte nicht gelesen werden. Hänge sie stattdessen in AMV an.",
+  "ja": "共有したファイルを読み込めませんでした。AMV の中から添付してください。",
+  "ru": "Не удалось прочитать файл, которым вы поделились. Прикрепите его внутри AMV.",
+  "id": "File yang Anda bagikan tidak dapat dibaca. Lampirkan dari dalam AMV.",
+  "bn": "আপনার শেয়ার করা ফাইলটি পড়া যায়নি। AMV-এর ভেতর থেকে এটি সংযুক্ত করুন।",
+  "ur": "آپ کی شیئر کی گئی فائل پڑھی نہیں جا سکی۔ اسے AMV کے اندر سے منسلک کریں۔",
+  "tr": "Paylaştığın dosya okunamadı. Onu AMV içinden ekle.",
+  "vi": "Không đọc được tệp bạn chia sẻ. Hãy đính kèm nó từ trong AMV.",
+  "it": "Impossibile leggere il file condiviso. Allegalo da AMV.",
+  "ko": "공유한 파일을 읽을 수 없습니다. AMV 안에서 첨부하세요.",
+  "ta": "நீங்கள் பகிர்ந்த கோப்பைப் படிக்க முடியவில்லை. அதை AMV-க்குள் இருந்து இணைக்கவும்."
+ },
+ "A shared file over 50 MB was left out. Attach a smaller copy.": {
+  "es": "Se omitió un archivo compartido de más de 50 MB. Adjunta una copia más pequeña.",
+  "zh": "超过 50 MB 的分享文件未被加入。请附加较小的副本。",
+  "hi": "50 MB से बड़ी साझा फ़ाइल छोड़ दी गई। छोटी प्रति संलग्न करें।",
+  "ar": "تم استبعاد ملف مشارك يزيد على 50 ميغابايت. أرفق نسخة أصغر.",
+  "pt": "Um arquivo compartilhado com mais de 50 MB ficou de fora. Anexe uma cópia menor.",
+  "fr": "Un fichier partagé de plus de 50 Mo a été écarté. Joignez une copie plus petite.",
+  "de": "Eine geteilte Datei über 50 MB wurde weggelassen. Hänge eine kleinere Kopie an.",
+  "ja": "50 MB を超える共有ファイルは除外されました。小さいコピーを添付してください。",
+  "ru": "Файл больше 50 МБ не был добавлен. Прикрепите копию поменьше.",
+  "id": "File bersama lebih dari 50 MB tidak disertakan. Lampirkan salinan yang lebih kecil.",
+  "bn": "৫০ MB-এর বেশি একটি শেয়ার করা ফাইল বাদ দেওয়া হয়েছে। ছোট একটি কপি সংযুক্ত করুন।",
+  "ur": "50 MB سے بڑی شیئر کی گئی فائل چھوڑ دی گئی۔ چھوٹی کاپی منسلک کریں۔",
+  "tr": "50 MB’tan büyük paylaşılan bir dosya dışarıda bırakıldı. Daha küçük bir kopya ekle.",
+  "vi": "Một tệp chia sẻ lớn hơn 50 MB đã bị bỏ qua. Hãy đính kèm bản nhỏ hơn.",
+  "it": "Un file condiviso oltre i 50 MB è stato escluso. Allega una copia più piccola.",
+  "ko": "50MB가 넘는 공유 파일은 제외되었습니다. 더 작은 사본을 첨부하세요.",
+  "ta": "50 MB-க்கு மேற்பட்ட பகிரப்பட்ட கோப்பு விடப்பட்டது. சிறிய நகலை இணைக்கவும்."
  }
 }

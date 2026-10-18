@@ -38,10 +38,43 @@ function _launchIntent(search){
       for(let i = kept.length - 1; i >= 0; i--) if(p.includes(kept[i])) kept.splice(i, 1);
       kept.push(p);
     }
-    return { kind: 'share', text: kept.join('\n\n').slice(0, 20000) };
+    const it = { kind: 'share', text: kept.join('\n\n').slice(0, 20000) };
+    return Object.assign(it, _sharedParts(q));
   }
+  /* Files shared with no words: the service worker's inbox number, or why
+     there is nothing in it. */
+  const files = _sharedParts(q);
+  if(files.shared || files.over || files.failed) return Object.assign({ kind: 'share', text: '' }, files);
   if(q.get('new') === '1') return { kind: 'new' };
   return null;
+}
+function _sharedParts(q){
+  const out = {};
+  const id = String(q.get('shared') || '');
+  if(/^[a-z0-9]{6,24}$/.test(id)) out.shared = id;
+  const over = parseInt(q.get('sharedover') || '0', 10);
+  if(over > 0 && over <= 10) out.over = over;
+  if(q.get('sharedfail') === '1') out.failed = true;
+  return out;
+}
+/* The files the service worker parked for this share, as files - and the
+   inbox emptied, whatever was in it, so nothing shared waits on the device
+   after the app has opened. */
+async function _sharedFilesTake(id){
+  const out = [];
+  try{
+    if(!window.caches) return out;
+    const box = await caches.open('amvshare-inbox');
+    for(const req of await box.keys()){
+      const m = /^\/__shared\/([a-z0-9]+)\/\d+$/.exec(new URL(req.url).pathname);
+      if(m && m[1] === id){
+        const res = await box.match(req);
+        if(res){ const blob = await res.blob(); out.push(new File([blob], decodeURIComponent(res.headers.get('X-Name') || 'file'), { type: blob.type })); }
+      }
+      await box.delete(req);
+    }
+  }catch(e){}
+  return out;
 }
 try{ window._launchIntent = _launchIntent; }catch(e){}
 
@@ -57,7 +90,7 @@ try{ window._launchIntent = _launchIntent; }catch(e){}
        the file itself comes through launchQueue, below. */
     if(!it && !q.has('open')) return;
     if(it) sessionStorage.setItem('amv_launch', JSON.stringify(it));
-    ['title', 'text', 'url', 'new', 'open'].forEach(k => q.delete(k));
+    ['title', 'text', 'url', 'new', 'open', 'shared', 'sharedover', 'sharedfail'].forEach(k => q.delete(k));
     history.replaceState(history.state, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
   }catch(e){}
 })();
@@ -116,27 +149,36 @@ function _applyLaunchFiles(){
 try{ window._applyLaunchFiles = _applyLaunchFiles; }catch(e){}
 
 /* Called once the app is open. */
-function _applyLaunchIntent(){
-  /* Only into an account. The app starts once before anybody is signed in
-     and again after - applied on the first start, the chat it made was left
-     behind by the second. Held until there is someone to give it to. */
-  try{ if(!(S.user && S.user.email)) return; }catch(e){ return; }
-  let it = null;
-  try{ it = JSON.parse(sessionStorage.getItem('amv_launch') || 'null'); sessionStorage.removeItem('amv_launch'); }catch(e){}
-  /* A file opened from the computer is the more specific ask; the address
-     it arrived on (?open=1) carries nothing else. */
-  if(_applyLaunchFiles()) return;
-  if(!it) return;
-  newChat();
-  if(it.kind !== 'share') return;
-  const box = $('mta'); if(!box) return;
-  box.value = String(it.text || '');
-  box.dispatchEvent(new Event('input', { bubbles: true }));
-  /* Saved as this chat's draft too, so the screen being drawn again on the way
-     in - which start-up does - puts it back rather than emptying the box. */
-  try{ _draftSave(box.value); }catch(e){}
-  try{ box.focus(); }catch(e){}
-  toast(T('Shared into a new chat. Say what you want done with it, then send.'), 'info', 6000);
+async function _applyLaunchIntent(){
+  try{
+    /* Only into an account. The app starts once before anybody is signed in
+       and again after - applied on the first start, the chat it made was left
+       behind by the second. Held until there is someone to give it to. */
+    try{ if(!(S.user && S.user.email)) return; }catch(e){ return; }
+    let it = null;
+    try{ it = JSON.parse(sessionStorage.getItem('amv_launch') || 'null'); sessionStorage.removeItem('amv_launch'); }catch(e){}
+    /* Files shared from another app join the words they came with, in the
+       same new chat; files opened from the computer arrive the same way. */
+    if(it && it.shared){
+      const got = await _sharedFilesTake(it.shared);
+      if(got.length) _launchFiles = (_launchFiles || []).concat(got);
+      else toast(T('The file you shared could not be read. Attach it from inside AMV instead.'), 'error', 8000);
+    }
+    if(it && it.failed) toast(T('The file you shared could not be read. Attach it from inside AMV instead.'), 'error', 8000);
+    if(it && it.over) toast(T('A shared file over 50 MB was left out. Attach a smaller copy.'), 'error', 8000);
+    const hadFiles = _applyLaunchFiles();
+    if(!it) return;
+    if(!hadFiles) newChat();
+    if(it.kind !== 'share' || !it.text) return;
+    const box = $('mta'); if(!box) return;
+    box.value = String(it.text || '');
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    /* Saved as this chat's draft too, so the screen being drawn again on the way
+       in - which start-up does - puts it back rather than emptying the box. */
+    try{ _draftSave(box.value); }catch(e){}
+    try{ box.focus(); }catch(e){}
+    if(!hadFiles) toast(T('Shared into a new chat. Say what you want done with it, then send.'), 'info', 6000);
+  }catch(e){ try{ _logErr('applyLaunchIntent', e); }catch(_){} }
 }
 try{ window._applyLaunchIntent = _applyLaunchIntent; }catch(e){}
 
