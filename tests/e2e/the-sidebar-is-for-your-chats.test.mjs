@@ -80,7 +80,11 @@ section('Help and What\u2019s New say where things are now');
      still sends people to a sidebar profile, or a Team plan behind Elite, is
      a page explaining a product that is not there. */
   const r = await page.evaluate(async () => {
-    setTab('help'); await new Promise(r => setTimeout(r, 300));
+    /* The questions arrive from help-faqs.js the first time Help opens, so
+       this waits for them rather than for a fixed moment. */
+    setTab('help');
+    for (let i = 0; i < 100 && !Array.isArray(window._FAQS); i++) await new Promise(r => setTimeout(r, 50));
+    await new Promise(r => setTimeout(r, 300));
     const t = document.getElementById('vc').textContent;
     return { avatar: /avatar at the top right/.test(t), team: /per person a month/.test(t) && !/Teams unlocks on/.test(t),
              mail: /email me when it is done/i.test(t), news: /Settings opens in the middle/.test(CHANGELOG[0].items.join(' ')) };

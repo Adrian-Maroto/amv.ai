@@ -1,3 +1,7 @@
+/* @exclusive - this suite times the page (first paint, blocking time). Run
+   beside three other browsers it times the machine instead: it failed at
+   2,106ms of blocking against a 2,000ms budget during a full gate, and
+   measures 200-250ms on its own. The runner gives it the machine to itself. */
 /* THE GATE MEASURED BYTES AND SHIPPED A TWELVE-SECOND BLANK PAGE.
 
    There was one performance check in this product: a ceiling on the gzipped
