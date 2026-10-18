@@ -1971,3 +1971,29 @@ pass-through to a connected app's API (`/v1/connect/api`) and connectors
 somebody else wrote - neither has a fixed action AMV could read back, and
 both are labelled as the app's word, not AMV's. The cloud browser's actions
 are on a site AMV cannot read the state of beyond the page it shows.
+
+## Round forty-five - a repository in the cloud workspace, and back
+
+`/v1/computer/checkout` copies one exact commit of a GitHub repository into the
+person's cloud workspace; the archive is fetched by the Worker with the
+person's grant, so the GitHub key never enters the machine. Sending back pushes
+a new branch built on that commit (`github.push` with `baseSha`, and `deletes`
+only with it).
+
+| # | what was broken | caught by |
+|---|---|---|
+| 276 | an archive path with `..` written where it pointed | 3 assertions |
+| 277 | a symlink in the archive written as a file | 3 assertions |
+| 278 | an archive that unpacks past the bound accepted | 1 assertion |
+| 279 | a repository name of `../x` reaching GitHub's API | 1 assertion |
+
+**Found while writing it:** `_ghRepo` accepted `.` and `..` as an owner or a
+name - they fit the allowed characters - so every GitHub action could be sent
+to another part of GitHub's API with the person's key (`/repos/../etc/...` is
+`/etc/...`). Refused at the one check every action uses.
+
+**Not measured on the real service:** the cloud computer is not switched on in
+production yet (GO-LIVE 2c2). This is driven against a real bridge in
+`--cloud` mode behind a stand-in for the container runtime - whose own race
+(two first requests starting two machines) was fixed in both suites that use
+it.

@@ -181,6 +181,15 @@ Companion docs (do not duplicate them here - read them):
   container from a hash of the account and meters AWAKE time - what the
   provider bills - against the plan (LESSONS 579). Anything needing the
   person's own machine checks `bridgeLocal()`, not `BRIDGE.connected`.
+  **A GitHub repository opens in it** through `/v1/computer/checkout`
+  (`src/worker/10a-cloud-checkout.js`): the SERVER fetches one exact commit's
+  archive with the person's grant and writes only text files into
+  `repos/<name>` - the GitHub key never enters the machine. Binaries,
+  oversized files, symlinks, paths that climb out and `.git` are skipped and
+  named; the folder records its commit (`.amv-checkout.json`) and is tracked by
+  git. Sending back (`36c-cloud-repo.js`) asks git what changed and pushes a
+  NEW branch through `github.push` with `baseSha` (the copied commit) and
+  `deletes`, so nothing is built on a base the work never saw.
   **AMV's own browser** (`amv-browser`, `MCP_BROWSER` in 38-mcp.js) is how chat
   and Crew connect to ANY service with a sign-in: `@playwright/mcp` pinned to
   one version, run by the bridge on the person's computer, visible (the bridge
