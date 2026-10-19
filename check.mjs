@@ -1475,7 +1475,12 @@ step('Page weight is under control', () => {
      address compiled into every visitor's copy, and text boxes' hints and
      line-broken prompt cards now reach the translator (~0.3KB gzipped). Both
      run at boot, before anything could be fetched. */
-  const CEILING = 611 * 1024;   // gzipped, which is what actually crosses the network
+  /* 611 -> 612, 2026-10-19, deliberately: a task in steps can join - a step
+     waits for several that run side by side, and the chat tool says so, the
+     Crew row counts how many of them are done (~0.2KB gzipped; the page was
+     20 bytes under the old ceiling). The tool's schema is sent with every
+     chat request, so it cannot be fetched later. */
+  const CEILING = 612 * 1024;   // gzipped, which is what actually crosses the network
   if (wire > CEILING)
     throw new Error(`index.html is ${KB(wire)} gzipped (${KB(buf.length)} raw) - over the ${KB(CEILING)} ceiling. `
       + 'Trim it, or raise the ceiling deliberately and say why.');

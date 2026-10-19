@@ -170,6 +170,98 @@ section('Resuming a waiting step keeps it waiting; a step cannot be made to repe
   ok(e.status === 409 && e.d.code === 'step_once', 'and making it repeat is refused, saying why', e.status + ' ' + e.d.code);
 }
 
+/* A JOIN: three pieces of research side by side, one step that compares all
+   three, and one after that. The step that joins runs once, after the last of
+   the three, with every result - and not at all if any of them fails. */
+const JOIN = [
+  { title: 'Gym A', detail: 'Find the price and hours of Gym A in Leeds.' },
+  { title: 'Gym B', detail: 'Find the price and hours of Gym B in Leeds.' },
+  { title: 'Gym C', detail: 'Find the price and hours of Gym C in Leeds.' },
+  { title: 'Compare', detail: 'Compare the three gyms on price and hours.', after: [0, 1, 2] },
+  { title: 'Recommend', detail: 'Recommend one gym for a beginner.', after: 3 },
+];
+const said = (n) => { const p = prompts[n - 1] || ''; const m = /Find the price and hours of (Gym [ABC])/.exec(p); return m ? 'FOUND-' + m[1].replace(' ', '') : 'RESULT-' + n; };
+
+section('Steps that wait for nothing run side by side; a step can wait for several');
+{
+  put({ items: [], results: [] });
+  const r = await post('/auto/create', { steps: JOIN, approval: 'require' });
+  ok(r.status === 200 && r.d.items.length === 5, 'five steps, created in one go', r.status + ' ' + JSON.stringify(r.d).slice(0, 200));
+  const [a, b, c, d, e] = r.d.items;
+  ok(![a, b, c].some(x => x.waiting) && [a, b, c].every(x => x.next <= Date.now() + 1000), 'the three pieces of research all start at once', [a, b, c].map(x => x.waiting));
+  ok(d.waiting && Array.isArray(d.after) && d.after.join() === [a.id, b.id, c.id].join(), 'the comparison waits for all three', d.after);
+  ok(e.waiting && e.after === d.id, 'and the last waits for the comparison alone, stored as it always was', e.after);
+  ok(d.approval === 'auto' && e.approval === 'require', 'only the step nothing waits on is delivered as asked', [d.approval, e.approval]);
+}
+
+section('The step that joins runs once, after the last of them, with every result');
+{
+  const [a, b, c, d, e] = rec().items;
+  /* Gym C is paused, so the first tick finishes only two of the three. */
+  await post('/auto/update', { id: c.id, action: 'pause' });
+  prompts = []; mode = 'ok'; answerText = said;
+  let r = await tickAt(Date.now() + 60e3);
+  let d1 = r.items.find(x => x.id === d.id);
+  ok(prompts.length === 2 && !prompts.some(p => /Compare the three/.test(p)), 'two of three finished: the comparison has not run', prompts.length);
+  ok(d1.waiting && d1.got && Object.keys(d1.got).length === 2, 'it is still waiting, holding the two results it has', d1.got && Object.keys(d1.got));
+  /* Resumed, a one-time job goes back on its own daily clock. */
+  await post('/auto/update', { id: c.id, action: 'resume' });
+  prompts = [];
+  r = await tickAt(Date.now() + 86400e3 + 120e3);
+  const join = prompts.find(p => /Compare the three gyms/.test(p)) || '';
+  ok(prompts.length === 3 && !!join, 'with the third finished, the comparison runs - and then the last step', prompts.length);
+  ok(/FOUND-GymA/.test(join) && /FOUND-GymB/.test(join) && /FOUND-GymC/.test(join), 'it is handed all three results', join.slice(0, 400));
+  ok(/## From "Gym A"/.test(join) && /## From "Gym C"/.test(join) && /The 3 steps it waits for/.test(join), 'each under its own name, and told there were three', join.slice(0, 400));
+  const tag = (/between the two (\S+) markers/.exec(join) || [])[1] || '';
+  ok(!!tag && join.indexOf(tag, join.indexOf('markers') + 8) < join.indexOf('FOUND-GymA') && join.lastIndexOf(tag) > join.indexOf('FOUND-GymC'),
+    'all three inside one fence, as material', tag);
+  ok(prompts.filter(p => /Compare the three/.test(p)).length === 1, 'and it ran exactly once', prompts.length);
+  const d2 = r.items.find(x => x.id === d.id);
+  ok(d2.done && !d2.waiting && !d2.got, 'finished, holding nothing over', [d2.done, d2.got]);
+  ok(/RESULT-/.test(prompts[2] || '') && /Recommend one gym/.test(prompts[2] || ''), 'and the last step built on the comparison', (prompts[2] || '').slice(0, 160));
+  answerText = null;
+}
+
+section('If any step it waits for fails, the join is cancelled, and so is what follows');
+{
+  put({ items: [], results: [] });
+  const r0 = await post('/auto/create', { steps: JOIN, approval: 'auto' });
+  const [, b, , d, e] = r0.d.items;
+  await post('/auto/update', { id: b.id, action: 'delete' });
+  prompts = []; mode = 'ok'; answerText = said;
+  const r = await tickAt(Date.now() + 60e3);
+  const d2 = r.items.find(x => x.id === d.id), e2 = r.items.find(x => x.id === e.id);
+  ok(d2.done && !d2.waiting && /\("Gym B"\)/.test(d2.lastError || ''), 'the comparison never runs, and names the step that is missing', d2.lastError);
+  ok(e2.done && !e2.waiting, 'nor does the step after it', e2.lastError);
+  ok(prompts.length === 2 && !prompts.some(p => /Compare the three|Recommend one gym/.test(p)), 'only the two surviving pieces of research ran', prompts.length);
+  answerText = null;
+}
+
+section('Each result handed to a join is cut to its share');
+{
+  put({ items: [], results: [] });
+  await post('/auto/create', { steps: JOIN.slice(0, 4), approval: 'auto' });
+  prompts = []; mode = 'ok';
+  answerText = (n) => n <= 3 ? 'X'.repeat(5000) + 'TAIL-' + n : 'RESULT-' + n;
+  await tickAt(Date.now() + 60e3);
+  const join = prompts.find(p => /Compare the three gyms/.test(p)) || '';
+  ok(join && !/TAIL-/.test(join) && (join.match(/X{4000}/g) || []).length === 3, 'three long results, each cut to a third of the whole', join.length);
+  answerText = null;
+}
+
+section('What a step may wait for is checked');
+{
+  put({ items: [], results: [] });
+  const fwd = await post('/auto/create', { steps: [JOIN[0], { ...JOIN[3], after: [0, 2] }, JOIN[1]] });
+  ok(fwd.status === 400 && fwd.d.code === 'step_after', 'a step cannot wait for one after it', fwd.status);
+  const many = await post('/auto/create', { steps: [JOIN[0], JOIN[1], JOIN[2], JOIN[0], JOIN[1], { ...JOIN[3], after: [0, 1, 2, 3, 4] }].slice(0, 5)
+    .concat([]).map((x, i) => i === 4 ? { ...JOIN[3], after: [0, 1, 2, 3, 3, 3, 3] } : x) });
+  ok(many.status === 400 && many.d.code === 'step_after', 'nor for more than four', many.status);
+  const dup = await post('/auto/create', { steps: [JOIN[0], { ...JOIN[3], after: [0, 0] }] });
+  ok(dup.status === 200 && dup.d.items[1].after === dup.d.items[0].id, 'the same step named twice is one step to wait for', dup.d.items && dup.d.items[1].after);
+  ok(rec().items.length === 2, 'and nothing refused was saved', rec().items.length);
+}
+
 section('The every-minute tick starts booked work, and never scans everybody');
 {
   put({ items: [], results: [] });

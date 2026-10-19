@@ -23207,7 +23207,9 @@ function _mcServerSchedRow(x){
      row lying about the one thing somebody opened it to check. */
   const stepOf = x.step ? T('Step {0} of {1}').replace('{0}', x.step.n).replace('{1}', x.step.of) + ' · ' : '';
   const when = stepOf + (x.done && /^did not run/.test(String(x.lastError||'')) ? T('Did not run') + ' - ' + String(x.lastError).replace(/^did not run - /, '')
-    : x.waiting ? T('Waits for the step before it to finish')
+    : x.waiting ? (Array.isArray(x.after) && x.after.length > 1
+        ? T('Waits for {0} steps to finish').replace('{0}', x.after.length) + ' \u00b7 ' + T('{0} done').replace('{0}', Object.keys(x.got || {}).length)
+        : T('Waits for the step before it to finish'))
     : (x.when && x.active !== false) ? (/^not watching/.test(String(x.lastError || '')) ? T('Not watching') + ' - ' + String(x.lastError).replace(/^not watching - /, '')
         : T('Watching for {0}').replace('{0}', _whenSay(x.when)) + (x.lastCheckAt ? ' \u00b7 ' + T('last checked {0}').replace('{0}', _agoLabel(x.lastCheckAt)) : ''))
     : x.done ? ('Ran once' + (x.doneAt ? ', ' + _dayLabel(x.doneAt) : '') + ' · finished')
@@ -28328,12 +28330,13 @@ const AMV_TOOLS = [
      all at once or not at all (_autoCreateSteps). */
   {
     name:'crew_steps',
-    description:'Start a task that runs in STEPS on AMV\'s servers, in the background, starting within about a minute and carrying on with their computer off and AMV closed. Each step can wait for an earlier one and is handed what it produced: "research these three suppliers, then compare them, then draft the email to the best one". Use when they want something multi-stage done in the background or "while I am away", or the work is too long to wait for now. 2-5 steps; the first starts without waiting. Each step counts as one of their plan\'s background jobs until it finishes. Each step is unattended: it can search the web and write, and cannot send, buy, book or touch an account - the result of the last step waits for them. Not for work you can just do now in this answer, and not for something on a schedule (use crew_add).',
+    description:'Start a task that runs in STEPS on AMV\'s servers, in the background, starting within about a minute and carrying on with their computer off and AMV closed. Each step can wait for one or several earlier steps and is handed what they produced; steps that wait for nothing run side by side: "research three suppliers at once, then compare them, then draft the email to the best one". Use when they want something multi-stage done in the background or "while I am away", or the work is too long to wait for now. 2-5 steps; the first starts without waiting. Each step counts as one of their plan\'s background jobs until it finishes. Each step is unattended: it can search the web and write, and cannot send, buy, book or touch an account - the result of the last step waits for them. Not for work you can just do now in this answer, and not for something on a schedule (use crew_add).',
     input_schema:{ type:'object', properties:{
       steps:{ type:'array', minItems:2, maxItems:5, items:{ type:'object', properties:{
         title:{type:'string', description:'A few words naming the step, shown to the person.'},
         detail:{type:'string', description:'Exactly what this step does, as an instruction to whoever runs it. It sees this and the result of the step it waits for, nothing else - include everything else it needs.'},
-        after:{type:'integer', minimum:0, description:'Which earlier step (0 is the first) it waits for and builds on. Leave out for a step that starts straight away.'}
+        after:{ anyOf:[ {type:'integer', minimum:0}, {type:'array', items:{type:'integer', minimum:0}, minItems:1, maxItems:4} ],
+                description:'Earlier step it waits for and builds on (0 is the first), or a list to wait for all of, e.g. [0,1,2]. Leave out to start straight away.'}
       }, required:['title','detail'] } },
       approval:{type:'string', enum:['require','auto'], description:'For the LAST step\'s result: "require" (default) waits for them before anything goes out; "auto" delivers it on its own.'}
     }, required:['steps'] }
@@ -28900,7 +28903,8 @@ async function _confirmModelTool(name, input){
   else if(name==='crew_steps'){
     const st = Array.isArray(input.steps) ? input.steps.slice(0, 5) : [];
     detail = st.map((s, i) => (i + 1) + '. ' + String((s && s.title) || '').slice(0, 80)
-               + (s && Number.isInteger(s.after) ? ' (after step ' + (s.after + 1) + ')' : '')
+               + (s && Number.isInteger(s.after) ? ' (after step ' + (s.after + 1) + ')'
+                  : s && Array.isArray(s.after) && s.after.length ? ' (after steps ' + s.after.filter(Number.isInteger).map(a => a + 1).join(', ') + ')' : '')
                + '\n   ' + String((s && s.detail) || '').slice(0, 300)).join('\n')
            + '\n\nIt starts within about a minute and keeps going with AMV closed. Each step uses one of your background jobs until it finishes.'
            + (String(input.approval || 'require') === 'auto'
@@ -29265,10 +29269,12 @@ function _crewStepsCard(items){
   const byId = new Map(items.map(x => [x.id, x]));
   return '<div class="chat-run dlg dlg-steps"><div class="chat-run-h">' + escH(T('Task in {0} steps, running in the background').replace('{0}', items.length)) + '</div><ul class="dlg-list">'
     + items.map(x => {
-        const prev = x.after && byId.get(x.after);
+        /* One step or several (a join): each named by its title. */
+        const prev = (Array.isArray(x.after) ? x.after : x.after ? [x.after] : []).map(id => byId.get(id)).filter(Boolean)
+          .map(p => (p.step && p.step.title) || '').filter(Boolean);
         return '<li class="dlg-i"><span class="dlg-st" aria-hidden="true">' + escH(String((x.step && x.step.n) || '')) + '</span>'
           + '<span class="dlg-t">' + escH((x.step && x.step.title) || String(x.detail || '').slice(0, 60))
-          + (prev ? ' <span class="dlg-after">' + escH(T('after {0}').replace('{0}', (prev.step && prev.step.title) || '')) + '</span>' : '') + '</span></li>';
+          + (prev.length ? ' <span class="dlg-after">' + escH(T('after {0}').replace('{0}', prev.join(', '))) + '</span>' : '') + '</span></li>';
       }).join('')
     + '</ul><div class="dlg-foot"><button class="btn bs" type="button" data-dact="setTab" data-darg="crew">' + escH(T('Open Crew')) + '</button></div></div>';
 }
@@ -29357,7 +29363,8 @@ async function _crewTool(name, input){
   if(name === 'crew_steps'){
     const raw = Array.isArray(input.steps) ? input.steps : [];
     const steps = raw.map(s => ({ title: String((s && s.title) || '').trim().slice(0, 80), detail: String((s && s.detail) || '').trim(),
-                                  ...(s && Number.isInteger(s.after) ? { after: s.after } : {}) }));
+                                  ...(s && Number.isInteger(s.after) ? { after: s.after }
+                                      : s && Array.isArray(s.after) && s.after.length ? { after: s.after.filter(Number.isInteger).slice(0, 4) } : {}) }));
     if(steps.length < 2 || steps.length > 5 || steps.some(s => !s.detail))
       return { text:'A task in steps needs two to five steps, each saying what it does. For one step, use crew_add or just do it now.', render:null };
     const approval = input.approval === 'auto' ? 'auto' : 'require';
@@ -29367,7 +29374,7 @@ async function _crewTool(name, input){
     _crewSynced();
     const made = d.items || [];
     return { text:'Started. ' + made.length + ' steps are in their Crew tab, running on AMV\u2019s servers: the first starts within about '
-      + ((d.startsWithinMin || 1) === 1 ? 'a minute' : d.startsWithinMin + ' minutes') + ', and each later step starts when the step it waits for has finished, building on its result. '
+      + ((d.startsWithinMin || 1) === 1 ? 'a minute' : d.startsWithinMin + ' minutes') + ', and each later step starts when the step or steps it waits for have finished, building on their results. '
       + 'It keeps going with their computer off and AMV closed. '
       + (approval === 'auto' ? 'The final result is delivered without review. ' : 'The final result waits for their approval. ')
       + 'If a step fails, the steps after it do not run, and Crew says which one stopped it. Do NOT say it has finished or describe results - nothing has run yet.',

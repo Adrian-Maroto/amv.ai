@@ -10695,5 +10695,43 @@
   "it": "Questa risposta non contiene una tabella da mettere in un foglio di calcolo. Chiedi i dati come tabella, poi esportali.",
   "ko": "이 답변에는 스프레드시트에 넣을 표가 없습니다. 데이터를 표로 요청한 뒤 내보내세요.",
   "ta": "இந்தப் பதிலில் விரிதாளில் வைக்க அட்டவணை இல்லை. தரவை அட்டவணையாகக் கேட்டு, பின் ஏற்றுமதி செய்யுங்கள்."
+ },
+ "Waits for {0} steps to finish": {
+  "es": "Espera a que terminen {0} pasos",
+  "zh": "等待 {0} 个步骤完成",
+  "hi": "{0} चरणों के पूरे होने का इंतज़ार",
+  "ar": "ينتظر انتهاء {0} خطوات",
+  "pt": "Espera {0} etapas terminarem",
+  "fr": "Attend la fin de {0} étapes",
+  "de": "Wartet, bis {0} Schritte fertig sind",
+  "ja": "{0} 個のステップの完了を待っています",
+  "ru": "Ждёт завершения шагов: {0}",
+  "id": "Menunggu {0} langkah selesai",
+  "bn": "{0}টি ধাপ শেষ হওয়ার অপেক্ষায়",
+  "ur": "{0} مراحل مکمل ہونے کا انتظار",
+  "tr": "{0} adımın bitmesini bekliyor",
+  "vi": "Đang chờ {0} bước hoàn tất",
+  "it": "Attende che finiscano {0} passaggi",
+  "ko": "{0}개 단계가 끝나기를 기다리는 중",
+  "ta": "{0} படிகள் முடியக் காத்திருக்கிறது"
+ },
+ "{0} done": {
+  "es": "{0} terminados",
+  "zh": "已完成 {0} 个",
+  "hi": "{0} पूरे",
+  "ar": "اكتمل {0}",
+  "pt": "{0} concluídas",
+  "fr": "{0} terminées",
+  "de": "{0} fertig",
+  "ja": "{0} 個完了",
+  "ru": "готово: {0}",
+  "id": "{0} selesai",
+  "bn": "{0}টি শেষ",
+  "ur": "{0} مکمل",
+  "tr": "{0} tamamlandı",
+  "vi": "{0} đã xong",
+  "it": "{0} completati",
+  "ko": "{0}개 완료",
+  "ta": "{0} முடிந்தது"
  }
 }

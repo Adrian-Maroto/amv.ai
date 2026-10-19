@@ -211,16 +211,28 @@ function _whenMatch(when, m){
    When a step finishes, this decides what happens to the ones waiting on it,
    and it is the only place that does:
      - it produced a result: each waiting step is released - due now, carrying
-       that result as `prior`, which its run reads as material to build on;
+       that result as `prior`, which its run reads as material to build on. A
+       step waiting for several keeps each result in `got` and is released
+       only when the last of them has finished, with all of them;
      - it did not (it failed for good, was set to suggest only, waited past its
-       window, or was deleted): each waiting step is cancelled and says why,
+       window, or was deleted): each waiting step is cancelled and says why -
+       a join too, since it cannot compare what one of its steps never made -
        and so is everything waiting on THOSE. Nothing is left waiting for a
        result that is never coming, and nothing runs without what it needed. */
 const AUTO_STEP_WAIT_MS = 3 * 86400e3;
 const AUTO_STEP_PRIOR_MAX = 6000;
 const AUTO_STEPS_MAX = 5;
+/* A JOIN: a step that waits for several. Each result it is handed is cut to
+   its share of AUTO_STEP_JOINED_MAX, so four steps running side by side cannot
+   make the step that compares them four times as expensive to run. */
+const AUTO_STEP_JOIN_MAX = 4;
+const AUTO_STEP_JOINED_MAX = 12000;
 function _autoStepTitle(item){
   return String((item && item.step && item.step.title) || (item && item.detail) || 'the step before').slice(0, 80);
+}
+/* What a step waits for, as a list, whichever way it was stored. */
+function _autoStepAfter(d){
+  return !d || d.after == null ? [] : Array.isArray(d.after) ? d.after : [d.after];
 }
 function _autoSettleSteps(rec, item, ok, out, now, why){
   if(!rec || !item || !item.id) return 0;
@@ -228,8 +240,23 @@ function _autoSettleSteps(rec, item, ok, out, now, why){
   const items = rec.items || [];
   const title = _autoStepTitle(item);
   for(const d of items){
-    if(!d || d.after !== item.id || !d.waiting) continue;
+    if(!d || !d.waiting) continue;
+    const waits = _autoStepAfter(d);
+    if(!waits.includes(item.id)) continue;
     n++;
+    if(ok && waits.length > 1){
+      /* One of several has finished. Kept until the last one does - and
+         released only then, with every result, each under its own name. */
+      d.got = Object.assign({}, d.got, { [item.id]: { title, out: String(out || '').slice(0, AUTO_STEP_PRIOR_MAX), at: now } });
+      if(!waits.every(id => d.got[id])) continue;
+      const share = Math.floor(AUTO_STEP_JOINED_MAX / waits.length);
+      const parts = waits.map(id => d.got[id]);
+      d.waiting = false; d.next = now; d.onceAt = now;
+      d.prior = { title: parts.map(p => p.title).join('", "'), n: parts.length, at: now,
+                  out: parts.map(p => '## From "' + p.title + '"\n' + String(p.out).slice(0, share)).join('\n\n') };
+      d.got = null;
+      continue;
+    }
     if(ok){
       d.waiting = false; d.next = now; d.onceAt = now;
       d.prior = { title, out: String(out || '').slice(0, AUTO_STEP_PRIOR_MAX), at: now };

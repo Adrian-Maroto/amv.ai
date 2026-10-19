@@ -86,7 +86,10 @@
     "tests": ["tests/worker/a-company-signs-in-only-its-own-people.test.mjs"],
     "says": ["company sign-in", "openid connect"] },
 
-  { "id": "task.join", "status": "next", "name": "A step that waits for several steps running side by side" },
+  { "id": "task.join", "status": "built", "name": "A step that waits for several steps running side by side, handed every result",
+    "code": [["src/worker/13-schedules-and-approvals.js", "_autoStepAfter"], ["src/worker/12-app-connectors.js", "AUTO_STEP_JOIN_MAX"]],
+    "tests": ["tests/worker/a-task-in-steps-keeps-going-without-you.test.mjs"],
+    "says": ["a step waiting for several", "joining several results", "waits for several"] },
   { "id": "trigger.github", "status": "next", "name": "When something happens on a GitHub repository, a job runs" },
   { "id": "trigger.webhook", "status": "next", "name": "A job started by a signed request from another service" },
   { "id": "trigger.slack", "status": "next", "name": "When a matching Slack message arrives, a job runs", "owner": "a Slack app registration" },

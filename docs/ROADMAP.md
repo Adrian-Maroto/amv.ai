@@ -430,8 +430,17 @@ assertions, eight mutations each caught) and a section of
 - **Steps that use tools.** A step searches the web and writes, as every
   unattended run does. Acting on accounts unattended is the Milestone 6
   decision and is unchanged.
-- **A step waiting for several.** One parent each keeps cycles impossible by
-  construction; joining several results is the next step if it is asked for.
+
+**Joins (done).** A step can wait for up to four earlier steps, which run side
+by side, and starts only when all of them have finished - handed every result
+under its own heading, each cut to its share of 12,000 characters, so a join
+costs no more than a long single step. If any of them fails, the join and
+everything after it are cancelled and say which. Steps still point only
+backwards, so a cycle cannot be written. Seven more assertions in
+`a-task-in-steps-keeps-going-without-you`; four mutations, each caught.
+
+*Next for the runtime:* steps that use tools, and steps that are not text -
+a cloud workspace or a browser run as one stage of a task.
 
 ## Live voice, step one — heard on the server, spoken as it is written (done)
 

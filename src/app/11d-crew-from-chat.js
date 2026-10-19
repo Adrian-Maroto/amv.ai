@@ -126,10 +126,12 @@ function _crewStepsCard(items){
   const byId = new Map(items.map(x => [x.id, x]));
   return '<div class="chat-run dlg dlg-steps"><div class="chat-run-h">' + escH(T('Task in {0} steps, running in the background').replace('{0}', items.length)) + '</div><ul class="dlg-list">'
     + items.map(x => {
-        const prev = x.after && byId.get(x.after);
+        /* One step or several (a join): each named by its title. */
+        const prev = (Array.isArray(x.after) ? x.after : x.after ? [x.after] : []).map(id => byId.get(id)).filter(Boolean)
+          .map(p => (p.step && p.step.title) || '').filter(Boolean);
         return '<li class="dlg-i"><span class="dlg-st" aria-hidden="true">' + escH(String((x.step && x.step.n) || '')) + '</span>'
           + '<span class="dlg-t">' + escH((x.step && x.step.title) || String(x.detail || '').slice(0, 60))
-          + (prev ? ' <span class="dlg-after">' + escH(T('after {0}').replace('{0}', (prev.step && prev.step.title) || '')) + '</span>' : '') + '</span></li>';
+          + (prev.length ? ' <span class="dlg-after">' + escH(T('after {0}').replace('{0}', prev.join(', '))) + '</span>' : '') + '</span></li>';
       }).join('')
     + '</ul><div class="dlg-foot"><button class="btn bs" type="button" data-dact="setTab" data-darg="crew">' + escH(T('Open Crew')) + '</button></div></div>';
 }
@@ -218,7 +220,8 @@ async function _crewTool(name, input){
   if(name === 'crew_steps'){
     const raw = Array.isArray(input.steps) ? input.steps : [];
     const steps = raw.map(s => ({ title: String((s && s.title) || '').trim().slice(0, 80), detail: String((s && s.detail) || '').trim(),
-                                  ...(s && Number.isInteger(s.after) ? { after: s.after } : {}) }));
+                                  ...(s && Number.isInteger(s.after) ? { after: s.after }
+                                      : s && Array.isArray(s.after) && s.after.length ? { after: s.after.filter(Number.isInteger).slice(0, 4) } : {}) }));
     if(steps.length < 2 || steps.length > 5 || steps.some(s => !s.detail))
       return { text:'A task in steps needs two to five steps, each saying what it does. For one step, use crew_add or just do it now.', render:null };
     const approval = input.approval === 'auto' ? 'auto' : 'require';
@@ -228,7 +231,7 @@ async function _crewTool(name, input){
     _crewSynced();
     const made = d.items || [];
     return { text:'Started. ' + made.length + ' steps are in their Crew tab, running on AMV\u2019s servers: the first starts within about '
-      + ((d.startsWithinMin || 1) === 1 ? 'a minute' : d.startsWithinMin + ' minutes') + ', and each later step starts when the step it waits for has finished, building on its result. '
+      + ((d.startsWithinMin || 1) === 1 ? 'a minute' : d.startsWithinMin + ' minutes') + ', and each later step starts when the step or steps it waits for have finished, building on their results. '
       + 'It keeps going with their computer off and AMV closed. '
       + (approval === 'auto' ? 'The final result is delivered without review. ' : 'The final result waits for their approval. ')
       + 'If a step fails, the steps after it do not run, and Crew says which one stopped it. Do NOT say it has finished or describe results - nothing has run yet.',

@@ -986,8 +986,10 @@ async function autoCreate(request, env){
    one from the page would leave the first steps of a task running when the
    third was refused, which is half a task, paid for, that nobody asked for.
 
-   A step waits for at most one earlier step of the same task (`after` is its
-   index), so the steps form a tree and a cycle cannot be written. Steps with
+   A step waits for one earlier step of the same task, or for several at once
+   (`after` is an index or a list of them, each smaller than its own), so the
+   steps can only point backwards and a cycle cannot be written: research
+   three suppliers side by side, then compare all three. Steps with
    nothing to wait for start at the next run of the server's every-minute
    schedule - within about a minute, not instantly, and the reply says so. Only the steps nothing
    waits on are delivered the way the person chose; the ones in between are
@@ -1006,15 +1008,24 @@ async function _autoCreateSteps(request, env, user, body){
     const sec = _detailSecrets(detail + '\n' + title);
     if(sec.length) return json({ error:'credentials_in_detail', kinds: sec,
       message:'AMV does not store passwords, card numbers or security codes. Nothing was saved. Connect the account instead, or describe the task without the credential.' }, 400);
-    let after = -1;
+    /* `after` is one earlier step, or several (a join): it starts when every
+       one of them has finished. Indexes only, each smaller than its own, so
+       the steps can only ever point backwards and a cycle cannot be written. */
+    let after = [];
     if(s.after != null && s.after !== ''){
-      after = Number(s.after);
-      if(!Number.isInteger(after) || after < 0 || after >= n)
-        return json({ error:'Step ' + (n + 1) + ' can only wait for a step that comes before it.', code:'step_after' }, 400);
+      const list = Array.isArray(s.after) ? s.after : [s.after];
+      if(list.length > AUTO_STEP_JOIN_MAX)
+        return json({ error:'Step ' + (n + 1) + ' can wait for at most ' + AUTO_STEP_JOIN_MAX + ' earlier steps.', code:'step_after' }, 400);
+      for(const v of list){
+        const a = Number(v);
+        if(!Number.isInteger(a) || a < 0 || a >= n)
+          return json({ error:'Step ' + (n + 1) + ' can only wait for a step that comes before it.', code:'step_after' }, 400);
+        if(!after.includes(a)) after.push(a);
+      }
     }
     steps.push({ detail, title, after, kind: s.kind === 'research' ? 'research' : 'task' });
   }
-  if(steps.every(s => s.after >= 0)) return json({ error:'At least one step has to start without waiting.', code:'step_after' }, 400);
+  if(steps.every(s => s.after.length)) return json({ error:'At least one step has to start without waiting.', code:'step_after' }, 400);
 
   const budget = await _budgetFor(env, user);
   if(_planRankOf(budget.plan, user.customCfg) < _planRankOf(AUTO_MIN_PLAN)){
@@ -1027,9 +1038,9 @@ async function _autoCreateSteps(request, env, user, body){
   const now = Date.now();
   const group = 'g' + now.toString(36) + Math.random().toString(36).slice(2, 7);
   const ids = steps.map((_, n) => 'a' + now.toString(36) + Math.random().toString(36).slice(2, 7) + n);
-  const waitedOn = new Set(steps.map(s => s.after).filter(a => a >= 0));
+  const waitedOn = new Set(steps.flatMap(s => s.after));
   const items = steps.map((s, n) => {
-    const waits = s.after >= 0;
+    const waits = s.after.length > 0;
     const at = waits ? now + AUTO_STEP_WAIT_MS : now;
     const last = !waitedOn.has(n);
     return {
@@ -1040,7 +1051,9 @@ async function _autoCreateSteps(request, env, user, body){
       uses: _autoUsesFromText(s.detail).slice(0, 4), boosts: [], country, tier: 'paid',
       created: now, runs: 0, lastError: null, active: true,
       group, step: { n: n + 1, of: steps.length, title: s.title },
-      ...(waits ? { after: ids[s.after], waiting: true } : {}),
+      /* One step: its id, as tasks have always been stored. Several: the
+         list, and `got` collects each result as it arrives. */
+      ...(waits ? { after: s.after.length === 1 ? ids[s.after[0]] : s.after.map(a => ids[a]), waiting: true } : {}),
     };
   });
   const key = _autoKey(user.email);
