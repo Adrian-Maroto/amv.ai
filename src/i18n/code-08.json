@@ -11569,5 +11569,24 @@
   "it": "release",
   "ko": "릴리스",
   "ta": "வெளியீடுகள்"
+ },
+ "characters, more than one message holds: each message is sent the passages that match it best.": {
+  "es": "caracteres, más de lo que cabe en un mensaje: cada mensaje recibe los fragmentos que mejor coinciden con él.",
+  "zh": "个字符，超过一条消息的容量：每条消息只会附上与它最相关的段落。",
+  "hi": "अक्षर, एक संदेश में समाने से ज़्यादा: हर संदेश के साथ वे अंश भेजे जाते हैं जो उससे सबसे अच्छी तरह मेल खाते हैं।",
+  "ar": "حرف، أكثر مما تتسع له رسالة واحدة: تُرسل مع كل رسالة المقاطع الأكثر تطابقًا معها.",
+  "pt": "caracteres, mais do que cabe numa mensagem: cada mensagem recebe os trechos que melhor correspondem a ela.",
+  "fr": "caractères, plus qu’un message ne peut contenir : chaque message reçoit les passages qui lui correspondent le mieux.",
+  "de": "Zeichen, mehr als eine Nachricht fasst: Jede Nachricht erhält die Abschnitte, die am besten zu ihr passen.",
+  "ja": "文字。1 件のメッセージに収まらないため、各メッセージには内容に最も合う部分が送られます。",
+  "ru": "символов — больше, чем помещается в одно сообщение: к каждому сообщению прикладываются фрагменты, которые лучше всего ему соответствуют.",
+  "id": "karakter, lebih dari yang muat dalam satu pesan: setiap pesan dikirimi bagian yang paling cocok dengannya.",
+  "bn": "অক্ষর, একটি বার্তায় যা ধরে তার চেয়ে বেশি: প্রতিটি বার্তার সঙ্গে সেই অংশগুলো পাঠানো হয় যা তার সঙ্গে সবচেয়ে ভালো মেলে।",
+  "ur": "حروف، ایک پیغام میں سمانے سے زیادہ: ہر پیغام کے ساتھ وہ حصے بھیجے جاتے ہیں جو اس سے سب سے زیادہ ملتے ہیں۔",
+  "tr": "karakter, bir mesajın alabileceğinden fazla: her mesaja onunla en iyi eşleşen bölümler gönderilir.",
+  "vi": "ký tự, nhiều hơn một tin nhắn có thể chứa: mỗi tin nhắn được gửi kèm những đoạn khớp với nó nhất.",
+  "it": "caratteri, più di quanti ne stiano in un messaggio: a ogni messaggio vengono inviati i passaggi che gli corrispondono meglio.",
+  "ko": "자, 메시지 하나에 담을 수 있는 양보다 많습니다. 메시지마다 가장 잘 맞는 부분이 함께 전송됩니다.",
+  "ta": "எழுத்துகள், ஒரு செய்தியில் அடங்குவதைவிட அதிகம்: ஒவ்வொரு செய்தியுடனும் அதற்கு மிகப் பொருத்தமான பகுதிகள் அனுப்பப்படும்."
  }
 }

@@ -37,7 +37,7 @@ import { ok, section, report, done } from '../lib/assert.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /* The page, and the parts of it fetched when they are opened (the sell form,
    a team owner's company sign-in): a door in one of those is still a door. */
-const bundle = ['app.js', 'market-sell.js', 'team-sso.js', 'credit.js', 'memory-io.js', 'skills.js', 'team-projects.js', 'api-keys.js', 'library.js', 'help-faqs.js', 'widget-form.js', 'live-voice.js', 'web-live.js', 'invest.js', 'predict.js', 'spending.js', 'family.js', 'health.js', 'office.js'].map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
+const bundle = ['app.js', 'market-sell.js', 'team-sso.js', 'credit.js', 'memory-io.js', 'skills.js', 'team-projects.js', 'api-keys.js', 'library.js', 'help-faqs.js', 'widget-form.js', 'live-voice.js', 'web-live.js', 'invest.js', 'predict.js', 'project-search.js', 'spending.js', 'family.js', 'health.js', 'office.js'].map(f => readFileSync(join(ROOT, f), 'utf8')).join('\n');
 
 /* Deliberately on window, and deliberately not a door. Each says which it is,
    because "internal API" is the excuse this check would rot into if it were

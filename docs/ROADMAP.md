@@ -532,3 +532,24 @@ before anything is spent. `when-it-arrives-amv-acts`, nine mutations caught.
 Mail read by app password cannot be watched yet (no
 cursor), and says so. What is built and what is next is kept in
 `docs/capabilities.json`, and the gate fails when this page disagrees with it.
+
+## Project files, step one — the part you asked about, from any file (done)
+
+A project's files used to go whole, newest first, up to one message's worth
+(120k characters), with the rest named and left out - so in a large project
+the first file added was the one a question about it never reached. Now,
+when the files are larger than one message holds, they are searched on the
+device for each message, and the passages that match it best fill the same
+budget, from any file. Nothing leaves the device to do it, and a project
+that fits never fetches the search at all.
+
+It works in every language AMV speaks without a dictionary for any of them:
+scripts written without spaces are matched by character pairs, accents are
+folded for Latin, Greek and Cyrillic, long words also match by their start,
+and a table row keeps its header. A follow-up counts the question before it.
+When nothing matches, the prompt says the start of each file was sent
+instead. `a-project-finds-the-part-you-asked-about` (23 assertions, ten
+mutations caught).
+
+*Next:* the account's file library searched the same way from any chat, and
+a server-side index for files too large to keep on a phone.

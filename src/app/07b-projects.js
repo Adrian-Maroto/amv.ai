@@ -21,9 +21,10 @@
    find them missing without a word.
 
    Bounded on the way into the prompt: a project's files are sent up to a fixed
-   size, newest first, and the rest are named as not included - the same rule
-   chat attachments follow - so a large project costs a known amount per turn
-   and never silently drops what it cannot fit. */
+   size, so a large project costs a known amount per turn. Files that fit go
+   whole. Files that do not are SEARCHED for each message (project-search.js)
+   and the passages that match it best fill the same budget, from any file -
+   rather than the newest files going whole and the oldest not at all. */
 
 const PROJ_INSTR_MAX = 4000;
 const PROJ_FILES_MAX = 20;
@@ -71,8 +72,10 @@ function _curProject(){
   try{ const c = getCurConv(); return c && c.wsId ? _wsById(c.wsId) : null; }catch(e){ return null; }
 }
 
-/* What a chat inside a project is told. Empty outside one. */
-function _projectContext(){
+/* What a chat inside a project is told. Empty outside one. `found` is the
+   files as project-search.js wrote them for this message, when they are
+   larger than one message holds; without it they go whole, newest first. */
+function _projectContext(found){
   const ws = _curProject();
   if(!ws) return '';
   let out = '\n\nPROJECT: ' + String(ws.name || 'Project').slice(0, 80)
@@ -90,7 +93,8 @@ function _projectContext(){
   const mem = (ws.memory || []).map(m => m && m.text).filter(Boolean);
   if(mem.length) out += '\nWhat AMV has learned within this project: ' + mem.slice(0, PROJ_MEM_MAX).join('; ');
   const files = _projFiles(ws.id);
-  if(files.length){
+  if(found) out += found;
+  else if(files.length){
     let room = PROJ_CTX_CHARS; const left = [];
     out += '\nProject files (the person’s own documents - quote and use them):';
     for(const f of files){
@@ -101,6 +105,37 @@ function _projectContext(){
     if(left.length) out += '\n(Not included, too large for one request alongside the rest: ' + left.join(', ') + '. Say so if the question needs them.)';
   }
   return out;
+}
+
+/* The files, searched for this message when they will not all fit. The
+   search is fetched only then; if it cannot be loaded the files go as before,
+   newest first with the rest named - less useful, never silent. */
+let _projSearchP = null;
+function _projSearchReady(){
+  if(typeof window.amvProjectSearch === 'function') return Promise.resolve(true);
+  if(!_projSearchP) _projSearchP = new Promise(res => {
+    const sc = document.createElement('script');
+    sc.src = 'project-search.js';
+    /* Arriving but not defining it (a host answering with its own page) is a
+       failure too, and neither is kept: the next message tries again. */
+    const fail = () => { _projSearchP = null; sc.remove(); res(false); };
+    sc.onload = () => typeof window.amvProjectSearch === 'function' ? res(true) : fail();
+    sc.onerror = fail;
+    document.head.appendChild(sc);
+  });
+  return _projSearchP;
+}
+async function _projectContextFor(msgs){
+  const ws = _curProject();
+  if(!ws) return '';
+  const files = _projFiles(ws.id);
+  if(files.reduce((n, f) => n + String(f.text || '').length, 0) <= PROJ_CTX_CHARS || !(await _projSearchReady())) return _projectContext();
+  /* What was just asked, and the question before it at half weight - "and
+     the second one?" means nothing on its own. */
+  const said = (msgs || []).filter(m => m && m.r === 'u').slice(-2).reverse()
+    .map((m, i) => ({ text: typeof m.c === 'string' ? m.c : String(m.d || ''), weight: i ? 0.5 : 1 }));
+  try{ return _projectContext(window.amvProjectSearch(files, said, PROJ_CTX_CHARS).said || ''); }
+  catch(e){ console.warn('[AMV] project search', e); return _projectContext(); }
 }
 
 /* Memory learned in a project chat goes to the project. */
@@ -152,7 +187,9 @@ function _renderProjectPanel(id){
       + '<button type="button" class="btn mc-mini ghost" id="pj-add">' + escH(T('Add files')) + '</button></span></h3>'
     + '<input type="file" id="pj-file" multiple hidden>'
     + '<p class="pj-note">' + escH(ws.team ? T('Shared with your team: every chat in this project, theirs and yours, can read them.') : T('Kept on this device. Chats here can read them; other devices see the project without them.'))
-      + (files.length ? ' ' + (used < 1000 ? used.toLocaleString() : Math.round(used / 1000) + 'k') + ' / ' + Math.round(PROJ_CTX_CHARS / 1000) + 'k ' + escH(T('characters sent with each message.')) : '') + '</p>'
+      + (!files.length ? '' : used > PROJ_CTX_CHARS
+        ? ' ' + Math.round(used / 1000) + 'k ' + escH(T('characters, more than one message holds: each message is sent the passages that match it best.'))
+        : ' ' + (used < 1000 ? used.toLocaleString() : Math.round(used / 1000) + 'k') + ' / ' + Math.round(PROJ_CTX_CHARS / 1000) + 'k ' + escH(T('characters sent with each message.'))) + '</p>'
     + (files.length ? files.map(f => '<div class="shelf-row"><div class="shelf-t"><div class="shelf-name">' + escH(f.name) + '</div>'
         + '<div class="shelf-meta">' + escH(f.summary || (Math.round(String(f.text || '').length / 1000) + 'k ' + T('characters'))) + '</div></div>'
         + '<div class="shelf-acts"><button type="button" class="btn mc-mini ghost" data-pj-rm="' + escH(f.id) + '">' + escH(T('Remove')) + '</button></div></div>').join('')
