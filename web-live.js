@@ -29,7 +29,13 @@ const _WLV_CSS = '.wlv{ position:fixed; right:var(--sp-4); top:calc(var(--nav-h,
   '.wlv-pic img{ width:100%; height:100%; object-fit:contain; display:block; }\n' +
   '.wlv-wait{ margin:0; font-size:var(--t-sm); color:var(--mu); }\n' +
   '.wlv-now{ margin:0; font-size:var(--t-sm); color:var(--tx); line-height:1.45; min-height:1.45em; overflow-wrap:anywhere; }\n' +
-  '.wlv.min .wlv-goal, .wlv.min .wlv-pic, .wlv.min .wlv-now{ display:none; }\n' +
+  '.wlv.min .wlv-goal, .wlv.min .wlv-pic, .wlv.min .wlv-now, .wlv.min .wlv-take{ display:none; }\n' +
+  '.wlv.taking .wlv-dot{ background:var(--gold); }\n' +
+  '.wlv.taking .wlv-pic img{ cursor:crosshair; }\n' +
+  '.wlv-take{ display:flex; flex-direction:column; gap:var(--sp-2); }\n' +
+  '.wlv-take-row{ display:flex; flex-wrap:wrap; gap:var(--sp-2); }\n' +
+  '.wlv-take-row input{ flex:1; min-width:0; min-height:44px; }\n' +
+  '.wlv-take .btn{ min-height:44px; }\n' +
   '@media (max-width:560px){\n' +
   '  .wlv{ right:0; left:0; top:auto; bottom:0; width:auto; border-radius:var(--r-lg) var(--r-lg) 0 0; border-bottom:0; }\n' +
   '}\n' +
@@ -91,9 +97,90 @@ function _webLiveOpen(goal){
     el.querySelector('#wlv-now').textContent = T('Stopped. Nothing more was done on the page.');
     el.classList.add('done');
   });
-  return {
+  /* YOUR TURN. The run stopped where only the person can go on - a captcha,
+     or a sign-in AMV has nothing for - and handed the browser over (see
+     72-web-takeover.js). The picture becomes the page: a tap clicks there,
+     the box types, the keys press. What is typed goes to the page and is
+     cleared from the box at once; it is never kept here either. `act` is the
+     caller's, which knows the address and the sign-in. Resolves 'resume' or
+     'stop'. */
+  const takeover = (end, act) => new Promise((resolve) => {
+    el.classList.remove('done'); el.classList.add('taking');
+    const now = el.querySelector('#wlv-now');
+    now.textContent = T('Your turn: AMV stopped at something only you can do. Tap the picture to click there, type below, then carry on. The browser stays open for ten minutes.');
+    const box = document.createElement('div');
+    box.className = 'wlv-take';
+    box.innerHTML = '<div class="wlv-take-row"><input id="wlv-text" type="text" autocomplete="off" spellcheck="false" aria-label="' + escH(T('Type into the page')) + '" placeholder="' + escH(T('Type into the page')) + '">'
+      + '<button class="btn bs" type="button" data-take="type">' + escH(T('Type')) + '</button></div>'
+      + '<div class="wlv-take-row"><button class="btn bs" type="button" data-take="Enter">Enter</button><button class="btn bs" type="button" data-take="Tab">Tab</button>'
+      + '<button class="btn bs" type="button" data-take="Backspace">' + escH(T('Delete')) + '</button><button class="btn bs" type="button" data-take="scroll">' + escH(T('Scroll down')) + '</button></div>'
+      + '<div class="wlv-take-row"><button class="btn bp" type="button" data-take="resume">' + escH(T('Carry on')) + '</button>'
+      + '<button class="btn bs" type="button" data-take="close">' + escH(T('Close the browser')) + '</button></div>';
+    el.appendChild(box);
+    const img = el.querySelector('#wlv-img');
+    let busy = false;
+    const finish = (how) => { img.removeEventListener('click', onPic); box.remove(); el.classList.remove('taking'); resolve(how); };
+    const send = async (a) => {
+      if(busy) return; busy = true; box.querySelectorAll('button').forEach(b => b.disabled = true);
+      try{
+        const d = await act(a);
+        if(d && d.shot) setPic(d.shot, T('The page'));
+        if(d && d.status === 410){ now.textContent = d.error || T('That browser has closed.'); finish('stop'); return; }
+        if(d && (d.code === 'blocked_url' || d.closed)){ now.textContent = d.error || T('The browser is closed.'); finish('stop'); return; }
+        if(d && d.error) now.textContent = d.error;
+      }catch(e){ now.textContent = T('That did not reach AMV’s browser. Try again.'); }
+      finally{ busy = false; box.querySelectorAll('button').forEach(b => b.disabled = false); }
+    };
+    const onPic = (e) => {
+      const r = img.getBoundingClientRect();
+      if(!r.width || !r.height) return;
+      send({ kind: 'click', x: Math.round((e.clientX - r.left) / r.width * 1279), y: Math.round((e.clientY - r.top) / r.height * 899) });
+    };
+    img.addEventListener('click', onPic);
+    const text = box.querySelector('#wlv-text');
+    const typeIt = () => { const t = text.value; text.value = ''; if(t) send({ kind: 'type', text: t.slice(0, 500) }); };
+    text.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); typeIt(); } });
+    box.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-take]'); if(!b) return;
+      const k = b.getAttribute('data-take');
+      if(k === 'type') typeIt();
+      else if(k === 'scroll') send({ kind: 'scroll', dy: 600 });
+      else if(k === 'resume'){ now.textContent = T('Carrying on…'); finish('resume'); }
+      else if(k === 'close'){ send({ kind: 'close' }).then(() => { now.textContent = T('Closed. Nothing more was done on the page.'); finish('stop'); }); }
+      else send({ kind: 'key', key: k });
+    });
+    stopBtn.textContent = T('Close'); stopBtn.dataset.done = '1';
+    text.focus();
+  });
+  /* Back to watching, for the run that carries on. */
+  const restart = () => {
+    el.classList.remove('done', 'taking');
+    stopBtn.textContent = T('Stop'); stopBtn.dataset.done = '';
+  };
+  /* A few rounds at most - each is the person's own choice. Sign-ins the run
+     collected are kept for this device after each, as at the end of any run. */
+  const rounds = async (d, runOnce, base, tok, site) => {
+    for(let round = 0; d && d.takeover && round < 3; round++){
+      if(site && Array.isArray(d.cookies)) await _webJarSave(site, d.cookies);
+      const handle = d.takeover;
+      const how = await takeover(d, async (a) => {
+        const tr = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/takeover', { method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
+          body: JSON.stringify({ handle, act: a }) }, 30000);
+        const j = await tr.json().catch(() => ({}));
+        return Object.assign(j, { status: tr.status });
+      });
+      if(how !== 'resume'){ delete d.takeover; break; }
+      restart();
+      const r = await runOnce({ resume: handle });
+      d = /event-stream/.test(r.headers.get('Content-Type') || '') ? await this_read(r) : await r.json().catch(() => ({}));
+    }
+    return d;
+  };
+  let this_read = null;
+  const view = {
     signal: ctrl.signal,
-    close,
+    close, takeover, restart, rounds,
     /* Read the stream to its end. Each step updates the panel; the `end` event
        is returned - the same answer the plain call gives, with its status. */
     async read(res){
@@ -131,6 +218,8 @@ function _webLiveOpen(goal){
       return end || { ok: false, status: 502, error: T('The web run ended without an answer.') };
     }
   };
+  this_read = view.read.bind(view);
+  return view;
 }
 
 

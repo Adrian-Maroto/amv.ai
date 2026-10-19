@@ -40,7 +40,7 @@ people care most about. One breach would end the company, and LESSONS 537
 already refused the password version of the same vault. What ships instead:
 - the sign-ins stay sealed on the person's device, as now;
 - the person can TAKE OVER the hosted browser to sign in or solve a check
-  themselves (next on the browser roadmap);
+  themselves - built (`72-web-takeover.js`);
 - a background job that needs a signed-in site says so and waits for the
   device, rather than failing quietly.
 Revisit only with hardware-backed per-user keys the server cannot use alone.

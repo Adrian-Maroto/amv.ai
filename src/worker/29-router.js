@@ -707,6 +707,7 @@ async function _route(request, env, ctx) {
     case '/deploy/list':     return deployList(request, env);
     case '/deploy/delete':   return deployDelete(request, env);
     case '/v1/browser/run':  return browserRunRoute(request, env, ctx);
+    case '/v1/browser/takeover': return browserTakeover(request, env, ctx);   // the person's hands in a handed-over run (72-web-takeover.js)
     case '/v1/finance/accounts':     return financeRoute(request, env, 'accounts');
     case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
     case '/v1/finance/checkin':      return financeCheckin(request, env);

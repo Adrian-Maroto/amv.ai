@@ -154,6 +154,59 @@ section('Settings lists where AMV\u2019s browser is signed in, and Forget works'
   ok(after.jar === 0 && !after.shown.includes('gyms.example.com'), 'Forget removes it from the device and the list', after);
 }
 
+section('Handed over: the person takes the browser, then AMV carries on in it');
+{
+  env.CONNECT_KEY = env.CONNECT_KEY || 'a-connect-key-for-sealing-at-least-32-chars';
+  const plainBrowser = env.BROWSER;
+  const TK = { captcha: true, clicks: [], typed: [], keys: [], closed: 0, connected: true, alive: true, connects: 0 };
+  const tp = Object.assign({}, page, { u: 'about:blank',
+    async evaluate(x){ if (typeof x === 'string' && /getBoundingClientRect/.test(x)) return { url: this.u, title: 'Sign in', text: TK.captcha ? 'Are you a robot?' : 'Inbox', captcha: TK.captcha, elements: [{ ref: 1, tag: 'a', type: '', label: 'Inbox' }] }; },
+    mouse: { async click(x, y){ TK.clicks.push([x, y]); } },
+    keyboard: { async type(t){ TK.typed.push(t); }, async press(k){ TK.keys.push(k); if (k === 'Enter') TK.captcha = false; } } });
+  const tb = { sessionId(){ return 's1'; }, async newPage(){ return tp; }, async pages(){ return [tp]; },
+    async close(){ TK.closed++; TK.alive = false; }, async disconnect(){ TK.connected = false; } };
+  env.BROWSER = { async launch(){ TK.connected = true; return tb; },
+                  async connect(id){ if (!TK.alive || TK.connected || id !== 's1') throw new Error('busy'); TK.connects++; TK.connected = true; return tb; } };
+  scripts.set('Read my newest messages.', [{ verb: 'done', why: 'You have 2 new messages.' }]);
+  /* The section before erased this device, which signs out. */
+  await P.evaluate(async ([em, pw]) => {
+    if (window.AMV_API && AMV_API.token) return;
+    openAuth('login'); await __amvAuthOpen();
+    const type = (sel, v) => { const el = document.querySelector(sel); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+    type('#a-email', em); type('#a-pass', pw);
+    document.getElementById('auth-submit').click(); await __amvSignedIn();
+  }, [EMAIL, 'A-real-Passw0rd!']);
+  const run = P.evaluate(async () => {
+    try { const d = await AMVConnectors.run('browser.do', { url: 'https://mail.example.com/', goal: 'Read my newest messages.' }); return { ok: true, d }; }
+    catch (e) { return { ok: false, msg: e.message, code: e.code }; }
+  });
+  await P.waitForSelector('.wlv-take', { timeout: 20000 });
+  const turn = await P.evaluate(() => ({ taking: document.getElementById('wlv').classList.contains('taking'), now: document.getElementById('wlv-now').textContent,
+    focus: document.activeElement && document.activeElement.id }));
+  ok(turn.taking && /Your turn/.test(turn.now) && turn.focus === 'wlv-text', 'at the captcha the panel becomes the controls, ready to type', turn);
+  ok(TK.closed === 0, 'and the browser was kept, not closed', TK.closed);
+  const box = await P.evaluate(() => { const r = document.getElementById('wlv-img').getBoundingClientRect(); return { w: r.width, h: r.height }; });
+  await P.click('#wlv-img', { position: { x: Math.round(box.w / 2), y: Math.round(box.h / 4) } });
+  for (let i = 0; i < 50 && !TK.clicks.length; i++) await new Promise(r => setTimeout(r, 100));
+  const [cx, cy] = TK.clicks[0] || [];
+  ok(Math.abs(cx - 640) <= 2 && Math.abs(cy - 225) <= 2, 'a tap on the picture clicks the same spot on the page', TK.clicks);
+  await P.fill('#wlv-text', 'I-am-human-42');
+  await P.click('[data-take="type"]');
+  for (let i = 0; i < 50 && !TK.typed.length; i++) await new Promise(r => setTimeout(r, 100));
+  ok(TK.typed[0] === 'I-am-human-42' && (await P.inputValue('#wlv-text')) === '', 'what is typed reaches the page, and the box is cleared at once', TK.typed);
+  await P.click('[data-take="Enter"]');
+  for (let i = 0; i < 50 && !TK.keys.length; i++) await new Promise(r => setTimeout(r, 100));
+  ok(TK.keys[0] === 'Enter', 'and keys are pressed', TK.keys);
+  await P.click('[data-take="resume"]');
+  const r = await run;
+  ok(r.ok && /2 new messages/.test(r.d.result), 'carrying on, the run finishes in the same browser', r);
+  ok(TK.connects >= 4 && TK.closed === 1, 'reconnecting each time, and closing it at the end', { connects: TK.connects, closed: TK.closed });
+  const kept = await P.evaluate(() => JSON.stringify(localStorage).includes('I-am-human-42') || JSON.stringify(getMsgs()).includes('I-am-human-42'));
+  ok(!kept, 'what was typed is kept nowhere on this device', kept);
+  await P.click('#wlv-stop');
+  env.BROWSER = plainBrowser;
+}
+
 section('Erasing this device takes the browser sign-ins with it');
 {
   B.set = []; B.jar = [];

@@ -42620,10 +42620,10 @@ AMVConnectors.register({
         const site = view ? window._wjSite(args.url) : '';
         const jar = site ? await window._webJarLoad(site) : [];
         let r;
-        try{ r = await fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run' + (view ? '?live=1' : ''), {
+        const runOnce = (extra) => fetchDeadline(base.replace(/\/$/, '') + '/v1/browser/run' + (view ? '?live=1' : ''), {
           method: 'POST', stream: !!view, signal: view ? view.signal : undefined,
           headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok },
-          body: JSON.stringify({
+          body: JSON.stringify(Object.assign({
             url: args.url, goal: args.goal,
             /* Values the user saved for this task. They never enter the model's
                view: the server decides which field each one belongs in, from
@@ -42645,8 +42645,9 @@ AMVConnectors.register({
             // the server enforces its own ceiling on these, independently
             spendAmount: spend || undefined,
             spendLimit: (typeof AMVSpend !== 'undefined' ? (AMVSpend.cfg().perPurchase || undefined) : undefined)
-          })
-        }, 240000); }   // a real browser session is slow, but it is not infinite
+          }, extra || {}))
+        }, 240000);   // a real browser session is slow, but it is not infinite
+        try{ r = await runOnce(); }
         catch(err){
           /* Stop pressed before the first step arrived: that is the person's
              answer, not a failure, and it is said as one. */
@@ -42656,7 +42657,11 @@ AMVConnectors.register({
         }
         const streamed = !!view && /event-stream/.test(r.headers.get('Content-Type') || '');
         if(view && !streamed) view.close();
-        const d = streamed ? await view.read(r) : await r.json().catch(() => ({}));
+        let d = streamed ? await view.read(r) : await r.json().catch(() => ({}));
+        /* HANDED OVER: the person takes over in the panel and the run carries
+           on in the same browser (web-live.js, 72-web-takeover.js). */
+        if(streamed && d && d.takeover) d = await view.rounds(d, runOnce, base, tok, site);
+        if(d) delete d.takeover;
         const okStatus = streamed ? (d.status >= 200 && d.status < 300) : r.ok;
         /* Kept for next time, however the run ended - a sign-in that worked
            before a later step stopped is still a sign-in. Then dropped from

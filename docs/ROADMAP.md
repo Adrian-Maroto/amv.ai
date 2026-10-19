@@ -485,7 +485,14 @@ cannot use them, and on the owner's delegated decision that stays so: a
 server-side store of live sign-ins is refused, opt-in or not - see
 `docs/OWNER-DECISIONS.md` #4.
 
-*Next:* take over the browser to sign in or solve a captcha yourself.
+**Taking over (done).** In a run somebody is watching, a captcha or a sign-in
+AMV has nothing for no longer ends it: the browser is handed over, kept open
+for ten minutes, and the panel becomes the controls - tap the picture to click
+there, type, press a key - then "carry on" continues in the same browser.
+Every action reconnects and re-applies the request isolation before acting;
+what is typed reaches the page and nothing else; the held time is charged to
+the run. `you-can-take-over-amvs-browser` (22 assertions, eight mutations
+caught) and a section of `watch-amv-use-a-website` in a real browser.
 
 ## Event triggers, step one — when matching mail arrives, AMV acts (done)
 

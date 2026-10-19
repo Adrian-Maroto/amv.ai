@@ -417,6 +417,13 @@ async function browserRun(request, env, ctx, emit, out){
 
   const gate = _webHostAllowed(body.url);
   if(!gate.ok) return json({ error:gate.why, code:'blocked_url' }, 400);
+  /* CARRYING ON after the person took over (72-web-takeover.js): the same
+     browser, still signed in, rather than a fresh one. Refused, not quietly
+     replaced, when it has gone - a fresh browser would not be where they
+     left it. */
+  const resumeH = body.resume ? await _webTakeOpen(env, body.resume, user.email) : null;
+  if(body.resume && !resumeH)
+    return json({ error:'That browser has closed - it is kept for ten minutes. Start the task again.', code:'takeover_gone' }, 410);
 
   /* AMV-001: where the user's own values may be filled, decided from the
      REQUEST before a browser exists, and never changed by anything the run
@@ -495,7 +502,11 @@ async function browserRun(request, env, ctx, emit, out){
   let spentHere = false;
   let browser = null;
   try{
-    try{ browser = await _webLaunch(env); }
+    try{
+      browser = resumeH ? await _webConnect(env, resumeH.s).catch(() => null)
+                        : await _webLaunch(env, emit ? { keep_alive: WEB_HOLD_MS } : undefined);
+      if(!browser) return json({ error:'That browser has closed - it is kept for ten minutes. Start the task again.', code:'takeover_gone' }, 410);
+    }
     catch(impErr){
       if(!impErr || impErr.code !== 'driver_missing') throw impErr;
       // The browser driver is not bundled in this deploy. Say so plainly
@@ -503,7 +514,23 @@ async function browserRun(request, env, ctx, emit, out){
       return json({ error:'The browser driver is not installed in this deployment. Run npm install and redeploy to enable web automation.', code:'needs_service' }, 503);
     }
     meter.browserFrom = Date.now();
-    const page = await browser.newPage();
+    const page = resumeH ? ((await browser.pages().catch(() => [])).slice(-1)[0] || await browser.newPage()) : await browser.newPage();
+    /* HANDING OVER, in a run somebody is watching: the browser is let go of,
+       not closed, and kept for WEB_HOLD_MS so they can do the step only they
+       can - and that holding time is charged here, once. Returns the handle,
+       or nothing when it cannot be done (nobody watching, no key to seal it
+       with, a driver without sessions), in which case the caller closes the
+       browser as before. */
+    const handOver = async (why, url) => {
+      if(!emit || emit.gone() || !connConfigured(env) || typeof browser.sessionId !== 'function' || typeof browser.disconnect !== 'function') return null;
+      let handle;
+      try{ handle = await _webTakeSeal(env, user.email, browser.sessionId(), url); }catch(e){ return null; }
+      try{ await browser.disconnect(); }catch(e){ return null; }
+      browser = null;
+      meter.holdMs = WEB_HOLD_MS;
+      audit(env, 'web_agent_handed_over', { by:user.email, why });
+      return handle;
+    };
     /* THE LIVE VIEW. In live mode every step is shown as it happens: what was
        done, where, and a picture of the page. Sent only to the person running
        it, never stored, never shown to the model (which reads the page as
@@ -516,7 +543,7 @@ async function browserRun(request, env, ctx, emit, out){
       await emit({ type:'step', step, verb, why:_webRedact(String(why || ''), secrets).slice(0, 300),
                    url:_webRedact(String(here || ''), secrets).slice(0, 500), shot: img.length <= WEB_SHOT_MAX ? img : '' });
     };
-    await page.setViewport({ width:1280, height:900 });
+    if(!resumeH) await page.setViewport({ width:1280, height:900 });
 
     /* AMV-002: BEFORE the first goto, because the first goto is one of the
        requests it guards. A 302 to an internal address used to be caught by
@@ -544,8 +571,8 @@ async function browserRun(request, env, ctx, emit, out){
 
     const visited = new Set([gate.url]);
     if(out) out.collect = async () => { const here = await page.url().catch(() => ''); if(here) visited.add(here); out.cookies = await _webJarOut(page, visited); };
-    if(jarIn.length && typeof page.setCookie === 'function') await page.setCookie(...jarIn).catch(() => {});
-    await page.goto(gate.url, { waitUntil:'domcontentloaded', timeout:20000 })
+    if(jarIn.length && !resumeH && typeof page.setCookie === 'function') await page.setCookie(...jarIn).catch(() => {});
+    if(!resumeH) await page.goto(gate.url, { waitUntil:'domcontentloaded', timeout:20000 })
       .catch((e) => {
         /* A goto that fails because the isolation aborted it is not an error to
            swallow: it is the destination redirecting somewhere it must not go,
@@ -618,10 +645,13 @@ async function browserRun(request, env, ctx, emit, out){
 
       if(obs.captcha){
         trace.push({ step, verb:'blocked', why:'captcha' });
-        await browser.close();
+        if(out) await out.collect();
+        const take = await handOver('captcha', obs.url);
+        if(!take) await browser.close();
         audit(env, 'web_agent_blocked', { by:user.email, reason:'captcha' });
         return json({ ok:false, code:'needs_human', need:'a captcha must be solved by you',
-          url:obs.url, trace, message:'This site showed a captcha. Solve it once and I can continue.' });
+          url:obs.url, trace, ...(take ? { takeover: take, takeoverForMs: WEB_HOLD_MS } : {}),
+          message: take ? 'This site wants a person. Take over, solve it, and I carry on.' : 'This site showed a captcha. Solve it once and I can continue.' });
       }
 
       /* AMV-001: the model is told what it can ACCOMPLISH and not what it can
@@ -686,9 +716,14 @@ async function browserRun(request, env, ctx, emit, out){
         return json({ ok:true, result:_webRedact(a.why || 'Completed.', secrets), url:obs.url, trace });
       }
       if(v.verb === 'blocked'){
-        await browser.close();
+        /* Usually a sign-in AMV has nothing for. The person can do it
+           themselves in the same browser, rather than hand AMV a password. */
+        if(out) await out.collect();
+        const take = await handOver('agent', obs.url);
+        if(!take) await browser.close();
         audit(env, 'web_agent_blocked', { by:user.email, reason:'agent' });
-        return json({ ok:false, code:'needs_info', need:_webRedact(a.why || 'more information', secrets), url:obs.url, trace });
+        return json({ ok:false, code:'needs_info', need:_webRedact(a.why || 'more information', secrets), url:obs.url, trace,
+                      ...(take ? { takeover: take, takeoverForMs: WEB_HOLD_MS } : {}) });
       }
 
       /* AMV-036: A PURCHASE NEEDS A BUDGET HOLDING MONEY FOR IT.
@@ -794,7 +829,7 @@ async function browserRun(request, env, ctx, emit, out){
     /* And the run itself, settled at what it really used: every decision's
        tokens and every second the browser was open. Nothing used, nothing
        charged - the reservation goes back. */
-    const browserMs = meter.browserFrom ? Math.max(0, Date.now() - meter.browserFrom) : 0;
+    const browserMs = (meter.browserFrom ? Math.max(0, Date.now() - meter.browserFrom) : 0) + (meter.holdMs || 0);
     const runUSD = (meter.input / 1e6) * runEng.inCost + (meter.output / 1e6) * runEng.outCost
                  + (browserMs / 3600000) * WEB_BROWSER_USD_PER_HOUR;
     await _recordSpend(env, user.billingSubject || user.email, runUSD, 'webagent', runBook.period, runBook);
@@ -804,12 +839,12 @@ async function browserRun(request, env, ctx, emit, out){
 /* The one place a browser is started. A deployment's BROWSER binding is a
    Cloudflare service binding, which has no `launch` of its own; a suite hands
    in an object that does, and that is the only way one gets one. */
-async function _webLaunch(env){
-  if(env.BROWSER && typeof env.BROWSER.launch === 'function') return env.BROWSER.launch();
+async function _webLaunch(env, opts){
+  if(env.BROWSER && typeof env.BROWSER.launch === 'function') return env.BROWSER.launch(opts);
   let puppeteer;
   try{ const mod = await import('@cloudflare/puppeteer'); puppeteer = mod.default || mod; }
   catch(e){ const err = new Error('driver missing'); err.code = 'driver_missing'; throw err; }
-  return puppeteer.launch(env.BROWSER);
+  return puppeteer.launch(env.BROWSER, opts);
 }
 
 /* LIVE MODE: the same run, streamed. `?live=1` answers with server-sent events

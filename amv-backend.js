@@ -13020,6 +13020,13 @@ async function browserRun(request, env, ctx, emit, out){
 
   const gate = _webHostAllowed(body.url);
   if(!gate.ok) return json({ error:gate.why, code:'blocked_url' }, 400);
+  /* CARRYING ON after the person took over (72-web-takeover.js): the same
+     browser, still signed in, rather than a fresh one. Refused, not quietly
+     replaced, when it has gone - a fresh browser would not be where they
+     left it. */
+  const resumeH = body.resume ? await _webTakeOpen(env, body.resume, user.email) : null;
+  if(body.resume && !resumeH)
+    return json({ error:'That browser has closed - it is kept for ten minutes. Start the task again.', code:'takeover_gone' }, 410);
 
   /* AMV-001: where the user's own values may be filled, decided from the
      REQUEST before a browser exists, and never changed by anything the run
@@ -13098,7 +13105,11 @@ async function browserRun(request, env, ctx, emit, out){
   let spentHere = false;
   let browser = null;
   try{
-    try{ browser = await _webLaunch(env); }
+    try{
+      browser = resumeH ? await _webConnect(env, resumeH.s).catch(() => null)
+                        : await _webLaunch(env, emit ? { keep_alive: WEB_HOLD_MS } : undefined);
+      if(!browser) return json({ error:'That browser has closed - it is kept for ten minutes. Start the task again.', code:'takeover_gone' }, 410);
+    }
     catch(impErr){
       if(!impErr || impErr.code !== 'driver_missing') throw impErr;
       // The browser driver is not bundled in this deploy. Say so plainly
@@ -13106,7 +13117,23 @@ async function browserRun(request, env, ctx, emit, out){
       return json({ error:'The browser driver is not installed in this deployment. Run npm install and redeploy to enable web automation.', code:'needs_service' }, 503);
     }
     meter.browserFrom = Date.now();
-    const page = await browser.newPage();
+    const page = resumeH ? ((await browser.pages().catch(() => [])).slice(-1)[0] || await browser.newPage()) : await browser.newPage();
+    /* HANDING OVER, in a run somebody is watching: the browser is let go of,
+       not closed, and kept for WEB_HOLD_MS so they can do the step only they
+       can - and that holding time is charged here, once. Returns the handle,
+       or nothing when it cannot be done (nobody watching, no key to seal it
+       with, a driver without sessions), in which case the caller closes the
+       browser as before. */
+    const handOver = async (why, url) => {
+      if(!emit || emit.gone() || !connConfigured(env) || typeof browser.sessionId !== 'function' || typeof browser.disconnect !== 'function') return null;
+      let handle;
+      try{ handle = await _webTakeSeal(env, user.email, browser.sessionId(), url); }catch(e){ return null; }
+      try{ await browser.disconnect(); }catch(e){ return null; }
+      browser = null;
+      meter.holdMs = WEB_HOLD_MS;
+      audit(env, 'web_agent_handed_over', { by:user.email, why });
+      return handle;
+    };
     /* THE LIVE VIEW. In live mode every step is shown as it happens: what was
        done, where, and a picture of the page. Sent only to the person running
        it, never stored, never shown to the model (which reads the page as
@@ -13119,7 +13146,7 @@ async function browserRun(request, env, ctx, emit, out){
       await emit({ type:'step', step, verb, why:_webRedact(String(why || ''), secrets).slice(0, 300),
                    url:_webRedact(String(here || ''), secrets).slice(0, 500), shot: img.length <= WEB_SHOT_MAX ? img : '' });
     };
-    await page.setViewport({ width:1280, height:900 });
+    if(!resumeH) await page.setViewport({ width:1280, height:900 });
 
     /* AMV-002: BEFORE the first goto, because the first goto is one of the
        requests it guards. A 302 to an internal address used to be caught by
@@ -13147,8 +13174,8 @@ async function browserRun(request, env, ctx, emit, out){
 
     const visited = new Set([gate.url]);
     if(out) out.collect = async () => { const here = await page.url().catch(() => ''); if(here) visited.add(here); out.cookies = await _webJarOut(page, visited); };
-    if(jarIn.length && typeof page.setCookie === 'function') await page.setCookie(...jarIn).catch(() => {});
-    await page.goto(gate.url, { waitUntil:'domcontentloaded', timeout:20000 })
+    if(jarIn.length && !resumeH && typeof page.setCookie === 'function') await page.setCookie(...jarIn).catch(() => {});
+    if(!resumeH) await page.goto(gate.url, { waitUntil:'domcontentloaded', timeout:20000 })
       .catch((e) => {
         /* A goto that fails because the isolation aborted it is not an error to
            swallow: it is the destination redirecting somewhere it must not go,
@@ -13221,10 +13248,13 @@ async function browserRun(request, env, ctx, emit, out){
 
       if(obs.captcha){
         trace.push({ step, verb:'blocked', why:'captcha' });
-        await browser.close();
+        if(out) await out.collect();
+        const take = await handOver('captcha', obs.url);
+        if(!take) await browser.close();
         audit(env, 'web_agent_blocked', { by:user.email, reason:'captcha' });
         return json({ ok:false, code:'needs_human', need:'a captcha must be solved by you',
-          url:obs.url, trace, message:'This site showed a captcha. Solve it once and I can continue.' });
+          url:obs.url, trace, ...(take ? { takeover: take, takeoverForMs: WEB_HOLD_MS } : {}),
+          message: take ? 'This site wants a person. Take over, solve it, and I carry on.' : 'This site showed a captcha. Solve it once and I can continue.' });
       }
 
       /* AMV-001: the model is told what it can ACCOMPLISH and not what it can
@@ -13289,9 +13319,14 @@ async function browserRun(request, env, ctx, emit, out){
         return json({ ok:true, result:_webRedact(a.why || 'Completed.', secrets), url:obs.url, trace });
       }
       if(v.verb === 'blocked'){
-        await browser.close();
+        /* Usually a sign-in AMV has nothing for. The person can do it
+           themselves in the same browser, rather than hand AMV a password. */
+        if(out) await out.collect();
+        const take = await handOver('agent', obs.url);
+        if(!take) await browser.close();
         audit(env, 'web_agent_blocked', { by:user.email, reason:'agent' });
-        return json({ ok:false, code:'needs_info', need:_webRedact(a.why || 'more information', secrets), url:obs.url, trace });
+        return json({ ok:false, code:'needs_info', need:_webRedact(a.why || 'more information', secrets), url:obs.url, trace,
+                      ...(take ? { takeover: take, takeoverForMs: WEB_HOLD_MS } : {}) });
       }
 
       /* AMV-036: A PURCHASE NEEDS A BUDGET HOLDING MONEY FOR IT.
@@ -13397,7 +13432,7 @@ async function browserRun(request, env, ctx, emit, out){
     /* And the run itself, settled at what it really used: every decision's
        tokens and every second the browser was open. Nothing used, nothing
        charged - the reservation goes back. */
-    const browserMs = meter.browserFrom ? Math.max(0, Date.now() - meter.browserFrom) : 0;
+    const browserMs = (meter.browserFrom ? Math.max(0, Date.now() - meter.browserFrom) : 0) + (meter.holdMs || 0);
     const runUSD = (meter.input / 1e6) * runEng.inCost + (meter.output / 1e6) * runEng.outCost
                  + (browserMs / 3600000) * WEB_BROWSER_USD_PER_HOUR;
     await _recordSpend(env, user.billingSubject || user.email, runUSD, 'webagent', runBook.period, runBook);
@@ -13407,12 +13442,12 @@ async function browserRun(request, env, ctx, emit, out){
 /* The one place a browser is started. A deployment's BROWSER binding is a
    Cloudflare service binding, which has no `launch` of its own; a suite hands
    in an object that does, and that is the only way one gets one. */
-async function _webLaunch(env){
-  if(env.BROWSER && typeof env.BROWSER.launch === 'function') return env.BROWSER.launch();
+async function _webLaunch(env, opts){
+  if(env.BROWSER && typeof env.BROWSER.launch === 'function') return env.BROWSER.launch(opts);
   let puppeteer;
   try{ const mod = await import('@cloudflare/puppeteer'); puppeteer = mod.default || mod; }
   catch(e){ const err = new Error('driver missing'); err.code = 'driver_missing'; throw err; }
-  return puppeteer.launch(env.BROWSER);
+  return puppeteer.launch(env.BROWSER, opts);
 }
 
 /* LIVE MODE: the same run, streamed. `?live=1` answers with server-sent events
@@ -15929,6 +15964,7 @@ async function _route(request, env, ctx) {
     case '/deploy/list':     return deployList(request, env);
     case '/deploy/delete':   return deployDelete(request, env);
     case '/v1/browser/run':  return browserRunRoute(request, env, ctx);
+    case '/v1/browser/takeover': return browserTakeover(request, env, ctx);   // the person's hands in a handed-over run (72-web-takeover.js)
     case '/v1/finance/accounts':     return financeRoute(request, env, 'accounts');
     case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
     case '/v1/finance/checkin':      return financeCheckin(request, env);
@@ -37941,4 +37977,116 @@ async function scimRoute(request, env, path){
     return _scimJson(now.find(x => x.id === one[1]) || Object.assign({}, cur, { active: active === null ? cur.active : active }));
   }
   return _scimErr(404, 'Not found. Users and ServiceProviderConfig are supported.');
+}
+/* ── TAKING OVER AMV'S BROWSER ─────────────────────────────────────────────
+
+   A run in AMV's hosted browser stops where only the person can go on: a
+   captcha, or a sign-in AMV has nothing for. Before this it closed the
+   browser and said so, and the person had nowhere to do the one thing asked
+   of them. Now, in a run they are watching, the browser is HANDED OVER
+   instead: kept open for WEB_HOLD_MS, and the panel becomes the controls -
+   tap the picture to click there, type, press a key, scroll - then "carry
+   on" starts the run again on the same browser, signed in.
+
+   This is the owner's delegated decision #4 in docs/OWNER-DECISIONS.md: the
+   person signs in themselves, live, instead of AMV keeping sign-ins on its
+   servers. Nothing here stores one.
+
+   WHAT HOLDS IT SAFE:
+     - The handle is the browser session's id, the account and an expiry,
+       sealed under CONNECT_KEY. Only the account it was made for can use it,
+       and only until the browser is closed by its keep-alive anyway.
+     - Every action reconnects, and the request isolation that stops a page
+       reaching internal addresses is put back on BEFORE anything is done -
+       it belongs to a connection, so a reconnect without it would be the
+       pivot _webIsolate exists to prevent. Where the page lands after the
+       action is gated too, and a page that went somewhere it must not ends
+       the browser.
+     - What the person types reaches the page and nothing else: it is not
+       logged, not kept, not shown to the model, and the audit records only
+       that an action of that kind happened.
+     - Each action is one short request, rate-limited per account. The time
+       the browser is held is charged once, to the run that handed it over. */
+const WEB_HOLD_MS = 10 * 60e3;
+const WEB_TAKE_TYPE_MAX = 500;
+const WEB_TAKE_KEYS = ['Enter', 'Tab', 'Backspace', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'];
+
+async function _webTakeSeal(env, email, sessionId, url){
+  return connSeal(env, { t: 'webtake', e: String(email).toLowerCase(), s: String(sessionId), x: Date.now() + WEB_HOLD_MS, u: String(url || '').slice(0, 500) });
+}
+async function _webTakeOpen(env, handle, email){
+  if(!connConfigured(env) || typeof handle !== 'string' || handle.length > 2000) return null;
+  let h; try{ h = await connOpen(env, handle); }catch(e){ return null; }
+  if(!h || h.t !== 'webtake' || h.e !== String(email).toLowerCase() || !h.s || !(h.x > Date.now())) return null;
+  return h;
+}
+async function _webConnect(env, sessionId){
+  if(env.BROWSER && typeof env.BROWSER.connect === 'function') return env.BROWSER.connect(sessionId);
+  const mod = await import('@cloudflare/puppeteer'); const puppeteer = mod.default || mod;
+  return puppeteer.connect(env.BROWSER, sessionId);
+}
+/* What the person asked for, in a known shape, or null. */
+function _webTakeAct(raw){
+  const a = raw && typeof raw === 'object' ? raw : {};
+  const n = (v, lo, hi) => { const x = Math.round(Number(v)); return Number.isFinite(x) && x >= lo && x <= hi ? x : null; };
+  if(a.kind === 'click'){ const x = n(a.x, 0, 1279), y = n(a.y, 0, 899); return x === null || y === null ? null : { kind: 'click', x, y }; }
+  if(a.kind === 'type'){ const t = typeof a.text === 'string' ? a.text : ''; return t && t.length <= WEB_TAKE_TYPE_MAX ? { kind: 'type', text: t } : null; }
+  if(a.kind === 'key') return WEB_TAKE_KEYS.includes(a.key) ? { kind: 'key', key: a.key } : null;
+  if(a.kind === 'scroll'){ const dy = n(a.dy, -3000, 3000); return dy === null ? null : { kind: 'scroll', dy }; }
+  if(a.kind === 'look' || a.kind === 'close') return { kind: a.kind };
+  return null;
+}
+
+async function browserTakeover(request, env, ctx){
+  const user = await requireUser(request, env);
+  if(!user) return json({ error:'unauthorized' }, 401);
+  const limited = await guardAction(env, 'webtake:' + user.email, 60, 600, 'actions in AMV’s browser');
+  if(limited) return limited;
+  const body = await request.json().catch(() => ({}));
+  const h = await _webTakeOpen(env, body.handle, user.email);
+  if(!h) return json({ error:'That browser has closed - it is kept for ten minutes. Start the task again.', code:'takeover_gone' }, 410);
+  const act = _webTakeAct(body.act);
+  if(!act) return json({ error:'That is not something AMV’s browser can do.', code:'bad_action' }, 400);
+  if(!env.BROWSER) return json({ error:'Web automation is not enabled on this deployment.', code:'needs_service' }, 503);
+  let browser;
+  try{ browser = await _webConnect(env, h.s); }
+  catch(e){ return json({ error:'That browser has closed - it is kept for ten minutes. Start the task again.', code:'takeover_gone' }, 410); }
+  try{
+    if(act.kind === 'close'){
+      await browser.close().catch(() => {});
+      audit(env, 'web_takeover', { by: user.email, kind: 'close' });
+      return json({ ok:true, closed:true });
+    }
+    const pages = await browser.pages().catch(() => []);
+    const page = pages[pages.length - 1] || await browser.newPage();
+    /* BEFORE anything else on this connection - see the note at the top. */
+    const denied = [];
+    const isolated = await _webIsolate(page, (url, why, kind) => { if(denied.length < 5) denied.push({ url: String(url).slice(0, 200), why, kind }); });
+    if(!isolated){
+      await browser.close().catch(() => {});
+      return json({ error:'AMV’s browser cannot be used safely on this deployment right now, so it was closed.', code:'needs_service' }, 503);
+    }
+    if(act.kind === 'click') await page.mouse.click(act.x, act.y).catch(() => {});
+    else if(act.kind === 'type') await page.keyboard.type(act.text).catch(() => {});
+    else if(act.kind === 'key') await page.keyboard.press(act.key === 'Space' ? ' ' : act.key).catch(() => {});
+    else if(act.kind === 'scroll') await page.evaluate('window.scrollBy(0, ' + act.dy + ')').catch(() => {});
+    if(act.kind !== 'look') await new Promise(r => setTimeout(r, WEB_SETTLE_MS));
+    let here = ''; try{ here = await page.url(); }catch(e){}
+    const g = here ? _webHostAllowed(here) : { ok: true };
+    if(!g.ok){
+      await browser.close().catch(() => {});
+      audit(env, 'web_agent_blocked', { by: user.email, reason: 'takeover', to: here.slice(0, 200) });
+      return json({ ok:false, code:'blocked_url', error:'The page went somewhere AMV is not allowed to go, so the browser was closed. ' + g.why }, 400);
+    }
+    let shot = '';
+    try{ shot = await page.screenshot({ type:'jpeg', quality:45, encoding:'base64' }); }catch(e){}
+    await browser.disconnect().catch(() => {});
+    /* The kind of action, never what was typed. */
+    audit(env, 'web_takeover', { by: user.email, kind: act.kind });
+    return json({ ok:true, url: here.slice(0, 500), shot: shot.length <= WEB_SHOT_MAX ? shot : '', blockedRequests: denied.length });
+  }catch(e){
+    try{ await browser.disconnect(); }catch(_){}
+    if(ctx && ctx.waitUntil) ctx.waitUntil(_workerError(env, 'browserTakeover', e));
+    return json({ error:'That did not reach AMV’s browser. Try again.', code:'takeover_failed' }, 502);
+  }
 }
