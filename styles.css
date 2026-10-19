@@ -17242,3 +17242,10 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .oe-card .oe-list{ margin:var(--sp-2) 0 var(--sp-3); padding-left:var(--sp-5); font-size:var(--t-sm); color:var(--tx); }
 .oe-card .oe-list li{ margin:var(--sp-1) 0; overflow-wrap:anywhere; }
 .oe-card .pj-note{ margin:0 0 var(--sp-3); }
+
+/* ═══ LAYER A327 - directory sync in company sign-in ═══
+   The SCIM token is one 140-character word: it breaks anywhere rather than
+   pushing a phone screen sideways, and it is selectable as a block. */
+.team-sso .team-scim-tok{ display:block; margin:var(--sp-2) 0; padding:var(--sp-2); font-family:var(--mn); font-size:var(--t-sm);
+  color:var(--tx); background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-sm); word-break:break-all; user-select:all; }
+.team-sso .team-scim .btn{ min-height:44px; margin-top:var(--sp-2); }

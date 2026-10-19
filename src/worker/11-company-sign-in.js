@@ -132,7 +132,14 @@ async function teamSso(request, env){
   const cur = team.sso || null;
   const view = async (s) => s ? { domain: s.domain, issuer: s.issuer, clientId: s.clientId, verified: !!s.verified,
     required: !!s.required, record: { name: '_amv-verify.' + s.domain, value: await _ssoProof(env, team.id, s.domain) } } : null;
-  if(action === 'get') return json({ ok:true, sso: await view(cur), redirectUri: _appRoot(env) });
+  /* Directory sync (71-scim.js): whether it is on, never the token. */
+  const scimView = team.scim ? { on: true, at: team.scim.at, tail: team.scim.tail, baseUrl: new URL(request.url).origin + '/scim/v2' } : null;
+  if(action === 'get') return json({ ok:true, sso: await view(cur), scim: scimView, redirectUri: _appRoot(env) });
+  if(action === 'scim'){
+    const limited = await guardAction(env, 'scimset:' + user.email, 10, 50, 'changes to directory sync');
+    if(limited) return limited;
+    return _scimOwnerAction(request, env, team, user, body.on === true);
+  }
 
   if(action === 'set'){
     const limited = await guardAction(env, 'ssoset:' + user.email, 10, 60, 'changes to company sign-in');
@@ -206,7 +213,8 @@ async function teamSso(request, env){
   }
 
   if(action === 'remove'){
-    try{ await _withTeam(env, team.id, (fresh) => { if(fresh) delete fresh.sso; return true; }); }
+    /* Directory sync goes with it: it only ever manages the proved domain. */
+    try{ await _withTeam(env, team.id, (fresh) => { if(fresh){ delete fresh.sso; delete fresh.scim; } return true; }); }
     catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
     await _ssoReleaseDomain(env, cur.domain, team.id);
     await _teamAudit(env, team, user.email, 'sso_removed', { domain: cur.domain });

@@ -12,7 +12,7 @@ are listed at the end, with exactly what to do.
 
 ## Decided
 
-**1. SCIM provisioning, Users only - YES, build it.**
+**1. SCIM provisioning, Users only - YES. Built** (`71-scim.js`, `a-company-directory-adds-and-removes-its-people`).
 The failure that ends an enterprise business is an ex-employee who still has
 the company's chats and files, and at scale that is not rare: it is every
 company forgetting somebody every week. SCIM makes the company's own directory

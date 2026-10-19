@@ -410,6 +410,11 @@ async function _route(request, env, ctx) {
   const path = url.pathname.replace(/\/+$/, '');
 
   // Live deployed sites are PUBLIC - served before any auth/CORS gating.
+  /* A company's directory adding and removing its people (71-scim.js).
+     Before the method list (SCIM uses GET, POST, PUT, PATCH and DELETE) and
+     before the emergency stop: removing somebody's access is a security
+     action, and the stop exists to stop spending. */
+  if (path.startsWith('/scim/v2') && request.method !== 'OPTIONS') return scimRoute(request, env, path);
   /* A request from another service to a Crew job's own address. Before the
      method list below, because the address is a path no list can name; the
      handler takes POST only. See 70-hooks.js. */

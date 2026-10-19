@@ -25,7 +25,7 @@ const { page, errors } = app;
 const appUrl = page.url().split('?')[0];
 
 const seen = [];
-let finishAnswer = null, loginAnswer = null, ssoState = null;
+let finishAnswer = null, loginAnswer = null, ssoState = null, scimState = null, scimN = 0;
 const jwt = (o) => ['e30', Buffer.from(JSON.stringify(Object.assign({ exp: Math.floor(Date.now() / 1000) + 3600 }, o))).toString('base64url'), 'sig'].join('.');
 await page.route(API + '/**', async (route) => {
   const req = route.request();
@@ -44,7 +44,13 @@ await page.route(API + '/**', async (route) => {
       record: { name: '_amv-verify.' + body.domain, value: 'amv-verify=0123456789abcdef0123456789abcdef' } };
     if (body.action === 'verify') { ssoState.verified = true; return reply(200, { ok: true, verified: true, sso: ssoState }); }
     if (body.action === 'require') ssoState.required = body.on === true;
-    return reply(200, { ok: true, sso: ssoState, redirectUri: appUrl });
+    if (body.action === 'scim') {
+      if (!body.on) { scimState = null; return reply(200, { ok: true, scim: null }); }
+      const token = 'amvscim_team_' + 'a'.repeat(32) + '_' + String(++scimN).repeat(64).slice(0, 64);
+      scimState = { on: true, at: Date.now(), tail: token.slice(-4), baseUrl: API + '/scim/v2' };
+      return reply(200, { ok: true, scim: scimState, token, baseUrl: API + '/scim/v2' });
+    }
+    return reply(200, { ok: true, sso: ssoState, scim: scimState, redirectUri: appUrl });
   }
   return reply(200, { ok: true });
 });
@@ -144,6 +150,35 @@ section('The owner’s settings load on demand: set, prove, require');
   ok(req && req.body.on === true, 'requiring it is one tick, sent as such', req);
   const on = await page.evaluate(() => document.getElementById('sso-require').checked);
   ok(on, 'and the box shows what the server now says');
+}
+
+section('Directory sync: on with a token shown once, a new one on request, off again');
+{
+  await page.waitForSelector('#scim-on');
+  await page.click('#scim-on');
+  await page.waitForSelector('.team-scim-tok');
+  const shown = await page.evaluate(() => ({ tok: document.querySelector('.team-scim-tok').textContent, text: document.getElementById('sso-host').innerText }));
+  ok(/^amvscim_team_/.test(shown.tok) && /shows it only once/.test(shown.text) && shown.text.includes(API + '/scim/v2'), 'the token is shown, once, with the address to give the provider', shown.text.slice(-300));
+  await page.evaluate(() => _teamSsoStart(document.getElementById('sso-host')));
+  await page.waitForSelector('#scim-new');
+  const again = await page.evaluate(() => ({ tok: !!document.querySelector('.team-scim-tok'), text: document.getElementById('sso-host').innerText }));
+  ok(!again.tok && /ending 1111/.test(again.text), 'opened again, only its last four characters are shown', again.text.slice(-200));
+  await page.click('#scim-new');
+  await page.waitForSelector('#cfm-yes');
+  const label = await page.evaluate(() => document.getElementById('cfm-yes').textContent.trim());
+  ok(label === 'New token', 'the dialog’s button says what it does', label);
+  await page.evaluate(() => document.getElementById('cfm-yes').click());   // the test's host sits above the overlay
+  await page.waitForSelector('.team-scim-tok');
+  const fresh = await page.evaluate(() => document.querySelector('.team-scim-tok').textContent);
+  ok(/2222$/.test(fresh), 'a new token replaces it, after asking', fresh.slice(-8));
+  await page.setViewportSize({ width: 390, height: 844 });
+  const w = await page.evaluate(() => { const r = document.querySelector('.team-scim-tok').getBoundingClientRect(); return { right: r.right, vw: innerWidth, sw: document.getElementById('sso-host').scrollWidth, cw: document.getElementById('sso-host').clientWidth }; });
+  ok(w.sw <= w.cw + 1 && w.right <= w.vw, 'on a phone, the long token wraps inside the screen rather than pushing it sideways', w);
+  await page.click('#scim-off');
+  await page.waitForSelector('#cfm-yes');
+  await page.evaluate(() => document.getElementById('cfm-yes').click());   // the test's host sits above the overlay
+  await page.waitForSelector('#scim-on');
+  ok(seen.filter(x => x.path === '/team/sso' && x.body.action === 'scim').map(x => x.body.on).join() === 'true,true,false', 'on, new, off - each sent as such', seen.filter(x => x.body.action === 'scim').map(x => x.body.on));
 }
 
 section('No JavaScript errors');

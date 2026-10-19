@@ -37,11 +37,33 @@ function _teamSsoRender(d){
     : '<div class="team-sso-step is-on"><b>On.</b> People at <b>@'+escH(s.domain)+'</b> can choose “Sign in with your company” and use '+
         escH(s.issuer)+'.</div>'+
       '<label class="team-sso-req"><input type="checkbox" id="sso-require"'+(s.required?' checked':'')+'> '+
-        'Require it for everybody at @'+escH(s.domain)+' - passwords and Google stop working for them. You can always still use yours.</label>';
+        'Require it for everybody at @'+escH(s.domain)+' - passwords and Google stop working for them. You can always still use yours.</label>'+
+      _teamScimHTML(s, d.scim);
   body.innerHTML = step +
     '<details class="team-sso-edit"><summary>Change settings</summary>'+_teamSsoFormHTML(s, d.redirectUri)+'</details>'+
     '<button class="btn bs" id="sso-remove" type="button">Turn off company sign-in</button>'+
     '<p class="team-sso-say" id="sso-say" role="status" aria-live="polite"></p>';
+}
+/* DIRECTORY SYNC (SCIM, 71-scim.js). When somebody leaves the company, its
+   identity provider removes them here and ends their sign-ins. Offered only
+   once the domain is proved, because it only ever manages that domain. The
+   token is shown once, at the moment it is made; the server keeps its hash. */
+function _teamScimHTML(s, scim){
+  const head = '<div class="team-sso-step team-scim"><b>'+escH(T('Directory sync (SCIM)'))+'</b> '+
+    escH(T('When somebody leaves, your identity provider removes them from AMV within minutes and ends every sign-in they have. It manages only addresses at {0}, and never you.').replace('{0}', '@'+s.domain));
+  if(!scim) return head + '<div><button class="btn bs" id="scim-on" type="button">'+escH(T('Turn on directory sync'))+'</button></div></div>';
+  return head + '<dl class="team-sso-rec"><dt>'+escH(T('Address'))+'</dt><dd><code>'+escH(scim.baseUrl||'')+'</code></dd>'+
+    '<dt>'+escH(T('Token'))+'</dt><dd>'+escH(T('ending {0}').replace('{0}', scim.tail||''))+'</dd></dl>'+
+    '<div id="scim-token" aria-live="polite"></div>'+
+    '<button class="btn bs" id="scim-new" type="button">'+escH(T('New token'))+'</button> '+
+    '<button class="btn bs" id="scim-off" type="button">'+escH(T('Turn off directory sync'))+'</button></div>';
+}
+function _teamScimShowToken(token){
+  const box = $('scim-token'); if(!box || !token) return;
+  box.innerHTML = '<p class="team-sso-say"><b>'+escH(T('Copy this token into your identity provider now. AMV shows it only once.'))+'</b></p>'+
+    '<code class="team-scim-tok">'+escH(token)+'</code> <button class="btn bs" id="scim-copy" type="button">'+escH(T('Copy'))+'</button>';
+  const c = $('scim-copy');
+  if(c) on(c, 'click', async () => { try{ await _copyText(token); toast(T('Token copied.'), 'success', 3000); }catch(e){ toast(T('Select it and copy it instead.'), 'info', 4000); } });
 }
 async function _teamSsoStart(vc){
   if(!$('team-sso-body')) return;
@@ -70,9 +92,28 @@ function _teamSsoWire(vc){
   const req = $('sso-require');
   if(req) on(req,'change',()=>run(req, { action:'require', on: req.checked },
     (d)=>toast(d.sso && d.sso.required ? 'Required. Only company sign-in works at @'+d.sso.domain+' now.' : 'Not required. Passwords work again.','success',5000)));
+  /* SCIM answers with the token, not the sign-in settings: read them again,
+     then show the token in the space the fresh render made for it. */
+  const scimRun = async (btn, on) => {
+    if(btn) btn.disabled = true; say('');
+    try{
+      const r = await AMVTeam.sso({ action:'scim', on });
+      const d = await AMVTeam.sso({ action:'get' });
+      _teamSsoRender(d); _teamSsoWire(vc);
+      if(on) _teamScimShowToken(r.token);
+      else toast(T('Directory sync is off. The old token no longer works.'), 'info', 5000);
+    }catch(e){ if(btn) btn.disabled = false; say(e.message || T('That did not work.')); }
+  };
+  const sOn = $('scim-on'); if(sOn) on(sOn, 'click', () => scimRun(sOn, true));
+  const sNew = $('scim-new');
+  if(sNew) on(sNew, 'click', () => confirmModal(T('Make a new token?'), T('The current token stops working at once. Paste the new one into your identity provider.'),
+    () => scimRun(sNew, true), { confirm: T('New token') }));
+  const sOff = $('scim-off');
+  if(sOff) on(sOff, 'click', () => confirmModal(T('Turn off directory sync?'), T('Your identity provider stops adding and removing people here. Nobody already in the team is removed.'),
+    () => scimRun(sOff, false), { confirm: T('Turn off') }));
   const rm = $('sso-remove');
   if(rm) on(rm,'click',()=>confirmModal('Turn off company sign-in?',
     'Your people go back to signing in with a password or Google. Anybody who never set a password will need to reset it.',
-    ()=>run(rm, { action:'remove' }, ()=>toast('Company sign-in is off.','info',5000)), { okText:'Turn off' }));
+    ()=>run(rm, { action:'remove' }, ()=>toast('Company sign-in is off.','info',5000)), { confirm:'Turn off' }));
 }
 window._teamSsoStart = _teamSsoStart;
