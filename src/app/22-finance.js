@@ -319,6 +319,25 @@ function _renderInvestPane(pane){
 }
 try{ window._renderInvestPane=_renderInvestPane; }catch(e){}
 
+/* Prediction markets live in predict.js (src/finance/predict.js), fetched the
+   first time they are opened: few people trade, and the page is at its
+   weight ceiling. */
+let _predictP = null;
+async function openPredictionMarkets(){
+  if(typeof window._openPredictNow !== 'function'){
+    if(!_predictP) _predictP = new Promise(res => {
+      const sc = document.createElement('script');
+      sc.src = 'predict.js';
+      sc.onload = () => res(typeof window._openPredictNow === 'function');
+      sc.onerror = () => { _predictP = null; sc.remove(); res(false); };
+      document.head.appendChild(sc);
+    });
+    if(!(await _predictP)){ toast(T('That could not be loaded. Check your connection and try again.'), 'error', 5000); return; }
+  }
+  return window._openPredictNow();
+}
+try{ window.openPredictionMarkets = openPredictionMarkets; }catch(e){}
+
 /* Expose finance to chat/Crew. READ-ONLY on purpose: AMV can see money and
    reason about it, but has no action that moves it. */
 try{

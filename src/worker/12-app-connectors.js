@@ -792,7 +792,8 @@ async function autoCreate(request, env){
     return json({ error: (body.when && body.when.source === 'page')
       ? 'Give a public page address, and the words to watch for appearing or disappearing on it.'
       : 'Say what to watch for: who it is from, words in the subject, or words in the message.', code:'when_empty' }, 400);
-  const whenUse = !when ? [] : _whenSrc(when) === 'calendar' ? ['calendar.read'] : ['page', 'hook'].includes(_whenSrc(when)) ? [] : ['mail.read'];
+  const whenUse = !when ? [] : _whenSrc(when) === 'calendar' ? ['calendar.read'] : _whenSrc(when) === 'github' ? ['repo.read']
+                : ['page', 'hook'].includes(_whenSrc(when)) ? [] : ['mail.read'];
   /* An address another service can call needs the key it is sealed with. */
   if(when && _whenSrc(when) === 'hook' && !connConfigured(env))
     return json({ error:'This deployment does not run jobs from other services.', code:'hook_unavailable' }, 503);

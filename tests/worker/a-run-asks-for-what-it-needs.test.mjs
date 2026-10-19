@@ -51,16 +51,25 @@ section('Every capability says what it wants, what it needs, and where');
 
 section('It only claims what the server can actually check');
 {
-  /* The honest half. Google, mail and Canvas are held on the server and are
-     genuinely verifiable; GitHub and Slack are connected in the browser and
-     nowhere else, so a scheduled run cannot reach them at all. Before this,
+  /* The honest half. Google, mail, Canvas and GitHub are held on the server
+     and are genuinely verifiable; Slack is connected in the browser and
+     nowhere else, so a scheduled run cannot reach it at all. Before this,
      such a job produced text every night that went nowhere. */
   const browserOnly = W.AUTO_CAPABILITIES.filter((c) => c.browserOnly).map((c) => c.id);
-  ok(browserOnly.includes('github') && browserOnly.includes('slack'),
-     'the browser-only integrations are marked as such rather than pretended', browserOnly);
-  const gh = W.AUTO_CAPABILITIES.find((c) => c.id === 'github');
-  ok(/browser/i.test(gh.needs),
-     'and say plainly why a scheduled run cannot use them', gh.needs);
+  ok(browserOnly.includes('slack') && !browserOnly.includes('github'),
+     'the browser-only integration is marked as such, and GitHub - a server-held connection now - is not', browserOnly);
+  const sl = W.AUTO_CAPABILITIES.find((c) => c.id === 'slack');
+  ok(/browser/i.test(sl.needs),
+     'and it says plainly why a scheduled run cannot use it', sl.needs);
+  /* GitHub is answered from the grant, not assumed either way: a repository
+     job is held until the connection can read repositories, and runs once it
+     can. It used to be refused for everybody, connected or not. */
+  const job = { detail: 'Summarise new pull requests on the repo.', uses: ['repo.read'] };
+  const without = W._autoNeedsFor(job, { scopes: ['calendar.read'] });
+  ok(!without.ready && without.missing.some((m) => m.id === 'github' && m.why === 'discovered'),
+     'a job that reads a repository waits for a GitHub connection that can', without.missing);
+  const withGh = W._autoNeedsFor(job, { scopes: ['repo.read'] });
+  ok(withGh.ready, 'and runs once that connection is there', withGh.missing);
 }
 
 section('What a person has connected is read from where the server keeps it');

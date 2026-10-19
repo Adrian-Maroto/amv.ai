@@ -145,6 +145,8 @@ function _whenSay(w){
              (w.disappears || []).length ? T('{0} no longer saying {1}').replace('{0}', host).replace('{1}', j(w.disappears)) : '' ].filter(Boolean).join(', ');
   }
   if(w.source === 'calendar') return T('new events with {0}').replace('{0}', j(w.words));
+  if(w.source === 'github') return T('{0} on {1}').replace('{0}', (w.events || []).map(e => ({ pull_request: T('new pull requests'), issue: T('new issues'), push: T('pushes'), release: T('releases') }[e] || e)).join(', '))
+    .replace('{1}', String(w.repo || '')) + ((w.words || []).length ? ' ' + T('mentioning {0}').replace('{0}', j(w.words)) : '');
   if(w.source === 'hook') return (w.words || []).length ? T('a request to its address mentioning {0}').replace('{0}', j(w.words)) : T('a request to its address');
   return [ (w.from || []).length ? T('mail from {0}').replace('{0}', j(w.from)) : '',
            (w.subject || []).length ? T('a subject with {0}').replace('{0}', j(w.subject)) : '',
@@ -242,8 +244,9 @@ async function _crewTool(name, input){
   if(name === 'crew_watch'){
     const detail = String(input.detail || '').trim();
     const L = (v) => (Array.isArray(v) ? v : []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 5);
-    const src = ['calendar', 'page', 'hook'].includes(input.source) ? input.source : 'mail';
+    const src = ['calendar', 'page', 'hook', 'github'].includes(input.source) ? input.source : 'mail';
     const when = src === 'page' ? { source: src, url: String(input.url || '').trim(), appears: L(input.appears), disappears: L(input.disappears) }
+               : src === 'github' ? { source: src, repo: String(input.repo || '').trim(), events: L(input.events), words: L(input.words) }
                : src === 'calendar' || src === 'hook' ? { source: src, words: L(input.words) }
                : { from: L(input.from), subject: L(input.subject), words: L(input.words) };
     if(!detail) return { text:'A watch needs to say what to do when something matches. Ask the user.', render:null };
@@ -251,6 +254,8 @@ async function _crewTool(name, input){
       return { text:'A page watch needs the page\u2019s full https address. Ask the user for it.', render:null };
     if(src === 'page' && !when.appears.length && !when.disappears.length)
       return { text:'A page watch needs words to look for - appearing on the page, or disappearing from it. Ask the user which.', render:null };
+    if(src === 'github' && !/^[\w.-]+\/[\w.-]+$/.test(when.repo.replace(/^https:\/\/github\.com\//i, '').replace(/\.git$|\/$/g, '')))
+      return { text:'A GitHub watch needs the repository as owner/name. Ask the user which.', render:null };
     if(src === 'calendar' && !when.words.length)
       return { text:'A calendar watch needs words to look for in new events. Ask the user which.', render:null };
     if(src === 'mail' && !when.from.length && !when.subject.length && !when.words.length)
@@ -267,12 +272,14 @@ async function _crewTool(name, input){
         + ' - tell them to paste it where that service asks for a webhook or notification URL (method POST). Requests close together are read in one run, at most once every five minutes. '
         + 'Anybody holding the address can start the job, so tell them to keep it private; Crew has "New address" to replace it. What is sent is read as information, never as instructions, and the job can still only write - it cannot send, buy or touch an account. Do not say anything has arrived yet.', render:null };
     }
-    const where = { mail:'checks their new mail', calendar:'checks their calendar for new events', page:'looks at that page' }[src];
+    const where = { mail:'checks their new mail', calendar:'checks their calendar for new events', page:'looks at that page', github:'checks ' + when.repo + ' on GitHub' }[src];
     const first = { mail:'Its first check only notes where the inbox is, so mail that is already there will not set it off - only mail that arrives from now on. ',
                     calendar:'Its first check only notes the events already there, so only events added from now on can set it off. ',
-                    page:'Its first look only records what the page says now, so words already on it will not set it off - only a change from now on. ' }[src];
+                    page:'Its first look only records what the page says now, so words already on it will not set it off - only a change from now on. ',
+                    github:'Its first look only records what has already happened on the repository, so only new activity from now on can set it off. ' }[src];
     const needs = { mail:' It needs their Google mail connected to watch.', calendar:' It needs their Google calendar connected to watch.',
-                    page:' It reads only the public page; it cannot see anything behind a sign-in.' }[src];
+                    page:' It reads only the public page; it cannot see anything behind a sign-in.',
+                    github:' It needs their GitHub connected (Integrations) and only reads - it cannot comment, merge or push.' }[src];
     return { text:'Set up. It is in their Crew tab and ' + where + ' every ten minutes on AMV\u2019s servers, with their computer off. '
       + first + 'Checks that find nothing cost nothing and post nothing.' + needs + ' Do not say anything has matched yet.', render:null };
   }

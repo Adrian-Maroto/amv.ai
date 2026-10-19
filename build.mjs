@@ -158,6 +158,7 @@ function emitSandbox() {
   writeFileSync('live-voice.js', readFileSync('src/voice/live-voice.js'));
   writeFileSync('web-live.js', readFileSync('src/web/web-live.js'));
   writeFileSync('invest.js', readFileSync('src/finance/invest.js'));
+  writeFileSync('predict.js', readFileSync('src/finance/predict.js'));
   writeFileSync('spending.js', readFileSync('src/finance/spending.js'));
   writeFileSync('family.js', readFileSync('src/finance/family.js'));
   writeFileSync('health.js', readFileSync('src/health/health.js'));
@@ -1086,6 +1087,7 @@ const PUBLISH = [
   'live-voice.js',         // the live voice conversation, fetched when voice mode starts with server speech
   'web-live.js',           // the panel that shows a web run as it happens, fetched when one starts
   'invest.js',             // the Invest settings pane, fetched the first time it is opened
+  'predict.js',            // prediction markets, fetched the first time they are opened
   'spending.js',           // the spending limits pane, fetched the first time it is opened
   'family.js',             // the Family settings pane, fetched the first time it is opened
   'health.js',             // reads an Apple Health export, fetched when a .zip is attached

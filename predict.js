@@ -1,6 +1,10 @@
 /* ══════════════════════════════════════════════════════════════════════════
    PLACING A TRADE, WITH THE APPROVAL THAT ACTUALLY MEANS SOMETHING.
 
+   Fetched the first time somebody opens it (openPredictionMarkets in
+   22-finance.js), so nobody who never trades carries it. A classic script in
+   the page's own scope.
+
    Two steps, and the split is the point. Quote first: the server writes down
    the exact market, side and amount and hands back an id. Then the person
    reads those numbers - the ones the SERVER holds, echoed back from its own
@@ -22,7 +26,7 @@ let _PQ = null;        // the quote awaiting confirmation, as the server describ
 
 function _pmMoney(n) { return '$' + (Math.round(Number(n) * 100) / 100).toFixed(2); }
 
-async function openPredictionMarkets() {
+async function _openPredictNow() {
   if (!_ovOpenLoading('pm', 'Prediction markets', 'Trade on an outcome')) return;
   _PQ = null;
 
@@ -109,4 +113,4 @@ async function openPredictionMarkets() {
     } catch (e) { say((e && e.message) || T('That trade could not be checked.'), 'err'); }
   });
 }
-try { window.openPredictionMarkets = openPredictionMarkets; } catch (e) {}
+try { window._openPredictNow = _openPredictNow; } catch (e) {}

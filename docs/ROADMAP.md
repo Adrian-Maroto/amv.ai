@@ -520,7 +520,15 @@ minutes; retries count once; a request without the job's words costs nothing;
 nothing credential-shaped is kept, and what a run read is deleted after it.
 `another-service-can-start-a-job` (42 assertions, twelve mutations caught).
 
-*Next sources:* a GitHub repository read through the person's connection, and
-Slack. Mail read by app password cannot be watched yet (no
+**A GitHub repository (done).** A job watches one repository through the
+person's GitHub connection - new pull requests and issues by default, pushes
+and releases when asked, narrowed by words - and runs on the new ones only:
+what is already there when it starts never fires it, and each event fires it
+once. Titles anybody can write are read inside the run's fence, as
+information. A run that needs the connection and has none waits and says so
+before anything is spent. `when-it-arrives-amv-acts`, nine mutations caught.
+
+*Next source:* Slack, which needs a Slack app registered in the owner's name.
+Mail read by app password cannot be watched yet (no
 cursor), and says so. What is built and what is next is kept in
 `docs/capabilities.json`, and the gate fails when this page disagrees with it.

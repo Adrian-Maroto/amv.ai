@@ -66,13 +66,20 @@ const AUTO_CAPABILITIES = [
     match: /\b(send (?:it|this|them)?\s?(?:to|off)|submit (?:it|this)|hand (?:it )?in|email (?:it|this) to|email (?:my|the) (?:teacher|professor|tutor|boss|manager))\b/i,
     has: (c, item) => /[^@\s]+@[^@\s]+\.[^@\s]+/.test(String((item && item.detail) || '')) || !!c.school },
 
-  /* Connected in the browser and nowhere else, so the cron genuinely cannot
-     reach them. Stated rather than silently skipped. */
-  { id: 'github', label: 'change a repository',
-    needs: 'GitHub connected on the server - today it is connected in your browser only, so scheduled runs cannot reach it',
+  /* GitHub is a Connected account, held on the server like Google, so a
+     scheduled run CAN read a repository through it (`repo.read`). This row
+     used to say it was connected in the browser only - true once, and left
+     standing after it stopped being true, so a job watching a repository was
+     told to connect an account the person had already connected. Reading is
+     all a run does: an unattended run never changes a repository (owner
+     decision #6), it writes text a person approves. */
+  { id: 'github', label: 'read your GitHub repositories',
+    needs: 'your GitHub account connected to AMV with permission to read repositories',
     where: 'Integrations, then GitHub',
     match: /\b(github|pull request|\bpr\b|repository|repo|commit|merge)\b/i,
-    has: () => false, browserOnly: true },
+    has: (c) => Array.isArray(c.scopes) && c.scopes.includes('repo.read') },
+  /* Connected in the browser and nowhere else, so the cron genuinely cannot
+     reach it. Stated rather than silently skipped. */
   { id: 'slack', label: 'post to Slack',
     needs: 'Slack connected on the server - today it is connected in your browser only, so scheduled runs cannot reach it',
     where: 'Integrations, then Slack',
@@ -104,14 +111,16 @@ const AUTO_CAPABILITIES = [
 ];
 /* The one bridge between a declared `use` and the gate's capabilities.
 
-   Only `bank.read` is here, on purpose. Mapping the others would look tidier
+   Only `bank.read` and `repo.read` are here, on purpose - each has exactly
+   one provider behind it, so the declared use and the row ask the same
+   question. Mapping the others would look tidier
    and would break them: a calendar granted through Microsoft carries
    `calendar.read` with no Google connection behind it, and the row that would
    catch it asks for `c.google` - so the gate would tell somebody to connect an
    account they do not need and do not have. The text matchers already answer
    correctly for those. This exists for the one capability that has no text
    matcher at all. */
-const AUTO_USE_TO_CAPABILITY = { 'bank.read': 'bank' };
+const AUTO_USE_TO_CAPABILITY = { 'bank.read': 'bank', 'repo.read': 'github' };
 
 /* One pass over what this person has, so resolving a run's needs is a fixed
    handful of reads rather than one per capability - the tick runs this for
