@@ -249,9 +249,12 @@ section('The run loop uses the decision rather than making its own');
   /* The approved list is decided from the REQUEST, before a browser exists, so
      nothing the run then sees can widen it. */
   const iOrigins = run.indexOf('_webApprovedOrigins(gate.url');
-  const iLaunch = run.indexOf('_webLaunch(env)');   // every browser starts through _webLaunch
-  ok(iOrigins > -1 && iOrigins < iLaunch,
-     'and where they may be used is settled before anything is loaded', { origins: iOrigins, launch: iLaunch });
+  /* Every browser starts through _webLaunch, or - carrying on after the
+     person took over - is reached again through _webConnect. Both after. */
+  const iLaunch = run.indexOf('_webLaunch(env');
+  const iConnect = run.indexOf('_webConnect(env');
+  ok(iOrigins > -1 && iLaunch > -1 && iConnect > -1 && iOrigins < iLaunch && iOrigins < iConnect,
+     'and where they may be used is settled before anything is loaded', { origins: iOrigins, launch: iLaunch, connect: iConnect });
 
   /* The model is not handed the names. It is told a value exists, because "the
      user has a password for this site" is what makes logging in reachable at
