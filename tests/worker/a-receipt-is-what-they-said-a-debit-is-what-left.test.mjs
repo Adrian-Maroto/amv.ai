@@ -380,8 +380,13 @@ section('The gate and the runner read the same field');
      then found nothing. Both now answer off `uses`, through one table. */
   ok(W.AUTO_USE_TO_CAPABILITY['bank.read'] === 'bank',
      'there is exactly one bridge from a declared use to a gate capability', W.AUTO_USE_TO_CAPABILITY);
-  ok(Object.keys(W.AUTO_USE_TO_CAPABILITY).length === 1,
-     'and it holds only bank.read - mapping the others would gate an Outlook calendar on a Google account it does not need',
+  /* Only uses with exactly one provider behind them may be bridged: bank.read
+     (the aggregator) and repo.read (GitHub). calendar.read and mail.read can
+     come from Microsoft or an app password, so bridging them would gate an
+     Outlook calendar on a Google account it does not need. */
+  const bridged = Object.keys(W.AUTO_USE_TO_CAPABILITY).sort().join();
+  ok(bridged === 'bank.read,repo.read' && !('calendar.read' in W.AUTO_USE_TO_CAPABILITY) && !('mail.read' in W.AUTO_USE_TO_CAPABILITY),
+     'and it holds only single-provider uses - mapping the others would gate an Outlook calendar on a Google account it does not need',
      W.AUTO_USE_TO_CAPABILITY);
 
   const job = { id: 'a1', detail: 'Report the real balances from the linked accounts.', uses: ['bank.read'] };
