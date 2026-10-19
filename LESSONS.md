@@ -15060,3 +15060,17 @@ Rule: an allowlist built for one caller is not a policy for every caller.
 When a filter drops something a caller sent, either the caller is told or the
 filter is scoped to the callers it was built for. Here API keys now bring
 their own tools, admitted by shape, with every size bound still applied.
+
+## 593. A walk through the screens is not a count of the strings
+
+The suite that reads every screen in two languages had an empty baseline, so
+the translation work looked finished. The code held 563 strings with no entry
+in any language pack: toasts after a failed save, the plugin and skill forms,
+a shared project's conflict, a payment confirmation, every reason a file is
+refused. None were on a screen the suite opens, and T() quietly falls back to
+the English, so all seventeen languages got English there and nothing said so.
+
+Rule: "every screen we looked at is translated" is a different claim from
+"every string is translated". When the source can answer a question exactly,
+ask the source - the gate now reads every literal T() in the page and in each
+file it fetches, and fails on any key the packs do not have.

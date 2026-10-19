@@ -121,7 +121,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 15 : 19;
+const TOTAL = FAST ? 16 : 20;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -985,6 +985,50 @@ step('No translated string promises a feature AMV removed', () => {
     throw new Error('translated copy still promises image or video generation, which AMV removed:\n'
       + offenders.join('\n')
       + '\n  Fix the translation, not just the English - a speaker of that language sees only this.');
+});
+
+/* ── 7d. EVERY ON-SCREEN STRING IN THE CODE HAS A TRANSLATION ──────────────
+
+   every-word-is-in-your-language reads the screens it can open, and its
+   baseline was empty - and 563 strings in the code still had no entry in any
+   language pack. They were on screens that suite never reaches: a toast after
+   a failed save, the plugin form, a shared project's conflict, a payment
+   confirmation, the files AMV refuses to attach. T() falls back to the English
+   when the pack has no key, so every one of them shipped in English to every
+   other language and nothing said so.
+
+   A screen walk can only see what it visits; the code holds every string. So
+   this reads every literal T('...') in the page and in each file it fetches on
+   first use (the copies in public/, which is exactly what a visitor gets) and
+   requires the key in the Spanish pack. Spanish stands for all seventeen: the
+   build refuses an entry that lacks any of them. */
+step('Every on-screen string in the code has a translation', () => {
+  const es = JSON.parse(readFileSync(R('i18n/es.json'), 'utf8'));
+  const files = ['app.js', ...readdirSync(R('public')).filter(f => f.endsWith('.js')).map(f => 'public/' + f)];
+  const CALL = /(?<![\w$.])T\(\s*(['"])((?:\\.|(?!\1)[^\\\n])*)\1\s*\)/g;
+  const unescape = s => s.replace(/\\u\{([0-9a-fA-F]+)\}/g, (m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/\\u([0-9a-fA-F]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/\\n/g, '\n').replace(/\\(['"\\])/g, '$1');
+  let seen = 0;
+  const missing = new Map();
+  for (const f of files) {
+    for (const m of readFileSync(R(f), 'utf8').matchAll(CALL)) {
+      const key = unescape(m[2]);
+      if (!/[A-Za-z]{2}/.test(key)) continue;
+      seen++;
+      if (!Object.prototype.hasOwnProperty.call(es, key) && !missing.has(key)) missing.set(key, f);
+    }
+  }
+  /* NEGATIVE CONTROL: a pattern that silently stops matching passes on an
+     empty read. There are over a thousand literal calls today. */
+  if (seen < 800)
+    throw new Error(`only ${seen} literal T() call(s) were found, so this stage checked almost nothing - `
+      + 'the scanner is broken, not the copy.');
+  if (missing.size)
+    throw new Error(`${missing.size} on-screen string(s) have no translation, so every other language sees English:\n`
+      + [...missing].slice(0, 25).map(([k, f]) => `    ${f}: ${JSON.stringify(k)}`).join('\n')
+      + (missing.size > 25 ? `\n    … and ${missing.size - 25} more` : '')
+      + '\n  Add each to a dictionary in src/i18n/ with all seventeen languages, then rebuild.');
 });
 
 step('No guard names a function that does not exist', () => {
