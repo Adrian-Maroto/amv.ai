@@ -121,7 +121,7 @@ let stepNum = 0;
    Full: syntax, worker, build, suites, bare classes, dead guards, page weight,
    deps, real runtime, preflight.
    Fast skips the two that need a clear machine and a long wait (suites, runtime). */
-const TOTAL = FAST ? 16 : 20;
+const TOTAL = FAST ? 17 : 21;
 /* Stages that ran but did nothing, so the final verdict can say so instead of
    letting a green tick stand in for work that never happened. */
 const skipped = [];
@@ -1029,6 +1029,58 @@ step('Every on-screen string in the code has a translation', () => {
       + [...missing].slice(0, 25).map(([k, f]) => `    ${f}: ${JSON.stringify(k)}`).join('\n')
       + (missing.size > 25 ? `\n    … and ${missing.size - 25} more` : '')
       + '\n  Add each to a dictionary in src/i18n/ with all seventeen languages, then rebuild.');
+});
+
+/* ── 7e. WHAT IS BUILT IS WRITTEN DOWN ONCE, AND NO DOC CALLS IT "NEXT" ─────
+
+   The October 19 audit read docs/ROADMAP.md: "Next sources: calendar changes,
+   a web page changing" - and both were already built and tested. Prose about
+   what exists goes stale at the speed the code moves, and a stale "not yet" is
+   read as a gap by everybody planning the next step.
+
+   docs/capabilities.json is the one list. For every entry marked built, each
+   named symbol must be in its file and each test must exist - so the list
+   cannot claim more than the repository holds. And no "Next", "Not yet" or
+   "Still open" paragraph in the docs may name a built capability by any of the
+   phrases it is known by - so the prose cannot claim less. */
+step('Every capability is built where this says, and no doc calls it next', () => {
+  const reg = JSON.parse(readFileSync(R('docs/capabilities.json'), 'utf8')).capabilities;
+  const problems = [];
+  const built = reg.filter(c => c.status === 'built');
+  if (built.length < 10) throw new Error(`only ${built.length} built capabilities are listed - the registry was emptied, not the product.`);
+  for (const c of reg) {
+    if (!['built', 'next'].includes(c.status)) problems.push(`${c.id}: status "${c.status}" is neither built nor next`);
+    if (c.status !== 'built') continue;
+    if (!(c.code || []).length || !(c.tests || []).length) { problems.push(`${c.id}: built, but names no code or no test`); continue; }
+    for (const [file, sym] of c.code) {
+      if (!sym) problems.push(`${c.id}: ${file} is named with no symbol to look for`);
+      else if (!existsSync(R(file))) problems.push(`${c.id}: ${file} does not exist`);
+      else if (!readFileSync(R(file), 'utf8').includes(sym)) problems.push(`${c.id}: ${file} has no "${sym}"`);
+    }
+    for (const t of c.tests) if (!existsSync(R(t))) problems.push(`${c.id}: test ${t} does not exist`);
+  }
+  /* The prose: every Markdown file a planner reads. LESSONS.md is history -
+     it says what was missing at the time, and that stays true. */
+  const docs = [...readdirSync(R('docs')).filter(f => f.endsWith('.md')).map(f => 'docs/' + f),
+                ...readdirSync(ROOT).filter(f => f.endsWith('.md') && f !== 'LESSONS.md')];
+  const NEXT = /^\s*[*_-]*\s*\**(next( sources| step)?|not yet|still open|genuinely still open)\b/i;
+  for (const d of docs) {
+    const lines = readFileSync(R(d), 'utf8').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      if (!NEXT.test(lines[i])) continue;
+      /* The paragraph that follows the marker, minus any line that says it
+         is done - "Starting in about a minute (done)" is a report, not a plan. */
+      const para = [];
+      for (let j = i; j < lines.length && (j === i || lines[j].trim()); j++)
+        if (!/\bdone\b/i.test(lines[j])) para.push(lines[j]);
+      const text = para.join(' ').toLowerCase().replace(/\s+/g, ' ');
+      for (const c of built) for (const s of c.says || [])
+        if (text.includes(s.toLowerCase())) problems.push(`${d}:${i + 1} lists "${s}" as not done, but ${c.id} is built`);
+    }
+  }
+  if (problems.length)
+    throw new Error('the capability record and the repository disagree:\n    ' + problems.join('\n    ')
+      + '\n  Fix docs/capabilities.json when a capability ships or moves, and the prose that still calls it next.');
 });
 
 step('No guard names a function that does not exist', () => {

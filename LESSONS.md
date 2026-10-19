@@ -15074,3 +15074,15 @@ Rule: "every screen we looked at is translated" is a different claim from
 "every string is translated". When the source can answer a question exactly,
 ask the source - the gate now reads every literal T() in the page and in each
 file it fetches, and fails on any key the packs do not have.
+
+## 594. A roadmap that is behind the code reads as a gap
+
+docs/ROADMAP.md listed calendar changes and a page changing as the next
+trigger sources. Both had been built and tested in the same suite as mail. An
+outside audit read the line and reported them missing - which is exactly how
+the next plan would have read it too, and work gets scheduled against prose.
+
+Rule: what exists is recorded once, where the gate can check it.
+docs/capabilities.json names each built capability's code and test, and the
+gate fails when either is missing, or when a "Next" or "Not yet" paragraph in
+the docs names something the record says is built.

@@ -488,5 +488,12 @@ looked; a trigger that cannot look says so on its row instead of paying a model
 to say it. `crew_watch` in chat; `when-it-arrives-amv-acts` (24 assertions, five
 mutations caught) and a section of `say-it-in-chat-and-it-happens`.
 
-*Next sources:* calendar changes, a web page changing, a payment arriving. Mail
-read by app password cannot be watched yet (no cursor), and says so.
+**Calendar and page sources (done).** A calendar trigger fires on NEW events
+matching its words, never on the ones already there; a page trigger fires when
+a watched word appears on a public page or leaves it - not on every edit to the
+page. Both in `when-it-arrives-amv-acts`.
+
+*Next sources:* a payment arriving, a GitHub repository, a signed request from
+another service, Slack. Mail read by app password cannot be watched yet (no
+cursor), and says so. What is built and what is next is kept in
+`docs/capabilities.json`, and the gate fails when this page disagrees with it.
