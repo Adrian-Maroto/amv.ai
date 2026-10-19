@@ -171,6 +171,7 @@ section('A request that lands just after the tick read the job is not lost');
 {
   await tickAt(job(id).next + 1000);   // nothing waiting
   await send(url, { event: 'order.created', order: { id: 5101 } });
+  await new Promise(r => setTimeout(r, 3));   // the late one is stamped after it, as the route would
   afterRead = () => {
     const r = JSON.parse(store.get('auto:' + ME));
     const it = r.items.find(x => x.id === id);

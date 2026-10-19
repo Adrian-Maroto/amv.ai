@@ -10473,12 +10473,7 @@ async function runDueAutomations(env, atMs, opts){
           const after = ran.get(item.id);
           if(!after) continue;
           for(const k of AUTO_CARRY_KEYS) item[k] = after[k];
-          /* What the run read is deleted here, under the lock; anything that
-             arrived while it ran is kept, and books the next run. */
-          if(_hookIsOn(item)){
-            item.hookIn = _hookPending(item);
-            if(item.hookIn.length && item.active !== false) item.next = _hookNextAt(item, now);
-          }
+          if(_hookIsOn(item)) _hookAfterRun(item, now);
           /* A job the RUN switched off after five failures stays off. A job the
              PERSON switched off stays off too - so this only ever turns one
              off, never back on. */
@@ -37601,6 +37596,18 @@ function _hookNextAt(item, now){
   return Math.max(now, (Number(item && item.watch && item.watch.at) || 0) + HOOK_GAP_MS);
 }
 
+/* Applied to the job as it is inside the tick's write-back lock, after the
+   run's own fields are carried across. The waiting list is NOT one of those
+   fields and must never be: it belongs to the delivery route, and the run's
+   copy of it is stale by definition - carrying it back would erase every
+   request that arrived while the run was reading. So what the run read
+   (everything up to `watch.upto`) is deleted here, what arrived since is
+   kept, and that books the next run. */
+function _hookAfterRun(item, now){
+  item.hookIn = _hookPending(item);
+  if(item.hookIn.length && item.active !== false) item.next = _hookNextAt(item, now);
+}
+
 async function hookDeliver(request, env, token){
   if(request.method !== 'POST')
     return json({ error:'Send a POST to this address.', code:'method_not_allowed', allow:'POST' }, 405, { Allow: 'POST' });
@@ -37643,7 +37650,7 @@ async function hookDeliver(request, env, token){
     if(pend.length >= HOOK_PENDING_MAX){ outcome = 'backlog'; return; }
     /* Strictly increasing, so "everything after what the last run read" can
        never skip a request that landed in the same millisecond. */
-    const stamp = Math.max(now, ...pend.map(d => d.at + 1));
+    const stamp = Math.max(now, (Number(it.watch && it.watch.upto) || 0) + 1, ...pend.map(d => d.at + 1));
     it.hookIn = pend.concat({ id, at: stamp, body: text.slice(0, HOOK_KEEP_CHARS), cut: text.length > HOOK_KEEP_CHARS });
     it.hook = Object.assign({}, it.hook, { seen: seen.concat(id).slice(-HOOK_SEEN_MAX), last: now });
     it.next = _hookNextAt(it, now);

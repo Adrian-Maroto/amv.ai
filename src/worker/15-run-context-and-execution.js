@@ -2033,12 +2033,7 @@ async function runDueAutomations(env, atMs, opts){
           const after = ran.get(item.id);
           if(!after) continue;
           for(const k of AUTO_CARRY_KEYS) item[k] = after[k];
-          /* What the run read is deleted here, under the lock; anything that
-             arrived while it ran is kept, and books the next run. */
-          if(_hookIsOn(item)){
-            item.hookIn = _hookPending(item);
-            if(item.hookIn.length && item.active !== false) item.next = _hookNextAt(item, now);
-          }
+          if(_hookIsOn(item)) _hookAfterRun(item, now);
           /* A job the RUN switched off after five failures stays off. A job the
              PERSON switched off stays off too - so this only ever turns one
              off, never back on. */
