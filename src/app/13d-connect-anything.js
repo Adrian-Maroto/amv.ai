@@ -201,7 +201,7 @@ function chatConnectGo(code){
       if(k === 'mail') return _intConnect('mail', v);
       if(k === 'p') return _intConnect('prov', v);
       if(k === 'r') return _intConnect('rmcp', v);
-      const use = { bank:'bank', cal:'calfeeds', predict:'predict', jobs:'jobs', everyday:'everyday', coverage:'coverage', vscode:'vscode', file:'chat' }[how];
+      const use = { bank:'bank', cal:'calfeeds', jobs:'jobs', everyday:'everyday', coverage:'coverage', vscode:'vscode', file:'chat' }[how];
       if(use) return _intUse(use);
       return;
     }

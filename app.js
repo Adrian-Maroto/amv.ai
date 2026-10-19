@@ -1576,14 +1576,6 @@ const AMV_API = {
   async calFeedAdd(url,label){ const r=await this._fetch('/v1/cal/feeds/add',{method:'POST',body:JSON.stringify({url,label})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not add that calendar.'),{code:d.code}); return d; },
   async calFeedRemove(id){ const r=await this._fetch('/v1/cal/feeds/remove',{method:'POST',body:JSON.stringify({id})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not remove that calendar.'),{code:d.code}); return d; },
   async calEvents(days){ const r=await this._fetch('/v1/cal/events',{method:'POST',body:JSON.stringify({days:days||7})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read your week.'),{code:d.code}); return d; },
-  /* Prediction markets. A trade is quoted first and executed by the id of
-     that quote, so nothing here can place one on its own - the terms live on
-     the server between the two calls. */
-  async predictMarkets(){ const r=await this._fetch('/v1/predict/markets',{method:'POST',body:'{}'}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not read the markets.'),{code:d.code}); return d; },
-  async predictQuote(venue,market,side,usd){ const r=await this._fetch('/v1/predict/quote',{method:'POST',body:JSON.stringify({venue,market,side,usd})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not quote that trade.'),{code:d.code}); return d; },
-  /* Only the quote id. Resending the terms would be inviting a caller to
-     change what was approved, and the server ignores them anyway. */
-  async predictTrade(quoteId){ const r=await this._fetch('/v1/predict/trade',{method:'POST',body:JSON.stringify({quoteId})}); const d=await r.json().catch(()=>({})); if(!r.ok) throw Object.assign(new Error(d.error||'Could not place that trade.'),{code:d.code}); return d; },
   async portal(customer){ const r=await this._fetch('/v1/stripe/portal',{method:'POST',body:JSON.stringify({customer})}); const d=await r.json(); if(!r.ok||!d.url) throw new Error(d.error||'Could not open billing.'); return d.url; },
 };
 window.AMV_API = AMV_API;
@@ -35566,7 +35558,6 @@ function _integrationsCatalogHTML(opts){
     else if(h==='bank'){ o.id='bank'; o.goto='bank'; o.useLabel='Link in Spending'; o.manageLabel='Manage in Spending';
       o.connected=(function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })(); }
     else if(h==='cal'){ o.id='calfeeds'; o.auto=false; o.use='calfeeds'; o.useLabel='Connect'; o.connected=false; }
-    else if(h==='predict'){ o.id='predict'; o.auto=false; o.use='predict'; o.useLabel='Open'; o.connected=false; }
     else if(h==='jobs'){ o.id='jobboards'; o.auto=false; o.use='jobs'; o.useLabel='Browse boards'; o.connected=false; }
     else if(h==='everyday'){ o.id='everyday'; o.auto=false; o.use='everyday'; o.useLabel='See yours'; o.connected=false; }
     else if(h==='coverage'){ o.id='coverage'; o.auto=false; o.use='coverage'; o.useLabel='See coverage'; o.connected=false; }
@@ -35821,7 +35812,6 @@ function _intConnect(conn, preset){
 }
 function _intUse(use){
   if(use==='jobs' && typeof openJobBoards==='function') return openJobBoards();
-  if(use==='predict' && typeof openPredictionMarkets==='function') return openPredictionMarkets();
   if(use==='calfeeds' && typeof openCalendarFeeds==='function') return openCalendarFeeds();
   if(use==='coverage' && typeof openCoverage==='function') return openCoverage();
   if(use==='everyday' && typeof openEveryday==='function') return openEveryday();
@@ -38064,7 +38054,7 @@ try{ window._cdirOpenNow=_cdirOpenNow; window._cdirReset=_cdirReset; window.cdir
      mail     the mailbox picker; mail:<id> opens it on that provider (ids are the
               server's MAIL_PROVIDERS keys - a wrong id just opens the picker)
      cal      a calendar's shared link, read-only
-     tg sms canvas bank predict jobs everyday coverage file vscode
+     tg sms canvas bank jobs everyday coverage file vscode
               AMV's own flows, each already on this page before this rewrite
      r:<slug> the app's own official connector, signed in to at the app
               (REMOTE_APPS on the server lists them and how each was verified)
@@ -38117,7 +38107,6 @@ const AMV_APP_CATS = [
   ]},
   { id:'money', t:'Bank &amp; money', q:'finance', apps:[
     'Bank account|bank|Real balances and real transactions, read-only. The sign-in happens on your bank’s own page - AMV never sees your password and cannot move money. Morning money summary, unusual charges, low balance warnings and the money leak detector all read from this.',
-    'Prediction markets|predict|Kalshi or Polymarket, depending on where you are. AMV shows you the exact trade and places it only after you confirm those numbers - it can never place one on its own.',
     'PayPal|r:paypal|Payments and transfers.', 'Stripe|r:stripe|Payments for businesses.', 'Wise||Money across currencies.',
     'Revolut||Banking and cards.', 'Venmo||Payments between friends.', 'Cash App||Send, spend and save.', 'Zelle||Bank transfers in the US.',
     'Coinbase||Buy and hold crypto.', 'Kraken||Crypto exchange.', 'Robinhood||Stocks and crypto.',
@@ -38515,7 +38504,7 @@ function chatConnectGo(code){
       if(k === 'mail') return _intConnect('mail', v);
       if(k === 'p') return _intConnect('prov', v);
       if(k === 'r') return _intConnect('rmcp', v);
-      const use = { bank:'bank', cal:'calfeeds', predict:'predict', jobs:'jobs', everyday:'everyday', coverage:'coverage', vscode:'vscode', file:'chat' }[how];
+      const use = { bank:'bank', cal:'calfeeds', jobs:'jobs', everyday:'everyday', coverage:'coverage', vscode:'vscode', file:'chat' }[how];
       if(use) return _intUse(use);
       return;
     }
@@ -44198,25 +44187,6 @@ function _renderInvestPane(pane){
   });
 }
 try{ window._renderInvestPane=_renderInvestPane; }catch(e){}
-
-/* Prediction markets live in predict.js (src/finance/predict.js), fetched the
-   first time they are opened: few people trade, and the page is at its
-   weight ceiling. */
-let _predictP = null;
-async function openPredictionMarkets(){
-  if(typeof window._openPredictNow !== 'function'){
-    if(!_predictP) _predictP = new Promise(res => {
-      const sc = document.createElement('script');
-      sc.src = 'predict.js';
-      sc.onload = () => res(typeof window._openPredictNow === 'function');
-      sc.onerror = () => { _predictP = null; sc.remove(); res(false); };
-      document.head.appendChild(sc);
-    });
-    if(!(await _predictP)){ toast(T('That could not be loaded. Check your connection and try again.'), 'error', 5000); return; }
-  }
-  return window._openPredictNow();
-}
-try{ window.openPredictionMarkets = openPredictionMarkets; }catch(e){}
 
 /* Expose finance to chat/Crew. READ-ONLY on purpose: AMV can see money and
    reason about it, but has no action that moves it. */

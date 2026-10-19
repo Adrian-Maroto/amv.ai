@@ -156,13 +156,6 @@ const BACKUP_NEVER = [
      can open, which is worse than bringing back nothing. Re-subscribing is
      thirty seconds of clicking; a credential in a backup file is forever. */
   'cal:',
-  /* A trade somebody has been shown and has not yet approved. It lives for one
-     minute and means nothing after that, so backing it up would preserve a
-     question nobody is still being asked - and RESTORING one would be worse
-     than pointless: it would put an approval for a real trade back into
-     circulation, minutes or months after the person decided about it. An
-     approval has to be fresh to be an approval. */
-  'pquote:',
   /* A cached page of the public connector directory. Nobody's data - it is the
      same answer for everyone and it rebuilds itself from the registry within
      six hours. Putting it in a backup would bulk up the file with a copy of

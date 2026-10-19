@@ -27,7 +27,7 @@ await page.evaluate(() => { document.getElementById('cookie-consent-banner')?.re
 await page.waitForTimeout(500);
 
 const CONNECTS = ['google', 'outlook', 'github', 'mail', 'telegram', 'sms', 'canvas', 'rmcp', 'prov'];
-const USES = ['bank', 'calfeeds', 'predict', 'jobs', 'everyday', 'coverage', 'chat', 'vscode'];
+const USES = ['bank', 'calfeeds', 'jobs', 'everyday', 'coverage', 'chat', 'vscode'];
 
 section('Every topic is the same shape, and there is no "everything else"');
 {

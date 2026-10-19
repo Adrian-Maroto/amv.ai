@@ -712,9 +712,6 @@ async function _route(request, env, ctx) {
     case '/v1/finance/transactions': return financeRoute(request, env, 'transactions');
     case '/v1/finance/checkin':      return financeCheckin(request, env);
     case '/v1/finance/status':       return financeStatus(request, env);
-    case '/v1/predict/markets':      return predictMarkets(request, env);
-    case '/v1/predict/quote':       return predictQuote(request, env);
-    case '/v1/predict/trade':       return predictTrade(request, env);
     case '/v1/cal/feeds':            return calFeedList(request, env);
     case '/v1/cal/feeds/add':       return calFeedAdd(request, env);
     case '/v1/cal/feeds/remove':    return calFeedRemove(request, env);

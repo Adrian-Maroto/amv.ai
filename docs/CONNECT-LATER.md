@@ -19,8 +19,7 @@ order. It is the promise the page makes, so this file is how it gets kept.
   Yandex, Naver, QQ and others.
 - **Calendar links, read-only:** iCloud, Fastmail, Proton, Zoho, Nextcloud
   and others.
-- **AMV's own flows:** Telegram, SMS, Canvas, bank link, Kalshi and
-  Polymarket, job boards.
+- **AMV's own flows:** Telegram, SMS, Canvas, bank link, job boards.
 
 The OAuth rows stay dark until their client id and secret are set as Worker
 secrets. On a deployment without them, the page says so.

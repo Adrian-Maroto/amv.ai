@@ -2013,8 +2013,7 @@ const EVERYDAY_BY_COUNTRY = {
 
    Crew guessed the country from the browser's language, so somebody in Madrid
    with an English (US) browser was shown work for the United States. The edge
-   already knows the country each request comes from - it is how prediction
-   markets are offered or withheld - so it is asked here. Country level only:
+   already knows the country each request comes from, so it is asked here. Country level only:
    no coordinates, no permission prompt, nothing stored, nothing read. Not
    cached, because the answer is per visitor, which is also why it is not a
    field on /v1/everyday - that one is cached at the edge and served to

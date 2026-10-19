@@ -803,7 +803,6 @@ function _integrationsCatalogHTML(opts){
     else if(h==='bank'){ o.id='bank'; o.goto='bank'; o.useLabel='Link in Spending'; o.manageLabel='Manage in Spending';
       o.connected=(function(){ try{ return typeof AMVFinance!=='undefined' && AMVFinance.linked(); }catch(e){ return false; } })(); }
     else if(h==='cal'){ o.id='calfeeds'; o.auto=false; o.use='calfeeds'; o.useLabel='Connect'; o.connected=false; }
-    else if(h==='predict'){ o.id='predict'; o.auto=false; o.use='predict'; o.useLabel='Open'; o.connected=false; }
     else if(h==='jobs'){ o.id='jobboards'; o.auto=false; o.use='jobs'; o.useLabel='Browse boards'; o.connected=false; }
     else if(h==='everyday'){ o.id='everyday'; o.auto=false; o.use='everyday'; o.useLabel='See yours'; o.connected=false; }
     else if(h==='coverage'){ o.id='coverage'; o.auto=false; o.use='coverage'; o.useLabel='See coverage'; o.connected=false; }
@@ -1058,7 +1057,6 @@ function _intConnect(conn, preset){
 }
 function _intUse(use){
   if(use==='jobs' && typeof openJobBoards==='function') return openJobBoards();
-  if(use==='predict' && typeof openPredictionMarkets==='function') return openPredictionMarkets();
   if(use==='calfeeds' && typeof openCalendarFeeds==='function') return openCalendarFeeds();
   if(use==='coverage' && typeof openCoverage==='function') return openCoverage();
   if(use==='everyday' && typeof openEveryday==='function') return openEveryday();

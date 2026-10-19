@@ -32,7 +32,7 @@
      mail     the mailbox picker; mail:<id> opens it on that provider (ids are the
               server's MAIL_PROVIDERS keys - a wrong id just opens the picker)
      cal      a calendar's shared link, read-only
-     tg sms canvas bank predict jobs everyday coverage file vscode
+     tg sms canvas bank jobs everyday coverage file vscode
               AMV's own flows, each already on this page before this rewrite
      r:<slug> the app's own official connector, signed in to at the app
               (REMOTE_APPS on the server lists them and how each was verified)
@@ -85,7 +85,6 @@ const AMV_APP_CATS = [
   ]},
   { id:'money', t:'Bank &amp; money', q:'finance', apps:[
     'Bank account|bank|Real balances and real transactions, read-only. The sign-in happens on your bank’s own page - AMV never sees your password and cannot move money. Morning money summary, unusual charges, low balance warnings and the money leak detector all read from this.',
-    'Prediction markets|predict|Kalshi or Polymarket, depending on where you are. AMV shows you the exact trade and places it only after you confirm those numbers - it can never place one on its own.',
     'PayPal|r:paypal|Payments and transfers.', 'Stripe|r:stripe|Payments for businesses.', 'Wise||Money across currencies.',
     'Revolut||Banking and cards.', 'Venmo||Payments between friends.', 'Cash App||Send, spend and save.', 'Zelle||Bank transfers in the US.',
     'Coinbase||Buy and hold crypto.', 'Kraken||Crypto exchange.', 'Robinhood||Stocks and crypto.',

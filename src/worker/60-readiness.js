@@ -237,25 +237,6 @@ function _readinessReport(env, seen) {
        state worth seeing here - Pro yearly but not Elite means one card on the
        pricing page can be bought by the year and the others cannot, for a
        reason that is invisible from the outside. */
-    /* READ DYNAMICALLY, SO THE SCAN CANNOT SEE THEM - WHICH IS WHY THEY ARE
-       WRITTEN OUT HERE BY HAND.
-
-       The venue table holds the name of each key and the code reads
-       `env[v.keyEnv]`, so the stage that checks every secret has a row on this
-       screen finds no literal to match and passes whether these are listed or
-       not. A check that cannot see something is not a check that approves it.
-       Without these rows an operator would have no way to learn the names, and
-       the feature would look broken rather than unconfigured. */
-    { id: 'predictKalshi', name: 'Prediction markets - Kalshi', blocking: false,
-      on: false, tag: 'not available yet',
-      problem: 'Held off on purpose: with one key for the whole site, every person\u2019s trade would be placed from your account and paid from your balance. It needs each person to connect their own account first. Setting this key does not switch it on.',
-      turnsOn: 'Reading and placing trades on Kalshi, which is the venue AMV offers in the United States. Every trade still needs the person to approve the exact numbers, and AMV will not place more than $' + PREDICT_MAX_TRADE_USD + ' on one or $' + PREDICT_MAX_DAY_USD + ' in a day.',
-      how: 'Nothing to set yet. KALSHI_API_KEY is not read until people can connect their own accounts.' },
-    { id: 'predictPolymarket', name: 'Prediction markets - Polymarket', blocking: false,
-      on: false, tag: 'not available yet',
-      problem: 'Held off on purpose: with one key for the whole site, every person\u2019s trade would be placed from your account and paid from your balance. It needs each person to connect their own account first. Setting this key does not switch it on.',
-      turnsOn: 'The same, outside the United States. Polymarket blocks US persons on its main venue, so AMV does not offer it to anybody the edge reports as being there - which is a legal line, not a preference.',
-      how: 'Nothing to set yet. POLYMARKET_API_KEY is not read until people can connect their own accounts.' },
     { id: 'stripePricesYearly', name: 'Yearly plan prices (Stripe)', blocking: false,
       on: _has(env, 'STRIPE_PRICE_PRO_YEAR') && _has(env, 'STRIPE_PRICE_ELITE_YEAR') && _has(env, 'STRIPE_PRICE_ULTRA_YEAR'),
       turnsOn: 'Buying a plan by the year instead of by the month. Each is a second price object on the same product in Stripe, with a yearly interval - AMV never computes a yearly amount of its own, it opens checkout with whichever price you created, so the discount is whatever you set it to. Plans with no yearly price are simply not offered yearly.',
@@ -483,7 +464,6 @@ function _readinessReport(env, seen) {
     speech: 'Core', speechUrl: 'Core', speechKey: 'Core', speechListenModel: 'Core', speechListenPrice: 'Core',
     speechVoiceModel: 'Core', speechVoice: 'Core', speechVoicePrice: 'Core',
     payments: 'Taking money', paymentsHook: 'Taking money', stripePrices: 'Taking money',
-    predictKalshi: 'Taking money', predictPolymarket: 'Taking money',
     stripePricesYearly: 'Taking money',
     teamSeats: 'Taking money', paypal: 'Taking money', paypalPlans: 'Taking money',
     paypalHook: 'Taking money', paypalLive: 'Taking money',

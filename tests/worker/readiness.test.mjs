@@ -121,10 +121,6 @@ section('It NEVER returns a secret, in any form');
        configured" has to mean everything the screen lists. */
     STRIPE_PRICE_PRO_YEAR: 'price_pro_y', STRIPE_PRICE_ELITE_YEAR: 'price_elite_y',
     STRIPE_PRICE_ULTRA_YEAR: 'price_ultra_y', STRIPE_PRICE_TEAM_SEAT_YEAR: 'price_team_y',
-    /* The prediction venues. Optional and regulated - a deployment is right to
-       leave both unset - but this fixture is the EVERYTHING one, and
-       "everything is configured" has to mean everything the screen lists. */
-    KALSHI_API_KEY: 'kalshi-SUPERSECRET', POLYMARKET_API_KEY: 'poly-SUPERSECRET',
     // Bindings too, or "everything configured" would not be true - which is
     // the point of the assertion below.
     DB: { prepare(){} }, AMV_COUNTER: {}, BROWSER: {},
@@ -182,9 +178,11 @@ section('Every entry says what it turns on and how to set it');
   ok(all.every(i => i.turnsOn && i.turnsOn.length > 20), 'each says what it enables, in a sentence');
   ok(all.every(i => i.how && i.how.length > 5), 'and how to set it');
   ok(d.items.filter(i => !i.tag).every(i => /wrangler secret put/.test(i.how)), 'secrets carry the exact command', d.items[0].how);
-  /* Held off on purpose: no command to paste, and the reason in its place. */
+  /* Held off on purpose: no command to paste, and the reason in its place.
+     The prediction venues were the held rows until they were removed (LESSONS
+     595); none is held today, and the rule stands for the next one. */
   const held = d.items.filter(i => i.tag);
-  ok(held.length >= 2 && held.every(i => !i.on && i.problem && !/wrangler secret put/.test(i.how)), 'a held row says why instead of asking for a key', held.map(i => i.id));
+  ok(held.every(i => !i.on && i.problem && !/wrangler secret put/.test(i.how)), 'a held row says why instead of asking for a key', held.map(i => i.id));
   ok(find(d, 'kv').how.includes('wrangler.toml'), 'a binding says where it is bound instead', find(d, 'kv').how);
 }
 

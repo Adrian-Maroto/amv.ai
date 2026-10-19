@@ -15086,3 +15086,22 @@ Rule: what exists is recorded once, where the gate can check it.
 docs/capabilities.json names each built capability's code and test, and the
 gate fails when either is missing, or when a "Next" or "Not yet" paragraph in
 the docs names something the record says is built.
+
+## 595. A feature that cannot do its one job is a liability, not a placeholder
+
+Prediction markets had a screen, a catalogue row, a quote-and-trade flow with
+hard caps, and a test proving the model could not trade. They also had
+`PREDICT_TRADING_LIVE = false`, because the only key the deployment could hold
+was the operator's own: every trade would have been placed from the owner's
+venue account. So the screen offered something that could never happen, in
+the same app as Family and School accounts, in a category - real-money
+betting - where one regulator's letter ends a company. Asked whether to keep
+"read-only odds in chat", the check showed there was no odds reader at all:
+the one read route only listed which venues the trading screen could offer.
+
+The owner removed it. Kept nowhere behind a switch: hidden money code is the
+code nobody tests until somebody turns it on.
+
+Rule: before describing what part of a feature to keep, read what that part
+actually returns. And a feature held off by a constant is either given a date
+and an owner to make it work, or removed - not carried.
