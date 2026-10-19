@@ -100,6 +100,9 @@ function _autoLiveCount(items){ return (items || []).filter(x => x && !x.done).l
 /* When a job that has just run - or been skipped, or failed - runs next.
    `how` matters only to a one-time job: 'ran', 'failed' or 'waiting'. */
 function _autoNextAfter(item, now, how){
+  /* A job another service starts is not on a clock: it runs when a request
+     arrives (70-hooks.js books it then), and otherwise looks once a month. */
+  if(_hookIsOn(item)) return _hookPending(item).length ? _hookNextAt(item, now) : now + HOOK_IDLE_MS;
   if(item && item.repeat === 'once'){
     const due = Number(item.onceAt) || Number(item.next) || now;
     if(how === 'ran' || now - due >= AUTO_ONCE_GRACE_MS){ item.active = false; item.done = true; item.doneAt = now; return 0; }
@@ -139,12 +142,16 @@ const WHEN_TERM_MAX = 60;
      page      words that APPEAR on a public page, or DISAPPEAR from it - not
                "any change", because nearly every page changes on every load
                (a clock, an advert) and that trigger would fire, and be paid
-               for, every ten minutes. */
+               for, every ten minutes;
+     hook      a request to the job's own address - see 70-hooks.js. */
 function _whenClean(raw){
   if(!raw || typeof raw !== 'object') return null;
   const list = (v) => (Array.isArray(v) ? v : (v == null ? [] : [v])).map(x => String(x || '').trim().toLowerCase().slice(0, WHEN_TERM_MAX)).filter(Boolean).slice(0, WHEN_LIST_MAX);
-  const source = ['mail', 'calendar', 'page'].includes(raw.source) ? raw.source : 'mail';
+  const source = ['mail', 'calendar', 'page', 'hook'].includes(raw.source) ? raw.source : 'mail';
   if(source === 'calendar') return { source, words: list(raw.words) };
+  /* Another service sends a request to the job's own address (70-hooks.js);
+     words, if any, must appear in what it sent. */
+  if(source === 'hook') return { source, words: list(raw.words) };
   if(source === 'page'){
     const g = _webHostAllowed(String(raw.url || ''));
     if(!g.ok) return null;

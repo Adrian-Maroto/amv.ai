@@ -410,6 +410,14 @@ async function _route(request, env, ctx) {
   const path = url.pathname.replace(/\/+$/, '');
 
   // Live deployed sites are PUBLIC - served before any auth/CORS gating.
+  /* A request from another service to a Crew job's own address. Before the
+     method list below, because the address is a path no list can name; the
+     handler takes POST only. See 70-hooks.js. */
+  if (path.startsWith('/v1/hook/') && request.method !== 'OPTIONS') {
+    const _killed = (await env.AMV_KV.get('GLOBAL_KILL')) === '1';
+    if (_killed) return json({ error: 'Service temporarily paused. Please try again soon.' }, 503);
+    return hookDeliver(request, env, path.slice('/v1/hook/'.length));
+  }
   if (request.method === 'GET' && path.startsWith('/s/')) {
     return serveSite(request, env, path.slice(3));
   }
@@ -687,6 +695,7 @@ async function _route(request, env, ctx) {
     case '/v1/remote/tools':   return remoteTools(request, env);
     case '/v1/remote/call':    return remoteCall(request, env);
     case '/auto/update':     return autoUpdate(request, env);
+    case '/auto/hook':       return autoHook(request, env);
     case '/auto/read':       return autoClearResults(request, env);
     case '/auto/pause':      return autoPause(request, env);
     case '/deploy':          return deploySite(request, env);

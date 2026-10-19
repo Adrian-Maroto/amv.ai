@@ -2,7 +2,10 @@
 
 Item 15 of the October audit list. These change how people sign in and who
 can do what, so CLAUDE.md requires the owner's approval before any of it
-ships. Nothing here has been built.
+ships.
+
+**Decided 2026-10-19** (the owner delegated it - see `docs/OWNER-DECISIONS.md`):
+SCIM Users, yes, as scoped below; SAML off the table; no new roles yet.
 
 ## What exists today
 

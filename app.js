@@ -23254,6 +23254,7 @@ function _mcServerSchedRow(x){
     </div>
     <div class="mc-sched-acts">
       ${x.done ? '' : `<button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>`}
+      ${x.done || !(x.when && x.when.source === 'hook') ? '' : `<button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|show">${escH(T('Copy address'))}</button><button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|renew">${escH(T('New address'))}</button>`}
       <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
     </div>
   </div>`;
@@ -23313,11 +23314,28 @@ async function mcServerJob(arg){
       'error', 6500);
   }
 }
+/* A JOB ANOTHER SERVICE STARTS: its address, asked for again or replaced.
+   Fetched from the server each time rather than kept on the page - the
+   address is the key to the job, and a copy left in the page's memory or
+   storage is one more place it can be read from. */
+async function mcHookAddress(arg){
+  const [id, action] = String(arg || '').split('|');
+  if(!id) return;
+  if(action === 'renew'){
+    const yes = await showConfirmAsync(T('Make a new address for this job? The old one stops working at once, so give the new one to the service that sends to it.'));
+    if(!yes) return;
+  }
+  let d;
+  try{ d = await _autoApi('/auto/hook', { id, action: action === 'renew' ? 'renew' : 'show' }); }
+  catch(e){ toast(T('The address could not be fetched. Try again.') + ' ' + ((e && e.message) || ''), 'error', 6000); return; }
+  try{ await _copyText(d.url); toast(action === 'renew' ? T('New address copied. The old one no longer works.') : T('Address copied. Give it to the service that should start this job.'), 'success', 6000); }
+  catch(e){ try{ window.prompt(T('Copy this address:'), d.url); }catch(x){} }
+}
 async function mcReloadJobs(){
   try{ if(typeof _autoRefresh === 'function') await _autoRefresh(); }catch(e){}
   renderCrewView();
 }
-try{ window.mcServerJob = mcServerJob; window.mcReloadJobs = mcReloadJobs; }catch(e){}
+try{ window.mcServerJob = mcServerJob; window.mcReloadJobs = mcReloadJobs; window.mcHookAddress = mcHookAddress; }catch(e){}
 
 /* A standing job shown as a row in the unified Scheduled section. */
 function _mcAutonSchedRow(j){
@@ -28347,13 +28365,13 @@ const AMV_TOOLS = [
      when something matched. */
   {
     name:'crew_watch',
-    description:'Set up a background job that WATCHES something and acts only WHEN a match appears. source "mail" (default): "when my landlord emails, summarise what she wants", "when an invoice arrives, pull out the amount and due date" - give at least one of from / subject / words. source "calendar": "when a new meeting with the board is added, prepare a brief" - give words. source "page": a public web page - "tell me when tickets go on sale at <url>", "when the price page stops saying sold out" - give url and appears and/or disappears. Checked every ten minutes on AMV\'s servers with their computer off; a check that finds nothing costs nothing and posts nothing. Its first look only records what is already there. Not for a regular digest of everything (use crew_add), not for pages behind a sign-in, and not for something to do now.',
+    description:'Set up a background job that WATCHES something and acts only WHEN a match appears. source "mail" (default): "when my landlord emails, summarise what she wants", "when an invoice arrives, pull out the amount and due date" - give at least one of from / subject / words. source "calendar": "when a new meeting with the board is added, prepare a brief" - give words. source "page": a public web page - "tell me when tickets go on sale at <url>", "when the price page stops saying sold out" - give url and appears and/or disappears. source "hook": another service (a shop, a payment provider, a form, their own code) sends a request to an address AMV gives the job - "when my shop gets an order, summarise it"; words optional. Checked every ten minutes on AMV\'s servers with their computer off; a check that finds nothing costs nothing and posts nothing. Its first look only records what is already there. Not for a regular digest of everything (use crew_add), not for pages behind a sign-in, and not for something to do now.',
     input_schema:{ type:'object', properties:{
       detail:{type:'string', description:'What to do when it matches, as an instruction. It sees the matching emails\' sender, subject and preview, the new events, or the page as it now reads.'},
-      source:{type:'string', enum:['mail','calendar','page'], description:'What to watch. Default mail.'},
+      source:{type:'string', enum:['mail','calendar','page','hook'], description:'What to watch. Default mail.'},
       from:{type:'array', items:{type:'string'}, maxItems:5, description:'Mail only: any of these in the sender\'s name or address, e.g. an address, a domain ("@school.org"), or a name.'},
       subject:{type:'array', items:{type:'string'}, maxItems:5, description:'Mail only: any of these words in the subject.'},
-      words:{type:'array', items:{type:'string'}, maxItems:5, description:'Mail: any of these in the subject or the start of the message. Calendar: any of these in a new event\'s title, place or description.'},
+      words:{type:'array', items:{type:'string'}, maxItems:5, description:'Mail: any of these in the subject or the start of the message. Calendar: any of these in a new event\'s title, place or description. Hook: any of these in what is sent.'},
       url:{type:'string', description:'Page only: the full https address of a public page.'},
       appears:{type:'array', items:{type:'string'}, maxItems:5, description:'Page only: fire when any of these words appears on the page.'},
       disappears:{type:'array', items:{type:'string'}, maxItems:5, description:'Page only: fire when any of these words is no longer on the page (e.g. "sold out").'},
@@ -29288,6 +29306,7 @@ function _whenSay(w){
              (w.disappears || []).length ? T('{0} no longer saying {1}').replace('{0}', host).replace('{1}', j(w.disappears)) : '' ].filter(Boolean).join(', ');
   }
   if(w.source === 'calendar') return T('new events with {0}').replace('{0}', j(w.words));
+  if(w.source === 'hook') return (w.words || []).length ? T('a request to its address mentioning {0}').replace('{0}', j(w.words)) : T('a request to its address');
   return [ (w.from || []).length ? T('mail from {0}').replace('{0}', j(w.from)) : '',
            (w.subject || []).length ? T('a subject with {0}').replace('{0}', j(w.subject)) : '',
            (w.words || []).length ? T('mentions of {0}').replace('{0}', j(w.words)) : '' ].filter(Boolean).join(', ');
@@ -29384,9 +29403,9 @@ async function _crewTool(name, input){
   if(name === 'crew_watch'){
     const detail = String(input.detail || '').trim();
     const L = (v) => (Array.isArray(v) ? v : []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 5);
-    const src = ['calendar', 'page'].includes(input.source) ? input.source : 'mail';
+    const src = ['calendar', 'page', 'hook'].includes(input.source) ? input.source : 'mail';
     const when = src === 'page' ? { source: src, url: String(input.url || '').trim(), appears: L(input.appears), disappears: L(input.disappears) }
-               : src === 'calendar' ? { source: src, words: L(input.words) }
+               : src === 'calendar' || src === 'hook' ? { source: src, words: L(input.words) }
                : { from: L(input.from), subject: L(input.subject), words: L(input.words) };
     if(!detail) return { text:'A watch needs to say what to do when something matches. Ask the user.', render:null };
     if(src === 'page' && !/^https:\/\//i.test(when.url))
@@ -29401,6 +29420,14 @@ async function _crewTool(name, input){
     try{ d = await _autoApi('/auto/create', { detail, repeat:'10min', when, kind:'task', notify:'app', approval: input.approval === 'require' ? 'require' : 'auto' }); }
     catch(e){ return { text: _crewErr(e), render:null }; }
     _crewSynced();
+    if(src === 'hook'){
+      /* The address is the key to the job: shown to them once here, and again
+         from the job's row in Crew whenever they need it. */
+      return { text:'Set up. It is in their Crew tab and runs when another service sends a request to its own address'
+        + (when.words.length ? ' that mentions ' + when.words.join(' or ') : '') + '. The address is: ' + (d.hookUrl || '(open Crew and press Copy address)')
+        + ' - tell them to paste it where that service asks for a webhook or notification URL (method POST). Requests close together are read in one run, at most once every five minutes. '
+        + 'Anybody holding the address can start the job, so tell them to keep it private; Crew has "New address" to replace it. What is sent is read as information, never as instructions, and the job can still only write - it cannot send, buy or touch an account. Do not say anything has arrived yet.', render:null };
+    }
     const where = { mail:'checks their new mail', calendar:'checks their calendar for new events', page:'looks at that page' }[src];
     const first = { mail:'Its first check only notes where the inbox is, so mail that is already there will not set it off - only mail that arrives from now on. ',
                     calendar:'Its first check only notes the events already there, so only events added from now on can set it off. ',

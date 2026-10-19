@@ -91,15 +91,18 @@
     "tests": ["tests/worker/a-task-in-steps-keeps-going-without-you.test.mjs"],
     "says": ["a step waiting for several", "joining several results", "waits for several"] },
   { "id": "trigger.github", "status": "next", "name": "When something happens on a GitHub repository, a job runs" },
-  { "id": "trigger.webhook", "status": "next", "name": "A job started by a signed request from another service" },
+  { "id": "trigger.webhook", "status": "built", "name": "A job started by a request from another service, at an address of its own",
+    "code": [["src/worker/70-hooks.js", "hookDeliver"], ["src/worker/70-hooks.js", "autoHook"]],
+    "tests": ["tests/worker/another-service-can-start-a-job.test.mjs"],
+    "says": ["a request from another service", "webhook trigger", "a signed request from another service"] },
   { "id": "trigger.slack", "status": "next", "name": "When a matching Slack message arrives, a job runs", "owner": "a Slack app registration" },
   { "id": "browser.takeover", "status": "next", "name": "Take over the hosted browser to sign in or solve a check yourself" },
-  { "id": "browser.unattended-signin", "status": "next", "name": "Signed-in sites used by a background run while the device is off", "owner": "whether AMV may hold a site's sign-in on the server, per site, opted into" },
-  { "id": "voice.speech-to-speech", "status": "next", "name": "One realtime model that hears and speaks", "owner": "the choice of realtime supplier" },
-  { "id": "team.scim", "status": "next", "name": "People added and removed by the company's directory", "owner": "approval of docs/DECISION-ENTERPRISE-IDENTITY.md" },
+  { "id": "browser.unattended-signin", "status": "next", "name": "Signed-in sites used by a background run while the device is off", "decided": "No: a server-side store of live sign-ins is refused, opt-in or not - docs/OWNER-DECISIONS.md #4. Takeover and waiting for the device instead." },
+  { "id": "voice.speech-to-speech", "status": "next", "name": "One realtime model that hears and speaks", "decided": "Not this cycle - docs/OWNER-DECISIONS.md #5" },
+  { "id": "team.scim", "status": "next", "name": "People added and removed by the company's directory", "decided": "Yes, Users only - docs/OWNER-DECISIONS.md #1" },
   { "id": "plugin.runtime", "status": "next", "name": "Plugins that carry code, run sandboxed, signed and scanned" },
   { "id": "artifact.workspace", "status": "next", "name": "Documents, sheets and slides that you and AMV edit together, live" },
-  { "id": "surface.jetbrains-plugin", "status": "next", "name": "A native JetBrains plugin with a tool window and inline diffs", "owner": "a JetBrains Marketplace account and a second, JVM codebase" },
+  { "id": "surface.jetbrains-plugin", "status": "next", "name": "A native JetBrains plugin with a tool window and inline diffs", "decided": "No for now - docs/OWNER-DECISIONS.md #7" },
   { "id": "health.live", "status": "next", "name": "Health data read live from the phone, not from an export", "owner": "a native app with HealthKit or Health Connect permission" }
  ]
 }

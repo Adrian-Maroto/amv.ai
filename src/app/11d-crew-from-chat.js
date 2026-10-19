@@ -145,6 +145,7 @@ function _whenSay(w){
              (w.disappears || []).length ? T('{0} no longer saying {1}').replace('{0}', host).replace('{1}', j(w.disappears)) : '' ].filter(Boolean).join(', ');
   }
   if(w.source === 'calendar') return T('new events with {0}').replace('{0}', j(w.words));
+  if(w.source === 'hook') return (w.words || []).length ? T('a request to its address mentioning {0}').replace('{0}', j(w.words)) : T('a request to its address');
   return [ (w.from || []).length ? T('mail from {0}').replace('{0}', j(w.from)) : '',
            (w.subject || []).length ? T('a subject with {0}').replace('{0}', j(w.subject)) : '',
            (w.words || []).length ? T('mentions of {0}').replace('{0}', j(w.words)) : '' ].filter(Boolean).join(', ');
@@ -241,9 +242,9 @@ async function _crewTool(name, input){
   if(name === 'crew_watch'){
     const detail = String(input.detail || '').trim();
     const L = (v) => (Array.isArray(v) ? v : []).map(x => String(x || '').trim()).filter(Boolean).slice(0, 5);
-    const src = ['calendar', 'page'].includes(input.source) ? input.source : 'mail';
+    const src = ['calendar', 'page', 'hook'].includes(input.source) ? input.source : 'mail';
     const when = src === 'page' ? { source: src, url: String(input.url || '').trim(), appears: L(input.appears), disappears: L(input.disappears) }
-               : src === 'calendar' ? { source: src, words: L(input.words) }
+               : src === 'calendar' || src === 'hook' ? { source: src, words: L(input.words) }
                : { from: L(input.from), subject: L(input.subject), words: L(input.words) };
     if(!detail) return { text:'A watch needs to say what to do when something matches. Ask the user.', render:null };
     if(src === 'page' && !/^https:\/\//i.test(when.url))
@@ -258,6 +259,14 @@ async function _crewTool(name, input){
     try{ d = await _autoApi('/auto/create', { detail, repeat:'10min', when, kind:'task', notify:'app', approval: input.approval === 'require' ? 'require' : 'auto' }); }
     catch(e){ return { text: _crewErr(e), render:null }; }
     _crewSynced();
+    if(src === 'hook'){
+      /* The address is the key to the job: shown to them once here, and again
+         from the job's row in Crew whenever they need it. */
+      return { text:'Set up. It is in their Crew tab and runs when another service sends a request to its own address'
+        + (when.words.length ? ' that mentions ' + when.words.join(' or ') : '') + '. The address is: ' + (d.hookUrl || '(open Crew and press Copy address)')
+        + ' - tell them to paste it where that service asks for a webhook or notification URL (method POST). Requests close together are read in one run, at most once every five minutes. '
+        + 'Anybody holding the address can start the job, so tell them to keep it private; Crew has "New address" to replace it. What is sent is read as information, never as instructions, and the job can still only write - it cannot send, buy or touch an account. Do not say anything has arrived yet.', render:null };
+    }
     const where = { mail:'checks their new mail', calendar:'checks their calendar for new events', page:'looks at that page' }[src];
     const first = { mail:'Its first check only notes where the inbox is, so mail that is already there will not set it off - only mail that arrives from now on. ',
                     calendar:'Its first check only notes the events already there, so only events added from now on can set it off. ',

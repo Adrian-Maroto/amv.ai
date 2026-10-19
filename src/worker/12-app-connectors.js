@@ -792,7 +792,10 @@ async function autoCreate(request, env){
     return json({ error: (body.when && body.when.source === 'page')
       ? 'Give a public page address, and the words to watch for appearing or disappearing on it.'
       : 'Say what to watch for: who it is from, words in the subject, or words in the message.', code:'when_empty' }, 400);
-  const whenUse = !when ? [] : _whenSrc(when) === 'calendar' ? ['calendar.read'] : _whenSrc(when) === 'page' ? [] : ['mail.read'];
+  const whenUse = !when ? [] : _whenSrc(when) === 'calendar' ? ['calendar.read'] : ['page', 'hook'].includes(_whenSrc(when)) ? [] : ['mail.read'];
+  /* An address another service can call needs the key it is sealed with. */
+  if(when && _whenSrc(when) === 'hook' && !connConfigured(env))
+    return json({ error:'This deployment does not run jobs from other services.', code:'hook_unavailable' }, 503);
   const uses = [...new Set(asked.concat(derived).concat(whenUse))].slice(0, 4);
   /* WHAT WOULD MAKE THE ANSWER BETTER, kept apart from what it needs.
 
@@ -933,6 +936,9 @@ async function autoCreate(request, env){
        need nobody's mailbox. */
     uses,
     ...(when ? { when } : {}),
+    /* A job another service starts: the nonce sealed into its address, and
+       no clock - it is booked when a request arrives. */
+    ...(when && _whenSrc(when) === 'hook' ? { hook: { n: _hookNonce() }, next: Date.now() + HOOK_IDLE_MS } : {}),
     /* And which it would be BETTER with. Stored beside `uses` rather than
        folded into it, because a missing one of these is a note about the
        evidence and a missing `use` is a broken job. */
@@ -972,6 +978,7 @@ async function autoCreate(request, env){
                code:'job_limit', have: budget.max }, 429);
   }
   return json({ ok:true, item, emailReady,
+                ...(_hookIsOn(item) ? { hookUrl: await _hookAddress(env, request, user.email, item) } : {}),
                 // true only when they asked for email and cannot have it
                 deliveryDowngraded: notify === 'email' && !emailReady,
                 free: budget.free, shaped,

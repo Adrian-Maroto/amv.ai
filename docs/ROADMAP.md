@@ -481,7 +481,9 @@ site sends them for that run only. AMV's servers never hold them, nothing logs
 them, the model never sees them, and erasing the device erases them. What
 stays off the table is a server-side store of everybody's live sessions - the
 vault LESSONS 537 refuses. The trade: a background run while the device is off
-cannot use them; a per-site opt-in for that is the owner's call.
+cannot use them, and on the owner's delegated decision that stays so: a
+server-side store of live sign-ins is refused, opt-in or not - see
+`docs/OWNER-DECISIONS.md` #4.
 
 *Next:* take over the browser to sign in or solve a captcha yourself.
 
@@ -502,7 +504,16 @@ matching its words, never on the ones already there; a page trigger fires when
 a watched word appears on a public page or leaves it - not on every edit to the
 page. Both in `when-it-arrives-amv-acts`.
 
-*Next sources:* a payment arriving, a GitHub repository, a signed request from
-another service, Slack. Mail read by app password cannot be watched yet (no
+**A request from another service (done).** A job can have an address of its
+own; a shop, a payment provider, a form or somebody's own code sends a request
+to it, and the job runs on what was sent - read fenced, as information. The
+address is the key: it is sealed, names nobody, and can be replaced from
+Crew. Requests close together are read in one run, at most every five
+minutes; retries count once; a request without the job's words costs nothing;
+nothing credential-shaped is kept, and what a run read is deleted after it.
+`another-service-can-start-a-job` (42 assertions, twelve mutations caught).
+
+*Next sources:* a GitHub repository read through the person's connection, and
+Slack. Mail read by app password cannot be watched yet (no
 cursor), and says so. What is built and what is next is kept in
 `docs/capabilities.json`, and the gate fails when this page disagrees with it.

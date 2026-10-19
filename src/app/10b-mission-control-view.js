@@ -941,6 +941,7 @@ function _mcServerSchedRow(x){
     </div>
     <div class="mc-sched-acts">
       ${x.done ? '' : `<button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>`}
+      ${x.done || !(x.when && x.when.source === 'hook') ? '' : `<button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|show">${escH(T('Copy address'))}</button><button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|renew">${escH(T('New address'))}</button>`}
       <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
     </div>
   </div>`;
@@ -1000,11 +1001,28 @@ async function mcServerJob(arg){
       'error', 6500);
   }
 }
+/* A JOB ANOTHER SERVICE STARTS: its address, asked for again or replaced.
+   Fetched from the server each time rather than kept on the page - the
+   address is the key to the job, and a copy left in the page's memory or
+   storage is one more place it can be read from. */
+async function mcHookAddress(arg){
+  const [id, action] = String(arg || '').split('|');
+  if(!id) return;
+  if(action === 'renew'){
+    const yes = await showConfirmAsync(T('Make a new address for this job? The old one stops working at once, so give the new one to the service that sends to it.'));
+    if(!yes) return;
+  }
+  let d;
+  try{ d = await _autoApi('/auto/hook', { id, action: action === 'renew' ? 'renew' : 'show' }); }
+  catch(e){ toast(T('The address could not be fetched. Try again.') + ' ' + ((e && e.message) || ''), 'error', 6000); return; }
+  try{ await _copyText(d.url); toast(action === 'renew' ? T('New address copied. The old one no longer works.') : T('Address copied. Give it to the service that should start this job.'), 'success', 6000); }
+  catch(e){ try{ window.prompt(T('Copy this address:'), d.url); }catch(x){} }
+}
 async function mcReloadJobs(){
   try{ if(typeof _autoRefresh === 'function') await _autoRefresh(); }catch(e){}
   renderCrewView();
 }
-try{ window.mcServerJob = mcServerJob; window.mcReloadJobs = mcReloadJobs; }catch(e){}
+try{ window.mcServerJob = mcServerJob; window.mcReloadJobs = mcReloadJobs; window.mcHookAddress = mcHookAddress; }catch(e){}
 
 /* A standing job shown as a row in the unified Scheduled section. */
 function _mcAutonSchedRow(j){
