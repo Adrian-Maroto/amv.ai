@@ -335,8 +335,8 @@ Set each with `npx wrangler secret put NAME` (it prompts for the value).
 | `STRIPE_PRICE_PRO`, `STRIPE_PRICE_ELITE`, `STRIPE_PRICE_ULTRA` | The price IDs for each plan |
 | `STRIPE_PRICE_PRO_YEAR`, `STRIPE_PRICE_ELITE_YEAR`, `STRIPE_PRICE_ULTRA_YEAR`, `STRIPE_PRICE_TEAM_SEAT_YEAR` | Optional. The yearly price IDs, which is what makes the Monthly/Yearly choice appear |
 
-> Prediction markets were removed (LESSONS 595). `KALSHI_API_KEY` and
-> `POLYMARKET_API_KEY` are no longer read; delete them if they are set.
+> Prediction markets were removed (LESSONS 595). The Kalshi and Polymarket
+> keys are no longer read; delete them if they are set.
 
 > Without Stripe configured, paid items are correctly **blocked** (no free
 > purchases) - the app degrades honestly.
