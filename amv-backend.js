@@ -17976,9 +17976,9 @@ async function _reauthForDelete(env, request, user, body) {
     const ok = timingSafeEqual(new TextEncoder().encode(hash), new TextEncoder().encode(acct.pwHash || ''));
     if (!ok) {
       audit(env, 'delete_reauth_failed', { email: em });
-      return json({ error: 'That password is not right.', code: 'reauth_failed' }, 401);
+      return json({ error: 'That password is not right.', code: 'reauth_failed', need: 'password' }, 401);
     }
-    return null;
+    return _deleteSecondStep(env, em, acct, body);
   }
 
   /* No password on the account - it is a federated sign-in. Typing the address
@@ -17989,7 +17989,31 @@ async function _reauthForDelete(env, request, user, body) {
     return json({ error: 'Type your email address to confirm you want to delete your account. This cannot be undone.',
                   code: 'reauth_required', need: 'confirmEmail' }, 401);
   }
-  return null;
+  return _deleteSecondStep(env, em, acct, body);
+}
+/* AND THE SECOND STEP, WHERE THERE IS ONE.
+
+   Somebody who turned on an authenticator app or added a passkey did it so
+   that a password alone - phished, reused, typed on a shared computer - does
+   not open the account. Deleting the account is the one thing that cannot be
+   undone, so it asks for the same: an authenticator or recovery code, or the
+   passkey. A recovery code used here is spent, like anywhere else. */
+async function _deleteSecondStep(env, em, acct, body) {
+  const f = _acctFactors(acct);
+  if (!f.totp && !f.passkeys) return null;
+  const b = body || {};
+  const can = { totp: f.totp, recovery: f.recoveryLeft > 0, passkey: f.passkeys > 0 };
+  if (typeof b.totp === 'string' && f.totp) { if (await _totpSpend(env, em, b.totp)) return null; }
+  else if (typeof b.recovery === 'string' && f.recoveryLeft) { if (await _recoverySpend(env, em, b.recovery)) return null; }
+  else if (b.passkey && f.passkeys) {
+    const site = _pkSite(env);
+    if (site && await _pkAssertFor(env, site, em, b.passkey, 'stepup').catch(() => null)) return null;
+  }
+  else return json({ error: f.totp ? 'Enter a code from your authenticator app as well. This cannot be undone.'
+                                   : 'Confirm with your passkey as well. This cannot be undone.',
+                     code: 'reauth_required', need: 'second', can }, 401);
+  audit(env, 'delete_reauth_failed', { email: em, step: 'second' });
+  return json({ error: 'That did not confirm it is you. Nothing was deleted.', code: 'reauth_failed', need: 'second', can }, 401);
 }
 
 async function authDeleteAccount(request, env) {

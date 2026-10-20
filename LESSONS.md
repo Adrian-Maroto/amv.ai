@@ -15181,3 +15181,26 @@ change it and dodge de-duplication; the body (which is signed) is used
 instead. GitHub's scheme carries no time either, so a month's memory of what
 was taken (`hookdel:`) is what stops a replay there. 43 Worker assertions and
 21 in a browser; eighteen mutations, all caught.
+
+## 599. A refusal the screen cannot answer is a feature that does not exist
+
+The server refuses to erase an account on a session alone - it wants the
+password, or the typed address for an account without one (LESSONS on
+`_reauthForDelete`). That rule was right, tested, and shipped. The dialog that
+calls it sent `{}` and had no field for either, so every connected account
+was answered "Enter your password to confirm" in a toast that vanished, with
+nowhere to enter it. Deleting an account from AMV - a right the privacy policy
+promises - could not be done from the screen at all.
+
+Nothing noticed because each half was tested alone: the Worker suites sent
+the password, and the only check on the dialog read its source for the string
+'/auth/delete'. A server rule that tightens what a request must carry is a
+change to every client of that route, and a test that greps a client for a URL
+is a test that the URL is spelled right.
+
+Rule: when a route starts refusing something, find every caller and drive
+each one, end to end, through the refusal and out the other side. Now the
+dialog asks for each thing as the server names it (`need`), and the same
+request carries the second step - an authenticator or recovery code, or the
+passkey - for an account that has one. delete-your-account-from-the-screen
+deletes real accounts through the real dialog and asks the server afterwards.

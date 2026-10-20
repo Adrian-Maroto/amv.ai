@@ -266,6 +266,7 @@ function _confirmDeleteAccount(){
       '<p style="font-size:var(--t-sm);color:var(--mu);margin-bottom:6px">Tip: you can <button class="lnk-inline" id="del-export">export your data</button> first.</p>'+
       '<label class="lbl">Type <b>DELETE</b> to confirm</label>'+
       '<input type="text" id="del-confirm" placeholder="DELETE" autocomplete="off">'+
+      '<div id="del-proof"></div><p class="ob-sub" id="del-msg" role="alert"></p>'+
       '<div style="display:flex;gap:9px;margin-top:14px">'+
         '<button class="btn bs" data-dact="closeOvr" style="flex:1">Cancel</button>'+
         '<button class="btn bd2" id="del-go" style="flex:1" disabled>Delete account</button>'+
@@ -276,15 +277,51 @@ function _confirmDeleteAccount(){
   const inp=$('del-confirm'), go=$('del-go');
   on(inp,'input',()=>{ if(go) go.disabled = (inp.value.trim().toUpperCase()!=='DELETE'); });
   on($('del-export'),'click',()=>{ try{ _exportUserData(); }catch(e){} });   // async; its own errors are reported inside
-  on(go,'click',async()=>{
+  /* PROOF, ASKED FOR AS THE SERVER NAMES IT.
+
+     This sent an empty request, and the server - rightly - refuses to erase an
+     account on a session alone: it wants the password (or, for an account
+     with no password, the address typed) and, where one is on, the second
+     step. There was nowhere to type any of it, so every connected account got
+     "Enter your password" as a toast and could not be deleted from the screen
+     at all. Each field appears when the server asks for it, and everything
+     typed so far is sent together, because the server needs all of it in one
+     request. */
+  const proof=$('del-proof'), say=(t)=>{ const m=$('del-msg'); if(m) m.textContent=t||''; };
+  const field=(id,label,attrs)=>{ if($(id)) return; proof.insertAdjacentHTML('beforeend','<label class="lbl" for="'+id+'">'+escH(label)+'</label><input id="'+id+'" '+attrs+'>'); };
+  const ask=(d)=>{
+    if(d.need==='password') field('del-pw',T('Your password'),'type="password" autocomplete="current-password"');
+    if(d.need==='confirmEmail') field('del-em',T('Your email address'),'type="email" autocomplete="email"');
+    if(d.need==='second'){
+      if(d.can&&(d.can.totp||d.can.recovery)) field('del-code',d.can.totp?T('A code from your authenticator app, or a recovery code'):T('A recovery code'),'type="text" autocomplete="one-time-code" spellcheck="false"');
+      if(d.can&&d.can.passkey&&window.PublicKeyCredential&&!$('del-pk')){
+        proof.insertAdjacentHTML('beforeend','<button class="btn bs" id="del-pk" type="button">'+escH(T('Confirm with a passkey'))+'</button>');
+        on($('del-pk'),'click',async()=>{
+          try{ send(await AMV_API.passkeyGet('stepup')); }
+          catch(e){ say(e&&e.name==='NotAllowedError'?T('The passkey was not used. Try again, or use another way.'):((e&&e.message)||T('That did not work. Try again.'))); }
+        });
+      }
+    }
+    const f=[...proof.querySelectorAll('input')].find(x=>!x.value); if(f) setTimeout(()=>{ try{ f.focus(); }catch(e){} },30);
+  };
+  let send;
+  on(go,'click',()=>send(null));
+  send=async(passkey)=>{
     if(inp.value.trim().toUpperCase()!=='DELETE') return;
-    go.disabled=true; go.textContent='Deleting\u2026';
+    go.disabled=true; go.textContent='Deleting\u2026'; say('');
     // Purge server-side FIRST (while we still hold the token to authenticate it).
     if(connected){
       let retained=null;
+      const body={};
+      if($('del-pw')) body.password=$('del-pw').value;
+      if($('del-em')) body.confirmEmail=$('del-em').value.trim();
+      const code=$('del-code')?$('del-code').value.trim():'';
+      if(code) body[/^\d{6}$/.test(code.replace(/\s/g,''))?'totp':'recovery']=code.replace(/\s/g,'');
+      if(passkey) body.passkey=passkey;
       try{
-        const r=await AMV_API._fetch('/auth/delete',{method:'POST',body:'{}'});
+        const r=await AMV_API._fetch('/auth/delete',{method:'POST',body:JSON.stringify(body)});
         const d=await r.json().catch(()=>({}));
+        if(r.status===401&&d.need){ go.disabled=false; go.textContent='Delete account'; say(d.error||''); ask(d); return; }
         if(!r.ok){
           /* SAY WHAT THE SERVER SAID.
 
@@ -331,7 +368,7 @@ function _confirmDeleteAccount(){
     try{ eraseDeviceData((S.user&&S.user.email)||'guest'); }catch(e){}
     try{ localStorage.removeItem('amv_user'); }catch(e){}
     location.reload();
-  });
+  };
 }
 try{ window._confirmDeleteAccount=_confirmDeleteAccount; }catch(e){}
 

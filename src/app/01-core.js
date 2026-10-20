@@ -1202,16 +1202,24 @@ const AMV_API = {
   },
   /* Sign in with a passkey: the server's challenge, the device's fingerprint
      or PIN, the server's check. No password and no email code. */
-  async passkeySignin(){
-    if(!this.live) return null;
+  /* The device's passkey answering a challenge AMV minted for `purpose`:
+     { cid, credential } as the server reads it. 'stepup' proves it is the
+     signed-in person, for something that cannot be undone. */
+  async passkeyGet(purpose){
     const b = (s) => { const t = String(s).replace(/-/g, '+').replace(/_/g, '/'); const x = atob(t + '='.repeat((4 - t.length % 4) % 4)); const u = new Uint8Array(x.length); for(let i = 0; i < x.length; i++) u[i] = x.charCodeAt(i); return u.buffer; };
     const e = (buf) => { let s = ''; for(const x of new Uint8Array(buf)) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
-    const o = await (await this._fetch('/auth/passkey/options', {method:'POST', body:JSON.stringify({purpose:'signin'})})).json().catch(()=>({}));
+    const o = await (await this._fetch('/auth/passkey/options', {method:'POST', body:JSON.stringify({purpose})})).json().catch(()=>({}));
     if(!o.cid){ const er=new Error(o.error || 'Passkeys are not available right now.'); er.code=o.code; throw er; }
-    const c = await navigator.credentials.get({ publicKey: Object.assign({}, o.publicKey, { challenge: b(o.publicKey.challenge) }) });
+    const pk = Object.assign({}, o.publicKey, { challenge: b(o.publicKey.challenge) });
+    if(Array.isArray(o.publicKey.allowCredentials)) pk.allowCredentials = o.publicKey.allowCredentials.map(c => ({ type: c.type, id: b(c.id) }));
+    const c = await navigator.credentials.get({ publicKey: pk });
     const res = c.response;
-    const r = await this._fetch('/auth/passkey/signin', {method:'POST', body:JSON.stringify({ cid:o.cid, credential:{ id:c.id, type:c.type, response:{
-      clientDataJSON:e(res.clientDataJSON), authenticatorData:e(res.authenticatorData), signature:e(res.signature), userHandle: res.userHandle ? e(res.userHandle) : '' } } })});
+    return { cid: o.cid, credential: { id:c.id, type:c.type, response:{ clientDataJSON:e(res.clientDataJSON), authenticatorData:e(res.authenticatorData),
+      signature:e(res.signature), userHandle: res.userHandle ? e(res.userHandle) : '' } } };
+  },
+  async passkeySignin(){
+    if(!this.live) return null;
+    const r = await this._fetch('/auth/passkey/signin', {method:'POST', body:JSON.stringify(await this.passkeyGet('signin'))});
     const d = await r.json().catch(()=>({}));
     if(d.token){ if(d.deviceToken && d.email) _devTokSet(d.email, d.deviceToken); this._setTokens(d); return d; }
     { const er=new Error(d.error || 'That passkey did not sign you in.'); if(d.code) er.code=d.code; throw er; }

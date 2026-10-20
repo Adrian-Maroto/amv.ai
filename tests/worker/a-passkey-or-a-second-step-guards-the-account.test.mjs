@@ -241,8 +241,13 @@ section('The last way into an account is never removed');
   /* Deleting the account takes its passkeys with it: the index that lets a
      passkey find its account goes too, or a deleted person's key would keep
      resolving to their address. */
-  const del = await call('/auth/delete', { confirmEmail: 'solo@example.com' }, soloTok);
-  ok(del.status === 200, 'the account is deleted', [del.status, del.d.error]);
+  const half = await call('/auth/delete', { confirmEmail: 'solo@example.com' }, soloTok);
+  ok(half.status === 401 && half.d.need === 'second' && half.d.can.passkey, 'deleting it asks for the passkey too: the session and the address are not enough', [half.status, half.d.need]);
+  ok(m.has('pkcred:' + id), 'and nothing is deleted on that request', true);
+  const ds = await call('/auth/passkey/options', { purpose: 'stepup' }, soloTok);
+  const del = await call('/auth/delete', { confirmEmail: 'solo@example.com', passkey: { cid: ds.d.cid,
+    credential: await key.get({ challenge: ds.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) } }, soloTok);
+  ok(del.status === 200, 'with the passkey, the account is deleted', [del.status, del.d.error]);
   ok(!m.has('pkcred:' + id), 'and its passkey no longer points at it', true);
   const oo = await call('/auth/passkey/options', { purpose: 'signin' });
   const after = await call('/auth/passkey/signin', { cid: oo.d.cid, credential: await key.get({ challenge: oo.d.publicKey.challenge, origin: ORIGIN, rpId: RP }) });
