@@ -15204,3 +15204,23 @@ dialog asks for each thing as the server names it (`need`), and the same
 request carries the second step - an authenticator or recovery code, or the
 passkey - for an account that has one. delete-your-account-from-the-screen
 deletes real accounts through the real dialog and asks the server afterwards.
+
+## 600. Read, change, write is a race the moment two events can arrive together
+
+Taking back a refunded pack of extra usage read how much had been taken back
+already, took the rest from the balance, and wrote the new total. Stripe
+sends a refund and a dispute as separate events and delivers them
+concurrently; two arriving together each read "nothing taken yet" and each
+took the whole pack. Reproduced: $35 of credit across two packs, one $25
+pack refunded and disputed at once, balance -$15 - the second $25 taken from
+a pack the person had paid for separately. Nothing tested the reversal at all.
+
+Found by listing every function that reads a record kind and writes the same
+kind back without a lock (about forty; most are logs or presence where a lost
+write costs nothing). Money is where it was not harmless.
+
+Rule: a read-modify-write on money takes a lock per record, and a webhook
+that finds it held fails (500) so the provider retries it, rather than
+waiting or guessing. A partial refund then a full one must still take the
+difference, so this is a mutex measured in seconds (`crevlock`), not a
+once-only claim.

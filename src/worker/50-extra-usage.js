@@ -70,18 +70,31 @@ async function _creditGrant(env, { subject, email, usd, ref }){
 }
 /* A refund or dispute on a pack. True when the payment WAS a pack, so the
    caller does not go on to treat it as the subscription. */
+/* ONE AT A TIME PER PACK. This reads how much was already taken back, takes
+   the rest and writes the new total - and Stripe sends a refund and a dispute
+   as separate events, delivered concurrently. Two arriving together each read
+   "nothing taken yet" and each took the whole pack, out of credit the person
+   had paid for separately (a-refund-takes-a-pack-back-once). The second waits
+   by failing: the webhook answers 500, Stripe retries, and the retry finds
+   nothing left to take. A partial refund then a full one still take the
+   difference, so this cannot be a once-only claim. */
 async function _creditReverse(env, ref, why, refundedUSD){
   if(!ref) return false;
-  const rec = _safeJson(await env.AMV_KV.get('creditpay:' + ref));
-  if(!rec || !rec.subject) return false;
-  const already = +rec.reversed || 0;
-  const want = Math.min(+rec.usd || 0, refundedUSD > 0 ? refundedUSD : +rec.usd || 0);
-  const take = Math.max(0, Math.round((want - already) * 100) / 100);
-  if(take > 0){
-    await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, ttlMs: CREDIT_TTL_MS, strict: true });
-    rec.reversed = already + take;
-    await env.AMV_KV.put('creditpay:' + ref, JSON.stringify(rec));
-  }
+  if(!(await env.AMV_KV.get('creditpay:' + ref))) return false;
+  if(!(await _claimOnce(env, 'crevlock', ref, 30))) throw new Error('credit reversal already in progress for this payment');
+  let rec, take = 0;
+  try{
+    rec = _safeJson(await env.AMV_KV.get('creditpay:' + ref));
+    if(!rec || !rec.subject) return false;
+    const already = +rec.reversed || 0;
+    const want = Math.min(+rec.usd || 0, refundedUSD > 0 ? refundedUSD : +rec.usd || 0);
+    take = Math.max(0, Math.round((want - already) * 100) / 100);
+    if(take > 0){
+      await counter(env, _creditBuyName(rec.subject), { op: 'incr', amount: -take, ttlMs: CREDIT_TTL_MS, strict: true });
+      rec.reversed = already + take;
+      await env.AMV_KV.put('creditpay:' + ref, JSON.stringify(rec));
+    }
+  } finally { await _releaseClaim(env, 'crevlock', ref); }
   audit(env, 'credit_reversed', { by: rec.email, usd: take, why });
   if(why === 'dispute' && rec.email) await _abuseRecord(env, rec.email, 'dispute', { chargeId: ref, amount: Math.round((+rec.usd || 0) * 100) });
   return true;
