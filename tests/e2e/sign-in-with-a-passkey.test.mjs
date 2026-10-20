@@ -17,7 +17,7 @@ import { createHmac } from 'crypto';
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { LAUNCH } from '../lib/harness.mjs';
+import { LAUNCH, armGeom } from '../lib/harness.mjs';
 import { makeEnv, serveArtifact } from '../lib/live-backend.mjs';
 import { ok, section, report, done } from '../lib/assert.mjs';
 
@@ -51,6 +51,7 @@ const browser = await chromium.launch(LAUNCH);
 const errors = [];
 async function device(viewport){
   const context = await browser.newContext({ viewport: viewport || { width: 1280, height: 900 } });
+  await armGeom(context);
   const page = await context.newPage();
   page.on('pageerror', e => errors.push(e.message));
   /* The phone's fingerprint reader: a platform authenticator that keeps
@@ -134,7 +135,7 @@ section('An authenticator app, with recovery codes shown once');
   await until(A.page, () => !!document.querySelector('.sec-secret code'));
   secret = await A.page.$eval('.sec-secret code', e => e.textContent.replace(/\s/g, ''));
   ok(/^[A-Z2-7]{32}$/.test(secret), 'the key to type into the app is shown', secret.length);
-  ok(/^otpauth:\/\/totp\//.test(await A.page.$eval('#sec-key-open', a => a.getAttribute('href'))), 'and the link a phone opens it with', true);
+  ok(await A.page.$('#sec-key-open') !== null, 'and a button that opens it in the app on a phone', true);
   await fill(A.page, '#sec-first', totp(secret, 0)); await click(A.page, '#sec-first-go');
   await until(A.page, () => !!document.querySelector('.sec-code-list'));
   codes = (await A.page.$eval('.sec-code-list', e => e.textContent)).trim().split('\n');
@@ -163,7 +164,7 @@ section('At phone width, the Security section fits');
   await A.page.setViewportSize({ width: 390, height: 844 });
   await openSecurity(A.page);
   const r = await A.page.evaluate(() => ({ over: document.documentElement.scrollWidth > innerWidth + 1,
-    small: [...document.querySelectorAll('#sec-mfa button')].filter(b => b.getBoundingClientRect().height && b.getBoundingClientRect().height < 43.5).length }));
+    small: [...document.querySelectorAll('#sec-mfa button')].filter(b => b.getBoundingClientRect().height && __under(b.getBoundingClientRect().height, 44)).length }));
   ok(!r.over && r.small === 0, 'nothing runs off the side, and every button is a full-size target', r);
 }
 

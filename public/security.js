@@ -133,11 +133,14 @@ async function _secTotpOn(){
   host.innerHTML = '<div class="sec-setup">'
     + '<p class="set-sub">' + escH(T('1. In your authenticator app, add an account and enter this key (or open the link on your phone):')) + '</p>'
     + '<div class="sec-secret" data-no-i18n><code>' + escH(grouped) + '</code></div>'
-    + '<div class="sec-row"><button class="btn bs" id="sec-key-copy">' + escH(T('Copy key')) + '</button><a class="btn bs" id="sec-key-open" href="' + escH(d.uri) + '">' + escH(T('Open in authenticator app')) + '</a></div>'
+    + '<div class="sec-row"><button class="btn bs" id="sec-key-copy">' + escH(T('Copy key')) + '</button><button class="btn bs" id="sec-key-open">' + escH(T('Open in authenticator app')) + '</button></div>'
     + '<label class="fp-lbl" for="sec-first">' + escH(T('2. Enter the 6-digit code it shows')) + '</label>'
     + '<input id="sec-first" class="fp-in fp-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">'
     + '<button class="btn bp" id="sec-first-go">' + escH(T('Turn on')) + '</button></div>';
   on($('sec-key-copy'), 'click', () => { try{ navigator.clipboard.writeText(d.secret); _secMsg(T('Copied.')); }catch(e){} });
+  /* Opened only in the one shape the server makes it: an otpauth address,
+     which a phone hands to its authenticator app. Nothing else is followed. */
+  on($('sec-key-open'), 'click', () => { if(/^otpauth:\/\/totp\/[^\s"'<>]+$/.test(d.uri)) location.href = d.uri; });
   on($('sec-first-go'), 'click', async () => {
     const code = ($('sec-first').value || '').replace(/\D/g, '');
     try{

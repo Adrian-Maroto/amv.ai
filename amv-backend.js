@@ -14240,6 +14240,10 @@ const BACKUP_PREFIXES = [
   /* Which team signs a proved domain in. Restored with the teams, or every
      company's sign-in would stop until each owner proved their domain again. */
   'ssodom:',
+  /* Which account each passkey belongs to - a public id and an address, no
+     secret. The account record carries the keys themselves; without this
+     index a restored deployment would have every passkey and none that work. */
+  'pkcred:',
   /* Each pack of extra usage that was paid for - what a refund or a dispute
      is matched against, and what the bought total can be rebuilt from. */
   'creditpay:',
@@ -14328,6 +14332,11 @@ const BACKUP_PREFIXES = [
    exist - which is also why erasing the creator takes them with it. */
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
+  /* Sign-in in flight: a passkey challenge (five minutes), a second-step
+     challenge (ten), and an authenticator app half set up, its secret sealed
+     with this deployment's key. Restoring any of them would put a spent or
+     expired step back into circulation. */
+  'pkchal:', 'mfachal:', 'totpset:',
   /* Batches: work in flight and answers kept for a week. Restoring one would
      put a finished batch back in the queue - to be run, and charged, again. */
   'batch:', 'batchidx:', 'batchq:', 'batchreq:', 'batchres:', 'batchcursor',
@@ -38431,7 +38440,7 @@ async function passkeyRegister(request, env){
   }
   if(await env.AMV_KV.get('pkcred:' + made.credId)) return json({ error: 'That passkey is already in use on an account.', code: 'passkey_exists' }, 409);
   const name = String(body.name || '').replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, 60) || 'Passkey';
-  const r = await _withAcct(env, em, (a) => {
+  const r = await _withAcct(env, user.email, (a) => {
     if(!a) return { error: 'unauthorized', status: 401 };
     a.passkeys = Array.isArray(a.passkeys) ? a.passkeys : [];
     if(a.passkeys.length >= PK_MAX) return { error: 'passkey_limit', status: 409 };
@@ -38493,7 +38502,7 @@ async function passkeyRemove(request, env){
   const refused = await _stepUp(env, request, user, body.proof); if(refused) return refused;
   const id = String(body.id || '');
   let name = '';
-  const r = await _withAcct(env, em, (a) => {
+  const r = await _withAcct(env, user.email, (a) => {
     const k = a && Array.isArray(a.passkeys) ? a.passkeys.find(x => x.id === id) : null;
     if(!k) return { error: 'not_found', status: 404 };
     /* Never the last way in: an account with no password, no other passkey
@@ -38570,7 +38579,7 @@ async function totpConfirm(request, env){
   const codes = _recoveryNew();
   const hashes = await Promise.all(codes.map(_recoveryHash));
   const sealed = await connSeal(env, { t: 'totp', s: pend.s });
-  await _withAcct(env, em, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; a.totp = { on: true, sealed, at: Date.now(), last: step }; a.recovery = hashes; });
+  await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; a.totp = { on: true, sealed, at: Date.now(), last: step }; a.recovery = hashes; });
   try{ await env.AMV_KV.delete('totpset:' + em); }catch(e){}
   audit(env, 'totp_on', { email: em });
   await _userEvent(env, request, em, 'mfa_on', { kind: 'authenticator app' });
@@ -38583,7 +38592,7 @@ async function totpDisable(request, env){
   const em = String(user.email).toLowerCase();
   const body = await request.json().catch(() => ({}));
   const refused = await _stepUp(env, request, user, body.proof); if(refused) return refused;
-  await _withAcct(env, em, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; delete a.totp; a.recovery = []; });
+  await _withAcct(env, user.email, (a) => { if(!a) return { error: 'unauthorized', status: 401 }; delete a.totp; a.recovery = []; });
   audit(env, 'totp_off', { email: em });
   await _userEvent(env, request, em, 'mfa_off', { kind: 'authenticator app' });
   return json({ ok: true, security: _securityShown(await DB.get(env, 'acct', em)) });
@@ -38599,7 +38608,7 @@ async function recoveryNew(request, env){
   if(!_acctFactors(acct).totp) return json({ error: 'Recovery codes come with an authenticator app. Turn that on first.', code: 'totp_off' }, 409);
   const codes = _recoveryNew();
   const hashes = await Promise.all(codes.map(_recoveryHash));
-  await _withAcct(env, em, (a) => { a.recovery = hashes; });
+  await _withAcct(env, user.email, (a) => { a.recovery = hashes; });
   audit(env, 'recovery_new', { email: em });
   await _userEvent(env, request, em, 'recovery_codes_new', {});
   return json({ ok: true, recovery: codes, security: _securityShown(await DB.get(env, 'acct', em)) });

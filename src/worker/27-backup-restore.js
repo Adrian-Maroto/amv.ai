@@ -48,6 +48,10 @@ const BACKUP_PREFIXES = [
   /* Which team signs a proved domain in. Restored with the teams, or every
      company's sign-in would stop until each owner proved their domain again. */
   'ssodom:',
+  /* Which account each passkey belongs to - a public id and an address, no
+     secret. The account record carries the keys themselves; without this
+     index a restored deployment would have every passkey and none that work. */
+  'pkcred:',
   /* Each pack of extra usage that was paid for - what a refund or a dispute
      is matched against, and what the bought total can be rebuilt from. */
   'creditpay:',
@@ -136,6 +140,11 @@ const BACKUP_PREFIXES = [
    exist - which is also why erasing the creator takes them with it. */
 const BACKUP_NEVER = [
   'fin:', 'finlink:', 'invsnap:',
+  /* Sign-in in flight: a passkey challenge (five minutes), a second-step
+     challenge (ten), and an authenticator app half set up, its secret sealed
+     with this deployment's key. Restoring any of them would put a spent or
+     expired step back into circulation. */
+  'pkchal:', 'mfachal:', 'totpset:',
   /* Batches: work in flight and answers kept for a week. Restoring one would
      put a finished batch back in the queue - to be run, and charged, again. */
   'batch:', 'batchidx:', 'batchq:', 'batchreq:', 'batchres:', 'batchcursor',
