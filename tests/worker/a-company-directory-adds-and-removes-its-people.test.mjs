@@ -168,6 +168,18 @@ section('Entra switches her back on with the string "True"; a full team takes no
 {
   const back = await scim('PATCH', '/Users/' + anaId, { Operations: [{ op: 'Replace', path: 'active', value: 'True' }] }, token);
   ok(back.status === 200 && back.d.active === true && (await team()).members.some(x => x.email === 'ana@acme-corp.com'), '"True" puts her back', [back.status, back.d.active]);
+  /* A malformed value is a directory's bug, not an instruction to switch
+     somebody off. Each of these is refused and she stays exactly as she was -
+     including a PATCH whose first operation was valid. */
+  const on = async () => (await team()).members.some(x => x.email === 'ana@acme-corp.com');
+  const bad1 = await scim('PATCH', '/Users/' + anaId, { Operations: [{ op: 'Replace', path: 'active', value: 'banana' }] }, token);
+  ok(bad1.status === 400 && bad1.d.scimType === 'invalidValue' && await on(), 'PATCH active "banana" is refused, and she is still on', [bad1.status, bad1.d.scimType]);
+  const bad2 = await scim('PUT', '/Users/' + anaId, { userName: 'ana@acme-corp.com', active: 'no' }, token);
+  ok(bad2.status === 400 && await on(), 'PUT active "no" is refused, and she is still on', bad2.status);
+  const bad3 = await scim('PATCH', '/Users/' + anaId, { Operations: [{ op: 'Replace', path: 'active', value: false }, { op: 'Replace', value: { active: 0 } }] }, token);
+  ok(bad3.status === 400 && await on(), 'a PATCH with one bad operation changes nothing, the valid one included', bad3.status);
+  const bad4 = await scim('POST', '/Users', { userName: 'new@acme-corp.com', active: 'yes' }, token);
+  ok(bad4.status === 400 && !(await team()).members.some(x => x.email === 'new@acme-corp.com'), 'POST with active "yes" adds nobody', bad4.status);
   const t = await team();
   const limit = (await call('/team/members', {}, owner)).d.seats.limit;
   ok(limit > t.members.length, 'the team has a seat limit to reach', limit);

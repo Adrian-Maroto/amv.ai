@@ -111,6 +111,7 @@ section('And every tool has been classified either way');
     approvals_list: 'reads their own approval queue; nothing is sent by looking',
     memory_list:    'reads what AMV already remembers about them',
     account_status: 'reads their own plan and usage',
+    library_search: 'reads their own kept files, on this device and in their account; nothing is changed or sent anywhere else',
     /* Pausing is the safe direction. A confirmation in front of "stop doing
        that" is the one place a dialog makes things worse. */
     crew_pause:     'stops a job running, which reduces what AMV does and what it spends',

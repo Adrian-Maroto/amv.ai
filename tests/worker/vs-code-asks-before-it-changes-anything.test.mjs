@@ -98,6 +98,18 @@ await new Promise(r => srv.listen(0, '127.0.0.1', r));
 const LOCAL = 'http://127.0.0.1:' + srv.address().port;
 const KEY = 'amv_sk_' + 'x'.repeat(30);
 
+section('The webview\u2019s script nonce comes from the cryptographic source');
+{
+  /* The panel's CSP admits only scripts carrying this value. With Math.random
+     pinned to one number, a nonce built from it would repeat; one from the
+     system's cryptographic source does not. */
+  const real = Math.random;
+  Math.random = () => 0.5;
+  const a = ext._test.nonce(), b = ext._test.nonce();
+  Math.random = real;
+  ok(a !== b && /^[A-Za-z0-9_-]{32,}$/.test(a), 'two nonces differ even with Math.random pinned, and are long', [a, b]);
+}
+
 section('The key goes only to a safe address, and only from the keychain');
 {
   const t = ext._test;

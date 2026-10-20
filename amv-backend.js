@@ -37642,7 +37642,16 @@ async function _scimAll(request, team){
   for(const o of team.scimOff || []) if(!(team.members || []).some(m => m.email === o.email)) out.push(await _scimUser(request, team, o, false));
   return out;
 }
-const _scimBool = (v) => v === true || String(v).toLowerCase() === 'true';
+/* Strict, because the wrong answer here switches somebody off. A directory
+   sending {"active":"banana"} has a bug, and reading it as false would end an
+   employee's every sign-in on the strength of that bug. true/false, or the
+   strings Entra ID sends ("True"/"False"); anything else is refused. */
+const _scimBool = (v) => {
+  if(v === true || v === false) return v;
+  const t = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  return t === 'true' ? true : t === 'false' ? false : null;
+};
+const _SCIM_BAD_ACTIVE = 'active must be true or false.';
 
 async function _scimAdd(env, team, email, name){
   if(_ssoDomainOf(email) !== team.sso.domain) return { status: 400, detail: 'Only addresses at ' + team.sso.domain + ' can be managed here.', type: 'invalidValue' };
@@ -37728,6 +37737,7 @@ async function scimRoute(request, env, path){
     const body = await request.json().catch(() => null);
     const email = String((body && (body.userName || (Array.isArray(body.emails) && body.emails[0] && body.emails[0].value))) || '').trim().toLowerCase();
     if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return _scimErr(400, 'userName must be an email address.', 'invalidValue');
+    if(body && body.active != null && _scimBool(body.active) === null) return _scimErr(400, _SCIM_BAD_ACTIVE, 'invalidValue');
     if(body && body.active != null && !_scimBool(body.active)) return _scimErr(400, 'A new user is created active.', 'invalidValue');
     const fresh = await DB.get(env, 'team', team.id);
     if((fresh.members || []).some(m => m.email === email)) return _scimErr(409, 'That person is already in the team.', 'uniqueness');
@@ -37757,6 +37767,7 @@ async function scimRoute(request, env, path){
       if(!body) return _scimErr(400, 'Send the user as JSON.', 'invalidSyntax');
       if(body.userName && String(body.userName).toLowerCase() !== email) return _scimErr(400, 'An address cannot be changed; add the new address as a new user.', 'mutability');
       active = body.active == null ? cur.active : _scimBool(body.active);
+      if(active === null) return _scimErr(400, _SCIM_BAD_ACTIVE, 'invalidValue');
     } else if(method === 'PATCH'){
       const body = await request.json().catch(() => null);
       const ops = body && Array.isArray(body.Operations) ? body.Operations : null;
@@ -37765,8 +37776,11 @@ async function scimRoute(request, env, path){
         const kind = String(op && op.op || '').toLowerCase();
         if(kind !== 'replace' && kind !== 'add') continue;
         const p = String(op.path || '').toLowerCase();
-        if(p === 'active') active = _scimBool(op.value);
-        else if(!p && op.value && typeof op.value === 'object' && 'active' in op.value) active = _scimBool(op.value.active);
+        /* Every operation is checked before any is applied: a request with
+           one bad value changes nothing. */
+        if(p === 'active'){ active = _scimBool(op.value); if(active === null) return _scimErr(400, _SCIM_BAD_ACTIVE, 'invalidValue'); }
+        else if(!p && op.value && typeof op.value === 'object' && 'active' in op.value){
+          active = _scimBool(op.value.active); if(active === null) return _scimErr(400, _SCIM_BAD_ACTIVE, 'invalidValue'); }
         else if(p === 'username' || (op.value && op.value.userName && String(op.value.userName).toLowerCase() !== email))
           return _scimErr(400, 'An address cannot be changed; add the new address as a new user.', 'mutability');
       }

@@ -112,7 +112,10 @@ function stopped() { const e = new Error('Stopped.'); e.stopped = true; return e
 /* Text only: the answer is put in with textContent, never as HTML, and the
    panel's policy allows exactly one script, its own. */
 let panel = null;
-function nonce() { let s = ''; const c = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'; for (let i = 0; i < 32; i++) s += c[Math.floor(Math.random() * c.length)]; return s; }
+/* The webview's Content-Security-Policy admits only scripts carrying this
+   value, so it is a security value: from the system's cryptographic source,
+   never Math.random, whose next outputs can be worked out from earlier ones. */
+function nonce() { return require('crypto').randomBytes(24).toString('base64url'); }
 function showPanel(title) {
   if (!panel) {
     panel = vscode.window.createWebviewPanel('amv.answer', 'AMV', { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
@@ -261,4 +264,4 @@ function activate(context) {
 }
 function deactivate() {}
 
-module.exports = { activate, deactivate, _test: { serverBase, codeFrom, stream } };
+module.exports = { activate, deactivate, _test: { serverBase, codeFrom, stream, nonce } };
