@@ -12956,5 +12956,43 @@
   "it": "Un codice di recupero",
   "ko": "복구 코드",
   "ta": "ஒரு மீட்புக் குறியீடு"
+ },
+ "1. Scan this with your authenticator app, or enter the key below:": {
+  "es": "1. Escanéalo con tu app de autenticación, o introduce la clave de abajo:",
+  "zh": "1. 用身份验证器应用扫描此码，或输入下方的密钥：",
+  "hi": "1. इसे अपने ऑथेंटिकेटर ऐप से स्कैन करें, या नीचे दी गई कुंजी दर्ज करें:",
+  "ar": "1. امسح هذا الرمز بتطبيق المصادقة، أو أدخل المفتاح أدناه:",
+  "pt": "1. Escaneie isto com seu app autenticador ou digite a chave abaixo:",
+  "fr": "1. Scannez ceci avec votre application d’authentification, ou saisissez la clé ci-dessous :",
+  "de": "1. Scannen Sie dies mit Ihrer Authentifizierungs-App oder geben Sie den Schlüssel unten ein:",
+  "ja": "1. 認証アプリでこれをスキャンするか、下のキーを入力してください：",
+  "ru": "1. Отсканируйте это приложением-аутентификатором или введите ключ ниже:",
+  "id": "1. Pindai ini dengan aplikasi autentikator Anda, atau masukkan kunci di bawah:",
+  "bn": "1. আপনার অথেন্টিকেটর অ্যাপ দিয়ে এটি স্ক্যান করুন, বা নিচের কী লিখুন:",
+  "ur": "1. اسے اپنی تصدیقی ایپ سے اسکین کریں، یا نیچے دی گئی کلید درج کریں:",
+  "tr": "1. Bunu kimlik doğrulama uygulamanızla tarayın veya aşağıdaki anahtarı girin:",
+  "vi": "1. Quét mã này bằng ứng dụng xác thực, hoặc nhập khóa bên dưới:",
+  "it": "1. Scansiona questo con la tua app di autenticazione, o inserisci la chiave qui sotto:",
+  "ko": "1. 인증 앱으로 이 코드를 스캔하거나 아래 키를 입력하세요:",
+  "ta": "1. இதை உங்கள் அங்கீகரிப்புச் செயலியால் ஸ்கேன் செய்யவும், அல்லது கீழே உள்ள விசையை உள்ளிடவும்:"
+ },
+ "QR code for your authenticator app": {
+  "es": "Código QR para tu app de autenticación",
+  "zh": "用于身份验证器应用的二维码",
+  "hi": "आपके ऑथेंटिकेटर ऐप के लिए QR कोड",
+  "ar": "رمز QR لتطبيق المصادقة",
+  "pt": "Código QR para seu app autenticador",
+  "fr": "Code QR pour votre application d’authentification",
+  "de": "QR-Code für Ihre Authentifizierungs-App",
+  "ja": "認証アプリ用の QR コード",
+  "ru": "QR-код для приложения-аутентификатора",
+  "id": "Kode QR untuk aplikasi autentikator Anda",
+  "bn": "আপনার অথেন্টিকেটর অ্যাপের জন্য QR কোড",
+  "ur": "آپ کی تصدیقی ایپ کے لیے QR کوڈ",
+  "tr": "Kimlik doğrulama uygulamanız için QR kodu",
+  "vi": "Mã QR cho ứng dụng xác thực của bạn",
+  "it": "Codice QR per la tua app di autenticazione",
+  "ko": "인증 앱용 QR 코드",
+  "ta": "உங்கள் அங்கீகரிப்புச் செயலிக்கான QR குறியீடு"
  }
 }

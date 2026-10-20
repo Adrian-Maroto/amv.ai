@@ -17263,3 +17263,10 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .sec-code-list{ margin:var(--sp-2) 0; padding:var(--sp-2) var(--sp-3); font-family:var(--mn); font-size:var(--t-md); line-height:1.7;
   color:var(--tx); background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-sm); user-select:all; white-space:pre; overflow-x:auto; }
 #pk-btn{ margin-top:var(--sp-2); }
+
+/* ═══ LAYER A329 - the authenticator app's QR code (Settings > Account) ═══
+   Black on white in both themes, with its own quiet zone: it is read by a
+   camera, and a dark-mode inversion is a code a scanner may refuse. Large
+   enough to scan from a phone held at arm's length, never wider than the
+   panel. */
+.sec-qr{ display:block; width:min(220px, 100%); height:auto; margin:var(--sp-2) 0; border-radius:var(--r-sm); border:1px solid var(--bd); }

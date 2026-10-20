@@ -136,6 +136,8 @@ section('An authenticator app, with recovery codes shown once');
   secret = await A.page.$eval('.sec-secret code', e => e.textContent.replace(/\s/g, ''));
   ok(/^[A-Z2-7]{32}$/.test(secret), 'the key to type into the app is shown', secret.length);
   ok(await A.page.$('#sec-key-open') !== null, 'and a button that opens it in the app on a phone', true);
+  const qr = await A.page.$eval('.sec-setup .sec-qr', e => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, label: e.getAttribute('aria-label') }; }).catch(() => null);
+  ok(qr && qr.w >= 200 && Math.abs(qr.w - qr.h) < 1 && /QR/.test(qr.label), 'and a QR code the app scans, large and square', qr);
   await fill(A.page, '#sec-first', totp(secret, 0)); await click(A.page, '#sec-first-go');
   await until(A.page, () => !!document.querySelector('.sec-code-list'));
   codes = (await A.page.$eval('.sec-code-list', e => e.textContent)).trim().split('\n');

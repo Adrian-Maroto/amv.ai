@@ -125,13 +125,138 @@ function _secShowCodes(codes){
   on($('sec-rc-copy'), 'click', () => { try{ navigator.clipboard.writeText(codes.join('\n')); _secMsg(T('Copied.')); }catch(e){} });
   on($('sec-rc-save'), 'click', () => _saveBlob(new Blob(['AMV recovery codes\n\n' + codes.join('\n') + '\n'], { type: 'text/plain' }), 'amv-recovery-codes.txt'));
 }
+/* A QR CODE FOR THE AUTHENTICATOR APP.
+
+   Typing a 32-letter key into a phone is where people give up on a second
+   step, so the key is also shown as a QR code the app scans. Drawn here, in
+   the page, from the key the server just sent: the key is a secret, and a
+   QR service on another host would be one more place it was sent.
+
+   Byte mode, error correction M, versions 1-10 (up to 213 bytes - an
+   otpauth address is about 100). The algorithm is the one in ISO/IEC 18004:
+   Reed-Solomon over GF(256), the function patterns, the zigzag placement and
+   the eight masks scored by the standard's four penalty rules. Returns rows
+   of booleans (true = dark), or null when the text is too long. */
+function _secQr(text){
+  const data = [...new TextEncoder().encode(String(text))];
+  const ECC = [0, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26], BLOCKS = [0, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5];
+  const raw = (v) => { let r = (16 * v + 128) * v + 64; if(v >= 2){ const n = Math.floor(v / 7) + 2; r -= (25 * n - 10) * n - 55; if(v >= 7) r -= 36; } return r; };
+  const cap = (v) => Math.floor(raw(v) / 8) - ECC[v] * BLOCKS[v];
+  let ver = 1;
+  while(ver <= 10 && 4 + (ver < 10 ? 8 : 16) + data.length * 8 > cap(ver) * 8) ver++;
+  if(ver > 10) return null;
+  /* The bit stream: mode, length, bytes, terminator, padding. */
+  const bits = [];
+  const put = (val, n) => { for(let i = n - 1; i >= 0; i--) bits.push((val >>> i) & 1); };
+  put(4, 4); put(data.length, ver < 10 ? 8 : 16); data.forEach(b => put(b, 8));
+  const room = cap(ver) * 8;
+  put(0, Math.min(4, room - bits.length)); put(0, (8 - bits.length % 8) % 8);
+  for(let p = 0xEC; bits.length < room; p ^= 0xEC ^ 0x11) put(p, 8);
+  const words = []; for(let i = 0; i < bits.length; i += 8) words.push(parseInt(bits.slice(i, i + 8).join(''), 2));
+  /* Reed-Solomon, per block, then interleaved. */
+  const mul = (x, y) => { let z = 0; for(let i = 7; i >= 0; i--){ z = (z << 1) ^ ((z >>> 7) * 0x11D); z ^= ((y >>> i) & 1) * x; } return z; };
+  const deg = ECC[ver], div = new Array(deg).fill(0); div[deg - 1] = 1;
+  for(let i = 0, root = 1; i < deg; i++){ for(let j = 0; j < deg; j++){ div[j] = mul(div[j], root); if(j + 1 < deg) div[j] ^= div[j + 1]; } root = mul(root, 2); }
+  const rem = (dat) => { const r = new Array(deg).fill(0); for(const b of dat){ const f = b ^ r.shift(); r.push(0); div.forEach((c, i) => { r[i] ^= mul(c, f); }); } return r; };
+  const nb = BLOCKS[ver], total = Math.floor(raw(ver) / 8), shortN = nb - total % nb, shortLen = Math.floor(total / nb);
+  const blocks = [];
+  for(let i = 0, k = 0; i < nb; i++){
+    const dat = words.slice(k, k + shortLen - deg + (i < shortN ? 0 : 1)); k += dat.length;
+    const e = rem(dat); if(i < shortN) dat.push(0); blocks.push(dat.concat(e));
+  }
+  const code = [];
+  for(let i = 0; i < blocks[0].length; i++) blocks.forEach((b, j) => { if(i !== shortLen - deg || j >= shortN) code.push(b[i]); });
+  /* The grid. */
+  const size = ver * 4 + 17;
+  const m = [...Array(size)].map(() => new Array(size).fill(false));
+  const fn = [...Array(size)].map(() => new Array(size).fill(false));
+  const set = (x, y, d) => { m[y][x] = d; fn[y][x] = true; };
+  for(let i = 0; i < size; i++){ set(6, i, i % 2 === 0); set(i, 6, i % 2 === 0); }
+  for(const [cx, cy] of [[3, 3], [size - 4, 3], [3, size - 4]])
+    for(let dy = -4; dy <= 4; dy++) for(let dx = -4; dx <= 4; dx++){
+      const x = cx + dx, y = cy + dy, d = Math.max(Math.abs(dx), Math.abs(dy));
+      if(x >= 0 && x < size && y >= 0 && y < size) set(x, y, d !== 2 && d !== 4);
+    }
+  if(ver > 1){
+    const n = Math.floor(ver / 7) + 2, step = Math.ceil((ver * 4 + 4) / (n * 2 - 2)) * 2, pos = [6];
+    for(let p = size - 7; pos.length < n; p -= step) pos.splice(1, 0, p);
+    pos.forEach((a, i) => pos.forEach((b, j) => {
+      if((i === 0 && j === 0) || (i === 0 && j === n - 1) || (i === n - 1 && j === 0)) return;
+      for(let dy = -2; dy <= 2; dy++) for(let dx = -2; dx <= 2; dx++) set(a + dx, b + dy, Math.max(Math.abs(dx), Math.abs(dy)) !== 1);
+    }));
+  }
+  const format = (mask) => {
+    const d = mask; let r = d; for(let i = 0; i < 10; i++) r = (r << 1) ^ ((r >>> 9) * 0x537);
+    const f = ((d << 10) | r) ^ 0x5412, bit = (i) => ((f >>> i) & 1) === 1;
+    for(let i = 0; i <= 5; i++) set(8, i, bit(i));
+    set(8, 7, bit(6)); set(8, 8, bit(7)); set(7, 8, bit(8));
+    for(let i = 9; i < 15; i++) set(14 - i, 8, bit(i));
+    for(let i = 0; i < 8; i++) set(size - 1 - i, 8, bit(i));
+    for(let i = 8; i < 15; i++) set(8, size - 15 + i, bit(i));
+    set(8, size - 8, true);
+  };
+  format(0);
+  if(ver >= 7){
+    let r = ver; for(let i = 0; i < 12; i++) r = (r << 1) ^ ((r >>> 11) * 0x1F25);
+    const v = (ver << 12) | r;
+    for(let i = 0; i < 18; i++){ const d = ((v >>> i) & 1) === 1, a = size - 11 + i % 3, b = Math.floor(i / 3); set(a, b, d); set(b, a, d); }
+  }
+  for(let right = size - 1, i = 0; right >= 1; right -= 2){
+    if(right === 6) right = 5;
+    for(let vert = 0; vert < size; vert++) for(let j = 0; j < 2; j++){
+      const x = right - j, y = ((right + 1) & 2) === 0 ? size - 1 - vert : vert;
+      if(!fn[y][x] && i < code.length * 8){ m[y][x] = ((code[i >>> 3] >>> (7 - (i & 7))) & 1) === 1; i++; }
+    }
+  }
+  const MASK = [(x, y) => (x + y) % 2 === 0, (x, y) => y % 2 === 0, (x) => x % 3 === 0, (x, y) => (x + y) % 3 === 0,
+    (x, y) => (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0, (x, y) => x * y % 2 + x * y % 3 === 0,
+    (x, y) => (x * y % 2 + x * y % 3) % 2 === 0, (x, y) => ((x + y) % 2 + x * y % 3) % 2 === 0];
+  const flip = (k) => { for(let y = 0; y < size; y++) for(let x = 0; x < size; x++) if(!fn[y][x] && MASK[k](x, y)) m[y][x] = !m[y][x]; };
+  const score = () => {
+    let s = 0, dark = 0;
+    const line = (get) => {
+      for(let a = 0; a < size; a++){
+        let run = 1;
+        for(let b = 1; b <= size; b++){
+          if(b < size && get(a, b) === get(a, b - 1)) run++;
+          else { if(run >= 5) s += run - 2; run = 1; }
+        }
+        for(let b = 0; b + 7 <= size; b++){
+          const p = [1, 0, 1, 1, 1, 0, 1].every((v, k) => get(a, b + k) === !!v);
+          if(!p) continue;
+          const light = (from, to) => { for(let k = from; k < to; k++) if(k >= 0 && k < size && get(a, k)) return false; return true; };
+          if(light(b - 4, b) || light(b + 7, b + 11)) s += 40;
+        }
+      }
+    };
+    line((a, b) => m[a][b]); line((a, b) => m[b][a]);
+    for(let y = 0; y < size - 1; y++) for(let x = 0; x < size - 1; x++){ const c = m[y][x]; if(c === m[y][x + 1] && c === m[y + 1][x] && c === m[y + 1][x + 1]) s += 3; }
+    m.forEach(r => r.forEach(c => { if(c) dark++; }));
+    return s + Math.floor(Math.abs(dark * 20 - size * size * 10) / (size * size)) * 10;
+  };
+  let best = 0, bestScore = Infinity;
+  for(let k = 0; k < 8; k++){ flip(k); format(k); const sc = score(); if(sc < bestScore){ best = k; bestScore = sc; } flip(k); }
+  flip(best); format(best);
+  return m;
+}
+/* As an SVG: dark squares on white with the four-module quiet zone the
+   scanner needs, in both themes - a QR code is read by a camera, not by the
+   colour scheme. */
+function _secQrSvg(text, label){
+  const m = _secQr(text); if(!m) return '';
+  const n = m.length + 8; let d = '';
+  m.forEach((r, y) => r.forEach((c, x) => { if(c) d += 'M' + (x + 4) + ' ' + (y + 4) + 'h1v1h-1z'; }));
+  return '<svg class="sec-qr" viewBox="0 0 ' + n + ' ' + n + '" role="img" aria-label="' + escH(label) + '" shape-rendering="crispEdges"><rect width="' + n + '" height="' + n + '" fill="#fff"/><path d="' + d + '" fill="#000"/></svg>';
+}
+
 async function _secTotpOn(){
   const proof = await _secProof(); if(!proof) return;
   let d; try{ d = await _secApi.call('/auth/totp/start', { proof }); }catch(e){ return _secFail(e); }
   const host = $('sec-totp-setup'); if(!host) return;
   const grouped = d.secret.match(/.{1,4}/g).join(' ');
   host.innerHTML = '<div class="sec-setup">'
-    + '<p class="set-sub">' + escH(T('1. In your authenticator app, add an account and enter this key (or open the link on your phone):')) + '</p>'
+    + '<p class="set-sub">' + escH(T('1. Scan this with your authenticator app, or enter the key below:')) + '</p>'
+    + (/^otpauth:\/\/totp\//.test(d.uri || '') ? _secQrSvg(d.uri, T('QR code for your authenticator app')) : '')
     + '<div class="sec-secret" data-no-i18n><code>' + escH(grouped) + '</code></div>'
     + '<div class="sec-row"><button class="btn bs" id="sec-key-copy">' + escH(T('Copy key')) + '</button><button class="btn bs" id="sec-key-open">' + escH(T('Open in authenticator app')) + '</button></div>'
     + '<label class="fp-lbl" for="sec-first">' + escH(T('2. Enter the 6-digit code it shows')) + '</label>'
