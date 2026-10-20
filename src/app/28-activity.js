@@ -25,6 +25,14 @@ const ACT_LABEL = {
   session_ended:          ['A sign-in was ended from the device list', 'warn'],
   account_created:        ['Account created', ''],
   password_changed:       ['Password changed', 'warn'],
+  /* Toned, every one: adding a passkey or turning two-step off is exactly what
+     somebody keeping a stolen account would do, and the owner looking at this
+     screen after a scare needs those to stand out. */
+  passkey_added:          ['A passkey was added', 'warn'],
+  passkey_removed:        ['A passkey was removed', 'warn'],
+  mfa_on:                 ['Two-step sign-in was turned on', ''],
+  mfa_off:                ['Two-step sign-in was turned off', 'warn'],
+  recovery_codes_new:     ['New recovery codes were made', 'warn'],
   plan_changed:           ['Plan changed', ''],
   /* Toned, because on a compromised account this is how somebody quietly ends
      a subscription - and the person it belongs to finds out when their plan

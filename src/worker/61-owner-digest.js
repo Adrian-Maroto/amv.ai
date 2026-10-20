@@ -755,7 +755,10 @@ async function authResetConfirm(request, env) {
             || _rlIp(request);
   const rcBlock = await guardAction(env, `resetconfirm:${rcIp}`, 10, 60, 'password resets');
   if (rcBlock) return rcBlock;
-  { const bad = _passwordProblem(password); if(bad) return json(bad, 400); }
+  /* Only the bound here: how long it must be depends on the account (a
+     passkey or an authenticator app lowers it to 8), and the account is not
+     known until the token is read below. */
+  { const bad = _passwordTooLong(password); if(bad) return json(bad, 400); }
   const stored = await env.AMV_KV.get(`reset:${token}`);
   if (!stored) return json({ error: 'This reset link is invalid or has expired. Please request a new one.' }, 400);
   /* Stored as {email, at}. The timestamp exists because erasure cannot reach
@@ -780,6 +783,7 @@ async function authResetConfirm(request, env) {
   if (_passwordIsPersonal(password, email, acct.name || ''))
     return json({ error: 'That password is your own email address or name, which is the first thing anybody holding your address would try. Please choose another.',
                   code: 'password_is_personal' }, 400);
+  { const bad = _passwordProblem(password, acct); if(bad) return json(bad, 400); }
   if (issuedAt && acct.createdAt && acct.createdAt > issuedAt) {
     await env.AMV_KV.delete(`reset:${token}`);
     audit(env, 'reset_token_predates_account', { email });

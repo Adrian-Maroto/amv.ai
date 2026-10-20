@@ -561,3 +561,23 @@ read as a document and never as an instruction. `ask-about-a-file-you-sent-befor
 was invisible to the check that the server forwards every tool).
 
 *Next:* a server-side index for libraries too large to search on a phone.
+
+## Account security, step one - passkeys and a second step (done)
+
+Owner decision, 2026-10-20. Somebody can sign in with a passkey - the
+device's fingerprint, face or PIN, no password and no emailed code - and can
+turn on an authenticator app, after which a password (or Google) on a new
+device asks for its code instead of the emailed one, with ten recovery codes
+for a lost phone. Any change to how somebody signs in needs proof in the same
+request (the password, a code, or a passkey); an API key can change none of
+it; the last way into an account cannot be removed. A password guarding an
+account alone is 15 characters, 8 with a second factor. Every verification -
+CBOR, the COSE key, ES256 and RS256 signatures, origin, site, user
+verification, the counter, single-use challenges - is in the Worker with no
+library. `a-passkey-or-a-second-step-guards-the-account` (53 assertions, real
+keys from a test authenticator) and `sign-in-with-a-passkey` (Chromium's own
+virtual authenticator, 18); nineteen of twenty mutations caught.
+
+*Next:* a QR code to scan during setup from a computer (today: the key to
+type, or a link that opens on the phone), and proof before deleting an account
+that has a second factor.

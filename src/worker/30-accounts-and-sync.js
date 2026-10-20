@@ -194,14 +194,27 @@ function _passwordTooLong(password){
 
    Renamed with it, because a name promising one check on a function doing
    three is how the next person reads past it. */
-function _passwordProblem(password){
+/* HOW LONG, BY WHAT ELSE GUARDS THE ACCOUNT (owner decision, 2026-10-20).
+   A password that is the only thing between a stranger and an account has to
+   be long: NIST SP 800-63B asks 15 characters of a password used alone, and 8
+   of one used with a second factor. So 15 for an account with no passkey and
+   no authenticator app - every new account - and 8 once it has one. Only where
+   a password is SET; nobody is locked out of a password they already have. */
+const PASSWORD_MIN_ALONE = 15;
+function _passwordProblem(password, acct){
   const tooLong = _passwordTooLong(password);
   if(tooLong) return tooLong;
-  if(String(password == null ? '' : password).length < PASSWORD_MIN)
-    return { error:'Password must be at least ' + PASSWORD_MIN + ' characters.', code:'password_too_short' };
+  /* First, because it is the more useful thing to hear: "that is one of the
+     most guessed passwords" teaches something "too short" does not. */
   if(_isCommonPassword(password))
     return { error:'That password is one of the most commonly guessed ones, so it would not protect the account. Please choose another.',
              code:'password_too_common' };
+  const f = acct ? _acctFactors(acct) : null;
+  const min = f && (f.passkeys || f.totp) ? PASSWORD_MIN : PASSWORD_MIN_ALONE;
+  if(String(password == null ? '' : password).length < min)
+    return { error: min === PASSWORD_MIN_ALONE
+               ? 'Use at least ' + min + ' characters - a short phrase you will remember works well. (With a passkey or an authenticator app on the account, 8 is enough.)'
+               : 'Password must be at least ' + min + ' characters.', code:'password_too_short', min };
   return null;
 }
 
@@ -329,10 +342,13 @@ async function authSignup(request, env){
   /* Length, commonness and every other strength rule arrive together from the
      one gate now - the separate common-password line that used to sit here is
      exactly why the two reset routes did not have one. */
-  { const bad = _passwordProblem(password); if(bad) return json(bad, 400); }
+  /* The bound first (it is about the server); then whether it is their own
+     address or name, which says more than "too short" would; then the rest. */
+  { const bad = _passwordTooLong(password); if(bad) return json(bad, 400); }
   if(_passwordIsPersonal(password, em, name))
     return json({ error:'That password is your own email address or name, which is the first thing anybody holding your address would try. Please choose another.',
                   code:'password_is_personal' }, 400);
+  { const bad = _passwordProblem(password); if(bad) return json(bad, 400); }
   const safeName = String(name||'').slice(0, 80);
   const salt = crypto.randomUUID();
   const pwHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);
@@ -577,6 +593,12 @@ async function authLogin(request, env) {
       });
     }catch(e){ /* non-fatal - login still succeeds */ }
   }
+  /* AN AUTHENTICATOR APP, WHERE THERE IS ONE, IS THE OTHER HALF instead of
+     the emailed code: the account's mailbox alone then no longer opens it
+     (73-passkeys-and-mfa.js). A device that has proved itself before is
+     trusted the same way either way. */
+  if (_acctFactors(acct).totp && !(await _deviceTrusted(env, request, body, em)))
+    return _mfaAsk(env, em, acct.name || name || '');
   /* THE PASSWORD IS ONE HALF. On a device this account has not proved itself
      on, the other half is a code sent to the address - see _startSignInCode. */
   let trust = null;

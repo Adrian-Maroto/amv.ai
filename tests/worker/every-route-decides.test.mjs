@@ -58,6 +58,8 @@ const PUBLIC = {
   '/auth/reset/code':    'same flow',
   '/auth/reset/verify':  'same flow',
   '/auth/login/verify':  'the second half of signing in - the emailed code, bound to the challenge the password check issued, is the credential',
+  '/auth/login/mfa':     'the second half of signing in with an authenticator app - the code or a recovery code, bound to the challenge the password check issued, is the credential',
+  '/auth/passkey/signin': 'signing in with a passkey - the signature over a challenge this server issued, by a key enrolled to the account, is the credential',
   '/auth/login/resend':  'the same challenge, a new code to the same address - it can only ever mail the account it was issued for',
   '/waitlist':           'a public sign-up form',
   '/v1/engines':         'what the product offers right now, AMV names only - nothing about who is asking',

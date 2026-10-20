@@ -228,7 +228,7 @@ globalThis.fetch = async (url, opts) => {
   sentFrom.push(JSON.parse(opts.body));
   return { ok: true, status: 200, json: async () => ({ id: 'e' }) };
 };
-await W.authSignup(post('/auth/signup', { name: 'V', email: 'onlykey@test.com', password: 'pass12345' }), onlyKey);
+await W.authSignup(post('/auth/signup', { name: 'V', email: 'onlykey@test.com', password: 'pass12345-long-enough' }), onlyKey);
 r = await W.authResetCode(post('/auth/reset/code', { email: 'onlykey@test.com' }), onlyKey);
 d = await r.json();
 ok(d.emailConfigured === true, 'EMAIL_API_KEY alone counts as configured', d);

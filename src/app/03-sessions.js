@@ -730,6 +730,75 @@ function _askForCode(d, email, kind){
 }
 try{ window._askForCode = _askForCode; }catch(e){}
 
+/* THE AUTHENTICATOR APP'S CODE - the second step for an account that turned
+   one on (73-passkeys-and-mfa.js). The same screen as the emailed code, with
+   a recovery code as the way out when the phone is not to hand. Resolves with
+   the session, or null if they back out. */
+function _askForMfa(d, email){
+  return new Promise((resolve) => {
+    const ovr = $('ovr'); if(!ovr){ resolve(null); return; }
+    let busy = false, rec = false;
+    ovr.innerHTML =
+      '<div class="share-modal fp-modal" role="dialog" aria-modal="true" aria-labelledby="mf-h">'+
+        '<button class="oc" id="mf-x" aria-label="'+escH(T('Close'))+'">&#215;</button>'+
+        '<div class="share-title" id="mf-h">'+escH(T('Two-step sign-in'))+'</div>'+
+        '<p class="fp-sub" id="mf-sub">'+escH(T('Enter the 6-digit code from your authenticator app.'))+'</p>'+
+        '<div id="mf-msg" class="fp-msg" role="status" aria-live="polite"></div>'+
+        '<label class="fp-lbl" for="mf-code" id="mf-lbl">'+escH(T('Code'))+'</label>'+
+        '<input id="mf-code" class="fp-in fp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">'+
+        '<button class="btn bp fp-go" id="mf-go">'+escH(T('Sign in'))+'</button>'+
+        '<div class="fp-alt"><button id="mf-rec">'+escH(T('Use a recovery code instead'))+'</button></div>'+
+      '</div>';
+    ovr.classList.add('on');
+    const msg = (t) => { const e = $('mf-msg'); if(e){ e.textContent = t || ''; e.className = 'fp-msg' + (t ? ' on err' : ''); } };
+    const ci = $('mf-code');
+    const go = async () => {
+      if(busy) return;
+      const v = (ci.value || '').trim();
+      if(!rec && !/^\d{6}$/.test(v)){ msg(T('Enter the 6-digit code.')); return; }
+      if(rec && v.replace(/[^A-Za-z0-9]/g, '').length < 12){ msg(T('Enter the whole recovery code.')); return; }
+      busy = true; const b = $('mf-go'); if(b){ b.disabled = true; b.textContent = T('Checking\u2026'); }
+      msg('');
+      try{ resolve(await AMV_API.verifyMfa(d.challenge, rec ? { recovery: v } : { code: v }, email)); }
+      catch(e){
+        busy = false; if(b){ b.disabled = false; b.textContent = T('Sign in'); }
+        msg(e.message || T('That code did not work.')); ci.value = ''; ci.focus();
+        if(e && (e.code === 'mfa_expired' || e.code === 'mfa_locked'))
+          setTimeout(() => { closeOvr(); try{ openAuth('login'); const ef = $('a-email'); if(ef) ef.value = email; showAuthErr(e.message); }catch(_){} resolve(null); }, 1600);
+      }
+    };
+    on($('mf-go'), 'click', go);
+    on(ci, 'keydown', e => { if(e.key === 'Enter') go(); });
+    on(ci, 'input', () => { if(!rec){ ci.value = ci.value.replace(/\D/g, '').slice(0, 6); if(ci.value.length === 6) go(); } });
+    on($('mf-rec'), 'click', () => {
+      rec = !rec;
+      ci.value = ''; ci.maxLength = rec ? 20 : 6; ci.inputMode = rec ? 'text' : 'numeric'; ci.placeholder = rec ? 'XXXX-XXXX-XXXX' : '000000';
+      $('mf-sub').textContent = rec ? T('Enter one of the recovery codes you saved. Each works once.') : T('Enter the 6-digit code from your authenticator app.');
+      $('mf-rec').textContent = rec ? T('Use the authenticator app instead') : T('Use a recovery code instead');
+      ci.focus();
+    });
+    on($('mf-x'), 'click', () => { closeOvr(); resolve(null); });
+    setTimeout(() => { try{ ci.focus(); }catch(e){} }, 60);
+  });
+}
+try{ window._askForMfa = _askForMfa; }catch(e){}
+
+/* SIGN IN WITH A PASSKEY - from the sign-in form, where the browser can. */
+async function signInWithPasskey(){
+  if(!(window.AMV_API && AMV_API.live)){ showAuthErr(T('Passkeys need AMV\u2019s server, and this copy is not connected to one.')); return; }
+  try{
+    const d = await AMV_API.passkeySignin();
+    if(d && d.token && d.email){
+      const nm = d.name || d.email.split('@')[0];
+      const ini = nm.split(' ').filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2) || '??';
+      closeOvr(); loginUser({ name: nm, email: d.email, ini, provider: 'passkey' });
+    }
+  }catch(e){
+    showAuthErr(e && e.name === 'NotAllowedError' ? T('The passkey prompt was closed. Try again, or use your password.') : ((e && e.message) || T('That passkey did not sign you in.')));
+  }
+}
+try{ window.signInWithPasskey = signInWithPasskey; }catch(e){}
+
 /* Password reset - sends a secure reset link via the backend's email service.
    Real apps do exactly this: no "current password" needed. */
 async function sendPasswordReset(email){
@@ -824,7 +893,7 @@ function _renderForgot(){
     ) : (
       '<p class="fp-sub">Code confirmed. Choose a new password for <b>'+escH(_RESET.email)+'</b>.</p>'+
       '<label class="fp-lbl" for="fp-pw">New password</label>'+
-      '<input id="fp-pw" class="fp-in" type="password" autocomplete="new-password" placeholder="At least 8 characters">'+
+      '<input id="fp-pw" class="fp-in" type="password" autocomplete="new-password" placeholder="'+escH(T('At least 15 characters'))+'">'+
       '<label class="fp-lbl" for="fp-pw2">Confirm password</label>'+
       '<input id="fp-pw2" class="fp-in" type="password" autocomplete="new-password" placeholder="Type it again">'+
       '<button class="btn bp fp-go" id="fp-save">Set new password</button>'
@@ -971,7 +1040,9 @@ async function _forgotVerify(){
 async function _forgotSave(){
   const pw  = ($('fp-pw')?.value)||'';
   const pw2 = ($('fp-pw2')?.value)||'';
-  if(pw.length < 8){ _forgotMsg('Password must be at least 8 characters.'); return; }
+  /* The server decides the rest: 15 for an account a password guards alone,
+     8 with a passkey or an authenticator app, and says which. */
+  if(pw.length < 8){ _forgotMsg(T('Password must be at least 8 characters.')); return; }
   if(pw !== pw2){ _forgotMsg('Those passwords don\u2019t match.'); return; }
 
   const btn = $('fp-save');
@@ -1046,6 +1117,7 @@ async function doLoginForm() {
       let d=await AMV_API.login(em, {password:pw, provider:'email', ..._authBotFields()});
       /* Right password, new device: the code emailed to the address finishes it. */
       if(d&&d.needsCode){ d = await _askForCode(d, em, 'signin'); if(!d) return; }
+      if(d&&d.needsMfa){ d = await _askForMfa(d, em); if(!d) return; }
       if(d&&d.token){
         clearFails(em);
         const nm=d.name||(findAccount(em)?.name)||em.split('@')[0];
@@ -1169,10 +1241,14 @@ async function handleGoogleCred(resp) {
         // The invite code, if they arrived through one, so a Google sign-up is
         // attributed the same way an email one is. The server verifies the
         // credential itself with Google.
-        body:JSON.stringify({ credential:resp.credential, ...((typeof _refPending==='function' && _refPending()) ? { ref:_refPending() } : {}) })
+        body:JSON.stringify({ credential:resp.credential, ...((typeof _refPending==='function' && _refPending()) ? { ref:_refPending() } : {}),
+          ...(_devTok(p.email) ? { deviceToken:_devTok(p.email) } : {}) })
       });
       if(r.ok){
-        const data=await r.json();
+        let data=await r.json();
+        /* An authenticator app on the account: Google proved the address, the
+           app's code proves the person. */
+        if(data.needsMfa){ data = await _askForMfa(data, p.email); if(!data) return; }
         // Spent - see doSignupForm for why it must not carry to the next account.
         try{ if(typeof _refClear==='function') _refClear(); }catch(e){}
         // server returns the verified profile + a session token

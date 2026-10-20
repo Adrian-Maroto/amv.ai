@@ -15105,3 +15105,27 @@ code nobody tests until somebody turns it on.
 Rule: before describing what part of a feature to keep, read what that part
 actually returns. And a feature held off by a constant is either given a date
 and an owner to make it work, or removed - not carried.
+
+## 596. A claim and the thing it claims must not share a name
+
+Passkey challenges were stored as `pkchal:<id>` and spent with
+`_claimOnce(env, 'pkchal', id)`. With the Durable Object bound, a claim lives
+in the object and the two never meet. Without it, `_claimOnce` falls back to
+storage and writes its marker as `kind:id` - which is `pkchal:<id>`, the
+challenge itself. Every claim found the challenge there, called it already
+taken, and refused every passkey, on every deployment without the object.
+
+The Worker suite passed: its stand-in object answered claims itself, so the
+fallback never ran. The browser suite, on a plain store, found it on its first
+run.
+
+Rule: a claim gets a kind of its own (`pkspent`), never the record's. And a
+lock or a claim is tested on each storage path it can take - a test with the
+object bound proves the object, not the code beside it.
+
+Also from this change (owner decision, 2026-10-20): a password that is the
+only thing guarding an account is 15 characters (NIST SP 800-63B), 8 with a
+passkey or an authenticator app; changes to how somebody signs in need proof
+in the same request; an API key can change none of it. 53 Worker assertions
+and 18 in the browser; twenty mutations, nineteen caught - the one left is the
+code-replay check before the lock, which the check inside it covers.

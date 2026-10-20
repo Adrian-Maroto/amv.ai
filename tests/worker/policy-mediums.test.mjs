@@ -27,7 +27,9 @@ section('AMV-051: stronger password policy at signup');
   ok((await signup(env, 'a@x.com', 'short12')).status === 400, 'a 7-character password is rejected');
   ok((await signup(env, 'b@x.com', 'password123')).status === 400, 'a common password is rejected');
   ok((await signup(env, 'c@x.com', 'aaaaaaaa')).status === 400, 'an all-same-character password is rejected');
-  const good = await signup(env, 'd@x.com', 'Str0ngPass!88');
+  /* 15 characters for an account a password guards alone (NIST SP 800-63B). */
+  ok((await signup(env, 'e@x.com', 'Str0ngPass!88')).status === 400, 'a 13-character password alone is rejected');
+  const good = await signup(env, 'd@x.com', 'Str0ngPass!88-long');
   ok(good.status < 400, 'a strong password is accepted', good.status);
 }
 

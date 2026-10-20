@@ -630,6 +630,24 @@ async function _loadSignIns(){
   }));
 }
 try{ window._loadSignIns=_loadSignIns; }catch(e){}
+/* Passkeys, the authenticator app and recovery codes are managed by
+   security.js, fetched when this pane opens - the page carries only this. */
+let _secP=null;
+function _loadSecurityFactors(){
+  if(!$('sec-mfa')) return;
+  if(!_secP) _secP=new Promise(res=>{
+    const sc=document.createElement('script'); sc.src='security.js';
+    const fail=()=>{ _secP=null; sc.remove(); res(false); };
+    sc.onload=()=>typeof window._secRenderNow==='function'?res(true):fail();
+    sc.onerror=fail;
+    document.head.appendChild(sc);
+  });
+  _secP.then(ok=>{
+    const h=$('sec-mfa'); if(!h) return;
+    if(ok) return window._secRenderNow();
+    h.innerHTML='<div class="set-sub">'+escH(T('That could not be loaded. Check your connection and try again.'))+'</div>';
+  });
+}
 
 // ── SKILLS ────────────────────────────────────────────────────
 // User-created instruction presets. Each active skill is injected into the
@@ -871,6 +889,7 @@ function _renderSetPaneInner(only, into){
           '<label class="sw"><input type="checkbox" id="acct-done-mail" aria-label="Email me when AMV is done" '+(loadStr('amv_done_mail')==='1'?'checked':'')+'><span class="sw-sl"></span></label></div>'+
         '<div class="set-sub" id="acct-done-msg" role="status" aria-live="polite" style="margin:6px 0 0"></div>'+
       '</div>'+
+      ((window.AMV_API && AMV_API.live && AMV_API.hasSession) ? '<div id="sec-mfa" aria-live="polite"><div class="ss2"><h3>'+escH(T('Passkeys'))+'</h3><div class="set-sub">'+escH(T('Loading…'))+'</div></div></div>' : '')+
       _activeSessionsHTML();
     on($('acct-done-mail'),'change',async function(){
       const box=this, msg=$('acct-done-msg'), want=box.checked;
@@ -899,6 +918,7 @@ function _renderSetPaneInner(only, into){
        "Signed out of all other sessions." Writing a second correct
        implementation here would leave two to keep in step; there is one. */
     _loadSignIns();
+    _loadSecurityFactors();
     on($('signout-others'),'click',()=>{
       const msg=$('sess-msg');
       if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){

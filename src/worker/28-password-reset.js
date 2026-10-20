@@ -236,7 +236,7 @@ async function authAdminReset(request, env){
   const email = String(body.email||'').toLowerCase().trim();
   const password = String(body.password||'');
   if(!email || !email.includes('@')) return json({ error:'valid email required' }, 400);
-  { const bad = _passwordProblem(password); if(bad) return json(bad, 400); }
+  { const bad = _passwordTooLong(password); if(bad) return json(bad, 400); }
   /* The address is in hand here, so the account's own email cannot be set as
      its password. An operator resetting somebody's account to their own
      address - which is the obvious thing to type - hands the next person who
@@ -247,6 +247,7 @@ async function authAdminReset(request, env){
 
   const acct = await DB.get(env, 'acct', email);
   if(!acct) return json({ error:'No account with that email.' }, 404);
+  { const bad = _passwordProblem(password, acct); if(bad) return json(bad, 400); }
 
   const salt = crypto.randomUUID().replace(/-/g,'');
   const newHash = await _hashPassword(password, salt, PBKDF2_ITERATIONS);

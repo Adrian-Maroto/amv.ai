@@ -160,6 +160,7 @@ function emitSandbox() {
   writeFileSync('invest.js', readFileSync('src/finance/invest.js'));
   writeFileSync('project-search.js', readFileSync('src/project/project-search.js'));
   writeFileSync('dna-editor.js', readFileSync('src/design/dna-editor.js'));
+  writeFileSync('security.js', readFileSync('src/security/security.js'));
   writeFileSync('spending.js', readFileSync('src/finance/spending.js'));
   writeFileSync('family.js', readFileSync('src/finance/family.js'));
   writeFileSync('health.js', readFileSync('src/health/health.js'));
@@ -1090,6 +1091,7 @@ const PUBLISH = [
   'invest.js',             // the Invest settings pane, fetched the first time it is opened
   'project-search.js',     // searches a project's files when they are larger than one message holds
   'dna-editor.js',         // the Design DNA editor, fetched the first time it is opened
+  'security.js',           // passkeys, the authenticator app and recovery codes, fetched when Security opens
   'spending.js',           // the spending limits pane, fetched the first time it is opened
   'family.js',             // the Family settings pane, fetched the first time it is opened
   'health.js',             // reads an Apple Health export, fetched when a .zip is attached

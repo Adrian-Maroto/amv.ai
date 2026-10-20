@@ -909,6 +909,9 @@ const AMV_API = {
     /* Right password on a device this account has not proved itself on: no
        session yet - the caller asks for the code that was just emailed. */
     if(d.needsCode && d.challenge) return d;
+    /* Right password, new device, an authenticator app on the account: the
+       caller asks for its code (or a recovery code) instead. */
+    if(d.needsMfa && d.challenge) return d;
     /* The CODE, not only the sentence. `captcha_required` is the moment the
        server states that a verification was expected - the one fact that
        separates "this deployment has no captcha" from "it has one and the
@@ -1187,6 +1190,31 @@ const AMV_API = {
     const d = await r.json().catch(()=>({}));
     if(d.token){ if(d.deviceToken) _devTokSet(email, d.deviceToken); this._setTokens(d); return d; }
     { const e=new Error(d.error || 'That code did not work.'); if(d.code) e.code=d.code; throw e; }
+  },
+  /* The authenticator app's code, or a recovery code, that finishes a sign-in
+     the password (or Google) started (/auth/login/mfa). */
+  async verifyMfa(challenge, answer, email){
+    if(!this.live) return null;
+    const r = await this._fetch('/auth/login/mfa', {method:'POST', body:JSON.stringify(Object.assign({challenge}, answer))});
+    const d = await r.json().catch(()=>({}));
+    if(d.token){ if(d.deviceToken) _devTokSet(email, d.deviceToken); this._setTokens(d); return d; }
+    { const e=new Error(d.error || 'That code did not work.'); if(d.code) e.code=d.code; throw e; }
+  },
+  /* Sign in with a passkey: the server's challenge, the device's fingerprint
+     or PIN, the server's check. No password and no email code. */
+  async passkeySignin(){
+    if(!this.live) return null;
+    const b = (s) => { const t = String(s).replace(/-/g, '+').replace(/_/g, '/'); const x = atob(t + '='.repeat((4 - t.length % 4) % 4)); const u = new Uint8Array(x.length); for(let i = 0; i < x.length; i++) u[i] = x.charCodeAt(i); return u.buffer; };
+    const e = (buf) => { let s = ''; for(const x of new Uint8Array(buf)) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+    const o = await (await this._fetch('/auth/passkey/options', {method:'POST', body:JSON.stringify({purpose:'signin'})})).json().catch(()=>({}));
+    if(!o.cid){ const er=new Error(o.error || 'Passkeys are not available right now.'); er.code=o.code; throw er; }
+    const c = await navigator.credentials.get({ publicKey: Object.assign({}, o.publicKey, { challenge: b(o.publicKey.challenge) }) });
+    const res = c.response;
+    const r = await this._fetch('/auth/passkey/signin', {method:'POST', body:JSON.stringify({ cid:o.cid, credential:{ id:c.id, type:c.type, response:{
+      clientDataJSON:e(res.clientDataJSON), authenticatorData:e(res.authenticatorData), signature:e(res.signature), userHandle: res.userHandle ? e(res.userHandle) : '' } } })});
+    const d = await r.json().catch(()=>({}));
+    if(d.token){ if(d.deviceToken && d.email) _devTokSet(d.email, d.deviceToken); this._setTokens(d); return d; }
+    { const er=new Error(d.error || 'That passkey did not sign you in.'); if(d.code) er.code=d.code; throw er; }
   },
   async resendCode(challenge){
     if(!this.live) return null;

@@ -17249,3 +17249,17 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
 .team-sso .team-scim-tok{ display:block; margin:var(--sp-2) 0; padding:var(--sp-2); font-family:var(--mn); font-size:var(--t-sm);
   color:var(--tx); background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-sm); word-break:break-all; user-select:all; }
 .team-sso .team-scim .btn{ min-height:44px; margin-top:var(--sp-2); }
+
+/* ═══ LAYER A328 - passkeys and two-step sign-in (Settings > Account) ═══
+   The secret an authenticator app takes is one long word in groups of four:
+   it wraps rather than pushing a phone sideways, and selects as a block. The
+   recovery codes are a monospaced list somebody copies or writes down. Every
+   button is a full-height target, here and in the second-step dialog. */
+.sec-row{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:var(--sp-2); }
+.sec-row .btn{ min-height:44px; }
+.sec-proof, .sec-setup, .sec-codes{ margin-top:var(--sp-3); padding:var(--sp-3); background:var(--s2); border:1px solid var(--bd); border-radius:var(--r-md); }
+.sec-secret code{ display:block; margin:var(--sp-2) 0; padding:var(--sp-2); font-family:var(--mn); font-size:var(--t-md); letter-spacing:.06em;
+  color:var(--tx); background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-sm); word-break:break-all; user-select:all; }
+.sec-code-list{ margin:var(--sp-2) 0; padding:var(--sp-2) var(--sp-3); font-family:var(--mn); font-size:var(--t-md); line-height:1.7;
+  color:var(--tx); background:var(--s1); border:1px solid var(--bd); border-radius:var(--r-sm); user-select:all; white-space:pre; overflow-x:auto; }
+#pk-btn{ margin-top:var(--sp-2); }

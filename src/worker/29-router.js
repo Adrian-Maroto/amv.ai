@@ -312,6 +312,8 @@ const NEEDS_SIGNING = new Set([
   '/auth/sso/finish',
   '/auth/refresh',
   '/auth/login/verify',
+  '/auth/login/mfa',
+  '/auth/passkey/signin',
 ]);
 
 /* Whether this deployment can serve this request at all.
@@ -630,6 +632,16 @@ async function _route(request, env, ctx) {
     case '/auth/login':      return authLogin(request, env);
     case '/auth/login/verify': return authLoginVerify(request, env);
     case '/auth/login/resend': return authLoginResend(request, env);
+    case '/auth/login/mfa':    return authLoginMfa(request, env);
+    case '/auth/passkey/options':  return passkeyOptions(request, env);
+    case '/auth/passkey/register': return passkeyRegister(request, env);
+    case '/auth/passkey/signin':   return passkeySignin(request, env);
+    case '/auth/passkey/remove':   return passkeyRemove(request, env);
+    case '/auth/security':         return securityStatus(request, env);
+    case '/auth/totp/start':       return totpStart(request, env);
+    case '/auth/totp/confirm':     return totpConfirm(request, env);
+    case '/auth/totp/disable':     return totpDisable(request, env);
+    case '/auth/recovery/new':     return recoveryNew(request, env);
     case '/auth/google':     return authGoogle(request, env);
     case '/auth/sso/start':  return authSsoStart(request, env);
     case '/auth/sso/finish': return authSsoFinish(request, env);

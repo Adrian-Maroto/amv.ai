@@ -909,6 +909,9 @@ const AMV_API = {
     /* Right password on a device this account has not proved itself on: no
        session yet - the caller asks for the code that was just emailed. */
     if(d.needsCode && d.challenge) return d;
+    /* Right password, new device, an authenticator app on the account: the
+       caller asks for its code (or a recovery code) instead. */
+    if(d.needsMfa && d.challenge) return d;
     /* The CODE, not only the sentence. `captcha_required` is the moment the
        server states that a verification was expected - the one fact that
        separates "this deployment has no captcha" from "it has one and the
@@ -1187,6 +1190,31 @@ const AMV_API = {
     const d = await r.json().catch(()=>({}));
     if(d.token){ if(d.deviceToken) _devTokSet(email, d.deviceToken); this._setTokens(d); return d; }
     { const e=new Error(d.error || 'That code did not work.'); if(d.code) e.code=d.code; throw e; }
+  },
+  /* The authenticator app's code, or a recovery code, that finishes a sign-in
+     the password (or Google) started (/auth/login/mfa). */
+  async verifyMfa(challenge, answer, email){
+    if(!this.live) return null;
+    const r = await this._fetch('/auth/login/mfa', {method:'POST', body:JSON.stringify(Object.assign({challenge}, answer))});
+    const d = await r.json().catch(()=>({}));
+    if(d.token){ if(d.deviceToken) _devTokSet(email, d.deviceToken); this._setTokens(d); return d; }
+    { const e=new Error(d.error || 'That code did not work.'); if(d.code) e.code=d.code; throw e; }
+  },
+  /* Sign in with a passkey: the server's challenge, the device's fingerprint
+     or PIN, the server's check. No password and no email code. */
+  async passkeySignin(){
+    if(!this.live) return null;
+    const b = (s) => { const t = String(s).replace(/-/g, '+').replace(/_/g, '/'); const x = atob(t + '='.repeat((4 - t.length % 4) % 4)); const u = new Uint8Array(x.length); for(let i = 0; i < x.length; i++) u[i] = x.charCodeAt(i); return u.buffer; };
+    const e = (buf) => { let s = ''; for(const x of new Uint8Array(buf)) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
+    const o = await (await this._fetch('/auth/passkey/options', {method:'POST', body:JSON.stringify({purpose:'signin'})})).json().catch(()=>({}));
+    if(!o.cid){ const er=new Error(o.error || 'Passkeys are not available right now.'); er.code=o.code; throw er; }
+    const c = await navigator.credentials.get({ publicKey: Object.assign({}, o.publicKey, { challenge: b(o.publicKey.challenge) }) });
+    const res = c.response;
+    const r = await this._fetch('/auth/passkey/signin', {method:'POST', body:JSON.stringify({ cid:o.cid, credential:{ id:c.id, type:c.type, response:{
+      clientDataJSON:e(res.clientDataJSON), authenticatorData:e(res.authenticatorData), signature:e(res.signature), userHandle: res.userHandle ? e(res.userHandle) : '' } } })});
+    const d = await r.json().catch(()=>({}));
+    if(d.token){ if(d.deviceToken && d.email) _devTokSet(d.email, d.deviceToken); this._setTokens(d); return d; }
+    { const er=new Error(d.error || 'That passkey did not sign you in.'); if(d.code) er.code=d.code; throw er; }
   },
   async resendCode(challenge){
     if(!this.live) return null;
@@ -4978,6 +5006,75 @@ function _askForCode(d, email, kind){
 }
 try{ window._askForCode = _askForCode; }catch(e){}
 
+/* THE AUTHENTICATOR APP'S CODE - the second step for an account that turned
+   one on (73-passkeys-and-mfa.js). The same screen as the emailed code, with
+   a recovery code as the way out when the phone is not to hand. Resolves with
+   the session, or null if they back out. */
+function _askForMfa(d, email){
+  return new Promise((resolve) => {
+    const ovr = $('ovr'); if(!ovr){ resolve(null); return; }
+    let busy = false, rec = false;
+    ovr.innerHTML =
+      '<div class="share-modal fp-modal" role="dialog" aria-modal="true" aria-labelledby="mf-h">'+
+        '<button class="oc" id="mf-x" aria-label="'+escH(T('Close'))+'">&#215;</button>'+
+        '<div class="share-title" id="mf-h">'+escH(T('Two-step sign-in'))+'</div>'+
+        '<p class="fp-sub" id="mf-sub">'+escH(T('Enter the 6-digit code from your authenticator app.'))+'</p>'+
+        '<div id="mf-msg" class="fp-msg" role="status" aria-live="polite"></div>'+
+        '<label class="fp-lbl" for="mf-code" id="mf-lbl">'+escH(T('Code'))+'</label>'+
+        '<input id="mf-code" class="fp-in fp-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000">'+
+        '<button class="btn bp fp-go" id="mf-go">'+escH(T('Sign in'))+'</button>'+
+        '<div class="fp-alt"><button id="mf-rec">'+escH(T('Use a recovery code instead'))+'</button></div>'+
+      '</div>';
+    ovr.classList.add('on');
+    const msg = (t) => { const e = $('mf-msg'); if(e){ e.textContent = t || ''; e.className = 'fp-msg' + (t ? ' on err' : ''); } };
+    const ci = $('mf-code');
+    const go = async () => {
+      if(busy) return;
+      const v = (ci.value || '').trim();
+      if(!rec && !/^\d{6}$/.test(v)){ msg(T('Enter the 6-digit code.')); return; }
+      if(rec && v.replace(/[^A-Za-z0-9]/g, '').length < 12){ msg(T('Enter the whole recovery code.')); return; }
+      busy = true; const b = $('mf-go'); if(b){ b.disabled = true; b.textContent = T('Checking\u2026'); }
+      msg('');
+      try{ resolve(await AMV_API.verifyMfa(d.challenge, rec ? { recovery: v } : { code: v }, email)); }
+      catch(e){
+        busy = false; if(b){ b.disabled = false; b.textContent = T('Sign in'); }
+        msg(e.message || T('That code did not work.')); ci.value = ''; ci.focus();
+        if(e && (e.code === 'mfa_expired' || e.code === 'mfa_locked'))
+          setTimeout(() => { closeOvr(); try{ openAuth('login'); const ef = $('a-email'); if(ef) ef.value = email; showAuthErr(e.message); }catch(_){} resolve(null); }, 1600);
+      }
+    };
+    on($('mf-go'), 'click', go);
+    on(ci, 'keydown', e => { if(e.key === 'Enter') go(); });
+    on(ci, 'input', () => { if(!rec){ ci.value = ci.value.replace(/\D/g, '').slice(0, 6); if(ci.value.length === 6) go(); } });
+    on($('mf-rec'), 'click', () => {
+      rec = !rec;
+      ci.value = ''; ci.maxLength = rec ? 20 : 6; ci.inputMode = rec ? 'text' : 'numeric'; ci.placeholder = rec ? 'XXXX-XXXX-XXXX' : '000000';
+      $('mf-sub').textContent = rec ? T('Enter one of the recovery codes you saved. Each works once.') : T('Enter the 6-digit code from your authenticator app.');
+      $('mf-rec').textContent = rec ? T('Use the authenticator app instead') : T('Use a recovery code instead');
+      ci.focus();
+    });
+    on($('mf-x'), 'click', () => { closeOvr(); resolve(null); });
+    setTimeout(() => { try{ ci.focus(); }catch(e){} }, 60);
+  });
+}
+try{ window._askForMfa = _askForMfa; }catch(e){}
+
+/* SIGN IN WITH A PASSKEY - from the sign-in form, where the browser can. */
+async function signInWithPasskey(){
+  if(!(window.AMV_API && AMV_API.live)){ showAuthErr(T('Passkeys need AMV\u2019s server, and this copy is not connected to one.')); return; }
+  try{
+    const d = await AMV_API.passkeySignin();
+    if(d && d.token && d.email){
+      const nm = d.name || d.email.split('@')[0];
+      const ini = nm.split(' ').filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 2) || '??';
+      closeOvr(); loginUser({ name: nm, email: d.email, ini, provider: 'passkey' });
+    }
+  }catch(e){
+    showAuthErr(e && e.name === 'NotAllowedError' ? T('The passkey prompt was closed. Try again, or use your password.') : ((e && e.message) || T('That passkey did not sign you in.')));
+  }
+}
+try{ window.signInWithPasskey = signInWithPasskey; }catch(e){}
+
 /* Password reset - sends a secure reset link via the backend's email service.
    Real apps do exactly this: no "current password" needed. */
 async function sendPasswordReset(email){
@@ -5072,7 +5169,7 @@ function _renderForgot(){
     ) : (
       '<p class="fp-sub">Code confirmed. Choose a new password for <b>'+escH(_RESET.email)+'</b>.</p>'+
       '<label class="fp-lbl" for="fp-pw">New password</label>'+
-      '<input id="fp-pw" class="fp-in" type="password" autocomplete="new-password" placeholder="At least 8 characters">'+
+      '<input id="fp-pw" class="fp-in" type="password" autocomplete="new-password" placeholder="'+escH(T('At least 15 characters'))+'">'+
       '<label class="fp-lbl" for="fp-pw2">Confirm password</label>'+
       '<input id="fp-pw2" class="fp-in" type="password" autocomplete="new-password" placeholder="Type it again">'+
       '<button class="btn bp fp-go" id="fp-save">Set new password</button>'
@@ -5219,7 +5316,9 @@ async function _forgotVerify(){
 async function _forgotSave(){
   const pw  = ($('fp-pw')?.value)||'';
   const pw2 = ($('fp-pw2')?.value)||'';
-  if(pw.length < 8){ _forgotMsg('Password must be at least 8 characters.'); return; }
+  /* The server decides the rest: 15 for an account a password guards alone,
+     8 with a passkey or an authenticator app, and says which. */
+  if(pw.length < 8){ _forgotMsg(T('Password must be at least 8 characters.')); return; }
   if(pw !== pw2){ _forgotMsg('Those passwords don\u2019t match.'); return; }
 
   const btn = $('fp-save');
@@ -5294,6 +5393,7 @@ async function doLoginForm() {
       let d=await AMV_API.login(em, {password:pw, provider:'email', ..._authBotFields()});
       /* Right password, new device: the code emailed to the address finishes it. */
       if(d&&d.needsCode){ d = await _askForCode(d, em, 'signin'); if(!d) return; }
+      if(d&&d.needsMfa){ d = await _askForMfa(d, em); if(!d) return; }
       if(d&&d.token){
         clearFails(em);
         const nm=d.name||(findAccount(em)?.name)||em.split('@')[0];
@@ -5417,10 +5517,14 @@ async function handleGoogleCred(resp) {
         // The invite code, if they arrived through one, so a Google sign-up is
         // attributed the same way an email one is. The server verifies the
         // credential itself with Google.
-        body:JSON.stringify({ credential:resp.credential, ...((typeof _refPending==='function' && _refPending()) ? { ref:_refPending() } : {}) })
+        body:JSON.stringify({ credential:resp.credential, ...((typeof _refPending==='function' && _refPending()) ? { ref:_refPending() } : {}),
+          ...(_devTok(p.email) ? { deviceToken:_devTok(p.email) } : {}) })
       });
       if(r.ok){
-        const data=await r.json();
+        let data=await r.json();
+        /* An authenticator app on the account: Google proved the address, the
+           app's code proves the person. */
+        if(data.needsMfa){ data = await _askForMfa(data, p.email); if(!data) return; }
         // Spent - see doSignupForm for why it must not carry to the next account.
         try{ if(typeof _refClear==='function') _refClear(); }catch(e){}
         // server returns the verified profile + a session token
@@ -32043,6 +32147,24 @@ async function _loadSignIns(){
   }));
 }
 try{ window._loadSignIns=_loadSignIns; }catch(e){}
+/* Passkeys, the authenticator app and recovery codes are managed by
+   security.js, fetched when this pane opens - the page carries only this. */
+let _secP=null;
+function _loadSecurityFactors(){
+  if(!$('sec-mfa')) return;
+  if(!_secP) _secP=new Promise(res=>{
+    const sc=document.createElement('script'); sc.src='security.js';
+    const fail=()=>{ _secP=null; sc.remove(); res(false); };
+    sc.onload=()=>typeof window._secRenderNow==='function'?res(true):fail();
+    sc.onerror=fail;
+    document.head.appendChild(sc);
+  });
+  _secP.then(ok=>{
+    const h=$('sec-mfa'); if(!h) return;
+    if(ok) return window._secRenderNow();
+    h.innerHTML='<div class="set-sub">'+escH(T('That could not be loaded. Check your connection and try again.'))+'</div>';
+  });
+}
 
 // ── SKILLS ────────────────────────────────────────────────────
 // User-created instruction presets. Each active skill is injected into the
@@ -32284,6 +32406,7 @@ function _renderSetPaneInner(only, into){
           '<label class="sw"><input type="checkbox" id="acct-done-mail" aria-label="Email me when AMV is done" '+(loadStr('amv_done_mail')==='1'?'checked':'')+'><span class="sw-sl"></span></label></div>'+
         '<div class="set-sub" id="acct-done-msg" role="status" aria-live="polite" style="margin:6px 0 0"></div>'+
       '</div>'+
+      ((window.AMV_API && AMV_API.live && AMV_API.hasSession) ? '<div id="sec-mfa" aria-live="polite"><div class="ss2"><h3>'+escH(T('Passkeys'))+'</h3><div class="set-sub">'+escH(T('Loading…'))+'</div></div></div>' : '')+
       _activeSessionsHTML();
     on($('acct-done-mail'),'change',async function(){
       const box=this, msg=$('acct-done-msg'), want=box.checked;
@@ -32312,6 +32435,7 @@ function _renderSetPaneInner(only, into){
        "Signed out of all other sessions." Writing a second correct
        implementation here would leave two to keep in step; there is one. */
     _loadSignIns();
+    _loadSecurityFactors();
     on($('signout-others'),'click',()=>{
       const msg=$('sess-msg');
       if(!(window.AMV_API && AMV_API.live && AMV_API.hasSession)){
@@ -33514,10 +33638,12 @@ function openAuth(mode){
           '<svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>'+
           'Continue with Google'+
         '</button>'+
+        /* A passkey: offered where the browser can make one sign in. */
+        (isL && window.PublicKeyCredential ? '<button class="gbtn" id="pk-btn" type="button">'+escH(T('Sign in with a passkey'))+'</button>' : '')+
         '<div class="ord"><span>or</span></div>'+
         (!isL?'<div><label class="lbl">Full Name</label><input type="text" id="a-name" placeholder="Alex Johnson" autocomplete="name"></div>':'')+
         '<div><label class="lbl">Email</label><input type="email" id="a-email" placeholder="you@example.com" autocomplete="email"></div>'+
-        '<div><label class="lbl">Password</label><input type="password" id="a-pass" placeholder="Minimum 6 characters" autocomplete="'+(isL?'current-password':'new-password')+'"></div>'+
+        '<div><label class="lbl">Password</label><input type="password" id="a-pass" placeholder="'+escH(isL?T('Your password'):T('At least 15 characters'))+'" autocomplete="'+(isL?'current-password':'new-password')+'"></div>'+
         // Honeypot: hidden from humans, bots fill it → server rejects. Not display:none
         // (some bots skip those); off-screen + aria-hidden + tab-skipped instead.
         '<div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;overflow:hidden"><label>Company<input type="text" id="a-company" name="company" tabindex="-1" autocomplete="off"></label></div>'+
@@ -33532,6 +33658,7 @@ function openAuth(mode){
   onBackdrop($('auth-bg'),closeOvr);
   document.getElementById('auth-x')?.addEventListener('click',_dismissOvr);
   document.getElementById('g-btn')?.addEventListener('click',triggerGoogle);
+  document.getElementById('pk-btn')?.addEventListener('click',signInWithPasskey);
   document.getElementById('auth-submit')?.addEventListener('click',()=>isL?doLoginForm():doSignupForm());
   try{ _mountTurnstile(); }catch(e){}
   /* The sheet is open and "Continue with Google" is on screen, so this is the
@@ -45339,6 +45466,14 @@ const ACT_LABEL = {
   session_ended:          ['A sign-in was ended from the device list', 'warn'],
   account_created:        ['Account created', ''],
   password_changed:       ['Password changed', 'warn'],
+  /* Toned, every one: adding a passkey or turning two-step off is exactly what
+     somebody keeping a stolen account would do, and the owner looking at this
+     screen after a scare needs those to stand out. */
+  passkey_added:          ['A passkey was added', 'warn'],
+  passkey_removed:        ['A passkey was removed', 'warn'],
+  mfa_on:                 ['Two-step sign-in was turned on', ''],
+  mfa_off:                ['Two-step sign-in was turned off', 'warn'],
+  recovery_codes_new:     ['New recovery codes were made', 'warn'],
   plan_changed:           ['Plan changed', ''],
   /* Toned, because on a compromised account this is how somebody quietly ends
      a subscription - and the person it belongs to finds out when their plan

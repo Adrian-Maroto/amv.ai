@@ -486,6 +486,13 @@ async function authGoogle(request, env) {
       catch(e){ try{ await _workerError(env, 'authGoogle:accounting', e); }catch(_){} }
       try{ await _referralCapture(env, request, em, body.ref); }catch(e){}
     }
+    /* Google proves the address; an authenticator app the account turned on
+       is still asked for on a device that has not proved itself, or Google
+       would be the way around it. */
+    if(!created){
+      const a = await DB.get(env, 'acct', em);
+      if(_acctFactors(a).totp && !(await _deviceTrusted(env, request, body, em))) return _mfaAsk(env, em, name);
+    }
     await _userEvent(env, request, em, 'signed_in', { reason: 'Google' });
     const tokens = await issueTokens(env, em, name, await _sessOpen(env, request, em));
     return _tokenResponse(env, tokens, { email: em, name, picture: claims.picture || '' });
@@ -1561,6 +1568,13 @@ async function authDeleteAccount(request, env) {
      message. So what survives is collected, named, returned, audited and paged.
      Erasure that half-worked and SAYS so can be finished by hand; erasure that
      half-worked in silence cannot, because nobody knows to look. */
+  /* Each passkey is also indexed by its own id, so a passkey sign-in can find
+     its account. Read before the account record goes, or nothing would say
+     which index entries were this person's - and a passkey of a deleted
+     account would keep resolving to an address. */
+  let myPasskeys = [];
+  try { const a = await DB.get(env, 'acct', email); myPasskeys = ((a && a.passkeys) || []).map(k => k.id).filter(Boolean); }
+  catch { _eraseFailed('passkey index'); }
   let deleted = 0;
   for (const kind of perUserKinds) {
     try { await DB.del(env, kind, email); deleted++; }
@@ -1593,8 +1607,11 @@ async function authDeleteAccount(request, env) {
                     carry no identity and stay; these name someone, so erasure
                     means them too (AMV-101). */
                  `factive:${email}`,
+                 /* An authenticator app being set up: its secret, sealed. */
+                 `totpset:${email}`,
                  ...FUNNEL_STEPS.map(step => `fstep:${email}:${step}`)];
   if (myCode) loose.push(`refcode:${myCode}`);
+  for (const id of myPasskeys) loose.push(`pkcred:${id}`);
   for (const raw of loose) {
     /* `resetcode:` in this list is a LIVE credential - the comment above says
        so - and the referral pair must go both ways or a code keeps resolving
