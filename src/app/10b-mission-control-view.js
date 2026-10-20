@@ -1029,7 +1029,7 @@ function mcHookSigning(arg){
     const paste = k === 'stripe' || k === 'slack' || k === 'github';
     $('hs-form').innerHTML = (paste ? '<label class="ob-sub" for="hs-secret">' + escH(k === 'github' ? T('Secret (leave empty and AMV makes one)')
         : k === 'stripe' ? T('Signing secret from Stripe (whsec_...)') : T('Signing Secret from your Slack app')) + '</label>'
-        + '<input id="hs-secret" type="password" autocomplete="off" spellcheck="false" class="fp-in">' : '')
+        + '<input id="hs-secret" type="password" autocomplete="new-password" spellcheck="false" class="fp-in">' : '')
       + '<div class="sec-row"><button class="btn bp" id="hs-save">' + escH(T('Require signing')) + '</button></div>';
     on($('hs-save'), 'click', () => save(k));
   };
