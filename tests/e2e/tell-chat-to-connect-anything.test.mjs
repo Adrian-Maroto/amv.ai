@@ -95,10 +95,7 @@ const env = makeEnv({
 
 const L = await bootLive({ env, outbound, port: 9187 });
 const { page } = L;
-/* CI once lost this page to a navigation in the middle of a turn ("Execution
-   context was destroyed"), and nothing said where it went. Every later
-   navigation of the main frame is printed, so the next one names itself. */
-page.on('framenavigated', (f) => { if (f === page.mainFrame()) console.error('[navigated] ' + f.url()); });
+/* Navigations after the first load are printed by bootLive itself. */
 
 const EMAIL = 'connectall@example.com';
 const PW = 'A-real-Passw0rd!';

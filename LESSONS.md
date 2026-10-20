@@ -15129,3 +15129,26 @@ passkey or an authenticator app; changes to how somebody signs in need proof
 in the same request; an API key can change none of it. 53 Worker assertions
 and 18 in the browser; twenty mutations, nineteen caught - the one left is the
 code-replay check before the lock, which the check inside it covers.
+
+## 597. A lock is applied to what it protects, not to everything behind the door
+
+`ALLOWED_ORIGIN` locks the browser API to AMV's own site, which is what lets
+the session live in an HttpOnly cookie. `_applyCors` applied that lock by
+stamping every response with "only the site may read this". That covered two
+callers who are cross-site by design and never carry a cookie: the website
+widget, whose handlers had already named the customer's site correctly and
+were overwritten, and a page calling with an API key. On any locked deployment
+the widget's settings and answers were refused by every visitor's browser,
+with nothing on AMV's side to say so. A request that does not carry a cookie
+cannot leak one, so locking it bought nothing and broke a paid feature.
+
+The first fix still failed in a real browser: a key in a header makes the
+browser ask first, and a preflight carries the header's NAME, not the key - so
+it read as a session and was locked. Only the browser suite saw it; the Worker
+suite had checked the real request, not the question before it.
+
+Rule: lock by kind of caller (the session; the widget, answered by its own
+handlers; a key, answered to anyone without credentials), and answer a
+preflight from any page but the site without credentials - it grants nothing
+on its own, and a browser sends no cookie after one. Test CORS in a browser:
+the headers are only half the claim, and the browser is the other half.

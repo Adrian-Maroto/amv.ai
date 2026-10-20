@@ -237,6 +237,11 @@ export async function bootLive(opts = {}) {
   });
 
   await page.goto(`http://localhost:${port}`, { waitUntil: 'load' });
+  /* CI has twice lost a live suite's page to a navigation in the middle of a
+     chat turn ("Execution context was destroyed"), in two different suites,
+     with nothing to say where it went. Every later navigation of the main
+     frame is printed, so the next one names itself. */
+  page.on('framenavigated', (f) => { if (f === page.mainFrame()) console.error('[navigated] ' + f.url()); });
   await page.waitForTimeout(700);
   /* The cookie banner covers the sign-up button on a narrow viewport, and
      every case here is about somebody getting to that button. */

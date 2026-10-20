@@ -390,11 +390,54 @@ function _paymentOriginMissing() {
    browser refuses `Allow-Credentials` alongside a wildcard - which is the rule
    that makes an origin-locked deployment the one that can hold an HttpOnly
    refresh cookie. */
+/* ONE LOCK, THREE KINDS OF CALLER (outside audit, 2026-10-20).
+
+   Locking the API to the site used to lock out the two callers that are
+   cross-site by design. Every response was stamped "only <the site> may read
+   this", so on a deployment that set ALLOWED_ORIGIN:
+     - the website widget, which runs on a CUSTOMER's site, had its config and
+       every chat answer refused by the visitor's browser - the widget simply
+       stopped working, with nothing on AMV's side to say so;
+     - a browser calling with an API key from its own page was refused too.
+   So the lock now applies to what it protects - the person's session, the one
+   caller that may carry cookies - and the other two are answered as what they
+   are, never with credentials:
+     - the widget's two public routes keep the answer their handlers give,
+       which names the visitor's site only where the widget is allowed - the
+       same as on an open deployment;
+     - a request carrying an API key is answered to anyone: the key in the
+       request is the whole credential, and no cookie is ever involved. */
+const _CORS_WIDGET = new Set(['/v1/widget/chat', '/v1/widget/config-public']);
+function _corsKind(request, want) {
+  try {
+    const path = new URL(request.url).pathname.replace(/\/+$/, '');
+    if (_CORS_WIDGET.has(path)) return 'widget';
+    /* A preflight carries no credential to look at - only the names of the
+       headers to come. One from any page but AMV's own is answered without
+       credentials: it grants nothing by itself (the real response still
+       decides what is readable), and a browser never sends a cookie after a
+       preflight answered '*', so the session stays locked. */
+    if (request.method === 'OPTIONS') return (request.headers.get('Origin') || '') === want ? 'session' : 'key';
+    const auth = (request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+    if (auth.startsWith(API_KEY_PREFIX) || request.headers.get('X-AMV-Key')) return 'key';
+  } catch (e) {}
+  return 'session';
+}
 function _applyCors(request, env, res) {
   try {
     const want = _corsOrigin(env);
     if (want === '*') return res;
+    const kind = _corsKind(request, want);
+    /* The widget's handlers decide for themselves - they name the visitor's
+       site only when the widget is allowed there - exactly as they do on an
+       open deployment. */
+    if (kind === 'widget') return res;
     const h = new Headers(res.headers);
+    if (kind === 'key') {
+      h.set('Access-Control-Allow-Origin', '*');
+      h.delete('Access-Control-Allow-Credentials');
+      return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+    }
     h.set('Access-Control-Allow-Origin', want);
     h.set('Access-Control-Allow-Credentials', 'true');
     /* A response that varies by origin must say so, or a shared cache can hand
