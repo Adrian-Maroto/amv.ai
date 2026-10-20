@@ -66,6 +66,11 @@ async function stripeSubscribe(request, env){
     }
     await DB.put(env, 'billing', user.email, Object.assign(rec, { customerId:customer, subId:sd.id, status }));
     await setEntitlement(env, user.email, plan);   // authoritative: server grants the plan
+    /* An upgrade is a new subscription on the same customer, and Stripe does
+       not know it replaces the old one. Checkout's completion cancels the old
+       one; this route never did, so upgrading from the card form billed both
+       plans every month. See _cancelSupersededSubs. */
+    await _cancelSupersededSubs(env, customer, sd.id, user.email);
     audit(env, 'subscribe_active', { by:user.email, plan, sub:sd.id });
     return json({ ok:true, plan, status });
   }catch(e){

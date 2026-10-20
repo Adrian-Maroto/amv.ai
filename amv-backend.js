@@ -12075,6 +12075,11 @@ async function stripeSubscribe(request, env){
     }
     await DB.put(env, 'billing', user.email, Object.assign(rec, { customerId:customer, subId:sd.id, status }));
     await setEntitlement(env, user.email, plan);   // authoritative: server grants the plan
+    /* An upgrade is a new subscription on the same customer, and Stripe does
+       not know it replaces the old one. Checkout's completion cancels the old
+       one; this route never did, so upgrading from the card form billed both
+       plans every month. See _cancelSupersededSubs. */
+    await _cancelSupersededSubs(env, customer, sd.id, user.email);
     audit(env, 'subscribe_active', { by:user.email, plan, sub:sd.id });
     return json({ ok:true, plan, status });
   }catch(e){
@@ -26899,6 +26904,14 @@ async function stripeWebhook(request, env, ctx) {
          to. Passed through so a message from a subscription that no longer owns
          the plan cannot revoke one the customer is currently paying for. */
       const subId = (type === 'customer.subscription.updated' ? obj.id : obj.subscription) || '';
+      /* The first payment of a NEW subscription: whatever it replaces stops
+         here. Checkout does this when its session completes; a subscription
+         started from the card form in the page, whose bank asked to confirm
+         the payment, is paid only now - and without this the plan it
+         replaced went on billing alongside it. A renewal is billed as
+         'subscription_cycle' and cancels nothing. */
+      if (type === 'invoice.paid' && obj.billing_reason === 'subscription_create' && obj.customer && subId)
+        await _cancelSupersededSubs(env, obj.customer, subId, email || '');
       const DEAD = ['unpaid', 'canceled', 'incomplete_expired'];
       if (email && DEAD.indexOf(status) >= 0) {
         await setEntitlement(env, email, 'free', { source: 'stripe', canceled: true, status, eventAt: evtAt, sub: subId });
@@ -27017,8 +27030,14 @@ async function _cancelSupersededSubs(env, customerId, keepSubId, email) {
     const ls = await fetchDeadline('https://api.stripe.com/v1/subscriptions?status=all&limit=100&customer=' +
       encodeURIComponent(customerId), { headers: sk });
     const ld = await ls.json().catch(() => ({}));
+    /* Only what came BEFORE the one being kept. Two new subscriptions in the
+       same moment - two tabs, a retry - each run this; if each cancelled the
+       other, somebody who paid would be left with no plan at all. The newer
+       one cancels the older, and the older cancels nothing. */
+    const kept = ((ld && ld.data) || []).find(s => s && s.id === keepSubId);
     for (const sub of ((ld && ld.data) || [])) {
       if (!sub || !sub.id || sub.id === keepSubId) continue;
+      if (kept && Number(sub.created) > Number(kept.created)) continue;
       if (_SUB_STILL_BILLS.indexOf(String(sub.status || '')) < 0) continue;
       try {
         const dr = await fetchDeadline('https://api.stripe.com/v1/subscriptions/' + encodeURIComponent(sub.id),

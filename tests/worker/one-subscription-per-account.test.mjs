@@ -34,7 +34,7 @@ const src = readFileSync(join(ROOT, 'amv-backend.js'), 'utf8');
 mkdirSync(join(__dir, '.build'), { recursive: true });
 const harness = join(__dir, '.build', 'one-sub.harness.mjs');
 writeFileSync(harness, src + `
-export { stripeCheckout, stripeWebhook, _cancelSupersededSubs, _linkCustomer,
+export { stripeCheckout, stripeWebhook, stripeSubscribe, _cancelSupersededSubs, _linkCustomer,
          setEntitlement, issueTokens, DB };
 export function __setRequireUser(fn){ requireUser = fn; }
 export function __setVerify(fn){ verifyStripeSignature = fn; }
@@ -212,6 +212,72 @@ section('With no Stripe key configured it does nothing at all');
 {
   const res = await W._cancelSupersededSubs({ ...env, STRIPE_SECRET_KEY: '' }, 'cus_A', 'sub_new', 'buyer@x.com');
   ok(res.cancelled === 0 && res.failed === 0, 'no calls, no alarm', res);
+}
+
+/* THE CARD FORM IN THE PAGE IS THE OTHER WAY IN. With a publishable key set,
+   paying happens in the page (/v1/subscribe) rather than at Checkout - and
+   that route created the new subscription on the same customer and cancelled
+   nothing, so an upgrade there billed both plans every month. */
+const stripeApi = (extra) => async (url, opts) => {
+  const u = String(url), method = (opts && opts.method) || 'GET';
+  calls.push({ u, method, body: (opts && opts.body) ? String(opts.body) : '' });
+  if (u.includes('/v1/subscriptions?')) return new Response(JSON.stringify({ data: SUBS }), { status: 200 });
+  if (method === 'DELETE' && u.includes('/v1/subscriptions/')) {
+    const id = decodeURIComponent(u.split('/v1/subscriptions/')[1]);
+    SUBS = SUBS.filter(s => s.id !== id);
+    return new Response(JSON.stringify({ id, status: 'canceled' }), { status: 200 });
+  }
+  if (method === 'POST' && /\/v1\/subscriptions$/.test(u)) {
+    const sub = { id: 'sub_card_' + SUBS.length, status: extra.status || 'active', created: 2000 };
+    SUBS.push(sub);
+    return new Response(JSON.stringify({ ...sub, latest_invoice: { payment_intent: { client_secret: 'pi_secret' } } }), { status: 200 });
+  }
+  return new Response('{}', { status: 200 });
+};
+const invoicePaid = (obj) => new Request('https://api.amv.dev/v1/stripe/webhook', {
+  method: 'POST', headers: { 'Stripe-Signature': 't=1,v1=x' },
+  body: JSON.stringify({ type: 'invoice.paid', data: { object: obj } }) });
+
+section('Upgrading from the card form in the page stops the old plan too');
+{
+  globalThis.fetch = stripeApi({});
+  await env.AMV_KV.put('billing:buyer@x.com', JSON.stringify({ customerId: 'cus_A', subId: 'sub_pro', status: 'active' }));
+  SUBS = [{ id: 'sub_pro', status: 'active', created: 1000 }];
+  const r = await W.stripeSubscribe(post('/v1/subscribe', { plan: 'elite', payment_method: 'pm_card' }), env);
+  const d = await r.json();
+  ok(d.ok && d.plan === 'elite', 'the upgrade goes through', d);
+  ok(SUBS.length === 1 && SUBS[0].id.startsWith('sub_card_'), 'and the Pro subscription it replaced is cancelled - one plan, one bill', SUBS.map(s => s.id));
+}
+
+section('When the bank asks to confirm, the old plan stops once the new one is paid');
+{
+  globalThis.fetch = stripeApi({ status: 'incomplete' });
+  SUBS = [{ id: 'sub_old', status: 'active', created: 1000 }];
+  const r = await W.stripeSubscribe(post('/v1/subscribe', { plan: 'elite', payment_method: 'pm_3ds' }), env);
+  const d = await r.json();
+  ok(d.code === 'requires_action', 'the bank wants to confirm', d.code);
+  ok(SUBS.some(s => s.id === 'sub_old'), 'and nothing is cancelled before the new plan is paid for', SUBS.map(s => s.id));
+  const fresh = SUBS.find(s => s.id !== 'sub_old'); fresh.status = 'active';
+  await W.stripeWebhook(invoicePaid({ id: 'in_1', billing_reason: 'subscription_create', customer: 'cus_A', subscription: fresh.id,
+    metadata: { email: 'buyer@x.com' }, lines: { data: [{ price: { id: 'price_elite' } }] } }), env, { waitUntil(){} });
+  ok(!SUBS.some(s => s.id === 'sub_old') && SUBS.some(s => s.id === fresh.id), 'its first payment cancels the one it replaced', SUBS.map(s => s.id));
+}
+
+section('A renewal cancels nothing');
+{
+  globalThis.fetch = stripeApi({});
+  SUBS = [{ id: 'sub_a', status: 'active', created: 1000 }, { id: 'sub_b', status: 'active', created: 2000 }];
+  await W.stripeWebhook(invoicePaid({ id: 'in_2', billing_reason: 'subscription_cycle', customer: 'cus_A', subscription: 'sub_a',
+    metadata: { email: 'buyer@x.com' }, lines: { data: [{ price: { id: 'price_pro' } }] } }), env, { waitUntil(){} });
+  ok(SUBS.length === 2, 'an ordinary monthly charge on an older subscription never cancels a newer one', SUBS.map(s => s.id));
+}
+
+section('Two new subscriptions at once: the newer stays, never neither');
+{
+  SUBS = [{ id: 'sub_first', status: 'active', created: 3000 }, { id: 'sub_second', status: 'active', created: 3001 }];
+  await Promise.all([W._cancelSupersededSubs(env, 'cus_A', 'sub_first', 'buyer@x.com'),
+                     W._cancelSupersededSubs(env, 'cus_A', 'sub_second', 'buyer@x.com')]);
+  ok(SUBS.length === 1 && SUBS[0].id === 'sub_second', 'each cancelling the other would have left a paying customer with no plan', SUBS.map(s => s.id));
 }
 
 if (report('one-subscription-per-account') > 0) process.exitCode = 1;
