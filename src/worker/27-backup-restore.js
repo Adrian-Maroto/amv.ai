@@ -145,6 +145,9 @@ const BACKUP_NEVER = [
      with this deployment's key. Restoring any of them would put a spent or
      expired step back into circulation. */
   'pkchal:', 'mfachal:', 'totpset:',
+  /* A signed request already taken (70-hooks.js): a month's memory that holds
+     only a job id and a hash, kept so a captured request cannot run twice. */
+  'hookdel:',
   /* Batches: work in flight and answers kept for a week. Restoring one would
      put a finished batch back in the queue - to be run, and charged, again. */
   'batch:', 'batchidx:', 'batchq:', 'batchreq:', 'batchres:', 'batchcursor',

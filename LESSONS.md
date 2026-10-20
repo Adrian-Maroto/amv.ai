@@ -15152,3 +15152,32 @@ handlers; a key, answered to anyone without credentials), and answer a
 preflight from any page but the site without credentials - it grants nothing
 on its own, and a browser sends no cookie after one. Test CORS in a browser:
 the headers are only half the claim, and the browser is the other half.
+
+## 598. An edit made from an older copy can undo a security setting
+
+Adding a signing secret to a webhook job meant asking where a job is
+rewritten. The cron tick was already careful: it carries back only the fields
+the run produced (AMV-205). `autoUpdate` was not. It read the record, changed
+one field on one job, and wrote the WHOLE list back under the lock - the list
+it had read before taking the lock. Anything another route had written in
+between was erased: until now that was a request delivered to a job's address
+while somebody pressed Pause, lost without a trace. With signing, the same
+write would have put back an old secret or taken signing off, quietly, from
+any screen that edited a job.
+
+The fix is the tick's rule applied here: a job's address, its signing and its
+waiting requests belong to their own routes, so an edit takes them from the
+record as it is inside the lock, never from its copy.
+
+Rule: before adding a field that guards something, list every writer of the
+record it lives on and ask of each one, "can you write this field from a
+stale copy?" A security setting that an unrelated edit can reset is not a
+setting. And a secret is never sent back to the page - the list says which
+scheme is on (`_hookShown`), nothing more.
+
+Also from this change: a signed request's identity comes only from signed
+material. GitHub's delivery id is an unsigned header, so a replayer could
+change it and dodge de-duplication; the body (which is signed) is used
+instead. GitHub's scheme carries no time either, so a month's memory of what
+was taken (`hookdel:`) is what stops a replay there. 43 Worker assertions and
+21 in a browser; eighteen mutations, all caught.

@@ -978,7 +978,7 @@ async function autoCreate(request, env){
                      '. Remove one to add another, or upgrade for more.',
                code:'job_limit', have: budget.max }, 429);
   }
-  return json({ ok:true, item, emailReady,
+  return json({ ok:true, item: _hookShown(item), emailReady,
                 ...(_hookIsOn(item) ? { hookUrl: await _hookAddress(env, request, user.email, item) } : {}),
                 // true only when they asked for email and cannot have it
                 deliveryDowngraded: notify === 'email' && !emailReady,

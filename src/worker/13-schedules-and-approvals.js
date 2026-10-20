@@ -517,7 +517,7 @@ async function autoUpdate(request, env){
                   /* How many jobs this actually restrains right now, so the
                      confirmation is about their jobs rather than about a word. */
                   restrains: items.filter(x => AUTO_APPROVAL_RANK[_autoApprovalOf(x.approval,'require')] > AUTO_APPROVAL_RANK[level]).length,
-                  items });
+                  items: items.map(_hookShown) });
   }
 
   const i = items.findIndex(x=>x.id===id);
@@ -612,10 +612,22 @@ async function autoUpdate(request, env){
      it, so the two cannot interleave mid-write. */
   const saved = await _withAuto(env, key, (fresh) => {
     if(!fresh) return null;
+    /* Except what belongs to a job's address (70-hooks.js): its key, its
+       signing and the requests waiting for it are changed by their own
+       routes, under this same lock. Taken from the record as it is now, or
+       an edit made from an older copy would put back a secret that was just
+       replaced - or take signing off - and erase what arrived meanwhile. */
+    const live = new Map((fresh.items || []).map(x => [x && x.id, x]));
+    for(const x of items){
+      const f = live.get(x && x.id);
+      if(!f) continue;
+      if(f.hook) x.hook = f.hook; else delete x.hook;
+      if(f.hookIn) x.hookIn = f.hookIn; else delete x.hookIn;
+    }
     fresh.items = items;
     return items;
   }, { items:[], results:[] });
-  return json({ ok:true, items: saved || items });
+  return json({ ok:true, items: (saved || items).map(_hookShown) });
 }
 
 /* ---- mark results as read ---- */

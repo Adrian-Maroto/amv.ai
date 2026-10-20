@@ -23390,7 +23390,7 @@ function _mcServerSchedRow(x){
     </div>
     <div class="mc-sched-acts">
       ${x.done ? '' : `<button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|${paused?'resume':'pause'}">${paused?'Resume':'Pause'}</button>`}
-      ${x.done || !(x.when && x.when.source === 'hook') ? '' : `<button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|show">${escH(T('Copy address'))}</button><button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|renew">${escH(T('New address'))}</button>`}
+      ${x.done || !(x.when && x.when.source === 'hook') ? '' : `<button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|show">${escH(T('Copy address'))}</button><button class="btn mc-mini ghost" data-dact="mcHookAddress" data-darg="${escH(x.id)}|renew">${escH(T('New address'))}</button><button class="btn mc-mini ghost" data-dact="mcHookSigning" data-darg="${escH(x.id)}|${escH((x.hook && x.hook.signed) || '')}">${escH(x.hook && x.hook.signed ? T('Signed') + ' · ' + T(_HOOK_SIGNERS[x.hook.signed]) : T('Require signing'))}</button>`}
       <button class="btn mc-mini ghost" data-dact="mcServerJob" data-darg="${escH(x.id)}|delete">Remove</button>
     </div>
   </div>`;
@@ -23467,11 +23467,51 @@ async function mcHookAddress(arg){
   try{ await _copyText(d.url); toast(action === 'renew' ? T('New address copied. The old one no longer works.') : T('Address copied. Give it to the service that should start this job.'), 'success', 6000); }
   catch(e){ try{ window.prompt(T('Copy this address:'), d.url); }catch(x){} }
 }
+/* WHO MAY START IT: the address alone, or only requests signed with a secret
+   (70-hooks.js). A secret AMV makes is shown here once and never again; one
+   pasted from Stripe or Slack is sent once and never shown back. */
+const _HOOK_SIGNERS = { amv:'AMV standard', github:'GitHub', stripe:'Stripe', slack:'Slack' };
+function mcHookSigning(arg){
+  const [id, now] = String(arg || '').split('|');
+  const r = $('ovr'); if(!id || !r) return;
+  const pick = (k) => {
+    const paste = k === 'stripe' || k === 'slack' || k === 'github';
+    $('hs-form').innerHTML = (paste ? '<label class="ob-sub" for="hs-secret">' + escH(k === 'github' ? T('Secret (leave empty and AMV makes one)')
+        : k === 'stripe' ? T('Signing secret from Stripe (whsec_...)') : T('Signing Secret from your Slack app')) + '</label>'
+        + '<input id="hs-secret" type="password" autocomplete="off" spellcheck="false" class="fp-in">' : '')
+      + '<div class="sec-row"><button class="btn bp" id="hs-save">' + escH(T('Require signing')) + '</button></div>';
+    on($('hs-save'), 'click', () => save(k));
+  };
+  const save = async (k) => {
+    const sec = ($('hs-secret') || {}).value || '';
+    let d;
+    try{ d = await _autoApi('/auto/hook', k ? { id, action:'sign', kind:k, secret:sec } : { id, action:'unsign' }); }
+    catch(e){ $('hs-msg').textContent = (e && e.message && e.message !== 'not-connected') ? e.message : T('That did not work. Nothing changed.'); return; }
+    mcReloadJobs();
+    if(!d.secret){ closeOvr(); toast(k ? T('Signing is on. Unsigned requests are refused.') : T('Signing is off. The address alone starts this job.'), 'success', 6000); return; }
+    $('hs-form').innerHTML = '<div class="sec-secret"><p class="ob-sub">' + escH(k === 'github' ? T('Paste this as the webhook’s Secret in GitHub. It is shown once.')
+        : T('Sign each request with this secret, using the Standard Webhooks headers: webhook-id, webhook-timestamp, webhook-signature. It is shown once.'))
+      + '</p><code>' + escH(d.secret) + '</code></div><div class="sec-row"><button class="btn bp" id="hs-copy">' + escH(T('Copy')) + '</button></div>';
+    on($('hs-copy'), 'click', () => { _copyText(d.secret).then(() => toast(T('Copied'), 'success', 2500), () => {}); });
+  };
+  r.innerHTML = '<div class="ov" id="hs-bg"><div class="ob" role="dialog" aria-labelledby="hs-t" style="max-width:520px">'
+    + '<button class="oc" id="hs-x" aria-label="' + escH(T('Close')) + '">×</button>'
+    + '<h2 id="hs-t">' + escH(T('Who may start this job?')) + '</h2>'
+    + '<p class="ob-sub">' + escH(T('Anyone with the address can start it. With signing on, only requests signed with a secret are accepted, so a leaked address is not enough.')) + '</p>'
+    + '<p class="ob-sub"><b>' + escH(now ? T('Now: signed by') + ' ' + T(_HOOK_SIGNERS[now]) : T('Now: the address alone')) + '</b></p>'
+    + '<div class="sec-row">' + Object.keys(_HOOK_SIGNERS).map(k => '<button class="btn bs" data-hs="' + k + '">' + escH(T(_HOOK_SIGNERS[k])) + '</button>').join('')
+    + (now ? '<button class="btn bs" data-hs="">' + escH(T('Turn off')) + '</button>' : '') + '</div>'
+    + '<div id="hs-form"></div><p class="ob-sub" id="hs-msg" role="alert"></p></div></div>';
+  r.classList.add('on');
+  r.querySelectorAll('[data-hs]').forEach(b => on(b, 'click', () => b.dataset.hs ? pick(b.dataset.hs) : save('')));
+  on($('hs-x'), 'click', closeOvr);
+  onBackdrop($('hs-bg'), closeOvr);
+}
 async function mcReloadJobs(){
   try{ if(typeof _autoRefresh === 'function') await _autoRefresh(); }catch(e){}
   renderCrewView();
 }
-try{ window.mcServerJob = mcServerJob; window.mcReloadJobs = mcReloadJobs; window.mcHookAddress = mcHookAddress; }catch(e){}
+try{ window.mcServerJob = mcServerJob; window.mcReloadJobs = mcReloadJobs; window.mcHookAddress = mcHookAddress; window.mcHookSigning = mcHookSigning; }catch(e){}
 
 /* A standing job shown as a row in the unified Scheduled section. */
 function _mcAutonSchedRow(j){

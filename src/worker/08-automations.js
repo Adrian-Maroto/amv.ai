@@ -117,7 +117,7 @@ async function autoList(request, env){
   try { _conn = await _autoConnected(env, user.email); } catch (e) { _conn = {}; }
   const _items = (rec.items || []).map((it) => {
     const n = _autoNeedsFor(it, _conn, it.discoveredNeeds);
-    return n.ready ? it : Object.assign({}, it, { willNeed: n.missing });
+    return _hookShown(n.ready ? it : Object.assign({}, it, { willNeed: n.missing }));
   });
   return json({ ok:true, items: _items, results: (rec.results||[]).slice(-AUTO_MAX_RESULTS),
                 /* Read back what the account has told its background work to do,
