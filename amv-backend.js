@@ -19937,6 +19937,9 @@ const AMV_CLIENT_TOOLS = new Set([
   /* An attached Word, Excel or PowerPoint file changed in place, in the
      browser, and offered back as the same file (office.js, amvOfficeEdit). */
   'office_edit',
+  /* Their file library searched for passages (project-search.js), in the
+     browser, from what this device and their account already hold. */
+  'library_search',
   /* THE BRIDGE'S TOOLS, AND THE SAME MISTAKE ONE FLOOR UP.
 
      The bridge was built end to end - a daemon on somebody's machine, a

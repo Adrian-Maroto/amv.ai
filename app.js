@@ -8966,6 +8966,8 @@ async function _callAITurn(msgs, _opts) {
     try{ tools = tools.concat(computerToolsOffered()); }catch(e){}
     /* An Office file somebody attached, while this tab holds it (office_edit). */
     try{ tools = tools.concat(officeToolsOffered()); }catch(e){}
+    /* Their file library, while they are signed in to have one. */
+    try{ tools = tools.concat(libraryToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(bridgeLocal() && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}
@@ -28515,6 +28517,16 @@ function officeToolsOffered(){
   return OFFICE_TOOLS.map(t => Object.assign({}, t, { input_schema: Object.assign({}, t.input_schema, {
     properties: Object.assign({}, t.input_schema.properties, { file: { type:'string', enum: names, description:'The attached file, by its name.' } }) }) }));
 }
+/* THEIR FILE LIBRARY, SEARCHED (amvLibrarySearch in project-search.js, fetched
+   on the first search). Offered to a signed-in person, whose library it is. */
+const LIBRARY_TOOLS = [{
+  name:'library_search',
+  description:'Search the documents the person has sent AMV before - their file library: documents, spreadsheets and notes as text - for passages about something. Use when they refer to a document of theirs that is not attached to this conversation ("my lease", "the report I sent last week", "what did the contract say about..."). Returns matching passages with file names; quote them and name the file. Never guess what a file says.',
+  input_schema:{ type:'object', properties:{
+    query:{ type:'string', description:'The words they would expect to find in the document, in its language.' }
+  }, required:['query'] }
+}];
+function libraryToolsOffered(){ return _libWho() ? LIBRARY_TOOLS : []; }
 /* The handler itself is in office.js (amvOfficeEditTool), which an edit
    needs anyway: loaded on the first one. */
 async function _officeEditTool(input){
@@ -29064,6 +29076,11 @@ async function _amvRunTool(name, input, onStatus){
 
     if(name==='delegate') return await _delegateRun(input, onStatus);
     if(name==='office_edit'){ onStatus && onStatus('Changing the file\u2026'); return await _officeEditTool(input); }
+    if(name==='library_search'){
+      onStatus && onStatus('Searching your files\u2026');
+      if(!(await _projSearchReady())) return { text:'The search could not be loaded (the connection dropped). Nothing was searched - tell them to try again.', render:null };
+      return { text: await window.amvLibrarySearch(input), render:null };
+    }
 
     if(name==='run_code'){
       onStatus && onStatus('Running the code\u2026');

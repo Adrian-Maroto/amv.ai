@@ -1158,6 +1158,8 @@ async function _callAITurn(msgs, _opts) {
     try{ tools = tools.concat(computerToolsOffered()); }catch(e){}
     /* An Office file somebody attached, while this tab holds it (office_edit). */
     try{ tools = tools.concat(officeToolsOffered()); }catch(e){}
+    /* Their file library, while they are signed in to have one. */
+    try{ tools = tools.concat(libraryToolsOffered()); }catch(e){}
     /* And whatever connectors are running on that machine. Same rule, one
        level out: a tool appears when the thing behind it exists. */
     try{ if(bridgeLocal() && typeof mcpRefreshTools === 'function') await mcpRefreshTools(); }catch(e){}

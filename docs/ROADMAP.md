@@ -551,5 +551,13 @@ When nothing matches, the prompt says the start of each file was sent
 instead. `a-project-finds-the-part-you-asked-about` (23 assertions, ten
 mutations caught).
 
-*Next:* the account's file library searched the same way from any chat, and
-a server-side index for files too large to keep on a phone.
+**Your file library, from chat (done).** Chat can search everything the
+person has sent AMV before - the documents on this device, and the text files
+their account holds that this device has not got yet, fetched for the visit
+(twelve at most per search, the rest named). Pictures and PDFs are counted as
+not searched rather than claimed. A passage comes back under its file's name,
+read as a document and never as an instruction. `ask-about-a-file-you-sent-before`
+(18 assertions, twelve mutations caught - one of them found that the new tool
+was invisible to the check that the server forwards every tool).
+
+*Next:* a server-side index for libraries too large to search on a phone.
