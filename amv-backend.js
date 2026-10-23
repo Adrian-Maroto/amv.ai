@@ -34054,7 +34054,12 @@ const AUTO_CAPABILITIES = [
   { id: 'slack', label: 'post to Slack',
     needs: 'Slack connected on the server - today it is connected in your browser only, so scheduled runs cannot reach it',
     where: 'Integrations, then Slack',
-    match: /\b(slack|post to (?:the )?channel|#[a-z0-9_-]{2,})\b/i,
+    /* POSTING, not the word. This fired on any mention - "summarise the order
+       posted in Slack", "from #orders" - so a job STARTED by a Slack message
+       (a signed hook, 70-hooks.js) stopped on its first run asking for a
+       Slack connection it never needed: the message was already in hand. Only
+       sending something to Slack needs the connection. */
+    match: /\b(?:(?:post|send|share|forward|announce)\s+(?:(?:it|this|that|them|the\s+\w+|a\s+\w+|an\s+\w+)\s+)?(?:to|in|on|into)\s+(?:slack|the\s+channel|#[a-z0-9_-]{2,})|slack\s+(?:it|this|me|the\s+team)|(?:message|notify|tell|ping)\s+(?:the\s+)?(?:team|channel|everyone)\s+(?:on|in)\s+slack)\b/i,
     has: () => false, browserOnly: true },
 
   /* THE ONE CAPABILITY WITH NO TEXT MATCHER, and that is deliberate.
@@ -37688,7 +37693,9 @@ function _hookAfterRun(item, now){
                webhook-signature "v1,<base64>"), with a secret AMV makes;
      - github  X-Hub-Signature-256, with a secret AMV makes or one pasted;
      - stripe  Stripe-Signature (t=..., v1=...), the secret Stripe shows;
-     - slack   X-Slack-Signature (v0=...), the app's signing secret.
+     - slack   X-Slack-Signature (v0=...), the app's signing secret; its
+               set-up question is answered, and a message a bot posted is
+               acknowledged and starts nothing.
 
    Once a job is signed an unsigned request is refused, whoever holds the
    address. Three things make a signature worth having, and each is here:
@@ -37842,6 +37849,12 @@ async function hookDeliver(request, env, token){
     if(sig0.kind === 'slack'){
       let o = null; try{ o = JSON.parse(raw); }catch(e){}
       if(o && o.type === 'url_verification' && typeof o.challenge === 'string') return json({ challenge: o.challenge.slice(0, 200) }, 200);
+      /* A message a BOT posted starts nothing. Bots answering bots is how a
+         channel turns into a loop that spends every few minutes for ever, and
+         a job's own summary posted back by another tool would be the first
+         link in one. Acknowledged, so Slack does not retry it, and not kept. */
+      const ev = o && o.event;
+      if(ev && (ev.bot_id || ev.subtype === 'bot_message' || ev.bot_profile)) return json({ ok:true, matched:false, bot:true }, 202);
     }
     if(await env.AMV_KV.get('hookdel:' + at.j + ':' + signedId)) return json({ ok:true, duplicate:true }, 200);
   }

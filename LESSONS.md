@@ -15248,3 +15248,17 @@ had the same shape outside the list: two tabs, one calendar lost.
 Rule: an exemption is only as good as a test that runs two of them at once.
 Each fixed one has that test now, and each reproduced the loss on the old code
 before it was fixed.
+
+## 602. A gate that matches a word stops the jobs that only mention it
+
+The run-needs row for Slack ("post to Slack") fired on the bare word
+"slack" and on any "#channel". A job STARTED by a Slack message - "summarise
+the order posted in Slack" - stopped on its first run asking for a Slack
+connection it never needed: the message was already in hand and nothing was
+being posted. The same shape as the mail row's old "email me" mistake: a
+permission gate keyed on vocabulary blocks the instructions that merely talk
+about the thing. It matches posting intents now (post/send/share to Slack or
+a channel, "slack me", "notify the team on Slack").
+
+And a Slack-triggered job ignores messages bots posted: bots answering bots
+is how a channel becomes a loop that spends every few minutes for ever.

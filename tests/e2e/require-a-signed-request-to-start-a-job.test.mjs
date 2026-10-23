@@ -104,9 +104,26 @@ section('Stripe’s secret is pasted; a wrong one is refused where it was typed'
   ok(r.status === 202, 'and a request Stripe signed is accepted', r);
 }
 
-section('Turned off, the address alone works again');
+section('Slack: the secret is pasted, and the dialog says what to do in Slack');
 {
   await until((s) => /Stripe/.test((document.querySelector(s) || {}).textContent || ''), btn(made.id));
+  await page.click(btn(made.id));
+  await until(() => !!document.querySelector('[data-hs="slack"]'));
+  await page.click('[data-hs="slack"]');
+  const key = '0123456789abcdef0123456789abcdef';
+  await page.fill('#hs-secret', key);
+  await page.click('#hs-save');
+  ok(await until(() => /Event Subscriptions/.test((document.getElementById('hs-form') || {}).textContent || '')), 'it does not just close: it says where the address goes in Slack', true);
+  ok(await page.$('#hs-addr') !== null, 'with the address to copy', true);
+  const ch = JSON.stringify({ token: 'x', challenge: 'c-55', type: 'url_verification' }); const t = Math.floor(Date.now() / 1000);
+  const v = await send(ch, { 'X-Slack-Request-Timestamp': String(t), 'X-Slack-Signature': 'v0=' + createHmac('sha256', key).update('v0:' + t + ':' + ch).digest('hex') });
+  ok(v.status === 200 && v.d.challenge === 'c-55', 'and when Slack checks that address, it is answered', v.d);
+  await page.evaluate(() => closeOvr());
+}
+
+section('Turned off, the address alone works again');
+{
+  await until((s) => /Slack/.test((document.querySelector(s) || {}).textContent || ''), btn(made.id));
   await page.click(btn(made.id));
   await until(() => !!document.querySelector('[data-hs=""]'));
   await page.click('[data-hs=""]');

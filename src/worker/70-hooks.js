@@ -95,7 +95,9 @@ function _hookAfterRun(item, now){
                webhook-signature "v1,<base64>"), with a secret AMV makes;
      - github  X-Hub-Signature-256, with a secret AMV makes or one pasted;
      - stripe  Stripe-Signature (t=..., v1=...), the secret Stripe shows;
-     - slack   X-Slack-Signature (v0=...), the app's signing secret.
+     - slack   X-Slack-Signature (v0=...), the app's signing secret; its
+               set-up question is answered, and a message a bot posted is
+               acknowledged and starts nothing.
 
    Once a job is signed an unsigned request is refused, whoever holds the
    address. Three things make a signature worth having, and each is here:
@@ -249,6 +251,12 @@ async function hookDeliver(request, env, token){
     if(sig0.kind === 'slack'){
       let o = null; try{ o = JSON.parse(raw); }catch(e){}
       if(o && o.type === 'url_verification' && typeof o.challenge === 'string') return json({ challenge: o.challenge.slice(0, 200) }, 200);
+      /* A message a BOT posted starts nothing. Bots answering bots is how a
+         channel turns into a loop that spends every few minutes for ever, and
+         a job's own summary posted back by another tool would be the first
+         link in one. Acknowledged, so Slack does not retry it, and not kept. */
+      const ev = o && o.event;
+      if(ev && (ev.bot_id || ev.subtype === 'bot_message' || ev.bot_profile)) return json({ ok:true, matched:false, bot:true }, 202);
     }
     if(await env.AMV_KV.get('hookdel:' + at.j + ':' + signedId)) return json({ ok:true, duplicate:true }, 200);
   }

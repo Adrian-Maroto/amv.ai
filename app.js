@@ -23496,6 +23496,15 @@ function mcHookSigning(arg){
     try{ d = await _autoApi('/auto/hook', k ? { id, action:'sign', kind:k, secret:sec } : { id, action:'unsign' }); }
     catch(e){ $('hs-msg').textContent = (e && e.message && e.message !== 'not-connected') ? e.message : T('That did not work. Nothing changed.'); return; }
     mcReloadJobs();
+    /* Slack needs one more thing done on Slack's side, so the dialog says what
+       rather than closing: the address goes in the app's Event Subscriptions,
+       where Slack checks it at once (70-hooks.js answers that check). */
+    if(k === 'slack' && d.url){
+      $('hs-form').innerHTML = '<p class="ob-sub">' + escH(T('In your Slack app, open Event Subscriptions, turn it on and paste this address as the Request URL - Slack checks it straight away. Then subscribe to the message.channels bot event and reinstall the app. Messages people post in the channels the app is in will start this job; messages from bots never do.')) + '</p>'
+        + '<div class="sec-row"><button class="btn bp" id="hs-addr">' + escH(T('Copy address')) + '</button></div>';
+      on($('hs-addr'), 'click', () => { _copyText(d.url).then(() => toast(T('Copied'), 'success', 2500), () => {}); });
+      return;
+    }
     if(!d.secret){ closeOvr(); toast(k ? T('Signing is on. Unsigned requests are refused.') : T('Signing is off. The address alone starts this job.'), 'success', 6000); return; }
     $('hs-form').innerHTML = '<div class="sec-secret"><p class="ob-sub">' + escH(k === 'github' ? T('Paste this as the webhook’s Secret in GitHub. It is shown once.')
         : T('Sign each request with this secret, using the Standard Webhooks headers: webhook-id, webhook-timestamp, webhook-signature. It is shown once.'))
