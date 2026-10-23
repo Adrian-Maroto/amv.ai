@@ -469,6 +469,21 @@ async function _rmcpRevoke(env, c){
   } catch (e) { return false; }
 }
 
+/* One remote connector tool as the page receives it. Bounded like any other
+   connector's list: a name, a description and a schema, each capped, and a
+   schema too large to be a schema dropped for an empty one rather than passed
+   on to the model. And what the connector says about the tool (MCP
+   annotations), cut down to the four true-or-false answers the page shows -
+   never its free text. */
+function _rmcpToolShown(t){
+  let schema = (t.inputSchema && typeof t.inputSchema === 'object') ? t.inputSchema : { type: 'object', properties: {} };
+  try { if (JSON.stringify(schema).length > 20000) schema = { type: 'object', properties: {} }; } catch (e) { schema = { type: 'object', properties: {} }; }
+  const a = t.annotations && typeof t.annotations === 'object' ? t.annotations : null;
+  const annotations = {};
+  if (a) for (const k of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']) if (a[k] === true || a[k] === false) annotations[k] = a[k];
+  return { name: String(t.name).slice(0, 120), description: String(t.description || '').slice(0, 1000), inputSchema: schema,
+           ...(Object.keys(annotations).length ? { annotations } : {}) };
+}
 async function remoteTools(request, env){
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'unauthorized' }, 401);
@@ -498,14 +513,7 @@ async function remoteTools(request, env){
   } catch (e) {
     return _rmcpFail(app, e);
   }
-  /* Bounded like any other connector's list: a name, a description and a
-     schema, each capped, and a schema too large to be a schema dropped for an
-     empty one rather than passed on to the model. */
-  const out = tools.slice(0, RMCP_MAX_TOOLS).map(t => {
-    let schema = (t.inputSchema && typeof t.inputSchema === 'object') ? t.inputSchema : { type: 'object', properties: {} };
-    try { if (JSON.stringify(schema).length > 20000) schema = { type: 'object', properties: {} }; } catch (e) { schema = { type: 'object', properties: {} }; }
-    return { name: String(t.name).slice(0, 120), description: String(t.description || '').slice(0, 1000), inputSchema: schema };
-  });
+  const out = tools.slice(0, RMCP_MAX_TOOLS).map(_rmcpToolShown);
   return json({ ok: true, app: slug, name: app.name, tools: out });
 }
 

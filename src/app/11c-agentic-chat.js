@@ -684,6 +684,8 @@ async function _confirmModelTool(name, input){
        arguments is a blank cheque, and these reach services holding somebody's
        real mail, repositories or money. */
     detail = _toolArgPreview(input);
+    const said = (typeof mcpHintsLine === 'function') ? mcpHintsLine(name) : '';
+    if(said) detail += '\n\n' + said;
   }
   if(name==='deploy_site') detail='Page title: '+String(input.title||'App');
   else if(name==='run_code'||name==='fix_code') detail=String(input.code||'').slice(0,600);
@@ -786,7 +788,13 @@ async function _amvRunTool(name, input, onStatus){
       const head = (r && r.ok)
         ? '[The connector reports this. AMV has not checked it - say so if it matters.]\n'
         : '[The connector reported a FAILURE. Do not say this was done.]\n';
-      return { text: head + String((r && r.text) || ''), render:null };
+      /* And the person sees the same thing the model is told, in the
+         conversation where it happened, so "done" in the reply can be held
+         against what the connector actually said. */
+      const rcpt = '<div class="chat-mcp-rcpt' + (r && r.ok ? '' : ' bad') + '"><b>'
+        + escH(who ? (who.name || who.id) + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '</b> '
+        + escH(r && r.ok ? T('The connector says this worked. AMV could not check it.') : T('The connector says this failed.')) + '</div>';
+      return { text: head + String((r && r.text) || ''), render: rcpt };
     }
     if(name==='run_command' || name==='read_file' || name==='write_file' || name==='list_dir'){
       const label = name==='run_command' ? ('Running: ' + String(input.command||'').slice(0,60))

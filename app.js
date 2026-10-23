@@ -28810,6 +28810,8 @@ async function _confirmModelTool(name, input){
        arguments is a blank cheque, and these reach services holding somebody's
        real mail, repositories or money. */
     detail = _toolArgPreview(input);
+    const said = (typeof mcpHintsLine === 'function') ? mcpHintsLine(name) : '';
+    if(said) detail += '\n\n' + said;
   }
   if(name==='deploy_site') detail='Page title: '+String(input.title||'App');
   else if(name==='run_code'||name==='fix_code') detail=String(input.code||'').slice(0,600);
@@ -28912,7 +28914,13 @@ async function _amvRunTool(name, input, onStatus){
       const head = (r && r.ok)
         ? '[The connector reports this. AMV has not checked it - say so if it matters.]\n'
         : '[The connector reported a FAILURE. Do not say this was done.]\n';
-      return { text: head + String((r && r.text) || ''), render:null };
+      /* And the person sees the same thing the model is told, in the
+         conversation where it happened, so "done" in the reply can be held
+         against what the connector actually said. */
+      const rcpt = '<div class="chat-mcp-rcpt' + (r && r.ok ? '' : ' bad') + '"><b>'
+        + escH(who ? (who.name || who.id) + ' \u00b7 ' + who.tool : String(name).replace(/^mcp__/, '')) + '</b> '
+        + escH(r && r.ok ? T('The connector says this worked. AMV could not check it.') : T('The connector says this failed.')) + '</div>';
+      return { text: head + String((r && r.text) || ''), render: rcpt };
     }
     if(name==='run_command' || name==='read_file' || name==='write_file' || name==='list_dir'){
       const label = name==='run_command' ? ('Running: ' + String(input.command||'').slice(0,60))
@@ -50349,6 +50357,35 @@ function mcpTools(opts){
 try{ window.mcpTools=mcpTools; window.mcpToolName=mcpToolName; window.mcpToolIdentity=mcpToolIdentity; window._mcpSplitName=_mcpSplitName; }catch(e){}
 
 function isMcpTool(name){ return String(name || '').startsWith(MCP_PREFIX); }
+
+/* WHAT A CONNECTOR SAYS ABOUT ONE OF ITS TOOLS - MCP's annotations: that it
+   only reads, may delete or overwrite, can be repeated safely, reaches other
+   services. Its own word, so it is shown to the person as exactly that and
+   never used to skip asking: a connector that wanted to slip a deletion past
+   somebody would simply say it only reads. Only a real true or false counts;
+   anything else is not an answer, and no default from the spec is assumed. */
+function mcpToolHints(name){
+  const hit = _mcpSplitName(name);
+  const a = hit && hit.tool && hit.tool.annotations;
+  if(!a || typeof a !== 'object') return null;
+  const b = (v) => (v === true || v === false) ? v : null;
+  const h = { readOnly: b(a.readOnlyHint), destructive: b(a.destructiveHint), idempotent: b(a.idempotentHint), openWorld: b(a.openWorldHint) };
+  return Object.values(h).some(v => v !== null) ? h : null;
+}
+function mcpHintsLine(name){
+  const h = mcpToolHints(name); if(!h) return '';
+  const who = mcpToolIdentity(name);
+  const said = [];
+  if(h.readOnly === true) said.push(T('it only reads'));
+  else if(h.destructive === true) said.push(T('it may delete or overwrite things'));
+  else if(h.destructive === false) said.push(T('it adds things but does not delete or overwrite them'));
+  if(h.idempotent === true && h.readOnly !== true) said.push(T('doing it twice has the same effect as once'));
+  if(h.openWorld === true) said.push(T('it reaches services beyond this one'));
+  if(!said.length) return '';
+  return T('What the {0} connector says about this:').replace('{0}', who ? (who.name || who.id) : '') + ' ' + said.join('; ') + '. '
+       + T('AMV cannot check what a connector says about itself, so it asks you either way.');
+}
+try{ window.mcpToolHints=mcpToolHints; window.mcpHintsLine=mcpHintsLine; }catch(e){}
 try{ window.isMcpTool=isMcpTool; }catch(e){}
 
 /* Run one. Failures come back as a RESULT rather than a throw, for the same

@@ -17270,3 +17270,12 @@ body:not(.sb-rail) #sb #hist-header.hh-off{ display:flex!important; visibility:h
    enough to scan from a phone held at arm's length, never wider than the
    panel. */
 .sec-qr{ display:block; width:min(220px, 100%); height:auto; margin:var(--sp-2) 0; border-radius:var(--r-sm); border:1px solid var(--bd); }
+
+/* ═══ LAYER A330 - what a connector said it did (chat) ═══
+   A connector's action leaves a line in the conversation saying what the
+   connector reported and that AMV could not check it - quiet, because it is a
+   record, and red only when the connector itself reported a failure. */
+.chat-mcp-rcpt{ margin:var(--sp-2) 0; padding:var(--sp-2) var(--sp-3); font-size:var(--t-sm); color:var(--mu);
+  background:var(--s2); border:1px solid var(--bd); border-left:3px solid var(--bdl); border-radius:var(--r-sm); }
+.chat-mcp-rcpt b{ color:var(--tx); font-weight:600; }
+.chat-mcp-rcpt.bad{ border-left-color:var(--red); }
