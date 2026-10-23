@@ -159,6 +159,15 @@ async function teamCreate(request, env){
      in its members array - so its owner went on paying for a seat its holder
      could no longer reach. That is refused rather than papered over: leave the
      team first, which is a route that exists and does the accounting. */
+  /* ONE CREATION AT A TIME PER PERSON. Everything below reads "no team yet"
+     and then makes one, so a double-click made two - the second pointer won
+     and the first team was left holding the owner's cached plan with nobody
+     able to reach it: the abandoned-team hole above, without anybody trying.
+     A second create while one is in flight is told so; asked again a moment
+     later, it gets the team the first one made. */
+  if(!(await _claimOnce(env, 'teamnew', String(user.email).toLowerCase(), 30)))
+    return json({ error:'Your team is already being created. Give it a moment.', code:'in_progress' }, 409);
+  try {
   const priorId = await env.AMV_KV.get(`userteam:${user.email}`);
   if(priorId){
     const prior = await DB.get(env, 'team', priorId);
@@ -210,6 +219,7 @@ async function teamCreate(request, env){
   }
   await _teamAudit(env, team, user.email, 'team_created', { name: team.name });
   return json({ ok:true, team, seats: { used: 1, limit: _teamSeatLimit(_teamPlan(team), team.customCfg) } });
+  } finally { await _releaseClaim(env, 'teamnew', String(user.email).toLowerCase()); }
 }
 async function teamGet(request, env){
   const user = await requireUser(request, env);

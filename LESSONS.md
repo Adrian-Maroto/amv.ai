@@ -15224,3 +15224,11 @@ that finds it held fails (500) so the provider retries it, rather than
 waiting or guessing. A partial refund then a full one must still take the
 difference, so this is a mutex measured in seconds (`crevlock`), not a
 once-only claim.
+
+Also from the same scan (600): `teamCreate` read "no team yet" and made one,
+so a double-click made three teams in the suite - the second pointer won and
+the others were left holding the owner's cached plan, reachable by nobody:
+the abandoned-team billing hole its own comment describes. One creation per
+person at a time (`teamnew`, seconds), a second told `in_progress`.
+`_referralEnsure` looked the same and is not: its code is derived from the
+address, so two calls write the same value.

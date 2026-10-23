@@ -245,6 +245,24 @@ section('A join that cannot be finished leaves no seat behind');
   ok(again.body.ok === true, 'so the invite can simply be tried again', again.body.error || again.status);
 }
 
+section('A double-click on Create team makes one team');
+{
+  /* Each create read "no team yet" and made one; the second pointer won, and
+     the first team was left with the owner's plan cached on it and nobody
+     who could reach it - the abandoned-team billing hole teamCreate's own
+     comment describes, from an ordinary double-click. */
+  const env = mkEnv();
+  const owner = await person(env, 'twice@example.com', 'elite');
+  const rs = await Promise.all([1, 2, 3].map(() => post(env, '/team/create', { name: 'Twice' }, owner)));
+  const teams = [...env.AMV_KV._map.keys()].filter(k => /^team:team_/.test(k));
+  ok(teams.length === 1, 'one team exists', { teams: teams.length, statuses: rs.map(r => r.status) });
+  const ids = new Set(rs.filter(r => r.body.ok).map(r => r.body.team.id));
+  ok(ids.size === 1, 'and every create that said yes names that one team', [...ids]);
+  ok(rs.every(r => r.body.ok || r.body.code === 'in_progress'), 'the others say a team is already being made', rs.map(r => r.body.code || 'ok'));
+  const again = await post(env, '/team/create', { name: 'Twice' }, owner);
+  ok(again.body.ok && again.body.existing && again.body.team.id === [...ids][0], 'and asking again afterwards returns it', again.body);
+}
+
 section('The decision is made inside the lock, not beside it');
 {
   /* The property, on the shape: a limit read before the lock and enforced
