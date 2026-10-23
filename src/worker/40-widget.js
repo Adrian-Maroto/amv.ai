@@ -91,9 +91,15 @@ async function widgetConfigGet(request, env) {
   if (!user) return json({ error: 'Please sign in.' }, 401);
   let cfg = await DB.get(env, 'widget_owner', user.email);
   if (!cfg) {
-    cfg = { ...WIDGET_DEFAULTS, key: _newSiteKey(), owner: user.email, created: Date.now() };
-    await DB.put(env, 'widget_owner', user.email, cfg);
-    await DB.put(env, 'widget', cfg.key, cfg);   // index by site key for public lookup
+    /* Made once, under the lock. Two first loads at once each made a key, and
+       the one not kept stayed live in the public index - a widget that went
+       on answering after its owner switched theirs off. */
+    let made = false;
+    cfg = await _withKind(env, 'widget_owner', user.email, (rec) => {
+      if (!rec.key) { Object.assign(rec, { ...WIDGET_DEFAULTS, key: _newSiteKey(), owner: user.email, created: Date.now() }); made = true; }
+      return { ...rec };
+    }, {});
+    if (made) await DB.put(env, 'widget', cfg.key, cfg);   // index by site key for public lookup
   }
   return json({ ok: true, config: cfg });
 }

@@ -12097,11 +12097,18 @@ async function fraudRecord(request, env){
   if(blocked) return blocked;
   const a = await request.json().catch(() => ({}));
   if(!a || !a.category) return json({ ok:true, stored:false });
-  const idx = (await DB.get(env, 'fraud', 'index')) || { items: [] };
-  idx.items = [{ at:Date.now(), by:user.email, category:String(a.category).slice(0,40),
+  /* One list that every account appends to, so it is written under the lock:
+     read-prepend-write from two accounts at once kept only one of them, and
+     this is the record an operator reads after an abuse incident. */
+  const entry = { at:Date.now(), by:user.email, category:String(a.category).slice(0,40),
     risk:String(a.risk||'').slice(0,10), action:String(a.action||'').slice(0,30),
-    confidence:+a.confidence || 0 }, ...(idx.items||[])].slice(0, 500);
-  await DB.put(env, 'fraud', 'index', idx);
+    confidence:+a.confidence || 0 };
+  try{
+    await _withRecord(env, 'fraud', 'index',
+      async (e, k) => (await DB.get(e, 'fraud', k)) || { items: [] },
+      async (e, k, rec) => { await DB.put(e, 'fraud', k, rec); },
+      (idx) => { idx.items = [entry, ...(idx.items||[])].slice(0, 500); });
+  }catch(e){ if(e && e.code === 'record_busy') return json({ ok:false, stored:false, code:'busy' }, 503); throw e; }
   return json({ ok:true, stored:true });
 }
 
@@ -23087,9 +23094,15 @@ async function widgetConfigGet(request, env) {
   if (!user) return json({ error: 'Please sign in.' }, 401);
   let cfg = await DB.get(env, 'widget_owner', user.email);
   if (!cfg) {
-    cfg = { ...WIDGET_DEFAULTS, key: _newSiteKey(), owner: user.email, created: Date.now() };
-    await DB.put(env, 'widget_owner', user.email, cfg);
-    await DB.put(env, 'widget', cfg.key, cfg);   // index by site key for public lookup
+    /* Made once, under the lock. Two first loads at once each made a key, and
+       the one not kept stayed live in the public index - a widget that went
+       on answering after its owner switched theirs off. */
+    let made = false;
+    cfg = await _withKind(env, 'widget_owner', user.email, (rec) => {
+      if (!rec.key) { Object.assign(rec, { ...WIDGET_DEFAULTS, key: _newSiteKey(), owner: user.email, created: Date.now() }); made = true; }
+      return { ...rec };
+    }, {});
+    if (made) await DB.put(env, 'widget', cfg.key, cfg);   // index by site key for public lookup
   }
   return json({ ok: true, config: cfg });
 }
@@ -26093,21 +26106,32 @@ async function calFeedAdd(request, env) {
   const gate = _webHostAllowed(url);
   if (!gate.ok) return json({ error: gate.why, code: 'bad_url' }, 400);
 
-  const rec = (await DB.get(env, 'cal', user.email)) || { feeds: [] };
-  const feeds = Array.isArray(rec.feeds) ? rec.feeds : [];
-  if (feeds.length >= CAL_MAX_FEEDS) {
-    return json({ error: 'That is ' + CAL_MAX_FEEDS + ' calendars, which is as many as AMV reads. Remove one first.',
-                  code: 'too_many' }, 400);
-  }
   let host = ''; try { host = new URL(url).host; } catch (e) {}
   const id = 'cal_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-  feeds.push({ id, label: label || host, host, url: await _mailEncrypt(env, url), addedAt: Date.now() });
-  await DB.put(env, 'cal', user.email, { feeds });
+  const sealed = await _mailEncrypt(env, url);
+  /* Under the lock, limit included: two tabs adding at once each read the
+     list without the other, and one calendar the person was told was added
+     was gone. */
+  const full = await _calWith(env, user.email, (rec) => {
+    if (rec.feeds.length >= CAL_MAX_FEEDS) return true;
+    rec.feeds.push({ id, label: label || host, host, url: sealed, addedAt: Date.now() });
+    return false;
+  });
+  if (full) return json({ error: 'That is ' + CAL_MAX_FEEDS + ' calendars, which is as many as AMV reads. Remove one first.',
+                          code: 'too_many' }, 400);
   await _userEvent(env, request, user.email, 'calendar_subscribed', { host });
   audit(env, 'cal_feed_add', { by: user.email, host });
   /* The host, never the URL. It is a secret and it does not need to come back
      out of storage to be listed. */
   return json({ ok: true, feed: { id, label: label || host, host } });
+}
+
+/* A person's calendar list, changed under the record lock. */
+function _calWith(env, email, mutate) {
+  return _withRecord(env, 'cal', String(email || '').toLowerCase(),
+    async (e, k) => { const r = (await DB.get(e, 'cal', k)) || {}; return { feeds: Array.isArray(r.feeds) ? r.feeds : [] }; },
+    async (e, k, rec) => { await DB.put(e, 'cal', k, { feeds: rec.feeds }); },
+    mutate);
 }
 
 async function calFeedList(request, env) {
@@ -26124,9 +26148,7 @@ async function calFeedRemove(request, env) {
   if (!user) return json({ error: 'sign in first', code: 'needs_auth' }, 401);
   const body = await request.json().catch(() => ({}));
   const id = String(body.id || '');
-  const rec = (await DB.get(env, 'cal', user.email)) || { feeds: [] };
-  const feeds = (Array.isArray(rec.feeds) ? rec.feeds : []).filter((f) => f.id !== id);
-  await DB.put(env, 'cal', user.email, { feeds });
+  const feeds = await _calWith(env, user.email, (rec) => { rec.feeds = rec.feeds.filter((f) => f.id !== id); return rec.feeds; });
   await _userEvent(env, request, user.email, 'calendar_unsubscribed', {});
   return json({ ok: true, feeds: feeds.map((f) => ({ id: f.id, label: f.label, host: f.host })) });
 }

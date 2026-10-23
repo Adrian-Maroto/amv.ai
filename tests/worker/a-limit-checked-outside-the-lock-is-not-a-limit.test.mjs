@@ -263,6 +263,35 @@ section('A double-click on Create team makes one team');
   ok(again.body.ok && again.body.existing && again.body.team.id === [...ids][0], 'and asking again afterwards returns it', again.body);
 }
 
+section('Two calendars added at once are both kept');
+{
+  const env = mkEnv(); env.MAIL_CRED_KEY = 'Qx7-vast-entropy-here-9931-kkzp-4417';
+  const tok = await person(env, 'cals@example.com', 'pro');
+  const rs = await Promise.all(['https://calendar.example.org/a.ics', 'https://calendar.example.org/b.ics'].map((url, i) =>
+    post(env, '/v1/cal/feeds/add', { url, label: 'Cal ' + i }, tok)));
+  const list = await post(env, '/v1/cal/feeds', {}, tok);
+  ok(rs.every(r => r.body.ok) && (list.body.feeds || []).length === 2, 'each one the person was told was added is in the list', { said: rs.map(r => r.body.ok || r.body.error), kept: (list.body.feeds || []).length });
+}
+
+section('Two first loads of the website widget make one key');
+{
+  const env = mkEnv();
+  const tok = await person(env, 'widget@example.com', 'pro');
+  const rs = await Promise.all([1, 2, 3].map(() => post(env, '/v1/widget/config', {}, tok)));
+  const keys = [...env.AMV_KV._map.keys()].filter(k => k.startsWith('widget:'));
+  ok(keys.length === 1, 'one public key exists - none left live that its owner cannot switch off', keys);
+  ok(new Set(rs.map(r => r.body.config && r.body.config.key)).size === 1, 'and every load shows that one', rs.map(r => r.body.config && r.body.config.key));
+}
+
+section('The abuse log keeps every account\u2019s entry when they arrive together');
+{
+  const env = mkEnv();
+  const toks = await Promise.all(['f1', 'f2', 'f3', 'f4'].map(n => person(env, n + '@example.com')));
+  await Promise.all(toks.map((t, i) => post(env, '/v1/fraud/record', { category: 'phishing-' + i, risk: 'high' }, t)));
+  const idx = await W.DB.get(env, 'fraud', 'index');
+  ok(idx && idx.items.length === 4, 'four accounts, four entries - the record an operator reads after an incident', idx && idx.items.map(x => x.category));
+}
+
 section('The decision is made inside the lock, not beside it');
 {
   /* The property, on the shape: a limit read before the lock and enforced

@@ -160,7 +160,13 @@ const NO_LOCK_NEEDED = {
      with the same claim in front of it". There was no claim in front of it, so
      the reason is now the true one (LESSONS 581). */
   _federatedAccount: 'creating the account for an address Google or a company has just verified - unlocked on purpose so sign-in survives an outage of the lock store, and two first sign-ins for one address write the same record; clearing a stranger\'s unconfirmed password DOES take the lock, and refuses the sign-in if it cannot',
-  teamCreate:      'writes a team that does not exist yet, under a fresh id nobody else has',
+  /* teamCreate was exempted as "a team that does not exist yet, under a fresh
+     id nobody else has". True of the team record and false of the decision in
+     front of it: three creates at once each read "no team yet" and made one,
+     leaving two abandoned teams holding the owner's plan (LESSONS 600). It
+     takes a per-person claim now; the exemption stays only for the record
+     write itself, and says so. */
+  teamCreate:      'the team record is new under a fresh id; the decision to create one is serialised per person by the teamnew claim in front of it',
   teamPresence:    'who is online right now, overwritten every few seconds by design - a lost write is corrected before anybody reads it',
   errorsReport:    'a telemetry sink; losing a sample of a burst that is being counted in the hundreds changes nothing anybody acts on',
   _workerError:    'the same sink, from the Worker side',
@@ -174,9 +180,12 @@ const NO_LOCK_NEEDED = {
      connFinish: that one takes its own claim, so it needs no exemption, and an
      exemption inherited by a different function is how a real bypass gets waved
      through on somebody else's reasoning. */
-  stripeSubscribe: 'writes the billing row for the checkout it is creating',
-  fraudRecord:     'an append-only assessment log, read only by an operator',
-  widgetConfigGet: 'creates the caller\'s widget record on first read, with a key nobody else has yet',
+  stripeSubscribe: 'writes the billing row for the subscription it just created; two at once leave both rows naming a live subscription, and _cancelSupersededSubs keeps only the newer one, so the row that loses names one that is being cancelled',
+  /* fraudRecord ("an append-only assessment log") and widgetConfigGet ("a key
+     nobody else has yet") were exempted here. The first is one list every
+     account appends to, so two at once kept one entry; the second made two
+     public keys from two first loads, and the one not kept went on answering
+     after the owner switched the widget off. Both lock now (LESSONS 600). */
 };
 
 section('Both sides were read');

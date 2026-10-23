@@ -15232,3 +15232,19 @@ the abandoned-team billing hole its own comment describes. One creation per
 person at a time (`teamnew`, seconds), a second told `in_progress`.
 `_referralEnsure` looked the same and is not: its code is derived from the
 address, so two calls write the same value.
+
+## 601. An exemption's reason is a claim about concurrency - test it
+
+`a-lock-nobody-takes-is-not-a-lock` keeps a list of handlers excused from
+locking, each with a reason. Three reasons were wrong, and each was a
+sentence about who owns a record rather than how many writers it has:
+"a team that does not exist yet, under a fresh id" (three teams from a
+double-click), "an append-only assessment log" (four accounts reporting at
+once left ONE entry - one list, every account appending), "a key nobody else
+has yet" (two first loads made two public widget keys, and the one not kept
+answered on after its owner switched the widget off). Calendar subscriptions
+had the same shape outside the list: two tabs, one calendar lost.
+
+Rule: an exemption is only as good as a test that runs two of them at once.
+Each fixed one has that test now, and each reproduced the loss on the old code
+before it was fixed.

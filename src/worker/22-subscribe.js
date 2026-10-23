@@ -88,11 +88,18 @@ async function fraudRecord(request, env){
   if(blocked) return blocked;
   const a = await request.json().catch(() => ({}));
   if(!a || !a.category) return json({ ok:true, stored:false });
-  const idx = (await DB.get(env, 'fraud', 'index')) || { items: [] };
-  idx.items = [{ at:Date.now(), by:user.email, category:String(a.category).slice(0,40),
+  /* One list that every account appends to, so it is written under the lock:
+     read-prepend-write from two accounts at once kept only one of them, and
+     this is the record an operator reads after an abuse incident. */
+  const entry = { at:Date.now(), by:user.email, category:String(a.category).slice(0,40),
     risk:String(a.risk||'').slice(0,10), action:String(a.action||'').slice(0,30),
-    confidence:+a.confidence || 0 }, ...(idx.items||[])].slice(0, 500);
-  await DB.put(env, 'fraud', 'index', idx);
+    confidence:+a.confidence || 0 };
+  try{
+    await _withRecord(env, 'fraud', 'index',
+      async (e, k) => (await DB.get(e, 'fraud', k)) || { items: [] },
+      async (e, k, rec) => { await DB.put(e, 'fraud', k, rec); },
+      (idx) => { idx.items = [entry, ...(idx.items||[])].slice(0, 500); });
+  }catch(e){ if(e && e.code === 'record_busy') return json({ ok:false, stored:false, code:'busy' }, 503); throw e; }
   return json({ ok:true, stored:true });
 }
 

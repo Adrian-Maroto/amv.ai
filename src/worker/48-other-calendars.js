@@ -136,21 +136,32 @@ async function calFeedAdd(request, env) {
   const gate = _webHostAllowed(url);
   if (!gate.ok) return json({ error: gate.why, code: 'bad_url' }, 400);
 
-  const rec = (await DB.get(env, 'cal', user.email)) || { feeds: [] };
-  const feeds = Array.isArray(rec.feeds) ? rec.feeds : [];
-  if (feeds.length >= CAL_MAX_FEEDS) {
-    return json({ error: 'That is ' + CAL_MAX_FEEDS + ' calendars, which is as many as AMV reads. Remove one first.',
-                  code: 'too_many' }, 400);
-  }
   let host = ''; try { host = new URL(url).host; } catch (e) {}
   const id = 'cal_' + crypto.randomUUID().replace(/-/g, '').slice(0, 12);
-  feeds.push({ id, label: label || host, host, url: await _mailEncrypt(env, url), addedAt: Date.now() });
-  await DB.put(env, 'cal', user.email, { feeds });
+  const sealed = await _mailEncrypt(env, url);
+  /* Under the lock, limit included: two tabs adding at once each read the
+     list without the other, and one calendar the person was told was added
+     was gone. */
+  const full = await _calWith(env, user.email, (rec) => {
+    if (rec.feeds.length >= CAL_MAX_FEEDS) return true;
+    rec.feeds.push({ id, label: label || host, host, url: sealed, addedAt: Date.now() });
+    return false;
+  });
+  if (full) return json({ error: 'That is ' + CAL_MAX_FEEDS + ' calendars, which is as many as AMV reads. Remove one first.',
+                          code: 'too_many' }, 400);
   await _userEvent(env, request, user.email, 'calendar_subscribed', { host });
   audit(env, 'cal_feed_add', { by: user.email, host });
   /* The host, never the URL. It is a secret and it does not need to come back
      out of storage to be listed. */
   return json({ ok: true, feed: { id, label: label || host, host } });
+}
+
+/* A person's calendar list, changed under the record lock. */
+function _calWith(env, email, mutate) {
+  return _withRecord(env, 'cal', String(email || '').toLowerCase(),
+    async (e, k) => { const r = (await DB.get(e, 'cal', k)) || {}; return { feeds: Array.isArray(r.feeds) ? r.feeds : [] }; },
+    async (e, k, rec) => { await DB.put(e, 'cal', k, { feeds: rec.feeds }); },
+    mutate);
 }
 
 async function calFeedList(request, env) {
@@ -167,9 +178,7 @@ async function calFeedRemove(request, env) {
   if (!user) return json({ error: 'sign in first', code: 'needs_auth' }, 401);
   const body = await request.json().catch(() => ({}));
   const id = String(body.id || '');
-  const rec = (await DB.get(env, 'cal', user.email)) || { feeds: [] };
-  const feeds = (Array.isArray(rec.feeds) ? rec.feeds : []).filter((f) => f.id !== id);
-  await DB.put(env, 'cal', user.email, { feeds });
+  const feeds = await _calWith(env, user.email, (rec) => { rec.feeds = rec.feeds.filter((f) => f.id !== id); return rec.feeds; });
   await _userEvent(env, request, user.email, 'calendar_unsubscribed', {});
   return json({ ok: true, feeds: feeds.map((f) => ({ id: f.id, label: f.label, host: f.host })) });
 }
