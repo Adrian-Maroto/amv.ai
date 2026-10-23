@@ -18803,7 +18803,8 @@ async function teamCreate(request, env){
      able to reach it: the abandoned-team hole above, without anybody trying.
      A second create while one is in flight is told so; asked again a moment
      later, it gets the team the first one made. */
-  if(!(await _claimOnce(env, 'teamnew', String(user.email).toLowerCase(), 30)))
+  const creator = String(user.email).toLowerCase();
+  if(!(await _claimOnce(env, 'teamnew', creator, 30)))
     return json({ error:'Your team is already being created. Give it a moment.', code:'in_progress' }, 409);
   try {
   const priorId = await env.AMV_KV.get(`userteam:${user.email}`);
@@ -18857,7 +18858,7 @@ async function teamCreate(request, env){
   }
   await _teamAudit(env, team, user.email, 'team_created', { name: team.name });
   return json({ ok:true, team, seats: { used: 1, limit: _teamSeatLimit(_teamPlan(team), team.customCfg) } });
-  } finally { await _releaseClaim(env, 'teamnew', String(user.email).toLowerCase()); }
+  } finally { await _releaseClaim(env, 'teamnew', creator); }
 }
 async function teamGet(request, env){
   const user = await requireUser(request, env);
