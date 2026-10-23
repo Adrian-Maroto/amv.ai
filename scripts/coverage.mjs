@@ -65,6 +65,17 @@ await new Promise((resolve) => {
   if (!suites.length) resolve();
 });
 console.error('');
+/* A suite that failed in the pool runs once more with the machine to itself,
+   as the gate's AMV_TEST_RETRY_ALONE does: several suites write helper files
+   and bind ports, and four that sort next to each other collided when they
+   started together - which read as their code never having run. */
+const retried = failed.splice(0);
+for (const s of retried) {
+  const code = await new Promise((r) => { const p = spawn(process.execPath, [join('tests', 'worker', s)], { cwd: ROOT, stdio: 'ignore',
+    env: { ...process.env, NODE_V8_COVERAGE: COV } }); const k = setTimeout(() => p.kill('SIGKILL'), 300000); p.on('exit', (c) => { clearTimeout(k); r(c); }); });
+  if (code) failed.push(s);
+}
+if (retried.length) console.error('re-ran ' + retried.length + ' alone; ' + failed.length + ' still failing');
 
 /* covered[i] = 1 if byte i of the bundle was inside a block that ran in any
    suite; seen[i] = 1 if any suite loaded it at all. called: function start

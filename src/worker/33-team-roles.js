@@ -689,7 +689,10 @@ async function teamPresence(request, env){
    stored per-team and every change is written to the team audit log. */
 const TASK_STATUSES = new Set(['todo', 'in_progress', 'done']);
 async function _teamTasks(env, teamId){ return (await DB.get(env, 'teamtasks', teamId)) || []; }
-async function _saveTeamTasks(env, teamId, tasks){ await DB.put(env, 'teamtasks', teamId, tasks); }
+/* No unlocked save here: a task list every member writes is changed only
+   under the team-tasks lock (see teamTaskCreate). The plain write that sat
+   here had no callers left, and an unlocked write lying around is the one
+   the next change reaches for. */
 
 async function teamTasks(request, env){
   const user = await requireUser(request, env);

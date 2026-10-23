@@ -352,6 +352,14 @@ Companion docs (do not duplicate them here - read them):
   uses it are two separate claims, and only the first can be checked by reading.
   And a comment saying "this is safe because X, Y and Z bound it" is a test plan
   written by the person who knew; go and test X, Y and Z.
+- **Coverage is measured too.** `npm run coverage` (~3 minutes) runs every
+  Worker suite under V8's own coverage and writes `docs/COVERAGE.md`: functions
+  called and block coverage per `src/worker` file, and every function in the
+  trust areas (sign-in, money, permissions, the action protocol, SCIM,
+  webhooks, spending) that no suite ever calls, by name. It is a report, not a
+  gate - the never-called list is what to act on. Its first run found an
+  unlocked team-task write with no callers left, and a route that hands out
+  Google's picker values that nothing tested.
 - **Performance is measured, not inferred.** There used to be one perf check, a
   ceiling on the gzipped size of `index.html`, and the page sat comfortably
   inside it the whole time it was taking 12.6 SECONDS to paint - a
