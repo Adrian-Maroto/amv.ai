@@ -42,6 +42,14 @@ async function signUp(page, em){
   }, [em, PW]);
 }
 const until = async (page, fn, ms = 8000) => { const s = Date.now(); while (Date.now() - s < ms) { if (await page.evaluate(fn).catch(() => false)) return true; await page.waitForTimeout(100); } return false; };
+/* After the server deletes, the dialog says what AMV must keep (payout records,
+   by law) and waits for the person to close it before the page reloads. */
+async function finishDelete(page){
+  await until(page, () => !!document.getElementById('cfm-yes') || !document.getElementById('del-go'), 10000);
+  const nav = page.waitForNavigation({ timeout: 10000 }).catch(() => null);
+  await page.evaluate(() => { const b = document.getElementById('cfm-yes'); if (b) b.click(); }).catch(() => {});
+  await nav;
+}
 async function openDelete(page){
   await page.evaluate(() => _confirmDeleteAccount());
   await page.fill('#del-confirm', 'DELETE');
@@ -71,12 +79,12 @@ section('A password account: asked for the password, and deleted with it');
   ok(await until(page, () => /not right/.test(document.getElementById('del-msg').textContent)), 'a wrong password is refused, and says so', true);
   ok(await exists(EM), 'and the account is still there', true);
   await page.fill('#del-pw', PW);
-  const nav = page.waitForNavigation({ timeout: 10000 }).catch(() => null);
   await page.click('#del-go');
-  await nav;
+  ok(await until(page, () => /payouts actually sent/i.test((document.getElementById('cfm-bg') || {}).textContent || ''), 10000),
+     'it says what AMV keeps, and why, before the page goes', true);
+  await finishDelete(page);
   ok(!(await exists(EM)), 'the right password deletes the account on the server', true);
-  await page.waitForTimeout(500);
-  ok(await page.evaluate(() => !(window.AMV_API && AMV_API.token)), 'and this browser is signed out', true);
+  ok(await until(page, () => !(window.AMV_API && AMV_API.token) && !localStorage.getItem('amv_user'), 15000), 'and this browser is signed out', true);
 }
 
 section('With an authenticator app: the password alone is not enough');
@@ -103,9 +111,8 @@ section('With an authenticator app: the password alone is not enough');
   ok(await until(page, () => /did not confirm/.test(document.getElementById('del-msg').textContent)), 'a wrong code is refused', true);
   ok(await exists(EM), 'and the account is still there', true);
   await page.fill('#del-code', totp(st.secret, 1));
-  const nav = page.waitForNavigation({ timeout: 10000 }).catch(() => null);
   await page.click('#del-go');
-  await nav;
+  await finishDelete(page);
   ok(!(await exists(EM)), 'the code from the app deletes it', true);
 }
 
