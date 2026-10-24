@@ -88,6 +88,7 @@ function mkEnv(extra) {
       idFromName: (n) => n,
       get: (n) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = vals.get(n) || 0;
+        if (b.op === 'clear') return new Response(JSON.stringify({ ok: true }));   // lifetime totals, erased with the account
         if (b.op === 'incr') { vals.set(n, cur + (b.amount || 0)); return new Response(JSON.stringify({ value: vals.get(n) })); }
         if (b.op === 'get') return new Response(JSON.stringify({ value: cur }));
         return new Response(JSON.stringify({ allowed: true, value: cur }));

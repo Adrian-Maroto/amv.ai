@@ -286,7 +286,7 @@ async function meterStream(stream, eng, { dName, mName, gName, costName, acctCos
   /* Lifetime totals for the person (op 'tally'): tokens, one message, the
      month and the engine. Never allowed to fail the answer it is counting. */
   if (user && user.email && total > 0) {
-    try { await counter(env, `life:${user.email}`, { op: 'tally', tokens: total, msgs: 1, month: monthKey(), engine: eng.key || '' }); } catch (e) {}
+    try { await counter(env, `life:${user.email}`, { op: 'lifeAdd', tokens: total, msgs: 1, month: monthKey(), engine: eng.key || '' }); } catch (e) {}
   }
   /* The same money, totalled once - so the dashboard can report spend without
      adding up every account (AMV-088). */
@@ -409,7 +409,7 @@ async function usageReport(request, env) {
   const dayStart = new Date(nowMs);
   /* All time, for this person (not the team pool): totals only. */
   let life = null;
-  try { const r = await counter(env, `life:${user.email}`, { op: 'tallyGet' }); life = r && r.tally; } catch (e) {}
+  try { const r = await counter(env, `life:${user.email}`, { op: 'lifeGet' }); life = r && r.tally; } catch (e) {}
   return json({
     plan: user.plan,
     day: { used: dUsed, limit: limits.dayTokens,

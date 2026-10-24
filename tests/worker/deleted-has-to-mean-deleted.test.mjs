@@ -69,6 +69,7 @@ function mkEnv(failKinds = []) {
       idFromName: (x) => x,
       get: (x) => ({ async fetch(_u, init) {
         const b = JSON.parse(init.body); const cur = n.get(x) || 0;
+        if (b.op === 'clear') return new Response(JSON.stringify({ ok: true }));   // lifetime totals, erased with the account
         if (b.op === 'rateCheck') { n.set(x, cur + 1); return new Response(JSON.stringify({ allowed: true })); }
         if (b.op === 'claim') { if (n.has('c:' + x)) return new Response(JSON.stringify({ claimed: false })); n.set('c:' + x, 1); return new Response(JSON.stringify({ claimed: true })); }
         if (b.op === 'release') { n.delete('c:' + x); return new Response(JSON.stringify({ ok: true })); }

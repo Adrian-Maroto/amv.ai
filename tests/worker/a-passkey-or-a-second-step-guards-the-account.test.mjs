@@ -35,6 +35,7 @@ const env = {
     async list({ prefix } = {}){ return { keys: [...m.keys()].filter(k => !prefix || k.startsWith(prefix)).map(name => ({ name })), list_complete: true }; } },
   AMV_COUNTER: { idFromName: n => n, get: n => ({ async fetch(_u, init){
     const b = JSON.parse(init.body || '{}'); const cur = vals.get(n) || 0; const r = (o) => new Response(JSON.stringify(o));
+    if (b.op === 'clear') return new Response(JSON.stringify({ ok: true }));   // lifetime totals, erased with the account
     /* One object per name, as the Durable Object is: a claim is taken once. */
     if (b.op === 'claim'){ if (vals.get(n)) return r({ claimed: false }); vals.set(n, 1); return r({ claimed: true, owner: n }); }
     if (b.op === 'release'){ vals.delete(n); return r({ ok: true }); }

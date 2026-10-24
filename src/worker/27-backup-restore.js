@@ -154,7 +154,7 @@ const BACKUP_NEVER = [
   'ses:',
   /* Lifetime usage totals when no counter object is bound: aggregates that
      rebuild from use, and erased with the account. */
-  'tally:',
+  'life:',
   /* Where the automation safety net's sweep and the renewal pass are up to -
      positions, not data. Restoring one would resume a pass over records that
      are no longer the ones it was counting. */

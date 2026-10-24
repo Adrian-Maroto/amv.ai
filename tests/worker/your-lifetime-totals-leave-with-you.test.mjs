@@ -53,8 +53,8 @@ const req = (env, path, body, tok) => W.default.fetch(new Request('https://api.a
   method: 'POST', headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '77.77.77.77', ...(tok ? { Authorization: 'Bearer ' + tok } : {}) },
   body: JSON.stringify(body || {}) }), env, ctx);
 const PW = 'A-real-Passw0rd!';
-const tally = (env, who, month) => W.counter(env, 'life:' + who, { op: 'tally', tokens: 1000, msgs: 1, month, engine: 'amv-core' });
-const read = async (env, who) => (await W.counter(env, 'life:' + who, { op: 'tallyGet' })).tally;
+const tally = (env, who, month) => W.counter(env, 'life:' + who, { op: 'lifeAdd', tokens: 1000, msgs: 1, month, engine: 'amv-core' });
+const read = async (env, who) => (await W.counter(env, 'life:' + who, { op: 'lifeGet' })).tally;
 
 section('The record keeps three years of months, and drops the oldest');
 {

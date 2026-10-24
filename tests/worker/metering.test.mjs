@@ -58,7 +58,7 @@ const realDO = (name) => {
   return realDOs.get(name);
 };
 globalThis.__mockCounter = async (env_, name, opts) => {
-  if (/^(tally|tallyGet|clear)$/.test(opts.op || '')) {
+  if (/^(lifeAdd|lifeGet|clear)$/.test(opts.op || '')) {
     return (await realDO(name).fetch(new Request('https://do/c', { method: 'POST', body: JSON.stringify(opts) }))).json();
   }
   const cur = counters.get(name) || 0;
@@ -360,10 +360,10 @@ section('Every answer adds to the person\u2019s lifetime totals - totals only');
      settled, so it is checked through the real proxy, not by calling it. */
   CURRENT = { email: 'life@test.com' };
   await setPlan('life@test.com', 'pro');
-  const before = (await W.counter(env, 'life:life@test.com', { op: 'tallyGet' })).tally;
+  const before = (await W.counter(env, 'life:life@test.com', { op: 'lifeGet' })).tally;
   await W.aiProxy(msg(basePayload()), env, ctx); await settle();
   await W.aiProxy(msg(basePayload()), env, ctx); await settle();
-  const t = (await W.counter(env, 'life:life@test.com', { op: 'tallyGet' })).tally;
+  const t = (await W.counter(env, 'life:life@test.com', { op: 'lifeGet' })).tally;
   ok(!before && t && t.msg === 2 && t.tok > 0, 'two answers: two messages and their tokens, all time', t && { msg: t.msg, tok: t.tok });
   const month = new Date().toISOString().slice(0, 7);
   ok(t && t.months[month] && t.months[month].msg === 2, 'counted in this month too', t && t.months);
