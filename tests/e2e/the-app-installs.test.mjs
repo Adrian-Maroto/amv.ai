@@ -82,7 +82,7 @@ section('The worker really registers in a real browser');
 {
   /* The assertion that would have caught this on day one: not "is there code
      to register a service worker" but "does the browser accept it". */
-  const L = await bootLive({ env: makeEnv(), outbound: makeOutbound(), port: 9173 });
+  const L = await bootLive({ env: makeEnv(), outbound: makeOutbound(), port: 9173, keepServiceWorker: true });
   const r = await L.page.evaluate(async () => {
     if (!('serviceWorker' in navigator)) return { skip: 'no serviceWorker here' };
     try {

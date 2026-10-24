@@ -15386,3 +15386,23 @@ had always reached it and why none could see a mount bug. Rule: anything
 the server hands out for another party to call is built with
 _publicOrigin(request), and a suite creates it through the mount and calls
 it back.
+
+## 609. A policy with no media-src refuses the sound you made yourself
+
+Voice mode plays each sentence the server speaks as a blob: URL in an Audio
+element. The page's policy had no media-src, so it fell back to
+default-src 'self' - which does not include blob: - and every browser
+refused the sound. The player's onerror moved on to the next sentence, so
+voice mode was silent and said nothing about why. The voice suite stubbed
+the audio element, so the refusal could never reach it.
+
+Found because the WebKit lane prints what the browser said; confirmed in
+Chromium by playing a real WAV under the shipped policy ("media-src blob").
+media-src now allows 'self' and blob:, and amv-speaks-out-loud plays a real
+sound under it. Rule: a suite that stubs the browser API a feature rests on
+must be paired with one that runs it unstubbed under the real policy.
+
+The same lane run found why WebKit's live suites never passed: a page its
+service worker controls is not routed by Playwright in WebKit. bootLive
+blocks the service worker there (keepServiceWorker for the suite about it),
+and 27 more suites pass (332 of 367).

@@ -218,8 +218,9 @@ export async function bootLive(opts = {}) {
      page a service worker controls is not seen by Playwright's routes in
      WebKit (Playwright's own advice is to block service workers when routing),
      so every request to the server went to the real network and only one of
-     thirty live suites ever passed there. Chromium keeps its service worker. */
-  const NO_SW = ENGINE !== 'chromium' ? { serviceWorkers: 'block' } : {};
+     thirty live suites ever passed there. Chromium and Firefox keep it, and a
+     suite about the service worker itself passes keepServiceWorker. */
+  const NO_SW = ENGINE === 'webkit' && !opts.keepServiceWorker ? { serviceWorkers: 'block' } : {};
   const context = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 }, ...NO_SW });
   /* Armed on the CONTEXT rather than the page, so every page this context makes
      carries the subpixel-tolerant comparators. See armGeom in harness.mjs for
