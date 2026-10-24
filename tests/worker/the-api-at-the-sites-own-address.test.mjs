@@ -147,6 +147,30 @@ section('Every link the server hands out leads to a page that exists');
   ok(js.includes(SITE + '/#embed=1'), 'the chat widget embeds the app itself, not the server', (js.match(/https?:[^'"]*#embed[^'"]*/) || [''])[0]);
 }
 
+section('An address the server hands out for others to call goes through the mount');
+{
+  /* A job's webhook address, and a team's SCIM base URL, are given to other
+     services - GitHub, Stripe, an identity provider - to call. Both were built
+     from the request's origin alone, so through the site's own address they
+     came out as https://site/v1/hook/..., a path the site never sends to the
+     server: every webhook to it went nowhere. They carry the mount now. */
+  const env = { ...mkEnv(), CONNECT_KEY: 'k'.repeat(44) };
+  const EM = 'hooks@example.com';
+  await env.AMV_KV.put('user:' + EM, JSON.stringify({ email: EM, name: 'H' }));
+  await env.AMV_KV.put('ent:' + EM, JSON.stringify({ plan: 'pro', updatedAt: Date.now(), renewedAt: Date.now(), source: 'stripe' }));
+  const { token } = await W.issueTokens(env, EM, 'H');
+  const made = await (await call(env, SITE + '/api/auto/create', { method: 'POST', headers: { Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ detail: 'Summarise the new order.', repeat: '10min', approval: 'auto', when: { source: 'hook' } }) })).json().catch(() => ({}));
+  ok(typeof made.hookUrl === 'string' && made.hookUrl.startsWith(SITE + '/api/v1/hook/'), 'a job made through the site gets an address through the site\'s /api', made.hookUrl || made.error);
+  if (made.hookUrl) {
+    const r = await call(env, made.hookUrl, { method: 'POST', body: JSON.stringify({ hello: 1 }) });
+    ok(r.status !== 404, 'and that address really reaches the job', r.status);
+  }
+  const own = await (await call(env, OWN + '/auto/create', { method: 'POST', headers: { Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ detail: 'Another.', repeat: '10min', approval: 'auto', when: { source: 'hook' } }) })).json().catch(() => ({}));
+  ok(typeof own.hookUrl === 'string' && own.hookUrl.startsWith(OWN + '/v1/hook/'), 'on its own host the address is unchanged', own.hookUrl || own.error);
+}
+
 globalThis.fetch = realFetch;
 if (report('the-api-at-the-sites-own-address') > 0) process.exitCode = 1;
 done();

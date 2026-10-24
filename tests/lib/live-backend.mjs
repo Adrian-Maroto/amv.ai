@@ -23,7 +23,7 @@
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { LAUNCH, BROWSER, armGeom, forEngine } from './harness.mjs';
+import { LAUNCH, BROWSER, ENGINE, armGeom, forEngine } from './harness.mjs';
 import { createServer } from 'http';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -143,7 +143,7 @@ export async function serveArtifact(port, apiBase) {
     if (file === 'index.html') {
       body = Buffer.from(String(body).replace(
         /<meta name="amv-api-base" content="[^"]*">/,
-        `<meta name="amv-api-base" content="${apiBase}">`));
+        `<meta name="amv-api-base" content="${typeof apiBase === 'function' ? apiBase() : apiBase}">`));
       body = forEngine(body);
     }
     res.writeHead(200, { 'Content-Type': TYPES[file.slice(file.lastIndexOf('.'))] || 'application/octet-stream' });
@@ -181,10 +181,23 @@ export async function bootLive(opts = {}) {
   const wanted = opts.port || 0;
   const env = opts.env || makeEnv();
   const outbound = opts.outbound || makeOutbound();
-  const apiBase = opts.apiBase === undefined ? BACKEND : opts.apiBase;
+  /* IN WEBKIT, THE SERVER ANSWERS ON THE PAGE'S OWN SITE, AS IN PRODUCTION.
+
+     Production serves the API at amv.homes/api - mounted by host, so its
+     cookies are first party, because Safari treats a cookie from another
+     site as a third party's (LESSONS 550). These suites put the server on
+     *.workers.dev instead, a different site from the localhost page, and
+     WebKit applies exactly that rule to it: sign-ups never completed and
+     the WebKit lane measured the test's address, not AMV. So for WebKit the
+     page's server is http://localhost:<port>/api, routed to the same Worker,
+     with APP_URL set to that origin so the Worker mounts it the way the real
+     deployment does. Chromium keeps the cross-site address the gate was
+     written against; opts.sameSite chooses explicitly. */
+  const sameSite = opts.apiBase === undefined && (opts.sameSite !== undefined ? !!opts.sameSite : process.env.AMV_SAME_SITE ? process.env.AMV_SAME_SITE === '1' : ENGINE === 'webkit');
+  let apiBase = opts.apiBase === undefined ? BACKEND : opts.apiBase;
 
   const worker = (await import(join(ROOT, 'amv-backend.js') + '?live=' + Date.now())).default;
-  const server = await serveArtifact(wanted, apiBase);
+  const server = await serveArtifact(wanted, () => apiBase);
   /* Whatever it actually got, which is not always what was asked for. */
   const port = server.address().port;
   /* And the deployment's own address follows it. Two suites name
@@ -193,6 +206,13 @@ export async function bootLive(opts = {}) {
      checkout returns, emailed links - would point into the OTHER suite's
      server. That is a failure that reads as the product being broken. */
   if (wanted && port !== wanted && String(env.APP_URL || '') === 'http://localhost:' + wanted) env.APP_URL = 'http://localhost:' + port;
+  const SITE = 'http://localhost:' + port;
+  /* Only where the deployment's address is the page's own, as in production:
+     a suite that configures APP_URL elsewhere on purpose keeps it, and keeps
+     the cross-site server. */
+  const appUrl = String(env.APP_URL || '').replace(/\/$/, '');
+  const mounted = sameSite && (!appUrl || appUrl === 'http://localhost' || appUrl === SITE);
+  if (mounted) { apiBase = SITE + '/api'; env.APP_URL = SITE; }
   const browser = await BROWSER.launch(LAUNCH);
   const context = await browser.newContext({ viewport: opts.viewport || { width: 1280, height: 900 } });
   /* Armed on the CONTEXT rather than the page, so every page this context makes
@@ -206,7 +226,7 @@ export async function bootLive(opts = {}) {
   const served = [];
   const pending = [];
 
-  await context.route(BACKEND + '/**', async (route) => {
+  const toWorker = async (route) => {
     const req = route.request();
     const url = req.url();
     let body = null;
@@ -232,9 +252,15 @@ export async function bootLive(opts = {}) {
     const text = Buffer.from(await res.arrayBuffer());
     const headers = {};
     res.headers.forEach((v, k) => { headers[k] = v; });
-    served.push({ url, status: res.status, path: new URL(url).pathname });
+    /* The path the Worker serves, without the /api mount, so a suite reads
+       the same route names whichever address the page used. */
+    const u0 = new URL(url);
+    const path = mounted && u0.origin === SITE && u0.pathname.startsWith('/api/') ? u0.pathname.slice(4) : u0.pathname;
+    served.push({ url, status: res.status, path });
     await route.fulfill({ status: res.status, headers, body: text });
-  });
+  };
+  await context.route(BACKEND + '/**', toWorker);
+  if (mounted) await context.route(SITE + '/api/**', toWorker);
 
   await page.goto(`http://localhost:${port}`, { waitUntil: 'load' });
   /* CI has twice lost a live suite's page to a navigation in the middle of a
@@ -251,6 +277,9 @@ export async function bootLive(opts = {}) {
 
   return {
     page, context, browser, env, outbound, served, errors, worker, port,
+    /* The server address the page was given - BACKEND, or the site's own
+       /api where the server is mounted there (WebKit). */
+    apiBase,
     /* Requests the page really made to the backend, so a case can assert that
        something was ASKED as well as that the screen changed. */
     hit(re) { return served.filter(s => re.test(s.path || s.url)); },
@@ -262,7 +291,7 @@ export async function bootLive(opts = {}) {
        plan stops being a plan. */
     async otherDevice() {
       const c2 = await browser.newContext();
-      await c2.route(BACKEND + '/**', async (route) => {
+      const toWorker2 = async (route) => {
         const req = route.request();
         let b = null; try { b = req.postDataBuffer(); } catch (e) {}
         const wr = new Request(req.url(), { method: req.method(), headers: req.headers(),
@@ -272,7 +301,9 @@ export async function bootLive(opts = {}) {
         const t = Buffer.from(await rs.arrayBuffer());
         const h = {}; rs.headers.forEach((v, k) => { h[k] = v; });
         await route.fulfill({ status: rs.status, headers: h, body: t });
-      });
+      };
+      await c2.route(BACKEND + '/**', toWorker2);
+      if (mounted) await c2.route(SITE + '/api/**', toWorker2);
       await armGeom(c2);
       const p2 = await c2.newPage();
       await p2.goto(`http://localhost:${port}`, { waitUntil: 'load' });

@@ -52,7 +52,10 @@ function _hookUnB64u(s){
 }
 async function _hookAddress(env, request, email, item){
   const sealed = await connSeal(env, { e: String(email).toLowerCase(), j: item.id, n: item.hook.n });
-  return new URL(request.url).origin + '/v1/hook/' + _hookB64u(sealed);
+  /* The address the WORKER answers on - through the site's /api mount when
+     that is where the request came in, or a sender is handed a path the
+     site never routes to the Worker. */
+  return _publicOrigin(request) + '/v1/hook/' + _hookB64u(sealed);
 }
 async function _hookOpen(env, token){
   if(!/^[A-Za-z0-9_-]{40,600}$/.test(String(token || ''))) return null;

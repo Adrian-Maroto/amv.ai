@@ -5137,7 +5137,7 @@ async function teamSso(request, env){
   const view = async (s) => s ? { domain: s.domain, issuer: s.issuer, clientId: s.clientId, verified: !!s.verified,
     required: !!s.required, record: { name: '_amv-verify.' + s.domain, value: await _ssoProof(env, team.id, s.domain) } } : null;
   /* Directory sync (71-scim.js): whether it is on, never the token. */
-  const scimView = team.scim ? { on: true, at: team.scim.at, tail: team.scim.tail, baseUrl: new URL(request.url).origin + '/scim/v2' } : null;
+  const scimView = team.scim ? { on: true, at: team.scim.at, tail: team.scim.tail, baseUrl: _publicOrigin(request) + '/scim/v2' } : null;
   if(action === 'get') return json({ ok:true, sso: await view(cur), scim: scimView, redirectUri: _appRoot(env) });
   if(action === 'scim'){
     const limited = await guardAction(env, 'scimset:' + user.email, 10, 50, 'changes to directory sync');
@@ -37797,7 +37797,10 @@ function _hookUnB64u(s){
 }
 async function _hookAddress(env, request, email, item){
   const sealed = await connSeal(env, { e: String(email).toLowerCase(), j: item.id, n: item.hook.n });
-  return new URL(request.url).origin + '/v1/hook/' + _hookB64u(sealed);
+  /* The address the WORKER answers on - through the site's /api mount when
+     that is where the request came in, or a sender is handed a path the
+     site never routes to the Worker. */
+  return _publicOrigin(request) + '/v1/hook/' + _hookB64u(sealed);
 }
 async function _hookOpen(env, token){
   if(!/^[A-Za-z0-9_-]{40,600}$/.test(String(token || ''))) return null;
@@ -38169,7 +38172,7 @@ async function _scimOwnerAction(request, env, team, user, on){
   catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
   await _teamAudit(env, team, user.email, 'scim_token_created', { tail: token.slice(-4) });
   return json({ ok:true, scim: { on: true, at, tail: token.slice(-4) }, token,
-                baseUrl: new URL(request.url).origin + '/scim/v2' });
+                baseUrl: _publicOrigin(request) + '/scim/v2' });
 }
 
 async function _scimTeam(request, env){

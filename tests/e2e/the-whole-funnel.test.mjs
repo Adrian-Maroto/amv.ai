@@ -58,7 +58,7 @@ section('A visitor who has never been here arrives fully live');
     live: !!AMV_API.live,
   }));
   ok(r.stored === null, 'they have configured nothing', r.stored);
-  ok(r.base === BACKEND, 'and the app still knows where its backend is', r.base);
+  ok(r.base === L.apiBase, 'and the app still knows where its backend is', r.base);
   ok(r.live === true, 'so it is a real product to them, not a demo', r.live);
 }
 

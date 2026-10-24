@@ -133,7 +133,7 @@ async function teamSso(request, env){
   const view = async (s) => s ? { domain: s.domain, issuer: s.issuer, clientId: s.clientId, verified: !!s.verified,
     required: !!s.required, record: { name: '_amv-verify.' + s.domain, value: await _ssoProof(env, team.id, s.domain) } } : null;
   /* Directory sync (71-scim.js): whether it is on, never the token. */
-  const scimView = team.scim ? { on: true, at: team.scim.at, tail: team.scim.tail, baseUrl: new URL(request.url).origin + '/scim/v2' } : null;
+  const scimView = team.scim ? { on: true, at: team.scim.at, tail: team.scim.tail, baseUrl: _publicOrigin(request) + '/scim/v2' } : null;
   if(action === 'get') return json({ ok:true, sso: await view(cur), scim: scimView, redirectUri: _appRoot(env) });
   if(action === 'scim'){
     const limited = await guardAction(env, 'scimset:' + user.email, 10, 50, 'changes to directory sync');

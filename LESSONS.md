@@ -15368,3 +15368,21 @@ load .../sandbox.js because it does not appear in the script-src directive").
 The frame now carries its script inline, named by its sha256 in script-src,
 which every engine honours whatever the frame's origin is. A policy for an
 opaque-origin document names its scripts by hash or by full URL, never 'self'.
+
+## 608. An address handed to somebody else must be the one that reaches you
+
+Lesson 550 mounted the server at the site's own /api so Safari keeps its
+cookies, and "links the server writes to itself carry the mount" was the
+rule. Three did not: a job's webhook address and a team's SCIM base URL (in
+two places) were built from the request's origin alone. Through the mount
+they came out as https://site/v1/hook/... and https://site/scim/v2 - paths
+the site never sends to the server. Every webhook GitHub, Stripe or Slack
+sent to such a job, and every provisioning call from a company's identity
+provider, went nowhere. The page showed a perfectly good-looking address.
+
+Found by making the WebKit lane serve the server where production does - on
+the page's own site - instead of on *.workers.dev, which is how every suite
+had always reached it and why none could see a mount bug. Rule: anything
+the server hands out for another party to call is built with
+_publicOrigin(request), and a suite creates it through the mount and calls
+it back.

@@ -57,7 +57,7 @@ const btn = (id) => `[data-dact="mcHookSigning"][data-darg^="${id}|"]`;
 
 section('A job another service starts offers signing');
 {
-  ok(made.url && made.url.startsWith(BACKEND + '/v1/hook/'), 'the job has an address', made.url);
+  ok(made.url && made.url.startsWith(L.apiBase + '/v1/hook/'), 'the job has an address', made.url);
   ok(await until((s) => !!document.querySelector(s), btn(made.id)), 'its row has the button', true);
   const label = await page.$eval(btn(made.id), b => b.textContent);
   ok(/Require signing/.test(label), 'which says signing is not on yet', label);

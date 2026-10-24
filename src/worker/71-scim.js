@@ -68,7 +68,7 @@ async function _scimOwnerAction(request, env, team, user, on){
   catch(e){ if(!_isBusy(e)) throw e; return _busyJson('team'); }
   await _teamAudit(env, team, user.email, 'scim_token_created', { tail: token.slice(-4) });
   return json({ ok:true, scim: { on: true, at, tail: token.slice(-4) }, token,
-                baseUrl: new URL(request.url).origin + '/scim/v2' });
+                baseUrl: _publicOrigin(request) + '/scim/v2' });
 }
 
 async function _scimTeam(request, env){
