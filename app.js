@@ -3550,6 +3550,30 @@ function _usageServerOwned(){ try{ return !!(window.AMV_API && AMV_API.live && A
    of numbers. Refreshed after a reply, at most every 15 seconds. */
 let _srvUsage = null, _srvUsageAt = 0, _srvUsageP = null;
 let _srvUsageWho = '', _srvUsageTry = 0;
+/* A WARNING BEFORE THE WALL, NOT AT IT.
+
+   At 70, 85 and 95% of whichever limit is nearest, once each per window, with
+   the moment it reopens - so nobody meets a refusal they had no sight of. Said
+   once per threshold per period (remembered on this device), because a notice
+   repeated on every reply stops being read. At 95% it says what can be done
+   about it; earlier, it only says where things stand. */
+const _USAGE_WARN_AT = [95, 85, 70];
+function _usageWarn(d){
+  if(!d || typeof _usageBinding !== 'function') return;
+  const m = _usageBinding(d); if(!m || !m.at) return;
+  const step = _USAGE_WARN_AT.find(p => m.pct >= p && m.pct < 100); if(!step) return;
+  const key = 'amv_usage_warned', mark = m.k + ':' + m.at + ':' + step;
+  let seen = []; try{ seen = JSON.parse(loadStr(key) || '[]'); }catch(e){}
+  if(seen.indexOf(mark) >= 0) return;
+  seen = seen.filter(x => +String(x).split(':')[1] > Date.now()).concat(mark).slice(-12);
+  try{ saveStr(key, JSON.stringify(seen)); }catch(e){}
+  const when = _usageResetWords(m.at);
+  const said = { session: 'You have used {0}% of this 5-hour window.', day: 'You have used {0}% of today\u2019s usage.', month: 'You have used {0}% of this month\u2019s usage.' }[m.k];
+  if(!said) return;
+  const msg = T(said).replace('{0}', m.pct) + (when ? ' ' + when + '.' : '')
+    + (step >= 95 ? ' ' + T('Switching to a lighter engine makes what is left go further.') : '');
+  toast(msg, 'info', step >= 85 ? 9000 : 6000);
+}
 function _srvUsageRefresh(force){
   if(!_usageServerOwned()) return Promise.resolve(null);
   /* Another account signed in on this tab never sees the last one's numbers. */
@@ -3561,7 +3585,7 @@ function _srvUsageRefresh(force){
   _srvUsageP = AMV_API.usage().then(d => {
     if(d && d.day && d.month && who === _srvUsageWho){ _srvUsage = d; _srvUsageAt = Date.now(); }
     return _srvUsage;
-  }).catch(() => _srvUsage).finally(() => { _srvUsageP = null; try{ _renderSbUsage(); }catch(e){} });
+  }).catch(() => _srvUsage).finally(() => { _srvUsageP = null; try{ _renderSbUsage(); }catch(e){} try{ _usageWarn(_srvUsage); }catch(e){} });
   return _srvUsageP;
 }
 

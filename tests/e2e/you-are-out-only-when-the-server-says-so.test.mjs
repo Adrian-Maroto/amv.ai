@@ -105,6 +105,23 @@ section('The sidebar is the server’s meter: the one nearest to refusing, with 
   ok(sb && /Upgrade for more/.test(sb.text), 'near the limit, it offers more', sb && sb.text);
 }
 
+section('A warning before the wall: once per threshold, with when it comes back');
+{
+  const toasts = () => page.evaluate(() => [...document.querySelectorAll('.toast')].map(t => t.textContent));
+  const warned = (await toasts()).filter(t => /You have used \d+% of today/.test(t));
+  ok(warned.length === 1 && /You have used 90% of today’s usage\. Resets in \d+ (hour|minute)/.test(warned[0]), 'at 90% of today it says so, and when today comes back', warned);
+  await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
+  await page.evaluate(async () => { await _srvUsageRefresh(true); });
+  ok(!(await toasts()).some(t => /You have used/.test(t)), 'and does not say it again on the next reply', await toasts());
+  const day = new Date().toISOString().slice(0, 10);
+  const dayKey = [...vals.keys()].find(k => k.startsWith('usg:' + EMAIL + ':' + day));
+  const limit = await page.evaluate(() => _srvUsage.day.limit);
+  vals.set(dayKey, Math.round(limit * 0.96));
+  await page.evaluate(async () => { await _srvUsageRefresh(true); });
+  const last = (await toasts()).filter(t => /You have used/.test(t));
+  ok(last.length === 1 && /96%/.test(last[0]) && /lighter engine/.test(last[0]), 'at 95% it says so once more, with what can be done about it', last);
+}
+
 section('When the server refuses, the chat stops with the server’s reset time');
 {
   const day = new Date().toISOString().slice(0, 10);
