@@ -99,6 +99,7 @@
     "amv-asks-before-it-touches-your-screen.test.mjs",
     "amv-emails-you-when-it-is-done.test.mjs",
     "amv-installs-and-takes-what-you-share.test.mjs",
+    "amv-speaks-out-loud.test.mjs",
     "amv-will-not-take-your-password.test.mjs",
     "an-accent-nobody-can-read.test.mjs",
     "an-account-is-asked-for-before-the-card-is.test.mjs",
