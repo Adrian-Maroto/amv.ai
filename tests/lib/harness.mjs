@@ -51,10 +51,36 @@ export function forEngine(html){
   if (ENGINE !== 'webkit') return html;
   return Buffer.from(String(html).replace(/upgrade-insecure-requests;?/, ''), 'utf8');
 }
+/* GOOGLE'S SIGN-IN SCRIPT IS UNREACHABLE IN EVERY SUITE, ON PURPOSE.
+
+   Until LESSONS 604 every suite ran with that script refused - a crossorigin
+   attribute made the browser reject it - so the whole gate was written
+   against a page without Google's library, whether or not the machine had a
+   network. Once the script really loaded, CI (which has one) ran a page no
+   suite had ever run, and two suites saw it navigate mid-test. The gate is a
+   statement about AMV, not about Google's servers that day, so the host does
+   not resolve here, exactly as on a network that blocks it. A suite that
+   needs the real library can launch without this rule. The fix itself is
+   held by the-page-head-tells-the-truth. */
+const NO_GOOGLE = ['--host-resolver-rules=MAP accounts.google.com ~NOTFOUND'];
+/* Behind an HTTP proxy (a sandboxed machine) Chromium hands every host to the
+   proxy and never resolves it itself, so the rule above would not apply. The
+   proxy is given to Playwright explicitly instead, with Google on its bypass
+   list: bypassed, the host is resolved here, and does not resolve. */
+const viaProxy = (() => {
+  const raw = process.env.HTTPS_PROXY || process.env.https_proxy || '';
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    const bypass = String(process.env.NO_PROXY || process.env.no_proxy || '').split(',').map(s => s.trim()).filter(Boolean);
+    return { server: u.protocol + '//' + u.host, ...(u.username ? { username: decodeURIComponent(u.username), password: decodeURIComponent(u.password) } : {}),
+             bypass: [...bypass, 'accounts.google.com'].join(',') };
+  } catch (e) { return null; }
+})();
 export const LAUNCH = (() => {
   if (ENGINE !== 'chromium') return {};
   const exe = providedChromium();
-  return exe ? { executablePath: exe } : {};
+  return { ...(exe ? { executablePath: exe } : {}), args: NO_GOOGLE, ...(viaProxy ? { proxy: viaProxy } : {}) };
 })();
 
 /* SERVING THE PAGE AS A DEPLOYMENT THAT HAS NOT BEEN CONFIGURED YET.

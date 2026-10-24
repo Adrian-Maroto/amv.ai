@@ -15335,3 +15335,20 @@ environment failing is testing the environment.
 Each fix has a section built to fail in Chromium too - an error whose stack
 lacks its message, a drag ended by a lost capture - because a regression
 test only one engine can see is one the gate will not run.
+
+## 606. Fixing a third party's load changes every suite's page
+
+Removing crossorigin (604) let Google's sign-in library load for the first
+time anywhere - including CI, which has a network - and two suites that had
+never once run beside it saw the page navigate mid-test there. Locally the
+whole gate passed with the library loaded, so what Google's live script did
+on CI's network that day is not known; what is known is that the gate had
+been written against a page without it, and was suddenly measuring Google.
+
+The harness now makes accounts.google.com unresolvable in every Chromium
+suite (a host-resolver rule, with the proxy handed to Playwright explicitly
+so a proxied machine resolves Google itself and the rule applies there
+too). The gate tests AMV on a network that blocks Google - the state it was
+always, unknowingly, in. Whether Google's library ever navigates a signed-in
+page is a separate question for a browser with a real client id, not for a
+gate that must say the same thing twice.
