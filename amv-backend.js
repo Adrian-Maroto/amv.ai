@@ -3608,6 +3608,25 @@ async function connUse(env, email, need, jobId, opts){
   const o = opts || {};
   if(!connConfigured(env)) return { ok:false, code:'connect_key_missing' };
 
+  /* NOTHING UNATTENDED WRITES ON SOMEBODY'S BEHALF - ENFORCED HERE, AT THE DOOR.
+
+     A run nobody is watching reads (mail, calendar, school, bank, a repo) and
+     reports back; every change to a connected account is made from chat, with
+     the person there to consent and the action protocol to read it back and
+     offer an undo. That was true because the scheduler's allowed list held
+     only `.read` grants - one list, one edit away from a job that sends mail
+     because an incoming email told it to. So it is decided here too, where
+     the account is actually opened: unattended, only a read. When unattended
+     writes are built they need their own door, with the evidence check the
+     October 24 audit describes (amvEvidenceIsSafe) - not this one widened. */
+  if(!o.attended){
+    const asked = Array.isArray(need) ? need : [need];
+    if(asked.some(n => !/\.read$/.test(String(n || '')))){
+      audit(env, 'unattended_write_refused', { email, need: asked.join(' + '), job: jobId });
+      return { ok:false, code:'unattended_write', need: asked.join(' + ') };
+    }
+  }
+
   /* THE EMERGENCY STOP REACHES IN HERE.
 
      "Pause all autonomous" exists because somebody wants AMV to stop touching

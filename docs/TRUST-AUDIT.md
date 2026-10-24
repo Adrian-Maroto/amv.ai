@@ -2113,3 +2113,17 @@ and counts every record.
 **Not measured yet:** a real export from an iPhone (the fixtures follow the
 format Health writes, built here), and the time a multi-gigabyte export takes
 on a phone.
+
+## 24 October: nothing unattended writes on the person's behalf
+
+The audit asked for an evidence check (amvEvidenceIsSafe) before any
+unattended action triggered by outside content - an email, a page, a webhook.
+Checked first: no unattended path can write. Scheduled and event-started runs
+open connected accounts only through `connUse` with `attended:false`, the
+scheduler's list (AUTO_USES_ALLOWED) holds `.read` grants only, and every
+write goes through the chat route with consent and the action protocol.
+That rested on one list, so it is now enforced at the door as well:
+`connUse` refuses any non-read grant when the person is not present, and
+records the refusal (tests/worker/nothing-unattended-writes-for-you). When
+unattended writes are built they need their own door with the evidence
+check, not this one widened.
