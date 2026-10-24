@@ -209,6 +209,48 @@ const DB = {
     Object.defineProperty(out, '_unreadable', { value: unreadable, enumerable: false });
     return out;
   },
+  /* EVERY id OF A KIND THAT STARTS WITH `idPrefix` - for records keyed by
+     their owner (`<buyer>:<item>`, `<owner>|<id>`), so finding one person's
+     costs a lookup of their own keys rather than a read of everybody's. */
+  async idsWithPrefix(env, kind, idPrefix){
+    const p = String(idPrefix || '');
+    if(!p) return [];
+    if(this._hasD1(env)){
+      const rows = await env.DB.prepare('SELECT id FROM kv WHERE kind=? AND substr(id, 1, ?)=?').bind(kind, p.length, p).all();
+      return (rows.results || []).map(r => r.id);
+    }
+    const ids = [];
+    let cursor;
+    do {
+      const page = await env.AMV_KV.list({ prefix: `${kind}:${p}`, cursor, limit: 1000 });
+      for (const k of page.keys) ids.push(k.name.slice(kind.length + 1));
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+    return ids;
+  },
+  /* ONE PAGE, AND WHERE TO PICK UP. `list` above reads a whole kind into
+     memory in one go, which is a cliff rather than a slope: at a few hundred
+     thousand records the request runs out of memory or time, and a sweep
+     that cannot finish covers nobody. A page is at most `max` records from
+     `after` (a KV cursor, or the last D1 id), with the place to continue from
+     - null at the end. Ordered on D1 so consecutive pages never overlap or
+     skip; on KV the cursor is the store's own. */
+  async page(env, kind, after, max){
+    const out = [];
+    const n = Math.max(1, Math.min(1000, max || 500));
+    if(this._hasD1(env)){
+      const rows = await env.DB.prepare('SELECT id,json FROM kv WHERE kind=? AND id>? ORDER BY id LIMIT ?').bind(kind, String(after || ''), n).all();
+      const rs = rows.results || [];
+      for(const r of rs){ try { out.push({ id: r.id, value: JSON.parse(r.json) }); } catch (e) {} }
+      return { rows: out, next: rs.length === n ? rs[rs.length - 1].id : null };
+    }
+    const page = await env.AMV_KV.list({ prefix: `${kind}:`, cursor: after || undefined, limit: n });
+    for(const k of page.keys){
+      const raw = await env.AMV_KV.get(k.name);
+      if(raw){ try { out.push({ id: k.name.slice(kind.length + 1), value: JSON.parse(raw) }); } catch (e) {} }
+    }
+    return { rows: out, next: page.list_complete ? null : (page.cursor || null) };
+  },
 };
 
 /* AMV-182: a bounded scan that comes back exactly full has probably stopped

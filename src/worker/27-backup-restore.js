@@ -148,6 +148,10 @@ const BACKUP_NEVER = [
   /* A signed request already taken (70-hooks.js): a month's memory that holds
      only a job id and a hash, kept so a captured request cannot run twice. */
   'hookdel:',
+  /* Where the automation safety net's sweep and the renewal pass are up to -
+     positions, not data. Restoring one would resume a pass over records that
+     are no longer the ones it was counting. */
+  'autosweep:', 'renewsweep:',
   /* Batches: work in flight and answers kept for a week. Restoring one would
      put a finished batch back in the queue - to be run, and charged, again. */
   'batch:', 'batchidx:', 'batchq:', 'batchreq:', 'batchres:', 'batchcursor',

@@ -26,7 +26,9 @@
      - an empty index and an index that was never built are told apart, because
        the first means nothing is due and the second means everything is
        invisible;
-     - and a full sweep still happens every hour, as the floor under all of it. */
+     - and a sweep still happens every hour, as the floor under all of it -
+       a bounded page from where the last one stopped, so it keeps working at
+       any number of accounts. */
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -289,13 +291,43 @@ section('Deferred work keeps its place');
   ok(laterR.queued >= 1, 'an hour later it is still being tried', laterR.queued);
 }
 
-section('A full sweep still happens every hour');
+section('A sweep still happens every hour - a page at a time, never all at once');
 {
   const tick = codeOnly(functionBody(src, 'runDueAutomations'));
   ok(/getUTCMinutes\(\) < 5/.test(tick),
      'the floor under every way a bucket can be wrong is still there', true);
-  ok(/scan\(env, 'auto', SCAN_ALL/.test(tick),
-     'and it is the same complete scan as before', true);
+  /* THE SWEEP USED TO READ EVERY RECORD IN ONE GO, which at a few hundred
+     thousand accounts runs the tick out of memory or time - a net that
+     covers nobody, failing at the same point every hour. It now reads a
+     bounded number from where the last one stopped. Seeded here with more
+     accounts than one sweep may read, and NO bookings, so the sweep is the
+     only way any of them can be found. */
+  const env = mkEnv();
+  const N = 2300;
+  const base = at(9, 2);
+  for (let i = 0; i < N; i++) {
+    const em = 'lost' + String(i).padStart(5, '0') + '@x.com';
+    env._store.set('auto:' + em, JSON.stringify({ items: [{ id: 'j', active: true, detail: 'later', next: base + 3600e3, interval: 86400000, approval: 'suggest' }], results: [] }));
+  }
+  let autoReads = 0;
+  const get = env.AMV_KV.get;
+  env.AMV_KV.get = async (k) => { if (k.startsWith('auto:')) autoReads++; return get(k); };
+  const booked = async (h) => { const c = await W._autoDueCandidates(env, h); return c ? c.size : 0; };
+  await W.runDueAutomations(env, base);
+  ok(autoReads <= 2000, 'one sweep reads a bounded number of accounts, however many exist', autoReads);
+  const first = await booked(base + 3600e3);
+  ok(first >= 1900 && first < N, 'and books what it read, so those are on the fast path now', first);
+  ok(!!env._store.get('autosweep:cursor'), 'and remembers where it stopped', true);
+  autoReads = 0;
+  await W.runDueAutomations(env, at(10, 2));
+  ok(await booked(base + 3600e3) === N, 'the next sweep carries on from there: every account is found within one pass', await booked(base + 3600e3));
+  ok(!env._store.get('autosweep:cursor'), 'and at the end it starts again from the beginning', env._store.get('autosweep:cursor'));
+
+  const small = mkEnv();
+  for (let i = 0; i < 5; i++) small._store.set('auto:s' + i + '@x.com', JSON.stringify({ items: [{ id: 'j', active: true, detail: 'x', next: base + 3600e3, interval: 86400000, approval: 'suggest' }], results: [] }));
+  await W.runDueAutomations(small, base);
+  ok(await (async () => { const c = await W._autoDueCandidates(small, base + 3600e3); return c && c.size === 5; })() && !small._store.get('autosweep:cursor'),
+     'a deployment smaller than one page is swept whole, exactly as before', true);
 }
 
 if (report('the-tick-costs-what-is-due-not-who-exists') > 0) process.exitCode = 1;

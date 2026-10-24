@@ -140,20 +140,31 @@ section('A scan that stops short says so, and pages somebody');
   ok(!alerted(/STOPPED SHORT/), 'and does not page anybody', alerts.length);
 }
 
-section('The renewal sweep no longer stops checking paying accounts in silence');
+section('The renewal sweep checks every paying account, however many there are');
 {
-  /* The real defect: `truncated` was computed here and thrown away by the cron,
-     which only ever logged `stale`. Exactly at the limit, so the sweep believes
-     it has seen everything. */
+  /* The real defect: past SWEEP_SCAN_LIMIT entitlements the same accounts
+     beyond the cut were never examined, and `truncated` was computed and
+     thrown away. Alerting about it was the first fix; the second is that
+     there is nothing to alert about - a pass goes through everyone, a few
+     pages per tick, and decides only once it has seen them all. Here: more
+     paying accounts than one tick reads, and the lapsed one placed past the
+     old cut-off, where it used to be invisible for ever. */
   const env = mkEnv();
-  for (let i = 0; i < W.SWEEP_SCAN_LIMIT; i++)
-    await W.DB.put(env, 'ent', 'p' + i + '@example.com', { plan: 'pro', source: 'stripe', renewedAt: Date.now() });
+  const N = W.SWEEP_SCAN_LIMIT + 300;
+  for (let i = 0; i < N; i++)
+    await W.DB.put(env, 'ent', 'p' + String(i).padStart(5, '0') + '@example.com', { plan: 'pro', source: 'stripe', renewedAt: Date.now() });
+  const lapsed = 'p' + String(N - 1).padStart(5, '0') + '@example.com';
+  await W.DB.put(env, 'ent', lapsed, { plan: 'pro', source: 'stripe', renewedAt: Date.now() - 60 * 86400000 });
 
-  const s = await W.runRenewalSweep(env);
-  ok(s.ran === true, 'the sweep ran', s);
-  ok(s.truncated === true, 'and knows it did not see everything', s.truncated);
-  ok(alerted(/STOPPED SHORT/) && alerted(/renewal sweep/),
-     'and that fact leaves the process, which is the part that was missing', alerts.length);
+  const s1 = await W.runRenewalSweep(env);
+  ok(s1.ran === true && s1.partial === true, 'the first tick reads its share and says the pass is not finished', s1);
+  ok(!(await W.DB.get(env, 'ent', lapsed)).pastDueSince, 'and decides nothing yet - the decision needs the whole picture', true);
+  const s2 = await W.runRenewalSweep(env);
+  ok(s2.ran === true && !s2.partial && s2.paid === N && s2.marked === 1, 'the next tick finishes the pass: every paying account counted, the lapsed one found', s2);
+  ok(!!(await W.DB.get(env, 'ent', lapsed)).pastDueSince, 'the account past the old cut-off is past due now', true);
+  ok(!alerted(/STOPPED SHORT/), 'and nothing stopped short, so nobody is paged about it', true);
+  const s3 = await W.runRenewalSweep(env);
+  ok(s3.ran === false, 'and the pass is once a day: a third tick starts nothing', s3);
 }
 
 section('Work that has to be complete to be correct is not capped at all');
@@ -161,8 +172,12 @@ section('Work that has to be complete to be correct is not capped at all');
   /* An erasure that quietly does most of it, and a reconciliation that quietly
      rescues the first two hundred people who paid, are both worse than one that
      fails: they report success. So these pass no practical ceiling. */
+  /* Marketplace snapshots are no longer scanned at all: they are keyed
+     `<buyer>:<item>`, and an erasure reads only the deleted person's own keys
+     (checked below, by deleting an account). A scan of every snapshot in the
+     product, once per deletion, ran out of time at scale - which fails the
+     erasure as surely as a cap would. */
   const named = [
-    ['erasure: marketplace snapshots', 'mktsnap'],
     ['erasure: account-link invitations', 'link'],
     ['payment reconciliation', 'paypending'],
   ];
@@ -172,6 +187,23 @@ section('Work that has to be complete to be correct is not capped at all');
     const line = src.slice(src.lastIndexOf('\n', i) + 1, i + what.length + 2);
     ok(/SCAN_ALL/.test(line), 'and reads all of ' + kind + ', not a slice of it', line.trim().slice(0, 120));
   }
+}
+
+section('An erasure finds every one of the person\u2019s purchase snapshots - and nobody else\u2019s');
+{
+  const env = mkEnv();
+  const PW = 'A-real-Passw0rd!';
+  const tok = (await (await call(env, '/auth/signup', { email: 'bob@x.co', name: 'B', password: PW })).json()).token;
+  for (let i = 0; i < 1500; i++) await W.DB.put(env, 'mktsnap', 'other' + i + '@x.com:item' + i, { id: 'item' + i });
+  for (let i = 0; i < 7; i++) await W.DB.put(env, 'mktsnap', 'bob@x.co:item' + i, { id: 'item' + i });
+  /* One letter longer, so a prefix that forgot its delimiter would take it. */
+  await W.DB.put(env, 'mktsnap', 'bob@x.com:keep', { id: 'keep' });
+  const r = await call(env, '/auth/delete', { password: PW }, tok);
+  ok(r.status === 200, 'the account is deleted', r.status);
+  const left = (await W.DB.idsWithPrefix(env, 'mktsnap', 'bob@x.co:')).length;
+  ok(left === 0, 'every one of its seven snapshots is gone', left);
+  ok(!!(await W.DB.get(env, 'mktsnap', 'bob@x.com:keep')) && !!(await W.DB.get(env, 'mktsnap', 'other99@x.com:item99')),
+     'and the snapshots of somebody whose address merely starts the same are still there', true);
 }
 
 section('An admin screen that shows part of something says which part');

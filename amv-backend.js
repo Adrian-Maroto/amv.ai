@@ -1081,6 +1081,48 @@ const DB = {
     Object.defineProperty(out, '_unreadable', { value: unreadable, enumerable: false });
     return out;
   },
+  /* EVERY id OF A KIND THAT STARTS WITH `idPrefix` - for records keyed by
+     their owner (`<buyer>:<item>`, `<owner>|<id>`), so finding one person's
+     costs a lookup of their own keys rather than a read of everybody's. */
+  async idsWithPrefix(env, kind, idPrefix){
+    const p = String(idPrefix || '');
+    if(!p) return [];
+    if(this._hasD1(env)){
+      const rows = await env.DB.prepare('SELECT id FROM kv WHERE kind=? AND substr(id, 1, ?)=?').bind(kind, p.length, p).all();
+      return (rows.results || []).map(r => r.id);
+    }
+    const ids = [];
+    let cursor;
+    do {
+      const page = await env.AMV_KV.list({ prefix: `${kind}:${p}`, cursor, limit: 1000 });
+      for (const k of page.keys) ids.push(k.name.slice(kind.length + 1));
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+    return ids;
+  },
+  /* ONE PAGE, AND WHERE TO PICK UP. `list` above reads a whole kind into
+     memory in one go, which is a cliff rather than a slope: at a few hundred
+     thousand records the request runs out of memory or time, and a sweep
+     that cannot finish covers nobody. A page is at most `max` records from
+     `after` (a KV cursor, or the last D1 id), with the place to continue from
+     - null at the end. Ordered on D1 so consecutive pages never overlap or
+     skip; on KV the cursor is the store's own. */
+  async page(env, kind, after, max){
+    const out = [];
+    const n = Math.max(1, Math.min(1000, max || 500));
+    if(this._hasD1(env)){
+      const rows = await env.DB.prepare('SELECT id,json FROM kv WHERE kind=? AND id>? ORDER BY id LIMIT ?').bind(kind, String(after || ''), n).all();
+      const rs = rows.results || [];
+      for(const r of rs){ try { out.push({ id: r.id, value: JSON.parse(r.json) }); } catch (e) {} }
+      return { rows: out, next: rs.length === n ? rs[rs.length - 1].id : null };
+    }
+    const page = await env.AMV_KV.list({ prefix: `${kind}:`, cursor: after || undefined, limit: n });
+    for(const k of page.keys){
+      const raw = await env.AMV_KV.get(k.name);
+      if(raw){ try { out.push({ id: k.name.slice(kind.length + 1), value: JSON.parse(raw) }); } catch (e) {} }
+    }
+    return { rows: out, next: page.list_complete ? null : (page.cursor || null) };
+  },
 };
 
 /* AMV-182: a bounded scan that comes back exactly full has probably stopped
@@ -9938,6 +9980,44 @@ const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'attempts', 'lastError', 'las
    "scan everybody" - the five-minute tick still never believes an empty index
    and still runs the hourly full sweep, so the floor under every job is
    exactly what it was. The quick tick only makes booked work start sooner. */
+/* THE SAFETY NET, A PAGE AT A TIME.
+
+   The index (duehour: buckets) is how a tick finds the work; this is the net
+   under it, for an account whose booking was lost. It used to read EVERY
+   automation record in one go, in the first minutes of each hour - which is
+   a cliff: at a few hundred thousand accounts the tick runs out of memory or
+   time, the net covers nobody, and it fails at the same point every hour.
+
+   Now each tick that needs the net reads at most AUTO_SWEEP_PAGES pages of
+   AUTO_SWEEP_PAGE records from where the last one stopped (autosweep:cursor),
+   and wraps at the end. A tick's cost no longer grows with the number of
+   accounts; on a deployment smaller than one page it is still the whole
+   namespace every time, exactly as before. Everything a page passes that is
+   due soon is booked into the index on the way (below), so a lost booking is
+   found within one pass. Emptiness is believed only from a pass that started
+   at the beginning and reached the end without finding anything. */
+const AUTO_SWEEP_PAGE = 500;
+const AUTO_SWEEP_PAGES = 4;
+async function _autoSweep(env) {
+  let after = null;
+  try { after = (await env.AMV_KV.get('autosweep:cursor')) || null; } catch (e) { after = null; }
+  const fromStart = !after;
+  const rows = [];
+  let next = after;
+  for (let i = 0; i < AUTO_SWEEP_PAGES; i++) {
+    const p = await DB.page(env, 'auto', next, AUTO_SWEEP_PAGE);
+    rows.push(...p.rows);
+    next = p.next;
+    if (!next) break;
+  }
+  try {
+    if (next) await env.AMV_KV.put('autosweep:cursor', String(next), { expirationTtl: 86400 });
+    else if (after) await env.AMV_KV.delete('autosweep:cursor');
+  } catch (e) {}
+  if (fromStart && !next && rows.length === 0) await _markKindEmpty(env, 'auto');
+  return { rows, wrapped: !next };
+}
+
 async function runDueAutomations(env, atMs, opts){
   const quick = !!(opts && opts.quick);
   const now = +atMs || Date.now();
@@ -9975,8 +10055,8 @@ async function runDueAutomations(env, atMs, opts){
       if (rec) allUsers.push({ id: em, value: rec });
     }
   } else {
-    const s = await scan(env, 'auto', SCAN_ALL, 'autonomous work tick');
-    allUsers = s.rows; truncated = s.truncated;
+    const s = await _autoSweep(env);
+    allUsers = s.rows; truncated = false;
     /* Book what is due SOON on the way past, so accounts written before the
        index existed join the fast path without waiting to be edited. Only the
        near ones: booking every idle account here would be the same
@@ -14372,6 +14452,10 @@ const BACKUP_NEVER = [
   /* A signed request already taken (70-hooks.js): a month's memory that holds
      only a job id and a hash, kept so a captured request cannot run twice. */
   'hookdel:',
+  /* Where the automation safety net's sweep and the renewal pass are up to -
+     positions, not data. Restoring one would resume a pass over records that
+     are no longer the ones it was counting. */
+  'autosweep:', 'renewsweep:',
   /* Batches: work in flight and answers kept for a week. Restoring one would
      put a finished batch back in the queue - to be run, and charged, again. */
   'batch:', 'batchidx:', 'batchq:', 'batchreq:', 'batchres:', 'batchcursor',
@@ -18222,10 +18306,12 @@ async function authDeleteAccount(request, env) {
        D1 deployment, so the snapshots of everything this person had bought
        survived the erasure of their account - data that was supposed to be gone
        and is keyed by their address. */
-    const { rows: snaps } = await scan(env, 'mktsnap', SCAN_ALL, 'erasure: marketplace snapshots');
-    for (const s of snaps) {
-      if (!s || typeof s.id !== 'string' || !s.id.startsWith(email + ':')) continue;
-      try { await DB.del(env, 'mktsnap', s.id); } catch { _eraseFailed('purchased-item snapshots'); }
+    /* Keyed `<buyer>:<item>`, so this person's are found by their own prefix.
+       This used to read every snapshot in the product for every deletion -
+       one is written on every purchase, so at scale an erasure that read them
+       all would run out of time and fail to erase. */
+    for (const id of await DB.idsWithPrefix(env, 'mktsnap', email + ':')) {
+      try { await DB.del(env, 'mktsnap', id); } catch { _eraseFailed('purchased-item snapshots'); }
     }
   } catch { _eraseFailed('purchased-item snapshots'); }
 
@@ -18240,6 +18326,14 @@ async function authDeleteAccount(request, env) {
      Both directions: invitations ABOUT this account, and invitations this
      account sent to somebody else. */
   try {
+    /* Invitations TO this account are keyed by it, so those come by prefix;
+       ones it SENT are keyed by whoever it invited, and nothing lists them,
+       so those still need the scan below. It is family invitations only,
+       rate-limited per sender, so the namespace stays small - but a sender
+       index would remove the scan entirely. */
+    for (const id of await DB.idsWithPrefix(env, 'link', email + '|')) {
+      try { await DB.del(env, 'link', id); } catch { _eraseFailed('account-link invitations'); }
+    }
     const { rows: invites } = await scan(env, 'link', SCAN_ALL, 'erasure: account-link invitations');
     for (const l of invites) {
       const id = l && typeof l.id === 'string' ? l.id : '';
@@ -25686,53 +25780,95 @@ async function runCohortCheck(env, now = Date.now()) {
   return { ran: true, active, heavy, share: +share.toFixed(4), alarmed: true };
 }
 
+/* A PASS OVER EVERY ENTITLEMENT, A FEW PAGES PER TICK.
+
+   This used to read the first SWEEP_SCAN_LIMIT entitlements once a day and
+   page somebody when there were more - so past two thousand paying accounts
+   the same ones beyond the cut were never examined for a lapsed payment
+   again, and a plan nobody was paying for kept its access for ever. Alerting
+   about that was honest; it did not fix it.
+
+   Now a pass starts once a day and goes through the whole namespace a page
+   at a time, SWEEP_SCAN_LIMIT records per tick, from where the last tick
+   stopped (`renewsweep:pass`). Nothing is marked until the pass has seen
+   everyone, because the decision needs the whole picture: a quarter of all
+   paid accounts stale at once is AMV's webhook, not their cards, and then
+   nobody is touched. A deployment smaller than one tick's share finishes in
+   one call, with the same answer as before. Two ticks never work on one pass
+   at once (`renewpage`). */
+const SWEEP_PAGE = 500;
+const SWEEP_STALE_KEEP = 20000;
 async function runRenewalSweep(env, now = Date.now()) {
   const day = todayKey();
-  /* Once a day, atomically, so overlapping 5-minute ticks cannot double-mark
-     or double-page. */
-  if (!(await _claimOnce(env, 'renewsweep', day, 3 * 86400))) return { ran: false, reason: 'already swept today' };
+  if (!(await _claimOnce(env, 'renewpage', 'tick', 120))) return { ran: false, reason: 'a sweep is already running' };
+  try {
+    let pass = null;
+    try { pass = JSON.parse((await env.AMV_KV.get('renewsweep:pass')) || 'null'); } catch (e) { pass = null; }
+    if (!pass) {
+      /* Once a day, atomically, so overlapping 5-minute ticks cannot start two. */
+      if (!(await _claimOnce(env, 'renewsweep', day, 3 * 86400))) return { ran: false, reason: 'already swept today' };
+      pass = { day, cursor: null, paid: 0, stale: [], staleCount: 0 };
+    }
+    let read = 0;
+    while (read < SWEEP_SCAN_LIMIT) {
+      const pg = await DB.page(env, 'ent', pass.cursor, Math.min(SWEEP_PAGE, SWEEP_SCAN_LIMIT - read));
+      read += pg.rows.length;
+      for (const row of pg.rows) {
+        const e = row.value || {};
+        if (_planPriceUSD(e.plan, e.custom) <= 0) continue;   // nothing is being paid for
+        /* Comped, negotiated and owner accounts are granted by a person, not by a
+           subscription, so there is no renewal to wait for and never will be. */
+        if (e.source === 'admin') continue;
+        pass.paid++;
+        if (e.pastDueSince) continue;                         // already in the pipeline
+        /* updatedAt as the fallback so records written before renewedAt existed
+           are covered rather than silently exempt - an exemption is exactly where
+           this class of defect hides. */
+        const lastSeen = e.renewedAt || e.updatedAt || 0;
+        if (!lastSeen) continue;                              // cannot judge; do not guess
+        if (now - lastSeen > RENEWAL_MAX_AGE_MS) {
+          pass.staleCount++;
+          if (pass.stale.length < SWEEP_STALE_KEEP) pass.stale.push({ email: row.id, plan: e.plan, lastSeen });
+        }
+      }
+      pass.cursor = pg.next;
+      if (!pg.next) break;
+    }
+    if (pass.cursor) {
+      await env.AMV_KV.put('renewsweep:pass', JSON.stringify(pass), { expirationTtl: 7 * 86400 });
+      return { ran: true, partial: true, paid: pass.paid, stale: pass.staleCount, truncated: false };
+    }
+    try { await env.AMV_KV.delete('renewsweep:pass'); } catch (e) {}
+    const paid = pass.paid, truncated = false;
+    /* Held back a share of the list for memory, so the decision uses the count. */
+    const stale = pass.stale;
+    if (pass.staleCount > stale.length) {
+      audit(env, 'renewal_sweep_overflow', { stale: pass.staleCount, kept: stale.length, paid });
+    }
+    return await _renewalDecide(env, day, paid, stale, pass.staleCount, truncated);
+  } finally { await _releaseClaim(env, 'renewpage', 'tick'); }
+}
+async function _renewalDecide(env, day, paid, stale, staleCount, truncated) {
+  if (!staleCount) return { ran: true, paid, stale: 0, truncated };
 
-  /* Through scan(), so hitting the ceiling pages somebody. Until it did, the
-     sweep past 2000 entitlements checked a stable arbitrary subset and the
-     rest were never examined for a lapsed payment again - silently, forever,
-     with `truncated` computed here and thrown away by the caller. */
-  const { rows, truncated } = await scan(env, 'ent', SWEEP_SCAN_LIMIT, 'renewal sweep');
-  let paid = 0;
-  const stale = [];
-  for (const row of rows) {
-    const e = row.value || {};
-    if (_planPriceUSD(e.plan, e.custom) <= 0) continue;   // nothing is being paid for
-    /* Comped, negotiated and owner accounts are granted by a person, not by a
-       subscription, so there is no renewal to wait for and never will be. */
-    if (e.source === 'admin') continue;
-    paid++;
-    if (e.pastDueSince) continue;                         // already in the pipeline
-    /* updatedAt as the fallback so records written before renewedAt existed
-       are covered rather than silently exempt - an exemption is exactly where
-       this class of defect hides. */
-    const lastSeen = e.renewedAt || e.updatedAt || 0;
-    if (!lastSeen) continue;                              // cannot judge; do not guess
-    if (now - lastSeen > RENEWAL_MAX_AGE_MS) stale.push({ email: row.id, plan: e.plan, lastSeen });
-  }
-
-  if (!stale.length) return { ran: true, paid, stale: 0, truncated };
-
-  const share = paid ? stale.length / paid : 1;
-  if (stale.length >= SWEEP_SYSTEMIC_MIN && share >= SWEEP_SYSTEMIC_FRACTION) {
+  const share = paid ? staleCount / paid : 1;
+  if (staleCount >= SWEEP_SYSTEMIC_MIN && share >= SWEEP_SYSTEMIC_FRACTION) {
     /* Everybody at once. That is us, not them. Touch nothing. */
-    audit(env, 'renewal_sweep_systemic', { stale: stale.length, paid, share: +share.toFixed(2) });
+    audit(env, 'renewal_sweep_systemic', { stale: staleCount, paid, share: +share.toFixed(2) });
     try {
       await alertOnce(env, 'renewal_systemic:' + day,
-        'RENEWALS ARE NOT ARRIVING. ' + stale.length + ' of ' + paid + ' paid accounts have had no renewal '
+        'RENEWALS ARE NOT ARRIVING. ' + staleCount + ' of ' + paid + ' paid accounts have had no renewal '
         + 'confirmed in over ' + Math.round(RENEWAL_MAX_AGE_MS / 86400000) + ' days. That is almost certainly the '
         + 'payment webhook, not that many cards failing at once - so NO account has been touched. While this lasts, '
         + 'cancellations and failed payments are also not reaching AMV, so plans are not being revoked either. '
         + 'Check STRIPE_WEBHOOK_SECRET and the endpoint in the Stripe dashboard (and PAYPAL_WEBHOOK_ID).',
         6 * 60);
     } catch (e) {}
-    return { ran: true, paid, stale: stale.length, systemic: true, marked: 0, truncated };
+    return { ran: true, paid, stale: staleCount, systemic: true, marked: 0, truncated };
   }
 
+  /* At most SWEEP_STALE_KEEP a pass; any beyond it are still stale tomorrow,
+     and tomorrow's pass marks them. */
   for (const s of stale) {
     await _markPastDue(env, s.email, { reason: 'no_renewal_seen', lastSeen: s.lastSeen, plan: s.plan });
   }

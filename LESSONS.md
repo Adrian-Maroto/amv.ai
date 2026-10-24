@@ -15262,3 +15262,27 @@ a channel, "slack me", "notify the team on Slack").
 
 And a Slack-triggered job ignores messages bots posted: bots answering bots
 is how a channel becomes a loop that spends every few minutes for ever.
+
+## 603. A job that reads everybody at once is a cliff, not a slope
+
+Three jobs read a whole kind of record into one Worker request: the
+automation safety-net sweep (every `auto:` record, hourly), the renewal sweep
+(the first 2,000 entitlements, daily), and every account deletion (every
+marketplace snapshot in the product). None of them gets slowly worse with
+size. Each works until the request runs out of memory or time, and then
+covers NOBODY - at the same point, every run. The renewal sweep was the honest
+one: it paged somebody when it hit its cap, and past 2,000 paying accounts the
+same ones beyond the cut were still never examined for a lapsed payment.
+
+Rule: a sweep over a population is a pass, not a request. It reads a bounded
+page from where the last one stopped (`DB.page`, with the position saved),
+wraps at the end, and makes any decision that needs the whole picture only
+when the pass is complete (the renewal sweep's "a quarter stale at once is
+our webhook" check). A record keyed by its owner is found by the owner's
+prefix (`DB.idsWithPrefix`), never by reading everyone's. On a deployment
+smaller than one page all of this behaves exactly as before, which is why
+nothing at small scale could have shown it.
+
+Still open: the invitations an account SENT are keyed by the recipient, so
+erasure still scans that kind; it is small (family invites, rate-limited),
+and a sender index would close it.

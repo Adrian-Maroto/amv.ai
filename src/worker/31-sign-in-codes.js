@@ -1310,10 +1310,12 @@ async function authDeleteAccount(request, env) {
        D1 deployment, so the snapshots of everything this person had bought
        survived the erasure of their account - data that was supposed to be gone
        and is keyed by their address. */
-    const { rows: snaps } = await scan(env, 'mktsnap', SCAN_ALL, 'erasure: marketplace snapshots');
-    for (const s of snaps) {
-      if (!s || typeof s.id !== 'string' || !s.id.startsWith(email + ':')) continue;
-      try { await DB.del(env, 'mktsnap', s.id); } catch { _eraseFailed('purchased-item snapshots'); }
+    /* Keyed `<buyer>:<item>`, so this person's are found by their own prefix.
+       This used to read every snapshot in the product for every deletion -
+       one is written on every purchase, so at scale an erasure that read them
+       all would run out of time and fail to erase. */
+    for (const id of await DB.idsWithPrefix(env, 'mktsnap', email + ':')) {
+      try { await DB.del(env, 'mktsnap', id); } catch { _eraseFailed('purchased-item snapshots'); }
     }
   } catch { _eraseFailed('purchased-item snapshots'); }
 
@@ -1328,6 +1330,14 @@ async function authDeleteAccount(request, env) {
      Both directions: invitations ABOUT this account, and invitations this
      account sent to somebody else. */
   try {
+    /* Invitations TO this account are keyed by it, so those come by prefix;
+       ones it SENT are keyed by whoever it invited, and nothing lists them,
+       so those still need the scan below. It is family invitations only,
+       rate-limited per sender, so the namespace stays small - but a sender
+       index would remove the scan entirely. */
+    for (const id of await DB.idsWithPrefix(env, 'link', email + '|')) {
+      try { await DB.del(env, 'link', id); } catch { _eraseFailed('account-link invitations'); }
+    }
     const { rows: invites } = await scan(env, 'link', SCAN_ALL, 'erasure: account-link invitations');
     for (const l of invites) {
       const id = l && typeof l.id === 'string' ? l.id : '';

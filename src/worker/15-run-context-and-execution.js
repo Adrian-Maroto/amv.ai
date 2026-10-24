@@ -1427,6 +1427,44 @@ const AUTO_CARRY_KEYS = ['next', 'runs', 'errors', 'attempts', 'lastError', 'las
    "scan everybody" - the five-minute tick still never believes an empty index
    and still runs the hourly full sweep, so the floor under every job is
    exactly what it was. The quick tick only makes booked work start sooner. */
+/* THE SAFETY NET, A PAGE AT A TIME.
+
+   The index (duehour: buckets) is how a tick finds the work; this is the net
+   under it, for an account whose booking was lost. It used to read EVERY
+   automation record in one go, in the first minutes of each hour - which is
+   a cliff: at a few hundred thousand accounts the tick runs out of memory or
+   time, the net covers nobody, and it fails at the same point every hour.
+
+   Now each tick that needs the net reads at most AUTO_SWEEP_PAGES pages of
+   AUTO_SWEEP_PAGE records from where the last one stopped (autosweep:cursor),
+   and wraps at the end. A tick's cost no longer grows with the number of
+   accounts; on a deployment smaller than one page it is still the whole
+   namespace every time, exactly as before. Everything a page passes that is
+   due soon is booked into the index on the way (below), so a lost booking is
+   found within one pass. Emptiness is believed only from a pass that started
+   at the beginning and reached the end without finding anything. */
+const AUTO_SWEEP_PAGE = 500;
+const AUTO_SWEEP_PAGES = 4;
+async function _autoSweep(env) {
+  let after = null;
+  try { after = (await env.AMV_KV.get('autosweep:cursor')) || null; } catch (e) { after = null; }
+  const fromStart = !after;
+  const rows = [];
+  let next = after;
+  for (let i = 0; i < AUTO_SWEEP_PAGES; i++) {
+    const p = await DB.page(env, 'auto', next, AUTO_SWEEP_PAGE);
+    rows.push(...p.rows);
+    next = p.next;
+    if (!next) break;
+  }
+  try {
+    if (next) await env.AMV_KV.put('autosweep:cursor', String(next), { expirationTtl: 86400 });
+    else if (after) await env.AMV_KV.delete('autosweep:cursor');
+  } catch (e) {}
+  if (fromStart && !next && rows.length === 0) await _markKindEmpty(env, 'auto');
+  return { rows, wrapped: !next };
+}
+
 async function runDueAutomations(env, atMs, opts){
   const quick = !!(opts && opts.quick);
   const now = +atMs || Date.now();
@@ -1464,8 +1502,8 @@ async function runDueAutomations(env, atMs, opts){
       if (rec) allUsers.push({ id: em, value: rec });
     }
   } else {
-    const s = await scan(env, 'auto', SCAN_ALL, 'autonomous work tick');
-    allUsers = s.rows; truncated = s.truncated;
+    const s = await _autoSweep(env);
+    allUsers = s.rows; truncated = false;
     /* Book what is due SOON on the way past, so accounts written before the
        index existed join the fast path without waiting to be edited. Only the
        near ones: booking every idle account here would be the same
